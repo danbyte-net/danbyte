@@ -27,6 +27,8 @@ import {
   sideLength,
 } from "./anchors"
 import type { AnchorLink, Anchors } from "./anchors"
+import { arcFor, arcSide } from "./arcs"
+import type { ArcAxis, ArcSide } from "./arcs"
 import { cardContent } from "./card-fields"
 import { cardLayout, JUNCTION, NUB } from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
@@ -34,15 +36,25 @@ import { detectFanouts, fanChip } from "./fanout"
 import type { Fan } from "./fanout"
 import { CLEAR, LANE, obstacles, SHARED_STUB } from "./lanes"
 import type { Obstacles } from "./lanes"
+import {
+  DEFAULT_LABELS,
+  fanLabelSets,
+  hasLabels,
+  linkLabelSet,
+  orientPair,
+} from "./link-labels"
+import type { LabelToken, LinkLabelSet } from "./link-labels"
 import { planEdges, portStub } from "./plan"
 import { pairKey } from "./types"
 import type {
+  CablePair,
   DiagramCardData,
   DiagramEdgeData,
   DiagramMode,
   Dir,
   End,
   LineType,
+  LinkLabels,
   Pt,
   Rect,
   Side,
@@ -56,7 +68,13 @@ import type {
 //   4. Detailed: count each card's nubs per side, grow the cards to fit,
 //      lay out again with the real boxes, and anchor every cable end;
 //   5. plan every line (plan.ts): elbows in their own lanes clear of the
-//      cards, port names along their cables, middle chips off the cards.
+//      cards, cyclical arcs round the cards between their ends, port names
+//      along their cables, middle chips off the cards, end addresses.
+//
+// Cyclical links are settled before anchoring: which draw as arcs (the
+// link's own line always does; the view's default only between level
+// cards whose straight line would cross one) and to which side, since an
+// arc's ends leave through the side it bulges to.
 //
 // A breakout cable (fanout.ts) is drawn as one trunk from its shared port
 // to a junction node, then one leg to each far port.
@@ -82,6 +100,9 @@ export interface DiagramOptions {
   /** Detailed: fold an aggregate's member cables into one link (their
    * nubs stay one per member). Simple folds every cable of a pair. */
   bundleLags?: boolean
+  /** The Labels setting: which of subnets, end addresses and port names
+   * the links carry (all three when absent). */
+  labels?: readonly LabelToken[]
   /** Saved arrangement: node id → centre. */
   positions?: Record<string, [number, number]>
   matched?: Set<string> | null
@@ -200,6 +221,7 @@ function diagramEdge(
     a: [],
     b: [],
     labels: {},
+    ...(line === "cyclical" ? { arcAsk: arcAsk(opts, pk) } : {}),
   })
   switch (c.sem) {
     case "bgp":
@@ -306,6 +328,68 @@ function diagramEdge(
   }
 }
 
+/** How a cyclical link asked for its arc: by its own override (always),
+ * or as the view's default; and a saved side. */
+function arcAsk(
+  opts: DiagramOptions,
+  pk: string
+): NonNullable<DiagramEdgeData["arcAsk"]> {
+  const own = opts.links?.[pk]
+  return {
+    always: own?.line === "cyclical",
+    ...(own?.flip === 1 || own?.flip === -1 ? { flip: own.flip } : {}),
+  }
+}
+
+/** The payload pairs behind a link, in the order its cables anchor
+ * (`anchorLink`), oriented to the drawn edge. */
+function linkPairs(d: DiagramEdgeData, flipped: boolean): CablePair[] {
+  const pairs: CablePair[] =
+    d.sem === "cable"
+      ? (d.raw?.pairs ?? [])
+      : (d.cables ?? []).flatMap((c) => c.pairs ?? [])
+  return pairs.map((p) => orientPair(p, flipped))
+}
+
+/** A link's labels with a label set folded in: subnets after the chip it
+ * has, the end addresses, and whether port names show. */
+function foldLabels(
+  labels: LinkLabels,
+  set: LinkLabelSet | null,
+  tokens: readonly LabelToken[]
+): LinkLabels {
+  const mid = [...(labels.mid ?? []), ...(set?.mid ?? [])]
+  const ends = set?.ends.some((e) => e.a || e.b) ? set.ends : undefined
+  return {
+    ...labels,
+    ...(mid.length ? { mid } : {}),
+    ...(ends ? { ends } : {}),
+    ...(tokens.includes("port") ? {} : { noPorts: true }),
+  }
+}
+
+/** A cable, bundle or aggregate link with its Labels: per cable where
+ * each has its own nub (Detailed), one set for the one line of Simple. */
+function withLinkLabels(
+  e: Edge<DiagramEdgeData>,
+  flipped: boolean,
+  mode: DiagramMode,
+  tokens: readonly LabelToken[]
+): Edge<DiagramEdgeData> {
+  const d = e.data
+  if (e.type !== "link" || !d || d.simple) return e
+  if (d.sem !== "cable" && d.sem !== "lagbundle" && d.sem !== "bundle") return e
+  const pairs = linkPairs(d, flipped)
+  const set = pairs.length
+    ? linkLabelSet(
+        mode === "detailed" ? pairs.map((p) => [p]) : [pairs],
+        tokens
+      )
+    : null
+  if (!(set && hasLabels(set)) && tokens.includes("port")) return e
+  return { ...e, data: { ...d, labels: foldLabels(d.labels, set, tokens) } }
+}
+
 /** Flip an oriented edge's per-end data: its aggregate names. */
 function orientData(e: Edge<DiagramEdgeData>): Edge<DiagramEdgeData> {
   const d = e.data!
@@ -381,6 +465,28 @@ function fanParts(
   const lineTo = (node: string): LineType =>
     opts.links?.[pairKey(keyOf(f.trunk.node), keyOf(node))]?.line ?? opts.line
   const chip = fanChip(raw)
+  const tokens = opts.labels ?? DEFAULT_LABELS
+  const legs =
+    mode === "simple"
+      ? far.map((node) => {
+          const mine = f.legs.filter((l) => l.node === node)
+          return {
+            node,
+            ports: mine.map((l) => l.port),
+            pairs: mine.flatMap((l) => l.pairs ?? []),
+          }
+        })
+      : f.legs.map((l) => ({
+          node: l.node,
+          ports: [l.port],
+          pairs: l.pairs ?? [],
+        }))
+  // Subnets per leg, the shared port's addresses on the trunk.
+  const sets = fanLabelSets(
+    raw.pairs ?? [],
+    legs.map((l) => l.pairs),
+    tokens
+  )
   const common = (pk: string, line: LineType) => ({
     sem: "cable" as const,
     raw,
@@ -399,17 +505,10 @@ function fanParts(
     data: {
       ...common(pairKey(keyOf(f.trunk.node), keyOf(far[0])), "straight"),
       fan: { role: "trunk", junction: f.id },
-      labels: { ...(chip.length ? { mid: chip } : {}) },
+      labels: foldLabels(chip.length ? { mid: chip } : {}, sets.trunk, tokens),
     },
     ...look,
   }
-  const legs =
-    mode === "simple"
-      ? far.map((node) => ({
-          node,
-          ports: f.legs.filter((l) => l.node === node).map((l) => l.port),
-        }))
-      : f.legs.map((l) => ({ node: l.node, ports: [l.port] }))
   const legEdges = legs.map(
     (l, i): Edge<DiagramEdgeData> => ({
       id: `${f.id}:l${i}`,
@@ -420,7 +519,7 @@ function fanParts(
       data: {
         ...common(pairKey(keyOf(f.trunk.node), keyOf(l.node)), lineTo(l.node)),
         fan: { role: "leg", junction: f.id },
-        labels: {},
+        labels: foldLabels({}, sets.legs[i], tokens),
       },
       ...look,
     })
@@ -668,6 +767,57 @@ interface Anchored {
   /** Every node's box, junctions included. */
   rects: Map<string, Rect>
   junctions: Map<string, { c: Pt; dir: Dir }>
+  /** The cyclical links drawn as arcs: their axis and side. */
+  arcs: Map<string, { axis: ArcAxis; s: ArcSide }>
+}
+
+/** Which cyclical links draw as arcs, and which way, for the cards where
+ * they are (`arcFor`). A breakout's legs stay bendy. */
+function arcsOf(
+  model: DiagramModel,
+  rects: ReadonlyMap<string, Rect>,
+  solid: Obstacles
+): Map<string, { axis: ArcAxis; s: ArcSide }> {
+  const out = new Map<string, { axis: ArcAxis; s: ArcSide }>()
+  for (const e of model.edges) {
+    const d = e.data
+    if (e.type !== "link" || !d?.arcAsk || d.line !== "cyclical") continue
+    if (d.fan || d.simple || e.source === e.target) continue
+    const a = rects.get(e.source)
+    const b = rects.get(e.target)
+    if (!a || !b) continue
+    const arc = arcFor(a, b, {
+      always: d.arcAsk.always,
+      ...(d.arcAsk.flip ? { flip: d.arcAsk.flip } : {}),
+      obs: solid,
+      own: [e.source, e.target],
+    })
+    if (arc) out.set(e.id, arc)
+  }
+  return out
+}
+
+/** Sides pinned by an earlier pass, with each cyclical link's arc sides
+ * put in - or, for one that no longer arcs, its arc's pin (one side at
+ * both ends) dropped so it chooses again. */
+function repin(
+  sides: Anchors["sides"] | undefined,
+  model: DiagramModel,
+  arcs: ReadonlyMap<string, { axis: ArcAxis; s: ArcSide }>
+): Anchors["sides"] | undefined {
+  if (!sides) return sides
+  const out = new Map(sides)
+  for (const e of model.edges) {
+    if (!e.data?.arcAsk) continue
+    const arc = arcs.get(e.id)
+    const pin = out.get(e.id)
+    if (arc) {
+      const side = arcSide(arc.axis, arc.s)
+      out.set(e.id, [side, side])
+    } else if (pin && pin[0] === pin[1] && e.source !== e.target)
+      out.delete(e.id)
+  }
+  return out
 }
 
 /** Anchor every link at the cards' centres. Detailed grows each card to
@@ -692,13 +842,23 @@ function anchorAll(
   }
   let solid = obstacles(rects)
   let junctions = placeJunctions(model, rects, solid)
+  // An arc leaves both its cards through the side it bulges to.
+  const arcs = arcsOf(model, rects, solid)
+  const links = arcs.size
+    ? model.links.map((l) => {
+        const arc = arcs.get(l.id)
+        if (!arc) return l
+        const side = arcSide(arc.axis, arc.s)
+        return { ...l, force: { a: side, b: side } }
+      })
+    : model.links
   const pass = (mode: DiagramMode, pinned?: Anchors["sides"]) =>
     anchorLinks(
       withJ(junctions),
-      withJunctionDirs(model.links, junctions, rects),
+      withJunctionDirs(links, junctions, rects),
       mode,
       {
-        ...(pinned ? { sides: pinned } : {}),
+        ...(pinned ? { sides: repin(pinned, model, arcs) } : {}),
         blockers: solid,
         ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
       }
@@ -714,7 +874,7 @@ function anchorAll(
       )
       anchors = pass("simple")
     }
-    return { anchors, boxes, rects: withJ(junctions), junctions }
+    return { anchors, boxes, rects: withJ(junctions), junctions, arcs }
   }
   const first = pass("detailed", sides)
   for (const [id, input] of model.cards) {
@@ -742,18 +902,20 @@ function anchorAll(
       solid,
       trunkEnds(model, anchors, rects)
     )
-  return { anchors, boxes, rects: withJ(junctions), junctions }
+  return { anchors, boxes, rects: withJ(junctions), junctions, arcs }
 }
 
-/** The edges with their anchors filled in. */
+/** The edges with their anchors filled in, and each arc's side. */
 function withAnchors(
   model: DiagramModel,
-  anchors: Anchors
+  anchors: Anchors,
+  arcs: Anchored["arcs"]
 ): Edge<DiagramEdgeData>[] {
   return model.edges.map((e) => {
     const d = e.data!
     const ends = anchors.links.get(e.id)
     if (e.type !== "link" || !ends) return e
+    const arc = arcs.get(e.id)
     return {
       ...e,
       data: {
@@ -761,6 +923,7 @@ function withAnchors(
         a: ends.a,
         b: ends.b,
         ...(model.mode === "simple" ? { simple: true } : {}),
+        ...(arc ? { arc: { flip: arc.s, h: 0 } } : {}),
       },
     }
   })
@@ -781,7 +944,7 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
     mode: model.mode,
     measure: model.measure,
   })
-  let edges = withAnchors(model, a.anchors)
+  let edges = withAnchors(model, a.anchors, a.arcs)
   const elbows = edges.filter(
     (e) => e.type === "link" && e.data?.line === "elbow"
   ).length
@@ -791,7 +954,7 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
     for (let round = 0; round < (elbows > 400 ? 1 : 2); round++) {
       const { turns } = planEdges(input(edges), { turnsOnly: true })
       if (!reorderNubs(a.anchors, turns)) break
-      edges = withAnchors(model, a.anchors)
+      edges = withAnchors(model, a.anchors, a.arcs)
     }
   const { plans } = planEdges(input(edges))
   return edges.map((e) => {
@@ -810,6 +973,7 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
         ...(plan.midT !== undefined ? { midT: plan.midT } : {}),
         ...(plan.midOff ? { midOff: plan.midOff } : {}),
         ...(plan.crowded ? { crowded: true } : {}),
+        ...(plan.arc ? { arc: plan.arc } : {}),
       },
     }
   })
@@ -916,9 +1080,11 @@ export function buildDiagram(
     for (const x of na) if (x !== b && nb.has(x)) return true
     return false
   }
+  const tokens = opts.labels ?? DEFAULT_LABELS
   const edges = [
     ...oriented.map((e0) => {
-      const e = flipped.has(e0.id) ? orientData(e0) : e0
+      const flip = flipped.has(e0.id)
+      const e = withLinkLabels(flip ? orientData(e0) : e0, flip, mode, tokens)
       return e.type === "link" && twins(e.source, e.target)
         ? { ...e, data: { ...e.data!, peer: true } }
         : e
@@ -949,18 +1115,25 @@ export function buildDiagram(
     ...edges.filter((e) => e.type !== "overlay" && !e.data?.fan),
     ...parts.flatMap((p) => p.layout),
   ]
-  // Detailed: ranks far enough apart for a port name at both ends of a
-  // cable, and a few lanes between them.
+  // Detailed: ranks far enough apart for a port name (and the addresses
+  // beside it) at both ends of a cable, and a few lanes between them.
   let widest = 0
   const degree = new Map<string, number>()
-  if (mode === "detailed")
+  if (mode === "detailed") {
+    const ports = tokens.includes("port")
     for (const l of links)
       for (const c of l.cables?.length ? l.cables : [{}]) {
-        for (const p of [c.a, c.b])
-          if (p) widest = Math.max(widest, measure(p, LABEL.END_SIZE, 400))
+        if (ports)
+          for (const p of [c.a, c.b])
+            if (p) widest = Math.max(widest, measure(p, LABEL.END_SIZE, 400))
         for (const n of [l.source, l.target])
           degree.set(n, (degree.get(n) ?? 0) + 1)
       }
+    for (const e of edges)
+      for (const end of e.data?.labels.ends ?? [])
+        for (const ip of [...(end.a ?? []), ...(end.b ?? [])])
+          widest = Math.max(widest, measure(ip, LABEL.END_SIZE, 400))
+  }
   const lanes = Math.min(8, Math.max(2, ...degree.values()))
   const rankGap = widest ? 2 * portStub(widest) + LANE * lanes : 0
   const all = new Map<string, { w: number; h: number }>([...fixed, ...base])

@@ -1,4 +1,5 @@
 import type { TopoEdge } from "@/lib/api"
+import type { CablePair } from "./types"
 
 // Breakout (fan-out) cables. A cable whose one end is a single port and
 // whose other end lands on several - an MPO trunk broken out to four
@@ -20,6 +21,8 @@ export interface FanTerm {
   port: string
   /** The component's id when the payload sends one. */
   id?: string
+  /** A leg: the indexes into the fan's `raw.pairs` that reach it. */
+  pairs?: number[]
 }
 
 export interface Fan {
@@ -36,13 +39,14 @@ export interface Fan {
   edges: string[]
 }
 
-type Pair = NonNullable<NonNullable<TopoEdge["data"]>["pairs"]>[number]
+type Pair = CablePair
 
 const termKey = (node: string, id: string | undefined, port: string) =>
   `${node}\u0000${id ?? `name:${port}`}`
 
-/** A pair seen from its other end. */
-function swapPair(p: Pair): Pair {
+/** A pair seen from its other end: every `a_` field traded with its `b_`
+ * twin, the shared subnets' ends too. */
+export function swapPair(p: Pair): Pair {
   const {
     a,
     b,
@@ -52,6 +56,8 @@ function swapPair(p: Pair): Pair {
     b_id,
     a_kind,
     b_kind,
+    a_end,
+    b_end,
     a_ips,
     b_ips,
     subnets,
@@ -67,6 +73,8 @@ function swapPair(p: Pair): Pair {
     ...(a_id !== undefined ? { b_id: a_id } : {}),
     ...(b_kind !== undefined ? { a_kind: b_kind } : {}),
     ...(a_kind !== undefined ? { b_kind: a_kind } : {}),
+    ...(b_end !== undefined ? { a_end: b_end } : {}),
+    ...(a_end !== undefined ? { b_end: a_end } : {}),
     ...(b_ips !== undefined ? { a_ips: b_ips } : {}),
     ...(a_ips !== undefined ? { b_ips: a_ips } : {}),
     ...(subnets
@@ -135,10 +143,11 @@ export function detectFanouts(
     const legs = [...terms.entries()]
       .filter(([k]) => k !== trunkKey)
       .sort((x, y) => x[1].first - y[1].first)
-      .map(([, t]) => ({
+      .map(([k, t]) => ({
         node: t.node,
         port: t.port,
         ...(t.id ? { id: t.id } : {}),
+        pairs: keys.flatMap(([a, b], i) => (a === k || b === k ? [i] : [])),
       }))
     if (legs.length < 2) continue
     const first = list[0].data!

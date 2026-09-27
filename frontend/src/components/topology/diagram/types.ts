@@ -105,11 +105,31 @@ export interface Route {
   at: (t: number) => { x: number; y: number; angle: number }
 }
 
-/** Labels a link carries: middle chip lines and per-end port / address. */
+/** A payload cable pair, with the cable end (A/B) each side is terminated
+ * on - `a_end`/`b_end`, oriented like the rest of the pair. */
+export type CablePair = NonNullable<
+  NonNullable<TopoEdge["data"]>["pairs"]
+>[number] & {
+  a_end?: "A" | "B" | null
+  b_end?: "A" | "B" | null
+}
+
+/** One cable's end addresses (`link-labels.ts`): the full address each end
+ * has in the link subnets the two ends share, IPv4 first. */
+export interface EndAddresses {
+  a?: string[]
+  b?: string[]
+}
+
+/** Labels a link carries (the view's Labels setting): middle chip lines -
+ * a bundle's count, then the shared subnets - and each cable's end
+ * addresses. */
 export interface LinkLabels {
   mid?: string[]
-  a?: { port?: string; ip?: string }
-  b?: { port?: string; ip?: string }
+  /** Per cable, in `a`/`b` anchor order. */
+  ends?: EndAddresses[]
+  /** Port names are switched off: no names along the cables. */
+  noPorts?: boolean
 }
 
 /** One cable's planned drawing (`plan.ts`): its route and where its port
@@ -121,6 +141,9 @@ export interface CablePlan {
   /** Port names along the cable (Detailed); null = no room, left off. */
   a?: PortPlace | null
   b?: PortPlace | null
+  /** End addresses along the cable (`labels.ends`), each a block of
+   * lines centred on its place; null = no room, left off. */
+  ips?: { a?: PortPlace | null; b?: PortPlace | null }
 }
 
 /** Which part of a breakout cable an edge draws: the trunk from the
@@ -148,7 +171,14 @@ export type LinkData = {
   line: LineType
   a: Anchor[]
   b: Anchor[]
-  /** Cyclical: the side the arc bulges to and its height. */
+  /** Cyclical: how the arc was asked for. `always`: the link's own line
+   * (an arc wherever it runs); else the view's default (an arc only where
+   * a line would cross a card, bendy elsewhere). `flip`: the side a saved
+   * override pins it to. */
+  arcAsk?: { always: boolean; flip?: 1 | -1 }
+  /** Drawn as an arc: the side it bulges to (-1 above or left of the
+   * cards, 1 below or right) and the height of its apex line past the
+   * outer of its two ends, px (0 until planned). */
   arc?: { flip: 1 | -1; h: number }
   labels: LinkLabels
   /** Where the middle label sits along the route, 0..1… */

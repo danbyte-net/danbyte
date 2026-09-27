@@ -1,12 +1,25 @@
 import type { Edge } from "@xyflow/react"
 
 import { portSide } from "@/lib/diagram/geometry"
+import type { PortPlace } from "@/lib/diagram/geometry"
 import type { Measure } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
 import { linkEnds, nubKey } from "./anchors"
 import type { EndTurns } from "./anchors"
-import { LabelScene, placeChips, placePortLabels } from "./label-placement"
-import type { ChipAsk, ChipPlace, PortLabelAsk } from "./label-placement"
+import { solveArcs } from "./arcs"
+import type { ArcAsk, ArcAxis, ArcSide } from "./arcs"
+import {
+  LabelScene,
+  placeChips,
+  placeEndLabels,
+  placePortLabels,
+} from "./label-placement"
+import type {
+  ChipAsk,
+  ChipPlace,
+  EndLabelAsk,
+  PortLabelAsk,
+} from "./label-placement"
 import {
   assignLanes,
   elbowBase,
@@ -42,7 +55,8 @@ import type {
 // A Diagram's links planned together, once the cards are placed and every
 // end is anchored: each cable's route (elbows in their own lanes, clear of
 // the cards they do not connect; bendy curves reined in where they would
-// sweep through a card), then where each port name and middle chip goes.
+// sweep through a card; cyclical arcs raised round the cards between their
+// ends), then where each port name, middle chip and end address goes.
 // The canvas, the SVG and the draw.io file all draw from this plan, so
 // they agree. Pure.
 
@@ -65,6 +79,8 @@ export interface EdgePlan {
   midT?: number
   midOff?: number
   crowded?: boolean
+  /** Drawn as arcs: the side and the highest apex of its cables. */
+  arc?: { flip: ArcSide; h: number }
 }
 
 export interface PlanOutput {
@@ -91,6 +107,17 @@ interface Item {
   tb?: string
   wa: number
   wb: number
+  /** Address lines at each end (`labels.ends`), and their widest. */
+  ia?: string[]
+  ib?: string[]
+  wia: number
+  wib: number
+  /** The card side a nub's port name leaves square to, for re-seating a
+   * side's names together. */
+  ga?: string
+  gb?: string
+  /** Drawn as an arc along this axis, bulging this way. */
+  arc?: { axis: ArcAxis; s: ArcSide }
   /** The end leaves a Detailed nub. */
   nubA: boolean
   nubB: boolean
@@ -132,10 +159,32 @@ function items(input: PlanInput): Item[] {
       const ba = d.b[i] as Anchor | undefined
       const nubA = detailed && !d.simple && aa?.k === "side"
       const nubB = detailed && !d.simple && ba?.k === "side"
-      const ta = nubA ? aa.port : undefined
-      const tb = nubB ? ba.port : undefined
+      const ports = !d.labels.noPorts
+      const ta = nubA && ports ? aa.port : undefined
+      const tb = nubB && ports ? ba.port : undefined
       const wa = ta ? input.measure(ta, LABEL.END_SIZE, 400) : 0
       const wb = tb ? input.measure(tb, LABEL.END_SIZE, 400) : 0
+      // Addresses only at a card: a breakout's junction end has none.
+      const addr = d.labels.ends?.[i]
+      const ia = aa?.k === "side" && addr?.a?.length ? addr.a : undefined
+      const ib = ba?.k === "side" && addr?.b?.length ? addr.b : undefined
+      const widest = (lines?: string[]) =>
+        lines
+          ? Math.max(...lines.map((l) => input.measure(l, LABEL.END_SIZE, 400)))
+          : 0
+      const wia = widest(ia)
+      const wib = widest(ib)
+      // A nub's straight run holds its port name and, beside it, its
+      // addresses.
+      const runA = Math.max(wa, nubA ? wia : 0)
+      const runB = Math.max(wb, nubB ? wib : 0)
+      const arc: Item["arc"] =
+        d.arc && aa?.k === "side" && ba?.k === "side"
+          ? {
+              axis: aa.side === "T" || aa.side === "B" ? "x" : "y",
+              s: d.arc.flip,
+            }
+          : undefined
       const shared = (end: End, node: string, anchor: typeof aa) =>
         anchor?.k === "junction"
           ? `${node}\u0000j\u0000${dirKey(end)}`
@@ -148,23 +197,40 @@ function items(input: PlanInput): Item[] {
         edge: e,
         i,
         key: `${e.id}#${i}`,
-        line: d.fan?.role === "trunk" ? "straight" : d.line,
+        // A cyclical link the view's default leaves unarched is bendy.
+        line:
+          d.fan?.role === "trunk"
+            ? "straight"
+            : d.line === "cyclical" && !arc
+              ? "bendy"
+              : d.line,
         a: {
           ...a,
           node: e.source,
-          stub: ta ? portStub(wa) : sa ? SHARED_STUB : STUB,
+          stub: runA ? portStub(runA) : sa ? SHARED_STUB : STUB,
           ...(sa ? { shared: sa } : {}),
         },
         b: {
           ...b,
           node: e.target,
-          stub: tb ? portStub(wb) : sb ? SHARED_STUB : STUB,
+          stub: runB ? portStub(runB) : sb ? SHARED_STUB : STUB,
           ...(sb ? { shared: sb } : {}),
         },
         ...(ta ? { ta } : {}),
         ...(tb ? { tb } : {}),
         wa,
         wb,
+        ...(ia ? { ia } : {}),
+        ...(ib ? { ib } : {}),
+        wia,
+        wib,
+        ...(ta && aa?.k === "side"
+          ? { ga: `${e.source}\u0000${aa.side}` }
+          : {}),
+        ...(tb && ba?.k === "side"
+          ? { gb: `${e.target}\u0000${ba.side}` }
+          : {}),
+        ...(arc ? { arc } : {}),
         nubA,
         nubB,
         ...(nubA ? { outA: outward(aa, s) } : {}),
@@ -189,11 +255,25 @@ function bendyPts(it: Item, obs: ReturnType<typeof obstacles>): Pt[] {
   if (it.fanLeg) {
     // Bend nearer the junction when the far port's name needs the room.
     const along = (B.x - A.x) * it.a.dir[0] + (B.y - A.y) * it.a.dir[1]
-    const need = it.tb ? portStub(it.wb) / 0.9 : 0
+    const named = !!(it.tb || it.ib)
+    const need = named ? 2 * it.b.stub : 0
     const bend =
       along > 0 ? Math.max(0.2, Math.min(FAN_BEND, 1 - need / along)) : FAN_BEND
     const fan = fanControls(it.a, it.b, bend)
-    if (fan) return [A, ...fan, B]
+    if (fan) {
+      // Legs converging on one card run in side by side. A point on the
+      // line from the last control point to the port (`x` px out) makes
+      // the curved rule end in a truly straight run, half-way back to that
+      // control point: at least a stub, so each name keeps its own gap.
+      const [, p2] = fan
+      const last = Math.hypot(B.x - p2.x, B.y - p2.y)
+      const x = Math.max(1, 2 * it.b.stub - last)
+      if (named && x < last - 1) {
+        const s = { x: B.x + it.b.dir[0] * x, y: B.y + it.b.dir[1] * x }
+        return [A, ...fan, s, B]
+      }
+      return [A, ...fan, B]
+    }
   }
   const k = bendyReach(A, B)
   let ka = Math.max(k, it.ta ? portStub(it.wa) : 0)
@@ -230,6 +310,26 @@ function unit(p: Pt, q: Pt): Pt | null {
   return l < 1e-9 ? null : { x: dx / l, y: dy / l }
 }
 
+/** How a planned cable leaves one of its ends: the points from that end,
+ * the first run's direction, the direction after its first bend, and the
+ * side of the line a label there goes on by default. */
+function leaving(
+  it: Item,
+  end: "a" | "b",
+  pts: readonly Pt[]
+): { p: readonly Pt[]; u: Pt; next: Pt | null; side: 1 | -1 } | null {
+  const p = end === "a" ? pts : reversed(pts)
+  const u = unit(p[0], p[1])
+  if (!u) return null
+  const next = p.length > 2 ? unit(p[1], p[2]) : null
+  // A run with no bend: the side facing away from the middle of the
+  // card's edge, so the names on one edge fan out one to a gap.
+  const out = end === "a" ? it.outA : it.outB
+  const away =
+    !next && out ? (Math.sign(-u.y * out.x + u.x * out.y) as 1 | -1 | 0) : 0
+  return { p, u, next, side: away || portSide(u, next) }
+}
+
 /** A port-name request for one end of a planned cable. */
 function portAsk(
   it: Item,
@@ -239,24 +339,30 @@ function portAsk(
 ): PortLabelAsk | null {
   const text = end === "a" ? it.ta : it.tb
   if (!text) return null
-  const p = end === "a" ? pts : reversed(pts)
-  const u = unit(p[0], p[1])
-  if (!u) return null
+  const run0 = leaving(it, end, pts)
+  if (!run0) return null
+  const { p, u, side } = run0
   const run = Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y)
+  // A curve whose next control point lies on its first run's line runs
+  // straight to halfway there (draw.io's curved rule).
+  const onLine =
+    p.length > 2 &&
+    Math.abs(u.x * (p[2].y - p[1].y) - u.y * (p[2].x - p[1].x)) < 1e-6 &&
+    u.x * (p[2].x - p[1].x) + u.y * (p[2].y - p[1].y) > 0
   // The straight room from the port: an elbow's first run up to its
   // rounded corner; most of a curve's reach; a straight line's length.
   const room =
     it.line === "elbow" && p.length > 2
       ? run - ELBOW_RADIUS - 1
       : it.line === "bendy" || it.line === "cyclical"
-        ? run * 0.9
+        ? onLine
+          ? run + Math.hypot(p[2].x - p[1].x, p[2].y - p[1].y) / 2 - 1
+          : run * 0.9
         : route.length - 4
-  const next = p.length > 2 ? unit(p[1], p[2]) : null
-  // A run with no bend: the side facing away from the middle of the
-  // card's edge, so the names on one edge fan out one to a gap.
-  const out = end === "a" ? it.outA : it.outB
-  const away =
-    !next && out ? (Math.sign(-u.y * out.x + u.x * out.y) as 1 | -1 | 0) : 0
+  // Runs square to their card side re-seat together (`reseat`).
+  const dir = end === "a" ? it.a.dir : it.b.dir
+  const group = end === "a" ? it.ga : it.gb
+  const square = Math.abs(u.x * dir[0] + u.y * dir[1]) > 0.999
   return {
     key: `${it.key}${end}`,
     cable: it.key,
@@ -265,7 +371,53 @@ function portAsk(
     start: p[0],
     angle: (Math.atan2(u.y, u.x) * 180) / Math.PI,
     room,
-    side: away || portSide(u, next),
+    side,
+    ...(group && square ? { group } : {}),
+  }
+}
+
+/** An end-address request for one end of a planned cable: in Detailed on
+ * the other side of the line from its port name, from just past the nub;
+ * in Simple `LABEL.END_DIST` out from the point the side's lines share. */
+function addressAsk(
+  it: Item,
+  end: "a" | "b",
+  pts: readonly Pt[],
+  route: Route,
+  port: PortPlace | null | undefined
+): EndLabelAsk | null {
+  const lines = end === "a" ? it.ia : it.ib
+  const len = route.length
+  if (!lines || len < 1) return null
+  const run0 = leaving(it, end, pts)
+  if (!run0) return null
+  const w = end === "a" ? it.wia : it.wib
+  const nub = end === "a" ? it.nubA : it.nubB
+  const from = nub ? LABEL.PORT_DIST : LABEL.END_DIST
+  let side = run0.side
+  if (port) {
+    // The side the name took: its centre, seen across the run.
+    const start = run0.p[0]
+    const across =
+      -run0.u.y * (port.x - start.x) + run0.u.x * (port.y - start.y)
+    side = across > 0 ? -1 : 1
+  }
+  const fromEnd = end === "b"
+  return {
+    key: `${it.key}${end}`,
+    w,
+    lines: lines.length,
+    walk: (d) => {
+      const at = route.at(fromEnd ? 1 - d / len : d / len)
+      return {
+        x: at.x,
+        y: at.y,
+        angle: fromEnd ? at.angle + 180 : at.angle,
+      }
+    },
+    from,
+    until: Math.min(len / 2, from + w + (nub ? 48 : 96)),
+    side,
   }
 }
 
@@ -325,13 +477,36 @@ export function planEdges(
 
   const ptsOf = new Map<string, Pt[]>()
   elbows.forEach((it, j) => ptsOf.set(it.key, routes[j].pts))
+  // Arcs together, so the longer ones go round the shorter.
+  const arcs = solveArcs(
+    all.flatMap((it): ArcAsk[] =>
+      it.arc
+        ? [
+            {
+              key: it.key,
+              a: { x: it.a.x, y: it.a.y },
+              b: { x: it.b.x, y: it.b.y },
+              axis: it.arc.axis,
+              s: it.arc.s,
+              own: [it.a.node, it.b.node],
+            },
+          ]
+        : []
+    ),
+    obs
+  )
   for (const it of all) {
     if (ptsOf.has(it.key)) continue
     const A = { x: it.a.x, y: it.a.y }
     const B = { x: it.b.x, y: it.b.y }
+    const arc = arcs.get(it.key)
     ptsOf.set(
       it.key,
-      it.line === "bendy" || it.line === "cyclical" ? bendyPts(it, obs) : [A, B]
+      arc
+        ? arc.pts
+        : it.line === "bendy" || it.line === "cyclical"
+          ? bendyPts(it, obs)
+          : [A, B]
     )
   }
   const routeOf = new Map<string, Route>()
@@ -411,6 +586,21 @@ export function planEdges(
       }
     }
   }
+  // End addresses last: best effort round the names and chips.
+  const addrAsks: EndLabelAsk[] = []
+  for (const it of all)
+    for (const end of ["a", "b"] as const) {
+      const ask = addressAsk(
+        it,
+        end,
+        ptsOf.get(it.key)!,
+        routeOf.get(it.key)!,
+        ports.get(`${it.key}${end}`)
+      )
+      if (ask) addrAsks.push(ask)
+    }
+  const addrs = placeEndLabels(addrAsks, scene)
+
   // Each chip by the edge that draws it, with the edge it belongs to.
   const chipFor = new Map<
     string,
@@ -423,12 +613,32 @@ export function planEdges(
   for (const [id, list] of byEdge) {
     const own = placed.get(id)
     const chip = chipFor.get(id)
+    const arced = list.flatMap((it) => {
+      const r = arcs.get(it.key)
+      return r && it.arc ? [{ s: it.arc.s, h: r.h }] : []
+    })
     plans.set(id, {
       cables: list.map((it) => ({
         pts: ptsOf.get(it.key)!,
         ...(it.ta ? { a: ports.get(`${it.key}a`) ?? null } : {}),
         ...(it.tb ? { b: ports.get(`${it.key}b`) ?? null } : {}),
+        ...(it.ia || it.ib
+          ? {
+              ips: {
+                ...(it.ia ? { a: addrs.get(`${it.key}a`) ?? null } : {}),
+                ...(it.ib ? { b: addrs.get(`${it.key}b`) ?? null } : {}),
+              },
+            }
+          : {}),
       })),
+      ...(arced.length
+        ? {
+            arc: {
+              flip: arced[0].s,
+              h: Math.max(...arced.map((x) => x.h)),
+            },
+          }
+        : {}),
       // The chip moved off this edge: it carries none.
       ...(own && own.on !== id ? { mid: [] } : {}),
       ...(chip

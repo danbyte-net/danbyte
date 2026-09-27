@@ -238,6 +238,9 @@ interface EndEntry {
   port?: string
   /** Sort key: where the far end is, seen from this side. */
   key: number
+  /** An arc's end: arcs to farther cards sit further out along the side,
+   * so the arcs leaving one side nest. */
+  far?: number
   /** Tie-break inside one node pair: the cable's rank in the pair (the
    * same at both ends), signed so the cables arrive in the order they left
    * and a bundle never twists. */
@@ -400,7 +403,14 @@ export function anchorLinks(
           const t = ALONG[side]
           const vx = px - mx
           const vy = py - my
-          e.key = Math.atan2(vx * t[0] + vy * t[1], vx * n[0] + vy * n[1])
+          const along = vx * t[0] + vy * t[1]
+          e.key = Math.atan2(along, vx * n[0] + vy * n[1])
+          if (l.force && l.force.a === l.force.b) {
+            // An arc (both ends on its bulge side): those running one way
+            // leave from that end of the side, the longest outermost.
+            e.key = along >= 0 ? Math.PI / 2 : -Math.PI / 2
+            e.far = along >= 0 ? -Math.abs(along) : Math.abs(along)
+          }
           // The traveller's left hand, walking from the pair's first node
           // to its second: out of this side, or into it.
           const left: Dir = node < partner ? [n[1], -n[0]] : [-n[1], n[0]]
@@ -419,6 +429,7 @@ export function anchorLinks(
     list.sort(
       (x, y) =>
         x.key - y.key ||
+        (x.far ?? 0) - (y.far ?? 0) ||
         (x.partner < y.partner ? -1 : x.partner > y.partner ? 1 : 0) ||
         x.sec - y.sec ||
         (x.link < y.link ? -1 : x.link > y.link ? 1 : 0) ||

@@ -1,4 +1,4 @@
-import { PORT_H, portPlace } from "@/lib/diagram/geometry"
+import { PORT_H, portPlace, uprightAngle } from "@/lib/diagram/geometry"
 import type { PortPlace } from "@/lib/diagram/geometry"
 import { LABEL } from "@/lib/diagram/theme"
 import {
@@ -20,10 +20,18 @@ import type { Pt, Rect } from "./types"
 //   line on the outside of its first bend. When that spot is taken by
 //   another cable, label or card it tries the other side of the line, then
 //   slides out along the run (either side); when nothing fits it is left
-//   off (the nub's tooltip still names the port).
+//   off (the nub's tooltip still names the port). Where that left names
+//   off on one card side - cables running out of it side by side, like
+//   breakout legs converging on one card - the side's names are seated
+//   again in order along it, each in the gap before its cable when free,
+//   and the seating that shows more names is kept.
 // - A middle chip sits at the middle of its route, or the nearest spot
 //   along it clear of cards and other labels; with none free it is
 //   `crowded` and shows on hover only.
+// - An end's addresses run along its cable like a port name, on a straight
+//   stretch of the route: in Detailed on the other side of the line from
+//   the port name, in Simple a little way out from the point the side's
+//   lines share. With no free stretch they are left off.
 
 /** A port name to place. */
 export interface PortLabelAsk {
@@ -42,6 +50,9 @@ export interface PortLabelAsk {
   room: number
   /** Preferred side of the line (`portSide`). */
   side: 1 | -1
+  /** The card side the name's cable leaves square to (node and side):
+   * names in one group are re-seated together when some were left off. */
+  group?: string
 }
 
 /** A middle chip to place. */
@@ -64,10 +75,15 @@ export interface ChipPlace {
   crowded: boolean
 }
 
+type Label = { k: "label"; box: TurnedBox; dead?: boolean }
+
 type Item =
   | { k: "seg"; cable: string; p: Pt; q: Pt }
   | { k: "card"; box: TurnedBox }
-  | { k: "label"; box: TurnedBox }
+  | Label
+
+/** A label taken into a scene; `drop` it to free its room again. */
+export type Taken = Label
 
 /** Everything labels keep clear of: the routes, the cards, and the labels
  * placed so far. */
@@ -94,13 +110,20 @@ export class LabelScene {
       if (it.k === "seg") {
         if (mine(it.cable)) continue
         if (segHitsBox(it.p, it.q, box)) return false
-      } else if (boxesOverlap(box, it.box)) return false
+      } else if (it.k === "label" && it.dead) continue
+      else if (boxesOverlap(box, it.box)) return false
     }
     return true
   }
 
-  take(box: TurnedBox): void {
-    this.grid.add(turnedBounds(box), { k: "label", box })
+  take(box: TurnedBox): Taken {
+    const it: Label = { k: "label", box }
+    this.grid.add(turnedBounds(box), it)
+    return it
+  }
+
+  drop(it: Taken): void {
+    it.dead = true
   }
 }
 
@@ -134,6 +157,7 @@ export function placePortLabels(
   scene: LabelScene
 ): Map<string, PortPlace | null> {
   const out = new Map<string, PortPlace | null>()
+  const taken = new Map<string, Taken>()
   for (const ask of asks) {
     let found: PortPlace | null = null
     for (const d of alongs(ask)) {
@@ -148,10 +172,88 @@ export function placePortLabels(
       }
       if (found) break
     }
-    if (found) scene.take(portBox(found, ask.w))
+    if (found) taken.set(ask.key, scene.take(portBox(found, ask.w)))
     out.set(ask.key, found)
   }
+  reseat(asks, scene, out, taken)
   return out
+}
+
+/** Where a name first fits along its run, trying `sides` in turn. */
+function firstFit(
+  ask: PortLabelAsk,
+  sides: readonly (1 | -1)[],
+  scene: LabelScene
+): PortPlace | null {
+  for (const side of sides)
+    for (const d of alongs(ask)) {
+      const place = portPlace(ask.start, ask.angle, ask.w, side, d)
+      if (scene.free(portBox(place, ask.w, NAME_GAP), (c) => c === ask.cable))
+        return place
+    }
+  return null
+}
+
+/**
+ * Seat again the names of each card side (`group`) the first pass left
+ * some off: in order along the side, each takes the gap before its cable
+ * when free, else the one after - from either end of the side. Cables
+ * running out side by side leave one gap per name that way, where the
+ * first pass could fill a gap two names needed. The seating that shows
+ * the most names is kept (the first pass's on a tie).
+ */
+function reseat(
+  asks: readonly PortLabelAsk[],
+  scene: LabelScene,
+  out: Map<string, PortPlace | null>,
+  taken: Map<string, Taken>
+): void {
+  const groups = new Map<string, PortLabelAsk[]>()
+  for (const a of asks) {
+    if (!a.group) continue
+    const list = groups.get(a.group)
+    if (list) list.push(a)
+    else groups.set(a.group, [a])
+  }
+  // Where a name's cable sits across its run: along the right hand of
+  // travel, which is where side +1 puts it.
+  const across = (a: PortLabelAsk) => {
+    const r = (a.angle * Math.PI) / 180
+    return -Math.sin(r) * a.start.x + Math.cos(r) * a.start.y
+  }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue
+    const shown = list.filter((a) => out.get(a.key)).length
+    if (shown === list.length) continue
+    for (const a of list) {
+      const t = taken.get(a.key)
+      if (t) scene.drop(t)
+    }
+    let best: Map<string, PortPlace | null> | null = null
+    let most = shown
+    for (const dir of [1, -1] as const) {
+      const sorted = [...list].sort(
+        (x, y) => dir * (across(x) - across(y)) || (x.key < y.key ? -1 : 1)
+      )
+      const places = new Map<string, PortPlace | null>()
+      const held: Taken[] = []
+      for (const a of sorted) {
+        const place = firstFit(a, [-dir as 1 | -1, dir], scene)
+        if (place) held.push(scene.take(portBox(place, a.w)))
+        places.set(a.key, place)
+      }
+      for (const t of held) scene.drop(t)
+      if (held.length > most) {
+        most = held.length
+        best = places
+      }
+    }
+    if (best) for (const [k, p] of best) out.set(k, p)
+    for (const a of list) {
+      const p = out.get(a.key)
+      if (p) taken.set(a.key, scene.take(portBox(p, a.w)))
+    }
+  }
 }
 
 /** Where a middle chip may sit, nearest the middle first. */
@@ -206,6 +308,98 @@ export function placeChips(
       continue
     }
     scene.take(boxAt(found.t, found.off))
+    out.set(ask.key, found)
+  }
+  return out
+}
+
+/** An end's addresses to place: a block of lines running along its cable
+ * from that end. */
+export interface EndLabelAsk {
+  key: string
+  /** The widest line, measured. */
+  w: number
+  lines: number
+  /** The drawn route walked from this end: the point `d` px along it, and
+   * the direction of travel there in degrees. */
+  walk: (d: number) => Pt & { angle: number }
+  /** The stretch of route the block may sit along, px from the end. */
+  from: number
+  until: number
+  /** Preferred side of the line (+1 = the right hand of travel). */
+  side: 1 | -1
+}
+
+/** An address block's box at a place. */
+export function endBox(
+  place: PortPlace,
+  w: number,
+  lines: number,
+  gap = 0
+): TurnedBox {
+  return {
+    cx: place.x,
+    cy: place.y,
+    hw: (w + 3) / 2 + gap,
+    hh: (lines * PORT_H) / 2,
+    angle: place.rotate,
+  }
+}
+
+/** Steps along a route an address block tries, px. */
+const END_STEP = 4
+/** The most a stretch may turn under an address block, degrees. */
+const STRAIGHT = 8
+
+const turnOf = (a: number, b: number) =>
+  Math.abs(((((a - b + 540) % 360) + 360) % 360) - 180)
+
+/**
+ * Place every end's addresses, in order: along a straight stretch of its
+ * route between `from` and `until`, beside the line on its preferred side
+ * first, turned like a port name to read upright. The block keeps clear of
+ * every card, label and cable, its own included. Null = left off.
+ */
+export function placeEndLabels(
+  asks: readonly EndLabelAsk[],
+  scene: LabelScene
+): Map<string, PortPlace | null> {
+  const out = new Map<string, PortPlace | null>()
+  for (const ask of asks) {
+    const at = new Map<number, Pt & { angle: number }>()
+    const walk = (d: number) => {
+      let p = at.get(d)
+      if (!p) at.set(d, (p = ask.walk(d)))
+      return p
+    }
+    const h = ask.lines * PORT_H
+    let found: PortPlace | null = null
+    for (const side of [ask.side, -ask.side as 1 | -1]) {
+      for (let d = ask.from; d + ask.w <= ask.until + 1e-6; d += END_STEP) {
+        const p = walk(d)
+        const q = walk(d + ask.w)
+        const chord = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
+        let straight = Math.hypot(q.x - p.x, q.y - p.y) > ask.w * 0.95
+        for (let k = d; straight && k <= d + ask.w; k += END_STEP)
+          if (turnOf(walk(k).angle, chord) > STRAIGHT) straight = false
+        if (!straight) continue
+        const r = (chord * Math.PI) / 180
+        const o = side * (LABEL.PORT_OFFSET + h / 2)
+        const place = {
+          x: (p.x + q.x) / 2 - Math.sin(r) * o,
+          y: (p.y + q.y) / 2 + Math.cos(r) * o,
+          rotate: uprightAngle(chord),
+        }
+        if (
+          scene.free(endBox(place, ask.w, ask.lines, NAME_GAP), () => false)
+        ) {
+          found = place
+          break
+        }
+      }
+      if (found) break
+    }
+    if (found) scene.take(endBox(found, ask.w, ask.lines))
     out.set(ask.key, found)
   }
   return out

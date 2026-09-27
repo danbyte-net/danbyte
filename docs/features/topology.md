@@ -97,6 +97,18 @@ something.
       the middle of the gap between two facing cards.
     - **Straight** - the direct line; a card's side is still chosen so the
       line does not leave it straight into a neighbour.
+    - **Cyclical** (a saved view's line, or one link's) - an arc that loops
+      round the cards between its two ends instead of crossing them, both
+      ends leaving through the side it bulges to (the top of a row, say).
+      It rises until it keeps 16 px clear of every card within its span; a
+      longer arc goes round a shorter one it holds, at least 12 px outside
+      it, and the arcs leaving one side of a card leave in that nesting
+      order. As the view's line it arcs only the links between cards of one
+      row (or column) whose straight line would cross a card, and draws the
+      rest Bendy; set on one link it always arcs. It goes above (or left of)
+      the cards unless the other side gives the lower arc, or the link's
+      saved flip picks a side. The arc is a draw.io curve, so every export
+      draws the same one.
 - **Breakout cables** - one cable whose one end is a single port and whose
   other end lands on several (a fan-out, as the cable's own page draws it)
   is drawn as **one cable**: a single nub for the shared port, one trunk out
@@ -105,6 +117,8 @@ something.
   lanes side by side. The trunk carries the cable's label and type
   (`TEST · cat5e`; on a trunk too short for it, the longest leg carries
   it). Hovering or clicking any part lights up and opens the whole cable.
+  With Bendy lines, legs converging on one card end in a straight run long
+  enough for their port names, one name to each gap between them.
   In Simple the legs to one card fold into one. A `2x` count only ever
   counts separate cables between two devices (and a LAG's members) - never
   the legs of one cable. A cable with several ports at both ends stays one
@@ -113,6 +127,24 @@ something.
   their line, or the nearest spot along it (or just beside it) clear of the
   cards, the port names and the other lines; a chip with no free spot
   shows while its line is hovered.
+- **Link labels** (the view's Labels setting: Subnet, IPs and Ports, all on
+  by default) - with the addresses loaded (`include=link_ips`), a cable
+  whose two ends share a subnet shows it on its middle chip (both, stacked,
+  on a dual-stack link; under a bundle's count) and each end's full address
+  at that end: in Detailed along the cable beside its port name, on the
+  other side of the line; in Simple about 28 px out from the point the
+  side's lines share. Addresses run along the line like port names, so on
+  a vertical run they read bottom to top.
+    - Only link-sized subnets count: /24 or smaller for IPv4, /64 or smaller
+      for IPv6. A larger shared subnet is a LAN and gets no labels.
+    - A LAG's address, on the aggregate, is shown once. A breakout gets a
+      subnet per leg (one that every leg shares goes on its trunk, once)
+      and the shared port's addresses on its trunk.
+    - Labels are best effort: one with no free spot clear of the cards, the
+      other labels and the lines is left off.
+    - Without addresses - none recorded, or no permission to view IP
+      addresses - there are no subnet or address labels. With Ports off
+      the cables carry no port names (the nubs still name them on hover).
 
 Simple and Detailed share one arrangement: a card is placed by its centre,
 so it stays put when Detailed grows it. The automatic layout follows the
@@ -969,7 +1001,7 @@ earlier versions load and save unchanged.
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
 | `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band) and `rule` `{by: role\|device_type, ids}` (at most 100 ids, what the band was generated from). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other colour string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
-| `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000 |
+| `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo}`, at most 10,000 |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building}`; `id` is unique, `text` at most 200 characters |
 
