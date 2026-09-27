@@ -22,6 +22,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { resolveLevels } from "./levels-param"
 
 /** A device role present on the map, with its color for the swatch. */
 export interface RoleTier {
@@ -29,24 +30,7 @@ export interface RoleTier {
   color?: string
 }
 
-/**
- * Resolve the role order + bonds into levels: `[[role, …], …]`.
- *
- * A role listed in `bonds` shares the level of the role directly above it, so
- * several roles can occupy one level (core switches beside routers, say). The
- * first role can never be bonded - there's nothing above it.
- *
- * Shared with the canvas so the popover and the layout can't disagree.
- */
-export function resolveLevels(order: string[], bonds: string[]): string[][] {
-  const out: string[][] = []
-  order.forEach((name, i) => {
-    if (i > 0 && bonds.includes(name) && out.length)
-      out[out.length - 1].push(name)
-    else out.push([name])
-  })
-  return out
-}
+export { resolveLevels }
 
 /**
  * Drag device roles into the tier order you want them stacked in - top of the

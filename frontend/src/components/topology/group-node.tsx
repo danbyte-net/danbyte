@@ -1,12 +1,12 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
+import { GROUP_H, GROUP_W } from "./group-size"
 import { handleId } from "./stencil-node"
 
 // Aggregated topology node: one card per site (or location) with its device
 // count and role breakdown. Double-click drills into the group.
 
-export const GROUP_W = 212
-export const GROUP_H = 76
+export { GROUP_H, GROUP_W }
 
 export interface TopoGroupData {
   group_id: string | null

@@ -308,6 +308,18 @@ Three mechanisms keep a large fabric legible:
   drill into that group's device view; the header chip pops back out.
   Levels and focus pause while grouped. Devices without a site collect
   under *Unassigned*.
+- **The Diagram is built in the background** - its layout and line
+  planning run in a web worker, so a big site never freezes the page: the
+  map shows a muted *Loading...* while the first build runs, and keeps the
+  last layout on screen (with *Loading...* at the top) while a new one is
+  built after a change of mode, line or labels, or re-routed after a drag.
+  Search dimming and the focused card are applied on the page and need no
+  rebuild. The worker loads the app's own Inter font and measures text on
+  an offscreen canvas, so its cards and labels are sized exactly as the
+  page would size them; it waits for the font before the first layout, so
+  a map opens as a *Re-layout* would draw it once fonts are loaded. A
+  browser without workers (or one that fails to start it) builds on the
+  page as before.
 - **Diagram work is reused** - the Diagram ranks a map's devices once:
   switching Simple / Detailed, the line type or the labels lays the same
   cards out again without ranking them anew. A drag re-routes only the

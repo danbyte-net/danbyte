@@ -15,10 +15,10 @@ import {
 import type { EdgeColorMode, EdgeSem } from "../edge-style"
 import { sharedLag } from "../lag-bundles"
 import type { EdgeLag } from "../lag-bundles"
+import { GROUP_H, GROUP_W } from "../group-size"
 import { layoutNodes } from "../layout"
-import { resolveLevels } from "../level-organiser"
-import { graphLevels } from "../levels-param"
-import { sizeOf } from "../node-registry"
+import type { SizeOf } from "../layout"
+import { graphLevels, resolveLevels } from "../levels-param"
 import {
   anchorLinks,
   anchorPoint,
@@ -115,7 +115,15 @@ export interface DiagramOptions {
    * the pill as it will read. */
   checkLabels?: Partial<Record<"down" | "degraded", string>>
   measure?: Measure
+  /** The box of a node the Diagram does not size itself: the canvas
+   * passes its node registry's. Without one (the worker has no
+   * components) such a node is a site or location card - the only other
+   * kind the topology API sends - sized as `group-size.ts` says. */
+  sizeOf?: SizeOf
 }
+
+/** A node the Diagram does not size itself, without the node registry. */
+const plainSize: SizeOf = () => ({ width: GROUP_W, height: GROUP_H })
 
 /** What a drag needs to re-anchor the links without a new layout. */
 export interface DiagramModel {
@@ -1253,7 +1261,10 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
 
 /** Node → the box the layout reserves: a card's current box, else the
  * registered size. */
-function sizer(boxes: ReadonlyMap<string, { w: number; h: number }>) {
+function sizer(
+  boxes: ReadonlyMap<string, { w: number; h: number }>,
+  sizeOf: SizeOf
+) {
   return (n: Node) => {
     const b = boxes.get(n.id)
     return b ? { width: b.w, height: b.h } : sizeOf(n)
@@ -1270,6 +1281,7 @@ export function buildDiagram(
   opts: DiagramOptions
 ): DiagramBuild {
   const measure = opts.measure ?? measureText
+  const sizeOf = opts.sizeOf ?? plainSize
   const direction = opts.direction ?? "LR"
   const grouped = graph.nodes.some((n) => n.type === "group")
   // A grouped map is always the Simple picture: one line per group pair.
@@ -1466,7 +1478,7 @@ export function buildDiagram(
       // No leaf grids: a straight line from the hub would cross every
       // card stacked in front of the one it serves.
       {
-        sizeOf: sizer(boxes),
+        sizeOf: sizer(boxes, sizeOf),
         compact: mode === "simple",
         leafGrids: false,
         ...(rankGap ? { rankGap } : {}),

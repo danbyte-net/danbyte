@@ -14,6 +14,11 @@ export type Weight = 400 | 500 | 600 | 700
 /** Width in px of `text` set at `size` px and `weight`. */
 export type Measure = (text: string, size: number, weight?: Weight) => number
 
+/** How a diagram's text was measured: with Inter on a canvas, or from its
+ * advance-width table (`approxMeasure`). A diagram laid out in a worker
+ * says which, so the page measures its labels the same way. */
+export type MeasureKind = "canvas" | "approx"
+
 /** The family the canvas measures - the app font from `styles.css`. */
 export const DIAGRAM_FONT = '"Inter Variable", Inter, sans-serif'
 
@@ -205,4 +210,10 @@ export function fit(
     else hi = mid - 1
   }
   return chars.slice(0, lo).join("").trimEnd() + ell
+}
+
+/** This thread's measure of a kind: `measureText` for the canvas (Inter
+ * once it has loaded), else the table. */
+export function measureOf(kind: MeasureKind): Measure {
+  return kind === "canvas" ? measureText : approxMeasure
 }

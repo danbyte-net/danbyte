@@ -32,6 +32,7 @@ import type {
   TopologyLinkOverride,
 } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
+import { cn } from "@/lib/utils"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
 import { diagramFontsReady } from "@/lib/diagram/measure"
 import type { DiagramDocument } from "@/lib/diagram/types"
@@ -71,6 +72,11 @@ import {
   remeasureDiagram,
 } from "./diagram/build-diagram"
 import type { DiagramModel } from "./diagram/build-diagram"
+import {
+  DiagramWorker,
+  canBuildOffThread,
+  relinkedModel,
+} from "./diagram/diagram-client"
 import { LinkEdge } from "./diagram/link-edge"
 import type { LabelToken } from "./diagram/link-labels"
 import { toDocument } from "./diagram/to-document"
@@ -978,6 +984,29 @@ function nodeCentre(n: Node): { x: number; y: number } {
   return n.origin ? n.position : { x: n.position.x + 110, y: n.position.y + 40 }
 }
 
+/** A built map: React Flow's nodes and edges, and the Diagram's model
+ * (with the worker's name for it when it was built there). */
+interface Built {
+  nodes: Node[]
+  edges: Edge[]
+  model: DiagramModel | null
+  modelId?: number
+  /** What the build was asked with that restarts the layout. */
+  stamp?: Stamp
+}
+
+/** The inputs that decide whether an applied build restarts the layout. */
+interface Stamp {
+  layoutTick: number
+  nodeStyle: NodeStyle
+  fitKey: string
+  direction: "LR" | "TB"
+  diagramMode: DiagramMode
+  positions: Record<string, [number, number]> | undefined
+}
+
+const EMPTY_BUILT: Built = { nodes: [], edges: [], model: null }
+
 /** Nodes carrying the Diagram cards' new boxes and nubs, and the
  * breakout junctions where they now sit (relinkDiagram). */
 function withCards(
@@ -1098,54 +1127,86 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     }
   }, [diagram])
 
-  const built = useMemo<{
-    nodes: Node[]
-    edges: Edge[]
-    model: DiagramModel | null
-  }>(
+  // The Diagram is laid out in a worker (diagram-client.ts) wherever the
+  // browser has one, so a big map never holds the page while it is built;
+  // the server, tests and a worker that fails build it here instead.
+  const [workerFailed, setWorkerFailed] = useState(false)
+  // The worker sizes devices and site/location cards (the kinds the
+  // topology API sends); anything else is sized by the node registry here.
+  const plainGraph = useMemo(
+    () => graph.nodes.every((n) => n.type === "device" || n.type === "group"),
+    [graph]
+  )
+  const offThread =
+    diagram && plainGraph && !workerFailed && canBuildOffThread()
+  const workerRef = useRef<DiagramWorker | null>(null)
+  const worker = useCallback(
+    () => (workerRef.current ??= new DiagramWorker()),
+    []
+  )
+  useEffect(
+    () => () => {
+      workerRef.current?.dispose()
+      workerRef.current = null
+    },
+    []
+  )
+  const lostWorker = useCallback(() => {
+    workerRef.current?.dispose()
+    workerRef.current = null
+    setWorkerFailed(true)
+  }, [])
+  // Builds and relinks in flight: the map shows "Loading..." meanwhile.
+  const [busy, setBusy] = useState(0)
+
+  const inPlace = useMemo<Built | null>(
     () =>
-      diagram
-        ? buildDiagram(graph, {
-            mode: diagramMode,
-            line: diagramLine,
-            links: linkOverrides,
-            ...(diagramLabels ? { labels: diagramLabels } : {}),
-            colorMode,
-            direction,
-            roleOrder,
-            roleBonds,
-            roleDistance,
-            bundleLags,
-            positions,
-            matched: matchedIds,
-            focusNodeId,
-            checkLabels,
-          })
-        : {
-            ...build(graph, {
-              focusNodeId,
+      offThread
+        ? null
+        : diagram
+          ? buildDiagram(graph, {
+              mode: diagramMode,
+              line: diagramLine,
+              links: linkOverrides,
+              ...(diagramLabels ? { labels: diagramLabels } : {}),
+              colorMode,
               direction,
               roleOrder,
               roleBonds,
               roleDistance,
-              edgeRouting,
-              colorMode,
-              nodeStyle,
               bundleLags,
-              // Positions pin whenever the parent supplies them. A
-              // deliberate relayout CLEARS them at the source (the page sets
-              // positions to undefined before bumping layoutTick) - gating
-              // on the tick here instead made every drag AFTER a relayout
-              // snap straight back.
               positions,
               matched: matchedIds,
-              hiddenPorts,
-              originId,
-            }),
-            model: null,
-          },
+              focusNodeId,
+              checkLabels,
+              sizeOf,
+            })
+          : {
+              ...build(graph, {
+                focusNodeId,
+                direction,
+                roleOrder,
+                roleBonds,
+                roleDistance,
+                edgeRouting,
+                colorMode,
+                nodeStyle,
+                bundleLags,
+                // Positions pin whenever the parent supplies them. A
+                // deliberate relayout CLEARS them at the source (the page
+                // sets positions to undefined before bumping layoutTick) -
+                // gating on the tick here instead made every drag AFTER a
+                // relayout snap straight back.
+                positions,
+                matched: matchedIds,
+                hiddenPorts,
+                originId,
+              }),
+              model: null,
+            },
     // layoutTick discards saved positions on purpose.
     [
+      offThread,
       graph,
       focusNodeId,
       direction,
@@ -1168,8 +1229,105 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       checkLabels,
     ]
   )
+
+  // Off the main thread: what to build, and what the build restarts (the
+  // same signals the in-place path reads from its props when it applies a
+  // build). Search dimming and the focused card are no part of it - the
+  // page applies them, and they change no layout.
+  const request = useMemo(
+    () =>
+      offThread
+        ? {
+            graph,
+            opts: {
+              mode: diagramMode,
+              line: diagramLine,
+              links: linkOverrides,
+              ...(diagramLabels ? { labels: diagramLabels } : {}),
+              colorMode,
+              direction,
+              roleOrder,
+              roleBonds,
+              roleDistance,
+              bundleLags,
+              positions,
+              checkLabels,
+            },
+            stamp: {
+              layoutTick,
+              nodeStyle,
+              fitKey,
+              direction,
+              diagramMode,
+              positions,
+            },
+          }
+        : null,
+    [
+      offThread,
+      graph,
+      diagramMode,
+      diagramLine,
+      linkOverrides,
+      diagramLabels,
+      colorMode,
+      direction,
+      roleOrder,
+      roleBonds,
+      roleDistance,
+      bundleLags,
+      positions,
+      checkLabels,
+      layoutTick,
+      nodeStyle,
+      fitKey,
+    ]
+  )
+  const [offBuilt, setOffBuilt] = useState<Built | null>(null)
+  useEffect(() => {
+    // Back on another tab: a Diagram built before is stale by the time the
+    // tab comes back - it waits for its new build instead.
+    if (!request) {
+      setOffBuilt(null)
+      return
+    }
+    let live = true
+    setBusy((b) => b + 1)
+    worker()
+      .build(request.graph, request.opts)
+      .then(
+        (res) => {
+          if (live && res)
+            setOffBuilt({
+              nodes: res.nodes,
+              edges: res.edges,
+              model: res.model,
+              modelId: res.modelId,
+              stamp: request.stamp,
+            })
+        },
+        () => {
+          if (live) lostWorker()
+        }
+      )
+      .finally(() => setBusy((b) => b - 1))
+    return () => {
+      live = false
+    }
+  }, [request, worker, lostWorker])
+
+  const built: Built = (offThread ? offBuilt : inPlace) ?? EMPTY_BUILT
+  // What an applied build restarts, as of the build: off the main thread
+  // the props may already be a build further on.
+  const stamp: Stamp | null = offThread
+    ? (offBuilt?.stamp ?? null)
+    : { layoutTick, nodeStyle, fitKey, direction, diagramMode, positions }
   /** The Diagram's anchoring state, as the last build or drag left it. */
   const modelRef = useRef<DiagramModel | null>(null)
+  /** The worker's name for that model, when it was built there. */
+  const modelIdRef = useRef<number | null>(null)
+  const focusRef = useRef(focusNodeId)
+  focusRef.current = focusNodeId
 
   // ── zones ──────────────────────────────────────────────────────────
   // Held outside `built`, because a zone drag must not rebuild the graph -
@@ -1302,8 +1460,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const monMemo = useRef(
     new Map<string, { src: Node; status: string | null; out: Node }>()
   )
+  // Built off the main thread, the search dims here (the in-place build
+  // dims in the build).
+  const searchSet = offThread ? (matchedIds ?? null) : null
   const shownNodes = useMemo(() => {
-    if (!spotSet && !monitor) return nodes
+    if (!spotSet && !monitor && !searchSet) return nodes
     const memo = monMemo.current
     return nodes.map((n) => {
       let out = n
@@ -1317,11 +1478,31 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           memo.set(n.id, { src: n, status, out })
         }
       }
-      return !spotSet || spotSet.has(n.id) || n.type === "sitegroup"
+      const unmatched =
+        !!searchSet &&
+        !searchSet.has(n.id) &&
+        n.type !== "zone" &&
+        n.type !== "junction"
+      return !unmatched &&
+        (!spotSet || spotSet.has(n.id) || n.type === "sitegroup")
         ? out
         : { ...out, data: { ...out.data, dimmed: true } }
     })
-  }, [nodes, spotSet, monitor])
+  }, [nodes, spotSet, monitor, searchSet])
+  // Built off the main thread, a newly focused card is selected here (the
+  // in-place build selects it).
+  useEffect(() => {
+    if (!offThread) return
+    setNodes((cur) =>
+      cur.some((n) => n.selected !== (n.id === focusNodeId))
+        ? cur.map((n) =>
+            n.type === "zone" || n.selected === (n.id === focusNodeId)
+              ? n
+              : { ...n, selected: n.id === focusNodeId }
+          )
+        : cur
+    )
+  }, [offThread, focusNodeId, setNodes])
   // Re-sync when the built graph changes, but keep user-dragged positions
   // for nodes that are still present (so a color-mode flip doesn't shuffle).
   const prevNodes = useRef<Node[]>([])
@@ -1330,7 +1511,15 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const prevDirection = useRef(direction)
   const prevFitKey = useRef(fitKey)
   const prevMode = useRef(diagramMode)
+  const sLayoutTick = stamp?.layoutTick
+  const sNodeStyle = stamp?.nodeStyle
+  const sFitKey = stamp?.fitKey
+  const sDirection = stamp?.direction
+  const sMode = stamp?.diagramMode
+  const sPositions = stamp?.positions
   useEffect(() => {
+    // Off the main thread nothing is built yet: the map waits.
+    if (!stamp) return
     const prev = new Map(prevNodes.current.map((n) => [n.id, n.position]))
     // Keep the user's dragged positions only across INCIDENTAL rebuilds
     // (colour mode, search highlight, a late graph refetch) - not when the
@@ -1347,35 +1536,76 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     //  - the DIRECTION changed. The trace maps flip it with a plain prop (no
     //    tick), and keeping side-to-side positions under tree-direction
     //    routing draws every cable as a giant loop around the map.
-    const restyled = nodeStyle !== prevStyle.current
-    prevStyle.current = nodeStyle
-    const requeried = fitKey !== prevFitKey.current
-    prevFitKey.current = fitKey
-    const redirected = direction !== prevDirection.current
-    prevDirection.current = direction
+    // Read from the build's stamp: a build made off the main thread lands
+    // after the props that asked for it, and it is the build that restarts.
+    const restyled = stamp.nodeStyle !== prevStyle.current
+    prevStyle.current = stamp.nodeStyle
+    const requeried = stamp.fitKey !== prevFitKey.current
+    prevFitKey.current = stamp.fitKey
+    const redirected = stamp.direction !== prevDirection.current
+    prevDirection.current = stamp.direction
     const relaidOut =
-      layoutTick !== prevTick.current || restyled || requeried || redirected
-    prevTick.current = layoutTick
+      stamp.layoutTick !== prevTick.current ||
+      restyled ||
+      requeried ||
+      redirected
+    prevTick.current = stamp.layoutTick
     // Simple and Detailed cards differ in size: an auto layout from one
     // mode is not kept for the other (a saved arrangement is - it pins the
     // centres both modes share). No re-fit, though: same map, same place.
-    const remoded = diagramMode !== prevMode.current
-    prevMode.current = diagramMode
+    const remoded = stamp.diagramMode !== prevMode.current
+    prevMode.current = stamp.diagramMode
     // A new layout is a new map - a stale spotlight would dim everything
     // with no visible cause.
     if (relaidOut) setSpotId(null)
+    const first = !prevNodes.current.some((n) => n.type !== "zone")
     const keepingDrags =
       !relaidOut &&
       !(diagram && remoded) &&
-      !positions &&
+      !stamp.positions &&
       prevNodes.current.length > 0
     let nextNodes = built.nodes.map((n) => {
       const kept = prev.get(n.id)
       return kept && keepingDrags ? { ...n, position: kept } : n
     })
+    // Built off the main thread: the focused card is selected here.
+    if (built.modelId !== undefined)
+      nextNodes = nextNodes.map((n) =>
+        n.selected !== (n.id === focusRef.current)
+          ? { ...n, selected: n.id === focusRef.current }
+          : n
+      )
     modelRef.current = built.model
+    modelIdRef.current = built.modelId ?? null
+    const refit = () =>
+      requestAnimationFrame(() =>
+        flow.fitView({ padding: 0.15, duration: 300 })
+      )
     // Diagram: the kept positions are not the ones the links were anchored
-    // for - re-anchor (and re-size the Detailed cards) where they are.
+    // for - re-anchor (and re-size the Detailed cards) where they are. Off
+    // the main thread the worker does it, and the map stays as it was until
+    // the answer is back.
+    if (built.model && keepingDrags && built.modelId !== undefined) {
+      const id = built.modelId
+      const kept = nextNodes
+      setBusy((b) => b + 1)
+      worker()
+        .relink(id, kept)
+        .then(
+          (re) => {
+            if (modelIdRef.current !== id || !modelRef.current) return
+            modelRef.current = relinkedModel(modelRef.current, re.cards)
+            setNodes([
+              ...zoneNodes.current,
+              ...withCards(kept, re.cards, re.junctions),
+            ])
+            setEdges(re.edges)
+          },
+          () => lostWorker()
+        )
+        .finally(() => setBusy((b) => b - 1))
+      return
+    }
     let diagramEdges: Edge[] | null = null
     if (built.model && keepingDrags) {
       const re = relinkDiagram(built.model, nextNodes)
@@ -1391,7 +1621,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       // When we kept dragged positions, `built.edges` were routed for the
       // layout's positions, not the kept ones - re-route from the actual
       // rendered positions so cables always match their cards.
-      const wp = edgeWaypoints(nextNodes, built.edges, sizeOf, direction)
+      const wp = edgeWaypoints(nextNodes, built.edges, sizeOf, stamp.direction)
       setEdges(
         built.edges.map((e) => {
           const sem = (e.data as { sem?: string } | undefined)?.sem
@@ -1411,24 +1641,26 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     }
     // Any relayout re-fits the viewport - without this the camera keeps
     // staring at wherever it was while the graph reshapes elsewhere, which
-    // reads as a frozen/blank map on big graphs.
-    if (relaidOut)
-      requestAnimationFrame(() =>
-        flow.fitView({ padding: 0.15, duration: 300 })
-      )
+    // reads as a frozen/blank map on big graphs. A map built off the main
+    // thread arrives after React Flow's own first fit: it fits then.
+    if (relaidOut || (built.modelId !== undefined && first)) refit()
+    // `stamp` is read through its fields: the in-place one is made afresh
+    // every render.
   }, [
     built,
     setNodes,
     setEdges,
-    layoutTick,
-    positions,
-    direction,
+    sLayoutTick,
+    sPositions,
+    sDirection,
     routingActive,
     flow,
-    fitKey,
-    nodeStyle,
+    sFitKey,
+    sNodeStyle,
     diagram,
-    diagramMode,
+    sMode,
+    worker,
+    lostWorker,
   ])
   useEffect(() => {
     prevNodes.current = nodes
@@ -1436,9 +1668,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   // Inter loaded after the cards were measured with the estimate: measure
   // them again where they stand and re-plan the lines, without a layout.
+  // (A worker measures with Inter loaded in the worker: nothing to redo.)
   useEffect(() => {
     const model = modelRef.current
-    if (!fontTick || !diagram || !model) return
+    if (!fontTick || !diagram || !model || modelIdRef.current !== null) return
     const re = remeasureDiagram(model, flow.getNodes())
     modelRef.current = re.model
     setNodes((cur) => withCards(cur, re.cards, re.junctions))
@@ -1752,6 +1985,26 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const onNodeDragStop = useCallback(() => {
     emitZones()
     const model = modelRef.current
+    const modelId = modelIdRef.current
+    if (diagram && model && modelId !== null) {
+      // Built off the main thread: the worker re-anchors, and the lines
+      // follow when it answers (unless a newer build took over).
+      setBusy((b) => b + 1)
+      worker()
+        .relink(modelId, flow.getNodes())
+        .then(
+          (re) => {
+            if (modelIdRef.current !== modelId || !modelRef.current) return
+            modelRef.current = relinkedModel(modelRef.current, re.cards)
+            setNodes((cur) => withCards(cur, re.cards, re.junctions))
+            setEdges(re.edges)
+          },
+          () => lostWorker()
+        )
+        .finally(() => setBusy((b) => b - 1))
+      onDragEnd?.()
+      return
+    }
     if (diagram && model) {
       // Re-anchor from where the cards are now: sides re-chosen, Detailed
       // cards re-sized around their centres, elbow channels re-routed.
@@ -1883,6 +2136,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     nodeStyle,
     emitZones,
     diagram,
+    worker,
+    lostWorker,
   ])
 
   if (!mounted)
@@ -1897,7 +2152,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   return (
     <div
       ref={wrapper}
-      className="h-full w-full"
+      className="relative h-full w-full"
       data-lod={lod}
       data-ports={portText ? undefined : "off"}
     >
@@ -1963,6 +2218,18 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         />
       </ReactFlow>
       <CanvasTip ref={tipApi} root={wrapper} />
+      {offThread && (busy > 0 || !offBuilt) && (
+        // Laid out off the main thread: the map stays usable, and the last
+        // layout stays up until the new one lands.
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-x-0 z-10 flex justify-center text-sm text-muted-foreground",
+            offBuilt ? "top-3" : "inset-y-0 items-center"
+          )}
+        >
+          Loading...
+        </div>
+      )}
     </div>
   )
 })

@@ -151,3 +151,23 @@ export function graphLevels(
     mainOffsets[i] = mainOffsets[i - 1] + gapOf(groups[i]?.[0] ?? "")
   return { levels, mainOffsets }
 }
+
+/**
+ * Resolve the role order + bonds into levels: `[[role, …], …]`.
+ *
+ * A role listed in `bonds` shares the level of the role directly above it, so
+ * several roles can occupy one level (core switches beside routers, say). The
+ * first role can never be bonded - there's nothing above it.
+ *
+ * Shared by the organiser, the canvas and the Diagram's builder (which
+ * runs in a worker), so the popover and the layout can't disagree.
+ */
+export function resolveLevels(order: string[], bonds: string[]): string[][] {
+  const out: string[][] = []
+  order.forEach((name, i) => {
+    if (i > 0 && bonds.includes(name) && out.length)
+      out[out.length - 1].push(name)
+    else out.push([name])
+  })
+  return out
+}
