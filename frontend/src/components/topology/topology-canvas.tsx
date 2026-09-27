@@ -8,12 +8,14 @@ import {
   useRef,
   useState,
 } from "react"
+import type { DragEvent, ReactNode } from "react"
 import {
   Background,
   BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
+  ViewportPortal,
   getNodesBounds,
   getViewportForBounds,
   useEdgesState,
@@ -32,7 +34,9 @@ import type {
   TopologyLinkOverride,
 } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
-import { cn } from "@/lib/utils"
+import { EmptyState } from "@/components/empty-state"
+import { readableText } from "@/lib/color"
+import { cn, cssColor } from "@/lib/utils"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
 import { diagramFontsReady } from "@/lib/diagram/measure"
 import type { DiagramDocument } from "@/lib/diagram/types"
@@ -78,6 +82,7 @@ import {
   relinkedModel,
 } from "./diagram/diagram-client"
 import { LinkEdge } from "./diagram/link-edge"
+import { DEVICE_IDS_MIME, NEW_CARD, parseDragIds } from "./diagram/placement"
 import type { LabelToken } from "./diagram/link-labels"
 import { toDocument } from "./diagram/to-document"
 import type { DocumentOptions } from "./diagram/to-document"
@@ -204,6 +209,53 @@ export interface CanvasHandle {
    * model, the other tabs in the Diagram's Simple look. Built from the
    * canvas's data - every card, on screen or not - never the DOM. */
   document: (opts: CanvasDocumentOptions) => DiagramDocument
+  /** Every card's box (top-left corner and size) by node id: where a new
+   * card must not land. Zones and breakout junctions are not cards. */
+  boxes: () => Record<string, Rect>
+  /** The devices behind the selected cards. */
+  selectedDevices: () => string[]
+}
+
+/** A device just added to the map and not fetched yet: drawn muted, a
+ * card's size, centred where it will land. */
+export interface PendingCard {
+  /** The node id it will have (`dev:<uuid>`). */
+  id: string
+  name: string
+  /** Its role colour, when it has one. */
+  color?: string | null
+  /** Its centre, in canvas coordinates. */
+  at: [number, number]
+}
+
+function PendingCardView({ card }: { card: PendingCard }) {
+  const fill = cssColor(card.color)
+  return (
+    <div
+      aria-busy
+      data-pending={card.id}
+      className={cn(
+        "pointer-events-none absolute flex items-center justify-center rounded-lg border border-dashed px-2.5 opacity-50",
+        !fill && "border-border bg-muted text-foreground"
+      )}
+      style={{
+        width: NEW_CARD.w,
+        height: NEW_CARD.h,
+        transform: `translate(${card.at[0] - NEW_CARD.w / 2}px, ${
+          card.at[1] - NEW_CARD.h / 2
+        }px)`,
+        ...(fill
+          ? {
+              backgroundColor: fill,
+              borderColor: readableText(fill),
+              color: readableText(fill),
+            }
+          : {}),
+      }}
+    >
+      <span className="truncate text-xs font-bold">{card.name}</span>
+    </div>
+  )
 }
 
 export interface CanvasDocumentOptions extends Omit<
@@ -979,6 +1031,15 @@ export interface TopologyCanvasProps {
   /** Diagram: monitoring state per device id, for the cards' pills. Kept
    * out of the build so a refresh never re-lays the map out. */
   monitor?: Record<string, BulkStatusEntry | undefined>
+  /** A map built by hand: the canvas takes devices dragged in from a
+   * device list (`DEVICE_IDS_MIME`), and an empty one still draws so
+   * there is somewhere to drop them. `at` is the pointer in canvas
+   * coordinates. */
+  onDropDevices?: (ids: string[], at: { x: number; y: number }) => void
+  /** Over an empty map that takes drops. */
+  emptyState?: ReactNode
+  /** Devices just added and not fetched yet, muted where they will land. */
+  pending?: readonly PendingCard[]
 }
 
 /** Where to aim the camera for a node: diagram nodes are placed by their
@@ -1085,6 +1146,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     linkOverrides,
     diagramLabels,
     monitor,
+    onDropDevices,
+    emptyState,
+    pending,
   },
   ref
 ) {
@@ -1093,6 +1157,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const wrapper = useRef<HTMLDivElement>(null)
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+  // A map that opens empty to be built on is not fitted when its first
+  // card lands: the camera stays where the card was dropped.
+  const [fitOnOpen] = useState(
+    () => !(onDropDevices && graph.nodes.length === 0)
+  )
 
   // Aligned hierarchy cables are already near-straight; flat draws floating
   // point-to-point beziers - neither re-routes orthogonally. The Diagram
@@ -1415,6 +1484,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         keep.add(e.target)
     return keep
   }, [edges, spotId])
+  // A spotlit card taken off the map takes the spotlight with it - else
+  // every card left would stay dimmed with no visible cause.
+  useEffect(() => {
+    if (spotId && !nodes.some((n) => n.id === spotId)) setSpotId(null)
+  }, [nodes, spotId])
   const shownEdges = useMemo(() => {
     if (!hotEdge && !selectedEdgeId && !spotSet) return edges
     // A breakout's trunk and legs light up together.
@@ -1514,6 +1588,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const prevDirection = useRef(direction)
   const prevFitKey = useRef(fitKey)
   const prevMode = useRef(diagramMode)
+  const shownEmpty = useRef(false)
   const sLayoutTick = stamp?.layoutTick
   const sNodeStyle = stamp?.nodeStyle
   const sFitKey = stamp?.fitKey
@@ -1562,6 +1637,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // with no visible cause.
     if (relaidOut) setSpotId(null)
     const first = !prevNodes.current.some((n) => n.type !== "zone")
+    // The map was on screen empty (a view being built from scratch): its
+    // first cards were dropped where the camera is, so it stays there.
+    const wasEmpty = shownEmpty.current
+    shownEmpty.current = built.nodes.length === 0
     const keepingDrags =
       !relaidOut &&
       !(diagram && remoded) &&
@@ -1646,7 +1725,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // staring at wherever it was while the graph reshapes elsewhere, which
     // reads as a frozen/blank map on big graphs. A map built off the main
     // thread arrives after React Flow's own first fit: it fits then.
-    if (relaidOut || (built.modelId !== undefined && first)) refit()
+    // Never on an empty map: React Flow holds a fit it cannot do yet and
+    // does it when the first card lands - which a map being built by hand
+    // must not.
+    if (
+      built.nodes.length > 0 &&
+      (relaidOut || (built.modelId !== undefined && first && !wasEmpty))
+    )
+      refit()
     // `stamp` is read through its fields: the in-place one is made afresh
     // every render.
   }, [
@@ -1904,8 +1990,59 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           area: box,
         })
       },
+      boxes: () => {
+        const out: Record<string, Rect> = {}
+        for (const n of flow.getNodes()) {
+          if (n.type === "zone" || n.type === "junction" || n.hidden) continue
+          const w = n.width ?? n.measured?.width
+          const h = n.height ?? n.measured?.height
+          if (!w || !h) continue
+          // Diagram cards stand on their centre, the older cards on
+          // their corner.
+          const [ox, oy] = n.origin ?? [0, 0]
+          out[n.id] = {
+            x: n.position.x - ox * w,
+            y: n.position.y - oy * h,
+            w,
+            h,
+          }
+        }
+        return out
+      },
+      selectedDevices: () =>
+        flow
+          .getNodes()
+          .filter((n) => n.selected)
+          .map((n) => (n.data as { device_id?: string }).device_id)
+          .filter((id): id is string => !!id),
     }),
     [flow, theme]
+  )
+
+  // Devices dragged in from a device list. Only a map built by hand takes
+  // them; anything else dragged over the canvas is left alone.
+  const takesDrops = !!onDropDevices
+  const onDragOver = useCallback(
+    (e: DragEvent) => {
+      if (!takesDrops) return
+      if (!Array.from(e.dataTransfer.types).includes(DEVICE_IDS_MIME)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = "copy"
+    },
+    [takesDrops]
+  )
+  const onDrop = useCallback(
+    (e: DragEvent) => {
+      if (!onDropDevices) return
+      const ids = parseDragIds(e.dataTransfer.getData(DEVICE_IDS_MIME))
+      if (!ids.length) return
+      e.preventDefault()
+      onDropDevices(
+        ids,
+        flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+      )
+    },
+    [onDropDevices, flow]
   )
 
   const onNodeClick = useCallback(
@@ -2145,10 +2282,15 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   if (!mounted)
     return <div className="h-full w-full animate-pulse bg-muted/30" />
-  if (graph.nodes.length === 0)
+  // A map built by hand stays a live canvas while empty: it is where the
+  // first devices get dropped.
+  const empty = graph.nodes.length === 0
+  if (empty && !takesDrops)
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Nothing to map yet - cable some devices first.
+      <div className="flex h-full items-center justify-center p-6">
+        <EmptyState title="Nothing to map yet." className="bg-card">
+          Cable some devices first.
+        </EmptyState>
       </div>
     )
 
@@ -2158,6 +2300,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       className="relative h-full w-full"
       data-lod={lod}
       data-ports={portText ? undefined : "off"}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
       <ReactFlow
         nodes={shownNodes}
@@ -2166,7 +2310,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        fitView
+        fitView={fitOnOpen}
         colorMode={theme}
         proOptions={{ hideAttribution: true }}
         nodesConnectable={false}
@@ -2219,7 +2363,21 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           nodeColor={diagram ? miniColor : undefined}
           className="rounded-md border !border-border !bg-card"
         />
+        {!!pending?.length && (
+          <ViewportPortal>
+            {pending.map((p) => (
+              <PendingCardView key={p.id} card={p} />
+            ))}
+          </ViewportPortal>
+        )}
       </ReactFlow>
+      {empty && !pending?.length && emptyState && !(offThread && !offBuilt) && (
+        // Drops land on the canvas underneath; only the card's own
+        // controls take the pointer.
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
+          <div className="pointer-events-auto">{emptyState}</div>
+        </div>
+      )}
       <CanvasTip ref={tipApi} root={wrapper} />
       {offThread && (busy > 0 || !offBuilt) && (
         // Laid out off the main thread: the map stays usable, and the last
