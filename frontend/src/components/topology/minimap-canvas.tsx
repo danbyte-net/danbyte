@@ -169,18 +169,18 @@ export function MiniMapCanvas({
           current = fill
         }
         const { x, y } = n.internals.positionAbsolute
-        // Whole device pixels, as the SVG's crisp edges snap them.
-        const left = Math.round((x - box.x) * k + ox)
-        const top = Math.round((y - box.y) * k + oy)
-        const right = Math.round((x + w - box.x) * k + ox)
-        const bottom = Math.round((y + h - box.y) * k + oy)
-        if (right <= left || bottom <= top) continue
+        // Where the SVG puts it, in device pixels. A card smaller than a
+        // pixel is left to the canvas to blend in, as the SVG's is.
+        const left = (x - box.x) * k + ox
+        const top = (y - box.y) * k + oy
+        const width = w * k
+        const height = h * k
         const r = RADIUS * k
-        if (r >= 1 && right - left > 2 * r && bottom - top > 2 * r) {
+        if (r >= 1 && width > 2 * r && height > 2 * r) {
           ctx.beginPath()
-          ctx.roundRect(left, top, right - left, bottom - top, r)
+          ctx.roundRect(left, top, width, height, r)
           ctx.fill()
-        } else ctx.fillRect(left, top, right - left, bottom - top)
+        } else ctx.fillRect(left, top, width, height)
       }
     }
     const schedule = () => {
