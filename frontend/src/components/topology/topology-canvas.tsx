@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -88,6 +89,7 @@ import {
 } from "./diagram/diagram-client"
 import { LinkEdge } from "./diagram/link-edge"
 import { DEVICE_IDS_MIME, NEW_CARD, parseDragIds } from "./diagram/placement"
+import { PRESIZE_AT, presized } from "./diagram/presize"
 import type { LabelToken } from "./diagram/link-labels"
 import { toDocument } from "./diagram/to-document"
 import type { DocumentOptions } from "./diagram/to-document"
@@ -1086,13 +1088,16 @@ function withCards(
   if (!cards.size && !junctions?.size) return nodes
   return nodes.map((n) => {
     const next = cards.get(n.id)
-    if (next)
-      return {
+    if (next) {
+      const card = {
         ...n,
         width: next.box.w,
         height: next.box.h,
         data: { ...n.data, diagram: next },
       }
+      // Handed over measured: its new box and handles go with it.
+      return n.handles ? presized(card) : card
+    }
     const j = junctions?.get(n.id)
     return j && (j.x !== n.position.x || j.y !== n.position.y)
       ? { ...n, position: { x: j.x, y: j.y }, hidden: false }
@@ -1361,7 +1366,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     ]
   )
   const [offBuilt, setOffBuilt] = useState<Built | null>(null)
-  useEffect(() => {
+  // Sent before the page paints: the worker lays out while it does.
+  useLayoutEffect(() => {
     // Back on another tab: a Diagram built before is stale by the time the
     // tab comes back - it waits for its new build instead.
     if (!request) {
@@ -1662,6 +1668,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           ? { ...n, selected: n.id === focusRef.current }
           : n
       )
+    // A big map's cards go in measured, so only those in view mount.
+    if (nextNodes.length >= PRESIZE_AT) nextNodes = nextNodes.map(presized)
     modelRef.current = built.model
     modelIdRef.current = built.modelId ?? null
     const refit = () =>

@@ -399,6 +399,10 @@ Three mechanisms keep a large fabric legible:
 - **A big minimap is one picture** - above 500 cards the minimap paints its
   cards on a single canvas instead of drawing each one as a shape; it
   looks, pans and zooms the same.
+- **Only the cards in view are drawn** - above 200 cards the Diagram hands
+  each card over with its size, so the page draws the cards in view and
+  the rest as you pan to them, instead of drawing every card once just to
+  measure it.
 - **The Flat view** - see above.
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat
