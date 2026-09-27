@@ -308,6 +308,13 @@ Three mechanisms keep a large fabric legible:
   drill into that group's device view; the header chip pops back out.
   Levels and focus pause while grouped. Devices without a site collect
   under *Unassigned*.
+- **Diagram work is reused** - the Diagram ranks a map's devices once:
+  switching Simple / Detailed, the line type or the labels lays the same
+  cards out again without ranking them anew. A drag re-routes only the
+  elbow lines whose way the moved card was, or now is, in, and a port name
+  crowded off the start of a straight line jumps past whatever surely
+  blocks it instead of trying every step. The picture is the same as a
+  full re-plan; it just arrives sooner.
 - **The Flat view** - see above.
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat

@@ -35,7 +35,7 @@ import { cardLayout, JUNCTION, NUB } from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
 import { detectFanouts, detectMeshes, fanChip } from "./fanout"
 import type { Fan, Mesh } from "./fanout"
-import { CLEAR, LANE, obstacles, SHARED_STUB } from "./lanes"
+import { CLEAR, LANE, obstacles, RouteCache, SHARED_STUB } from "./lanes"
 import type { Obstacles } from "./lanes"
 import {
   DEFAULT_LABELS,
@@ -1190,6 +1190,16 @@ function withAnchors(
   })
 }
 
+/** Each map's elbow routes, kept across its plans (a drag re-plans only
+ * the cables it moved), by the links the model was built with. */
+const routeCaches = new WeakMap<readonly AnchorLink[], RouteCache>()
+
+function routeCache(model: DiagramModel): RouteCache {
+  let cache = routeCaches.get(model.links)
+  if (!cache) routeCaches.set(model.links, (cache = new RouteCache()))
+  return cache
+}
+
 /**
  * The edges anchored and planned: Detailed nubs re-ordered so elbow
  * routes nest (twice - a side's order moves the far sides' routes), then
@@ -1204,6 +1214,7 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
     solid,
     mode: model.mode,
     measure: model.measure,
+    routes: routeCache(model),
   })
   let edges = withAnchors(model, a.anchors, a.arcs)
   const elbows = edges.filter(
@@ -1459,6 +1470,8 @@ export function buildDiagram(
         compact: mode === "simple",
         leafGrids: false,
         ...(rankGap ? { rankGap } : {}),
+        reuseRanks: true,
+        waypoints: false,
       },
       pins,
       direction,

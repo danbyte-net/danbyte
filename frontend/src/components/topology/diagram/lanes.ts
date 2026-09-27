@@ -1,4 +1,5 @@
-import { Grid, inflate, segBox, segHitsRect } from "./spatial"
+import { Grid, inflate, segBox, segHitsRect, spansMeet } from "./spatial"
+import type { CellSpan } from "./spatial"
 import type { Dir, End, Pt, Rect } from "./types"
 
 // The elbow planner: every elbow cable gets its own route, clear of the
@@ -112,7 +113,7 @@ function segClear(
   own: readonly string[],
   terminal: boolean
 ): boolean {
-  for (const { id, r } of o.near(segBox(p, q, 1))) {
+  for (const { id, r } of o.touching(segBox(p, q, 1))) {
     const mine = own.includes(id)
     const box = mine ? inflate(r, terminal ? -0.5 : 1) : inflate(r, CLEAR)
     if (segHitsRect(p, q, box)) return false
@@ -388,6 +389,88 @@ function routeWith(
   return done(four(ys[0], xs[0]), false)
 }
 
+/**
+ * Elbow routes found alone (`elbowBase`), kept from one plan of a map to
+ * the next: the pass that orders the nubs and the one that draws, and the
+ * plan after a drag. A cable with the same ends, stubs and stagger routes
+ * the same way among the same cards - and a card that moved changes only
+ * the routes whose search looked where it was or now is (the grid's cells
+ * each search queried).
+ */
+export class RouteCache {
+  private kept = new Map<
+    string,
+    { route: ElbowRoute; seen: CellSpan | null; plan: number }
+  >()
+  private cards = new Map<string, Rect>()
+  private plan = 0
+
+  /** A new plan among `cards`, the rects `o` was built from: routes that
+   * looked where a card changed are dropped, and those no plan asked for
+   * lately. */
+  begin(cards: Iterable<[string, Rect]>, o: Obstacles): void {
+    this.plan++
+    const next = new Map(cards)
+    const moved: CellSpan[] = []
+    const note = (r: Rect | undefined) => {
+      if (r && r.w > 0 && r.h > 0) moved.push(o.cellsOf(inflate(r, CLEAR)))
+    }
+    for (const [id, r] of next) {
+      const was = this.cards.get(id)
+      if (
+        !was ||
+        was.x !== r.x ||
+        was.y !== r.y ||
+        was.w !== r.w ||
+        was.h !== r.h
+      ) {
+        note(was)
+        note(r)
+      }
+    }
+    for (const [id, r] of this.cards) if (!next.has(id)) note(r)
+    this.cards = next
+    for (const [k, e] of this.kept)
+      if (
+        e.plan < this.plan - 4 ||
+        (e.seen && moved.some((m) => spansMeet(m, e.seen!)))
+      )
+        this.kept.delete(k)
+  }
+
+  /** `elbowBase`, or the route it gave before. */
+  route(c: ElbowCable, o: Obstacles, pinA?: number, pinB?: number): ElbowRoute {
+    const end = (e: PlanEnd) =>
+      `${e.x}\u0001${e.y}\u0001${e.dir[0]}\u0001${e.dir[1]}\u0001${e.node}\u0001${e.stub}`
+    const key = `${end(c.a)}\u0002${end(c.b)}\u0002${pinA}\u0002${pinB}`
+    const hit = this.kept.get(key)
+    if (hit) {
+      hit.plan = this.plan
+      return copyRoute(hit.route)
+    }
+    let seen: CellSpan | null = null
+    o.watch((s) => {
+      seen = seen
+        ? [
+            Math.min(seen[0], s[0]),
+            Math.min(seen[1], s[1]),
+            Math.max(seen[2], s[2]),
+            Math.max(seen[3], s[3]),
+          ]
+        : s
+    })
+    const route = elbowBase(c, o, pinA, pinB)
+    o.watch(null)
+    this.kept.set(key, { route: copyRoute(route), seen, plan: this.plan })
+    return route
+  }
+}
+
+const copyRoute = (r: ElbowRoute): ElbowRoute => ({
+  ...r,
+  pts: r.pts.map((p) => ({ x: p.x, y: p.y })),
+})
+
 const pinFor = (pinA?: number, pinB?: number) => ({
   ...(pinA !== undefined ? { pinA: true } : {}),
   ...(pinB !== undefined ? { pinB: true } : {}),
@@ -505,78 +588,87 @@ function runsOf(
   h: boolean
 ): Run[] {
   const out: Run[] = []
-  routes.forEach((r, i) => {
-    const p = r.pts
-    const n = p.length
-    for (let k = 0; k < n - 1; k++) {
-      const a = p[k]
-      const b = p[k + 1]
-      const horiz = Math.abs(a.y - b.y) < 1e-6
-      const vert = Math.abs(a.x - b.x) < 1e-6
-      if (horiz === vert || horiz !== h) continue
-      const c = h ? a.y : a.x
-      const sa = h ? a.x : a.y
-      const sb = h ? b.x : b.y
-      const cross = (q: Pt | undefined, from: Pt) => {
-        if (!q) return 0
-        const d = h ? q.y - from.y : q.x - from.x
-        return Math.abs(d) < 1e-6 ? 0 : Math.sign(d)
-      }
-      const da = cross(p[k - 1], a)
-      const db = cross(p[k + 2], b)
-      const terminal = k === 0 || k === n - 2
-      // A run beside an end keeps that end's stub - or, turning off a
-      // shared point, its stagger depth.
-      const ends: [PlanEnd, number | undefined][] = []
-      if (k === 1) ends.push([cables[i].a, r.pinA])
-      if (k === n - 3) ends.push([cables[i].b, r.pinB])
-      let [lo, hi, lo2, hi2] = [-Infinity, Infinity, -Infinity, Infinity]
-      for (const [e, pin] of ends) {
-        const [l1, h1] = pin !== undefined ? bound(e, pin) : boundAt(e, c)
-        const [l2, h2] =
-          pin !== undefined
-            ? bound(e, pin)
-            : bound(e, Math.min(e.stub, MIN_STUB))
-        lo = Math.max(lo, l1)
-        hi = Math.min(hi, h1)
-        lo2 = Math.max(lo2, l2)
-        hi2 = Math.min(hi2, h2)
-      }
-      // A route's parallel corridors keep their order: they may meet (the
-      // step between them goes), never cross into an S.
-      for (const j of [k - 2, k + 2]) {
-        if (j < 1 || j > n - 3) continue
-        const other = h ? p[j].y : p[j].x
-        if (other > c) {
-          hi = Math.min(hi, other)
-          hi2 = Math.min(hi2, other)
-        } else if (other < c) {
-          lo = Math.max(lo, other)
-          lo2 = Math.max(lo2, other)
-        }
-      }
-      // A cramped route already breaks its bounds: it may stay put.
-      lo = Math.min(lo, c)
-      hi = Math.max(hi, c)
-      lo2 = Math.min(lo2, c)
-      hi2 = Math.max(hi2, c)
-      out.push({
-        route: i,
-        k,
-        h,
-        c,
-        lo,
-        hi,
-        lo2,
-        hi2,
-        pinned: terminal,
-        s0: Math.min(sa, sb),
-        s1: Math.max(sa, sb),
-        d0: sa <= sb ? da : db,
-        d1: sa <= sb ? db : da,
-      })
+  routes.forEach((_, i) => routeRuns(routes, cables, i, h, out))
+  return out
+}
+
+/** One route's runs of one orientation (into `out`). */
+function routeRuns(
+  routes: readonly ElbowRoute[],
+  cables: readonly ElbowCable[],
+  i: number,
+  h: boolean,
+  out: Run[] = []
+): Run[] {
+  const r = routes[i]
+  const p = r.pts
+  const n = p.length
+  for (let k = 0; k < n - 1; k++) {
+    const a = p[k]
+    const b = p[k + 1]
+    const horiz = Math.abs(a.y - b.y) < 1e-6
+    const vert = Math.abs(a.x - b.x) < 1e-6
+    if (horiz === vert || horiz !== h) continue
+    const c = h ? a.y : a.x
+    const sa = h ? a.x : a.y
+    const sb = h ? b.x : b.y
+    const cross = (q: Pt | undefined, from: Pt) => {
+      if (!q) return 0
+      const d = h ? q.y - from.y : q.x - from.x
+      return Math.abs(d) < 1e-6 ? 0 : Math.sign(d)
     }
-  })
+    const da = cross(p[k - 1], a)
+    const db = cross(p[k + 2], b)
+    const terminal = k === 0 || k === n - 2
+    // A run beside an end keeps that end's stub - or, turning off a
+    // shared point, its stagger depth.
+    const ends: [PlanEnd, number | undefined][] = []
+    if (k === 1) ends.push([cables[i].a, r.pinA])
+    if (k === n - 3) ends.push([cables[i].b, r.pinB])
+    let [lo, hi, lo2, hi2] = [-Infinity, Infinity, -Infinity, Infinity]
+    for (const [e, pin] of ends) {
+      const [l1, h1] = pin !== undefined ? bound(e, pin) : boundAt(e, c)
+      const [l2, h2] =
+        pin !== undefined ? bound(e, pin) : bound(e, Math.min(e.stub, MIN_STUB))
+      lo = Math.max(lo, l1)
+      hi = Math.min(hi, h1)
+      lo2 = Math.max(lo2, l2)
+      hi2 = Math.min(hi2, h2)
+    }
+    // A route's parallel corridors keep their order: they may meet (the
+    // step between them goes), never cross into an S.
+    for (const j of [k - 2, k + 2]) {
+      if (j < 1 || j > n - 3) continue
+      const other = h ? p[j].y : p[j].x
+      if (other > c) {
+        hi = Math.min(hi, other)
+        hi2 = Math.min(hi2, other)
+      } else if (other < c) {
+        lo = Math.max(lo, other)
+        lo2 = Math.max(lo2, other)
+      }
+    }
+    // A cramped route already breaks its bounds: it may stay put.
+    lo = Math.min(lo, c)
+    hi = Math.max(hi, c)
+    lo2 = Math.min(lo2, c)
+    hi2 = Math.max(hi2, c)
+    out.push({
+      route: i,
+      k,
+      h,
+      c,
+      lo,
+      hi,
+      lo2,
+      hi2,
+      pinned: terminal,
+      s0: Math.min(sa, sb),
+      s1: Math.max(sa, sb),
+      d0: sa <= sb ? da : db,
+      d1: sa <= sb ? db : da,
+    })
+  }
   return out
 }
 
@@ -638,79 +730,150 @@ function setRun(routes: ElbowRoute[], r: Run, c: number) {
  * another route outside the ones being placed together? */
 type Blocked = (r: Run, c: number) => boolean
 
-/** A `Blocked` over `runs` (one orientation) as the routes now lie, but
- * the runs in `cluster`. */
-function blocker(
-  routes: readonly ElbowRoute[],
-  runs: readonly Run[],
-  cluster: readonly Run[]
-): Blocked {
-  const mine = new Set(cluster)
-  const now = (q: Run) => {
-    const p = routes[q.route].pts[q.k]
-    return q.h ? p.y : p.x
-  }
-  return (r, c) =>
-    runs.some(
-      (q) =>
-        !mine.has(q) &&
-        q.route !== r.route &&
-        Math.abs(now(q) - c) < LANE - 0.5 &&
-        overlap(q, r)
-    )
+/** Where a run lies now: its routes move as the corridors spread. */
+function now(routes: readonly ElbowRoute[], q: Run): number {
+  const p = routes[q.route].pts[q.k]
+  return q.h ? p.y : p.x
 }
+
+/**
+ * The runs of one orientation filed by lane-wide bands of where they lie
+ * now, so a `Blocked` looks only at the runs within a lane of the spot it
+ * is asked about. Re-file a route's runs (`moved`) once it has moved.
+ */
+class RunBands {
+  private bands = new Map<number, Set<Run>>()
+  private filed = new Map<Run, number>()
+  private byRoute = new Map<number, Run[]>()
+
+  constructor(
+    private readonly routes: readonly ElbowRoute[],
+    runs: readonly Run[]
+  ) {
+    for (const q of runs) {
+      const list = this.byRoute.get(q.route)
+      if (list) list.push(q)
+      else this.byRoute.set(q.route, [q])
+      this.file(q)
+    }
+  }
+
+  private file(q: Run) {
+    const b = Math.floor(now(this.routes, q) / LANE)
+    const was = this.filed.get(q)
+    if (was === b) return
+    if (was !== undefined) this.bands.get(was)?.delete(q)
+    const set = this.bands.get(b)
+    if (set) set.add(q)
+    else this.bands.set(b, new Set([q]))
+    this.filed.set(q, b)
+  }
+
+  /** The runs of these routes lie where they now are. */
+  moved(runs: readonly Run[]) {
+    const seen = new Set<number>()
+    for (const r of runs) {
+      if (seen.has(r.route)) continue
+      seen.add(r.route)
+      for (const q of this.byRoute.get(r.route) ?? []) this.file(q)
+    }
+  }
+
+  /** A `Blocked` over every run as the routes now lie, but the runs in
+   * `cluster`. */
+  blocker(cluster: readonly Run[]): Blocked {
+    const mine = new Set(cluster)
+    return (r, c) => {
+      const b = Math.floor(c / LANE)
+      for (let k = b - 1; k <= b + 1; k++)
+        for (const q of this.bands.get(k) ?? [])
+          if (
+            !mine.has(q) &&
+            q.route !== r.route &&
+            Math.abs(now(this.routes, q) - c) < LANE - 0.5 &&
+            overlap(q, r)
+          )
+            return true
+      return false
+    }
+  }
+}
+
+/** Corners whose order along their corridor is settled (head on, the one
+ * whose port lies first turns first): `${route}:${k}` → the corners it
+ * comes before. */
+type Firsts = ReadonlyMap<string, readonly string[]>
 
 function spread(
   routes: ElbowRoute[],
   free: Run[],
   fits: Fits,
-  before: (a: Run, b: Run) => boolean = () => false,
+  firsts: Firsts = new Map(),
   blocked: Blocked = () => false
 ) {
   // Along the corridor: head-on corners in their order first, then runs
   // that would cross, then where each lies now. Kahn's order, counting
   // what each run still waits on.
   const n0 = free.length
-  const idx = new Map(free.map((r, i) => [r, i]))
   const hardOut: number[][] = free.map(() => [])
   const softOut: number[][] = free.map(() => [])
   const hardIn = new Array<number>(n0).fill(0)
   const softIn = new Array<number>(n0).fill(0)
+  // The settled orders among these runs, by index.
+  const settled: (Set<number> | undefined)[] = new Array(n0)
+  if (firsts.size) {
+    const at = new Map(free.map((r, i) => [`${r.route}:${r.k}`, i]))
+    free.forEach((r, i) => {
+      for (const b of firsts.get(`${r.route}:${r.k}`) ?? []) {
+        const j = at.get(b)
+        if (j !== undefined) (settled[i] ??= new Set()).add(j)
+      }
+    })
+  }
   // One route's own parallel runs keep their order too.
-  const first = (x: Run, y: Run) =>
-    before(x, y) ||
-    (x.route === y.route && (x.c < y.c || (x.c === y.c && x.k < y.k)))
-  for (const x of free)
-    for (const y of free) {
-      if (x === y) continue
-      const [i, j] = [idx.get(x)!, idx.get(y)!]
-      if (first(x, y)) {
+  const first = (i: number, j: number) => {
+    if (settled[i]?.has(j)) return true
+    const x = free[i]
+    const y = free[j]
+    return x.route === y.route && (x.c < y.c || (x.c === y.c && x.k < y.k))
+  }
+  for (let i = 0; i < n0; i++)
+    for (let j = 0; j < n0; j++) {
+      if (i === j) continue
+      if (first(i, j)) {
         hardOut[i].push(j)
         hardIn[j]++
-      } else if (vote(x, y) < 0 && !first(y, x)) {
+      } else if (vote(free[i], free[j]) < 0 && !first(j, i)) {
         softOut[i].push(j)
         softIn[j]++
       }
     }
   const order: Run[] = []
   const done = new Array<boolean>(n0).fill(false)
-  const byPlace = (a: number, b: number) =>
-    free[a].c - free[b].c ||
-    free[a].route - free[b].route ||
-    free[a].k - free[b].k
+  // Where each lies now, first to last.
+  const byPlace = free
+    .map((_, i) => i)
+    .sort(
+      (a, b) =>
+        free[a].c - free[b].c ||
+        free[a].route - free[b].route ||
+        free[a].k - free[b].k
+    )
+  let lead = 0
   for (let step = 0; step < n0; step++) {
     // Free of both, else of the head-on order at least, else anything
     // (a cycle): the one that lies first.
+    while (done[byPlace[lead]]) lead++
     let pick = -1
-    for (const pass of [0, 1, 2]) {
-      for (let i = 0; i < n0; i++) {
+    for (let pass = 0; pass < 3 && pick < 0; pass++)
+      for (let s = lead; s < n0; s++) {
+        const i = byPlace[s]
         if (done[i]) continue
         if (pass < 2 && hardIn[i] > 0) continue
         if (pass < 1 && softIn[i] > 0) continue
-        if (pick < 0 || byPlace(i, pick) < 0) pick = i
+        pick = i
+        break
       }
-      if (pick >= 0) break
-    }
     order.push(free[pick])
     done[pick] = true
     for (const j of hardOut[pick]) hardIn[j]--
@@ -718,6 +881,19 @@ function spread(
   }
   const n = order.length
   const centre = order.reduce((s, r) => s + r.c, 0) / n
+  // Nothing moves while the spreads are tried: each run's answer at a
+  // spot holds until one is chosen.
+  const tried = new Map<Run, Map<number, boolean>>()
+  const fitsAt = (r: Run, c: number) => {
+    let seen = tried.get(r)
+    if (!seen) tried.set(r, (seen = new Map()))
+    let ok = seen.get(c)
+    if (ok === undefined) {
+      ok = fits(r, c) && !blocked(r, c)
+      seen.set(c, ok)
+    }
+    return ok
+  }
   // A full lane each and the port names' room; a full lane each before
   // that room (a name with none is left off - cables close together are
   // misread); only then closer lanes.
@@ -738,9 +914,7 @@ function spread(
     // The spread nearest centred that keeps every run clear of cards.
     const want = Math.min(hi, Math.max(lo, centre - ((n - 1) / 2) * pitch))
     const clear = (base: number) =>
-      order.every(
-        (r, i) => fits(r, base + i * pitch) && !blocked(r, base + i * pitch)
-      )
+      order.every((r, i) => fitsAt(r, base + i * pitch))
     for (let k = 0; k <= 2 * STEPS; k++) {
       const base = want + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * (LANE / 3)
       if (base < lo || base > hi || !clear(base)) continue
@@ -910,9 +1084,7 @@ function cornerOf(
   const n = routes[end.route].pts.length
   if (n < 4) return undefined
   const k = end.k === 0 ? 1 : n - 3
-  const r = runsOf(routes, cables, !end.h).find(
-    (q) => q.route === end.route && q.k === k
-  )
+  const r = routeRuns(routes, cables, end.route, !end.h).find((q) => q.k === k)
   return r && r.k !== 0 && r.k !== n - 2 ? r : undefined
 }
 
@@ -937,9 +1109,8 @@ function swapCorners(
   if (!fits(cx, b) || !fits(cy, a)) return false
   setRun(routes, cx, b)
   setRun(routes, cy, a)
-  const ends = runsOf(routes, cables, x.h)
-  const ex = ends.find((r) => r.route === x.route && r.k === x.k)
-  const ey = ends.find((r) => r.route === y.route && r.k === y.k)
+  const ex = routeRuns(routes, cables, x.route, x.h).find((r) => r.k === x.k)
+  const ey = routeRuns(routes, cables, y.route, y.h).find((r) => r.k === y.k)
   if (
     ex &&
     ey &&
@@ -997,8 +1168,8 @@ function untangleEnds(
                 : NaN
           if (Number.isNaN(target)) continue
           const adjK = t.k === 0 ? 1 : n - 3
-          const adj = runsOf(routes, cables, !h).find(
-            (r) => r.route === t.route && r.k === adjK
+          const adj = routeRuns(routes, cables, t.route, !h).find(
+            (r) => r.k === adjK
           )
           if (!adj || adj.k === 0 || adj.k === n - 2) continue
           if ((target - at) * (adj.c - at) <= 0) continue
@@ -1062,12 +1233,15 @@ export function assignLanes(
       const first = heads.get(h)!
       for (const [a, b] of facingCorners(routes, cables, !h))
         if (!first.has(`${b}|${a}`)) first.add(`${a}|${b}`)
+      const firsts = new Map<string, string[]>()
       for (const ab of first) {
         const [a, b] = ab.split("|")
         union(`${h ? "h" : "v"}${a}`, `${h ? "h" : "v"}${b}`)
+        const list = firsts.get(a)
+        if (list) list.push(b)
+        else firsts.set(a, [b])
       }
-      const before = (x: Run, y: Run) =>
-        first.size > 0 && first.has(`${x.route}:${x.k}|${y.route}:${y.k}`)
+      const bands = new RunBands(routes, runs)
       const clusters = new Map<string, Run[]>()
       for (const r of runs) {
         const k = find(keyOf(r))
@@ -1082,9 +1256,10 @@ export function assignLanes(
         const fixed = list.filter((r) => r.pinned)
         // Nor onto a run outside the cluster: this round's clusters were
         // drawn before any of them moved.
-        const blocked = blocker(routes, runs, list)
+        const blocked = bands.blocker(list)
         if (fixed.length) around(routes, free, fixed, fits, blocked)
-        else if (free.length > 1) spread(routes, free, fits, before, blocked)
+        else if (free.length > 1) spread(routes, free, fits, firsts, blocked)
+        bands.moved(free)
       }
     }
   untangleEnds(routes, cables, fits)
@@ -1110,8 +1285,8 @@ function straighten(
       // The run after the step moves onto the run before it - unless it
       // is the end run (it starts on its port); then the one before moves.
       const later = k + 1 < p.length - 2
-      const move = runsOf(routes, cables, h).find(
-        (r) => r.route === i && r.k === (later ? k + 1 : k - 1)
+      const move = routeRuns(routes, cables, i, h).find(
+        (r) => r.k === (later ? k + 1 : k - 1)
       )
       const to = later ? (h ? a.y : a.x) : h ? b.y : b.x
       if (!move || move.pinned || to < move.lo2 || to > move.hi2) continue

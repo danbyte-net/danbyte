@@ -8,6 +8,7 @@ import {
   LANE,
   MIN_STUB,
   obstacles,
+  RouteCache,
   SHARED_STUB,
   sharedPins,
 } from "./lanes"
@@ -200,5 +201,49 @@ describe("endTurn", () => {
       depth: 50,
       extent: 300,
     })
+  })
+})
+
+describe("RouteCache", () => {
+  // Two cables that must step round a card each, far apart.
+  const cards: [string, Rect][] = [
+    ["a1", { x: -50, y: -60, w: 100, h: 60 }],
+    ["b1", { x: 150, y: 400, w: 100, h: 60 }],
+    ["mid1", { x: 0, y: 150, w: 260, h: 80 }],
+    ["a2", { x: 2950, y: -60, w: 100, h: 60 }],
+    ["b2", { x: 3150, y: 400, w: 100, h: 60 }],
+    ["mid2", { x: 3000, y: 150, w: 260, h: 80 }],
+  ]
+  const c1 = cable("c1", end(0, 0, DOWN, "a1"), end(200, 400, UP, "b1"))
+  const c2 = cable("c2", end(3000, 0, DOWN, "a2"), end(3200, 400, UP, "b2"))
+
+  it("gives the routes elbowBase gives, and copies it may change", () => {
+    const cache = new RouteCache()
+    const o = obstacles(cards)
+    cache.begin(cards, o)
+    const r1 = cache.route(c1, o)
+    expect(r1).toEqual(elbowBase(c1, o))
+    r1.pts[1].y += 5
+    cache.begin(cards, o)
+    expect(cache.route(c1, o)).toEqual(elbowBase(c1, o))
+  })
+
+  it("routes again only the cables whose search a moved card crossed", () => {
+    const cache = new RouteCache()
+    const o = obstacles(cards)
+    cache.begin(cards, o)
+    cache.route(c1, o)
+    cache.route(c2, o)
+    // mid1 moves out of c1's way; c2, far off, keeps its route.
+    const moved = cards.map(([id, r]): [string, Rect] =>
+      id === "mid1" ? [id, { ...r, x: r.x - 600 }] : [id, r]
+    )
+    const o2 = obstacles(moved)
+    cache.begin(moved, o2)
+    const kept = (cache as unknown as { kept: Map<string, unknown> }).kept
+    expect(kept.size).toBe(1)
+    expect(cache.route(c1, o2)).toEqual(elbowBase(c1, o2))
+    expect(cache.route(c2, o2)).toEqual(elbowBase(c2, o2))
+    expect(cache.route(c1, o2).pts).not.toEqual(elbowBase(c1, o).pts)
   })
 })

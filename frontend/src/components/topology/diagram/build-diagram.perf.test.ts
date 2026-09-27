@@ -5,10 +5,13 @@ import { approxMeasure } from "@/lib/diagram/measure"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramMode } from "./types"
 
-// Scale: a 600-device, 1,500-link fabric through the Diagram pipeline. The
-// timings are logged for comparison, not asserted - CI machines vary too
-// much for a wall-clock gate. The dagre layout dominates, as it does for the
-// Wiring and Flat views on the same graph.
+// Scale: a 600-device, 1,500-link fabric through the Diagram pipeline, and
+// a sparse site of 2,400 devices with 900 cables. The timings are logged
+// for comparison, not asserted - CI machines vary too much for a
+// wall-clock gate. A map's first build pays for dagre's ranking; a rebuild
+// of the same graph (another mode, line or label setting) reuses the ranks,
+// and a drag re-plans only the routes the moved card touched. In the app
+// both run in a worker (diagram.worker.ts), off the main thread.
 
 const ROLES = {
   spine: { name: "Spine", color: "#6366f1" },
@@ -86,6 +89,44 @@ function fabric(): TopologyGraph {
   return { nodes, edges }
 }
 
+/** A site of many unconnected devices: 200 firewalls each cabled to a
+ * PDU and a few servers, 1,600 devices with no cables at all. */
+function sparse(): TopologyGraph {
+  const nodes: TopoNode[] = []
+  const edges: TopoEdge[] = []
+  const device = (name: string, role: keyof typeof ROLES) => {
+    nodes.push({
+      id: `dev:${name}`,
+      type: "device",
+      data: { name, device_id: name, role: ROLES[role] },
+    })
+    return `dev:${name}`
+  }
+  let n = 0
+  for (let i = 0; i < 200; i++) {
+    const fw = device(`fw-${i + 1}`, "spine")
+    const pdu = device(`pdu-${i + 1}`, "leaf")
+    const link = (a: string, ap: string, b: string, bp: string) =>
+      edges.push({
+        id: `s${++n}`,
+        source: a,
+        target: b,
+        type: "cable",
+        data: {
+          cable_id: `s${n}`,
+          pairs: [{ a: ap, b: bp, a_port: ap, b_port: bp }],
+        },
+      })
+    link(fw, "mgmt0", pdu, "outlet1")
+    for (let k = 0; k < (i % 4) + 2; k++)
+      link(fw, `ethernet1/${k + 1}`, device(`srv-${i}-${k}`, "server"), "eno1")
+  }
+  while (nodes.length < 2400) device(`spare-${nodes.length}`, "server")
+  return { nodes, edges }
+}
+
+const ms = (t: number) => `${Math.round(performance.now() - t)} ms`
+
 describe("buildDiagram at scale", () => {
   const graph = fabric()
 
@@ -96,24 +137,48 @@ describe("buildDiagram at scale", () => {
 
   for (const mode of ["simple", "detailed"] as DiagramMode[])
     it(`builds and re-anchors 600 cards · ${mode}`, () => {
-      const t0 = performance.now()
-      const built = buildDiagram(graph, {
+      const opts = {
         mode,
-        line: "elbow",
-        colorMode: "cable",
+        line: "elbow" as const,
+        colorMode: "cable" as const,
         measure: approxMeasure,
-      })
+      }
+      const t0 = performance.now()
+      const built = buildDiagram(graph, opts)
+      const first = ms(t0)
       const t1 = performance.now()
-      const re = relinkDiagram(built.model, built.nodes)
+      buildDiagram(graph, { ...opts, line: "straight" })
+      const rebuilt = ms(t1)
       const t2 = performance.now()
+      const re = relinkDiagram(built.model, built.nodes)
+      const relink = ms(t2)
+      // A drag: one leaf moves, then another.
+      const drag = (from: typeof built.model, id: string) => {
+        const t = performance.now()
+        const out = relinkDiagram(
+          from,
+          built.nodes.map((n) =>
+            n.id === id
+              ? {
+                  ...n,
+                  position: { x: n.position.x + 90, y: n.position.y - 60 },
+                }
+              : n
+          )
+        )
+        return { out, took: ms(t) }
+      }
+      const d1 = drag(re.model, "dev:leaf-40")
+      const d2 = drag(d1.out.model, "dev:leaf-41")
       // stderr: vitest keeps console output of passing tests to itself.
       process.stderr.write(
-        `diagram ${mode}: build ${Math.round(t1 - t0)} ms, ` +
-          `relink ${Math.round(t2 - t1)} ms ` +
+        `diagram ${mode}: build ${first}, rebuild ${rebuilt}, ` +
+          `relink ${relink}, drags ${d1.took} / ${d2.took} ` +
           `(${built.nodes.length} cards, ${built.edges.length} links)\n`
       )
       expect(built.nodes).toHaveLength(600)
       expect(re.edges).toHaveLength(built.edges.length)
+      expect(d2.out.edges).toHaveLength(built.edges.length)
 
       // A saved arrangement pins every card: no layout, only routing.
       const positions = Object.fromEntries(
@@ -135,4 +200,22 @@ describe("buildDiagram at scale", () => {
         built.nodes.map((c) => c.position)
       )
     }, 120_000)
+
+  it("builds a sparse 2,400-device site", () => {
+    const site = sparse()
+    for (const mode of ["simple", "detailed"] as DiagramMode[]) {
+      const t = performance.now()
+      const built = buildDiagram(site, {
+        mode,
+        line: "straight",
+        colorMode: "cable",
+        measure: approxMeasure,
+      })
+      process.stderr.write(
+        `sparse site ${mode}: build ${ms(t)} ` +
+          `(${site.nodes.length} cards, ${site.edges.length} cables)\n`
+      )
+      expect(built.nodes).toHaveLength(2400)
+    }
+  }, 120_000)
 })

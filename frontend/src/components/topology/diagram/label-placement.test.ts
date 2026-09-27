@@ -501,3 +501,70 @@ describe("a breakout's legs converging on one card", () => {
       expect(faults(b)).toEqual([])
     })
 })
+
+describe("a label sliding along a straight line", () => {
+  // A fan of straight lines out of one card, crossing a second fan: names
+  // near the card are crowded out and slide a long way along their lines.
+  // Knowing each line is straight lets a slide skip what surely blocks it;
+  // the places must be the ones found step by step.
+  const lines: [string, Pt, Pt][] = []
+  for (let i = 0; i < 24; i++) {
+    lines.push([`f${i}`, { x: 0, y: i * 9 }, { x: 900, y: -400 + i * 40 }])
+    lines.push([
+      `g${i}`,
+      { x: 300 + i * 17, y: -300 },
+      { x: 420 + i * 11, y: 500 },
+    ])
+  }
+  const cards = [
+    { x: -120, y: -10, w: 120, h: 230 },
+    { x: 380, y: 60, w: 90, h: 40 },
+  ]
+  const asks = (straight: boolean): InlineAsk[] =>
+    lines.flatMap(([key, a, b]) => {
+      const route = routeThrough("straight", [a, b], [1, 0])
+      const len = route.length
+      const u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len }
+      return [
+        {
+          key: `${key}a`,
+          cable: key,
+          ws: [measure("Ethernet1/12", LABEL.END_SIZE, 400)],
+          walk: (d: number) => route.at(d / len),
+          from: LABEL.LEAD,
+          until: len / 2,
+          first: true,
+          ...(straight ? { line: { at: a, u } } : {}),
+        },
+        {
+          key: `${key}ips`,
+          cable: key,
+          ws: [
+            measure("10.1.1.0", LABEL.END_SIZE, 400),
+            measure("2001:db8::1", LABEL.END_SIZE, 400),
+          ],
+          walk: (d: number) => route.at(d / len),
+          from: 60,
+          until: len - LABEL.LEAD,
+          ...(straight ? { line: { at: a, u } } : {}),
+        },
+      ]
+    })
+  const place = (straight: boolean) =>
+    placeInline(
+      asks(straight),
+      new LabelScene(
+        lines.map(([k, a, b]) => [k, [a, b]]),
+        cards
+      )
+    )
+
+  it("finds the places a step-by-step slide finds", () => {
+    const slow = place(false)
+    const fast = place(true)
+    expect([...fast]).toEqual([...slow])
+    // Some are crowded out near the card and placed further on.
+    const far = [...slow.values()].filter((p) => p && p.reach > 120)
+    expect(far.length).toBeGreaterThan(3)
+  })
+})

@@ -493,3 +493,27 @@ describe("hierarchy cards never overlap", () => {
       }
   })
 })
+
+describe("layoutNodes reusing ranks", () => {
+  it("lays a graph out for new sizes as a fresh ranking would", () => {
+    const { nodes, edges } = fabric()
+    const grown = {
+      sizeOf: (n: Node) => {
+        const s = sizeOf(n)
+        return { width: s.width + 40, height: s.height + 12 }
+      },
+      compact: false,
+    }
+    // Ranks the graph once; the second layout replays them.
+    layoutNodes(nodes, edges, { ...CARDS, reuseRanks: true })
+    const again = layoutNodes(nodes, edges, { ...grown, reuseRanks: true })
+    const fresh = layoutNodes(nodes, edges, grown)
+    expect(again.nodes.map((n) => n.position)).toEqual(
+      fresh.nodes.map((n) => n.position)
+    )
+    expect(again.waypoints).toEqual(fresh.waypoints)
+    // A view that routes its own lines gets none.
+    const own = { ...grown, leafGrids: false, waypoints: false }
+    expect(layoutNodes(nodes, edges, own).waypoints.size).toBe(0)
+  })
+})

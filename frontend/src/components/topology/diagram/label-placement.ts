@@ -5,7 +5,6 @@ import {
   Grid,
   boxesOverlap,
   inflate,
-  segBox,
   segHitsBox,
   turnedBox,
   turnedBounds,
@@ -49,6 +48,10 @@ export interface InlineAsk {
   until: number
   /** Keep to the straight run out of the end (a port name at its nub). */
   first?: boolean
+  /** The route is one straight line: `walk(d)` is `at` plus `d` times
+   * the unit vector `u`. Lets a label skip the stretch something is
+   * sure to block. */
+  line?: { at: Pt; u: Pt }
 }
 
 /** A middle chip to place. */
@@ -81,6 +84,21 @@ type Item =
 /** A label taken into a scene; `drop` it to free its room again. */
 export type Taken = Label
 
+/** Something in a scene a box ran into. */
+export type Blocker = Item
+
+/** Does `it` stand in `box`'s way? A cable never blocks its own labels,
+ * nor a dropped label anything. */
+export function blocks(
+  it: Blocker,
+  box: TurnedBox,
+  mine: (cable: string) => boolean
+): boolean {
+  if (it.k === "seg") return !mine(it.cable) && segHitsBox(it.p, it.q, box)
+  if (it.k === "label" && it.dead) return false
+  return boxesOverlap(box, it.box)
+}
+
 /** Everything labels keep clear of: the routes, the cards, and the labels
  * placed so far. */
 export class LabelScene {
@@ -94,7 +112,7 @@ export class LabelScene {
       for (let i = 1; i < pts.length; i++) {
         const p = pts[i - 1]
         const q = pts[i]
-        this.grid.add(segBox(p, q, 1), { k: "seg", cable, p, q })
+        this.grid.addSegment(p, q, 1, { k: "seg", cable, p, q })
       }
     for (const r of cards) this.grid.add(r, { k: "card", box: turnedBox(r) })
   }
@@ -102,14 +120,14 @@ export class LabelScene {
   /** Is `box` clear of every card, label and cable but its own
    * (`mine`)? */
   free(box: TurnedBox, mine: (cable: string) => boolean): boolean {
-    for (const it of this.grid.near(turnedBounds(box))) {
-      if (it.k === "seg") {
-        if (mine(it.cable)) continue
-        if (segHitsBox(it.p, it.q, box)) return false
-      } else if (it.k === "label" && it.dead) continue
-      else if (boxesOverlap(box, it.box)) return false
-    }
-    return true
+    return !this.blocker(box, mine)
+  }
+
+  /** What `box` runs into first, if anything (`free` is its absence). */
+  blocker(box: TurnedBox, mine: (cable: string) => boolean): Blocker | null {
+    for (const it of this.grid.near(turnedBounds(box)))
+      if (blocks(it, box, mine)) return it
+    return null
   }
 
   take(box: TurnedBox): Taken {
@@ -121,6 +139,85 @@ export class LabelScene {
   drop(it: Taken): void {
     it.dead = true
   }
+}
+
+/** How sure a skip is: what it leaves out is blocked by at least this
+ * much, far beyond rounding. */
+const SURE = 1e-3
+
+/**
+ * The stretch of a straight line where a box centred on it (`hw` along,
+ * `hh` across) surely runs into `it`: [from, to] in px along the line from
+ * `line.at`, or null. What the box meets there lies at least `SURE` inside
+ * it, so the exact test would find it too.
+ */
+function sureBlock(
+  it: Blocker,
+  line: { at: Pt; u: Pt },
+  hw: number,
+  hh: number
+): [number, number][] {
+  const { at, u } = line
+  const along = (p: Pt) => (p.x - at.x) * u.x + (p.y - at.y) * u.y
+  const across = (p: Pt) => (p.y - at.y) * u.x - (p.x - at.x) * u.y
+  const w = hw - 2 * SURE
+  const h = hh - SURE
+  if (w <= 0 || h <= 0) return []
+  const edges: [Pt, Pt][] = []
+  if (it.k === "seg") edges.push([it.p, it.q])
+  else {
+    const { cx, cy, hw: bw, hh: bh, angle } = it.box
+    const r = (angle * Math.PI) / 180
+    const [c, s] = [Math.cos(r), Math.sin(r)]
+    const corner = (i: number, j: number): Pt => ({
+      x: cx + i * bw * c - j * bh * s,
+      y: cy + i * bw * s + j * bh * c,
+    })
+    const k = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)]
+    for (let i = 0; i < 4; i++) edges.push([k[i], k[(i + 1) % 4]])
+  }
+  const out: [number, number][] = []
+  for (const [p, q] of edges) {
+    // Long enough that a point of it well inside the box is a real hit.
+    if (Math.hypot(q.x - p.x, q.y - p.y) < 1) continue
+    const [ap, aq] = [across(p), across(q)]
+    let t0 = 0
+    let t1 = 1
+    if (ap === aq) {
+      if (Math.abs(ap) > h) continue
+    } else {
+      const ta = (-h - ap) / (aq - ap)
+      const tb = (h - ap) / (aq - ap)
+      t0 = Math.max(0, Math.min(ta, tb))
+      t1 = Math.min(1, Math.max(ta, tb))
+      if (t0 > t1) continue
+    }
+    const [lp, lq] = [along(p), along(q)]
+    const x0 = lp + (lq - lp) * t0
+    const x1 = lp + (lq - lp) * t1
+    out.push([Math.min(x0, x1) - w, Math.max(x0, x1) + w])
+  }
+  return out
+}
+
+/** How much further along its straight line a box centred `centre` px
+ * along it stays surely blocked by `it` (0 when it is not sure to be). */
+function sureRun(
+  it: Blocker,
+  line: { at: Pt; u: Pt },
+  box: TurnedBox,
+  centre: number
+): number {
+  const spans = sureBlock(it, line, box.hw, box.hh).sort((x, y) => x[0] - y[0])
+  let lo = Infinity
+  let hi = -Infinity
+  for (const [a, b] of spans) {
+    if (a > hi) {
+      if (lo <= centre && centre <= hi) break
+      ;[lo, hi] = [a, b]
+    } else hi = Math.max(hi, b)
+  }
+  return lo <= centre && centre <= hi ? hi - centre : 0
 }
 
 /** An end label's box at its place: the text and its gaps along the
@@ -181,17 +278,52 @@ export function placeInline(
 ): Map<string, InlinePlace | null> {
   const out = new Map<string, InlinePlace | null>()
   for (const ask of asks) {
-    const seen = new Map<number, Pt & { angle: number }>()
-    const walk = (d: number) => {
-      let p = seen.get(d)
-      if (!p) seen.set(d, (p = ask.walk(d)))
-      return p
-    }
+    const walk = ask.walk
     const spans = ask.ws.map(inlineSpan)
     const total = inlineLength(ask.ws)
     const mine = (c: string) => c === ask.cable
+    // What stopped the last try: a label sliding along its line usually
+    // runs into the same thing a step on, so it is asked first.
+    let last: Blocker | null = null
+    const stop = (box: TurnedBox): Blocker | null => {
+      if (last && blocks(last, box, mine)) return last
+      last = scene.blocker(box, mine)
+      return last
+    }
+    // A port name keeps to its nub's run: straight from the end on. The
+    // run is probed every PROBE px once, however far the name slides:
+    // the two directions furthest apart so far stand for all of them (a
+    // stretch whose directions spread more than twice STRAIGHT cannot lie
+    // within STRAIGHT of one chord; one that spreads less does when both
+    // of those do).
+    let upto = 0
+    let ref = NaN
+    let lo = Infinity
+    let hi = -Infinity
+    let loA = 0
+    let hiA = 0
+    const runTo = (b: number) => {
+      for (; upto < b; upto += PROBE) {
+        const angle = walk(upto).angle
+        if (Number.isNaN(ref)) ref = angle
+        const dev = ((((angle - ref + 540) % 360) + 360) % 360) - 180
+        if (dev < lo) [lo, loA] = [dev, angle]
+        if (dev > hi) [hi, hiA] = [dev, angle]
+      }
+    }
+    const bentFrom = (chord: number) =>
+      hi - lo > 2 * STRAIGHT + 1e-9 ||
+      turnOf(loA, chord) > STRAIGHT ||
+      turnOf(hiA, chord) > STRAIGHT
+    // On a straight route, the tries after one that stopped are passed
+    // over while the label that stopped is sure to stay stopped by what
+    // stopped it (each would fail the same way).
+    const line = ask.line
+    let skip: { from: number; by: number } | null = null
     let found: InlinePlace | null = null
     for (let d = ask.from; d + total <= ask.until + 1e-6; d += STEP) {
+      if (skip && d - skip.from <= skip.by) continue
+      skip = null
       const places: PortPlace[] = []
       let off = d
       let bent = false
@@ -203,18 +335,30 @@ export function placeInline(
         const q = walk(b)
         const chord = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
         let straight = Math.hypot(q.x - p.x, q.y - p.y) > spans[i] * 0.97
-        // A port name keeps to its nub's run: straight from the end on.
-        const k0 = ask.first && i === 0 ? 0 : a
-        for (let k = k0; straight && k < b + PROBE; k += PROBE)
-          if (turnOf(walk(Math.min(k, b)).angle, chord) > STRAIGHT)
+        if (ask.first && i === 0) {
+          if (straight) runTo(b)
+          if (
+            straight &&
+            (bentFrom(chord) || turnOf(q.angle, chord) > STRAIGHT)
+          )
             straight = false
+        } else
+          for (let k = a; straight && k < b + PROBE; k += PROBE)
+            if (turnOf(walk(Math.min(k, b)).angle, chord) > STRAIGHT)
+              straight = false
         if (!straight) {
           bent = i === 0
           break
         }
         const c = walk(a + spans[i] / 2)
         const place = { x: c.x, y: c.y, rotate: uprightAngle(chord) }
-        if (!scene.free(inlineBox(place, ask.ws[i], PAD, PAD / 2), mine)) break
+        const box = inlineBox(place, ask.ws[i], PAD, PAD / 2)
+        const hit = stop(box)
+        if (hit) {
+          const by = line ? sureRun(hit, line, box, a + spans[i] / 2) : 0
+          if (by > 0) skip = { from: d, by }
+          break
+        }
         places.push(place)
         off = b + LABEL.LEAD
       }

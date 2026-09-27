@@ -22,7 +22,7 @@ import {
   sharedPins,
   SHARED_STUB,
 } from "./lanes"
-import type { ElbowCable, ElbowRoute, PlanEnd } from "./lanes"
+import type { ElbowCable, ElbowRoute, PlanEnd, RouteCache } from "./lanes"
 import {
   BENDY,
   bendyControls,
@@ -63,6 +63,8 @@ export interface PlanInput {
   solid: (id: string) => boolean
   mode: DiagramMode
   measure: Measure
+  /** Routes kept from the map's last plans, reused where nothing changed. */
+  routes?: RouteCache
 }
 
 export interface EdgePlan {
@@ -323,6 +325,16 @@ function walker(route: Route, fromEnd: boolean) {
   }
 }
 
+/** A route that is one straight line, walked from one of its ends: where
+ * it starts and which way it runs (`InlineAsk.line`). */
+function lineOf(route: Route, fromEnd: boolean): InlineAsk["line"] {
+  if (route.pts.length !== 2) return undefined
+  const [p, q] = fromEnd ? [route.pts[1], route.pts[0]] : route.pts
+  const len = Math.hypot(q.x - p.x, q.y - p.y)
+  if (!(len > 0)) return undefined
+  return { at: p, u: { x: (q.x - p.x) / len, y: (q.y - p.y) / len } }
+}
+
 /** How far out along its route an end's labels may reach: near their
  * end, and short of the middle when the other end has labels too. */
 function reach(
@@ -360,7 +372,9 @@ export function planEdges(
   opts: { turnsOnly?: boolean } = {}
 ): PlanOutput {
   const all = items(input)
-  const obs = obstacles([...input.rects].filter(([id]) => input.solid(id)))
+  const cards = [...input.rects].filter(([id]) => input.solid(id))
+  const obs = obstacles(cards)
+  input.routes?.begin(cards, obs)
   const turns = new Map<
     string,
     { turn: -1 | 0 | 1; depth: number; extent: number }
@@ -382,9 +396,12 @@ export function planEdges(
       .filter((it) => it.line !== "elbow" && (it.a.shared || it.b.shared))
       .map((it) => ({ key: `~${it.key}`, a: it.a, b: it.b })),
   ])
-  const routes: ElbowRoute[] = cables.map((c) =>
-    elbowBase(c, obs, pins.get(`${c.key}:a`), pins.get(`${c.key}:b`))
-  )
+  const routes: ElbowRoute[] = cables.map((c) => {
+    const [pa, pb] = [pins.get(`${c.key}:a`), pins.get(`${c.key}:b`)]
+    return input.routes
+      ? input.routes.route(c, obs, pa, pb)
+      : elbowBase(c, obs, pa, pb)
+  })
   elbows.forEach((it, j) => {
     const pts = routes[j].pts
     if (it.nubA)
@@ -457,11 +474,13 @@ export function planEdges(
       if (!text) continue
       const ws = [end === "a" ? it.wa : it.wb]
       const nub = end === "a" ? it.nubA : it.nubB
+      const line = lineOf(route, end === "b")
       asks.push({
         key: `${it.key}${end}`,
         cable: it.key,
         ws,
         walk: walker(route, end === "b"),
+        ...(line ? { line } : {}),
         from: LABEL.LEAD,
         // A nub's name keeps to its run; a Simple line's finds its own.
         until: nub
@@ -549,11 +568,13 @@ export function planEdges(
       const ws = end === "a" ? it.wia : it.wib
       const port = ports.get(`${it.key}${end}`)
       const from = port ? port.reach + LABEL.LEAD : LABEL.LEAD
+      const line = lineOf(route, end === "b")
       addrAsks.push({
         key: `${it.key}${end}`,
         cable: it.key,
         ws,
         walk: walker(route, end === "b"),
+        ...(line ? { line } : {}),
         from,
         until: reach(route, from, ws, labelledAt(it, end === "a" ? "b" : "a")),
       })

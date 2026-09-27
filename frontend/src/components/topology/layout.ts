@@ -3,6 +3,7 @@ import type { Edge, Node } from "@xyflow/react"
 
 import { statusPillReserve } from "./card-metrics"
 import type { HasStatusPill } from "./card-metrics"
+import { Grid } from "./diagram/spatial"
 
 // Lay nodes out left-to-right with dagre and write positions back. Node
 // sizes come from the caller (a stencil card is a header + one row per
@@ -37,6 +38,60 @@ export interface NodeSizing {
   /** The least gap between ranks (px): room for what a view draws at both
    * ends of a cable crossing it - the Diagram's port names. */
   rankGap?: number
+  /** Reuse the ranks dagre found for the same graph before (`dagreRanks`):
+   * ranking ignores node sizes, so a layout re-run for new sizes - or
+   * another mode of the same map - skips it. */
+  reuseRanks?: boolean
+  /** Route the cables round the cards (`LayoutResult.waypoints`); a view
+   * that routes its own lines skips it. Default true. */
+  waypoints?: boolean
+}
+
+/** Ranks dagre found, by graph: its nodes and edges in the order given,
+ * with their weights and lengths. A few graphs are kept. */
+const dagreRanks = new Map<string, Map<string, number>>()
+const RANK_GRAPHS = 8
+
+type DagreGraph = Parameters<typeof dagre.layout>[0]
+
+function rankKey(g: DagreGraph): string {
+  const edges = g
+    .edges()
+    .map((e: { v: string; w: string }) => {
+      const l = g.edge(e) as { weight?: number; minlen?: number }
+      return `${e.v}\u0001${e.w}\u0001${l.weight}\u0001${l.minlen}`
+    })
+    .join("\u0002")
+  return `${g.nodes().join("\u0001")}\u0003${edges}`
+}
+
+/** Lay `g` out, ranking it only when its graph was not ranked before.
+ * The ranks read back are dagre's own (network simplex), so replaying them
+ * gives the layout the ranking would. */
+function layoutReusingRanks(g: DagreGraph): void {
+  const key = rankKey(g)
+  const known = dagreRanks.get(key)
+  if (known) {
+    const low = Math.min(...known.values())
+    // The nesting root dagre adds sits a rank above every node.
+    g.graph().ranker = ((lg: DagreGraph) => {
+      for (const v of lg.nodes())
+        (lg.node(v) as { rank?: number }).rank = known.get(v) ?? low - 1
+    }) as unknown as "network-simplex"
+    dagre.layout(g)
+    dagreRanks.delete(key)
+    dagreRanks.set(key, known)
+    return
+  }
+  dagre.layout(g)
+  const ranks = new Map<string, number>()
+  for (const v of g.nodes()) {
+    const r = (g.node(v) as { rank?: number }).rank
+    if (typeof r === "number") ranks.set(v, r)
+  }
+  dagreRanks.set(key, ranks)
+  while (dagreRanks.size > RANK_GRAPHS)
+    dagreRanks.delete(dagreRanks.keys().next().value!)
 }
 
 export interface LayoutResult {
@@ -1089,13 +1144,18 @@ function segSlice(
   const dy = b[1] - a[1]
   let t0 = 0
   let t1 = 1
-  const sides: [number, number][] = [
-    [-dx, a[0] - (r.x - pad)],
-    [dx, r.x + r.w + pad - a[0]],
-    [-dy, a[1] - (r.y - pad)],
-    [dy, r.y + r.h + pad - a[1]],
-  ]
-  for (const [p, q] of sides) {
+  // The four sides in turn, without building them (this runs for every
+  // card against every cable).
+  for (let i = 0; i < 4; i++) {
+    const p = i === 0 ? -dx : i === 1 ? dx : i === 2 ? -dy : dy
+    const q =
+      i === 0
+        ? a[0] - (r.x - pad)
+        : i === 1
+          ? r.x + r.w + pad - a[0]
+          : i === 2
+            ? a[1] - (r.y - pad)
+            : r.y + r.h + pad - a[1]
     if (p === 0) {
       if (q < 0) return null
       continue
@@ -1131,23 +1191,34 @@ export function nudgeOffEdges(
     const r = rectOf(n)
     return r ? [r.x + r.w / 2, r.y + r.h / 2] : null
   }
-  // The straight line each cable would draw, endpoint centres.
+  // The straight line each cable would draw, endpoint centres - filed by
+  // the cells they pass through, so a card looks only at the lines near it.
   const segs: { s: string; t: string; a: [number, number]; b: [number, number] }[] = []
+  let filed = new Grid<number>(256)
   const segsFor = () => {
     segs.length = 0
+    filed = new Grid<number>(256)
     for (const e of edges) {
       const s = byId.get(e.source)
       const t = byId.get(e.target)
       if (!s || !t) continue
       const a = centre(s)
       const b = centre(t)
-      if (a && b) segs.push({ s: e.source, t: e.target, a, b })
+      if (!a || !b) continue
+      const at = segs.length
+      filed.addSegment({ x: a[0], y: a[1] }, { x: b[0], y: b[1] }, 2, at)
+      segs.push({ s: e.source, t: e.target, a, b })
     }
   }
+  /** The lines that may pass within 2px of `r`. */
+  const nearSegs = (r: NRect) =>
+    filed
+      .near({ x: r.x - 2, y: r.y - 2, w: r.w + 4, h: r.h + 4 })
+      .map((i) => segs[i])
   /** Cables crossing card `id` that don't terminate on it. */
   const crossings = (id: string, r: NRect) => {
     let n = 0
-    for (const sg of segs) {
+    for (const sg of nearSegs(r)) {
       if (sg.s === id || sg.t === id) continue
       if (segSlice(sg.a, sg.b, r, 2)) n++
     }
@@ -1181,7 +1252,7 @@ export function nudgeOffEdges(
       // card must move to clear it. Take the worst over every crossing run.
       let lo = Infinity
       let hi = -Infinity
-      for (const sg of segs) {
+      for (const sg of nearSegs(r)) {
         if (sg.s === n.id || sg.t === n.id) continue
         const sl = segSlice(sg.a, sg.b, r, 2)
         if (!sl) continue
@@ -1381,7 +1452,14 @@ export function layoutNodes(
    * absent, tiers use a uniform gap. */
   mainOffsets?: number[]
 ): LayoutResult {
-  const { sizeOf: sizer, compact, leafGrids = true, rankGap = 0 } = sizing
+  const {
+    sizeOf: sizer,
+    compact,
+    leafGrids = true,
+    rankGap = 0,
+    reuseRanks = false,
+    waypoints = true,
+  } = sizing
   const tbDir = direction === "TB"
   const pinnedIds = positions
     ? new Set(Object.keys(positions))
@@ -1556,7 +1634,8 @@ export function layoutNodes(
     if ((e.data as { peer?: boolean } | undefined)?.peer) continue
     g.setEdge(e.source, e.target, { weight: 1, minlen: 1 })
   }
-  dagre.layout(g)
+  if (reuseRanks) layoutReusingRanks(g)
+  else dagre.layout(g)
   const tb = direction === "TB"
   const sizeOf = (id: string) => g.node(id)
 
@@ -1790,7 +1869,9 @@ export function layoutNodes(
     const clear = nudgeOffEdges(spaced, edges, (n) => sizeOf(n.id), tb, pinnedIds)
     return {
       nodes: clear,
-      waypoints: computeWaypoints(clear, edges, sizeOf, tb),
+      waypoints: waypoints
+        ? computeWaypoints(clear, edges, sizeOf, tb)
+        : new Map(),
     }
   }
 
@@ -1834,12 +1915,14 @@ export function layoutNodes(
     exempt
   )
   const { out, streets } = placeLeafGrids(cleared)
-  const wp = computeWaypoints(
-    out.filter((n) => !clusters.leafSet.has(n.id)),
-    mainEdges,
-    sizeOf,
-    tb
-  )
+  const wp = waypoints
+    ? computeWaypoints(
+        out.filter((n) => !clusters.leafSet.has(n.id)),
+        mainEdges,
+        sizeOf,
+        tb
+      )
+    : new Map<string, [number, number][]>()
   for (const [k, v] of streets) wp.set(k, v)
   return { nodes: out, waypoints: wp }
 }
