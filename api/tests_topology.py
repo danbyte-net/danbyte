@@ -1273,6 +1273,83 @@ class AlwaysOnFieldTests(_Base):
         self.assertEqual(after, before)
 
 
+class CableEndTests(_Base):
+    """Each pair names the cable end (A/B) its two terminations sit on, so a
+    breakout with several ports at both ends can be split by side."""
+
+    def _dev(self, name):
+        dev = Device.objects.create(tenant=self.tenant, name=name)
+        return dev, Interface.objects.create(device=dev, name="e1")
+
+    def _ends(self, g):
+        """{(a_port device, b_port device): (a_end, b_end)} per pair."""
+        name = {n["id"]: n["data"]["name"] for n in g["nodes"]}
+        out = {}
+        for e in g["edges"]:
+            for p in e["data"]["pairs"]:
+                key = (name[e["source"]], name[e["target"]])
+                out[key] = (p["a_end"], p["b_end"])
+        return out
+
+    def test_direct_cable(self):
+        a, ia = self._dev("sw-a")
+        b, ib = self._dev("sw-b")
+        self._cable(ia, ib)
+        ends = self._ends(self._graph())
+        self.assertEqual(len(ends), 1)
+        (src, _), got = next(iter(ends.items()))
+        # Oriented like the pair: the source's end first.
+        self.assertEqual(got, ("A", "B") if src == "sw-a" else ("B", "A"))
+
+    def test_breakout_with_ports_at_both_ends(self):
+        # One cable, x1/x2 on its A end and y1/y2 on its B end: four pairs,
+        # each naming the side of the cable its ports are on.
+        xs = [self._dev(f"x{i}") for i in (1, 2)]
+        ys = [self._dev(f"y{i}") for i in (1, 2)]
+        cab = Cable.objects.create(tenant=self.tenant)
+        for end, devs in (("A", xs), ("B", ys)):
+            for _dev, port in devs:
+                CableTermination.objects.create(cable=cab, end=end, interface=port)
+        ends = self._ends(self._graph())
+        self.assertEqual(len(ends), 4)
+        for (src, tgt), (a_end, b_end) in ends.items():
+            side = {src: a_end, tgt: b_end}
+            for dev_name, end in side.items():
+                self.assertEqual(end, "A" if dev_name.startswith("x") else "B")
+
+    def test_collapsed_run_takes_the_far_side(self):
+        # server:eth0 -c1- panel-a -trunk- panel-b -c3- switch:gi1. The
+        # collapsed edge rides one of the outer cables: the end on it keeps
+        # its own side, the far end beyond the panels takes the other.
+        server, eth0 = self._dev("server")
+        switch, gi1 = self._dev("switch")
+        pa = Device.objects.create(tenant=self.tenant, name="panel-a")
+        pb = Device.objects.create(tenant=self.tenant, name="panel-b")
+        ra = RearPort.objects.create(device=pa, name="rear", positions=12)
+        fa = FrontPort.objects.create(
+            device=pa, name="front1", rear_port=ra, rear_port_position=1
+        )
+        rb = RearPort.objects.create(device=pb, name="rear", positions=12)
+        fb = FrontPort.objects.create(
+            device=pb, name="front1", rear_port=rb, rear_port_position=1
+        )
+        # Both outer cables end B at the panel: eth0 and gi1 are both A ends
+        # of their own cables.
+        self._cable(eth0, fa)
+        self._cable(ra, rb)
+        self._cable(gi1, fb)
+        g = self._graph("collapse_panels=1")
+        self.assertEqual(len(g["edges"]), 1)
+        edge = g["edges"][0]["data"]
+        pair = edge["pairs"][0]
+        own = CableTermination.objects.get(
+            cable_id=edge["cable_id"], interface__in=[eth0, gi1]
+        ).interface
+        self.assertEqual(pair["a_end"] if pair["a_id"] == str(own.id)
+                         else pair["b_end"], "A")
+        self.assertEqual({pair["a_end"], pair["b_end"]}, {"A", "B"})
+
+
 class LagEdgeTests(_Base):
     """Edges name the aggregate each end belongs to; a run's origin names its
     aggregate - what the canvas and the overview fold bundles with."""

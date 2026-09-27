@@ -707,6 +707,7 @@ Always present, at no extra query cost:
 | Node | `device_type_id` | id, or `null` |
 | Cable edge | `status_mini` | as on a node, for the cable's status |
 | Each pair | `a_id`, `a_kind`, `b_id`, `b_kind` | the component at each end |
+| Each pair | `a_end`, `b_end` | `"A"` or `"B"`: the cable end each component sits on |
 
 `is_default` is true when the status is the one new devices (on a node) or
 new cables (on an edge) get by default - its `default_for` list.
@@ -715,6 +716,11 @@ new cables (on an edge) get by default - its `default_for` list.
 `power_outlet`, `aux_port` or `circuit_termination`. Pair ends follow the same
 orientation as `a_port`/`b_port` (the edge's source, then its target); on a
 collapsed edge they are the run's two real endpoints, not the panels between.
+`a_end`/`b_end` say which end of the edge's cable each component is
+terminated on, whatever the orientation - so the pairs of a breakout cable
+with several ports at both ends split into its A side and its B side. A
+collapsed run's far end, beyond the panels, sits on another cable: it takes
+the end the run leaves the edge's cable by, the opposite of the near end.
 
 `GET /api/monitoring/topology/ghosts/?device=<id>` - the device page's LLDP
 mini-graph - returns its nodes in a reduced shape: name, site, `status` and

@@ -603,6 +603,21 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
     # and edge id → [(pair, a_obj, a_kind, b_obj, b_kind)].
     port_objs: dict[str, dict] = {}
     pair_objs: dict[str, list] = {}
+    # cable id → {(termination kind, port id): "A" | "B"}, read off the
+    # terminations the cable queryset prefetched (no queries).
+    cable_ends: dict = {}
+
+    def end_on(cab, kind, port):
+        """The end of ``cab`` a termination sits on, or None when it is not
+        one of the cable's own (a run's far end beyond a panel)."""
+        ends = cable_ends.get(cab.id)
+        if ends is None:
+            ends = cable_ends[cab.id] = {}
+            for t in cab.terminations.all():
+                k, obj = _term_point(t)
+                if obj is not None:
+                    ends[(k, obj.id)] = t.end
+        return ends.get((kind, port.id))
 
     def note_port(dev, port, kind):
         d = port_sets.setdefault(str(dev.id), {})
@@ -658,6 +673,14 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
                 "a": {"id": str(lag_a.id), "name": lag_a.name} if lag_a else None,
                 "b": {"id": str(lag_b.id), "name": lag_b.name} if lag_b else None,
             }
+        # The cable end each termination sits on. A run collapsed through
+        # panels ends on another cable: its far end takes the end the run
+        # leaves this cable by.
+        ends = [end_on(cab, ka, pa), end_on(cab, kb, pb)]
+        for i in (0, 1):
+            if ends[i] is None and ends[1 - i] is not None:
+                ends[i] = "B" if ends[1 - i] == "A" else "A"
+        a_end, b_end = ends if src_is_a else ends[::-1]
         pair = {
             "a": f"{da.name if src_is_a else db.name}:{a_port}",
             "b": f"{db.name if src_is_a else da.name}:{b_port}",
@@ -665,8 +688,10 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
             "b_port": b_port,
             "a_id": str(end_a[0].id),
             "a_kind": end_a[1],
+            "a_end": a_end,
             "b_id": str(end_b[0].id),
             "b_kind": end_b[1],
+            "b_end": b_end,
         }
         e["data"]["pairs"].append(pair)
         if collect is not None:
