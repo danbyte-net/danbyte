@@ -649,6 +649,10 @@ map.
 - **Zones** on this view style: click to fit the box, double-click to
   rename.
 
+On a big map the long lists draw only the rows near where you have
+scrolled, so a 2,400-device sidebar stays light. The browser's find-in-page
+sees only those rows; the sidebar's own search sees them all.
+
 A click on any row flies to the object and selects it, so its inspector
 opens as if you had clicked the card. The eyes on the headers and rows are
 [hiding](#hiding-things-the-eyes). The sidebar is a per-browser preference,

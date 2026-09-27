@@ -28,6 +28,7 @@ import {
   nodeHidden,
 } from "./hidden"
 import type { TopoHidden } from "./hidden"
+import { LazyRows } from "./lazy-rows"
 import { typeColor } from "./topology-canvas"
 import type { Zone } from "./view-positions"
 
@@ -60,6 +61,12 @@ export function readGroupMode(): GroupMode {
 }
 
 type StatusFilter = "down" | "degraded" | "up" | null
+
+// A row's height (px) before it is drawn - see LazyRows: a device or
+// problem row, a site/location row, a link row with its cable's label.
+const ROW_H = 26
+const GROUP_ROW_H = 27.5
+const LINK_ROW_H = 42.5
 
 /** down < degraded < everything else - the sidebar's triage order. */
 function checkRank(check: string | null | undefined): number {
@@ -135,6 +142,8 @@ export function TopologyObjectsSidebar({
     setModeState(m)
   }
   const [editingZone, setEditingZone] = useState<string | null>(null)
+  // The panel the long lists scroll in: they draw only what is near view.
+  const [scroller, setScroller] = useState<HTMLElement | null>(null)
 
   const filter = q.trim().toLowerCase()
   const matchNode = (d: TopoNode["data"]) =>
@@ -263,7 +272,10 @@ export function TopologyObjectsSidebar({
     }`
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3">
+    <aside
+      ref={setScroller}
+      className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3"
+    >
       <div className="mb-2 flex items-center justify-between">
         <p className="text-[11px] font-semibold tracking-wide uppercase">
           On this map
@@ -336,24 +348,29 @@ export function TopologyObjectsSidebar({
           <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Problems
           </p>
-          {problems.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => onPickNode(nodeById.get(p.id)!)}
-              className={cn(
-                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono text-[12px]",
-                selectedDeviceId === p.device_id
-                  ? "bg-muted font-medium"
-                  : "hover:bg-muted/60"
-              )}
-            >
-              <span className="min-w-0 truncate">{p.name}</span>
-              <span className="ml-auto shrink-0">
-                <CheckChip check={p.check} />
-              </span>
-            </button>
-          ))}
+          <LazyRows
+            root={scroller}
+            rows={problems}
+            estimate={ROW_H}
+            row={(p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onPickNode(nodeById.get(p.id)!)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono text-[12px]",
+                  selectedDeviceId === p.device_id
+                    ? "bg-muted font-medium"
+                    : "hover:bg-muted/60"
+                )}
+              >
+                <span className="min-w-0 truncate">{p.name}</span>
+                <span className="ml-auto shrink-0">
+                  <CheckChip check={p.check} />
+                </span>
+              </button>
+            )}
+          />
         </div>
       )}
 
@@ -364,39 +381,44 @@ export function TopologyObjectsSidebar({
               ? "Sites"
               : "Locations"}
           </p>
-          {groupRows.map((n) => {
-            const g = n.data as unknown as TopoGroupData
-            const key = g.kind === "site" ? "sites" : "locations"
-            return (
-              <button
-                key={n.id}
-                type="button"
-                onClick={() => onPickGroup(n)}
-                onDoubleClick={() => onDrillGroup(g)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
-                  !shown(n) && "text-muted-foreground/60",
-                  selectedGroupId === g.group_id
-                    ? "bg-muted font-medium"
-                    : "hover:bg-muted/60"
-                )}
-              >
-                <span className="min-w-0 truncate">{g.name}</span>
-                <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                  <VisibilityToggle
-                    vis={{
-                      shown: shown(n),
-                      onChange: (v) => toggle(key, g.name, v),
-                      what: g.name,
-                    }}
-                  />
-                  <span className="num text-[11px] text-muted-foreground/70">
-                    {g.device_count}
+          <LazyRows
+            root={scroller}
+            rows={groupRows}
+            estimate={GROUP_ROW_H}
+            row={(n) => {
+              const g = n.data as unknown as TopoGroupData
+              const key = g.kind === "site" ? "sites" : "locations"
+              return (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => onPickGroup(n)}
+                  onDoubleClick={() => onDrillGroup(g)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
+                    !shown(n) && "text-muted-foreground/60",
+                    selectedGroupId === g.group_id
+                      ? "bg-muted font-medium"
+                      : "hover:bg-muted/60"
+                  )}
+                >
+                  <span className="min-w-0 truncate">{g.name}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    <VisibilityToggle
+                      vis={{
+                        shown: shown(n),
+                        onChange: (v) => toggle(key, g.name, v),
+                        what: g.name,
+                      }}
+                    />
+                    <span className="num text-[11px] text-muted-foreground/70">
+                      {g.device_count}
+                    </span>
                   </span>
-                </span>
-              </button>
-            )
-          })}
+                </button>
+              )
+            }}
+          />
         </div>
       )}
 
@@ -450,46 +472,51 @@ export function TopologyObjectsSidebar({
                 </>
               }
             >
-              {g.rows.map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => onPickNode(d.node)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left font-mono text-[12px]",
-                    !shown(d.node) && "text-muted-foreground/60",
-                    selectedDeviceId === d.device_id
-                      ? "bg-muted font-medium"
-                      : "hover:bg-muted/60"
-                  )}
-                >
-                  <span className="min-w-0 truncate">{d.name}</span>
-                  {mode !== "role" && d.data.role && (
-                    <span className="flex min-w-0 items-center gap-1 font-sans text-[10px] text-muted-foreground/70">
-                      <span
-                        className="size-2 shrink-0 rounded-sm"
-                        style={{ background: d.data.role.color || "#71717a" }}
+              <LazyRows
+                root={scroller}
+                rows={g.rows}
+                estimate={ROW_H}
+                row={(d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => onPickNode(d.node)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left font-mono text-[12px]",
+                      !shown(d.node) && "text-muted-foreground/60",
+                      selectedDeviceId === d.device_id
+                        ? "bg-muted font-medium"
+                        : "hover:bg-muted/60"
+                    )}
+                  >
+                    <span className="min-w-0 truncate">{d.name}</span>
+                    {mode !== "role" && d.data.role && (
+                      <span className="flex min-w-0 items-center gap-1 font-sans text-[10px] text-muted-foreground/70">
+                        <span
+                          className="size-2 shrink-0 rounded-sm"
+                          style={{ background: d.data.role.color || "#71717a" }}
+                        />
+                        <span className="truncate">{d.data.role.name}</span>
+                      </span>
+                    )}
+                    {filter && d.data.device_type && (
+                      <span className="min-w-0 truncate font-sans text-[10px] text-muted-foreground/70">
+                        {d.data.device_type}
+                      </span>
+                    )}
+                    <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                      <VisibilityToggle
+                        vis={{
+                          shown: !hidden.devices.includes(d.id),
+                          onChange: (v) => toggle("devices", d.id, v),
+                          what: d.name,
+                        }}
                       />
-                      <span className="truncate">{d.data.role.name}</span>
+                      <CheckChip check={d.check} />
                     </span>
-                  )}
-                  {filter && d.data.device_type && (
-                    <span className="min-w-0 truncate font-sans text-[10px] text-muted-foreground/70">
-                      {d.data.device_type}
-                    </span>
-                  )}
-                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                    <VisibilityToggle
-                      vis={{
-                        shown: !hidden.devices.includes(d.id),
-                        onChange: (v) => toggle("devices", d.id, v),
-                        what: d.name,
-                      }}
-                    />
-                    <CheckChip check={d.check} />
-                  </span>
-                </button>
-              ))}
+                  </button>
+                )}
+              />
             </FoldableGroup>
           ))}
         </div>
@@ -521,31 +548,40 @@ export function TopologyObjectsSidebar({
                 what: `${fam} links`,
               }}
             >
-              {rows.map((e) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => onPickEdge(e)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[12px]",
-                    edgeDim(e) && "text-muted-foreground/60",
-                    selectedEdgeId === e.id
-                      ? "bg-muted font-medium"
-                      : "hover:bg-muted/60"
-                  )}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-mono">
-                      {edgeEnds(e)}
-                    </span>
-                    {(e.data?.cable_label || e.data?.cable_numid) && (
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {e.data.cable_label || `#${e.data.cable_numid}`}
-                      </span>
+              <LazyRows
+                root={scroller}
+                rows={rows}
+                estimate={(e) =>
+                  e.data?.cable_label || e.data?.cable_numid
+                    ? LINK_ROW_H
+                    : ROW_H
+                }
+                row={(e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => onPickEdge(e)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[12px]",
+                      edgeDim(e) && "text-muted-foreground/60",
+                      selectedEdgeId === e.id
+                        ? "bg-muted font-medium"
+                        : "hover:bg-muted/60"
                     )}
-                  </span>
-                </button>
-              ))}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-mono">
+                        {edgeEnds(e)}
+                      </span>
+                      {(e.data?.cable_label || e.data?.cable_numid) && (
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {e.data.cable_label || `#${e.data.cable_numid}`}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                )}
+              />
             </FoldableGroup>
           ))}
         </div>
