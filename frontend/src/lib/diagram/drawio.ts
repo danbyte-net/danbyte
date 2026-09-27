@@ -729,10 +729,13 @@ function page(
       if (k.role === "mid") continue
       const at = labelAt(poly, blockCentre(k))
       const rotation = k.rotate ? ((k.rotate % 360) + 360) % 360 : 0
+      // draw.io paints the label background over the glyphs only; a
+      // non-breaking space each side keeps the line's gap round the text
+      // (labelPadding would pad it vertically too, over a lane 12px off).
       out.push(
         `<mxCell${attrs({
           id: take(`${id}-${k.role}${k.index ?? ""}`),
-          value: h(k.lines[0]?.text ?? ""),
+          value: `&nbsp;${h(k.lines[0]?.text ?? "")}&nbsp;`,
           style: style(["edgeLabel"], {
             html: 1,
             align: "center",

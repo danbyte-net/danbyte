@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react"
 
 import type { TopologyGraph, TopologyLinkOverride } from "@/lib/api"
+import { endTextWidth } from "@/lib/diagram/geometry"
 import { measureText } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
@@ -33,7 +34,13 @@ import type { ArcAxis, ArcSide } from "./arcs"
 import { cardContent } from "./card-fields"
 import { cardLayout, JUNCTION, NUB } from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
-import { detectFanouts, detectMeshes, fanChip } from "./fanout"
+import {
+  detectFanouts,
+  detectMeshes,
+  fanChip,
+  portsLabel,
+  sortPorts,
+} from "./fanout"
 import type { Fan, Mesh } from "./fanout"
 import { CLEAR, LANE, obstacles, RouteCache, SHARED_STUB } from "./lanes"
 import type { Obstacles } from "./lanes"
@@ -74,9 +81,9 @@ import type {
 //      along their cables, middle chips off the cards, end addresses.
 //
 // Cyclical links are settled before anchoring: which draw as arcs (the
-// link's own line always does; the view's default only between level
-// cards whose straight line would cross one) and to which side, since an
-// arc's ends leave through the side it bulges to.
+// link's own line always does; the view's default only where its straight
+// line would cross a card and an arc gets clear of it) and to which side,
+// since an arc's ends leave through the side it bulges to.
 //
 // A breakout cable (fanout.ts) is drawn as one trunk from its shared port
 // to a junction node, then one leg to each far port; one with several
@@ -499,7 +506,7 @@ function fanParts(
           const mine = f.legs.filter((l) => l.node === node)
           return {
             node,
-            ports: mine.map((l) => l.port),
+            ports: sortPorts(mine.map((l) => l.port)),
             pairs: mine.flatMap((l) => l.pairs ?? []),
           }
         })
@@ -545,7 +552,11 @@ function fanParts(
       animated: raw.marked,
       data: {
         ...common(pairKey(keyOf(f.trunk.node), keyOf(l.node)), lineTo(l.node)),
-        fan: { role: "leg", junction: f.id },
+        fan: {
+          role: "leg",
+          junction: f.id,
+          ...(l.ports.length > 1 ? { ports: l.ports } : {}),
+        },
         labels: foldLabels({}, sets.legs[i], tokens),
       },
       ...look,
@@ -565,7 +576,7 @@ function fanParts(
         id: e.id,
         source: e.source,
         target: e.target,
-        cables: [{ b: legs[i].ports.join(", ") }],
+        cables: [{ b: portsLabel(legs[i].ports) }],
         ...(mode === "simple" ? { simple: true } : {}),
         junction: { a: [0, 0] },
       })
@@ -575,7 +586,7 @@ function fanParts(
     ? measure(chip[0], LABEL.MID_SIZE, 600) + 2 * LABEL.PAD_X
     : 0
   // The runs the trunk's and the legs' end labels take out of their nubs.
-  const width = (t: string) => measure(t, LABEL.END_SIZE, 400)
+  const width = (t: string) => endTextWidth(t, measure)
   const ports = tokens.includes("port")
   const trunkRun = endRun([
     ...(ports ? [width(f.trunk.port)] : []),
@@ -672,17 +683,16 @@ function meshParts(
     b: [],
     cableId: m.cable,
   })
-  // In Simple each card's ports fold into one leg.
+  // In Simple each card's ports fold into one leg, named by its first.
   const legsOf = (terms: readonly Mesh["a"][number][]) =>
     mode === "simple"
-      ? [...new Set(terms.map((t) => t.node))].map((node) => ({
-          node,
-          port: terms
-            .filter((t) => t.node === node)
-            .map((t) => t.port)
-            .join(", "),
-        }))
-      : terms.map((t) => ({ node: t.node, port: t.port }))
+      ? [...new Set(terms.map((t) => t.node))].map((node) => {
+          const ports = sortPorts(
+            terms.filter((t) => t.node === node).map((t) => t.port)
+          )
+          return { node, port: portsLabel(ports), ports }
+        })
+      : terms.map((t) => ({ node: t.node, port: t.port, ports: [t.port] }))
   const node = (id: string): Node => ({
     id,
     type: "junction",
@@ -736,7 +746,11 @@ function meshParts(
         animated: raw.marked,
         data: {
           ...common(key, opts.links?.[key]?.line ?? opts.line),
-          fan: { role: "leg", junction },
+          fan: {
+            role: "leg",
+            junction,
+            ...(l.ports.length > 1 ? { ports: l.ports } : {}),
+          },
           labels: noPorts,
         },
         ...look,
@@ -773,7 +787,7 @@ function meshParts(
               ? endRun([
                   Math.max(
                     ...[...m.a, ...m.b].map((t) =>
-                      measure(t.port, LABEL.END_SIZE, 400)
+                      endTextWidth(t.port, measure)
                     )
                   ),
                 ])
@@ -1420,7 +1434,7 @@ export function buildDiagram(
   const degree = new Map<string, number>()
   {
     const ports = tokens.includes("port")
-    const width = (t: string) => measure(t, LABEL.END_SIZE, 400)
+    const width = (t: string) => endTextWidth(t, measure)
     const byId = new Map(edges.map((e) => [e.id, e]))
     for (const l of links) {
       const d = byId.get(l.id)?.data
@@ -1443,12 +1457,10 @@ export function buildDiagram(
     }
   }
   const lanes = Math.min(8, Math.max(2, ...degree.values()))
-  // An N:M breakout's two junctions sit between its ends' ranks, each
-  // with its legs' room out to its cards.
-  const meshGap = Math.max(
-    0,
-    ...meshed.map((p) => 2 * p.model.reach[mode] + LANE)
-  )
+  // An N:M breakout's two junctions sit between its ends' ranks at the
+  // thirds of the gap, each with its legs' room out to its cards and the
+  // trunk as long again between them.
+  const meshGap = Math.max(0, ...meshed.map((p) => 3 * p.model.reach[mode]))
   const rankGap = Math.max(run ? 2 * portStub(run) + LANE * lanes : 0, meshGap)
   const all = new Map<string, { w: number; h: number }>([...fixed, ...base])
   const layout = (boxes: Map<string, { w: number; h: number }>): Laid => {

@@ -2949,6 +2949,10 @@ export interface TopoEdge {
       a_kind?: string
       b_id?: string
       b_kind?: string
+      /** The cable end (A/B) each side is terminated on, oriented like the
+       * rest of the pair; null where it cannot be told. */
+      a_end?: "A" | "B" | null
+      b_end?: "A" | "B" | null
       /** `include=link_ips`: each end's addresses with length (at most 8). */
       a_ips?: string[]
       b_ips?: string[]

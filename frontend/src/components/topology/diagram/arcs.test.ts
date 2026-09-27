@@ -130,6 +130,43 @@ describe("solveArc", () => {
     expect(Math.min(...pts.map((p) => p.x))).toBeLessThan(-60 - ARC.CLEAR)
   })
 
+  it("leaves a nub square to its card, straight for its lead, then arcs", () => {
+    const cards = row(4)
+    const res = solveArc(
+      { ...ask(cards, "c0", "c3"), lead: [40, 0] },
+      obstacles(cards)
+    )
+    expect(res.clear).toBe(true)
+    const [a, l1, l2] = res.pts
+    // Two points straight above the end: the run goes up, square.
+    expect(l1.x).toBe(a.x)
+    expect(l2.x).toBe(a.x)
+    expect(a.y - (l1.y + l2.y) / 2).toBeCloseTo(40, 6)
+    // The curve drawn through them is straight for those 40 px.
+    const pts = curve(res.pts, 64)
+    for (const p of pts.filter((q) => a.y - q.y <= 40 && q.x <= a.x + 1))
+      expect(p.x).toBeCloseTo(a.x, 6)
+    // A lead of 0 is none; a short one is `LEAD` at least.
+    const b = solveArc(
+      { ...ask(cards, "c0", "c3"), lead: [0, 4] },
+      obstacles(cards)
+    )
+    expect(b.pts).toHaveLength(6)
+    const end = b.pts.at(-1)!
+    const [m2, m1] = b.pts.slice(-3, -1)
+    expect([m1.x, m2.x]).toEqual([end.x, end.x])
+    expect(end.y - (m1.y + m2.y) / 2).toBeCloseTo(ARC.LEAD, 6)
+    // The arc still clears the cards between, and never dips under its
+    // leads' tops.
+    for (const r of [res, b]) {
+      const c = curve(r.pts, 128)
+      for (const id of ["c1", "c2"])
+        for (const p of c)
+          expect(inside(p, cards.get(id)!, ARC.CLEAR - 0.5)).toBe(false)
+    }
+    expect(res.h).toBeGreaterThan(40 + ARC.BEND)
+  })
+
   it("says so when even the highest arc allowed is not clear", () => {
     const cards = row(3, [["wall", { x: 150, y: -5000, w: 100, h: 5020 }]])
     const res = solveArc(ask(cards, "c0", "c2"), obstacles(cards))
@@ -174,7 +211,7 @@ describe("arcFor", () => {
   const obs = obstacles(cards)
   const r = (id: string) => cards.get(id)!
 
-  it("arcs the view's default only between level cards with one between", () => {
+  it("arcs the view's default only where the line would cross a card", () => {
     expect(
       arcFor(r("c0"), r("c1"), { always: false, obs, own: ["c0", "c1"] })
     ).toBeNull()
@@ -184,11 +221,58 @@ describe("arcFor", () => {
       axis: "x",
       s: -1,
     })
-    // Not level: a card a row down.
+    // A card a row down, nothing in the way.
     const low = { x: 340, y: 200, w: 120, h: 40 }
     expect(
       arcFor(r("c0"), low, { always: false, obs, own: ["c0", "low"] })
     ).toBeNull()
+  })
+
+  it("arcs the view's default round a card between ends not level", () => {
+    // Two cards far apart, one a little lower, a third between them on
+    // the line: an auto layout's columns seldom leave ends level.
+    const three = new Map<string, Rect>([
+      ["l", { x: -60, y: -20, w: 120, h: 40 }],
+      ["m", { x: 390, y: 10, w: 120, h: 40 }],
+      ["r", { x: 940, y: 35, w: 120, h: 40 }],
+    ])
+    const o = obstacles(three)
+    const got = arcFor(three.get("l")!, three.get("r")!, {
+      always: false,
+      obs: o,
+      own: ["l", "r"],
+    })
+    expect(got).not.toBeNull()
+    expect(got!.axis).toBe("x")
+    // And the arc drawn clears the card between.
+    const side = got!.s < 0 ? "T" : "B"
+    const at = (rc: Rect) => ({
+      x: rc.x + rc.w / 2,
+      y: side === "T" ? rc.y : rc.y + rc.h,
+    })
+    const res = solveArc(
+      {
+        key: "l-r",
+        a: at(three.get("l")!),
+        b: at(three.get("r")!),
+        axis: "x",
+        s: got!.s,
+        own: ["l", "r"],
+      },
+      o
+    )
+    expect(res.clear).toBe(true)
+    for (const p of curve(res.pts, 128))
+      expect(inside(p, three.get("m")!, ARC.CLEAR - 0.5)).toBe(false)
+    // Where no arc gets clear, the default stays Bendy; the link's own
+    // Cyclical line arcs all the same.
+    const walled = new Map(three)
+    walled.set("wall", { x: 400, y: -5000, w: 100, h: 10100 })
+    const ow = obstacles(walled)
+    const own = ["l", "r"]
+    const [l, rr] = [walled.get("l")!, walled.get("r")!]
+    expect(arcFor(l, rr, { always: false, obs: ow, own })).toBeNull()
+    expect(arcFor(l, rr, { always: true, obs: ow, own })).not.toBeNull()
   })
 
   it("always arcs a link's own cyclical line, to its saved side", () => {
@@ -309,6 +393,20 @@ describe("Cyclical on the Diagram", () => {
           expect(a.k === "side" && a.side).toBe("T")
         expect(d.arc!.flip).toBe(-1)
         expect(d.arc!.h).toBeGreaterThan(0)
+        // In Detailed both ends leave their nubs square, straight up for a
+        // lead before the curve: two points above each end.
+        if (mode === "detailed") {
+          const pts = d.plan![0].pts
+          expect(pts).toHaveLength(8)
+          for (const [end, l1, l2] of [
+            pts.slice(0, 3),
+            pts.slice(-3).reverse(),
+          ]) {
+            expect([l1.x, l2.x]).toEqual([end.x, end.x])
+            expect(end.y - l2.y).toBeGreaterThan(end.y - l1.y)
+            expect(end.y - l1.y).toBeGreaterThan(0)
+          }
+        } else expect(d.plan![0].pts).toHaveLength(4)
       }
       const cards = new Map(
         b.nodes.map((n) => [

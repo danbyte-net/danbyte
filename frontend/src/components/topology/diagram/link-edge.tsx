@@ -1,8 +1,14 @@
 import { memo } from "react"
+import type { CSSProperties } from "react"
 import { BaseEdge, EdgeLabelRenderer, useInternalNode } from "@xyflow/react"
 import type { Edge, EdgeProps, InternalNode } from "@xyflow/react"
 
-import { PORT_H, inlinePlaces, inlineSpan } from "@/lib/diagram/geometry"
+import {
+  PORT_H,
+  endTextWidth,
+  inlinePlaces,
+  inlineSpan,
+} from "@/lib/diagram/geometry"
 import type { PortPlace } from "@/lib/diagram/geometry"
 import { baselineAt, measureText } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
@@ -42,11 +48,20 @@ function boxOf(n: InternalNode | undefined): Rect | null {
 
 const r1 = (v: number) => Math.round(v * 10) / 10
 
-const width = (text: string) => measureText(text, LABEL.END_SIZE, 400)
+const width = (text: string) => endTextWidth(text, measureText)
 
 /** An end label on its line: the gap the line breaks for, then the text,
- * turned to read upright. */
-function EndLabel({ place, text }: { place: PortPlace; text: string }) {
+ * turned to read upright. A faded link fades the text only: the gap stays
+ * solid, so the line still breaks round it. */
+function EndLabel({
+  place,
+  text,
+  fade,
+}: {
+  place: PortPlace
+  text: string
+  fade?: CSSProperties
+}) {
   const x = r1(place.x)
   const y = r1(place.y)
   const w = inlineSpan(width(text))
@@ -66,6 +81,7 @@ function EndLabel({ place, text }: { place: PortPlace; text: string }) {
         x={x}
         y={r1(baselineAt(y - PORT_H / 2, LABEL.END_SIZE, PORT_H))}
         textAnchor="middle"
+        style={fade}
       >
         {text}
       </text>
@@ -113,7 +129,7 @@ export const LinkEdge = memo(function LinkEdge({
           ]
         }
         return {
-          route: routeThrough(data.line, p.pts, leaves(p.pts)),
+          route: routeThrough(p.line ?? data.line, p.pts, leaves(p.pts)),
           a: side("a"),
           b: side("b"),
         }
@@ -168,9 +184,9 @@ export const LinkEdge = memo(function LinkEdge({
       ))}
       {cables.map((c, i) =>
         c.a.length || c.b.length ? (
-          <g key={`l${i}`} className="topo-endlabel" style={fade}>
+          <g key={`l${i}`} className="topo-endlabel">
             {[...c.a, ...c.b].map((l, k) => (
-              <EndLabel key={k} place={l.place} text={l.text} />
+              <EndLabel key={k} place={l.place} text={l.text} fade={fade} />
             ))}
           </g>
         ) : null

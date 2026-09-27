@@ -707,7 +707,7 @@ export function toDocument(
     pairs.forEach(([a0, b0], i) => {
       const p = plan?.[i]
       const route = p
-        ? routeThrough(line, p.pts, leaves(p.pts))
+        ? routeThrough(p.line ?? line, p.pts, leaves(p.pts))
         : linkRoute(line, a0, b0)
       const first = route.pts[0]
       const last = route.pts[route.pts.length - 1]

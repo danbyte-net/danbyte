@@ -1,5 +1,6 @@
 import type { Edge } from "@xyflow/react"
 
+import { endTextWidth } from "@/lib/diagram/geometry"
 import type { Measure } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
 import { linkEnds, nubKey } from "./anchors"
@@ -129,6 +130,9 @@ interface Item {
   nubA: boolean
   nubB: boolean
   fanLeg: boolean
+  /** A bendy breakout leg no curve gets clear of the cards: routed as an
+   * elbow instead. */
+  rerouted?: true
 }
 
 const dirKey = (e: End) => `${Math.round(e.dir[0])},${Math.round(e.dir[1])}`
@@ -157,7 +161,7 @@ function items(input: PlanInput): Item[] {
         ports && aa?.k === "side" && (nubA || !detailed) ? aa.port : undefined
       const tb =
         ports && ba?.k === "side" && (nubB || !detailed) ? ba.port : undefined
-      const width = (text: string) => input.measure(text, LABEL.END_SIZE, 400)
+      const width = (text: string) => endTextWidth(text, input.measure)
       const wa = ta ? width(ta) : 0
       const wb = tb ? width(tb) : 0
       // Addresses only at a card: a breakout's junction end has none.
@@ -229,11 +233,22 @@ function items(input: PlanInput): Item[] {
 
 const reversed = (pts: readonly Pt[]) => [...pts].reverse()
 
+/** Where a breakout leg may bend, as fractions of its run along the
+ * trunk: `first`, then nearer the junction, then nearer the port. */
+function fanBends(first: number): number[] {
+  const out = [first]
+  for (let b = first - 0.1; b >= 0.149; b -= 0.1) out.push(b)
+  for (let b = first + 0.1; b <= 0.851; b += 0.1) out.push(b)
+  return out
+}
+
 /** A bendy cable's control points: out along each end's normal, at least
  * far enough that a port name runs along the curve's straight start, and
  * pulled in until the control polygon keeps clear of the cards it does
- * not connect. A breakout leg curves like the cable page's fan-out. */
-function bendyPts(it: Item, obs: ReturnType<typeof obstacles>): Pt[] {
+ * not connect. A breakout leg curves like the cable page's fan-out,
+ * bending nearer the junction or the port where that keeps it clear;
+ * null for one no curve gets clear (it goes as an elbow). */
+function bendyPts(it: Item, obs: ReturnType<typeof obstacles>): Pt[] | null {
   const A = { x: it.a.x, y: it.a.y }
   const B = { x: it.b.x, y: it.b.y }
   const own = [it.a.node, it.b.node]
@@ -242,10 +257,11 @@ function bendyPts(it: Item, obs: ReturnType<typeof obstacles>): Pt[] {
     const along = (B.x - A.x) * it.a.dir[0] + (B.y - A.y) * it.a.dir[1]
     const named = it.runB > 0
     const need = named ? 2 * it.b.stub : 0
-    const bend =
+    const first =
       along > 0 ? Math.max(0.2, Math.min(FAN_BEND, 1 - need / along)) : FAN_BEND
-    const fan = fanControls(it.a, it.b, bend)
-    if (fan) {
+    for (const bend of fanBends(first)) {
+      const fan = fanControls(it.a, it.b, bend)
+      if (!fan) break
       // Legs converging on one card run in side by side. A point on the
       // line from the last control point to the port (`x` px out) makes
       // the curved rule end in a truly straight run, half-way back to that
@@ -253,11 +269,17 @@ function bendyPts(it: Item, obs: ReturnType<typeof obstacles>): Pt[] {
       const [, p2] = fan
       const last = Math.hypot(B.x - p2.x, B.y - p2.y)
       const x = Math.max(1, 2 * it.b.stub - last)
-      if (named && x < last - 1) {
-        const s = { x: B.x + it.b.dir[0] * x, y: B.y + it.b.dir[1] * x }
-        return [A, ...fan, s, B]
-      }
-      return [A, ...fan, B]
+      const pts =
+        named && x < last - 1
+          ? [
+              A,
+              ...fan,
+              { x: B.x + it.b.dir[0] * x, y: B.y + it.b.dir[1] * x },
+              B,
+            ]
+          : [A, ...fan, B]
+      // The control polygon is the curve's hull: clear, so is the curve.
+      if (pathClear(obs, pts, own)) return pts
     }
   }
   const k = bendyReach(A, B)
@@ -284,6 +306,7 @@ function bendyPts(it: Item, obs: ReturnType<typeof obstacles>): Pt[] {
     ]
     if (pathClear(obs, pts, own)) return withLeads(pts, it.runA, it.runB)
   }
+  if (it.fanLeg) return null
   return withLeads(
     [A, ...bendyControls(it.a, it.b, BENDY.MIN, BENDY.MIN), B],
     it.runA,
@@ -380,6 +403,19 @@ export function planEdges(
     { turn: -1 | 0 | 1; depth: number; extent: number }
   >()
 
+  // Bendy breakout legs first: one no curve gets clear of the cards goes
+  // round them as an elbow, in the lanes with the others.
+  const bent = new Map<string, Pt[]>()
+  for (const it of all) {
+    if (!it.fanLeg || it.line !== "bendy") continue
+    const pts = bendyPts(it, obs)
+    if (pts) bent.set(it.key, pts)
+    else {
+      it.line = "elbow"
+      it.rerouted = true
+    }
+  }
+
   // Elbows: each alone, then into lanes.
   const elbows = all.filter((it) => it.line === "elbow")
   const cables: ElbowCable[] = elbows.map((it) => ({
@@ -432,6 +468,11 @@ export function planEdges(
               axis: it.arc.axis,
               s: it.arc.s,
               own: [it.a.node, it.b.node],
+              // Out of a nub square to the card, as far as its labels.
+              lead: [
+                it.nubA ? Math.max(STUB, it.runA + 2) : 0,
+                it.nubB ? Math.max(STUB, it.runB + 2) : 0,
+              ],
             },
           ]
         : []
@@ -446,9 +487,9 @@ export function planEdges(
     ptsOf.set(
       it.key,
       arc
-        ? withLeads(arc.pts, it.runA, it.runB)
+        ? arc.pts
         : it.line === "bendy" || it.line === "cyclical"
-          ? bendyPts(it, obs)
+          ? (bent.get(it.key) ?? bendyPts(it, obs) ?? [A, B])
           : [A, B]
     )
   }
@@ -601,6 +642,7 @@ export function planEdges(
     plans.set(id, {
       cables: list.map((it) => ({
         pts: ptsOf.get(it.key)!,
+        ...(it.rerouted ? { line: "elbow" as const } : {}),
         ...(it.ta ? { a: ports.get(`${it.key}a`)?.at[0] ?? null } : {}),
         ...(it.tb ? { b: ports.get(`${it.key}b`)?.at[0] ?? null } : {}),
         ...(it.ia || it.ib

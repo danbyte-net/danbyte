@@ -680,6 +680,9 @@
 .topo-endlabel text {
   font-size: 9px;
   fill: var(--muted-foreground);
+  /* Unhinted, so the text is as wide as it was measured at every zoom and
+     the break round it stays even. */
+  text-rendering: geometricPrecision;
 }
 .topo-endlabel rect {
   fill: var(--background);
@@ -696,6 +699,11 @@
 }
 [data-lod="2"] .topo-cardline {
   visibility: hidden;
+}
+/* A hovered or selected link is raised over the others; its chip rises
+   with it, or the raised line would strike through it. */
+.topo-midlabel[data-hot] {
+  z-index: 1001;
 }
 
 /* Cable connector dot. Sits fully outside its port cell so the circle is

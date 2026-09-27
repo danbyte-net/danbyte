@@ -1,5 +1,6 @@
 import type { Edge, Node } from "@xyflow/react"
 
+import type { Measure } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
 import { inlineBox } from "../diagram/label-placement"
 import { routeThrough, leaves } from "../diagram/link-geometry"
@@ -46,7 +47,7 @@ export function boxOf(n: Node): Rect {
 export function drawn(
   nodes: readonly Node[],
   edges: readonly Edge[],
-  measure: (t: string, s: number, w?: 400 | 500 | 600 | 700) => number
+  measure: Measure
 ): Drawn[] {
   const kinds = new Map(nodes.map((n) => [n.id, n.type]))
   const out: Drawn[] = []
@@ -54,9 +55,10 @@ export function drawn(
     const d = e.data as DiagramEdgeData | undefined
     if (e.type !== "link" || !d?.plan) continue
     d.plan.forEach((p, i) => {
-      const route = routeThrough(d.line, p.pts, leaves(p.pts))
+      const line = p.line ?? d.line
+      const route = routeThrough(line, p.pts, leaves(p.pts))
       const pts =
-        d.line === "bendy" || d.line === "cyclical"
+        line === "bendy" || line === "cyclical"
           ? Array.from({ length: 33 }, (_, k) => {
               const q = route.at(k / 32)
               return { x: q.x, y: q.y }
@@ -69,7 +71,7 @@ export function drawn(
           labels.push({
             end,
             text,
-            box: inlineBox(place, measure(text, LABEL.END_SIZE, 400)),
+            box: inlineBox(place, measure(text, LABEL.END_SIZE, 400, true)),
             along: Math.hypot(place.x - start.x, place.y - start.y),
             ...(ip ? { ip } : {}),
           })
@@ -86,7 +88,7 @@ export function drawn(
       out.push({
         edge: e.id,
         cable: i,
-        line: d.line,
+        line,
         source: e.source,
         target: e.target,
         pts,

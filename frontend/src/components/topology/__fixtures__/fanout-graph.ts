@@ -144,3 +144,40 @@ export const fanoutGraph: TopologyGraph = {
     ),
   ],
 }
+
+export const MESH_CABLE = "c0ffee00-fa00-4000-8000-0000000000aa"
+
+/** The same map with fw-01's two cables to core-c replaced by one N:M
+ * breakout: MPO-1, fw-01 ethernet1/1 and 1/2 on its A end, core-c Eth1
+ * and Eth2 on its B end, each A port paired with each B port - sent, as
+ * the backend orients it, from core-c. */
+export const meshGraph: TopologyGraph = {
+  nodes: fanoutGraph.nodes,
+  edges: [
+    ...fanoutGraph.edges.filter(
+      (e) => ![e.source, e.target].includes(`dev:${FAN_DEV.coreC}`)
+    ),
+    {
+      id: `e:${MESH_CABLE}:${FAN_DEV.coreC}:${FAN_DEV.fw}`,
+      source: `dev:${FAN_DEV.coreC}`,
+      target: `dev:${FAN_DEV.fw}`,
+      type: "cable",
+      data: {
+        cable_id: MESH_CABLE,
+        cable_label: "MPO-1",
+        status: "connected",
+        pairs: (["1", "2"] as const).flatMap((c) =>
+          (["1", "2"] as const).map((f) => ({
+            a: `core-c:Eth${c}`,
+            b: `fw-01:ethernet1/${f}`,
+            a_port: `Eth${c}`,
+            b_port: `ethernet1/${f}`,
+            a_end: "B" as const,
+            b_end: "A" as const,
+          }))
+        ),
+        lag: { a: null, b: null },
+      },
+    },
+  ],
+}

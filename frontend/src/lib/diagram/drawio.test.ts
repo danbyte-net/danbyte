@@ -433,6 +433,9 @@ describe("toDrawio", () => {
     // On the line, over the page's colour.
     const cell = page.get("cab-5-a")!
     expect(cell.style.labelBackgroundColor).toBe("#ffffff")
+    // draw.io paints that colour over the glyphs only: a non-breaking
+    // space each side keeps the gap in the line round the text.
+    expect(cell.value).toBe(`&nbsp;${a.lines[0].text}&nbsp;`)
   })
 
   it("lands every label where the screen puts it", () => {

@@ -109,10 +109,7 @@ export interface Route {
  * on - `a_end`/`b_end`, oriented like the rest of the pair. */
 export type CablePair = NonNullable<
   NonNullable<TopoEdge["data"]>["pairs"]
->[number] & {
-  a_end?: "A" | "B" | null
-  b_end?: "A" | "B" | null
-}
+>[number]
 
 /** One cable's end addresses (`link-labels.ts`): the full address each end
  * has in the link subnets the two ends share, IPv4 first. */
@@ -138,6 +135,10 @@ export interface CablePlan {
   /** Terminals included: an elbow's corners, a curve's control points, a
    * straight line's ends. */
   pts: Pt[]
+  /** The line this cable is drawn as where it is not its link's: a bendy
+   * breakout leg no curve gets clear of the cards goes round them as an
+   * elbow. */
+  line?: LineType
   /** The port name on the line at each end; null = no room, left off. */
   a?: PortPlace | null
   b?: PortPlace | null
@@ -152,6 +153,9 @@ export interface FanPart {
   role: "trunk" | "leg"
   /** The junction node the part ends (trunk) or starts (leg) at. */
   junction: string
+  /** A Simple leg folding several ports: all of them, in natural order.
+   * Its label names the first and counts the rest. */
+  ports?: string[]
 }
 
 /**

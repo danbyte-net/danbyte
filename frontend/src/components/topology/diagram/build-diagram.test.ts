@@ -10,6 +10,12 @@ import {
   fabricGraph,
   groupedGraph,
 } from "../__fixtures__/fabric-graph"
+import { meshGraph } from "../__fixtures__/fanout-graph"
+import {
+  boxOf as cardBox,
+  drawn,
+  throughCards,
+} from "../__fixtures__/route-checks"
 import { linkEnds } from "./anchors"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
@@ -122,7 +128,9 @@ function edgeLines(e: Edge, byId: Map<string, Node>): string {
   const routes = plan
     ? plan.map((p) =>
         [
-          `  path ${routeThrough(d.line, p.pts, leaves(p.pts)).d}`,
+          `  path ${routeThrough(p.line ?? d.line, p.pts, leaves(p.pts)).d}${
+            p.line ? ` (${p.line})` : ""
+          }`,
           ...(p.a !== undefined || p.b !== undefined
             ? [`    ports a ${place(p.a)} b ${place(p.b)}`]
             : []),
@@ -187,6 +195,25 @@ describe("buildDiagram golden", () => {
           direction: "TB",
         })
       })
+
+  // An N:M breakout beside a 1:N one: its junctions at the thirds of the
+  // gap, and no route (bendy legs included) through a card.
+  for (const [mode, line] of [
+    ["detailed", "elbow"],
+    ["detailed", "bendy"],
+    ["simple", "elbow"],
+  ] as const)
+    it(`N:M breakout · ${mode} · ${line}`, async () => {
+      const o: DiagramOptions = { mode, line, colorMode: "cable" }
+      await expectGolden(`mesh-${mode}-${line}`, meshGraph, o)
+      const b = buildDiagram(meshGraph, { ...o, measure: approxMeasure })
+      const cards = new Map(
+        b.nodes.filter((n) => n.type === "card").map((n) => [n.id, cardBox(n)])
+      )
+      expect(
+        throughCards(drawn(b.nodes, b.edges, approxMeasure), cards)
+      ).toEqual([])
+    })
 
   it("grouped by site draws the Simple picture", async () => {
     await expectGolden("grouped", groupedGraph, {

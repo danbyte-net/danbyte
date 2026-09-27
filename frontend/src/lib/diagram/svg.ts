@@ -254,6 +254,8 @@ function labelSvg(b: LabelBlock, page: string): string {
         "font-weight": line.weight === 400 ? undefined : line.weight,
         "font-style": line.italic ? "italic" : undefined,
         fill: b.chip ? PRINT.body : PRINT.muted,
+        // Unhinted, as wide as measured: the gap round it stays even.
+        "text-rendering": b.chip ? undefined : "geometricPrecision",
       })
     )
   })

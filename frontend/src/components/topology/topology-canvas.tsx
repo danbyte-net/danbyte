@@ -223,6 +223,7 @@ function hoverLabel(e: Edge): string | undefined {
         raw?: TopoEdge["data"]
         cables?: BundleMember[]
         group?: GroupEdgeInfo
+        fan?: { ports?: string[] }
       }
     | undefined
   if (!d) return undefined
@@ -234,7 +235,9 @@ function hoverLabel(e: Edge): string | undefined {
     if (r.cable_type) bits.push(r.cable_type)
     if (r.speed) bits.push(r.speed)
     const pair = r.pairs?.[0]
-    if (pair)
+    // A breakout leg folding several ports (Simple) names them all.
+    if (d.fan?.ports?.length) bits.push(d.fan.ports.join(", "))
+    else if (pair)
       bits.push(
         `${pair.a} ↔ ${pair.b}${
           (r.pairs?.length ?? 0) > 1 ? `  ×${r.pairs!.length}` : ""

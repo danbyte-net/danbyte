@@ -7,10 +7,10 @@ import { fmt } from "@/lib/diagram/geometry"
 import { approxMeasure } from "@/lib/diagram/measure"
 import { toSvg } from "@/lib/diagram/svg"
 import { FAN_CABLE, FAN_DEV, fanoutGraph } from "../__fixtures__/fanout-graph"
-import { boxOf } from "../__fixtures__/route-checks"
+import { boxOf, drawn, throughCards } from "../__fixtures__/route-checks"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
-import { detectFanouts, detectMeshes } from "./fanout"
+import { detectFanouts, detectMeshes, portsLabel, sortPorts } from "./fanout"
 import { toDocument } from "./to-document"
 import type { DiagramCardData, DiagramEdgeData, DiagramMode } from "./types"
 
@@ -227,7 +227,24 @@ describe("an N:M breakout on the Diagram", () => {
         expect(
           nubPorts(b, FW).filter((p) => p === "1" || p === "2")
         ).toHaveLength(2)
+      else
+        // Each card's folded leg is named by its first port, both ends.
+        for (const l of legs) {
+          const end = data(l).b[0]
+          expect(end.k === "side" && end.port).toBe("1 +1")
+          expect(data(l).fan?.ports).toEqual(["1", "2"])
+        }
     })
+})
+
+describe("sortPorts and portsLabel", () => {
+  it("orders ports naturally and names a folded leg by its first", () => {
+    const ports = sortPorts(["Ethernet1/6", "Ethernet1/10", "Ethernet1/3"])
+    expect(ports).toEqual(["Ethernet1/3", "Ethernet1/6", "Ethernet1/10"])
+    expect(portsLabel(ports)).toBe("Ethernet1/3 +2")
+    expect(portsLabel(["Gi1/0/3"])).toBe("Gi1/0/3")
+    expect(portsLabel([])).toBe("")
+  })
 })
 
 describe("a breakout on the Diagram", () => {
@@ -290,11 +307,51 @@ describe("a breakout on the Diagram", () => {
         [J, ASW],
       ].sort()
     )
+    // A leg folding three ports is named by the first in natural order;
+    // the tooltip lists them all.
+    const toCore = fan.find((e) => e.target === CORE_B)!
+    expect(data(toCore).fan?.ports).toEqual([
+      "Ethernet1/3",
+      "Ethernet1/6",
+      "Ethernet1/7",
+    ])
+    const end = data(toCore).b[0]
+    expect(end.k === "side" && end.port).toBe("Ethernet1/3 +2")
     // Two separate cables between fw-01 and core-c are still a "2x".
     const pair = b.edges.find(
       (e) => [e.source, e.target].sort().join() === [FW, CORE_C].sort().join()
     )!
     expect(data(pair).labels.mid).toEqual(["2x"])
+  })
+
+  it("Bendy: a leg no curve gets clear of the cards goes round as an elbow", () => {
+    // core-b squarely between the junction and asw-01: every fan curve
+    // to asw-01 would run through it.
+    const positions: Record<string, [number, number]> = {
+      [FW]: [0, 0],
+      [CORE_B]: [320, 0],
+      [ASW]: [700, 0],
+      [CORE_C]: [0, 260],
+    }
+    const b = build("detailed", { line: "bendy", positions })
+    const legs = b.edges.filter(
+      (e) => data(e).cableId === FAN_CABLE && e.target === ASW
+    )
+    expect(legs).toHaveLength(2)
+    const plans = legs.flatMap((e) => data(e).plan ?? [])
+    expect(plans.map((p) => p.line)).toEqual(["elbow", "elbow"])
+    const cards = new Map(
+      b.nodes.filter((n) => n.type === "card").map((n) => [n.id, boxOf(n)])
+    )
+    expect(throughCards(drawn(b.nodes, b.edges, approxMeasure), cards)).toEqual(
+      []
+    )
+    // The legs to core-b, clear as curves, stay curves.
+    const toCore = b.edges.filter(
+      (e) => data(e).cableId === FAN_CABLE && e.target === CORE_B
+    )
+    for (const p of toCore.flatMap((e) => data(e).plan ?? []))
+      expect(p.line).toBeUndefined()
   })
 
   it("re-places its junction when the trunk's card moves", () => {

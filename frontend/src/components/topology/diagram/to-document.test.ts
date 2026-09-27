@@ -473,7 +473,7 @@ describe("link labels in the exports", () => {
         expect(c.getAttribute("style")).toContain(
           "labelBackgroundColor=#ffffff"
         )
-        expect(c.getAttribute("value")).toMatch(/^10\.9\./)
+        expect(c.getAttribute("value")).toMatch(/^&nbsp;10\.9\.[\d.]+&nbsp;$/)
       }
     })
 

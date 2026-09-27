@@ -218,6 +218,16 @@ export function uprightAngle(angle: number): number {
   return r >= 80 ? r - 180 : r
 }
 
+/** An end label's text width: exact (unhinted), as the canvas draws it
+ * (`text-rendering: geometricPrecision`) and the exports set it, so the
+ * gap cut for it is even on both sides at every zoom. */
+export function endTextWidth(
+  text: string,
+  measure: Measure = measureText
+): number {
+  return measure(text, LABEL.END_SIZE, 400, true)
+}
+
 /** How much of its line an end label `w` px wide takes: the text, and the
  * gap on either side of it. */
 export function inlineSpan(w: number): number {
@@ -369,7 +379,7 @@ export function linkLabels(
       ),
     ]
     if (!pieces.length) continue
-    const ws = pieces.map((p) => measure(p.label.text, LABEL.END_SIZE, 400))
+    const ws = pieces.map((p) => endTextWidth(p.label.text, measure))
     const auto = pieces.some((p) => !p.label.at)
       ? inlinePlaces((d) => along(poly, d, end === "b"), ws)
       : []

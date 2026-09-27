@@ -1,0 +1,97 @@
+# buildDiagram(graph, {"mode":"detailed","line":"bendy","colorMode":"cable"})
+
+nodes 7
+dev:10000000-0000-4000-8000-000000000001  card @44,33 88x66
+  fill #f59e0b ink #0a0a0a
+  title "fw-01" top 6
+  nubs R17:ethernet1/4 R33:ethernet1/2 R49:ethernet1/1
+dev:20000000-0000-4000-8000-000000000002  card @424.1,165 88x66
+  fill #e11d48 ink #fff
+  title "core-b" top 6
+  nubs R33:Ethernet1/1 L17:Ethernet1/3 L33:Ethernet1/6 L49:Ethernet1/7
+dev:30000000-0000-4000-8000-000000000003  card @804.3,95 88x66
+  fill #2563eb ink #fff
+  title "asw-01" top 6
+  nubs L17:Gi1/0/3 L33:Gi1/0/4 L49:Te1/1/1
+dev:40000000-0000-4000-8000-000000000004  card @424.1,33 88x50
+  fill #e11d48 ink #fff
+  title "core-c" top 6
+  nubs L17:Eth1 L33:Eth2
+fan:c0ffee00-fa00-4000-8000-000000000001  junction @237.5,17 6x6
+fan:c0ffee00-fa00-4000-8000-0000000000aa  junction @188,33 6x6
+fan:c0ffee00-fa00-4000-8000-0000000000aa:b  junction @280.1,33 6x6
+
+edges 12
+e:@c13:20000000-0000-4000-8000-000000000002:30000000-0000-4000-8000-000000000003  link cable bendy
+  style {"strokeWidth":1.25}
+  a R33:Ethernet1/1
+  b L49:Te1/1/1
+  path M 474.15,165 Q 480.8,165 534.53,165 Q 588.27,165 614.22,138 Q 640.18,111 696.74,111 Q 753.3,111 754.3,111
+    ports a 506.3,165@0 b 731,111@0
+fan:c0ffee00-fa00-4000-8000-000000000001:t  link cable straight mid ["TEST · cat5e"]
+  style {"strokeWidth":1.25}
+  a R17:ethernet1/4
+  b junction(-1,0)
+  mid at 0.74
+  path M 94,17 L 237.49,17
+    ports a 127.2,17@0 b 
+fan:c0ffee00-fa00-4000-8000-000000000001:l0  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(1,0)
+  b L33:Ethernet1/6
+  path M 237.49,17 Q 264.83,17 264.83,91 Q 264.83,165 305.84,165 Q 346.86,165 374.15,165
+    ports a  b 341,165@0
+fan:c0ffee00-fa00-4000-8000-000000000001:l1  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(1,0)
+  b L17:Ethernet1/3
+  path M 237.49,17 Q 264.83,17 264.83,83 Q 264.83,149 305.87,149 Q 346.91,149 374.15,149
+    ports a  b 341,149@0
+fan:c0ffee00-fa00-4000-8000-000000000001:l2  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(1,0)
+  b L49:Ethernet1/7
+  path M 237.49,17 Q 264.83,17 264.83,99 Q 264.83,181 306.33,181 Q 347.84,181 374.15,181
+    ports a  b 341.2,181@0
+fan:c0ffee00-fa00-4000-8000-000000000001:l3  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(1,0)
+  b L17:Gi1/0/3
+  path M 237.49,17 Q 366.7,17 366.7,48 Q 366.7,79 560,79 Q 753.3,79 754.3,79
+    ports a  b 730.2,79@0
+fan:c0ffee00-fa00-4000-8000-000000000001:l4  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(1,0)
+  b L33:Gi1/0/4
+  path M 237.49,17 Q 366.7,17 366.7,56 Q 366.7,95 560,95 Q 753.3,95 754.3,95
+    ports a  b 730,95@0
+fan:c0ffee00-fa00-4000-8000-0000000000aa:t  link cable straight mid ["MPO-1"]
+  style {"strokeWidth":1.25}
+  a junction(1,0)
+  b junction(-1,0)
+  mid at 0.5
+  path M 188.05,33 L 280.1,33
+fan:c0ffee00-fa00-4000-8000-0000000000aa:a0  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(-1,0)
+  b R49:ethernet1/1
+  path M 188.05,33 Q 169.24,33 169.24,41 Q 169.24,49 160.22,49 Q 151.2,49 94,49
+    ports a  b 126.1,49@0
+fan:c0ffee00-fa00-4000-8000-0000000000aa:a1  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(-1,0)
+  b R33:ethernet1/2
+  path M 188.05,33 Q 169.24,33 169.24,33 Q 169.24,33 162.05,33 Q 154.86,33 94,33
+    ports a  b 127,33@0
+fan:c0ffee00-fa00-4000-8000-0000000000aa:b0  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(1,0)
+  b L17:Eth1
+  path M 280.1,33 Q 299.48,33 299.48,29 Q 299.48,25 336.31,25 Q 373.15,25 374.15,25
+    ports a  b off
+fan:c0ffee00-fa00-4000-8000-0000000000aa:b1  link cable bendy
+  style {"strokeWidth":1.25}
+  a junction(1,0)
+  b L33:Eth2
+  path M 280.1,33 Q 298.91,33 298.91,37 Q 298.91,41 334.98,41 Q 371.06,41 374.15,41
+    ports a  b 339.6,41@0.1

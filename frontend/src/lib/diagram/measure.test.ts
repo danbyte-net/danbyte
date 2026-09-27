@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import { approxMeasure, baselineAt, fit, measureText } from "./measure"
+import {
+  EXACT_SIZE,
+  approxMeasure,
+  baselineAt,
+  canvasWidth,
+  fit,
+  measureText,
+} from "./measure"
 
 // Card sizes come from these widths, so they must be deterministic where
 // there is no canvas (tests, SSR) and never clip Inter.
@@ -59,5 +66,42 @@ describe("baselineAt", () => {
     expect(b).toBeGreaterThan(11)
     expect(b).toBeLessThan(13.5)
     expect(baselineAt(10, 12, 16)).toBeCloseTo(b + 10)
+  })
+})
+
+describe("canvasWidth", () => {
+  /** A canvas that hints like Chromium's: whole-pixel widths at the size
+   * the font is set at. */
+  function hinting() {
+    const ctx = {
+      font: "",
+      measureText(t: string) {
+        const size = Number(/ (\d+)px /.exec(ctx.font)![1])
+        return { width: Math.round(approxMeasure(t, size)) }
+      },
+    }
+    return ctx
+  }
+
+  it("measures as HTML sets it at the size itself", () => {
+    const c = hinting()
+    expect(canvasWidth(c, "Ethernet1/2", 9, 400, false)).toBe(
+      Math.round(approxMeasure("Ethernet1/2", 9))
+    )
+    expect(c.font).toContain(" 9px ")
+  })
+
+  it("measures an exact width at the reference size, scaled", () => {
+    const c = hinting()
+    const w = canvasWidth(c, "Ethernet1/2", 9, 400, true)
+    expect(c.font).toContain(` ${EXACT_SIZE}px `)
+    expect(w).toBeCloseTo(approxMeasure("Ethernet1/2", 9), 1)
+    expect(Number.isInteger(w)).toBe(false)
+  })
+
+  it("is exact or not alike without a canvas", () => {
+    expect(measureText("10.9.5.1", 9, 400, true)).toBe(
+      measureText("10.9.5.1", 9, 400)
+    )
   })
 })

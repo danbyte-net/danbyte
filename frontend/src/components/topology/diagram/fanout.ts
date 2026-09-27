@@ -223,7 +223,7 @@ export function detectMeshes(
     const pairs: { src: string; dst: string; p: Pair }[] = []
     let ends = true
     for (const e of list)
-      for (const p0 of (e.data?.pairs ?? []) as Pair[]) {
+      for (const p0 of e.data?.pairs ?? []) {
         const known = (x?: string | null) => x === "A" || x === "B"
         if (!known(p0.a_end) || !known(p0.b_end) || p0.a_end === p0.b_end) {
           ends = false
@@ -283,4 +283,19 @@ export function detectMeshes(
 export function fanChip(raw: NonNullable<TopoEdge["data"]>): string[] {
   const text = [raw.cable_label, raw.cable_type].filter(Boolean).join(" · ")
   return text ? [text] : []
+}
+
+/** Port names in natural order (Ethernet1/3 before Ethernet1/10). */
+export function sortPorts(ports: readonly string[]): string[] {
+  return [...ports].sort((a, b) =>
+    a.localeCompare(b, "en", { numeric: true, sensitivity: "base" })
+  )
+}
+
+/** The name a Simple leg carries for the ports it folds: the first, and
+ * how many more ("Ethernet1/3 +2") - the full list is in the tooltip and
+ * the cable's panel. `ports` in the order to show. */
+export function portsLabel(ports: readonly string[]): string {
+  if (ports.length <= 1) return ports[0] ?? ""
+  return `${ports[0]} +${ports.length - 1}`
 }

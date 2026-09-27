@@ -90,13 +90,19 @@ something.
   (`TEST · cat5e`; on a trunk too short for it, the longest leg carries
   it). Hovering or clicking any part lights up and opens the whole cable.
   With Bendy lines, legs converging on one card end in a straight run long
-  enough for their port names, one name to each gap between them.
-  In Simple the legs to one card fold into one. A `2x` count only ever
-  counts separate cables between two devices (and a LAG's members) - never
-  the legs of one cable. A cable with several ports at **both** ends (an
-  MPO trunk broken out at each end) is drawn the same way from both: each
-  end's ports meet at a split point of their own, and one trunk joins the
-  two - its ends are told apart by the cable end (A/B) each port is on.
+  enough for their port names, one name to each gap between them; a leg
+  bends nearer its split point or its port to keep clear of the cards it
+  passes, and one no curve gets clear of goes round them as an elbow.
+  In Simple the legs to one card fold into one, named by its first port in
+  natural order and a count of the rest (`Ethernet1/3 +2`); hovering it
+  lists them all, and the cable's panel has every pair. A `2x` count only
+  ever counts separate cables between two devices (and a LAG's members) -
+  never the legs of one cable. A cable with several ports at **both** ends
+  (an MPO trunk broken out at each end) is drawn the same way from both:
+  each end's ports meet at a split point of their own, a third of the way
+  across the gap from its cards (the layout leaves the room), and one
+  trunk joins the two - its ends are told apart by the cable end (A/B) each
+  port is on.
   From a server that does not send the ends it stays one line per port
   pair.
 - **Middle chips** (a bundle's count, a trunk's name) sit at the middle of
@@ -216,14 +222,17 @@ the faint dotted overlay from card centre to card centre.
   curve runs straight out of it far enough for them.
 - **Cyclical** - an arc that loops round the cards between its two ends
   instead of crossing them, both ends leaving through the side it bulges to
-  (the top of a row, say). It rises until it keeps 16 px clear of every card
-  within its span; a longer arc goes round a shorter one it holds, at least
-  12 px outside it, and the arcs leaving one side of a card leave in that
-  nesting order. As the view's line it arcs only the links between cards of
-  one row (or column) whose straight line would cross a card, and draws the
-  rest Bendy. It goes above (or left of) the cards unless the other side
-  gives the lower arc. The arc is a draw.io curve, so every export draws the
-  same one.
+  (the top of a row, say). In Detailed each end first runs straight out of
+  its nub, square to the card, far enough for its labels, and then turns
+  into the arc. It rises until it keeps 16 px clear of every card within its
+  span; a longer arc goes round a shorter one it holds, at least 12 px
+  outside it, and the arcs leaving one side of a card leave in that nesting
+  order. As the view's line it arcs the links whose straight line would
+  cross a card - cards of one row with others between, or a link that skips
+  over a card on its way, even between cards that are not quite level - and
+  draws the rest Bendy, as it does a link no arc gets clear for. It goes
+  above (or left of) the cards unless the other side gives the lower arc.
+  The arc is a draw.io curve, so every export draws the same one.
 
 **One link's own line** - click a cable (or a bundle) and its panel has a
 **Line** row: **Default** follows the view, the four line types pin this
@@ -257,7 +266,10 @@ and of the link (`labels=`).
   (both, stacked, on a dual-stack link; under a bundle's count).
 
 The gaps are the canvas's own colour, in the light and the dark theme, and
-the page's white in every export. Which labels exist:
+the page's white in every export. The gap is cut to the text's exact width,
+so it stays even on both sides at every zoom; on a faded line (while another
+is hovered) only the text fades, and the break stays. A hovered or selected
+link's chip sits over its raised line. Which labels exist:
 
 - Only a subnet both ends of a cable sit in counts, and only a link-sized
   one: /24 or smaller for IPv4, /64 or smaller for IPv6. A larger shared
@@ -817,8 +829,8 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   adds the interface nubs; each line leaves its own nub.
 - **Labels:** the chip (subnet, count) is the line's own label. Each port
   name and address is a label cell on its line, turned along it, on a
-  white background so the line breaks for it - move the line and they
-  follow.
+  white background with a space either side, so the line breaks for it
+  with a small gap round the text - move the line and they follow.
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
   with each corner as a waypoint, so they stay square when you move a card.
   Bendy lines and Cyclical arcs are draw.io curves through the same points

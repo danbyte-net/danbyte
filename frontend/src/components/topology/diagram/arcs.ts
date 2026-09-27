@@ -1,5 +1,6 @@
 import { chooseSides, sideLength } from "./anchors"
 import type { Obstacles } from "./lanes"
+import { STUB } from "./link-geometry"
 import { segHitsRect } from "./spatial"
 import type { Pt, Rect, Side } from "./types"
 
@@ -13,6 +14,12 @@ import type { Pt, Rect, Side } from "./types"
 // the span in from each end (mxGraph's paintCurvedLine: `M A, Q P1
 // mid(P1,P2), Q P2 B`), so the canvas, the SVG and the .drawio file draw
 // one curve. The curve touches the apex line at its middle.
+//
+// An end at a Detailed nub first runs straight out of it, square to the
+// card, for `lead` px (at least `LEAD`, more where its port name and
+// addresses sit), as every other line leaves a nub: two more points on
+// the nub's normal, `[A, L1, L2, P1, P2, M2, M1, B]`, make the curved
+// rule draw that run straight and then turn smoothly into the arc.
 //
 // The apex line is raised until `SAMPLES` points along the curve clear
 // every card within its span by `CLEAR` px. Arcs are solved shortest
@@ -34,6 +41,11 @@ export const ARC = {
   /** The most: `CAP_SPAN` of the span plus `CAP` px. */
   CAP_SPAN: 0.9,
   CAP: 200,
+  /** The least straight run out of a nub. */
+  LEAD: STUB,
+  /** The two lead points sit this far either side of the run's end: the
+   * bend into the arc. */
+  BEND: 8,
 } as const
 
 /** The axis an arc runs along: `x` for cards side by side (it bulges up
@@ -150,6 +162,9 @@ export interface ArcAsk {
   s: ArcSide
   /** The nodes the arc joins: never obstacles to it. */
   own: readonly string[]
+  /** The straight run out of each end before the curve (0: none), as a
+   * nub's; at least `LEAD` when set. */
+  lead?: readonly [number, number]
 }
 
 export interface ArcResult {
@@ -172,44 +187,78 @@ interface Placed {
   mid: UV[]
 }
 
-/** The curve sampled at `SAMPLES` points between its ends, each as `u`
+/** The curve sampled between its ends (not at them), each point as `u`
  * and `v = base + c * V` for an apex line at `V`: `u` does not move with
- * the apex, and `v` moves with it linearly. */
+ * the apex, and `v` moves with it linearly. A lead's points have `c` 0:
+ * no apex moves them. */
 interface Samples {
   u: Float64Array
   base: Float64Array
   c: Float64Array
 }
 
-function samples(A: UV, B: UV): Samples {
-  const n = ARC.SAMPLES - 1
-  const half = ARC.SAMPLES / 2
-  const u = new Float64Array(n)
-  const base = new Float64Array(n)
-  const c = new Float64Array(n)
+/** A point of the arc's chain: at `u`, and `v + c * V` across. */
+interface ChainPt {
+  u: number
+  v: number
+  c: number
+}
+
+/** The points the curved rule runs through: the ends, each end's lead
+ * (two points on its normal, `BEND` either side of the run's end), and
+ * the two control points on the apex line. */
+function chain(A: UV, B: UV, s: ArcSide, lead: readonly [number, number]) {
   const d = B.u - A.u
-  const p1 = A.u + ARC.INSET * d
-  const p2 = A.u + (1 - ARC.INSET) * d
-  const m = (p1 + p2) / 2
-  for (let k = 1; k <= n; k++) {
-    const i = k - 1
-    if (k <= half) {
-      // A → mid(P1, P2), control P1; P1 and the mid sit on the apex line.
-      const t = k / half
-      const w = (1 - t) * (1 - t)
-      u[i] = w * A.u + 2 * t * (1 - t) * p1 + t * t * m
-      base[i] = w * A.v
-      c[i] = 1 - w
-    } else {
-      // mid(P1, P2) → B, control P2.
-      const t = (k - half) / half
-      const w = t * t
-      u[i] = (1 - t) * (1 - t) * m + 2 * t * (1 - t) * p2 + w * B.u
-      base[i] = w * B.v
-      c[i] = 1 - w
-    }
+  const on = (p: UV, k: number): ChainPt => ({ u: p.u, v: p.v + s * k, c: 0 })
+  const [la, lb] = lead
+  return [
+    { u: A.u, v: A.v, c: 0 },
+    ...(la > 0 ? [on(A, la - ARC.BEND), on(A, la + ARC.BEND)] : []),
+    { u: A.u + ARC.INSET * d, v: 0, c: 1 },
+    { u: A.u + (1 - ARC.INSET) * d, v: 0, c: 1 },
+    ...(lb > 0 ? [on(B, lb + ARC.BEND), on(B, lb - ARC.BEND)] : []),
+    { u: B.u, v: B.v, c: 0 },
+  ]
+}
+
+function samples(pts: readonly ChainPt[]): Samples {
+  const mid = (p: ChainPt, q: ChainPt): ChainPt => ({
+    u: (p.u + q.u) / 2,
+    v: (p.v + q.v) / 2,
+    c: (p.c + q.c) / 2,
+  })
+  // mxGraph's pieces: Q P1 mid(P1,P2), ..., Q Pn T.
+  const pieces: { from: ChainPt; c: ChainPt; to: ChainPt }[] = []
+  let from = pts[0]
+  for (let i = 1; i < pts.length - 1; i++) {
+    const to = i < pts.length - 2 ? mid(pts[i], pts[i + 1]) : pts.at(-1)!
+    pieces.push({ from, c: pts[i], to })
+    from = to
   }
-  return { u, base, c }
+  // A straight lead needs its ends only; the curve takes the rest.
+  const straight = (p: (typeof pieces)[number]) =>
+    p.from.c === 0 && p.c.c === 0 && p.to.c === 0
+  const curved = pieces.filter((p) => !straight(p)).length || 1
+  const per = Math.ceil((ARC.SAMPLES - 2 * (pieces.length - curved)) / curved)
+  const out: ChainPt[] = []
+  pieces.forEach((p, i) => {
+    const n = straight(p) ? 2 : per
+    const last = i === pieces.length - 1
+    for (let k = 1; k <= (last ? n - 1 : n); k++) {
+      const t = k / n
+      const [w0, w1, w2] = [(1 - t) * (1 - t), 2 * t * (1 - t), t * t]
+      out.push({
+        u: w0 * p.from.u + w1 * p.c.u + w2 * p.to.u,
+        v: w0 * p.from.v + w1 * p.c.v + w2 * p.to.v,
+        c: w0 * p.from.c + w1 * p.c.c + w2 * p.to.c,
+      })
+    }
+  })
+  return {
+    u: Float64Array.from(out, (p) => p.u),
+    base: Float64Array.from(out, (p) => p.v),
+    c: Float64Array.from(out, (p) => p.c),
+  }
 }
 
 /** The curve's `v` at `u` (linear between samples) as `[base, c]`, or null
@@ -277,12 +326,25 @@ export function solveArc(
   const u1 = Math.max(A.u, B.u)
   const span = u1 - u0
   const base = s < 0 ? Math.min(A.v, B.v) : Math.max(A.v, B.v)
-  const S = samples(A, B)
+  const lead = (k: number | undefined) =>
+    k && k > 0 ? Math.max(ARC.LEAD, k) : 0
+  const leads = [lead(ask.lead?.[0]), lead(ask.lead?.[1])] as const
+  const pts = chain(A, B, s, leads)
+  const S = samples(pts)
   const holds = inner.filter((p) => nests(p, axis, s, u0, u1, base))
-  let V = base + s * (ARC.MIN + ARC.RISE * span)
-  const cap = base + s * (ARC.CAP_SPAN * span + ARC.CAP)
-  let clear = true
   const beyond = (x: number, y: number) => s * (x - y) > 0
+  // The apex clears the leads too, so the arc never dips back to them.
+  let V = base + s * (ARC.MIN + ARC.RISE * span)
+  for (const [p, k] of [
+    [A, leads[0]],
+    [B, leads[1]],
+  ] as const) {
+    const top = p.v + s * (k + ARC.BEND + ARC.MIN / 2)
+    if (k > 0 && beyond(top, V)) V = top
+  }
+  let cap = base + s * (ARC.CAP_SPAN * span + ARC.CAP)
+  if (beyond(V, cap)) cap = V
+  let clear = true
   for (let round = 0; round < 48; round++) {
     // The cards the curve can reach at this height.
     const lo = Math.min(base, V) - ARC.CLEAR
@@ -301,6 +363,11 @@ export function solveArc(
         if (u <= b.u0 || u >= b.u1) continue
         const v = S.base[k] + S.c[k] * V
         if (v <= b.v0 || v >= b.v1) continue
+        // A lead into a card: no apex moves it clear.
+        if (S.c[k] <= 1e-6) {
+          clear = false
+          continue
+        }
         const want = (face - S.base[k]) / S.c[k]
         if (beyond(want, need)) need = want
       }
@@ -322,13 +389,18 @@ export function solveArc(
       break
     }
   }
-  const [p1, p2] = arcControls(ask.a, ask.b, axis, V)
   const mid: UV[] = []
   const n = S.u.length
   for (let k = Math.floor(n * 0.2); k <= Math.ceil(n * 0.8); k++)
     mid.push({ u: S.u[k], v: S.base[k] + S.c[k] * V })
   return {
-    pts: [ask.a, p1, p2, ask.b],
+    pts: pts.map((p, i) =>
+      i === 0
+        ? ask.a
+        : i === pts.length - 1
+          ? ask.b
+          : fromUV(p.u, p.v + p.c * V, axis)
+    ),
     h: s * (V - base),
     clear,
     placed: { axis, s, u0, u1, base, mid },
@@ -372,15 +444,20 @@ export function solveArcs(
   return out
 }
 
+/** What an arc that is not clear of the cards counts as high by. */
+const UNCLEAR = 1e6
+
 /**
  * Should a cyclical link between cards `a` and `b` draw as an arc, and
  * which way? `always` (the link's own line) says yes wherever it runs;
- * the view's default only for cards level on one row or column whose
- * straight line would cross a card. The side is `flip` when given, else
- * the one with the lower arc - above (or left) on a tie. A link's own arc
- * between cards on no one row or column may go round the other way too -
- * past their sides rather than over their tops - where only that way is
- * clear of the cards between.
+ * the view's default wherever its straight line would cross a card - the
+ * cards of one row with others between, or a link skipping over a card
+ * on its way - when an arc along the axis the cards are further apart on
+ * gets clear of them (else it stays Bendy). The side is `flip` when
+ * given, else the one with the lower arc - above (or left) on a tie. A
+ * link's own arc between cards on no one row or column may go round the
+ * other way too - past their sides rather than over their tops - where
+ * only that way is clear of the cards between.
  */
 export function arcFor(
   a: Rect,
@@ -396,8 +473,7 @@ export function arcFor(
   const ca = centre(a)
   const cb = centre(b)
   if (ca.x === cb.x && ca.y === cb.y) return null
-  if (!o.always && !(level(a, b, axis) && crossesCard(a, b, o.obs, o.own)))
-    return null
+  if (!o.always && !crossesCard(a, b, o.obs, o.own)) return null
   const h = (x: ArcAxis, s: ArcSide) => {
     const side = arcSide(x, s)
     const r = solveArc(
@@ -411,9 +487,11 @@ export function arcFor(
       },
       o.obs
     )
-    return r.clear ? r.h : r.h + 1e6
+    return r.clear ? r.h : r.h + UNCLEAR
   }
   const other: ArcAxis = axis === "x" ? "y" : "x"
+  // The view's default keeps to the natural axis; a link's own arc may go
+  // round the other way where that is lower (or only that way is clear).
   const axes: ArcAxis[] =
     o.always && !level(a, b, axis) ? [axis, other] : [axis]
   const sides: ArcSide[] = o.flip ? [o.flip] : [-1, 1]
@@ -424,5 +502,6 @@ export function arcFor(
       // The natural axis wins ties; above (or left) before below.
       if (!best || v < best.h - 1e-6) best = { axis: x, s, h: v }
     }
+  if (!o.always && best!.h >= UNCLEAR) return null
   return { axis: best!.axis, s: best!.s }
 }

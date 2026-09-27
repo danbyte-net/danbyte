@@ -11,8 +11,16 @@
 
 export type Weight = 400 | 500 | 600 | 700
 
-/** Width in px of `text` set at `size` px and `weight`. */
-export type Measure = (text: string, size: number, weight?: Weight) => number
+/** Width in px of `text` set at `size` px and `weight`: as HTML lays it
+ * out (hinted at that size, whole pixels on a canvas), or with `exact` its
+ * true width - text drawn unhinted (`text-rendering: geometricPrecision`),
+ * an end label on its line, whose gap is cut to that width. */
+export type Measure = (
+  text: string,
+  size: number,
+  weight?: Weight,
+  exact?: boolean
+) => number
 
 /** How a diagram's text was measured: with Inter on a canvas, or from its
  * advance-width table (`approxMeasure`). A diagram laid out in a worker
@@ -21,6 +29,10 @@ export type MeasureKind = "canvas" | "approx"
 
 /** The family the canvas measures - the app font from `styles.css`. */
 export const DIAGRAM_FONT = '"Inter Variable", Inter, sans-serif'
+
+/** The size an exact width is measured at and scaled from: large enough
+ * that hinting moves it by a negligible fraction. */
+export const EXACT_SIZE = 100
 
 /** Inter's vertical metrics as fractions of the em (hhea ascender and
  * descender, units per em 2048). */
@@ -80,7 +92,8 @@ function advance(ch: string, t: number): number {
   return pair[0] + (pair[1] - pair[0]) * t
 }
 
-/** Deterministic width from Inter's advance-width table - no DOM needed. */
+/** Deterministic width from Inter's advance-width table - no DOM needed.
+ * Unhinted already, so exact or not. */
 export const approxMeasure: Measure = (text, size, weight = 400) => {
   const t = (Math.min(700, Math.max(400, weight)) - 400) / 300
   let units = 0
@@ -142,22 +155,44 @@ function fontReady(weight: Weight): boolean {
   return false
 }
 
+/** `text` measured on a 2D context: at `size` (hinted, as HTML sets it),
+ * or `exact` at `EXACT_SIZE` and scaled down. The page and the worker
+ * measure by this one rule. */
+export function canvasWidth(
+  c: { font: string; measureText: (t: string) => { width: number } },
+  text: string,
+  size: number,
+  weight: Weight,
+  exact: boolean
+): number {
+  if (!exact) {
+    c.font = fontSpec(size, weight)
+    return c.measureText(text).width
+  }
+  c.font = fontSpec(EXACT_SIZE, weight)
+  return (c.measureText(text).width * size) / EXACT_SIZE
+}
+
 /**
  * The measure the diagram uses: the canvas when there is one and Inter has
  * loaded at that weight, else `approxMeasure`. Canvas results are cached.
  */
-export const measureText: Measure = (text, size, weight = 400) => {
+export const measureText: Measure = (
+  text,
+  size,
+  weight = 400,
+  exact = false
+) => {
   const c = context()
   if (!c) return approxMeasure(text, size, weight)
   if (!fontReady(weight)) {
     estimated = true
     return approxMeasure(text, size, weight)
   }
-  const key = `${weight}|${size}|${text}`
+  const key = `${weight}|${size}|${exact ? 1 : 0}|${text}`
   const hit = cache.get(key)
   if (hit !== undefined) return hit
-  c.font = fontSpec(size, weight)
-  const w = c.measureText(text).width
+  const w = canvasWidth(c, text, size, weight, exact)
   cache.set(key, w)
   return w
 }

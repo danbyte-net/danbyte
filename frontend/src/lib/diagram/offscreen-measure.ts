@@ -6,7 +6,7 @@ import latinExt from "@fontsource-variable/inter/files/inter-latin-ext-wght-norm
 import latin from "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url"
 import vietnamese from "@fontsource-variable/inter/files/inter-vietnamese-wght-normal.woff2?url"
 
-import { DIAGRAM_FONT } from "./measure"
+import { canvasWidth } from "./measure"
 import type { Measure } from "./measure"
 
 // Text measurement in a worker, where the page's fonts are not loaded and
@@ -84,12 +84,11 @@ export async function offscreenMeasure(wait = 5000): Promise<Measure | null> {
     return null
   }
   const cache = new Map<string, number>()
-  return (text, size, weight = 400) => {
-    const key = `${weight}|${size}|${text}`
+  return (text, size, weight = 400, exact = false) => {
+    const key = `${weight}|${size}|${exact ? 1 : 0}|${text}`
     let w = cache.get(key)
     if (w === undefined) {
-      ctx.font = `${weight} ${size}px ${DIAGRAM_FONT}`
-      w = ctx.measureText(text).width
+      w = canvasWidth(ctx, text, size, weight, exact)
       cache.set(key, w)
     }
     return w
