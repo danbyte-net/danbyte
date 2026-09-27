@@ -8,6 +8,7 @@ import { CARD as INK, mix } from "@/lib/diagram/theme"
 import { cn } from "@/lib/utils"
 import { cardContent } from "./card-fields"
 import { CARD, PILL, nubRect, pillTop } from "./card-layout"
+import { PhotoNode } from "./photo-node"
 import type { DiagramCardData } from "./types"
 
 // A Diagram card: a solid rounded box in the device role's colour, the name
@@ -19,6 +20,8 @@ import type { DiagramCardData } from "./types"
 // Every size and offset comes from `cardLayout` (card-layout.ts): the box
 // React Flow reserves, the layout and the exports use the same numbers, so
 // text placed here lands where the SVG and draw.io writers put it.
+//
+// A device the view shows as its photo is drawn by PhotoNode instead.
 
 /** Handles exist only so React Flow draws the edges; the link edge works
  * out its own end points from the anchors. */
@@ -33,8 +36,10 @@ const STATUS_PILL =
  * takes the border's pixel too. */
 const CHECK_PILL = "h-4 max-w-24 px-[7px] text-[9px] leading-[14px]"
 
-export const CardNode = memo(function CardNode({ data, selected }: NodeProps) {
+export const CardNode = memo(function CardNode(props: NodeProps) {
+  const { data, selected } = props
   const d = data as DiagramCardData
+  if (d.diagram.photo) return <PhotoNode {...props} />
   const { box, nubs } = d.diagram
   const { pill } = cardContent(d, { monitor: d.monitor })
   const fill = box.fill

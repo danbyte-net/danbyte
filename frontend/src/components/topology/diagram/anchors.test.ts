@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import { anchorLinks, anchorPoint, chooseSides, sideLength } from "./anchors"
+import {
+  anchorLinks,
+  anchorPoint,
+  chooseSides,
+  leadStart,
+  sideLength,
+} from "./anchors"
 import type { AnchorLink } from "./anchors"
 import { NUB } from "./card-layout"
 import type { Anchor, Rect, Side } from "./types"
@@ -352,10 +358,13 @@ describe("anchorPoint", () => {
     })
   })
 
-  it("resolves a photo marker", () => {
+  it("leaves a photo port through its exit edge, its lead from the port", () => {
     const b = box(0, 0, 480, 44)
-    expect(
-      anchorPoint(b, { k: "point", fx: 0.25, fy: 0.5, exit: "T", port: "1" })
-    ).toEqual({ x: 120, y: 22, dir: [0, -1] })
+    const up: Anchor = { k: "point", fx: 0.25, fy: 0.5, exit: "T", port: "1" }
+    expect(anchorPoint(b, up)).toEqual({ x: 120, y: 0, dir: [0, -1] })
+    expect(leadStart(b, up)).toEqual({ x: 120, y: 22 })
+    const down: Anchor = { ...up, exit: "B" }
+    expect(anchorPoint(b, down, 6)).toEqual({ x: 120, y: 44, dir: [0, 1] })
+    expect(leadStart(b, { k: "side", side: "B", off: 3 })).toBeNull()
   })
 })

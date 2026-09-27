@@ -78,6 +78,10 @@ something.
       one side they continue round the corner. The nubs on a side are
       ordered by where their cables turn, so the cables leaving one side
       nest instead of crossing on their way out.
+- **Devices** (Display popover) - **Card** or **Photo**: each device drawn
+  as its card, or as its type's front photo with every cable on the port it
+  is plugged into; one device at a time from its right-click menu. See
+  [Photo nodes](#photo-nodes).
 - **Lines** (Display popover) - **Straight**, **Elbow**, **Bendy** or
   **Cyclical**, for the whole view or one link at a time; see
   [Line types](#line-types).
@@ -286,6 +290,54 @@ link's chip sits over its raised line. Which labels exist:
   cards, the other labels and the other lines, is left off (the nub's
   tooltip and the panel still name the port). With Ports off the cables
   carry no names.
+
+### Photo nodes
+
+**Devices ▸ Photo** in the Display popover draws each device as its device
+type's **front photo**, with every cable landing on the port it is plugged
+into - the picture you would take of the rack, wired up. **Card** is the
+default. Right-click a device for **Show photo** or **Show card** to draw
+just that one the other way; the choice is kept with the view (one undo
+step, marks the view edited) and the view's own choice is in the link
+(`face=photo`).
+
+- **What it needs:** a front photo on the device type, with its
+  [photo ports](../dcim/device-catalog.md#photo-ports) marked. Markers
+  match the device's ports the way its faceplate matches them - the stack
+  member number, a renamed port's marker key, then its name - and a
+  device's own marker layout wins over its type's.
+- **To scale:** every photo is drawn at one scale, a 19-inch device 480 px
+  wide (a half-width type half that), at the photo's own proportions. The
+  device's name is a caption under it, the status pill after it, with no
+  card fill.
+- **Cables on their ports:** a cable starts at its port's marker, runs
+  straight up or down to the nearer edge of the photo (its lead, drawn over
+  the photo), and from there is routed like any other line - elbows round
+  the photos, the photo it leaves included, in their own lanes. The port a
+  line lands on has a thin outline; the port name sits on the cable just
+  past the photo's edge. This holds in **Simple** too: the photo is the
+  detail, so each cable to a photo keeps its own port rather than meeting
+  at the side's midpoint. Straight and Bendy lines keep their shape, so one
+  can cross a photo where its port faces away from the far end - Elbow
+  goes round.
+- **The caption** sits at the left under the photo, or steps right to the
+  first gap between the leads running down through it.
+- **What stands in** (never artwork made up for the map):
+    1. the photo with its port markers;
+    2. the photo without a marker for a port - that cable lands on a short
+       grey tab on the photo's top or bottom edge, facing its far end;
+    3. no photo, but a schematic faceplate for the type - drawn on screen,
+       its ports as those tabs (its drawing has no port positions to land
+       on); a file draws it as the device's card;
+    4. neither - the normal card.
+- **Layout:** photos are wide and their cables leave up and down, so
+  side-by-side photos keep room above and below them for the cables and
+  their port names. **Tree** layout (Display ▸ Layout) often suits a
+  photo map best. A saved arrangement keeps each device's centre when it
+  changes between card and photo.
+- **Performance:** photos load with the map only while some device shows
+  one (`include=photo`). Far out - below 35% zoom on a map with 24 photos
+  or more, 12% on a smaller one - each photo is drawn as a plain box.
 
 ## Big graphs
 
@@ -779,6 +831,7 @@ back button and a reload all keep it.
 |---|---|
 | `tab` | `wiring` (default), `diagram`, `hierarchy`, `flat`, `logical` |
 | `mode` | Diagram: `simple` (default), `detailed` |
+| `face` | Diagram: devices as `card` (default) or `photo` - see [Photo nodes](#photo-nodes) |
 | `line` | Diagram: `straight` (default), `elbow`, `bendy`, `cyclical` |
 | `labels` | Diagram: the link labels, comma-separated `subnet`, `ip`, `port` (all by default); empty for none |
 | `view` | a saved view's id |
@@ -1065,6 +1118,7 @@ whatever the size of the map, and none without `ipaddress.view`.
   },
   "type_faceplate": true,
   "u_height": 1,
+  "rack_width": "full",
   "vc_position": 2
 }
 ```
@@ -1089,6 +1143,8 @@ whatever the size of the map, and none without `ipaddress.view`.
   first.
 - `type_faceplate` is true when the type can draw a schematic faceplate
   instead: a saved faceplate layout with a front, else interface templates.
+- `u_height` and `rack_width` (`full` or `half`) are the type's; the Diagram
+  draws a half-width type's photo half as wide.
 - Only the front is sent.
 
 It costs one query, plus one per port kind the markers of cabled ports use,

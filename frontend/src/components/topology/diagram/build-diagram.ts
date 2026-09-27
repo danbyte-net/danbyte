@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react"
 
 import type { TopologyGraph, TopologyLinkOverride } from "@/lib/api"
+import { readableText } from "@/lib/color"
 import { endTextWidth } from "@/lib/diagram/geometry"
 import { measureText } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
@@ -32,7 +33,14 @@ import type { AnchorLink, Anchors } from "./anchors"
 import { arcFor, arcSide } from "./arcs"
 import type { ArcAxis, ArcSide } from "./arcs"
 import { cardContent } from "./card-fields"
-import { cardLayout, JUNCTION, NUB } from "./card-layout"
+import {
+  CARD,
+  cardLayout,
+  JUNCTION,
+  NO_NUBS,
+  normalizeHex,
+  NUB,
+} from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
 import {
   detectFanouts,
@@ -53,9 +61,12 @@ import {
 } from "./link-labels"
 import type { LabelToken, LinkLabelSet } from "./link-labels"
 import { ELBOW_RADIUS } from "./link-geometry"
+import { PHOTO, photoFace, photoLod, photoShown } from "./photo-anchors"
+import type { PhotoFace, PhotoShown } from "./photo-anchors"
 import { endRun, planEdges, portStub } from "./plan"
 import { pairKey } from "./types"
 import type {
+  Anchor,
   CablePair,
   DiagramCardData,
   DiagramEdgeData,
@@ -64,6 +75,7 @@ import type {
   End,
   LineType,
   LinkLabels,
+  PortRef,
   Pt,
   Rect,
   Side,
@@ -94,6 +106,11 @@ import type {
 // [0.5, 0.5]), so a card that grows to fit its nubs - or shrinks back in
 // Simple mode - stays where it was put, and one saved arrangement serves
 // both modes.
+//
+// A device the page marked for its photo (`withFaces`) is drawn as its
+// front photo when the payload has one (photo-anchors.ts): a fixed box to
+// scale, every cable on its port in either mode - the photo is the
+// detail - and an obstacle like any card.
 
 /** Diagram nodes: `position` is the node's centre. */
 export const CENTRE: [number, number] = [0.5, 0.5]
@@ -142,6 +159,10 @@ export interface DiagramModel {
   base: Map<string, CardBox>
   /** Each card's current box and nubs. */
   shown: Map<string, DiagramCardData["diagram"]>
+  /** Nodes drawn as photos: their face, the name for the caption and the
+   * pills it keeps room for. Their box is in `base`; they are not in
+   * `cards` (a photo never grows). */
+  photos?: Map<string, PhotoModel>
   /** Other nodes' boxes (group cards, trace ports). */
   fixed: Map<string, { w: number; h: number }>
   /** The links anchored to card sides. */
@@ -156,6 +177,14 @@ export interface DiagramModel {
    * each end of a cable. */
   roomy: number
   measure: Measure
+}
+
+/** A photo node as the anchoring sees it. */
+export interface PhotoModel {
+  face: PhotoFace
+  name: string
+  /** Every pill text the card fields can show (`cardContent().pillSlot`). */
+  slot: string[]
 }
 
 /** A breakout cable as the anchoring sees it. */
@@ -224,15 +253,28 @@ function bundleLabel(n: number, lag: EdgeLag | null): string[] {
 
 type Pair = NonNullable<BundleMember["pairs"]>[number]
 
-/** One `{a, b}` port per cable pair, oriented to the edge's ends. */
+/** A pair end's component, when the payload names it. */
+const refOf = (id?: string, kind?: string): PortRef | undefined =>
+  id ? { id, ...(kind ? { kind } : {}) } : undefined
+
+/** One `{a, b}` port per cable pair (with its component), oriented to the
+ * edge's ends. */
 function cablesOf(
   pairs: readonly Pair[],
   flipped: boolean
-): { a?: string; b?: string }[] {
+): { a?: string; b?: string; aRef?: PortRef; bRef?: PortRef }[] {
   return pairs.map((p) => {
     const a = p.a_port ?? p.a
     const b = p.b_port ?? p.b
-    return flipped ? { a: b, b: a } : { a, b }
+    const ra = refOf(p.a_id, p.a_kind)
+    const rb = refOf(p.b_id, p.b_kind)
+    const [x, y, rx, ry] = flipped ? [b, a, rb, ra] : [a, b, ra, rb]
+    return {
+      a: x,
+      b: y,
+      ...(rx ? { aRef: rx } : {}),
+      ...(ry ? { bRef: ry } : {}),
+    }
   })
 }
 
@@ -403,12 +445,14 @@ function foldLabels(
 }
 
 /** A cable, bundle or aggregate link with its Labels: per cable where
- * each has its own nub (Detailed), one set for the one line of Simple. */
+ * each has its own nub (Detailed) or its own port on a photo
+ * (`perCable`), one set for the one line of Simple. */
 function withLinkLabels(
   e: Edge<DiagramEdgeData>,
   flipped: boolean,
   mode: DiagramMode,
-  tokens: readonly LabelToken[]
+  tokens: readonly LabelToken[],
+  perCable = false
 ): Edge<DiagramEdgeData> {
   const d = e.data
   if (e.type !== "link" || !d || d.simple) return e
@@ -416,7 +460,7 @@ function withLinkLabels(
   const pairs = linkPairs(d, flipped)
   const set = pairs.length
     ? linkLabelSet(
-        mode === "detailed" ? pairs.map((p) => [p]) : [pairs],
+        mode === "detailed" || perCable ? pairs.map((p) => [p]) : [pairs],
         tokens
       )
     : null
@@ -515,6 +559,10 @@ function fanParts(
           ports: [l.port],
           pairs: l.pairs ?? [],
         }))
+  // Each leg's far component (its first port's), for a photo's marker.
+  const legIds = legs.map(
+    (l) => f.legs.find((x) => x.node === l.node && x.port === l.ports[0])?.id
+  )
   // Subnets per leg, the shared port's addresses on the trunk.
   const sets = fanLabelSets(
     raw.pairs ?? [],
@@ -567,7 +615,12 @@ function fanParts(
       id: trunk.id,
       source: trunk.source,
       target: trunk.target,
-      cables: [{ a: f.trunk.port }],
+      cables: [
+        {
+          a: f.trunk.port,
+          ...(f.trunk.id ? { aRef: { id: f.trunk.id } } : {}),
+        },
+      ],
       ...(mode === "simple" ? { simple: true } : {}),
       junction: { b: [0, 0] },
     },
@@ -576,7 +629,12 @@ function fanParts(
         id: e.id,
         source: e.source,
         target: e.target,
-        cables: [{ b: portsLabel(legs[i].ports) }],
+        cables: [
+          {
+            b: portsLabel(legs[i].ports),
+            ...(legIds[i] ? { bRef: { id: legIds[i] } } : {}),
+          },
+        ],
         ...(mode === "simple" ? { simple: true } : {}),
         junction: { a: [0, 0] },
       })
@@ -874,6 +932,41 @@ const rectAt = (c: Pt, s: { w: number; h: number }): Rect => ({
   h: s.h,
 })
 
+/** How far along its (axis-aligned) direction a ray from `from` first
+ * meets a card other than `own`, grown by `CLEAR`, within `reach`; null
+ * when it meets none. */
+function firstHit(
+  solid: Obstacles,
+  from: End,
+  reach: number,
+  own: string
+): number | null {
+  const [nx, ny] = from.dir
+  const to = { x: from.x + nx * reach, y: from.y + ny * reach }
+  const area = {
+    x: Math.min(from.x, to.x) - 1,
+    y: Math.min(from.y, to.y) - 1,
+    w: Math.abs(to.x - from.x) + 2,
+    h: Math.abs(to.y - from.y) + 2,
+  }
+  let best: number | null = null
+  for (const { id, r } of solid.near(area)) {
+    if (id === own) continue
+    const x0 = r.x - CLEAR
+    const x1 = r.x + r.w + CLEAR
+    const y0 = r.y - CLEAR
+    const y1 = r.y + r.h + CLEAR
+    let t: number | null = null
+    if (nx > 0.5 && from.y > y0 && from.y < y1) t = x0 - from.x
+    else if (nx < -0.5 && from.y > y0 && from.y < y1) t = from.x - x1
+    else if (ny > 0.5 && from.x > x0 && from.x < x1) t = y0 - from.y
+    else if (ny < -0.5 && from.x > x0 && from.x < x1) t = from.y - y1
+    if (t !== null && t > 0 && t <= reach && (best === null || t < best))
+      best = t
+  }
+  return best
+}
+
 /** Where each breakout's junction goes: straight out from its trunk's
  * port (`trunkEnds`, else the side facing the far cards' midpoint), a
  * third of the way to the far cards but far enough for the trunk's port
@@ -924,6 +1017,12 @@ function placeJunctions(
     const least = Math.min(f.trunkRoom[model.mode], Math.max(12, proj / 2))
     let d = Math.max(Math.min(Math.max(proj / 3, want), room), least)
     if (proj <= 0) d = want
+    // Short of a card the trunk would run into on the way (a photo's
+    // port facing away from the far cards, with a neighbour below it):
+    // the junction stops in front of it rather than beyond it.
+    const block = firstHit(solid, start, d + CLEAR + 12, f.trunk)
+    if (block !== null && block - CLEAR - 3 >= 12)
+      d = Math.min(d, block - CLEAR - 3)
     const at = () => ({ x: start.x + nx * d, y: start.y + ny * d })
     for (let k = 0; k < 40; k++) {
       const p = at()
@@ -1029,18 +1128,84 @@ function nextShown(
   prev: DiagramCardData["diagram"] | undefined,
   box: CardBox,
   nubs: DiagramCardData["diagram"]["nubs"],
-  mode: DiagramMode
+  mode: DiagramMode,
+  photo?: PhotoShown
 ): DiagramCardData["diagram"] {
   if (
     prev &&
     prev.mode === mode &&
     prev.box.w === box.w &&
     prev.box.h === box.h &&
-    JSON.stringify(prev.nubs) === JSON.stringify(nubs)
+    JSON.stringify(prev.nubs) === JSON.stringify(nubs) &&
+    JSON.stringify(prev.photo) === JSON.stringify(photo)
   )
     return prev
   const keep = prev && prev.box.w === box.w && prev.box.h === box.h
-  return { box: keep ? prev.box : box, nubs, mode }
+  return { box: keep ? prev.box : box, nubs, mode, ...(photo ? { photo } : {}) }
+}
+
+/** A photo node's box as the layout and the anchors see it: fixed, the
+ * image and its caption. Its text is drawn from `PhotoShown`. */
+function photoBox(p: PhotoModel, color?: string | null): CardBox {
+  const fill = normalizeHex(color)
+  const top = p.face.imgH + PHOTO.CAPTION_GAP
+  return {
+    w: p.face.w,
+    h: p.face.h,
+    fill,
+    ink: fill ? readableText(fill) : null,
+    title: {
+      text: p.name,
+      size: CARD.TITLE_SIZE,
+      weight: CARD.TITLE_WEIGHT,
+      x: 0,
+      y: top + CARD.TITLE_LH,
+      top,
+      lh: CARD.TITLE_LH,
+      anchor: "start",
+      w: 0,
+    },
+    lines: [],
+    pill: null,
+    stacked: false,
+    nubs: { ...NO_NUBS },
+  }
+}
+
+/** Each photo node as drawn for where its lines landed. */
+function photosShown(
+  model: DiagramModel,
+  anchors: Anchors
+): Map<string, PhotoShown> {
+  const out = new Map<string, PhotoShown>()
+  const photos = model.photos
+  if (!photos?.size) return out
+  const ends = new Map<string, Anchor[]>()
+  const note = (node: string, list: readonly Anchor[]) => {
+    if (!photos.has(node)) return
+    const mine = ends.get(node) ?? []
+    for (const a of list) if (a.k === "point") mine.push(a)
+    ends.set(node, mine)
+  }
+  for (const l of model.links) {
+    const a = anchors.links.get(l.id)
+    if (!a) continue
+    note(l.source, a.a)
+    note(l.target, a.b)
+  }
+  const lod = photoLod(photos.size)
+  for (const [id, p] of photos)
+    out.set(
+      id,
+      photoShown(p.face, ends.get(id) ?? [], p.name, p.slot, model.measure, lod)
+    )
+  return out
+}
+
+/** The photo faces the anchoring lands cable ends on. */
+function facesOf(model: DiagramModel): Map<string, PhotoFace> | undefined {
+  if (!model.photos?.size) return undefined
+  return new Map([...model.photos].map(([id, p]) => [id, p.face]))
 }
 
 interface Anchored {
@@ -1124,6 +1289,7 @@ function anchorAll(
   }
   let solid = obstacles(rects)
   let junctions = placeJunctions(model, rects, solid)
+  const photos = facesOf(model)
   // An arc leaves both its cards through the side it bulges to.
   const arcs = arcsOf(model, rects, solid)
   const links = arcs.size
@@ -1143,6 +1309,7 @@ function anchorAll(
         ...(pinned ? { sides: repin(pinned, model, arcs) } : {}),
         blockers: solid,
         ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
+        ...(photos ? { photos } : {}),
       }
     )
   if (model.mode === "simple") {
@@ -1304,6 +1471,7 @@ export function buildDiagram(
   const cards = new Map<string, CardLayoutInput>()
   const base = new Map<string, CardBox>()
   const fixed = new Map<string, { w: number; h: number }>()
+  const photos = new Map<string, PhotoModel>()
   const keyOf = new Map<string, string>()
   const rfNodes: Node[] = graph.nodes.map((n) => {
     keyOf.set(n.id, deviceKey(n.id, n.data.device_id))
@@ -1315,7 +1483,18 @@ export function buildDiagram(
       position: { x: 0, y: 0 },
       data: { ...n.data },
     }
-    if (type === "card") {
+    const face = type === "card" ? photoFace(n.data) : null
+    if (face) {
+      // Drawn as its photo: a fixed box, not a card that grows.
+      const content = cardContent(n.data, { checkLabels: opts.checkLabels })
+      const p: PhotoModel = {
+        face,
+        name: content.name,
+        slot: content.pillSlot,
+      }
+      photos.set(n.id, p)
+      base.set(n.id, photoBox(p, n.data.role?.color))
+    } else if (type === "card") {
       const content = cardContent(n.data, { checkLabels: opts.checkLabels })
       const input: CardLayoutInput = {
         name: content.name,
@@ -1334,14 +1513,11 @@ export function buildDiagram(
   const key = (id: string) => keyOf.get(id) ?? deviceKey(id)
 
   // Breakout cables come out of the payload whole, as trunk and legs.
-  const fans = grouped ? [] : detectFanouts(graph.edges, (id) => cards.has(id))
+  const device = (id: string) => cards.has(id) || photos.has(id)
+  const fans = grouped ? [] : detectFanouts(graph.edges, device)
   const meshes = grouped
     ? []
-    : detectMeshes(
-        graph.edges,
-        (id) => cards.has(id),
-        new Set(fans.map((f) => f.cable))
-      )
+    : detectMeshes(graph.edges, device, new Set(fans.map((f) => f.cable)))
   const consumed = new Set([
     ...fans.flatMap((f) => f.edges),
     ...meshes.flatMap((m) => m.edges),
@@ -1390,10 +1566,19 @@ export function buildDiagram(
     return false
   }
   const tokens = opts.labels ?? DEFAULT_LABELS
+  // A line to a photo lands on its port: one per cable, labels too.
+  const onPhoto = (e: { source: string; target: string }) =>
+    photos.has(e.source) || photos.has(e.target)
   const edges = [
     ...oriented.map((e0) => {
       const flip = flipped.has(e0.id)
-      const e = withLinkLabels(flip ? orientData(e0) : e0, flip, mode, tokens)
+      const e = withLinkLabels(
+        flip ? orientData(e0) : e0,
+        flip,
+        mode,
+        tokens,
+        onPhoto(e0)
+      )
       return e.type === "link" && twins(e.source, e.target)
         ? { ...e, data: { ...e.data!, peer: true } }
         : e
@@ -1439,9 +1624,10 @@ export function buildDiagram(
     for (const l of links) {
       const d = byId.get(l.id)?.data
       const named = ports && (mode === "detailed" || d?.sem === "cable")
-      // Simple draws one line per link: its first cable's names.
+      // Simple draws one line per link (its first cable's names), or one
+      // per cable to a photo's ports.
       const all = l.cables?.length ? l.cables : [{}]
-      const cables = mode === "detailed" ? all : all.slice(0, 1)
+      const cables = mode === "detailed" || onPhoto(l) ? all : all.slice(0, 1)
       cables.forEach((c, i) => {
         const ends = d?.labels.ends?.[i]
         for (const end of ["a", "b"] as const) {
@@ -1462,7 +1648,25 @@ export function buildDiagram(
   // trunk as long again between them.
   const meshGap = Math.max(0, ...meshed.map((p) => 3 * p.model.reach[mode]))
   const rankGap = Math.max(run ? 2 * portStub(run) + LANE * lanes : 0, meshGap)
-  const all = new Map<string, { w: number; h: number }>([...fixed, ...base])
+  // A photo's cables leave up and down, each with its port name on its
+  // run: side by side (LR) photos keep that room above and below them.
+  const photoPad = photos.size
+    ? direction === "LR"
+      ? Math.max(2 * LANE, run ? portStub(run) + 2 * LANE : 0)
+      : LANE
+    : 0
+  const reserve = (boxes: Map<string, { w: number; h: number }>) => {
+    if (!photoPad) return boxes
+    const out = new Map(boxes)
+    for (const id of photos.keys()) {
+      const b = boxes.get(id)
+      if (b) out.set(id, { w: b.w, h: b.h + 2 * photoPad })
+    }
+    return out
+  }
+  const all = reserve(
+    new Map<string, { w: number; h: number }>([...fixed, ...base])
+  )
   const layout = (boxes: Map<string, { w: number; h: number }>): Laid => {
     // Saved positions are centres; the layout pins top-left corners.
     const pins = opts.positions
@@ -1521,6 +1725,7 @@ export function buildDiagram(
     base,
     shown: new Map(),
     fixed,
+    ...(photos.size ? { photos } : {}),
     links,
     edges,
     fans: parts.map((p) => p.model),
@@ -1540,10 +1745,9 @@ export function buildDiagram(
       return !!was && (b.w - was.w > REGROW || b.h - was.h > REGROW)
     })
     if (grew) {
-      const sized = new Map<string, { w: number; h: number }>([
-        ...fixed,
-        ...anchored.boxes,
-      ])
+      const sized = reserve(
+        new Map<string, { w: number; h: number }>([...fixed, ...anchored.boxes])
+      )
       laid = layout(sized)
       anchored = anchorAll(model, laid.centres, anchored.anchors.sides)
     }
@@ -1551,6 +1755,7 @@ export function buildDiagram(
 
   const planned = plannedEdges(model, anchored)
   const { anchors, boxes, junctions } = anchored
+  const drawn = photosShown(model, anchors)
   const nodes: Node[] = rfNodes.map((n) => {
     const c = laid.centres.get(n.id) ?? { x: 0, y: 0 }
     const box = boxes.get(n.id) ?? fixed.get(n.id)!
@@ -1568,7 +1773,8 @@ export function buildDiagram(
       undefined,
       boxes.get(n.id)!,
       anchors.nubs.get(n.id) ?? [],
-      mode
+      mode,
+      drawn.get(n.id)
     )
     model.shown.set(n.id, shown)
     return {
@@ -1614,10 +1820,17 @@ export function relinkDiagram(model: DiagramModel, live: Node[]): Relinked {
 
   const cards = new Map<string, DiagramCardData["diagram"]>()
   const shown = new Map(model.shown)
+  const drawn = photosShown(model, anchors)
   for (const [id, box] of boxes) {
     if (!centres.has(id)) continue
     const prev = model.shown.get(id)
-    const next = nextShown(prev, box, anchors.nubs.get(id) ?? [], model.mode)
+    const next = nextShown(
+      prev,
+      box,
+      anchors.nubs.get(id) ?? [],
+      model.mode,
+      drawn.get(id)
+    )
     if (next !== prev) {
       cards.set(id, next)
       shown.set(id, next)

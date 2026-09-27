@@ -77,7 +77,11 @@ export function drawn(
           })
         const place = p[end]
         const anchor = d[end][i] as Anchor | undefined
-        if (place && anchor?.k === "side" && anchor.port)
+        if (
+          place &&
+          (anchor?.k === "side" || anchor?.k === "point") &&
+          anchor.port
+        )
           add(anchor.port, place)
         const ips = p.ips?.[end]
         const texts = d.labels.ends?.[i]?.[end] ?? []

@@ -1,10 +1,14 @@
 import { NUB } from "./card-layout"
 import type { Obstacles } from "./lanes"
+import { photoAnchors } from "./photo-anchors"
+import type { PhotoFace, PointAnchor } from "./photo-anchors"
 import type {
   Anchor,
   DiagramMode,
   Dir,
   End,
+  PortRef,
+  Pt,
   Rect,
   Side,
   SideCount,
@@ -75,7 +79,9 @@ export function chooseSides(a: Rect, b: Rect): [Side, Side] {
 
 /**
  * A link end in flow coordinates. `out` moves a side anchor out along the
- * side's normal - `NUB.OUT` starts the line at a Detailed nub's tip.
+ * side's normal - `NUB.OUT` starts the line at a Detailed nub's tip. A
+ * photo port's line starts where its lead leaves the node's box, straight
+ * above or below the port (`leadStart` is the port itself).
  */
 export function anchorPoint(box: Rect, a: Anchor, out = 0): End {
   if (a.k === "junction")
@@ -83,7 +89,7 @@ export function anchorPoint(box: Rect, a: Anchor, out = 0): End {
   if (a.k === "point") {
     return {
       x: box.x + a.fx * box.w,
-      y: box.y + a.fy * box.h,
+      y: a.exit === "T" ? box.y : box.y + box.h,
       dir: a.exit === "T" ? SIDE_DIR.T : SIDE_DIR.B,
     }
   }
@@ -97,13 +103,26 @@ export function anchorPoint(box: Rect, a: Anchor, out = 0): End {
   }
 }
 
+/** Where a photo port's lead starts: its marker's centre (or its stub's
+ * place on the image edge). Null for any other anchor. */
+export function leadStart(box: Rect, a: Anchor | undefined): Pt | null {
+  if (a?.k !== "point") return null
+  return { x: box.x + a.fx * box.w, y: box.y + a.fy * box.h }
+}
+
 export interface AnchorLink {
   id: string
   source: string
   target: string
-  /** One entry per cable, with the port at each end: each gets its own
-   * nub in Detailed mode. Absent or empty = one unnamed end. */
-  cables?: readonly { a?: string; b?: string }[]
+  /** One entry per cable, with the port at each end (and its component,
+   * for photo markers): each gets its own nub in Detailed mode. Absent or
+   * empty = one unnamed end. */
+  cables?: readonly {
+    a?: string
+    b?: string
+    aRef?: PortRef
+    bRef?: PortRef
+  }[]
   /** Pin an end to a side (a cyclical arc leaves on its bulge side). */
   force?: { a?: Side; b?: Side }
   /** Meet at the side midpoints even in Detailed mode - for links that
@@ -149,6 +168,9 @@ export interface AnchorOptions {
    * name at each end). A pair of sides closer than this gives way to the
    * other axis's pair when that one has the room. */
   roomy?: number
+  /** Nodes drawn as photos: their cable ends land on their ports, in
+   * either mode (photo-anchors.ts). */
+  photos?: ReadonlyMap<string, PhotoFace>
 }
 
 /** How far out from a side a third card makes it a poor exit: a stub and
@@ -311,7 +333,15 @@ export function anchorLinks(
     ...(port ? { port } : {}),
   })
 
-  // Simple mode, and links that never get nubs: side midpoints.
+  // Cable ends on photo nodes land on their ports whatever the mode.
+  const photo: ReadonlyMap<string, PointAnchor> = opts.photos?.size
+    ? photoAnchors(opts.photos, boxes, live)
+    : new Map()
+  const photoEnd = (l: AnchorLink, i: number, end: "a" | "b") =>
+    photo.size ? photo.get(`${l.id}#${i}${end}`) : undefined
+
+  // Simple mode, and links that never get nubs: side midpoints - one line
+  // per cable where a photo end lands each on its own port.
   const detailed: AnchorLink[] = []
   for (const l of live) {
     if (mode === "detailed" && !l.simple) {
@@ -319,6 +349,24 @@ export function anchorLinks(
       continue
     }
     const [sa, sb] = out.sides.get(l.id)!
+    const cables = l.cables ?? []
+    if (cables.some((_, i) => photoEnd(l, i, "a") || photoEnd(l, i, "b"))) {
+      out.links.set(l.id, {
+        a: cables.map(
+          (c, i): Anchor =>
+            l.junction?.a
+              ? { k: "junction", dir: l.junction.a }
+              : (photoEnd(l, i, "a") ?? midAnchor(l.source, sa, c.a))
+        ),
+        b: cables.map(
+          (c, i): Anchor =>
+            l.junction?.b
+              ? { k: "junction", dir: l.junction.b }
+              : (photoEnd(l, i, "b") ?? midAnchor(l.target, sb, c.b))
+        ),
+      })
+      continue
+    }
     const first = l.cables?.[0]
     out.links.set(l.id, {
       a: [
@@ -360,13 +408,20 @@ export function anchorLinks(
     list.forEach((c, r) => rank.set(`${c.l.id}#${c.i}`, r))
   }
 
-  // Each end, keyed for its side. Junction ends get no nub.
+  // Each end, keyed for its side. Junction ends get no nub, and photo
+  // ends keep their ports.
   const perSide = new Map<string, EndEntry[]>()
   const junctionEnds: {
     link: string
     cable: number
     end: "a" | "b"
     dir: Dir
+  }[] = []
+  const photoEnds: {
+    link: string
+    cable: number
+    end: "a" | "b"
+    anchor: Anchor
   }[] = []
   for (const l of detailed) {
     const [sa, sb] = out.sides.get(l.id)!
@@ -377,6 +432,11 @@ export function anchorLinks(
         const jdir = l.junction?.[end]
         if (jdir) {
           junctionEnds.push({ link: l.id, cable: i, end, dir: jdir })
+          continue
+        }
+        const own = photoEnd(l, i, end)
+        if (own) {
+          photoEnds.push({ link: l.id, cable: i, end, anchor: own })
           continue
         }
         const node = end === "a" ? l.source : l.target
@@ -398,7 +458,12 @@ export function anchorLinks(
           e.sec = 2 * r + (end === "b" ? 1 : 0)
         } else {
           const [mx, my] = sideMid(boxes.get(node)!, side)
-          const [px, py] = sideMid(boxes.get(partner)!, pSide)
+          // A far end on a photo is where its lead leaves the photo.
+          const far = photoEnd(l, i, end === "a" ? "b" : "a")
+          const fp = far && anchorPoint(boxes.get(partner)!, far)
+          const [px, py] = fp
+            ? [fp.x, fp.y]
+            : sideMid(boxes.get(partner)!, pSide)
           const n = SIDE_DIR[side]
           const t = ALONG[side]
           const vx = px - mx
@@ -507,6 +572,7 @@ export function anchorLinks(
   }
   for (const j of junctionEnds)
     anchorsOf.get(j.link)![j.end][j.cable] = { k: "junction", dir: j.dir }
+  for (const p of photoEnds) anchorsOf.get(p.link)![p.end][p.cable] = p.anchor
   for (const [id, a] of anchorsOf) out.links.set(id, a)
   return out
 }
@@ -524,6 +590,21 @@ export function linkEnds(
   t: Rect,
   live = true
 ): [End, End][] {
+  const onPhoto =
+    link.a.some((a) => a.k === "point") || link.b.some((b) => b.k === "point")
+  if (link.simple && live && onPhoto) {
+    // Photo ports stay where they are; a card end meets its side midpoint.
+    const [ss, ts] = chooseSides(s, t)
+    const end = (box: Rect, a: Anchor, side: Side) =>
+      a.k === "side"
+        ? anchorPoint(box, { k: "side", side, off: sideLength(box, side) / 2 })
+        : anchorPoint(box, a)
+    const out: [End, End][] = []
+    const n = Math.min(link.a.length, link.b.length)
+    for (let i = 0; i < n; i++)
+      out.push([end(s, link.a[i], ss), end(t, link.b[i], ts)])
+    return out
+  }
   if ((link.simple && live) || !link.a.length || !link.b.length) {
     const [ss, ts] = chooseSides(s, t)
     const ja = link.a[0]?.k === "junction" ? link.a[0] : null

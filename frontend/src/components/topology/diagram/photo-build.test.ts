@@ -1,0 +1,229 @@
+import { describe, expect, it } from "vitest"
+import type { Node } from "@xyflow/react"
+
+import type { TopologyGraph } from "@/lib/api"
+import { approxMeasure } from "@/lib/diagram/measure"
+import { aarhusId } from "../__fixtures__/aarhus-graph"
+import { aarhusPhotoGraph } from "../__fixtures__/aarhus-photos"
+import {
+  boxOf,
+  drawn,
+  labelFaults,
+  throughCards,
+} from "../__fixtures__/route-checks"
+import { segHitsRect } from "./spatial"
+import { anchorPoint, leadStart } from "./anchors"
+import { buildDiagram, relinkDiagram } from "./build-diagram"
+import type { DiagramOptions } from "./build-diagram"
+import { PHOTO, withFaces } from "./photo-anchors"
+import type { FacedData } from "./photo-anchors"
+import type {
+  Anchor,
+  DiagramCardData,
+  DiagramEdgeData,
+  DiagramMode,
+  Rect,
+} from "./types"
+
+// Photo nodes in the Diagram, on the Århus DC map with its real front
+// photos: each device is its photo to scale, the photos never overlap,
+// every cable starts at its port's marker (or a stub lead) and runs
+// straight out of the photo, then keeps clear of every photo - its own
+// included - and its port name sits on its own line.
+
+const build = (graph: TopologyGraph, o: Partial<DiagramOptions> = {}) =>
+  buildDiagram(graph, {
+    mode: "detailed",
+    line: "elbow",
+    colorMode: "cable",
+    measure: approxMeasure,
+    ...o,
+  })
+
+const photos = withFaces(aarhusPhotoGraph, "photo")
+
+const devices = (nodes: Node[]) => nodes.filter((n) => n.type === "card")
+const rects = (nodes: Node[]) =>
+  new Map<string, Rect>(devices(nodes).map((n) => [n.id, boxOf(n)]))
+const overlap = (a: Rect, b: Rect) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+const inset = (r: Rect, d: number): Rect => ({
+  x: r.x + d,
+  y: r.y + d,
+  w: r.w - 2 * d,
+  h: r.h - 2 * d,
+})
+
+const MODES: DiagramMode[] = ["detailed", "simple"]
+
+describe("photo nodes", () => {
+  for (const mode of MODES) {
+    it(`${mode}: every device is its photo, to scale, none overlapping`, () => {
+      const b = build(photos, { mode })
+      const cards = devices(b.nodes)
+      expect(cards).toHaveLength(8)
+      for (const n of cards) {
+        const d = n.data as DiagramCardData
+        expect(d.diagram.photo?.kind).toBe("photo")
+        expect(n.width).toBe(PHOTO.W)
+        expect(n.height).toBe(
+          d.diagram.photo!.imgH + PHOTO.CAPTION_GAP + PHOTO.CAPTION_LH
+        )
+      }
+      const boxes = [...rects(b.nodes).values()]
+      for (let i = 0; i < boxes.length; i++)
+        for (let j = i + 1; j < boxes.length; j++)
+          expect(overlap(boxes[i], boxes[j])).toBe(false)
+    })
+
+    it(`${mode}: cables start at their ports and keep clear of the photos`, () => {
+      const b = build(photos, { mode })
+      const boxes = rects(b.nodes)
+      const cables = drawn(b.nodes, b.edges, approxMeasure)
+      expect(cables.length).toBeGreaterThan(0)
+      expect(throughCards(cables, boxes)).toEqual([])
+      // Past its lead, no line goes back through its own photo either.
+      for (const c of cables)
+        for (let k = 1; k < c.pts.length - 2; k++)
+          for (const id of [c.source, c.target]) {
+            const r = boxes.get(id)
+            if (r)
+              expect(
+                segHitsRect(c.pts[k], c.pts[k + 1], inset(r, 1)),
+                `${c.edge}#${c.cable} run ${k} x ${id}`
+              ).toBe(false)
+          }
+      // Each photo end: the plan starts at the port and runs straight to
+      // the photo's edge.
+      let leads = 0
+      for (const e of b.edges) {
+        const d = e.data as DiagramEdgeData | undefined
+        if (e.type !== "link" || !d?.plan) continue
+        d.plan.forEach((p, i) => {
+          for (const [end, id] of [
+            ["a", e.source],
+            ["b", e.target],
+          ] as const) {
+            const a = d[end][i] as Anchor | undefined
+            const box = boxes.get(id)
+            const from = box && leadStart(box, a)
+            if (!from || !a) continue
+            leads++
+            const [p0, p1] =
+              end === "a"
+                ? [p.pts[0], p.pts[1]]
+                : [p.pts.at(-1)!, p.pts.at(-2)!]
+            expect(p0).toEqual(from)
+            expect(p1.x).toBeCloseTo(from.x)
+            // Out through its exit edge (a stub on the top edge is already
+            // there: no lead).
+            const exit = anchorPoint(box, a)
+            if (exit.y !== from.y)
+              expect(Math.sign(p1.y - p0.y)).toBe(exit.dir[1])
+          }
+        })
+      }
+      expect(leads).toBeGreaterThan(10)
+      expect(labelFaults(cables)).toEqual([])
+    })
+  }
+
+  it("lands marked ports on their markers, the servers' on stub leads", () => {
+    const b = build(photos)
+    const at = (name: string) =>
+      (b.nodes.find((n) => n.id === aarhusId(name))!.data as DiagramCardData)
+        .diagram.photo!
+    // ethernet1/1, 1/4, 1/6 and 1/7 on the firewall, each its own marker.
+    expect(at("aarhus-fw1").marks.map((m) => m.port)).toEqual([
+      "ethernet1/1",
+      "ethernet1/4",
+      "ethernet1/6",
+      "ethernet1/7",
+    ])
+    expect(at("aarhus-fw1").stubs).toEqual([])
+    // No markers on the servers' type: the cable lands on a stub lead,
+    // on the edge facing the switch.
+    const srv = at("aarhus-srv1")
+    expect(srv.marks).toEqual([])
+    expect(srv.stubs).toHaveLength(1)
+    expect(srv.stubs[0].port).toBe("eno1")
+    // The caption steps clear of the leads running down through it.
+    const fw = at("aarhus-fw1")
+    for (const mark of fw.marks.filter((m) => m.y >= 0.5)) {
+      const x = mark.x * PHOTO.W
+      expect(x < fw.caption.x || x > fw.caption.x + fw.caption.w).toBe(true)
+    }
+  })
+
+  it("mixes photos and cards: a device shown as its card stays a card", () => {
+    const fw = aarhusId("aarhus-fw1").slice(4)
+    const g = withFaces(aarhusPhotoGraph, "photo", { [fw]: { face: "card" } })
+    const b = build(g)
+    const kind = (id: string) =>
+      (b.nodes.find((n) => n.id === id)!.data as DiagramCardData).diagram.photo
+        ?.kind
+    expect(kind(aarhusId("aarhus-fw1"))).toBeUndefined()
+    expect(kind(aarhusId("aarhus-sw1"))).toBe("photo")
+    expect(
+      throughCards(drawn(b.nodes, b.edges, approxMeasure), rects(b.nodes))
+    ).toEqual([])
+  })
+
+  it("draws a type without a photo as its faceplate, else its card", () => {
+    const g: TopologyGraph = {
+      ...photos,
+      nodes: photos.nodes.map((n) => {
+        const d = n.data as FacedData
+        if (d.name === "aarhus-sw1")
+          return {
+            ...n,
+            data: {
+              ...d,
+              device_type_id: "t-sw",
+              photo: { ...d.photo!, front: null, type_faceplate: true },
+            },
+          }
+        if (d.name === "aarhus-sw2")
+          return {
+            ...n,
+            data: {
+              ...d,
+              photo: { ...d.photo!, front: null, type_faceplate: false },
+            },
+          }
+        return n
+      }),
+    }
+    const b = build(g)
+    const shown = (name: string) =>
+      (b.nodes.find((n) => n.id === aarhusId(name))!.data as DiagramCardData)
+        .diagram.photo
+    const plate = shown("aarhus-sw1")!
+    expect(plate.kind).toBe("faceplate")
+    expect(plate.typeId).toBe("t-sw")
+    // A faceplate's ports have no coordinates: its cable is a stub lead.
+    expect(plate.marks).toEqual([])
+    expect(plate.stubs.map((s) => s.port)).toEqual(["Te1/1/1"])
+    expect(shown("aarhus-sw2")).toBeUndefined()
+  })
+
+  it("re-anchors a moved photo: its ports go with it", () => {
+    const b = build(photos)
+    const moved = b.nodes.map((n) =>
+      n.id === aarhusId("aarhus-sw1")
+        ? { ...n, position: { x: n.position.x + 600, y: n.position.y + 300 } }
+        : n
+    )
+    const re = relinkDiagram(b.model, moved)
+    const sw1 = moved.find((n) => n.id === aarhusId("aarhus-sw1"))!
+    const box = boxOf(sw1)
+    const e = re.edges.find((x) => x.source === sw1.id || x.target === sw1.id)!
+    const d = e.data as DiagramEdgeData
+    const end = e.source === sw1.id ? "a" : "b"
+    const from = leadStart(box, d[end][0])!
+    const p = d.plan![0]
+    expect(end === "a" ? p.pts[0] : p.pts.at(-1)).toEqual(from)
+    const cables = drawn(moved, re.edges, approxMeasure)
+    expect(throughCards(cables, rects(moved))).toEqual([])
+  })
+})

@@ -144,6 +144,11 @@ import {
 import { DEFAULT_LABELS } from "@/components/topology/diagram/link-labels"
 import type { LabelToken } from "@/components/topology/diagram/link-labels"
 import {
+  faceOf,
+  wantsPhotos,
+  withFaces,
+} from "@/components/topology/diagram/photo-anchors"
+import {
   typeColor,
   type BundleMember,
   type CanvasHandle,
@@ -218,6 +223,8 @@ export interface TopologySearch {
   cables?: "routed" | "straight" | "curved"
   /** Diagram tab: Simple or Detailed cards. */
   mode?: DiagramModeParam
+  /** Diagram tab: devices as cards or as their front photos. */
+  face?: FaceParam
   /** Diagram tab: the line type. */
   line?: LineParam
   /** Diagram tab: the labels on the links, comma-separated `subnet`, `ip`,
@@ -279,6 +286,8 @@ export const Route = createFileRoute("/topology/")({
     if (cables) out.cables = cables
     const mode = oneOf(s.mode, DIAGRAM_MODES)
     if (mode) out.mode = mode
+    const face = oneOf(s.face, FACES)
+    if (face) out.face = face
     const line = oneOf(s.line, LINE_TYPES)
     if (line) out.line = line
     const depth = Number(s.depth)
@@ -297,8 +306,8 @@ export const Route = createFileRoute("/topology/")({
  * the user has edited the view. */
 const OVERRIDE_KEYS = [
   "tab", "site", "location", "role", "status", "tag", "panels", "group",
-  "dir", "color", "cables", "mode", "line", "labels", "lag", "levels",
-  "device", "depth", "devices", "q", "vlangroup", "vms",
+  "dir", "color", "cables", "mode", "face", "line", "labels", "lag",
+  "levels", "device", "depth", "devices", "q", "vlangroup", "vms",
 ] as const
 
 const Skeleton = () => (
@@ -499,6 +508,8 @@ const GROUPS = ["none", "site", "location"] as const
 /** The Diagram tab's switches: the card mode, the line type and the labels
  * the links carry. */
 const DIAGRAM_MODES = ["simple", "detailed"] as const
+/** Card | Photo: the view's default face; a device may override it. */
+const FACES = ["card", "photo"] as const
 const LINE_TYPES = ["straight", "elbow", "bendy", "cyclical"] as const
 const LABEL_TOKENS: readonly LabelToken[] = ["subnet", "ip", "port"]
 /** The known Labels tokens in `v`, in their own order; undefined for
@@ -508,6 +519,7 @@ const labelsOf = (v: unknown): LabelToken[] | undefined =>
     ? LABEL_TOKENS.filter((t) => (v as unknown[]).includes(t))
     : undefined
 type DiagramModeParam = (typeof DIAGRAM_MODES)[number]
+type FaceParam = (typeof FACES)[number]
 type LineParam = (typeof LINE_TYPES)[number]
 const styleOfTab = (t: TabStyle): ViewStyle => (t === "wiring" ? "stencil" : t)
 const tabOfStyle = (v: ViewStyle): TabStyle => (v === "stencil" ? "wiring" : v)
@@ -657,6 +669,10 @@ function TopologyPage() {
       oneOf(vf.diagram?.mode, DIAGRAM_MODES) ??
       oneOf(storedDiagram?.mode, DIAGRAM_MODES) ??
       "simple",
+    face:
+      oneOf(vf.diagram?.face, FACES) ??
+      oneOf(storedDiagram?.face, FACES) ??
+      "card",
     line:
       oneOf(vf.diagram?.line, LINE_TYPES) ??
       oneOf(storedDiagram?.line, LINE_TYPES) ??
@@ -693,6 +709,11 @@ function TopologyPage() {
     "mode",
     dflt.mode,
     DIAGRAM_MODES
+  )
+  const [diagramFace, setDiagramFace] = useUrlEnum<FaceParam>(
+    "face",
+    dflt.face,
+    FACES
   )
   const [diagramLine, setDiagramLine] = useUrlEnum<LineParam>(
     "line",
@@ -825,7 +846,7 @@ function TopologyPage() {
   const savedDiagram = doc.doc.filters.diagram
   const diagramDisplay = useMemo<TopologyDiagramDisplay>(
     () => ({
-      face: savedDiagram?.face ?? "card",
+      face: diagramFace,
       labels: diagramLabels,
       ...(savedDiagram?.fields !== undefined
         ? { fields: savedDiagram.fields }
@@ -833,7 +854,7 @@ function TopologyPage() {
       mode: diagramMode,
       line: diagramLine,
     }),
-    [savedDiagram, diagramMode, diagramLine, diagramLabels]
+    [savedDiagram, diagramMode, diagramFace, diagramLine, diagramLabels]
   )
   /** A view gains the Diagram display once the Diagram tab is used on it. */
   const withDiagram = isDiagram || !!savedDiagram
@@ -1184,12 +1205,18 @@ function TopologyPage() {
   // label shows them.
   const linkIps =
     diagramLabels.includes("subnet") || diagramLabels.includes("ip")
+  // Front photos (`include=photo`) only when some device shows its photo.
+  const photos = wantsPhotos(diagramFace, doc.doc.nodes)
   const graphQuery = useMemo<TopologyQuery>(() => {
     const collapse_panels = filters.collapse
     const cards: Partial<TopologyQuery> =
       isDiagram && !grouped
         ? {
-            include: linkIps ? ["card", "link_ips"] : ["card"],
+            include: [
+              "card",
+              ...(linkIps ? (["link_ips"] as const) : []),
+              ...(photos ? (["photo"] as const) : []),
+            ],
             ...(cardFieldsKey !== null
               ? { card_fields: cardFieldsKey ? cardFieldsKey.split(",") : [] }
               : {}),
@@ -1219,6 +1246,7 @@ function TopologyPage() {
     isDiagram,
     cardFieldsKey,
     linkIps,
+    photos,
   ])
   /** Changes exactly when the map does - the canvas refits on a new one.
    * What the cards and links carry (`include`, the card lines) is not a
@@ -1296,13 +1324,22 @@ function TopologyPage() {
     const bgpEdges = (bgp.data?.edges ?? []).filter(between)
     return { ...q.data, edges: [...q.data.edges, ...ghostEdges, ...bgpEdges] }
   }, [q.data, ghosts.data, bgp.data])
+  // Each device's own Card | Photo, over the view's.
+  const nodeFaces = doc.doc.nodes
   /** What the canvas draws. How many cards hiding took off THIS map is the
    * chip's count - a view saved against one filter can carry names the
    * current query never returns, and offering to restore those would be a
-   * lie. */
+   * lie. The Diagram marks the devices it shows as their photos. */
   const graph = useMemo(
-    () => (fullGraph ? applyHidden(fullGraph, hidden) : undefined),
-    [fullGraph, hidden]
+    () =>
+      fullGraph
+        ? withFaces(
+            applyHidden(fullGraph, hidden),
+            isDiagram ? diagramFace : "card",
+            isDiagram ? nodeFaces : undefined
+          )
+        : undefined,
+    [fullGraph, hidden, isDiagram, diagramFace, nodeFaces]
   )
   const hiddenHere = fullGraph ? hiddenOnMap(fullGraph, hidden) : 0
 
@@ -2208,6 +2245,18 @@ function TopologyPage() {
                   ]}
                 />
               </PopoverField>
+              {isDiagram && !grouped && (
+                <PopoverField label="Devices">
+                  <SegmentedTabs<FaceParam>
+                    value={diagramFace}
+                    onValueChange={setDiagramFace}
+                    items={[
+                      { value: "card", label: "Card" },
+                      { value: "photo", label: "Photo" },
+                    ]}
+                  />
+                </PopoverField>
+              )}
               {isDiagram && (
                 <PopoverField label="Lines">
                   <LineTabs<LineParam>
@@ -2912,6 +2961,30 @@ function TopologyPage() {
                     }}
                   >
                     Remove from view
+                  </MenuItem>
+                )}
+                {isDiagram && !grouped && menu.node.device_id && (
+                  <MenuItem
+                    onClick={() => {
+                      // The view's face, or this device's own - kept only
+                      // where it differs from the view's.
+                      const id = menu.node!.device_id!
+                      const next =
+                        faceOf(id, diagramFace, nodeFaces) === "photo"
+                          ? "card"
+                          : "photo"
+                      setMenu(null)
+                      edit({
+                        type: "setNode",
+                        id,
+                        value: next === diagramFace ? null : { face: next },
+                      })
+                    }}
+                  >
+                    {faceOf(menu.node.device_id, diagramFace, nodeFaces) ===
+                    "photo"
+                      ? "Show card"
+                      : "Show photo"}
                   </MenuItem>
                 )}
                 {isDiagram &&

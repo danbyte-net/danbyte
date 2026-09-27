@@ -12,6 +12,7 @@ import type { BundleMember } from "../edge-semantics"
 import type { EdgeLag } from "../lag-bundles"
 import type { Nub } from "./anchors"
 import type { CardBox } from "./card-layout"
+import type { PhotoShown } from "./photo-anchors"
 
 // The Diagram tab's shared vocabulary: what the pure layout core (card
 // fields, card layout, anchors, link geometry) hands the renderers and the
@@ -52,16 +53,34 @@ export type SideCount = Record<Side, number>
  * Where a link end attaches to its node.
  * - `side`: `off` px along the side from its start (the left end of T/B,
  *   the top end of L/R). `port` names the interface; `id` its handle id.
- * - `point`: a photo marker centre as fractions of the image, leaving
- *   through the top or bottom edge.
+ * - `point`: a port on a photo node (photo-anchors.ts) - its marker's
+ *   centre as fractions of the node's box (image and caption), or with
+ *   `stub` a lead on the image's top or bottom edge for a port without a
+ *   marker. The line leaves the box through `exit`, straight above or
+ *   below the point; the run from the point to there is its lead.
  * - `junction`: a breakout's split point (the centre of its junction
  *   node), leaving along `dir` - the trunk's direction for the legs, back
  *   towards the trunk's card for the trunk.
  */
 export type Anchor =
   | { k: "side"; side: Side; off: number; port?: string; id?: string }
-  | { k: "point"; fx: number; fy: number; exit: "T" | "B"; port: string }
+  | {
+      k: "point"
+      fx: number
+      fy: number
+      exit: "T" | "B"
+      port: string
+      stub?: true
+    }
   | { k: "junction"; dir: Dir }
+
+/** A cable end's component, as the payload pair names it (`a_id` and
+ * `a_kind`): what a photo marker is matched on before the port name. */
+export interface PortRef {
+  id: string
+  /** The termination kind, underscored (`front_port`). */
+  kind?: string
+}
 
 /** A link end resolved to flow coordinates: the point the line starts
  * from and the direction it leaves in. */
@@ -234,6 +253,9 @@ export type DiagramCardData = TopoNode["data"] & {
     /** Detailed mode: one per cabled interface, in order along each side. */
     nubs: Nub[]
     mode: DiagramMode
+    /** Drawn as the device's front photo (or its faceplate) instead of a
+     * card: what the node draws and where its caption goes. */
+    photo?: PhotoShown
   }
 }
 

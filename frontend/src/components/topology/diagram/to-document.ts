@@ -10,6 +10,7 @@ import type {
 import { readableText } from "@/lib/color"
 import { documentBounds } from "@/lib/diagram/geometry"
 import type { PortPlace } from "@/lib/diagram/geometry"
+import { baselineAt, fit, measureText } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
 import {
   LINK_DEFAULTS,
@@ -35,15 +36,26 @@ import type {
   Side as DocSide,
 } from "@/lib/diagram/types"
 import type { LegendItem } from "../legend"
-import { linkEnds } from "./anchors"
+import { leadStart, linkEnds } from "./anchors"
 import type { AnchorLink, Nub } from "./anchors"
 import { distinctCables, relinkDiagram } from "./build-diagram"
-import type { DiagramModel } from "./build-diagram"
+import type { DiagramModel, PhotoModel } from "./build-diagram"
 import { cardContent } from "./card-fields"
 import type { CardPill } from "./card-fields"
-import { cardLayout, JUNCTION, nubRect } from "./card-layout"
+import {
+  CARD,
+  cardLayout,
+  JUNCTION,
+  normalizeHex,
+  NUB,
+  nubRect,
+  PILL,
+  pillWidth,
+} from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
 import { leaves, linkRoute, planOf, routeThrough } from "./link-geometry"
+import { captionPill, PHOTO } from "./photo-anchors"
+import type { PhotoShown } from "./photo-anchors"
 import type {
   Anchor,
   DiagramEdgeData,
@@ -229,6 +241,99 @@ export function cardNode(
       ...(pillRect ? { pill: pillRect } : {}),
     },
     ...(opts.link ? { link: opts.link } : {}),
+  }
+}
+
+/**
+ * A photo node as a document node, centred at `c`: the image with the
+ * markers its lines land on, the stub leads as nubs on the image edge, and
+ * the caption (and pill) where the canvas put them. A faceplate node - it
+ * has no image to export - is a card of the same box, its name at the top.
+ */
+export function photoDocNode(
+  id: string,
+  c: Pt,
+  p: PhotoModel,
+  shown: PhotoShown,
+  color: string | null | undefined,
+  opts: {
+    pill?: CardPill | null
+    checks?: CheckLook
+    link?: string
+    measure?: Measure
+  } = {}
+): DiagramNode {
+  const { w, h, imgH } = p.face
+  const x = c.x - w / 2
+  const y = c.y - h / 2
+  const hex = normalizeHex(color)
+  const fill = hex ?? NEUTRAL_CARD.fill
+  const ink = hex ? inkOn(hex) : NEUTRAL_CARD.ink
+  const photo = shown.kind === "photo" && !!shown.url
+  const nubs: DiagramNub[] = shown.stubs.map((s) => ({
+    x: x + s.x - NUB.ALONG / 2,
+    y: s.side === "T" ? y - NUB.OUT : photo ? y + imgH : y + h,
+    w: NUB.ALONG,
+    h: NUB.OUT,
+    side: s.side === "T" ? "top" : "bottom",
+    ...(s.port ? { label: s.port } : {}),
+  }))
+  const common = {
+    id,
+    x,
+    y,
+    w,
+    h,
+    fill,
+    ink,
+    lines: [],
+    ...(nubs.length ? { nubs } : {}),
+    ...(opts.link ? { link: opts.link } : {}),
+  }
+  let pill: DiagramPill | undefined
+  let pillRect: Rect | undefined
+  if (opts.pill) {
+    const text = fit(
+      opts.pill.text,
+      PILL.MAX_W - 2 * PILL.PAD_X,
+      PILL.SIZE,
+      PILL.WEIGHT,
+      opts.measure ?? measureText
+    )
+    pill = { ...pillLook(opts.pill, opts.checks), text }
+    const r = captionPill(shown.caption, pillWidth(text, opts.measure))
+    pillRect = { ...r, x: x + r.x, y: y + r.y }
+  }
+  if (!photo)
+    return { ...common, kind: "card", title: p.name, ...(pill ? { pill } : {}) }
+  const cap = shown.caption
+  return {
+    ...common,
+    kind: "photo",
+    title: cap.text,
+    ...(pill ? { pill } : {}),
+    photo: {
+      href: shown.url!,
+      x,
+      y,
+      w,
+      h: imgH,
+      markers: shown.marks.map((m) => ({
+        port: m.port,
+        x: x + (m.x - m.w / 2) * w,
+        y: y + (m.y - m.h / 2) * imgH,
+        w: m.w * w,
+        h: m.h * imgH,
+      })),
+    },
+    place: {
+      title: {
+        x: x + cap.x + cap.w / 2,
+        y: y + baselineAt(cap.top, CARD.TITLE_SIZE, PHOTO.CAPTION_LH),
+      },
+      lines: [],
+      ...(pillRect ? { pill: pillRect } : {}),
+    },
   }
 }
 
@@ -446,15 +551,17 @@ const isWiring = (e: Pick<Edge, "type"> & { data?: unknown }) => {
  * keeps a pair's separate cables apart, so its Simple document folds them
  * here - one line with a count chip, like the Simple canvas - and a
  * breakout's legs to one card into one leg. Each folded edge comes with
- * the id of the edge it was made from.
+ * the id of the edge it was made from. Lines to a photo stay apart
+ * (`keep`): each lands on its own port.
  */
 function foldPairs<TEdge extends LiveEdge>(
-  edges: readonly TEdge[]
+  edges: readonly TEdge[],
+  keep?: (e: TEdge) => boolean
 ): [TEdge, string][] {
   const groups = new Map<string, TEdge[]>()
   const out: (TEdge | string)[] = []
   for (const e of edges) {
-    if (!isWiring(e)) {
+    if (!isWiring(e) || keep?.(e)) {
       out.push(e)
       continue
     }
@@ -509,7 +616,9 @@ function foldPairs<TEdge extends LiveEdge>(
  * the Simple ones. */
 function simpleModel(model: DiagramModel): DiagramModel {
   const byId = new Map(model.links.map((l) => [l.id, l]))
-  const folded = foldPairs(model.edges)
+  const photo = (e: { source: string; target: string }) =>
+    !!model.photos?.has(e.source) || !!model.photos?.has(e.target)
+  const folded = foldPairs(model.edges, photo)
   const links: AnchorLink[] = []
   for (const [e, from] of folded) {
     const l = byId.get(from)
@@ -520,6 +629,8 @@ function simpleModel(model: DiagramModel): DiagramModel {
       target: e.target,
       simple: true,
       ...(l.junction ? { junction: l.junction } : {}),
+      // A photo's lines keep their ports, to land on them.
+      ...(photo(e) && l.cables ? { cables: l.cables } : {}),
     })
   }
   return {
@@ -598,7 +709,32 @@ export function toDocument(
   for (const n of shownNodes) {
     const c = { x: n.position.x, y: n.position.y }
     const data = (n.data ?? {}) as CardData & {
-      diagram?: { box: CardBox; nubs: Nub[] }
+      diagram?: { box: CardBox; nubs: Nub[]; photo?: PhotoShown }
+    }
+    const photo = model.photos?.get(n.id)
+    if (photo) {
+      const drawn = shown.get(n.id)?.photo ?? data.diagram?.photo
+      if (!drawn) continue
+      const r = rectAt(c, photo.face)
+      if (area && !overlaps(area, r)) continue
+      const monitor = data.device_id
+        ? opts.monitor?.[data.device_id]?.status
+        : undefined
+      rects.set(n.id, r)
+      nodes.push(
+        photoDocNode(n.id, c, photo, drawn, data.role?.color, {
+          pill: cardContent(data, {
+            monitor,
+            checkLabels: checkNames(opts.checkLabels),
+          }).pill,
+          checks: opts.checkLabels,
+          link: data.device_id
+            ? danbyteUrl(opts.origin, `/devices/${data.device_id}`)
+            : undefined,
+          measure,
+        })
+      )
+      continue
     }
     const input = model.cards.get(n.id)
     if (input) {
@@ -683,6 +819,8 @@ export function toDocument(
 
   // The links: one per cable in Detailed (each leaves its own nub), one
   // per device pair in Simple - each drawn as the canvas plans it.
+  const docKind = new Map(nodes.map((n) => [n.id, n.kind]))
+  const drawsPhoto = (id: string) => docKind.get(id) === "photo"
   const links: DiagramLink[] = []
   for (const e of edges) {
     if (e.type !== "link" && e.type !== "overlay") continue
@@ -706,15 +844,36 @@ export function toDocument(
     const cable = cableIds(d)
     pairs.forEach(([a0, b0], i) => {
       const p = plan?.[i]
-      const route = p
-        ? routeThrough(p.line ?? line, p.pts, leaves(p.pts))
+      const aa = d.a[i] as Anchor | undefined
+      const ba = d.b[i] as Anchor | undefined
+      // A photo port's line starts at the port (its lead): the plan's
+      // points already do, an unplanned line gets it here. A faceplate
+      // exports as a card, so its lines start at its edge.
+      const leadA = leadStart(s, aa)
+      const leadB = leadStart(t, ba)
+      const imageA = !!leadA && drawsPhoto(e.source)
+      const imageB = !!leadB && drawsPhoto(e.target)
+      const planned = p?.pts.slice(
+        leadA && !imageA ? 1 : 0,
+        leadB && !imageB ? -1 : undefined
+      )
+      const drawn = planned
+        ? routeThrough(p!.line ?? line, planned, leaves(planned))
         : linkRoute(line, a0, b0)
+      const route = {
+        kind: drawn.kind,
+        pts: planned
+          ? drawn.pts
+          : [
+              ...(imageA ? [leadA] : []),
+              ...drawn.pts,
+              ...(imageB ? [leadB] : []),
+            ],
+      }
       const first = route.pts[0]
       const last = route.pts[route.pts.length - 1]
       const a = { ...a0, x: first.x, y: first.y }
       const b = { ...b0, x: last.x, y: last.y }
-      const aa = d.a[i] as Anchor | undefined
-      const ba = d.b[i] as Anchor | undefined
       const na = detailed ? nubIndex.get(`${e.id}#${i}a`) : undefined
       const nb = detailed ? nubIndex.get(`${e.id}#${i}b`) : undefined
       // The end labels on the line: where the plan seated them, or (a
@@ -724,17 +883,22 @@ export function toDocument(
         anchor: typeof aa,
         placed: PortPlace | null | undefined
       ): DiagramEndLabel | undefined => {
-        if (!named || overlay || anchor?.k !== "side" || !anchor.port)
-          return undefined
-        if (placed === null) return undefined
-        return { text: anchor.port, ...(placed ? { at: placed } : {}) }
+        if (overlay || !anchor || placed === null) return undefined
+        // A photo port is named in either mode, like a Detailed nub.
+        const text =
+          anchor.k === "point"
+            ? !d.labels.noPorts && anchor.port
+            : anchor.k === "side" && named && anchor.port
+        if (!text) return undefined
+        return { text, ...(placed ? { at: placed } : {}) }
       }
       const addresses = (
         anchor: typeof aa,
         lines: string[] | undefined,
         placed: PortPlace[] | null | undefined
       ): DiagramEndLabel[] | undefined => {
-        if (overlay || anchor?.k !== "side" || !lines?.length) return undefined
+        if (overlay || !anchor || anchor.k === "junction" || !lines?.length)
+          return undefined
         if (plan && !placed) return undefined
         return lines.map((text, k) => ({
           text,
@@ -750,7 +914,8 @@ export function toDocument(
         node: string,
         at: End,
         anchor: typeof aa,
-        nub: number | undefined
+        nub: number | undefined,
+        image: boolean
       ): DiagramEnd => ({
         node,
         x: at.x,
@@ -759,6 +924,7 @@ export function toDocument(
           ? {}
           : { side: endSide(at, detailed ? anchor : undefined) }),
         ...(nub !== undefined ? { nub } : {}),
+        ...(image ? { marker: true } : {}),
       })
       links.push(
         routeLink(
@@ -766,7 +932,7 @@ export function toDocument(
           e.source,
           e.target,
           route,
-          [end(e.source, a, aa, na), end(e.target, b, ba, nb)],
+          [end(e.source, a, aa, na, imageA), end(e.target, b, ba, nb, imageB)],
           {
             sem,
             ...paint,

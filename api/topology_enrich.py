@@ -449,7 +449,7 @@ _PHOTO_UNREADABLE = "unreadable"
 def enrich_photo(ctx: EnrichContext) -> None:
     """``include=photo``: each device node's front photo with the markers of
     its cabled ports - ``node.data.photo = {front, type_faceplate, u_height,
-    vc_position}``.
+    rack_width, vc_position}``.
 
     ``front`` is ``{url, aspect, scale, markers}``, or None when the type has
     no front photo or its file is gone. ``markers`` are
@@ -519,6 +519,7 @@ def enrich_photo(ctx: EnrichContext) -> None:
             "front": front,
             "type_faceplate": dt is not None and dt.pk in faceplates,
             "u_height": dt.u_height if dt is not None else 1,
+            "rack_width": dt.rack_width if dt is not None else "full",
             "vc_position": d.vc_position,
         }
 

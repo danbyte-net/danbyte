@@ -159,12 +159,22 @@ class PhotoPayloadTests(_Base):
             "x": 0.1, "y": 0.5, "w": 0.03, "h": 0.4,
         }])
         self.assertEqual(photos["sw-a"]["u_height"], 2)
+        self.assertEqual(photos["sw-a"]["rack_width"], "full")
         self.assertIsNone(photos["sw-a"]["vc_position"])
-        # The peer has no type: no photo, no faceplate, one unit.
+        # The peer has no type: no photo, no faceplate, one full-width unit.
         self.assertEqual(photos["peer"], {
             "front": None, "type_faceplate": False, "u_height": 1,
-            "vc_position": None,
+            "rack_width": "full", "vc_position": None,
         })
+
+    def test_half_width_type(self):
+        dt = self._type("SN2010", rack_width="half", front=[
+            _marker("interface", "eth0"),
+        ])
+        a = self._device("tor", dt)
+        self._to_peer(Interface.objects.create(device=a, name="eth0"))
+        g = self.client.get("/api/topology/?include=photo").json()
+        self.assertEqual(self._photos(g)["tor"]["rack_width"], "half")
 
     def test_position_renders_for_a_stack_member(self):
         dt = self._type("C9300", front=[

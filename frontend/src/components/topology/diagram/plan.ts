@@ -3,7 +3,7 @@ import type { Edge } from "@xyflow/react"
 import { endTextWidth } from "@/lib/diagram/geometry"
 import type { Measure } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
-import { linkEnds, nubKey } from "./anchors"
+import { leadStart, linkEnds, nubKey } from "./anchors"
 import type { EndTurns } from "./anchors"
 import { solveArcs } from "./arcs"
 import type { ArcAsk, ArcAxis, ArcSide } from "./arcs"
@@ -51,7 +51,9 @@ import type {
 // the cards they do not connect; bendy curves reined in where they would
 // sweep through a card; cyclical arcs raised round the cards between their
 // ends), then where each port name, middle chip and end address goes -
-// end labels on their own cable, which breaks for them.
+// end labels on their own cable, which breaks for them. A cable on a photo
+// port is planned from where its lead leaves the photo, like a nub's; its
+// planned points then start at the port itself.
 // The canvas, the SVG and the draw.io file all draw from this plan, so
 // they agree. Pure.
 
@@ -126,9 +128,13 @@ interface Item {
   runB: number
   /** Drawn as an arc along this axis, bulging this way. */
   arc?: { axis: ArcAxis; s: ArcSide }
-  /** The end leaves a Detailed nub. */
+  /** The end leaves a Detailed nub, or a photo port. */
   nubA: boolean
   nubB: boolean
+  /** The end is a photo port: where its lead starts. Its line is planned
+   * from where the lead leaves the photo, as a nub's is. */
+  leadA?: Pt
+  leadB?: Pt
   fanLeg: boolean
   /** A bendy breakout leg no curve gets clear of the cards: routed as an
    * elbow instead. */
@@ -136,6 +142,10 @@ interface Item {
 }
 
 const dirKey = (e: End) => `${Math.round(e.dir[0])},${Math.round(e.dir[1])}`
+
+/** The port name an end carries: a nub's, or a photo port's. */
+const portOf = (a: Anchor | undefined) =>
+  (a?.k === "side" || a?.k === "point" ? a.port : undefined) || undefined
 
 function items(input: PlanInput): Item[] {
   const out: Item[] = []
@@ -152,27 +162,40 @@ function items(input: PlanInput): Item[] {
     ends.forEach(([a, b], i) => {
       const aa = d.a[i] as Anchor | undefined
       const ba = d.b[i] as Anchor | undefined
-      const nubA = detailed && !d.simple && aa?.k === "side"
-      const nubB = detailed && !d.simple && ba?.k === "side"
-      // Port names at a nub, or on a Simple line that is one cable (a
-      // bundle's line is named by its chip).
+      const leadA = leadStart(s, aa)
+      const leadB = leadStart(t, ba)
+      // A photo port's end runs straight out of the photo like a nub's.
+      const nubA = (detailed && !d.simple && aa?.k === "side") || !!leadA
+      const nubB = (detailed && !d.simple && ba?.k === "side") || !!leadB
+      // Port names at a nub or a photo port, or on a Simple line that is
+      // one cable (a bundle's line is named by its chip).
       const ports = !d.labels.noPorts && (detailed || d.sem === "cable")
-      const ta =
-        ports && aa?.k === "side" && (nubA || !detailed) ? aa.port : undefined
-      const tb =
-        ports && ba?.k === "side" && (nubB || !detailed) ? ba.port : undefined
+      const named = (x: Anchor | undefined, nub: boolean) =>
+        x?.k === "point"
+          ? !d.labels.noPorts
+          : ports && x?.k === "side" && (nub || !detailed)
+      const ta = named(aa, nubA) ? portOf(aa) : undefined
+      const tb = named(ba, nubB) ? portOf(ba) : undefined
       const width = (text: string) => endTextWidth(text, input.measure)
       const wa = ta ? width(ta) : 0
       const wb = tb ? width(tb) : 0
       // Addresses only at a card: a breakout's junction end has none.
       const addr = d.labels.ends?.[i]
-      const ia = aa?.k === "side" && addr?.a?.length ? addr.a : undefined
-      const ib = ba?.k === "side" && addr?.b?.length ? addr.b : undefined
+      const onCard = (x: Anchor | undefined) =>
+        x?.k === "side" || x?.k === "point"
+      const ia = onCard(aa) && addr?.a?.length ? addr.a : undefined
+      const ib = onCard(ba) && addr?.b?.length ? addr.b : undefined
       const wia = (ia ?? []).map(width)
       const wib = (ib ?? []).map(width)
-      // A nub's straight run holds its port name, then its addresses.
-      const runA = nubA ? endRun([...(ta ? [wa] : []), ...wia]) : 0
-      const runB = nubB ? endRun([...(tb ? [wb] : []), ...wib]) : 0
+      // A nub's straight run holds its port name, then its addresses; a
+      // photo port's runs straight out even with no labels, so a curve
+      // carries on from its lead.
+      const runA = nubA
+        ? Math.max(leadA ? 1 : 0, endRun([...(ta ? [wa] : []), ...wia]))
+        : 0
+      const runB = nubB
+        ? Math.max(leadB ? 1 : 0, endRun([...(tb ? [wb] : []), ...wib]))
+        : 0
       const arc: Item["arc"] =
         d.arc && aa?.k === "side" && ba?.k === "side"
           ? {
@@ -183,7 +206,7 @@ function items(input: PlanInput): Item[] {
       const shared = (end: End, node: string, anchor: typeof aa) =>
         anchor?.k === "junction"
           ? `${node}\u0000j\u0000${dirKey(end)}`
-          : d.simple
+          : d.simple && anchor?.k !== "point"
             ? `${node}\u0000${dirKey(end)}`
             : undefined
       const sa = shared(a, e.source, aa)
@@ -224,6 +247,8 @@ function items(input: PlanInput): Item[] {
         ...(arc ? { arc } : {}),
         nubA,
         nubB,
+        ...(leadA ? { leadA } : {}),
+        ...(leadB ? { leadB } : {}),
         fanLeg: d.fan?.role === "leg",
       })
     })
@@ -440,12 +465,12 @@ export function planEdges(
   })
   elbows.forEach((it, j) => {
     const pts = routes[j].pts
-    if (it.nubA)
+    if (it.nubA && !it.leadA)
       turns.set(
         nubKey({ link: it.edge.id, cable: it.i, end: "a" }),
         endTurn(pts, it.a)
       )
-    if (it.nubB)
+    if (it.nubB && !it.leadB)
       turns.set(
         nubKey({ link: it.edge.id, cable: it.i, end: "b" }),
         endTurn(reversed(pts), it.b)
@@ -631,6 +656,32 @@ export function planEdges(
   for (const [id, c] of placed)
     chipFor.set(c.on, { at: c, mid: midOf(id), from: id })
 
+  // A photo port's lead joins its route: the planned points start (or
+  // end) at the port. A chip's place along the route that carries it is
+  // re-measured on the longer route.
+  const withLead = (it: Item) => {
+    const pts = ptsOf.get(it.key)!
+    if (!it.leadA && !it.leadB) return pts
+    return [
+      ...(it.leadA ? [it.leadA] : []),
+      ...pts,
+      ...(it.leadB ? [it.leadB] : []),
+    ]
+  }
+  const leadT = (edge: string, t: number) => {
+    const list = byEdge.get(edge)
+    const it = list?.[Math.floor(list.length / 2)]
+    if (!it || (!it.leadA && !it.leadB)) return t
+    const len = routeOf.get(it.key)!.length
+    const la = it.leadA
+      ? Math.hypot(it.leadA.x - it.a.x, it.leadA.y - it.a.y)
+      : 0
+    const lb = it.leadB
+      ? Math.hypot(it.leadB.x - it.b.x, it.leadB.y - it.b.y)
+      : 0
+    return len + la + lb > 0 ? (la + t * len) / (len + la + lb) : t
+  }
+
   const plans = new Map<string, EdgePlan>()
   for (const [id, list] of byEdge) {
     const own = placed.get(id)
@@ -641,7 +692,7 @@ export function planEdges(
     })
     plans.set(id, {
       cables: list.map((it) => ({
-        pts: ptsOf.get(it.key)!,
+        pts: withLead(it),
         ...(it.rerouted ? { line: "elbow" as const } : {}),
         ...(it.ta ? { a: ports.get(`${it.key}a`)?.at[0] ?? null } : {}),
         ...(it.tb ? { b: ports.get(`${it.key}b`)?.at[0] ?? null } : {}),
@@ -667,7 +718,7 @@ export function planEdges(
       ...(chip
         ? {
             ...(chip.from !== id ? { mid: chip.mid } : {}),
-            midT: chip.at.t,
+            midT: leadT(id, chip.at.t),
             ...(chip.at.off ? { midOff: chip.at.off } : {}),
             ...(chip.at.crowded ? { crowded: true } : {}),
           }

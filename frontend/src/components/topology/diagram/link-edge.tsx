@@ -1,6 +1,11 @@
 import { memo } from "react"
 import type { CSSProperties } from "react"
-import { BaseEdge, EdgeLabelRenderer, useInternalNode } from "@xyflow/react"
+import {
+  BaseEdge,
+  EdgeLabelRenderer,
+  useInternalNode,
+  ViewportPortal,
+} from "@xyflow/react"
 import type { Edge, EdgeProps, InternalNode } from "@xyflow/react"
 
 import {
@@ -12,10 +17,10 @@ import {
 import type { PortPlace } from "@/lib/diagram/geometry"
 import { baselineAt, measureText } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
-import { linkEnds } from "./anchors"
+import { anchorPoint, leadStart, linkEnds } from "./anchors"
 import { chipCentre } from "./label-placement"
 import { linkRoute, leaves, planOf, routeThrough } from "./link-geometry"
-import type { Anchor, DiagramEdgeData, Rect, Route } from "./types"
+import type { Anchor, DiagramEdgeData, Pt, Rect, Route } from "./types"
 
 // A Diagram link: one line per cable between two cards, drawn from the
 // shared plan (plan.ts) so the screen and every export agree.
@@ -31,6 +36,10 @@ import type { Anchor, DiagramEdgeData, Rect, Route } from "./types"
 // another from each end) until the drop plans them again. The middle chip
 // (a bundle's count, the link's subnet) sits on the line; a breakout's
 // trunk carries the cable's label and type.
+//
+// A cable on a photo port starts at the port: its lead runs straight to
+// the photo's edge over the image, so it is drawn a second time above the
+// nodes (React Flow draws every edge under them).
 
 type LinkEdgeType = Edge<DiagramEdgeData, "link">
 
@@ -47,6 +56,10 @@ function boxOf(n: InternalNode | undefined): Rect | null {
 }
 
 const r1 = (v: number) => Math.round(v * 10) / 10
+
+/** The port name an end shows: a card nub's or a photo port's. */
+const portName = (a: Anchor | undefined) =>
+  (a?.k === "side" || a?.k === "point" ? a.port : undefined) || undefined
 
 const width = (text: string) => endTextWidth(text, measureText)
 
@@ -115,7 +128,7 @@ export const LinkEdge = memo(function LinkEdge({
           const anchor = (end === "a" ? data.a[i] : data.b[i]) as
             | Anchor
             | undefined
-          const port = anchor?.k === "side" ? anchor.port : undefined
+          const port = portName(anchor)
           const at = p[end]
           const ips = ends?.[end] ?? []
           const ipAt = p.ips?.[end]
@@ -143,10 +156,12 @@ export const LinkEdge = memo(function LinkEdge({
           const anchor = (end === "a" ? data.a[i] : data.b[i]) as
             | Anchor
             | undefined
-          const card = anchor?.k === "side" ? anchor : undefined
+          const card =
+            anchor?.k === "side" || anchor?.k === "point" ? anchor : undefined
           const named =
-            !data.labels.noPorts && (!data.simple || data.sem === "cable")
-          const port = named ? card?.port : undefined
+            !data.labels.noPorts &&
+            (!data.simple || data.sem === "cable" || anchor?.k === "point")
+          const port = named ? portName(card) : undefined
           const texts = [
             ...(port ? [port] : []),
             ...(card ? (data.labels.ends?.[i]?.[end] ?? []) : []),
@@ -171,8 +186,40 @@ export const LinkEdge = memo(function LinkEdge({
   )
   const fade =
     labelStyle?.opacity != null ? { opacity: labelStyle.opacity } : undefined
+  // Photo ports: from the port to where the line leaves the photo.
+  const leads: [Pt, Pt][] = []
+  const n = Math.min(data.a.length, data.b.length)
+  for (let i = 0; i < n; i++)
+    for (const [box, anchor] of [
+      [s, data.a[i]],
+      [t, data.b[i]],
+    ] as const) {
+      const from = leadStart(box, anchor)
+      if (!from) continue
+      const to = anchorPoint(box, anchor)
+      if (from.x !== to.x || from.y !== to.y) leads.push([from, to])
+    }
   return (
     <>
+      {leads.length > 0 && (
+        <ViewportPortal>
+          <svg
+            aria-hidden
+            className="topo-lead pointer-events-none absolute top-0 left-0 overflow-visible"
+            width={1}
+            height={1}
+          >
+            {leads.map(([from, to], k) => (
+              <path
+                key={k}
+                className="react-flow__edge-path"
+                d={`M ${r1(from.x)},${r1(from.y)} L ${r1(to.x)},${r1(to.y)}`}
+                style={style}
+              />
+            ))}
+          </svg>
+        </ViewportPortal>
+      )}
       {cables.map((c, i) => (
         <BaseEdge
           key={i}

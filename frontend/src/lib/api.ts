@@ -2910,6 +2910,8 @@ export interface TopoPhoto {
   /** The type can render a `TypeFaceplate` (on screen only). */
   type_faceplate: boolean
   u_height: number
+  /** The type's rack footprint: a half-width photo is drawn half as wide. */
+  rack_width?: "full" | "half"
   vc_position: number | null
 }
 

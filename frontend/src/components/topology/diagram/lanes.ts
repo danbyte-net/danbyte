@@ -103,15 +103,30 @@ const dot = (p: Pt, q: Pt) => p.x * q.x + p.y * q.y
 
 // ── Clearance ────────────────────────────────────────────────────────────
 
-/** Does one run keep clear of every card? A route's own cards may be
- * touched only by its first and last runs (`terminal`: they start on
- * them). */
+const NONE: readonly string[] = []
+
+/** The cards run `i` of a route's `runs` may touch: the first starts on
+ * A's, the last ends on B's. A photo port's route can have to go round its
+ * own card; no other run crosses it. */
+function mayTouch(
+  i: number,
+  runs: number,
+  own: readonly string[]
+): readonly string[] {
+  if (runs === 1) return own
+  if (i === 0) return own.slice(0, 1)
+  if (i === runs - 1) return own.slice(1, 2)
+  return NONE
+}
+
+/** Does one run keep clear of every card? A route's own cards are only
+ * touched by the runs starting or ending on them (`touch`). */
 function segClear(
   o: Obstacles,
   p: Pt,
   q: Pt,
   own: readonly string[],
-  terminal: boolean
+  touch: readonly string[]
 ): boolean {
   // The run's box, 1px round it (`segBox`), without making it.
   const near = o.touchingBox(
@@ -121,7 +136,7 @@ function segClear(
     Math.abs(p.y - q.y) + 2
   )
   for (const { id, r } of near) {
-    const grow = own.includes(id) ? (terminal ? -0.5 : 1) : CLEAR
+    const grow = touch.includes(id) ? -0.5 : own.includes(id) ? 1 : CLEAR
     if (segHitsGrown(p, q, r, grow)) return false
   }
   return true
@@ -133,8 +148,9 @@ export function pathClear(
   pts: readonly Pt[],
   own: readonly string[]
 ): boolean {
-  for (let i = 0; i < pts.length - 1; i++)
-    if (!segClear(o, pts[i], pts[i + 1], own, i === 0 || i === pts.length - 2))
+  const runs = pts.length - 1
+  for (let i = 0; i < runs; i++)
+    if (!segClear(o, pts[i], pts[i + 1], own, mayTouch(i, runs, own)))
       return false
   return true
 }
@@ -270,7 +286,7 @@ function routeWith(
       // The street itself first: it is what most often fails.
       const s1 = F.b({ x: v, y: c1 })
       const s2 = F.b({ x: v, y: c2 })
-      if (!segClear(o, s1, s2, own, false)) continue
+      if (!segClear(o, s1, s2, own, NONE)) continue
       const pts = [
         A,
         { x: A.x, y: c1 },
@@ -281,8 +297,8 @@ function routeWith(
       ]
       // The end runs were checked with c1 and c2: only the crossings.
       if (
-        segClear(o, F.b(pts[1]), s1, own, false) &&
-        segClear(o, s2, F.b(pts[4]), own, false) &&
+        segClear(o, F.b(pts[1]), s1, own, NONE) &&
+        segClear(o, s2, F.b(pts[4]), own, NONE) &&
         ok([A, pts[1]]) &&
         ok([pts[4], B])
       )
@@ -367,11 +383,15 @@ function routeWith(
     )
   }
 
-  // Both leave the same way: out past both and across.
+  // Both leave the same way: out past both and across - or, with a card
+  // in the way of either leg (a photo port facing away, or its own photo
+  // between the ends), round it.
   if (Math.abs(bd.x) < 0.5) {
     const start = Math.max(A.y + sA, B.y + sB)
     const u = (y: number) => [A, { x: A.x, y }, { x: B.x, y }, B]
     for (const y of onward(start, 1)) if (ok(u(y))) return done(u(y), true)
+    const d = detour(onward(A.y + sA, 1), onward(B.y + sB, 1))
+    if (d) return done(d, true)
     return done(u(start), false)
   }
 
@@ -715,7 +735,7 @@ function fitter(
         : p[j]
     const own = [cables[r.route].a.node, cables[r.route].b.node]
     for (let i = Math.max(0, r.k - 1); i <= Math.min(n - 2, r.k + 1); i++)
-      if (!segClear(o, at(i), at(i + 1), own, i === 0 || i === n - 2))
+      if (!segClear(o, at(i), at(i + 1), own, mayTouch(i, n - 1, own)))
         return false
     return true
   }

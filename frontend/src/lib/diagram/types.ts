@@ -83,12 +83,17 @@ export interface DiagramNode extends Rect {
 }
 
 /** One end of a link. `x/y` is where the line attaches: the nub's outer
- * edge in Detailed, the side midpoint in Simple, a marker on a photo. */
+ * edge in Detailed, the side midpoint in Simple, a port on a photo. */
 export interface DiagramEnd extends Pt {
   node: string
   side?: Side
   /** Index into the node's `nubs` the line leaves from. */
   nub?: number
+  /** The end is a port on a photo node: the run from it to the link's
+   * first point (last, at the target) is its lead, straight to the
+   * photo's edge, and is drawn over the photo. `side` is the edge it
+   * leaves by. */
+  marker?: boolean
 }
 
 /** A label at one end of a link - a port name or an address. It sits ON
