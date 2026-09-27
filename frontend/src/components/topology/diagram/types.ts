@@ -233,6 +233,14 @@ export type DiagramCardData = TopoNode["data"] & {
   }
 }
 
+/** A Diagram link as its panel sees it: the saved view's override key
+ * (the sorted device pair) and, when it draws as an arc, the side it
+ * bulges to. */
+export interface DiagramLinkRef {
+  pairKey: string
+  arc?: 1 | -1
+}
+
 /** The per-link override key: the two device ids, sorted, joined by "|". */
 export function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`

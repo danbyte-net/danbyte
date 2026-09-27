@@ -377,7 +377,10 @@ export function solveArcs(
  * which way? `always` (the link's own line) says yes wherever it runs;
  * the view's default only for cards level on one row or column whose
  * straight line would cross a card. The side is `flip` when given, else
- * the one with the lower arc - above (or left) on a tie.
+ * the one with the lower arc - above (or left) on a tie. A link's own arc
+ * between cards on no one row or column may go round the other way too -
+ * past their sides rather than over their tops - where only that way is
+ * clear of the cards between.
  */
 export function arcFor(
   a: Rect,
@@ -395,15 +398,14 @@ export function arcFor(
   if (ca.x === cb.x && ca.y === cb.y) return null
   if (!o.always && !(level(a, b, axis) && crossesCard(a, b, o.obs, o.own)))
     return null
-  if (o.flip) return { axis, s: o.flip }
-  const h = (s: ArcSide) => {
-    const side = arcSide(axis, s)
+  const h = (x: ArcAxis, s: ArcSide) => {
+    const side = arcSide(x, s)
     const r = solveArc(
       {
         key: "",
         a: sideMid(a, side),
         b: sideMid(b, side),
-        axis,
+        axis: x,
         s,
         own: o.own,
       },
@@ -411,5 +413,16 @@ export function arcFor(
     )
     return r.clear ? r.h : r.h + 1e6
   }
-  return { axis, s: h(1) < h(-1) ? 1 : -1 }
+  const other: ArcAxis = axis === "x" ? "y" : "x"
+  const axes: ArcAxis[] =
+    o.always && !level(a, b, axis) ? [axis, other] : [axis]
+  const sides: ArcSide[] = o.flip ? [o.flip] : [-1, 1]
+  let best: { axis: ArcAxis; s: ArcSide; h: number } | null = null
+  for (const x of axes)
+    for (const s of sides) {
+      const v = h(x, s)
+      // The natural axis wins ties; above (or left) before below.
+      if (!best || v < best.h - 1e-6) best = { axis: x, s, h: v }
+    }
+  return { axis: best!.axis, s: best!.s }
 }

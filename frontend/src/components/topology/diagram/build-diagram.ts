@@ -24,6 +24,7 @@ import {
   anchorPoint,
   chooseSides,
   reorderNubs,
+  SIDE_DIR,
   sideLength,
 } from "./anchors"
 import type { AnchorLink, Anchors } from "./anchors"
@@ -32,8 +33,8 @@ import type { ArcAxis, ArcSide } from "./arcs"
 import { cardContent } from "./card-fields"
 import { cardLayout, JUNCTION, NUB } from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
-import { detectFanouts, fanChip } from "./fanout"
-import type { Fan } from "./fanout"
+import { detectFanouts, detectMeshes, fanChip } from "./fanout"
+import type { Fan, Mesh } from "./fanout"
 import { CLEAR, LANE, obstacles, SHARED_STUB } from "./lanes"
 import type { Obstacles } from "./lanes"
 import {
@@ -44,6 +45,7 @@ import {
   orientPair,
 } from "./link-labels"
 import type { LabelToken, LinkLabelSet } from "./link-labels"
+import { ELBOW_RADIUS } from "./link-geometry"
 import { endRun, planEdges, portStub } from "./plan"
 import { pairKey } from "./types"
 import type {
@@ -77,7 +79,9 @@ import type {
 // arc's ends leave through the side it bulges to.
 //
 // A breakout cable (fanout.ts) is drawn as one trunk from its shared port
-// to a junction node, then one leg to each far port.
+// to a junction node, then one leg to each far port; one with several
+// ports at both ends as a trunk between two junctions, each end's ports
+// meeting at their own.
 //
 // Diagram nodes are positioned by their CENTRE (React Flow `origin`
 // [0.5, 0.5]), so a card that grows to fit its nubs - or shrinks back in
@@ -131,6 +135,8 @@ export interface DiagramModel {
   edges: Edge<DiagramEdgeData>[]
   /** Breakout cables: where their junctions go. */
   fans: FanModel[]
+  /** N:M breakout cables: where their two junctions go. */
+  meshes?: MeshModel[]
   /** Detailed: the gap two facing sides should leave for a port name at
    * each end of a cable. */
   roomy: number
@@ -154,6 +160,19 @@ export interface FanModel {
   /** The trunk's own port name, per mode: what the junction keeps room
    * for before the legs' room. */
   trunkRoom: Record<DiagramMode, number>
+}
+
+/** An N:M breakout cable as the anchoring sees it. */
+export interface MeshModel {
+  /** The A end's junction node, and the B end's. */
+  id: string
+  idB: string
+  /** The cards each end's ports are on. */
+  a: string[]
+  b: string[]
+  /** How far out from each end's cards its junction sits at least, per
+   * mode: room for the legs' lanes and port names. */
+  reach: Record<DiagramMode, number>
 }
 
 export interface DiagramBuild {
@@ -604,6 +623,228 @@ function fanParts(
   }
 }
 
+/** An N:M breakout's two junction nodes, the trunk between them and a
+ * leg from each junction to each of its end's ports (in Simple, one per
+ * card). Legs carry their port names; the trunk the cable's chip. */
+function meshParts(
+  m: Mesh,
+  keyOf: (id: string) => string,
+  mode: DiagramMode,
+  opts: DiagramOptions,
+  measure: Measure
+): {
+  nodes: Node[]
+  edges: Edge<DiagramEdgeData>[]
+  links: AnchorLink[]
+  layout: Edge[]
+  model: MeshModel
+} {
+  const raw = m.raw
+  const stroke = edgeStroke(raw, opts.colorMode)
+  const look = flowEdgeStyle(
+    edgeLook("cable", {
+      stroke,
+      via: !!raw.via?.length,
+      marked: raw.marked,
+    })
+  )
+  const tokens = opts.labels ?? DEFAULT_LABELS
+  const idB = `${m.id}:b`
+  const trunkId = `${m.id}:t`
+  const cardsA = [...new Set(m.a.map((t) => t.node))]
+  const cardsB = [...new Set(m.b.map((t) => t.node))]
+  const pk = pairKey(keyOf(cardsA[0]), keyOf(cardsB[0]))
+  const chip = fanChip(raw)
+  const common = (key: string, line: LineType) => ({
+    sem: "cable" as const,
+    raw,
+    pairKey: key,
+    line,
+    a: [],
+    b: [],
+    cableId: m.cable,
+  })
+  // In Simple each card's ports fold into one leg.
+  const legsOf = (terms: readonly Mesh["a"][number][]) =>
+    mode === "simple"
+      ? [...new Set(terms.map((t) => t.node))].map((node) => ({
+          node,
+          port: terms
+            .filter((t) => t.node === node)
+            .map((t) => t.port)
+            .join(", "),
+        }))
+      : terms.map((t) => ({ node: t.node, port: t.port }))
+  const node = (id: string): Node => ({
+    id,
+    type: "junction",
+    position: { x: 0, y: 0 },
+    origin: CENTRE,
+    width: JUNCTION.w,
+    height: JUNCTION.h,
+    draggable: false,
+    selectable: false,
+    focusable: false,
+    data: { cable: m.cable, stroke, raw, trunk: trunkId },
+  })
+  const noPorts = tokens.includes("port") ? {} : { noPorts: true }
+  const edges: Edge<DiagramEdgeData>[] = [
+    {
+      id: trunkId,
+      source: m.id,
+      target: idB,
+      type: "link",
+      animated: raw.marked,
+      data: {
+        ...common(pk, "straight"),
+        fan: { role: "trunk", junction: m.id },
+        labels: chip.length ? { mid: chip } : {},
+      },
+      ...look,
+    },
+  ]
+  const links: AnchorLink[] = [
+    {
+      id: trunkId,
+      source: m.id,
+      target: idB,
+      cables: [{}],
+      ...(mode === "simple" ? { simple: true } : {}),
+      junction: { a: [0, 0], b: [0, 0] },
+    },
+  ]
+  for (const [end, junction, terms, others] of [
+    ["a", m.id, m.a, cardsB],
+    ["b", idB, m.b, cardsA],
+  ] as const)
+    legsOf(terms).forEach((l, i) => {
+      const key = pairKey(keyOf(l.node), keyOf(others[0]))
+      const id = `${m.id}:${end}${i}`
+      edges.push({
+        id,
+        source: junction,
+        target: l.node,
+        type: "link",
+        animated: raw.marked,
+        data: {
+          ...common(key, opts.links?.[key]?.line ?? opts.line),
+          fan: { role: "leg", junction },
+          labels: noPorts,
+        },
+        ...look,
+      })
+      links.push({
+        id,
+        source: junction,
+        target: l.node,
+        cables: [{ b: l.port }],
+        ...(mode === "simple" ? { simple: true } : {}),
+        junction: { a: [0, 0] },
+      })
+    })
+  return {
+    nodes: [node(m.id), node(idB)],
+    edges,
+    links,
+    layout: cardsA.flatMap((a, i) =>
+      cardsB.map((b, j) => ({ id: `${m.id}:p${i}.${j}`, source: a, target: b }))
+    ),
+    model: {
+      id: m.id,
+      idB,
+      a: cardsA,
+      b: cardsB,
+      reach: {
+        simple: SHARED_STUB + LANE + 16,
+        detailed:
+          SHARED_STUB +
+          ELBOW_RADIUS +
+          LANE * Math.ceil(Math.max(m.a.length, m.b.length) / 2) +
+          portStub(
+            tokens.includes("port")
+              ? endRun([
+                  Math.max(
+                    ...[...m.a, ...m.b].map((t) =>
+                      measure(t.port, LABEL.END_SIZE, 400)
+                    )
+                  ),
+                ])
+              : 0
+          ),
+      },
+    },
+  }
+}
+
+/** Where each N:M breakout's junctions go: between its two ends' cards, a
+ * third of the way out from each towards the other, clear of every card.
+ * Each end's legs leave its junction towards that end's cards. */
+function placeMeshes(
+  model: DiagramModel,
+  rects: ReadonlyMap<string, Rect>,
+  solid: Obstacles
+): Map<string, { c: Pt; dir: Dir }> {
+  const out = new Map<string, { c: Pt; dir: Dir }>()
+  const bbox = (ids: readonly string[]): Rect | null => {
+    const rs = ids.map((id) => rects.get(id)).filter((r): r is Rect => !!r)
+    if (!rs.length) return null
+    const x = Math.min(...rs.map((r) => r.x))
+    const y = Math.min(...rs.map((r) => r.y))
+    return {
+      x,
+      y,
+      w: Math.max(...rs.map((r) => r.x + r.w)) - x,
+      h: Math.max(...rs.map((r) => r.y + r.h)) - y,
+    }
+  }
+  for (const m of model.meshes ?? []) {
+    const ba = bbox(m.a)
+    const bb = bbox(m.b)
+    if (!ba || !bb) continue
+    const [sa, sb] = chooseSides(ba, bb)
+    const dir = SIDE_DIR[sa]
+    // From the nubs' tips in Detailed.
+    const tip = model.mode === "detailed" ? NUB.OUT : 0
+    const mid = (r: Rect, side: Side) =>
+      anchorPoint(r, { k: "side", side, off: sideLength(r, side) / 2 }, tip)
+    // Level with each other, half-way across: the trunk runs straight.
+    const [ma, mb] = [mid(ba, sa), mid(bb, sb)]
+    const across = dir[0] ? (ma.y + mb.y) / 2 : (ma.x + mb.x) / 2
+    const pa = dir[0] ? { x: ma.x, y: across } : { x: across, y: ma.y }
+    const pb = dir[0] ? { x: mb.x, y: across } : { x: across, y: mb.y }
+    const gap = (pb.x - pa.x) * dir[0] + (pb.y - pa.y) * dir[1]
+    // Far enough out for the legs, a third of the way when there is room,
+    // never past the middle.
+    const want = m.reach[model.mode]
+    const d =
+      gap > 0
+        ? Math.min(Math.max(gap / 3, want), Math.max(12, gap / 2 - 6))
+        : 24
+    const clear = (p: Pt) =>
+      !solid
+        .near({ x: p.x - 1, y: p.y - 1, w: 2, h: 2 })
+        .some(
+          ({ r }) =>
+            p.x > r.x - CLEAR &&
+            p.x < r.x + r.w + CLEAR &&
+            p.y > r.y - CLEAR &&
+            p.y < r.y + r.h + CLEAR
+        )
+    const at = (from: Pt, s: number) => {
+      let k = d
+      let p = { x: from.x + s * dir[0] * k, y: from.y + s * dir[1] * k }
+      for (let i = 0; i < 40 && !clear(p); i++) {
+        k += 12
+        p = { x: from.x + s * dir[0] * k, y: from.y + s * dir[1] * k }
+      }
+      return p
+    }
+    out.set(m.id, { c: at(pa, 1), dir: [-dir[0], -dir[1]] as Dir })
+    out.set(m.idB, { c: at(pb, -1), dir })
+  }
+  return out
+}
+
 const rectAt = (c: Pt, s: { w: number; h: number }): Rect => ({
   x: c.x - s.w / 2,
   y: c.y - s.h / 2,
@@ -614,7 +855,8 @@ const rectAt = (c: Pt, s: { w: number; h: number }): Rect => ({
 /** Where each breakout's junction goes: straight out from its trunk's
  * port (`trunkEnds`, else the side facing the far cards' midpoint), a
  * third of the way to the far cards but far enough for the trunk's port
- * name and chip, and clear of every card. */
+ * name and chip, and clear of every card. An N:M breakout's two go
+ * between its ends (`placeMeshes`). */
 function placeJunctions(
   model: DiagramModel,
   rects: ReadonlyMap<string, Rect>,
@@ -677,6 +919,7 @@ function placeJunctions(
     }
     out.set(f.id, { c: at(), dir: start.dir })
   }
+  for (const [id, j] of placeMeshes(model, rects, solid)) out.set(id, j)
   return out
 }
 
@@ -717,11 +960,15 @@ function withJunctionDirs(
       const side = FACING[`${Math.round(dx)},${Math.round(dy)}`]
       if (side && near >= 2 * LANE) force = { ...force, b: side }
     }
+    // A trunk between two junctions (N:M) leaves its A junction the
+    // other way from that junction's legs.
+    const both = !!(l.junction.a && l.junction.b)
+    const da: Dir | undefined = ja && both ? [-ja.dir[0], -ja.dir[1]] : ja?.dir
     return {
       ...l,
       ...(force ? { force } : {}),
       junction: {
-        ...(l.junction.a ? { a: ja?.dir ?? ([1, 0] as Dir) } : {}),
+        ...(l.junction.a ? { a: da ?? ([1, 0] as Dir) } : {}),
         ...(l.junction.b
           ? {
               b: jb ? ([-jb.dir[0], -jb.dir[1]] as Dir) : ([-1, 0] as Dir),
@@ -900,7 +1147,8 @@ function anchorAll(
   }
   solid = obstacles(rects)
   let anchors = first
-  if (model.fans.length)
+  const junctioned = model.fans.length || model.meshes?.length
+  if (junctioned)
     junctions = placeJunctions(
       model,
       rects,
@@ -908,7 +1156,7 @@ function anchorAll(
       trunkEnds(model, first, rects)
     )
   anchors = pass("detailed", first.sides)
-  if (model.fans.length)
+  if (junctioned)
     junctions = placeJunctions(
       model,
       rects,
@@ -1050,8 +1298,19 @@ export function buildDiagram(
 
   // Breakout cables come out of the payload whole, as trunk and legs.
   const fans = grouped ? [] : detectFanouts(graph.edges, (id) => cards.has(id))
-  const consumed = new Set(fans.flatMap((f) => f.edges))
+  const meshes = grouped
+    ? []
+    : detectMeshes(
+        graph.edges,
+        (id) => cards.has(id),
+        new Set(fans.map((f) => f.cable))
+      )
+  const consumed = new Set([
+    ...fans.flatMap((f) => f.edges),
+    ...meshes.flatMap((m) => m.edges),
+  ])
   const parts = fans.map((f) => fanParts(f, key, mode, opts, measure))
+  const meshed = meshes.map((m) => meshParts(m, key, mode, opts, measure))
 
   const { edges: oriented, flipped } = orientHubToLeaf(
     classifyEdges(
@@ -1103,12 +1362,14 @@ export function buildDiagram(
         : e
     }),
     ...parts.flatMap((p) => p.edges),
+    ...meshed.flatMap((p) => p.edges),
   ]
   const links = [
     ...oriented
       .map((e) => anchorLink(e, flipped.has(e.id)))
       .filter((l): l is AnchorLink => !!l),
     ...parts.flatMap((p) => p.links),
+    ...meshed.flatMap((p) => p.links),
   ]
 
   let levels: Map<string, number> | undefined
@@ -1127,6 +1388,7 @@ export function buildDiagram(
   const wiring = [
     ...edges.filter((e) => e.type !== "overlay" && !e.data?.fan),
     ...parts.flatMap((p) => p.layout),
+    ...meshed.flatMap((p) => p.layout),
   ]
   // Ranks far enough apart for the labels on the line at both ends of a
   // cable - a port name, then its addresses - and a few lanes between.
@@ -1158,7 +1420,13 @@ export function buildDiagram(
     }
   }
   const lanes = Math.min(8, Math.max(2, ...degree.values()))
-  const rankGap = run ? 2 * portStub(run) + LANE * lanes : 0
+  // An N:M breakout's two junctions sit between its ends' ranks, each
+  // with its legs' room out to its cards.
+  const meshGap = Math.max(
+    0,
+    ...meshed.map((p) => 2 * p.model.reach[mode] + LANE)
+  )
+  const rankGap = Math.max(run ? 2 * portStub(run) + LANE * lanes : 0, meshGap)
   const all = new Map<string, { w: number; h: number }>([...fixed, ...base])
   const layout = (boxes: Map<string, { w: number; h: number }>): Laid => {
     // Saved positions are centres; the layout pins top-left corners.
@@ -1219,6 +1487,7 @@ export function buildDiagram(
     links,
     edges,
     fans: parts.map((p) => p.model),
+    ...(meshed.length ? { meshes: meshed.map((p) => p.model) } : {}),
     roomy: run && mode === "detailed" ? 2 * portStub(run) : 0,
     measure,
   }
@@ -1270,9 +1539,12 @@ export function buildDiagram(
       data: { ...n.data, dimmed, diagram: shown } as DiagramCardData,
     }
   })
-  for (const p of parts) {
-    const j = junctions.get(p.node.id)
-    nodes.push(j ? { ...p.node, position: j.c } : { ...p.node, hidden: true })
+  for (const n of [
+    ...parts.map((p) => p.node),
+    ...meshed.flatMap((p) => p.nodes),
+  ]) {
+    const j = junctions.get(n.id)
+    nodes.push(j ? { ...n, position: j.c } : { ...n, hidden: true })
   }
 
   return { nodes, edges: planned, model }

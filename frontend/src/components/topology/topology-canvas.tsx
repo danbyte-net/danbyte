@@ -77,6 +77,8 @@ import { toDocument } from "./diagram/to-document"
 import type { DocumentOptions } from "./diagram/to-document"
 import type {
   DiagramCardData,
+  DiagramEdgeData,
+  DiagramLinkRef,
   DiagramMode,
   LineType,
   Rect,
@@ -86,6 +88,16 @@ import { fromFlow } from "./export/from-flow"
 export { speedColor, typeColor } from "./edge-style"
 export type { EdgeColorMode } from "./edge-style"
 export type { BundleMember } from "./edge-semantics"
+
+/** The Diagram link behind a clicked edge, when it is wiring. */
+function linkRef(e: Edge): DiagramLinkRef | undefined {
+  if (e.type !== "link") return undefined
+  const d = e.data as DiagramEdgeData | undefined
+  if (!d?.pairKey || d.fan?.role === "trunk") return undefined
+  if (d.sem !== "cable" && d.sem !== "bundle" && d.sem !== "lagbundle")
+    return undefined
+  return { pairKey: d.pairKey, ...(d.arc ? { arc: d.arc.flip } : {}) }
+}
 
 const edgeTypes = { routed: RoutedEdge, overlay: OverlayEdge, link: LinkEdge }
 
@@ -911,9 +923,18 @@ export interface TopologyCanvasProps {
   hiddenPorts?: Set<string>
   originId?: string
   onSelectNode?: (data: TopologyGraph["nodes"][number]["data"]) => void
-  onSelectEdge?: (data: NonNullable<TopoEdge["data"]>, edgeId: string) => void
+  /** A cable was clicked. `link`: the Diagram link it draws. */
+  onSelectEdge?: (
+    data: NonNullable<TopoEdge["data"]>,
+    edgeId: string,
+    link?: DiagramLinkRef
+  ) => void
   /** Flat view: a bundled edge was clicked - its member cables. */
-  onSelectBundle?: (cables: BundleMember[], edgeId: string) => void
+  onSelectBundle?: (
+    cables: BundleMember[],
+    edgeId: string,
+    link?: DiagramLinkRef
+  ) => void
   /** Grouped mode: a group card was clicked. */
   onSelectGroup?: (data: TopoGroupData) => void
   /** Grouped mode: an aggregated group-to-group edge was clicked. */
@@ -1655,8 +1676,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     (_: unknown, node: Node) => {
       // A breakout's junction is part of its cable.
       if (node.type === "junction") {
-        const raw = (node.data as { raw?: TopoEdge["data"] }).raw
-        if (raw) onSelectEdge?.(raw, `${node.id}:t`)
+        const { raw, trunk } = node.data as {
+          raw?: TopoEdge["data"]
+          trunk?: string
+        }
+        if (raw) onSelectEdge?.(raw, trunk ?? `${node.id}:t`)
         return
       }
       if (node.type === "sitegroup")
@@ -1698,10 +1722,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         (data?.sem === "bundle" || data?.sem === "lagbundle") &&
         data.cables
       )
-        onSelectBundle?.(data.cables, edge.id)
+        onSelectBundle?.(data.cables, edge.id, linkRef(edge))
       else if (data?.sem === "groupedge" && data.group)
         onSelectGroupEdge?.(data.group, edge.id)
-      else if (data?.raw) onSelectEdge?.(data.raw, edge.id)
+      else if (data?.raw) onSelectEdge?.(data.raw, edge.id, linkRef(edge))
     },
     [onGhostEdge, onBgpEdge, onSelectEdge, onSelectBundle, onSelectGroupEdge]
   )

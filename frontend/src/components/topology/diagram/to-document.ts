@@ -563,7 +563,10 @@ export function toDocument(
   const shownNodes = live.nodes.filter(
     (n) => !n.hidden && (model.base.has(n.id) || model.fixed.has(n.id))
   )
-  const fanIds = new Set(model.fans.map((f) => f.id))
+  const fanIds = new Set([
+    ...model.fans.map((f) => f.id),
+    ...(model.meshes ?? []).flatMap((m) => [m.id, m.idB]),
+  ])
 
   // Boxes, nubs, junctions and anchored edges for the document's mode.
   let shown = model.shown

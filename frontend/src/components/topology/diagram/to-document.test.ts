@@ -21,6 +21,7 @@ import { printLegend, toDocument } from "./to-document"
 import type { DocumentOptions } from "./to-document"
 import { routePolyline } from "@/lib/diagram/geometry"
 import type { DiagramCardData } from "./types"
+import { pairKey } from "./types"
 
 // The export document is drawn from the Diagram's model and where the cards
 // are now - never the DOM - and carries only what the map means: no hidden
@@ -475,6 +476,24 @@ describe("link labels in the exports", () => {
         expect(c.getAttribute("value")).toMatch(/^10\.9\./)
       }
     })
+
+  it("draws a link's own Cyclical line as a curved arc, in draw.io too", () => {
+    const key = pairKey(DEV.spine1, DEV.leaf1)
+    const b = build({ links: { [key]: { line: "cyclical" } } })
+    const doc = exportOf(b)
+    const arcs = doc.links.filter((l) => l.kind === "cyclical")
+    expect(arcs.length).toBeGreaterThan(0)
+    for (const l of arcs) expect(l.points.length).toBeGreaterThanOrEqual(2)
+    const xml = parse(toDrawio([doc], { measure: approxMeasure }), "text/xml")
+    for (const l of arcs) {
+      const cell = [...xml.getElementsByTagName("object")].find(
+        (o) => o.getAttribute("danbyte_id") === l.id
+      )!
+      expect(
+        cell.getElementsByTagName("mxCell")[0].getAttribute("style")
+      ).toContain("curved=1")
+    }
+  })
 })
 
 describe("printLegend", () => {

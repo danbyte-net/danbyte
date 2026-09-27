@@ -10,9 +10,13 @@ import type { CablePair } from "./types"
 // a bundle count on what is one cable.
 //
 // The Diagram draws it as the cable page does: one trunk out of the shared
-// port to a split point (the junction), then one leg to each far port. This
-// module only finds them; build-diagram.ts turns each into a junction node,
-// a trunk edge and its legs.
+// port to a split point (the junction), then one leg to each far port. A
+// cable with several ports at both ends (N:M, an MPO trunk broken out at
+// each end) is drawn the same way from both: each end's ports meet at a
+// junction of their own, and one trunk joins the two junctions - when the
+// payload says which cable end (A/B) each port is on. This module only
+// finds them; build-diagram.ts turns each into junction nodes, a trunk
+// edge and its legs.
 
 /** One termination of a cable: a port on a node. */
 export interface FanTerm {
@@ -168,6 +172,106 @@ export function detectFanouts(
         ...(trunk.id ? { id: trunk.id } : {}),
       },
       legs,
+      edges: list.map((e) => e.id),
+    })
+  }
+  return out
+}
+
+/** A breakout with several ports at both ends: each end's ports meet at
+ * a junction of their own, one trunk joins the junctions. */
+export interface Mesh {
+  /** The A end's junction node: `fan:<cable uuid>`; the B end's is
+   * `fan:<cable uuid>:b`. */
+  id: string
+  cable: string
+  /** The cable's data, every pair oriented from its A end. */
+  raw: NonNullable<TopoEdge["data"]>
+  /** The ports on the cable's A end and on its B end, in payload order;
+   * each one's `pairs` index `raw.pairs`. */
+  a: FanTerm[]
+  b: FanTerm[]
+  /** The payload edges it replaces. */
+  edges: string[]
+}
+
+/**
+ * The N:M breakout cables among a payload's edges: two or more ports at
+ * both of the cable's ends, told apart by the ends (`a_end`/`b_end`) every
+ * pair carries. Without them - an older server - there are none, and such
+ * a cable stays one line per pair. `skip`: cables already drawn otherwise
+ * (1:N breakouts).
+ */
+export function detectMeshes(
+  edges: readonly TopoEdge[],
+  present: (id: string) => boolean,
+  skip: ReadonlySet<string> = new Set()
+): Mesh[] {
+  const byCable = new Map<string, TopoEdge[]>()
+  for (const e of edges) {
+    if (e.type && e.type !== "cable") continue
+    const cable = e.data?.cable_id
+    if (!cable || skip.has(cable)) continue
+    if (!present(e.source) || !present(e.target)) continue
+    const list = byCable.get(cable)
+    if (list) list.push(e)
+    else byCable.set(cable, [e])
+  }
+  const out: Mesh[] = []
+  for (const [cable, list] of byCable) {
+    // Every pair from the cable's A end.
+    const pairs: { src: string; dst: string; p: Pair }[] = []
+    let ends = true
+    for (const e of list)
+      for (const p0 of (e.data?.pairs ?? []) as Pair[]) {
+        const known = (x?: string | null) => x === "A" || x === "B"
+        if (!known(p0.a_end) || !known(p0.b_end) || p0.a_end === p0.b_end) {
+          ends = false
+          continue
+        }
+        pairs.push(
+          p0.a_end === "A"
+            ? { src: e.source, dst: e.target, p: p0 }
+            : { src: e.target, dst: e.source, p: swapPair(p0) }
+        )
+      }
+    if (!ends || pairs.length < 4) continue
+    const terms = (side: "a" | "b") => {
+      const seen = new Map<string, FanTerm & { first: number }>()
+      pairs.forEach(({ src, dst, p }, i) => {
+        const node = side === "a" ? src : dst
+        const port = side === "a" ? (p.a_port ?? p.a) : (p.b_port ?? p.b)
+        const id = side === "a" ? p.a_id : p.b_id
+        const k = termKey(node, id, port)
+        const t = seen.get(k)
+        if (t) t.pairs!.push(i)
+        else
+          seen.set(k, {
+            node,
+            port,
+            ...(id ? { id } : {}),
+            pairs: [i],
+            first: seen.size,
+          })
+      })
+      return [...seen.values()]
+        .sort((x, y) => x.first - y.first)
+        .map(({ first: _first, ...t }) => t)
+    }
+    const a = terms("a")
+    const b = terms("b")
+    if (a.length < 2 || b.length < 2) continue
+    const first = list[0].data!
+    out.push({
+      id: `fan:${cable}`,
+      cable,
+      raw: {
+        ...first,
+        pairs: pairs.map((x) => x.p),
+        lag: { a: null, b: null },
+      },
+      a,
+      b,
       edges: list.map((e) => e.id),
     })
   }

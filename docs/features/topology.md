@@ -78,35 +78,9 @@ something.
       one side they continue round the corner. The nubs on a side are
       ordered by where their cables turn, so the cables leaving one side
       nest instead of crossing on their way out.
-- **Lines** (Display popover) - **Straight**, **Elbow** or **Bendy**. LLDP
-  ghosts stay straight and dashed; BGP sessions stay the faint dotted
-  overlay from card centre to card centre.
-    - **Elbow** - right angles with rounded corners. Each cable runs
-      straight out of its port far enough for its end labels before its
-      first bend, and keeps clear of the cards it does not connect: a
-      corridor with a card in it moves to the middle of the clear gap, and
-      when no corridor between two cards is clear the cable steps round
-      through a clear street. Cables sharing a corridor each get a **lane**
-      of their own, 12 px apart, in the order that keeps them from crossing.
-      In a tight gap the labels give way first (a cable keeps its lane
-      and loses the name), and only then do the lanes close up.
-    - **Bendy** - a smooth curve that leaves each card square to its edge,
-      reined in where it would sweep through a card and never overshooting
-      the middle of the gap between two facing cards.
-    - **Straight** - the direct line; a card's side is still chosen so the
-      line does not leave it straight into a neighbour.
-    - **Cyclical** (a saved view's line, or one link's) - an arc that loops
-      round the cards between its two ends instead of crossing them, both
-      ends leaving through the side it bulges to (the top of a row, say).
-      It rises until it keeps 16 px clear of every card within its span; a
-      longer arc goes round a shorter one it holds, at least 12 px outside
-      it, and the arcs leaving one side of a card leave in that nesting
-      order. As the view's line it arcs only the links between cards of one
-      row (or column) whose straight line would cross a card, and draws the
-      rest Bendy; set on one link it always arcs. It goes above (or left of)
-      the cards unless the other side gives the lower arc, or the link's
-      saved flip picks a side. The arc is a draw.io curve, so every export
-      draws the same one.
+- **Lines** (Display popover) - **Straight**, **Elbow**, **Bendy** or
+  **Cyclical**, for the whole view or one link at a time; see
+  [Line types](#line-types).
 - **Breakout cables** - one cable whose one end is a single port and whose
   other end lands on several (a fan-out, as the cable's own page draws it)
   is drawn as **one cable**: a single nub for the shared port, one trunk out
@@ -119,8 +93,12 @@ something.
   enough for their port names, one name to each gap between them.
   In Simple the legs to one card fold into one. A `2x` count only ever
   counts separate cables between two devices (and a LAG's members) - never
-  the legs of one cable. A cable with several ports at both ends stays one
-  line per port pair.
+  the legs of one cable. A cable with several ports at **both** ends (an
+  MPO trunk broken out at each end) is drawn the same way from both: each
+  end's ports meet at a split point of their own, and one trunk joins the
+  two - its ends are told apart by the cable end (A/B) each port is on.
+  From a server that does not send the ends it stays one line per port
+  pair.
 - **Middle chips** (a bundle's count, a trunk's name) sit at the middle of
   their line, or the nearest spot along it (or just beside it) clear of the
   cards, the port names and the other lines; a chip with no free spot
@@ -214,6 +192,48 @@ it stays in this browser.
 
 Admins also get **Role card lines** in the card's menu, which opens
 **Settings → Topology** on that device's role.
+
+### Line types
+
+**Lines** in the Display popover sets the view's line, as icon tabs (hover
+one for its name). LLDP ghosts stay straight and dashed; BGP sessions stay
+the faint dotted overlay from card centre to card centre.
+
+- **Straight** - the direct line; a card's side is still chosen so the line
+  does not leave it straight into a neighbour.
+- **Elbow** - right angles with rounded corners. Each cable runs straight
+  out of its port far enough for its end labels before its first bend, and
+  keeps clear of the cards it does not connect: a corridor with a card in
+  it moves to the middle of the clear gap, and when no corridor between two
+  cards is clear the cable steps round through a clear street. Cables
+  sharing a corridor each get a **lane** of their own, 12 px apart, in the
+  order that keeps them from crossing. In a tight gap the labels give way
+  first (a cable keeps its lane and loses the name), and only then do the
+  lanes close up.
+- **Bendy** - a smooth curve that leaves each card square to its edge,
+  reined in where it would sweep through a card and never overshooting the
+  middle of the gap between two facing cards. Where a nub has labels the
+  curve runs straight out of it far enough for them.
+- **Cyclical** - an arc that loops round the cards between its two ends
+  instead of crossing them, both ends leaving through the side it bulges to
+  (the top of a row, say). It rises until it keeps 16 px clear of every card
+  within its span; a longer arc goes round a shorter one it holds, at least
+  12 px outside it, and the arcs leaving one side of a card leave in that
+  nesting order. As the view's line it arcs only the links between cards of
+  one row (or column) whose straight line would cross a card, and draws the
+  rest Bendy. It goes above (or left of) the cards unless the other side
+  gives the lower arc. The arc is a draw.io curve, so every export draws the
+  same one.
+
+**One link's own line** - click a cable (or a bundle) and its panel has a
+**Line** row: **Default** follows the view, the four line types pin this
+link's own. A link's own Cyclical always arcs; between cards on no one row
+or column it goes round whichever way - over their tops or past their sides
+- is clear of the cards between. On a link drawn as an arc, **Flip the arc**
+turns it over to the other side of the cards. The choice covers every cable
+between the two devices, in Simple and Detailed alike, and is part of the
+view like its arrangement: each change is one undo step, marks the view
+**edited**, and is kept by **Save** (on the default map, in this browser).
 
 ### Link labels
 
@@ -671,7 +691,7 @@ back button and a reload all keep it.
 |---|---|
 | `tab` | `wiring` (default), `diagram`, `hierarchy`, `flat`, `logical` |
 | `mode` | Diagram: `simple` (default), `detailed` |
-| `line` | Diagram: `straight` (default), `elbow`, `bendy` |
+| `line` | Diagram: `straight` (default), `elbow`, `bendy`, `cyclical` |
 | `labels` | Diagram: the link labels, comma-separated `subnet`, `ip`, `port` (all by default); empty for none |
 | `view` | a saved view's id |
 | `site` `location` `role` `status` | an id, or `all` |
@@ -755,10 +775,10 @@ Both show what the canvas shows, from the same plan: role-coloured cards
 with the name, card lines and pill; in Detailed, the interface nubs; the
 port names and addresses on their cables where the map put them, each over
 a white box that breaks the line (a label the map left off is left off);
-every elbow in its lane; the same line types (curves follow draw.io's
-curved rule, so the draw.io file matches); a breakout's split point; the
-subnet and count chips where the map shows them (a chip the map only shows
-on hover is left out); zones. The monitoring pill is
+every elbow in its lane; the same line types, Cyclical arcs and each link's
+own line (curves follow draw.io's curved rule, so the draw.io file
+matches); a breakout's split points; the subnet and count chips where the
+map shows them (a chip the map only shows on hover is left out); zones. The monitoring pill is
 the one on screen when the file is made. Selection, hover, search dimming
 and hidden devices or link families never reach a file.
 
@@ -782,11 +802,13 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   follow.
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
   with each corner as a waypoint, so they stay square when you move a card.
-  Bendy lines are draw.io curves through the same points the map uses. A
+  Bendy lines and Cyclical arcs are draw.io curves through the same points
+  the map uses. A
   single cable links back to it in Danbyte. Lines are written before the
   cards, so they pass under a card as they do on the screen.
-- **Breakouts:** the split point is a small ellipse; the trunk ends on it
-  and each leg leaves from it, so dragging it in draw.io moves the split.
+- **Breakouts:** the split point is a small ellipse (two, for a cable
+  broken out at both ends); the trunk ends on it and each leg leaves from
+  it, so dragging it in draw.io moves the split.
   The trunk, the legs and the ellipse carry the cable's id
   (`danbyte_cable`, under *Edit Data*) and link back to the cable.
 - **Bands:** a row band becomes a swimlane that holds its cards (the ones

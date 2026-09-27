@@ -27,6 +27,7 @@ import type {
   TopoNode,
   TopologyGraph,
   TopologyDiagramDisplay,
+  TopologyLinkOverride,
   TopologyQuery,
   TopologyViewSaved,
   TopologyViewState,
@@ -111,6 +112,11 @@ import {
   ViewCardLinesEditor,
 } from "@/components/topology/diagram/card-lines-dialog"
 import type { CardLinesTarget } from "@/components/topology/diagram/card-lines-dialog"
+import {
+  LineTabs,
+  LinkLineRow,
+  linkOverride,
+} from "@/components/topology/diagram/line-tabs"
 import { DEFAULT_LABELS } from "@/components/topology/diagram/link-labels"
 import type { LabelToken } from "@/components/topology/diagram/link-labels"
 import {
@@ -120,6 +126,7 @@ import {
   type EdgeColorMode,
   type NodeStyle,
 } from "@/components/topology/topology-canvas"
+import type { DiagramLinkRef } from "@/components/topology/diagram/types"
 import { sharedLag } from "@/components/topology/lag-bundles"
 import type {
   GroupEdgeInfo,
@@ -458,10 +465,9 @@ const ROUTINGS = ["routed", "straight", "curved"] as const
 const LAG_MODES = ["on", "off"] as const
 const GROUPS = ["none", "site", "location"] as const
 /** The Diagram tab's switches: the card mode, the line type and the labels
- * the links carry. Cyclical joins the line types with the arcs; a saved
- * view holding it reads as the default until then. */
+ * the links carry. */
 const DIAGRAM_MODES = ["simple", "detailed"] as const
-const LINE_TYPES = ["straight", "elbow", "bendy"] as const
+const LINE_TYPES = ["straight", "elbow", "bendy", "cyclical"] as const
 const LABEL_TOKENS: readonly LabelToken[] = ["subnet", "ip", "port"]
 /** The known Labels tokens in `v`, in their own order; undefined for
  * anything that is not a list. */
@@ -775,13 +781,9 @@ function TopologyPage() {
         ? { fields: savedDiagram.fields }
         : {}),
       mode: diagramMode,
-      // A line type this page cannot pick yet is kept, not reset.
-      line:
-        !urlSearch.line && savedDiagram?.line === "cyclical"
-          ? savedDiagram.line
-          : diagramLine,
+      line: diagramLine,
     }),
-    [savedDiagram, diagramMode, diagramLine, urlSearch.line, diagramLabels]
+    [savedDiagram, diagramMode, diagramLine, diagramLabels]
   )
   /** A view gains the Diagram display once the Diagram tab is used on it. */
   const withDiagram = isDiagram || !!savedDiagram
@@ -926,6 +928,8 @@ function TopologyPage() {
   )
   const [selBundle, setSelBundle] = useState<BundleMember[] | null>(null)
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null)
+  /** The Diagram link behind the open cable or bundle panel. */
+  const [selLink, setSelLink] = useState<DiagramLinkRef | null>(null)
   const [selGroup, setSelGroup] = useState<TopoGroupData | null>(null)
   const [selGroupEdge, setSelGroupEdge] = useState<GroupEdgeInfo | null>(null)
   const [hintDismissed, setHintDismissed] = useState(false)
@@ -946,7 +950,22 @@ function TopologyPage() {
     setSelGroup(null)
     setSelGroupEdge(null)
     setSelEdgeId(null)
+    setSelLink(null)
   }
+  /** The open panel's link, as the view draws it. */
+  const lineRow =
+    isDiagram && selLink ? (
+      <LinkLineRow
+        link={selLink}
+        override={doc.doc.links[selLink.pairKey]}
+        viewLine={diagramLine}
+        onChange={(v) => setLinkOverride(selLink.pairKey, v)}
+      />
+    ) : null
+  /** A link's own line (and arc side) in the view; empty = the view's. */
+  const setLinkOverride = (key: string, value: TopologyLinkOverride) =>
+    edit({ type: "setLink", key, value: linkOverride(value) })
+
   /** Drilling in scopes the map to that one group - which the URL already has
    * a spelling for, so this is a filter change, not a mode. */
   const drillInto = (d: TopoGroupData) => {
@@ -1815,14 +1834,9 @@ function TopologyPage() {
               </PopoverField>
               {isDiagram && (
                 <PopoverField label="Lines">
-                  <SegmentedTabs<LineParam>
+                  <LineTabs<LineParam>
                     value={diagramLine}
-                    onValueChange={setDiagramLine}
-                    items={[
-                      { value: "straight", label: "Straight" },
-                      { value: "elbow", label: "Elbow" },
-                      { value: "bendy", label: "Bendy" },
-                    ]}
+                    onChange={setDiagramLine}
                   />
                 </PopoverField>
               )}
@@ -2108,15 +2122,17 @@ function TopologyPage() {
                 clearSel()
                 setSelNode(d)
               }}
-              onSelectEdge={(d, id) => {
+              onSelectEdge={(d, id, link) => {
                 clearSel()
                 setSelEdge(d)
                 setSelEdgeId(id)
+                setSelLink(link ?? null)
               }}
-              onSelectBundle={(cables, id) => {
+              onSelectBundle={(cables, id, link) => {
                 clearSel()
                 setSelBundle(cables)
                 setSelEdgeId(id)
+                setSelLink(link ?? null)
               }}
               onSelectGroup={(d) => {
                 clearSel()
@@ -2239,10 +2255,18 @@ function TopologyPage() {
           />
         )}
         {selEdge && (
-          <EdgePanel data={selEdge} onClose={() => setSelEdge(null)} />
+          <EdgePanel
+            data={selEdge}
+            onClose={() => setSelEdge(null)}
+            line={lineRow}
+          />
         )}
         {selBundle && (
-          <BundlePanel cables={selBundle} onClose={() => setSelBundle(null)} />
+          <BundlePanel
+            cables={selBundle}
+            onClose={() => setSelBundle(null)}
+            line={lineRow}
+          />
         )}
         {selGroup && (
           <GroupPanel
@@ -2728,9 +2752,12 @@ function PairEnds({ pair: p }: { pair: CablePairRow }) {
 function EdgePanel({
   data: d,
   onClose,
+  line,
 }: {
   data: NonNullable<TopoEdge["data"]>
   onClose: () => void
+  /** The Diagram link's Line row. */
+  line?: React.ReactNode
 }) {
   return (
     <PanelShell
@@ -2772,6 +2799,7 @@ function EdgePanel({
         )}
         {!!d.via?.length && <Row label="Via">{d.via.join(", ")}</Row>}
       </div>
+      {line && <div className="mt-2 border-t border-border pt-2">{line}</div>}
       {!!d.pairs?.length && (
         <div className="mt-2 border-t border-border pt-2">
           <PanelHeading>Connections</PanelHeading>
@@ -2951,15 +2979,19 @@ function lagTitle(cables: BundleMember[]): string {
 function BundlePanel({
   cables,
   onClose,
+  line,
 }: {
   cables: BundleMember[]
   onClose: () => void
+  /** The Diagram link's Line row. */
+  line?: React.ReactNode
 }) {
   return (
     <PanelShell
       title={`${lagTitle(cables)}${cables.length} cable${cables.length === 1 ? "" : "s"}`}
       onClose={onClose}
     >
+      {line && <div className="mb-2 border-b border-border pb-2">{line}</div>}
       <div className="space-y-1.5">
         {cables.map((c, i) => (
           <div

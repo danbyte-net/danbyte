@@ -10,7 +10,7 @@ import { FAN_CABLE, FAN_DEV, fanoutGraph } from "../__fixtures__/fanout-graph"
 import { boxOf } from "../__fixtures__/route-checks"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
-import { detectFanouts } from "./fanout"
+import { detectFanouts, detectMeshes } from "./fanout"
 import { toDocument } from "./to-document"
 import type { DiagramCardData, DiagramEdgeData, DiagramMode } from "./types"
 
@@ -115,6 +115,119 @@ describe("detectFanouts", () => {
     expect(fans).toHaveLength(1)
     expect(fans[0].legs.map((l) => l.node)).toEqual([CORE_B, CORE_B, CORE_B])
   })
+})
+
+/** An MPO trunk broken out at both ends: fw-01 ports 1 and 2 on its A
+ * end, core-c ports 1 and 2 on its B end, the payload edge running from
+ * core-c (so every pair arrives B → A). */
+const NM = "c0ffee00-fa00-4000-8000-0000000000aa"
+function nmEdge(ends = true): TopoEdge {
+  const pair = (c: string, f: string) => ({
+    a: `core-c:${c}`,
+    b: `fw-01:${f}`,
+    a_port: c,
+    b_port: f,
+    ...(ends ? { a_end: "B" as const, b_end: "A" as const } : {}),
+  })
+  return {
+    id: "e:nm",
+    source: CORE_C,
+    target: FW,
+    type: "cable",
+    data: {
+      cable_id: NM,
+      cable_label: "MPO-1",
+      pairs: [pair("1", "1"), pair("1", "2"), pair("2", "1"), pair("2", "2")],
+    },
+  }
+}
+
+describe("detectMeshes", () => {
+  it("groups each end's ports by the cable end the payload names", () => {
+    const [m, ...rest] = detectMeshes([nmEdge()], () => true)
+    expect(rest).toHaveLength(0)
+    expect(m.id).toBe(`fan:${NM}`)
+    expect(m.a.map((t) => [t.node, t.port])).toEqual([
+      [FW, "1"],
+      [FW, "2"],
+    ])
+    expect(m.b.map((t) => [t.node, t.port])).toEqual([
+      [CORE_C, "1"],
+      [CORE_C, "2"],
+    ])
+    // Every pair from the A end.
+    expect(m.raw.pairs!.every((p) => p.a.startsWith("fw-01:"))).toBe(true)
+    expect(m.a[0].pairs).toEqual([0, 2])
+  })
+
+  it("leaves the cable alone without the ends, or once it is a fan", () => {
+    expect(detectMeshes([nmEdge(false)], () => true)).toEqual([])
+    expect(detectMeshes([nmEdge()], () => true, new Set([NM]))).toEqual([])
+    // A 1:N breakout is not one either.
+    expect(detectMeshes(fanoutGraph.edges, () => true)).toEqual([])
+  })
+})
+
+describe("an N:M breakout on the Diagram", () => {
+  const graph = {
+    ...fanoutGraph,
+    edges: [
+      ...fanoutGraph.edges.filter(
+        (e) => ![e.source, e.target].includes(CORE_C)
+      ),
+      nmEdge(),
+    ],
+  }
+  for (const mode of ["detailed", "simple"] as const)
+    it(`${mode}: a trunk between two junctions, each end's ports on its own`, () => {
+      const b = buildDiagram(graph, {
+        mode,
+        line: "elbow",
+        colorMode: "cable",
+        measure: approxMeasure,
+      })
+      const JA = `fan:${NM}`
+      const JB = `${JA}:b`
+      const mine = b.edges.filter((e) => data(e).cableId === NM)
+      const trunk = mine.filter((e) => data(e).fan?.role === "trunk")
+      expect(trunk.map((e) => [e.source, e.target])).toEqual([[JA, JB]])
+      // The cable's name, on the trunk (or a leg when it is too short).
+      expect(mine.flatMap((e) => data(e).labels.mid ?? [])).toContain("MPO-1")
+      const legs = mine.filter((e) => data(e).fan?.role === "leg")
+      const want =
+        mode === "detailed"
+          ? [
+              [JA, FW],
+              [JA, FW],
+              [JB, CORE_C],
+              [JB, CORE_C],
+            ]
+          : [
+              [JA, FW],
+              [JB, CORE_C],
+            ]
+      expect(legs.map((e) => [e.source, e.target]).sort()).toEqual(want.sort())
+      // Both junctions sit between the two cards, the A one nearer fw-01.
+      const at = (id: string) => b.nodes.find((n) => n.id === id)!.position
+      const fw = at(FW)
+      const core = at(CORE_C)
+      const [ja, jb] = [at(JA), at(JB)]
+      const t = (p: { x: number; y: number }) =>
+        ((p.x - fw.x) * (core.x - fw.x) + (p.y - fw.y) * (core.y - fw.y)) /
+        ((core.x - fw.x) ** 2 + (core.y - fw.y) ** 2)
+      expect(t(ja)).toBeGreaterThan(0)
+      expect(t(ja)).toBeLessThan(t(jb))
+      expect(t(jb)).toBeLessThan(1)
+      // Clicking a junction opens the cable: both know its trunk.
+      for (const id of [JA, JB])
+        expect(
+          (b.nodes.find((n) => n.id === id)!.data as { trunk?: string }).trunk
+        ).toBe(trunk[0].id)
+      if (mode === "detailed")
+        expect(
+          nubPorts(b, FW).filter((p) => p === "1" || p === "2")
+        ).toHaveLength(2)
+    })
 })
 
 describe("a breakout on the Diagram", () => {
