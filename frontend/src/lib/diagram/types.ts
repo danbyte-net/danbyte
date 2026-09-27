@@ -91,15 +91,13 @@ export interface DiagramEnd extends Pt {
   nub?: number
 }
 
-/** A label at one end of a link. */
+/** A label at one end of a link - a port name or an address. It sits ON
+ * the line, which breaks for it, turned to read upright. */
 export interface DiagramEndLabel {
   text: string
-  /** Run the text along the line, turned to stay upright (Detailed port
-   * names). Absent = horizontal, a little way along the route (Simple). */
-  rotate?: boolean
-  /** A rotated label's box centre and turn, as the builder placed it clear
-   * of other cables and labels (`portPlace`). Absent = placed by the same
-   * rule from the route alone. */
+  /** The text's centre and turn, as the builder placed it clear of other
+   * cables and labels (`inlinePlace`). Absent = one after another from
+   * the end by the same rule, from the route alone. */
   at?: { x: number; y: number; rotate: number }
 }
 
@@ -127,10 +125,13 @@ export interface DiagramLink {
     /** …and how far beside the line, px, to the right hand of travel
      * (absent = on it). */
     midOff?: number
-    /** The source end. */
+    /** The port name at the source end… */
     a?: DiagramEndLabel
-    /** The target end. */
+    /** …and at the target end. */
     b?: DiagramEndLabel
+    /** Each end's addresses in the link's subnet, after its port name. */
+    aIps?: DiagramEndLabel[]
+    bIps?: DiagramEndLabel[]
   }
   link?: string
   /** The cable this line is part of - a breakout's trunk and legs share

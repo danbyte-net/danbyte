@@ -9,20 +9,19 @@ import { buildDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
 import {
   chipCentre,
-  endBox,
+  inlineBox,
   LabelScene,
-  placePortLabels,
-  portBox,
+  placeInline,
 } from "./label-placement"
-import type { PortLabelAsk } from "./label-placement"
+import type { InlineAsk } from "./label-placement"
 import { leaves, routeThrough } from "./link-geometry"
 import { boxesOverlap, segHitsBox, turnedBox } from "./spatial"
 import type { TurnedBox } from "./spatial"
 import type { Anchor, DiagramEdgeData, LineType, Pt } from "./types"
 
-// Where a Diagram's labels go: port names, middle chips and end addresses
-// never overlap each other or a card, addresses keep off every line, and a
-// card side's names share its gaps one to a gap.
+// Where a Diagram's labels go: port names and end addresses sit ON their
+// own line and off every other one, and no label - those or a middle chip
+// - overlaps another or a card.
 
 const measure = approxMeasure
 
@@ -72,6 +71,8 @@ const build = (graph: TopologyGraph, o: Partial<DiagramOptions>) =>
 interface Placed {
   what: string
   box: TurnedBox
+  /** An end label: the line it sits on. */
+  on?: string
 }
 
 /** Every label a build placed, as boxes, and every drawn line. */
@@ -92,25 +93,21 @@ function scene(b: ReturnType<typeof build>) {
       })
     )
     d.plan.forEach((p, i) => {
+      const on = `${e.id}#${i}`
+      const add = (text: string, place: Pt & { rotate: number }) =>
+        labels.push({
+          what: `${text}@${on}`,
+          box: inlineBox(place, measure(text, LABEL.END_SIZE, 400)),
+          on,
+        })
       for (const end of ["a", "b"] as const) {
         const anchor = d[end][i] as Anchor | undefined
         const place = p[end]
         if (place && anchor?.k === "side" && anchor.port)
-          labels.push({
-            what: `${anchor.port}@${e.id}#${i}`,
-            box: portBox(place, measure(anchor.port, LABEL.END_SIZE, 400)),
-          })
-        const ip = p.ips?.[end]
+          add(anchor.port, place)
+        const ips = p.ips?.[end]
         const addr = d.labels.ends?.[i]?.[end]
-        if (ip && addr) {
-          const w = Math.max(
-            ...addr.map((t) => measure(t, LABEL.END_SIZE, 400))
-          )
-          labels.push({
-            what: `${addr[0]}@${e.id}#${i}`,
-            box: endBox(ip, w, addr.length),
-          })
-        }
+        if (ips && addr) ips.forEach((at, k) => add(addr[k], at))
       }
     })
     const mid = (d.labels.mid ?? []).filter(Boolean)
@@ -133,7 +130,23 @@ function scene(b: ReturnType<typeof build>) {
   return { labels, lines, cards }
 }
 
-/** Labels over one another or over a card, and addresses on a line. */
+/** How far `p` lies from a polyline. */
+function offLine(pts: readonly Pt[], p: Pt): number {
+  let best = Infinity
+  for (let i = 1; i < pts.length; i++) {
+    const [a, b] = [pts[i - 1], pts[i]]
+    const [dx, dy] = [b.x - a.x, b.y - a.y]
+    const l2 = dx * dx + dy * dy
+    const u = l2
+      ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2))
+      : 0
+    best = Math.min(best, Math.hypot(p.x - a.x - u * dx, p.y - a.y - u * dy))
+  }
+  return best
+}
+
+/** Labels over one another or over a card, end labels off their own line
+ * or on another one. */
 function faults(b: ReturnType<typeof build>): string[] {
   const { labels, lines, cards } = scene(b)
   const out: string[] = []
@@ -152,13 +165,19 @@ function faults(b: ReturnType<typeof build>): string[] {
         out.push(`${labels[i].what} on ${c.id}`)
   }
   for (const l of labels) {
-    if (!/^[0-9a-f:.]+@/.test(l.what)) continue
-    for (const line of lines)
+    if (!l.on) continue
+    const own = lines.find((x) => x.edge === l.on)!
+    // Curves are sampled: allow the chord's sag.
+    if (offLine(own.pts, { x: l.box.cx, y: l.box.cy }) > 1.5)
+      out.push(`${l.what} off its line`)
+    for (const line of lines) {
+      if (line.edge === l.on) continue
       for (let k = 1; k < line.pts.length; k++)
         if (segHitsBox(line.pts[k - 1], line.pts[k], tight(l.box))) {
           out.push(`${l.what} on ${line.edge}`)
           break
         }
+    }
   }
   return out
 }
@@ -187,7 +206,13 @@ describe("labels with addresses", () => {
                   if (p.ips[end]) shown++
                 }
           expect(asked).toBeGreaterThan(10)
-          expect(shown / asked).toBeGreaterThan(saved ? 0.5 : 0.1)
+          // Simple's curves leave their shared point together and part late,
+          // so fewer of their ends find a free stretch.
+          const curved =
+            mode === "simple" && line !== "elbow" && line !== "straight"
+          expect(shown / asked).toBeGreaterThan(
+            saved ? (curved ? 0.4 : 0.5) : 0.1
+          )
         })
 
   it("Simple: an address sits out along its line, turned on a vertical run", () => {
@@ -240,67 +265,177 @@ describe("labels with addresses", () => {
       ["a", pts[0]],
       ["b", pts.at(-1)!],
     ] as const) {
-      const place = d.plan![0].ips![end]!
-      expect(place.rotate).toBe(-90)
-      const w = measure(d.labels.ends![0][end]![0], LABEL.END_SIZE, 400)
-      // The block's near end is END_DIST or more along the line.
-      expect(Math.abs(place.y - from.y) - w / 2).toBeGreaterThanOrEqual(
-        LABEL.END_DIST - 0.5
-      )
+      // The port name first, then the address further out, both on the
+      // line and reading bottom to top.
+      const port = d.plan![0][end]!
+      const [ip] = d.plan![0].ips![end]!
+      for (const place of [port, ip]) {
+        expect(place.rotate).toBe(-90)
+        expect(place.x).toBeCloseTo(from.x, 6)
+      }
+      const w = measure("e1", LABEL.END_SIZE, 400)
+      const near = Math.abs(port.y - from.y)
+      expect(near).toBeCloseTo(LABEL.LEAD + LABEL.GAP + w / 2, 6)
+      expect(Math.abs(ip.y - from.y)).toBeGreaterThan(near + w / 2)
     }
   })
 })
 
-describe("port names on one card side", () => {
-  /** Three cables leaving a card's right side 16 px apart, a card right
-   * above the top one: four gaps, the top one closed. */
-  function side() {
-    const ys = [0, 16, 32]
+describe("end labels on their line", () => {
+  /** Straight cables, as routes from their end, in a scene with them and
+   * `cards`. */
+  function lines(
+    routes: Pt[][],
+    cards: { x: number; y: number; w: number; h: number }[] = []
+  ) {
     const sc = new LabelScene(
-      ys.map((y, i): [string, Pt[]] => [
-        `c${i}`,
-        [
-          { x: 0, y },
-          { x: 200, y },
-        ],
-      ]),
-      [{ x: 0, y: -40, w: 200, h: 37 }]
+      routes.map((pts, i): [string, Pt[]] => [`c${i}`, pts]),
+      cards
     )
-    const ask = (i: number, prefer: 1 | -1): PortLabelAsk => ({
-      key: `c${i}`,
-      cable: `c${i}`,
-      text: `Ethernet1/${i}`,
-      w: 50,
-      start: { x: 0, y: ys[i] },
-      angle: 0,
-      room: 90,
-      side: prefer,
-      group: "card\u0000R",
-    })
+    const ask = (
+      i: number,
+      ws: number[],
+      o: Partial<InlineAsk> = {}
+    ): InlineAsk => {
+      const [p, q] = routes[i]
+      const len = Math.hypot(q.x - p.x, q.y - p.y)
+      const angle = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
+      return {
+        key: `c${i}`,
+        cable: `c${i}`,
+        ws,
+        walk: (d) => ({
+          x: p.x + ((q.x - p.x) * d) / len,
+          y: p.y + ((q.y - p.y) * d) / len,
+          angle,
+        }),
+        from: LABEL.LEAD,
+        until: len / 2,
+        ...o,
+      }
+    }
     return { sc, ask }
   }
 
-  it("seats every name one to a gap where the first pass could not", () => {
-    const { sc, ask } = side()
-    // The middle cable goes first and takes the gap above it - the only
-    // one the top cable has.
-    const asks = [ask(1, -1), ask(0, 1), ask(2, 1)]
-    const out = placePortLabels(asks, sc)
-    expect([...out.values()].every(Boolean)).toBe(true)
-    const ys = asks.map((a) => out.get(a.key)!.y).sort((x, y) => x - y)
-    // One in each open gap: between 0 and 16, 16 and 32, below 32.
-    expect(ys[0]).toBeGreaterThan(0)
-    expect(ys[0]).toBeLessThan(16)
-    expect(ys[1]).toBeGreaterThan(16)
-    expect(ys[1]).toBeLessThan(32)
-    expect(ys[2]).toBeGreaterThan(32)
+  it("centres a name on its line, a lead and a gap out from the end", () => {
+    const { sc, ask } = lines([
+      [
+        { x: 0, y: 0 },
+        { x: 200, y: 0 },
+      ],
+    ])
+    const [place] = placeInline([ask(0, [40])], sc).get("c0")!.at
+    expect(place).toEqual({ x: LABEL.LEAD + LABEL.GAP + 20, y: 0, rotate: 0 })
   })
 
-  it("keeps the first pass where it already seated every name", () => {
-    const { sc, ask } = side()
-    const asks = [ask(0, 1), ask(1, 1), ask(2, 1)]
-    const out = placePortLabels(asks, sc)
-    for (const a of asks) expect(out.get(a.key)!.y).toBeGreaterThan(a.start.y)
+  it("reads bottom to top on a line running down", () => {
+    const { sc, ask } = lines([
+      [
+        { x: 0, y: 0 },
+        { x: 0, y: 200 },
+      ],
+    ])
+    const [place] = placeInline([ask(0, [40])], sc).get("c0")!.at
+    expect(place.rotate).toBe(-90)
+    expect(place.x).toBeCloseTo(0, 9)
+  })
+
+  it("puts each name side by side on its own line", () => {
+    const ys = [0, 16, 32]
+    const { sc, ask } = lines(
+      ys.map((y) => [
+        { x: 0, y },
+        { x: 200, y },
+      ])
+    )
+    const out = placeInline(
+      ys.map((_, i) => ask(i, [50])),
+      sc
+    )
+    ys.forEach((y, i) => {
+      const [p] = out.get(`c${i}`)!.at
+      expect(p.y).toBe(y)
+      expect(p.x).toBeCloseTo(LABEL.LEAD + LABEL.GAP + 25, 9)
+    })
+  })
+
+  it("slides out past a crossing line, and runs the addresses after the name", () => {
+    const { sc, ask } = lines([
+      [
+        { x: 0, y: 0 },
+        { x: 300, y: 0 },
+      ],
+      [
+        { x: 20, y: -50 },
+        { x: 20, y: 50 },
+      ],
+    ])
+    const out = placeInline([ask(0, [40, 60])], sc).get("c0")!
+    const [port, ip] = out.at
+    // Clear of the line at x = 20: the name's gap starts past it.
+    expect(port.x - 20 - LABEL.GAP).toBeGreaterThan(20)
+    expect(ip.x - port.x).toBeCloseTo(
+      20 + LABEL.GAP + LABEL.LEAD + LABEL.GAP + 30,
+      9
+    )
+    expect(out.reach).toBeCloseTo(ip.x + 30 + LABEL.GAP, 9)
+  })
+
+  it("keeps a port name to the run out of its nub", () => {
+    // An elbow: 30 px out, then down.
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+      { x: 30, y: 200 },
+    ]
+    const sc = new LabelScene([["c0", pts]], [])
+    const walk = (d: number) =>
+      d <= 30 ? { x: d, y: 0, angle: 0 } : { x: 30, y: d - 30, angle: 90 }
+    const ask: InlineAsk = {
+      key: "c0",
+      cable: "c0",
+      ws: [40],
+      walk,
+      from: LABEL.LEAD,
+      until: 115,
+    }
+    expect(placeInline([{ ...ask, first: true }], sc).get("c0")).toBeNull()
+    // Anywhere along: past the bend, on the long run.
+    const [p] = placeInline([ask], sc).get("c0")!.at
+    expect(p.x).toBe(30)
+    expect(p.rotate).toBe(-90)
+  })
+
+  it("leaves a label off rather than over a card or another label", () => {
+    const { sc, ask } = lines(
+      [
+        [
+          { x: 0, y: 0 },
+          { x: 200, y: 0 },
+        ],
+        [
+          { x: 0, y: 20 },
+          { x: 200, y: 20 },
+        ],
+      ],
+      [{ x: 8, y: -20, w: 120, h: 30 }]
+    )
+    expect(placeInline([ask(0, [30])], sc).get("c0")).toBeNull()
+    // The second line's name takes its spot; a wider one asked after it
+    // on a line 8 px away could only overlap it.
+    const sc2 = lines([
+      [
+        { x: 0, y: 0 },
+        { x: 80, y: 0 },
+      ],
+      [
+        { x: 0, y: 8 },
+        { x: 80, y: 8 },
+      ],
+    ])
+    const out = placeInline([sc2.ask(0, [20]), sc2.ask(1, [20])], sc2.sc)
+    expect(out.get("c0")).toBeTruthy()
+    expect(out.get("c1")).toBeNull()
   })
 })
 
@@ -355,7 +490,8 @@ describe("a breakout's legs converging on one card", () => {
       for (const e of legs) {
         const d = e.data as DiagramEdgeData
         expect(d.plan![0].b, e.id).toBeTruthy()
-        // Each ends in a straight run as long as its name's stub.
+        // Each ends in a straight run as long as its name's stub, and
+        // the name sits on it.
         const pts = d.plan![0].pts
         const [s, t] = [pts.at(-2)!, pts.at(-1)!]
         const p = pts.at(-3)!

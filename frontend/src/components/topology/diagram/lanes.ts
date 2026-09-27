@@ -634,11 +634,38 @@ function setRun(routes: ElbowRoute[], r: Run, c: number) {
   }
 }
 
+/** Would a run moved to `c` land within a lane of an overlapping run of
+ * another route outside the ones being placed together? */
+type Blocked = (r: Run, c: number) => boolean
+
+/** A `Blocked` over `runs` (one orientation) as the routes now lie, but
+ * the runs in `cluster`. */
+function blocker(
+  routes: readonly ElbowRoute[],
+  runs: readonly Run[],
+  cluster: readonly Run[]
+): Blocked {
+  const mine = new Set(cluster)
+  const now = (q: Run) => {
+    const p = routes[q.route].pts[q.k]
+    return q.h ? p.y : p.x
+  }
+  return (r, c) =>
+    runs.some(
+      (q) =>
+        !mine.has(q) &&
+        q.route !== r.route &&
+        Math.abs(now(q) - c) < LANE - 0.5 &&
+        overlap(q, r)
+    )
+}
+
 function spread(
   routes: ElbowRoute[],
   free: Run[],
   fits: Fits,
-  before: (a: Run, b: Run) => boolean = () => false
+  before: (a: Run, b: Run) => boolean = () => false,
+  blocked: Blocked = () => false
 ) {
   // Along the corridor: head-on corners in their order first, then runs
   // that would cross, then where each lies now. Kahn's order, counting
@@ -711,7 +738,9 @@ function spread(
     // The spread nearest centred that keeps every run clear of cards.
     const want = Math.min(hi, Math.max(lo, centre - ((n - 1) / 2) * pitch))
     const clear = (base: number) =>
-      order.every((r, i) => fits(r, base + i * pitch))
+      order.every(
+        (r, i) => fits(r, base + i * pitch) && !blocked(r, base + i * pitch)
+      )
     for (let k = 0; k <= 2 * STEPS; k++) {
       const base = want + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * (LANE / 3)
       if (base < lo || base > hi || !clear(base)) continue
@@ -724,13 +753,19 @@ function spread(
   const base = centre - ((n - 1) / 2) * LANE
   order.forEach((r, i) => {
     const c = Math.min(r.hi2, Math.max(r.lo2, base + i * LANE))
-    if (fits(r, c)) setRun(routes, r, c)
+    if (fits(r, c) && !blocked(r, c)) setRun(routes, r, c)
   })
 }
 
 /** Free runs round the pinned ones: each takes the nearest coordinate a
  * lane clear of every run it overlaps. */
-function around(routes: ElbowRoute[], free: Run[], fixed: Run[], fits: Fits) {
+function around(
+  routes: ElbowRoute[],
+  free: Run[],
+  fixed: Run[],
+  fits: Fits,
+  blocked: Blocked = () => false
+) {
   // What is placed, filed by lane-wide bands of its coordinate.
   const placed = new Map<number, { r: Run; c: number }[]>()
   const place = (r: Run, c: number) => {
@@ -756,7 +791,7 @@ function around(routes: ElbowRoute[], free: Run[], fixed: Run[], fits: Fits) {
       for (let k = 0; k <= STEPS; k++) {
         const cs = k ? [r.c + k * LANE, r.c - k * LANE] : [r.c]
         const hit = cs.find(
-          (c) => c >= lo && c <= hi && !taken(c) && fits(r, c)
+          (c) => c >= lo && c <= hi && !taken(c) && fits(r, c) && !blocked(r, c)
         )
         if (hit !== undefined) {
           best = hit
@@ -1045,8 +1080,11 @@ export function assignLanes(
         const free = list.filter((r) => !r.pinned)
         if (!free.length) continue
         const fixed = list.filter((r) => r.pinned)
-        if (fixed.length) around(routes, free, fixed, fits)
-        else if (free.length > 1) spread(routes, free, fits, before)
+        // Nor onto a run outside the cluster: this round's clusters were
+        // drawn before any of them moved.
+        const blocked = blocker(routes, runs, list)
+        if (fixed.length) around(routes, free, fixed, fits, blocked)
+        else if (free.length > 1) spread(routes, free, fits, before, blocked)
       }
     }
   untangleEnds(routes, cables, fits)

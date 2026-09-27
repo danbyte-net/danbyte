@@ -419,14 +419,20 @@ describe("toDrawio", () => {
     )
   })
 
-  it("places end labels at x = 2t-1 along the line", () => {
+  it("places end labels at x = 2t-1 along the line, on it", () => {
     const page = pages(SIMPLE())[0]
     const l = fabricSimple.links.find((k) => k.id === "cab-5")!
     const len = polylineLength([l.source, l.target])
-    const t = Math.min(LABEL.END_DIST, 0.35 * len) / len
+    const [a, b] = linkLabels(l).filter((k) => k.role !== "mid")
+    // A lead out from each end, then half the label's gap and text.
+    const t = (LABEL.LEAD + a.box.w / 2) / len
+    const u = (LABEL.LEAD + b.box.w / 2) / len
     const x = (id: string) => num(geo(page.get(id)!), "x")
     expect(x("cab-5-a")).toBeCloseTo(2 * t - 1, 3)
-    expect(x("cab-5-b")).toBeCloseTo(1 - 2 * t, 3)
+    expect(x("cab-5-b")).toBeCloseTo(1 - 2 * u, 3)
+    // On the line, over the page's colour.
+    const cell = page.get("cab-5-a")!
+    expect(cell.style.labelBackgroundColor).toBe("#ffffff")
   })
 
   it("lands every label where the screen puts it", () => {
@@ -442,7 +448,9 @@ describe("toDrawio", () => {
         const poly = route(page, e)
         for (const b of linkLabels(l)) {
           const g =
-            b.role === "mid" ? geo(e) : geo(page.get(`${l.id}-${b.role}`)!)
+            b.role === "mid"
+              ? geo(e)
+              : geo(page.get(`${l.id}-${b.role}${b.index ?? ""}`)!)
           const want = centre(b)
           expect(
             near(labelPoint(poly, g), { x: want.x + s.x, y: want.y + s.y }, 1),

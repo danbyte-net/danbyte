@@ -72,6 +72,7 @@ import {
 } from "./diagram/build-diagram"
 import type { DiagramModel } from "./diagram/build-diagram"
 import { LinkEdge } from "./diagram/link-edge"
+import type { LabelToken } from "./diagram/link-labels"
 import { toDocument } from "./diagram/to-document"
 import type { DocumentOptions } from "./diagram/to-document"
 import type {
@@ -942,6 +943,9 @@ export interface TopologyCanvasProps {
   diagramLine?: LineType
   /** Diagram: per device-pair line overrides from the saved view. */
   linkOverrides?: Record<string, TopologyLinkOverride>
+  /** Diagram: which labels the links carry (subnets, addresses, port
+   * names); all three when absent. Keep the array stable. */
+  diagramLabels?: readonly LabelToken[]
   /** Diagram: monitoring state per device id, for the cards' pills. Kept
    * out of the build so a refresh never re-lays the map out. */
   monitor?: Record<string, BulkStatusEntry | undefined>
@@ -1026,6 +1030,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     diagramMode = "simple",
     diagramLine = "straight",
     linkOverrides,
+    diagramLabels,
     monitor,
   },
   ref
@@ -1083,6 +1088,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             mode: diagramMode,
             line: diagramLine,
             links: linkOverrides,
+            ...(diagramLabels ? { labels: diagramLabels } : {}),
             colorMode,
             direction,
             roleOrder,
@@ -1137,6 +1143,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       diagramMode,
       diagramLine,
       linkOverrides,
+      diagramLabels,
       checkLabels,
     ]
   )

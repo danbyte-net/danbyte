@@ -1538,7 +1538,7 @@ export function layoutNodes(
     // route under a neighbouring card.
     nodesep: compact ? 28 : Math.min(56 + Math.max(0, maxFan - 8) * 3, 240),
     edgesep: compact ? 10 : 18,
-    ranksep: compact ? 90 : Math.max(130, rankGap),
+    ranksep: compact ? Math.max(90, rankGap) : Math.max(130, rankGap),
     ranker: "network-simplex",
     align: "UL",
   })

@@ -132,18 +132,18 @@ export interface LinkLabels {
   noPorts?: boolean
 }
 
-/** One cable's planned drawing (`plan.ts`): its route and where its port
- * names went. */
+/** One cable's planned drawing (`plan.ts`): its route and where its end
+ * labels went. */
 export interface CablePlan {
   /** Terminals included: an elbow's corners, a curve's control points, a
    * straight line's ends. */
   pts: Pt[]
-  /** Port names along the cable (Detailed); null = no room, left off. */
+  /** The port name on the line at each end; null = no room, left off. */
   a?: PortPlace | null
   b?: PortPlace | null
-  /** End addresses along the cable (`labels.ends`), each a block of
-   * lines centred on its place; null = no room, left off. */
-  ips?: { a?: PortPlace | null; b?: PortPlace | null }
+  /** Each end's addresses (`labels.ends`) on the line after its port
+   * name, one place per address; null = no room, left off. */
+  ips?: { a?: PortPlace[] | null; b?: PortPlace[] | null }
 }
 
 /** Which part of a breakout cable an edge draws: the trunk from the

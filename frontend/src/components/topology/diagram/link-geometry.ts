@@ -270,8 +270,16 @@ function sampler(f: Flat, dir: Dir): Pick<Route, "length" | "at"> {
   const deg = (r: number) => (r * 180) / Math.PI
   const at = (t: number) => {
     const want = Math.min(1, Math.max(0, t)) * length
-    // The first chord with any length that reaches `want`.
-    let i = 1
+    // The first chord with any length that reaches `want` (the first
+    // cumulative length at or past it, found by bisection).
+    let lo = 1
+    let hi = pts.length
+    while (lo < hi) {
+      const m = (lo + hi) >> 1
+      if (cum[m] >= want) hi = m
+      else lo = m + 1
+    }
+    let i = lo
     while (i < pts.length && !(cum[i] > cum[i - 1] && cum[i] >= want)) i++
     if (i === pts.length)
       return {

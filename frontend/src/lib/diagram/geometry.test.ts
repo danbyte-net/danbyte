@@ -10,9 +10,9 @@ import {
   labelCorners,
   linkLabels,
   linkPath,
+  inlinePlace,
+  inlineSpan,
   PORT_H,
-  portPlace,
-  portSide,
   routePoints,
   routePolyline,
   uprightAngle,
@@ -128,45 +128,61 @@ describe("along", () => {
 })
 
 describe("link labels", () => {
-  it("port names run along the line, upright, beside its first run", () => {
+  it("end labels sit on the line, upright, a lead out from the end", () => {
+    let n = 0
     for (const l of fabric.links) {
-      for (const b of linkLabels(l).filter((x) => x.role !== "mid")) {
-        const spec = l.labels[b.role as "a" | "b"]!
-        if (!spec.rotate) {
-          expect(b.rotate).toBe(0)
-          continue
+      const poly = routePolyline(l)
+      for (const end of ["a", "b"] as const) {
+        const blocks = linkLabels(l).filter(
+          (x) => x.role === end || x.role === `ip${end}`
+        )
+        if (!blocks.length) continue
+        let ahead = LABEL.LEAD
+        for (const b of blocks) {
+          // Upright: never past 10° beyond vertical either way.
+          expect(b.rotate).toBeGreaterThanOrEqual(-100)
+          expect(b.rotate).toBeLessThan(80)
+          expect(b.anchor).toBe("middle")
+          expect(b.chip).toBe(false)
+          // Centred on the line, turned with it; the line breaks for the
+          // text and a gap either side, one label after another.
+          const at = along(poly, ahead + b.box.w / 2, end === "b")
+          expect(b.ox).toBeCloseTo(at.x, 5)
+          expect(b.oy).toBeCloseTo(at.y, 5)
+          expect(b.rotate).toBeCloseTo(uprightAngle(at.angle), 5)
+          expect(b.box.h).toBe(PORT_H)
+          ahead += b.box.w + LABEL.LEAD
+          n++
         }
-        // Upright: never past 10° beyond vertical either way.
-        expect(b.rotate).toBeGreaterThanOrEqual(-100)
-        expect(b.rotate).toBeLessThan(80)
-        expect(b.anchor).toBe("middle")
-        // The box starts just past the nub and sits beside the line.
-        const poly = routePolyline(l)
-        const pts = b.role === "a" ? poly : [...poly].reverse()
-        const [p0, p1] = pts
-        const len = Math.hypot(p1.x - p0.x, p1.y - p0.y)
-        const u = { x: (p1.x - p0.x) / len, y: (p1.y - p0.y) / len }
-        const ahead = (b.ox - p0.x) * u.x + (b.oy - p0.y) * u.y
-        const beside = Math.abs((b.ox - p0.x) * u.y - (b.oy - p0.y) * u.x)
-        expect(ahead).toBeCloseTo(LABEL.PORT_DIST + (b.box.w - 3) / 2, 5)
-        expect(beside).toBeCloseTo(LABEL.PORT_OFFSET + PORT_H / 2, 5)
       }
     }
+    expect(n).toBeGreaterThan(5)
   })
 
-  it("places a port name where the builder put it", () => {
+  it("places end labels where the builder put them", () => {
     const l = link("cab-1")
     const at = { x: 12, y: 34, rotate: -90 }
-    const b = linkLabels({
+    const ip = { x: 12, y: 90, rotate: -90 }
+    const blocks = linkLabels({
       ...l,
-      labels: { a: { text: "Ethernet1/1", rotate: true, at } },
-    }).find((x) => x.role === "a")!
+      labels: {
+        a: { text: "Ethernet1/1", at },
+        aIps: [{ text: "10.0.0.1", at: ip }],
+      },
+    })
+    const b = blocks.find((x) => x.role === "a")!
     expect([b.ox, b.oy, b.rotate]).toEqual([12, 34, -90])
     expect(b.box.x + b.box.w / 2).toBeCloseTo(12, 5)
     expect(b.box.y + b.box.h / 2).toBeCloseTo(34, 5)
+    expect(b.box.w).toBeCloseTo(
+      inlineSpan(measureText("Ethernet1/1", LABEL.END_SIZE, 400)),
+      5
+    )
+    const a = blocks.find((x) => x.role === "ipa")!
+    expect([a.ox, a.oy, a.index]).toEqual([12, 90, 0])
   })
 
-  it("turns a port name by one rule at any angle", () => {
+  it("turns an end label by one rule at any angle", () => {
     // 0° and 180° read left to right; anything within 10° of vertical,
     // either way along the line, reads upwards.
     const cases: [number, number][] = [
@@ -180,30 +196,12 @@ describe("link labels", () => {
     ]
     for (const [angle, want] of cases) {
       expect(uprightAngle(angle)).toBeCloseTo(want, 9)
-      const p = portPlace({ x: 0, y: 0 }, angle, 40, 1)
+      const p = inlinePlace({ x: 0, y: 0 }, angle, 40)
       expect(p.rotate).toBeCloseTo(want, 9)
+      // On the line, whichever way it runs.
+      const r = (angle * Math.PI) / 180
+      expect(p.x * Math.sin(r) - p.y * Math.cos(r)).toBeCloseTo(0, 9)
     }
-  })
-
-  it("puts a port name outside its cable's first bend", () => {
-    // Leaving right, then turning down: the name goes above the line.
-    expect(portSide({ x: 1, y: 0 }, { x: 0, y: 1 })).toBe(-1)
-    // Leaving right, then turning up: below it.
-    expect(portSide({ x: 1, y: 0 }, { x: 0, y: -1 })).toBe(1)
-    // No bend: above the text as it reads.
-    const up = portPlace({ x: 0, y: 0 }, 0, 40, portSide({ x: 1, y: 0 }))
-    expect(up.y).toBeLessThan(0)
-    // Down a vertical run the name reads upwards: its top faces left.
-    const left = portPlace({ x: 0, y: 0 }, 90, 40, portSide({ x: 0, y: 1 }))
-    expect(left.x).toBeLessThan(0)
-  })
-
-  it("Simple end labels sit a fixed distance along the route", () => {
-    const l = link("cab-5")
-    const [a, b] = linkLabels(l).filter((x) => x.role !== "mid")
-    expect(a.oy - l.source.y).toBeCloseTo(LABEL.END_DIST, 5)
-    expect(l.target.y - b.oy).toBeCloseTo(LABEL.END_DIST, 5)
-    expect(a.anchor).toBe("middle")
   })
 
   it("middle labels stack at the middle of the route", () => {

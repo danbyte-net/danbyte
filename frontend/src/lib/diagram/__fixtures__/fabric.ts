@@ -240,8 +240,8 @@ const links: DiagramLink[] = [
     points: [],
     ...cable,
     labels: {
-      a: { text: "Ethernet1/1", rotate: true },
-      b: { text: "Ethernet49/1", rotate: true },
+      a: { text: "Ethernet1/1" },
+      b: { text: "Ethernet49/1" },
     },
     link: "https://danbyte.example/cables/1",
   },
@@ -257,8 +257,8 @@ const links: DiagramLink[] = [
     ],
     ...cable,
     labels: {
-      a: { text: "Ethernet1/2", rotate: true },
-      b: { text: "Ethernet49/1", rotate: true },
+      a: { text: "Ethernet1/2" },
+      b: { text: "Ethernet49/1" },
     },
   },
   {
@@ -274,8 +274,8 @@ const links: DiagramLink[] = [
     stroke: "#0ea5e9",
     width: 1.25,
     labels: {
-      a: { text: "Ethernet1/1", rotate: true },
-      b: { text: "Ethernet49/1", rotate: true },
+      a: { text: "Ethernet1/1" },
+      b: { text: "Ethernet49/1" },
     },
   },
   {
@@ -314,8 +314,8 @@ const links: DiagramLink[] = [
     dash: "10 4",
     labels: {
       mid: ["10.1.9.0/31"],
-      a: { text: "Ethernet50/1", rotate: true },
-      b: { text: "Ethernet50/1", rotate: true },
+      a: { text: "Ethernet50/1" },
+      b: { text: "Ethernet50/1" },
     },
   },
   {
@@ -357,7 +357,7 @@ const links: DiagramLink[] = [
     target: atNub(leaf1, 2),
     points: [],
     ...cable,
-    labels: { b: { text: "Ethernet48", rotate: true } },
+    labels: { b: { text: "Ethernet48" } },
   },
   {
     id: "ghost-1",

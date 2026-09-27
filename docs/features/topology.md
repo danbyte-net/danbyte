@@ -66,17 +66,15 @@ something.
       starts at that side's midpoint, and the lines part right after it:
       each elbow turns off at its own depth, a lane apart. All the cables
       between two devices draw as one line with a count chip (`2x`, or the
-      aggregates' names when they are one bundle).
+      aggregates' names when they are one bundle). A line that is one
+      cable carries its port names (see [Link labels](#link-labels)), on
+      its own run once it has parted from the side's other lines.
     - **Detailed** - each cabled interface gets a small grey **nub** on the
       edge facing its far end, and each cable leaves its own nub - a LAG's
       members too, with the bundle's chip on the lines between. The
-      interface name runs along its own cable's first straight run, just
-      past the nub, turned so it reads upright (a line within 10° of
-      vertical reads bottom to top). It sits on the outside of the cable's
-      first bend, so the cable turns away from it; when that spot is taken
-      by another cable or name it moves to the other side of the line, then
-      further out along it, and when nothing fits it is left off - the nub's
-      tooltip still names the port. Cards grow to fit their nubs; past 48 on
+      interface name sits **on its own cable**, just past the nub (see
+      [Link labels](#link-labels)), so names side by side can never be
+      read as the neighbour's. Cards grow to fit their nubs; past 48 on
       one side they continue round the corner. The nubs on a side are
       ordered by where their cables turn, so the cables leaving one side
       nest instead of crossing on their way out.
@@ -84,13 +82,13 @@ something.
   ghosts stay straight and dashed; BGP sessions stay the faint dotted
   overlay from card centre to card centre.
     - **Elbow** - right angles with rounded corners. Each cable runs
-      straight out of its port far enough for its port name before its
+      straight out of its port far enough for its end labels before its
       first bend, and keeps clear of the cards it does not connect: a
       corridor with a card in it moves to the middle of the clear gap, and
       when no corridor between two cards is clear the cable steps round
       through a clear street. Cables sharing a corridor each get a **lane**
       of their own, 12 px apart, in the order that keeps them from crossing.
-      In a tight gap the port names give way first (a cable keeps its lane
+      In a tight gap the labels give way first (a cable keeps its lane
       and loses the name), and only then do the lanes close up.
     - **Bendy** - a smooth curve that leaves each card square to its edge,
       reined in where it would sweep through a card and never overshooting
@@ -127,36 +125,22 @@ something.
   their line, or the nearest spot along it (or just beside it) clear of the
   cards, the port names and the other lines; a chip with no free spot
   shows while its line is hovered.
-- **Link labels** (the view's Labels setting: Subnet, IPs and Ports, all on
-  by default) - with the addresses loaded (`include=link_ips`), a cable
-  whose two ends share a subnet shows it on its middle chip (both, stacked,
-  on a dual-stack link; under a bundle's count) and each end's full address
-  at that end: in Detailed along the cable beside its port name, on the
-  other side of the line; in Simple about 28 px out from the point the
-  side's lines share. Addresses run along the line like port names, so on
-  a vertical run they read bottom to top.
-    - Only link-sized subnets count: /24 or smaller for IPv4, /64 or smaller
-      for IPv6. A larger shared subnet is a LAN and gets no labels.
-    - A LAG's address, on the aggregate, is shown once. A breakout gets a
-      subnet per leg (one that every leg shares goes on its trunk, once)
-      and the shared port's addresses on its trunk.
-    - Labels are best effort: one with no free spot clear of the cards, the
-      other labels and the lines is left off.
-    - Without addresses - none recorded, or no permission to view IP
-      addresses - there are no subnet or address labels. With Ports off
-      the cables carry no port names (the nubs still name them on hover).
+- **Link labels** - the subnet on the middle chip, and each end's port name
+  and address on the cable itself; see [Link labels](#link-labels).
 
 Simple and Detailed share one arrangement: a card is placed by its centre,
 so it stays put when Detailed grows it. The automatic layout follows the
 cables only - BGP sessions never move a card - and two devices of one role
 that share a neighbour (a leaf pair on the same spines, an HA pair) sit on
-one tier with their peer link between them. In Detailed it leaves the tiers
-far enough apart for a port name at both ends of a cable and a few lanes
-between. For clean role rows, set the [Levels](#levels-role-tiers). Drag a
+one tier with their peer link between them. It leaves the tiers far enough
+apart for the labels at both ends of a cable - a port name, then its
+address - and a few lanes between; a map with no labels to show keeps
+Simple's compact spacing. For clean role rows, set the [Levels](#levels-role-tiers). Drag a
 card and its lines follow it straight away; when you drop it they are
 routed, laned and labelled again (a breakout's split point moves with its
-trunk). Zoomed out, the port names go first, then the chips and the card
-lines; hovering a line still names it at any zoom.
+trunk). Zoomed out, the port names and addresses go first (the lines close
+up behind them), then the chips and the card lines; hovering a line still
+names it at any zoom.
 
 The cards fetch their lines with the map (`include=card`), and the
 monitoring states load whenever a card lists the monitoring pill - not only
@@ -230,6 +214,46 @@ it stays in this browser.
 
 Admins also get **Role card lines** in the card's menu, which opens
 **Settings → Topology** on that device's role.
+
+### Link labels
+
+**Labels** in the Display popover picks what the links carry - **Subnet**,
+**IPs** and **Ports**, all on by default. The choice is part of the view,
+and of the link (`labels=`).
+
+- **Ports** - each cable's port name sits **on the cable**, which breaks for
+  it: out of the nub the line runs a few pixels, stops for a small gap, the
+  name, a gap, and runs on. So when many ports sit side by side, each name
+  is plainly on its own cable. It reads along the line, turned to stay
+  upright (a line within 10° of vertical reads bottom to top). In Detailed
+  the name sits on the straight run out of its nub, and the planner makes
+  that run long enough for it before the cable bends; in Simple a line that
+  is one cable carries its names on its own run, once it has parted from
+  the other lines leaving that side.
+- **IPs** - each end's full address in the subnet the two ends share, the
+  same way on the same cable, after its port name (a dual-stack end shows
+  both, one after the other).
+- **Subnet** - the shared subnet as the chip on the middle of the line
+  (both, stacked, on a dual-stack link; under a bundle's count).
+
+The gaps are the canvas's own colour, in the light and the dark theme, and
+the page's white in every export. Which labels exist:
+
+- Only a subnet both ends of a cable sit in counts, and only a link-sized
+  one: /24 or smaller for IPv4, /64 or smaller for IPv6. A larger shared
+  subnet is a LAN and gets no labels.
+- A LAG's address, on the aggregate, is shown once. A breakout gets a
+  subnet per leg (one that every leg shares goes on its trunk, once) and the
+  shared port's addresses on its trunk.
+- The addresses load with the map only while Subnet or IPs is on
+  (`include=link_ips`), and only the ones you may see: without permission to
+  view IP addresses - or with none recorded - there are no subnet or address
+  labels, and no error. The cable's panel lists every address of each end,
+  and the subnets they share.
+- Labels are best effort: one with no free stretch of its line, clear of the
+  cards, the other labels and the other lines, is left off (the nub's
+  tooltip and the panel still name the port). With Ports off the cables
+  carry no names.
 
 ## Big graphs
 
@@ -648,6 +672,7 @@ back button and a reload all keep it.
 | `tab` | `wiring` (default), `diagram`, `hierarchy`, `flat`, `logical` |
 | `mode` | Diagram: `simple` (default), `detailed` |
 | `line` | Diagram: `straight` (default), `elbow`, `bendy` |
+| `labels` | Diagram: the link labels, comma-separated `subnet`, `ip`, `port` (all by default); empty for none |
 | `view` | a saved view's id |
 | `site` `location` `role` `status` | an id, or `all` |
 | `tag` | a tag slug, or `all` |
@@ -727,12 +752,13 @@ pills, cable colours.
   stay under about 16.7 million pixels - Safari draws nothing above that.
 
 Both show what the canvas shows, from the same plan: role-coloured cards
-with the name, card lines and pill; in Detailed, the interface nubs with
-each port name where the map put it along its cable (a name the map left
-off is left off); every elbow in its lane; the same line types (curves
-follow draw.io's curved rule, so the draw.io file matches); a breakout's
-split point; the count chips on bundles where the map shows them (a chip
-the map only shows on hover is left out); zones. The monitoring pill is
+with the name, card lines and pill; in Detailed, the interface nubs; the
+port names and addresses on their cables where the map put them, each over
+a white box that breaks the line (a label the map left off is left off);
+every elbow in its lane; the same line types (curves follow draw.io's
+curved rule, so the draw.io file matches); a breakout's split point; the
+subnet and count chips where the map shows them (a chip the map only shows
+on hover is left out); zones. The monitoring pill is
 the one on screen when the file is made. Selection, hover, search dimming
 and hidden devices or link families never reach a file.
 
@@ -749,8 +775,11 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
 - **Simple is the default**: every line meets its card at the midpoint of
   that side, and a pair's cables are one line with a count - the shape a
   hand-drawn diagram has, even when the map is in Detailed. **Detailed**
-  adds the interface nubs; each line leaves its own nub, with the port name
-  turned along the line.
+  adds the interface nubs; each line leaves its own nub.
+- **Labels:** the chip (subnet, count) is the line's own label. Each port
+  name and address is a label cell on its line, turned along it, on a
+  white background so the line breaks for it - move the line and they
+  follow.
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
   with each corner as a waypoint, so they stay square when you move a card.
   Bendy lines are draw.io curves through the same points the map uses. A

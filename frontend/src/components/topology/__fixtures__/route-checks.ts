@@ -1,7 +1,7 @@
 import type { Edge, Node } from "@xyflow/react"
 
 import { LABEL } from "@/lib/diagram/theme"
-import { portBox } from "../diagram/label-placement"
+import { inlineBox } from "../diagram/label-placement"
 import { routeThrough, leaves } from "../diagram/link-geometry"
 import { boxesOverlap, segHitsBox, segHitsRect } from "../diagram/spatial"
 import type { TurnedBox } from "../diagram/spatial"
@@ -9,7 +9,8 @@ import type { Anchor, DiagramEdgeData, Pt, Rect } from "../diagram/types"
 
 // Checks the Diagram's planned lines against the rules the owner set: no
 // two cables on one run, no line behind a card it does not connect, and
-// port names along their own cable, clear of everything else.
+// end labels (port names, addresses) ON their own cable, clear of
+// everything else.
 
 export interface Drawn {
   edge: string
@@ -22,7 +23,14 @@ export interface Drawn {
   /** The ends meet a shared point (a Simple side midpoint, a junction). */
   sharedA: boolean
   sharedB: boolean
-  labels: { end: "a" | "b"; text: string; box: TurnedBox; along: number }[]
+  labels: {
+    end: "a" | "b"
+    text: string
+    box: TurnedBox
+    along: number
+    /** An address, after the port name. */
+    ip?: boolean
+  }[]
 }
 
 export function boxOf(n: Node): Rect {
@@ -56,16 +64,23 @@ export function drawn(
           : route.pts
       const labels: Drawn["labels"] = []
       for (const end of ["a", "b"] as const) {
+        const start = end === "a" ? route.pts[0] : route.pts.at(-1)!
+        const add = (text: string, place: Pt & { rotate: number }, ip?: true) =>
+          labels.push({
+            end,
+            text,
+            box: inlineBox(place, measure(text, LABEL.END_SIZE, 400)),
+            along: Math.hypot(place.x - start.x, place.y - start.y),
+            ...(ip ? { ip } : {}),
+          })
         const place = p[end]
         const anchor = d[end][i] as Anchor | undefined
-        if (!place || anchor?.k !== "side" || !anchor.port) continue
-        const w = measure(anchor.port, LABEL.END_SIZE, 400)
-        const start = end === "a" ? route.pts[0] : route.pts.at(-1)!
-        labels.push({
-          end,
-          text: anchor.port,
-          box: portBox(place, w),
-          along: Math.hypot(place.x - start.x, place.y - start.y),
+        if (place && anchor?.k === "side" && anchor.port)
+          add(anchor.port, place)
+        const ips = p.ips?.[end]
+        const texts = d.labels.ends?.[i]?.[end] ?? []
+        ips?.forEach((at, k) => {
+          if (texts[k]) add(texts[k], at, true)
         })
       }
       out.push({
@@ -154,14 +169,36 @@ export function throughCards(
   return out
 }
 
-/** Port names that sit off their own cable's first straight run, overlap
- * another name, or lie on another cable. */
+/** How far `p` lies from a polyline. */
+function offLine(pts: readonly Pt[], p: Pt): number {
+  let best = Infinity
+  for (let i = 1; i < pts.length; i++) {
+    const [a, b] = [pts[i - 1], pts[i]]
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const l2 = dx * dx + dy * dy
+    const u = l2
+      ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2))
+      : 0
+    best = Math.min(best, Math.hypot(p.x - a.x - u * dx, p.y - a.y - u * dy))
+  }
+  return best
+}
+
+/** End labels that sit off their own line, a port name past its cable's
+ * first straight run, labels that overlap, or lie on another cable. */
 export function labelFaults(cables: readonly Drawn[]): string[] {
   const out: string[] = []
   const all = cables.flatMap((c) => c.labels.map((l) => ({ c, l })))
   for (const { c, l } of all) {
     const pts = l.end === "a" ? c.pts : [...c.pts].reverse()
-    if (c.line === "elbow" && pts.length > 2) {
+    // Curves are sampled: allow the chord's sag.
+    const tol = c.line === "bendy" || c.line === "cyclical" ? 1.5 : 0.5
+    if (offLine(c.pts, { x: l.box.cx, y: l.box.cy }) > tol)
+      out.push(`${c.edge}#${c.cable}${l.end} ${l.text}: off its line`)
+    // A nub's name keeps to its first run; a Simple line's finds its own.
+    const shared = l.end === "a" ? c.sharedA : c.sharedB
+    if (c.line === "elbow" && pts.length > 2 && !l.ip && !shared) {
       const run = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
       const w = l.box.hw * 2
       if (l.along + w / 2 > run + 0.5)

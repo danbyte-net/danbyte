@@ -714,20 +714,35 @@ export function toDocument(
       const ba = d.b[i] as Anchor | undefined
       const na = detailed ? nubIndex.get(`${e.id}#${i}a`) : undefined
       const nb = detailed ? nubIndex.get(`${e.id}#${i}b`) : undefined
+      // The end labels on the line: where the plan seated them, or (a
+      // drag in progress) one after another from the end.
+      const named = !d.labels.noPorts && (detailed || d.sem === "cable")
       const port = (
         anchor: typeof aa,
         placed: PortPlace | null | undefined
       ): DiagramEndLabel | undefined => {
-        if (!detailed || anchor?.k !== "side" || !anchor.port) return undefined
+        if (!named || overlay || anchor?.k !== "side" || !anchor.port)
+          return undefined
         if (placed === null) return undefined
-        return {
-          text: anchor.port,
-          rotate: true,
-          ...(placed ? { at: placed } : {}),
-        }
+        return { text: anchor.port, ...(placed ? { at: placed } : {}) }
+      }
+      const addresses = (
+        anchor: typeof aa,
+        lines: string[] | undefined,
+        placed: PortPlace[] | null | undefined
+      ): DiagramEndLabel[] | undefined => {
+        if (overlay || anchor?.k !== "side" || !lines?.length) return undefined
+        if (plan && !placed) return undefined
+        return lines.map((text, k) => ({
+          text,
+          ...(placed?.[k] ? { at: placed[k] } : {}),
+        }))
       }
       const la = port(aa, p ? p.a : undefined)
       const lb = port(ba, p ? p.b : undefined)
+      const ends = d.labels.ends?.[i]
+      const ia = addresses(aa, ends?.a, p?.ips?.a)
+      const ib = addresses(ba, ends?.b, p?.ips?.b)
       const end = (
         node: string,
         at: End,
@@ -764,6 +779,8 @@ export function toDocument(
                 : {}),
               ...(la ? { a: la } : {}),
               ...(lb ? { b: lb } : {}),
+              ...(ia ? { aIps: ia } : {}),
+              ...(ib ? { bIps: ib } : {}),
             },
             ...(url ? { link: url } : {}),
             ...(cable.length === 1 ? { cable: cable[0] } : {}),

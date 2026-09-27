@@ -3,6 +3,7 @@ import type { Measure, Weight } from "./measure"
 import { CARD, ELBOW_RADIUS, LABEL, PILL } from "./theme"
 import type {
   DiagramDocument,
+  DiagramEndLabel,
   DiagramLink,
   DiagramNode,
   DiagramNote,
@@ -172,10 +173,14 @@ export interface LabelLine {
   italic: boolean
 }
 
-/** A link label, resolved: a halo box and baselines in its own frame,
+/** A link label, resolved: its box and baselines in its own frame,
  * turned by `rotate` degrees about `(ox, oy)`. */
 export interface LabelBlock {
-  role: "mid" | "a" | "b"
+  /** The middle chip, a port name at the source (`a`) or target (`b`)
+   * end, or one of that end's addresses (`ipa`, `ipb`, numbered by
+   * `index`). */
+  role: "mid" | "a" | "b" | "ipa" | "ipb"
+  index?: number
   lines: LabelLine[]
   size: number
   lh: number
@@ -187,14 +192,17 @@ export interface LabelBlock {
   rotate: number
   ox: number
   oy: number
-  /** Middle labels are chips with a hairline edge; end labels are plain. */
+  /** Middle labels are chips with a hairline edge. End labels sit on
+   * their line: the box is the gap the line breaks for, in the page's
+   * colour, with no edge. */
   chip: boolean
 }
 
-/** A Detailed port name's box height: the 9px text and a hairline. */
+/** An end label's height: the 9px text and a hairline. The line breaks
+ * for a box this tall. */
 export const PORT_H = LABEL.END_SIZE + 1
 
-/** Where a port name sits along its cable: the centre of its box and its
+/** Where an end label sits: the centre of its text, on its line, and its
  * turn in degrees (`uprightAngle`). */
 export interface PortPlace {
   x: number
@@ -210,59 +218,68 @@ export function uprightAngle(angle: number): number {
   return r >= 80 ? r - 180 : r
 }
 
+/** How much of its line an end label `w` px wide takes: the text, and the
+ * gap on either side of it. */
+export function inlineSpan(w: number): number {
+  return w + 2 * LABEL.GAP
+}
+
 /**
- * A port name `w` px wide laid along the run leaving `start` at `angle`
- * degrees (the direction of travel away from the card): `out` px out,
- * beside the line on `side` (+1 = the right hand of travel, -1 = the left)
- * with `LABEL.PORT_OFFSET` px clear of it. The canvas, the SVG and the
- * draw.io file all place port names through this one rule.
+ * An end label `w` px wide ON the straight run leaving `start` at `angle`
+ * degrees (the direction of travel away from the card): the line runs
+ * `out` px, breaks for the gap, the text and the gap, and runs on. The
+ * text is centred on the line and turned to read upright. The canvas, the
+ * SVG and the draw.io file all place end labels by this one rule.
  */
-export function portPlace(
+export function inlinePlace(
   start: Pt,
   angle: number,
   w: number,
-  side: 1 | -1,
-  out: number = LABEL.PORT_DIST
+  out: number = LABEL.LEAD
 ): PortPlace {
   const r = (angle * Math.PI) / 180
-  const [ux, uy] = [Math.cos(r), Math.sin(r)]
-  const d = out + w / 2
-  const o = side * (LABEL.PORT_OFFSET + PORT_H / 2)
+  const d = out + inlineSpan(w) / 2
   return {
-    x: start.x + ux * d - uy * o,
-    y: start.y + uy * d + ux * o,
+    x: start.x + Math.cos(r) * d,
+    y: start.y + Math.sin(r) * d,
     rotate: uprightAngle(angle),
   }
 }
 
-/** The side of the line a port name goes on by default: outside the
- * cable's first bend (`next` is the direction after it), so the cable
- * turns away from the text; on a run with no bend, above the text as it
- * reads. */
-export function portSide(u: Pt, next?: Pt | null): 1 | -1 {
-  if (next) {
-    const cross = u.x * next.y - u.y * next.x
-    if (Math.abs(cross) > 1e-9) return cross > 0 ? -1 : 1
-  }
-  // Above the reading line: against the text frame's down vector.
-  const r =
-    (uprightAngle((Math.atan2(u.y, u.x) * 180) / Math.PI) * Math.PI) / 180
-  const down = { x: -Math.sin(r), y: Math.cos(r) }
-  const n = { x: -u.y, y: u.x }
-  return n.x * down.x + n.y * down.y > 0 ? -1 : 1
+/**
+ * End labels one after another along a route from one of its ends, from
+ * where they sit alone (the route walked: the point `d` px out and the
+ * direction of travel there): the first `LABEL.LEAD` px out, each next
+ * `LABEL.LEAD` past the one before, each turned with the route where it
+ * sits. `ws` are the texts' widths, nearest the end first.
+ */
+export function inlinePlaces(
+  walk: (d: number) => Pt & { angle: number },
+  ws: readonly number[]
+): PortPlace[] {
+  let d = LABEL.LEAD
+  return ws.map((w) => {
+    const span = inlineSpan(w)
+    const c = walk(d + span / 2)
+    d += span + LABEL.LEAD
+    return { x: c.x, y: c.y, rotate: uprightAngle(c.angle) }
+  })
 }
 
-/** A port name's label block, centred on its place and turned about it. */
-export function portBlock(
-  role: "a" | "b",
+/** An end label's block: the text centred on its place, over a box of the
+ * page's colour - the gap its line breaks for. */
+export function inlineBlock(
+  role: "a" | "b" | "ipa" | "ipb",
   text: string,
   tw: number,
-  place: PortPlace
+  place: PortPlace,
+  index?: number
 ): LabelBlock {
   const size = LABEL.END_SIZE
-  const w = tw + 3
+  const w = inlineSpan(tw)
   return {
     role,
+    ...(index !== undefined ? { index } : {}),
     lines: [{ text, weight: 400, italic: false }],
     size,
     lh: PORT_H,
@@ -275,28 +292,6 @@ export function portBlock(
     oy: place.y,
     chip: false,
   }
-}
-
-/** A port name placed from the route alone (a polyline or a curve's
- * control points): just past the terminal,
- * outside the first bend. */
-export function routePortPlace(
-  poly: Pt[],
-  fromEnd: boolean,
-  tw: number
-): PortPlace {
-  const pts = fromEnd ? [...poly].reverse() : poly
-  const p = along(pts, 0)
-  const r = (p.angle * Math.PI) / 180
-  const u = { x: Math.cos(r), y: Math.sin(r) }
-  let next: Pt | null = null
-  for (let i = 1; i < pts.length - 1 && !next; i++) {
-    const v = { x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y }
-    const len = Math.hypot(v.x, v.y)
-    if (len > 1e-6 && Math.abs(u.x * v.y - u.y * v.x) / len > 1e-3)
-      next = { x: v.x / len, y: v.y / len }
-  }
-  return portPlace(pts[0], p.angle, tw, portSide(u, next))
 }
 
 /** Where a link's labels go. */
@@ -314,7 +309,12 @@ export function linkLabels(
     const lh = LABEL.MID_LH
     const lines = mids.map<LabelLine>((text, i) => ({
       text,
-      weight: link.sem === "bundle" && i === 0 ? 600 : 400,
+      // A bundle's count ("2x", "Po1 ⇄ Po10 · 2x") stands out; its
+      // subnets do not.
+      weight:
+        link.sem === "bundle" && i === 0 && /^\d+x\b|\b\d+x$/.test(text)
+          ? 600
+          : 400,
       italic: link.sem === "ghost",
     }))
     const w =
@@ -344,38 +344,40 @@ export function linkLabels(
     })
   }
 
-  for (const role of ["a", "b"] as const) {
-    const label = link.labels[role]
-    if (!label?.text) continue
-    const fromEnd = role === "b"
-    const tw = measure(label.text, LABEL.END_SIZE, 400)
-    if (label.rotate) {
-      // Along the cable, beside its first straight run: where the builder
-      // placed it, or by the same rule from the route alone.
-      const place = label.at ?? routePortPlace(poly, fromEnd, tw)
-      out.push(portBlock(role, label.text, tw, place))
-      continue
-    }
-    const size = LABEL.END_SIZE
-    const lh = size + 3
-    const line: LabelLine = { text: label.text, weight: 400, italic: false }
-    const p = along(poly, Math.min(LABEL.END_DIST, 0.35 * len), fromEnd)
-    const w = tw + 2 * LABEL.PAD_X
-    const box = { x: p.x - w / 2, y: p.y - lh / 2, w, h: lh }
-    out.push({
-      role,
-      lines: [line],
-      size,
-      lh,
-      anchor: "middle",
-      tx: p.x,
-      ty: baselineAt(box.y, size, lh),
-      box,
-      rotate: 0,
-      ox: p.x,
-      oy: p.y,
-      chip: false,
-    })
+  // Each end's port name, then its addresses, on the line: where the
+  // builder placed them clear of other cables and labels, or one after
+  // another from the end by the same rule.
+  for (const end of ["a", "b"] as const) {
+    const port = link.labels[end]
+    const ips = (end === "a" ? link.labels.aIps : link.labels.bIps) ?? []
+    const pieces: {
+      role: "a" | "b" | "ipa" | "ipb"
+      label: DiagramEndLabel
+      index?: number
+    }[] = [
+      ...(port?.text ? [{ role: end, label: port }] : []),
+      ...ips.flatMap((label, index) =>
+        label.text
+          ? [
+              {
+                role: end === "a" ? ("ipa" as const) : ("ipb" as const),
+                label,
+                index,
+              },
+            ]
+          : []
+      ),
+    ]
+    if (!pieces.length) continue
+    const ws = pieces.map((p) => measure(p.label.text, LABEL.END_SIZE, 400))
+    const auto = pieces.some((p) => !p.label.at)
+      ? inlinePlaces((d) => along(poly, d, end === "b"), ws)
+      : []
+    pieces.forEach((p, i) =>
+      out.push(
+        inlineBlock(p.role, p.label.text, ws[i], p.label.at ?? auto[i], p.index)
+      )
+    )
   }
   return out
 }

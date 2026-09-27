@@ -54,9 +54,10 @@ import type {
 //   corner as a waypoint, which it reproduces exactly and keeps orthogonal
 //   when a card moves. Bendy and cyclical lines are `curved=1` through the
 //   same control points - draw.io's curved rule is the one the screen uses.
-// - The middle label is the line's own label; end labels are child label
-//   cells at x = 2t-1 along the line, with an offset that lands them where
-//   the screen puts them. Port names are turned along their line.
+// - The middle label is the line's own label; end labels (port names,
+//   then addresses) are child label cells at x = 2t-1 along the line, with
+//   an offset that lands them where the screen puts them: on the line,
+//   turned along it, over the page's colour so the line breaks for them.
 // - A breakout cable's junction is a small ellipse its trunk ends on and
 //   its legs leave from; trunk, legs and junction all carry the cable's
 //   id (`danbyte_cable`).
@@ -730,7 +731,7 @@ function page(
       const rotation = k.rotate ? ((k.rotate % 360) + 360) % 360 : 0
       out.push(
         `<mxCell${attrs({
-          id: take(`${id}-${k.role}`),
+          id: take(`${id}-${k.role}${k.index ?? ""}`),
           value: h(k.lines[0]?.text ?? ""),
           style: style(["edgeLabel"], {
             html: 1,

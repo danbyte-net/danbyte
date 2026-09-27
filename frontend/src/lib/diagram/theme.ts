@@ -155,13 +155,15 @@ export const LABEL = {
   END_SIZE: 9,
   PAD_X: 3,
   RADIUS: 3,
-  /** Simple mode: horizontal end labels sit this far along the route, clear
-   * of the point every line on that side converges on. */
-  END_DIST: 28,
-  /** Detailed mode: a port name starts this far out from its nub… */
-  PORT_DIST: 4,
-  /** …and sits this far beside the line. */
-  PORT_OFFSET: 3,
+  /** End labels (port names, addresses) sit ON their line, which breaks
+   * for them: it runs this far out of its nub (or its end) first, and this
+   * far again between two labels… */
+  LEAD: 6,
+  /** …and stops this far short of the text on either side, the page
+   * showing through. */
+  GAP: 3,
+  /** A middle chip moved off its line sits this far beside it. */
+  BESIDE: 3,
 } as const
 
 /** Corner radius of an elbow route (draw.io `arcSize` = twice this). */

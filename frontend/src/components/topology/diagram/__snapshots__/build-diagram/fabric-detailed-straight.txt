@@ -1,27 +1,27 @@
 # buildDiagram(graph, {"mode":"detailed","line":"straight","colorMode":"cable","direction":"TB"})
 
 nodes 10
-dev:@fw-01  card @1037,610 172x71
+dev:@fw-01  card @1037,634 172x71
   fill #ef4444 ink #fff
   title "fw-01" top 6
   lines primary_ip="10.0.2.1" loopback="10.255.0.1" serial="SN FDO22000X"
   nubs T78:ethernet1/2 T94:ethernet1/1
-dev:@leaf-01  card @95,322.7 180x71
+dev:@leaf-01  card @95,334.7 180x71
   fill #0ea5e9 ink #fff
   title "leaf-01" top 6
   lines primary_ip="10.0.1.1" loopback="10.255.0.2" serial="SN FDO22001X"
   nubs T74:Ethernet1/50 T90:Ethernet1/49 T106:Ethernet1/51 R27.5:Ethernet1/54 R43.5:Ethernet1/53
-dev:@leaf-02  card @1055,322.7 182x71
+dev:@leaf-02  card @1055,334.7 182x71
   fill #0ea5e9 ink #fff
   title "leaf-02" top 6
   lines primary_ip="10.0.1.2" loopback="10.255.0.3" serial="SN FDO22002X"
   nubs T91:Ethernet1/51 L19.5:Ethernet1/49 L35.5:Ethernet1/54 L51.5:Ethernet1/53
-dev:@leaf-03  card @360,322.7 182x71
+dev:@leaf-03  card @360,334.7 182x71
   fill #0ea5e9 ink #fff
   title "leaf-03" top 6
   lines primary_ip="10.0.1.3" loopback="10.255.0.4" serial="SN FDO22003X"
   nubs T83:Ethernet1/49 T99:Ethernet1/51 B83:Ethernet1/47 B99:Ethernet1/48
-dev:@leaf-04  card @598,322.7 182x71
+dev:@leaf-04  card @598,334.7 182x71
   fill #0ea5e9 ink #fff
   title "leaf-04" top 6
   lines primary_ip="10.0.1.4" loopback="10.255.0.5" serial="SN FDO22004X"
@@ -30,7 +30,7 @@ dev:@oob-con-01  card @1339.5,35.5 207x71
   fill #a855f7 ink #fff
   title "oob-con-01" top 6
   lines primary_ip="10.0.9.1" loopback="10.255.0.6" serial="SN FDO22005X"
-dev:@pp-c01  card @598,610 88x28
+dev:@pp-c01  card @598,634 88x28
   fill #71717a ink #fff
   title "pp-c01" top 6
   nubs T44:1
@@ -44,7 +44,7 @@ dev:@spine-02  card @342,35.5 192x71
   title "spine-02" top 6
   lines primary_ip="10.0.0.2" loopback="10.255.0.9" serial="SN FDO22008X"
   nubs B72:Ethernet1/1 B88:Ethernet1/3 B104:Ethernet1/4 B120:Ethernet1/2
-dev:@srv-db-01  card @796.5,610 197x57
+dev:@srv-db-01  card @796.5,634 197x57
   fill #10b981 ink #fff
   title "srv-db-01" top 6
   lines loopback="10.255.0.10" serial="SN FDO22009X"
@@ -55,88 +55,88 @@ e:@c1:@leaf-01:@spine-01  link cable straight
   style {"strokeWidth":1.25}
   a B87:Ethernet1/1
   b T90:Ethernet1/49
-  path M 87,77 L 95,281.24
-    ports a 80.1,104.5@-92.2 b 85.8,250.5@-92.2
+  path M 87,77 L 95,293.24
+    ports a 88.2,109.2@-92.1 b 93.7,257.2@-92.1
 e:@c2:@leaf-01:@spine-01  link cable straight
   style {"strokeWidth":1.25}
   a B71:Ethernet1/2
   b T74:Ethernet1/50
-  path M 71,77 L 79,281.24
-    ports a 64.1,105.4@-92.2 b 69.8,250.7@-92.2
+  path M 71,77 L 79,293.24
+    ports a 72.2,110.1@-92.1 b 77.7,257.4@-92.1
 e:@c3:@leaf-02:@spine-01  link cable straight
   style {"strokeWidth":1.25}
   a R35.5:Ethernet1/3
   b L19.5:Ethernet1/49
-  path M 196,35.5 L 958,306.74
-    ports a 406.1,101.8@19.6 b 931.4,288.8@19.6
+  path M 196,35.5 L 958,318.74
+    ports a 425.8,120.9@20.4 b 924.2,306.2@20.4
 e:@c4:@spine-01:@leaf-03  link cable straight
   style {"strokeWidth":1.25,"stroke":"#f59e0b"}
   a B103:Ethernet1/4
   b T83:Ethernet1/49
-  path M 103,77 L 352,281.24
-    ports a 119.8,101.1@39.4 b 333.1,255.4@39.4
+  path M 103,77 L 352,293.24
+    ports a 128.1,98.8@41 b 324.8,269.6@41
 e:@c5:@spine-01:@leaf-04  link cable straight
   style {"strokeWidth":1.25}
   a B119:Ethernet1/5
   b T83:Ethernet1/49
-  path M 119,77 L 590,281.24
-    ports a 152.5,100.3@23.4 b 553.7,256.8@23.4
+  path M 119,77 L 590,293.24
+    ports a 149,90.8@24.7 b 557.2,278.2@24.7
 e:@c6:@leaf-01:@spine-02  link cable straight
   style {"strokeWidth":1.25}
   a B72:Ethernet1/1
   b T106:Ethernet1/51
-  path M 318,77 L 111,281.24
-    ports a 300,106@-44.6 b 126.6,254.6@-44.6
+  path M 318,77 L 111,293.24
+    ports a 294.4,101.7@-46.3 b 135.1,268.1@-46.3
 e:@c7:@leaf-02:@spine-02  link cable straight
   style {"strokeWidth":1.25}
   a B120:Ethernet1/2
   b T91:Ethernet1/51
-  path M 366,77 L 1055,281.24
-    ports a 418.2,84.1@16.5 b 1028.6,265.1@16.5
+  path M 366,77 L 1055,293.24
+    ports a 397.6,86.9@17.4 b 1021.7,282.8@17.4
 e:@c8:@spine-02:@leaf-03  link cable straight
   style {"strokeWidth":1.25,"stroke":"#f59e0b"}
   a B88:Ethernet1/3
   b T99:Ethernet1/51
-  path M 334,77 L 368,281.24
-    ports a 332.7,117.9@-99.5 b 371,250.5@-99.5
+  path M 334,77 L 368,293.24
+    ports a 340.7,119.6@-98.9 b 362.6,258.8@-98.9
 e:@c9:@spine-02:@leaf-04  link cable straight
   style {"strokeWidth":1.25}
   a B104:Ethernet1/4
   b T99:Ethernet1/51
-  path M 350,77 L 606,281.24
-    ports a 395.3,123.3@38.6 b 587.6,256.4@38.6
+  path M 350,77 L 606,293.24
+    ports a 428.9,143.6@40.2 b 579.4,270.7@40.2
 e:@c12:@fw-01:@leaf-04  link cable straight
   style {"strokeWidth":1.25,"stroke":"#3b82f6"}
   a B107:Ethernet1/1 B91:Ethernet1/2
   b T94:ethernet1/1 T78:ethernet1/2
-  path M 614,364.24 L 1045,568.47
-    ports a 658.3,376.4@25.4 b 1007.7,541.9@25.4
-  path M 598,364.24 L 1029,568.47
-    ports a 620,383.5@25.4 b 984,556@25.4
+  path M 614,376.24 L 1045,592.47
+    ports a 642.8,390.7@26.6 b 1010.9,575.4@26.6
+  path M 598,376.24 L 1029,592.47
+    ports a 688.4,421.6@26.6 b 958.4,557@26.6
 e:@c13:@leaf-03:@srv-db-01  link cable straight
   style {"strokeWidth":1.25,"strokeDasharray":"10 4"}
   a B99:Ethernet1/48
   b T106.5:eno1
-  path M 368,364.24 L 804.5,575.47
-    ports a 415.6,378.4@25.8 b 795.6,562.3@25.8
+  path M 368,376.24 L 804.5,599.47
+    ports a 400.1,392.7@27.1 b 787.8,590.9@27.1
 e:@c14:@pp-c01:@leaf-04  link cable straight
   style {"strokeWidth":1.25}
   a B75:Ethernet1/48
   b T44:1
-  path M 582,364.24 L 598,589.97
-    ports a 576.2,395.8@-94.1 b 589.6,584.7@-94.1
+  path M 582,376.24 L 598,613.97
+    ports a 584.4,412.2@-93.9 b 597.3,603.2@-93.9
 e:@c17:@leaf-03:@srv-db-01  link cable straight
   style {"strokeWidth":1.25}
   a B83:Ethernet1/47
   b T90.5:eno2
-  path M 352,364.24 L 788.5,575.47
-    ports a 376.3,384.9@25.8 b 755.6,568.4@25.8
+  path M 352,376.24 L 788.5,599.47
+    ports a 451.6,427.2@27.1 b 758.5,584.1@27.1
 ghost:@leaf-02:@fw-01  link ghost straight simple mid ["LLDP"]
   style {"strokeWidth":1.5,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","opacity":0.8}
   a B91
   b T86
   mid at 0.5
-  path M 1055,358.24 L 1037,574.47
+  path M 1055,370.24 L 1037,598.47
 bgp:@fw-01:@spine-01:  overlay bgp straight
   style {"strokeWidth":1.25,"stroke":"var(--primary)","strokeDasharray":"3 5","opacity":0.45}
 bgp:@spine-01:@spine-02:underlay  overlay bgp straight
@@ -146,7 +146,7 @@ lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  link lagbundle straight
   a R43.5:Ethernet1/53 R27.5:Ethernet1/54
   b L51.5:Ethernet1/53 L35.5:Ethernet1/54
   mid at 0.74
-  path M 191,330.74 L 958,338.74
-    ports a 221.7,339.1@0.6 b 927.1,346.4@0.6
-  path M 191,314.74 L 958,322.74
-    ports a 222,307.1@0.6 b 927.1,314.4@0.6
+  path M 191,342.74 L 958,350.74
+    ports a 226.8,343.1@0.6 b 922.2,350.4@0.6
+  path M 191,326.74 L 958,334.74
+    ports a 226.9,327.1@0.6 b 922.1,334.4@0.6

@@ -38,9 +38,9 @@ import type {
 // paths and text only. No foreignObject, no CSS variables, no `style=`
 // attributes, no filters or opacity; every colour is solid hex. Text sits on
 // explicit baselines (no `dominant-baseline`, which WeasyPrint only
-// approximates) and label halos are white boxes rather than `paint-order`
-// strokes. The output is deterministic: the same document gives the same
-// string, byte for byte.
+// approximates), and an end label breaks its line with a box of the page's
+// colour rather than a `paint-order` stroke. The output is deterministic:
+// the same document gives the same string, byte for byte.
 
 /** A font face to embed as a `data:` URI - the PNG path needs it, because an
  * SVG drawn as an image cannot reach the page's web fonts. */
@@ -226,18 +226,21 @@ function linkSvg(l: DiagramLink): string {
   })
 }
 
-function labelSvg(b: LabelBlock): string {
+/** A link label. A middle chip is a box with a hairline edge; an end
+ * label sits on its line over a box of the page's colour - the gap the
+ * line breaks for. */
+function labelSvg(b: LabelBlock, page: string): string {
   const out: string[] = []
   const bg = b.chip
     ? { fill: PRINT.paper, stroke: PRINT.border, "stroke-width": 0.75 }
-    : { fill: PRINT.paper }
+    : { fill: page }
   out.push(
     el("rect", {
       x: b.box.x,
       y: b.box.y,
       width: b.box.w,
       height: b.box.h,
-      rx: b.chip ? 3 : 2,
+      rx: b.chip ? 3 : undefined,
       ...bg,
     })
   )
@@ -738,7 +741,8 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
     out.push(linked(n.link, nodeSvg(n, measure, photoId)))
   out.push(`</g><g id="labels">`)
   for (const l of doc.links)
-    for (const block of linkLabels(l, measure)) out.push(labelSvg(block))
+    for (const block of linkLabels(l, measure))
+      out.push(labelSvg(block, col(bg ?? PRINT.paper, PRINT.paper)))
   out.push(`</g>`)
   if (doc.notes.length) {
     out.push(`<g id="notes">`)

@@ -44,7 +44,7 @@ import {
   orientPair,
 } from "./link-labels"
 import type { LabelToken, LinkLabelSet } from "./link-labels"
-import { planEdges, portStub } from "./plan"
+import { endRun, planEdges, portStub } from "./plan"
 import { pairKey } from "./types"
 import type {
   CablePair,
@@ -547,10 +547,23 @@ function fanParts(
   const chipW = chip.length
     ? measure(chip[0], LABEL.MID_SIZE, 600) + 2 * LABEL.PAD_X
     : 0
-  const portW = measure(f.trunk.port, LABEL.END_SIZE, 400)
-  const legW = Math.max(
+  // The runs the trunk's and the legs' end labels take out of their nubs.
+  const width = (t: string) => measure(t, LABEL.END_SIZE, 400)
+  const ports = tokens.includes("port")
+  const trunkRun = endRun([
+    ...(ports ? [width(f.trunk.port)] : []),
+    ...(sets.trunk.ends[0]?.a ?? []).map(width),
+  ])
+  const legRun = Math.max(
     0,
-    ...f.legs.map((l) => measure(l.port, LABEL.END_SIZE, 400))
+    ...f.legs.map((l, i) =>
+      endRun([
+        ...(ports ? [width(l.port)] : []),
+        ...(mode === "detailed" ? (sets.legs[i]?.ends[0]?.b ?? []) : []).map(
+          width
+        ),
+      ])
+    )
   )
   return {
     node: {
@@ -578,15 +591,15 @@ function fanParts(
       far,
       reach: {
         simple: Math.max(24, chipW + 16),
-        detailed: Math.max(24, portStub(portW) + (chipW ? chipW + 8 : 0)),
+        detailed: Math.max(24, portStub(trunkRun) + (chipW ? chipW + 8 : 0)),
       },
       // Legs turn off both ways, so half of them stack up on one side.
       legRoom: {
         simple: SHARED_STUB + LANE * Math.ceil(far.length / 2) + 16,
         detailed:
-          SHARED_STUB + LANE * Math.ceil(f.legs.length / 2) + portStub(legW),
+          SHARED_STUB + LANE * Math.ceil(f.legs.length / 2) + portStub(legRun),
       },
-      trunkRoom: { simple: 24, detailed: portStub(portW) },
+      trunkRoom: { simple: 24, detailed: portStub(trunkRun) },
     },
   }
 }
@@ -1115,27 +1128,37 @@ export function buildDiagram(
     ...edges.filter((e) => e.type !== "overlay" && !e.data?.fan),
     ...parts.flatMap((p) => p.layout),
   ]
-  // Detailed: ranks far enough apart for a port name (and the addresses
-  // beside it) at both ends of a cable, and a few lanes between them.
-  let widest = 0
+  // Ranks far enough apart for the labels on the line at both ends of a
+  // cable - a port name, then its addresses - and a few lanes between.
+  // A map with no labels to show keeps its compact spacing.
+  let run = 0
   const degree = new Map<string, number>()
-  if (mode === "detailed") {
+  {
     const ports = tokens.includes("port")
-    for (const l of links)
-      for (const c of l.cables?.length ? l.cables : [{}]) {
-        if (ports)
-          for (const p of [c.a, c.b])
-            if (p) widest = Math.max(widest, measure(p, LABEL.END_SIZE, 400))
+    const width = (t: string) => measure(t, LABEL.END_SIZE, 400)
+    const byId = new Map(edges.map((e) => [e.id, e]))
+    for (const l of links) {
+      const d = byId.get(l.id)?.data
+      const named = ports && (mode === "detailed" || d?.sem === "cable")
+      // Simple draws one line per link: its first cable's names.
+      const all = l.cables?.length ? l.cables : [{}]
+      const cables = mode === "detailed" ? all : all.slice(0, 1)
+      cables.forEach((c, i) => {
+        const ends = d?.labels.ends?.[i]
+        for (const end of ["a", "b"] as const) {
+          const port = named ? c[end] : undefined
+          run = Math.max(
+            run,
+            endRun([...(port ? [port] : []), ...(ends?.[end] ?? [])].map(width))
+          )
+        }
         for (const n of [l.source, l.target])
           degree.set(n, (degree.get(n) ?? 0) + 1)
-      }
-    for (const e of edges)
-      for (const end of e.data?.labels.ends ?? [])
-        for (const ip of [...(end.a ?? []), ...(end.b ?? [])])
-          widest = Math.max(widest, measure(ip, LABEL.END_SIZE, 400))
+      })
+    }
   }
   const lanes = Math.min(8, Math.max(2, ...degree.values()))
-  const rankGap = widest ? 2 * portStub(widest) + LANE * lanes : 0
+  const rankGap = run ? 2 * portStub(run) + LANE * lanes : 0
   const all = new Map<string, { w: number; h: number }>([...fixed, ...base])
   const layout = (boxes: Map<string, { w: number; h: number }>): Laid => {
     // Saved positions are centres; the layout pins top-left corners.
@@ -1196,7 +1219,7 @@ export function buildDiagram(
     links,
     edges,
     fans: parts.map((p) => p.model),
-    roomy: widest ? 2 * portStub(widest) : 0,
+    roomy: run && mode === "detailed" ? 2 * portStub(run) : 0,
     measure,
   }
 

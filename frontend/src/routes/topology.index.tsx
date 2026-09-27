@@ -102,6 +102,7 @@ import {
   useHideKeys,
 } from "@/components/hidden-objects"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { DevicePicker } from "@/components/device-picker"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
@@ -110,6 +111,8 @@ import {
   ViewCardLinesEditor,
 } from "@/components/topology/diagram/card-lines-dialog"
 import type { CardLinesTarget } from "@/components/topology/diagram/card-lines-dialog"
+import { DEFAULT_LABELS } from "@/components/topology/diagram/link-labels"
+import type { LabelToken } from "@/components/topology/diagram/link-labels"
 import {
   typeColor,
   type BundleMember,
@@ -186,6 +189,9 @@ export interface TopologySearch {
   mode?: DiagramModeParam
   /** Diagram tab: the line type. */
   line?: LineParam
+  /** Diagram tab: the labels on the links, comma-separated `subnet`, `ip`,
+   * `port`. Present but empty = none. */
+  labels?: string
   /** Fold link-aggregation member cables into one edge ("on" by default). */
   lag?: "on" | "off"
   /** Levels organiser, encoded by `levels-param.ts`. */
@@ -247,9 +253,10 @@ export const Route = createFileRoute("/topology/")({
     const depth = Number(s.depth)
     if (Number.isFinite(depth) && depth > 0)
       out.depth = Math.min(6, Math.round(depth))
-    // "" is meaningful here (an empty builder map), so this one keeps a
-    // present-but-empty string instead of dropping it.
+    // "" is meaningful here (an empty builder map, no labels), so these
+    // keep a present-but-empty string instead of dropping it.
     if (typeof s.devices === "string") out.devices = s.devices
+    if (typeof s.labels === "string") out.labels = s.labels
     return out
   },
 })
@@ -259,8 +266,8 @@ export const Route = createFileRoute("/topology/")({
  * the user has edited the view. */
 const OVERRIDE_KEYS = [
   "tab", "site", "location", "role", "status", "tag", "panels", "group",
-  "dir", "color", "cables", "mode", "line", "lag", "levels", "device",
-  "depth", "devices", "q", "vlangroup", "vms",
+  "dir", "color", "cables", "mode", "line", "labels", "lag", "levels",
+  "device", "depth", "devices", "q", "vlangroup", "vms",
 ] as const
 
 const Skeleton = () => (
@@ -450,10 +457,18 @@ const DIRS = ["lr", "tb"] as const
 const ROUTINGS = ["routed", "straight", "curved"] as const
 const LAG_MODES = ["on", "off"] as const
 const GROUPS = ["none", "site", "location"] as const
-/** The Diagram tab's two switches. Cyclical joins the line types with the
- * arcs; a saved view holding it reads as the default until then. */
+/** The Diagram tab's switches: the card mode, the line type and the labels
+ * the links carry. Cyclical joins the line types with the arcs; a saved
+ * view holding it reads as the default until then. */
 const DIAGRAM_MODES = ["simple", "detailed"] as const
 const LINE_TYPES = ["straight", "elbow", "bendy"] as const
+const LABEL_TOKENS: readonly LabelToken[] = ["subnet", "ip", "port"]
+/** The known Labels tokens in `v`, in their own order; undefined for
+ * anything that is not a list. */
+const labelsOf = (v: unknown): LabelToken[] | undefined =>
+  Array.isArray(v)
+    ? LABEL_TOKENS.filter((t) => (v as unknown[]).includes(t))
+    : undefined
 type DiagramModeParam = (typeof DIAGRAM_MODES)[number]
 type LineParam = (typeof LINE_TYPES)[number]
 const styleOfTab = (t: TabStyle): ViewStyle => (t === "wiring" ? "stencil" : t)
@@ -492,6 +507,13 @@ function writeStoredDisplay(d: StoredDisplay) {
   } catch {
     /* quota / private mode - non-fatal */
   }
+}
+
+/** A topology query as the map it asks for: what the cards and links
+ * carry (`include`, the card lines) left out. */
+function mapKeyOf(q: TopologyQuery): string {
+  const { include: _include, card_fields: _fields, ...map } = q
+  return JSON.stringify(map)
 }
 
 /** One saved view, state included. */
@@ -602,6 +624,9 @@ function TopologyPage() {
       oneOf(vf.diagram?.line, LINE_TYPES) ??
       oneOf(storedDiagram?.line, LINE_TYPES) ??
       "straight",
+    labels:
+      labelsOf(vf.diagram?.labels) ??
+      labelsOf(storedDiagram?.labels) ?? [...DEFAULT_LABELS],
   } as const
 
   const [tab, setTab] = useUrlEnum<TabStyle>("tab", dflt.tab, TAB_STYLES)
@@ -637,6 +662,18 @@ function TopologyPage() {
     dflt.line,
     LINE_TYPES
   )
+  // Which labels the links carry. One stable array per value, so the
+  // canvas rebuilds only when it changes.
+  const [labelsCsv, setLabelsCsv] = useUrlCsv("labels", dflt.labels)
+  const labelsKey = (labelsOf(labelsCsv) ?? dflt.labels).join(",")
+  const diagramLabels = useMemo(
+    () => (labelsKey ? (labelsKey.split(",") as LabelToken[]) : []),
+    [labelsKey]
+  )
+  const setLabel = (token: LabelToken, on: boolean) =>
+    setLabelsCsv(
+      LABEL_TOKENS.filter((t) => (t === token ? on : diagramLabels.includes(t)))
+    )
   const isDiagram = viewStyle === "diagram"
   const logical = viewStyle === "logical"
   // Aggregate the graph to one card per site/location; double-click a card
@@ -733,7 +770,7 @@ function TopologyPage() {
   const diagramDisplay = useMemo<TopologyDiagramDisplay>(
     () => ({
       face: savedDiagram?.face ?? "card",
-      labels: savedDiagram?.labels ?? ["subnet", "ip", "port"],
+      labels: diagramLabels,
       ...(savedDiagram?.fields !== undefined
         ? { fields: savedDiagram.fields }
         : {}),
@@ -744,7 +781,7 @@ function TopologyPage() {
           ? savedDiagram.line
           : diagramLine,
     }),
-    [savedDiagram, diagramMode, diagramLine, urlSearch.line]
+    [savedDiagram, diagramMode, diagramLine, urlSearch.line, diagramLabels]
   )
   /** A view gains the Diagram display once the Diagram tab is used on it. */
   const withDiagram = isDiagram || !!savedDiagram
@@ -910,7 +947,6 @@ function TopologyPage() {
     setSelGroupEdge(null)
     setSelEdgeId(null)
   }
-
   /** Drilling in scopes the map to that one group - which the URL already has
    * a spelling for, so this is a filter change, not a mode. */
   const drillInto = (d: TopoGroupData) => {
@@ -1069,12 +1105,16 @@ function TopologyPage() {
   // view's own list when it has one.
   const cardFields = savedDiagram?.fields
   const cardFieldsKey = cardFields ? cardFields.join(",") : null
+  // The links' subnets and addresses (`include=link_ips`) only when a
+  // label shows them.
+  const linkIps =
+    diagramLabels.includes("subnet") || diagramLabels.includes("ip")
   const graphQuery = useMemo<TopologyQuery>(() => {
     const collapse_panels = filters.collapse
     const cards: Partial<TopologyQuery> =
       isDiagram && !grouped
         ? {
-            include: ["card"],
+            include: linkIps ? ["card", "link_ips"] : ["card"],
             ...(cardFieldsKey !== null
               ? { card_fields: cardFieldsKey ? cardFieldsKey.split(",") : [] }
               : {}),
@@ -1103,14 +1143,24 @@ function TopologyPage() {
     custom,
     isDiagram,
     cardFieldsKey,
+    linkIps,
   ])
-  /** Changes exactly when the query does - the canvas refits on a new one. */
-  const graphKey = useMemo(() => JSON.stringify(graphQuery), [graphQuery])
+  /** Changes exactly when the map does - the canvas refits on a new one.
+   * What the cards and links carry (`include`, the card lines) is not a
+   * new map. */
+  const graphKey = useMemo(() => mapKeyOf(graphQuery), [graphQuery])
 
   const q = useQuery({
     queryKey: ["topology", graphQuery],
     queryFn: ({ signal }) => fetchTopology(graphQuery, { signal }),
     enabled: !logical,
+    // The same map asked for with other labels or card lines keeps the
+    // one on screen until the new one arrives, instead of blanking it.
+    placeholderData: (prev, prevQuery) =>
+      prevQuery &&
+      mapKeyOf(prevQuery.queryKey[1] as TopologyQuery) === graphKey
+        ? prev
+        : undefined,
   })
 
   /** Replace the arrangement of the style on screen (undefined = re-layout
@@ -1776,6 +1826,27 @@ function TopologyPage() {
                   />
                 </PopoverField>
               )}
+              {isDiagram && !grouped && (
+                <PopoverField label="Labels">
+                  <div className="flex items-center gap-4">
+                    {(
+                      [
+                        ["subnet", "Subnet"],
+                        ["ip", "IPs"],
+                        ["port", "Ports"],
+                      ] as const
+                    ).map(([token, label]) => (
+                      <FormCheckbox
+                        key={token}
+                        label={label}
+                        checked={diagramLabels.includes(token)}
+                        onChange={(v) => setLabel(token, v)}
+                        className="items-center whitespace-nowrap"
+                      />
+                    ))}
+                  </div>
+                </PopoverField>
+              )}
               {viewStyle === "stencil" && (
                 <PopoverField label="Cables">
                   <SegmentedTabs<"routed" | "straight" | "curved">
@@ -2020,6 +2091,7 @@ function TopologyPage() {
               diagramMode={diagramMode}
               diagramLine={diagramLine}
               linkOverrides={doc.doc.links}
+              diagramLabels={isDiagram ? diagramLabels : undefined}
               monitor={isDiagram ? checks : undefined}
               bundleLags={lagMode === "on"}
               positions={positions}
@@ -2608,6 +2680,51 @@ function NodePanel({
   )
 }
 
+/** A section heading inside a side panel. */
+function PanelHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+      {children}
+    </div>
+  )
+}
+
+type CablePairRow = NonNullable<NonNullable<TopoEdge["data"]>["pairs"]>[number]
+
+/** One cable pair: each end's port and every address it has, and the
+ * subnets the two ends share. Full names, wrapped - never clipped. */
+function PairEnds({ pair: p }: { pair: CablePairRow }) {
+  const subnets = (p.subnets ?? []).map((s) => s.cidr)
+  const label = "font-sans text-[10px] text-muted-foreground"
+  return (
+    <div className="grid grid-cols-[auto_1fr] gap-x-2 py-1 font-mono text-[11px] leading-snug">
+      {(["a", "b"] as const).map((end) => (
+        <div key={end} className="contents">
+          <span className={label}>{end.toUpperCase()}</span>
+          <div className="min-w-0 break-all">
+            <div>{end === "a" ? p.a : p.b}</div>
+            {((end === "a" ? p.a_ips : p.b_ips) ?? []).map((ip) => (
+              <div key={ip} className="text-muted-foreground">
+                {ip}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {subnets.length > 0 && (
+        <>
+          <span className={label}>Subnet</span>
+          <div className="min-w-0 break-all">
+            {subnets.map((cidr) => (
+              <div key={cidr}>{cidr}</div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function EdgePanel({
   data: d,
   onClose,
@@ -2634,7 +2751,13 @@ function EdgePanel({
             </span>
           </Row>
         )}
-        {d.status && <Row label="Status">{d.status}</Row>}
+        {d.status_mini ? (
+          <Row label="Status">
+            <StatusBadge status={d.status_mini} />
+          </Row>
+        ) : (
+          d.status && <Row label="Status">{d.status}</Row>
+        )}
         {d.length && (
           <Row label="Length">
             <span className="num">
@@ -2651,19 +2774,12 @@ function EdgePanel({
       </div>
       {!!d.pairs?.length && (
         <div className="mt-2 border-t border-border pt-2">
-          <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-            Connections
+          <PanelHeading>Connections</PanelHeading>
+          <div className="divide-y divide-border">
+            {d.pairs.map((p, i) => (
+              <PairEnds key={i} pair={p} />
+            ))}
           </div>
-          {d.pairs.map((p, i) => (
-            // Full endpoint names, never clipped - wrap instead of truncate.
-            <div
-              key={i}
-              className="py-0.5 font-mono text-[11px] leading-snug break-all"
-            >
-              <div>{p.a}</div>
-              <div>↔ {p.b}</div>
-            </div>
-          ))}
         </div>
       )}
       {d.cable_id && (
@@ -2867,17 +2983,15 @@ function BundlePanel({
                 </span>
               )}
             </div>
+            {c.status_mini && (
+              <div className="mt-1">
+                <StatusBadge status={c.status_mini} />
+              </div>
+            )}
             {!!c.pairs?.length && (
-              <div className="mt-1 space-y-1">
+              <div className="mt-1 divide-y divide-border">
                 {c.pairs.map((p2, j) => (
-                  // Every pair, full names, wrapped - never clipped.
-                  <div
-                    key={j}
-                    className="font-mono text-[10px] leading-snug break-all"
-                  >
-                    <div>{p2.a}</div>
-                    <div>↔ {p2.b}</div>
-                  </div>
+                  <PairEnds key={j} pair={p2} />
                 ))}
               </div>
             )}

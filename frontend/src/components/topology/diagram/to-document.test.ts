@@ -19,6 +19,7 @@ import type { DiagramOptions } from "./build-diagram"
 import { NUB } from "./card-layout"
 import { printLegend, toDocument } from "./to-document"
 import type { DocumentOptions } from "./to-document"
+import { routePolyline } from "@/lib/diagram/geometry"
 import type { DiagramCardData } from "./types"
 
 // The export document is drawn from the Diagram's model and where the cards
@@ -225,8 +226,9 @@ describe("toDocument", () => {
       (l) => l.id.startsWith("lag") || l.sem === "bundle"
     )
     expect(lag.length).toBeGreaterThan(0)
+    // Port names where the plan seated them, on the line.
     const cable = doc.links.find((l) => l.labels.a)!
-    expect(cable.labels.a?.rotate).toBe(true)
+    expect(cable.labels.a?.at).toBeTruthy()
   })
 
   it("writes a Simple document of a Detailed map for draw.io", () => {
@@ -378,6 +380,101 @@ describe("toDocument", () => {
       expect(n.y + n.h).toBeLessThanOrEqual(y + h)
     }
   })
+})
+
+/** The fabric with a /31 on every cable pair. */
+const ipGraph: TopologyGraph = {
+  ...cardGraph,
+  edges: cardGraph.edges.map((e, i) =>
+    e.data?.pairs
+      ? {
+          ...e,
+          data: {
+            ...e.data,
+            pairs: e.data.pairs.map((p, j) => ({
+              ...p,
+              subnets: [
+                {
+                  cidr: `10.9.${i}.${4 * j}/31`,
+                  family: 4 as const,
+                  a: `10.9.${i}.${4 * j}`,
+                  b: `10.9.${i}.${4 * j + 1}`,
+                },
+              ],
+            })),
+          },
+        }
+      : e
+  ),
+}
+
+/** How far `p` lies from a polyline. */
+function offLine(
+  pts: readonly { x: number; y: number }[],
+  p: { x: number; y: number }
+) {
+  let best = Infinity
+  for (let i = 1; i < pts.length; i++) {
+    const [a, b] = [pts[i - 1], pts[i]]
+    const [dx, dy] = [b.x - a.x, b.y - a.y]
+    const l2 = dx * dx + dy * dy
+    const u = l2
+      ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2))
+      : 0
+    best = Math.min(best, Math.hypot(p.x - a.x - u * dx, p.y - a.y - u * dy))
+  }
+  return best
+}
+
+describe("link labels in the exports", () => {
+  for (const mode of ["detailed", "simple"] as const)
+    it(`${mode}: port names and addresses sit on their line, where the canvas put them`, () => {
+      const b = build({ mode, line: "elbow" }, ipGraph)
+      const doc = exportOf(b)
+      let ends = 0
+      for (const l of doc.links) {
+        const poly = routePolyline(l)
+        for (const label of [
+          l.labels.a,
+          l.labels.b,
+          ...(l.labels.aIps ?? []),
+          ...(l.labels.bIps ?? []),
+        ]) {
+          if (!label) continue
+          ends++
+          // Seated by the plan, on the line.
+          expect(label.at, `${l.id} ${label.text}`).toBeTruthy()
+          expect(offLine(poly, label.at!)).toBeLessThan(0.5)
+        }
+      }
+      expect(ends).toBeGreaterThan(8)
+      const svg = toSvg(doc, { measure: approxMeasure })
+      // Each end label over a box of the page's colour, with no edge.
+      const dom = parse(svg, "image/svg+xml")
+      const texts = [...dom.querySelectorAll("#labels text")].filter((t) =>
+        // The addresses, not the subnet chips.
+        /^10\.9\.\d+\.\d+$/.test(t.textContent)
+      )
+      expect(texts.length).toBeGreaterThan(4)
+      for (const t of texts) {
+        const rect = t.parentElement!.querySelector("rect")!
+        expect(rect.getAttribute("fill")).toBe("#ffffff")
+        expect(rect.getAttribute("stroke")).toBeNull()
+      }
+      // draw.io: a child label on the line over the page's colour.
+      const xml = parse(toDrawio([doc], { measure: approxMeasure }), "text/xml")
+      const cells = [...xml.getElementsByTagName("mxCell")].filter((c) =>
+        /-ip[ab]\d+$/.test(c.getAttribute("id") ?? "")
+      )
+      expect(cells.length).toBeGreaterThan(4)
+      for (const c of cells) {
+        expect(c.getAttribute("style")).toContain("edgeLabel")
+        expect(c.getAttribute("style")).toContain(
+          "labelBackgroundColor=#ffffff"
+        )
+        expect(c.getAttribute("value")).toMatch(/^10\.9\./)
+      }
+    })
 })
 
 describe("printLegend", () => {
