@@ -333,8 +333,9 @@ step, marks the view edited) and the view's own choice is in the link
 - **Layout:** photos are wide and their cables leave up and down, so
   side-by-side photos keep room above and below them for the cables and
   their port names. **Tree** layout (Display ▸ Layout) often suits a
-  photo map best. A saved arrangement keeps each device's centre when it
-  changes between card and photo.
+  photo map best. When devices change between card and photo, a map laid
+  out automatically is laid out again; a saved arrangement keeps each
+  device's centre, and whatever a photo now covers moves out of its way.
 - **Performance:** photos load with the map only while some device shows
   one (`include=photo`). Far out - below 35% zoom on a map with 24 photos
   or more, 12% on a smaller one - each photo is drawn as a plain box.

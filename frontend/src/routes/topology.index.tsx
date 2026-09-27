@@ -1342,6 +1342,18 @@ function TopologyPage() {
     [fullGraph, hidden, isDiagram, diagramFace, nodeFaces]
   )
   const hiddenHere = fullGraph ? hiddenOnMap(fullGraph, hidden) : 0
+  // Devices turning into photos (or back) change size a lot: the map is
+  // laid out again rather than kept where the cards were - once the
+  // photos have arrived. A device added to a hand-built map is not that.
+  const photoKey = useMemo(() => {
+    if (!isDiagram || !wantsPhotos(diagramFace, nodeFaces)) return ""
+    const own = Object.entries(nodeFaces)
+      .flatMap(([id, v]) => (v.face ? [`${id}=${v.face}`] : []))
+      .sort()
+      .join(",")
+    const loaded = !!graph?.nodes.some((n) => n.data.photo)
+    return `${diagramFace}:${own}:${loaded ? 1 : 0}`
+  }, [isDiagram, diagramFace, nodeFaces, graph])
 
   // Media types on the map - the legend swatches them in type color mode.
   const presentTypes = useMemo(() => {
@@ -2640,7 +2652,7 @@ function TopologyPage() {
               bundleLags={lagMode === "on"}
               positions={positions}
               layoutTick={layoutTick}
-              fitKey={fitKey}
+              fitKey={photoKey ? `${fitKey}|${photoKey}` : fitKey}
               onDropDevices={canBuild ? dropDevices : undefined}
               pending={canBuild ? pendingCards : undefined}
               emptyState={

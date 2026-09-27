@@ -207,6 +207,29 @@ describe("photo nodes", () => {
     expect(shown("aarhus-sw2")).toBeUndefined()
   })
 
+  it("moves what a photo covers in an arrangement saved with cards", () => {
+    // The cards' own arrangement, then the same centres with photos.
+    const cards = build(aarhusPhotoGraph)
+    const positions = Object.fromEntries(
+      devices(cards.nodes).map((n): [string, [number, number]] => [
+        n.id,
+        [n.position.x, n.position.y],
+      ])
+    )
+    const b = build(photos, { positions })
+    const boxes = [...rects(b.nodes).values()]
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++)
+        expect(overlap(boxes[i], boxes[j])).toBe(false)
+    // A card map's arrangement is left as it was.
+    const again = build(aarhusPhotoGraph, { positions })
+    for (const n of devices(again.nodes))
+      expect([n.position.x, n.position.y]).toEqual(positions[n.id])
+    expect(
+      throughCards(drawn(b.nodes, b.edges, approxMeasure), rects(b.nodes))
+    ).toEqual([])
+  })
+
   it("re-anchors a moved photo: its ports go with it", () => {
     const b = build(photos)
     const moved = b.nodes.map((n) =>

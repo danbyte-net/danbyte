@@ -63,6 +63,7 @@ import type { LabelToken, LinkLabelSet } from "./link-labels"
 import { ELBOW_RADIUS } from "./link-geometry"
 import { PHOTO, photoFace, photoLod, photoShown } from "./photo-anchors"
 import type { PhotoFace, PhotoShown } from "./photo-anchors"
+import { separateOverlaps } from "./placement"
 import { endRun, planEdges, portStub } from "./plan"
 import { pairKey } from "./types"
 import type {
@@ -1120,6 +1121,8 @@ interface Laid {
   centres: Map<string, Pt>
 }
 
+type Size = { w: number; h: number }
+
 /**
  * The card's nubs and box after anchoring, reusing the previous objects
  * when nothing changed - so a drag only re-renders the cards it touched.
@@ -1734,7 +1737,41 @@ export function buildDiagram(
     measure,
   }
 
-  let laid = layout(all)
+  // A saved arrangement from before a device showed its photo: the photo
+  // is far wider than the card was, and whatever it now covers moves out
+  // of its way (nothing else moves).
+  const settle = (l: Laid, sizes: ReadonlyMap<string, Size>): Laid => {
+    if (!photos.size || !opts.positions) return l
+    const rects: Record<string, Rect> = {}
+    for (const [id, c] of l.centres) {
+      const b = sizes.get(id)
+      if (b) rects[id] = rectAt(c, b)
+    }
+    const grid = obstacles(Object.entries(rects))
+    const covers = [...photos.keys()].some((id) => {
+      const r = rects[id] as Rect | undefined
+      return (
+        !!r &&
+        grid
+          .near(r)
+          .some(
+            (o) =>
+              o.id !== id &&
+              o.r.x < r.x + r.w &&
+              r.x < o.r.x + o.r.w &&
+              o.r.y < r.y + r.h &&
+              r.y < o.r.y + o.r.h
+          )
+      )
+    })
+    if (!covers) return l
+    const centres = new Map(l.centres)
+    for (const [id, [x, y]] of Object.entries(separateOverlaps(rects)))
+      centres.set(id, { x, y })
+    return { centres }
+  }
+
+  let laid = settle(layout(all), new Map<string, Size>([...fixed, ...base]))
   let anchored = anchorAll(model, laid.centres)
   if (mode === "detailed") {
     // The cards grew to fit their nubs: lay out again with the real
@@ -1748,7 +1785,10 @@ export function buildDiagram(
       const sized = reserve(
         new Map<string, { w: number; h: number }>([...fixed, ...anchored.boxes])
       )
-      laid = layout(sized)
+      laid = settle(
+        layout(sized),
+        new Map<string, Size>([...fixed, ...anchored.boxes])
+      )
       anchored = anchorAll(model, laid.centres, anchored.anchors.sides)
     }
   }
