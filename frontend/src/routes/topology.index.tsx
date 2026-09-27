@@ -1,10 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  ChevronDown,
   Crosshair,
+  FilePlus,
   Filter,
   LayoutGrid,
   Link2 as LinkIcon,
+  PanelLeft,
   PanelRight,
   Plus,
   Save,
@@ -19,6 +22,7 @@ import { toast } from "sonner"
 import { api, fetchTopology } from "@/lib/api"
 import type {
   BulkStatusResponse,
+  DevicePaletteRow,
   GhostEdgeData,
   Paginated,
   Status,
@@ -69,7 +73,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { EmptyState } from "@/components/empty-state"
 import { Combobox } from "@/components/ui/combobox"
 import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
@@ -108,6 +120,18 @@ import { QueryError } from "@/components/query-error"
 import { DevicePicker } from "@/components/device-picker"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
 import {
+  DevicePalette,
+  PALETTE_QUERY_KEY,
+} from "@/components/topology/device-palette"
+import { NewViewDialog } from "@/components/topology/new-view-dialog"
+import type { NewViewStart } from "@/components/topology/new-view-dialog"
+import {
+  NEW_CARD,
+  boxAround,
+  dropPlacement,
+  placeNewcomers,
+} from "@/components/topology/diagram/placement"
+import {
   CardLinesDialog,
   ViewCardLinesEditor,
 } from "@/components/topology/diagram/card-lines-dialog"
@@ -126,7 +150,7 @@ import {
   type EdgeColorMode,
   type NodeStyle,
 } from "@/components/topology/topology-canvas"
-import type { DiagramLinkRef } from "@/components/topology/diagram/types"
+import type { DiagramLinkRef, Pt } from "@/components/topology/diagram/types"
 import { sharedLag } from "@/components/topology/lag-bundles"
 import type {
   GroupEdgeInfo,
@@ -423,6 +447,14 @@ function writeStoredZones(z: ZonesByStyle) {
 // they must survive a reload. Saved views persist theirs via Save.
 const DISPLAY_KEY = "danbyte-topology-display"
 const SIDEBAR_KEY = "topology:sidebar"
+/** Whether the Diagram's device list is open, per browser. */
+const PALETTE_KEY = "topology:palette"
+/** An unsaved map's device set rides in the URL, and the page's own
+ * address has to fit a request line: past this many ids it is saved as a
+ * view instead. */
+const URL_SET_MAX = 200
+/** A device's node id on the map. */
+const devNode = (id: string) => `dev:${id}`
 const EMPTY_MON: BulkStatusResponse["statuses"] = {}
 interface StoredDisplay {
   colorMode?: EdgeColorMode
@@ -621,7 +653,6 @@ function TopologyPage() {
       bonds: vf.roleBonds ?? stored.roleBonds ?? [],
       distance: vf.roleDistance ?? stored.roleDistance ?? {},
     }),
-    devices: vf.devices ?? null,
     mode:
       oneOf(vf.diagram?.mode, DIAGRAM_MODES) ??
       oneOf(storedDiagram?.mode, DIAGRAM_MODES) ??
@@ -724,10 +755,11 @@ function TopologyPage() {
     groupBy === "site" ? siteF : groupBy === "location" ? locationF : "all"
   const drilled = groupBy !== "none" && drillId !== "all"
   const grouped = groupBy !== "none" && !drilled
-  // Custom-map builder: a hand-picked device set (right-click to grow it,
-  // the + button to seed it). null = normal mode.
-  const [custom, setCustom] = useUrlCsv("devices", dflt.devices)
-  const builder = custom !== null
+  // A hand-picked device set - a map built by hand. An unsaved one lives in
+  // the URL (`devices=`); a saved view keeps its set in its document (below),
+  // so adding and removing devices is undoable and saved with the view.
+  const [urlDevices, setUrlDevices] = useUrlCsv("devices")
+  const urlSetKey = urlDevices?.join(",") ?? null
   const [menu, setMenu] = useState<{
     x: number
     y: number
@@ -757,7 +789,11 @@ function TopologyPage() {
   // map is a scratch map until it is saved, so what you draw on it must not
   // follow you back to the default map when you exit.
   const mapKey =
-    viewId !== "none" ? `view:${viewId}` : builder ? "custom" : "default"
+    viewId !== "none"
+      ? `view:${viewId}`
+      : urlDevices !== null
+        ? "custom"
+        : "default"
 
   // Everything about this map that is not in the URL - the arrangements,
   // zones, hidden set, overrides - as one undoable document. A saved view's
@@ -765,10 +801,24 @@ function TopologyPage() {
   // from this browser's copy.
   const doc = useViewDocument(() => {
     if (urlSearch.view) return { doc: emptyDocument(), key: mapKey }
-    if (builder) return { doc: emptyDocument(), key: mapKey }
+    if (urlDevices !== null)
+      return { doc: emptyDocument({ devices: urlDevices }), key: mapKey }
     return { doc: defaultDocument(styleOfTab(dflt.tab)), key: mapKey }
   })
   const { dispatch: send, dirtyRef } = doc
+  /** The saved view's own document is on screen, not the blank one shown
+   * while it loads. */
+  const viewDocReady =
+    viewId !== "none" && doc.docKey === mapKey && doc.base !== null
+  /** The hand-picked set on screen; null = the filters decide. A view's
+   * comes from its document once that has loaded (before, from the view as
+   * fetched); an unsaved map's from the URL. */
+  const custom: string[] | null =
+    viewId === "none"
+      ? urlDevices
+      : (urlDevices ?? (viewDocReady ? doc.doc.devices : (vf.devices ?? null)))
+  const builder = custom !== null
+  const customKey = custom?.join(",") ?? null
 
   /** The Diagram display a view saves: the URL's switches over what else
    * the view keeps (card face, labels, its own card lines). */
@@ -881,7 +931,7 @@ function TopologyPage() {
         appliedView.updated_at
       )
     } else if (mapKey === "custom") {
-      doc.load(emptyDocument(), mapKey)
+      doc.load(emptyDocument({ devices: urlDevices }), mapKey)
     } else {
       doc.load(defaultDocument(viewStyle), mapKey)
     }
@@ -890,6 +940,29 @@ function TopologyPage() {
     // Keyed on the map and the view copy only: the style and the document
     // are read as they are at that moment, not reasons to reload.
   }, [mapKey, appliedView])
+
+  // An unsaved map's set is its URL. When the URL changes under the map
+  // (Back, an edited link) the document follows, so undo and Save see the
+  // set on screen; the page's own edits change both at once.
+  const lastUrlSet = useRef(urlSetKey)
+  useEffect(() => {
+    if (lastUrlSet.current === urlSetKey) return
+    lastUrlSet.current = urlSetKey
+    if (viewId !== "none" || urlDevices === null) return
+    if (doc.docKey !== "custom") return
+    if ((doc.doc.devices?.join(",") ?? null) === urlSetKey) return
+    send({ type: "replace", doc: { ...doc.doc, devices: urlDevices } })
+  }, [urlSetKey])
+  // A saved view keeps its set in its document; a link from before that
+  // may still carry `devices=` beside `view=`. Read it once, as an edit.
+  useEffect(() => {
+    if (!viewDocReady || urlDevices === null) return
+    send(
+      { type: "replace", doc: { ...doc.doc, devices: urlDevices } },
+      { coalesce: "gesture" }
+    )
+    patch({ devices: undefined }, { replace: true })
+  }, [viewDocReady, urlSetKey])
 
   // The default map persists to this browser as it changes; a saved view's
   // document is written by Save. Keyed on the document's own map, so the
@@ -981,33 +1054,16 @@ function TopologyPage() {
     dropAllPositions()
   }
 
-  /** Builder: merge ids into the custom set (starting it if needed). */
-  const addToCustom = (ids: string[]) =>
-    setCustom([...new Set([...(custom ?? []), ...ids])])
-
   /** Leaving the builder. A saved view whose whole point IS its device set
-   * can't survive losing it, so that view is left behind too. The map the
-   * user lands on brings its own arrangement (the load effect), and a view
-   * built on by hand keeps the positions of the cards it still shows. */
+   * can't survive losing it, so that view is left behind too; a filter view
+   * built on by hand goes back to its filters. The map the user lands on
+   * brings its own arrangement (the load effect), and a view built on by
+   * hand keeps the positions of the cards it still shows. */
   const exitBuilder = () => {
+    if (viewId !== "none" && !vf.devices && viewDocReady)
+      edit({ type: "replace", doc: { ...doc.doc, devices: null } })
     patch({ devices: undefined, ...(vf.devices ? { view: undefined } : {}) })
     clearSel()
-  }
-
-  /** Builder: pull one device's 1-hop neighbourhood into the set. */
-  const addNeighbors = async (deviceId: string) => {
-    try {
-      const g = await api<TopologyGraph>(
-        `/api/topology/?device=${deviceId}&depth=1`
-      )
-      addToCustom(
-        g.nodes
-          .map((n) => n.data.device_id)
-          .filter((x): x is string => !!x)
-      )
-    } catch (err) {
-      apiErrorToast(err)
-    }
   }
 
   /** A filter change writes its params in ONE navigation (separate setters in
@@ -1168,16 +1224,27 @@ function TopologyPage() {
    * What the cards and links carry (`include`, the card lines) is not a
    * new map. */
   const graphKey = useMemo(() => mapKeyOf(graphQuery), [graphQuery])
+  /** A map built by hand is the same map however its set grows or shrinks:
+   * adding a device must not refit the camera or blank the canvas. */
+  const setKey =
+    custom !== null
+      ? `set:${viewId === "none" ? "scratch" : viewId}:${
+          filters.collapse ? 1 : 0
+        }`
+      : null
+  const fitKey = setKey ?? graphKey
 
   const q = useQuery({
-    queryKey: ["topology", graphQuery],
+    queryKey: ["topology", graphQuery, setKey],
     queryFn: ({ signal }) => fetchTopology(graphQuery, { signal }),
     enabled: !logical,
-    // The same map asked for with other labels or card lines keeps the
-    // one on screen until the new one arrives, instead of blanking it.
+    // The same map asked for with other labels or card lines - or a hand-
+    // built map with a device more or less - keeps the one on screen until
+    // the new one arrives, instead of blanking it.
     placeholderData: (prev, prevQuery) =>
       prevQuery &&
-      mapKeyOf(prevQuery.queryKey[1] as TopologyQuery) === graphKey
+      (mapKeyOf(prevQuery.queryKey[1] as TopologyQuery) === graphKey ||
+        (setKey !== null && prevQuery.queryKey[2] === setKey))
         ? prev
         : undefined,
   })
@@ -1471,6 +1538,308 @@ function TopologyPage() {
     onError: (err) => apiErrorToast(err),
   })
 
+  // ── Building a map by hand ──
+  // The device list (Diagram tab) and New view. Cards added by hand get a
+  // Diagram position before the map is fetched again, so the build pins
+  // them where they were put; until they arrive they are drawn muted.
+  const [paletteOpen, setPaletteOpen] = useState(() => {
+    try {
+      return localStorage.getItem(PALETTE_KEY) === "open"
+    } catch {
+      return false
+    }
+  })
+  const setPalette = (open: boolean) => {
+    setPaletteOpen(open)
+    try {
+      localStorage.setItem(PALETTE_KEY, open ? "open" : "closed")
+    } catch {
+      /* private mode - non-fatal */
+    }
+  }
+  const paletteShown = isDiagram && paletteOpen
+  /** A Diagram whose set is picked by hand takes dropped devices. */
+  const canBuild = isDiagram && builder
+  /** Where the next device added from the list lands (a right-click on
+   * the canvas); null = the middle of the screen. */
+  const [addAt, setAddAt] = useState<Pt | null>(null)
+  const [newViewOpen, setNewViewOpen] = useState(false)
+  /** Devices added and not on the map yet: their names and role colours. */
+  const [pending, setPending] = useState<
+    ReadonlyMap<string, { name: string; color?: string | null }>
+  >(() => new Map())
+  /** Every device on the map, or in its set. */
+  const placedIds = useMemo(
+    () =>
+      new Set(
+        customKey !== null
+          ? customKey.split(",").filter(Boolean)
+          : (q.data?.nodes ?? [])
+              .map((n) => n.data.device_id)
+              .filter((x): x is string => !!x)
+      ),
+    [customKey, q.data]
+  )
+  const pendingCards = useMemo(() => {
+    if (!pending.size) return []
+    const present = new Set((q.data?.nodes ?? []).map((n) => n.id))
+    const pos = doc.doc.positions.diagram ?? {}
+    return [...pending].flatMap(([id, info]) => {
+      const key = devNode(id)
+      return !present.has(key) && key in pos
+        ? [{ id: key, name: info.name, color: info.color, at: pos[key] }]
+        : []
+    })
+  }, [pending, q.data, doc.doc.positions])
+  // Once the map is fetched with them, the added devices are either on it
+  // or out of this user's sight - they stay in the set either way (another
+  // user may see them).
+  useEffect(() => {
+    if (!pending.size || !q.data || q.isPlaceholderData || q.isFetching) return
+    const inSet = new Set(customKey?.split(",") ?? [])
+    const ids = [...pending.keys()]
+    if (!ids.every((id) => inSet.has(id))) return
+    const present = new Set(q.data.nodes.map((n) => n.data.device_id))
+    const missing = ids.filter((id) => !present.has(id)).length
+    if (missing)
+      toast.error(
+        missing === 1
+          ? "1 device can't be shown on this map"
+          : `${missing} devices can't be shown on this map`
+      )
+    setPending(new Map())
+  }, [pending, q.data, q.isPlaceholderData, q.isFetching, customKey])
+
+  /**
+   * Devices join the hand-picked set - with `place`, their Diagram
+   * positions, in the same undo step. A view's set is in its document; an
+   * unsaved map's in the URL as well (the document follows it for undo).
+   * On a map that follows its filters this starts a set of just `ids`, as
+   * the older tabs' Add device always has. False when nothing was added.
+   */
+  const addToSet = (ids: string[], place?: PosMap): boolean => {
+    const have = custom ?? []
+    const fresh = ids.filter((id) => !have.includes(id))
+    if (!fresh.length) return false
+    const next = [...have, ...fresh]
+    const placed = place ? { style: "diagram" as const, place } : {}
+    if (viewId !== "none") {
+      // Not before the view's own document is on screen: the load would
+      // throw the edit away.
+      if (!viewDocReady) return false
+      edit({ type: "addDevices", ids: fresh, ...placed })
+      return true
+    }
+    if (next.length > URL_SET_MAX) {
+      toast.error(`An unsaved map holds up to ${URL_SET_MAX} devices`, {
+        description: "Save it as a view to add more.",
+        ...(canAddViews
+          ? { action: { label: "Save as…", onClick: () => openSaveAs() } }
+          : {}),
+      })
+      return false
+    }
+    if (custom !== null) edit({ type: "addDevices", ids: fresh, ...placed })
+    setUrlDevices(next)
+    return true
+  }
+  /** Devices leave the hand-picked set, with their positions and
+   * overrides - one undo step. */
+  const removeFromSet = (ids: string[]) => {
+    if (custom === null || !ids.length) return
+    if (viewId !== "none") {
+      if (viewDocReady) edit({ type: "removeDevices", ids })
+      return
+    }
+    edit({ type: "removeDevices", ids })
+    setUrlDevices(custom.filter((id) => !ids.includes(id)))
+  }
+  /** "Start custom map here": the map shrinks to this one device. */
+  const startSetAt = (id: string) => {
+    if (viewId !== "none") {
+      if (!viewDocReady) return
+      edit({ type: "replace", doc: { ...doc.doc, devices: [id] } })
+      patch({ device: undefined, depth: undefined })
+      return
+    }
+    patch({ device: undefined, depth: undefined, devices: id })
+  }
+  /** Diagram cards laid out automatically so far keep their place when a
+   * device is added by hand: their centres, to pin with it. */
+  const freezeLayout = (): PosMap => {
+    const saved = doc.doc.positions.diagram ?? {}
+    const out: PosMap = {}
+    for (const [id, b] of Object.entries(canvas.current?.boxes() ?? {}))
+      if (id.startsWith("dev:") && !(id in saved))
+        out[id] = [b.x + b.w / 2, b.y + b.h / 2]
+    return out
+  }
+  /** What a new card must not land on: the cards, and those on the way. */
+  const occupied = () => [
+    ...Object.values(canvas.current?.boxes() ?? {}),
+    ...pendingCards.map((p) => boxAround({ x: p.at[0], y: p.at[1] }, NEW_CARD)),
+  ]
+  const markPending = (
+    ids: string[],
+    info: (id: string) => { name: string; color?: string | null }
+  ) =>
+    setPending((cur) => {
+      const next = new Map(cur)
+      for (const id of ids) next.set(id, info(id))
+      return next
+    })
+  /** The palette's rows, as its query last loaded them. */
+  const paletteRow = (id: string): DevicePaletteRow | undefined =>
+    qc
+      .getQueryData<Paginated<DevicePaletteRow>>(PALETTE_QUERY_KEY)
+      ?.results.find((r) => r.id === id)
+  /** Devices dropped on the Diagram (or added from the list) at `at`. */
+  const dropDevices = (ids: string[], at: Pt) => {
+    if (!canBuild) return
+    const onMap = new Set(custom)
+    const fresh = ids.filter((id) => !onMap.has(id))
+    if (!fresh.length) return
+    const place = dropPlacement(fresh.map(devNode), at, occupied())
+    if (!addToSet(fresh, { ...freezeLayout(), ...place })) return
+    markPending(fresh, (id) => {
+      const row = paletteRow(id)
+      return { name: row?.name ?? "…", color: row?.role?.color }
+    })
+  }
+  const addFromList = (rows: DevicePaletteRow[]) => {
+    const at = addAt ?? canvas.current?.center() ?? { x: 0, y: 0 }
+    setAddAt(null)
+    dropDevices(
+      rows.map((r) => r.id),
+      at
+    )
+  }
+  /** Everything cabled to these devices joins the set - on the Diagram
+   * placed next to what it is cabled to. */
+  const addConnected = async (sources: string[]) => {
+    if (!sources.length) return
+    try {
+      const graphs = await Promise.all(
+        sources.map((id) =>
+          fetchTopology({
+            device: id,
+            depth: 1,
+            collapse_panels: filters.collapse,
+          })
+        )
+      )
+      const have = new Set(custom ?? [])
+      const fresh = new Map<string, TopoNode>()
+      for (const g of graphs)
+        for (const n of g.nodes) {
+          const id = n.data.device_id
+          if (id && !have.has(id) && !fresh.has(id)) fresh.set(id, n)
+        }
+      if (!fresh.size) {
+        toast("Nothing new is cabled to it")
+        return
+      }
+      const ids = [...fresh.keys()]
+      if (!canBuild) {
+        addToSet(ids)
+        return
+      }
+      const boxes = canvas.current?.boxes() ?? {}
+      const newNodes = new Set(ids.map(devNode))
+      const near: Record<string, Pt[]> = {}
+      for (const g of graphs)
+        for (const e of g.edges)
+          for (const [a, b] of [
+            [e.source, e.target],
+            [e.target, e.source],
+          ]) {
+            if (!newNodes.has(a) || !(b in boxes)) continue
+            const box = boxes[b]
+            ;(near[a] ??= []).push({
+              x: box.x + box.w / 2,
+              y: box.y + box.h / 2,
+            })
+          }
+      const place = placeNewcomers(ids.map(devNode), near, occupied())
+      if (!addToSet(ids, { ...freezeLayout(), ...place })) return
+      markPending(ids, (id) => ({
+        name: fresh.get(id)?.data.name ?? "…",
+        color: fresh.get(id)?.data.role?.color,
+      }))
+    } catch (err) {
+      apiErrorToast(err)
+    }
+  }
+  /** The devices a building action works on: the selected cards. */
+  const selectedDevices = () => {
+    const ids = canvas.current?.selectedDevices() ?? []
+    return ids.length ? ids : selNode?.device_id ? [selNode.device_id] : []
+  }
+  // Delete and Backspace take the selected cards off a map built by hand.
+  // React Flow's own delete key is off (cards leave only on purpose).
+  const deleteKey = useRef<(() => boolean) | null>(null)
+  deleteKey.current = canBuild
+    ? () => {
+        const ids = selectedDevices()
+        if (!ids.length) return false
+        removeFromSet(ids)
+        clearSel()
+        return true
+      }
+    : null
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+      const t = e.target instanceof HTMLElement ? e.target : null
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable ||
+          t.closest("[role=dialog],[role=alertdialog],[role=listbox]"))
+      )
+        return
+      if (deleteKey.current?.()) e.preventDefault()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+  /** A new view's saved state: blank, or this map's devices as they stand
+   * (on the Diagram, where they stand). */
+  const newViewState = (start: NewViewStart): TopologyViewState => {
+    const ids =
+      start === "map"
+        ? (graph?.nodes ?? [])
+            .map((n) => n.data.device_id)
+            .filter((x): x is string => !!x)
+        : []
+    const arranged: PosByStyle = {}
+    if (start === "map" && isDiagram) {
+      const at: PosMap = {}
+      for (const [id, b] of Object.entries(canvas.current?.boxes() ?? {}))
+        if (id.startsWith("dev:")) at[id] = [b.x + b.w / 2, b.y + b.h / 2]
+      arranged.diagram = at
+    }
+    return toViewState(emptyDocument({ devices: ids, positions: arranged }), {
+      filters: {
+        collapse: filters.collapse,
+        colorMode,
+        direction,
+        roleOrder,
+        roleBonds,
+        roleDistance,
+        edgeRouting,
+        viewStyle: "diagram",
+        groupBy: "none",
+        lag: lagMode,
+        diagram: diagramDisplay,
+      },
+      style: "diagram",
+    })
+  }
+
   // ── Keyboard ──
   /** Ctrl/Cmd+S: Save in place where allowed, else Save as. False leaves
    * the key to the browser. */
@@ -1494,6 +1863,13 @@ function TopologyPage() {
     const before = doc.doc.positions[style]
     const to = back ? doc.undo() : doc.redo()
     if (to && before && !to.positions[style]) setLayoutTick((t) => t + 1)
+    // An unsaved map's set is in its URL too: it steps with the document.
+    const toSet = to?.devices?.join(",")
+    if (viewId === "none" && urlDevices !== null && toSet !== undefined)
+      if (toSet !== urlSetKey) {
+        lastUrlSet.current = toSet
+        patch({ devices: toSet }, { replace: true })
+      }
   }
   useDocumentKeys({
     enabled: !logical,
@@ -1925,6 +2301,22 @@ function TopologyPage() {
           The Logical view has its own toolbar - no saved views/PNG there. */}
       {!logical && (
       <div className="flex h-10 shrink-0 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden">
+        {isDiagram && (
+          <BarTip tip="Devices to place on the map">
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-7 shrink-0 text-xs",
+                !paletteShown && "text-muted-foreground"
+              )}
+              aria-pressed={paletteShown}
+              onClick={() => setPalette(!paletteOpen)}
+            >
+              <PanelLeft className="h-3 w-3" /> Devices
+            </Button>
+          </BarTip>
+        )}
         <Select
           value={viewId}
           onValueChange={(v) => {
@@ -1951,6 +2343,19 @@ function TopologyPage() {
             ))}
           </SelectContent>
         </Select>
+        {canAddViews && (
+          <BarTip tip="New view">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 w-7 shrink-0 px-0"
+              aria-label="New view"
+              onClick={() => setNewViewOpen(true)}
+            >
+              <FilePlus className="h-3 w-3" />
+            </Button>
+          </BarTip>
+        )}
         {edited && (
           <Badge variant="secondary" className="shrink-0">
             edited
@@ -2001,6 +2406,66 @@ function TopologyPage() {
               <PanelRight className="h-3 w-3" /> Objects
             </Button>
           </BarTip>
+          {isDiagram ? (
+            <>
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 text-xs">
+                        <Plus className="h-3 w-3" /> Add
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" variant="panel">
+                    Add to the map
+                  </TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onSelect={() => setPalette(true)}>
+                    <PanelLeft /> Devices…
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!canBuild || !selNode?.device_id}
+                    onSelect={() => void addConnected(selectedDevices())}
+                  >
+                    <LinkIcon /> Connected devices
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={addZoneCentered}>
+                    <Square /> Zone
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 text-xs">
+                        <LayoutGrid className="h-3 w-3" /> Arrange
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" variant="panel">
+                    Arrange the cards
+                  </TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setPositions(undefined)
+                      setLayoutTick((t) => t + 1)
+                    }}
+                  >
+                    <LayoutGrid /> Re-layout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : (
+            <>
           <BarTip tip="Start a custom map">
             <Button
               variant="outline"
@@ -2034,6 +2499,8 @@ function TopologyPage() {
               <LayoutGrid className="h-3 w-3" /> Re-layout
             </Button>
           </BarTip>
+            </>
+          )}
           <BarTip tip="Copy a link to this map">
             <Button
               variant="outline"
@@ -2080,6 +2547,20 @@ function TopologyPage() {
       )}
 
       <div className="flex min-h-0 flex-1">
+      {paletteShown && (
+        <DevicePalette
+          placed={placedIds}
+          editable={canBuild}
+          panelsHidden={filters.collapse}
+          onAdd={addFromList}
+          onFocus={(id) => {
+            canvas.current?.focusNode(devNode(id))
+            canvas.current?.selectNode(devNode(id))
+          }}
+          onNewView={canAddViews ? () => setNewViewOpen(true) : undefined}
+          onClose={() => setPalette(false)}
+        />
+      )}
       <div className="relative min-h-0 flex-1">
         {logical && <LogicalTopologyView />}
         {!logical && q.isLoading && (
@@ -2110,7 +2591,27 @@ function TopologyPage() {
               bundleLags={lagMode === "on"}
               positions={positions}
               layoutTick={layoutTick}
-              fitKey={graphKey}
+              fitKey={fitKey}
+              onDropDevices={canBuild ? dropDevices : undefined}
+              pending={canBuild ? pendingCards : undefined}
+              emptyState={
+                canBuild ? (
+                  <EmptyState title="No devices yet." className="bg-card">
+                    {paletteShown ? (
+                      "Drag devices in from the list."
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 h-7 text-xs"
+                        onClick={() => setPalette(true)}
+                      >
+                        <PanelLeft className="h-3 w-3" /> Devices
+                      </Button>
+                    )}
+                  </EmptyState>
+                ) : undefined
+              }
               matchedIds={matchedIds}
               selectedEdgeId={selEdgeId}
               onGhostEdge={setGhost}
@@ -2372,7 +2873,7 @@ function TopologyPage() {
                   <MenuItem
                     onClick={() => {
                       setMenu(null)
-                      void addNeighbors(menu.node!.device_id!)
+                      void addConnected([menu.node!.device_id!])
                     }}
                   >
                     Add connected devices
@@ -2381,27 +2882,22 @@ function TopologyPage() {
                 {builder && menu.node.device_id && (
                   <MenuItem
                     onClick={() => {
+                      const id = menu.node!.device_id!
                       setMenu(null)
-                      setCustom(
-                        custom?.filter((x) => x !== menu.node!.device_id) ??
-                          custom
-                      )
+                      removeFromSet([id])
+                      clearSel()
                     }}
                   >
-                    Remove from map
+                    {isDiagram ? "Remove from diagram" : "Remove from map"}
                   </MenuItem>
                 )}
                 {!builder && menu.node.device_id && (
                   <MenuItem
                     onClick={() => {
                       setMenu(null)
-                      // One navigation: leaving focus and seeding the builder
-                      // are the same transition.
-                      patch({
-                        device: undefined,
-                        depth: undefined,
-                        devices: menu.node!.device_id!,
-                      })
+                      // One step: leaving focus and seeding the builder are
+                      // the same transition.
+                      startSetAt(menu.node!.device_id!)
                     }}
                   >
                     Start custom map here
@@ -2489,8 +2985,16 @@ function TopologyPage() {
               <>
                 <MenuItem
                   onClick={() => {
+                    const { fx, fy } = menu
                     setMenu(null)
-                    setAddOpen(true)
+                    if (!isDiagram) {
+                      setAddOpen(true)
+                      return
+                    }
+                    // The list opens, and what it adds next lands here.
+                    if (canBuild && fx !== undefined && fy !== undefined)
+                      setAddAt({ x: fx, y: fy })
+                    setPalette(true)
                   }}
                 >
                   Add device…
@@ -2526,7 +3030,26 @@ function TopologyPage() {
         open={addOpen}
         onOpenChange={setAddOpen}
         excludeIds={custom ?? undefined}
-        onPick={(id) => addToCustom([id])}
+        onPick={(id) => addToSet([id])}
+      />
+      <NewViewDialog
+        open={newViewOpen}
+        onOpenChange={setNewViewOpen}
+        mapCount={
+          grouped || !graph
+            ? null
+            : graph.nodes.filter((n) => n.data.device_id).length
+        }
+        stateFor={newViewState}
+        taken={views.data?.results.map((v) => v.name)}
+        onCreated={(v) => {
+          // Opened from what was just written, not a second fetch.
+          qc.setQueryData(["topology-view", v.id], v)
+          void qc.invalidateQueries({ queryKey: ["topology-views"] })
+          setPalette(true)
+          patch({ view: v.id, ...noOverrides() })
+          toast.success(`Created “${v.name}”`)
+        }}
       />
       <MaterializeCableDialog ghost={ghost} onClose={() => setGhost(null)} />
       <CardLinesDialog

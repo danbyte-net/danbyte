@@ -2,10 +2,11 @@ import { useMemo } from "react"
 
 import type { Device } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
-import {
-  ObjectPicker,
-  type ObjectPickerProps,
-  type ObjectPickerSpec,
+import { ObjectPicker } from "@/components/object-picker"
+import type {
+  ObjectPickerProps,
+  ObjectPickerSpec,
+  PickerFilter,
 } from "@/components/object-picker"
 import { StatusBadge } from "@/components/status-badge"
 
@@ -25,6 +26,61 @@ interface DeviceVcOption {
 }
 
 const DASH = <span className="text-muted-foreground">-</span>
+
+/** The device list's filters, as its advanced search offers them - the
+ * topology diagram's device palette offers the same, from the same shared
+ * picker caches. */
+export const DEVICE_PICKER_FILTERS: PickerFilter[] = [
+  {
+    key: "tag",
+    label: "Tag",
+    endpoint: "/api/tags/",
+    queryKey: "tags-picker",
+    paramOf: (t: { slug: string }) => t.slug,
+  },
+  {
+    key: "manufacturer",
+    label: "Manufacturer",
+    endpoint: "/api/manufacturers/?picker=1",
+    queryKey: "manufacturers-picker",
+  },
+  {
+    key: "device_type",
+    label: "Type",
+    endpoint: "/api/device-types/?picker=1",
+    queryKey: "device-types-picker",
+  },
+  {
+    key: "role",
+    label: "Role",
+    endpoint: "/api/device-roles/?picker=1",
+    queryKey: "device-roles-picker",
+  },
+  {
+    key: "status",
+    label: "Status",
+    endpoint: "/api/statuses/?available_to=device&picker=1",
+    queryKey: "device-statuses-picker",
+  },
+  {
+    key: "site",
+    label: "Site",
+    endpoint: "/api/sites/?picker=1",
+    queryKey: "sites-picker",
+  },
+  {
+    key: "location",
+    label: "Location",
+    endpoint: "/api/locations/?picker=1",
+    queryKey: "locations-picker",
+  },
+  {
+    key: "region",
+    label: "Region",
+    endpoint: "/api/regions/?picker=1",
+    queryKey: "regions-picker",
+  },
+]
 
 /**
  * The device preset of ObjectPicker - searchable combobox + advanced-search
@@ -58,57 +114,7 @@ export function DevicePicker({
       detailQueryKey: (id) => ["device", id],
       listEndpoint: "/api/devices/",
       searchHint: "Search name, serial, asset tag, description…",
-      filters: [
-        {
-          key: "tag",
-          label: "Tag",
-          endpoint: "/api/tags/",
-          queryKey: "tags-picker",
-          paramOf: (t: { slug: string }) => t.slug,
-        },
-        {
-          key: "manufacturer",
-          label: "Manufacturer",
-          endpoint: "/api/manufacturers/?picker=1",
-          queryKey: "manufacturers-picker",
-        },
-        {
-          key: "device_type",
-          label: "Type",
-          endpoint: "/api/device-types/?picker=1",
-          queryKey: "device-types-picker",
-        },
-        {
-          key: "role",
-          label: "Role",
-          endpoint: "/api/device-roles/?picker=1",
-          queryKey: "device-roles-picker",
-        },
-        {
-          key: "status",
-          label: "Status",
-          endpoint: "/api/statuses/?available_to=device&picker=1",
-          queryKey: "device-statuses-picker",
-        },
-        {
-          key: "site",
-          label: "Site",
-          endpoint: "/api/sites/?picker=1",
-          queryKey: "sites-picker",
-        },
-        {
-          key: "location",
-          label: "Location",
-          endpoint: "/api/locations/?picker=1",
-          queryKey: "locations-picker",
-        },
-        {
-          key: "region",
-          label: "Region",
-          endpoint: "/api/regions/?picker=1",
-          queryKey: "regions-picker",
-        },
-      ],
+      filters: DEVICE_PICKER_FILTERS,
       columns: [
         { header: "Name", cell: (d) => d.name },
         {

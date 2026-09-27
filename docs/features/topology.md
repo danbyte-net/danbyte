@@ -431,17 +431,70 @@ server-to-switch run through two patch panels is **one edge**, annotated
 `via panel-a, panel-b`. Untick it to see the raw physical hops with the
 panels as nodes - the truth on the wall vs the truth in the racks.
 
-## Custom maps - build exactly the diagram you want
+## Building a diagram
 
-Right-click is the builder. **Right-click a device** and pick *Start custom
-map here* - the map reduces to just that device - then grow it: right-click →
-**Add connected devices** pulls in a node's cabled neighbours, **Remove from
-map** prunes, and the **Add device** button (also on right-clicking empty
-canvas) inserts any device by name - including onto an empty map. A header
-chip shows the set size and exits the builder. The hand-picked set saves
-with a [saved view](#saved-views), so a curated diagram ("core row",
-"customer X hand-off") is one select away. Right-click also offers *Open
-device* and *Focus here* in any mode.
+A map normally shows whatever its filters match. A diagram built by hand
+shows exactly the devices you put on it, where you put them - "core row",
+"customer X hand-off" - and keeps them there as the network grows around it.
+
+**Start from a blank view.** The **New view** button (the page icon beside
+the saved-views select) asks for a name and where to start:
+
+- **Blank** - a view with no devices at all.
+- **This map** - the devices the map shows now become the view's fixed set,
+  arranged as they stand on the Diagram. Not offered for a map grouped by
+  site or location, nor for more than 10,000 devices.
+
+The new view opens on the Diagram tab with the device list open. It needs the
+add permission on topology views.
+
+**The device list.** **Devices** at the left of the second bar opens it: every
+device you may see, grouped by role under the role's own badge (fold a group
+by its header). Type to search names, models, sites and racks; the filter
+button narrows by site, role, type, status, tag and rack. **All** and **Not
+placed** switch between every device and the ones not on the map yet. A
+device already on the map is dimmed and ticked - click it to find its card.
+
+**Placing devices.** Drag a device from the list onto the canvas and its card
+lands where you let go. To place several, click one, ++ctrl++-click
+(++cmd++-click on a Mac) more or ++shift++-click a range, then drag any of
+them: they land in a small grid from that point, clear of the cards already
+there. Double-click a device, press ++enter++ on it, or use **Add** at the
+bottom of the list to place the selection in the middle of the screen (after
+right-clicking the canvas → *Add device…*, where you clicked). Cables between
+the devices on the map draw themselves - there is nothing to connect. A card
+shows muted until the map has fetched it; the camera stays where it is.
+
+Patch panels cannot be placed while **Show patch panels** is off: their
+cables are walked through, so the panel would never appear.
+
+**Add connected devices.** Right-click a card → *Add connected devices*, or
+select it and use **Add ▸ Connected devices**, to bring in everything cabled
+to it. Each newcomer is placed under the cards it is cabled to.
+
+**Removing devices.** Right-click a card → *Remove from diagram*, or select
+cards and press ++delete++ (or ++backspace++). That takes the device out of
+the view's set, with its position and overrides; ++ctrl+z++ puts it back.
+*Remove from view* is different - it hides a card and keeps it in the set
+(see [Hiding things](#hiding-things-the-eyes)).
+
+**Arranging.** Drag cards where you want them. **Arrange ▸ Re-layout** lays
+the diagram out automatically again. Devices added to a diagram that was laid
+out automatically pin the cards already there, so nothing moves under you.
+
+**Saving.** Adding, placing and removing devices are edits to the view: undo
+steps like any other, and **Save** (++ctrl+s++) writes them - see
+[Saved views](#saved-views). On the Diagram tab **Add** and **Arrange** menus
+stand in for the Add device, Zone and Re-layout buttons of the other tabs.
+
+**A map that follows its filters** takes no drops: the device list says so and
+offers **New view**. Right-click a device → *Start custom map here* still
+turns any map into an unsaved one of just that device, grown with *Add
+connected devices* (and, on the other tabs, the **Add device** button). An
+unsaved map keeps its devices in its address (`devices=`), which holds up to
+200 of them; past that, save it as a view to keep adding. A header chip
+shows the set's size and leaves it. Right-click also offers *Open device* and
+*Focus here* in any mode.
 
 ### Hiding things - the eyes
 
@@ -472,14 +525,14 @@ Keyboard: ++h++ hides the selected card (or, on a grouped map, the selected
 site or location); ++shift+h++ shows everything again. The same two keys
 work on the site map and the floor plans.
 
-(In a custom map, *Remove from map* is the different thing next to *Remove
-from view*: it takes the device out of the hand-picked set the map is built
-from.)
+(On a map built by hand, *Remove from diagram* - *Remove from map* on the
+other tabs - is the different thing next to *Remove from view*: it takes the
+device out of the hand-picked set the map is built from.)
 
 ### Zones - boxes to group things by eye
 
-The **Zone** button (or right-click empty canvas → *Add zone*) drops a
-labelled box behind the map. Use them to say what a cluster of cards *is*:
+The **Zone** button (**Add ▸ Zone** on the Diagram tab, or right-click empty
+canvas → *Add zone*) drops a labelled box behind the map. Use them to say what a cluster of cards *is*:
 "WAN circuits", "comms closet rack", "customer side".
 
 - **Move** it by its label bar - the bar is the grip, so a click anywhere
@@ -487,9 +540,10 @@ labelled box behind the map. Use them to say what a cluster of cards *is*:
 - **Rename** it by double-clicking the label.
 - **Resize** it by selecting it and dragging a corner.
 - **Recolour or delete** it from the small toolbar above a selected zone, or
-  by right-clicking it. The Delete and Backspace keys never remove a zone or
-  a card - that always takes one of these explicit actions, and
-  ++ctrl+z++ puts a deleted zone back.
+  by right-clicking it. The Delete and Backspace keys never remove a zone -
+  that always takes one of these explicit actions - and remove cards only
+  from a [diagram built by hand](#building-a-diagram); ++ctrl+z++ puts
+  either back.
 
 A zone is an **annotation, not a container** - it owns nothing inside it, so
 dragging one moves the box and leaves every card exactly where it was. That
@@ -707,6 +761,9 @@ your changes); nothing is overwritten silently.
 | ++ctrl+s++ / ++cmd+s++ | Save (Save as… on a map that is not a saved view) |
 | ++ctrl+z++ / ++cmd+z++ | Undo the last edit to the map |
 | ++ctrl+shift+z++ / ++cmd+shift+z++ (or ++ctrl+y++) | Redo |
+| ++delete++ / ++backspace++ | Remove the selected cards from a diagram built by hand |
+| ++enter++ (device list) | Place the selected devices in the middle of the screen |
+| ++ctrl++ / ++cmd++ / ++shift++ + click (device list) | Select several devices to drag at once |
 
 Undo and redo leave a text field's own undo alone while you type in it.
 ++h++ and ++shift+h++ hide and show cards - see
@@ -735,7 +792,7 @@ back button and a reload all keep it.
 | `lag` | `on` (default) bundles aggregate members, `off` |
 | `levels` | the tier order - see below |
 | `device` `depth` | focus on one device, 1-6 hops |
-| `devices` | a comma-separated device set (the custom map) |
+| `devices` | a comma-separated device set - an unsaved map built by hand, up to 200 |
 | `q` | the search box |
 | `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
 
