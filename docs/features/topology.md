@@ -392,6 +392,10 @@ Three mechanisms keep a large fabric legible:
   crowded off the start of a straight line jumps past whatever surely
   blocks it instead of trying every step. The picture is the same as a
   full re-plan; it just arrives sooner.
+- **Layouts rank fast** - every view sorts its cards into ranks with the
+  layout library's own network-simplex method, run on flat arrays: it makes
+  the same choices, so every card lands exactly where it did, but a
+  2,400-device site ranks in a fraction of a second instead of seconds.
 - **The Flat view** - see above.
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat

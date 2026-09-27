@@ -4,6 +4,7 @@ import type { Edge, Node } from "@xyflow/react"
 import { statusPillReserve } from "./card-metrics"
 import type { HasStatusPill } from "./card-metrics"
 import { Grid } from "./diagram/spatial"
+import { networkSimplex } from "./network-simplex"
 
 // Lay nodes out left-to-right with dagre and write positions back. Node
 // sizes come from the caller (a stencil card is a header + one row per
@@ -16,6 +17,11 @@ const LEVEL_GAP_TB = 210
 const CROSS_GAP = 64 // intra-tier peer spacing - wide enough that a
 // vertical cable’s label between tiers isn’t hidden behind the next node, and
 // that fanned-out cable bundles have room between neighbouring cards.
+
+// dagre's own network-simplex ranking, on arrays (network-simplex.ts): the
+// same ranks, and so the same layout, in a fraction of the time on a big
+// site. dagre's types name only its built-in rankers.
+const NETWORK_SIMPLEX = networkSimplex as unknown as "network-simplex"
 
 // Natural order so fw-01 precedes fw-02 precedes fw-10.
 const natural = (a: string, b: string) =>
@@ -847,7 +853,7 @@ export function layoutHierarchy(
     nodesep: 40,
     edgesep: 12,
     ranksep: 170,
-    ranker: "network-simplex",
+    ranker: NETWORK_SIMPLEX,
     align: "UL",
   })
   const provH = (id: string) =>
@@ -1620,7 +1626,7 @@ export function layoutNodes(
     nodesep: compact ? 28 : Math.min(56 + Math.max(0, maxFan - 8) * 3, 240),
     edgesep: compact ? 10 : 18,
     ranksep: compact ? Math.max(90, rankGap) : Math.max(130, rankGap),
-    ranker: "network-simplex",
+    ranker: NETWORK_SIMPLEX,
     align: "UL",
   })
   for (const n of nodes) {
