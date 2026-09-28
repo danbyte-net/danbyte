@@ -86,6 +86,17 @@ describe("ExportMenu", () => {
     })
   })
 
+  it("exports draw.io in the mode the map is shown in by default", async () => {
+    const doc = vi.fn(() => fabric)
+    render(
+      <ExportMenu document={doc} name="DC1 fabric" modes shownMode="detailed" />
+    )
+    open()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "draw.io" }))
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1))
+    expect(doc).toHaveBeenCalledWith({ area: "all", mode: "detailed" })
+  })
+
   it("draws photos into draw.io only when asked, inlined", async () => {
     const photo: typeof fabric = {
       ...fabric,

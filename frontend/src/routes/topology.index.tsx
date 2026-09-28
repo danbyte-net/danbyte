@@ -2945,6 +2945,7 @@ function TopologyPage() {
             <ExportMenu
               name={exportName}
               modes={isDiagram}
+              shownMode={diagramMode}
               disabled={!graph}
               // Every file is drawn in the Diagram's look, whatever the tab.
               legend={legendRows({

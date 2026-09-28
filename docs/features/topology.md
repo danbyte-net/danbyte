@@ -1169,8 +1169,8 @@ The menu's choices are remembered per browser:
 
 - **Area** - **Whole map**, or **Visible area**: only the cards on screen
   and the lines between them.
-- **draw.io** (Diagram tab) - **Simple** (the default) or **Detailed**,
-  whichever mode the map is in on screen, and **Photos**: off by default,
+- **draw.io** (Diagram tab) - **As shown** (the default: the mode the map is
+  in on screen), or always **Simple** or **Detailed**, and **Photos**: off by default,
   so a photo is drawn as the device's card - the shape you edit in draw.io;
   on, it is the photo (see [draw.io](#drawio)).
 - **Paper** - for PDF and Print: A4, A3, Letter or Tabloid, landscape or

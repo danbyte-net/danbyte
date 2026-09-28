@@ -48,7 +48,8 @@ import type { LegendItem } from "../legend"
 
 // One Export menu for the topology map: PNG, SVG, PDF and draw.io, and
 // Print, with the few choices that change the file - whole map or what is on
-// screen, Simple or Detailed for draw.io (and its photos, off by default: a
+// screen, draw.io as the map is shown or as Simple or Detailed (and its
+// photos, off by default: a
 // card is what a draw.io user edits), the PDF's paper, and the title block
 // with the legend. The files are drawn from the map's data (to-document.ts /
 // from-flow.ts), never from the screen, so they are light-themed and carry
@@ -68,9 +69,12 @@ export interface ExportRequest {
   mode?: "simple" | "detailed"
 }
 
+type DrawioMode = "simple" | "detailed"
+
 interface Prefs {
   area: ExportArea
-  drawio: "simple" | "detailed"
+  /** draw.io: "shown" follows the map's own mode. */
+  drawio: "shown" | DrawioMode
   /** draw.io: photo nodes as their photos, not cards. */
   photos: boolean
   /** Title block and legend under the drawing (PNG, SVG and PDF). */
@@ -83,7 +87,7 @@ interface Prefs {
 const KEY = "topology:export"
 const DEFAULTS: Prefs = {
   area: "all",
-  drawio: "simple",
+  drawio: "shown",
   photos: false,
   extras: true,
   paper: "a3",
@@ -98,7 +102,10 @@ function readPrefs(): Prefs {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<Prefs>
     return {
       area: raw.area === "visible" ? "visible" : "all",
-      drawio: raw.drawio === "detailed" ? "detailed" : "simple",
+      drawio:
+        raw.drawio === "detailed" || raw.drawio === "simple"
+          ? raw.drawio
+          : "shown",
       photos: raw.photos === true,
       extras: raw.extras !== false,
       paper: isPaper(raw.paper) ? raw.paper : DEFAULTS.paper,
@@ -157,6 +164,7 @@ export function ExportMenu({
   document: buildDocument,
   capturePng,
   modes = false,
+  shownMode = "detailed",
   legend,
   name,
   disabled,
@@ -168,6 +176,8 @@ export function ExportMenu({
   capturePng?: (visibleOnly: boolean) => Promise<string | null>
   /** Offer Simple and Detailed for draw.io (the Diagram tab). */
   modes?: boolean
+  /** The mode the map is shown in; draw.io follows it by default. */
+  shownMode?: DrawioMode
   /** The legend's entries (legend.tsx `legendRows`), for the files. */
   legend?: readonly LegendItem[]
   /** The file name's base: the view's name. */
@@ -184,7 +194,7 @@ export function ExportMenu({
   }
 
   /** The document, with the legend when the title block is on. */
-  const build = async (mode?: Prefs["drawio"]) => {
+  const build = async (mode?: DrawioMode) => {
     const doc = buildDocument({ area: prefs.area, mode })
     if (!doc || !prefs.extras || !legend?.length) return doc
     const { printLegend } = await import("../diagram/to-document")
@@ -218,7 +228,13 @@ export function ExportMenu({
         return
       }
       const doc = await build(
-        format === "drawio" ? (modes ? prefs.drawio : "simple") : undefined
+        format !== "drawio"
+          ? undefined
+          : !modes
+            ? "simple"
+            : prefs.drawio === "shown"
+              ? shownMode
+              : prefs.drawio
       )
       if (!doc) return
       const extras = { titleBlock: prefs.extras, legend: prefs.extras }
@@ -379,9 +395,14 @@ export function ExportMenu({
             <DropdownMenuRadioGroup
               value={prefs.drawio}
               onValueChange={(v) =>
-                set({ drawio: v === "detailed" ? "detailed" : "simple" })
+                set({
+                  drawio: v === "detailed" || v === "simple" ? v : "shown",
+                })
               }
             >
+              <DropdownMenuRadioItem value="shown" onSelect={keepOpen}>
+                As shown
+              </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="simple" onSelect={keepOpen}>
                 Simple
               </DropdownMenuRadioItem>
