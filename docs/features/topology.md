@@ -698,7 +698,13 @@ set one (roles bonded to one level share a band, "Spine + Border"), otherwise
 in the order the layout ranked them, core on top. Devices with no role get a
 band of their own at the bottom. Each band's cards stand side by side in the
 order they stood, wrapping onto another line past 12 cards; every band is as
-wide as the widest. **Bands by device type** does the same per device type.
+wide as the widest. In **Detailed**, rows keep room for the port names (and
+addresses) on the cables: a clear run above and below a row's cards where
+its cables leave that way, lanes between rows for the cables to turn in, and
+cabled cards side by side far enough apart for a name at each end - the
+bands come out taller, and no port name is left off for want of room.
+Sub-rows, and the other band edits below, keep the same room. In Simple the
+rows stay compact. **Bands by device type** does the same per device type.
 Both move the cards and write the bands in one step - ++ctrl+z++ undoes the
 lot. Run it again after adding devices and the bands are rebuilt around
 them: each band is found again by the roles (or types) it shares most with

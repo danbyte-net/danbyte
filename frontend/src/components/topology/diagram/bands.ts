@@ -38,8 +38,8 @@ export const BAND = {
   /** The title strip across the top of a row: the label sits centred in it
    * and it is the grip. Cards are placed below it. */
   TITLE: 32,
-  /** Clear space inside a row: beside its cards, under its title (room
-   * for the port names at the top of its cards) and under its cards. */
+  /** Clear space inside a row: beside its cards, under its title and
+   * under its cards. A Detailed map's port names take more (`LabelRoom`). */
   PAD_X: 40,
   PAD_TOP: 24,
   PAD_BOTTOM: 32,
@@ -123,6 +123,27 @@ export interface ArrangeInput {
   axis?: "x" | "y"
   /** Id for a new band (tests pass a counter). */
   newId?: (key: string) => string
+  /** A Detailed map's labels at the nubs: room kept for them. */
+  room?: LabelRoom | null
+}
+
+/**
+ * The room a Detailed map's end labels take (build-diagram.ts
+ * `labelRoom`): a port name, then its addresses, on the straight run out
+ * of each nub. Rows keep that run clear above and below their cards where
+ * a cable leaves that way, and cabled cards side by side stand far enough
+ * apart for a name at both ends.
+ */
+export interface LabelRoom {
+  /** The straight run out of a nub its labels take, px (the planner's
+   * `portStub` of the longest). */
+  stub: number
+  /** The cards cabled to each other, by node id: a pair per link. */
+  links: readonly (readonly [string, string])[]
+  /** Room for the lanes the cables between two rows turn in, px. */
+  lanes: number
+  /** More between two rows when a breakout's legs turn off there, px. */
+  legs?: number
 }
 
 export interface BandEdit {
@@ -706,14 +727,65 @@ function groupsOf(
   )
 }
 
+/** How far apart a row's cards stand: the usual gaps, or - with a
+ * Detailed map's labels (`LabelRoom`) - far enough for a port name at
+ * both ends of a cable, with lanes between. */
+interface Spacing {
+  /** Between two cards side by side in a line. */
+  gapX: (a: string, b: string) => number
+  lineGap: number
+  subGap: number
+  /** Between two rows of a stack. */
+  rowGap: number
+  /** Above and below a row's cards where a cable leaves them that way. */
+  padTop: number
+  padBottom: number
+  /** The pairs of cabled cards (`a\0b`, both ways); empty without room. */
+  pairs: ReadonlySet<string>
+}
+
+const pairKey = (a: string, b: string) => `${a}\u0000${b}`
+
+function spacingOf(room: LabelRoom | null | undefined): Spacing {
+  const pairs = new Set<string>()
+  if (!room || room.stub <= 0)
+    return {
+      gapX: () => BAND.GAP_X,
+      lineGap: BAND.LINE_GAP,
+      subGap: BAND.SUB_GAP,
+      rowGap: BAND.GAP,
+      padTop: BAND.PAD_TOP,
+      padBottom: BAND.PAD_BOTTOM,
+      pairs,
+    }
+  for (const [a, b] of room.links) {
+    pairs.add(pairKey(a, b))
+    pairs.add(pairKey(b, a))
+  }
+  // Both ends' runs, then the lanes between.
+  const across = 2 * room.stub
+  const lanes = Math.max(BAND.GAP, room.lanes)
+  const side = Math.max(BAND.GAP_X, across + BAND.FIT_GAP)
+  return {
+    gapX: (a, b) => (pairs.has(pairKey(a, b)) ? side : BAND.GAP_X),
+    lineGap: Math.max(BAND.LINE_GAP, across + lanes),
+    subGap: Math.max(BAND.SUB_GAP, across + lanes),
+    rowGap: lanes + (room.legs ?? 0),
+    padTop: Math.max(BAND.PAD_TOP, room.stub + BAND.FIT_EDGE),
+    padBottom: Math.max(BAND.PAD_BOTTOM, room.stub + BAND.FIT_EDGE),
+    pairs,
+  }
+}
+
 /** A row's cards in lines: wrapped past MAX_PER_LINE cards or MAX_LINE_W
  * px of cards. */
-function linesOf(cards: ArrangeCard[]): ArrangeCard[][] {
+function linesOf(cards: ArrangeCard[], sp: Spacing): ArrangeCard[][] {
   const lines: ArrangeCard[][] = []
   let cur: ArrangeCard[] = []
   let w = 0
   for (const c of cards) {
-    const add = (cur.length ? BAND.GAP_X : 0) + c.box.w
+    const last = cur.at(-1)
+    const add = (last ? sp.gapX(last.id, c.id) : 0) + c.box.w
     if (
       cur.length &&
       (cur.length >= BAND.MAX_PER_LINE || w + add > BAND.MAX_LINE_W)
@@ -722,15 +794,19 @@ function linesOf(cards: ArrangeCard[]): ArrangeCard[][] {
       cur = []
       w = 0
     }
-    w += (cur.length ? BAND.GAP_X : 0) + c.box.w
+    const prev = cur.at(-1)
+    w += (prev ? sp.gapX(prev.id, c.id) : 0) + c.box.w
     cur.push(c)
   }
   if (cur.length) lines.push(cur)
   return lines
 }
 
-const lineWidth = (line: ArrangeCard[]) =>
-  line.reduce((s, c) => s + c.box.w, 0) + BAND.GAP_X * (line.length - 1)
+const lineWidth = (line: ArrangeCard[], sp: Spacing) =>
+  line.reduce(
+    (s, c, i) => s + c.box.w + (i ? sp.gapX(line[i - 1].id, c.id) : 0),
+    0
+  )
 const lineHeight = (line: ArrangeCard[]) =>
   Math.max(...line.map((c) => c.box.h))
 
@@ -773,12 +849,17 @@ interface Laid {
   h: number
   /** The room its sub-labels take at its left (0: none). */
   gutter: number
+  sp: Spacing
+  /** Clear space under its title and under its cards. */
+  padTop: number
+  padBottom: number
 }
 
 function layOut(
   cards: readonly ArrangeCard[],
   axis: "x" | "y",
-  layers: { by: BandBy; ids: readonly string[] } | null
+  layers: { by: BandBy; ids: readonly string[] } | null,
+  sp: Spacing
 ): Laid {
   const blocks: { label: string; cards: ArrangeCard[] }[] = []
   if (layers) {
@@ -801,26 +882,70 @@ function layOut(
     }
   } else blocks.push({ label: "", cards: [...cards] })
   const subs = blocks.map((b) => {
-    const lines = linesOf(standing(b.cards, axis))
+    const lines = linesOf(standing(b.cards, axis), sp)
     return {
       label: b.label,
       lines,
-      h: lines.reduce(
-        (s, l, i) => s + lineHeight(l) + (i ? BAND.LINE_GAP : 0),
-        0
-      ),
+      h: lines.reduce((s, l, i) => s + lineHeight(l) + (i ? sp.lineGap : 0), 0),
     }
   })
   return {
     subs,
-    w: Math.max(0, ...subs.flatMap((b) => b.lines.map(lineWidth))),
-    h: subs.reduce((s, b, i) => s + b.h + (i ? BAND.SUB_GAP : 0), 0),
+    w: Math.max(
+      0,
+      ...subs.flatMap((b) => b.lines.map((l) => lineWidth(l, sp)))
+    ),
+    h: subs.reduce((s, b, i) => s + b.h + (i ? sp.subGap : 0), 0),
     gutter: layers ? gutterOf(subs.map((b) => b.label)) : 0,
+    sp,
+    padTop: BAND.PAD_TOP,
+    padBottom: BAND.PAD_BOTTOM,
   }
 }
 
 /** A laid-out row's height. */
-const rowHeight = (l: Laid) => BAND.TITLE + BAND.PAD_TOP + l.h + BAND.PAD_BOTTOM
+const rowHeight = (l: Laid) => BAND.TITLE + l.padTop + l.h + l.padBottom
+
+/**
+ * A laid-out row's padding for its labelled cables (`LabelRoom`): room
+ * under its title for the ones that leave its cards upwards - to a row
+ * above (`rowOf` smaller), a card in no row, or round a card of its own
+ * line - and under its cards for the ones that leave downwards. Cables
+ * between two cards side by side, or between its lines or sub-rows, have
+ * their gap already.
+ */
+function padFor(l: Laid, i: number, rowOf: ReadonlyMap<string, number>): Laid {
+  if (!l.sp.pairs.size) return l
+  const at = new Map<string, [number, number, number]>()
+  l.subs.forEach((b, s) =>
+    b.lines.forEach((line, k) =>
+      line.forEach((c, j) => at.set(c.id, [s, k, j]))
+    )
+  )
+  let up = false
+  let down = false
+  for (const key of l.sp.pairs) {
+    const [a, b] = key.split("\u0000")
+    const pa = at.get(a)
+    if (!pa) continue
+    const j = rowOf.get(b)
+    const pb = at.get(b)
+    if (j === undefined && !pb) {
+      up = down = true
+    } else if (pb) {
+      // Its own row: the same line, not side by side, goes round.
+      if (pa[0] === pb[0] && pa[1] === pb[1] && Math.abs(pa[2] - pb[2]) > 1)
+        up = down = true
+    } else if (j! < i) up = true
+    else if (j! > i) down = true
+    if (up && down) break
+  }
+  return {
+    ...l,
+    padTop: up ? l.sp.padTop : BAND.PAD_TOP,
+    padBottom: down ? l.sp.padBottom : BAND.PAD_BOTTOM,
+  }
+}
 
 /** A laid-out row's cards placed: its lines centred across `w` from
  * `left`, the first from `top` down. */
@@ -831,17 +956,19 @@ function placeLaid(
   top: number,
   into: Record<string, Centre>
 ): void {
+  const { sp } = l
   let y = top
   l.subs.forEach((b, i) => {
-    if (i) y += BAND.SUB_GAP
+    if (i) y += sp.subGap
     b.lines.forEach((line, j) => {
-      if (j) y += BAND.LINE_GAP
+      if (j) y += sp.lineGap
       const lh = lineHeight(line)
-      let x = left + (w - lineWidth(line)) / 2
-      for (const c of line) {
+      let x = left + (w - lineWidth(line, sp)) / 2
+      line.forEach((c, k) => {
+        if (k) x += sp.gapX(line[k - 1].id, c.id)
         into[c.id] = [Math.round(x + c.box.w / 2), Math.round(y + lh / 2)]
-        x += c.box.w + BAND.GAP_X
-      }
+        x += c.box.w
+      })
       y += lh
     })
   })
@@ -931,9 +1058,12 @@ export function arrangeBands(input: ArrangeInput): {
     oldStack?.y ?? (cardBox ? cardBox.y - BAND.TITLE - BAND.PAD_TOP : 0)
   )
 
-  const laid = groups.map((g) => {
+  const sp = spacingOf(input.room)
+  const rowOf = new Map<string, number>()
+  groups.forEach((g, i) => g.cards.forEach((c) => rowOf.set(c.id, i)))
+  const laid = groups.map((g, i) => {
     const layers = g.kept ? layersOf(g.kept, input) : null
-    return { g, layers, l: layOut(g.cards, axis, layers) }
+    return { g, layers, l: padFor(layOut(g.cards, axis, layers, sp), i, rowOf) }
   })
   const contentW = Math.max(0, ...laid.map(({ l }) => l.w))
   // Room for a stacked row's sub-labels, both sides: every row of the
@@ -969,8 +1099,8 @@ export function arrangeBands(input: ArrangeInput): {
         rule: { by: input.by, ids: [...g.ids].sort() },
       })
     }
-    placeLaid(l, x0 + pad, contentW, y + BAND.TITLE + BAND.PAD_TOP, positions)
-    y += h + BAND.GAP
+    placeLaid(l, x0 + pad, contentW, y + BAND.TITLE + l.padTop, positions)
+    y += h + sp.rowGap
   }
 
   return {
@@ -1390,6 +1520,8 @@ export interface LayersInput {
   cards: readonly ArrangeCard[]
   /** The Levels organiser, for the order of a stacked row's layers. */
   levels?: ArrangeInput["levels"]
+  /** A Detailed map's labels at the nubs: room kept for them. */
+  room?: LabelRoom | null
 }
 
 const noEdit = (regions: readonly Region[]): BandEdit => ({
@@ -1472,8 +1604,16 @@ function reflow(
   const rows = new Map<string, Region>()
   const moves: Record<string, Centre> = {}
   const widened: { x: number; w: number; to: number }[] = []
+  // Each card's row in the stack after the edit: what its labelled
+  // cables leave by.
+  const sp = spacingOf(input.room)
+  const rowOf = new Map<string, number>()
+  order.forEach((id, k) => {
+    const held = assign.get(id)?.map((c) => c.id) ?? members.get(id) ?? []
+    for (const c of held) rowOf.set(c, k)
+  })
   let bottom: number | null = null
-  for (const id of order) {
+  for (const [k, id] of order.entries()) {
     const r = now.get(id)
     if (!r) continue
     const w0 = was.get(id)
@@ -1481,17 +1621,11 @@ function reflow(
       bottom === null ? (w0?.y ?? r.y) : bottom + Math.max(0, gapAbove(id))
     const cards = assign.get(id)
     if (cards) {
-      const l = layOut(cards, "y", layersOf(r, input))
+      const l = padFor(layOut(cards, "y", layersOf(r, input), sp), k, rowOf)
       const pad = Math.max(BAND.PAD_X, l.gutter)
       const w = Math.round(Math.max(r.w, l.w + 2 * pad))
       const h = cards.length ? Math.round(rowHeight(l)) : r.h
-      placeLaid(
-        l,
-        r.x + pad,
-        w - 2 * pad,
-        top + BAND.TITLE + BAND.PAD_TOP,
-        moves
-      )
+      placeLaid(l, r.x + pad, w - 2 * pad, top + BAND.TITLE + l.padTop, moves)
       if (w > r.w) widened.push({ x: r.x, w: r.w, to: w })
       rows.set(id, { ...r, y: Math.round(top), w, h })
       bottom = top + h

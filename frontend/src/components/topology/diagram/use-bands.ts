@@ -133,6 +133,9 @@ export function useBands(opts: {
       })
     }
     const at = () => canvas.current?.center() ?? { x: 0, y: 0 }
+    /** Detailed: the room the labels at the nubs take, kept clear when
+     * an edit lays cards out. */
+    const room = () => canvas.current?.labelRoom() ?? null
     const id = () => `b${Date.now().toString(36)}`
     const hand = handDrawn(regions)
     const info = new Map((nodes ?? []).map((n) => [n.id, n.data]))
@@ -187,6 +190,7 @@ export function useBands(opts: {
           levels,
           regions: live(),
           axis: direction === "LR" ? "x" : "y",
+          room: room(),
         })
         setRegions(res.regions)
         setPositions({
@@ -221,6 +225,7 @@ export function useBands(opts: {
               regions: now,
               cards: allCards(),
               levels,
+              room: room(),
               id: e.id,
               by: e.by,
               ids: e.ids,
@@ -234,6 +239,7 @@ export function useBands(opts: {
               regions: now,
               cards: allCards(),
               levels,
+              room: room(),
               id: e.id,
               layout: e.layout,
             })
@@ -241,7 +247,13 @@ export function useBands(opts: {
           return
         }
         if (e.type === "merge" || e.type === "split") {
-          const input = { regions: now, cards: allCards(), levels, id: e.id }
+          const input = {
+            regions: now,
+            cards: allCards(),
+            levels,
+            room: room(),
+            id: e.id,
+          }
           apply(e.type === "merge" ? mergeDown(input) : splitLayers(input))
           return
         }

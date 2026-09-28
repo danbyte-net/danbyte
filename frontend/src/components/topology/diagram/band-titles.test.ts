@@ -9,16 +9,17 @@ import {
   bandRows,
   chipBand,
   chipWidth,
+  mergeDown,
   titleSpot,
   titleStrip,
 } from "./bands"
-import type { ArrangeCard } from "./bands"
-import { buildDiagram } from "./build-diagram"
-import type { DiagramOptions } from "./build-diagram"
+import type { ArrangeCard, Region } from "./bands"
+import { buildDiagram, labelRoom } from "./build-diagram"
+import type { DiagramBuild, DiagramOptions } from "./build-diagram"
 import { elbowBase, obstacles } from "./lanes"
 import type { ElbowCable } from "./lanes"
 import { boxesOverlap, segHitsRect, turnedBox } from "./spatial"
-import type { DiagramMode, Rect } from "./types"
+import type { Anchor, DiagramEdgeData, DiagramMode, Rect } from "./types"
 
 // A layer band's title sits in a strip across the top of its row. Cables
 // cross the strip - they have to, to reach the row's cards - but never run
@@ -54,35 +55,111 @@ describe("title strips in the elbow planner", () => {
   })
 })
 
-describe("row titles on an arranged map", () => {
-  const arranged = (mode: DiagramMode) => {
-    const opts: DiagramOptions = {
-      mode,
-      line: "elbow",
-      colorMode: "cable",
-      measure: approxMeasure,
-      direction: "TB",
-    }
-    const first = buildDiagram(aarhusGraph, opts)
-    const cards: ArrangeCard[] = first.nodes
-      .filter((n) => n.type === "card")
-      .map((n) => {
-        const d = n.data as { role?: { name: string } | null }
-        return {
-          id: n.id,
-          box: boxOf(n),
-          role: d.role ? { name: d.role.name } : null,
-        }
-      })
-    const { positions, regions } = arrangeBands({ cards, by: "role" })
-    const b = buildDiagram(aarhusGraph, {
-      ...opts,
-      positions,
-      rows: bandRows(regions),
-    })
-    return { b, regions }
-  }
+const optsFor = (mode: DiagramMode): DiagramOptions => ({
+  mode,
+  line: "elbow",
+  colorMode: "cable",
+  measure: approxMeasure,
+  direction: "TB",
+})
 
+const cardsOf = (b: DiagramBuild): ArrangeCard[] =>
+  b.nodes
+    .filter((n) => n.type === "card")
+    .map((n) => {
+      const d = n.data as { role?: { name: string } | null }
+      return {
+        id: n.id,
+        box: boxOf(n),
+        role: d.role ? { id: d.role.name, name: d.role.name } : null,
+      }
+    })
+
+/** Arrange ▸ Bands by role, as the page runs it: the room for the labels
+ * the map shows at its nubs. */
+const arranged = (mode: DiagramMode) => {
+  const opts = optsFor(mode)
+  const first = buildDiagram(aarhusGraph, opts)
+  const { positions, regions } = arrangeBands({
+    cards: cardsOf(first),
+    by: "role",
+    room: labelRoom(first.model),
+  })
+  const b = buildDiagram(aarhusGraph, {
+    ...opts,
+    positions,
+    rows: bandRows(regions),
+  })
+  return { b, regions, positions }
+}
+
+/** The port names a build asks for at its nubs, and the ones it shows. */
+function portNames(b: DiagramBuild) {
+  const asked: string[] = []
+  for (const e of b.edges) {
+    const d = e.data as DiagramEdgeData | undefined
+    if (e.type !== "link" || !d?.plan) continue
+    d.plan.forEach((_p, i) => {
+      for (const end of ["a", "b"] as const) {
+        const a = d[end][i] as Anchor | undefined
+        if ((a?.k === "side" || a?.k === "point") && a.port) asked.push(a.port)
+      }
+    })
+  }
+  const shown = drawn(b.nodes, b.edges, approxMeasure).flatMap((c) =>
+    c.labels.filter((l) => !l.ip).map((l) => l.text)
+  )
+  return { asked: asked.sort(), shown: shown.sort() }
+}
+
+describe("port names on an arranged Detailed map", () => {
+  it("keeps every one in rows by role", () => {
+    const { b } = arranged("detailed")
+    const { asked, shown } = portNames(b)
+    expect(asked.length).toBe(23)
+    expect(shown).toEqual(asked)
+  })
+
+  it("keeps every one in a band of two layers", () => {
+    const { b, regions, positions } = arranged("detailed")
+    const access = regions.find((r) => r.label === "Access")!
+    const { regions: merged, moves } = mergeDown({
+      regions,
+      cards: cardsOf(b),
+      id: access.id,
+      room: labelRoom(b.model),
+    })
+    const row = merged.find((r) => r.id === access.id) as Region
+    expect(row.label).toBe("Access + Server")
+    expect(row.layout).toBe("stack")
+    const again = buildDiagram(aarhusGraph, {
+      ...optsFor("detailed"),
+      positions: { ...positions, ...moves },
+      rows: bandRows(merged),
+    })
+    const { asked, shown } = portNames(again)
+    expect(shown).toEqual(asked)
+  })
+
+  it("keeps Simple's compact rows", () => {
+    const first = buildDiagram(aarhusGraph, optsFor("simple"))
+    expect(labelRoom(first.model)).toBeNull()
+    const detailed = buildDiagram(aarhusGraph, optsFor("detailed"))
+    const room = labelRoom(detailed.model)!
+    expect(room.stub).toBeGreaterThan(BAND.PAD_TOP)
+    const plain = arrangeBands({ cards: cardsOf(first), by: "role" })
+    const roomy = arrangeBands({ cards: cardsOf(first), by: "role", room })
+    const height = (rs: readonly Region[]) =>
+      Math.max(...rs.map((r) => r.y + r.h)) - Math.min(...rs.map((r) => r.y))
+    expect(height(roomy.regions)).toBeGreaterThan(height(plain.regions))
+    // No room: the usual spacing.
+    expect(
+      arrangeBands({ cards: cardsOf(first), by: "role", room: null })
+    ).toEqual(plain)
+  })
+})
+
+describe("row titles on an arranged map", () => {
   for (const mode of ["detailed", "simple"] as const)
     it(`hides no cable, junction or label (${mode})`, () => {
       const { b, regions } = arranged(mode)

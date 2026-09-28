@@ -77,7 +77,7 @@ import {
   paintOrder,
   stackOf,
 } from "./diagram/bands"
-import type { BandBy, BandLayout, BandRow } from "./diagram/bands"
+import type { BandBy, BandLayout, BandRow, LabelRoom } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { lagBundleLabel, sharedLag } from "./lag-bundles"
@@ -93,6 +93,7 @@ import type { BundleMember, EdgeClass } from "./edge-semantics"
 import { nodeTypes, sizeOf } from "./node-registry"
 import {
   buildDiagram,
+  labelRoom,
   relinkDiagram,
   remeasureDiagram,
 } from "./diagram/build-diagram"
@@ -317,6 +318,9 @@ export interface CanvasHandle {
    * re-fitted them round the cards (`fitRows`), which is what an edit
    * starts from and saves. */
   regions: () => Zone[]
+  /** The room a Detailed Diagram's labels at the nubs take, for band
+   * edits that lay cards out (null: none to keep). */
+  labelRoom: () => LabelRoom | null
   /** The devices behind the selected cards. */
   selectedDevices: () => string[]
   /** Bring these boxes (canvas coordinates) into view with what is on
@@ -2444,6 +2448,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         return out
       },
       regions: () => nodesToZones(flow.getNodes(), zonesRef.current),
+      labelRoom: () =>
+        exportRef.current.diagram && modelRef.current
+          ? labelRoom(modelRef.current)
+          : null,
       selectedDevices: () =>
         flow
           .getNodes()

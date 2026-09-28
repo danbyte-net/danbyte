@@ -32,7 +32,7 @@ import {
 import type { AnchorLink, Anchors } from "./anchors"
 import { arcFor, arcSide } from "./arcs"
 import { chipBand, fitRows, rowsSig, titleStrip } from "./bands"
-import type { BandRow } from "./bands"
+import type { BandRow, LabelRoom } from "./bands"
 import type { ArcAxis, ArcSide } from "./arcs"
 import { cardContent } from "./card-fields"
 import {
@@ -2170,4 +2170,46 @@ export function remeasureDiagram(model: DiagramModel, live: Node[]): Relinked {
   for (const [id, input] of model.cards)
     base.set(id, cardLayout(input, null, model.measure))
   return relinkDiagram({ ...model, base, shown: new Map() }, live)
+}
+
+/**
+ * The room Arrange ▸ Bands keeps for a Detailed map's end labels
+ * (bands.ts `LabelRoom`): the straight run out of a nub the longest port
+ * name and addresses take - the gap `roomy` asks between two facing
+ * sides, halved - the cards cabled to each other (a breakout's trunk card
+ * to each of its far cards), and the lanes the cables between two rows
+ * turn in. Null when no nub carries a label (Simple, or nothing to show).
+ */
+export function labelRoom(model: DiagramModel): LabelRoom | null {
+  if (model.mode !== "detailed" || !model.roomy) return null
+  const links: [string, string][] = []
+  // Lanes as the layout keeps them between ranks: a few, more for the
+  // busiest card.
+  const degree = new Map<string, number>()
+  const count = (id: string, n: number) =>
+    degree.set(id, (degree.get(id) ?? 0) + n)
+  for (const l of model.links) {
+    if (l.simple) continue
+    const n = Math.max(1, l.cables?.length ?? 0)
+    count(l.source, n)
+    count(l.target, n)
+    if (model.base.has(l.source) && model.base.has(l.target))
+      links.push([l.source, l.target])
+  }
+  for (const f of model.fans) for (const c of f.far) links.push([f.trunk, c])
+  for (const m of model.meshes ?? [])
+    for (const a of m.a) for (const b of m.b) links.push([a, b])
+  const lanes = Math.min(8, Math.max(2, ...degree.values()))
+  // A breakout's legs turn off from its junction in lanes of their own.
+  const legs = Math.max(
+    0,
+    ...model.fans.map((f) => f.legRoom.detailed),
+    ...(model.meshes ?? []).map((m) => m.reach.detailed)
+  )
+  return {
+    stub: model.roomy / 2,
+    links,
+    lanes: LANE * lanes,
+    ...(legs ? { legs } : {}),
+  }
 }
