@@ -6,15 +6,16 @@ import type { Edge, Node } from "@xyflow/react"
 // box - often empty space between rows - and the user is left with a
 // blank canvas. Such a map opens on a part of it that means something
 // instead: the device in focus, else the most-cabled one, with the devices
-// cabled to it that fit on screen with it, then the devices nearest it -
-// enough of them to see where it sits. Pure.
+// cabled to it that fit on screen with it, then the cabled devices nearest
+// it - enough of them to see where it sits, close enough to read. The
+// devices nothing is cabled to (packed under the rest) never fill it. Pure.
 
 /** The least zoom the map goes to. */
 export const MIN_ZOOM = 0.05
 
-/** The least zoom the part a big map opens on is shown at: its cards are
- * still boxes in their role colours, told apart. */
-export const OPEN_ZOOM = 0.1
+/** The least zoom the part a big map opens on is shown at: its cards'
+ * names still read. */
+export const OPEN_ZOOM = 0.3
 
 /** How many cards the part a big map opens on takes, cabled or not, before
  * it stops taking the nearest: the fewer, the closer the camera. */
@@ -50,9 +51,9 @@ const union = (a: Box, b: Box): Box => {
  * on the map, else the card with the most cables to other cards (through
  * a breakout's junction too; the first in reading order among equals).
  * Then the cards cabled to it, nearest first, and after them the other
- * cards nearest it until there are `OPEN_CARDS`, each taken while the box
- * of all taken still `fits` on screen. `box` gives a node's box on the
- * map. Empty for a map with no cards.
+ * cabled cards nearest it until there are `OPEN_CARDS`, each taken while
+ * the box of all taken still `fits` on screen. `box` gives a node's box on
+ * the map. Empty for a map with no cards.
  */
 export function openingPart(
   nodes: readonly Node[],
@@ -124,7 +125,10 @@ export function openingPart(
   }
   for (const n of byDistance(cabled(anchor.id).map((id) => byId.get(id)!)))
     take(n)
-  const rest = cards.filter((n) => !taken.has(n.id))
+  // The cabled devices near it - or, for a focused device nothing is
+  // cabled to, the devices packed round it.
+  const loose = !adj.has(anchor.id)
+  const rest = cards.filter((n) => !taken.has(n.id) && (loose || adj.has(n.id)))
   for (const n of byDistance(rest).slice(0, NEAREST)) {
     if (part.length >= OPEN_CARDS) break
     take(n)

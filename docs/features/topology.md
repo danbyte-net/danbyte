@@ -456,10 +456,11 @@ Three mechanisms keep a large fabric legible:
 - **A map too big to fit opens on part of it** - a site whose whole map
   would need less than 5% zoom (the least there is) opens on the focused
   device, else the one with the most cables, with the devices cabled to it
-  and the nearest others that fit on screen with it (close enough that the
-  cards are told apart, and on a photo map that the photos are pictures),
-  and a note to search or focus a device for the rest. The fit button does
-  the same; the note goes as soon as you move the map.
+  and the nearest other cabled devices that fit on screen with it (at 30%
+  zoom or closer, so the card names read, and on a photo map so the photos
+  are pictures) - never the devices nothing is cabled to, packed under the
+  rest - and a note to search or focus a device for the rest. The fit
+  button does the same; the note goes as soon as you move the map.
 - **Only the cards in view are drawn** - above 200 cards the Diagram hands
   each card (or photo) over with its size, so the page draws the cards in
   view and the rest as you pan to them, instead of drawing every card once

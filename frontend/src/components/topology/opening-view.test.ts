@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Edge, Node } from "@xyflow/react"
 
-import { openingPart } from "./opening-view"
+import { MIN_ZOOM, OPEN_ZOOM, openingPart } from "./opening-view"
 import type { Box } from "./opening-view"
 
 const node = (id: string, x: number, y: number, type = "card"): Node => ({
@@ -104,5 +104,47 @@ describe("openingPart", () => {
     )
     expect(part(hidden, edges)).not.toContain("leaf1")
     expect(part([node("zone:z", 0, 0, "zone")], [])).toEqual([])
+  })
+
+  it("opens a big map on cabled cards close enough to read", () => {
+    // A core and its twelve leaves, and 6,000 devices nothing is cabled
+    // to packed in a grid right under them - most of a large site.
+    const W = 1600
+    const H = 900
+    const PAD = 0.15
+    const zoomFor = (b: Box) =>
+      Math.min(W / (b.width * (1 + 2 * PAD)), H / (b.height * (1 + 2 * PAD)))
+    const cards = (n: Node): Box => ({
+      x: n.position.x,
+      y: n.position.y,
+      width: 240,
+      height: 72,
+    })
+    const leaves = Array.from({ length: 12 }, (_, i) =>
+      node(`leaf${i}`, (i - 6) * 300, 200)
+    )
+    const packed = Array.from({ length: 6000 }, (_, i) =>
+      node(`lone${i}`, (i % 100) * 280 - 14000, 400 + Math.floor(i / 100) * 110)
+    )
+    const big = [node("core", 0, 0), ...leaves, ...packed]
+    const wires = leaves.map((l) => edge("core", l.id))
+    const all = big.map(cards).reduce((a, b) => ({
+      x: Math.min(a.x, b.x),
+      y: Math.min(a.y, b.y),
+      width: Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x),
+      height: Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y),
+    }))
+    expect(zoomFor(all)).toBeLessThan(MIN_ZOOM)
+    const got = openingPart(big, wires, cards, (b) => zoomFor(b) >= OPEN_ZOOM)
+    expect(got.map((n) => n.id)).toContain("core")
+    expect(got.length).toBeGreaterThan(3)
+    expect(got.some((n) => n.id.startsWith("lone"))).toBe(false)
+    const box = got.map(cards).reduce((a, b) => ({
+      x: Math.min(a.x, b.x),
+      y: Math.min(a.y, b.y),
+      width: Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x),
+      height: Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y),
+    }))
+    expect(zoomFor(box)).toBeGreaterThanOrEqual(0.3)
   })
 })
