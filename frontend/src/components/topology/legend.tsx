@@ -19,17 +19,19 @@ function Line({
   dash,
   width = 2,
   color = "var(--muted-foreground)",
+  length = 26,
 }: {
   dash?: string
   width?: number
   color?: string
+  length?: number
 }) {
   return (
-    <svg width="26" height="10" className="shrink-0">
+    <svg width={length} height="10" className="shrink-0">
       <line
         x1="1"
         y1="5"
-        x2="25"
+        x2={length - 1}
         y2="5"
         stroke={color}
         strokeWidth={width}
@@ -153,18 +155,7 @@ export function legendRows({
         sem: "bgp",
       }
     )
-  } else if (viewStyle === "flat")
-    out.push(
-      { kind: "line", label: "Cable bundle (×N)", sem: "cable" },
-      {
-        kind: "line",
-        label: "LLDP, no cable",
-        dash: "6 4",
-        width: 1.5,
-        sem: "ghost",
-      }
-    )
-  else
+  } else
     out.push(
       { kind: "line", label: "Cable", sem: "cable" },
       {
@@ -293,11 +284,10 @@ export function CanvasLegend(props: LegendOptions) {
             }
           >
             {tones.map((t) => (
+              // A tone colours the lines: its swatch is a line, as in
+              // the exports.
               <span key={t.label} className="flex items-center gap-1">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ background: t.color }}
-                />
+                <Line color={t.color} width={2.5} length={14} />
                 <span
                   className={
                     t.mono

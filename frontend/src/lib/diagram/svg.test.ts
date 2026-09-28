@@ -60,6 +60,37 @@ describe("toSvg", () => {
     await expect(out).toMatchFileSnapshot("./__golden__/fabric-sheet.svg")
   })
 
+  it("draws a legend role as its badge, never a swatch beside a name", () => {
+    const doc = parse(
+      toSvg(fabric, { legend: true, measure: (s) => s.length * 5 })
+    )
+    const footer = doc.getElementById("footer")!
+    const label = [...footer.getElementsByTagName("text")].find(
+      (t) => t.textContent === "Firewall"
+    )!
+    const pill = label.previousElementSibling!
+    expect(pill.nodeName).toBe("rect")
+    expect(pill.getAttribute("fill")).toBe("#ef4444")
+    expect(pill.getAttribute("rx")).toBe("5")
+    expect(pill.getAttribute("height")).toBe("16")
+    // The name sits inside the pill, in the ink that reads on it.
+    const x = Number(pill.getAttribute("x"))
+    const w = Number(pill.getAttribute("width"))
+    expect(w).toBe(8 * 5 + 14)
+    expect(label.getAttribute("text-anchor")).toBe("middle")
+    expect(Number(label.getAttribute("x"))).toBe(x + w / 2)
+    expect(label.getAttribute("fill")).toBe("#ffffff")
+    // The monitoring pill says what it is, so it never reads as a role.
+    const texts = [...footer.getElementsByTagName("text")].map(
+      (t) => t.textContent
+    )
+    expect(texts.indexOf("Monitoring")).toBe(texts.indexOf("Down") + 1)
+    // No round or tiny swatches anywhere in the legend.
+    expect(footer.getElementsByTagName("circle")).toHaveLength(0)
+    for (const r of footer.getElementsByTagName("rect"))
+      expect(Number(r.getAttribute("height"))).toBe(16)
+  })
+
   it("is well-formed SVG with one path per link", () => {
     const doc = parse(toSvg(fabric))
     const root = doc.documentElement

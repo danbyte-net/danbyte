@@ -533,7 +533,13 @@ describe("printLegend", () => {
     expect(rows.slice(0, 3)).toEqual([
       { kind: "role", label: "Spine", fill: "#6366f1", ink: "#ffffff" },
       { kind: "role", label: "Other", fill: "#f4f4f5", ink: "#18181b" },
-      { kind: "pill", label: "Down", fill: "#fb2c36", ink: "#ffffff" },
+      {
+        kind: "pill",
+        label: "Down",
+        caption: "Monitoring",
+        fill: "#fb2c36",
+        ink: "#ffffff",
+      },
     ])
     const bgp = rows.find((r) => r.label === "BGP session")!
     expect(bgp.stroke).toMatch(/^#[0-9a-f]{6}$/)

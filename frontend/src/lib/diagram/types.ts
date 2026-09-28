@@ -184,10 +184,13 @@ export interface DiagramNote extends Pt {
   outline?: boolean
 }
 
-/** One legend entry: a role swatch, a pill, or a line style. */
+/** One legend entry: a role's badge, a pill, or a line style. */
 export interface LegendRow {
   kind: "role" | "pill" | "line"
   label: string
+  /** A pill's meaning, written beside it ("Monitoring"): the pill alone
+   * would read as one more role. */
+  caption?: string
   fill?: string
   ink?: string
   stroke?: string

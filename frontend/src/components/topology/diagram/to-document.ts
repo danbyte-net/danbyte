@@ -536,6 +536,7 @@ export function printLegend(
       out.push({
         kind: "pill",
         label: checks.down?.name || "Down",
+        caption: it.label,
         fill: look.fill,
         ink: look.ink,
       })

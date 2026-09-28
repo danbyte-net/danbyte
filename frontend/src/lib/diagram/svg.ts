@@ -1,3 +1,4 @@
+import { readableText } from "@/lib/color"
 import { xmlEscape } from "@/lib/xml"
 
 import {
@@ -499,8 +500,6 @@ function noteSvg(n: DiagramNote, measure: Measure): string {
 const FOOT = {
   PAD: 12,
   ROW: 18,
-  SWATCH_W: 14,
-  SWATCH_H: 10,
   LINE_W: 22,
   ITEM_GAP: 14,
   LABEL: 10,
@@ -518,15 +517,33 @@ interface Footer {
   draw: (x0: number, top: number, width: number) => string
 }
 
+/** A pill's caption: its meaning, after it. */
+const captionWidth = (r: LegendRow, measure: Measure) =>
+  r.caption ? 5 + measure(r.caption, FOOT.LABEL) : 0
+
 function legendItemWidth(r: LegendRow, measure: Measure): number {
-  if (r.kind === "pill") return pillWidth(r.label, measure)
-  const sw = r.kind === "line" ? FOOT.LINE_W : FOOT.SWATCH_W
-  return sw + 5 + measure(r.label, FOOT.LABEL)
+  if (r.kind === "pill")
+    return pillWidth(r.label, measure) + captionWidth(r, measure)
+  // A role is its badge: the name on the role's colour, never a swatch
+  // beside it. Not cut short, as a card's pill is.
+  if (r.kind === "role")
+    return Math.ceil(measure(r.label, PILL.SIZE, PILL.WEIGHT)) + 2 * PILL.PAD_X
+  return FOOT.LINE_W + 5 + measure(r.label, FOOT.LABEL)
 }
 
 function legendItem(r: LegendRow, x: number, cy: number, measure: Measure) {
-  if (r.kind === "pill") {
-    const w = legendItemWidth(r, measure)
+  if (r.kind === "pill" || r.kind === "role") {
+    const w =
+      r.kind === "pill"
+        ? pillWidth(r.label, measure)
+        : legendItemWidth(r, measure)
+    const role = r.kind === "role"
+    const fill = col(r.fill, role ? PRINT.wash : PRINT.subtle)
+    // The role's ink as its cards read, when the row does not say.
+    const ink = col(
+      r.ink,
+      role ? (hex6(readableText(fill)) ?? PRINT.text) : PRINT.paper
+    )
     return (
       el("rect", {
         x,
@@ -534,7 +551,15 @@ function legendItem(r: LegendRow, x: number, cy: number, measure: Measure) {
         width: w,
         height: PILL.H,
         rx: PILL.RADIUS,
-        fill: col(r.fill, PRINT.subtle),
+        fill,
+        // A role's edge, as its cards have: a pale role still reads on
+        // white paper.
+        ...(role
+          ? {
+              stroke: mix("#000000", fill, CARD.EDGE_DARKEN),
+              "stroke-width": 1,
+            }
+          : {}),
       }) +
       text(r.label, {
         x: x + w / 2,
@@ -542,36 +567,27 @@ function legendItem(r: LegendRow, x: number, cy: number, measure: Measure) {
         "text-anchor": "middle",
         "font-size": PILL.SIZE,
         "font-weight": PILL.WEIGHT,
-        fill: col(r.ink, PRINT.paper),
-      })
+        fill: ink,
+      }) +
+      (r.kind === "pill" && r.caption
+        ? text(r.caption, {
+            x: x + w + 5,
+            y: baselineAt(cy - FOOT.ROW / 2, FOOT.LABEL, FOOT.ROW),
+            "font-size": FOOT.LABEL,
+            fill: PRINT.body,
+          })
+        : "")
     )
   }
-  let swatch: string
-  let sw: number
-  if (r.kind === "line") {
-    sw = FOOT.LINE_W
-    const dash = dashOk(r.dash)
-    swatch = el("path", {
-      d: `M ${fmt(x + 1)},${fmt(cy)} H ${fmt(x + sw - 1)}`,
-      stroke: col(r.stroke, PRINT.subtle),
-      "stroke-width": r.width ?? 1.25,
-      "stroke-dasharray": dash,
-      "stroke-linecap": dash ? undefined : "round",
-    })
-  } else {
-    sw = FOOT.SWATCH_W
-    const fill = col(r.fill, PRINT.wash)
-    swatch = el("rect", {
-      x: x + 0.5,
-      y: cy - FOOT.SWATCH_H / 2 + 0.5,
-      width: sw - 1,
-      height: FOOT.SWATCH_H - 1,
-      rx: 3,
-      fill,
-      stroke: mix("#000000", fill, CARD.EDGE_DARKEN),
-      "stroke-width": 1,
-    })
-  }
+  const sw = FOOT.LINE_W
+  const dash = dashOk(r.dash)
+  const swatch = el("path", {
+    d: `M ${fmt(x + 1)},${fmt(cy)} H ${fmt(x + sw - 1)}`,
+    stroke: col(r.stroke, PRINT.subtle),
+    "stroke-width": r.width ?? 1.25,
+    "stroke-dasharray": dash,
+    "stroke-linecap": dash ? undefined : "round",
+  })
   return (
     swatch +
     text(r.label, {

@@ -502,9 +502,11 @@ map scoped to them.
 
 A collapsible **Legend** in the map's corner explains the line styles for
 whichever view is active (the Logical view carries its own under the
-diagram); its open/closed state is remembered per browser. In *By type*
-color mode it swatches the media types actually on the map. Clicking a
-cable draws it emphasized in the accent color while its panel is open.
+diagram); its open/closed state is remembered per browser. On the Diagram
+it lists the roles on the map as their badges. In *By type* or *By speed*
+color mode it keys the media types on the map, or the speed tiers, as short
+lines in their colours. Clicking a cable draws it emphasized in the accent
+color while its panel is open.
 
 ## Reading the map
 
