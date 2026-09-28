@@ -1025,6 +1025,8 @@ and the **hidden objects**. Load it from the views select; **Save** (or
 left-to-right layout. **Save** needs the change permission on topology
 views, **Save as…** the add permission (++ctrl+s++ on a map that is not a
 saved view opens **Save as…**), and deleting a view the delete permission.
+The delete button beside **Save** asks first - a view's layout, bands and
+notes go with it.
 Views are plain API objects
 (`/api/topology-views/`), change-logged like everything else - except that
 the change log keeps a summary of a view's `state`, not the arrangement

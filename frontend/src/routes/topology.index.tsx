@@ -1827,10 +1827,13 @@ function TopologyPage() {
     }
   }
 
+  /** Delete asks first: a view holds a diagram built by hand. */
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const deleteView = useMutation({
     mutationFn: (id: string) =>
       api<void>(`/api/topology-views/${id}/`, { method: "DELETE" }),
     onSuccess: () => {
+      setConfirmDelete(false)
       qc.invalidateQueries({ queryKey: ["topology-views"] })
       // Nothing is left to keep the edits in, so there is nothing for the
       // leave guard to ask; the default map loads on the way out.
@@ -2733,14 +2736,17 @@ function TopologyPage() {
             </Button>
           )}
           {viewId !== "none" && canDeleteViews && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-destructive hover:text-destructive"
-              onClick={() => deleteView.mutate(viewId)}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+            <BarTip tip="Delete view">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-destructive hover:text-destructive"
+                aria-label="Delete view"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </BarTip>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <BarTip tip="Everything on this map">
@@ -3601,6 +3607,39 @@ function TopologyPage() {
           else if (ask) bands.clear()
         }}
       />
+
+      <AlertDialog
+        open={confirmDelete}
+        onOpenChange={(open) => {
+          if (!deleteView.isPending) setConfirmDelete(open)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete “{appliedView?.name ?? "this view"}”?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Its layout, bands and notes go with it. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteView.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteView.isPending}
+              onClick={(e) => {
+                e.preventDefault()
+                deleteView.mutate(viewId)
+              }}
+            >
+              {deleteView.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* The leave guard's one dialog. The router holds the navigation open
           until this resolves, so every close path must settle it: leave the
