@@ -21,7 +21,7 @@ import { api, type IPAddress, type IPRange, type Paginated } from "@/lib/api"
 import { parseCidr, bigIntToIp, ipToBigInt } from "@/lib/prefix-tree"
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { VlanBadge } from "@/components/cells/vlan-badge"
-import { copyText } from "@/lib/clipboard"
+import { copyWithToast } from "@/lib/clipboard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { KvCard, type KvRow } from "@/components/kv-card"
@@ -399,9 +399,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   // ─── Copy actions ─────────────────────────────────────────────────────
 
   async function copyIp() {
-    const ok = await copyText(ip.ip_address)
-    if (ok) toast.success(`Copied ${ip.ip_address}`)
-    else toast.error("Couldn't copy - clipboard blocked by the browser")
+    await copyWithToast(ip.ip_address, `Copied ${ip.ip_address}`)
   }
 
   async function copyAllAsTable() {
@@ -421,9 +419,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     if (subnetRows.length > 0) {
       blocks.push("", "# Subnet", fmt(subnetRows))
     }
-    const ok = await copyText(blocks.join("\n"))
-    if (ok) toast.success("Copied IP details to clipboard")
-    else toast.error("Couldn't copy - clipboard blocked by the browser")
+    await copyWithToast(blocks.join("\n"), "Copied IP details to clipboard")
   }
 
   return (

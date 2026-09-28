@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
 import { useMemo, useState } from "react"
 
 import {
@@ -12,7 +11,7 @@ import {
   type MacObjectDetail,
   type OuiStatus,
 } from "@/lib/api"
-import { copyText } from "@/lib/clipboard"
+import { copyWithToast } from "@/lib/clipboard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -154,9 +153,7 @@ function Body({ data }: { data: MacDetail }) {
   })
 
   async function copy() {
-    const ok = await copyText(data.mac)
-    if (ok) toast.success(`Copied ${data.mac}`)
-    else toast.error("Couldn't copy - clipboard blocked by the browser")
+    await copyWithToast(data.mac, `Copied ${data.mac}`)
   }
 
   const interfaceColumns = useMemo<ColumnDef<MacInterface>[]>(

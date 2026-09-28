@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
-import { copyText } from "@/lib/clipboard"
+import { copyWithToast } from "@/lib/clipboard"
 import { RowActions } from "@/components/row-actions"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
@@ -607,8 +607,7 @@ const LOG_COLUMNS: ColumnDef<LogRow>[] = [
         variant="ghost"
         title="Copy line"
         onClick={() => {
-          void copyText(row.original.raw)
-          toast.success("Line copied")
+          void copyWithToast(row.original.raw, "Line copied")
         }}
       >
         <Copy className="h-3.5 w-3.5" />

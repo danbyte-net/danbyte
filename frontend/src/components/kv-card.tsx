@@ -1,9 +1,8 @@
 import * as React from "react"
 import { useState } from "react"
 import { Check, Copy } from "lucide-react"
-import { toast } from "sonner"
 
-import { copyText } from "@/lib/clipboard"
+import { copyWithToast } from "@/lib/clipboard"
 import { dash } from "@/components/cells/dash"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { PendingFieldMark } from "@/lib/pending-fields"
@@ -71,11 +70,7 @@ export function CopyButton({ value }: { value: string }) {
     <button
       type="button"
       onClick={async () => {
-        const ok = await copyText(value)
-        if (!ok) {
-          toast.error("Couldn't copy - clipboard blocked by the browser")
-          return
-        }
+        if (!(await copyWithToast(value))) return
         setDone(true)
         window.setTimeout(() => setDone(false), 1200)
       }}

@@ -76,16 +76,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { LeaveGuardDialog } from "@/components/leave-guard-dialog"
 import {
   Dialog,
   DialogContent,
@@ -463,11 +454,12 @@ function FloorPlanPage() {
       isDirtyRef.current && !samePath(next.pathname, current.pathname),
     []
   )
-  // withResolver hands back proceed/reset, which the themed AlertDialog at the
-  // end of this component drives - a native window.confirm can't be styled and
-  // reads as a browser error. enableBeforeUnload stays off because the blocker
-  // is registered whether or not the plan is dirty; the ref-gated listener
-  // below owns the browser-level case, which no router blocker can reach.
+  // withResolver hands back proceed/reset, which the shared LeaveGuardDialog
+  // at the end of this component drives - a native window.confirm can't be
+  // styled and reads as a browser error. enableBeforeUnload stays off because
+  // the blocker is registered whether or not the plan is dirty; the ref-gated
+  // listener below owns the browser-level case, which no router blocker can
+  // reach.
   const leaveGuard = useBlocker({
     shouldBlockFn: shouldBlockLeave,
     enableBeforeUnload: false,
@@ -2332,38 +2324,11 @@ function FloorPlanPage() {
       </Dialog>
 
       {/* The leave guard's one dialog - for a floor switch, a sidebar link, and
-          browser back alike. The router holds the navigation open until this
-          resolves, so every close path must settle it: leave the blocker
-          hanging and the next navigation is stuck behind it forever. */}
-      <AlertDialog
-        open={leaveGuard.status === "blocked"}
-        onOpenChange={(open) => {
-          // Escape, an overlay click, and "Keep editing" all mean stay.
-          if (!open) leaveGuard.reset?.()
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This plan has unsaved changes. Leaving this page - including
-              switching to another floor - drops them. Save first to keep them.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            {/* Radix closes on action too, so onOpenChange's reset() lands right
-                after this proceed(). Both settle the same promise and only the
-                first wins, so the navigation still goes through. */}
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => leaveGuard.proceed?.()}
-            >
-              Discard and leave
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          browser back alike. */}
+      <LeaveGuardDialog
+        blocker={leaveGuard}
+        description="This plan has unsaved changes."
+      />
     </div>
   )
 }

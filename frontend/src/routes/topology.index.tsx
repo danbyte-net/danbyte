@@ -199,7 +199,7 @@ import type {
 } from "@/components/topology/group-node"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
-import { copyText } from "@/lib/clipboard"
+import { copyWithToast } from "@/lib/clipboard"
 import {
   useUrlCsv,
   useUrlEnum,
@@ -2231,9 +2231,7 @@ function TopologyPage() {
 
   /** This map, as a link someone else can open. */
   const copyLink = async () => {
-    const ok = await copyText(window.location.href)
-    if (ok) toast.success("Link copied")
-    else toast.error("Couldn't copy - clipboard blocked by the browser")
+    await copyWithToast(window.location.href, "Link copied")
   }
 
   // What an export says about this map: its name, the tenant, the filters
