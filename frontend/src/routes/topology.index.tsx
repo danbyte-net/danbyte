@@ -8,7 +8,6 @@ import {
   Crosshair,
   Eraser,
   FilePlus,
-  Filter,
   Globe,
   LayoutGrid,
   Link as LinkIcon,
@@ -54,6 +53,11 @@ import type {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import {
   Dialog,
   DialogContent,
@@ -101,9 +105,13 @@ import {
 import { LeaveGuardDialog } from "@/components/leave-guard-dialog"
 import { Loading } from "@/components/loading"
 import { InfoTip } from "@/components/ui/info-tip"
-import { Combobox } from "@/components/ui/combobox"
+import { TruncatedText } from "@/components/ui/truncated-text"
 import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
+import {
+  PopoverField,
+  TopologyFilters,
+} from "@/components/topology/filters-popover"
 import { CanvasLegend, legendRows } from "@/components/topology/legend"
 import { ExportMenu } from "@/components/topology/export/export-menu"
 import { LogicalTopologyView } from "@/components/topology/logical-view"
@@ -375,49 +383,6 @@ type Filters = {
   status: string
   tag: string
   collapse: boolean
-}
-
-/** Searchable filter select ("all" ↔ the combobox's null/none row) - the
- * option lists here (41 sites and counting) want type-to-filter. */
-function FilterSelect({
-  value,
-  onChange,
-  anyLabel,
-  options,
-}: {
-  value: string
-  onChange: (v: string) => void
-  anyLabel: string
-  options: { value: string; label: string }[]
-}) {
-  return (
-    <Combobox
-      value={value === "all" ? null : value}
-      onChange={(v) => onChange(v ?? "all")}
-      options={options}
-      noneLabel={anyLabel}
-      placeholder={anyLabel}
-      className="h-8 w-full text-xs"
-    />
-  )
-}
-
-/** A labelled row inside the Filters / Display popovers. */
-function PopoverField({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="space-y-1">
-      <span className="text-[11px] font-medium tracking-[0.04em] text-muted-foreground uppercase">
-        {label}
-      </span>
-      {children}
-    </div>
-  )
 }
 
 /** A scope chip's X - the drill, hand-picked and focus chips. A plain
@@ -1359,7 +1324,7 @@ function TopologyPage() {
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
+      api<Paginated<{ id: string; name: string; color?: string | null }>>(
         "/api/device-roles/?picker=1"
       ),
     staleTime: 10 * 60_000,
@@ -2305,12 +2270,6 @@ function TopologyPage() {
   }, [graph])
 
   const count = q.data?.nodes.length ?? 0
-  const activeFilters = [
-    filters.site,
-    filters.role,
-    filters.status,
-    filters.tag,
-  ].filter((v) => v !== "all").length
   const focusName = focus
     ? (graph?.nodes.find((n) => n.data.device_id === focus.id)?.data.name ??
       "device")
@@ -2324,7 +2283,7 @@ function TopologyPage() {
     ? {
         hide: "@max-[1240px]/head:hidden",
         show: "@max-[1240px]/head:inline-flex",
-        find: "@max-[1240px]/head:w-36",
+        find: "@max-[1240px]/head:w-32",
       }
     : {
         hide: "@max-[1040px]/head:hidden",
@@ -2346,7 +2305,7 @@ function TopologyPage() {
             variant="secondary"
             className={cn("shrink-0", scopeChip && headNarrow.hide)}
           >
-            {count}{" "}
+            <span className="num">{count}</span>{" "}
             {grouped
               ? count === 1
                 ? "group"
@@ -2358,7 +2317,7 @@ function TopologyPage() {
         )}
         {drill && (
           <Badge variant="default" className="shrink-0 gap-1">
-            {drill.name}
+            <TruncatedText className="max-w-40">{drill.name}</TruncatedText>
             <ChipClose label="Back to groups" onClick={leaveDrill} />
           </Badge>
         )}
@@ -2404,7 +2363,14 @@ function TopologyPage() {
         {focus && (
           <Badge variant="default" className="shrink-0 gap-1">
             <Crosshair className="h-3 w-3" />
-            {focusName} · {focus.depth} hop{focus.depth === 1 ? "" : "s"}
+            <TruncatedText className="max-w-40">{focusName}</TruncatedText>
+            {/* The hops select beside Find says how far; without it (a
+                hand-picked map) the chip does. */}
+            {builder && (
+              <span className="whitespace-nowrap">
+                · {focus.depth} hop{focus.depth === 1 ? "" : "s"}
+              </span>
+            )}
             <ChipClose label="Clear focus" onClick={() => setFocus(null)} />
           </Badge>
         )}
@@ -2412,9 +2378,11 @@ function TopologyPage() {
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {!logical && (
             <>
-              <div className="relative shrink-0">
-                <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
+              <InputGroup className={cn("h-7 w-40 shrink-0", headNarrow.find)}>
+                <InputGroupAddon>
+                  <Search className="size-3" />
+                </InputGroupAddon>
+                <InputGroupInput
                   placeholder="Find on map…"
                   aria-label="Find on map"
                   value={search}
@@ -2423,15 +2391,19 @@ function TopologyPage() {
                     if (e.key === "Enter" && matchedIds?.size)
                       canvas.current?.focusNode([...matchedIds][0])
                   }}
-                  className={cn("h-8 w-40 pl-8 text-xs", headNarrow.find)}
+                  className="h-7 text-xs md:text-xs"
                 />
-              </div>
+              </InputGroup>
               {builder ? null : focus ? (
                 <Select
                   value={String(focus.depth)}
                   onValueChange={(v) => setFocusDepth(Number(v))}
                 >
-                  <SelectTrigger className="h-8 w-24 text-xs">
+                  <SelectTrigger
+                    size="sm"
+                    className="w-24 text-xs data-[size=sm]:h-7"
+                    aria-label="Hops"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -2443,72 +2415,14 @@ function TopologyPage() {
                   </SelectContent>
                 </Select>
               ) : (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 shrink-0 gap-1.5 text-xs"
-                    >
-                      <Filter className="h-3.5 w-3.5" />
-                      Filters
-                      {activeFilters > 0 && (
-                        <Badge
-                          variant="secondary"
-                          className="ml-0.5 h-4 px-1 text-[10px]"
-                        >
-                          {activeFilters}
-                        </Badge>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-64 space-y-3 p-3">
-                    <PopoverField label="Site">
-                      <FilterSelect
-                        value={filters.site}
-                        onChange={(v) => set({ site: v })}
-                        anyLabel="Any site"
-                        options={(sites.data?.results ?? []).map((s) => ({
-                          value: s.id,
-                          label: s.name,
-                        }))}
-                      />
-                    </PopoverField>
-                    <PopoverField label="Role">
-                      <FilterSelect
-                        value={filters.role}
-                        onChange={(v) => set({ role: v })}
-                        anyLabel="Any role"
-                        options={(roles.data?.results ?? []).map((r) => ({
-                          value: r.id,
-                          label: r.name,
-                        }))}
-                      />
-                    </PopoverField>
-                    <PopoverField label="Status">
-                      <FilterSelect
-                        value={filters.status}
-                        onChange={(v) => set({ status: v })}
-                        anyLabel="Any status"
-                        options={(statuses.data?.results ?? []).map((s) => ({
-                          value: s.id,
-                          label: s.name,
-                        }))}
-                      />
-                    </PopoverField>
-                    <PopoverField label="Tag">
-                      <FilterSelect
-                        value={filters.tag}
-                        onChange={(v) => set({ tag: v })}
-                        anyLabel="Any tag"
-                        options={(tags.data?.results ?? []).map((t) => ({
-                          value: t.slug,
-                          label: t.name,
-                        }))}
-                      />
-                    </PopoverField>
-                  </PopoverContent>
-                </Popover>
+                <TopologyFilters
+                  value={filters}
+                  onChange={set}
+                  sites={sites.data?.results}
+                  roles={roles.data?.results}
+                  statuses={statuses.data?.results}
+                  tags={tags.data?.results}
+                />
               )}
               {!grouped && viewStyle !== "hierarchy" && (
                 <LevelOrganiser
@@ -2537,14 +2451,9 @@ function TopologyPage() {
               )}
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 shrink-0 gap-1.5 text-xs"
-                  >
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
-                    Display
-                  </Button>
+                  <BarMenuTrigger>
+                    <SlidersHorizontal /> Display
+                  </BarMenuTrigger>
                 </PopoverTrigger>
                 <PopoverContent
                   align="end"
@@ -2649,7 +2558,7 @@ function TopologyPage() {
                       value={colorMode}
                       onValueChange={(v) => setColorMode(v as EdgeColorMode)}
                     >
-                      <SelectTrigger className="h-8 w-full text-xs">
+                      <SelectTrigger size="sm" className="w-full text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -2687,18 +2596,14 @@ function TopologyPage() {
               </Popover>
               {isDiagram && (
                 <DropdownMenu>
-                  <BarTip tip="More">
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        aria-label="More"
-                        className={cn("hidden shrink-0", headNarrow.show)}
-                      >
-                        <MoreHorizontal className="h-3.5 w-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                  </BarTip>
+                  <DropdownMenuTrigger asChild>
+                    <BarIconButton
+                      label="More"
+                      className={cn("hidden", headNarrow.show)}
+                    >
+                      <MoreHorizontal />
+                    </BarIconButton>
+                  </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-40">
                     <DropdownMenuLabel>Diagram</DropdownMenuLabel>
                     <DropdownMenuRadioGroup
@@ -2749,7 +2654,8 @@ function TopologyPage() {
             }}
           >
             <SelectTrigger
-              className="h-7 w-44 shrink-0 text-xs @max-[1080px]/bar:w-36"
+              size="sm"
+              className="w-44 shrink-0 text-xs data-[size=sm]:h-7 @max-[1080px]/bar:w-36"
               aria-label="Views"
             >
               <SelectValue placeholder="Views" />

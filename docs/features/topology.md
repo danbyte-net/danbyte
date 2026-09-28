@@ -893,11 +893,13 @@ disturbs the default map's own arrangement.
 
 Filter by **site / role / status / tag** - the filter fields are searchable
 comboboxes (*Any site*, *Any role*…), so a long site list is a keystroke
-away. Click a device → **Focus** (or right-click it → *Focus*) to re-query
-just its neighbourhood, with a **1–6 hop** radius selector in place of
-Filters; the focus chip in the header clears it. The **Find on map** box
-dims everything that doesn't match (name, IP, type) - press ++enter++ to
-zoom to the first hit. What you type there is not an edit of a saved view.
+away. Roles and statuses are listed as their colored badges, the same as in
+every table. Click a device → **Focus** (or right-click it → *Focus*) to
+re-query just its neighbourhood, with a **1–6 hop** radius selector in place
+of Filters; the focus chip in the header names the device, and its × clears
+the focus. The **Find on map** box dims everything that doesn't match (name,
+IP, type) - press ++enter++ to zoom to the first hit. What you type there is
+not an edit of a saved view.
 
 ### Objects sidebar {#on-this-map-the-objects-sidebar}
 
@@ -968,14 +970,17 @@ The toolbar groups its controls to stay uncluttered: a **Filters** popover
 (site / role / status / tag, with a badge counting active filters) and a
 **Display** popover (layout axis, grouping, the Diagram's *Draw as*, lines,
 labels and card lines, *Color by*, *LAG bundles* and *Patch panels*).
-**Find on map** and **Levels** stay on the bar.
+**Find on map** and **Levels** stay on the bar. Both bars are built from the
+same buttons, toggles and menu triggers as the [site map](site-map.md) and
+the [floor plans](floor-plans.md) bars.
 
 Both bars fit a 1280 px screen with the sidebar open. Where the room runs
 out, the header's **Simple / Detailed** and the second bar's **Objects** and
 **Copy link** move into a **More** (⋯) menu at the end of their bar, and
 while a scope chip (hand-picked, focus or a group drilled into) is showing,
-the device count gives way to it. Narrower still, a bar scrolls sideways,
-its scrollbar showing.
+the device count gives way to it. A long device or group name in a chip is
+shortened, with the full name on hover. Narrower still, a bar scrolls
+sideways, its scrollbar showing.
 
 ## Link aggregation bundles
 

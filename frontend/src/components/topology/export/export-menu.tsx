@@ -10,7 +10,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { Button } from "@/components/ui/button"
+import { BarButton } from "@/components/map-toolbar"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -334,16 +334,13 @@ export function ExportMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 min-w-24 text-xs"
-          disabled={disabled || busy}
-        >
-          <Download className="h-3 w-3" />
+        {/* BarMenuTrigger's markup, but while a file is made the verb
+            changes and the chevron makes room for it, so the width holds. */}
+        <BarButton className="min-w-24" disabled={disabled || busy}>
+          <Download />
           {busy ? "Exporting…" : "Export"}
-          {!busy && <ChevronDown className="h-3 w-3" />}
-        </Button>
+          {!busy && <ChevronDown data-icon="inline-end" />}
+        </BarButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuItem onSelect={() => void run("png")}>

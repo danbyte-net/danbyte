@@ -16,6 +16,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { GripVertical, Layers, Link2, Unlink } from "lucide-react"
 
 import { ColorBadge } from "@/components/cells/color-badge"
+import { BarMenuTrigger } from "@/components/map-toolbar"
 import { Button } from "@/components/ui/button"
 import { InfoTip } from "@/components/ui/info-tip"
 import {
@@ -108,9 +109,9 @@ export function LevelOrganiser({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 text-xs">
-          <Layers className="h-3.5 w-3.5" /> Levels
-        </Button>
+        <BarMenuTrigger>
+          <Layers /> Levels
+        </BarMenuTrigger>
       </PopoverTrigger>
       {/* Long role lists must scroll inside the popover, not overflow the
           viewport - cap to the available height. */}
@@ -146,7 +147,7 @@ export function LevelOrganiser({
                       {/* Between-row link: bonds this row to the one above, so
                           both sit on one level. */}
                       {i > 0 && (
-                        <div className="flex items-center gap-1.5 py-0.5 pl-[7px]">
+                        <div className="flex items-center gap-1.5 py-0.5 pl-0.5">
                           <BondButton
                             bonded={bonded}
                             tip={
@@ -182,16 +183,17 @@ export function LevelOrganiser({
           </DndContext>
         )}
         {order.length > 0 && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => {
               onChange([])
               onBonds([])
             }}
-            className="mt-2 w-full shrink-0 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground"
+            className="mt-1 shrink-0 self-start text-muted-foreground"
           >
             Reset levels
-          </button>
+          </Button>
         )}
       </PopoverContent>
     </Popover>
@@ -212,24 +214,16 @@ function BondButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          type="button"
+        <Button
+          variant={bonded ? "default" : "outline"}
+          size="icon-xs"
           onClick={onClick}
           aria-label={tip}
           aria-pressed={bonded}
-          className={cn(
-            "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
-            bonded
-              ? "border-primary bg-primary text-primary-foreground"
-              : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-          )}
+          className={cn(!bonded && "text-muted-foreground")}
         >
-          {bonded ? (
-            <Link2 className="h-2.5 w-2.5" />
-          ) : (
-            <Unlink className="h-2.5 w-2.5" />
-          )}
-        </button>
+          {bonded ? <Link2 /> : <Unlink />}
+        </Button>
       </TooltipTrigger>
       <TooltipContent side="right" variant="default">
         {tip}
@@ -276,8 +270,11 @@ function TierRow({
         bonded && "border-primary/40"
       )}
     >
+      {/* No tooltip: the popover opens with the focus here, and a tip
+          would pop up every time it does. */}
       <button
         type="button"
+        aria-label="Reorder"
         className="cursor-grab text-muted-foreground active:cursor-grabbing"
         {...attributes}
         {...listeners}
