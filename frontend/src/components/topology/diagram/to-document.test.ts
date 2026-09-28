@@ -548,3 +548,73 @@ describe("printLegend", () => {
     expect(rows.map((r) => r.label)).not.toContain("Color: cable")
   })
 })
+
+describe("a band of several layers in the file", () => {
+  it("carries the sub-rows the canvas draws, badges and all", () => {
+    // The fabric's roles with ids, as the graph sends them.
+    const withIds: TopologyGraph = {
+      ...cardGraph,
+      nodes: cardGraph.nodes.map((n) =>
+        n.data.role
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                role: { ...n.data.role, id: `role-${n.data.role.name}` },
+              },
+            }
+          : n
+      ),
+    }
+    const b = build({}, withIds)
+    const everywhere = { x: -1e5, y: -1e5, w: 2e5, h: 2e5 }
+    const doc = toDocument(
+      b.model,
+      { nodes: b.nodes, edges: b.edges },
+      [
+        {
+          id: "fab",
+          label: "Fabric",
+          kind: "band",
+          orient: "h",
+          color: null,
+          ...everywhere,
+          layout: "stack",
+          rule: { by: "role", ids: ["role-Spine", "role-Leaf"] },
+        },
+      ],
+      { meta: META, measure: approxMeasure }
+    )
+    const [band] = doc.bands
+    // Spine, then Leaf, then the cards of no layer it holds (no badge).
+    expect(band.layers!.map((l) => [l.label, l.fill ?? null])).toEqual([
+      ["Spine", "#6366f1"],
+      ["Leaf", "#0ea5e9"],
+      ["", null],
+    ])
+    const nodes = byId(doc)
+    const spines = doc.nodes.filter((n) => n.title.startsWith("spine"))
+    const top = Math.min(...spines.map((n) => n.y))
+    expect(band.layers![0].y).toBe(top)
+    expect(nodes.size).toBeGreaterThan(spines.length)
+    // One row: no sub-rows.
+    const flat = toDocument(
+      b.model,
+      { nodes: b.nodes, edges: b.edges },
+      [
+        {
+          id: "fab",
+          label: "Fabric",
+          kind: "band",
+          orient: "h",
+          color: null,
+          ...everywhere,
+          layout: "row",
+          rule: { by: "role", ids: ["role-Spine", "role-Leaf"] },
+        },
+      ],
+      { meta: META, measure: approxMeasure }
+    )
+    expect(flat.bands[0].layers).toBeUndefined()
+  })
+})

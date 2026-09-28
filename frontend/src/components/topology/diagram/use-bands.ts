@@ -20,6 +20,8 @@ import {
   ruleRow,
   rowsAt,
   sameGeometry,
+  setLayers,
+  setLayout,
   snapSide,
 } from "./bands"
 import type { ArrangeCard, BandBy, BandEdit, Region, RuleOf } from "./bands"
@@ -55,7 +57,8 @@ export interface BandsApi {
   addSide: () => void
   /** Restack the rows in this top-to-bottom order (the sidebar). */
   reorder: (ids: string[]) => void
-  /** The canvas's band edits that move cards: up/down, resize. */
+  /** The canvas's band edits that move cards: up/down, resize, a row's
+   * layers and layout. */
   edit: (e: CanvasBandEdit) => void
   /** The canvas's `onZonesChange` on the Diagram: side bands moved or
    * resized by hand snap to the rows' edges. */
@@ -130,6 +133,24 @@ export function useBands(opts: {
     const at = () => canvas.current?.center() ?? { x: 0, y: 0 }
     const id = () => `b${Date.now().toString(36)}`
     const hand = handDrawn(regions)
+    const info = new Map((nodes ?? []).map((n) => [n.id, n.data]))
+    /** Every card on the map with its role and type: who is in which row
+     * and on which of its sub-rows. */
+    const cards = (): ArrangeCard[] =>
+      Object.entries(boxes()).map(([nid, box]) => {
+        const d = info.get(nid)
+        return {
+          id: nid,
+          box,
+          role: d?.role
+            ? { id: d.role.id, name: d.role.name, color: d.role.color }
+            : null,
+          type:
+            d?.device_type_id || d?.device_type
+              ? { id: d.device_type_id, name: d.device_type }
+              : null,
+        }
+      })
     return {
       regions,
       handRows: hand.filter(isRow).length,
@@ -148,7 +169,9 @@ export function useBands(opts: {
           cards.push({
             id: n.id,
             box: b,
-            role: d.role ? { id: d.role.id, name: d.role.name } : null,
+            role: d.role
+              ? { id: d.role.id, name: d.role.name, color: d.role.color }
+              : null,
             type:
               d.device_type_id || d.device_type
                 ? { id: d.device_type_id, name: d.device_type }
@@ -190,6 +213,31 @@ export function useBands(opts: {
           apply(reorderRow(now, boxes(), e.id, e.dir))
           return
         }
+        if (e.type === "layers") {
+          apply(
+            setLayers({
+              regions: now,
+              cards: cards(),
+              levels,
+              id: e.id,
+              by: e.by,
+              ids: e.ids,
+            })
+          )
+          return
+        }
+        if (e.type === "layout") {
+          apply(
+            setLayout({
+              regions: now,
+              cards: cards(),
+              levels,
+              id: e.id,
+              layout: e.layout,
+            })
+          )
+          return
+        }
         const band = now.find((r) => r.id === e.id)
         if (band && isSide(band)) {
           // A side band carries nothing: resized, it snaps to the rows.
@@ -221,8 +269,8 @@ export function useBands(opts: {
         }
         setRegions(out)
       },
-      rowsAt: (p) => rowsAt(live())(p),
-      ruleRow: (card) => ruleRow(live())(card),
+      rowsAt: (p) => rowsAt(live(), cards())(p),
+      ruleRow: (card) => ruleRow(live(), cards())(card),
     }
   }, [regions, on, nodes, levels, direction, canvas, setRegions, setPositions])
 }

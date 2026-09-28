@@ -1,6 +1,6 @@
 import { baselineAt, fit, measureText } from "./measure"
 import type { Measure, Weight } from "./measure"
-import { CARD, ELBOW_RADIUS, LABEL, PILL } from "./theme"
+import { BAND, CARD, ELBOW_RADIUS, LABEL, PILL } from "./theme"
 import type {
   DiagramDocument,
   DiagramEndLabel,
@@ -408,6 +408,42 @@ export function labelCorners(b: LabelBlock): Pt[] {
     x: b.ox + (p.x - b.ox) * c - (p.y - b.oy) * s,
     y: b.oy + (p.x - b.ox) * s + (p.y - b.oy) * c,
   }))
+}
+
+// ── Bands ────────────────────────────────────────────────────────────────
+
+/** The rules between a stacked row's sub-rows, top to bottom: halfway
+ * between two that do not overlap. The canvas draws the same. */
+export function layerRules(
+  layers: readonly { y: number; h: number }[]
+): number[] {
+  const sorted = [...layers].sort((a, b) => a.y - b.y)
+  const out: number[] = []
+  for (let i = 1; i < sorted.length; i++) {
+    const above = sorted[i - 1].y + sorted[i - 1].h
+    if (above <= sorted[i].y) out.push((above + sorted[i].y) / 2)
+  }
+  return out
+}
+
+/** A sub-row's badge: its layer's name at the row's left, level with the
+ * middle of the sub-row's cards; cut to the row. */
+export function layerBadge(
+  band: Rect,
+  layer: { label: string; y: number; h: number },
+  measure: Measure = measureText
+): Rect & { text: string } {
+  const room = Math.max(0, band.w - 2 * BAND.SUB_EDGE - 2 * BAND.SUB_PAD)
+  const text = fit(layer.label, room, BAND.SUB_SIZE, BAND.SUB_WEIGHT, measure)
+  return {
+    text,
+    x: band.x + BAND.SUB_EDGE,
+    y: layer.y + layer.h / 2 - BAND.SUB_H / 2,
+    w:
+      Math.ceil(measure(text, BAND.SUB_SIZE, BAND.SUB_WEIGHT)) +
+      2 * BAND.SUB_PAD,
+    h: BAND.SUB_H,
+  }
 }
 
 // ── Cards ────────────────────────────────────────────────────────────────

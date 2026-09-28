@@ -26,8 +26,9 @@ export const DEVICE_IDS_MIME = "application/x-danbyte-device-ids"
 const MAX_DROP = 10_000
 
 /** The inside of a layer band a card can go in: below its title, within
- * its padding (top-left rectangle). */
-export type RowSlot = Rect
+ * its padding (top-left rectangle) - or, in a band of several layers, one
+ * layer's sub-row. `band` is the band's id. */
+export type RowSlot = Rect & { band?: string }
 
 /** The band row a point is in, as a slot; null outside every row
  * (`bands.ts` `rowsAt`). */
@@ -45,7 +46,7 @@ export interface PlaceOptions {
   /** Layer bands made by Arrange: the row a card's role or device type
    * belongs in (`bands.ts` `ruleRow`), by id. A card added next to its
    * neighbours goes there first, and so does one dropped outside every
-   * row. */
+   * row - or into its own row, where it takes its layer's sub-row. */
   ruleRow?: (id: string) => RowSlot | null
 }
 
@@ -221,7 +222,8 @@ function freeInRow(
  * A slot that would overlap a card already there moves to the nearest
  * free spot instead. Dropped in a band row, they go into the row
  * instead: side by side on the line under the pointer, clear of the
- * cards there. Returns each id's centre.
+ * cards there - in a band of several layers, on its layer's sub-row
+ * when the band holds its layer. Returns each id's centre.
  */
 export function dropPlacement(
   ids: readonly string[],
@@ -240,12 +242,17 @@ export function dropPlacement(
       x: at.x + (k % cols) * (size.w + gap),
       y: at.y + Math.floor(k / cols) * (size.h + gap),
     }
-    // Outside every row: into the row made for its role, under the drop.
-    const own = row ? null : (opts.ruleRow?.(id) ?? null)
-    const c =
-      (row && freeInRow(slot, row, size, gap, taken)) ??
-      (own && freeInRow(slotIn(own, slot.x), own, size, gap, taken)) ??
-      nearestFree(slot, size, gap, taken)
+    const own = opts.ruleRow?.(id) ?? null
+    let c: Pt | null = null
+    if (row) {
+      // In its own band: its layer's sub-row there, else the row it hit.
+      if (own && own.band !== undefined && own.band === row.band)
+        c = freeInRow(slot, own, size, gap, taken)
+      c ??= freeInRow(slot, row, size, gap, taken)
+    } else if (own)
+      // Outside every row: into the row made for its role, under the drop.
+      c = freeInRow(slotIn(own, slot.x), own, size, gap, taken)
+    c ??= nearestFree(slot, size, gap, taken)
     out[id] = centre(c)
     taken.add(boxAround({ x: out[id][0], y: out[id][1] }, size))
   })

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import { fabric } from "./__fixtures__/fabric"
 import { fabricSimple } from "./__fixtures__/fabric-simple"
+import { stacked } from "./__fixtures__/stacked"
 import { drawioPointAt, toDrawio, toDrawioSvg } from "./drawio"
 import { linkLabels, NOTE, noteLayout, polylineLength } from "./geometry"
 import type { LabelBlock } from "./geometry"
@@ -249,6 +250,49 @@ describe("toDrawio", () => {
     // Background shapes come first, so rows never hide under them.
     const order = [...page.keys()]
     expect(order.indexOf("band-wan")).toBeLessThan(order.indexOf("band-spine"))
+  })
+
+  it("keeps a band of several layers one swimlane, its sub-rows inside", async () => {
+    const xml = toDrawio([stacked])
+    expect(toDrawio([clone(stacked)])).toBe(xml)
+    await expect(xml).toMatchFileSnapshot("./__golden__/stacked.drawio")
+    const page = pages(xml)[0]
+    const fabric = stacked.bands.find((b) => b.id === "band-fabric")!
+    const [access, server] = fabric.layers!
+    expect(page.get("band-fabric")!.style.swimlane).toBe("")
+    // Every card in the one swimlane; no swimlane inside it.
+    for (const id of ["access-01", "access-02", "srv-01", "srv-02"])
+      expect(page.get(`dev:${id}`)?.parent).toBe("band-fabric")
+    const inside = [...page.values()].filter((c) => c.parent === "band-fabric")
+    expect(inside.some((c) => "swimlane" in c.style)).toBe(false)
+    // Each layer's badge: a text cell of its role's colour at the left,
+    // level with its sub-row, before the cards.
+    const badges = inside.filter((c) => c.id.includes("-layer-"))
+    expect(badges.map((c) => [c.value, c.style.fillColor])).toEqual([
+      ["Access", access.fill],
+      ["Server", server.fill],
+    ])
+    const g = geo(badges[0])
+    expect(num(g, "x")).toBe(BAND.SUB_EDGE)
+    expect(num(g, "y") + num(g, "height") / 2).toBeCloseTo(
+      access.y + access.h / 2 - fabric.y
+    )
+    expect(badges[0].style).toMatchObject({
+      rounded: "1",
+      fontSize: String(BAND.SUB_SIZE),
+    })
+    // The rule between the sub-rows: a dashed line cell.
+    const rules = inside.filter((c) => c.id.includes("-rule-"))
+    expect(rules).toHaveLength(1)
+    expect(rules[0].style).toMatchObject({ line: "", dashed: "1" })
+    const rg = geo(rules[0])
+    expect(num(rg, "y") + 0.5).toBe(
+      (access.y + access.h + server.y) / 2 - fabric.y
+    )
+    const order = [...page.keys()]
+    expect(order.indexOf(badges[1].id)).toBeLessThan(
+      order.indexOf("dev:access-01")
+    )
   })
 
   it("nests a zone in the row that holds it", () => {

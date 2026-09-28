@@ -178,6 +178,169 @@ describe("BandNode", () => {
   })
 })
 
+describe("a band of several layers", () => {
+  const ACCESS = { id: "r-access", name: "Access", color: "#0ea5e9" }
+  const SERVER = { id: "r-server", name: "Server", color: "#10b981" }
+
+  beforeEach(() => {
+    // cmdk scrolls the active option into view.
+    Element.prototype.scrollIntoView ??= () => undefined
+  })
+
+  const Card = () => <div />
+  const cardNode = (
+    id: string,
+    x: number,
+    y: number,
+    role: typeof ACCESS | null,
+    type?: { id: string; name: string }
+  ): Node => ({
+    id,
+    type: "card",
+    position: { x, y },
+    width: 120,
+    height: 60,
+    data: {
+      device_id: id,
+      role,
+      ...(type ? { device_type_id: type.id, device_type: type.name } : {}),
+    },
+  })
+
+  /** A band and cards on a real canvas: the band reads them from the
+   * flow's store. */
+  async function onCanvas(data: Partial<BandData>, extra: Node[] = []) {
+    const band: Node = {
+      id: "band:fab",
+      type: "band",
+      position: { x: 0, y: 0 },
+      width: 800,
+      height: 400,
+      selected: true,
+      data: { label: "Data Center fabric", color: null, orient: "h", ...data },
+    }
+    const out = render(
+      <div style={{ width: 900, height: 700 }}>
+        <ReactFlowProvider>
+          <ReactFlow
+            nodes={[
+              band,
+              ...extra,
+              cardNode("a1", 100, 80, ACCESS, { id: "t-1", name: "N9K" }),
+              cardNode("a2", 400, 80, ACCESS),
+              cardNode("s1", 100, 220, SERVER),
+              cardNode("s2", 400, 220, SERVER),
+            ]}
+            nodeTypes={{ band: BandNode, card: Card }}
+          />
+        </ReactFlowProvider>
+      </div>
+    )
+    await settle()
+    return out
+  }
+
+  it("labels each sub-row with its role's badge, a rule between them", async () => {
+    const { container } = await onCanvas({
+      layout: "stack",
+      rule: { by: "role", ids: [ACCESS.id, SERVER.id] },
+    })
+    const labels = [
+      ...container.querySelectorAll<HTMLElement>(
+        ".react-flow__edgelabel-renderer .band-sublabel"
+      ),
+    ]
+    expect(labels.map((l) => l.textContent)).toEqual(["Access", "Server"])
+    // At the band's left, level with the middle of the sub-row's cards.
+    expect(labels[0].style.transform).toBe(
+      `translate(0, -50%) translate(${BAND.SUB_EDGE}px, 110px)`
+    )
+    expect(labels[1].style.transform).toContain("250px")
+    // The role's badge, never a dot.
+    const badge = labels[0].firstElementChild as HTMLElement
+    expect(badge.style.backgroundColor).toBe("rgb(14, 165, 233)")
+    expect(container.querySelector(".band-sublabel .rounded-full")).toBeNull()
+    // One rule, halfway between the sub-rows.
+    const rules = container.querySelectorAll<HTMLElement>(".band-divider")
+    expect(rules).toHaveLength(1)
+    expect(rules[0].style.top).toBe("180px")
+  })
+
+  it("draws no sub-rows in one row", async () => {
+    const { container } = await onCanvas({
+      layout: "row",
+      rule: { by: "role", ids: [ACCESS.id, SERVER.id] },
+    })
+    expect(container.querySelector(".band-sublabel")).toBeNull()
+    expect(container.querySelector(".band-divider")).toBeNull()
+  })
+
+  it("switches between sub-rows and one row", async () => {
+    const onLayout = vi.fn()
+    await onCanvas({
+      layout: "stack",
+      rule: { by: "role", ids: [ACCESS.id, SERVER.id] },
+      onLayout,
+    })
+    const sub = screen.getByRole("button", { name: "Sub-rows" })
+    const one = screen.getByRole("button", { name: "One row" })
+    expect(sub.getAttribute("aria-pressed")).toBe("true")
+    expect(one.getAttribute("aria-pressed")).toBe("false")
+    expect(one.getAttribute("data-tip")).toBe("One row")
+    fireEvent.click(one)
+    expect(onLayout).toHaveBeenCalledWith("row")
+  })
+
+  it("offers the layout only with several layers", async () => {
+    await onCanvas({ rule: { by: "role", ids: [ACCESS.id] } })
+    expect(screen.queryByRole("button", { name: "One row" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Layers…" })).toBeTruthy()
+  })
+
+  it("picks its layers from the roles and types on the map", async () => {
+    const onLayers = vi.fn()
+    const other: Node = {
+      id: "band:srv",
+      type: "band",
+      position: { x: 0, y: 500 },
+      width: 800,
+      height: 160,
+      data: {
+        label: "Servers",
+        color: null,
+        orient: "h",
+        rule: { by: "role", ids: [SERVER.id] },
+      },
+    }
+    await onCanvas({ rule: { by: "role", ids: [ACCESS.id] }, onLayers }, [
+      other,
+    ])
+    fireEvent.click(screen.getByRole("button", { name: "Layers…" }))
+    await settle()
+    const options = screen.getAllByRole("option")
+    expect(options.map((o) => o.textContent)).toEqual([
+      "Access",
+      // Held by another band: named beside it.
+      "ServerServers",
+    ])
+    expect(options[0].getAttribute("data-checked")).toBe("true")
+    // Each role as its badge.
+    const badge = options[1].querySelector("[data-slot=badge]") as HTMLElement
+    expect(badge.textContent).toBe("Server")
+    fireEvent.click(options[1])
+    expect(onLayers).toHaveBeenLastCalledWith("role", [ACCESS.id, SERVER.id])
+    fireEvent.click(options[0])
+    expect(onLayers).toHaveBeenLastCalledWith("role", [])
+    // Device types instead: a pick starts the band's layers afresh.
+    fireEvent.click(screen.getByRole("button", { name: "Types" }))
+    await settle()
+    const types = screen.getAllByRole("option")
+    expect(types.map((o) => o.textContent)).toEqual(["N9K"])
+    fireEvent.click(types[0])
+    expect(onLayers).toHaveBeenLastCalledWith("device_type", ["t-1"])
+  })
+})
+
 describe("bands on the canvas", () => {
   const band = (id: string, orient: "h" | "v", x: number): Zone => ({
     id,

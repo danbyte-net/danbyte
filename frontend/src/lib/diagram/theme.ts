@@ -185,6 +185,16 @@ export const BAND = {
   SIDE_SIZE: 20,
   LABEL_WEIGHT: 600 as Weight,
   RADIUS: 8,
+  /** A stacked row's sub-row badge - the canvas's ColorBadge (`BAND.SUB_*`
+   * in bands.ts): height, text, the room either side of the text (with
+   * the badge's border), corner, and its distance from the row's left
+   * edge (the rule between sub-rows keeps it from both edges). */
+  SUB_H: 20,
+  SUB_SIZE: 12,
+  SUB_WEIGHT: 500 as Weight,
+  SUB_PAD: 9,
+  SUB_RADIUS: 5,
+  SUB_EDGE: 12,
 } as const
 
 /** Default line looks per link kind, matching `edgeLook` in

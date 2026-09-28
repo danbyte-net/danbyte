@@ -38,7 +38,8 @@ import type {
 import type { LegendItem } from "../legend"
 import { leadStart, linkEnds } from "./anchors"
 import type { AnchorLink, Nub } from "./anchors"
-import { BAND, chipWidth, paintOrder, titleSpot } from "./bands"
+import { BAND, chipWidth, paintOrder, stackedSubRows, titleSpot } from "./bands"
+import type { ArrangeCard } from "./bands"
 import { distinctCables, relinkDiagram } from "./build-diagram"
 import type { DiagramModel, PhotoModel } from "./build-diagram"
 import { cardContent } from "./card-fields"
@@ -92,7 +93,7 @@ export type LiveEdge = Pick<
 /** A zone or band box behind the cards (`zones_by_style.diagram`). */
 export type Region = Pick<
   TopologyViewZone,
-  "id" | "label" | "x" | "y" | "w" | "h" | "kind" | "orient"
+  "id" | "label" | "x" | "y" | "w" | "h" | "kind" | "orient" | "rule" | "layout"
 > & { color?: string | null }
 
 /** Monitoring state per device id (the canvas's `monitor` prop). */
@@ -447,13 +448,20 @@ export function routeLink(
 /** Zones and bands as document bands, back to front: side bands, then
  * rows, then zones, as the canvas stacks them. A row's title goes where
  * the canvas puts it (`titleSpot`): clear of the spans `titles` holds for
- * its strip. */
+ * its strip. A stacked row of several layers carries its sub-rows, read
+ * off `cards` (the cards drawn, with their roles and types) as the canvas
+ * reads them. */
 export function regionBands(
   regions: readonly Region[],
   area?: Rect | null,
   titles?: ReadonlyMap<string, readonly (readonly [number, number])[]>,
-  measure: Measure = measureText
+  measure: Measure = measureText,
+  cards: readonly ArrangeCard[] = []
 ): DiagramBand[] {
+  const subs = stackedSubRows(
+    regions.map((z) => ({ ...z, color: z.color ?? null })),
+    cards
+  )
   return paintOrder(regions)
     .filter((z) => !area || overlaps(area, z))
     .map((z) => {
@@ -470,6 +478,7 @@ export function regionBands(
       const titleX = busy
         ? Math.round(titleSpot(z, chipWidth(text, z.w), busy))
         : undefined
+      const layers = subs.get(z.id)
       return {
         id: `zone:${z.id}`,
         kind,
@@ -482,6 +491,16 @@ export function regionBands(
         fill: hex6(z.color),
         ...(titleX !== undefined && titleX !== Math.round(z.x + z.w / 2)
           ? { titleX }
+          : {}),
+        ...(layers?.length
+          ? {
+              layers: layers.map((s) => ({
+                label: s.label,
+                ...(s.color ? { fill: hex6(s.color) } : {}),
+                y: s.y,
+                h: s.h,
+              })),
+            }
           : {}),
       }
     })
@@ -845,6 +864,27 @@ export function toDocument(
     )
   }
 
+  // The devices drawn, as a stacked row sorts them onto its sub-rows.
+  const layerCards: ArrangeCard[] = []
+  for (const n of shownNodes) {
+    const r = rects.get(n.id)
+    const d = (n.data ?? {}) as Pick<
+      TopoNode["data"],
+      "device_id" | "role" | "device_type_id" | "device_type"
+    >
+    if (!r || !d.device_id) continue
+    layerCards.push({
+      id: n.id,
+      box: r,
+      role: d.role
+        ? { id: d.role.id, name: d.role.name, color: d.role.color }
+        : null,
+      type: d.device_type_id
+        ? { id: d.device_type_id, name: d.device_type }
+        : null,
+    })
+  }
+
   // Breakout junctions: a dot in their cable's colour, where their trunk
   // meets their legs.
   const junctions: DiagramJunction[] = []
@@ -1028,7 +1068,7 @@ export function toDocument(
     })
   }
 
-  const bands = regionBands(regions, area, titles, measure)
+  const bands = regionBands(regions, area, titles, measure, layerCards)
   const notes = viewNotes(opts.notes, area)
   const body = {
     bands,

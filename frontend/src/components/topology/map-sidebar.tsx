@@ -14,7 +14,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { EyeOff, GripVertical, Search } from "lucide-react"
+import { EyeOff, GripVertical, Layers, Search } from "lucide-react"
 
 import type {
   BulkStatusEntry,
@@ -23,6 +23,11 @@ import type {
   TopologyGraph,
 } from "@/lib/api"
 import { Input } from "@/components/ui/input"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import {
   CheckChip,
@@ -329,6 +334,19 @@ export function TopologyObjectsSidebar({
             {z.label ||
               (isSide(z) ? "Side band" : z.kind === "band" ? "Band" : "Zone")}
           </span>
+          {isRow(z) && (z.rule?.ids.length ?? 0) > 1 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="num ml-auto flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                  <Layers className="size-3" />
+                  {z.rule!.ids.length}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="left" variant="panel">
+                {z.rule!.ids.length} layers
+              </TooltipContent>
+            </Tooltip>
+          )}
         </button>
       </div>
     )

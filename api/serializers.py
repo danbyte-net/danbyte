@@ -3864,6 +3864,8 @@ class TopologyViewSerializer(NumIdModelSerializer):
     BAND_ORIENTS = ("h", "v")
     BAND_RULE_BY = ("role", "device_type")
     MAX_BAND_RULE_IDS = 100
+    #: A row of several layers: a sub-row per layer, or one mixed row.
+    BAND_LAYOUTS = ("stack", "row")
     DIAGRAM_MODES = ("simple", "detailed")
     DIAGRAM_FACES = ("card", "photo")
     #: Where cables meet a photo: on its ports, or spread along its edge.
@@ -4004,6 +4006,9 @@ class TopologyViewSerializer(NumIdModelSerializer):
             self._choice(
                 region.get("orient"), self.BAND_ORIENTS, f"{where}.orient"
             )
+            self._choice(
+                region.get("layout"), self.BAND_LAYOUTS, f"{where}.layout"
+            )
             # A swatch, or neutral. An off-palette hex - which older zones
             # could carry, and which the map already draws as the first
             # swatch - saves as neutral rather than refusing the whole view.
@@ -4035,6 +4040,8 @@ class TopologyViewSerializer(NumIdModelSerializer):
                     f"{where}.rule.ids must be a list of at most "
                     f"{self.MAX_BAND_RULE_IDS} ids"
                 )
+            # A band's layers, in the order its sub-rows stack: each once.
+            rule["ids"] = list(dict.fromkeys(ids))
 
     def _diagram_display(self, display):
         """``filters.diagram``: the Diagram tab's display settings."""

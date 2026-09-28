@@ -2,8 +2,9 @@
 import { describe, expect, it } from "vitest"
 
 import { fabric } from "./__fixtures__/fabric"
+import { stacked } from "./__fixtures__/stacked"
 import { toSvg } from "./svg"
-import { bandPaint, PRINT } from "./theme"
+import { BAND, bandPaint, PRINT } from "./theme"
 import type { DiagramDocument } from "./types"
 
 const clone = (d: DiagramDocument): DiagramDocument => structuredClone(d)
@@ -131,6 +132,58 @@ describe("toSvg", () => {
       ...doc.getElementById("bands")!.getElementsByTagName("text"),
     ].find((t) => t.textContent === "WAN")!
     expect(wan.getAttribute("transform")).toMatch(/^rotate\(-90 /)
+  })
+
+  it("draws a band of several layers with its sub-rows", async () => {
+    const out = toSvg(stacked)
+    expect(toSvg(structuredClone(stacked))).toBe(out)
+    await expect(out).toMatchFileSnapshot("./__golden__/stacked.svg")
+    const doc = parse(out)
+    const fabric = stacked.bands.find((b) => b.id === "band-fabric")!
+    const [access, server] = fabric.layers!
+    // Each layer's badge at the row's left, on its role's colour, with
+    // the title, over the lines and under the cards.
+    const titles = doc.getElementById("band-titles")!
+    const badges = [...titles.getElementsByTagName("rect")].filter(
+      (r) => r.getAttribute("rx") === String(BAND.SUB_RADIUS)
+    )
+    expect(badges.map((r) => r.getAttribute("fill"))).toEqual([
+      access.fill,
+      server.fill,
+    ])
+    expect(Number(badges[0].getAttribute("x"))).toBe(fabric.x + BAND.SUB_EDGE)
+    expect(Number(badges[0].getAttribute("height"))).toBe(BAND.SUB_H)
+    expect(Number(badges[0].getAttribute("y")) + BAND.SUB_H / 2).toBeCloseTo(
+      access.y + access.h / 2
+    )
+    const names = [...titles.getElementsByTagName("text")].map(
+      (t) => t.textContent
+    )
+    expect(names).toEqual(["Core", "Data Center fabric", "Access", "Server"])
+    // Never a dot beside a name.
+    expect(doc.getElementsByTagName("circle")).toHaveLength(0)
+    // One dashed rule, halfway between the sub-rows, behind the lines.
+    const rules = [
+      ...doc.getElementById("bands")!.getElementsByTagName("path"),
+    ].filter((p) => p.getAttribute("stroke-dasharray"))
+    expect(rules).toHaveLength(1)
+    const y = (access.y + access.h + server.y) / 2
+    expect(rules[0].getAttribute("d")).toBe(
+      `M ${BAND.SUB_EDGE},${y} H ${fabric.w - BAND.SUB_EDGE}`
+    )
+    expect(rules[0].getAttribute("stroke")).toBe(bandPaint(fabric).edge)
+  })
+
+  it("draws a device type's badge on the neutral wash", () => {
+    const doc = structuredClone(stacked)
+    const fabric = doc.bands[1]
+    fabric.layers = fabric.layers!.map((l) => ({ ...l, fill: undefined }))
+    const titles = parse(toSvg(doc)).getElementById("band-titles")!
+    const badge = [...titles.getElementsByTagName("rect")].find(
+      (r) => r.getAttribute("rx") === String(BAND.SUB_RADIUS)
+    )!
+    expect(badge.getAttribute("fill")).toBe(PRINT.wash)
+    expect(badge.getAttribute("stroke")).toBeNull()
   })
 
   it("escapes names and labels", () => {

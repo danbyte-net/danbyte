@@ -502,6 +502,33 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(state["notes"][0]["size"], "l")
         self.assertIs(state["notes"][0]["outline"], True)
 
+    def test_a_band_of_several_layers_round_trips(self):
+        a, b = self.A, self.B
+        many = [f"0c0c0c0c-0000-4000-8000-{i:012d}" for i in range(100)]
+        state = {"zones_by_style": {"diagram": [
+            {"id": "fab", "label": "Data Center fabric", "x": 0, "y": 0,
+             "w": 900, "h": 400, "color": None, "kind": "band", "orient": "h",
+             "layout": "stack", "rule": {"by": "role", "ids": [b, a, b]}},
+            {"id": "mix", "label": "Mixed", "x": 0, "y": 450, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "layout": "row", "rule": {"by": "device_type", "ids": many}},
+            # Saved before layouts: still fine.
+            {"id": "old", "label": "Spine + Border", "x": 0, "y": 700,
+             "w": 900, "h": 200, "color": None, "kind": "band",
+             "orient": "h", "rule": {"by": "role", "ids": [a, b]}},
+        ]}}
+        resp = self._save(state)
+        self.assertEqual(resp.status_code, 201, resp.content)
+        zones = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]["zones_by_style"]["diagram"]
+        self.assertEqual(zones[0]["layout"], "stack")
+        # Each layer once, in the order its sub-rows stack.
+        self.assertEqual(zones[0]["rule"], {"by": "role", "ids": [b, a]})
+        self.assertEqual(zones[1]["layout"], "row")
+        self.assertEqual(len(zones[1]["rule"]["ids"]), 100)
+        self.assertNotIn("layout", zones[2])
+
     def test_off_palette_diagram_colour_saves_as_neutral(self):
         zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
         resp = self._save({"zones_by_style": {"diagram": [
@@ -531,6 +558,8 @@ class DiagramViewStateTests(_Base):
             {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "site", "ids": []}}]}},
             {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "role", "ids": ["x"]}}]}},
             {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "role", "ids": [a] * 101}}]}},
+            {"zones_by_style": {"diagram": [{**zone, "layout": "grid"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "layout": ["stack"]}]}},
             {"filters": {"diagram": "detailed"}},
             {"filters": {"diagram": {"mode": "photo"}}},
             {"filters": {"diagram": {"face": "rear"}}},

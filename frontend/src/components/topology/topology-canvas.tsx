@@ -76,7 +76,7 @@ import {
   membersOf,
   paintOrder,
 } from "./diagram/bands"
-import type { BandRow } from "./diagram/bands"
+import type { BandBy, BandLayout, BandRow } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { lagBundleLabel, sharedLag } from "./lag-bundles"
@@ -163,6 +163,8 @@ const isOverlayNode = (n: Node) => isRegionNode(n) || n.type === "note"
 export type CanvasBandEdit =
   | { type: "move"; id: string; dir: -1 | 1 }
   | { type: "resize"; id: string; rect: Rect }
+  | { type: "layers"; id: string; by: BandBy; ids: string[] }
+  | { type: "layout"; id: string; layout: BandLayout }
 
 interface ZoneCallbacks {
   onRename: (id: string, label: string) => void
@@ -171,6 +173,8 @@ interface ZoneCallbacks {
   onResizeEnd: () => void
   onMove: (id: string, dir: -1 | 1) => void
   onBandResize: (id: string, rect: Rect) => void
+  /** Row edits that move cards: layers, layout. */
+  onBandEdit: (edit: CanvasBandEdit) => void
 }
 
 function zoneToNode(
@@ -182,6 +186,8 @@ function zoneToNode(
     const busy = titles.get(z.id)
     const data: BandData = {
       ...(busy ? { busy } : {}),
+      ...(z.rule ? { rule: z.rule } : {}),
+      ...(z.layout ? { layout: z.layout } : {}),
       label: z.label,
       color: z.color || null,
       orient: z.orient === "v" ? "v" : "h",
@@ -190,6 +196,9 @@ function zoneToNode(
       onDelete: () => cb.onDelete(z.id),
       onMove: (dir) => cb.onMove(z.id, dir),
       onResizeEnd: (rect) => cb.onBandResize(z.id, rect),
+      onLayers: (by, ids) =>
+        cb.onBandEdit({ type: "layers", id: z.id, by, ids }),
+      onLayout: (layout) => cb.onBandEdit({ type: "layout", id: z.id, layout }),
     }
     return {
       id: `band:${z.id}`,
@@ -1654,6 +1663,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           onBandEditRef.current({ type: "resize", id, rect })
         else emitZonesRef.current()
       },
+      onBandEdit: (edit) => onBandEditRef.current?.(edit),
     }
   }, [])
   const zoneNodes = useRef<Node[]>([])
@@ -1666,7 +1676,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const zoneSig = (zones ?? [])
     .map(
       (z) =>
-        `${z.id}:${z.kind}:${z.orient}:${z.label}:${z.color}:${z.x}:${z.y}:${z.w}:${z.h}`
+        `${z.id}:${z.kind}:${z.orient}:${z.label}:${z.color}:${z.x}:${z.y}:${z.w}:${z.h}:${z.layout}:${z.rule?.by}:${z.rule?.ids.join(",")}`
     )
     .join("|")
 

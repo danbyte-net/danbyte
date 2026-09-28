@@ -167,6 +167,22 @@ export interface DiagramBand extends Rect {
   /** A row: where its title chip is centred, when not the middle - moved
    * along its strip clear of the lines and labels crossing it. */
   titleX?: number
+  /** A row holding several layers, stacked: its sub-rows, top to bottom,
+   * each labelled with its layer's badge at the row's left. */
+  layers?: DiagramBandLayer[]
+}
+
+/** A sub-row of a stacked row band: where one layer's cards stand. */
+export interface DiagramBandLayer {
+  /** The role's or device type's name; empty for the cards of no layer
+   * the row holds, which get no badge. */
+  label: string
+  /** A role's colour: the badge's fill. Absent: a device type, drawn on
+   * the neutral wash. */
+  fill?: string | null
+  /** Its cards span this, top to bottom. */
+  y: number
+  h: number
 }
 
 export type NoteIcon = "cloud" | "globe" | "building"

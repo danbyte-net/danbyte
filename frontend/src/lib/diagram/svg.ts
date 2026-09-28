@@ -5,6 +5,8 @@ import {
   cardText,
   fmt,
   labelCorners,
+  layerBadge,
+  layerRules,
   linkLabels,
   linkPath,
   noteLayout,
@@ -175,6 +177,16 @@ function bandSvg(b: DiagramBand, measure: Measure): string {
       })
     )
   }
+  // A stacked row: a faint rule between its sub-rows.
+  for (const y of layerRules(b.layers ?? []))
+    out.push(
+      el("path", {
+        d: `M ${fmt(b.x + BAND.SUB_EDGE)},${fmt(y)} H ${fmt(b.x + b.w - BAND.SUB_EDGE)}`,
+        stroke: p.edge,
+        "stroke-width": 1,
+        "stroke-dasharray": "4 4",
+      })
+    )
   out.push(
     el("rect", {
       ...frame,
@@ -184,6 +196,46 @@ function bandSvg(b: DiagramBand, measure: Measure): string {
     })
   )
   return `<g>${out.join("")}</g>`
+}
+
+/** A stacked row's sub-row badges: each layer's name on its role's
+ * colour (a device type on the neutral wash), at the row's left - the
+ * canvas's ColorBadge, with a role's darker edge as its cards have. */
+function layerBadgesSvg(b: DiagramBand, measure: Measure): string {
+  return (b.layers ?? [])
+    .filter((l) => l.label)
+    .map((l) => {
+      const r = layerBadge(b, l, measure)
+      const fill = col(l.fill, PRINT.wash)
+      const ink = l.fill
+        ? col(hex6(readableText(fill)), PRINT.text)
+        : PRINT.body
+      return (
+        el("rect", {
+          x: r.x,
+          y: r.y,
+          width: r.w,
+          height: r.h,
+          rx: BAND.SUB_RADIUS,
+          fill,
+          ...(l.fill
+            ? {
+                stroke: mix("#000000", fill, CARD.EDGE_DARKEN),
+                "stroke-width": 1,
+              }
+            : {}),
+        }) +
+        text(r.text, {
+          x: r.x + r.w / 2,
+          y: baselineAt(r.y, BAND.SUB_SIZE, r.h),
+          "text-anchor": "middle",
+          "font-size": BAND.SUB_SIZE,
+          "font-weight": BAND.SUB_WEIGHT,
+          fill: ink,
+        })
+      )
+    })
+    .join("")
 }
 
 /** A row's title in the strip across its top - centred, or where the plan
@@ -827,7 +879,8 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
   const titles = doc.bands.filter((k) => k.kind === "row")
   if (titles.length) {
     out.push(`</g><g id="band-titles">`)
-    for (const band of titles) out.push(bandTitleSvg(band, measure))
+    for (const band of titles)
+      out.push(bandTitleSvg(band, measure) + layerBadgesSvg(band, measure))
   }
   out.push(`</g><g id="nodes">`)
   for (const n of doc.nodes)

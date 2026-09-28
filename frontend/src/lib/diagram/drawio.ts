@@ -1,9 +1,12 @@
+import { readableText } from "@/lib/color"
 import { htmlEscape, xmlEscape } from "@/lib/xml"
 
 import {
   cardText,
   documentBounds,
   fmt,
+  layerBadge,
+  layerRules,
   linkLabels,
   noteLayout,
   NOTE,
@@ -64,9 +67,11 @@ import type {
 // - Lines are written before the cards on the page's layer, so they pass
 //   under cards as on the screen.
 // - Row bands are swimlanes holding the cards whose centre they contain,
-//   their title centred across the top, and zones are containers too. Side
-//   bands are background shapes with a turned label (a card has one
-//   parent). LLDP neighbours and BGP sessions get layers of their own.
+//   their title centred across the top, and zones are containers too. A
+//   row of several layers, stacked, is still one swimlane: its sub-row
+//   badges and the rules between them are child cells. Side bands are
+//   background shapes with a turned label (a card has one parent). LLDP
+//   neighbours and BGP sessions get layers of their own.
 // - An end label's gap is the colour under it: the page, or its band.
 // - Photo nodes are cards by default. With `photos`, a photo inlined as a
 //   `data:` URI is an image cell with its name as a label underneath, a
@@ -747,9 +752,81 @@ function page(
     for (const [i, nub] of (n.nubs ?? []).entries()) nubCell(n, i, nub, id, n)
   }
 
+  /** A stacked row's sub-rows: the rules between them and each layer's
+   * badge, child cells in the row's frame. */
+  function layerCells(b: DiagramBand, id: string) {
+    if (!b.layers?.length) return
+    const p = bandPaint(b)
+    for (const [i, y] of layerRules(b.layers).entries())
+      out.push(
+        `<mxCell${attrs({
+          id: take(`${id}-rule-${i}`),
+          value: "",
+          style: style(["line"], {
+            strokeColor: p.edge,
+            strokeWidth: 1,
+            dashed: 1,
+            dashPattern: "4 4",
+            html: 1,
+            movable: 0,
+            resizable: 0,
+            rotatable: 0,
+          }),
+          vertex: "1",
+          connectable: "0",
+          parent: id,
+        })}>${geometry(
+          rel(
+            {
+              x: b.x + BAND.SUB_EDGE,
+              y: y - 0.5,
+              w: b.w - 2 * BAND.SUB_EDGE,
+              h: 1,
+            },
+            b
+          )
+        )}</mxCell>`
+      )
+    for (const [i, l] of b.layers.entries()) {
+      if (!l.label) continue
+      const r = layerBadge(b, l, measure)
+      const fill = hex6(l.fill) ?? PRINT.wash
+      out.push(
+        `<mxCell${attrs({
+          id: take(`${id}-layer-${i}`),
+          value: h(r.text),
+          style: style([], {
+            rounded: 1,
+            absoluteArcSize: 1,
+            arcSize: 2 * BAND.SUB_RADIUS,
+            html: 1,
+            whiteSpace: "nowrap",
+            fillColor: fill,
+            strokeColor: l.fill
+              ? mix("#000000", fill, CARD.EDGE_DARKEN)
+              : "none",
+            fontColor: l.fill
+              ? (hex6(readableText(fill)) ?? PRINT.text)
+              : PRINT.body,
+            fontFamily: FONT,
+            fontSize: BAND.SUB_SIZE,
+            spacing: 0,
+            movable: 0,
+            resizable: 0,
+            rotatable: 0,
+          }),
+          vertex: "1",
+          connectable: "0",
+          parent: id,
+        })}>${geometry(rel(r, b))}</mxCell>`
+      )
+    }
+  }
+
   function container(c: Cont, parent: DiagramBand | null, pid: string) {
     band(c.b, parent, pid)
     const id = bandIds.get(c.b) ?? ""
+    layerCells(c.b, id)
     for (const d of conts) if (contParent.get(d) === c) container(d, c.b, id)
     for (const n of doc.nodes) if (nodeParent.get(n) === c) node(n, c.b, id)
   }

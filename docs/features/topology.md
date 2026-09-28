@@ -714,6 +714,40 @@ were made from (as the menu entry above) instead of throwing the cards into
 a fresh layout across them - rows hold their cards. With only bands drawn
 by hand, Re-layout is off: clear the bands first.
 
+**Several layers in one band.** A band can hold more than one role (or
+device type): "Data Center fabric" holding Access and Server, under one
+title. Select a band and pick its layers with **Layers…** in the toolbar
+above it: the roles on the map, each as its badge, or - on the
+*Types* tab - the device types. A tick takes effect at once and is one undo
+step:
+
+- **A layer lives in one band.** Tick a role another band holds and it
+  moves here with its cards (the list names that band beside the role,
+  unless the band is named after it). Cards of that role outside every band
+  come in too. A band left
+  holding nothing is a band drawn by hand, its cards where they were.
+- **Sub-rows or one row.** A band that holds several layers for the first
+  time is stacked: each layer's cards on a **sub-row** of their own, in the
+  [Levels](#levels-role-tiers) order (else the order you ticked them), the
+  layer's badge at the left of its sub-row and a faint dashed rule between
+  sub-rows. **One row** mixes every layer's cards in one row instead;
+  **Sub-rows** stacks them again. Both buttons sit above the band once it
+  holds two layers. Either way the band is laid out again where it stands,
+  and the bands under it move up or down with their cards.
+- **Arrange keeps it.** A band whose layers you chose keeps them, with its
+  name, tint and layout, when **Arrange ▸ Bands by role** (or *by type*)
+  runs again - its layers' cards go back into it, stacked or mixed as you
+  left it. Roles in no such band get bands of their own as before. A band a
+  Levels bond made ("Spine + Border") is still the Levels' to change.
+- **A name made of its layers follows them** ("Access" becomes "Access +
+  Server"); a name you gave it stays.
+- **New devices find their sub-row.** A device added next to what it is
+  cabled to, dropped outside every band, or dropped into its own band goes
+  onto its layer's sub-row, beside the cards there; a layer with no card in
+  the band yet goes between the sub-rows either side of it.
+
+The sidebar shows a band's layer count beside its name.
+
 **Bands by hand.** **Add ▸ Band** puts a new band under the stack, as wide
 as it (or across the cards, on a diagram with none). **Add ▸ Side band** puts
 a tall one to the right of the rows and of any side bands already there,
@@ -1170,7 +1204,8 @@ every elbow in its lane; the same line types, Cyclical arcs and each link's
 own line (curves follow draw.io's curved rule, so the draw.io file
 matches); a breakout's split points; the subnet and count chips where the
 map shows them (a chip the map only shows on hover is left out); bands,
-titled as on the canvas, and zones; and the [notes](#notes), over
+titled as on the canvas - a band of several layers with its sub-row badges
+and the rules between them - and zones; and the [notes](#notes), over
 everything. The monitoring pill is
 the one on screen when the file is made. Selection, hover, search dimming
 and hidden devices or link families never reach a file.
@@ -1207,7 +1242,10 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   (`danbyte_cable`, under *Edit Data*) and link back to the cable.
 - **Bands:** a row band becomes a swimlane with its title across the top -
   where the canvas put it, clear of the lines - that holds its cards (the
-  ones whose centre is inside it) and carries them when you drag it. Zones
+  ones whose centre is inside it) and carries them when you drag it. A band
+  of several layers, stacked, is still one swimlane: its sub-row badges are
+  text cells in it and the rules between sub-rows dashed line cells, so the
+  whole band moves as one. Zones
   hold their cards the same way. A side band is a shape behind the rows
   with its label turned to read upwards, as a card can sit in only one
   container. A card in a swimlane is drawn with it, before the lines, so a
@@ -1490,7 +1528,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band) and `rule` `{by: role\|device_type, ids}` (at most 100 ids, what the band was generated from). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other colour string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other colour string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |

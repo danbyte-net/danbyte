@@ -84,6 +84,11 @@ export interface Zone {
   /** A band made by Arrange: what it was generated from, so a re-run finds
    * it again (and keeps its name and colour). */
   rule?: { by: "role" | "device_type"; ids: string[] }
+  /** A row holding several layers (roles or types): a sub-row per layer
+   * under its title (`stack`), or all its cards in one row (`row`). Set
+   * once the band's layers were chosen by hand - Arrange keeps such a
+   * band as it is. Absent: a row. */
+  layout?: "stack" | "row"
 }
 
 export type ZonesByStyle = Partial<Record<NodeStyle, Zone[]>>
