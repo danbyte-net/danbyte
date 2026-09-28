@@ -29,6 +29,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { ColorBadge } from "@/components/cells/color-badge"
 import {
   CheckChip,
   CheckCountChip,
@@ -38,11 +39,13 @@ import {
 import { hiddenCount, setHidden } from "@/components/hidden-objects"
 import type { TopoGroupData } from "./group-node"
 import {
+  BGP_SESSIONS,
   DISCOVERED,
   NO_LOCATION,
   NO_ROLE,
   NO_SITE,
   NO_TOPO_HIDDEN,
+  UNTYPED,
   edgeHidden,
   linkFamily,
   nodeHidden,
@@ -552,11 +555,12 @@ export function TopologyObjectsSidebar({
               key={`${mode}:${g.title}`}
               title={g.title}
               count={g.rows.length}
-              badge={
+              label={
                 g.role ? (
-                  <span
-                    className="size-2.5 shrink-0 rounded-sm"
-                    style={{ background: g.role.color || "#71717a" }}
+                  <ColorBadge
+                    name={g.title}
+                    color={g.role.color || undefined}
+                    className="max-w-44"
                   />
                 ) : undefined
               }
@@ -592,13 +596,11 @@ export function TopologyObjectsSidebar({
                   >
                     <span className="min-w-0 truncate">{d.name}</span>
                     {mode !== "role" && d.data.role && (
-                      <span className="flex min-w-0 items-center gap-1 font-sans text-[10px] text-muted-foreground/70">
-                        <span
-                          className="size-2 shrink-0 rounded-sm"
-                          style={{ background: d.data.role.color || "#71717a" }}
-                        />
-                        <span className="truncate">{d.data.role.name}</span>
-                      </span>
+                      <ColorBadge
+                        name={d.data.role.name}
+                        color={d.data.role.color || undefined}
+                        className="h-4 max-w-28 min-w-0 truncate px-1.5 font-sans text-[10px]"
+                      />
                     )}
                     {filter && d.data.device_type && (
                       <span className="min-w-0 truncate font-sans text-[10px] text-muted-foreground/70">
@@ -635,12 +637,19 @@ export function TopologyObjectsSidebar({
               count={rows.length}
               defaultOpen={false}
               storageId={FOLDS}
-              badge={
-                <span
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{
-                    background: fam === DISCOVERED ? "#71717a" : typeColor(fam),
-                  }}
+              label={
+                <ColorBadge
+                  name={fam}
+                  color={
+                    // Coloured as a cable of its type is on the map; the
+                    // families that are not a media type stay neutral.
+                    fam === DISCOVERED ||
+                    fam === BGP_SESSIONS ||
+                    fam === UNTYPED
+                      ? undefined
+                      : typeColor(fam)
+                  }
+                  className="max-w-44"
                 />
               }
               visibility={{

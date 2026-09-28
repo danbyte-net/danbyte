@@ -899,9 +899,12 @@ map.
   list to one state.
 - **Devices** grouped by **role**, **site** or **location** - the switch at
   the group header, remembered per browser - with the monitoring chip on
-  each row. When the map is grouped by site or location, the groups are
-  listed instead; double-click one to open it.
-- **Links** by media type, with LLDP-discovered links and **BGP sessions**
+  each row. A role group is headed by its role's badge, and a row grouped
+  by site or location carries its role's badge. When the map is grouped by
+  site or location, the groups are listed instead; double-click one to open
+  it.
+- **Links** by media type, each family headed by a badge in its line
+  colour, with LLDP-discovered links and **BGP sessions**
   (a dotted line per peering device pair and table, labelled with the two
   AS numbers, iBGP or eBGP and the VRF; click it to open the session) as
   their own families;

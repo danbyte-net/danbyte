@@ -29,6 +29,8 @@ export const NO_ROLE = "No role"
 export const DISCOVERED = "Discovered"
 /** The link family BGP sessions are listed and hidden under. */
 export const BGP_SESSIONS = "BGP sessions"
+/** The link family of cables with no media type. */
+export const UNTYPED = "Untyped"
 
 /** The family a link is listed and hidden under - cables by media type,
  * LLDP ghosts as their own; null for the aggregates and pass-through
@@ -36,7 +38,7 @@ export const BGP_SESSIONS = "BGP sessions"
 export function linkFamily(e: TopoEdge): string | null {
   if (e.type === "ghost") return DISCOVERED
   if (e.type === "bgp") return BGP_SESSIONS
-  if (e.type === "cable" || !e.type) return e.data?.cable_type || "Untyped"
+  if (e.type === "cable" || !e.type) return e.data?.cable_type || UNTYPED
   return null
 }
 

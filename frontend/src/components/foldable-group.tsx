@@ -74,6 +74,7 @@ export function VisibilityToggle({ vis }: { vis: GroupVisibility }) {
 
 export function FoldableGroup({
   title,
+  label,
   badge,
   count,
   extra,
@@ -83,7 +84,10 @@ export function FoldableGroup({
   children,
 }: {
   title: string
-  /** Leading swatch/icon - e.g. the floorplan's TileBadge, or a status dot. */
+  /** Drawn in place of the title: a ColorBadge for a coloured catalog
+   * object (never a swatch beside its name). */
+  label?: React.ReactNode
+  /** Leading icon - e.g. the floorplan's TileBadge. */
   badge?: React.ReactNode
   count: number
   /** Trailing header content before the count - e.g. health count chips,
@@ -121,11 +125,13 @@ export function FoldableGroup({
         {badge}
         <span
           className={cn(
-            "truncate",
-            visibility && !visibility.shown && "text-muted-foreground/60"
+            "min-w-0 truncate",
+            visibility &&
+              !visibility.shown &&
+              (label ? "opacity-60" : "text-muted-foreground/60")
           )}
         >
-          {title}
+          {label ?? title}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {visibility && <VisibilityToggle vis={visibility} />}
