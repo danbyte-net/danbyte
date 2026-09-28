@@ -121,8 +121,8 @@ arcs) is reused as a compact **MiniMap** wherever a map helps:
 Markers are clickable everywhere (site → site page, device → device page).
 
 Devices and free markers render as the floor-planner's **badge squares**
-(the role/type colour, icon or centred dot) rather than plain pins; the
-**selected** one gets a primary-coloured ring so it's obvious what you
+(the role/type color, icon or centred dot) rather than plain pins; the
+**selected** one gets a primary-colored ring so it's obvious what you
 clicked.
 
 ## Deferred (documented, not forgotten)
@@ -173,8 +173,10 @@ against an external service. You place things yourself.
   the top-left corner counts it, one chip per state named as your status
   catalog names it; each click flies to the next problem, worst
   first, and opens its popover.
-- **Legend** - bottom-left, collapsed to a pill by default; explains pins,
-  badges, cluster chips, health dots and the line colors.
+- **Legend** - bottom-left, folded to a **Legend** chip by default; explains
+  pins, badges, cluster chips, the health ring's states (named as your
+  status catalog names them) and the line colors. Its ✕ (*Hide legend*)
+  folds it again.
 - **Fullscreen** - the expand button in the toolbar puts just the map
   fullscreen; every control keeps working.
 - A metric **scale bar** sits bottom-left.
@@ -191,9 +193,9 @@ theme color with a standard building glyph. The same pair exists on locations - 
 on list and detail pages (locations have no coordinates, so nothing changes on
 the map), and give the upcoming topology views a grouping color to work with.
 
-To colour many at once, tick them in the **Sites**, **Regions** or
+To color many at once, tick them in the **Sites**, **Regions** or
 **Locations** list and choose **Edit** in the bar that appears: sites and
-locations take a marker colour and icon, regions a colour. Leave a field
+locations take a marker color and icon, regions a color. Leave a field
 unticked to keep each one's own; tick it with nothing picked to clear it.
 
 ## Close markers cluster
@@ -251,7 +253,7 @@ Click a device to open its inspector:
   splitters crossed). The **⤳ trace** button on a run lights that whole path
   on the map and fits the view; clicking any cable line toggles its highlight.
 - **Ports** lists the device's interfaces and front/rear ports, each showing
-  a coloured dot when cabled or a **＋ Connect** when empty. Connect opens the
+  a colored dot when cabled or a **＋ Connect** when empty. Connect opens the
   cable form seeded with that port as the A-side - the fastest way to wire
   fibre straight from the map; the new cable appears the instant you save.
 

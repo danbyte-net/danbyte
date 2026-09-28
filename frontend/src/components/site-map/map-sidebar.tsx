@@ -15,6 +15,7 @@ import {
 } from "@/components/hidden-objects"
 import type { HiddenSet } from "@/components/hidden-objects"
 import { cn } from "@/lib/utils"
+import { useCableTypeLabel } from "@/lib/use-dcim-choices"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
   CheckCountBadge,
@@ -172,6 +173,7 @@ export function MapObjectsSidebar({
   /** Fit the map to a region's boundary. */
   onFocusRegion: (region: SiteMapRegion) => void
 }) {
+  const typeLabel = useCableTypeLabel()
   const [q, setQ] = useState("")
   const [status, setStatus] = useState<CheckFilter>(null)
   const filter = q.trim().toLowerCase()
@@ -592,7 +594,7 @@ export function MapObjectsSidebar({
                   <span className="min-w-0 truncate font-mono">{c.label}</span>
                   {c.type && (
                     <span className="ml-auto text-[10px] text-muted-foreground/70">
-                      {c.type}
+                      {typeLabel(c.type)}
                     </span>
                   )}
                 </button>

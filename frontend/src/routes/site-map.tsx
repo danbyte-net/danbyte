@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import {
   Building2,
   Expand,
+  List,
   MapPin,
   Maximize,
   PanelRight,
@@ -63,6 +64,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { InfoTip } from "@/components/ui/info-tip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { SectionLabel } from "@/components/map-panel"
+import { useCableTypeLabel } from "@/lib/use-dcim-choices"
 import {
   Dialog,
   DialogContent,
@@ -123,7 +131,6 @@ import {
   buildConnectionsLayer,
   KIND_COLOR,
 } from "@/components/site-map/connections-layer"
-import { CHECK_COLOR } from "@/components/site-map/status-colors"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import {
   LABEL_ZOOM,
@@ -1657,7 +1664,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             // backdrop so the tints read over tiles; each steps through its
             // own severity.
             // left-14 clears Leaflet's zoom control in the corner.
-            <div className="absolute top-3 left-14 z-[900] flex items-center gap-1 rounded-md border border-border bg-background/95 p-1 shadow-sm backdrop-blur">
+            <div className="absolute top-3 left-14 z-[900] flex items-center gap-1 rounded-md border border-border bg-background/95 p-1">
               {problems.some((p) => p.check === "down") && (
                 <BarTip tip="Next">
                   <Badge variant="destructive" asChild>
@@ -2145,16 +2152,18 @@ function MapLegend({
   open: boolean
   onToggle: () => void
 }) {
-  // Sits above the Leaflet scale control; collapsed it's just a pill.
+  // Sits above the Leaflet scale control. A chip on the map, as on the
+  // topology canvas: bordered, no shadow (shadows are for overlays).
   if (!open)
     return (
-      <Badge
+      <Button
         variant="outline"
-        asChild
-        className="absolute bottom-9 left-3 z-[900] bg-background/95 shadow-sm backdrop-blur"
+        size="xs"
+        onClick={onToggle}
+        className="absolute bottom-9 left-3 z-[900] bg-background/95 text-muted-foreground shadow-none"
       >
-        <button onClick={onToggle}>Legend</button>
-      </Badge>
+        <List /> Legend
+      </Button>
     )
   const line = (color: string, dashed = false) => (
     <span
@@ -2166,16 +2175,25 @@ function MapLegend({
     />
   )
   return (
-    <div className="absolute bottom-9 left-3 z-[900] w-fit rounded-lg border border-border bg-background/95 p-3 text-[11px] shadow-sm backdrop-blur">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-medium">Legend</span>
-        <button
-          onClick={onToggle}
-          className="text-muted-foreground hover:text-foreground"
-          aria-label="Close legend"
-        >
-          <X className="size-3" />
-        </button>
+    <div className="absolute bottom-9 left-3 z-[900] w-fit rounded-md border border-border bg-background/95 p-2.5 pt-1.5 text-[11px]">
+      <div className="mb-1 flex items-center justify-between gap-4">
+        <SectionLabel className="mb-0">Legend</SectionLabel>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="-mr-1.5"
+              aria-label="Hide legend"
+              onClick={onToggle}
+            >
+              <X />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" variant="default">
+            Hide legend
+          </TooltipContent>
+        </Tooltip>
       </div>
       <div className="grid gap-1.5 whitespace-nowrap text-muted-foreground">
         <span className="flex items-center gap-2">
@@ -2192,19 +2210,18 @@ function MapLegend({
           <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-background px-1 text-[10px] font-semibold text-foreground shadow-[0_0_0_1px_var(--border)]">
             5
           </span>
-          Cluster - click to zoom
+          Cluster
         </span>
-        <span className="flex items-center gap-2">
-          <span className="flex shrink-0 items-center gap-1">
-            {(["up", "degraded", "down"] as const).map((c) => (
-              <span
-                key={c}
-                className="size-2 rounded-full"
-                style={{ background: CHECK_COLOR[c] }}
-              />
-            ))}
-          </span>
-          Up · degraded · down
+        {/* A pin wears its monitoring state as its ring, in the tenant's
+            names for the states. */}
+        <span className="flex items-center gap-1">
+          {(["up", "degraded", "down"] as const).map((c) => (
+            <CheckStatusBadge
+              key={c}
+              status={c}
+              className="h-4 px-[7px] text-[9px]"
+            />
+          ))}
         </span>
         <span className="flex items-center gap-2">
           {line(KIND_COLOR.circuit)}
@@ -2555,26 +2572,28 @@ function CablePopover({
   cable: SiteMapCable
   onClose: () => void
 }) {
+  const typeLabel = useCableTypeLabel()
+  const strands = c.fiber_count ?? 0
   return (
     <div className="grid gap-2">
       <PopHeader title={c.label || "Cable"} mono onClose={onClose} />
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant="outline" className="uppercase">
-          cable
-        </Badge>
-        {c.type && <Badge variant="outline">{c.type}</Badge>}
-        {c.status && (
-          <ColorBadge
-            name={c.status.name}
-            color={c.status.color || undefined}
-          />
-        )}
-        {c.fiber_count ? (
-          <Badge variant="outline" className="num">
-            ×{c.fiber_count}
-          </Badge>
-        ) : null}
-      </div>
+      {(c.type || c.status || strands > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {c.type && <Badge variant="outline">{typeLabel(c.type)}</Badge>}
+          {c.status && (
+            <ColorBadge
+              name={c.status.name}
+              color={c.status.color || undefined}
+            />
+          )}
+          {strands > 0 && (
+            <Badge variant="outline">
+              <span className="num">{strands}</span>{" "}
+              {strands === 1 ? "strand" : "strands"}
+            </Badge>
+          )}
+        </div>
+      )}
       <div className="text-[12px] text-muted-foreground">
         <Link to="/devices/$id" params={{ id: c.a.device_id }} className="link">
           {c.a.device_name}

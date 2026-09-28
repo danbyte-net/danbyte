@@ -68,7 +68,7 @@ export function DevicePathsList({
                 {g.lag.name}
               </Link>
               <span className="text-muted-foreground">
-                · {g.runs.length} {g.runs.length === 1 ? "link" : "links"}
+                · {g.runs.length} {g.runs.length === 1 ? "cable" : "cables"}
                 {g.lag.elsewhere ? ` · on ${g.lag.device}` : ""}
               </span>
             </div>
@@ -231,6 +231,8 @@ function toPathSteps(apiSteps: DevicePathRun["steps"]): PathStep[] {
           seg: {
             cableId: s.cable_id,
             label: s.label,
+            // The run's label is its cable's type (or "cable").
+            cableType: s.label === "cable" ? undefined : s.label,
             tag: s.cable_label ?? undefined,
             color: s.color ?? undefined,
             self: false,

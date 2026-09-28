@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { CableAdd } from "@/components/cable-add"
 import { Field } from "@/components/forms"
+import { useCableTypeLabel } from "@/lib/use-dcim-choices"
 import { cn } from "@/lib/utils"
 
 // Cables-mode panels for the site map - straight clones of the floor
@@ -141,6 +142,7 @@ export function RouteInspector({
   onDelete: () => void
   onClose: () => void
 }) {
+  const typeLabel = useCableTypeLabel()
   const [name, setName] = useState(route.name)
   const [kind, setKind] = useState(route.kind)
   useEffect(() => {
@@ -253,7 +255,7 @@ export function RouteInspector({
                 <span className="truncate font-mono text-xs">{c.label}</span>
                 {c.type && (
                   <span className="ml-auto text-[10px] text-muted-foreground">
-                    {c.type}
+                    {typeLabel(c.type)}
                   </span>
                 )}
               </button>

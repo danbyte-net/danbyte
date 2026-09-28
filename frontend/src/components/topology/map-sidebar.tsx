@@ -28,6 +28,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useCableTypeLabel } from "@/lib/use-dcim-choices"
 import { cn } from "@/lib/utils"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
@@ -167,6 +168,7 @@ export function TopologyObjectsSidebar({
   /** The layer bands (rows) in a new top-to-bottom order. */
   onReorderBands?: (ids: string[]) => void
 }) {
+  const typeLabel = useCableTypeLabel()
   const [q, setQ] = useState("")
   const [status, setStatus] = useState<CheckFilter>(null)
   const [mode, setModeState] = useState<GroupMode>(readGroupMode)
@@ -277,6 +279,11 @@ export function TopologyObjectsSidebar({
         .filter((d) => d.check === "down" || d.check === "degraded")
         .sort((a, b) => checkRank(a.check) - checkRank(b.check) || byName(a, b))
 
+  /** A link family's name: "LLDP", "No type", or a cable type's label. */
+  const famName = (fam: string) => {
+    const name = familyLabel(fam)
+    return name === fam ? typeLabel(fam) : name
+  }
   const linkGroups = (() => {
     const map = new Map<string, TopoEdge[]>()
     for (const e of graph.edges) {
@@ -594,7 +601,7 @@ export function TopologyObjectsSidebar({
               storageId={FOLDS}
               label={
                 <ColorBadge
-                  name={familyLabel(fam)}
+                  name={famName(fam)}
                   color={
                     // Colored as a cable of its type is on the map; the
                     // families that are not a media type stay neutral.
@@ -610,7 +617,7 @@ export function TopologyObjectsSidebar({
               visibility={{
                 shown: !hidden.kinds.includes(fam),
                 onChange: (v) => toggle("kinds", fam, v),
-                what: familyLabel(fam),
+                what: famName(fam),
               }}
             >
               <LazyRows

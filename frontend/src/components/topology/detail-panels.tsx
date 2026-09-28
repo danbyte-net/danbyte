@@ -9,7 +9,7 @@ import type {
   TopoEdge,
   TopoNode,
 } from "@/lib/api"
-import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { useCableTypeLabel } from "@/lib/use-dcim-choices"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
@@ -27,14 +27,6 @@ import { sharedLag } from "./lag-bundles"
 // between two such cards. All five are the shared map PanelShell.
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`
-
-/** The cable-type label the cable list shows ("CAT6"), not the stored value
- * ("cat6"); the value itself until the choices load. */
-function useCableTypeLabel(): (value: string) => string {
-  const choices = useDcimChoices()
-  return (value) =>
-    choices.cable_types.find((c) => c.value === value)?.label ?? value
-}
 
 /** A device's monitoring roll-up: from the map's own bulk query when it has
  * run, else fetched for this one device. `null` = no checks. */

@@ -40,3 +40,12 @@ export function useDcimChoices(): DcimChoices {
   })
   return q.data ?? EMPTY
 }
+
+/** A cable type's label as the cable list shows it ("CAT6"), not its stored
+ * value ("cat6"); the value itself until the choices load, or for a value
+ * the list does not know. Keys (a hidden set, a fold) stay the value. */
+export function useCableTypeLabel(): (value: string) => string {
+  const choices = useDcimChoices()
+  return (value) =>
+    choices.cable_types.find((c) => c.value === value)?.label ?? value
+}

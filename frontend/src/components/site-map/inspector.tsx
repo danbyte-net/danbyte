@@ -431,7 +431,6 @@ export function DeviceInspector({
           deviceId={d.id}
           onTraceCables={onTraceCables}
           max={4}
-          emptyText="Nothing cabled yet - connect a port below."
         />
       </div>
 
@@ -536,7 +535,6 @@ export function MarkerInspector({
             deviceId={m.device.id}
             onTraceCables={onTraceCables}
             max={4}
-            emptyText="The linked device has nothing cabled yet."
           />
         </div>
       )}
