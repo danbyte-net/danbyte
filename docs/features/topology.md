@@ -401,7 +401,7 @@ greyed out (it would change nothing).
        on); a file draws it as the device's card;
     4. neither - the normal card.
 - **Layout:** photos are wide and short, so a photo map opens **Top to
-  bottom** (Display ▸ Layout), its devices in rows like a rack, unless
+  bottom** (Arrange ▸ Layout), its devices in rows like a rack, unless
   its saved view has a layout of its own or the link names one (`dir=`).
   Photos laid out left to right keep room above and below them for the cables and
   their port names. Switching the view between Card and Photo lays a map
@@ -983,7 +983,8 @@ like the site map's.
 
 ## Layout: left to right or top to bottom {#layout-side-to-side-or-tree}
 
-**Layout** in the Display popover picks the axis:
+On the Diagram, the **Layout** group of the **Arrange** menu picks the axis
+(the Hierarchy always runs left to right, ranked by its cabling):
 
 - **Left to right** (default) - cards flow left→right, ports on the left and
   right edges. A Diagram showing photos opens Top to bottom instead (see
@@ -1011,11 +1012,23 @@ Two passes keep the port-by-port cards readable without manual cleanup:
 
 The toolbar groups its controls to stay uncluttered: a **Filters** popover
 (site / role / status / tag, with a badge counting active filters) and a
-**Display** popover (layout axis, grouping, the Diagram's *Draw as*, lines,
-labels and card lines, *Color by*, *LAG bundles* and *Patch panels*).
-**Find on map** and **Levels** stay on the bar. Both bars are built from the
-same buttons, toggles and menu triggers as the [site map](site-map.md) and
-the [floor plans](floor-plans.md) bars.
+**Display** popover (grouping, the Diagram's *Draw as*, lines, labels and
+card lines, *Color by*, *LAG bundles* and *Patch panels*); **Find on map**
+stays on the bar. How the map is placed lives in the second bar's
+**Arrange** menu:
+
+| Arrange | Items |
+|---|---|
+| Diagram | **Reset layout** · **Bands by role**, **Bands by device type**, **Clear bands** · **Layout**: **Left to right** / **Top to bottom**, **Levels…** |
+| Hierarchy | **Reset layout** |
+
+**Levels…** opens the [Levels](#levels-role-tiers) list under the Arrange
+button; it is left out while the map is grouped by site or location. The
+direction and the levels keep their URL parameters (`dir`, `levels`) and
+their place in a saved view. Both bars are built from the same buttons,
+toggles and menu triggers as the [site map](site-map.md) and the
+[floor plans](floor-plans.md) bars. The device count beside the title keeps
+one width as the number changes, so the tabs after it stay put.
 
 Both bars fit a 1280 px screen with the sidebar open. Where the room runs
 out, the header's **Simple / Detailed** and the second bar's **Objects** and
@@ -1064,7 +1077,7 @@ device row and the fabric spaces out by a layer. Each level's **Gap above**
 dots control the gap directly **above** its own row, so a role's dots move
 that row up or down.
 
-The **Levels** button opens a list of the device roles on the map, each as
+**Arrange ▸ Levels…** opens a list of the device roles on the map, each as
 its badge - drag them into the order you want (top of the list = first
 level). Nodes then stack strictly by role: firewalls, then distribution, then
 access, then servers, so the map reads as a hierarchy instead of following

@@ -26,6 +26,8 @@ function open(props: Partial<Parameters<typeof LevelOrganiser>[0]> = {}) {
   const onDistance = vi.fn()
   render(
     <LevelOrganiser
+      open
+      onOpenChange={vi.fn()}
       roles={roles}
       order={[]}
       onChange={vi.fn()}
@@ -34,9 +36,10 @@ function open(props: Partial<Parameters<typeof LevelOrganiser>[0]> = {}) {
       distance={{}}
       onDistance={onDistance}
       {...props}
-    />
+    >
+      <button type="button">Arrange</button>
+    </LevelOrganiser>
   )
-  fireEvent.click(screen.getByRole("button", { name: "Levels" }))
   return { onBonds, onDistance }
 }
 
@@ -47,21 +50,31 @@ async function tipOf(el: HTMLElement) {
 }
 
 describe("LevelOrganiser", () => {
-  it("opens from a bar menu trigger", () => {
-    render(
-      <LevelOrganiser
-        roles={roles}
-        order={[]}
-        onChange={vi.fn()}
-        bonds={[]}
-        onBonds={vi.fn()}
-        distance={{}}
-        onDistance={vi.fn()}
-      />
+  it("hangs from the element it is given, with no button of its own", () => {
+    const props = {
+      onOpenChange: vi.fn(),
+      roles,
+      order: [],
+      onChange: vi.fn(),
+      bonds: [],
+      onBonds: vi.fn(),
+      distance: {},
+      onDistance: vi.fn(),
+    }
+    const { rerender } = render(
+      <LevelOrganiser open={false} {...props}>
+        <button type="button">Arrange</button>
+      </LevelOrganiser>
     )
-    const trigger = screen.getByRole("button", { name: "Levels" })
-    expect(trigger.className).toContain("h-7")
-    expect(trigger.querySelector("svg.lucide-chevron-down")).not.toBeNull()
+    expect(screen.queryByRole("button", { name: "Levels" })).toBeNull()
+    expect(screen.queryByRole("dialog")).toBeNull()
+    rerender(
+      <LevelOrganiser open {...props}>
+        <button type="button">Arrange</button>
+      </LevelOrganiser>
+    )
+    expect(screen.getByRole("dialog", { name: "Levels" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Arrange" })).toBeTruthy()
   })
 
   it("names each role with its badge, never a dot", () => {
@@ -112,18 +125,7 @@ describe("LevelOrganiser", () => {
     cleanup()
     const onChange = vi.fn()
     const onBonds = vi.fn()
-    render(
-      <LevelOrganiser
-        roles={roles}
-        order={["Access", "Core"]}
-        onChange={onChange}
-        bonds={["Core"]}
-        onBonds={onBonds}
-        distance={{}}
-        onDistance={vi.fn()}
-      />
-    )
-    fireEvent.click(screen.getByRole("button", { name: "Levels" }))
+    open({ order: ["Access", "Core"], onChange, bonds: ["Core"], onBonds })
     fireEvent.click(screen.getByRole("button", { name: "Reset levels" }))
     expect(onChange).toHaveBeenCalledWith([])
     expect(onBonds).toHaveBeenCalledWith([])

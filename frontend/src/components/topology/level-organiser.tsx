@@ -13,17 +13,12 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { GripVertical, Layers, Link2, Unlink } from "lucide-react"
+import { GripVertical, Link2, Unlink } from "lucide-react"
 
 import { ColorBadge } from "@/components/cells/color-badge"
-import { BarMenuTrigger } from "@/components/map-toolbar"
 import { Button } from "@/components/ui/button"
 import { InfoTip } from "@/components/ui/info-tip"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import {
   Tooltip,
   TooltipContent,
@@ -40,26 +35,9 @@ export interface RoleTier {
 
 export { resolveLevels }
 
-/**
- * Drag device roles into the level order you want them stacked in - top of
- * the list = first level (left in Left to right, top in Top to bottom).
- * Nodes then lay out by their role's position here instead of by pure graph
- * structure. Roles left off, and devices with no role, fall to the last
- * level.
- *
- * Roles can be **bonded** to the row above with the link button between them,
- * putting both on one level - for when two roles belong side by side rather
- * than stacked.
- */
-export function LevelOrganiser({
-  roles,
-  order,
-  onChange,
-  bonds,
-  onBonds,
-  distance,
-  onDistance,
-}: {
+/** What the levels popover edits: the roles on the map and their order,
+ * bonds and gaps. */
+export interface LevelsProps {
   roles: RoleTier[]
   /** Current role order (names); may include roles no longer on the map. */
   order: string[]
@@ -70,6 +48,39 @@ export function LevelOrganiser({
   /** Role name → distance step (0–4) for the gap above its level. */
   distance: Record<string, number>
   onDistance: (role: string, step: number) => void
+}
+
+/**
+ * Drag device roles into the level order you want them stacked in - top of
+ * the list = first level (left in Left to right, top in Top to bottom).
+ * Nodes then lay out by their role's position here instead of by pure graph
+ * structure. Roles left off, and devices with no role, fall to the last
+ * level.
+ *
+ * Roles can be **bonded** to the row above with the link button between them,
+ * putting both on one level - for when two roles belong side by side rather
+ * than stacked.
+ *
+ * A popover with no trigger of its own: `children` is what it hangs from
+ * (the Arrange menu's button, whose "Levels…" opens it), and the owner
+ * holds `open`.
+ */
+export function LevelOrganiser({
+  open,
+  onOpenChange,
+  children,
+  roles,
+  order,
+  onChange,
+  bonds,
+  onBonds,
+  distance,
+  onDistance,
+}: LevelsProps & {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** The element the popover is anchored to. */
+  children: React.ReactElement
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -107,16 +118,13 @@ export function LevelOrganiser({
     )
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <BarMenuTrigger>
-          <Layers /> Levels
-        </BarMenuTrigger>
-      </PopoverTrigger>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverAnchor asChild>{children}</PopoverAnchor>
       {/* Long role lists must scroll inside the popover, not overflow the
           viewport - cap to the available height. */}
       <PopoverContent
         align="end"
+        aria-label="Levels"
         className="flex max-h-[min(70vh,32rem)] w-64 flex-col gap-1.5 p-2"
       >
         <div className="flex shrink-0 items-center gap-1 px-1">

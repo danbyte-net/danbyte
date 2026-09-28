@@ -6,10 +6,8 @@ import {
   Cloud,
   CopyPlus,
   Crosshair,
-  Eraser,
   FilePlus,
   Globe,
-  LayoutGrid,
   Link as LinkIcon,
   MoreHorizontal,
   PanelLeft,
@@ -17,8 +15,6 @@ import {
   Plus,
   RectangleHorizontal,
   RectangleVertical,
-  RefreshCw,
-  Rows3,
   Save,
   Search,
   Server,
@@ -107,7 +103,8 @@ import { Loading } from "@/components/loading"
 import { InfoTip } from "@/components/ui/info-tip"
 import { TruncatedText } from "@/components/ui/truncated-text"
 import { FormCheckbox } from "@/components/forms"
-import { LevelOrganiser } from "@/components/topology/level-organiser"
+import { ArrangeMenu } from "@/components/topology/arrange-menu"
+import type { LevelsProps } from "@/components/topology/level-organiser"
 import {
   PopoverField,
   TopologyFilters,
@@ -2323,6 +2320,30 @@ function TopologyPage() {
         seen.set(n.data.role.name, n.data.role.color)
     return [...seen].map(([name, color]) => ({ name, color }))
   }, [graph])
+  /** The Arrange menu's "Levels…": reordering, bonding or spacing the
+   * levels drops pinned coordinates and lays the map out again. */
+  const relevel = () => {
+    dropAllPositions()
+    setLayoutTick((t) => t + 1)
+  }
+  const levelsProps: LevelsProps = {
+    roles: rolesInGraph,
+    order: roleOrder,
+    onChange: (o) => {
+      setRoleOrder(o)
+      relevel()
+    },
+    bonds: roleBonds,
+    onBonds: (b) => {
+      setRoleBonds(b)
+      relevel()
+    },
+    distance: roleDistance,
+    onDistance: (role, step) => {
+      setRoleDistance({ ...roleDistance, [role]: step })
+      relevel()
+    },
+  }
 
   const count = q.data?.nodes.length ?? 0
   const focusName = focus
@@ -2341,9 +2362,9 @@ function TopologyPage() {
         find: "@max-[1240px]/head:w-32",
       }
     : {
-        hide: "@max-[1040px]/head:hidden",
-        show: "@max-[1040px]/head:inline-flex",
-        find: "@max-[1040px]/head:w-36",
+        hide: "@max-[900px]/head:hidden",
+        show: "@max-[900px]/head:inline-flex",
+        find: "@max-[1040px]/head:w-32",
       }
   // The second bar's widths below which Objects and Copy link move into
   // More: an applied view's Edited, Save and Delete need the room.
@@ -2418,7 +2439,8 @@ function TopologyPage() {
       <header className="@container/head flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
         <h1 className="shrink-0 text-base font-semibold">Topology</h1>
         {q.data && !logical && (
-          <Badge variant="secondary" className="shrink-0">
+          // One width whatever the number, so the tabs after it stay put.
+          <Badge variant="secondary" className="min-w-24 shrink-0">
             <span className="num">{count}</span>{" "}
             {grouped
               ? count === 1
@@ -2545,31 +2567,6 @@ function TopologyPage() {
                   tags={tags.data?.results}
                 />
               )}
-              {!grouped && viewStyle !== "hierarchy" && (
-                <LevelOrganiser
-                  roles={rolesInGraph}
-                  order={roleOrder}
-                  onChange={(o) => {
-                    setRoleOrder(o)
-                    dropAllPositions()
-                    setLayoutTick((t) => t + 1)
-                  }}
-                  bonds={roleBonds}
-                  onBonds={(b) => {
-                    setRoleBonds(b)
-                    // Bonding changes the tiers, so drop pinned coordinates and
-                    // relayout - same as reordering.
-                    dropAllPositions()
-                    setLayoutTick((t) => t + 1)
-                  }}
-                  distance={roleDistance}
-                  onDistance={(role, step) => {
-                    setRoleDistance({ ...roleDistance, [role]: step })
-                    dropAllPositions()
-                    setLayoutTick((t) => t + 1)
-                  }}
-                />
-              )}
               <Popover>
                 <PopoverTrigger asChild>
                   <BarMenuTrigger>
@@ -2580,23 +2577,6 @@ function TopologyPage() {
                   align="end"
                   className="max-h-(--radix-popover-content-available-height) w-64 space-y-3 overflow-y-auto p-3"
                 >
-                  {viewStyle !== "hierarchy" && (
-                    <PopoverField label="Layout">
-                      <SegmentedTabs<"LR" | "TB">
-                        value={direction}
-                        onValueChange={(d) => {
-                          setDirection(d)
-                          // A saved LR layout doesn't fit TB - re-run the layout.
-                          dropAllPositions()
-                          setLayoutTick((t) => t + 1)
-                        }}
-                        items={[
-                          { value: "LR", label: "Left to right" },
-                          { value: "TB", label: "Top to bottom" },
-                        ]}
-                      />
-                    </PopoverField>
-                  )}
                   <PopoverField label="Group by">
                     <SegmentedTabs<GroupBy>
                       value={groupBy}
@@ -2898,49 +2878,36 @@ function TopologyPage() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <BarMenuTrigger>
-                      <LayoutGrid /> Arrange
-                    </BarMenuTrigger>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-auto min-w-48 whitespace-nowrap"
-                  >
-                    <DropdownMenuItem
-                      // Rows hold their cards: with rows Arrange made, a new
-                      // layout arranges them again by what they were made
-                      // from; rows drawn by hand are cleared first.
-                      disabled={bands.hasRows && !bands.ruleBy}
-                      onSelect={() => {
-                        if (bands.ruleBy) {
-                          arrangeBands(bands.ruleBy)
-                          return
-                        }
-                        setPositions(undefined)
-                        setLayoutTick((t) => t + 1)
-                      }}
-                    >
-                      <RefreshCw /> Reset layout
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => arrangeBands("role")}>
-                      <Rows3 /> Bands by role
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() => arrangeBands("device_type")}
-                    >
-                      <Rows3 /> Bands by device type
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={!bands.hasBands}
-                      onSelect={clearBands}
-                    >
-                      <Eraser /> Clear bands
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <ArrangeMenu
+                  // Rows hold their cards: with rows Arrange made, a new
+                  // layout arranges them again by what they were made
+                  // from; rows drawn by hand are cleared first.
+                  resetDisabled={bands.hasRows && !bands.ruleBy}
+                  onReset={() => {
+                    if (bands.ruleBy) {
+                      arrangeBands(bands.ruleBy)
+                      return
+                    }
+                    setPositions(undefined)
+                    setLayoutTick((t) => t + 1)
+                  }}
+                  bands={{
+                    onByRole: () => arrangeBands("role"),
+                    onByType: () => arrangeBands("device_type"),
+                    onClear: clearBands,
+                    canClear: bands.hasBands,
+                  }}
+                  direction={{
+                    value: direction,
+                    onChange: (d) => {
+                      setDirection(d)
+                      // A saved LR layout doesn't fit TB - re-run the layout.
+                      dropAllPositions()
+                      setLayoutTick((t) => t + 1)
+                    },
+                  }}
+                  levels={grouped ? undefined : levelsProps}
+                />
               </>
             ) : (
               <>
@@ -2960,26 +2927,12 @@ function TopologyPage() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <BarMenuTrigger>
-                      <LayoutGrid /> Arrange
-                    </BarMenuTrigger>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-auto min-w-48 whitespace-nowrap"
-                  >
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        setPositions(undefined)
-                        setLayoutTick((t) => t + 1)
-                      }}
-                    >
-                      <RefreshCw /> Reset layout
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <ArrangeMenu
+                  onReset={() => {
+                    setPositions(undefined)
+                    setLayoutTick((t) => t + 1)
+                  }}
+                />
               </>
             )}
             <BarButton onClick={copyLink} className={barNarrow.hide}>
