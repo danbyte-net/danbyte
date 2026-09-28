@@ -720,6 +720,10 @@ function TopologyPage() {
     enabled: viewId !== "none",
   })
   const appliedView = viewId !== "none" ? viewQ.data : undefined
+  /** A saved view's settings have arrived (or failed to): until then the
+   * filters are the defaults, and the map, its LLDP ghosts and its BGP
+   * sessions would be fetched for the whole tenant. */
+  const viewSettled = viewId === "none" || viewQ.isFetched
   const vf = (appliedView?.state.filters ?? {}) as ViewFilters
   // Personal defaults from the last unsaved session (this read is unchanged
   // from before the URL work - same hydration behaviour).
@@ -1439,7 +1443,7 @@ function TopologyPage() {
   const q = useQuery({
     queryKey: ["topology", graphQuery, setKey],
     queryFn: ({ signal }) => fetchTopology(graphQuery, { signal }),
-    enabled: !logical,
+    enabled: !logical && viewSettled,
     // The same map asked for with other labels or card lines - or a hand-
     // built map with a device more or less - keeps the one on screen until
     // the new one arrives, instead of blanking it.
@@ -1523,23 +1527,25 @@ function TopologyPage() {
 
   const ghosts = useQuery({
     queryKey: ["topology-ghosts", filters.site],
-    enabled: !logical,
-    queryFn: () =>
+    enabled: !logical && viewSettled,
+    queryFn: ({ signal }) =>
       api<{ edges: TopoEdge[] }>(
         `/api/monitoring/topology/ghosts/${
           filters.site !== "all" ? `?site=${filters.site}` : ""
-        }`
+        }`,
+        { signal }
       ),
   })
 
   const bgp = useQuery({
     queryKey: ["topology-bgp", filters.site],
-    enabled: !logical,
-    queryFn: () =>
+    enabled: !logical && viewSettled,
+    queryFn: ({ signal }) =>
       api<{ edges: TopoEdge[] }>(
         `/api/routing/topology/bgp/${
           filters.site !== "all" ? `?site=${filters.site}` : ""
-        }`
+        }`,
+        { signal }
       ),
   })
 
@@ -2987,7 +2993,7 @@ function TopologyPage() {
         )}
         <div className="relative min-h-0 flex-1">
           {logical && <LogicalTopologyView />}
-          {!logical && q.isLoading && (
+          {!logical && (q.isLoading || (!viewSettled && !graph)) && (
             <p className="p-6 text-sm text-muted-foreground">Loading…</p>
           )}
           {!logical && q.isError && (

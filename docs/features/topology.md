@@ -1019,7 +1019,9 @@ settings** (colour mode, layout direction, Levels, grouping, aggregate
 bundling, and the Diagram's Simple/Detailed mode, line type and its own
 [card lines](#card-lines)),
 **every node position** per view style, the **zones**
-and the **hidden objects**. Load it from the views select; **Save** (or
+and the **hidden objects**. Load it from the views select - the map, its
+LLDP links and its BGP sessions are fetched once the view's settings are in,
+never for the whole tenant first; **Save** (or
 ++ctrl+s++, ++cmd+s++ on a Mac) updates it in place after you rearrange;
 **Re-layout** discards hand positions and re-runs the automatic
 left-to-right layout. **Save** needs the change permission on topology
