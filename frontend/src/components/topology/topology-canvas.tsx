@@ -58,6 +58,7 @@ import {
   hierarchyWaypoints,
   layoutHierarchy,
   layoutNodes,
+  layoutOutOfBounds,
   realignHierPorts,
 } from "./layout"
 import type { NodeSizing } from "./layout"
@@ -1168,6 +1169,9 @@ export interface TopologyCanvasProps {
   onDropDevices?: (ids: string[], at: { x: number; y: number }) => void
   /** Over an empty map that takes drops. */
   emptyState?: ReactNode
+  /** Under "Couldn't lay out this map." when a layout runs off the canvas
+   * (`layoutOutOfBounds`): a way on, such as another tab. */
+  brokenLayout?: ReactNode
   /** Devices just added and not fetched yet, muted where they will land. */
   pending?: readonly PendingCard[]
   /** Diagram: an arrangement carried over from another view, drawn at
@@ -1367,6 +1371,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     monitor,
     onDropDevices,
     emptyState,
+    brokenLayout,
     pending,
     spreadFrom,
     onSpread,
@@ -1623,6 +1628,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   }, [request, worker, lostWorker])
 
   const built: Built = (offThread ? offBuilt : inPlace) ?? EMPTY_BUILT
+  const broken = useMemo(() => layoutOutOfBounds(built.nodes), [built.nodes])
   // What an applied build restarts, as of the build: off the main thread
   // the props may already be a build further on.
   const stamp: Stamp | null = offThread
@@ -2873,6 +2879,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState title="No cabled devices yet." className="bg-card" />
+      </div>
+    )
+  if (broken)
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <EmptyState title="Couldn't lay out this map." className="bg-card">
+          {brokenLayout}
+        </EmptyState>
       </div>
     )
 

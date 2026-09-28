@@ -52,6 +52,31 @@ describe("React Flow controls", () => {
   })
 })
 
+describe("a layout off the canvas", () => {
+  it("says it couldn't lay out the map instead of drawing nothing", async () => {
+    const graph = {
+      nodes: [{ id: "dev:a", type: "device", data: { name: "a" } }],
+      edges: [],
+    } as unknown as TopologyGraph
+    render(
+      <div style={{ width: 800, height: 600 }}>
+        <TopologyCanvas
+          graph={graph}
+          nodeStyle="hierarchy"
+          positions={{ "dev:a": [0, 3e11] }}
+          brokenLayout={<button type="button">Switch to Diagram</button>}
+        />
+      </div>
+    )
+    await settle()
+    expect(screen.getByText("Couldn't lay out this map.")).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Switch to Diagram" })
+    ).toBeTruthy()
+    expect(document.querySelector(".react-flow")).toBeNull()
+  })
+})
+
 describe("BGP hover", () => {
   it("names the peers, the session kind and the VRF", () => {
     expect(

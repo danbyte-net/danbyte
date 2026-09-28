@@ -18,9 +18,15 @@ icon: lucide/share-2
   ends over the rank structure; drag a card and its chips ride along.
   Cables here are routed from the ports, not the cards: one bends only to
   cross a card standing in its way, and only where a clear vertical street
-  exists - otherwise it stays straight at its own port level. Past 60
-  devices a **Large map** chip in the top-left corner offers **Switch to
-  Diagram**; closed, it stays closed in this browser.
+  exists - otherwise it stays straight at its own port level. Each island
+  of cabled devices is laid out on its own and the islands are packed
+  together, and a card's chips spread at most one card's height per port
+  (past that they close up rather than face far peers), so a large,
+  multi-homed map stays a readable size. Past 60 devices a **Large map**
+  chip in the top-left corner offers **Switch to Diagram**; closed, it
+  stays closed in this browser. A layout that would still run off the
+  canvas shows *Couldn't lay out this map.* with **Switch to Diagram**
+  instead of an empty canvas.
 - **Logical** - the L2 picture: **VLANs as rails** (grouped by VLAN group,
   colored by the VLAN's own color or its zone's), with everything attached
   to them - physical devices via their interfaces' untagged/tagged VLANs

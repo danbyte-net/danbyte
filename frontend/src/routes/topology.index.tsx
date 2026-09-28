@@ -3112,6 +3112,16 @@ function TopologyPage() {
                     </EmptyState>
                   ) : undefined
                 }
+                brokenLayout={
+                  viewStyle === "hierarchy" ? (
+                    <BarButton
+                      className="mt-2"
+                      onClick={() => setTab("diagram")}
+                    >
+                      Switch to Diagram
+                    </BarButton>
+                  ) : undefined
+                }
                 matchedIds={matchedIds}
                 selectedEdgeId={selEdgeId}
                 onGhostEdge={setGhost}

@@ -797,6 +797,20 @@ export const HIER_HEADER = 30
 export const HIER_PAD = 12
 export const HIER_MIN_SPAN = 60
 const HIER_NODE_GAP = 36
+/** How far a card's port chips may spread: one plain card and the gap
+ * under it per port, so a hub's chips can still face a column of leaves
+ * one to one. Past that the chips close up and stop facing their peers.
+ * Without a bound a card spanned the distance between its farthest peers,
+ * and on a big multi-homed map that fed on itself: a stretched card pushed
+ * the rest of its rank down, their peers followed, and the next sweep
+ * stretched it further (the 2,475-device demo map came out 3e11 px tall
+ * and drew nothing). */
+function hierMaxSpan(ports: number): number {
+  return Math.max(
+    HIER_MIN_SPAN,
+    ports * (HIER_HEADER + 2 * HIER_PAD + HIER_MIN_SPAN + HIER_NODE_GAP)
+  )
+}
 
 export interface HierPortPos {
   side: "L" | "R"
@@ -826,6 +840,24 @@ export function hierarchyWidth(
   return Math.max(190, Math.min(360, 40 + name + tail) + statusPillReserve(d))
 }
 
+/** Past this a layout is broken, not big: a saved view refuses coordinates
+ * further out (the API's MAX_COORD), and the browser can no longer place
+ * a card that far. */
+export const LAYOUT_LIMIT = 10_000_000
+
+/** A layout the canvas cannot draw: a card at a non-finite or runaway
+ * coordinate. The camera would fit the map from so far out that nothing
+ * shows, so the page says so instead. */
+export function layoutOutOfBounds(nodes: readonly Node[]): boolean {
+  return nodes.some(
+    (n) =>
+      !Number.isFinite(n.position.x) ||
+      !Number.isFinite(n.position.y) ||
+      Math.abs(n.position.x) > LAYOUT_LIMIT ||
+      Math.abs(n.position.y) > LAYOUT_LIMIT
+  )
+}
+
 export interface HierResult {
   nodes: Node[]
   portPos: Map<string, Record<string, HierPortPos>>
@@ -834,6 +866,81 @@ export interface HierResult {
 }
 
 export function layoutHierarchy(
+  nodes: Node[],
+  edges: Edge[],
+  widthOf: (n: Node) => number,
+  positions?: Record<string, [number, number]>
+): HierResult {
+  const pinned = positions ? new Set(Object.keys(positions)) : undefined
+  // Each island of cabled cards is laid out on its own, then the islands
+  // are packed. Laid out as one, the sweeps' collision pass took every card
+  // in a column for a neighbour, whatever island it was in: islands pushed
+  // each other down and interleaved, and a big map came out a hundred
+  // thousand px tall. A map with cards pinned by hand stays one layout -
+  // the packing leaves it alone, so separate islands would overlap.
+  const parts =
+    pinned && nodes.some((n) => pinned.has(n.id))
+      ? [{ nodes, edges }]
+      : hierIslands(nodes, edges)
+  const at = new Map<string, { x: number; y: number }>()
+  const portPos = new Map<string, Record<string, HierPortPos>>()
+  const span = new Map<string, number>()
+  const sides = new Map<string, Record<string, "L" | "R">>()
+  for (const part of parts) {
+    if (!part.edges.length && part.nodes.length === 1) {
+      // A card with no cables: nothing to rank or align.
+      const pin = positions?.[part.nodes[0].id]
+      at.set(part.nodes[0].id, pin ? { x: pin[0], y: pin[1] } : { x: 0, y: 0 })
+      continue
+    }
+    const res = layoutHierarchyPart(part.nodes, part.edges, widthOf, positions)
+    for (const n of res.nodes) at.set(n.id, n.position)
+    for (const [k, v] of res.portPos) portPos.set(k, v)
+    for (const [k, v] of res.span) span.set(k, v)
+    for (const [k, v] of res.sides) sides.set(k, v)
+  }
+  const laid = packComponents(
+    nodes.map((n) => ({ ...n, position: at.get(n.id) ?? { x: 0, y: 0 } })),
+    edges,
+    (n) => ({ width: widthOf(n), height: hierHeight(span.get(n.id) ?? 0) }),
+    pinned
+  )
+  return { nodes: laid, portPos, span, sides }
+}
+
+/** The map's islands - cards joined by cables, directly or through each
+ * other - each with its own edges, in the order the map lists them. */
+function hierIslands(
+  nodes: Node[],
+  edges: Edge[]
+): { nodes: Node[]; edges: Edge[] }[] {
+  const parent = new Map<string, string>()
+  const find = (x: string): string => {
+    let r = x
+    while (parent.get(r) !== r) r = parent.get(r)!
+    parent.set(x, r)
+    return r
+  }
+  for (const n of nodes) parent.set(n.id, n.id)
+  for (const e of edges) {
+    if (!parent.has(e.source) || !parent.has(e.target)) continue
+    parent.set(find(e.source), find(e.target))
+  }
+  const parts = new Map<string, { nodes: Node[]; edges: Edge[] }>()
+  const partOf = (id: string) => {
+    const r = find(id)
+    return parts.get(r) ?? parts.set(r, { nodes: [], edges: [] }).get(r)!
+  }
+  for (const n of nodes) partOf(n.id).nodes.push(n)
+  for (const e of edges)
+    if (parent.has(e.source) && parent.has(e.target))
+      partOf(e.source).edges.push(e)
+  return [...parts.values()]
+}
+
+/** One island of the Hierarchy layout (or the whole map, when cards are
+ * pinned), before the islands are packed. */
+function layoutHierarchyPart(
   nodes: Node[],
   edges: Edge[],
   widthOf: (n: Node) => number,
@@ -923,6 +1030,26 @@ export function layoutHierarchy(
       abs.push({ pt, y })
       prev = y
     }
+    const most = hierMaxSpan(abs.length)
+    const ideal = prev - abs[0].y
+    if (ideal > most) {
+      // Too far apart to face them all: close the gaps up in proportion,
+      // keeping the pitch, and centre the stack on the peers so the chips
+      // fall short both ways rather than all on one side.
+      const floor = (abs.length - 1) * HIER_PORT_PITCH
+      const k = (most - floor) / (ideal - floor)
+      const y0 = abs[0].y
+      let y = y0
+      for (let i = 0; i < abs.length; i++) {
+        if (i > 0)
+          y += HIER_PORT_PITCH + (abs[i].y - abs[i - 1].y - HIER_PORT_PITCH) * k
+        abs[i].y = y
+      }
+      const shift =
+        targets.reduce((s2, x2) => s2 + x2.t, 0) / targets.length -
+        abs.reduce((s2, a2) => s2 + a2.y, 0) / abs.length
+      for (const a2 of abs) a2.y += shift
+    }
     const first = abs[0].y
     const last = abs[abs.length - 1].y
     if (!pinned?.has(id)) top.set(id, first - HIER_HEADER - HIER_PAD)
@@ -986,12 +1113,16 @@ export function layoutHierarchy(
             0,
         }))
         .sort((a2, b2) => a2.t - b2.t)
+      // The card stays; its chips chase their peers only as far as the
+      // card may grow, leaving room for the chips still to come.
+      const most = base + hierMaxSpan(list.length)
       let prev = base - HIER_PORT_PITCH
-      for (const { pt, t } of targets) {
-        const y = Math.max(base, t, prev + HIER_PORT_PITCH)
+      targets.forEach(({ pt, t }, i) => {
+        const room = most - (targets.length - 1 - i) * HIER_PORT_PITCH
+        const y = Math.min(Math.max(base, t, prev + HIER_PORT_PITCH), room)
         portY.set(`${n.id}:${pt.name}`, y)
         prev = y
-      }
+      })
       span.set(n.id, prev - base)
     }
   }
@@ -1050,16 +1181,10 @@ export function layoutHierarchy(
       }
     portPos.set(id, rec)
   }
-  let laid = nodes.map((n) => ({
+  const laid = nodes.map((n) => ({
     ...n,
     position: { x: x.get(n.id) ?? 0, y: top.get(n.id) ?? 0 },
   }))
-  laid = packComponents(
-    laid,
-    edges,
-    (n) => ({ width: widthOf(n), height: hierHeight(span.get(n.id) ?? 0) }),
-    pinned
-  )
   return { nodes: laid, portPos, span, sides }
 }
 

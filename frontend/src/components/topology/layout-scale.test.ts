@@ -4,8 +4,10 @@ import type { Edge, Node } from "@xyflow/react"
 import {
   edgeWaypoints,
   hierarchyWaypoints,
+  LAYOUT_LIMIT,
   layoutHierarchy,
   layoutNodes,
+  layoutOutOfBounds,
   nudgeOffEdges,
   type HierPortPos,
 } from "./layout"
@@ -491,6 +493,111 @@ describe("hierarchy cards never overlap", () => {
           r1.y < r2.y + r2.h - 4 && r1.y + r1.h - 4 > r2.y
         expect(overlap, `${r1.id} overlaps ${r2.id}`).toBe(false)
       }
+  })
+})
+
+describe("hierarchy on a big multi-homed map", () => {
+  // Islands of two cores, access switches cabled to both, and servers
+  // cabled to their access switch, the next one and a management switch -
+  // each card's peers far apart. Before the cards' spread was capped and
+  // the islands laid out one by one, this came out billions of px tall.
+  function islands(count: number) {
+    const nodes: Node[] = []
+    const edges: Edge[] = []
+    const node = (id: string) =>
+      nodes.push({
+        id,
+        type: "hier",
+        position: { x: 0, y: 0 },
+        data: { name: id },
+      })
+    let k = 0
+    const cable = (s: string, sp: string, t: string, tp: string) =>
+      edges.push({
+        id: `e${k++}`,
+        source: s,
+        target: t,
+        sourceHandle: sp,
+        targetHandle: tp,
+        data: { sem: "cable" },
+      })
+    for (let i = 0; i < count; i++) {
+      const cores = [`i${i}-core1`, `i${i}-core2`]
+      const mgmt = `i${i}-mgmt`
+      cores.forEach(node)
+      node(mgmt)
+      let m = 0
+      for (let a = 0; a < 4; a++) {
+        const acc = `i${i}-acc${a}`
+        node(acc)
+        cores.forEach((c, ci) => cable(acc, `up${ci}`, c, `p${a}`))
+        for (let s = 0; s < 8; s++) {
+          const srv = `i${i}-a${a}-s${s}`
+          node(srv)
+          cable(srv, "eth0", acc, `d${s}`)
+          cable(srv, "eth1", `i${i}-acc${(a + 1) % 4}`, `x${a}-${s}`)
+          cable(srv, "mgmt", mgmt, `m${m++}`)
+        }
+      }
+    }
+    for (let j = 0; j < 20; j++) node(`lone${j}`)
+    return { nodes, edges }
+  }
+
+  it("stays on the canvas", () => {
+    const { nodes, edges } = islands(6)
+    const res = layoutHierarchy(nodes, edges, () => 200)
+    expect(layoutOutOfBounds(res.nodes)).toBe(false)
+    const bottom = Math.max(
+      ...res.nodes.map((n) => n.position.y + 60 + (res.span.get(n.id) ?? 0))
+    )
+    // 254 cards: tall, but tens of thousands of px, not billions.
+    expect(bottom).toBeLessThan(150_000)
+    // A card spreads its chips one plain card and gap per port at most.
+    for (const n of res.nodes) {
+      const ports = Object.keys(res.portPos.get(n.id) ?? {}).length
+      expect(res.span.get(n.id) ?? 0).toBeLessThanOrEqual(
+        Math.max(60, ports * 150) + 1e-6
+      )
+    }
+  })
+
+  it("lays each island out as it would alone", () => {
+    // Laid out as one, the islands shared the collision pass and pushed
+    // into each other; now an island's shape is its own.
+    const all = islands(3)
+    const one = islands(1)
+    const lone = new Set(
+      one.nodes.filter((n) => n.id.startsWith("lone")).map((n) => n.id)
+    )
+    const shape = (res: ReturnType<typeof layoutHierarchy>) => {
+      const own = res.nodes.filter((n) => n.id.startsWith("i0-"))
+      const x0 = Math.min(...own.map((n) => n.position.x))
+      const y0 = Math.min(...own.map((n) => n.position.y))
+      return Object.fromEntries(
+        own.map((n) => [n.id, [n.position.x - x0, n.position.y - y0]])
+      )
+    }
+    const alone = layoutHierarchy(
+      one.nodes.filter((n) => !lone.has(n.id)),
+      one.edges,
+      () => 200
+    )
+    expect(shape(layoutHierarchy(all.nodes, all.edges, () => 200))).toEqual(
+      shape(alone)
+    )
+  })
+
+  it("flags a layout that runs off the canvas", () => {
+    const at = (x: number, y: number): Node => ({
+      id: "a",
+      position: { x, y },
+      data: {},
+    })
+    expect(layoutOutOfBounds([at(0, 0), at(5_000, 90_000)])).toBe(false)
+    expect(layoutOutOfBounds([at(0, LAYOUT_LIMIT * 2)])).toBe(true)
+    expect(layoutOutOfBounds([at(Number.NaN, 0)])).toBe(true)
+    expect(layoutOutOfBounds([at(0, -Infinity)])).toBe(true)
   })
 })
 
