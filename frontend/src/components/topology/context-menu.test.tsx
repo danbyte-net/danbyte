@@ -14,14 +14,18 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { useHideKeys } from "@/components/hidden-objects"
 import { PointerMenu } from "@/components/pointer-menu"
 import {
   DeviceMenuItems,
   GroupMenuItems,
   PaneMenuItems,
   RegionMenuItems,
+  deviceMenuKeys,
+  groupMenuKeys,
 } from "./context-menu"
 import type { CardFace, DeviceMenuProps } from "./context-menu"
 
@@ -41,15 +45,22 @@ window.scrollTo = () => undefined
 /** The items, open at a point, inside a real in-memory router (the device
  * and settings items are router links). */
 async function openMenu(items: React.ReactNode, onClose = vi.fn()) {
+  const router = await inRouter(() => (
+    <PointerMenu menu={{ x: 40, y: 60 }} onClose={onClose} label="Test">
+      {() => items}
+    </PointerMenu>
+  ))
+  return { router, onClose }
+}
+
+/** `page` at /topology inside a real in-memory router, once its menu is
+ * open. */
+async function inRouter(page: () => React.ReactNode) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const map = createRoute({
     getParentRoute: () => root,
     path: "/topology",
-    component: () => (
-      <PointerMenu menu={{ x: 40, y: 60 }} onClose={onClose} label="Test">
-        {() => items}
-      </PointerMenu>
-    ),
+    component: page,
   })
   const devicePage = createRoute({
     getParentRoute: () => root,
@@ -67,7 +78,7 @@ async function openMenu(items: React.ReactNode, onClose = vi.fn()) {
   })
   render(<RouterProvider router={router as never} />)
   await screen.findByRole("menu")
-  return { router, onClose }
+  return router
 }
 
 /** The menu's rows in order: items by their text, separators as "--". */
@@ -405,5 +416,83 @@ describe("PointerMenu", () => {
   it("names the menu", async () => {
     await openMenu(<GroupMenuItems onOpen={vi.fn()} onHide={vi.fn()} />)
     expect(screen.getByRole("menu").getAttribute("aria-label")).toBe("Test")
+  })
+})
+
+describe("menu shortcuts", () => {
+  /** Card A is selected on the canvas (the page's H and Delete act on it)
+   * and card B is right-clicked: its menu is open. */
+  function Harness({
+    a,
+    b,
+    onClose,
+  }: {
+    a: DeviceMenuProps
+    b: DeviceMenuProps
+    onClose: () => void
+  }) {
+    useHideKeys(a.onHide ?? null, () => undefined)
+    useEffect(() => {
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Delete") a.onRemove()
+      }
+      window.addEventListener("keydown", onKey)
+      return () => window.removeEventListener("keydown", onKey)
+    }, [a])
+    const [menu, setMenu] = useState<{ x: number; y: number } | null>({
+      x: 40,
+      y: 60,
+    })
+    return (
+      <PointerMenu
+        menu={menu}
+        onClose={() => {
+          onClose()
+          setMenu(null)
+        }}
+        keys={() => deviceMenuKeys(b)}
+      >
+        {() => <DeviceMenuItems {...b} />}
+      </PointerMenu>
+    )
+  }
+
+  it.each([
+    ["h", "onHide"],
+    ["Delete", "onRemove"],
+    ["Backspace", "onRemove"],
+  ] as const)(
+    "%s acts on the card right-clicked, not the selection",
+    async (key, handler) => {
+      const a = device({ deviceId: "a", builder: true })
+      const b = device({ deviceId: "b", builder: true })
+      const onClose = vi.fn()
+      await inRouter(() => <Harness a={a} b={b} onClose={onClose} />)
+      fireEvent.keyDown(screen.getByRole("menu"), { key })
+      expect(b[handler]).toHaveBeenCalledOnce()
+      expect(a.onHide).not.toHaveBeenCalled()
+      expect(a.onRemove).not.toHaveBeenCalled()
+      expect(onClose).toHaveBeenCalledOnce()
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull())
+    }
+  )
+
+  it("leaves Del alone on a filtered map, and Shift+H to the page", () => {
+    const b = device({ deviceId: "b", builder: false })
+    const keys = deviceMenuKeys(b)
+    expect(Object.keys(keys)).toEqual(["h"])
+    const g = { onOpen: vi.fn(), onHide: vi.fn() }
+    groupMenuKeys(g).h?.()
+    expect(g.onHide).toHaveBeenCalledOnce()
+  })
+
+  it("passes Shift+H through to show everything", async () => {
+    const a = device({ deviceId: "a", builder: true })
+    const b = device({ deviceId: "b", builder: true })
+    const onClose = vi.fn()
+    await inRouter(() => <Harness a={a} b={b} onClose={onClose} />)
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "H", shiftKey: true })
+    expect(b.onHide).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

@@ -14,6 +14,9 @@ export interface PointerMenuAt {
   y: number
 }
 
+/** Shortcut keys a pointer menu answers while open. */
+export type MenuKeys = Partial<Record<string, () => void>>
+
 /**
  * A right-click menu on a canvas: the shared DropdownMenu, controlled, and
  * anchored at the pointer instead of a button. Open it by setting `menu`
@@ -26,12 +29,17 @@ export interface PointerMenuAt {
  *
  * A right-click that closes the menu only closes it: the browser's own
  * context menu stays shut, as it would with the old overlay.
+ *
+ * `keys` lets the open menu answer the shortcuts its items show (H for
+ * Hide, Del for Remove): pressed while it is open, they act on the thing
+ * right-clicked, not on whatever the canvas has selected, and close it.
  */
 export function PointerMenu<T extends PointerMenuAt>({
   menu,
   onClose,
   label,
   className,
+  keys,
   children,
 }: {
   menu: T | null
@@ -39,6 +47,10 @@ export function PointerMenu<T extends PointerMenuAt>({
   /** The menu's accessible name, e.g. "Device". */
   label?: string
   className?: string
+  /** The open menu's shortcuts, by `KeyboardEvent.key` with letters in
+   * lower case ("h", "Delete"). A key pressed with Ctrl, Alt, Meta or
+   * Shift is left to the page. */
+  keys?: (menu: T) => MenuKeys
   children: (menu: T) => React.ReactNode
 }) {
   const last = useRef<T | null>(menu)
@@ -95,6 +107,19 @@ export function PointerMenu<T extends PointerMenuAt>({
         // Nothing to hand the focus back to: the anchor is a point. And an
         // item that opens an editor (Rename, Add text) keeps its focus.
         onCloseAutoFocus={(e) => e.preventDefault()}
+        // Ahead of the menu's type-to-find, and of the page's own key
+        // listeners, which act on the selection.
+        onKeyDown={(e) => {
+          if (!menu || !keys) return
+          if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+          const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+          const run = keys(menu)[key]
+          if (!run) return
+          e.preventDefault()
+          e.stopPropagation()
+          run()
+          onClose()
+        }}
       >
         {shown && children(shown)}
       </DropdownMenuContent>

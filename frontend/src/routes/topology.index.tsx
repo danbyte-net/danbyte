@@ -113,14 +113,20 @@ import {
   TopologyFilters,
 } from "@/components/topology/filters-popover"
 import { CanvasLegend, legendRows } from "@/components/topology/legend"
+import { PartialMapChip } from "@/components/topology/partial-map-chip"
 import { ExportMenu } from "@/components/topology/export/export-menu"
 import {
   DeviceMenuItems,
   GroupMenuItems,
   PaneMenuItems,
   RegionMenuItems,
+  deviceMenuKeys,
+  groupMenuKeys,
 } from "@/components/topology/context-menu"
-import type { CardFace } from "@/components/topology/context-menu"
+import type {
+  CardFace,
+  DeviceMenuProps,
+} from "@/components/topology/context-menu"
 import { PointerMenu } from "@/components/pointer-menu"
 import {
   LogicalBar,
@@ -906,6 +912,8 @@ function TopologyPage() {
     zoneId?: string
   } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  // The camera shows a part of a map too large to open whole.
+  const [partialMap, setPartialMap] = useState(false)
   // The device whose own card lines the "Card lines…" dialog edits.
   const [cardLinesFor, setCardLinesFor] = useState<CardLinesTarget | null>(null)
   const [search, setSearch] = useUrlText("q", "", { replace: true })
@@ -2179,7 +2187,9 @@ function TopologyPage() {
           t.tagName === "TEXTAREA" ||
           t.tagName === "SELECT" ||
           t.isContentEditable ||
-          t.closest("[role=dialog],[role=alertdialog],[role=listbox]"))
+          t.closest(
+            "[role=dialog],[role=alertdialog],[role=listbox],[role=menu]"
+          ))
       )
         return
       if (deleteKey.current?.()) e.preventDefault()
@@ -2335,21 +2345,80 @@ function TopologyPage() {
         show: "@max-[1040px]/head:inline-flex",
         find: "@max-[1040px]/head:w-36",
       }
+  // The second bar's widths below which Objects and Copy link move into
+  // More: an applied view's Edited, Save and Delete need the room.
+  const barNarrow =
+    viewId !== "none"
+      ? {
+          hide: "@max-[1080px]/bar:hidden",
+          show: "@max-[1080px]/bar:inline-flex",
+          views: "@max-[1080px]/bar:w-36",
+        }
+      : {
+          hide: "@max-[920px]/bar:hidden",
+          show: "@max-[920px]/bar:inline-flex",
+          views: "@max-[920px]/bar:w-36",
+        }
+
+  /** A device card's right-click menu: its items and the keys they show
+   * act on this card, not on the canvas selection. */
+  const deviceMenu = (
+    n: TopoNode["data"],
+    nodeId: string | undefined
+  ): DeviceMenuProps => {
+    const id = n.device_id ?? null
+    return {
+      deviceId: id,
+      builder,
+      onFocus: () => id && focusDevice(id),
+      onAddConnected: () => id && void addConnected([id]),
+      onRemove: () => {
+        if (!id) return
+        removeFromSet([id])
+        clearSel()
+      },
+      // One step: leaving focus and seeding the set are the same
+      // transition.
+      onStartSet: () => id && startSetAt(id),
+      onHide: nodeId
+        ? () => setHiddenNodes(withHidden(hidden, "devices", nodeId, true))
+        : undefined,
+      diagram:
+        isDiagram && id
+          ? {
+              face: grouped ? undefined : cardFace(n, id),
+              onCardLines: canDo("device", "change")
+                ? () => setCardLinesFor({ id, name: n.name, role: n.role })
+                : undefined,
+              roleSlug: (canManage && n.role?.slug) || undefined,
+            }
+          : undefined,
+    }
+  }
+  /** A site or location card's right-click menu. */
+  const groupMenu = (g: TopoGroupData) => ({
+    onOpen: () => drillInto(g),
+    onHide: () =>
+      setHiddenNodes(
+        withHidden(
+          hidden,
+          g.kind === "site" ? "sites" : "locations",
+          g.name,
+          true
+        )
+      ),
+  })
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Both bars fit a 1280px screen with the sidebar open: past the
           widths below, the header's Simple | Detailed and the second bar's
-          Objects and Copy link move into a More menu (and the header's
-          count gives way to a scope chip). Anything narrower scrolls, with
-          its scrollbar showing. */}
+          Objects and Copy link move into a More menu. Anything narrower
+          scrolls, with its scrollbar showing. */}
       <header className="@container/head flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
         <h1 className="shrink-0 text-base font-semibold">Topology</h1>
         {q.data && !logical && (
-          <Badge
-            variant="secondary"
-            className={cn("shrink-0", scopeChip && headNarrow.hide)}
-          >
+          <Badge variant="secondary" className="shrink-0">
             <span className="num">{count}</span>{" "}
             {grouped
               ? count === 1
@@ -2358,20 +2427,6 @@ function TopologyPage() {
               : count === 1
                 ? "device"
                 : "devices"}
-          </Badge>
-        )}
-        {drill && (
-          <Badge variant="default" className="shrink-0 gap-1">
-            <TruncatedText className="max-w-40">{drill.name}</TruncatedText>
-            <ChipClose label="Back to groups" onClick={leaveDrill} />
-          </Badge>
-        )}
-        {/* A view saved as a device set is that set: its name is in the
-            views select and the count beside the title. */}
-        {handPickedChip && (
-          <Badge variant="default" className="shrink-0 gap-1">
-            Hand-picked · <span className="num">{custom?.length ?? 0}</span>
-            <ChipClose label="Back to filtered map" onClick={exitBuilder} />
           </Badge>
         )}
         <SegmentedTabs<TabStyle>
@@ -2404,6 +2459,21 @@ function TopologyPage() {
               ]}
             />
           </div>
+        )}
+        {/* Scope chips follow the tabs, so the tabs never move. */}
+        {drill && (
+          <Badge variant="default" className="shrink-0 gap-1">
+            <TruncatedText className="max-w-40">{drill.name}</TruncatedText>
+            <ChipClose label="Back to groups" onClick={leaveDrill} />
+          </Badge>
+        )}
+        {/* A view saved as a device set is that set: its name is in the
+            views select and the count beside the title. */}
+        {handPickedChip && (
+          <Badge variant="default" className="shrink-0 gap-1">
+            Hand-picked · <span className="num">{custom?.length ?? 0}</span>
+            <ChipClose label="Back to filtered map" onClick={exitBuilder} />
+          </Badge>
         )}
         {focus && (
           <Badge variant="default" className="shrink-0 gap-1">
@@ -2707,7 +2777,10 @@ function TopologyPage() {
           >
             <SelectTrigger
               size="sm"
-              className="w-44 shrink-0 text-xs data-[size=sm]:h-7 @max-[1080px]/bar:w-36"
+              className={cn(
+                "w-44 shrink-0 text-xs data-[size=sm]:h-7",
+                barNarrow.views
+              )}
               aria-label="Views"
             >
               <SelectValue placeholder="Views" />
@@ -2762,7 +2835,7 @@ function TopologyPage() {
             <BarToggle
               pressed={showObjects}
               onClick={toggleObjects}
-              className="@max-[1080px]/bar:hidden"
+              className={barNarrow.hide}
             >
               <PanelRight /> Objects
             </BarToggle>
@@ -2909,10 +2982,7 @@ function TopologyPage() {
                 </DropdownMenu>
               </>
             )}
-            <BarButton
-              onClick={copyLink}
-              className="@max-[1080px]/bar:hidden"
-            >
+            <BarButton onClick={copyLink} className={barNarrow.hide}>
               <LinkIcon /> Copy link
             </BarButton>
             <ExportMenu
@@ -2950,7 +3020,7 @@ function TopologyPage() {
               <DropdownMenuTrigger asChild>
                 <BarIconButton
                   label="More"
-                  className="hidden @max-[1080px]/bar:inline-flex"
+                  className={cn("hidden", barNarrow.show)}
                 >
                   <MoreHorizontal />
                 </BarIconButton>
@@ -3107,6 +3177,7 @@ function TopologyPage() {
                     })
                 }}
                 onPaneContext={(x, y, fx, fy) => setMenu({ x, y, fx, fy })}
+                onPartialChange={setPartialMap}
                 onCanvasClick={clearSel}
                 onDragEnd={() => {
                   const p = canvas.current?.positions()
@@ -3124,7 +3195,8 @@ function TopologyPage() {
 
           {/* The top-left corner is the one the canvas leaves free: the
               MiniMap is bottom-right, the legend and zoom controls
-              bottom-left, and a detail panel opens top-right. */}
+              bottom-left, and a detail panel opens top-right. Its chips
+              stack: the large-map hint, Partial map, the hidden count. */}
           <div className="pointer-events-none absolute top-3 left-3 z-10 flex flex-col items-start gap-2 [&>*]:pointer-events-auto">
             {graph &&
               viewStyle === "hierarchy" &&
@@ -3161,6 +3233,7 @@ function TopologyPage() {
                   </Tooltip>
                 </div>
               )}
+            {!logical && graph && partialMap && <PartialMapChip />}
             {!showObjects && (
               <HiddenChip
                 count={hiddenHere}
@@ -3280,70 +3353,18 @@ function TopologyPage() {
                 ? "Area"
                 : "Map"
         }
+        keys={(m) =>
+          m.node
+            ? deviceMenuKeys(deviceMenu(m.node, m.nodeId))
+            : m.group
+              ? groupMenuKeys(groupMenu(m.group))
+              : {}
+        }
       >
         {(m) => {
-          if (m.node) {
-            const n = m.node
-            const id = n.device_id ?? null
-            return (
-              <DeviceMenuItems
-                deviceId={id}
-                builder={builder}
-                onFocus={() => id && focusDevice(id)}
-                onAddConnected={() => id && void addConnected([id])}
-                onRemove={() => {
-                  if (!id) return
-                  removeFromSet([id])
-                  clearSel()
-                }}
-                // One step: leaving focus and seeding the set are the same
-                // transition.
-                onStartSet={() => id && startSetAt(id)}
-                onHide={
-                  m.nodeId
-                    ? () =>
-                        setHiddenNodes(
-                          withHidden(hidden, "devices", m.nodeId!, true)
-                        )
-                    : undefined
-                }
-                diagram={
-                  isDiagram && id
-                    ? {
-                        face: grouped ? undefined : cardFace(n, id),
-                        onCardLines: canDo("device", "change")
-                          ? () =>
-                              setCardLinesFor({
-                                id,
-                                name: n.name,
-                                role: n.role,
-                              })
-                          : undefined,
-                        roleSlug: (canManage && n.role?.slug) || undefined,
-                      }
-                    : undefined
-                }
-              />
-            )
-          }
-          if (m.group) {
-            const g = m.group
-            return (
-              <GroupMenuItems
-                onOpen={() => drillInto(g)}
-                onHide={() =>
-                  setHiddenNodes(
-                    withHidden(
-                      hidden,
-                      g.kind === "site" ? "sites" : "locations",
-                      g.name,
-                      true
-                    )
-                  )
-                }
-              />
-            )
-          }
+          if (m.node)
+            return <DeviceMenuItems {...deviceMenu(m.node, m.nodeId)} />
+          if (m.group) return <GroupMenuItems {...groupMenu(m.group)} />
           if (m.zoneId) {
             const id = m.zoneId
             const region = zones?.find((z) => z.id === id)

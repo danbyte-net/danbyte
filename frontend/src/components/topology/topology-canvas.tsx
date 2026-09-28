@@ -38,13 +38,13 @@ import type {
 import { useTheme } from "@/components/theme-provider"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
-import { InfoTip } from "@/components/ui/info-tip"
 import { readableText } from "@/lib/color"
 import { cn, cssColor } from "@/lib/utils"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
 import { diagramFontsReady } from "@/lib/diagram/measure"
 import type { DiagramDocument } from "@/lib/diagram/types"
 import { CanvasTip } from "./canvas-tip"
+import { PartialMapChip } from "./partial-map-chip"
 import type { CanvasTipHandle } from "./canvas-tip"
 import { ABOVE, BELOW, RIGHT, handleId } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
@@ -1176,6 +1176,11 @@ export interface TopologyCanvasProps {
    * went is reported to `onSpread` - even when nothing had to move. */
   spreadFrom?: Record<string, [number, number]>
   onSpread?: (centres: Record<string, [number, number]>) => void
+  /** Told when the camera shows only part of a map too large to open
+   * whole, and when it no longer does. With it the page draws the
+   * "Partial map" chip where its other chips are; without it the canvas
+   * draws the chip at its foot. */
+  onPartialChange?: (partial: boolean) => void
 }
 
 /** Where to aim the camera for a node: diagram nodes are placed by their
@@ -1365,6 +1370,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     pending,
     spreadFrom,
     onSpread,
+    onPartialChange,
   },
   ref
 ) {
@@ -1871,6 +1877,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // zoom, on a part of it that means something (opening-view.ts), with a
   // word on how to find the rest.
   const [partial, setPartial] = useState(false)
+  const partialRef = useRef(onPartialChange)
+  partialRef.current = onPartialChange
+  useEffect(() => partialRef.current?.(partial), [partial])
   const fitMap = useCallback(
     (duration: number) => {
       const el = wrapper.current
@@ -2969,14 +2978,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           <div className="pointer-events-auto">{emptyState}</div>
         </div>
       )}
-      {partial && (
+      {partial && !onPartialChange && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4">
-          <div className="pointer-events-auto flex items-center gap-1 rounded-md border bg-background/95 px-2 py-1 text-xs whitespace-nowrap text-muted-foreground">
-            Partial map
-            <InfoTip side="top">
-              Part of a large map. Search or focus a device to see the rest.
-            </InfoTip>
-          </div>
+          <PartialMapChip side="top" className="pointer-events-auto" />
         </div>
       )}
       <CanvasTip ref={tipApi} root={wrapper} />

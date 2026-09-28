@@ -23,6 +23,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import type { MenuKeys } from "@/components/pointer-menu"
 import { cn } from "@/lib/utils"
 import { bandLook } from "./diagram/band-node"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
@@ -139,6 +140,27 @@ export function DeviceMenuItems({
   )
 }
 
+/** The shortcuts a device menu shows, for PointerMenu's `keys`: H hides
+ * the card right-clicked and Del takes it off a hand-picked map, whatever
+ * else the canvas has selected. */
+export function deviceMenuKeys({
+  deviceId,
+  builder,
+  onRemove,
+  onHide,
+}: Pick<
+  DeviceMenuProps,
+  "deviceId" | "builder" | "onRemove" | "onHide"
+>): MenuKeys {
+  const keys: MenuKeys = {}
+  if (onHide) keys.h = onHide
+  if (deviceId && builder) {
+    keys.Delete = onRemove
+    keys.Backspace = onRemove
+  }
+  return keys
+}
+
 /** Photo or card, named for what a pick switches to; and, on a photo,
  * where its cables meet it. */
 function FaceItems({ face }: { face: CardFace }) {
@@ -193,6 +215,11 @@ export function GroupMenuItems({
       </DropdownMenuItem>
     </>
   )
+}
+
+/** The shortcut a group menu shows: H hides the group right-clicked. */
+export function groupMenuKeys({ onHide }: { onHide: () => void }): MenuKeys {
+  return { h: onHide }
 }
 
 /** A swatch in a band or zone menu. */

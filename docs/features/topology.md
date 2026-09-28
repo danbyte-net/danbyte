@@ -8,7 +8,7 @@ icon: lucide/share-2
 **Diagram / Hierarchy / Logical** tabs in the header:
 
 - **Diagram** (default) - a clean, printable network diagram: one solid
-  card per device in its role's colour, in **Detailed** mode (the default:
+  card per device in its role's color, in **Detailed** mode (the default:
   a nub and a named line per cabled interface) or **Simple** (one line per
   device pair), with a choice of line. See [Diagram view](#diagram-view).
 - **Hierarchy** - tall rounded cards with the identity on a header row (the
@@ -69,14 +69,14 @@ The port-by-port **stencil cards** Wiring drew live on in the
 ## Diagram view
 
 The **Diagram** tab draws the map the way you would sketch it for a wiki
-page or a change ticket: plain cards and lines, colour only where it means
+page or a change ticket: plain cards and lines, color only where it means
 something.
 
 - **Cards** - each device is a solid rounded card filled with its **role's
-  colour**, the name bold and centred at the top and a few quieter lines
+  color**, the name bold and centred at the top and a few quieter lines
   under it (by default its IP, loopback and serial - see
   [Card lines](#card-lines)). The text is black or white, whichever reads on
-  that colour. A device whose role has no colour gets a plain grey card.
+  that color. A device whose role has no color gets a plain grey card.
   Patch panels keep a dashed edge.
 - **The pill** - at most one, inside the card's top-left corner: the
   monitoring pill (your tenant's name for *down* or *degraded*) while the
@@ -158,7 +158,7 @@ names it at any zoom.
 The cards fetch their lines with the map (`include=card`), and the
 monitoring states load whenever a card lists the monitoring pill - not only
 with the sidebar open. The legend lists the roles on the map in their card
-colours, and the monitoring pill when a card can show it.
+colors, and the monitoring pill when a card can show it.
 
 ### Card lines
 
@@ -302,7 +302,7 @@ and of the link (`labels=`).
 - **Subnets** - the shared subnet as the chip on the middle of the line
   (both, stacked, on a dual-stack link; under a bundle's count).
 
-The gaps are the canvas's own colour, in the light and the dark theme, and
+The gaps are the canvas's own color, in the light and the dark theme, and
 the page's white in every export. The gap is cut to the text's exact width,
 so it stays even on both sides at every zoom; on a faded line (while another
 is hovered) only the text fades, and the break stays. A hovered or selected
@@ -407,7 +407,7 @@ greyed out (it would change nothing).
 - **Performance:** photos load with the map only while some device shows
   one (`include=photo`). Far out - below 35% zoom on a map with 24 photos
   or more, 12% on a smaller one - each photo is drawn as a box, edged and
-  tinted in its role's colour (neutral without a role). On a
+  tinted in its role's color (neutral without a role). On a
   map of 200 devices or more only the photos in view are drawn, as with
   cards.
 - **Exports:** a photo that will not load when a file is made (a network
@@ -491,8 +491,8 @@ These keep a large map legible:
   and the nearest other cabled devices that fit on screen with it (at 30%
   zoom or closer, so the card names read, and on a photo map so the photos
   are pictures) - never the devices nothing is cabled to, packed under the
-  rest - and a **Partial map** chip (its ⓘ says to search or focus a device
-  for the rest). The fit button does the same; the chip goes as soon as you
+  rest - and a **Partial map** chip at the top left (its ⓘ says to search
+  or focus a device for the rest). The fit button does the same; the chip goes as soon as you
   move the map.
 - **Only the cards in view are drawn** - above 200 cards the Diagram hands
   each card (or photo) over with its size, so the page draws the cards in
@@ -530,7 +530,7 @@ whichever view is active (the Logical view carries its own under the
 diagram); its open/closed state is remembered per browser. On the Diagram
 it lists the roles on the map as their badges. With **Color by** on *Type*
 or *Speed* it keys the cable types on the map, or the speed tiers, as short
-lines in their colours; on *Cable* or *Status* it says so in one line
+lines in their colors; on *Cable* or *Status* it says so in one line
 (*Color by cable*). Its **Hide legend** button folds it to a small
 **Legend** chip, which opens it again. Clicking a cable draws it emphasized
 in the accent color while its panel is open.
@@ -914,7 +914,7 @@ band, "PNI" next to a line, a cloud captioned "Internet · DC02".
 - **Delete** it from the toolbar, or select it and press ++delete++ (or
   ++backspace++).
 
-Notes are in muted ink and never coloured. Every change is one undo step,
+Notes are in muted ink and never colored. Every change is one undo step,
 and they save with the view (the default map keeps its own in this
 browser). The SVG, PNG and draw.io exports draw them where they stand.
 
@@ -956,7 +956,7 @@ a 70-card map.
   site or location, the groups are listed instead; double-click one to open
   it.
 - **Links** by cable type (**No type** for cables without one), each family
-  headed by a badge in its line colour, with **LLDP** (discovered links) and
+  headed by a badge in its line color, with **LLDP** (discovered links) and
   **BGP sessions**
   (a dotted line per peering device pair and table, labelled with the two
   AS numbers, iBGP or eBGP and the VRF; click it to open the session) as
@@ -1168,7 +1168,8 @@ there. The menus are the app's own menus: the arrow keys move through them,
 ++enter++ picks, ++esc++ or a click anywhere else closes them, and a
 right-click outside only closes the menu - the browser's own menu stays
 shut. An item that the toolbar also has keeps the toolbar's icon; a key that
-does the same thing is shown at the item's right.
+does the same thing is shown at the item's right, and pressed while the menu
+is open it acts on what you right-clicked, not on what is selected.
 
 | Right-click | Items, in order |
 |---|---|
@@ -1269,7 +1270,7 @@ The menu's choices are remembered per browser:
   portrait. A3 landscape until you choose.
 - **Title and legend** - a strip under a PNG or SVG: the view name, the
   tenant, the filters, the date and a link back to this map, beside the
-  legend (role colours, the monitoring pill, line styles). On a PDF the
+  legend (role colors, the monitoring pill, line styles). On a PDF the
   legend runs under the drawing, and the title block sits in the sheet's
   bottom-right corner: the view name; the tenant and filters; the date, the
   Danbyte version and the page.
@@ -1278,7 +1279,7 @@ A file is named after the saved view (else the site, else `topology`) and
 the day: `arhus-dc-2026-09-26.drawio`.
 
 **Hierarchy** exports its SVG, PDF and draw.io in the Diagram's Simple
-look: a compact role-coloured card with the device's IP, centred where its
+look: a compact role-colored card with the device's IP, centred where its
 card sits on the tab, and one straight line per device pair with a count
 chip (`2x`) when it stands for several cables. Its port chips are how that
 tab draws rather than what the map says. Its PNG is still a picture of the
@@ -1287,8 +1288,8 @@ canvas as you see it, in the app's theme. The Logical tab has no export.
 ### How Diagram exports are drawn
 
 Every export is light-themed whatever theme the app is in: white paper,
-zinc greys, and colour only where it means something - role fills, status
-pills, cable colours.
+zinc greys, and color only where it means something - role fills, status
+pills, cable colors.
 
 - **SVG** is plain vector drawing: shapes, lines and text, no embedded HTML.
   It opens in a browser, Inkscape or Illustrator and stays editable. Text is
@@ -1314,10 +1315,10 @@ pills, cable colours.
   not load is drawn as the device's card; a faceplate, which has no image,
   is too.
 
-Both show what the canvas shows, from the same plan: role-coloured cards
+Both show what the canvas shows, from the same plan: role-colored cards
 with the name, card lines and pill; in Detailed, the interface nubs; the
 port names and addresses on their cables where the map put them, each over
-a box in the colour under it - the page, or its band - that breaks the
+a box in the color under it - the page, or its band - that breaks the
 line (a label the map left off is left off);
 every elbow in its lane; the same line types, Cyclical arcs and each link's
 own line (curves follow draw.io's curved rule, so the draw.io file
@@ -1334,7 +1335,7 @@ and hidden devices or link families never reach a file.
 **draw.io** (`.drawio`) is the same diagram as a file you keep editing, in
 draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
 
-- **Cards** are rounded boxes in the role colour, with the name in bold and
+- **Cards** are rounded boxes in the role color, with the name in bold and
   the card lines under it; the pill is a small box in the top-left corner.
   Each card links back: click it in draw.io to open the device in Danbyte,
   and its Danbyte id is under *Edit Data* (Ctrl+M). A name cut to fit its
@@ -1345,7 +1346,7 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   adds the interface nubs; each line leaves its own nub.
 - **Labels:** the chip (subnet, count) is the line's own label. Each port
   name and address is a label cell on its line, turned along it, on a
-  background of the colour under it (white, or its band's) with a space
+  background of the color under it (white, or its band's) with a space
   either side, so the line breaks for it
   with a small gap round the text - move the line and they follow.
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
@@ -1647,7 +1648,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other colour string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |
