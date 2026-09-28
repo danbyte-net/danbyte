@@ -5,7 +5,19 @@ import { Layers, Waypoints } from "lucide-react"
 
 import { api, type DevicePathRun } from "@/lib/api"
 import { QueryError } from "@/components/query-error"
-import { FanOut, PathStrip, type PathStep } from "@/components/cable-trace-path"
+import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
+  FanOut,
+  IncompleteBadge,
+  PathStrip,
+  type PathStep,
+} from "@/components/cable-trace-path"
 
 // The end-to-end cabled runs of a device, one flat strip each (panels crossed
 // front⇄rear). Shared by the device page's topology widget and the site map's
@@ -15,7 +27,7 @@ export function DevicePathsList({
   deviceId,
   onTraceCables,
   max = 5,
-  emptyText = "Nothing cabled yet - connect a port and its run shows up here.",
+  emptyText = "Not cabled.",
 }: {
   deviceId: string
   onTraceCables?: (cableIds: string[]) => void
@@ -36,10 +48,8 @@ export function DevicePathsList({
         <QueryError error={paths.error} />
       </div>
     )
-  if (paths.isLoading)
-    return <div className="h-16 w-full animate-pulse rounded bg-muted/30" />
-  if (runs.length === 0)
-    return <p className="px-1 text-[12px] text-muted-foreground">{emptyText}</p>
+  if (paths.isLoading) return <Loading />
+  if (runs.length === 0) return <EmptyState title={emptyText} className="p-4" />
 
   return (
     <div className="divide-y divide-border">
@@ -174,20 +184,21 @@ export function PathRow({
           hasLeading ? (
             <div className="mr-2 flex shrink-0 items-center gap-1.5">
               {onTraceCables && ids.length > 0 && (
-                <button
-                  type="button"
-                  title="Trace this whole run"
-                  onClick={() => onTraceCables(ids)}
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
-                >
-                  <Waypoints className="h-3.5 w-3.5" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Trace run"
+                      onClick={() => onTraceCables(ids)}
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                    >
+                      <Waypoints className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent variant="default">Trace run</TooltipContent>
+                </Tooltip>
               )}
-              {!run.complete && (
-                <span className="shrink-0 text-[9px] text-amber-600 dark:text-amber-400">
-                  incomplete
-                </span>
-              )}
+              {!run.complete && <IncompleteBadge />}
             </div>
           ) : undefined
         }

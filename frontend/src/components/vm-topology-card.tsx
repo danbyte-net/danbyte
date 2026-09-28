@@ -7,6 +7,8 @@ import {
   type VMInterface,
   type VirtNetwork,
 } from "@/lib/api"
+import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { railText } from "@/components/topology/rail-diagram"
 
 // Mirrors the main topology view's language at VM scale: the VM box on top,
@@ -33,6 +35,19 @@ const PALETTE = [
 
 function fit(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s
+}
+
+/** The card's heading over whatever it holds - the map, its loader or its
+ * empty state - in the detail page's section-title style. */
+function TopologySection({ children }: { children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+        Topology
+      </h2>
+      {children}
+    </section>
+  )
 }
 
 /** VM-centric slice of the network topology: this VM's interfaces → the
@@ -104,35 +119,31 @@ export function VmTopologyCard({
   }
 
   if (ifaces.isLoading || nets.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (conns.length === 0) {
-    const syncOn = source.data?.sync_networks
     return (
-      <p className="text-sm text-muted-foreground">
-        {syncOn ? (
-          <>
-            The source syncs networks, but hasn&rsquo;t linked this
-            VM&rsquo;s interfaces to one yet. Run a sync - and note vCenter
-            network links need Danbyte v0.13.0 or newer.
-          </>
-        ) : syncedFromId ? (
-          <>
-            This VM isn&rsquo;t on a mapped virtual network yet. Enable{" "}
-            <span className="font-medium">
-              virtual switches &amp; networks
-            </span>{" "}
-            sync on its source to populate this.
-          </>
-        ) : (
-          <>
-            No virtual networks are mapped for this VM. Networks appear here
-            when a virtualization source syncs them, or when an interface is
-            assigned a VLAN.
-          </>
-        )}
-      </p>
+      <TopologySection>
+        <Loading />
+      </TopologySection>
     )
-  }
+  if (conns.length === 0)
+    return (
+      <TopologySection>
+        <EmptyState title="No virtual networks yet.">
+          {source.data?.sync_networks ? (
+            "Run a sync on its source."
+          ) : syncedFromId ? (
+            <>
+              Turn on{" "}
+              <span className="font-medium">
+                Sync virtual switches &amp; networks
+              </span>{" "}
+              on its source.
+            </>
+          ) : (
+            "Assign a VLAN to one of its interfaces."
+          )}
+        </EmptyState>
+      </TopologySection>
+    )
 
   const vmCx = PAD + VM_W / 2
   const railsY = (i: number) => PAD + VM_H + DROP + i * (RAIL_H + RAIL_GAP)
@@ -141,10 +152,7 @@ export function VmTopologyCard({
     conns[i].vlan?.color || PALETTE[i % PALETTE.length]
 
   return (
-    <section>
-      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
-        Network topology
-      </h2>
+    <TopologySection>
       <div className="overflow-x-auto rounded-lg border border-border bg-muted/10 p-2">
         <svg width={W} height={height} style={{ fontFamily: "inherit" }}>
           {/* legs - ribbon-cable lanes: each attachment runs box → its rail in
@@ -208,7 +216,7 @@ export function VmTopologyCard({
             const y = railsY(i)
             const label =
               (c.net?.name || c.vlan?.name || c.net?.ext_key || "network") +
-              (c.vlan ? `  ·  VLAN ${c.vlan.vlan_id}` : "")
+              (c.vlan ? ` · VLAN ${c.vlan.vlan_id}` : "")
             const vlanId = c.vlan?.id
             return (
               <g
@@ -255,6 +263,6 @@ export function VmTopologyCard({
           })}
         </svg>
       </div>
-    </section>
+    </TopologySection>
   )
 }

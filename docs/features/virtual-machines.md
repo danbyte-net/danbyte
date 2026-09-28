@@ -29,8 +29,12 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 
 ## The detail page
 
-**Overview** carries the attribute cards, the disk list and a per-VM network
-diagram. Then:
+**Overview** carries the attribute cards, the disk list and the VM's
+**Topology** card - its networks as rails, the same drawing as the
+[Virtual topology](virtual-switches.md#network-topology). With none mapped,
+the card says *No virtual networks yet.* and what to do: run a sync, turn on
+**Sync virtual switches & networks** on its source, or give one of its
+interfaces a VLAN. Then:
 
 | Tab | What's on it |
 | --- | --- |

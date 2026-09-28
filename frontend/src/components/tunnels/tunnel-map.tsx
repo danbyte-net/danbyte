@@ -14,6 +14,7 @@ import type { Edge, Node, NodeProps } from "@xyflow/react"
 
 import type { Tunnel, TunnelTermination } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/empty-state"
 import { useTheme } from "@/components/theme-provider"
 
 // Card geometry - the layout math needs the DOM size, like the stencil nodes.
@@ -52,12 +53,10 @@ function TunnelEndNode({ data, selected }: NodeProps) {
       style={{ width: CARD_W, minHeight: CARD_H }}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate font-mono text-[11px] font-medium">
-          {d.endpoint}
-        </span>
+        <span className="truncate text-[11px] font-medium">{d.endpoint}</span>
         <Badge
           variant="secondary"
-          className={`h-4 shrink-0 px-1 text-[9px] uppercase ${
+          className={`h-4 shrink-0 px-1 text-[10px] ${
             d.hub ? "font-semibold" : ""
           }`}
         >
@@ -189,12 +188,7 @@ export function TunnelMap({ tunnel }: { tunnel: Tunnel }) {
   )
 
   if (tunnel.terminations.length === 0)
-    return (
-      <p className="text-sm text-muted-foreground">
-        No terminations on this tunnel yet - add its ends on the Terminations
-        tab to draw the map.
-      </p>
-    )
+    return <EmptyState title="No terminations yet." />
 
   return (
     <div className="h-96 overflow-hidden rounded-lg border border-border bg-card">

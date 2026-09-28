@@ -2,7 +2,9 @@ import { lazy, Suspense, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api, type TraceGraph } from "@/lib/api"
-import { Badge } from "@/components/ui/badge"
+import { IncompleteBadge } from "@/components/cable-trace-path"
+import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useUrlEnum } from "@/lib/use-url-state"
@@ -39,40 +41,30 @@ export function TraceSection({
     <div>
       <div className="mb-2 flex items-center gap-2">
         <h2 className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-          Trace map
+          Trace
         </h2>
-        {q.data && !q.data.complete && (
-          <Badge variant="warning">Incomplete</Badge>
-        )}
+        {q.data && !q.data.complete && <IncompleteBadge />}
         {q.data && q.data.nodes.length > 1 && (
           <div className="ml-auto">
             <SegmentedTabs<"LR" | "TB">
               value={direction}
               onValueChange={setDirection}
               items={[
-                { value: "LR", label: "Side-to-side" },
-                { value: "TB", label: "Tree" },
+                { value: "LR", label: "Left to right" },
+                { value: "TB", label: "Top to bottom" },
               ]}
             />
           </div>
         )}
       </div>
-      {q.isLoading && (
-        <div className="h-16 animate-pulse rounded-lg border border-border" />
-      )}
+      {q.isLoading && <Loading />}
       {q.isError && <QueryError error={q.error} />}
       {q.data && (q.data.device_graph?.nodes.length ?? 0) <= 1 && (
-        <p className="text-sm text-muted-foreground">
-          Not cabled - nothing to trace.
-        </p>
+        <EmptyState title="Not cabled." />
       )}
       {q.data && (q.data.device_graph?.nodes.length ?? 0) > 1 && (
         <div className="h-[440px] overflow-hidden rounded-lg border border-border">
-          <Suspense
-            fallback={
-              <div className="h-full w-full animate-pulse bg-muted/30" />
-            }
-          >
+          <Suspense fallback={<Loading />}>
             <TopologyCanvas
               graph={q.data.device_graph!}
               focusNodeId={focusNodeId}

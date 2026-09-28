@@ -3,7 +3,7 @@ import { useMemo } from "react"
 // The OpenStack-style rail diagram, generalised: full-width coloured rails
 // grouped into titled sections, boxes drawn ONCE in the band under their
 // topmost rail with a coloured leg to every rail they attach to. Extracted
-// from the Virtual network topology page so the topology page's Logical
+// from the Virtual topology page so the topology page's Logical
 // (VLAN) view and the virtual view share one layout - the column allocation,
 // ribbon legs, and luminance-picked rail text move here verbatim.
 

@@ -136,7 +136,10 @@ sticker - shown as a column in the front/rear port tables and editable in bulk.
 Every interface, cable, and panel port has a **Trace** tab. It walks the
 connection end to end - hopping across each cable and *through* each patch panel -
 and draws the whole path as a single chain, so you can see the real far end of a
-link even when it runs through three panels to get there.
+link even when it runs through three panels to get there. A run that stops
+before it reaches a far port is marked **Incomplete**; a port with no cable
+says *Not cabled.* See [the topology page](../features/topology.md#pass-through-tracing)
+for how a trace walks through panels and PDUs.
 
 ## Topology {#topology-map}
 

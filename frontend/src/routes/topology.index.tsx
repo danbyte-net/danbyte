@@ -114,7 +114,12 @@ import {
 } from "@/components/topology/filters-popover"
 import { CanvasLegend, legendRows } from "@/components/topology/legend"
 import { ExportMenu } from "@/components/topology/export/export-menu"
-import { LogicalTopologyView } from "@/components/topology/logical-view"
+import {
+  LogicalBar,
+  LogicalDisplay,
+  LogicalFilters,
+  LogicalTopologyView,
+} from "@/components/topology/logical-view"
 import { TopologyObjectsSidebar } from "@/components/topology/map-sidebar"
 import {
   NO_TOPO_HIDDEN,
@@ -2300,7 +2305,7 @@ function TopologyPage() {
           its scrollbar showing. */}
       <header className="@container/head flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
         <h1 className="shrink-0 text-base font-semibold">Topology</h1>
-        {q.data && (
+        {q.data && !logical && (
           <Badge
             variant="secondary"
             className={cn("shrink-0", scopeChip && headNarrow.hide)}
@@ -2376,6 +2381,12 @@ function TopologyPage() {
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {logical && (
+            <>
+              <LogicalFilters />
+              <LogicalDisplay />
+            </>
+          )}
           {!logical && (
             <>
               <InputGroup className={cn("h-7 w-40 shrink-0", headNarrow.find)}>
@@ -2627,8 +2638,9 @@ function TopologyPage() {
         </div>
       </header>
 
-      {/* Second bar: saved views + actions. The Logical view has its own
-          controls - no saved views or exports there. */}
+      {/* Second bar: saved views + actions. The Logical tab has no saved
+          views or exports: its bar is Copy link. */}
+      {logical && <LogicalBar />}
       {!logical && (
         <div className="@container/bar flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
           {isDiagram && (

@@ -10,6 +10,35 @@ import type { FiberColorEntry } from "@/lib/fiber"
 import { FiberDot } from "@/components/fiber/fiber-dot"
 import { useFiberPalette } from "@/components/fiber/use-fiber-palette"
 import { useLinkPrefs } from "@/components/link-prefs-provider"
+import { Badge } from "@/components/ui/badge"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
+/** A run that dead-ends before it reaches a far port. One badge for it on
+ * every trace: path strips, the trace map, the dialogs and a device's runs. */
+export function IncompleteBadge() {
+  return <Badge variant="warning">Incomplete</Badge>
+}
+
+/** The plain one-line tooltip on a strip's port or cable control. */
+function Tip({
+  tip,
+  children,
+}: {
+  tip: string | undefined
+  children: React.ReactElement
+}) {
+  if (!tip) return children
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent variant="default">{tip}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 /** The fibre cable's strands as a compact row of coloured dots (the same
  * swatch used on the cable page, tracer stripes and all), capped at 12 with a
@@ -224,20 +253,9 @@ export function PathStrip({
                           })
                       : undefined
                 return (
-                  <span
+                  <Tip
                     key={pi}
-                    data-port-row={stackPorts ? "" : undefined}
-                    className={
-                      "px-2 py-0.5 font-mono text-[10px] whitespace-nowrap " +
-                      (stackPorts ? "text-left" : "flex-1 text-center") +
-                      " " +
-                      (highlightPort && port.name === highlightPort
-                        ? "bg-muted font-medium text-foreground"
-                        : "text-muted-foreground") +
-                      (onClick ? " cursor-pointer hover:text-foreground" : "")
-                    }
-                    onClick={onClick}
-                    title={
+                    tip={
                       port.interfaceId
                         ? "Open interface"
                         : port.powerFeedId
@@ -247,13 +265,27 @@ export function PathStrip({
                             : undefined
                     }
                   >
-                    {port.name}
-                    {port.label && (
-                      <span className="pl-1 text-muted-foreground/70">
-                        {port.label}
-                      </span>
-                    )}
-                  </span>
+                    <span
+                      data-port-row={stackPorts ? "" : undefined}
+                      className={
+                        "px-2 py-0.5 font-mono text-[10px] whitespace-nowrap " +
+                        (stackPorts ? "text-left" : "flex-1 text-center") +
+                        " " +
+                        (highlightPort && port.name === highlightPort
+                          ? "bg-muted font-medium text-foreground"
+                          : "text-muted-foreground") +
+                        (onClick ? " cursor-pointer hover:text-foreground" : "")
+                      }
+                      onClick={onClick}
+                    >
+                      {port.name}
+                      {port.label && (
+                        <span className="pl-1 text-muted-foreground/70">
+                          {port.label}
+                        </span>
+                      )}
+                    </span>
+                  </Tip>
                 )
               })}
             </div>
@@ -313,20 +345,25 @@ export function PathStrip({
               (onTraceCable && s.seg.cableId)) && (
               <span className="absolute top-full left-1/2 mt-0.5 flex -translate-x-1/2 items-center gap-1 text-[8px] whitespace-nowrap text-muted-foreground">
                 {s.seg.strand ? (
-                  <span
-                    className="inline-flex items-center gap-1 font-medium text-foreground"
-                    title={
-                      "Strand " + s.seg.strand + " · " + s.seg.strandColor?.name
+                  <Tip
+                    tip={
+                      "Strand " +
+                      s.seg.strand +
+                      (s.seg.strandColor?.name
+                        ? " · " + s.seg.strandColor.name
+                        : "")
                     }
                   >
-                    <FiberDot
-                      position={s.seg.strand}
-                      palette={palette}
-                      size={11}
-                      showTracer
-                    />
-                    strand {s.seg.strand}
-                  </span>
+                    <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                      <FiberDot
+                        position={s.seg.strand}
+                        palette={palette}
+                        size={11}
+                        showTracer
+                      />
+                      strand {s.seg.strand}
+                    </span>
+                  </Tip>
                 ) : s.seg.fiber && s.seg.fiberCount ? (
                   <StrandStrip count={s.seg.fiberCount} palette={palette} />
                 ) : null}
@@ -337,14 +374,16 @@ export function PathStrip({
                 {s.seg.tag && s.seg.self && " · "}
                 {s.seg.self && "this cable"}
                 {onTraceCable && s.seg.cableId ? (
-                  <button
-                    type="button"
-                    title="Trace this cable on the floor plan"
-                    onClick={() => onTraceCable(s.seg.cableId as string)}
-                    className="shrink-0 hover:text-foreground"
-                  >
-                    <Waypoints className="h-3 w-3" />
-                  </button>
+                  <Tip tip="Trace cable">
+                    <button
+                      type="button"
+                      aria-label="Trace cable"
+                      onClick={() => onTraceCable(s.seg.cableId as string)}
+                      className="shrink-0 hover:text-foreground"
+                    >
+                      <Waypoints className="h-3 w-3" />
+                    </button>
+                  </Tip>
                 ) : null}
               </span>
             )}
@@ -713,11 +752,7 @@ export function TracePathStrip({
               Fans out to {legTree.branches.length} leg
               {legTree.branches.length === 1 ? "" : "s"}
             </span>
-            {!q.data.complete && (
-              <span className="text-[10px] text-amber-600 dark:text-amber-400">
-                incomplete
-              </span>
-            )}
+            {!q.data.complete && <IncompleteBadge />}
           </div>
           <FanOut
             trunk={legTree.trunk}
@@ -736,11 +771,7 @@ export function TracePathStrip({
         <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
           End-to-end path
         </span>
-        {!q.data.complete && (
-          <span className="text-[10px] text-amber-600 dark:text-amber-400">
-            incomplete
-          </span>
-        )}
+        {!q.data.complete && <IncompleteBadge />}
       </div>
       <PathStrip steps={steps} highlightPort={highlightPort} />
     </div>
@@ -774,11 +805,7 @@ export function TracePreview({
       <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
         End-to-end path
       </span>
-      {!q.data.complete && (
-        <span className="text-[10px] text-amber-600 dark:text-amber-400">
-          incomplete
-        </span>
-      )}
+      {!q.data.complete && <IncompleteBadge />}
     </div>
   )
 
@@ -810,11 +837,7 @@ export function TracePreview({
             Fans out to {tree.branches.length} leg
             {tree.branches.length === 1 ? "" : "s"}
           </span>
-          {!q.data.complete && (
-            <span className="text-[10px] text-amber-600 dark:text-amber-400">
-              incomplete
-            </span>
-          )}
+          {!q.data.complete && <IncompleteBadge />}
         </div>
         <FanOut
           trunk={tree.trunk}
@@ -836,11 +859,7 @@ export function TracePreview({
         <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
           Traces to {devices.length} device{devices.length === 1 ? "" : "s"}
         </span>
-        {!q.data.complete && (
-          <span className="text-[10px] text-amber-600 dark:text-amber-400">
-            incomplete
-          </span>
-        )}
+        {!q.data.complete && <IncompleteBadge />}
       </div>
       <div className="flex flex-wrap gap-1.5">
         {devices.map((n) =>
@@ -901,11 +920,7 @@ export function CableTracePath({
               Fans out to {tree.branches.length} leg
               {tree.branches.length === 1 ? "" : "s"}
             </span>
-            {!q.data.complete && (
-              <span className="text-[10px] text-amber-600 dark:text-amber-400">
-                incomplete
-              </span>
-            )}
+            {!q.data.complete && <IncompleteBadge />}
           </div>
           <FanOut trunk={tree.trunk} branches={tree.branches} />
         </div>
@@ -919,11 +934,7 @@ export function CableTracePath({
         <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
           End-to-end path
         </span>
-        {!q.data.complete && (
-          <span className="text-[10px] text-amber-600 dark:text-amber-400">
-            incomplete
-          </span>
-        )}
+        {!q.data.complete && <IncompleteBadge />}
       </div>
       <PathStrip steps={steps} />
     </div>

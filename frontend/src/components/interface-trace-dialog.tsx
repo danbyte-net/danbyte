@@ -1,15 +1,20 @@
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
 
 import { api, type TraceGraph } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { linearizeTrace, PathStrip } from "@/components/cable-trace-path"
+import {
+  IncompleteBadge,
+  linearizeTrace,
+  PathStrip,
+} from "@/components/cable-trace-path"
+import { Loading } from "@/components/loading"
+import { OpenLink } from "@/components/open-link"
 import { TraceSection } from "@/components/topology/trace-section"
 
 export interface TraceTarget {
@@ -33,28 +38,29 @@ export function InterfaceTraceDialog({
     enabled: !!target,
   })
   const steps = q.data ? linearizeTrace(q.data, "") : null
+  // A run with two ends or more draws as the flat strip; anything else
+  // (breakouts, loops) as the trace map.
+  const strip =
+    steps && steps.filter((s) => s.t === "chip").length >= 2 ? steps : null
 
   return (
     <Dialog open={!!target} onOpenChange={onOpenChange}>
       <DialogContent size="2xl">
         <DialogHeader>
-          <DialogTitle>
-            Trace · <span className="font-mono">{target?.name}</span>
+          <DialogTitle className="flex items-center gap-2">
+            <span>
+              Trace · <span className="font-mono">{target?.name}</span>
+            </span>
+            {/* The trace map below carries its own badge. */}
+            {strip && !q.data?.complete && <IncompleteBadge />}
           </DialogTitle>
         </DialogHeader>
         {q.isLoading ? (
-          <div className="h-16 animate-pulse rounded-md bg-muted/30" />
-        ) : steps && steps.filter((s) => s.t === "chip").length >= 2 ? (
-          <>
-            {q.data && !q.data.complete && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                Incomplete - the run dead-ends before reaching a far port.
-              </p>
-            )}
-            <div className="overflow-x-auto">
-              <PathStrip steps={steps} highlightPort={target?.name} />
-            </div>
-          </>
+          <Loading />
+        ) : strip ? (
+          <div className="overflow-x-auto">
+            <PathStrip steps={strip} highlightPort={target?.name} />
+          </div>
         ) : target ? (
           // Breakout / looped / otherwise non-linear runs can't be a flat
           // strip - render the full trace graph inline (shares this dialog's
@@ -65,11 +71,11 @@ export function InterfaceTraceDialog({
           />
         ) : null}
         {target && (
-          <Button size="sm" variant="outline" className="w-fit" asChild>
-            <Link to="/interfaces/$id" params={{ id: target.id }}>
+          <DialogFooter>
+            <OpenLink to="/interfaces/$id" params={{ id: target.id }}>
               Open interface
-            </Link>
-          </Button>
+            </OpenLink>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

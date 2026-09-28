@@ -268,8 +268,10 @@ speed, VLAN (access/trunk + native), and IPs - click to open the interface.
 
 Below the panel sits the **Topology card**: **Paths** lists one flat
 end-to-end strip per cabled port (panels crossed `front ⇄ rear`, segments in
-the cable's color); **Map** shows the React Flow neighbourhood; *Full map*
-opens the [topology page](../features/topology.md) focused here. On the
+the cable's color); **Map** shows the React Flow neighbourhood; **Open in
+Topology** opens the [topology page](../features/topology.md) focused here.
+Its header counts the runs and any LLDP links seen with no cable; a run
+that dead-ends is marked **Incomplete**. On the
 **Interfaces** tab, every cabled row carries a **trace** button (the same
 strip in a dialog) and uncabled physical rows a ghosted **connect** button
 that pre-seeds the cable form with the port as side A.

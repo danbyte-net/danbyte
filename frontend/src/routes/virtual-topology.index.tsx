@@ -3,7 +3,6 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { useUrlText } from "@/lib/use-url-state"
-import { Cloud } from "lucide-react"
 
 import {
   api,
@@ -14,18 +13,15 @@ import {
 } from "@/lib/api"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
+import { QueryError } from "@/components/query-error"
 import {
   RailDiagram,
   type BoxInput,
   type SectionInput,
 } from "@/components/topology/rail-diagram"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
+import { InfoTip } from "@/components/ui/info-tip"
 
 export const Route = createFileRoute("/virtual-topology/")({
   component: VirtualTopologyPage,
@@ -104,8 +100,7 @@ function VirtualTopologyPage() {
         rails: sorted.map((n) => ({
           id: n.id,
           label:
-            (n.name || n.ext_key) +
-            (n.vlan ? `  ·  VLAN ${n.vlan.vlan_id}` : ""),
+            (n.name || n.ext_key) + (n.vlan ? ` · VLAN ${n.vlan.vlan_id}` : ""),
           color: n.vlan?.color || "",
           onClick: n.vlan
             ? () => nav({ to: "/vlans/$id", params: { id: n.vlan!.id } })
@@ -134,42 +129,50 @@ function VirtualTopologyPage() {
   }, [groups, swById, nav])
 
   const loading = networks.isLoading || switches.isLoading
-  const isEmpty = !loading && groups.length === 0
+  const failed = networks.isError
+    ? networks
+    : switches.isError
+      ? switches
+      : null
 
   return (
+    // The shell draws only the header: this is a Maps page, so the body
+    // keeps the Maps loader and its own error and empty states.
     <ListPageShell
       title="Virtual topology"
-      query={networks}
       actions={
-        <Select
-          value={source || "all"}
-          onValueChange={(v) => setSource(v === "all" ? "" : v)}
-        >
-          <SelectTrigger size="sm" className="h-8 w-52 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All sources</SelectItem>
-            {(sources.data?.results ?? []).map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <>
+          <InfoTip side="bottom">
+            Each network is a rail. A VM is drawn once, with a leg to every
+            network it is on. A rail takes its VLAN&rsquo;s color, else its
+            zone&rsquo;s.
+          </InfoTip>
+          <Combobox
+            value={source || null}
+            onChange={(v) => setSource(v ?? "")}
+            options={(sources.data?.results ?? []).map((s) => ({
+              value: s.id,
+              label: s.name,
+            }))}
+            noneLabel="Any source"
+            placeholder="Any source"
+            className="h-8 w-52 text-xs"
+          />
+        </>
       }
     >
-      {isEmpty ? (
-        <EmptyState title="No virtual networks to map yet.">
+      {failed ? (
+        <QueryError error={failed.error} />
+      ) : loading ? (
+        <Loading />
+      ) : groups.length === 0 ? (
+        <EmptyState title="No virtual networks yet.">
           Turn on{" "}
           <span className="font-medium">
             Sync virtual switches &amp; networks
           </span>{" "}
-          on a virtualization source and re-sync - its switches, networks
-          (VLANs) and the VMs on them are drawn here.
+          on a virtualization source.
         </EmptyState>
-      ) : loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         // Capped to the viewport so the diagram scrolls inside its own box -
         // the horizontal bar then sits on screen instead of below a page-high
@@ -182,13 +185,6 @@ function VirtualTopologyPage() {
           />
         </div>
       )}
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Cloud className="h-3.5 w-3.5" />
-        Networks are rails; each VM appears once, connected by a line to every
-        network it attaches to. Rail colour follows the VLAN's zone (set a zone
-        on the VLAN to pick it); unzoned networks get a palette shade. Click any
-        node to open it.
-      </div>
     </ListPageShell>
   )
 }

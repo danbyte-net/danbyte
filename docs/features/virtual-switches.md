@@ -103,13 +103,16 @@ multi-homed firewall reads as a single box with several cables rather than
 appearing on every rail. Rail colour follows the [VLAN's own
 colour](ipam-objects.md#vlans), falling back to its zone's colour and then to a
 palette shade. Every node clicks through to its object, and a VM's own page
-shows the same diagram scoped to that VM.
+shows the same diagram scoped to that VM, as its **Topology** card. The ⓘ
+beside the source picker sums this up.
 
 Switches, networks and the topology are populated when **Sync virtual switches
 & networks** is enabled on a source; you can also create switches by hand.
+Until then the page says *No virtual networks yet.* and names that setting.
 
-Scoping the diagram to one source is on the address (`?source=<id>`), so a
-single cluster's picture is a link.
+Pick a source in the header (**Any source** shows them all) to scope the
+diagram to it. The choice is on the address (`?source=<id>`), so a single
+cluster's picture is a link.
 
 The same rail diagram drives the [topology page's **Logical**
 view](topology.md), which widens the picture to the whole L2 domain -

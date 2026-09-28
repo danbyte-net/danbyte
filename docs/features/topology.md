@@ -26,9 +26,13 @@ icon: lucide/share-2
   to them - physical devices via their interfaces' untagged/tagged VLANs
   **and virtual machines** via their VM interfaces, on one hybrid diagram.
   Devices draw solid, VMs dashed; a dashed leg is a tagged (trunk)
-  attachment; leg labels are the interface names. Filter by site or VLAN
-  group, or hide VMs. Click any rail or box to open it. (The same rail
-  layout drives the [Virtual topology](virtual-switches.md#network-topology).)
+  attachment; leg labels are the interface names. The header's
+  **Filters** take a site or a VLAN group (*Any site*, *Any VLAN group*;
+  the site is the same one the other tabs filter on) and its **Display**
+  shows or hides **VMs**; the second bar has **Copy link**. An empty
+  domain says *No VLAN attachments yet.* Click any rail or box to open
+  it. (The same rail layout drives the
+  [Virtual topology](virtual-switches.md#network-topology).)
 
 The view choice is remembered per browser and saved with
 [saved views](#saved-views); a map opens on the Diagram, Detailed, until
@@ -487,9 +491,12 @@ These keep a large map legible:
   just to measure it.
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat
-end-to-end path strip on top, and a **trace map** below - the traced devices
-as full stencil cards (laid out left to right or top to bottom) with the traced cable drawn as a
-thick animated primary line. The interface **Overview** also carries the
+end-to-end path strip on top, and the trace map below, headed **Trace** -
+the traced devices as full stencil cards (**Left to right** or **Top to
+bottom**) with the traced cable drawn as a thick animated primary line. A
+run that dead-ends before it reaches a far port carries an **Incomplete**
+badge, here, in the trace dialogs and on a device's runs; an uncabled
+port says *Not cabled.* The interface **Overview** also carries the
 end-to-end path on the right.
 
 Port names in a path strip that resolve to a real interface are **clickable** (pointer cursor) - jump straight to the interface. The device card lists its first five runs with a **Show all** toggle.
@@ -503,8 +510,8 @@ to a single strip).
 Every **device page** carries the same language: its Topology card defaults
 to **Paths** - one flat end-to-end strip per cabled port (linked chips,
 panels crossed `front ⇄ rear`, segments in the cable's color) - with a
-**Map** tab for the React Flow 1-hop neighbourhood and "Full map" jumping
-here focused. That choice is on the address (`?sub=map`), so a link can open
+**Map** tab for the React Flow 1-hop neighbourhood and **Open in Topology**
+jumping here focused. That choice is on the address (`?sub=map`), so a link can open
 the device straight on its map. The **cable page** hero draws its own run the
 same way. Site and location pages have a **Topology** button that opens this
 map scoped to them.

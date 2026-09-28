@@ -106,9 +106,9 @@ tunnel drawn from its terminations:
   form a ring, fully meshed).
 
 Each card shows the terminating device (or VM), the interface, the **outside
-IP**, and the end's role; clicking a card jumps to that interface (or VM).
-The map fills in as you add terminations - an empty tunnel just points you to
-the Terminations tab.
+IP**, and the end's role (*Hub*, *Spoke* or *Peer*); clicking a card jumps to
+that interface (or VM). The map fills in as you add terminations on the
+**Terminations** tab; until then it says *No terminations yet.*
 
 ## Where tunnels show up on interfaces
 
