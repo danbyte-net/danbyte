@@ -26,7 +26,8 @@ Two sources feed the palette automatically:
 - **Floor tile types** - the kinds you create.
 - **Device roles** - every role doubles as a tile type, reusing its color, so
   a shop that already defined "Firewall / Access / Server" roles gets matching
-  tiles for free.
+  tiles for free. The palette lists a role as its colored role badge, a tile
+  type as its tile.
 
 Two ticks on a tile type change how its tiles behave:
 
@@ -51,10 +52,10 @@ whether you named its type "Rack", "Cabinet", or "Skab".
 ### Open a tile type
 
 Clicking a name under **Customize → Floor tiles** opens that type's detail page
-- the answer to "what breaks if I change this?" before you recolour, rename, or
+- the answer to "what breaks if I change this?" before you recolor, rename, or
 delete a palette entry.
 
-- **Overview** - its colour, icon, slug and default size; the three rendering
+- **Overview** - its color, icon, slug and default size; the three rendering
   ticks (**Background zone**, **Camera field of view**, **Perforated**); and a
   short **Site markers** list, because a type is also the vocabulary for free
   markers on the geographic [site map](site-map.md). Markers are a handful at
@@ -147,7 +148,7 @@ uploaded blueprint textures it.
   hall; pick what reads at the distance you work at. Under it, **Auto /
   Tubes / Lines** picks the renderer: real tubes shaded like the rest of the
   room, or flat lines of constant on-screen width in the cable's solid
-  colour. Auto draws tubes up to two hundred cables and lines past that.
+  color. Auto draws tubes up to two hundred cables and lines past that.
   Both saved per device in the browser, like Quality.
 - **Quality** (View menu, 3D): Auto / Low / Medium / High - how much the
   effects may cost. Low drops shadows and caps resolution (software
@@ -186,7 +187,7 @@ uploaded blueprint textures it.
   gains an Airflow row only while cones are on screen.
 
 - Up close, a device whose type has **photo-anchored ports** wears its port
-  markers on the image, coloured exactly as on the device page - speed tier
+  markers on the image, colored exactly as on the device page - speed tier
   for cabled ports, the part's status for hardware bays. Click one for a card
   with its cable, far end and, when SNMP disagrees with the record, the
   **difference** (see [drift in the room](#drift-in-the-room)). Marker names
@@ -317,7 +318,7 @@ saved on the plan; and **Camera FOV cones** shows/hides the camera wedges.
 
 **Changing a tile's type.** Select a placed tile and pick another **Type**
 in the inspector - any tile type, or a device role standing in as one. The
-tile keeps its position, size, label, colour and object link; only the look
+tile keeps its position, size, label, color and object link; only the look
 (and the popover rows configured for that type) follow the new type. Zones
 stay zones.
 
@@ -509,7 +510,7 @@ reshapeable. Click a tray to select it, then:
 - **Drag the body** to shift the whole run.
 
 **Done editing trays** (or **Esc**) turns cables back on. Name / kind /
-colour / cables and delete stay in the inspector.
+color / cables and delete stay in the inspector.
 
 Tips:
 

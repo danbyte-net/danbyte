@@ -310,7 +310,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     },
   },
   color: {
-    label: "Colour",
+    label: "Color",
     render: ({ tile }) => {
       const c = tile.color
       if (!c) return null

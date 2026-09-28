@@ -9,10 +9,10 @@ const FALLBACK = "#a1a1aa"
  *
  * The single source of truth for this treatment: the palette rail, the objects
  * sidebar and the popover settings all render it, so a type looks identical
- * everywhere it appears. (Device roles carry no icon, so they fall back to a
- * colour chip inside the same tint - exactly as the palette has always drawn
- * them.) Use this rather than a bare colour dot: a dot beside a name is what the
- * design rules call out, and it loses the icon that makes types scannable.
+ * everywhere it appears. (A type with no icon gets a colour chip inside the
+ * same tint. The palette lists a device role as its ColorBadge instead.) Use
+ * this rather than a bare colour dot: a dot beside a name is what the design
+ * rules call out, and it loses the icon that makes types scannable.
  */
 export function TileBadge({
   color,

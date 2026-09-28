@@ -1921,11 +1921,23 @@ function FloorPlanPage() {
                       "bg-muted ring-1 ring-foreground/20"
                   )}
                 >
-                  <TileBadge color={entry.color} icon={entry.icon} />
-                  <span className="truncate">{entry.name}</span>
-                  {(entry.kind === "role" || entry.hasFov) && (
+                  {/* A role is a colored catalog object: its badge, as
+                      everywhere else. A tile type shows its tile. */}
+                  {entry.kind === "role" ? (
+                    <ColorBadge
+                      name={entry.name}
+                      color={entry.color}
+                      className="max-w-full min-w-0 truncate"
+                    />
+                  ) : (
+                    <>
+                      <TileBadge color={entry.color} icon={entry.icon} />
+                      <span className="truncate">{entry.name}</span>
+                    </>
+                  )}
+                  {entry.hasFov && (
                     <span className="ml-auto text-[10px] text-muted-foreground">
-                      {entry.kind === "role" ? "role" : "cam"}
+                      cam
                     </span>
                   )}
                 </button>
@@ -2151,7 +2163,10 @@ function FloorPlanPage() {
                         }
                       }}
                     >
-                      <SelectTrigger className="h-7 w-32 text-xs">
+                      <SelectTrigger
+                        size="sm"
+                        className="w-32 text-xs data-[size=sm]:h-7"
+                      >
                         <SelectValue placeholder="Set type…" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2164,7 +2179,7 @@ function FloorPlanPage() {
                           ))}
                         {(roles.data?.results ?? []).map((r) => (
                           <SelectItem key={r.id} value={`role:${r.id}`}>
-                            {r.name} (role)
+                            <ColorBadge name={r.name} color={r.color} />
                           </SelectItem>
                         ))}
                       </SelectContent>

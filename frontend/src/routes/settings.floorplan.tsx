@@ -43,7 +43,7 @@ const FIELD_META: Partial<Record<string, FieldMeta>> = {
   position: { label: "Position", hint: "Grid X, Y" },
   size: { label: "Size", hint: "Footprint in cells" },
   orientation: { label: "Orientation", hint: "Rotation in degrees" },
-  color: { label: "Colour", hint: "The tile's paint colour" },
+  color: { label: "Color", hint: "The tile's paint color" },
   fov: { label: "Coverage", hint: "Camera FOV / PTZ reach" },
   plan: { label: "Plan", hint: "Which floor plan it's on" },
   created: { label: "Created", hint: "When the tile was placed" },
