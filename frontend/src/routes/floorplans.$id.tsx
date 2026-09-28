@@ -103,6 +103,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group"
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -1541,9 +1546,9 @@ function FloorPlanPage() {
           </BarToggle>
           <Popover>
             <PopoverTrigger asChild>
-              <BarButton>
+              <BarMenuTrigger>
                 <SlidersHorizontal /> Display
-              </BarButton>
+              </BarMenuTrigger>
             </PopoverTrigger>
             {/* Two columns once the 3D block is in play. As one 224px stack
                 this ran past the bottom of a laptop viewport and had to be
@@ -1734,9 +1739,9 @@ function FloorPlanPage() {
           {canEdit && (
             <Popover>
               <PopoverTrigger asChild>
-                <BarButton className={WIDE_ONLY}>
+                <BarMenuTrigger className={WIDE_ONLY}>
                   <ImageIcon /> Background
-                </BarButton>
+                </BarMenuTrigger>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-64 gap-3 p-3">
                 {backgroundControls}
@@ -3200,9 +3205,11 @@ function TileSearch({
   return (
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <div className="relative">
-          <Search className="absolute top-1/2 left-2.5 size-3 -translate-y-1/2 text-muted-foreground" />
-          <Input
+        <InputGroup className="h-7 w-40 shrink-0">
+          <InputGroupAddon>
+            <Search className="size-3" />
+          </InputGroupAddon>
+          <InputGroupInput
             placeholder="Find on plan…"
             aria-label="Find on plan"
             value={value}
@@ -3210,9 +3217,9 @@ function TileSearch({
               onChange(e.target.value)
               setOpen(true)
             }}
-            className="h-7 w-44 pl-7 text-xs"
+            className="h-7 text-xs md:text-xs"
           />
-        </div>
+        </InputGroup>
       </PopoverTrigger>
       <PopoverContent
         align="end"

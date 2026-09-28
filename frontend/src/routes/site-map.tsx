@@ -45,13 +45,18 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Loading } from "@/components/loading"
 import {
-  BarButton,
   BarIconButton,
+  BarMenuTrigger,
   BarTip,
   BarToggle,
 } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import {
   Popover,
   PopoverContent,
@@ -150,11 +155,6 @@ import { usePageTitle } from "@/lib/page-title"
 // selected, and an "On this map" objects sidebar on the far right. Tiles come
 // from the deployment's configured tile server (OSM + Esri World Imagery by
 // default, per their usage policies: exact HTTPS URLs, visible attribution).
-
-/** The page's one bar is an h-14 header, so its controls are the topology
- * header's: the toolbar parts at h-8 with size-3.5 icons. */
-const HEAD = "h-8"
-const HEAD_ICON = "size-8"
 
 export const Route = createFileRoute("/site-map")({
   // ?focus=<deviceId> - arrive centered on a device (the "Show on site map"
@@ -1523,43 +1523,29 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               setSelected(sel)
             }}
           />
-          <BarIconButton
-            label="Fit to view"
-            className={HEAD_ICON}
-            onClick={() => fitAll()}
-          >
-            <Maximize className="size-3.5" />
+          <BarIconButton label="Fit to view" onClick={() => fitAll()}>
+            <Maximize />
           </BarIconButton>
           <BarToggle
             pressed={basemap === "sat"}
-            className={HEAD}
             onClick={() => setBase(basemap === "sat" ? "map" : "sat")}
           >
-            <Satellite className="size-3.5" /> Satellite
+            <Satellite /> Satellite
           </BarToggle>
           <BarIconButton
             label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-            className={HEAD_ICON}
             onClick={toggleFullscreen}
           >
-            {fullscreen ? (
-              <Shrink className="size-3.5" />
-            ) : (
-              <Expand className="size-3.5" />
-            )}
+            {fullscreen ? <Shrink /> : <Expand />}
           </BarIconButton>
-          <BarToggle
-            pressed={showObjects}
-            className={HEAD}
-            onClick={toggleObjects}
-          >
-            <PanelRight className="size-3.5" /> Objects
+          <BarToggle pressed={showObjects} onClick={toggleObjects}>
+            <PanelRight /> Objects
           </BarToggle>
           <Popover>
             <PopoverTrigger asChild>
-              <BarButton className={HEAD}>
-                <SlidersHorizontal className="size-3.5" /> Display
-              </BarButton>
+              <BarMenuTrigger>
+                <SlidersHorizontal /> Display
+              </BarMenuTrigger>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-56 gap-1 p-2">
               <FormCheckbox
@@ -2108,9 +2094,11 @@ function MapSearch({
   return (
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <div className="relative">
-          <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
+        <InputGroup className="h-7 w-40 shrink-0">
+          <InputGroupAddon>
+            <Search className="size-3" />
+          </InputGroupAddon>
+          <InputGroupInput
             placeholder="Find on map…"
             aria-label="Find on map"
             value={value}
@@ -2118,9 +2106,9 @@ function MapSearch({
               setValue(e.target.value)
               setOpen(true)
             }}
-            className="h-8 w-40 pl-8 text-xs"
+            className="h-7 text-xs md:text-xs"
           />
-        </div>
+        </InputGroup>
       </PopoverTrigger>
       <PopoverContent
         align="end"
