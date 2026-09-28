@@ -1,5 +1,5 @@
 import type { Weight } from "./measure"
-import type { DiagramBand, LinkSem } from "./types"
+import type { DiagramBand, LinkSem, Pt } from "./types"
 
 // The light print theme every diagram export draws with, whatever theme the
 // app is in: solid hex only (no CSS variables, no alpha - some printers choke
@@ -169,13 +169,20 @@ export const LABEL = {
 /** Corner radius of an elbow route (draw.io `arcSize` = twice this). */
 export const ELBOW_RADIUS = 6
 
-/** Bands: rows carry their label in a left header strip (a draw.io
- * swimlane with `horizontal=0`), columns in a top strip, zones in a tab. */
+/** Bands, as the canvas draws them (components/topology/diagram/bands.ts
+ * and band-node.tsx): a row's title centred in a strip across its top (a
+ * draw.io swimlane), a side band's big label running up its middle, a
+ * zone's in a tab. */
 export const BAND = {
-  ROW_HEADER: 28,
-  COLUMN_HEADER: 24,
+  /** A row's title strip - the canvas's `BAND.TITLE`. */
+  ROW_TITLE: 32,
   ZONE_HEADER: 22,
+  /** A zone's label. */
   LABEL_SIZE: 12,
+  /** A row's title. */
+  TITLE_SIZE: 13,
+  /** A side band's label. */
+  SIDE_SIZE: 20,
   LABEL_WEIGHT: 600 as Weight,
   RADIUS: 8,
 } as const
@@ -209,6 +216,7 @@ export const ZONE_COLORS = [
 
 export interface BandPaint {
   fill: string
+  /** A zone's label tab. */
   header: string
   edge: string
   ink: string
@@ -217,7 +225,9 @@ export interface BandPaint {
 }
 
 /** A band's print tints. Rows and columns are neutral unless they carry a
- * zone swatch; a zone always has one (the first when its own is unknown). */
+ * zone swatch - the canvas's light grey (`--muted` toward `--border`), or
+ * a pastel of the swatch; a zone always has one (the first when its own is
+ * unknown). */
 export function bandPaint(band: Pick<DiagramBand, "kind" | "fill">): BandPaint {
   const own = hex6(band.fill)
   const swatch =
@@ -228,7 +238,7 @@ export function bandPaint(band: Pick<DiagramBand, "kind" | "fill">): BandPaint {
         : null
   if (!swatch)
     return {
-      fill: PRINT.tint,
+      fill: mix(PRINT.wash, PRINT.border, 0.7),
       header: PRINT.wash,
       edge: PRINT.border,
       ink: PRINT.body,
@@ -243,12 +253,28 @@ export function bandPaint(band: Pick<DiagramBand, "kind" | "fill">): BandPaint {
         edgeWidth: 1.5,
       }
     : {
-        fill: mix(swatch, PRINT.paper, 0.06),
-        header: mix(swatch, PRINT.paper, 0.16),
+        fill: mix(swatch, PRINT.paper, 0.12),
+        header: mix(swatch, PRINT.paper, 0.22),
         edge: mix(swatch, PRINT.paper, 0.4),
         ink: PRINT.body,
         edgeWidth: 1,
       }
+}
+
+/** The colour under a point: the fill of the top band there (`bands` back
+ * to front), else the page. An end label breaks its line over it, so the
+ * gap reads as a gap on a band as on the page. */
+export function groundAt(
+  bands: readonly DiagramBand[],
+  p: Pt,
+  page: string
+): string {
+  for (let i = bands.length - 1; i >= 0; i--) {
+    const b = bands[i]
+    if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h)
+      return bandPaint(b).fill
+  }
+  return page
 }
 
 /** The font stack the writers name. Inter first; the fallbacks keep a

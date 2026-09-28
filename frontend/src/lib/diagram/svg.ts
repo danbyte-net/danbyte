@@ -3,6 +3,7 @@ import { xmlEscape } from "@/lib/xml"
 import {
   cardText,
   fmt,
+  labelCorners,
   linkLabels,
   linkPath,
   noteLayout,
@@ -18,6 +19,7 @@ import {
   bandPaint,
   CARD,
   FONT_STACK,
+  groundAt,
   hex6,
   mix,
   NUB,
@@ -154,51 +156,19 @@ function bandSvg(b: DiagramBand, measure: Measure): string {
         fill: p.ink,
       })
     )
-  } else if (b.orient === "h") {
-    // A row: the label runs up a strip down the left side.
-    const hw = Math.min(b.w, BAND.ROW_HEADER)
-    out.push(
-      el("path", {
-        d:
-          `M ${fmt(b.x + r)},${fmt(b.y)} H ${fmt(b.x + hw)} V ${fmt(b.y + b.h)}` +
-          ` H ${fmt(b.x + r)} A ${r} ${r} 0 0 1 ${fmt(b.x)},${fmt(b.y + b.h - r)}` +
-          ` V ${fmt(b.y + r)} A ${r} ${r} 0 0 1 ${fmt(b.x + r)},${fmt(b.y)} Z`,
-        fill: p.header,
-      })
-    )
-    const cx = b.x + hw / 2
+  } else if (b.orient !== "h") {
+    // A side band: a big label up its middle, reading bottom to top.
+    const ss = BAND.SIDE_SIZE
+    const cx = b.x + b.w / 2
     const cy = b.y + b.h / 2
-    const label = fit(b.label, Math.max(0, b.h - 16), size, weight, measure)
+    const label = fit(b.label, Math.max(0, b.h - 16), ss, weight, measure)
     out.push(
       text(label, {
         x: cx,
-        y: baselineAt(cy - size, size, 2 * size),
+        y: baselineAt(cy - ss, ss, 2 * ss),
         "text-anchor": "middle",
         transform: `rotate(-90 ${fmt(cx)} ${fmt(cy)})`,
-        "font-size": size,
-        "font-weight": weight,
-        fill: p.ink,
-      })
-    )
-  } else {
-    // A column: the label sits in a strip across the top.
-    const hh = Math.min(b.h, BAND.COLUMN_HEADER)
-    out.push(
-      el("path", {
-        d:
-          `M ${fmt(b.x + r)},${fmt(b.y)} H ${fmt(b.x + b.w - r)}` +
-          ` A ${r} ${r} 0 0 1 ${fmt(b.x + b.w)},${fmt(b.y + r)} V ${fmt(b.y + hh)}` +
-          ` H ${fmt(b.x)} V ${fmt(b.y + r)} A ${r} ${r} 0 0 1 ${fmt(b.x + r)},${fmt(b.y)} Z`,
-        fill: p.header,
-      })
-    )
-    const label = fit(b.label, Math.max(0, b.w - 16), size, weight, measure)
-    out.push(
-      text(label, {
-        x: b.x + b.w / 2,
-        y: baselineAt(b.y, size, hh),
-        "text-anchor": "middle",
-        "font-size": size,
+        "font-size": ss,
         "font-weight": weight,
         fill: p.ink,
       })
@@ -213,6 +183,41 @@ function bandSvg(b: DiagramBand, measure: Measure): string {
     })
   )
   return `<g>${out.join("")}</g>`
+}
+
+/** A row's title, centred in the strip across its top: a chip of the
+ * row's own fill over the lines (they break for it) and under the cards,
+ * the layers of a hand-drawn network diagram. */
+function bandTitleSvg(b: DiagramBand, measure: Measure): string {
+  const p = bandPaint(b)
+  const size = BAND.TITLE_SIZE
+  const weight = BAND.LABEL_WEIGHT
+  const label = fit(b.label, Math.max(0, b.w - 32), size, weight, measure)
+  if (!label) return ""
+  const strip = Math.min(b.h, BAND.ROW_TITLE)
+  const w = measure(label, size, weight) + 16
+  const h = Math.min(strip, 24)
+  const cx = b.x + b.w / 2
+  return (
+    `<g>` +
+    el("rect", {
+      x: cx - w / 2,
+      y: b.y + (strip - h) / 2,
+      width: w,
+      height: h,
+      rx: 6,
+      fill: p.fill,
+    }) +
+    text(label, {
+      x: cx,
+      y: baselineAt(b.y, size, strip),
+      "text-anchor": "middle",
+      "font-size": size,
+      "font-weight": weight,
+      fill: p.ink,
+    }) +
+    `</g>`
+  )
 }
 
 // ── Links ────────────────────────────────────────────────────────────────
@@ -273,8 +278,8 @@ function leadSvg(l: DiagramLink, boxes: ReadonlyMap<string, Rect>): string[] {
 }
 
 /** A link label. A middle chip is a box with a hairline edge; an end
- * label sits on its line over a box of the page's colour - the gap the
- * line breaks for. */
+ * label sits on its line over a box of the colour under it (the page, or
+ * the band it is on) - the gap the line breaks for. */
 function labelSvg(b: LabelBlock, page: string): string {
   const out: string[] = []
   const bg = b.chip
@@ -784,6 +789,11 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
         })
       )
     )
+  const titles = doc.bands.filter((k) => k.kind === "row")
+  if (titles.length) {
+    out.push(`</g><g id="band-titles">`)
+    for (const band of titles) out.push(bandTitleSvg(band, measure))
+  }
   out.push(`</g><g id="nodes">`)
   for (const n of doc.nodes)
     out.push(linked(n.link, nodeSvg(n, measure, photoId)))
@@ -798,9 +808,16 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
     : []
   if (leads.length) out.push(`</g><g id="leads">`, ...leads)
   out.push(`</g><g id="labels">`)
+  const page = col(bg ?? PRINT.paper, PRINT.paper)
   for (const l of doc.links)
-    for (const block of linkLabels(l, measure))
-      out.push(labelSvg(block, col(bg ?? PRINT.paper, PRINT.paper)))
+    for (const block of linkLabels(l, measure)) {
+      const cs = labelCorners(block)
+      const c = {
+        x: (cs[0].x + cs[2].x) / 2,
+        y: (cs[0].y + cs[2].y) / 2,
+      }
+      out.push(labelSvg(block, groundAt(doc.bands, c, page)))
+    }
   out.push(`</g>`)
   if (doc.notes.length) {
     out.push(`<g id="notes">`)

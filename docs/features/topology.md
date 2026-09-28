@@ -1044,11 +1044,13 @@ pills, cable colours.
 Both show what the canvas shows, from the same plan: role-coloured cards
 with the name, card lines and pill; in Detailed, the interface nubs; the
 port names and addresses on their cables where the map put them, each over
-a white box that breaks the line (a label the map left off is left off);
+a box in the colour under it - the page, or its band - that breaks the
+line (a label the map left off is left off);
 every elbow in its lane; the same line types, Cyclical arcs and each link's
 own line (curves follow draw.io's curved rule, so the draw.io file
 matches); a breakout's split points; the subnet and count chips where the
-map shows them (a chip the map only shows on hover is left out); zones. The monitoring pill is
+map shows them (a chip the map only shows on hover is left out); bands,
+titled as on the canvas, and zones. The monitoring pill is
 the one on screen when the file is made. Selection, hover, search dimming
 and hidden devices or link families never reach a file.
 
@@ -1068,7 +1070,8 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   adds the interface nubs; each line leaves its own nub.
 - **Labels:** the chip (subnet, count) is the line's own label. Each port
   name and address is a label cell on its line, turned along it, on a
-  white background with a space either side, so the line breaks for it
+  background of the colour under it (white, or its band's) with a space
+  either side, so the line breaks for it
   with a small gap round the text - move the line and they follow.
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
   with each corner as a waypoint, so they stay square when you move a card.
@@ -1081,10 +1084,11 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   it, so dragging it in draw.io moves the split.
   The trunk, the legs and the ellipse carry the cable's id
   (`danbyte_cable`, under *Edit Data*) and link back to the cable.
-- **Bands:** a row band becomes a swimlane that holds its cards (the ones
-  whose centre is inside it) and carries them when you drag it. Zones hold
-  their cards the same way. A side band is a shape behind the rows, as a
-  card can sit in only one container.
+- **Bands:** a row band becomes a swimlane with its title centred across
+  the top that holds its cards (the ones whose centre is inside it) and
+  carries them when you drag it. Zones hold their cards the same way. A
+  side band is a shape behind the rows with its label turned to read
+  upwards, as a card can sit in only one container.
 - **Layers:** LLDP neighbours and BGP sessions are on their own layers,
   *Discovered (LLDP)* and *BGP sessions*, so you can hide them in one click
   (*View ▸ Layers*, Ctrl+Shift+L).

@@ -19,6 +19,7 @@ import {
   bandPaint,
   CARD,
   ELBOW_RADIUS,
+  groundAt,
   hex6,
   mix,
   NUB,
@@ -63,9 +64,11 @@ import type {
 //   id (`danbyte_cable`).
 // - Lines are written before the cards on the page's layer, so they pass
 //   under cards as on the screen.
-// - Row bands are swimlanes holding the cards whose centre they contain, and
-//   zones are containers too. Side bands are background shapes (a card has
-//   one parent). LLDP neighbours and BGP sessions get layers of their own.
+// - Row bands are swimlanes holding the cards whose centre they contain,
+//   their title centred across the top, and zones are containers too. Side
+//   bands are background shapes with a turned label (a card has one
+//   parent). LLDP neighbours and BGP sessions get layers of their own.
+// - An end label's gap is the colour under it: the page, or its band.
 // - Photo nodes are cards by default. With `photos`, a photo inlined as a
 //   `data:` URI is an image cell with its name as a label underneath, a
 //   connection point on each marked port, and its cables attached at their
@@ -521,22 +524,25 @@ function page(
             labelBackgroundColor: p.header,
           })
         : b.orient === "h"
-          ? style(["swimlane"], {
-              horizontal: 0,
-              startSize: Math.min(b.w, BAND.ROW_HEADER),
+          ? // A row: a swimlane with its title centred across the top, one
+            // fill for title and body, as on the canvas.
+            style(["swimlane"], {
+              startSize: Math.min(b.h, BAND.ROW_TITLE),
               swimlaneLine: 0,
               ...common,
-              fillColor: p.header,
+              fontSize: BAND.TITLE_SIZE,
+              fillColor: p.fill,
               swimlaneFillColor: p.fill,
             })
-          : style(["swimlane"], {
-              startSize: Math.min(b.h, BAND.COLUMN_HEADER),
+          : // A side band: a plain shape behind the rows (a card has one
+            // parent), its big label turned to read bottom to top.
+            style([], {
+              ...common,
+              horizontal: 0,
               container: 0,
               dropTarget: 0,
-              swimlaneLine: 0,
-              ...common,
-              fillColor: p.header,
-              swimlaneFillColor: p.fill,
+              fontSize: BAND.SIDE_SIZE,
+              fillColor: p.fill,
             })
     out.push(
       `<mxCell${attrs({
@@ -872,7 +878,11 @@ function page(
             fontFamily: FONT,
             fontSize: k.size,
             fontColor: PRINT.muted,
-            labelBackgroundColor: PRINT.paper,
+            labelBackgroundColor: groundAt(
+              doc.bands,
+              blockCentre(k),
+              PRINT.paper
+            ),
             rotation: rotation || undefined,
           }),
           vertex: "1",

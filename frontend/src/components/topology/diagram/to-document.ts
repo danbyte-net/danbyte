@@ -38,6 +38,7 @@ import type {
 import type { LegendItem } from "../legend"
 import { leadStart, linkEnds } from "./anchors"
 import type { AnchorLink, Nub } from "./anchors"
+import { paintOrder } from "./bands"
 import { distinctCables, relinkDiagram } from "./build-diagram"
 import type { DiagramModel, PhotoModel } from "./build-diagram"
 import { cardContent } from "./card-fields"
@@ -443,12 +444,13 @@ export function routeLink(
   }
 }
 
-/** Zones and bands as document bands, back to front. */
+/** Zones and bands as document bands, back to front: side bands, then
+ * rows, then zones, as the canvas stacks them. */
 export function regionBands(
   regions: readonly Region[],
   area?: Rect | null
 ): DiagramBand[] {
-  return regions
+  return paintOrder(regions)
     .filter((z) => !area || overlaps(area, z))
     .map((z) => ({
       id: `zone:${z.id}`,

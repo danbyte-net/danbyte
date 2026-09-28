@@ -327,7 +327,7 @@ describe("toDocument", () => {
     expect(doc.links).toHaveLength(0)
   })
 
-  it("turns zones and bands into document bands", () => {
+  it("turns zones and bands into document bands, back to front", () => {
     const b = build()
     const doc = toDocument(
       b.model,
@@ -353,17 +353,40 @@ describe("toDocument", () => {
           kind: "band",
           orient: "v",
         },
+        {
+          id: "r1",
+          label: "Spine-lag",
+          x: 0,
+          y: 300,
+          w: 400,
+          h: 180,
+          color: "#8b5cf6",
+          kind: "band",
+          orient: "h",
+        },
       ],
       { meta: META, measure: approxMeasure }
     )
+    // Side bands, then rows, then zones - as the canvas stacks them.
     expect(doc.bands).toEqual([
-      expect.objectContaining({ id: "zone:z1", kind: "zone", fill: "#0ea5e9" }),
       expect.objectContaining({
         id: "zone:b1",
         kind: "column",
         orient: "v",
         fill: null,
       }),
+      expect.objectContaining({
+        id: "zone:r1",
+        kind: "row",
+        orient: "h",
+        label: "Spine-lag",
+        x: 0,
+        y: 300,
+        w: 400,
+        h: 180,
+        fill: "#8b5cf6",
+      }),
+      expect.objectContaining({ id: "zone:z1", kind: "zone", fill: "#0ea5e9" }),
     ])
   })
 

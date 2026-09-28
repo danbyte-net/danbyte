@@ -6,7 +6,7 @@ import { fabricSimple } from "./__fixtures__/fabric-simple"
 import { drawioPointAt, toDrawio, toDrawioSvg } from "./drawio"
 import { linkLabels, polylineLength } from "./geometry"
 import type { LabelBlock } from "./geometry"
-import { LABEL, PRINT } from "./theme"
+import { BAND, bandPaint, LABEL, PRINT } from "./theme"
 import type { DiagramDocument, DiagramLink, Pt, Rect } from "./types"
 
 const clone = (d: DiagramDocument): DiagramDocument => structuredClone(d)
@@ -225,14 +225,26 @@ describe("toDrawio", () => {
   it("draws row bands as swimlanes and side bands behind them", () => {
     const page = pages(SIMPLE())[0]
     const row = page.get("band-spine")!
+    // The title centred across the top, one fill for title and body.
     expect(row.style).toMatchObject({
       swimlane: "",
-      horizontal: "0",
-      startSize: "28",
+      startSize: String(BAND.ROW_TITLE),
+      swimlaneLine: "0",
+      fontSize: String(BAND.TITLE_SIZE),
     })
+    expect(row.style.horizontal).toBeUndefined()
+    expect(row.style.fillColor).toBe(row.style.swimlaneFillColor)
     expect(row.style.container).toBeUndefined()
+    expect(row.value).toBe("Spine")
+    // A side band: a plain shape, its big label turned to read upwards.
     const side = page.get("band-wan")!
-    expect(side.style).toMatchObject({ container: "0", dropTarget: "0" })
+    expect(side.style).toMatchObject({
+      container: "0",
+      dropTarget: "0",
+      horizontal: "0",
+      fontSize: String(BAND.SIDE_SIZE),
+    })
+    expect(side.style.swimlane).toBeUndefined()
     expect(page.get("zone-lab")!.style.container).toBe("1")
     // Background shapes come first, so rows never hide under them.
     const order = [...page.keys()]
@@ -430,9 +442,10 @@ describe("toDrawio", () => {
     const x = (id: string) => num(geo(page.get(id)!), "x")
     expect(x("cab-5-a")).toBeCloseTo(2 * t - 1, 3)
     expect(x("cab-5-b")).toBeCloseTo(1 - 2 * u, 3)
-    // On the line, over the page's colour.
+    // On the line, over the colour under it: here the Leaf row's tint.
     const cell = page.get("cab-5-a")!
-    expect(cell.style.labelBackgroundColor).toBe("#ffffff")
+    const leaf = fabricSimple.bands.find((k) => k.id === "band-leaf")!
+    expect(cell.style.labelBackgroundColor).toBe(bandPaint(leaf).fill)
     // draw.io paints that colour over the glyphs only: a non-breaking
     // space each side keeps the gap in the line round the text.
     expect(cell.value).toBe(`&nbsp;${a.lines[0].text}&nbsp;`)

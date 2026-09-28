@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import { fabric } from "./__fixtures__/fabric"
 import { toSvg } from "./svg"
-import { PRINT } from "./theme"
+import { bandPaint, PRINT } from "./theme"
 import type { DiagramDocument } from "./types"
 
 const clone = (d: DiagramDocument): DiagramDocument => structuredClone(d)
@@ -74,6 +74,32 @@ describe("toSvg", () => {
     expect(doc.getElementById("nodes")!.children).toHaveLength(
       fabric.nodes.length
     )
+  })
+
+  it("titles rows over the lines and under the cards; turns side labels", () => {
+    const doc = parse(toSvg(fabric))
+    const groups = [...doc.documentElement.children].map((g) => g.id)
+    const at = (id: string) => groups.indexOf(id)
+    expect(at("band-titles")).toBeGreaterThan(at("links"))
+    expect(at("band-titles")).toBeLessThan(at("nodes"))
+    const texts = [
+      ...doc.getElementById("band-titles")!.getElementsByTagName("text"),
+    ]
+    expect(texts.map((t) => t.textContent)).toEqual(["Spine", "Leaf", "Access"])
+    // Centred on the row, over a chip of the row's own colour.
+    const spine = fabric.bands.find((k) => k.id === "band-spine")!
+    expect(Number(texts[0].getAttribute("x"))).toBeCloseTo(
+      spine.x + spine.w / 2
+    )
+    expect(texts[0].getAttribute("text-anchor")).toBe("middle")
+    expect(texts[0].previousElementSibling!.getAttribute("fill")).toBe(
+      bandPaint(spine).fill
+    )
+    // The side band's label is on the band, reading bottom to top.
+    const wan = [
+      ...doc.getElementById("bands")!.getElementsByTagName("text"),
+    ].find((t) => t.textContent === "WAN")!
+    expect(wan.getAttribute("transform")).toMatch(/^rotate\(-90 /)
   })
 
   it("escapes names and labels", () => {
