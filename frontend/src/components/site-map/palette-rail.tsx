@@ -5,6 +5,7 @@ import { Building2, Plus } from "lucide-react"
 
 import { api, type Device, type SiteMapSite } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { BarTip } from "@/components/map-toolbar"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { DevicePicker } from "@/components/device-picker"
@@ -61,11 +62,13 @@ export function MapPaletteRail({
         <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
           Palette
         </span>
-        <Button variant="ghost" size="sm" asChild className="h-6 px-1.5">
-          <Link to="/floor-tile-types/new" title="Add marker type">
-            <Plus className="h-3.5 w-3.5" />
-          </Link>
-        </Button>
+        <BarTip tip="Add marker type">
+          <Button variant="ghost" size="icon-xs" asChild>
+            <Link to="/floor-tile-types/new" aria-label="Add marker type">
+              <Plus className="size-3.5" />
+            </Link>
+          </Button>
+        </BarTip>
       </div>
       <div className="px-2 pb-1">
         <SegmentedTabs<"sites" | "devices" | "markers">

@@ -31,7 +31,7 @@ sorts.
 The menu then shows your views and the shared ones, with who owns each. Picking
 one applies its search and filters; **Clear** puts the list back to everything.
 
-If you change the filters after applying a view, the button says **edited** -
+If you change the filters after applying a view, the button says **Edited** -
 what you're looking at is no longer what the view describes. **Update** writes
 the current filters back to it (your own views only).
 

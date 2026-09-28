@@ -35,11 +35,11 @@ Two ticks on a tile type change how its tiles behave:
   Zones render *under* normal tiles, and normal tiles may sit on top of them
   (they're the one exception to the no-stacking rule). Their name labels
   (*Cold aisle*, *Hot aisle*…) can be hidden with the **Zone labels** toggle
-  under **View** when they clutter a busy plan.
+  under **Display** when they clutter a busy plan.
 - **Camera field of view** - tiles of this type get a **FOV cone**
   (direction / angle / reach in cells) drawn on the canvas. The same tick
   exists on **device roles** (e.g. a CCTV role), so camera devices get cones
-  whichever way you type the tile. Toggle all cones under **View**.
+  whichever way you type the tile. Toggle all cones under **Display**.
   Per tile: a dice-style **anchor picker** sets where the cone emits from
   (center or any corner), and a **PTZ** toggle swaps the cone for a full
   **360° coverage ring** (radius = reach) for pan-tilt-zoom cameras.
@@ -272,6 +272,15 @@ stairwell tile), link a tile to another floor plan.
 Anyone with `floorplan · change` gets the edit tools; everyone else sees the
 read-only viewer.
 
+The page has two bars, split the way the [topology map](topology.md)'s are.
+The header names the plan, with the floor switcher and the **Edited** badge,
+and holds the **2D / 3D** and **Layout / Structure / Cables** tabs. The bar
+under it has *Find on plan…*, **Fit to view** and **Grid** on the left, and
+**Objects**, **Display**, **Background**, **PNG**, plan settings and **Save**
+on the right. When that bar is too narrow for all of them (a small window),
+Grid, Background, PNG and plan settings move into **More**, so nothing is
+ever cut off.
+
 | Action | How |
 |---|---|
 | Place a tile | Click a palette entry to arm it, then click a cell (default size) or drag a rectangle (walls, aisles) |
@@ -292,7 +301,7 @@ Edits are local until you press **Save** - one transactional bulk call writes
 all creates, moves, and deletes together, and the change log records each
 tile individually.
 
-While there are unsaved edits an **unsaved** badge sits in the header, and
+While there are unsaved edits an **Edited** badge sits in the header, and
 leaving the plan asks first - **Discard unsaved changes?**, with *Keep editing*
 or *Discard and leave*. One guard covers every in-app exit: a sidebar link, a
 breadcrumb, browser back/forward, a tile that links out to a rack or another
@@ -302,7 +311,7 @@ browser's own leave-site prompt instead, since that never reaches the app.
 Switching the same plan between 2D and 3D, or clearing a cable trace, is a view
 change rather than an exit, so neither is guarded.
 
-Under **View**: **Fit labels to tiles** auto-sizes each tile's text to its
+Under **Display**: **Fit labels to tiles** auto-sizes each tile's text to its
 footprint (so single-cell tiles keep readable names) - the preference is
 saved on the plan; and **Camera FOV cones** shows/hides the camera wedges.
 
@@ -332,7 +341,8 @@ device page. Device tiles open the end-to-end view directly.
 
 ## Viewer
 
-Click a tile to see what it is and jump to the linked object ("Open rack R01").
+Click a tile to see what it is and jump to the linked object (**Open rack**,
+**Open device**…, the same link every map panel uses).
 Rack and device tiles open the deep view; a tile linked to **another floor
 plan** navigates into it on click - use this to nest a cage or suite plan
 inside a hall plan.
@@ -516,7 +526,7 @@ Auto-picking a cable's trays from its endpoints is the next phase.*
 
 ### Seeing cables A↔B (routed through the trays)
 
-Turn on **View → Cable links (A↔B)** and every cable routed through a tray
+Turn on **Display → Cable links (A↔B)** and every cable routed through a tray
 draws its **physical run** - not a straight line, but the actual path
 **through the trays it's assigned to**. Danbyte resolves each cable's
 terminations to its devices, then to the tile holding that device (or the
@@ -531,7 +541,7 @@ to each tray it passes through (a main run plus a branch, say). The trace
 stitches them at their junctions - including where two trays **cross
 mid-run** - and takes the branch toward the destination.
 
-**Tracing a single cable - no Cables mode needed.** With **View → Cable
+**Tracing a single cable - no Cables mode needed.** With **Display → Cable
 links** on, just **click any cable line** (in Layout *or* Cables mode) to
 trace it: the clicked run jumps to the **front**, brightens with a moving
 dash, and every other cable **dims** so the route reads clearly even where
@@ -561,14 +571,14 @@ are placed as their own tiles.
 Trays render as a **subtle gray channel** (recolor per tray) with no solid
 centerline, so a highlighted cable reads as running *inside* the tray.
 
-**View → Cable trays** hides/shows the tray layer itself - look at just the
+**Display → Cable trays** hides/shows the tray layer itself - look at just the
 cable runs, just the trays, or both.
 
 ## Finding things
 
-- **Search** (Layout mode, header): type a tile's label, linked object, or
-  type name and jump straight to it - the canvas pans and zooms to the hit.
-- **Fit** (the ⤢ button) recentres the whole plan after you've zoomed around.
+- **Find on plan…** (Layout mode, the bar under the header): type a tile's
+  label, linked object, or type name and jump straight to it - the canvas pans and zooms to the hit.
+- **Fit to view** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
   monitoring state. **Click to pin** it - a pinned popover stays put so you can

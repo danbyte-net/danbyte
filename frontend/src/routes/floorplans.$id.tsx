@@ -14,7 +14,7 @@ import {
   ArrowUp,
   ChevronRight,
   Download,
-  ExternalLink,
+  Ellipsis,
   Grid3x3,
   Image as ImageIcon,
   Maximize,
@@ -68,6 +68,16 @@ import type {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ColorBadge } from "@/components/cells/color-badge"
+import { Loading } from "@/components/loading"
+import {
+  BarButton,
+  BarIconButton,
+  BarMenuTrigger,
+  BarTip,
+  BarToggle,
+} from "@/components/map-toolbar"
+import { OpenLink } from "@/components/open-link"
 import { ColorPicker } from "@/components/ui/color-picker"
 import {
   Select,
@@ -83,6 +93,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Popover,
@@ -179,6 +197,12 @@ const AREA_PSEUDO_ENTRY = {
  * stored there falls back to cutaway. */
 const SHELL_MODES_3D = ["solid", "cutaway", "xray"] as const
 type ShellMode3D = (typeof SHELL_MODES_3D)[number]
+
+/** Second-bar controls that move into More once the bar is narrower than
+ * 52rem - never at 1280px with the app sidebar open, only on a narrower
+ * window - so nothing on the bar is ever clipped or scrolled out of sight. */
+const WIDE_ONLY = "hidden @min-[52rem]:inline-flex"
+const NARROW_ONLY = "@min-[52rem]:hidden"
 
 export const Route = createFileRoute("/floorplans/$id")({
   component: FloorPlanPage,
@@ -343,6 +367,7 @@ function FloorPlanPage() {
   const [paletteTab, setPaletteTab] = useState<"tiles" | "zones">("tiles")
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [backgroundOpen, setBackgroundOpen] = useState(false)
   // Deep view: the rack/device contents + end-to-end trace side sheet.
   const [deepTile, setDeepTile] = useState<FloorPlanTile | null>(null)
   // View prefs - seeded from plan.state, persisted back for editors.
@@ -1310,20 +1335,86 @@ function FloorPlanPage() {
     [cablePaths, trays, shownTiles]
   )
 
-  if (planQuery.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (planQuery.isLoading) return <Loading />
   if (planQuery.isError) return <QueryError error={planQuery.error} />
   if (!plan) return null
 
+  // The background image's controls: a popover off the header on a wide
+  // screen, a dialog from More on a narrow one.
+  const backgroundControls = (
+    <>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) uploadBackground.mutate(f)
+          e.target.value = ""
+        }}
+      />
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={uploadBackground.isPending}
+          onClick={() => fileInput.current?.click()}
+        >
+          {plan.background_image ? "Replace image…" : "Upload image…"}
+        </Button>
+        {plan.background_image && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={uploadBackground.isPending}
+            onClick={() => uploadBackground.mutate(null)}
+          >
+            Remove
+          </Button>
+        )}
+      </div>
+      {plan.background_image && (
+        <label className="grid gap-1 text-xs">
+          <span className="text-muted-foreground">
+            Opacity - <span className="num">{plan.background_opacity}%</span>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            defaultValue={plan.background_opacity}
+            onMouseUp={(e) =>
+              patchPlan.mutate({
+                background_opacity: Number(
+                  (e.target as HTMLInputElement).value
+                ),
+              })
+            }
+            onTouchEnd={(e) =>
+              patchPlan.mutate({
+                background_opacity: Number(
+                  (e.target as HTMLInputElement).value
+                ),
+              })
+            }
+          />
+        </label>
+      )}
+    </>
+  )
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {/* ── Header ──────────────────────────────────────────────────── */}
+      {/* ── Header: which plan, which floor, which mode ──────────────── */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
-        <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/floorplans">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
+        <BarTip tip="Floor plans">
+          <Button variant="ghost" size="icon-sm" asChild className="-ml-2">
+            <Link to="/floorplans" aria-label="Floor plans">
+              <ArrowLeft />
+            </Link>
+          </Button>
+        </BarTip>
         <div className="min-w-0">
           <h1 className="truncate text-base font-semibold">{plan.name}</h1>
           <p className="truncate text-[11px] text-muted-foreground">
@@ -1334,7 +1425,7 @@ function FloorPlanPage() {
             cells
           </p>
         </div>
-        {isDirty && <Badge variant="secondary">unsaved</Badge>}
+        {isDirty && <Badge variant="secondary">Edited</Badge>}
         {(floors.data?.results.length ?? 0) > 0 && (
           <div className="ml-4 flex min-w-0 items-center gap-1">
             <SegmentedTabs
@@ -1353,20 +1444,17 @@ function FloorPlanPage() {
               }))}
             />
             {canEdit && (
-              <Button
-                variant="ghost"
-                size="sm"
-                asChild
-                className="h-8 px-1.5"
-                title="Add a floor to this location"
-              >
-                <Link
-                  to="/floorplans/new"
-                  search={{ location: plan.location.id }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+              <BarTip tip="Add floor">
+                <Button variant="ghost" size="icon-sm" asChild>
+                  <Link
+                    to="/floorplans/new"
+                    search={{ location: plan.location.id }}
+                    aria-label="Add floor"
+                  >
+                    <Plus className="size-3.5" />
+                  </Link>
+                </Button>
+              </BarTip>
             )}
           </div>
         )}
@@ -1412,47 +1500,50 @@ function FloorPlanPage() {
               ]}
             />
           )}
-          {mode === "layout" && (
-            <TileSearch
-              tiles={tiles}
-              value={search}
-              onChange={setSearch}
-              onPick={(tile) => {
-                setSelectedId(tile.id)
-                canvasApi.current?.focusTile(tile)
-              }}
-            />
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            title="Fit to view"
-            onClick={() => canvasApi.current?.fit()}
-          >
-            <Maximize className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowGrid((g) => !g)}
-            className={cn(!showGrid && "text-muted-foreground")}
-          >
-            <Grid3x3 className="h-3.5 w-3.5" /> Grid
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
+        </div>
+      </header>
+
+      {/* ── Second bar: find and view on the left, the panel, display and
+          file actions on the right - the topology map's split. A container,
+          so the overflow into More follows the bar's own width (the app
+          sidebar open or not) rather than the window's. */}
+      <div className="@container flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
+        {mode === "layout" && (
+          <TileSearch
+            tiles={tiles}
+            value={search}
+            onChange={setSearch}
+            onPick={(tile) => {
+              setSelectedId(tile.id)
+              canvasApi.current?.focusTile(tile)
+            }}
+          />
+        )}
+        <BarIconButton
+          label="Fit to view"
+          onClick={() => canvasApi.current?.fit()}
+        >
+          <Maximize />
+        </BarIconButton>
+        <BarToggle
+          pressed={showGrid}
+          className={WIDE_ONLY}
+          onClick={() => setShowGrid((g) => !g)}
+        >
+          <Grid3x3 /> Grid
+        </BarToggle>
+        <div className="ml-auto flex items-center gap-2">
+          <BarToggle
+            pressed={showObjects}
             onClick={() => setViewPref("show_objects", !showObjects)}
-            className={cn(!showObjects && "text-muted-foreground")}
-            title="List the objects placed on this plan"
           >
-            <PanelRight className="h-3.5 w-3.5" /> Objects
-          </Button>
+            <PanelRight /> Objects
+          </BarToggle>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm">
-                <SlidersHorizontal className="h-3.5 w-3.5" /> View
-              </Button>
+              <BarButton>
+                <SlidersHorizontal /> Display
+              </BarButton>
             </PopoverTrigger>
             {/* Two columns once the 3D block is in play. As one 224px stack
                 this ran past the bottom of a laptop viewport and had to be
@@ -1643,96 +1734,69 @@ function FloorPlanPage() {
           {canEdit && (
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <ImageIcon className="h-3.5 w-3.5" /> Background
-                </Button>
+                <BarButton className={WIDE_ONLY}>
+                  <ImageIcon /> Background
+                </BarButton>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-64 gap-3 p-3">
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) uploadBackground.mutate(f)
-                    e.target.value = ""
-                  }}
-                />
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={uploadBackground.isPending}
-                    onClick={() => fileInput.current?.click()}
-                  >
-                    {plan.background_image ? "Replace image…" : "Upload image…"}
-                  </Button>
-                  {plan.background_image && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={uploadBackground.isPending}
-                      onClick={() => uploadBackground.mutate(null)}
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
-                {plan.background_image && (
-                  <label className="grid gap-1 text-xs">
-                    <span className="text-muted-foreground">
-                      Opacity -{" "}
-                      <span className="num">{plan.background_opacity}%</span>
-                    </span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      defaultValue={plan.background_opacity}
-                      onMouseUp={(e) =>
-                        patchPlan.mutate({
-                          background_opacity: Number(
-                            (e.target as HTMLInputElement).value
-                          ),
-                        })
-                      }
-                      onTouchEnd={(e) =>
-                        patchPlan.mutate({
-                          background_opacity: Number(
-                            (e.target as HTMLInputElement).value
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                )}
+                {backgroundControls}
               </PopoverContent>
             </Popover>
           )}
-          <Button variant="outline" size="sm" onClick={exportPng}>
-            <Download className="h-3.5 w-3.5" /> PNG
-          </Button>
+          <BarButton className={WIDE_ONLY} onClick={exportPng}>
+            <Download /> PNG
+          </BarButton>
           {canEdit && (
-            <Button
-              variant="outline"
-              size="sm"
+            <BarIconButton
+              label="Plan settings"
+              className={WIDE_ONLY}
               onClick={() => setSettingsOpen(true)}
             >
-              <Settings2 className="h-3.5 w-3.5" />
-            </Button>
+              <Settings2 />
+            </BarIconButton>
           )}
+          {/* What the wide header shows as its own buttons, gathered here
+              when the header is too narrow for all of them. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <BarMenuTrigger className={NARROW_ONLY}>
+                <Ellipsis /> More
+              </BarMenuTrigger>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuCheckboxItem
+                checked={showGrid}
+                onCheckedChange={(v) => setShowGrid(v)}
+              >
+                Grid
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              {canEdit && (
+                <DropdownMenuItem onSelect={() => setBackgroundOpen(true)}>
+                  <ImageIcon /> Background…
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={exportPng}>
+                <Download /> PNG
+              </DropdownMenuItem>
+              {canEdit && (
+                <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
+                  <Settings2 /> Plan settings…
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {canEdit && (
-            <Button
-              size="sm"
+            <BarButton
+              variant="default"
               disabled={!isDirty || save.isPending}
               onClick={() => save.mutate()}
             >
               {save.isPending ? "Saving…" : "Save"}
-            </Button>
+            </BarButton>
           )}
         </div>
-      </header>
+      </div>
 
       {/* ── Body: palette rail · canvas · inspector ─────────────────── */}
       <div className="flex min-h-0 flex-1">
@@ -1792,15 +1856,17 @@ function FloorPlanPage() {
               <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                 Palette
               </span>
-              <Button variant="ghost" size="sm" asChild className="h-6 px-1.5">
-                <Link
-                  to="/floor-tile-types/new"
-                  search={{ from: plan.id }}
-                  title="Add tile type"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+              <BarTip tip="Add tile type">
+                <Button variant="ghost" size="icon-xs" asChild>
+                  <Link
+                    to="/floor-tile-types/new"
+                    search={{ from: plan.id }}
+                    aria-label="Add tile type"
+                  >
+                    <Plus className="size-3.5" />
+                  </Link>
+                </Button>
+              </BarTip>
             </div>
             <div className="px-2 pb-1">
               <SegmentedTabs<"tiles" | "zones">
@@ -1878,13 +1944,7 @@ function FloorPlanPage() {
           )}
           {view3d && (
             <>
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    Loading 3D view…
-                  </div>
-                }
-              >
+              <Suspense fallback={<Loading />}>
                 <FloorScene3D
                   planId={plan.id}
                   liveState={liveState.data ?? null}
@@ -2038,24 +2098,24 @@ function FloorPlanPage() {
                         { o: 270 as const, icon: ArrowLeft, label: "left" },
                       ] as const
                     ).map(({ o, icon: Icon, label }) => (
-                      <Button
-                        key={o}
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0"
-                        title={`Front faces ${label}`}
-                        aria-label={`Front faces ${label}`}
-                        onClick={() => {
-                          // Per-tile absolute facing - setTileFacing keeps the
-                          // footprint-swap + collision rules a hand rotate has.
-                          for (const tid of multiSel) {
-                            const t = tiles.find((x) => x.id === tid)
-                            if (t) setTileFacing(t, o)
-                          }
-                        }}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                      </Button>
+                      <BarTip key={o} tip={`Front faces ${label}`}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          aria-label={`Front faces ${label}`}
+                          onClick={() => {
+                            // Per-tile absolute facing - setTileFacing keeps the
+                            // footprint-swap + collision rules a hand rotate has.
+                            for (const tid of multiSel) {
+                              const t = tiles.find((x) => x.id === tid)
+                              if (t) setTileFacing(t, o)
+                            }
+                          }}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                        </Button>
+                      </BarTip>
                     ))}
                     <span className="h-4 w-px bg-border" />
                     <Select
@@ -2116,15 +2176,17 @@ function FloorPlanPage() {
                     >
                       <Trash2 className="mr-1 h-3 w-3" /> Delete
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={() => setMultiSel(new Set())}
-                      title="Clear selection"
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
+                    <BarTip tip="Clear selection">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        onClick={() => setMultiSel(new Set())}
+                        aria-label="Clear selection"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </BarTip>
                   </div>
                 </div>
               )}
@@ -2310,6 +2372,15 @@ function FloorPlanPage() {
         onTraceCables={traceCablesOnMap}
       />
 
+      <Dialog open={backgroundOpen} onOpenChange={setBackgroundOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Background</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">{backgroundControls}</div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent size="xl">
           <DialogHeader>
@@ -2333,51 +2404,53 @@ function FloorPlanPage() {
   )
 }
 
-/** Client-side Link per link kind - plain <a href> would full-reload the SPA. */
+/** "Open device", "Open rack"… for the linked object - the router link the
+ * Maps panels share, so the SPA never reloads. */
 function LinkedObjectLink({
   linked,
 }: {
   linked: NonNullable<FloorPlanTile["linked"]>
 }) {
-  const label = (
-    <>
-      <ExternalLink className="h-3 w-3" />
-      Open {linked.kind === "floorplan" ? "plan" : linked.kind} {linked.name}
-    </>
-  )
-  const className =
-    "mt-2 inline-flex items-center gap-1.5 text-xs underline-offset-2 link"
+  const className = "mt-2 w-full"
   const params = { id: linked.id }
   switch (linked.kind) {
     case "rack":
       return (
-        <Link to="/racks/$id" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink to="/racks/$id" params={params} className={className}>
+          Open rack
+        </OpenLink>
       )
     case "device":
       return (
-        <Link to="/devices/$id" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink to="/devices/$id" params={params} className={className}>
+          Open device
+        </OpenLink>
       )
     case "powerpanel":
       return (
-        <Link to="/power-panels/$id/edit" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink
+          to="/power-panels/$id/edit"
+          params={params}
+          className={className}
+        >
+          Open power panel
+        </OpenLink>
       )
     case "powerfeed":
       return (
-        <Link to="/power-feeds/$id/edit" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink
+          to="/power-feeds/$id/edit"
+          params={params}
+          className={className}
+        >
+          Open power feed
+        </OpenLink>
       )
     case "floorplan":
       return (
-        <Link to="/floorplans/$id" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink to="/floorplans/$id" params={params} className={className}>
+          Open plan
+        </OpenLink>
       )
   }
 }
@@ -2495,15 +2568,13 @@ function TileInspector({
         <span className="font-medium">
           {tile.tile_type?.name ?? tile.role_type?.name}
         </span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto h-7 px-2"
+        <BarIconButton
+          label="Rotate 90°"
+          className="ml-auto"
           onClick={onRotate}
-          title="Rotate 90° (swaps footprint, spins the icon)"
         >
-          <RotateCw className="h-3.5 w-3.5" />
-        </Button>
+          <RotateCw className="size-3.5" />
+        </BarIconButton>
       </div>
 
       {/* Re-type a placed tile: any tile type (zones stay zones), or a device
@@ -2564,20 +2635,20 @@ function TileInspector({
                 { o: 270 as const, icon: ArrowLeft, label: "Left" },
               ] as const
             ).map(({ o, icon: Icon, label }) => (
-              <Button
-                key={o}
-                variant={tile.orientation === o ? "secondary" : "outline"}
-                size="sm"
-                className={cn(
-                  "h-8 px-0",
-                  tile.orientation === o && "border-primary/50"
-                )}
-                onClick={() => onSetFacing(o)}
-                title={`Front faces ${label.toLowerCase()}`}
-                aria-label={`Front faces ${label.toLowerCase()}`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-              </Button>
+              <BarTip key={o} tip={`Front faces ${label.toLowerCase()}`}>
+                <Button
+                  variant={tile.orientation === o ? "secondary" : "outline"}
+                  size="sm"
+                  className={cn(
+                    "h-8 px-0",
+                    tile.orientation === o && "border-primary/50"
+                  )}
+                  onClick={() => onSetFacing(o)}
+                  aria-label={`Front faces ${label.toLowerCase()}`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </Button>
+              </BarTip>
             ))}
           </div>
         </Field>
@@ -2943,11 +3014,9 @@ function RackDeepView({
           </div>
         )}
         {rack && (
-          <Button variant="outline" size="sm" asChild className="w-fit">
-            <Link to="/racks/$id" params={{ id: rack.id }}>
-              <ExternalLink className="h-3.5 w-3.5" /> Open rack page
-            </Link>
-          </Button>
+          <OpenLink to="/racks/$id" params={{ id: rack.id }} className="w-fit">
+            Open rack
+          </OpenLink>
         )}
         {rack && (
           <div>
@@ -2994,26 +3063,23 @@ function RackDeepView({
                   {d.name}
                 </Link>
                 {d.role && (
-                  <span
-                    className="rounded-sm px-1.5 py-0.5 text-[10px]"
-                    style={{
-                      backgroundColor: `${d.role.color || "#a1a1aa"}22`,
-                      color: d.role.color || undefined,
-                    }}
-                  >
-                    {d.role.name}
-                  </span>
+                  <ColorBadge
+                    name={d.role.name}
+                    color={d.role.color || undefined}
+                    className="h-4 min-w-0 px-1.5 text-[10px]"
+                  />
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto h-7"
-                  title="Trace this device end-to-end"
-                  aria-label={`Trace ${d.name}`}
-                  onClick={() => setTraceDevice(d)}
-                >
-                  <Waypoints className="h-3.5 w-3.5" />
-                </Button>
+                <BarTip tip="Trace">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="ml-auto size-7"
+                    aria-label={`Trace ${d.name}`}
+                    onClick={() => setTraceDevice(d)}
+                  >
+                    <Waypoints className="size-3.5" />
+                  </Button>
+                </BarTip>
               </li>
             ))}
           </ul>
@@ -3044,11 +3110,9 @@ function DeviceDeepView({
       {/* Natural top-aligned stack - no flex-1 stretch, so the button sits
           right above the topology instead of leaving a tall gap. */}
       <div className="flex flex-col gap-3 px-4 pb-4">
-        <Button variant="outline" size="sm" asChild className="w-fit">
-          <Link to="/devices/$id" params={{ id: deviceId }}>
-            <ExternalLink className="h-3.5 w-3.5" /> Open device page
-          </Link>
-        </Button>
+        <OpenLink to="/devices/$id" params={{ id: deviceId }} className="w-fit">
+          Open device
+        </OpenLink>
         <DeviceMiniTopology deviceId={deviceId} onTraceCables={onTraceCables} />
       </div>
     </div>
@@ -3137,15 +3201,16 @@ function TileSearch({
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <div className="relative">
-          <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute top-1/2 left-2.5 size-3 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Find on plan…"
+            aria-label="Find on plan"
             value={value}
             onChange={(e) => {
               onChange(e.target.value)
               setOpen(true)
             }}
-            className="h-8 w-48 pl-8 text-xs"
+            className="h-7 w-44 pl-7 text-xs"
           />
         </div>
       </PopoverTrigger>
@@ -3167,10 +3232,6 @@ function TileSearch({
               }}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-muted/60"
             >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                style={{ backgroundColor: tileFill(t) }}
-              />
               <span className="truncate">{label}</span>
               {t.linked && (
                 <span className="ml-auto text-[10px] text-muted-foreground">
@@ -3839,7 +3900,6 @@ function TrayInspector({
             >
               <button
                 type="button"
-                title="Show this cable's A↔B run"
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 onClick={() =>
                   onHighlightCable(highlightCableId === c.id ? null : c.id)
@@ -3856,20 +3916,22 @@ function TrayInspector({
                   </span>
                 )}
               </button>
-              <button
-                type="button"
-                title="Remove"
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() =>
-                  onPatch({
-                    cable_ids: tray.cables
-                      .filter((x) => x.id !== c.id)
-                      .map((x) => x.id),
-                  })
-                }
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <BarTip tip="Remove">
+                <button
+                  type="button"
+                  aria-label={`Remove ${c.label}`}
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() =>
+                    onPatch({
+                      cable_ids: tray.cables
+                        .filter((x) => x.id !== c.id)
+                        .map((x) => x.id),
+                    })
+                  }
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </BarTip>
             </li>
           ))}
         </ul>

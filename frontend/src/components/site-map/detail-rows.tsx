@@ -11,6 +11,7 @@ import {
 } from "@/lib/api"
 import { CopyButton } from "@/components/kv-card"
 import { TagList } from "@/components/cells/tag-list"
+import { Loading } from "@/components/loading"
 import {
   formatCustomValue,
   useCustomFieldDefs,
@@ -172,9 +173,7 @@ export function SiteDetailRows({
   rows.push(...customFieldRows(cfDefs, d?.custom_fields, on))
   return (
     <>
-      {detail.isLoading && (
-        <p className="text-[12px] text-muted-foreground">Loading…</p>
-      )}
+      {detail.isLoading && <Loading className="min-h-16" />}
       <DetailRowList rows={rows} />
     </>
   )
@@ -205,8 +204,7 @@ export function DeviceExtraRows({
   })
   const cfDefs = useCustomFieldDefs("device").data?.results
   const d = q.data
-  if (q.isLoading)
-    return <p className="text-[12px] text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading className="min-h-16" />
   if (!d) return null
   const has = (k: string) => shownKeys.includes(k)
   const on = (k: string) => !enabledKeys || enabledKeys.includes(k)

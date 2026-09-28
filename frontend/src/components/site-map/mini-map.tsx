@@ -32,6 +32,7 @@ import {
 } from "@/components/site-map/cluster"
 import { deviceIcon, siteIcon } from "@/components/site-map/map-icons"
 import { cn } from "@/lib/utils"
+import { Loading } from "@/components/loading"
 
 // A read-only OSM mini-map: real tiles, your sites/devices as the full map's
 // pins (mini variant), cables + connection arcs drawn like the full Site map.
@@ -298,9 +299,7 @@ export function MiniMap({
   return (
     <div className={cn("relative", className)}>
       <div ref={el} className="absolute inset-0" />
-      {mapQ.isLoading && (
-        <div className="absolute inset-0 animate-pulse bg-muted/30" />
-      )}
+      {mapQ.isLoading && <Loading className="absolute inset-0 min-h-0" />}
       {nonesPlaced && (
         <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
           Nothing placed yet - open the Site map and drop your first site.

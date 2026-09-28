@@ -42,9 +42,9 @@ for a popup with counts and a jump-off to the site or device page.
 
 The page is a clone of the floor-plan editor's shell:
 
-- **Header** - View / Edit tabs, a *Find on map…* search (sites, devices,
+- **Header** - View / Layout / Cables tabs, a *Find on map…* search (sites, devices,
   markers - jump + select), **Fit to view**, the **Satellite** toggle, the
-  **Objects** sidebar toggle, and a **View** menu (Sites / Devices / Links /
+  **Objects** sidebar toggle, and a **Display** menu (Sites / Devices / Links /
   Cables / Cable routes / Region boundaries layers + camera FOV cones).
   Links are circuits and tunnels; **Cables** toggles the plain cable lines
   separately, so a map can show just the carrier picture.
@@ -96,7 +96,7 @@ The page is a clone of the floor-plan editor's shell:
     all"** line appears at the top of the sidebar whenever anything is off,
     and a chip in the map's top-right corner says the same while the sidebar
     is closed. The choice is remembered per browser. This is finer-grained than
-    **View**, which switches whole kinds on and off. The
+    **Display**, which switches whole kinds on and off. The
     [floor plans](floor-plans.md) and the [topology map](topology.md) have
     the same eyes. Keyboard: ++h++ hides the selected site, or the selected
     device's role; ++shift+h++ shows all.
@@ -170,7 +170,8 @@ against an external service. You place things yourself.
 ## Chrome and memory
 
 - **Problems pill** - when anything on the map is down or degraded, a pill in
-  the top-left corner counts it; each click flies to the next problem, worst
+  the top-left corner counts it, one chip per state named as your status
+  catalog names it; each click flies to the next problem, worst
   first, and opens its popover.
 - **Legend** - bottom-left, collapsed to a pill by default; explains pins,
   badges, cluster chips, health dots and the line colors.
@@ -205,7 +206,7 @@ hide a problem. Click a chip to zoom into it - at maximum zoom, markers on the
 clustered object from the sidebar, search, or a `?focus=` link zooms and fans
 automatically until that marker is visible.
 
-Stacking is a preference: **View settings → Stack nearby markers** (default
+Stacking is a preference: **Display → Stack nearby markers** (default
 on). Turned off, nothing collapses - crowded markers **shrink** instead, down
 to about half size, so every site stays individually visible and clickable.
 The choice applies to the mini maps too.
@@ -217,7 +218,7 @@ smaller chip.
 
 Name chips declutter with zoom as well: site names appear once you're
 reasonably close, device names closer still, and hovering or selecting a
-marker always shows its name at any zoom. The **Labels** toggle in the View
+marker always shows its name at any zoom. The **Labels** toggle in the Display
 menu (remembered per browser) switches to hover/selection-only if you prefer
 a bare map.
 
@@ -267,7 +268,7 @@ prefill from it) or later from the route inspector. Reshape
 any time: drag a vertex, click a segment's **＋** to add a bend, right-click a
 vertex to remove it.
 
-Routes render in every mode as faint channels (toggle under **View → Cable
+Routes render in every mode as faint channels (toggle under **Display → Cable
 routes**); their assigned cables draw as thin colored lines *inside* the
 channel, routed through the route graph between their endpoint sites. A cable
 bundle whose members all follow real routes drops its abstract arc. Cable
@@ -294,7 +295,7 @@ Regions that carry an [OpenStreetMap boundary](regions-locations.md#map-boundary
 shade their outline under the markers, tinted by the region's map color
 (muted zinc when no color is set). The polygons are decoration, not
 controls - clicks pass straight through to pins and the map. Toggle them
-under **View → Region boundaries** (remembered per browser, like the other
+under **Display → Region boundaries** (remembered per browser, like the other
 layers). Boundary data © OpenStreetMap contributors, ODbL.
 
 ## Satellite view

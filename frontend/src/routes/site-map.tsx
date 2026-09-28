@@ -43,6 +43,14 @@ import {
 } from "@/components/site-map/detail-rows"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Loading } from "@/components/loading"
+import {
+  BarButton,
+  BarIconButton,
+  BarTip,
+  BarToggle,
+} from "@/components/map-toolbar"
+import { OpenLink } from "@/components/open-link"
 import { Input } from "@/components/ui/input"
 import {
   Popover,
@@ -59,6 +67,10 @@ import {
 import { Field, FormCheckbox } from "@/components/forms"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import {
+  statusLabel,
+  useStatusLabels,
+} from "@/components/monitoring/status-palette"
 import { TagList } from "@/components/cells/tag-list"
 import {
   formatCustomValue,
@@ -130,7 +142,6 @@ import {
 import { MapPaletteRail } from "@/components/site-map/palette-rail"
 import { buildFovLayer, type FovSource } from "@/components/site-map/fov-layer"
 import { useMe } from "@/lib/use-me"
-import { cn } from "@/lib/utils"
 import { usePageTitle } from "@/lib/page-title"
 
 // The geographic floor plan. Same shell as /floorplans/$id - h-14 header with
@@ -139,6 +150,11 @@ import { usePageTitle } from "@/lib/page-title"
 // selected, and an "On this map" objects sidebar on the far right. Tiles come
 // from the deployment's configured tile server (OSM + Esri World Imagery by
 // default, per their usage policies: exact HTTPS URLs, visible attribution).
+
+/** The page's one bar is an h-14 header, so its controls are the topology
+ * header's: the toolbar parts at h-8 with size-3.5 icons. */
+const HEAD = "h-8"
+const HEAD_ICON = "size-8"
 
 export const Route = createFileRoute("/site-map")({
   // ?focus=<deviceId> - arrive centered on a device (the "Show on site map"
@@ -169,8 +185,7 @@ function SiteMapPage() {
         You don't have permission to view the site map.
       </p>
     )
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading map…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   return <MapBody data={q.data!} />
 }
@@ -184,6 +199,8 @@ type Placing =
 
 function MapBody({ data }: { data: SiteMapPayload }) {
   const qc = useQueryClient()
+  // The problems pill names the states as the status catalog does.
+  const statusLabels = useStatusLabels()
   const { focus, trace } = Route.useSearch()
   const { canDo } = useMe()
   const mapEl = useRef<HTMLDivElement | null>(null)
@@ -1506,49 +1523,43 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               setSelected(sel)
             }}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            title="Fit to view"
+          <BarIconButton
+            label="Fit to view"
+            className={HEAD_ICON}
             onClick={() => fitAll()}
           >
-            <Maximize className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
+            <Maximize className="size-3.5" />
+          </BarIconButton>
+          <BarToggle
+            pressed={basemap === "sat"}
+            className={HEAD}
             onClick={() => setBase(basemap === "sat" ? "map" : "sat")}
-            className={cn(basemap !== "sat" && "text-muted-foreground")}
-            title="Toggle satellite imagery"
           >
-            <Satellite className="h-3.5 w-3.5" /> Satellite
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
+            <Satellite className="size-3.5" /> Satellite
+          </BarToggle>
+          <BarIconButton
+            label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            className={HEAD_ICON}
             onClick={toggleFullscreen}
-            title={fullscreen ? "Exit fullscreen" : "Fullscreen map"}
           >
             {fullscreen ? (
-              <Shrink className="h-3.5 w-3.5" />
+              <Shrink className="size-3.5" />
             ) : (
-              <Expand className="h-3.5 w-3.5" />
+              <Expand className="size-3.5" />
             )}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
+          </BarIconButton>
+          <BarToggle
+            pressed={showObjects}
+            className={HEAD}
             onClick={toggleObjects}
-            className={cn(!showObjects && "text-muted-foreground")}
-            title="List everything on this map"
           >
-            <PanelRight className="h-3.5 w-3.5" /> Objects
-          </Button>
+            <PanelRight className="size-3.5" /> Objects
+          </BarToggle>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm">
-                <SlidersHorizontal className="h-3.5 w-3.5" /> View
-              </Button>
+              <BarButton className={HEAD}>
+                <SlidersHorizontal className="size-3.5" /> Display
+              </BarButton>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-56 gap-1 p-2">
               <FormCheckbox
@@ -1662,30 +1673,28 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             // left-14 clears Leaflet's zoom control in the corner.
             <div className="absolute top-3 left-14 z-[900] flex items-center gap-1 rounded-md border border-border bg-background/95 p-1 shadow-sm backdrop-blur">
               {problems.some((p) => p.check === "down") && (
-                <Badge variant="destructive" asChild>
-                  <button
-                    onClick={() => nextProblem("down")}
-                    title="Step through what's down"
-                  >
-                    <span className="num">
-                      {problems.filter((p) => p.check === "down").length}
-                    </span>{" "}
-                    down
-                  </button>
-                </Badge>
+                <BarTip tip="Next">
+                  <Badge variant="destructive" asChild>
+                    <button onClick={() => nextProblem("down")}>
+                      <span className="num">
+                        {problems.filter((p) => p.check === "down").length}
+                      </span>{" "}
+                      {statusLabel("down", statusLabels)}
+                    </button>
+                  </Badge>
+                </BarTip>
               )}
               {problems.some((p) => p.check === "degraded") && (
-                <Badge variant="warning" asChild>
-                  <button
-                    onClick={() => nextProblem("degraded")}
-                    title="Step through what's degraded"
-                  >
-                    <span className="num">
-                      {problems.filter((p) => p.check === "degraded").length}
-                    </span>{" "}
-                    degraded
-                  </button>
-                </Badge>
+                <BarTip tip="Next">
+                  <Badge variant="warning" asChild>
+                    <button onClick={() => nextProblem("degraded")}>
+                      <span className="num">
+                        {problems.filter((p) => p.check === "degraded").length}
+                      </span>{" "}
+                      {statusLabel("degraded", statusLabels)}
+                    </button>
+                  </Badge>
+                </BarTip>
               )}
             </div>
           )}
@@ -2061,7 +2070,6 @@ function MapSearch({
       lng: number
       name: string
       hint: string
-      color: string
     }[] = []
     for (const s of sites) {
       if (s.name.toLowerCase().includes(q))
@@ -2071,7 +2079,6 @@ function MapSearch({
           lng: Number(s.longitude),
           name: s.name,
           hint: "site",
-          color: "#71717a",
         })
     }
     for (const d of devices) {
@@ -2082,7 +2089,6 @@ function MapSearch({
           lng: d.longitude,
           name: d.name,
           hint: d.role?.name ?? "device",
-          color: d.role?.color || "#71717a",
         })
     }
     for (const m of markers) {
@@ -2094,7 +2100,6 @@ function MapSearch({
           lng: m.longitude,
           name,
           hint: m.type?.name ?? "marker",
-          color: m.type?.color || "#71717a",
         })
     }
     return rows.slice(0, 8)
@@ -2104,15 +2109,16 @@ function MapSearch({
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <div className="relative">
-          <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Find on map…"
+            aria-label="Find on map"
             value={value}
             onChange={(e) => {
               setValue(e.target.value)
               setOpen(true)
             }}
-            className="h-8 w-48 pl-8 text-xs"
+            className="h-8 w-40 pl-8 text-xs"
           />
         </div>
       </PopoverTrigger>
@@ -2131,10 +2137,6 @@ function MapSearch({
             }}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-muted/60"
           >
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: m.color }}
-            />
             <span className="truncate">{m.name}</span>
             <span className="ml-auto text-[10px] text-muted-foreground">
               {m.hint}
@@ -2240,14 +2242,10 @@ function MapLegend({
 function PopHeader({
   title,
   mono,
-  dot,
   onClose,
 }: {
   title: string
   mono?: boolean
-  /** Identity colour (site colour, role colour, marker-type colour) - a 10px
-   * dot before the name, same colour the marker itself wears. */
-  dot?: string
   onClose: () => void
 }) {
   return (
@@ -2258,22 +2256,17 @@ function PopHeader({
           (mono ? "font-mono" : "")
         }
       >
-        {dot && (
-          <span
-            aria-hidden
-            className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
-            style={{ background: dot }}
-          />
-        )}
         <span className="truncate">{title}</span>
       </span>
-      <button
-        onClick={onClose}
-        className="text-muted-foreground hover:text-foreground"
-        aria-label="Close"
-      >
-        <X className="size-3.5" />
-      </button>
+      <BarTip tip="Close">
+        <button
+          onClick={onClose}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Close"
+        >
+          <X className="size-3.5" />
+        </button>
+      </BarTip>
     </div>
   )
 }
@@ -2287,11 +2280,7 @@ function SitePopover({
 }) {
   return (
     <div className="grid gap-2">
-      <PopHeader
-        title={s.name}
-        dot={s.color || "var(--primary)"}
-        onClose={onClose}
-      />
+      <PopHeader title={s.name} onClose={onClose} />
       <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-muted-foreground">
         <span>
           {s.device_count} device{s.device_count === 1 ? "" : "s"}
@@ -2315,11 +2304,9 @@ function SitePopover({
           ))}
         </div>
       )}
-      <Button size="sm" variant="outline" asChild className="h-7">
-        <Link to="/sites/$id" params={{ id: s.id }}>
-          Open site →
-        </Link>
-      </Button>
+      <OpenLink to="/sites/$id" params={{ id: s.id }}>
+        Open site
+      </OpenLink>
     </div>
   )
 }
@@ -2497,12 +2484,13 @@ function DevicePopover({
 }) {
   return (
     <div className="grid gap-2">
-      <PopHeader
-        title={d.name}
-        mono
-        dot={d.role?.color || undefined}
-        onClose={onClose}
-      />
+      <PopHeader title={d.name} onClose={onClose} />
+      {/* The role's badge, unless the configured rows already carry it. */}
+      {d.role && !(fields ?? DEFAULT_DEVICE_KEYS).includes("linked_role") && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ColorBadge name={d.role.name} color={d.role.color || undefined} />
+        </div>
+      )}
       <DeviceDetails device={d} fields={fields} />
       <DeviceExtraRows
         id={d.id}
@@ -2524,11 +2512,9 @@ function DevicePopover({
           </button>
         )}
       </div>
-      <Button size="sm" variant="outline" asChild className="h-7">
-        <Link to="/devices/$id" params={{ id: d.id }}>
-          Open device →
-        </Link>
-      </Button>
+      <OpenLink to="/devices/$id" params={{ id: d.id }}>
+        Open device
+      </OpenLink>
     </div>
   )
 }
@@ -2548,7 +2534,6 @@ function MarkerPopover({
     <div className="grid gap-2">
       <PopHeader
         title={m.label || m.device?.name || m.type?.name || "Marker"}
-        dot={m.type?.color || undefined}
         onClose={onClose}
       />
       {m.type && (
@@ -2567,11 +2552,9 @@ function MarkerPopover({
         />
       )}
       {m.device && (
-        <Button size="sm" variant="outline" asChild className="h-7">
-          <Link to="/devices/$id" params={{ id: m.device.id }}>
-            Open {m.device.name} →
-          </Link>
-        </Button>
+        <OpenLink to="/devices/$id" params={{ id: m.device.id }}>
+          Open device
+        </OpenLink>
       )}
     </div>
   )
@@ -2615,11 +2598,9 @@ function CablePopover({
         </Link>
         <span className="font-mono">:{c.z.port}</span>
       </div>
-      <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
-        <Link to="/cables/$id" params={{ id: c.id }}>
-          Open cable
-        </Link>
-      </Button>
+      <OpenLink to="/cables/$id" params={{ id: c.id }}>
+        Open cable
+      </OpenLink>
     </div>
   )
 }
@@ -2632,12 +2613,6 @@ function ConnectionPopover({
   onClose: () => void
 }) {
   const rawId = e.id.split(":")[1]
-  const detail =
-    e.kind === "circuit"
-      ? `/circuits/${rawId}`
-      : e.kind === "tunnel"
-        ? `/tunnels/${rawId}`
-        : null
   const meta = e.meta as Record<string, unknown>
   return (
     <div className="grid gap-2">
@@ -2688,10 +2663,15 @@ function ConnectionPopover({
           {String(meta.count)} cable{Number(meta.count) === 1 ? "" : "s"}
         </div>
       )}
-      {detail && (
-        <Button size="sm" variant="outline" asChild className="h-7">
-          <Link to={detail}>Open →</Link>
-        </Button>
+      {e.kind === "circuit" && (
+        <OpenLink to="/circuits/$id" params={{ id: rawId }}>
+          Open circuit
+        </OpenLink>
+      )}
+      {e.kind === "tunnel" && (
+        <OpenLink to="/tunnels/$id" params={{ id: rawId }}>
+          Open tunnel
+        </OpenLink>
       )}
     </div>
   )

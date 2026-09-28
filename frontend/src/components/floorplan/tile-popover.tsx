@@ -19,6 +19,7 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { Loading } from "@/components/loading"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
 import {
@@ -122,8 +123,7 @@ function TileFaceplate({
       }>(`/api/device-types/${deviceTypeId}/`),
     staleTime: 5 * 60_000,
   })
-  if (ifaces.isLoading)
-    return <p className="text-[11px] text-muted-foreground">Loading…</p>
+  if (ifaces.isLoading) return <Loading className="min-h-16" />
   // A rear side is only worth offering when there is something to show there.
   const hasRear = !!dt.data?.rear_image
   // No mapped ports on this side but an uploaded photo: show the photo as
@@ -652,11 +652,7 @@ export function TilePopover({
                 {r.node}
               </div>
             ))}
-            {loading && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Loading object details…
-              </p>
-            )}
+            {loading && <Loading className="mt-1 min-h-16" />}
             {target?.pinned ? (
               renderActions?.(ctx.tile)
             ) : (

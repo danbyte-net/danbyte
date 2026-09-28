@@ -3,6 +3,8 @@ import { Spline, Trash2, X } from "lucide-react"
 
 import type { CableRoute, CableRouteWritePayload } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { ColorBadge } from "@/components/cells/color-badge"
+import { BarTip } from "@/components/map-toolbar"
 import { ColorPicker } from "@/components/ui/color-picker"
 import {
   Dialog,
@@ -102,11 +104,11 @@ export function RouteRail({
               r.id === selectedRouteId && "bg-muted ring-1 ring-foreground/20"
             )}
           >
-            <span
-              className="h-3 w-3 shrink-0 rounded-full"
-              style={{ backgroundColor: r.color || "#71717a" }}
+            <ColorBadge
+              name={r.name}
+              color={r.color || undefined}
+              className="min-w-0"
             />
-            <span className="truncate">{r.name}</span>
             <span className="num ml-auto text-[10px] text-muted-foreground">
               {r.cables.length}
             </span>
@@ -208,11 +210,11 @@ export function RouteInspector({
         </>
       ) : (
         <div className="flex items-center gap-2 text-sm">
-          <span
-            className="h-3 w-3 shrink-0 rounded-full"
-            style={{ backgroundColor: route.color || "#71717a" }}
+          <ColorBadge
+            name={route.name}
+            color={route.color || undefined}
+            className="min-w-0"
           />
-          <span className="min-w-0 truncate font-medium">{route.name}</span>
           {route.kind && (
             <span className="ml-auto text-[11px] text-muted-foreground">
               {route.kind}
@@ -239,7 +241,6 @@ export function RouteInspector({
             >
               <button
                 type="button"
-                title="Highlight this cable's run"
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 onClick={() =>
                   onHighlightCable(highlightCableId === c.id ? null : c.id)
@@ -257,20 +258,22 @@ export function RouteInspector({
                 )}
               </button>
               {canEdit && (
-                <button
-                  type="button"
-                  title="Remove"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() =>
-                    onPatch({
-                      cable_ids: route.cables
-                        .filter((x) => x.id !== c.id)
-                        .map((x) => x.id),
-                    })
-                  }
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                <BarTip tip="Remove">
+                  <button
+                    type="button"
+                    aria-label={`Remove ${c.label}`}
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() =>
+                      onPatch({
+                        cable_ids: route.cables
+                          .filter((x) => x.id !== c.id)
+                          .map((x) => x.id),
+                      })
+                    }
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </BarTip>
               )}
             </li>
           ))}

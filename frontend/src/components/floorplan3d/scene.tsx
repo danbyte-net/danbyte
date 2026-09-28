@@ -27,6 +27,11 @@ import { FaceplateLegend } from "@/components/device-faceplate"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { Button } from "@/components/ui/button"
+import { ColorBadge } from "@/components/cells/color-badge"
+import { RowCheckBadge } from "@/components/foldable-group"
+import { Loading } from "@/components/loading"
+import { BarButton, BarTip } from "@/components/map-toolbar"
+import { OpenLink } from "@/components/open-link"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
@@ -371,12 +376,7 @@ export default function FloorScene3D({
         <QueryError error={scene.error} />
       </div>
     )
-  if (!scene.data)
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading scene…
-      </div>
-    )
+  if (!scene.data) return <Loading />
 
   const data = scene.data
   const { plan } = data
@@ -1059,54 +1059,44 @@ function RackHud({
           {rack.devices.length} device{rack.devices.length === 1 ? "" : "s"}
         </span>
         {live?.kind === "rack" && (
-          <span>
+          <span className="flex items-center gap-1.5">
             {live.used_units}/{live.u_height}U used
-            {live.check ? ` · ${live.check}` : ""}
+            <RowCheckBadge check={live.check} />
           </span>
         )}
         <span className="text-[11px]">double-click to zoom in</span>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <Button
-          size="sm"
-          variant={focused ? "default" : "outline"}
-          className="h-7"
-          onClick={onToggleFocus}
-          title="Ghost everything except this rack (F)"
-        >
-          Focus · F
-        </Button>
-        <Button size="sm" variant="outline" className="h-7" onClick={onFlip}>
+        <BarTip tip="Focus" shortcut="F">
+          <BarButton
+            variant={focused ? "default" : "outline"}
+            onClick={onToggleFocus}
+          >
+            Focus
+          </BarButton>
+        </BarTip>
+        <BarButton onClick={onFlip}>
           {viewSide === "front" ? "View rear" : "View front"}
-        </Button>
+        </BarButton>
       </div>
       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-        <Button
-          size="sm"
-          variant="outline"
-          className={onIsolateZone ? "h-7" : "col-span-2 h-7"}
+        <BarButton
+          className={onIsolateZone ? undefined : "col-span-2"}
           onClick={onIsolateRow}
-          title="Hide everything outside this rack's row (Esc restores)"
         >
           Isolate row
-        </Button>
+        </BarButton>
         {onIsolateZone && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7"
-            onClick={onIsolateZone}
-            title="Hide everything outside this rack's zone (Esc restores)"
-          >
-            Isolate zone
-          </Button>
+          <BarButton onClick={onIsolateZone}>Isolate zone</BarButton>
         )}
       </div>
-      <Button size="sm" variant="outline" asChild className="mt-1.5 h-7 w-full">
-        <Link to="/racks/$id" params={{ id: rack.id }}>
-          Open rack →
-        </Link>
-      </Button>
+      <OpenLink
+        to="/racks/$id"
+        params={{ id: rack.id }}
+        className="mt-1.5 w-full"
+      >
+        Open rack
+      </OpenLink>
     </div>
   )
 }
@@ -1137,15 +1127,11 @@ function DeviceHud({
           {dev.name}
         </span>
         {dev.status && (
-          <span
-            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
-            style={{
-              backgroundColor: `${dev.status.color || "#71717a"}26`,
-              color: dev.status.color || undefined,
-            }}
-          >
-            {dev.status.name}
-          </span>
+          <ColorBadge
+            name={dev.status.name}
+            color={dev.status.color || undefined}
+            className="h-4 shrink-0 px-1.5 text-[10px]"
+          />
         )}
       </div>
       <div className="mt-1.5 grid gap-1 text-[12px]">
@@ -1153,15 +1139,11 @@ function DeviceHud({
         {dev.role_name &&
           row(
             "Role",
-            <span className="inline-flex items-center gap-1.5">
-              {dev.role_color && (
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: dev.role_color }}
-                />
-              )}
-              {dev.role_name}
-            </span>
+            <ColorBadge
+              name={dev.role_name}
+              color={dev.role_color || undefined}
+              className="h-4 px-1.5 text-[10px]"
+            />
           )}
         {row(
           "Position",
@@ -1186,20 +1168,22 @@ function DeviceHud({
         {dev.serial_number &&
           row("Serial", <span className="font-mono">{dev.serial_number}</span>)}
       </div>
-      <Button
-        size="sm"
-        variant={focused ? "default" : "outline"}
-        className="mt-2 h-7 w-full"
-        onClick={onToggleFocus}
-        title="Ghost everything except this device (F)"
+      <BarTip tip="Focus" shortcut="F">
+        <BarButton
+          variant={focused ? "default" : "outline"}
+          className="mt-2 w-full"
+          onClick={onToggleFocus}
+        >
+          Focus
+        </BarButton>
+      </BarTip>
+      <OpenLink
+        to="/devices/$id"
+        params={{ id: dev.id }}
+        className="mt-1.5 w-full"
       >
-        Focus · F
-      </Button>
-      <Button size="sm" variant="outline" asChild className="mt-1.5 h-7 w-full">
-        <Link to="/devices/$id" params={{ id: dev.id }}>
-          Open device →
-        </Link>
-      </Button>
+        Open device
+      </OpenLink>
     </div>
   )
 }
@@ -1370,7 +1354,7 @@ function PortHud({
       {/* ── Cabled: the run + its far end ─────────────────────────────── */}
       {fp?.connected && (
         <div className="mt-2 grid gap-1 rounded-md border border-border bg-muted/30 p-2 text-[12px] text-muted-foreground">
-          {cable.isLoading && <span>Loading cable…</span>}
+          {cable.isLoading && <Loading className="min-h-12" />}
           {cable.data && (
             <>
               <div className="flex items-center gap-1.5">
@@ -1416,22 +1400,14 @@ function PortHud({
           )}
           {cable.data && (
             <div className="mt-1 flex gap-1.5">
-              <Button
-                size="sm"
-                variant="outline"
-                asChild
-                className="h-6 flex-1 px-2 text-[11px]"
+              <OpenLink
+                to="/cables/$id"
+                params={{ id: cable.data.id }}
+                className="flex-1"
               >
-                <Link to="/cables/$id" params={{ id: cable.data.id }}>
-                  Open cable
-                </Link>
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                asChild
-                className="h-6 flex-1 px-2 text-[11px]"
-              >
+                Open cable
+              </OpenLink>
+              <BarButton asChild className="flex-1">
                 {/* Same route, ?trace= - the room draws the run as a
                     marching line (and 2D uses the identical param). */}
                 <Link
@@ -1441,7 +1417,7 @@ function PortHud({
                 >
                   Trace run
                 </Link>
-              </Button>
+              </BarButton>
             </div>
           )}
         </div>
@@ -1523,11 +1499,13 @@ function PortHud({
         </p>
       )}
 
-      <Button size="sm" variant="outline" asChild className="mt-1.5 h-7 w-full">
-        <Link to="/devices/$id" params={{ id: dev.id }}>
-          Open device →
-        </Link>
-      </Button>
+      <OpenLink
+        to="/devices/$id"
+        params={{ id: dev.id }}
+        className="mt-1.5 w-full"
+      >
+        Open device
+      </OpenLink>
     </div>
   )
 }
@@ -1666,9 +1644,7 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
   return (
     <div className="absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
       {!c ? (
-        <span className="text-[12px] text-muted-foreground">
-          Loading cable…
-        </span>
+        <Loading className="min-h-16" />
       ) : (
         <>
           <div className="flex items-center gap-2">
@@ -1717,12 +1693,10 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
             )}
           </div>
           <div className="mt-2 flex gap-1.5">
-            <Button size="sm" variant="outline" asChild className="h-7 flex-1">
-              <Link to="/cables/$id" params={{ id: c.id }}>
-                Open cable →
-              </Link>
-            </Button>
-            <Button size="sm" variant="outline" asChild className="h-7 flex-1">
+            <OpenLink to="/cables/$id" params={{ id: c.id }} className="flex-1">
+              Open cable
+            </OpenLink>
+            <BarButton asChild className="flex-1">
               <Link
                 to="/floorplans/$id"
                 params={{ id: planId }}
@@ -1730,7 +1704,7 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
               >
                 Trace run
               </Link>
-            </Button>
+            </BarButton>
           </div>
         </>
       )}
