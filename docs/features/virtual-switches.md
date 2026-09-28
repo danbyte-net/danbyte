@@ -90,9 +90,10 @@ by hand is never re-pointed. The now-unused minted VLAN stays in the source's
 group for you to delete - the sync never removes a VLAN something might still
 reference.
 
-## Network topology
+## Virtual topology {#network-topology}
 
-**Virtualization → Network topology** draws the whole picture in one diagram:
+**Maps → Virtual topology** (also the **Virtual topology** button on the
+Virtual switches list) draws the whole picture in one diagram:
 
     external network → physical adapters (host NICs) → switches
         → networks (VLANs, as coloured rails) → the VMs on each

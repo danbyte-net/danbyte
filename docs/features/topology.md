@@ -1,10 +1,10 @@
 ---
-icon: lucide/network
+icon: lucide/share-2
 ---
 
-# Topology map
+# Topology {#topology-map}
 
-**DCIM → Topology** draws your network three ways, switched by the
+**Maps → Topology** draws your network three ways, switched by the
 **Diagram / Hierarchy / Logical** tabs in the header:
 
 - **Diagram** (default) - a clean, printable network diagram: one solid
@@ -26,7 +26,7 @@ icon: lucide/network
   Devices draw solid, VMs dashed; a dashed leg is a tagged (trunk)
   attachment; leg labels are the interface names. Filter by site or VLAN
   group, or hide VMs. Click any rail or box to open it. (The same rail
-  layout drives the [virtual network topology](virtual-switches.md).)
+  layout drives the [Virtual topology](virtual-switches.md#network-topology).)
 
 The view choice is remembered per browser and saved with
 [saved views](#saved-views); a map opens on the Diagram, Detailed, until

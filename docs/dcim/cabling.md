@@ -138,9 +138,9 @@ connection end to end - hopping across each cable and *through* each patch panel
 and draws the whole path as a single chain, so you can see the real far end of a
 link even when it runs through three panels to get there.
 
-## Topology map
+## Topology {#topology-map}
 
-The **Topology** page (sidebar, under DCIM) draws an interactive **device-to-
+The **Topology** page (sidebar, under Maps) draws an interactive **device-to-
 device map** of your cabling. Filter it by **site** to focus on one location, or
 by **device** to pull in just that device's neighbours. Drag nodes around, use
 the minimap to navigate, and click **re-layout** to tidy it up. Cable colors

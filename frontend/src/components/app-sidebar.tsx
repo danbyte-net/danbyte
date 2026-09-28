@@ -179,7 +179,7 @@ type NavSection = {
   clusters: NavCluster[]
 }
 
-const sections: NavSection[] = [
+export const sections: NavSection[] = [
   {
     label: "Organization",
     icon: Users,
@@ -688,12 +688,6 @@ const sections: NavSection[] = [
             icon: Gauge,
             objectType: "device",
           },
-          {
-            title: "Topology",
-            url: "/topology",
-            icon: Share2,
-            anyOf: ["device", "cable", "interface"],
-          },
         ],
       },
     ],
@@ -715,6 +709,18 @@ const sections: NavSection[] = [
             url: "/floorplans",
             icon: LayoutGrid,
             objectType: "floorplan",
+          },
+          {
+            title: "Topology",
+            url: "/topology",
+            icon: Share2,
+            anyOf: ["device", "cable", "interface"],
+          },
+          {
+            title: "Virtual topology",
+            url: "/virtual-topology",
+            icon: Waypoints,
+            objectType: "virtualswitch",
           },
         ],
       },
@@ -848,12 +854,6 @@ const sections: NavSection[] = [
             title: "Virtual switches",
             url: "/virtual-switches",
             icon: Network,
-            objectType: "virtualswitch",
-          },
-          {
-            title: "Network topology",
-            url: "/virtual-topology",
-            icon: Waypoints,
             objectType: "virtualswitch",
           },
           {

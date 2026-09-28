@@ -59,8 +59,8 @@ different VRF gets a *VLAN is in another VRF* badge on its page, so a
 mismatch is seen rather than assumed.
 
 A VLAN also has an optional **colour** (set on its edit form) that paints its
-badge everywhere VLANs appear - tables, the IP/prefix panes, and the virtual
-network topology rails. Colour precedence: the VLAN's own colour, then its
+badge everywhere VLANs appear - tables, the IP/prefix panes, and the Virtual
+topology rails. Colour precedence: the VLAN's own colour, then its
 zone's colour (zones stay firewall semantics - inside/outside/prod - never a
 colour requirement), then a neutral badge / blue palette shade.
 

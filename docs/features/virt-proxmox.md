@@ -74,7 +74,7 @@ Per-source switches widen what a source imports:
   what gives bridge uplinks a Device to hang NICs off.
 
 Once networks are synced, each **virtual switch** page has a **Networks** tab
-and **Virtualization → Network topology** draws the whole picture - switches,
+and **Maps → Virtual topology** draws the whole picture - switches,
 their networks (VLANs) as bars, and the VMs on each.
 
 ### Uplinks - filled automatically

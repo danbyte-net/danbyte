@@ -4,7 +4,7 @@ icon: lucide/map
 
 # Site map
 
-**Organization → Site map** shows your estate on a real world map - the
+**Maps → Site map** shows your estate on a real world map - the
 geographic analog of a [floor plan](floor-plans.md). Every site with
 coordinates gets a labelled marker (with its device count); devices that carry
 their own GPS coordinates appear as small dots colored by role. Click a marker
@@ -299,7 +299,7 @@ layers). Boundary data © OpenStreetMap contributors, ODbL.
 The header's **Satellite** button swaps the basemap to imagery -
 **Esri World Imagery** by default (their attribution shown as required).
 The choice is remembered per browser. A deployment can point the satellite
-basemap elsewhere in **Settings → Maps → Map tiles** (satellite URL +
+basemap elsewhere in **Settings → Site map → Map tiles** (satellite URL +
 attribution), same rules as the street tiles: https-only, `{z}`/`{x}`/`{y}`
 placeholders, and the tile host must be allowed in the nginx CSP `img-src`
 (the shipped config already allows `server.arcgisonline.com`).
@@ -322,7 +322,7 @@ Danbyte follows it:
 
 The default is fine for **light internal use** - a handful of operators
 looking at a map. If your deployment is large, busy, or public-facing, the
-policy expects you to use your own tile source: set **Settings → Maps →
+policy expects you to use your own tile source: set **Settings → Site map →
 Map tiles** to any raster tile server (an `https://…/{z}/{x}/{y}.png`
 template) - a commercial provider, or self-hosted tiles. Set the matching
 attribution string; nearly every provider requires one.

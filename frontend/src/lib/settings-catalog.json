@@ -144,6 +144,15 @@
       "keywords": ["popover", "interface", "port", "hover", "component"]
     },
     {
+      "key": "maps",
+      "label": "Site map",
+      "description": "Tile servers behind the site map",
+      "to": "/settings/maps",
+      "group": "data",
+      "scopes": ["deployment"],
+      "keywords": ["tiles", "openstreetmap", "osm", "satellite", "basemaps"]
+    },
+    {
       "key": "floorplans",
       "label": "Floor plans",
       "description": "Tiles and the fields a plan shows",
@@ -162,15 +171,6 @@
       "scopes": ["tenant", "deployment"],
       "defaultScope": "tenant",
       "keywords": ["topology", "diagram", "card", "lines", "map", "role"]
-    },
-    {
-      "key": "maps",
-      "label": "Maps",
-      "description": "Tile servers behind the site map",
-      "to": "/settings/maps",
-      "group": "data",
-      "scopes": ["deployment"],
-      "keywords": ["tiles", "openstreetmap", "osm", "satellite", "basemap"]
     },
     {
       "key": "snmp-profiles",

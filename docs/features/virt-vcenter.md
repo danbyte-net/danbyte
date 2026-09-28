@@ -132,7 +132,7 @@ have:
     with deleting off and a **7-day** delay for when you enable it.
 
 Once networks are synced, each **virtual switch** page has a **Networks** tab
-and **Virtualization → Network topology** draws the whole picture - switches,
+and **Maps → Virtual topology** draws the whole picture - switches,
 their networks (VLANs) as bars, and the VMs on each.
 
 ### Host pNICs and uplinks - filled automatically

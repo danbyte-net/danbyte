@@ -29,7 +29,7 @@ function MapsPage() {
   }
   return (
     <div className="space-y-6">
-      <SettingsHeader title="Maps">
+      <SettingsHeader title="Site map">
         The tile servers behind the Site map - standard and satellite basemaps.
       </SettingsHeader>
       <SettingsGrid>

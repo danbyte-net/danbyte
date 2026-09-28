@@ -138,7 +138,7 @@ function VirtualTopologyPage() {
 
   return (
     <ListPageShell
-      title="Virtual network topology"
+      title="Virtual topology"
       query={networks}
       actions={
         <Select
