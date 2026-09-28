@@ -37,8 +37,9 @@ export const BAND = {
   GAP_X: 48,
   /** Between two lines of cards when a row wraps. */
   LINE_GAP: 40,
-  /** Between two rows of a stack. */
-  GAP: 24,
+  /** Between two rows of a stack: room for the lanes the cables between
+   * them run in, clear of the next row's title strip. */
+  GAP: 48,
   /** A row wraps onto another line past this many cards… */
   MAX_PER_LINE: 12,
   /** …or this width of cards. */
@@ -52,7 +53,21 @@ export const BAND = {
   /** The smallest a band may be resized to. */
   MIN_W: 48,
   MIN_H: 64,
+  /** A row's title chip: its height in the strip, its text and the room
+   * either side of the text (the canvas, SVG and draw.io agree). */
+  CHIP_H: 24,
+  CHIP_SIZE: 13,
+  CHIP_PAD: 8,
+  /** Least clear space a re-fitted row keeps between its cards, and
+   * round a card that no longer fitted it. */
+  FIT_GAP: 24,
+  FIT_EDGE: 12,
 } as const
+
+/** A row's geometry, as the Diagram build takes it. */
+export interface BandRow extends Rect {
+  id: string
+}
 
 /** A card as Arrange sees it: where it is now, and what groups it. */
 export interface ArrangeCard {
@@ -96,6 +111,9 @@ export const isRow = (r: Pick<Region, "kind" | "orient">) =>
   r.kind === "band" && r.orient !== "v"
 export const isSide = (r: Pick<Region, "kind" | "orient">) =>
   r.kind === "band" && r.orient === "v"
+
+const byName = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { numeric: true })
 
 const num = (v: unknown): number | null =>
   typeof v === "number" && Number.isFinite(v) ? v : null
@@ -198,6 +216,19 @@ export function membersOf(
   return out
 }
 
+/** A row's inside a card may go in: below its title, within its
+ * padding. */
+function slotOf(r: Rect): RowSlot {
+  const top = r.y + BAND.TITLE
+  const padX = Math.min(BAND.PAD_X, r.w / 4)
+  return {
+    x: r.x + padX,
+    y: top,
+    w: Math.max(0, r.w - 2 * padX),
+    h: Math.max(0, r.y + r.h - top),
+  }
+}
+
 /** Where a card dropped at a point goes when that point is in a row: the
  * row's inside, below its title and within its padding. For
  * placement.ts's `rowsAt`. */
@@ -206,16 +237,136 @@ export function rowsAt(regions: readonly Region[]): RowsAt {
   return (p: Pt): RowSlot | null => {
     if (!rows.length) return null
     const r = rowAt(rows, p)
-    if (!r) return null
-    const top = r.y + BAND.TITLE
-    const padX = Math.min(BAND.PAD_X, r.w / 4)
-    return {
-      x: r.x + padX,
-      y: top,
-      w: Math.max(0, r.w - 2 * padX),
-      h: Math.max(0, r.y + r.h - top),
-    }
+    return r ? slotOf(r) : null
   }
+}
+
+/** What a new card is, for the row its role or device type names. */
+export interface RuleOf {
+  role?: string | null
+  type?: string | null
+}
+
+/** The row a new card belongs in by what Arrange made the rows from: the
+ * first row, top to bottom, whose rule names its role (or device type) -
+ * for a card added next to its neighbours, or dropped outside every row.
+ * Null when no row was made for it. */
+export function ruleRow(regions: readonly Region[]) {
+  const rows = regions
+    .filter((r) => isRow(r) && r.rule)
+    .sort((a, b) => a.y - b.y || byName(a.id, b.id))
+  return (card: RuleOf): RowSlot | null => {
+    for (const r of rows) {
+      const id = r.rule!.by === "role" ? card.role : card.type
+      if (id && r.rule!.ids.includes(id)) return slotOf(r)
+    }
+    return null
+  }
+}
+
+/** Do two region lists draw the same boxes (by id)? */
+export function sameGeometry(
+  a: readonly (Rect & { id: string })[],
+  b: readonly (Rect & { id: string })[]
+): boolean {
+  if (a.length !== b.length) return false
+  const byId = new Map(b.map((r) => [r.id, r]))
+  return a.every((r) => {
+    const o = byId.get(r.id)
+    return !!o && o.x === r.x && o.y === r.y && o.w === r.w && o.h === r.h
+  })
+}
+
+/** The rows of a region list, as the build takes them: top to bottom. */
+export function bandRows(regions: readonly Region[] | undefined): BandRow[] {
+  return (regions ?? [])
+    .filter(isRow)
+    .map(({ id, x, y, w, h }) => ({ id, x, y, w, h }))
+    .sort((a, b) => a.y - b.y || byName(a.id, b.id))
+}
+
+/** A row list's geometry, as one string: what a build fitted them from. */
+export const rowsSig = (rows: readonly BandRow[]) =>
+  rows.map((r) => `${r.id}:${r.x}:${r.y}:${r.w}:${r.h}`).join("|")
+
+/**
+ * The regions as the map draws them: each row where the Diagram build
+ * re-fitted it (`fitRows`, `fitted`), side bands following their rows.
+ * Only when those rows were fitted from the rows in `regions` - a build
+ * for rows since changed is not applied.
+ */
+export function drawnRegions<T extends Region>(
+  regions: readonly T[],
+  fitted: { from: string; rows: readonly BandRow[] } | null | undefined
+): T[] {
+  if (!fitted) return [...regions]
+  const saved = bandRows(regions)
+  if (rowsSig(saved) !== fitted.from || rowsSig(fitted.rows) === fitted.from)
+    return [...regions]
+  const byId = new Map(fitted.rows.map((r) => [r.id, r]))
+  const sides = new Map(
+    followRows(regions.filter(isSide), saved, fitted.rows).map((r) => [r.id, r])
+  )
+  return regions.map((r) => {
+    const row = isRow(r) ? byId.get(r.id) : undefined
+    if (row) return { ...r, x: row.x, y: row.y, w: row.w, h: row.h }
+    return sides.get(r.id) ?? r
+  })
+}
+
+// ── Titles ───────────────────────────────────────────────────────────────
+
+/** The strip across the top of a row its title sits in. */
+export const titleStrip = (r: Rect): Rect => ({
+  x: r.x,
+  y: r.y,
+  w: r.w,
+  h: Math.min(BAND.TITLE, r.h),
+})
+
+/** The part of a row's strip its title chip takes up and down. */
+export const chipBand = (r: Rect): Rect => {
+  const s = titleStrip(r)
+  const h = Math.min(BAND.CHIP_H, s.h)
+  return { x: s.x, y: s.y + (s.h - h) / 2, w: s.w, h }
+}
+
+/** A row's title chip width for a label `textW` px wide, within the row. */
+export const chipWidth = (textW: number, rowW: number) =>
+  Math.max(0, Math.min(textW + 2 * BAND.CHIP_PAD, rowW - 16))
+
+/**
+ * Where a row's title chip `w` px wide goes along its strip (its centre
+ * x): the middle of the row, or - where a cable or a label crosses there
+ * (`busy`, x spans the planner found in the strip) - the free spot nearest
+ * the middle, so a title never hides a cable. With no free spot, the
+ * middle.
+ */
+export function titleSpot(
+  r: Rect,
+  w: number,
+  busy: readonly (readonly [number, number])[] = []
+): number {
+  const mid = r.x + r.w / 2
+  const lo = r.x + 8 + w / 2
+  const hi = r.x + r.w - 8 - w / 2
+  if (!busy.length || hi < lo) return mid
+  const free = (c: number) =>
+    busy.every(([a, b]) => c + w / 2 <= a || c - w / 2 >= b)
+  if (free(mid)) return mid
+  let best: number | null = null
+  for (const [a, b] of busy)
+    for (const c of [a - w / 2, b + w / 2])
+      if (
+        c >= lo &&
+        c <= hi &&
+        free(c) &&
+        (best === null ||
+          Math.abs(c - mid) < Math.abs(best - mid) ||
+          (Math.abs(c - mid) === Math.abs(best - mid) && c < best))
+      )
+        best = c
+  return best ?? mid
 }
 
 // ── Arrange ──────────────────────────────────────────────────────────────
@@ -233,9 +384,6 @@ function hash(s: string): string {
 const ruleKey = (by: BandBy, ids: readonly string[]) =>
   `${by}:${[...ids].sort().join(",")}`
 
-const byName = (a: string, b: string) =>
-  a.localeCompare(b, undefined, { numeric: true })
-
 interface Group {
   key: string
   label: string
@@ -247,6 +395,11 @@ interface Group {
   none: boolean
 }
 
+/** A Levels tier's label: the names of its roles on the map, in the
+ * tier's order ("Leaf + Border"). */
+const tierLabel = (tier: readonly string[], present: ReadonlySet<string>) =>
+  tier.filter((n) => present.has(n)).join(" + ")
+
 function groupsOf(input: ArrangeInput, axis: "x" | "y"): Group[] {
   const { cards, by } = input
   const groups = new Map<string, Group>()
@@ -257,6 +410,7 @@ function groupsOf(input: ArrangeInput, axis: "x" | "y"): Group[] {
       : []
   const tierOf = new Map<string, number>()
   tiers.forEach((names, i) => names.forEach((n) => tierOf.set(n, i)))
+  const present = new Set(cards.flatMap((c) => (c.role ? [c.role.name] : [])))
   for (const c of cards) {
     let key: string
     let label: string
@@ -272,7 +426,8 @@ function groupsOf(input: ArrangeInput, axis: "x" | "y"): Group[] {
           : name !== null
             ? `role:${id ?? name}`
             : "none"
-      label = tier !== null ? tiers[tier].join(" + ") : (name ?? "No role")
+      label =
+        tier !== null ? tierLabel(tiers[tier], present) : (name ?? "No role")
     } else {
       id = c.type?.id ?? null
       const name = c.type?.name ?? null
@@ -368,9 +523,7 @@ export function arrangeBands(input: ArrangeInput): {
   const axis = oldRows.length ? "y" : (input.axis ?? "y")
   const across = axis === "x" ? "y" : "x"
   const groups = groupsOf(input, axis)
-  const byRule = new Map<string, Region>()
-  for (const r of oldRows)
-    if (r.rule) byRule.set(ruleKey(r.rule.by, r.rule.ids), r)
+  const matched = matchRows(oldRows, groups, input)
   const taken = new Set(regions.map((r) => r.id))
   const newId =
     input.newId ??
@@ -413,21 +566,18 @@ export function arrangeBands(input: ArrangeInput): {
 
   const positions: Record<string, Centre> = {}
   const rows: Region[] = []
-  const used = new Set<Region>()
   let y = y0
   for (const { g, lines, h } of laid) {
     const key = ruleKey(input.by, g.ids.length ? g.ids : [g.key])
     const rule = { by: input.by, ids: [...g.ids].sort() }
-    const match = byRule.get(ruleKey(input.by, rule.ids))
-    const old = match && !used.has(match) ? match : undefined
-    if (old) used.add(old)
+    const old = matched.get(g)
     const id = old?.id ?? newId(key)
     taken.add(id)
     rows.push({
       id,
       kind: "band",
       orient: "h",
-      label: old?.label ?? g.label,
+      label: old && renamed(old, input) ? old.label : g.label,
       color: old?.color ?? null,
       x: x0,
       y: Math.round(y),
@@ -451,19 +601,39 @@ export function arrangeBands(input: ArrangeInput): {
     y += h + BAND.GAP
   }
 
-  // Side bands follow the rows they spanned, and stay beside the stack.
-  const newById = new Map(rows.map((r) => [r.id, r]))
-  const newStack = bounds(rows)
-  const sides = regions.filter(isSide).map((s) => {
-    if (!oldStack || !newStack) return s
-    const spanned = oldRows.filter((r) => {
+  return {
+    positions,
+    regions: [
+      ...regions.filter((r) => !isBand(r)),
+      ...followRows(regions.filter(isSide), oldRows, rows),
+      ...rows,
+    ],
+  }
+}
+
+/**
+ * Side bands after their rows moved (`before` → `after`, matched by id):
+ * each spans the rows it spanned, as they now stand - those still there -
+ * and keeps its distance beside the stack.
+ */
+export function followRows<T extends Rect>(
+  sides: readonly T[],
+  before: readonly BandRow[],
+  after: readonly BandRow[]
+): T[] {
+  const oldStack = bounds(before)
+  const newStack = bounds(after)
+  if (!oldStack || !newStack) return [...sides]
+  const newById = new Map(after.map((r) => [r.id, r]))
+  return sides.map((s) => {
+    const spanned = before.filter((r) => {
       const mid = r.y + r.h / 2
       return mid >= s.y && mid <= s.y + s.h
     })
     const now = spanned
       .map((r) => newById.get(r.id))
-      .filter((r): r is Region => !!r)
-    if (!now.length || now.length !== spanned.length) return s
+      .filter((r): r is BandRow => !!r)
+    if (!now.length) return s
     const top = Math.min(...now.map((r) => r.y))
     const bottom = Math.max(...now.map((r) => r.y + r.h))
     const right = oldStack.x + oldStack.w
@@ -473,13 +643,77 @@ export function arrangeBands(input: ArrangeInput): {
         : s.x + s.w <= oldStack.x
           ? newStack.x - oldStack.x
           : 0
+    if (!dx && top === s.y && bottom - top === s.h) return s
     return { ...s, x: s.x + dx, y: top, h: bottom - top }
   })
+}
 
-  return {
-    positions,
-    regions: [...regions.filter((r) => !isBand(r)), ...sides, ...rows],
+/** How much two rules' ids share (Jaccard); two empty rules (the "No
+ * role" row) match fully. */
+function shared(a: readonly string[], b: readonly string[]): number {
+  if (!a.length && !b.length) return 1
+  const set = new Set(a)
+  const both = b.filter((x) => set.has(x)).length
+  return both / (a.length + b.length - both)
+}
+
+/**
+ * The rows a second Arrange finds again: each generated row of the same
+ * kind goes to the one new group its rule shares the most ids with - so a
+ * row keeps its id, name and colour when a role joins or leaves its
+ * Levels tier - one to one, the best pairs first.
+ */
+function matchRows(
+  oldRows: readonly Region[],
+  groups: readonly Group[],
+  input: ArrangeInput
+): Map<Group, Region> {
+  const pairs: { g: Group; r: Region; score: number; i: number; j: number }[] =
+    []
+  oldRows.forEach((r, i) => {
+    if (!r.rule || r.rule.by !== input.by) return
+    groups.forEach((g, j) => {
+      const score = shared(r.rule!.ids, g.ids)
+      if (score > 0) pairs.push({ g, r, score, i, j })
+    })
+  })
+  pairs.sort((a, b) => b.score - a.score || a.i - b.i || a.j - b.j)
+  const out = new Map<Group, Region>()
+  const used = new Set<Region>()
+  for (const p of pairs) {
+    if (out.has(p.g) || used.has(p.r)) continue
+    out.set(p.g, p.r)
+    used.add(p.r)
   }
+  return out
+}
+
+/**
+ * Was a found row renamed by hand? Not when its name is one Arrange gives:
+ * "No role" / "No type", a Levels tier's role names ("Leaf + Border"), or
+ * the names of the roles or types its rule holds. A generated name follows
+ * the roles now in the row; a name given by hand stays.
+ */
+function renamed(old: Region, input: ArrangeInput): boolean {
+  const label = old.label.trim()
+  if (label === "No role" || label === "No type") return false
+  const parts = label.split(" + ")
+  if (input.by === "role" && input.levels?.order.length) {
+    const tiers = resolveLevels(
+      [...input.levels.order],
+      [...input.levels.bonds]
+    )
+    if (tiers.some((t) => parts.every((p) => t.includes(p)))) return false
+  }
+  const names = new Map<string, string>()
+  for (const c of input.cards) {
+    const v = input.by === "role" ? c.role : c.type
+    if (v?.id && v.name) names.set(v.id, v.name)
+  }
+  const mine = new Set(
+    (old.rule?.ids ?? []).flatMap((id) => names.get(id) ?? [])
+  )
+  return !parts.every((p) => mine.has(p))
 }
 
 /** Remove every band; zones stay. Cards stay where they are. */
@@ -589,11 +823,26 @@ export function resizeRow(
 ): BandEdit {
   const row = regions.find((r) => r.id === id)
   if (!row || !isRow(row)) return { regions: [...regions], moves: {} }
+  // Never smaller than its cards: one left outside would change rows.
+  const held = (membersOf(regions, boxes).get(id) ?? []).map((m) => boxes[m])
+  const inner = bounds(held)
   const next: Rect = {
     x: Math.round(rect.x),
     y: Math.round(rect.y),
-    w: Math.round(Math.max(BAND.MIN_W, rect.w)),
-    h: Math.round(Math.max(BAND.MIN_H, rect.h)),
+    w: Math.round(
+      Math.max(
+        BAND.MIN_W,
+        rect.w,
+        inner ? inner.x + inner.w + BAND.PAD_X - rect.x : 0
+      )
+    ),
+    h: Math.round(
+      Math.max(
+        BAND.MIN_H,
+        rect.h,
+        inner ? inner.y + inner.h + BAND.PAD_BOTTOM - rect.y : 0
+      )
+    ),
   }
   const bottom = row.y + row.h
   const right = row.x + row.w
@@ -625,6 +874,138 @@ export function resizeRow(
     return r
   })
   return { regions: out, moves: carry(regions, out, boxes) }
+}
+
+/**
+ * The rows re-fitted round their cards as they are now sized - a map
+ * arranged with Simple cards drawn Detailed, or as photos: each row's
+ * cards (the ones whose centre it holds) pushed apart along their line
+ * where they overlap, below its title, the row grown to hold them, and the
+ * rows under a grown one moved down with their cards. Rows of a stack
+ * that were as wide stay as wide. Nothing moves when everything fits, so
+ * a map shown as it was arranged is left exactly as it is. `boxes` are
+ * the cards at their saved centres, in their size now. Returns the rows
+ * (same ids, top to bottom) and the new centre of every card that moved.
+ */
+export function fitRows(
+  rows: readonly BandRow[],
+  boxes: Readonly<Record<string, Rect>>
+): { rows: BandRow[]; moves: Record<string, Centre> } {
+  const sorted = [...rows].sort((a, b) => a.y - b.y || byName(a.id, b.id))
+  if (!sorted.length) return { rows: [], moves: {} }
+  const members = membersOf(
+    sorted.map((r) => ({ ...r, kind: "band", label: "", color: null })),
+    boxes
+  )
+  const placed: Record<string, Rect> = {}
+  const grown: { x0: number; x1: number; at: number; dh: number }[] = []
+  const out: BandRow[] = []
+  for (const r of sorted) {
+    // Pushed down by every row above it that grew.
+    const dy = grown
+      .filter((g) => g.at <= r.y + 1 && g.x0 < r.x + r.w && r.x < g.x1)
+      .reduce((s, g) => s + g.dh, 0)
+    const top = r.y + dy
+    const cards = (members.get(r.id) ?? []).map((id) => ({
+      id,
+      b: { ...boxes[id], y: boxes[id].y + dy },
+    }))
+    // Lines: the cards level with each other, top to bottom.
+    cards.sort(
+      (p, q) =>
+        p.b.y + p.b.h / 2 - (q.b.y + q.b.h / 2) ||
+        p.b.x - q.b.x ||
+        byName(p.id, q.id)
+    )
+    const lines: (typeof cards)[] = []
+    for (const c of cards) {
+      const line = lines.at(-1)
+      const cy = c.b.y + c.b.h / 2
+      if (
+        line &&
+        cy - (line[0].b.y + line[0].b.h / 2) <
+          Math.min(...line.map((m) => m.b.h)) / 2
+      )
+        line.push(c)
+      else lines.push([c])
+    }
+    // The first line only moves when it reaches into the title strip.
+    let floor = top + BAND.TITLE
+    let lift: number = BAND.FIT_EDGE
+    for (const line of lines) {
+      line.sort((p, q) => p.b.x - q.b.x || byName(p.id, q.id))
+      // Apart along the line, then back round where its middle was.
+      const x0 = Math.min(...line.map((c) => c.b.x))
+      const x1 = Math.max(...line.map((c) => c.b.x + c.b.w))
+      let pushed = false
+      for (let i = 1; i < line.length; i++) {
+        const prev = line[i - 1].b
+        const least = prev.x + prev.w + BAND.FIT_GAP
+        if (line[i].b.x < least) {
+          line[i].b.x = least
+          pushed = true
+        }
+      }
+      if (pushed) {
+        const nx0 = line[0].b.x
+        const nx1 = Math.max(...line.map((c) => c.b.x + c.b.w))
+        const shift = (x0 + x1) / 2 - (nx0 + nx1) / 2
+        for (const c of line) c.b.x += shift
+      }
+      // Below the title, or the line above.
+      const lineTop = Math.min(...line.map((c) => c.b.y))
+      const down = lineTop < floor ? floor + lift - lineTop : 0
+      for (const c of line) c.b.y += down
+      floor = Math.max(...line.map((c) => c.b.y + c.b.h))
+      lift = BAND.FIT_GAP
+    }
+    for (const c of cards) placed[c.id] = c.b
+    // Grown only where a card reaches past an edge, with room round it.
+    const inner = bounds(cards.map((c) => c.b))
+    const edge = BAND.FIT_EDGE
+    const bottom =
+      inner && inner.y + inner.h > top + r.h
+        ? inner.y + inner.h + edge
+        : top + r.h
+    const left = inner && inner.x < r.x ? inner.x - edge : r.x
+    const right =
+      inner && inner.x + inner.w > r.x + r.w
+        ? inner.x + inner.w + edge
+        : r.x + r.w
+    const dh = bottom - (top + r.h)
+    if (dh > 0.5) grown.push({ x0: r.x, x1: r.x + r.w, at: r.y + r.h, dh })
+    out.push({
+      id: r.id,
+      x: Math.round(left),
+      y: Math.round(top),
+      w: Math.round(right - left),
+      h: Math.round(bottom - top),
+    })
+  }
+  // A stack Arrange made keeps one width: rows that were as wide as each
+  // other take the widest of them now.
+  const width = new Map<string, { x0: number; x1: number }>()
+  const keyOf = (r: BandRow) => `${Math.round(r.x)}:${Math.round(r.w)}`
+  sorted.forEach((r, i) => {
+    const k = keyOf(r)
+    const w = width.get(k)
+    const n = out[i]
+    width.set(k, {
+      x0: Math.min(w?.x0 ?? Infinity, n.x),
+      x1: Math.max(w?.x1 ?? -Infinity, n.x + n.w),
+    })
+  })
+  sorted.forEach((r, i) => {
+    const w = width.get(keyOf(r))!
+    out[i] = { ...out[i], x: w.x0, w: w.x1 - w.x0 }
+  })
+  const moves: Record<string, Centre> = {}
+  for (const [id, b] of Object.entries(placed)) {
+    const was = boxes[id]
+    if (Math.abs(b.x - was.x) < 0.5 && Math.abs(b.y - was.y) < 0.5) continue
+    moves[id] = [Math.round(b.x + b.w / 2), Math.round(b.y + b.h / 2)]
+  }
+  return { rows: out, moves }
 }
 
 /** How far a side band's ends snap to a row's edge. */

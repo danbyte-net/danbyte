@@ -677,9 +677,18 @@ order they stood, wrapping onto another line past 12 cards; every band is as
 wide as the widest. **Bands by device type** does the same per device type.
 Both move the cards and write the bands in one step - ++ctrl+z++ undoes the
 lot. Run it again after adding devices and the bands are rebuilt around
-them: a band you renamed or tinted keeps its name and tint, and a side band
-stays on the rows it spanned. Bands you drew by hand are replaced, after a
-question.
+them: each band is found again by the roles (or types) it shares most with
+what it was made from, so a band you renamed or tinted keeps its name and
+tint even when a role joins or leaves its level, and a side band stays on
+the rows it spanned. A band still carrying the name Arrange gave it follows
+the roles now in it ("Leaf" becomes "Leaf + Border"); a level's band is
+named after the roles in it that are on the map. Bands you drew by hand
+are replaced, after a question.
+
+**Re-layout** with bands on the map arranges the bands again by what they
+were made from (as the menu entry above) instead of throwing the cards into
+a fresh layout across them - rows hold their cards. With only bands drawn
+by hand, Re-layout is off: clear the bands first.
 
 **Bands by hand.** **Add ▸ Band** puts a new band under the stack, as wide
 as it (or across the cards, on a diagram with none). **Add ▸ Side band** puts
@@ -698,10 +707,13 @@ rows' edges. Side bands can stand side by side.
   swap places and their cards go with them.
 - **Resize** a selected band from its bottom or right edge (a side band from
   any edge). A taller band pushes the rows under it down, cards and all; a
-  wider one widens the rows stacked with it.
-- **Tint** it with one of the zone swatches, or back to neutral grey, from
-  the toolbar above it. Colour means nothing on its own: it is there to set
-  one part of a picture apart.
+  wider one widens the rows stacked with it. A band never gets smaller than
+  the cards in it.
+- **Tint** it with one of the zone swatches (each named on hover: Slate,
+  Sky, Emerald, Amber, Pink, Violet), or back to neutral grey, from the
+  toolbar above it. Rows start neutral, side bands on a pastel swatch.
+  Colour means nothing on its own: it is there to set one part of a picture
+  apart.
 - **Delete** it from the toolbar or by right-clicking it; its cards stay
   where they are. **Arrange ▸ Clear bands** removes every band (after a
   question when some were drawn by hand).
@@ -709,6 +721,27 @@ rows' edges. Side bands can stand side by side.
 A card belongs to the band its centre is in - nothing else is stored - so
 you can drag a card into another band, and the draw.io file nests it
 there too. Bands draw behind the cables as well as the cards.
+
+**Titles never hide a cable.** Cables cross a row's title strip to reach
+its cards, but an elbow never runs along it: the lanes between two rows
+keep to the gap between them. A row's title sits in the middle of its
+strip, and where a cable, a port name or an address crosses there, it moves
+along the strip to the nearest clear spot. The exports put it in the same
+place.
+
+**One arrangement, every size.** Simple cards, Detailed cards and photos
+are different sizes, and the arrangement is shared. Drawn in a mode or face
+bigger than the one it was arranged in, the bands are re-fitted round their
+cards: cards that would overlap in a row move apart along it, a row grows
+to hold them, and the rows under it move down with their cards - every
+card stays in its band. Nothing is saved by switching: back in the mode you
+arranged in, the map is exactly as it was. The first change you make there
+(a drag, a band edit, a device added) saves the bands and cards as drawn.
+
+**New devices find their band.** A device added next to what it is cabled
+to (**Add connected devices**) goes into the band made for its role (or
+type) when there is one, and so does one dropped outside every band. One
+dropped into a band stays in that band.
 
 **Zones** (the **Zone** button, **Add ▸ Zone** on the Diagram tab, or
 right-click empty canvas → *Add zone*) work the same way on every tab:
@@ -740,7 +773,9 @@ band, "PNI" next to a line, a cloud captioned "Internet · DC02".
 - **Add ▸ Text** puts a text note in the middle of the screen, open for
   typing (right-click empty canvas → *Add text* puts it where you clicked).
   **Add ▸ Cloud**, **Globe** or **Building** puts a Lucide icon there, with
-  a caption to type under it.
+  a caption to type under it. Added from the **Add** menu, a note lands on
+  the spot nearest the middle of the screen clear of the cards, the rows'
+  titles and the side bands.
 - **Edit** by double-clicking, or with the pencil above a selected note.
   ++enter++ keeps the text, ++shift+enter++ starts a new line, ++esc++
   leaves it as it was. Up to 200 characters. A text note left empty is
@@ -1124,11 +1159,15 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   it, so dragging it in draw.io moves the split.
   The trunk, the legs and the ellipse carry the cable's id
   (`danbyte_cable`, under *Edit Data*) and link back to the cable.
-- **Bands:** a row band becomes a swimlane with its title centred across
-  the top that holds its cards (the ones whose centre is inside it) and
-  carries them when you drag it. Zones hold their cards the same way. A
-  side band is a shape behind the rows with its label turned to read
-  upwards, as a card can sit in only one container.
+- **Bands:** a row band becomes a swimlane with its title across the top -
+  where the canvas put it, clear of the lines - that holds its cards (the
+  ones whose centre is inside it) and carries them when you drag it. Zones
+  hold their cards the same way. A side band is a shape behind the rows
+  with its label turned to read upwards, as a card can sit in only one
+  container. A card in a swimlane is drawn with it, before the lines, so a
+  Straight, Bendy or Cyclical line that crosses such a card passes over it,
+  while one crossing a card outside every band passes under it (elbows never
+  cross a card).
 - **Notes** are draw.io's own shapes, to restyle there like anything else:
   a text note is a text cell (on a rounded box when it is outlined); a
   cloud is draw.io's cloud, a building the network library's *Business

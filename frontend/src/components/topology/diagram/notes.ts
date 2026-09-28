@@ -67,22 +67,61 @@ function freeId(notes: readonly TopologyViewNote[], want: string): string {
   return id
 }
 
+/** The room a new note keeps clear round its centre: an icon and its
+ * caption, or a line of text. */
+const NEW_NOTE = { w: 112, h: 88 }
+
+type Box = { x: number; y: number; w: number; h: number }
+
 /**
  * A new note centred at `at`: a text note saying "Text", or an icon
- * without a caption. A note already standing on that spot pushes it down,
- * so adding two in a row never stacks them.
+ * without a caption. It goes to the spot nearest `at` clear of the other
+ * notes and of `avoid` - the cards, the bands' titles and side bands - so
+ * it never lands on something already there; with none clear nearby, a
+ * note already standing on the spot still pushes it down, so adding two
+ * in a row never stacks them.
  */
 export function newNote(
   notes: readonly TopologyViewNote[],
   id: string,
   what: { kind: "text" } | { kind: "icon"; icon: NoteIconName },
-  at: { x: number; y: number }
+  at: { x: number; y: number },
+  avoid: readonly Box[] = []
 ): TopologyViewNote {
-  const x = Math.round(at.x)
-  let y = Math.round(at.y)
-  const taken = (py: number) =>
-    notes.some((n) => Math.abs(n.x - x) < STEP && Math.abs(n.y - py) < STEP)
-  for (let i = 0; i < 50 && taken(y); i++) y += STEP
+  const noteAt = (x: number, y: number) =>
+    notes.some((n) => Math.abs(n.x - x) < STEP && Math.abs(n.y - y) < STEP)
+  const clear = (x: number, y: number) => {
+    if (noteAt(x, y)) return false
+    const l = x - NEW_NOTE.w / 2
+    const t = y - NEW_NOTE.h / 2
+    return !avoid.some(
+      (r) =>
+        l < r.x + r.w &&
+        r.x < l + NEW_NOTE.w &&
+        t < r.y + r.h &&
+        r.y < t + NEW_NOTE.h
+    )
+  }
+  const x0 = Math.round(at.x)
+  const y0 = Math.round(at.y)
+  let x = x0
+  let y = y0
+  for (let i = 0; i < 50 && noteAt(x, y); i++) y += STEP
+  if (!clear(x, y)) {
+    // On a card or a band: ring by ring round the spot, the nearest one
+    // clear of everything.
+    let best: { x: number; y: number; d: number } | null = null
+    for (let r = 1; r <= 24 && !best; r++)
+      for (let i = -r; i <= r; i++)
+        for (let j = -r; j <= r; j++) {
+          if (Math.max(Math.abs(i), Math.abs(j)) !== r) continue
+          const px = x0 + i * STEP
+          const py = y0 + j * STEP
+          const d = Math.hypot(px - x0, py - y0)
+          if ((!best || d < best.d) && clear(px, py)) best = { x: px, y: py, d }
+        }
+    if (best) ({ x, y } = best)
+  }
   const base = { id: freeId(notes, id), x, y, size: "m" as const }
   return what.kind === "text"
     ? { ...base, kind: "text", text: NEW_NOTE_TEXT }

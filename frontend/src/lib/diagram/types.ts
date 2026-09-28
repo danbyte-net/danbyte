@@ -164,6 +164,9 @@ export interface DiagramBand extends Rect {
   label: string
   /** One of the zone swatches; absent or null = neutral. */
   fill?: string | null
+  /** A row: where its title chip is centred, when not the middle - moved
+   * along its strip clear of the lines and labels crossing it. */
+  titleX?: number
 }
 
 export type NoteIcon = "cloud" | "globe" | "building"

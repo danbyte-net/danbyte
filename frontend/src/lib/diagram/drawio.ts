@@ -505,8 +505,9 @@ function page(
             labelBackgroundColor: p.header,
           })
         : b.orient === "h"
-          ? // A row: a swimlane with its title centred across the top, one
-            // fill for title and body, as on the canvas.
+          ? // A row: a swimlane with its title across the top - centred, or
+            // where the canvas moved it clear of the lines - one fill for
+            // title and body, as on the canvas.
             style(["swimlane"], {
               startSize: Math.min(b.h, BAND.ROW_TITLE),
               swimlaneLine: 0,
@@ -514,6 +515,21 @@ function page(
               fontSize: BAND.TITLE_SIZE,
               fillColor: p.fill,
               swimlaneFillColor: p.fill,
+              ...(b.titleX !== undefined
+                ? {
+                    align: "left",
+                    spacing: 0,
+                    spacingLeft: Math.max(
+                      0,
+                      Math.round(
+                        b.titleX -
+                          b.x -
+                          measure(b.label, BAND.TITLE_SIZE, BAND.LABEL_WEIGHT) /
+                            2
+                      )
+                    ),
+                  }
+                : {}),
             })
           : // A side band: a plain shape behind the rows (a card has one
             // parent), its big label turned to read bottom to top.

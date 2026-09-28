@@ -10,9 +10,10 @@ import {
 import type { ControlLinePosition, NodeProps } from "@xyflow/react"
 import { ArrowDown, ArrowUp, Pencil, Trash2 } from "lucide-react"
 
+import { measureText } from "@/lib/diagram/measure"
 import { cn } from "@/lib/utils"
 import { ZONE_COLORS } from "../view-positions"
-import { BAND } from "./bands"
+import { BAND, chipWidth, titleSpot } from "./bands"
 import type { Rect } from "./types"
 
 /**
@@ -27,9 +28,10 @@ import type { Rect } from "./types"
  * cables as well as the cards: the canvas stacks it before the cards and
  * blends it (darken on light, lighten on dark), so a cable, and the gap an
  * end label makes in it, reads on the band as it does on the canvas. A
- * row's title is a chip of the band's own colour in the edge-label layer:
- * over the cables (a cable breaks for it, as for a port name), under the
- * cards.
+ * row's title is a chip of the band's own colour in the edge-label layer,
+ * under the cards: centred in its strip, or - where a cable or a label
+ * crosses there - moved along it to the nearest clear spot the plan found
+ * (`busy`), so it never hides one.
  *
  * Only the title strip (a row) or the strip itself (a side band) takes the
  * pointer, plus the resize edges while selected - a click anywhere else
@@ -47,7 +49,20 @@ export interface BandData {
   onMove?: (dir: -1 | 1) => void
   /** The box after a resize from one of its edges. */
   onResizeEnd?: (rect: Rect) => void
+  /** A row: the x spans of its title strip that lines, cards and labels
+   * take, as the Diagram last planned them (canvas px). */
+  busy?: readonly (readonly [number, number])[]
   [key: string]: unknown
+}
+
+/** The swatches' names, for their buttons. */
+const SWATCH_NAMES: Record<string, string> = {
+  "#64748b": "Slate",
+  "#0ea5e9": "Sky",
+  "#10b981": "Emerald",
+  "#f59e0b": "Amber",
+  "#ec4899": "Pink",
+  "#8b5cf6": "Violet",
 }
 
 /** The grip class - the node's `dragHandle`. */
@@ -87,6 +102,7 @@ export function BandNode({
   data,
   selected,
   width,
+  height,
   positionAbsoluteX,
   positionAbsoluteY,
 }: NodeProps) {
@@ -154,17 +170,20 @@ export function BandNode({
               d.color === null ? "border-foreground" : "border-border"
             )}
           />
+          {/* A swatch's button shows its hue, stronger than the band's
+              tint, so slate never reads as the neutral grey. */}
           {ZONE_COLORS.map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => d.onRecolor?.(c)}
-              aria-label="Tint"
+              aria-label={SWATCH_NAMES[c] ?? c}
+              data-tip={SWATCH_NAMES[c] ?? c}
               className={cn(
                 "size-4 rounded-sm border",
                 c === d.color ? "border-foreground" : "border-border"
               )}
-              style={bandLook(c).style}
+              style={{ background: bandLook(c).edge }}
             />
           ))}
           {!side && (
@@ -205,7 +224,7 @@ export function BandNode({
           // The whole strip is the grip: nothing is drawn on a side band.
           <div
             className={`${BAND_DRAG_HANDLE} pointer-events-auto flex h-full w-full cursor-grab items-center justify-center overflow-hidden active:cursor-grabbing`}
-            data-tip="Drag to move · double-click the name to rename"
+            data-tip="Move"
           >
             {editing ? (
               field
@@ -225,7 +244,7 @@ export function BandNode({
             className={`${BAND_DRAG_HANDLE} pointer-events-auto flex w-full cursor-grab items-center justify-center px-3 active:cursor-grabbing`}
             style={{ height: BAND.TITLE }}
             onDoubleClick={rename}
-            data-tip="Drag to move with its cards · double-click to rename"
+            data-tip="Move"
           >
             {editing && field}
           </div>
@@ -261,7 +280,12 @@ export function BandNode({
             style={{
               ...look.style,
               maxWidth: Math.max(0, (width ?? 0) - 16),
-              transform: `translate(-50%, -50%) translate(${positionAbsoluteX + (width ?? 0) / 2}px, ${positionAbsoluteY + BAND.TITLE / 2}px)`,
+              transform: `translate(-50%, -50%) translate(${titleX(
+                name,
+                positionAbsoluteX,
+                width ?? 0,
+                d.busy
+              )}px, ${positionAbsoluteY + Math.min(BAND.TITLE, height ?? BAND.TITLE) / 2}px)`,
             }}
           >
             {name}
@@ -270,6 +294,18 @@ export function BandNode({
       )}
     </>
   )
+}
+
+/** Where a row's title chip is centred (canvas x): `titleSpot` for the
+ * chip the name makes, clear of the spans the plan found. */
+function titleX(
+  name: string,
+  x: number,
+  w: number,
+  busy: readonly (readonly [number, number])[] | undefined
+): number {
+  const chip = chipWidth(measureText(name, BAND.CHIP_SIZE, 600), w)
+  return titleSpot({ x, y: 0, w, h: BAND.TITLE }, chip, busy)
 }
 
 /** A small button in a region's or note's toolbar. `active` marks the

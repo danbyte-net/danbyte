@@ -31,6 +31,8 @@ import {
 } from "./anchors"
 import type { AnchorLink, Anchors } from "./anchors"
 import { arcFor, arcSide } from "./arcs"
+import { chipBand, fitRows, rowsSig, titleStrip } from "./bands"
+import type { BandRow } from "./bands"
 import type { ArcAxis, ArcSide } from "./arcs"
 import { cardContent } from "./card-fields"
 import {
@@ -72,6 +74,7 @@ import type { PhotoFace, PhotoShown } from "./photo-anchors"
 import { packLoose } from "./pack"
 import { settleGrown } from "./placement"
 import { endRun, planEdges, portStub } from "./plan"
+import type { TitleStrip } from "./plan"
 import { pairKey } from "./types"
 import type {
   Anchor,
@@ -144,6 +147,10 @@ export interface DiagramOptions {
   labels?: readonly LabelToken[]
   /** Saved arrangement: node id → centre. */
   positions?: Record<string, [number, number]>
+  /** The layer bands' rows as saved (bands.ts): with a saved arrangement
+   * they are re-fitted round the cards as this mode and face size them
+   * (`fitRows`), and the lines keep out of their title strips. */
+  rows?: readonly BandRow[]
   matched?: Set<string> | null
   focusNodeId?: string
   /** The tenant's names for the monitoring states: a card keeps room for
@@ -188,6 +195,14 @@ export interface DiagramModel {
    * each end of a cable. */
   roomy: number
   measure: Measure
+  /** The layer bands' rows as drawn: the saved ones re-fitted round the
+   * cards (`fitRows`). Their title strips keep the lines out. */
+  rows?: BandRow[]
+  /** The saved rows those were fitted from (`rowsSig`). */
+  rowsFrom?: string
+  /** Per row, the x spans of its title strip that lines, cards and labels
+   * take, as last planned: where its title chip may not go. */
+  titles?: Map<string, [number, number][]>
 }
 
 /** A photo node as the anchoring sees it. */
@@ -1039,6 +1054,17 @@ function placeJunctions(
           p.y > r.y - CLEAR &&
           p.y < r.y + r.h + CLEAR
       )
+  // A band's title strip the point is in: a junction there would hide
+  // under the title and start its legs along the strip.
+  const strips = (model.rows ?? []).map(titleStrip)
+  const stripAt = (p: Pt) =>
+    strips.find(
+      (r) =>
+        p.x > r.x &&
+        p.x < r.x + r.w &&
+        p.y > r.y - LANE &&
+        p.y < r.y + r.h + LANE
+    )
   for (const f of model.fans) {
     const tb = rects.get(f.trunk)
     const farR = f.far.map((id) => rects.get(id)).filter((r): r is Rect => !!r)
@@ -1100,6 +1126,18 @@ function placeJunctions(
       d = Math.min(d, block - CLEAR - 3)
     const at = () => ({ x: start.x + nx * d, y: start.y + ny * d })
     for (let k = 0; k < 40 && inCard(at()); k++) d += 12
+    // Down (or up) through a title strip: short of it where the trunk has
+    // room, else past it.
+    const strip = Math.abs(ny) > 0.5 ? stripAt(at()) : undefined
+    if (strip) {
+      const near = ny > 0 ? strip.y - LANE : strip.y + strip.h + LANE
+      const far = ny > 0 ? strip.y + strip.h + LANE : strip.y - LANE
+      const back = (near - start.y) * ny
+      const past = (far - start.y) * ny
+      const d0 = d
+      d = back >= 12 ? back : past
+      if (inCard(at())) d = d0
+    }
     out.set(f.id, { c: at(), dir: start.dir })
   }
   for (const [id, j] of placeMeshes(model, rects, solid)) out.set(id, j)
@@ -1498,8 +1536,14 @@ function routeCache(model: DiagramModel): RouteCache {
  * every line routed, laned and labelled. Mutates `a.anchors` (the nub
  * order).
  */
-function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
+function plannedEdges(
+  model: DiagramModel,
+  a: Anchored
+): { edges: Edge[]; titles?: Map<string, [number, number][]> } {
   const solid = (id: string) => model.base.has(id) || model.fixed.has(id)
+  const strips = (model.rows ?? []).map(
+    (r): TitleStrip => ({ id: r.id, r: titleStrip(r), chip: chipBand(r) })
+  )
   const input = (edges: Edge<DiagramEdgeData>[]) => ({
     edges,
     rects: a.rects,
@@ -1507,6 +1551,7 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
     mode: model.mode,
     measure: model.measure,
     routes: routeCache(model),
+    ...(strips.length ? { strips } : {}),
   })
   let edges = withAnchors(model, a)
   const elbows = edges.filter(
@@ -1520,8 +1565,8 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
       if (!reorderNubs(a.anchors, turns)) break
       edges = withAnchors(model, a)
     }
-  const { plans } = planEdges(input(edges))
-  return edges.map((e) => {
+  const { plans, busy } = planEdges(input(edges))
+  const planned = edges.map((e) => {
     const plan = plans.get(e.id)
     const s = a.rects.get(e.source)
     const t = a.rects.get(e.target)
@@ -1541,6 +1586,7 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
       },
     }
   })
+  return { edges: planned, ...(busy ? { titles: busy } : {}) }
 }
 
 /** Node → the box the layout reserves: a card's current box, else the
@@ -1887,21 +1933,44 @@ export function buildDiagram(
     measure,
   }
 
-  // A saved arrangement from before a device showed its photo: the photo
-  // is far wider than the card was, and whatever it now covers moves out
-  // of its way (nothing else moves).
+  if (opts.rows?.length) {
+    model.rows = opts.rows.map((r) => ({ ...r }))
+    model.rowsFrom = rowsSig(opts.rows)
+  }
+  // A saved arrangement drawn at another size - arranged with Simple
+  // cards, drawn Detailed or as photos: the layer bands are re-fitted
+  // round their cards first (`fitRows`: a row's cards stay in it), then
+  // whatever a photo still covers moves out of its way (nothing else
+  // moves). Neither is saved: the arrangement stays the one arranged.
   const settle = (l: Laid, sizes: ReadonlyMap<string, Size>): Laid => {
-    if (!photos.size || !opts.positions) return l
-    const rects: Record<string, Rect> = {}
-    for (const [id, c] of l.centres) {
-      const b = sizes.get(id)
-      if (b) rects[id] = rectAt(c, b)
+    if (!opts.positions) return l
+    const rectsOf = (centres: ReadonlyMap<string, Pt>) => {
+      const rects: Record<string, Rect> = {}
+      for (const [id, c] of centres) {
+        const b = sizes.get(id)
+        if (b) rects[id] = rectAt(c, b)
+      }
+      return rects
     }
-    const moved = settleGrown(rects, photos.keys())
-    if (!moved) return l
-    const centres = new Map(l.centres)
-    for (const [id, [x, y]] of Object.entries(moved)) centres.set(id, { x, y })
-    return { centres }
+    let centres = l.centres
+    if (opts.rows?.length) {
+      const fit = fitRows(opts.rows, rectsOf(centres))
+      model.rows = fit.rows
+      const moved = Object.entries(fit.moves)
+      if (moved.length) {
+        centres = new Map(centres)
+        for (const [id, [x, y]] of moved) centres.set(id, { x, y })
+      }
+    }
+    if (photos.size) {
+      const moved = settleGrown(rectsOf(centres), photos.keys())
+      if (moved) {
+        centres = new Map(centres)
+        for (const [id, [x, y]] of Object.entries(moved))
+          centres.set(id, { x, y })
+      }
+    }
+    return centres === l.centres ? l : { centres }
   }
 
   let laid = settle(layout(all), new Map<string, Size>([...fixed, ...base]))
@@ -1926,7 +1995,8 @@ export function buildDiagram(
     }
   }
 
-  const planned = plannedEdges(model, anchored)
+  const { edges: planned, titles } = plannedEdges(model, anchored)
+  if (titles) model.titles = titles
   const { anchors, boxes, junctions } = anchored
   const drawn = photosShown(model, anchors)
   const nodes: Node[] = rfNodes.map((n) => {
@@ -1968,6 +2038,8 @@ export function buildDiagram(
 
 export interface Relinked {
   edges: Edge[]
+  /** Per band row, what its title strip holds (`DiagramModel.titles`). */
+  titles?: Map<string, [number, number][]>
   /** Cards whose box or nubs changed, by id. */
   cards: Map<string, DiagramCardData["diagram"]>
   /** Where each breakout's junction now sits (its centre). */
@@ -1988,7 +2060,7 @@ export function relinkDiagram(model: DiagramModel, live: Node[]): Relinked {
     if (model.base.has(n.id) || model.fixed.has(n.id))
       centres.set(n.id, { x: n.position.x, y: n.position.y })
   const anchored = anchorAll(model, centres)
-  const edges = plannedEdges(model, anchored)
+  const { edges, titles } = plannedEdges(model, anchored)
   const { anchors, boxes } = anchored
 
   const cards = new Map<string, DiagramCardData["diagram"]>()
@@ -2011,8 +2083,8 @@ export function relinkDiagram(model: DiagramModel, live: Node[]): Relinked {
   }
   const junctions = new Map<string, Pt>()
   for (const [id, j] of anchored.junctions) junctions.set(id, j.c)
-  const next: DiagramModel = { ...model, shown }
-  return { edges, cards, junctions, model: next }
+  const next: DiagramModel = { ...model, shown, ...(titles ? { titles } : {}) }
+  return { edges, cards, junctions, model: next, ...(titles ? { titles } : {}) }
 }
 
 /**

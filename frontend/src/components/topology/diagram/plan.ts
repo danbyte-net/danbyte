@@ -73,6 +73,17 @@ export interface PlanInput {
   measure: Measure
   /** Routes kept from the map's last plans, reused where nothing changed. */
   routes?: RouteCache
+  /** The layer bands' title strips (`r`) and the part of each its title
+   * chip takes (`chip`): elbows cross a strip but never run along it, and
+   * the plan reports what crosses each chip's part. */
+  strips?: readonly TitleStrip[]
+}
+
+/** A layer band's title strip, as the planner keeps it clear. */
+export interface TitleStrip {
+  id: string
+  r: Rect
+  chip: Rect
 }
 
 export interface EdgePlan {
@@ -89,6 +100,9 @@ export interface EdgePlan {
 
 export interface PlanOutput {
   plans: Map<string, EdgePlan>
+  /** Per title strip, the x spans of its chip's part that cables, cards
+   * and labels take (`LabelScene.occupied`): where its title may not go. */
+  busy?: Map<string, [number, number][]>
   /** Detailed: how each elbow nub's route leaves its side - what
    * `reorderNubs` orders a side by. */
   turns: EndTurns
@@ -587,7 +601,13 @@ export function planEdges(
   const all = items(input)
   const cards = [...input.rects].filter(([id]) => input.solid(id))
   const obs = obstacles(cards)
-  input.routes?.begin(cards, obs)
+  // Elbows keep their runs out of the bands' title strips too.
+  const strips = (input.strips ?? []).map((s): [string, Rect] => [
+    `\u0000strip:${s.id}`,
+    s.r,
+  ])
+  const lanesObs = strips.length ? obstacles(cards, strips) : obs
+  input.routes?.begin(strips.length ? [...cards, ...strips] : cards, lanesObs)
   const turns = new Map<
     string,
     { turn: -1 | 0 | 1; depth: number; extent: number }
@@ -673,8 +693,8 @@ export function planEdges(
   const routes: ElbowRoute[] = cables.map((c) => {
     const [pa, pb] = [pins.get(`${c.key}:a`), pins.get(`${c.key}:b`)]
     return input.routes
-      ? input.routes.route(c, obs, pa, pb)
-      : elbowBase(c, obs, pa, pb)
+      ? input.routes.route(c, lanesObs, pa, pb)
+      : elbowBase(c, lanesObs, pa, pb)
   })
   elbows.forEach((it, j) => {
     const pts = routes[j].pts
@@ -690,7 +710,7 @@ export function planEdges(
       )
   })
   if (opts.turnsOnly) return { plans: new Map(), turns }
-  assignLanes(routes, cables, obs)
+  assignLanes(routes, cables, lanesObs)
 
   const ptsOf = new Map<string, Pt[]>()
   elbows.forEach((it, j) => ptsOf.set(it.key, routes[j].pts))
@@ -932,5 +952,7 @@ export function planEdges(
         : {}),
     })
   }
-  return { plans, turns }
+  const busy = new Map<string, [number, number][]>()
+  for (const s of input.strips ?? []) busy.set(s.id, scene.occupied(s.chip))
+  return { plans, turns, ...(busy.size ? { busy } : {}) }
 }

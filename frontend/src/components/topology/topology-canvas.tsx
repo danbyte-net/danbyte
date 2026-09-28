@@ -69,7 +69,14 @@ import { noteToNode, notesAt, selectedNotes } from "./diagram/annotation-node"
 import type { NoteCallbacks, NoteData } from "./diagram/annotation-node"
 import { patchNote, readNotes, removeNotes } from "./diagram/notes"
 import type { BandData } from "./diagram/band-node"
-import { isRow, membersOf, paintOrder } from "./diagram/bands"
+import {
+  bandRows,
+  drawnRegions,
+  isRow,
+  membersOf,
+  paintOrder,
+} from "./diagram/bands"
+import type { BandRow } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { lagBundleLabel, sharedLag } from "./lag-bundles"
@@ -166,9 +173,15 @@ interface ZoneCallbacks {
   onBandResize: (id: string, rect: Rect) => void
 }
 
-function zoneToNode(z: Zone, cb: ZoneCallbacks): Node {
+function zoneToNode(
+  z: Zone,
+  cb: ZoneCallbacks,
+  titles: ReadonlyMap<string, [number, number][]> = NO_TITLES
+): Node {
   if (z.kind === "band") {
+    const busy = titles.get(z.id)
     const data: BandData = {
+      ...(busy ? { busy } : {}),
       label: z.label,
       color: z.color || null,
       orient: z.orient === "v" ? "v" : "h",
@@ -283,6 +296,10 @@ export interface CanvasHandle {
   /** Every card's box (top-left corner and size) by node id: where a new
    * card must not land. Zones and breakout junctions are not cards. */
   boxes: () => Record<string, Rect>
+  /** The zones and bands as drawn: on the Diagram, the rows as the build
+   * re-fitted them round the cards (`fitRows`), which is what an edit
+   * starts from and saves. */
+  regions: () => Zone[]
   /** The devices behind the selected cards. */
   selectedDevices: () => string[]
   /** Bring these boxes (canvas coordinates) into view with what is on
@@ -1154,6 +1171,8 @@ interface Stamp {
 }
 
 const EMPTY_BUILT: Built = { nodes: [], edges: [], model: null }
+/** No band titles planned. */
+const NO_TITLES: ReadonlyMap<string, [number, number][]> = new Map()
 
 /** Room kept round a fitted map, as a fraction of the screen. */
 const FIT_PAD = 0.15
@@ -1331,6 +1350,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     }
   }, [diagram])
 
+  // The layer bands' rows, as the Diagram build takes them: geometry only,
+  // one stable list per shape, so renaming or tinting a band never
+  // rebuilds the map.
+  const rowsKey = diagram ? JSON.stringify(bandRows(zones)) : "[]"
+  const bandRowList = useMemo(() => JSON.parse(rowsKey) as BandRow[], [rowsKey])
+  const withRows = bandRowList.length ? { rows: bandRowList } : {}
+
   // The Diagram is laid out in a worker (diagram-client.ts) wherever the
   // browser has one, so a big map never holds the page while it is built;
   // the server, tests and a worker that fails build it here instead.
@@ -1380,6 +1406,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               roleDistance,
               bundleLags,
               positions,
+              ...withRows,
               matched: matchedIds,
               focusNodeId,
               checkLabels,
@@ -1431,6 +1458,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       linkOverrides,
       diagramLabels,
       checkLabels,
+      bandRowList,
     ]
   )
 
@@ -1455,6 +1483,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               roleDistance,
               bundleLags,
               positions,
+              ...(bandRowList.length ? { rows: bandRowList } : {}),
               checkLabels,
             },
             stamp: {
@@ -1481,6 +1510,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       roleDistance,
       bundleLags,
       positions,
+      bandRowList,
       checkLabels,
       layoutTick,
       nodeStyle,
@@ -1529,6 +1559,28 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     : { layoutTick, nodeStyle, fitKey, direction, diagramMode, positions }
   /** The Diagram's anchoring state, as the last build or drag left it. */
   const modelRef = useRef<DiagramModel | null>(null)
+  // What the band titles need from the last plan: the rows as the build
+  // re-fitted them, and what crosses each row's title strip.
+  const [fittedRows, setFittedRows] = useState<{
+    from: string
+    rows: BandRow[]
+  } | null>(null)
+  const [bandTitles, setBandTitles] =
+    useState<ReadonlyMap<string, [number, number][]>>(NO_TITLES)
+  const titlesRef = useRef(bandTitles)
+  /** The model a build or a relink left, and what it says of the bands. */
+  const adopt = useCallback((model: DiagramModel | null) => {
+    modelRef.current = model
+    titlesRef.current = model?.titles ?? NO_TITLES
+    setBandTitles(titlesRef.current)
+    setFittedRows((cur) => {
+      const next =
+        model?.rows && model.rowsFrom !== undefined
+          ? { from: model.rowsFrom, rows: model.rows }
+          : null
+      return JSON.stringify(cur) === JSON.stringify(next) ? cur : next
+    })
+  }, [])
   /** The worker's name for that model, when it was built there. */
   const modelIdRef = useRef<number | null>(null)
   const focusRef = useRef(focusNodeId)
@@ -1875,7 +1927,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       )
     // A big map's cards go in measured, so only those in view mount.
     if (nextNodes.length >= PRESIZE_AT) nextNodes = nextNodes.map(presized)
-    modelRef.current = built.model
+    adopt(built.model)
     modelIdRef.current = built.modelId ?? null
     const refit = () => requestAnimationFrame(() => fitMap(300))
     // Diagram: the kept positions are not the ones the links were anchored
@@ -1891,7 +1943,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         .then(
           (re) => {
             if (modelIdRef.current !== id || !modelRef.current) return
-            modelRef.current = relinkedModel(modelRef.current, re.cards)
+            adopt(relinkedModel(modelRef.current, re.cards, re.titles))
             setNodes([
               ...zoneNodes.current,
               ...withCards(kept, re.cards, re.junctions),
@@ -1907,7 +1959,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     let diagramEdges: Edge[] | null = null
     if (built.model && keepingDrags) {
       const re = relinkDiagram(built.model, nextNodes)
-      modelRef.current = re.model
+      adopt(re.model)
       diagramEdges = re.edges
       nextNodes = withCards(nextNodes, re.cards, re.junctions)
     }
@@ -1980,7 +2032,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     const model = modelRef.current
     if (!fontTick || !diagram || !model || modelIdRef.current !== null) return
     const re = remeasureDiagram(model, flow.getNodes())
-    modelRef.current = re.model
+    adopt(re.model)
     setNodes((cur) => withCards(cur, re.cards, re.junctions))
     setEdges(re.edges)
   }, [fontTick, diagram, flow, setNodes, setEdges])
@@ -1998,13 +2050,28 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         cur.filter((n) => isRegionNode(n) && n.selected).map((n) => n.id)
       )
       // Side bands, then rows, then zones: array order is paint order.
-      zoneNodes.current = paintOrder(zonesRef.current).map((z) => {
-        const n = zoneToNode(z, zoneCb)
+      // The rows as the build fitted them round the cards.
+      const shown = drawnRegions(zonesRef.current, fittedRows)
+      zoneNodes.current = paintOrder(shown).map((z) => {
+        const n = zoneToNode(z, zoneCb, titlesRef.current)
         return sel.has(n.id) ? { ...n, selected: true } : n
       })
       return [...zoneNodes.current, ...cur.filter((n) => !isRegionNode(n))]
     })
-  }, [zoneSig, zoneCb, setNodes])
+  }, [zoneSig, zoneCb, setNodes, fittedRows])
+
+  // A row's title keeps clear of what the last plan put in its strip.
+  useEffect(() => {
+    const busyOf = (n: Node) =>
+      n.type === "band" ? bandTitles.get(n.id.slice(5)) : undefined
+    const stale = (n: Node) =>
+      n.type === "band" && (n.data as BandData).busy !== busyOf(n)
+    const fresh = (n: Node) => ({ ...n, data: { ...n.data, busy: busyOf(n) } })
+    zoneNodes.current = zoneNodes.current.map((n) => (stale(n) ? fresh(n) : n))
+    setNodes((cur) =>
+      cur.some(stale) ? cur.map((n) => (stale(n) ? fresh(n) : n)) : cur
+    )
+  }, [bandTitles, setNodes])
 
   // Note nodes: last in the array, so they paint over the cards. A note
   // just added is the selection, in its editor.
@@ -2254,11 +2321,12 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         }
         const cards = live.nodes.filter((n) => !isOverlayNode(n))
         const model = modelRef.current
+        const regions = nodesToZones(flow.getNodes(), zonesRef.current)
         if (live.diagram && model)
           return toDocument(
             model,
             { nodes: cards, edges: live.edges },
-            zonesRef.current,
+            regions,
             {
               ...opts,
               area: box,
@@ -2266,7 +2334,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               checkLabels: live.statusLabels,
             }
           )
-        return fromFlow(cards, live.edges, zonesRef.current, {
+        return fromFlow(cards, live.edges, regions, {
           ...opts,
           area: box,
         })
@@ -2290,6 +2358,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         }
         return out
       },
+      regions: () => nodesToZones(flow.getNodes(), zonesRef.current),
       selectedDevices: () =>
         flow
           .getNodes()
@@ -2443,7 +2512,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           h,
         }
       }
-      const regions = zonesRef.current.filter(isRow)
+      // The rows as drawn: the build may have re-fitted them.
+      const regions = nodesToZones(all, zonesRef.current).filter(isRow)
       const byId = new Map(all.map((n) => [n.id, n]))
       const members = new Map<string, { x: number; y: number }>()
       for (const m of membersOf(regions, boxes).get(id) ?? []) {
@@ -2506,7 +2576,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         .then(
           (re) => {
             if (modelIdRef.current !== modelId || !modelRef.current) return
-            modelRef.current = relinkedModel(modelRef.current, re.cards)
+            adopt(relinkedModel(modelRef.current, re.cards, re.titles))
             setNodes((cur) => withCards(cur, re.cards, re.junctions))
             setEdges(re.edges)
           },
@@ -2520,7 +2590,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       // Re-anchor from where the cards are now: sides re-chosen, Detailed
       // cards re-sized around their centres, elbow channels re-routed.
       const re = relinkDiagram(model, nowNodes())
-      modelRef.current = re.model
+      adopt(re.model)
       // Into the real state, not the rendered nodes (those carry the
       // spotlight's dimming and the monitoring pill).
       setNodes((cur) => withCards(cur, re.cards, re.junctions))

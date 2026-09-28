@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest"
 import {
   BAND,
   arrangeBands,
+  bandRows,
   clearBands,
+  drawnRegions,
+  fitRows,
   handDrawn,
   isRow,
   membersOf,
@@ -16,7 +19,10 @@ import {
   resizeRow,
   rowAt,
   rowsAt,
+  rowsSig,
+  ruleRow,
   snapSide,
+  titleSpot,
 } from "./bands"
 import type { ArrangeCard, Region } from "./bands"
 import { boxAround, dropPlacement, NEW_CARD, placeNewcomers } from "./placement"
@@ -554,5 +560,285 @@ describe("placing cards into rows", () => {
     const inA = b.y >= BAND.TITLE && b.y + b.h <= 160
     const inB = b.y >= 184 + BAND.TITLE && b.y + b.h <= 384
     expect(inA || inB).toBe(true)
+  })
+})
+
+describe("a second Arrange as the roles change", () => {
+  const levels = { order: ["Spine", "Leaf", "Border"], bonds: ["Border"] }
+  const base = () => [
+    card("dev:s1", at(0, 0), ROLES.spine),
+    card("dev:s2", at(200, 0), ROLES.spine),
+    card("dev:l1", at(0, 200), ROLES.leaf),
+    card("dev:l2", at(200, 200), ROLES.leaf),
+  ]
+  const border = card("dev:b1", at(400, 200), ROLES.border)
+
+  it("names a Levels tier by the roles on the map", () => {
+    const { regions } = arrangeBands({ cards: base(), by: "role", levels })
+    expect(regions.filter(isRow).map((r) => r.label)).toEqual(["Spine", "Leaf"])
+    const both = arrangeBands({
+      cards: [...base(), border],
+      by: "role",
+      levels,
+    })
+    expect(both.regions.filter(isRow).map((r) => r.label)).toEqual([
+      "Spine",
+      "Leaf + Border",
+    ])
+  })
+
+  it("keeps a renamed row and its side band when a role joins the tier", () => {
+    const first = arrangeBands({ cards: base(), by: "role", levels })
+    const [top, leaf] = first.regions.filter(isRow)
+    const renamed = first.regions.map((r) =>
+      r.id === leaf.id ? { ...r, label: "Leaf-lag", color: "#10b981" } : r
+    )
+    const fabricBand = side(
+      "fabric",
+      top.y,
+      leaf.y + leaf.h - top.y,
+      top.x + top.w + 16
+    )
+    const again = arrangeBands({
+      cards: [...base(), border],
+      by: "role",
+      levels,
+      regions: [...renamed, fabricBand],
+    })
+    const rows = again.regions.filter(isRow)
+    expect(rows.map((r) => [r.id, r.label])).toEqual([
+      [top.id, "Spine"],
+      [leaf.id, "Leaf-lag"],
+    ])
+    expect(rows[1].color).toBe("#10b981")
+    expect(rows[1].rule?.ids).toEqual([ROLES.leaf.id, ROLES.border.id].sort())
+    const f = again.regions.find((r) => r.id === "fabric")!
+    expect([f.y, f.h]).toEqual([rows[0].y, rows[1].y + rows[1].h - rows[0].y])
+  })
+
+  it("keeps the row when the last card of a role in it goes", () => {
+    const first = arrangeBands({
+      cards: [...base(), border],
+      by: "role",
+      levels,
+    })
+    const leaf = first.regions.filter(isRow)[1]
+    const renamed = first.regions.map((r) =>
+      r.id === leaf.id ? { ...r, label: "Leaf-lag" } : r
+    )
+    const again = arrangeBands({
+      cards: base(),
+      by: "role",
+      levels,
+      regions: renamed,
+    })
+    const now = again.regions.filter(isRow)[1]
+    expect([now.id, now.label]).toEqual([leaf.id, "Leaf-lag"])
+  })
+
+  it("names a row it named after the roles now in it", () => {
+    const first = arrangeBands({ cards: base(), by: "role", levels })
+    const leaf = first.regions.filter(isRow)[1]
+    const again = arrangeBands({
+      cards: [...base(), border],
+      by: "role",
+      levels,
+      regions: first.regions,
+    })
+    const now = again.regions.filter(isRow)[1]
+    expect([now.id, now.label]).toEqual([leaf.id, "Leaf + Border"])
+  })
+})
+
+describe("fitRows", () => {
+  const arranged = () => {
+    const cards = fabric()
+    const { positions, regions } = arrangeBands({ cards, by: "role" })
+    const at = (c: ArrangeCard, w = c.box.w, h = c.box.h) =>
+      boxAround({ x: positions[c.id][0], y: positions[c.id][1] }, { w, h })
+    return { cards, regions, at }
+  }
+
+  it("leaves an arrangement that fits exactly as it is", () => {
+    const { cards, regions, at } = arranged()
+    const rows = bandRows(regions)
+    const fit = fitRows(
+      rows,
+      Object.fromEntries(cards.map((c) => [c.id, at(c)]))
+    )
+    expect(fit.moves).toEqual({})
+    expect(fit.rows).toEqual(rows)
+  })
+
+  it("re-fits the rows round cards drawn as photos, each card in its row", () => {
+    const { cards, regions, at } = arranged()
+    const rows = bandRows(regions)
+    // Arranged as cards, drawn as 480 px photos.
+    const photos = Object.fromEntries(cards.map((c) => [c.id, at(c, 480, 80)]))
+    const was = membersOf(regions, photos)
+    const fit = fitRows(rows, photos)
+    const moved: Record<string, Rect> = {}
+    for (const [id, b] of Object.entries(photos)) {
+      const c = fit.moves[id]
+      moved[id] = c ? boxAround({ x: c[0], y: c[1] }, { w: b.w, h: b.h }) : b
+    }
+    const drawn = fit.rows.map((r) => ({
+      ...r,
+      kind: "band" as const,
+      label: r.id,
+      color: null,
+    }))
+    // Every card stays in the row it was in, below its title, inside it.
+    const now = membersOf(drawn, moved)
+    for (const [id, list] of was) expect(now.get(id)).toEqual(list)
+    for (const r of fit.rows)
+      for (const id of now.get(r.id) ?? []) {
+        const b = moved[id]
+        expect(b.y).toBeGreaterThanOrEqual(r.y + BAND.TITLE)
+        expect(b.y + b.h).toBeLessThanOrEqual(r.y + r.h)
+        expect(b.x).toBeGreaterThanOrEqual(r.x)
+        expect(b.x + b.w).toBeLessThanOrEqual(r.x + r.w)
+      }
+    // No two cards overlap; the rows keep their order and never overlap;
+    // the stack keeps one width.
+    const all = Object.values(moved)
+    for (let i = 0; i < all.length; i++)
+      for (let j = i + 1; j < all.length; j++) {
+        const a = all[i]
+        const b = all[j]
+        expect(
+          a.x < b.x + b.w &&
+            b.x < a.x + a.w &&
+            a.y < b.y + b.h &&
+            b.y < a.y + a.h
+        ).toBe(false)
+      }
+    expect(fit.rows.map((r) => r.id)).toEqual(rows.map((r) => r.id))
+    for (let i = 1; i < fit.rows.length; i++)
+      expect(fit.rows[i].y).toBeGreaterThanOrEqual(
+        fit.rows[i - 1].y + fit.rows[i - 1].h
+      )
+    expect(new Set(fit.rows.map((r) => r.w)).size).toBe(1)
+    // Fitted once, it fits.
+    expect(fitRows(fit.rows, moved).moves).toEqual({})
+  })
+
+  it("draws the fitted rows only for the rows they were fitted from", () => {
+    const regions = [row("a", 0, 160), row("b", 184, 200), side("s", 0, 384)]
+    const rows = bandRows(regions)
+    const fitted = {
+      from: rowsSig(rows),
+      rows: [
+        { id: "a", x: 0, y: 0, w: 1200, h: 300 },
+        { id: "b", x: 0, y: 324, w: 1200, h: 200 },
+      ],
+    }
+    const out = drawnRegions(regions, fitted)
+    expect(out.find((r) => r.id === "b")).toMatchObject({ y: 324, w: 1200 })
+    // The side band follows its rows, beside the wider stack.
+    expect(out.find((r) => r.id === "s")).toMatchObject({
+      x: 1216,
+      y: 0,
+      h: 524,
+    })
+    // Fitted from rows since moved: the saved ones are drawn.
+    expect(drawnRegions([row("a", 40), ...regions.slice(1)], fitted)).toEqual([
+      row("a", 40),
+      ...regions.slice(1),
+    ])
+  })
+})
+
+describe("row titles", () => {
+  const r = { x: 0, y: 0, w: 1000, h: 200 }
+
+  it("centres a title with nothing in its way", () => {
+    expect(titleSpot(r, 100)).toBe(500)
+    expect(titleSpot(r, 100, [[0, 300]])).toBe(500)
+  })
+
+  it("moves a title along its strip clear of what crosses there", () => {
+    // A cable at 520: the nearer side of it is the left.
+    expect(titleSpot(r, 100, [[516, 524]])).toBe(466)
+    // Cables either side of the middle: the nearest gap that fits.
+    expect(
+      titleSpot(r, 100, [
+        [400, 480],
+        [520, 700],
+      ])
+    ).toBe(350)
+    // Nowhere clear: the middle.
+    expect(titleSpot(r, 100, [[0, 1000]])).toBe(500)
+  })
+})
+
+describe("the row made for a card", () => {
+  it("finds the first row whose rule names its role or type", () => {
+    const regions = [
+      row("spine", 0, 160, { rule: { by: "role", ids: ["r1"] } }),
+      row("leaf", 184, 200, { rule: { by: "role", ids: ["r2", "r3"] } }),
+      row("hand", 400, 200),
+    ]
+    expect(ruleRow(regions)({ role: "r3" })).toEqual(
+      rowsAt(regions)({ x: 500, y: 300 })
+    )
+    expect(ruleRow(regions)({ role: "r9", type: "r1" })).toBeNull()
+  })
+
+  it("places a newcomer in its role's row, and a drop outside every row", () => {
+    const regions = [
+      row("spine", 0, 160, { rule: { by: "role", ids: ["r1"] } }),
+      row("leaf", 184, 200, { rule: { by: "role", ids: ["r2"] } }),
+    ]
+    const own = (id: string) =>
+      ruleRow(regions)({ role: id === "n" ? "r2" : null })
+    // Cabled to a spine: its neighbours say "under the spine", its role
+    // says the leaf row.
+    const out = placeNewcomers(
+      ["n"],
+      { n: [{ x: 500, y: 80 }] },
+      [at(500, 80)],
+      {
+        rowsAt: rowsAt(regions),
+        ruleRow: own,
+      }
+    )
+    const b = boxAround({ x: out.n[0], y: out.n[1] }, NEW_CARD)
+    expect(b.y).toBeGreaterThanOrEqual(184 + BAND.TITLE)
+    expect(b.y + b.h).toBeLessThanOrEqual(384)
+    // Dropped far below the bands: into its row, under the pointer.
+    const drop = dropPlacement(["n"], { x: 300, y: 2000 }, [], {
+      rowsAt: rowsAt(regions),
+      ruleRow: own,
+    })
+    expect(drop.n[0]).toBe(300)
+    expect(drop.n[1]).toBeGreaterThan(184)
+    expect(drop.n[1]).toBeLessThan(384)
+    // Dropped in another row: the row it was dropped in.
+    const into = dropPlacement(["n"], { x: 300, y: 90 }, [], {
+      rowsAt: rowsAt(regions),
+      ruleRow: own,
+    })
+    expect(into.n[1]).toBeLessThan(160)
+  })
+})
+
+describe("resizing a row round its cards", () => {
+  it("never shrinks a row past the cards in it", () => {
+    const regions = [row("a", 0, 300), row("b", 324, 200)]
+    const boxes = { "dev:1": at(300, 200, 120, 60) }
+    const { regions: out, moves } = resizeRow(regions, boxes, "a", {
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 80,
+    })
+    const a = out.find((r) => r.id === "a")!
+    expect(a.h).toBe(230 + BAND.PAD_BOTTOM)
+    expect(a.w).toBe(360 + BAND.PAD_X)
+    // The card is still in it, and the row below moved up with its cards.
+    expect(membersOf(out, boxes).get("a")).toEqual(["dev:1"])
+    expect(out.find((r) => r.id === "b")!.y).toBe(324 - (300 - a.h))
+    expect(moves).toEqual({})
   })
 })

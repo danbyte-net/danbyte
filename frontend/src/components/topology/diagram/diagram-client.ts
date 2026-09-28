@@ -30,6 +30,8 @@ export interface OffThreadRelink {
   edges: Edge[]
   cards: Map<string, DiagramCardData["diagram"]>
   junctions: Map<string, Pt>
+  /** What each band row's title strip holds now. */
+  titles?: Map<string, [number, number][]>
   ms: number
 }
 
@@ -196,6 +198,7 @@ export class DiagramWorker {
       edges: reply.edges,
       cards: new Map(reply.cards),
       junctions: new Map(reply.junctions),
+      ...(reply.titles ? { titles: new Map(reply.titles) } : {}),
       ms: reply.ms,
     }
   }
@@ -212,13 +215,15 @@ export class DiagramWorker {
   }
 }
 
-/** A relinked model as the page keeps it: the cards that changed put in. */
+/** A relinked model as the page keeps it: the cards that changed put in,
+ * and what the band titles' strips now hold. */
 export function relinkedModel(
   model: DiagramModel,
-  cards: ReadonlyMap<string, DiagramCardData["diagram"]>
+  cards: ReadonlyMap<string, DiagramCardData["diagram"]>,
+  titles?: Map<string, [number, number][]>
 ): DiagramModel {
-  if (!cards.size) return model
+  if (!cards.size && !titles) return model
   const shown = new Map(model.shown)
   for (const [id, card] of cards) shown.set(id, card)
-  return { ...model, shown }
+  return { ...model, shown, ...(titles ? { titles } : {}) }
 }

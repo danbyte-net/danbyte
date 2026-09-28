@@ -38,7 +38,7 @@ import type {
 import type { LegendItem } from "../legend"
 import { leadStart, linkEnds } from "./anchors"
 import type { AnchorLink, Nub } from "./anchors"
-import { paintOrder } from "./bands"
+import { BAND, chipWidth, paintOrder, titleSpot } from "./bands"
 import { distinctCables, relinkDiagram } from "./build-diagram"
 import type { DiagramModel, PhotoModel } from "./build-diagram"
 import { cardContent } from "./card-fields"
@@ -445,24 +445,46 @@ export function routeLink(
 }
 
 /** Zones and bands as document bands, back to front: side bands, then
- * rows, then zones, as the canvas stacks them. */
+ * rows, then zones, as the canvas stacks them. A row's title goes where
+ * the canvas puts it (`titleSpot`): clear of the spans `titles` holds for
+ * its strip. */
 export function regionBands(
   regions: readonly Region[],
-  area?: Rect | null
+  area?: Rect | null,
+  titles?: ReadonlyMap<string, readonly (readonly [number, number])[]>,
+  measure: Measure = measureText
 ): DiagramBand[] {
   return paintOrder(regions)
     .filter((z) => !area || overlaps(area, z))
-    .map((z) => ({
-      id: `zone:${z.id}`,
-      kind: z.kind === "band" ? (z.orient === "v" ? "column" : "row") : "zone",
-      orient: z.kind === "band" && z.orient === "v" ? "v" : "h",
-      label: z.label,
-      x: z.x,
-      y: z.y,
-      w: z.w,
-      h: z.h,
-      fill: hex6(z.color),
-    }))
+    .map((z) => {
+      const kind =
+        z.kind === "band" ? (z.orient === "v" ? "column" : "row") : "zone"
+      const busy = kind === "row" ? titles?.get(z.id) : undefined
+      const text = busy
+        ? measure(
+            fit(z.label, Math.max(0, z.w - 32), BAND.CHIP_SIZE, 600, measure),
+            BAND.CHIP_SIZE,
+            600
+          )
+        : 0
+      const titleX = busy
+        ? Math.round(titleSpot(z, chipWidth(text, z.w), busy))
+        : undefined
+      return {
+        id: `zone:${z.id}`,
+        kind,
+        orient: z.kind === "band" && z.orient === "v" ? "v" : "h",
+        label: z.label,
+        x: z.x,
+        y: z.y,
+        w: z.w,
+        h: z.h,
+        fill: hex6(z.color),
+        ...(titleX !== undefined && titleX !== Math.round(z.x + z.w / 2)
+          ? { titleX }
+          : {}),
+      }
+    })
 }
 
 /** Saved-view notes as document notes. A note is in an area when its
@@ -707,6 +729,7 @@ export function toDocument(
 
   // Boxes, nubs, junctions and anchored edges for the document's mode.
   let shown = model.shown
+  let titles = model.titles
   let edges: LiveEdge[]
   const junctionAt = new Map<string, Pt>()
   if (mode === model.mode && live.edges) {
@@ -724,6 +747,7 @@ export function toDocument(
       shownNodes.map((n) => ({ id: n.id, position: n.position, data: {} }))
     )
     shown = re.model.shown
+    titles = re.model.titles
     edges = re.edges.filter((e) => !e.hidden)
     for (const [id, c] of re.junctions) junctionAt.set(id, c)
   }
@@ -1003,7 +1027,7 @@ export function toDocument(
     })
   }
 
-  const bands = regionBands(regions, area)
+  const bands = regionBands(regions, area, titles, measure)
   const notes = viewNotes(opts.notes, area)
   const body = {
     bands,

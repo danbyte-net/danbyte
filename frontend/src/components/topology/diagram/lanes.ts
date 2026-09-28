@@ -57,13 +57,24 @@ export interface ElbowRoute {
   pinB?: number
 }
 
-/** The cards routes keep clear of. */
-export type Obstacles = Grid<{ id: string; r: Rect }>
+/** The cards routes keep clear of - and, `flat`, the strips across the
+ * top of the layer bands their titles sit in, which a cable may cross but
+ * never run along. */
+export type Obstacles = Grid<{ id: string; r: Rect; flat?: true }>
 
-export function obstacles(rects: Iterable<[string, Rect]>): Obstacles {
+/** How far a run along keeps from a title strip. */
+const STRIP_CLEAR = 2
+
+export function obstacles(
+  rects: Iterable<[string, Rect]>,
+  strips: Iterable<[string, Rect]> = []
+): Obstacles {
   const g: Obstacles = new Grid(128)
   for (const [id, r] of rects)
     if (r.w > 0 && r.h > 0) g.add(inflate(r, CLEAR), { id, r })
+  for (const [id, r] of strips)
+    if (r.w > 0 && r.h > 0)
+      g.add(inflate(r, STRIP_CLEAR), { id, r, flat: true })
   return g
 }
 
@@ -135,7 +146,12 @@ function segClear(
     Math.abs(p.x - q.x) + 2,
     Math.abs(p.y - q.y) + 2
   )
-  for (const { id, r } of near) {
+  const along = Math.abs(p.y - q.y) < 1e-6 && Math.abs(p.x - q.x) > 1e-6
+  for (const { id, r, flat } of near) {
+    if (flat) {
+      if (along && segHitsGrown(p, q, r, STRIP_CLEAR)) return false
+      continue
+    }
     const grow = touch.includes(id) ? -0.5 : own.includes(id) ? 1 : CLEAR
     if (segHitsGrown(p, q, r, grow)) return false
   }
@@ -273,7 +289,8 @@ function routeWith(
       w: band.w + 2 * Math.abs(across.x),
       h: band.h + 2 * Math.abs(across.y),
     }
-    for (const { r } of o.near(wide)) {
+    for (const { r, flat } of o.near(wide)) {
+      if (flat) continue
       const p = F.f({ x: r.x, y: r.y })
       const q = F.f({ x: r.x + r.w, y: r.y + r.h })
       cand.add(Math.min(p.x, q.x) - CLEAR - LANE / 2)

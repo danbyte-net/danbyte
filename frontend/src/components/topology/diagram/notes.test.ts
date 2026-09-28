@@ -80,6 +80,28 @@ describe("newNote", () => {
     // Far enough away, it lands where asked.
     expect(newNote(have, "z", { kind: "text" }, { x: 400, y: 100 }).y).toBe(100)
   })
+
+  it("lands clear of the cards and bands there, nearest where it was asked", () => {
+    // A card under the middle of the screen, a side band's strip beside.
+    const card = { x: 0, y: 0, w: 240, h: 72 }
+    const band = { x: 260, y: -400, w: 72, h: 800 }
+    const n = newNote(
+      [],
+      "c",
+      { kind: "icon", icon: "cloud" },
+      { x: 120, y: 36 },
+      [card, band]
+    )
+    const box = { x: n.x - 56, y: n.y - 44, w: 112, h: 88 }
+    for (const r of [card, band])
+      expect(
+        box.x < r.x + r.w &&
+          r.x < box.x + box.w &&
+          box.y < r.y + r.h &&
+          r.y < box.y + box.h
+      ).toBe(false)
+    expect(Math.hypot(n.x - 120, n.y - 36)).toBeLessThan(200)
+  })
 })
 
 describe("patchNote, removeNotes, moveNotes", () => {

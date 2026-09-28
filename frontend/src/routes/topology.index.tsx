@@ -142,6 +142,7 @@ import {
   placeNewcomers,
 } from "@/components/topology/diagram/placement"
 import { useBands } from "@/components/topology/diagram/use-bands"
+import { isRow, isSide, titleStrip } from "@/components/topology/diagram/bands"
 import type { BandBy } from "@/components/topology/diagram/bands"
 import { NOTES_MAX, newNote } from "@/components/topology/diagram/notes"
 import type { NoteIconName } from "@/components/topology/diagram/notes"
@@ -1000,11 +1001,21 @@ function TopologyPage() {
     at?: { x: number; y: number }
   ) => {
     if (notesFull) return
+    // In the middle of the screen: clear of the cards, the rows' titles and
+    // the side bands there. Where the menu was opened: there.
+    const drawn = at ? [] : (canvas.current?.regions() ?? [])
     const n = newNote(
       doc.doc.notes,
       `n${Date.now().toString(36)}`,
       icon ? { kind: "icon", icon } : { kind: "text" },
-      at ?? canvas.current?.center() ?? { x: 0, y: 0 }
+      at ?? canvas.current?.center() ?? { x: 0, y: 0 },
+      at
+        ? []
+        : [
+            ...Object.values(canvas.current?.boxes() ?? {}),
+            ...drawn.filter(isRow).map(titleStrip),
+            ...drawn.filter(isSide),
+          ]
     )
     setNotes([...doc.doc.notes, n])
     setFreshNote(n.id)
@@ -1871,7 +1882,16 @@ function TopologyPage() {
     if (!fresh.length) return
     const place = dropPlacement(fresh.map(devNode), at, occupied(), {
       rowsAt: bands.rowsAt,
+      ruleRow: (nid) => {
+        const row = paletteRow(nid.slice(4))
+        return bands.ruleRow({
+          role: row?.role?.id,
+          type: row?.device_type?.id,
+        })
+      },
     })
+    // Placed among the bands as drawn: those are what gets saved.
+    if (isDiagram) bands.keepDrawn()
     if (!addToSet(fresh, { ...freezeLayout(), ...place })) return
     markPending(fresh, (id) => {
       const row = paletteRow(id)
@@ -1934,7 +1954,12 @@ function TopologyPage() {
           }
       const place = placeNewcomers(ids.map(devNode), near, occupied(), {
         rowsAt: bands.rowsAt,
+        ruleRow: (nid) => {
+          const d = fresh.get(nid.slice(4))?.data
+          return bands.ruleRow({ role: d?.role?.id, type: d?.device_type_id })
+        },
       })
+      if (isDiagram) bands.keepDrawn()
       if (!addToSet(ids, { ...freezeLayout(), ...place })) return
       markPending(ids, (id) => ({
         name: fresh.get(id)?.data.name ?? "…",
@@ -2410,18 +2435,18 @@ function TopologyPage() {
                   />
                 </PopoverField>
               )}
-                  {isDiagram && !grouped && photos && (
-                    <PopoverField label="Cables to">
-                      <SegmentedTabs<AnchorParam>
-                        value={diagramAnchor}
-                        onValueChange={setDiagramAnchor}
-                        items={[
-                          { value: "ports", label: "Ports" },
-                          { value: "edge", label: "Edge" },
-                        ]}
-                      />
-                    </PopoverField>
-                  )}
+              {isDiagram && !grouped && photos && (
+                <PopoverField label="Cables to">
+                  <SegmentedTabs<AnchorParam>
+                    value={diagramAnchor}
+                    onValueChange={setDiagramAnchor}
+                    items={[
+                      { value: "ports", label: "Ports" },
+                      { value: "edge", label: "Edge" },
+                    ]}
+                  />
+                </PopoverField>
+              )}
               {isDiagram && (
                 <PopoverField label="Lines">
                   <LineTabs<LineParam>
@@ -2714,7 +2739,15 @@ function TopologyPage() {
                   className="w-auto min-w-48 whitespace-nowrap"
                 >
                   <DropdownMenuItem
+                    // Rows hold their cards: with rows Arrange made, a new
+                    // layout arranges them again by what they were made
+                    // from; rows drawn by hand are cleared first.
+                    disabled={bands.hasRows && !bands.ruleBy}
                     onSelect={() => {
+                      if (bands.ruleBy) {
+                        arrangeBands(bands.ruleBy)
+                        return
+                      }
                       setPositions(undefined)
                       setLayoutTick((t) => t + 1)
                     }}
@@ -2962,6 +2995,8 @@ function TopologyPage() {
                   // Keep the arrangement in-session (so an incidental rebuild -
                   // colour/search - doesn't snap cards back) and, on the default
                   // view, persist it across reloads. Saved views persist via Save.
+                  // The bands too, when the build re-fitted them round the cards.
+                  if (isDiagram) bands.keepDrawn()
                   setPositions(p)
                 }}
               />

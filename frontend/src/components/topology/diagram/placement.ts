@@ -42,6 +42,11 @@ export interface PlaceOptions {
    * with the cards already there, inside the row - rather than to the
    * nearest free spot anywhere. */
   rowsAt?: RowsAt
+  /** Layer bands made by Arrange: the row a card's role or device type
+   * belongs in (`bands.ts` `ruleRow`), by id. A card added next to its
+   * neighbours goes there first, and so does one dropped outside every
+   * row. */
+  ruleRow?: (id: string) => RowSlot | null
 }
 
 /** The device ids in a drag payload; nothing for anything else. */
@@ -161,6 +166,9 @@ function nearestFree(
 
 const centre = (p: Pt): Centre => [Math.round(p.x), Math.round(p.y)]
 
+/** The point in a row's slot level with its middle, at `x`. */
+const slotIn = (row: RowSlot, x: number): Pt => ({ x, y: row.y + row.h / 2 })
+
 /** How far along a row the search for a free spot looks, in half cards. */
 const ROW_REACH = 400
 
@@ -232,8 +240,11 @@ export function dropPlacement(
       x: at.x + (k % cols) * (size.w + gap),
       y: at.y + Math.floor(k / cols) * (size.h + gap),
     }
+    // Outside every row: into the row made for its role, under the drop.
+    const own = row ? null : (opts.ruleRow?.(id) ?? null)
     const c =
       (row && freeInRow(slot, row, size, gap, taken)) ??
+      (own && freeInRow(slotIn(own, slot.x), own, size, gap, taken)) ??
       nearestFree(slot, size, gap, taken)
     out[id] = centre(c)
     taken.add(boxAround({ x: out[id][0], y: out[id][1] }, size))
@@ -270,6 +281,14 @@ export function placeNewcomers(
       x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
       y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
     }
+    // The row made for its role first, under its neighbours.
+    const own = opts.ruleRow?.(id) ?? null
+    const inOwn = own && freeInRow(slotIn(own, mid.x), own, size, gap, taken)
+    if (inOwn) {
+      out[id] = centre(inOwn)
+      taken.add(boxAround(inOwn, size))
+      continue
+    }
     const near = nearestFree(mid, size, gap, taken)
     // Landing in a band row - or across its edge - onto the row's line,
     // the lower row first (the spot was chosen below its neighbours).
@@ -282,12 +301,24 @@ export function placeNewcomers(
     out[id] = centre(c)
     taken.add(boxAround({ x: out[id][0], y: out[id][1] }, size))
   }
-  if (loose.length) {
-    // An "inbox" row under the map, left-aligned with it.
+  // Cabled to nothing on the map: the row made for its role, else an
+  // "inbox" row under the map, left-aligned with it.
+  const inbox: string[] = []
+  for (const id of loose) {
+    const own = opts.ruleRow?.(id) ?? null
+    const c = own && freeInRow(slotIn(own, own.x), own, size, gap, taken)
+    if (!c) {
+      inbox.push(id)
+      continue
+    }
+    out[id] = centre(c)
+    taken.add(boxAround(c, size))
+  }
+  if (inbox.length) {
     const y = (taken.lowest ?? 0) + gap + size.h / 2
     const x0 = (taken.leftmost ?? 0) + size.w / 2
     const perRow = 8
-    loose.forEach((id, k) => {
+    inbox.forEach((id, k) => {
       const slot = {
         x: x0 + (k % perRow) * (size.w + gap),
         y: y + Math.floor(k / perRow) * (size.h + gap),

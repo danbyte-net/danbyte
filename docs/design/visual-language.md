@@ -63,10 +63,10 @@ a lot of data fast - typography and spacing serve that, not decoration.
   text, semantic colour - uses `variant="panel"` instead, because those
   colours are chosen against the page background. Use the shared `Tooltip`
   or `InfoTip`, never a `title=` attribute.
-- **Canvas bands** (topology layers) are neutral by default - `--muted`
-  toward `--border`, title centred on top - with an optional zone swatch as a
-  pastel tint; never a free colour picker, never the role colour the cards
-  already carry.
+- **Canvas bands** (topology layers): rows neutral by default - `--muted`
+  toward `--border`, title centred on top unless a cable crosses there -
+  side bands on a pastel zone swatch; never a free colour picker, never the
+  role colour the cards already carry.
 - **Canvas notes** are text in `text-foreground/75` and Lucide icons in
   `--muted-foreground`, no box unless outlined (`border-border` on
   `bg-card`); never coloured.

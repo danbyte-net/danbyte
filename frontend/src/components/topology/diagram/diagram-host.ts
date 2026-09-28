@@ -59,6 +59,8 @@ export type HostReply =
       edges: Edge[]
       cards: [string, DiagramCardData["diagram"]][]
       junctions: [string, Pt][]
+      /** What each band row's title strip holds now. */
+      titles?: [string, [number, number][]][]
       ms: number
     }
   | { kind: "error"; id: number; message: string }
@@ -117,6 +119,7 @@ export function diagramHost(
         edges: re.edges,
         cards: [...re.cards],
         junctions: [...re.junctions],
+        ...(re.titles ? { titles: [...re.titles] } : {}),
         ms: performance.now() - t0,
       }
     } catch (e) {

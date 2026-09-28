@@ -142,6 +142,50 @@ export class LabelScene {
   drop(it: Taken): void {
     it.dead = true
   }
+
+  /**
+   * What crosses `r` from side to side, as x spans (sorted, merged, `pad`
+   * wider each side): the cables through it, and the cards and labels in
+   * it. Where a band's title chip may not go.
+   */
+  occupied(r: Rect, pad = 4): [number, number][] {
+    const spans: [number, number][] = []
+    const y0 = r.y
+    const y1 = r.y + r.h
+    for (const it of this.grid.near(r)) {
+      if (it.k === "seg") {
+        const { p, q } = it
+        if (Math.max(p.y, q.y) < y0 || Math.min(p.y, q.y) > y1) continue
+        let a = p.x
+        let b = q.x
+        if (Math.abs(q.y - p.y) > 1e-6) {
+          // The part of the run within the strip's height.
+          const at = (y: number) =>
+            p.x + ((q.x - p.x) * (y - p.y)) / (q.y - p.y)
+          const lo = Math.max(y0, Math.min(p.y, q.y))
+          const hi = Math.min(y1, Math.max(p.y, q.y))
+          a = at(lo)
+          b = at(hi)
+        }
+        spans.push([Math.min(a, b), Math.max(a, b)])
+        continue
+      }
+      if (it.k === "label" && it.dead) continue
+      const b = turnedBounds(it.box)
+      if (b.y > y1 || b.y + b.h < y0) continue
+      spans.push([b.x, b.x + b.w])
+    }
+    const out: [number, number][] = []
+    for (const [a, b] of spans
+      .map(([a, b]): [number, number] => [a - pad, b + pad])
+      .filter(([a, b]) => b > r.x && a < r.x + r.w)
+      .sort((x, y) => x[0] - y[0] || x[1] - y[1])) {
+      const last = out.at(-1)
+      if (last && a <= last[1]) last[1] = Math.max(last[1], b)
+      else out.push([a, b])
+    }
+    return out.map(([a, b]) => [Math.floor(a), Math.ceil(b)])
+  }
 }
 
 /** How sure a skip is: what it leaves out is blocked by at least this

@@ -166,8 +166,12 @@ describe("BandNode", () => {
     expect(data.onMove).toHaveBeenNthCalledWith(2, 1)
     fireEvent.click(screen.getByRole("button", { name: "Neutral" }))
     expect(data.onRecolor).toHaveBeenCalledWith(null)
-    fireEvent.click(screen.getAllByRole("button", { name: "Tint" })[3])
+    // Each swatch is named, and none reads as the neutral grey.
+    fireEvent.click(screen.getByRole("button", { name: "Amber" }))
     expect(data.onRecolor).toHaveBeenCalledWith(ZONE_COLORS[3])
+    const slate = screen.getByRole("button", { name: "Slate" })
+    expect(slate.getAttribute("data-tip")).toBe("Slate")
+    expect(slate.style.background).toContain("40%")
     fireEvent.click(screen.getByRole("button", { name: "Delete" }))
     expect(data.onDelete).toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy()

@@ -185,9 +185,9 @@ function bandSvg(b: DiagramBand, measure: Measure): string {
   return `<g>${out.join("")}</g>`
 }
 
-/** A row's title, centred in the strip across its top: a chip of the
- * row's own fill over the lines (they break for it) and under the cards,
- * the layers of a hand-drawn network diagram. */
+/** A row's title in the strip across its top - centred, or where the plan
+ * found it clear of the lines (`titleX`): a chip of the row's own fill
+ * under the cards, the layers of a hand-drawn network diagram. */
 function bandTitleSvg(b: DiagramBand, measure: Measure): string {
   const p = bandPaint(b)
   const size = BAND.TITLE_SIZE
@@ -197,7 +197,7 @@ function bandTitleSvg(b: DiagramBand, measure: Measure): string {
   const strip = Math.min(b.h, BAND.ROW_TITLE)
   const w = measure(label, size, weight) + 16
   const h = Math.min(strip, 24)
-  const cx = b.x + b.w / 2
+  const cx = b.titleX ?? b.x + b.w / 2
   return (
     `<g>` +
     el("rect", {
