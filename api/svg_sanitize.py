@@ -21,8 +21,12 @@ attributes, each value checked against a pattern. Everything else goes:
   ``@font-face`` only when the caller allows fonts (the PDF brings its own).
 
 Caps bound the work: the SVG's size in bytes, its element count and the
-characters of text in it. Reused
-by any feature that needs to render a client-drawn SVG on the server.
+characters of text in it - every character inside a ``<text>``, whatever
+element it follows - and they are charged again as rendered: WeasyPrint
+draws a ``<symbol>`` once for each ``<use>`` of it and a ``<clipPath>``
+once for each element it clips, so what one holds counts as many times as
+it is referenced (path data too, against the byte cap). Reused by any
+feature that needs to render a client-drawn SVG on the server.
 """
 
 from __future__ import annotations
@@ -440,6 +444,96 @@ class _Builder:
                 del el.attrib["clip-path"]
 
 
+_TEXT_TAG = f"{{{SVG_NS}}}text"
+_USE_TAG = f"{{{SVG_NS}}}use"
+_SYMBOL_TAG = f"{{{SVG_NS}}}symbol"
+_CLIP_TAG = f"{{{SVG_NS}}}clipPath"
+
+
+def _text_chars(root: etree._Element) -> int:
+    """The characters WeasyPrint lays out: all the text inside each
+    ``<text>`` - every element's own and the tail after it, whatever the
+    element is."""
+    total = 0
+    stack = [(root, False)]
+    while stack:
+        el, inside = stack.pop()
+        inside = inside or el.tag == _TEXT_TAG
+        if inside:
+            total += len(el.text or "")
+        for child in el:
+            if inside:
+                total += len(child.tail or "")
+            stack.append((child, inside))
+    return total
+
+
+class _Cost:
+    """What rendering the rebuilt drawing takes, references followed:
+    elements, characters of text and bytes of path data. Over a cap
+    raises as soon as it is."""
+
+    def __init__(self, max_elements: int, max_text: int, max_path: int):
+        self.caps = (max_elements, max_text, max_path)
+        self.clips: dict[str, tuple[int, int, int]] = {}
+        self.symbols: dict[str, tuple[int, int, int]] = {}
+
+    def check(self, n: list[int]) -> None:
+        max_elements, max_text, max_path = self.caps
+        if n[0] > max_elements:
+            raise SvgTooLarge(
+                f"The drawing has over {max_elements:,} elements as rendered "
+                "(each reused part counts every time it is drawn)."
+            )
+        if n[1] > max_text:
+            raise SvgTooLarge(f"The drawing has over {max_text:,} characters of text.")
+        if n[2] > max_path:
+            raise SvgTooLarge("The drawing has too much path data.")
+
+    def of(self, el: etree._Element, inside: bool = False) -> list[int]:
+        inside = inside or el.tag == _TEXT_TAG
+        n = [
+            1,
+            len(el.text or "") if inside else 0,
+            len(el.get("d") or "") + len(el.get("points") or ""),
+        ]
+        refs = []
+        m = _LOCAL_URL.match(el.get("clip-path") or "")
+        if m and m.group(1) in self.clips:
+            refs.append(self.clips[m.group(1)])
+        if el.tag == _USE_TAG:
+            refs.append(self.symbols.get((el.get("href") or "")[1:], (0, 0, 0)))
+        for ref in refs:
+            n = [a + b for a, b in zip(n, ref, strict=True)]
+        for child in el:
+            c = self.of(child, inside)
+            n = [a + b for a, b in zip(n, c, strict=True)]
+            if inside:
+                n[1] += len(child.tail or "")
+            self.check(n)
+        self.check(n)
+        return n
+
+    def drawing(self, root: etree._Element) -> None:
+        """Charge the drawing: its clip paths first (they hold shapes and
+        text, never a reference), then its symbols (whose parts may be
+        clipped), then everything, each reference costing what it points
+        at. The same id twice costs its dearest."""
+
+        def dearest(into: dict, el: etree._Element) -> None:
+            key = el.get("id")
+            if key:
+                cost = self.of(el)
+                had = into.get(key, (0, 0, 0))
+                into[key] = tuple(max(a, b) for a, b in zip(had, cost, strict=True))
+
+        for el in root.iter(_CLIP_TAG):
+            dearest(self.clips, el)
+        for el in root.iter(_SYMBOL_TAG):
+            dearest(self.symbols, el)
+        self.of(root)
+
+
 def sanitize_svg(
     svg: str | bytes,
     *,
@@ -477,20 +571,19 @@ def sanitize_svg(
         raise SvgRejected("DOCTYPE and entity declarations are not allowed.")
     if _local(root.tag) != "svg":
         raise SvgRejected("The drawing is not an SVG document.")
-    count = chars = 0
-    text_tags = (f"{{{SVG_NS}}}text", f"{{{SVG_NS}}}tspan")
-    for el in root.iter():
+    count = 0
+    for _el in root.iter():
         count += 1
         if count > max_elements:
             raise SvgTooLarge(f"The drawing has over {max_elements:,} elements.")
-        if el.tag in text_tags:
-            chars += len(el.text or "") + (len(el.tail or "") if el.tag == text_tags[1] else 0)
-            if chars > max_text:
-                raise SvgTooLarge(f"The drawing has over {max_text:,} characters of text.")
+    if _text_chars(root) > max_text:
+        raise SvgTooLarge(f"The drawing has over {max_text:,} characters of text.")
 
     b = _Builder(allow_fonts)
     out = etree.Element(f"{{{SVG_NS}}}svg", nsmap={None: SVG_NS})
     b.attrs("svg", root, out)
     b.copy(root, out)
     b.resolve(out)
+    # As WeasyPrint will draw it: every reference followed.
+    _Cost(max_elements, max_text, max_bytes).drawing(out)
     return etree.tostring(out, encoding="utf-8")

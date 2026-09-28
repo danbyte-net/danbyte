@@ -248,6 +248,56 @@ class SanitizerTests(SimpleTestCase):
         self.assertEqual(SvgTooLarge("x").status, 413)
         self.assertEqual(SvgRejected("x").status, 400)
 
+    def test_text_after_any_element_in_a_text_counts(self):
+        # A <desc> (or anything else) inside a <text> hides nothing.
+        for inner in ("<desc/>", "<title/>", "<foo/>", '<tspan x="1">a</tspan>'):
+            with self.subTest(inner=inner), self.assertRaises(SvgTooLarge):
+                sanitize_svg(_svg(f"<text>a{inner}{'x' * 50}</text>"), max_text=40)
+        with self.assertRaises(SvgTooLarge):
+            sanitize_svg(_svg(f"<text>a<desc/>{'x' * 90_000}</text>"))
+
+    def test_a_symbol_costs_what_it_holds_each_time_it_is_used(self):
+        symbol = f'<defs><symbol id="s"><text>{"x" * 1000}</text></symbol></defs>'
+        with self.assertRaises(SvgTooLarge) as cm:
+            sanitize_svg(_svg(symbol + '<use href="#s"/>' * 200))
+        self.assertIn("characters of text", str(cm.exception))
+        # Elements too, and path data against the byte cap.
+        rects = '<defs><symbol id="r">' + '<rect width="1" height="1"/>' * 30 + "</symbol></defs>"
+        with self.assertRaises(SvgTooLarge):
+            sanitize_svg(_svg(rects + '<use href="#r"/>' * 30), max_elements=500)
+        path = f'<defs><symbol id="p"><path d="M0 0{" L1 1" * 2000}"/></symbol></defs>'
+        with self.assertRaises(SvgTooLarge):
+            sanitize_svg(_svg(path + '<use href="#p"/>' * 20), max_bytes=100_000)
+        # Used a few times, it fits.
+        sanitize_svg(_svg(symbol + '<use href="#s"/>' * 50))
+
+    def test_a_clip_path_costs_what_it_holds_for_each_element_it_clips(self):
+        clip = f'<clipPath id="c"><text>{"x" * 1000}</text></clipPath>'
+        with self.assertRaises(SvgTooLarge):
+            sanitize_svg(_svg(clip + '<rect width="1" height="1" clip-path="url(#c)"/>' * 100))
+        # Inside a symbol, the two multiply.
+        small = f'<clipPath id="c"><text>{"x" * 100}</text></clipPath>'
+        parts = '<rect width="1" height="1" clip-path="url(#c)"/>' * 30
+        with self.assertRaises(SvgTooLarge):
+            sanitize_svg(
+                _svg(
+                    f'{small}<defs><symbol id="s">{parts}</symbol></defs>' + '<use href="#s"/>' * 30
+                )
+            )
+
+    def test_the_writers_photo_symbols_fit(self):
+        # One symbol per photo, used by every device of its type.
+        photo = (
+            '<defs><symbol id="ph0" viewBox="0 0 100 100" preserveAspectRatio="none">'
+            f'<image width="100" height="100" preserveAspectRatio="none" href="{_data_png()}"/>'
+            "</symbol></defs>"
+        )
+        uses = "".join(
+            f'<use href="#ph0" x="{i * 10}" y="0" width="480" height="44"/>' for i in range(400)
+        )
+        out = sanitize_svg(_svg(photo + uses))
+        self.assertEqual(len(_tree(out).findall(f"{{{SVG_NS}}}use")), 400)
+
 
 class FetcherTests(SimpleTestCase):
     def setUp(self):
@@ -397,7 +447,7 @@ class EndpointTests(APITestCase):
         payload = {"svg": DRAWING, "title": "DC1 fabric", **(body or {})}
         return self.client.post(URL + query, payload, format="json")
 
-    fake = mock.patch.object(tx, "render_topology_pdf", return_value=b"%PDF-1.7 fake")
+    fake = mock.patch.object(tx, "render_with_deadline", return_value=b"%PDF-1.7 fake")
 
     def test_anonymous_refused(self):
         self.client.logout()
@@ -453,6 +503,40 @@ class EndpointTests(APITestCase):
             self.assertEqual(self._post().status_code, 200)
         # The lock is released after a render.
         self.assertIsNone(cache.get(f"topology-pdf-busy:{self.admin.pk}"))
+
+    def test_so_many_renders_at_once_across_the_deployment(self):
+        for i in range(tx.RENDER_SLOTS):
+            cache.add(f"topology-pdf-slot:{i}", "someone", 60)
+        with self.fake as render:
+            r = self._post()
+        self.assertEqual(r.status_code, 429)
+        self.assertIn("Other PDFs", r.json()["detail"])
+        render.assert_not_called()
+        # The user's own lock went with the refusal.
+        self.assertIsNone(cache.get(f"topology-pdf-busy:{self.admin.pk}"))
+        cache.delete("topology-pdf-slot:1")
+        with self.fake:
+            self.assertEqual(self._post().status_code, 200)
+        # A slot taken is given back; one held by another render is not.
+        self.assertIsNone(cache.get("topology-pdf-slot:1"))
+        self.assertEqual(cache.get("topology-pdf-slot:0"), "someone")
+
+    def test_a_render_past_its_deadline_is_refused(self):
+        with mock.patch.object(tx, "render_with_deadline", side_effect=tx.RenderTimeout):
+            r = self._post()
+        self.assertEqual(r.status_code, 413)
+        self.assertIn("too long", r.json()["detail"])
+        self.assertIsNone(cache.get(f"topology-pdf-busy:{self.admin.pk}"))
+
+    def test_the_date_is_the_servers(self):
+        from django.utils import timezone
+
+        with self.fake as render:
+            r = self._post({"meta": {"generated_at": "1999-12-31T23:59:00Z"}})
+        when = render.call_args.kwargs["generated"]
+        self.assertLess(abs((timezone.now() - when).total_seconds()), 60)
+        self.assertIn(f"-{when:%Y-%m-%d}.pdf", r["Content-Disposition"])
+        self.assertNotIn("1999", r["Content-Disposition"])
 
     def test_title_block_names_the_session_tenant(self):
         with self.fake as render:
@@ -516,6 +600,23 @@ class EndpointTests(APITestCase):
         self.client.logout()
         self.assertIn(self.client.get(link).status_code, (401, 403))
 
+    def test_a_new_print_link_replaces_the_last(self):
+        with self.fake:
+            first = self._post(query="?print=1").json()["url"]
+            second = self._post(query="?print=1").json()["url"]
+        self.assertNotEqual(first, second)
+        self.assertEqual(self.client.get(first).status_code, 404)
+        self.assertEqual(self.client.get(second).status_code, 200)
+
+    def test_print_links_without_a_cache(self):
+        with self.fake, mock.patch.object(tx.cache, "set", side_effect=ConnectionError):
+            r = self._post(query="?print=1")
+        self.assertEqual(r.status_code, 503)
+        with self.fake:
+            link = self._post(query="?print=1").json()["url"]
+        with mock.patch.object(tx.cache, "get", side_effect=ConnectionError):
+            self.assertEqual(self.client.get(link).status_code, 503)
+
     def test_print_link_expires(self):
         with self.fake:
             link = self._post(query="?print=1").json()["url"]
@@ -532,3 +633,30 @@ class EndpointTests(APITestCase):
             with self.subTest(token=token):
                 r = self.client.get(f"{URL}{token}/")
                 self.assertEqual(r.status_code, 404)
+
+
+class DeadlineTests(SimpleTestCase):
+    """The render runs in a forked child the parent stops at its deadline."""
+
+    def test_a_slow_render_is_stopped(self):
+        import time
+
+        def slow(*args, **kwargs):
+            time.sleep(30)
+
+        start = time.monotonic()
+        with (
+            mock.patch.object(tx, "render_topology_pdf", side_effect=slow),
+            self.assertRaises(tx.RenderTimeout),
+        ):
+            tx.render_with_deadline(b"<svg/>", timeout=0.5, title="x")
+        self.assertLess(time.monotonic() - start, 10)
+
+    def test_the_childs_answer_and_its_failure(self):
+        with mock.patch.object(tx, "render_topology_pdf", return_value=b"%PDF-child"):
+            self.assertEqual(tx.render_with_deadline(b"<svg/>", title="x"), b"%PDF-child")
+        with (
+            mock.patch.object(tx, "render_topology_pdf", side_effect=ValueError("boom")),
+            self.assertRaisesRegex(RuntimeError, "ValueError: boom"),
+        ):
+            tx.render_with_deadline(b"<svg/>", title="x")

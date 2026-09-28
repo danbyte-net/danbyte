@@ -16,16 +16,25 @@ behalf: its URL fetcher serves the posted drawing from memory, decodes
 instances of the app's variable Inter so every weight embeds), and refuses
 everything else.
 
+Rendering is bounded three ways: the sanitizer's caps (what a drawing may
+cost as rendered), one render per user and ``RENDER_SLOTS`` across the
+deployment at a time (the cache counts them), and a hard deadline - the
+render runs in a forked child that is killed after ``RENDER_TIMEOUT``
+seconds, well inside gunicorn's worker timeout.
+
 ``?print=1`` keeps the PDF in the cache for five minutes and answers with a
 link, ``GET /api/topology/export/pdf/<token>/``, that only the same user in
 the same tenant can open - inline, so the browser's viewer prints it; add
-``?download=1`` to save it instead.
+``?download=1`` to save it instead. A user keeps one such PDF per tenant: a
+new one replaces the last, and its link stops working.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import mimetypes
+import multiprocessing
 import re
 import secrets
 from functools import lru_cache
@@ -79,8 +88,14 @@ MAX_SCALE = 1.5 * PX_MM
 MAX_BODY_BYTES = 10 * 1024 * 1024
 MAX_PDF_BYTES = 48 * 1024 * 1024
 PRINT_TTL = 300
-# One render per user at a time; the lock outlives a stuck worker.
-RENDER_LOCK_TTL = 120
+# A render is killed past this many seconds (gunicorn's timeout is 60).
+RENDER_TIMEOUT = 30
+# Renders at once across the deployment, and one per user; the locks
+# outlive a render that never released them.
+RENDER_SLOTS = 2
+RENDER_LOCK_TTL = RENDER_TIMEOUT + 60
+
+log = logging.getLogger(__name__)
 
 FONT_DIR = Path(__file__).resolve().parent / "pdf_fonts"
 FONT_WEIGHTS = (400, 500, 600, 700)
@@ -317,6 +332,53 @@ class PdfUrlFetcher:
         return _response(url, path.read_bytes(), mime)
 
 
+class RenderTimeout(Exception):
+    """The render ran past its deadline and was stopped."""
+
+
+def _render_child(conn, kwargs: dict) -> None:
+    """The forked renderer: the PDF, or why not, back through ``conn``."""
+    try:
+        conn.send((True, render_topology_pdf(**kwargs)))
+    except BaseException as exc:  # noqa: BLE001 - reported to the parent
+        conn.send((False, f"{type(exc).__name__}: {exc}"))
+    finally:
+        conn.close()
+
+
+def render_with_deadline(svg: bytes, *, timeout: float = RENDER_TIMEOUT, **kwargs) -> bytes:
+    """:func:`render_topology_pdf` in a forked child that is killed after
+    ``timeout`` seconds (:class:`RenderTimeout`), so no drawing holds a web
+    worker until gunicorn kills it. WeasyPrint and the unpacked fonts are
+    loaded here first and the child inherits them. Without ``fork`` (not
+    Linux) it renders in place."""
+    import weasyprint  # noqa: F401 - loaded once per worker, not per child
+
+    for path in _font_files():
+        _font_bytes(path)
+    if "fork" not in multiprocessing.get_all_start_methods():
+        return render_topology_pdf(svg, **kwargs)
+    ctx = multiprocessing.get_context("fork")
+    recv, send = ctx.Pipe(duplex=False)
+    proc = ctx.Process(target=_render_child, args=(send, {"svg": svg, **kwargs}))
+    proc.start()
+    send.close()
+    try:
+        if not recv.poll(timeout):
+            raise RenderTimeout
+        ok, payload = recv.recv()
+    except EOFError as exc:
+        raise RuntimeError("The PDF renderer stopped without an answer.") from exc
+    finally:
+        if proc.is_alive():
+            proc.kill()
+        proc.join(5)
+        recv.close()
+    if not ok:
+        raise RuntimeError(payload)
+    return payload
+
+
 def render_topology_pdf(
     svg: bytes,
     *,
@@ -363,7 +425,11 @@ class _MetaSerializer(serializers.Serializer):
         help_text="Ignored: the title block names the session's tenant.",
     )
     filters = serializers.CharField(max_length=500, required=False, allow_blank=True)
-    generated_at = serializers.DateTimeField(required=False, allow_null=True)
+    generated_at = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+        help_text="Ignored: the title block is stamped with the server's time.",
+    )
 
 
 class TopologyPdfRequestSerializer(serializers.Serializer):
@@ -393,8 +459,40 @@ def _file_name(title: str, when: dt.datetime) -> str:
     return f"{slug}-{when.astimezone(dt.UTC):%Y-%m-%d}.pdf"
 
 
-def _cache_key(user_id, tenant_id, token: str) -> str:
-    return f"topology-pdf:{user_id}:{tenant_id}:{token}"
+def _print_key(user_id, tenant_id) -> str:
+    """The one print PDF a user keeps per tenant; its token is inside."""
+    return f"topology-pdf-print:{user_id}:{tenant_id}"
+
+
+def _take(key: str, ttl: int) -> str | None:
+    """A lock in the cache: its token when taken, None when someone holds
+    it, "" when there is no cache (the render goes ahead unguarded)."""
+    token = secrets.token_hex(8)
+    try:
+        return token if cache.add(key, token, ttl) else None
+    except Exception:  # noqa: BLE001 - no cache: no lock
+        return ""
+
+
+def _release(key: str, token: str) -> None:
+    if not token:
+        return
+    try:
+        if cache.get(key) == token:
+            cache.delete(key)
+    except Exception:  # noqa: BLE001, S110 - it expires on its own
+        pass
+
+
+def _take_slot() -> tuple[str, str] | None:
+    """One of the deployment's RENDER_SLOTS: (key, token), or None when
+    every one is taken."""
+    for i in range(RENDER_SLOTS):
+        key = f"topology-pdf-slot:{i}"
+        token = _take(key, RENDER_LOCK_TTL)
+        if token is not None:
+            return key, token
+    return None
 
 
 def _flag(request, name: str) -> bool:
@@ -405,10 +503,13 @@ def _flag(request, name: str) -> bool:
     summary="Topology diagram as a PDF",
     description=(
         "Renders a diagram SVG (as the Diagram's SVG export draws it) on one "
-        "sheet of A4, A3, Letter or Tabloid, fitted, with a title block. The "
-        "SVG is sanitized to an allowlist; at most 8 MB and 60,000 elements, "
-        "the request at most 10 MB. `?print=1` returns `{url}`: a link to the "
-        "PDF for five minutes, for the same user and tenant."
+        "sheet of A4, A3, Letter or Tabloid, fitted, with a title block "
+        "stamped with the server's time. The SVG is sanitized to an "
+        "allowlist; at most 8 MB, 60,000 elements and 80,000 characters of "
+        "text as rendered (a reused part counts each time it is drawn), the "
+        "request at most 10 MB, the render at most 30 seconds. `?print=1` "
+        "returns `{url}`: a link to the PDF for five minutes, for the same "
+        "user and tenant; a newer one replaces it."
     ),
     tags=["topology"],
     parameters=[
@@ -427,8 +528,11 @@ def _flag(request, name: str) -> bool:
         ),
         400: OpenApiResponse(description="Invalid request or SVG."),
         403: OpenApiResponse(description="No tenant or no device.view."),
-        413: OpenApiResponse(description="Over a size or element cap."),
-        429: OpenApiResponse(description="A PDF for this user is being made."),
+        413: OpenApiResponse(description="Over a cap, or too slow to render."),
+        429: OpenApiResponse(
+            description="A PDF for this user is being made, or as many as the server makes at once."
+        ),
+        503: OpenApiResponse(description="The print link could not be kept."),
     },
 )
 @api_view(["POST"])
@@ -449,47 +553,61 @@ def topology_pdf_view(request):
     paper = data.get("paper") or {}
     meta = data.get("meta") or {}
     title = (data.get("title") or meta.get("view") or "").strip() or "Topology"
-    generated = meta.get("generated_at") or timezone.now()
+    # The server's clock, never the caller's: the date on paper is when
+    # the PDF was made.
+    generated = timezone.now()
 
     lock = f"topology-pdf-busy:{request.user.pk}"
-    try:
-        locked = cache.add(lock, 1, RENDER_LOCK_TTL)
-    except Exception:  # noqa: BLE001 - no cache: render without the lock
-        locked = None
-    if locked is False:
+    mine = _take(lock, RENDER_LOCK_TTL)
+    if mine is None:
         return _detail("A PDF is already being made.", 429)
+    slot = None
     try:
+        slot = _take_slot()
+        if slot is None:
+            return _detail("Other PDFs are being made. Try again in a minute.", 429)
         try:
             svg = sanitize_svg(data["svg"])
         except SvgRejected as exc:
             return _detail(str(exc), exc.status)
-        pdf = render_topology_pdf(
-            svg,
-            title=title,
-            tenant=tenant.name,
-            filters=(meta.get("filters") or "").strip(),
-            generated=generated,
-            paper=paper.get("size", "a3"),
-            orientation=paper.get("orientation", "landscape"),
-            title_block=data.get("title_block", True),
-        )
+        try:
+            pdf = render_with_deadline(
+                svg,
+                title=title,
+                tenant=tenant.name,
+                filters=(meta.get("filters") or "").strip(),
+                generated=generated,
+                paper=paper.get("size", "a3"),
+                orientation=paper.get("orientation", "landscape"),
+                title_block=data.get("title_block", True),
+            )
+        except RenderTimeout:
+            log.warning(
+                "Topology PDF for user %s stopped after %ss", request.user.pk, RENDER_TIMEOUT
+            )
+            return _detail(
+                "The drawing took too long to render. Export a smaller part of the map.", 413
+            )
     finally:
-        if locked:
-            try:
-                cache.delete(lock)
-            except Exception:  # noqa: BLE001, S110 - it expires on its own
-                pass
+        if slot:
+            _release(*slot)
+        _release(lock, mine)
 
     name = _file_name(title, generated)
     if _flag(request, "print"):
         if len(pdf) > MAX_PDF_BYTES:
             return _detail("The PDF is too large to keep for printing.", 413)
         token = secrets.token_urlsafe(32)
-        cache.set(
-            _cache_key(request.user.pk, tenant.pk, token),
-            {"pdf": pdf, "name": name},
-            PRINT_TTL,
-        )
+        try:
+            # One per user and tenant: a new print link replaces the last.
+            cache.set(
+                _print_key(request.user.pk, tenant.pk),
+                {"token": token, "pdf": pdf, "name": name},
+                PRINT_TTL,
+            )
+        except Exception:  # noqa: BLE001 - the cache is down or too slow
+            log.warning("Topology PDF print link not kept", exc_info=True)
+            return _detail("The PDF could not be kept for its link. Try again in a minute.", 503)
         return Response({"url": reverse("topology-export-pdf-file", kwargs={"token": token})})
     resp = HttpResponse(pdf, content_type="application/pdf")
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
@@ -501,7 +619,8 @@ def topology_pdf_view(request):
     summary="A topology PDF made with ?print=1",
     description=(
         "The PDF behind a print link, for five minutes, to the user and tenant "
-        "that made it; inline, or as a download with `?download=1`."
+        "that made it, until they make another; inline, or as a download with "
+        "`?download=1`."
     ),
     tags=["topology"],
     parameters=[
@@ -515,6 +634,7 @@ def topology_pdf_view(request):
     responses={
         (200, "application/pdf"): OpenApiTypes.BINARY,
         404: OpenApiResponse(description="No such link for this user and tenant."),
+        503: OpenApiResponse(description="Print links are unavailable right now."),
     },
 )
 @api_view(["GET"])
@@ -527,8 +647,16 @@ def topology_pdf_file_view(request, token):
         or rbac.row_filter(request.user, tenant, "device", "view") is None
     ):
         return _detail("Not found.", 404)
-    entry = cache.get(_cache_key(request.user.pk, tenant.pk, token))
-    if not isinstance(entry, dict) or not isinstance(entry.get("pdf"), bytes):
+    try:
+        entry = cache.get(_print_key(request.user.pk, tenant.pk))
+    except Exception:  # noqa: BLE001 - the cache is down or too slow
+        return _detail("Print links are unavailable right now.", 503)
+    if (
+        not isinstance(entry, dict)
+        or not isinstance(entry.get("pdf"), bytes)
+        or not isinstance(entry.get("token"), str)
+        or not secrets.compare_digest(entry["token"], token)
+    ):
         return _detail("Not found.", 404)
     resp = HttpResponse(entry["pdf"], content_type="application/pdf")
     how = "attachment" if _flag(request, "download") else "inline"

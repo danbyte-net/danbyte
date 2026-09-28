@@ -1605,7 +1605,7 @@ returns the PDF as a download (`Content-Disposition: attachment`). The body:
 | `svg` | the drawing, as the Diagram's SVG export draws it (required) |
 | `title` | the sheet's title, usually the view name; else `meta.view`, else `Topology` |
 | `paper` | `{size: a4\|a3\|letter\|tabloid, orientation: landscape\|portrait}`; A3 landscape when absent |
-| `meta` | `{view, filters, generated_at}` for the title block. `tenant` is accepted and ignored: the block names the session's tenant. |
+| `meta` | `{view, filters}` for the title block. `tenant` and `generated_at` are accepted and ignored: the block names the session's tenant and is dated by the server's clock, as is the file name. |
 | `title_block` | `false` leaves the title block off; `true` by default |
 
 The drawing is scaled to fit inside 10 mm margins, keeping its shape, and
@@ -1615,8 +1615,10 @@ enlarged to at most 1.5 times its size on screen. Text is Inter, embedded
 from the server's own copy (`api/pdf_fonts/`, SIL Open Font License).
 
 Anyone signed in with an active tenant and `device.view` (at any scope) may
-call it; otherwise it is a 403. One PDF is made at a time per user; a second
-request while one is rendering is a 429.
+call it; otherwise it is a 403. One PDF is made at a time per user, and two
+at a time across the whole server; a request past either is a 429 (try
+again in a minute). A render is stopped after 30 seconds - well inside the
+web worker's own timeout - and answered with a 413.
 
 The SVG is rebuilt from an allowlist before it is drawn: shapes, paths,
 text, clip paths, `<symbol>`/`<use>` and `<image>`, with each attribute
@@ -1633,12 +1635,21 @@ vendored fonts and device-type photos under `/media/device-type-images/`.
 | Request body | 10 MB (413) |
 | SVG | 8 MB, 60,000 elements, 80,000 characters of text (413) |
 | Each embedded image | PNG, JPEG or WebP as a `data:` URI; 3 MB and 36 million pixels (413) |
+| Render | 30 seconds (413) |
+
+The element, text and size limits count the drawing as it is drawn: a
+`<symbol>` costs what it holds each time a `<use>` draws it, and a clip path
+each time it clips something (path data counts against the 8 MB). All text
+inside a `<text>` counts, whatever element it follows.
 
 Rendering time grows with the text on the map: 600 cards with 1,500
 labelled links take about 7 seconds.
 
 `?print=1` answers `{"url": "/api/topology/export/pdf/<token>/"}` instead of
 the file. The PDF is kept for five minutes, and only the same user in the
-same tenant can open the link; anyone else gets a 404. `GET` it to open the
-PDF in the browser, whose viewer prints it at the paper size, or add
-`?download=1` to save it.
+same tenant can open the link; anyone else gets a 404. A user keeps one
+such PDF per tenant: a newer one replaces it, and the older link is a 404.
+`GET` it to open the PDF in the browser, whose viewer prints it at the paper
+size, or add `?download=1` to save it. When the server's cache cannot keep
+the PDF (or read it back), the answer is a 503; try again in a minute, or
+ask for the PDF without `?print=1`.
