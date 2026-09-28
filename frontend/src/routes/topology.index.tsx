@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ChevronDown,
   Crosshair,
+  Eraser,
   FilePlus,
   Filter,
   LayoutGrid,
@@ -10,6 +11,9 @@ import {
   PanelLeft,
   PanelRight,
   Plus,
+  RectangleHorizontal,
+  RectangleVertical,
+  Rows3,
   Save,
   SlidersHorizontal,
   Square,
@@ -132,6 +136,9 @@ import {
   dropPlacement,
   placeNewcomers,
 } from "@/components/topology/diagram/placement"
+import { useBands } from "@/components/topology/diagram/use-bands"
+import type { BandBy } from "@/components/topology/diagram/bands"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
   CardLinesDialog,
   ViewCardLinesEditor,
@@ -1408,6 +1415,33 @@ function TopologyPage() {
     return [...s].sort()
   }, [graph])
 
+  // The Diagram's layer bands (diagram/bands.ts): Arrange writes the bands
+  // and the cards it moved as one undo step, like every band edit that
+  // carries cards.
+  const bandLevels = useMemo(
+    () => ({ order: roleOrder, bonds: roleBonds }),
+    [roleOrder, roleBonds]
+  )
+  const bands = useBands({
+    regions: isDiagram ? zones : undefined,
+    setRegions: setZones,
+    setPositions: (p) => setPositions(p),
+    canvas,
+    nodes: graph?.nodes,
+    levels: bandLevels,
+    direction,
+  })
+  /** Arrange or Clear waiting on "replace the bands drawn by hand?". */
+  const [bandAsk, setBandAsk] = useState<{ by: BandBy | null } | null>(null)
+  const arrangeBands = (by: BandBy) => {
+    if (bands.handRows) setBandAsk({ by })
+    else bands.arrange(by)
+  }
+  const clearBands = () => {
+    if (bands.handBands) setBandAsk({ by: null })
+    else bands.clear()
+  }
+
   // ── Search → dim non-matching nodes; Enter zooms to the first hit ──
   const matchedIds = useMemo(() => {
     const needle = search.trim().toLowerCase()
@@ -1793,7 +1827,9 @@ function TopologyPage() {
     const onMap = new Set(custom)
     const fresh = ids.filter((id) => !onMap.has(id))
     if (!fresh.length) return
-    const place = dropPlacement(fresh.map(devNode), at, occupied())
+    const place = dropPlacement(fresh.map(devNode), at, occupied(), {
+      rowsAt: bands.rowsAt,
+    })
     if (!addToSet(fresh, { ...freezeLayout(), ...place })) return
     markPending(fresh, (id) => {
       const row = paletteRow(id)
@@ -1854,7 +1890,9 @@ function TopologyPage() {
               y: box.y + box.h / 2,
             })
           }
-      const place = placeNewcomers(ids.map(devNode), near, occupied())
+      const place = placeNewcomers(ids.map(devNode), near, occupied(), {
+        rowsAt: bands.rowsAt,
+      })
       if (!addToSet(ids, { ...freezeLayout(), ...place })) return
       markPending(ids, (id) => ({
         name: fresh.get(id)?.data.name ?? "…",
@@ -2559,6 +2597,12 @@ function TopologyPage() {
                     <LinkIcon /> Connected devices
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={bands.addRow}>
+                    <RectangleHorizontal /> Band
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={bands.addSide}>
+                    <RectangleVertical /> Side band
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={addZoneCentered}>
                     <Square /> Zone
                   </DropdownMenuItem>
@@ -2582,7 +2626,10 @@ function TopologyPage() {
                     Arrange the cards
                   </TooltipContent>
                 </Tooltip>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent
+                  align="end"
+                  className="w-auto min-w-48 whitespace-nowrap"
+                >
                   <DropdownMenuItem
                     onSelect={() => {
                       setPositions(undefined)
@@ -2590,6 +2637,21 @@ function TopologyPage() {
                     }}
                   >
                     <LayoutGrid /> Re-layout
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => arrangeBands("role")}>
+                    <Rows3 /> Bands by role
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => arrangeBands("device_type")}
+                  >
+                    <Rows3 /> Bands by device type
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!bands.hasBands}
+                    onSelect={clearBands}
+                  >
+                    <Eraser /> Clear bands
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -2783,9 +2845,10 @@ function TopologyPage() {
                   nav({ to: "/devices/$id", params: { id } })
                 }
                 zones={zones}
-                onZonesChange={setZones}
+                onZonesChange={isDiagram ? bands.onRegionsChange : setZones}
+                onBandEdit={isDiagram ? bands.edit : undefined}
                 onNodeContext={(node, x, y) => {
-                  if (node.type === "zone")
+                  if (node.type === "zone" || node.type === "band")
                     setMenu({ x, y, zoneId: node.id.slice(5) })
                   else if (node.type === "sitegroup")
                     setMenu({
@@ -2964,6 +3027,7 @@ function TopologyPage() {
                 (zones ?? []).map((z) => (z.id === id ? { ...z, label } : z))
               )
             }
+            onReorderBands={isDiagram ? bands.reorder : undefined}
           />
         )}
       </div>
@@ -3187,7 +3251,9 @@ function TopologyPage() {
                     removeZone(id)
                   }}
                 >
-                  Delete zone
+                  {zones?.find((z) => z.id === menu.zoneId)?.kind === "band"
+                    ? "Delete band"
+                    : "Delete zone"}
                 </MenuItem>
               </>
             )}
@@ -3296,6 +3362,26 @@ function TopologyPage() {
           openSaveAs(`${appliedView?.name ?? "View"} (copy)`)
         }}
         onReload={() => void reloadView()}
+      />
+
+      <ConfirmDialog
+        open={!!bandAsk}
+        onOpenChange={(open) => {
+          if (!open) setBandAsk(null)
+        }}
+        title={bandAsk?.by ? "Replace bands?" : "Clear bands?"}
+        description={
+          bandAsk?.by
+            ? "Bands drawn by hand are replaced by the new ones. Undo puts them back."
+            : "Every band goes, including those drawn by hand. The cards stay. Undo puts them back."
+        }
+        confirmLabel={bandAsk?.by ? "Replace" : "Clear"}
+        onConfirm={() => {
+          const ask = bandAsk
+          setBandAsk(null)
+          if (ask?.by) bands.arrange(ask.by)
+          else if (ask) bands.clear()
+        }}
       />
 
       {/* The leave guard's one dialog. The router holds the navigation open

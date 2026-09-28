@@ -63,6 +63,9 @@ import { graphLevels } from "./levels-param"
 import { OverlayEdge } from "./overlay-edge"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
+import { BAND_DRAG_HANDLE, BAND_NODE_CLASS } from "./diagram/band-node"
+import type { BandData } from "./diagram/band-node"
+import { isRow, membersOf, paintOrder } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { lagBundleLabel, sharedLag } from "./lag-bundles"
@@ -136,14 +139,58 @@ const edgeTypes = { routed: RoutedEdge, overlay: OverlayEdge, link: LinkEdge }
  */
 const ZONE_Z = 0
 
+/** Zones and layer bands: boxes behind the map, not part of the built
+ * graph - the canvas keeps them across rebuilds and out of the
+ * arrangement. */
+const isRegionNode = (n: Node) => n.type === "zone" || n.type === "band"
+
+/** A band edit that moves cards with it (diagram/bands.ts), for the parent
+ * to apply to the arrangement and the bands together. */
+export type CanvasBandEdit =
+  | { type: "move"; id: string; dir: -1 | 1 }
+  | { type: "resize"; id: string; rect: Rect }
+
 interface ZoneCallbacks {
   onRename: (id: string, label: string) => void
-  onRecolor: (id: string, color: string) => void
+  onRecolor: (id: string, color: string | null) => void
   onDelete: (id: string) => void
   onResizeEnd: () => void
+  onMove: (id: string, dir: -1 | 1) => void
+  onBandResize: (id: string, rect: Rect) => void
 }
 
 function zoneToNode(z: Zone, cb: ZoneCallbacks): Node {
+  if (z.kind === "band") {
+    const data: BandData = {
+      label: z.label,
+      color: z.color || null,
+      orient: z.orient === "v" ? "v" : "h",
+      onRename: (label) => cb.onRename(z.id, label),
+      onRecolor: (color) => cb.onRecolor(z.id, color),
+      onDelete: () => cb.onDelete(z.id),
+      onMove: (dir) => cb.onMove(z.id, dir),
+      onResizeEnd: (rect) => cb.onBandResize(z.id, rect),
+    }
+    return {
+      id: `band:${z.id}`,
+      type: "band",
+      position: { x: z.x, y: z.y },
+      width: z.w,
+      height: z.h,
+      // Handed over measured: a resize starts from the measured box, which
+      // otherwise lags a box re-seeded from the document by a frame.
+      measured: { width: z.w, height: z.h },
+      zIndex: ZONE_Z,
+      selectable: true,
+      draggable: true,
+      dragHandle: `.${BAND_DRAG_HANDLE}`,
+      // Blended with the cables it lies under (band-node.tsx), and
+      // click-through but for its title strip and resize edges.
+      className: BAND_NODE_CLASS,
+      style: { pointerEvents: "none" },
+      data,
+    }
+  }
   return {
     id: `zone:${z.id}`,
     type: "zone",
@@ -172,7 +219,8 @@ function nodesToZones(nodes: Node[], previous: Zone[]): Zone[] {
   const was = new Map(previous.map((z) => [z.id, z]))
   const out: Zone[] = []
   for (const n of nodes) {
-    if (n.type !== "zone") continue
+    if (!isRegionNode(n)) continue
+    // "zone:" and "band:" are the same length.
     const id = n.id.slice(5)
     const prev = was.get(id)
     if (!prev) continue
@@ -986,6 +1034,10 @@ export interface TopologyCanvasProps {
   zones?: Zone[]
   /** A zone was moved, resized or renamed - the parent persists the list. */
   onZonesChange?: (zones: Zone[]) => void
+  /** A layer band was moved up or down its stack, or resized: an edit that
+   * moves cards too, so the parent applies it (without it, a resize is a
+   * plain `onZonesChange`). */
+  onBandEdit?: (edit: CanvasBandEdit) => void
   /** Bump to discard drags/saved positions and re-run the auto layout. */
   layoutTick?: number
   /** Identity of the underlying query (filters/focus/grouping). When it
@@ -1183,6 +1235,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     positions,
     zones,
     onZonesChange,
+    onBandEdit,
     layoutTick = 0,
     fitKey = "",
     matchedIds,
@@ -1474,6 +1527,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // the zone back where it was saved, mid-drag. Nothing moved, ever.
   const onZonesChangeRef = useRef(onZonesChange)
   onZonesChangeRef.current = onZonesChange
+  const onBandEditRef = useRef(onBandEdit)
+  onBandEditRef.current = onBandEdit
   const zoneCb = useMemo<ZoneCallbacks>(() => {
     const patch = (id: string, p: Partial<Zone>) =>
       onZonesChangeRef.current?.(
@@ -1487,6 +1542,12 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           zonesRef.current.filter((z) => z.id !== id)
         ),
       onResizeEnd: () => emitZonesRef.current(),
+      onMove: (id, dir) => onBandEditRef.current?.({ type: "move", id, dir }),
+      onBandResize: (id, rect) => {
+        if (onBandEditRef.current)
+          onBandEditRef.current({ type: "resize", id, rect })
+        else emitZonesRef.current()
+      },
     }
   }, [])
   const zoneNodes = useRef<Node[]>([])
@@ -1497,7 +1558,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // drag, and re-seeding the nodes from it on each one would fight the drag
   // that produced it.
   const zoneSig = (zones ?? [])
-    .map((z) => `${z.id}:${z.label}:${z.color}:${z.x}:${z.y}:${z.w}:${z.h}`)
+    .map(
+      (z) =>
+        `${z.id}:${z.kind}:${z.orient}:${z.label}:${z.color}:${z.x}:${z.y}:${z.w}:${z.h}`
+    )
     .join("|")
 
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes)
@@ -1620,7 +1684,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const unmatched =
         !!searchSet &&
         !searchSet.has(n.id) &&
-        n.type !== "zone" &&
+        !isRegionNode(n) &&
         n.type !== "junction"
       return !unmatched &&
         (!spotSet || spotSet.has(n.id) || n.type === "sitegroup")
@@ -1635,7 +1699,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     setNodes((cur) =>
       cur.some((n) => n.selected !== (n.id === focusNodeId))
         ? cur.map((n) =>
-            n.type === "zone" || n.selected === (n.id === focusNodeId)
+            isRegionNode(n) || n.selected === (n.id === focusNodeId)
               ? n
               : { ...n, selected: n.id === focusNodeId }
           )
@@ -1740,7 +1804,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // A new layout is a new map - a stale spotlight would dim everything
     // with no visible cause.
     if (relaidOut) setSpotId(null)
-    const first = !prevNodes.current.some((n) => n.type !== "zone")
+    const first = !prevNodes.current.some((n) => !isRegionNode(n))
     // The map was on screen empty (a view being built from scratch): its
     // first cards were dropped where the camera is, so it stays there.
     const wasEmpty = shownEmpty.current
@@ -1886,13 +1950,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       // Keep whatever was selected: re-seeding after a resize would
       // otherwise drop the selection, and the handles with it.
       const sel = new Set(
-        cur.filter((n) => n.type === "zone" && n.selected).map((n) => n.id)
+        cur.filter((n) => isRegionNode(n) && n.selected).map((n) => n.id)
       )
-      zoneNodes.current = zonesRef.current.map((z) => {
+      // Side bands, then rows, then zones: array order is paint order.
+      zoneNodes.current = paintOrder(zonesRef.current).map((z) => {
         const n = zoneToNode(z, zoneCb)
         return sel.has(n.id) ? { ...n, selected: true } : n
       })
-      return [...zoneNodes.current, ...cur.filter((n) => n.type !== "zone")]
+      return [...zoneNodes.current, ...cur.filter((n) => !isRegionNode(n))]
     })
   }, [zoneSig, zoneCb, setNodes])
 
@@ -1905,18 +1970,22 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   useImperativeHandle(
     ref,
     () => ({
-      positions: () =>
-        Object.fromEntries(
+      positions: () => ({
+        ...Object.fromEntries(
           flow
             .getNodes()
-            // Zones carry their own geometry - a zone id in the arrangement
-            // would be a node the layout keeps trying to place.
-            .filter((n) => n.type !== "zone")
+            // Zones and bands carry their own geometry - one in the
+            // arrangement would be a node the layout keeps trying to place.
+            .filter((n) => !isRegionNode(n))
             .map((n) => [
               n.id,
               [n.position.x, n.position.y] as [number, number],
             ])
         ),
+        // Where a band just carried its cards, before the canvas has drawn
+        // them there.
+        ...carried.current,
+      }),
       center: () => {
         const el = wrapper.current
         if (!el) return { x: 0, y: 0 }
@@ -2106,7 +2175,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             h: el.clientHeight / vp.zoom,
           }
         }
-        const cards = live.nodes.filter((n) => n.type !== "zone")
+        const cards = live.nodes.filter((n) => !isRegionNode(n))
         const model = modelRef.current
         if (live.diagram && model)
           return toDocument(
@@ -2128,7 +2197,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       boxes: () => {
         const out: Record<string, Rect> = {}
         for (const n of flow.getNodes()) {
-          if (n.type === "zone" || n.type === "junction" || n.hidden) continue
+          if (isRegionNode(n) || n.type === "junction" || n.hidden) continue
           const w = n.width ?? n.measured?.width
           const h = n.height ?? n.measured?.height
           if (!w || !h) continue
@@ -2182,6 +2251,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   const onNodeClick = useCallback(
     (_: unknown, node: Node) => {
+      // A band or zone is selected for its own toolbar - not a device.
+      if (isRegionNode(node)) return
       // A breakout's junction is part of its cable.
       if (node.type === "junction") {
         const { raw, trunk } = node.data as {
@@ -2257,7 +2328,94 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   emitZonesRef.current = emitZones
 
+  // ── band drags ─────────────────────────────────────────────────────
+  // A layer band carries the cards whose centre is inside it (bands.ts
+  // membersOf): they follow the band live, and land where it lands.
+  const bandDrag = useRef<{
+    id: string
+    x: number
+    y: number
+    members: Map<string, { x: number; y: number }>
+  } | null>(null)
+  /** Where the last band drag left its cards, until the canvas has them
+   * (read by `positions()`). */
+  const carried = useRef<Record<string, [number, number]>>({})
+  useEffect(() => {
+    carried.current = {}
+  }, [nodes])
+  const onNodeDragStart = useCallback(
+    (_: unknown, node: Node) => {
+      bandDrag.current = null
+      if (node.type !== "band" || (node.data as BandData).orient === "v") return
+      const id = node.id.slice(5)
+      const all = flow.getNodes()
+      const boxes: Record<string, Rect> = {}
+      for (const n of all) {
+        // Selected cards already move with the drag.
+        if (isRegionNode(n) || n.type === "junction" || n.hidden) continue
+        if (n.selected) continue
+        const w = n.width ?? n.measured?.width
+        const h = n.height ?? n.measured?.height
+        if (!w || !h) continue
+        const [ox, oy] = n.origin ?? [0, 0]
+        boxes[n.id] = {
+          x: n.position.x - ox * w,
+          y: n.position.y - oy * h,
+          w,
+          h,
+        }
+      }
+      const regions = zonesRef.current.filter(isRow)
+      const byId = new Map(all.map((n) => [n.id, n]))
+      const members = new Map<string, { x: number; y: number }>()
+      for (const m of membersOf(regions, boxes).get(id) ?? []) {
+        const n = byId.get(m)
+        if (n) members.set(m, { ...n.position })
+      }
+      bandDrag.current = {
+        id: node.id,
+        x: node.position.x,
+        y: node.position.y,
+        members,
+      }
+    },
+    [flow]
+  )
+  /** The carried cards at the band's offset from where the drag began. */
+  const carry = useCallback(
+    (node: Node) => {
+      const d = bandDrag.current
+      if (!d || d.id !== node.id || !d.members.size) return null
+      const dx = node.position.x - d.x
+      const dy = node.position.y - d.y
+      const at = new Map<string, { x: number; y: number }>()
+      for (const [id, p] of d.members) at.set(id, { x: p.x + dx, y: p.y + dy })
+      setNodes((cur) =>
+        cur.map((n) => {
+          const p = at.get(n.id)
+          return p ? { ...n, position: p } : n
+        })
+      )
+      return at
+    },
+    [setNodes]
+  )
+  const onNodeDrag = useCallback(
+    (_: unknown, node: Node) => void carry(node),
+    [carry]
+  )
+
   const onNodeDragStop = useCallback(() => {
+    // Read where the cards are, those a band just carried included.
+    const at = carried.current
+    const nowNodes = () => {
+      const all = flow.getNodes()
+      if (!Object.keys(at).length) return all
+      return all.map((n) => {
+        const p = at[n.id] as [number, number] | undefined
+        return p ? { ...n, position: { x: p[0], y: p[1] } } : n
+      })
+    }
     emitZones()
     const model = modelRef.current
     const modelId = modelIdRef.current
@@ -2266,7 +2424,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       // follow when it answers (unless a newer build took over).
       setBusy((b) => b + 1)
       worker()
-        .relink(modelId, flow.getNodes())
+        .relink(modelId, nowNodes())
         .then(
           (re) => {
             if (modelIdRef.current !== modelId || !modelRef.current) return
@@ -2283,7 +2441,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     if (diagram && model) {
       // Re-anchor from where the cards are now: sides re-chosen, Detailed
       // cards re-sized around their centres, elbow channels re-routed.
-      const re = relinkDiagram(model, flow.getNodes())
+      const re = relinkDiagram(model, nowNodes())
       modelRef.current = re.model
       // Into the real state, not the rendered nodes (those carry the
       // spotlight's dimming and the monitoring pill).
@@ -2415,6 +2573,20 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     lostWorker,
   ])
 
+  /** A drag ends: a band's cards land with it, then as any drag. */
+  const onDragStop = useCallback(
+    (_: unknown, node: Node) => {
+      const at = carry(node)
+      bandDrag.current = null
+      if (at)
+        carried.current = Object.fromEntries(
+          [...at].map(([id, p]) => [id, [p.x, p.y] as [number, number]])
+        )
+      onNodeDragStop()
+    },
+    [carry, onNodeDragStop]
+  )
+
   if (!mounted)
     return <div className="h-full w-full animate-pulse bg-muted/30" />
   // A map built by hand stays a live canvas while empty: it is where the
@@ -2467,7 +2639,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           })
           onPaneContext?.(ev.clientX, ev.clientY, p.x, p.y)
         }}
-        onNodeDragStop={onNodeDragStop}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
+        onNodeDragStop={onDragStop}
         onEdgeClick={onEdgeClick}
         onEdgeMouseEnter={(ev, e) => {
           setHotEdge(e.id)

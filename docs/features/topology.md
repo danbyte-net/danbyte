@@ -596,6 +596,9 @@ the view's set, with its position and overrides; ++ctrl+z++ puts it back.
 **Arranging.** Drag cards where you want them. **Arrange ▸ Re-layout** lays
 the diagram out automatically again. Devices added to a diagram that was laid
 out automatically pin the cards already there, so nothing moves under you.
+**Arrange ▸ Bands by role** (or *by device type*) stacks the diagram into
+labelled layers - see [Bands and zones](#bands-and-zones). A device
+dropped into a band lands in that band's row, beside the cards there.
 
 **Saving.** Adding, placing and removing devices are edits to the view: undo
 steps like any other, and **Save** (++ctrl+s++) writes them - see
@@ -645,30 +648,77 @@ work on the site map and the floor plans.
 other tabs - is the different thing next to *Hide* (*Remove from view*): it
 takes the device out of the hand-picked set the map is built from.)
 
-### Zones - boxes to group things by eye
+### Bands and zones
 
-The **Zone** button (**Add ▸ Zone** on the Diagram tab, or right-click empty
-canvas → *Add zone*) drops a labelled box behind the map. Use them to say what a cluster of cards *is*:
-"WAN circuits", "comms closet rack", "customer side".
+Two kinds of labelled box sit behind the cards. **Bands** (Diagram tab only)
+stack a diagram into layers, the way a hand-drawn network diagram does:
+"NSP", "CE", "Spine", "Leaf", "Compute" top to bottom, each a light grey row
+with its title centred across the top, and side bands down the right such as
+"WAN" or "Data Center fabric" spanning the rows they name. **Zones** frame a
+few cards anywhere: "WAN circuits", "comms closet rack".
 
-- **Move** it by its label bar - the bar is the grip, so a click anywhere
-  else inside the box still reaches the canvas and the cards under it.
+**Bands from the map.** **Arrange ▸ Bands by role** makes one band per device
+role and stacks them: in the [Levels](#levels-role-tiers) order when you have
+set one (roles bonded to one level share a band, "Spine + Border"), otherwise
+in the order the layout ranked them, core on top. Devices with no role get a
+band of their own at the bottom. Each band's cards stand side by side in the
+order they stood, wrapping onto another line past 12 cards; every band is as
+wide as the widest. **Bands by device type** does the same per device type.
+Both move the cards and write the bands in one step - ++ctrl+z++ undoes the
+lot. Run it again after adding devices and the bands are rebuilt around
+them: a band you renamed or tinted keeps its name and tint, and a side band
+stays on the rows it spanned. Bands you drew by hand are replaced, after a
+question.
+
+**Bands by hand.** **Add ▸ Band** puts a new band under the stack, as wide
+as it (or across the cards, on a diagram with none). **Add ▸ Side band** puts
+a tall one to the right of the rows and of any side bands already there,
+spanning every row; resize it to the rows you mean - its ends snap to the
+rows' edges. Side bands can stand side by side.
+
+- **Move** a band by its title strip (a side band by anywhere on it). A band
+  carries the cards whose centre is inside it; a click anywhere else inside
+  it still reaches the canvas and the cards on it. A side band carries
+  nothing.
+- **Rename** it by double-clicking the title, or with the pencil above a
+  selected band.
+- **Reorder** the rows with the arrows above a selected band, or by dragging
+  them in the [Objects sidebar](#on-this-map-the-objects-sidebar). The rows
+  swap places and their cards go with them.
+- **Resize** a selected band from its bottom or right edge (a side band from
+  any edge). A taller band pushes the rows under it down, cards and all; a
+  wider one widens the rows stacked with it.
+- **Tint** it with one of the zone swatches, or back to neutral grey, from
+  the toolbar above it. Colour means nothing on its own: it is there to set
+  one part of a picture apart.
+- **Delete** it from the toolbar or by right-clicking it; its cards stay
+  where they are. **Arrange ▸ Clear bands** removes every band (after a
+  question when some were drawn by hand).
+
+A card belongs to the band its centre is in - nothing else is stored - so
+you can drag a card into another band, and the draw.io file nests it
+there too. Bands draw behind the cables as well as the cards.
+
+**Zones** (the **Zone** button, **Add ▸ Zone** on the Diagram tab, or
+right-click empty canvas → *Add zone*) work the same way on every tab:
+
+- **Move** a zone by its label bar - the bar is the grip, so a click
+  anywhere else inside the box still reaches the canvas and the cards under
+  it.
 - **Rename** it by double-clicking the label.
 - **Resize** it by selecting it and dragging a corner.
 - **Recolour or delete** it from the small toolbar above a selected zone, or
-  by right-clicking it. The Delete and Backspace keys never remove a zone -
-  that always takes one of these explicit actions - and remove cards only
-  from a [diagram built by hand](#building-a-diagram); ++ctrl+z++ puts
-  either back.
+  by right-clicking it.
 
 A zone is an **annotation, not a container** - it owns nothing inside it, so
 dragging one moves the box and leaves every card exactly where it was. That
 is what makes it safe to draw one across a map somebody else arranged.
-Zones sit behind the cables as well as the cards, so a cable crossing a zone
-still reads as a cable.
 
-Like the arrangement, zones are kept **per view style**: a box that frames
-four Flat chips would frame half a card in Wiring.
+The Delete and Backspace keys never remove a band or a zone - that always
+takes one of the explicit actions above - and remove cards only from a
+[diagram built by hand](#building-a-diagram); ++ctrl+z++ puts either back.
+Like the arrangement, bands and zones are kept **per view style**: a box
+that frames four Flat chips would frame half a card in Wiring.
 
 The arrangement, zones and hidden objects belong to the map you made them
 on. A saved view carries its own, the default map keeps its own in this
@@ -705,8 +755,9 @@ map.
   AS numbers, iBGP or eBGP and the VRF; click it to open the session) as
   their own families;
   each row names its two ends and the cable label.
-- **Zones** on this view style: click to fit the box, double-click to
-  rename.
+- **Bands and zones** on this view style: the layer bands top to bottom,
+  then side bands, then zones. Click one to fit it, double-click to rename;
+  drag a layer band by its grip to reorder the stack, cards and all.
 
 On a big map the long lists draw only the rows near where you have
 scrolled, so a 2,400-device sidebar stays light. The browser's find-in-page

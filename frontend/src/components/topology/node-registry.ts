@@ -8,6 +8,7 @@ import { hierHeight, hierarchyWidth } from "./layout"
 import { PortNode, StencilNode, stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
 import { ZoneNode } from "./zone-node"
+import { BandNode } from "./diagram/band-node"
 import { CardNode } from "./diagram/card-node"
 import { JUNCTION } from "./diagram/card-layout"
 import { JunctionNode } from "./diagram/junction-node"
@@ -25,7 +26,7 @@ export interface NodeSize {
 export interface NodeKind {
   component: ComponentType<NodeProps>
   /** The rendered box the layout reserves. Kinds without one (trace-map
-   * ports, zones) are reserved a stencil card's box. */
+   * ports, zones, bands) are reserved a stencil card's box. */
   size?: (n: Node) => NodeSize
 }
 
@@ -70,6 +71,8 @@ export const NODE_KINDS = {
   front_port: { component: PortNode },
   rear_port: { component: PortNode },
   zone: { component: ZoneNode },
+  // A Diagram layer band (diagram/bands.ts): a region, never laid out.
+  band: { component: BandNode },
 } satisfies Record<string, NodeKind>
 
 // Defined once, at module level (re-creating nodeTypes each render

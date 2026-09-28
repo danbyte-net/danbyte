@@ -1,5 +1,20 @@
 import { useMemo, useState } from "react"
-import { EyeOff, Search } from "lucide-react"
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import type { DragEndEvent } from "@dnd-kit/core"
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import { EyeOff, GripVertical, Search } from "lucide-react"
 
 import type {
   BulkStatusEntry,
@@ -30,14 +45,18 @@ import {
 import type { TopoHidden } from "./hidden"
 import { LazyRows } from "./lazy-rows"
 import { typeColor } from "./topology-canvas"
+import { ZONE_COLORS } from "./view-positions"
 import type { Zone } from "./view-positions"
+import { isRow, isSide } from "./diagram/bands"
+import { bandLook } from "./diagram/band-node"
 
 // "On this map" for the topology page - the site map's sidebar with the
 // graph's own objects: device cards grouped by role, site or location, the
 // site/location aggregates when the map is grouped, the links by media
-// type, and the zones drawn behind the cards. Click flies to and selects,
-// like clicking the card; a zone row pans to the box and renames it on
-// double-click, like the box itself. The eyes are the site map's: a group
+// type, and the bands and zones drawn behind the cards. Click flies to and
+// selects, like clicking the card; a band or zone row pans to the box and
+// renames it on double-click, like the box itself, and the layer bands
+// reorder by dragging (cards and all). The eyes are the site map's: a group
 // header hides its key (the role, the site, the media type), a row hides
 // that one card. Hidden objects stay listed, dimmed, so "where did my core
 // switch go" answers itself.
@@ -112,6 +131,7 @@ export function TopologyObjectsSidebar({
   onPickEdge,
   onFocusZone,
   onRenameZone,
+  onReorderBands,
 }: {
   /** The whole graph, hidden objects included - they are listed dimmed. */
   graph: TopologyGraph
@@ -129,6 +149,8 @@ export function TopologyObjectsSidebar({
   onPickEdge: (edge: TopoEdge) => void
   onFocusZone: (zone: Zone) => void
   onRenameZone: (id: string, label: string) => void
+  /** The layer bands (rows) in a new top-to-bottom order. */
+  onReorderBands?: (ids: string[]) => void
 }) {
   const [q, setQ] = useState("")
   const [status, setStatus] = useState<StatusFilter>(null)
@@ -142,6 +164,9 @@ export function TopologyObjectsSidebar({
     setModeState(m)
   }
   const [editingZone, setEditingZone] = useState<string | null>(null)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
+  )
   // The panel the long lists scroll in: they draw only what is near view.
   const [scroller, setScroller] = useState<HTMLElement | null>(null)
 
@@ -249,6 +274,64 @@ export function TopologyObjectsSidebar({
   const shownZones = (zones ?? []).filter(
     (z) => !filter || z.label.toLowerCase().includes(filter)
   )
+  // Layer bands top to bottom, then side bands left to right, then zones.
+  const bandRows = shownZones.filter(isRow).sort((a, b) => a.y - b.y)
+  const sideRows = shownZones.filter(isSide).sort((a, b) => a.x - b.x)
+  const zoneRows = shownZones.filter((z) => z.kind !== "band")
+  // Reordering needs every row in the list: not while a search hides some.
+  const sortable = !!onReorderBands && !filter && bandRows.length > 1
+  const onBandDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const ids = bandRows.map((r) => r.id)
+    const from = ids.indexOf(String(active.id))
+    const to = ids.indexOf(String(over.id))
+    if (from < 0 || to < 0) return
+    onReorderBands?.(arrayMove(ids, from, to))
+  }
+  const regionRow = (z: Zone, grip?: React.ReactNode) =>
+    editingZone === z.id ? (
+      <ZoneLabelInput
+        key={z.id}
+        zone={z}
+        onDone={(label) => {
+          if (label && label !== z.label) onRenameZone(z.id, label)
+          setEditingZone(null)
+        }}
+      />
+    ) : (
+      <div key={z.id} className="flex items-center">
+        {grip ?? (sortable && <span className="w-[18px] shrink-0" />)}
+        <button
+          type="button"
+          onClick={() => onFocusZone(z)}
+          onDoubleClick={() => setEditingZone(z.id)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-muted/60"
+        >
+          {/* The name on the box's own fill, as the canvas titles it. */}
+          <span
+            className={cn(
+              "min-w-0 truncate rounded-[5px] border px-1.5 leading-5 whitespace-nowrap",
+              z.kind === "band" && bandLook(z.color).className
+            )}
+            style={
+              z.kind === "band"
+                ? {
+                    ...bandLook(z.color).style,
+                    borderColor: bandLook(z.color).edge,
+                  }
+                : {
+                    background: `color-mix(in srgb, ${z.color ?? ZONE_COLORS[0]} 22%, var(--card))`,
+                    borderColor: `color-mix(in srgb, ${z.color ?? ZONE_COLORS[0]} 45%, var(--card))`,
+                  }
+            }
+          >
+            {z.label ||
+              (isSide(z) ? "Side band" : z.kind === "band" ? "Band" : "Zone")}
+          </span>
+        </button>
+      </div>
+    )
 
   const deviceCount = deviceGroups.reduce((n, g) => n + g.rows.length, 0)
   const total =
@@ -589,38 +672,71 @@ export function TopologyObjectsSidebar({
 
       {shownZones.length > 0 && !status && (
         <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Zones
+          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
+            Bands and zones
           </p>
-          {shownZones.map((z) =>
-            editingZone === z.id ? (
-              <ZoneLabelInput
-                key={z.id}
-                zone={z}
-                onDone={(label) => {
-                  if (label && label !== z.label) onRenameZone(z.id, label)
-                  setEditingZone(null)
-                }}
-              />
-            ) : (
-              <button
-                key={z.id}
-                type="button"
-                onClick={() => onFocusZone(z)}
-                onDoubleClick={() => setEditingZone(z.id)}
-                className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-muted/60"
+          {sortable ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={onBandDragEnd}
+            >
+              <SortableContext
+                items={bandRows.map((r) => r.id)}
+                strategy={verticalListSortingStrategy}
               >
-                <span
-                  className="size-2.5 shrink-0 rounded-sm"
-                  style={{ background: z.color }}
-                />
-                <span className="min-w-0 truncate">{z.label}</span>
-              </button>
-            )
+                {bandRows.map((z) => (
+                  <SortableBand key={z.id} id={z.id}>
+                    {(grip) => regionRow(z, grip)}
+                  </SortableBand>
+                ))}
+              </SortableContext>
+            </DndContext>
+          ) : (
+            bandRows.map((z) => regionRow(z))
           )}
+          {sideRows.map((z) => regionRow(z))}
+          {zoneRows.map((z) => regionRow(z))}
         </div>
       )}
     </aside>
+  )
+}
+
+/** A layer band's sidebar row, draggable by its grip to restack. */
+function SortableBand({
+  id,
+  children,
+}: {
+  id: string
+  children: (grip: React.ReactNode) => React.ReactNode
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(isDragging && "opacity-60")}
+    >
+      {children(
+        <button
+          type="button"
+          aria-label="Drag to reorder"
+          className="cursor-grab px-0.5 text-muted-foreground active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   )
 }
 

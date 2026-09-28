@@ -25,11 +25,23 @@ export const DEVICE_IDS_MIME = "application/x-danbyte-device-ids"
 /** More than this in one drop is refused (the graph endpoint's cap). */
 const MAX_DROP = 10_000
 
+/** The inside of a layer band a card can go in: below its title, within
+ * its padding (top-left rectangle). */
+export type RowSlot = Rect
+
+/** The band row a point is in, as a slot; null outside every row
+ * (`bands.ts` `rowsAt`). */
+export type RowsAt = (p: Pt) => RowSlot | null
+
 export interface PlaceOptions {
   /** The box each new card is given until it is measured. */
   size?: { w: number; h: number }
   /** Clear space around each new card. */
   gap?: number
+  /** Layer bands: a card that lands in a row goes into it - side by side
+   * with the cards already there, inside the row - rather than to the
+   * nearest free spot anywhere. */
+  rowsAt?: RowsAt
 }
 
 /** The device ids in a drag payload; nothing for anything else. */
@@ -149,11 +161,59 @@ function nearestFree(
 
 const centre = (p: Pt): Centre => [Math.round(p.x), Math.round(p.y)]
 
+/** How far along a row the search for a free spot looks, in half cards. */
+const ROW_REACH = 400
+
+/**
+ * The free spot inside a band row nearest `target`: first along the line
+ * the card would sit on (half a card at a time, right before left), then
+ * on the row's other lines, nearest first. Null when the row is full.
+ */
+function freeInRow(
+  target: Pt,
+  row: RowSlot,
+  size: { w: number; h: number },
+  gap: number,
+  taken: Taken
+): Pt | null {
+  const minX = row.x + size.w / 2
+  const maxX = row.x + row.w - size.w / 2
+  const minY = row.y + size.h / 2
+  const maxY = row.y + row.h - size.h / 2
+  if (maxX < minX) return null
+  // A row too shallow for the card still takes it, on its middle.
+  const y0 =
+    maxY < minY ? row.y + row.h / 2 : Math.min(maxY, Math.max(minY, target.y))
+  const x0 = Math.min(maxX, Math.max(minX, target.x))
+  const lines = [y0]
+  if (maxY >= minY)
+    for (let k = 1; k < 64; k++) {
+      const down = y0 + k * (size.h + gap)
+      const up = y0 - k * (size.h + gap)
+      if (down > maxY && up < minY) break
+      if (down <= maxY) lines.push(down)
+      if (up >= minY) lines.push(up)
+    }
+  const sx = (size.w + gap) / 2
+  for (const y of lines)
+    for (let i = 0; i <= ROW_REACH; i++) {
+      const right = x0 + i * sx
+      const left = x0 - i * sx
+      if (right > maxX && left < minX) break
+      for (const x of i ? [right, left] : [x0])
+        if (x >= minX && x <= maxX && taken.free(boxAround({ x, y }, size)))
+          return { x, y }
+    }
+  return null
+}
+
 /**
  * Cards dropped at `at` (canvas coordinates): the first centred on the
  * pointer, the rest fanned out right and down in a small square grid.
  * A slot that would overlap a card already there moves to the nearest
- * free spot instead. Returns each id's centre.
+ * free spot instead. Dropped in a band row, they go into the row
+ * instead: side by side on the line under the pointer, clear of the
+ * cards there. Returns each id's centre.
  */
 export function dropPlacement(
   ids: readonly string[],
@@ -164,14 +224,17 @@ export function dropPlacement(
   const size = opts.size ?? NEW_CARD
   const gap = opts.gap ?? CARD_GAP
   const taken = new Taken(occupied, gap)
-  const cols = Math.max(1, Math.ceil(Math.sqrt(ids.length)))
+  const row = opts.rowsAt?.(at) ?? null
+  const cols = row ? ids.length : Math.max(1, Math.ceil(Math.sqrt(ids.length)))
   const out: Record<string, Centre> = {}
   ids.forEach((id, k) => {
     const slot = {
       x: at.x + (k % cols) * (size.w + gap),
       y: at.y + Math.floor(k / cols) * (size.h + gap),
     }
-    const c = nearestFree(slot, size, gap, taken)
+    const c =
+      (row && freeInRow(slot, row, size, gap, taken)) ??
+      nearestFree(slot, size, gap, taken)
     out[id] = centre(c)
     taken.add(boxAround({ x: out[id][0], y: out[id][1] }, size))
   })
@@ -181,9 +244,10 @@ export function dropPlacement(
 /**
  * Cards joining the map because they are cabled to cards already on it
  * ("Add connected devices"): each goes to the free spot nearest the middle
- * of its neighbours, preferring below. `neighbours` holds, per new id, the
- * centres of the cards on the map it is cabled to. One with none lines up
- * in a row under everything. Returns each id's centre.
+ * of its neighbours, preferring below - and when that spot is in a band
+ * row, onto the row's line. `neighbours` holds, per new id, the centres of
+ * the cards on the map it is cabled to. One with none lines up in a row
+ * under everything. Returns each id's centre.
  */
 export function placeNewcomers(
   newIds: readonly string[],
@@ -206,7 +270,15 @@ export function placeNewcomers(
       x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
       y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
     }
-    const c = nearestFree(mid, size, gap, taken)
+    const near = nearestFree(mid, size, gap, taken)
+    // Landing in a band row - or across its edge - onto the row's line,
+    // the lower row first (the spot was chosen below its neighbours).
+    const row =
+      opts.rowsAt?.(near) ??
+      opts.rowsAt?.({ x: near.x, y: near.y + size.h / 2 }) ??
+      opts.rowsAt?.({ x: near.x, y: near.y - size.h / 2 }) ??
+      null
+    const c = (row && freeInRow(near, row, size, gap, taken)) ?? near
     out[id] = centre(c)
     taken.add(boxAround({ x: out[id][0], y: out[id][1] }, size))
   }

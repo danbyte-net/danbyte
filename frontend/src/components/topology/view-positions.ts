@@ -59,6 +59,11 @@ export function viewPositions(
  * moves the box and nothing else. That is what makes it safe to draw one
  * across a map somebody else arranged.
  *
+ * On the Diagram tab the same list also holds **bands** (`kind: "band"`,
+ * see diagram/bands.ts): a row (`orient: "h"`) groups the cards whose
+ * centre is inside it and carries them when it moves; a side band
+ * (`orient: "v"`) is a labelled strip beside the rows.
+ *
  * Held per view style for the same reason positions are: a box that frames
  * four Flat chips frames half a card in Stencil.
  */
@@ -69,8 +74,16 @@ export interface Zone {
   y: number
   w: number
   h: number
-  /** One of ZONE_COLORS; anything else falls back to the first. */
-  color: string
+  /** One of ZONE_COLORS; anything else falls back to the first. A band may
+   * be neutral: null or "". */
+  color: string | null
+  /** Absent = "zone" (every view saved before bands). */
+  kind?: "zone" | "band"
+  /** Bands: a row (`h`, the default) or a side band (`v`). */
+  orient?: "h" | "v"
+  /** A band made by Arrange: what it was generated from, so a re-run finds
+   * it again (and keeps its name and colour). */
+  rule?: { by: "role" | "device_type"; ids: string[] }
 }
 
 export type ZonesByStyle = Partial<Record<NodeStyle, Zone[]>>
