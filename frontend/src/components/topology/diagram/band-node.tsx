@@ -16,11 +16,13 @@ import type {
 import {
   ArrowDown,
   ArrowUp,
+  FoldVertical,
   Layers,
   Pencil,
   RectangleHorizontal,
   Rows3,
   Trash2,
+  UnfoldVertical,
 } from "lucide-react"
 
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -87,6 +89,8 @@ export interface BandData {
   rule?: { by: BandBy; ids: string[] }
   /** A row of several layers: a sub-row each, or one row. */
   layout?: BandLayout
+  /** A row with another under it in its stack. */
+  canMerge?: boolean
   onRename?: (label: string) => void
   onRecolor?: (color: string | null) => void
   onDelete?: () => void
@@ -97,6 +101,10 @@ export interface BandData {
   /** A row: the layers it holds now, by roles or by device types. */
   onLayers?: (by: BandBy, ids: string[]) => void
   onLayout?: (layout: BandLayout) => void
+  /** A row: one band with the row under it. */
+  onMerge?: () => void
+  /** A row of several layers: a band per layer. */
+  onSplit?: () => void
   /** A row: the x spans of its title strip that lines, cards and labels
    * take, as the Diagram last planned them (canvas px). */
   busy?: readonly (readonly [number, number])[]
@@ -282,6 +290,23 @@ export function BandNode({
                 onClick={() => d.onMove?.(1)}
                 icon={<ArrowDown className="size-3" />}
               />
+              {(d.canMerge || layers > 1) && (
+                <span className="mx-0.5 h-4 w-px bg-border" />
+              )}
+              {d.canMerge && (
+                <ToolButton
+                  label="Merge with band below"
+                  onClick={() => d.onMerge?.()}
+                  icon={<FoldVertical className="size-3" />}
+                />
+              )}
+              {layers > 1 && (
+                <ToolButton
+                  label="Split into layers"
+                  onClick={() => d.onSplit?.()}
+                  icon={<UnfoldVertical className="size-3" />}
+                />
+              )}
             </>
           )}
           <span className="mx-0.5 h-4 w-px bg-border" />
@@ -425,8 +450,8 @@ function cardOf(
   if (n.hidden || NOT_CARDS.has(n.type ?? "")) return null
   const d = n.data as CardInfo
   if (!d.device_id) return null
-  const w = n.width ?? n.measured?.width
-  const h = n.height ?? n.measured?.height
+  const w = n.width ?? n.measured.width
+  const h = n.height ?? n.measured.height
   if (!w || !h) return null
   const [ox, oy] = n.origin ?? [0, 0]
   return {

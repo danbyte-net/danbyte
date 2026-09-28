@@ -139,8 +139,8 @@ describe("toSvg", () => {
     expect(toSvg(structuredClone(stacked))).toBe(out)
     await expect(out).toMatchFileSnapshot("./__golden__/stacked.svg")
     const doc = parse(out)
-    const fabric = stacked.bands.find((b) => b.id === "band-fabric")!
-    const [access, server] = fabric.layers!
+    const fab = stacked.bands.find((b) => b.id === "band-fabric")!
+    const [access, server] = fab.layers!
     // Each layer's badge at the row's left, on its role's colour, with
     // the title, over the lines and under the cards.
     const titles = doc.getElementById("band-titles")!
@@ -151,7 +151,7 @@ describe("toSvg", () => {
       access.fill,
       server.fill,
     ])
-    expect(Number(badges[0].getAttribute("x"))).toBe(fabric.x + BAND.SUB_EDGE)
+    expect(Number(badges[0].getAttribute("x"))).toBe(fab.x + BAND.SUB_EDGE)
     expect(Number(badges[0].getAttribute("height"))).toBe(BAND.SUB_H)
     expect(Number(badges[0].getAttribute("y")) + BAND.SUB_H / 2).toBeCloseTo(
       access.y + access.h / 2
@@ -169,15 +169,15 @@ describe("toSvg", () => {
     expect(rules).toHaveLength(1)
     const y = (access.y + access.h + server.y) / 2
     expect(rules[0].getAttribute("d")).toBe(
-      `M ${BAND.SUB_EDGE},${y} H ${fabric.w - BAND.SUB_EDGE}`
+      `M ${BAND.SUB_EDGE},${y} H ${fab.w - BAND.SUB_EDGE}`
     )
-    expect(rules[0].getAttribute("stroke")).toBe(bandPaint(fabric).edge)
+    expect(rules[0].getAttribute("stroke")).toBe(bandPaint(fab).edge)
   })
 
   it("draws a device type's badge on the neutral wash", () => {
     const doc = structuredClone(stacked)
-    const fabric = doc.bands[1]
-    fabric.layers = fabric.layers!.map((l) => ({ ...l, fill: undefined }))
+    const fab = doc.bands[1]
+    fab.layers = fab.layers!.map((l) => ({ ...l, fill: undefined }))
     const titles = parse(toSvg(doc)).getElementById("band-titles")!
     const badge = [...titles.getElementsByTagName("rect")].find(
       (r) => r.getAttribute("rx") === String(BAND.SUB_RADIUS)

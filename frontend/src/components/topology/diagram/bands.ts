@@ -407,10 +407,10 @@ export function rowsAt(
     const subs = subsOf(r)
     if (subs.length) {
       const sorted = [...subs].sort((a, b) => a.y - b.y)
-      const i = sorted.findIndex((s, k) => {
-        const next = sorted[k + 1]
-        return !next || p.y < (s.y + s.h + next.y) / 2
-      })
+      const i = sorted.findIndex(
+        (s, k) =>
+          k === sorted.length - 1 || p.y < (s.y + s.h + sorted[k + 1].y) / 2
+      )
       const s = sorted[Math.max(0, i)]
       return subSlot(r, subs, s.y, s.h)
     }
@@ -1622,6 +1622,104 @@ export function setLayout(
   const rowOf = rowOfCards(regions, cards)
   const mine = cards.filter((c) => rowOf.get(c.id) === id)
   return reflowAll(regions, after, new Map([[id, mine]]), input)
+}
+
+/**
+ * A row and the row under it in its stack as one band (Merge with band
+ * below): the upper one's id, tint and place, both names ("Access +
+ * Server"), both rows' layers - of the kind the upper one holds, else the
+ * lower one's - and every card of both. Holding several layers it is
+ * stacked, a sub-row each (unless it was set to one row). The rows under
+ * them move up with their cards. Nothing to merge with: unchanged.
+ */
+export function mergeDown(input: LayersInput & { id: string }): BandEdit {
+  const { regions, cards, id } = input
+  const row = regions.find((r) => r.id === id)
+  if (!row || !isRow(row)) return noEdit(regions)
+  const stack = stackOf(regions, row)
+  const k = stack.indexOf(row)
+  if (k + 1 >= stack.length) return noEdit(regions)
+  const below = stack[k + 1]
+  const by = row.rule?.by ?? below.rule?.by
+  const ids = by
+    ? [
+        ...new Set(
+          [row, below].flatMap((r) => (r.rule?.by === by ? r.rule.ids : []))
+        ),
+      ]
+    : []
+  const merged: Region = {
+    ...row,
+    label: [row.label, below.label].filter((l) => l.trim()).join(" + "),
+    color: row.color ?? below.color,
+  }
+  if (by && ids.length)
+    merged.rule = { by, ids: orderLayers(ids, { ...input, by }) }
+  else delete merged.rule
+  if (ids.length > 1) merged.layout = row.layout ?? "stack"
+  const after = regions
+    .filter((r) => r.id !== below.id)
+    .map((r) => (r.id === id ? merged : r))
+  const rowOf = rowOfCards(regions, cards)
+  const both = cards.filter((c) => {
+    const at = rowOf.get(c.id)
+    return at === id || at === below.id
+  })
+  return reflowAll(regions, after, new Map([[id, both]]), input)
+}
+
+/**
+ * A row of several layers as a band per layer (Split into layers), top
+ * to bottom in its layers' order: each named after its layer and holding
+ * its layer's cards, all in the row's tint. The first keeps the row's id
+ * and place (and the cards of no layer it held); the rest stack under it,
+ * and the rows below move down with their cards. A layer with no card on
+ * the map is left out - there is nothing to name it by.
+ */
+export function splitLayers(
+  input: LayersInput & { id: string; newId?: (key: string) => string }
+): BandEdit {
+  const { regions, cards, id } = input
+  const row = regions.find((r) => r.id === id)
+  if (!row || !isRow(row) || !row.rule || row.rule.ids.length < 2)
+    return noEdit(regions)
+  const { by } = row.rule
+  const rowOf = rowOfCards(regions, cards)
+  const mine = cards.filter((c) => rowOf.get(c.id) === id)
+  const names = layerNames(mine, by)
+  const layers = orderLayers(row.rule.ids, { ...input, by }).filter((l) =>
+    names.has(l)
+  )
+  if (!layers.length) return noEdit(regions)
+  const taken = new Set(regions.map((r) => r.id))
+  const newId =
+    input.newId ??
+    ((key: string) => {
+      let nid = `b${hash(key)}`
+      for (let k = 2; taken.has(nid); k++) nid = `b${hash(key)}-${k}`
+      return nid
+    })
+  const parts: Region[] = layers.map((l, k) => {
+    const part: Region = {
+      ...row,
+      id: k ? newId(`${id}:${l}`) : id,
+      label: names.get(l)!,
+      // Stacked right under the row until laid out: the order they take.
+      y: row.y + k / 1000,
+      h: BAND.NEW_H,
+      rule: { by, ids: [l] },
+    }
+    delete part.layout
+    taken.add(part.id)
+    return part
+  })
+  const after = regions.flatMap((r) => (r.id === id ? parts : [r]))
+  const assign = new Map<string, ArrangeCard[]>(parts.map((p) => [p.id, []]))
+  for (const c of mine) {
+    const k = layers.indexOf(layerOf(c, by) ?? "")
+    assign.get(parts[Math.max(0, k)].id)!.push(c)
+  }
+  return reflowAll(regions, after, assign, input)
 }
 
 /** How far a side band's ends snap to a row's edge. */

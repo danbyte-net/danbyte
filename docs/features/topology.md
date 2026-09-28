@@ -741,6 +741,14 @@ step:
   Levels bond made ("Spine + Border") is still the Levels' to change.
 - **A name made of its layers follows them** ("Access" becomes "Access +
   Server"); a name you gave it stays.
+- **Merge with band below** (above a selected band, when another band is
+  under it) makes the two one band: the upper one's place and tint, both
+  names ("Access + Server"), both bands' layers and cards, stacked on
+  sub-rows. The bands under them move up.
+- **Split into layers** (above a band of several layers) gives each layer
+  its own band again, named after it and in the band's tint, stacked where
+  the band stood; the bands under them move down. A layer with no device on
+  the map is left out. Both are one undo step.
 - **New devices find their sub-row.** A device added next to what it is
   cabled to, dropped outside every band, or dropped into its own band goes
   onto its layer's sub-row, beside the cards there; a layer with no card in

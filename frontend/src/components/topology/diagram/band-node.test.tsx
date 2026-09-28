@@ -184,7 +184,7 @@ describe("a band of several layers", () => {
 
   beforeEach(() => {
     // cmdk scrolls the active option into view.
-    Element.prototype.scrollIntoView ??= () => undefined
+    Element.prototype.scrollIntoView = () => undefined
   })
 
   const Card = () => <div />
@@ -294,7 +294,31 @@ describe("a band of several layers", () => {
   it("offers the layout only with several layers", async () => {
     await onCanvas({ rule: { by: "role", ids: [ACCESS.id] } })
     expect(screen.queryByRole("button", { name: "One row" })).toBeNull()
+    expect(
+      screen.queryByRole("button", { name: "Split into layers" })
+    ).toBeNull()
+    expect(
+      screen.queryByRole("button", { name: "Merge with band below" })
+    ).toBeNull()
     expect(screen.getByRole("button", { name: "Layers…" })).toBeTruthy()
+  })
+
+  it("merges with the band below, and splits into layers", async () => {
+    const onMerge = vi.fn()
+    const onSplit = vi.fn()
+    await onCanvas({
+      layout: "stack",
+      rule: { by: "role", ids: [ACCESS.id, SERVER.id] },
+      canMerge: true,
+      onMerge,
+      onSplit,
+    })
+    const merge = screen.getByRole("button", { name: "Merge with band below" })
+    expect(merge.getAttribute("data-tip")).toBe("Merge with band below")
+    fireEvent.click(merge)
+    expect(onMerge).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole("button", { name: "Split into layers" }))
+    expect(onSplit).toHaveBeenCalledTimes(1)
   })
 
   it("picks its layers from the roles and types on the map", async () => {
@@ -385,5 +409,40 @@ describe("bands on the canvas", () => {
     expect(row.style.pointerEvents).toBe("none")
     for (const c of BAND_NODE_CLASS.split(" "))
       expect(row.classList.contains(c)).toBe(true)
+  })
+
+  it("offers a merge to a row with a row under it, and hands it up", async () => {
+    const onBandEdit = vi.fn()
+    const zones: Zone[] = [
+      { ...band("top", "h", 0), h: 160 },
+      { ...band("low", "h", 0), y: 208, h: 160 },
+    ]
+    const { container } = render(
+      <div style={{ width: 800, height: 600 }}>
+        <TopologyCanvas
+          graph={fanoutGraph}
+          nodeStyle="diagram"
+          zones={zones}
+          onBandEdit={onBandEdit}
+        />
+      </div>
+    )
+    await settle()
+    const grip = (id: string) =>
+      container.querySelector(
+        `[data-id="band:${id}"] .${BAND_DRAG_HANDLE}`
+      ) as HTMLElement
+    fireEvent.click(grip("top"))
+    await settle()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Merge with band below" })
+    )
+    expect(onBandEdit).toHaveBeenCalledWith({ type: "merge", id: "top" })
+    fireEvent.click(grip("low"))
+    await settle()
+    expect(screen.getByRole("button", { name: "Move up" })).toBeTruthy()
+    expect(
+      screen.queryByRole("button", { name: "Merge with band below" })
+    ).toBeNull()
   })
 })

@@ -257,8 +257,8 @@ describe("toDrawio", () => {
     expect(toDrawio([clone(stacked)])).toBe(xml)
     await expect(xml).toMatchFileSnapshot("./__golden__/stacked.drawio")
     const page = pages(xml)[0]
-    const fabric = stacked.bands.find((b) => b.id === "band-fabric")!
-    const [access, server] = fabric.layers!
+    const fab = stacked.bands.find((b) => b.id === "band-fabric")!
+    const [access, server] = fab.layers!
     expect(page.get("band-fabric")!.style.swimlane).toBe("")
     // Every card in the one swimlane; no swimlane inside it.
     for (const id of ["access-01", "access-02", "srv-01", "srv-02"])
@@ -275,7 +275,7 @@ describe("toDrawio", () => {
     const g = geo(badges[0])
     expect(num(g, "x")).toBe(BAND.SUB_EDGE)
     expect(num(g, "y") + num(g, "height") / 2).toBeCloseTo(
-      access.y + access.h / 2 - fabric.y
+      access.y + access.h / 2 - fab.y
     )
     expect(badges[0].style).toMatchObject({
       rounded: "1",
@@ -287,7 +287,7 @@ describe("toDrawio", () => {
     expect(rules[0].style).toMatchObject({ line: "", dashed: "1" })
     const rg = geo(rules[0])
     expect(num(rg, "y") + 0.5).toBe(
-      (access.y + access.h + server.y) / 2 - fabric.y
+      (access.y + access.h + server.y) / 2 - fab.y
     )
     const order = [...page.keys()]
     expect(order.indexOf(badges[1].id)).toBeLessThan(

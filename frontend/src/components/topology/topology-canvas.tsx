@@ -75,6 +75,7 @@ import {
   isRow,
   membersOf,
   paintOrder,
+  stackOf,
 } from "./diagram/bands"
 import type { BandBy, BandLayout, BandRow } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
@@ -165,6 +166,8 @@ export type CanvasBandEdit =
   | { type: "resize"; id: string; rect: Rect }
   | { type: "layers"; id: string; by: BandBy; ids: string[] }
   | { type: "layout"; id: string; layout: BandLayout }
+  | { type: "merge"; id: string }
+  | { type: "split"; id: string }
 
 interface ZoneCallbacks {
   onRename: (id: string, label: string) => void
@@ -173,14 +176,16 @@ interface ZoneCallbacks {
   onResizeEnd: () => void
   onMove: (id: string, dir: -1 | 1) => void
   onBandResize: (id: string, rect: Rect) => void
-  /** Row edits that move cards: layers, layout. */
+  /** Row edits that move cards: layers, layout, merge, split. */
   onBandEdit: (edit: CanvasBandEdit) => void
 }
 
 function zoneToNode(
   z: Zone,
   cb: ZoneCallbacks,
-  titles: ReadonlyMap<string, [number, number][]> = NO_TITLES
+  titles: ReadonlyMap<string, [number, number][]> = NO_TITLES,
+  /** A row with another row under it in its stack (Merge). */
+  below = false
 ): Node {
   if (z.kind === "band") {
     const busy = titles.get(z.id)
@@ -188,6 +193,7 @@ function zoneToNode(
       ...(busy ? { busy } : {}),
       ...(z.rule ? { rule: z.rule } : {}),
       ...(z.layout ? { layout: z.layout } : {}),
+      ...(below ? { canMerge: true } : {}),
       label: z.label,
       color: z.color || null,
       orient: z.orient === "v" ? "v" : "h",
@@ -199,6 +205,8 @@ function zoneToNode(
       onLayers: (by, ids) =>
         cb.onBandEdit({ type: "layers", id: z.id, by, ids }),
       onLayout: (layout) => cb.onBandEdit({ type: "layout", id: z.id, layout }),
+      onMerge: () => cb.onBandEdit({ type: "merge", id: z.id }),
+      onSplit: () => cb.onBandEdit({ type: "split", id: z.id }),
     }
     return {
       id: `band:${z.id}`,
@@ -2128,7 +2136,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       // The rows as the build fitted them round the cards.
       const shown = drawnRegions(zonesRef.current, fittedRows)
       zoneNodes.current = paintOrder(shown).map((z) => {
-        const n = zoneToNode(z, zoneCb, titlesRef.current)
+        const below =
+          isRow(z) && stackOf(shown, z).some((r) => r.y > z.y && r.id !== z.id)
+        const n = zoneToNode(z, zoneCb, titlesRef.current, below)
         return sel.has(n.id) ? { ...n, selected: true } : n
       })
       return [...zoneNodes.current, ...cur.filter((n) => !isRegionNode(n))]

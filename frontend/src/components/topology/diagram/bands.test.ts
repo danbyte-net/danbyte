@@ -11,6 +11,7 @@ import {
   handDrawn,
   isRow,
   membersOf,
+  mergeDown,
   newRow,
   newSide,
   normalizeRegions,
@@ -25,6 +26,7 @@ import {
   setLayers,
   setLayout,
   snapSide,
+  splitLayers,
   stackedSubRows,
   subDividers,
   subRowsOf,
@@ -914,7 +916,7 @@ const after = (
   moves: Record<string, [number, number]>
 ): ArrangeCard[] =>
   cards.map((c) =>
-    moves[c.id]
+    c.id in moves
       ? {
           ...c,
           box: boxAround(
@@ -944,15 +946,15 @@ describe("a band holding several layers", () => {
       ids: [LAYER.access.id, LAYER.server.id],
     })
     const byId = new Map(edit.regions.map((r) => [r.id, r]))
-    const fabric = byId.get("access")!
+    const fab = byId.get("access")!
     // Stacked by default, named after its layers, its colour kept.
-    expect(fabric.rule).toEqual({
+    expect(fab.rule).toEqual({
       by: "role",
       ids: [LAYER.access.id, LAYER.server.id],
     })
-    expect(fabric.layout).toBe("stack")
-    expect(fabric.label).toBe("Access + Server")
-    expect(fabric.color).toBe("#8b5cf6")
+    expect(fab.layout).toBe("stack")
+    expect(fab.label).toBe("Access + Server")
+    expect(fab.color).toBe("#8b5cf6")
     // The Server row lost its only layer: a band drawn by hand now, its
     // name as it was.
     const left = byId.get("server")!
@@ -971,11 +973,11 @@ describe("a band holding several layers", () => {
     expect(cy(now, "dev:a1")).toBe(cy(now, "dev:a2"))
     expect(cy(now, "dev:h1")).toBe(cy(now, "dev:h2"))
     expect(cy(now, "dev:h1") - cy(now, "dev:a1")).toBe(60 + BAND.SUB_GAP)
-    expect(fabric.h).toBe(
+    expect(fab.h).toBe(
       BAND.TITLE + BAND.PAD_TOP + 60 + BAND.SUB_GAP + 60 + BAND.PAD_BOTTOM
     )
     // The row under it moved down, keeping its gap; Core stayed put.
-    expect(left.y).toBe(fabric.y + fabric.h + 48)
+    expect(left.y).toBe(fab.y + fab.h + 48)
     expect(byId.get("core")).toEqual(regions[0])
     expect(edit.moves["dev:c1"]).toBeUndefined()
   })
@@ -989,14 +991,14 @@ describe("a band holding several layers", () => {
       by: "role",
       ids: [LAYER.access.id, LAYER.server.id],
     })
-    const fabric = edit.regions.find((r) => r.id === "access")!
+    const fab = edit.regions.find((r) => r.id === "access")!
     const now = after(cards, edit.moves)
     const gutter = gutterOf(["Access", "Server"])
     expect(gutter).toBeGreaterThan(BAND.PAD_X)
     for (const id of ["dev:a1", "dev:a2", "dev:h1", "dev:h2"]) {
       const b = now.find((c) => c.id === id)!.box
-      expect(b.x).toBeGreaterThanOrEqual(fabric.x + gutter)
-      expect(b.x + b.w).toBeLessThanOrEqual(fabric.x + fabric.w - gutter)
+      expect(b.x).toBeGreaterThanOrEqual(fab.x + gutter)
+      expect(b.x + b.w).toBeLessThanOrEqual(fab.x + fab.w - gutter)
     }
   })
 
@@ -1021,8 +1023,8 @@ describe("a band holding several layers", () => {
     ])
     // A card of no layer it holds gets an unlabelled sub-row of its own.
     const odd = card("dev:x", at(500, subs[1].y + 200), LAYER.border)
-    const fabric = edit.regions.find((r) => r.id === "access")!
-    const more = subRowsOf({ ...fabric, h: fabric.h + 300 }, [
+    const fab = edit.regions.find((r) => r.id === "access")!
+    const more = subRowsOf({ ...fab, h: fab.h + 300 }, [
       ...now.filter((c) => c.id !== "dev:c1"),
       odd,
     ])
@@ -1033,7 +1035,7 @@ describe("a band holding several layers", () => {
     ])
     expect(more[2].label).toBe("")
     // A row that is not stacked has none.
-    expect(subRowsOf({ ...fabric, layout: "row" }, now)).toEqual([])
+    expect(subRowsOf({ ...fab, layout: "row" }, now)).toEqual([])
   })
 
   it("puts a layer in one band only", () => {
@@ -1091,8 +1093,8 @@ describe("a band holding several layers", () => {
       by: "role",
       ids: [LAYER.server.id, LAYER.access.id],
     })
-    const fabric = edit.regions.find((r) => r.id === "access")!
-    expect(fabric.rule!.ids).toEqual([LAYER.access.id, LAYER.server.id])
+    const fab = edit.regions.find((r) => r.id === "access")!
+    expect(fab.rule!.ids).toEqual([LAYER.access.id, LAYER.server.id])
     const now = after(cards, edit.moves)
     expect(cy(now, "dev:a1")).toBeLessThan(cy(now, "dev:h1"))
   })
@@ -1196,8 +1198,8 @@ describe("Arrange with a band of several layers", () => {
       newId: counter(),
     })
     const rows = res.regions.filter(isRow)
-    const fabric = rows.find((r) => r.id === "access")!
-    expect(fabric).toMatchObject({
+    const fab = rows.find((r) => r.id === "access")!
+    expect(fab).toMatchObject({
       label: "Data Center fabric",
       color: "#8b5cf6",
       layout: "stack",
@@ -1219,9 +1221,9 @@ describe("Arrange with a band of several layers", () => {
     expect(cy(now, "dev:h1") - cy(now, "dev:a1")).toBe(60 + BAND.SUB_GAP)
     // Room for the sub-labels, both sides, on every row of the stack.
     const pad = gutterOf(["Access", "Server"])
-    for (const r of rows) expect(r.w).toBe(fabric.w)
+    for (const r of rows) expect(r.w).toBe(fab.w)
     const xs = now.map((c) => c.box.x)
-    expect(Math.min(...xs)).toBeGreaterThanOrEqual(fabric.x + pad)
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(fab.x + pad)
   })
 
   it("arranges the same way a second time", () => {
@@ -1279,7 +1281,7 @@ describe("Arrange with a band of several layers", () => {
 })
 
 describe("placing cards into a band of several layers", () => {
-  function fabric() {
+  function fabricRows() {
     const { regions, cards } = layered()
     const edit = setLayers({
       regions,
@@ -1292,7 +1294,7 @@ describe("placing cards into a band of several layers", () => {
   }
 
   it("answers a point with the sub-row it is in", () => {
-    const { regions, cards } = fabric()
+    const { regions, cards } = fabricRows()
     const subs = stackedSubRows(regions, cards).get("access")!
     const [acc, srv] = subs
     const slot = rowsAt(regions, cards)({ x: 500, y: srv.y + 10 })!
@@ -1304,7 +1306,7 @@ describe("placing cards into a band of several layers", () => {
   })
 
   it("puts a card on its own layer's sub-row", () => {
-    const { regions, cards } = fabric()
+    const { regions, cards } = fabricRows()
     const [acc, srv] = stackedSubRows(regions, cards).get("access")!
     expect(ruleRow(regions, cards)({ role: LAYER.server.id })).toMatchObject({
       y: srv.y,
@@ -1331,12 +1333,117 @@ describe("placing cards into a band of several layers", () => {
   })
 
   it("offers a layer with no card in the band the room where it goes", () => {
-    const { regions, cards } = fabric()
+    const { regions, cards } = fabricRows()
     const onlyAccess = cards.filter((c) => c.role?.name !== "Server")
     const fabricRow = regions.find((r) => r.id === "access")!
     const [acc] = stackedSubRows(regions, onlyAccess).get("access")!
     const slot = ruleRow(regions, onlyAccess)({ role: LAYER.server.id })!
     expect(slot.y).toBe(acc.y + acc.h)
     expect(slot.y + slot.h).toBe(fabricRow.y + fabricRow.h)
+  })
+})
+
+describe("merging and splitting bands", () => {
+  it("merges a band with the one under it, as sub-rows", () => {
+    const { regions, cards } = layered()
+    const edit = mergeDown({ regions, cards, id: "access" })
+    const rows = edit.regions.filter(isRow)
+    expect(rows.map((r) => r.id)).toEqual(["core", "access"])
+    const fab = rows[1]
+    expect(fab).toMatchObject({
+      label: "Access + Server",
+      color: "#8b5cf6",
+      layout: "stack",
+      rule: { by: "role", ids: [LAYER.access.id, LAYER.server.id] },
+    })
+    const now = after(cards, edit.moves)
+    expect(membersOf(edit.regions, boxesOf(now)).get("access")!.sort()).toEqual(
+      ["dev:a1", "dev:a2", "dev:h1", "dev:h2"]
+    )
+    expect(cy(now, "dev:h1") - cy(now, "dev:a1")).toBe(60 + BAND.SUB_GAP)
+    expect(stackedSubRows(edit.regions, now).get("access")).toHaveLength(2)
+  })
+
+  it("moves the rows under a merge up, keeping their gap", () => {
+    const { regions, cards } = layered()
+    const edit = mergeDown({ regions, cards, id: "core" })
+    const byId = new Map(edit.regions.map((r) => [r.id, r]))
+    expect(byId.has("access")).toBe(false)
+    const top = byId.get("core")!
+    expect(top.label).toBe("Core + Access")
+    const server = byId.get("server")!
+    expect(server.y).toBe(top.y + top.h + 48)
+    // Its cards went with it.
+    const now = after(cards, edit.moves)
+    expect(membersOf(edit.regions, boxesOf(now)).get("server")!.sort()).toEqual(
+      ["dev:h1", "dev:h2"]
+    )
+  })
+
+  it("has nothing to merge the bottom band with", () => {
+    const { regions, cards } = layered()
+    const edit = mergeDown({ regions, cards, id: "server" })
+    expect(edit.regions).toEqual(regions)
+    expect(edit.moves).toEqual({})
+  })
+
+  it("splits a band into a band per layer, and back to where it was", () => {
+    const { regions, cards } = layered()
+    const merged = mergeDown({ regions, cards, id: "access" })
+    const mid = after(cards, merged.moves)
+    const split = splitLayers({
+      regions: merged.regions,
+      cards: mid,
+      id: "access",
+      newId: counter(),
+    })
+    const rows = split.regions.filter(isRow)
+    expect(rows.map((r) => [r.id, r.label, r.rule?.ids])).toEqual([
+      ["core", "Core", [LAYER.core.id]],
+      ["access", "Access", [LAYER.access.id]],
+      ["new1", "Server", [LAYER.server.id]],
+    ])
+    // One layer each: plain bands again, in the band's tint.
+    for (const r of rows.slice(1)) {
+      expect(r.layout).toBeUndefined()
+      expect(r.color).toBe("#8b5cf6")
+    }
+    const now = after(mid, split.moves)
+    const m = membersOf(split.regions, boxesOf(now))
+    expect(m.get("access")!.sort()).toEqual(["dev:a1", "dev:a2"])
+    expect(m.get("new1")!.sort()).toEqual(["dev:h1", "dev:h2"])
+    const [a, s] = rows.slice(1)
+    expect(s.y).toBe(a.y + a.h + 48)
+    expect(a.h).toBe(BAND.TITLE + BAND.PAD_TOP + 60 + BAND.PAD_BOTTOM)
+  })
+
+  it("leaves out a layer with no card on the map", () => {
+    const { regions, cards } = layered()
+    const band = regions.map((r) =>
+      r.id === "access"
+        ? {
+            ...r,
+            layout: "stack" as const,
+            rule: {
+              by: "role" as const,
+              ids: [LAYER.access.id, LAYER.border.id],
+            },
+          }
+        : r
+    )
+    const split = splitLayers({
+      regions: band,
+      cards,
+      id: "access",
+      newId: counter(),
+    })
+    const access = split.regions.find((r) => r.id === "access")!
+    expect(access.rule).toEqual({ by: "role", ids: [LAYER.access.id] })
+    expect(access.layout).toBeUndefined()
+    expect(split.regions.filter(isRow)).toHaveLength(3)
+    // A band of one layer has nothing to split.
+    expect(splitLayers({ regions, cards, id: "access" }).regions).toEqual(
+      regions
+    )
   })
 })

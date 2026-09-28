@@ -11,6 +11,7 @@ import {
   handDrawn,
   isRow,
   isSide,
+  mergeDown,
   newRow,
   newSide,
   normalizeRegions,
@@ -23,6 +24,7 @@ import {
   setLayers,
   setLayout,
   snapSide,
+  splitLayers,
 } from "./bands"
 import type { ArrangeCard, BandBy, BandEdit, Region, RuleOf } from "./bands"
 import type { RowsAt, RowSlot } from "./placement"
@@ -58,7 +60,7 @@ export interface BandsApi {
   /** Restack the rows in this top-to-bottom order (the sidebar). */
   reorder: (ids: string[]) => void
   /** The canvas's band edits that move cards: up/down, resize, a row's
-   * layers and layout. */
+   * layers and layout, merge and split. */
   edit: (e: CanvasBandEdit) => void
   /** The canvas's `onZonesChange` on the Diagram: side bands moved or
    * resized by hand snap to the rows' edges. */
@@ -136,7 +138,7 @@ export function useBands(opts: {
     const info = new Map((nodes ?? []).map((n) => [n.id, n.data]))
     /** Every card on the map with its role and type: who is in which row
      * and on which of its sub-rows. */
-    const cards = (): ArrangeCard[] =>
+    const allCards = (): ArrangeCard[] =>
       Object.entries(boxes()).map(([nid, box]) => {
         const d = info.get(nid)
         return {
@@ -217,7 +219,7 @@ export function useBands(opts: {
           apply(
             setLayers({
               regions: now,
-              cards: cards(),
+              cards: allCards(),
               levels,
               id: e.id,
               by: e.by,
@@ -230,12 +232,17 @@ export function useBands(opts: {
           apply(
             setLayout({
               regions: now,
-              cards: cards(),
+              cards: allCards(),
               levels,
               id: e.id,
               layout: e.layout,
             })
           )
+          return
+        }
+        if (e.type === "merge" || e.type === "split") {
+          const input = { regions: now, cards: allCards(), levels, id: e.id }
+          apply(e.type === "merge" ? mergeDown(input) : splitLayers(input))
           return
         }
         const band = now.find((r) => r.id === e.id)
@@ -269,8 +276,8 @@ export function useBands(opts: {
         }
         setRegions(out)
       },
-      rowsAt: (p) => rowsAt(live(), cards())(p),
-      ruleRow: (card) => ruleRow(live(), cards())(card),
+      rowsAt: (p) => rowsAt(live(), allCards())(p),
+      ruleRow: (card) => ruleRow(live(), allCards())(card),
     }
   }, [regions, on, nodes, levels, direction, canvas, setRegions, setPositions])
 }
