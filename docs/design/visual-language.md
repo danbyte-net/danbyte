@@ -123,6 +123,25 @@ Radix controls report changes differently from DOM ones - `Checkbox` uses
 > with no definition behind it, delete the markup and use a primitive.** Grep
 > `styles.css` before trusting a bare class name.
 
+## Loading, and the shared Maps parts
+
+**One loader.** A page, section, panel or canvas that is fetching shows
+`<Loading />` (`components/loading.tsx`): the first-load splash spinner with a
+small muted *Loading…* under it, centred in the box it loads. The splash itself
+is the same component with its label kept for screen readers only. A table
+keeps its built-in loading row. A pending labelled button keeps its size and
+swaps the verb (*Saving…*); a spinner on its own is for icon-only buttons.
+The ellipsis is always the one `…` character.
+
+The Maps pages (Topology, Site map, Floor plans) build their chrome from shared
+parts, so a control reads the same on each:
+
+| Need | Use |
+|---|---|
+| Toolbar controls (h-7, `text-xs`, size-3 icons) | `components/map-toolbar.tsx`: `BarButton`, `BarIconButton` (its required `label` is the aria-label and the tooltip; `destructive` is ghost with destructive text), `BarToggle` (`aria-pressed`, muted when off), `BarMenuTrigger` (label plus chevron, no tooltip) and `BarTip` (the plain `default` tooltip, below the control) |
+| Leaving the map for an object's page | `OpenLink` (`components/open-link.tsx`): a router link drawn as a bar button with a leading ArrowUpRight, e.g. *Open device*. Drilling in on the same map is a plain button, no arrow |
+| A shortcut in a tooltip or menu | `Kbd` (`components/ui/kbd.tsx`), with `modKey()` (`lib/mod-key.ts`) for the modifier: `${modKey()}S` reads *⌘S* on a Mac, *Ctrl+S* elsewhere |
+
 ## Widths and truncation are the primitive's job
 
 A control must declare *one* width contract, and the shared primitives do:
