@@ -20,8 +20,18 @@ describe("docsUrlFor", () => {
   it("every registry target is a normalized docs path", () => {
     for (const [route, target] of Object.entries(DOCS_LINKS)) {
       expect(route.startsWith("/"), route).toBe(true)
-      expect(target.endsWith("/"), target).toBe(true)
+      // A page, or a section of one: "page/" or "page/#anchor".
+      expect(target, target).toMatch(/\/(#[a-z0-9-]+)?$/)
       expect(target.startsWith("/"), target).toBe(false)
     }
+  })
+
+  it("deep-links a page's section", () => {
+    expect(docsUrlFor("/virtual-topology")).toBe(
+      "/docs/features/virtual-switches/#network-topology"
+    )
+    expect(docsUrlFor("/virtual-switches")).toBe(
+      "/docs/features/virtual-switches/"
+    )
   })
 })

@@ -3,6 +3,8 @@ import { useEffect, useState } from "react"
 
 import { useMe } from "@/lib/use-me"
 import { Input } from "@/components/ui/input"
+import { InfoTip } from "@/components/ui/info-tip"
+import { Loading } from "@/components/loading"
 import {
   SettingsCard,
   SettingsGrid,
@@ -17,8 +19,7 @@ export const Route = createFileRoute("/settings/maps")({
 
 function MapsPage() {
   const { canManageDeployment, isLoading } = useMe()
-  if (isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (isLoading) return <Loading />
   if (!canManageDeployment) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -30,7 +31,7 @@ function MapsPage() {
   return (
     <div className="space-y-6">
       <SettingsHeader title="Site map">
-        The tile servers behind the Site map - standard and satellite basemaps.
+        The Site map's standard and satellite basemaps.
       </SettingsHeader>
       <SettingsGrid>
         <MapTilesCard />
@@ -59,7 +60,16 @@ function MapTilesCard() {
   return (
     <SettingsCard
       title="Map tiles"
-      description="The tile server behind the Site map. Blank = OpenStreetMap's standard tiles (fine for light use; run your own tile server for heavy or offline deployments)."
+      badge={
+        <InfoTip>
+          OpenStreetMap&rsquo;s servers are donation-funded: keep the default
+          only for light internal use, per their tile usage policy, and run your
+          own tile server for heavy or offline deployments. A custom tile host
+          must also be allowed in the nginx CSP (img-src); see the Site map
+          docs.
+        </InfoTip>
+      }
+      description="Blank uses OpenStreetMap's standard tiles."
       onSave={() =>
         save.mutate({
           key: "tiles",
@@ -137,11 +147,6 @@ function MapTilesCard() {
           spellCheck={false}
         />
       </SettingsRow>
-      <p className="px-4 py-3 text-[11px] text-muted-foreground">
-        A custom tile host also needs to be allowed in the nginx CSP (img-src) -
-        see the Site map docs. OpenStreetMap's servers are donation-funded: keep
-        the default only for light internal use, per their tile usage policy.
-      </p>
     </SettingsCard>
   )
 }

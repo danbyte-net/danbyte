@@ -96,12 +96,12 @@ reference.
 Virtual switches list) draws the whole picture in one diagram:
 
     external network → physical adapters (host NICs) → switches
-        → networks (VLANs, as coloured rails) → the VMs on each
+        → networks (VLANs, as colored rails) → the VMs on each
 
 Each VM is drawn **once**, with one connector per network it attaches to, so a
 multi-homed firewall reads as a single box with several cables rather than
-appearing on every rail. Rail colour follows the [VLAN's own
-colour](ipam-objects.md#vlans), falling back to its zone's colour and then to a
+appearing on every rail. Rail color follows the [VLAN's own
+color](ipam-objects.md#vlans), falling back to its zone's color and then to a
 palette shade. Every node clicks through to its object, and a VM's own page
 shows the same diagram scoped to that VM, as its **Topology** card. The ⓘ
 beside the source picker sums this up.

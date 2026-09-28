@@ -142,6 +142,11 @@ parts, so a control reads the same on each:
 | Leaving the map for an object's page | `OpenLink` (`components/open-link.tsx`): a router link drawn as a bar button with a leading ArrowUpRight, e.g. *Open device*. Drilling in on the same map is a plain button, no arrow |
 | Unsaved edits on the way out | `LeaveGuardDialog` (`components/leave-guard-dialog.tsx`), driven by `useBlocker({ withResolver: true })`: *Discard unsaved changes?* with *Keep editing* / *Discard and leave* |
 | A shortcut in a tooltip or menu | `Kbd` (`components/ui/kbd.tsx`), with `modKey()` (`lib/mod-key.ts`) for the modifier: `${modKey()}S` reads *⌘S* on a Mac, *Ctrl+S* elsewhere |
+| The Objects sidebar | `ObjectsPanel` (`components/objects-panel.tsx`): *Objects* and its count, the search box, `CheckFilterTabs`, the hidden row, then the page's `ObjectsSection`s. Each group inside is a `FoldableGroup` (`components/foldable-group.tsx`) with its count and, where it can be hidden, the `VisibilityToggle` eye |
+| How much is hidden, with the sidebar shut | `HiddenChip` (`components/hidden-chip.tsx`): *N hidden · Show all*, in the corner the page names with `position` (the one its MiniMap, legend and attribution leave free) |
+| A right-click menu on a canvas | `PointerMenu` (`components/pointer-menu.tsx`): the shared dropdown opened at the pointer. A key an item shows (++h++, ++delete++) is passed in `keys`, so it acts on what was right-clicked, not on the selection |
+| The detail panel over a canvas | `PanelShell` (`components/map-panel.tsx`): title and Close, `PanelRow` key/value rows, `PanelSection`s under a `SectionLabel`, and the actions at the foot (*Open …* first). `SectionLabel` also heads a legend |
+| A chip on a canvas (a legend folded, *Partial map*) | Bordered `bg-background/95`, no shadow and no blur: shadows are for overlays. A folded legend is an outline `xs` button with the List icon |
 
 Anything that copies to the clipboard goes through `copyWithToast()`
 (`lib/clipboard.ts`), so a copy that fails always says *Couldn't copy*.

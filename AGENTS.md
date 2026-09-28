@@ -183,6 +183,10 @@ Use the active shared system; do not hand-roll another version of existing UI:
   `rounded-full` pill. `rounded-full` is for status dots and avatars only.
 - Dates/times: `TimeCell` or the shared time helpers.
 - Tabs: the shared segmented-tabs component.
+- Maps chrome (Topology, Site map, Floor plans): `components/map-toolbar.tsx`
+  for bar controls, `ObjectsPanel`, `HiddenChip`, `PointerMenu`, and
+  `components/map-panel.tsx` for detail panels. The table in
+  `docs/design/visual-language.md` lists them.
 
 One entity should have one column factory, reused by list and embedded tables.
 Do not copy a shell, inline a second `ColumnDef[]`, add raw `<table>` markup, or

@@ -4,7 +4,7 @@
 //
 // Keys are app route prefixes ("/devices" also covers "/devices/<id>/edit");
 // values are docs paths as the static site serves them (".md" dropped,
-// "index.md" → its directory). Adding a page? Add its mapping here - the
+// "index.md" → its directory), optionally with a section's "#anchor". Adding a page? Add its mapping here - the
 // repo's docs-link hook reminds you when a new route ships without one.
 
 export const DOCS_LINKS: Record<string, string> = {
@@ -75,7 +75,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/cluster-groups": "features/clusters/",
   "/virtual-machines": "features/virtual-machines/",
   "/virtual-switches": "features/virtual-switches/",
-  "/virtual-topology": "features/virtual-switches/",
+  "/virtual-topology": "features/virtual-switches/#network-topology",
   "/circuits": "features/circuits/",
   "/circuit-types": "features/circuits/",
   "/providers": "features/circuits/",

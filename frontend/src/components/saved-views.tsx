@@ -17,6 +17,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 /**
@@ -266,26 +271,42 @@ export function SavedViews({ objectType, q, onQ, filters }: SavedViewsProps) {
                     })
                   }
                 >
-                  {save.isPending ? "Saving..." : "Save view"}
+                  {save.isPending ? "Saving…" : "Save view"}
                 </Button>
               </div>
             </div>
           ) : (
             <div className="flex items-center gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="justify-start"
-                disabled={!anythingActive}
-                title={
-                  anythingActive
-                    ? "Save the current search and filters as a view"
-                    : "Filter the list first"
-                }
-                onClick={() => setNaming(true)}
-              >
-                Save current filters
-              </Button>
+              {anythingActive ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="justify-start"
+                  onClick={() => setNaming(true)}
+                >
+                  Save current filters
+                </Button>
+              ) : (
+                // A disabled button takes no pointer: the tip hangs on a
+                // wrapper.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="justify-start"
+                        disabled
+                      >
+                        Save current filters
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" variant="default">
+                    Filter the list first
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {applied && edited && applied.mine && (
                 <Button
                   size="sm"
@@ -293,7 +314,7 @@ export function SavedViews({ objectType, q, onQ, filters }: SavedViewsProps) {
                   disabled={update.isPending}
                   onClick={() => update.mutate(applied)}
                 >
-                  {update.isPending ? "Updating..." : "Update"}
+                  {update.isPending ? "Updating…" : "Update"}
                 </Button>
               )}
               {anythingActive && (
@@ -364,28 +385,42 @@ function ViewGroup({
             )}
           </button>
           {view.mine && (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              asChild
-              className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-              title={`Edit “${view.name}”`}
-            >
-              <Link to="/saved-filters" search={{ edit: view.id }}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  asChild
+                  className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                  aria-label={`Edit “${view.name}”`}
+                >
+                  <Link to="/saved-filters" search={{ edit: view.id }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" variant="default">
+                Edit “{view.name}”
+              </TooltipContent>
+            </Tooltip>
           )}
           {onDelete && (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-              title={`Delete “${view.name}”`}
-              onClick={() => onDelete(view)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                  aria-label={`Delete “${view.name}”`}
+                  onClick={() => onDelete(view)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" variant="default">
+                Delete “{view.name}”
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       ))}
