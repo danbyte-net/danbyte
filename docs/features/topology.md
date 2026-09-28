@@ -39,6 +39,11 @@ every cabled interface and its name on its own cable, as Wiring did;
 
 - **Links** - an old link that names them (`?tab=wiring`, `?tab=stencil`,
   `?tab=flat`) opens the Diagram in Detailed or Simple instead.
+- **Lines** - until a map names a [line type](#line-types) of its own, its
+  cables keep the look they had: Wiring's routed cables (its default) are
+  **Elbow**, Flat's free curves are **Bendy**, and a map set to curved or
+  straight cables is **Bendy** or **Straight**. An old link does the same
+  from its `cables` parameter, unless it names a `line`.
 - **Saved views** - a view last shown on Wiring or Flat opens on the
   Diagram in Detailed or Simple. The first time it does, while it has no
   Diagram arrangement of its own, it brings that tab's arrangement and

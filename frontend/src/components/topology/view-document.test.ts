@@ -14,6 +14,7 @@ import {
   historyReducer,
   initHistory,
   isRetiredStyle,
+  lineOfRouting,
   readDefaultMap,
   storedDefaultMap,
   toViewState,
@@ -564,6 +565,17 @@ describe("carryIntoDiagram", () => {
       zones: { stencil: [zone("z1")] },
       ...over,
     })
+
+  it("opens a retired map with the lines its routing drew", () => {
+    expect(lineOfRouting("stencil", undefined)).toBe("elbow")
+    expect(lineOfRouting("stencil", "routed")).toBe("elbow")
+    expect(lineOfRouting("stencil", "curved")).toBe("bendy")
+    expect(lineOfRouting("stencil", "straight")).toBe("straight")
+    expect(lineOfRouting("flat", undefined)).toBe("bendy")
+    expect(lineOfRouting("flat", "routed")).toBe("bendy")
+    expect(lineOfRouting("flat", "straight")).toBe("straight")
+    expect(lineOfRouting("stencil", "bogus")).toBe("elbow")
+  })
 
   it("names the retired tabs and the mode each opens in", () => {
     expect(RETIRED_STYLES).toEqual({ stencil: "detailed", flat: "simple" })

@@ -19,10 +19,12 @@ describe("topology search params", () => {
     expect(validate({ tab: "wiring" })).toEqual({
       tab: "diagram",
       mode: "detailed",
+      line: "elbow",
     })
     expect(validate({ tab: "stencil", site: "s1" })).toEqual({
       tab: "diagram",
       mode: "detailed",
+      line: "elbow",
       site: "s1",
     })
   })
@@ -31,11 +33,24 @@ describe("topology search params", () => {
     expect(validate({ tab: "flat" })).toEqual({
       tab: "diagram",
       mode: "simple",
+      line: "bendy",
     })
     expect(validate({ tab: "flat", mode: "detailed" })).toEqual({
       tab: "diagram",
       mode: "simple",
+      line: "bendy",
     })
+  })
+
+  it("draws a retired tab's cables as its routing did", () => {
+    const line = (s: Record<string, unknown>) => validate(s).line
+    expect(line({ tab: "wiring", cables: "routed" })).toBe("elbow")
+    expect(line({ tab: "wiring", cables: "curved" })).toBe("bendy")
+    expect(line({ tab: "stencil", cables: "straight" })).toBe("straight")
+    expect(line({ tab: "flat", cables: "straight" })).toBe("straight")
+    // A line the link names wins; the tabs that stay add none.
+    expect(line({ tab: "wiring", line: "cyclical" })).toBe("cyclical")
+    expect(line({ tab: "diagram", cables: "curved" })).toBeUndefined()
   })
 
   it("keeps the tabs that stay, and their mode", () => {

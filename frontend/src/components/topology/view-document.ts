@@ -5,6 +5,7 @@ import type { ShouldBlockFn } from "@tanstack/react-router"
 
 import { ApiError } from "@/lib/api"
 import type {
+  TopologyLineType,
   TopologyLinkOverride,
   TopologyPositionStyle,
   TopologyViewFilters,
@@ -180,6 +181,22 @@ export type RetiredStyle = keyof typeof RETIRED_STYLES
 
 export const isRetiredStyle = (v: unknown): v is RetiredStyle =>
   v === "stencil" || v === "flat"
+
+/**
+ * The Diagram line a map last shown on a retired tab opens with, when it
+ * names none of its own: the look its cable routing gave it there. Wiring
+ * bent cables round the cards ("routed", its default) - Elbow; Flat drew
+ * them as free curves - Bendy; "curved" is Bendy and "straight" stays
+ * Straight on either.
+ */
+export function lineOfRouting(
+  from: RetiredStyle,
+  routing: unknown
+): TopologyLineType {
+  if (routing === "straight") return "straight"
+  if (routing === "curved") return "bendy"
+  return from === "stencil" ? "elbow" : "bendy"
+}
 
 /**
  * A map last arranged on Wiring or Flat, carried into the Diagram: that

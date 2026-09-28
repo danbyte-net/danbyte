@@ -113,6 +113,7 @@ import {
   emptyDocument,
   isRetiredStyle,
   isStaleViewError,
+  lineOfRouting,
   readDefaultMap,
   RETIRED_STYLES,
   storedDefaultMap,
@@ -336,6 +337,11 @@ export const Route = createFileRoute("/topology/")({
     if (anchor) out.anchor = anchor
     const line = oneOf(s.line, LINE_TYPES)
     if (line) out.line = line
+    // …with the lines that tab drew, unless the link names one.
+    const retiredStyle =
+      typeof s.tab === "string" ? RETIRED_TAB_STYLE[s.tab] : undefined
+    if (retiredStyle && !out.line)
+      out.line = lineOfRouting(retiredStyle, s.cables)
     const depth = Number(s.depth)
     if (Number.isFinite(depth) && depth > 0)
       out.depth = Math.min(6, Math.round(depth))
@@ -548,6 +554,12 @@ const RETIRED_TABS: Record<string, DiagramModeParam | undefined> = {
   stencil: "detailed",
   flat: "simple",
 }
+/** The retired style each old tab name drew. */
+const RETIRED_TAB_STYLE: Record<string, RetiredStyle | undefined> = {
+  wiring: "stencil",
+  stencil: "stencil",
+  flat: "flat",
+}
 const COLOR_MODES = ["cable", "type", "status", "speed", "none"] as const
 const DIRS = ["lr", "tb"] as const
 const ROUTINGS = ["routed", "straight", "curved"] as const
@@ -731,6 +743,11 @@ function TopologyPage() {
   const retiredMode = isRetiredStyle(openedAs)
     ? RETIRED_STYLES[openedAs]
     : undefined
+  // …with the lines its cable routing gave it there, until it names its
+  // own: a view's over this browser's Diagram default.
+  const retiredLine = isRetiredStyle(openedAs)
+    ? lineOfRouting(openedAs, vf.edgeRouting ?? stored.edgeRouting)
+    : undefined
   const dfltFace =
     oneOf(vf.diagram?.face, FACES) ??
     oneOf(storedDiagram?.face, FACES) ??
@@ -774,7 +791,9 @@ function TopologyPage() {
       "ports",
     line:
       oneOf(vf.diagram?.line, LINE_TYPES) ??
+      (isRetiredStyle(vf.viewStyle) ? retiredLine : undefined) ??
       oneOf(storedDiagram?.line, LINE_TYPES) ??
+      retiredLine ??
       "straight",
     labels:
       labelsOf(vf.diagram?.labels) ??
