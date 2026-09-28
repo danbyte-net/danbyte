@@ -1292,7 +1292,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onBgpEdge,
     onCanvasClick,
     onDragEnd,
-    diagramMode = "simple",
+    diagramMode = "detailed",
     diagramLine = "straight",
     linkOverrides,
     diagramLabels,

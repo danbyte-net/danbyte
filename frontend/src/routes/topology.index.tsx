@@ -677,8 +677,9 @@ function TopologyPage() {
   // object. "all" / "none" are spelled out rather than left absent, because a
   // link that turns a saved view's filter OFF has to say so - an absent param
   // would inherit the view's value again.
+  // Nothing saved or stored opens the Diagram (Detailed, below).
   const dfltTab = tabOfStyle(
-    sanitizeViewStyle(vf.viewStyle ?? stored.viewStyle)
+    sanitizeViewStyle(vf.viewStyle ?? stored.viewStyle ?? "diagram")
   )
   const dfltFace =
     oneOf(vf.diagram?.face, FACES) ??
@@ -714,7 +715,7 @@ function TopologyPage() {
     mode:
       oneOf(vf.diagram?.mode, DIAGRAM_MODES) ??
       oneOf(storedDiagram?.mode, DIAGRAM_MODES) ??
-      "simple",
+      "detailed",
     face: dfltFace,
     anchor:
       oneOf(vf.diagram?.photo_anchor, ANCHORS) ??

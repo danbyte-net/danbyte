@@ -7,10 +7,11 @@ icon: lucide/network
 **DCIM → Topology** draws your network five ways, switched by the
 **Diagram / Wiring / Hierarchy / Flat / Logical** tabs in the header:
 
-- **Diagram** - a clean, printable network diagram: one solid card per
-  device in its role's colour, with **Simple** and **Detailed** modes and a
-  choice of line. See [Diagram view](#diagram-view).
-- **Wiring** (default) - the port-accurate diagram described below: stencil
+- **Diagram** (default) - a clean, printable network diagram: one solid
+  card per device in its role's colour, in **Detailed** mode (the default:
+  a nub and a named line per cabled interface) or **Simple** (one line per
+  device pair), with a choice of line. See [Diagram view](#diagram-view).
+- **Wiring** - the port-accurate diagram described below: stencil
   cards with one row per cabled port, cables drawn port-to-port.
 - **Hierarchy** - tall rounded cards with the identity on a header row and
   **port chips aligned to their peer's height**, so cables run
@@ -36,7 +37,8 @@ icon: lucide/network
   layout drives the [virtual network topology](virtual-switches.md).)
 
 The view choice is remembered per browser and saved with
-[saved views](#saved-views).
+[saved views](#saved-views); a map opens on the Diagram, Detailed, until
+you choose otherwise.
 
 In the Wiring view, devices render as **stencil cards** - role-colored
 spine, status pill, type and primary IP, and one row per **cabled port** -
@@ -61,7 +63,8 @@ something.
   device is down or degraded, else the lifecycle status pill when the card
   lists it. A card keeps room for its pill, so a device going down never
   resizes it or moves its lines.
-- **Simple | Detailed** (beside the tabs):
+- **Simple | Detailed** (beside the tabs; **Detailed** unless a view or
+  link says otherwise):
     - **Simple** - compact cards. Every line leaving one side of a card
       starts at that side's midpoint, and the lines part right after it:
       each elbow turns off at its own depth, a lane apart. All the cables
@@ -1029,8 +1032,8 @@ back button and a reload all keep it.
 
 | Parameter | Values |
 |---|---|
-| `tab` | `wiring` (default), `diagram`, `hierarchy`, `flat`, `logical` |
-| `mode` | Diagram: `simple` (default), `detailed` |
+| `tab` | `diagram` (default), `wiring`, `hierarchy`, `flat`, `logical` |
+| `mode` | Diagram: `detailed` (default), `simple` |
 | `face` | Diagram: devices as `card` (default) or `photo` - see [Photo nodes](#photo-nodes) |
 | `anchor` | Diagram: cables meet a photo at its `ports` (default) or its `edge` |
 | `line` | Diagram: `straight` (default), `elbow`, `bendy`, `cyclical` |
