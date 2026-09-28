@@ -807,12 +807,23 @@ export function hierHeight(span: number): number {
   return HIER_HEADER + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
 }
 
-/** Sized to the device name, capped, plus the status pill beside it. */
-export function hierarchyWidth(d: { name?: string } & HasStatusPill): number {
-  return Math.max(
-    190,
-    Math.min(300, 70 + (d.name?.length ?? 0) * 6.6) + statusPillReserve(d)
-  )
+/** The most of a Hierarchy card's width its name takes before it
+ * truncates. */
+export const HIER_NAME_MAX = 180
+
+/** Sized to the header: the device name (whole up to 180px), the status
+ * pill beside it, then its address and site - capped. */
+export function hierarchyWidth(
+  d: {
+    name?: string
+    primary_ip?: string | null
+    site?: string | null
+  } & HasStatusPill
+): number {
+  const name = Math.min(HIER_NAME_MAX, (d.name?.length ?? 0) * 6.6)
+  const sub = [d.primary_ip, d.site].filter(Boolean).join(" · ")
+  const tail = sub ? 8 + Math.min(140, sub.length * 5) : 0
+  return Math.max(190, Math.min(360, 40 + name + tail) + statusPillReserve(d))
 }
 
 export interface HierResult {

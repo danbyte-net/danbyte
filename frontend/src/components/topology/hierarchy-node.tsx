@@ -4,6 +4,7 @@ import { NodeStatusPill } from "./node-status-pill"
 import { handleId, type StencilData } from "./stencil-node"
 import {
   HIER_HEADER,
+  HIER_NAME_MAX,
   hierHeight,
   hierarchyWidth,
   type HierPortPos,
@@ -62,7 +63,11 @@ export function HierarchyNode({ data, selected }: NodeProps) {
           style={{ background: d.role?.color || "var(--border)" }}
           data-tip={d.role?.name}
         />
-        <span className="min-w-0 truncate font-mono text-[11px] font-medium">
+        {/* The name keeps its room; the address and site give way first. */}
+        <span
+          className="shrink-0 truncate font-mono text-[11px] font-medium"
+          style={{ maxWidth: HIER_NAME_MAX }}
+        >
           {d.name}
         </span>
         <NodeStatusPill status={d.status_mini} />

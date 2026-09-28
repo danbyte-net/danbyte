@@ -11,8 +11,9 @@ icon: lucide/network
   card per device in its role's colour, in **Detailed** mode (the default:
   a nub and a named line per cabled interface) or **Simple** (one line per
   device pair), with a choice of line. See [Diagram view](#diagram-view).
-- **Hierarchy** - tall rounded cards with the identity on a header row and
-  **port chips aligned to their peer's height**, so cables run
+- **Hierarchy** - tall rounded cards with the identity on a header row (the
+  device name kept whole up to 180 px; its address and site give way
+  first) and **port chips aligned to their peer's height**, so cables run
   near-straight left-to-right. The layout relaxes ports toward their far
   ends over the rank structure; drag a card and its chips ride along.
   Cables here are routed from the ports, not the cards: one bends only to
