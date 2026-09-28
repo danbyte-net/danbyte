@@ -173,6 +173,47 @@ export function toViewState(
   return state
 }
 
+/** The retired Wiring and Flat tabs, and the Diagram mode each now opens
+ * in. Their arrangements stay under their own keys for one release. */
+export const RETIRED_STYLES = { stencil: "detailed", flat: "simple" } as const
+export type RetiredStyle = keyof typeof RETIRED_STYLES
+
+export const isRetiredStyle = (v: unknown): v is RetiredStyle =>
+  v === "stencil" || v === "flat"
+
+/**
+ * A map last arranged on Wiring or Flat, carried into the Diagram: that
+ * tab's arrangement and its zones, each copied only where the Diagram has
+ * none of its own. The retired tabs placed a card by its top-left corner
+ * and the Diagram places it by its centre, so each corner moves by half
+ * the card's box on the retired tab (`sizeOf`). The retired tab's own keys
+ * are kept. Null when there is nothing to carry, or the Diagram already
+ * has an arrangement.
+ */
+export function carryIntoDiagram(
+  doc: ViewDocument,
+  from: RetiredStyle,
+  sizeOf: (id: string) => { w: number; h: number }
+): ViewDocument | null {
+  if (doc.positions.diagram) return null
+  const src = doc.positions[from]
+  const zones = doc.zones.diagram ? undefined : doc.zones[from]
+  const hasSrc = !!src && Object.keys(src).length > 0
+  if (!hasSrc && !zones?.length) return null
+  const next: ViewDocument = { ...doc }
+  if (hasSrc) {
+    const centres: PosMap = {}
+    for (const [id, [x, y]] of Object.entries(src)) {
+      const b = sizeOf(id)
+      centres[id] = [Math.round(x + b.w / 2), Math.round(y + b.h / 2)]
+    }
+    next.positions = { ...doc.positions, diagram: centres }
+  }
+  if (zones?.length)
+    next.zones = { ...doc.zones, diagram: zones.map((z) => ({ ...z })) }
+  return next
+}
+
 /** The default map as this browser stores it: a saved view's `state`,
  * without a device set (the default map has none). */
 export function storedDefaultMap(doc: ViewDocument): string {
@@ -449,8 +490,13 @@ export interface ViewDocumentApi {
   /** `updated_at` of the saved version the edits are based on. */
   base: string | null
   /** `coalesce` names a gesture: calls with the same name in one tick
-   * (one event handler) become a single undo step. */
-  dispatch: (action: DocAction, opts?: { coalesce?: string }) => void
+   * (one event handler) become a single undo step. `step` names one across
+   * ticks: consecutive calls with the same `step` are one undo step, as
+   * long as no other edit comes between them. */
+  dispatch: (
+    action: DocAction,
+    opts?: { coalesce?: string; step?: string }
+  ) => void
   /** Step back; returns the document it steps to, or null at the start. */
   undo: () => ViewDocument | null
   redo: () => ViewDocument | null
@@ -480,9 +526,9 @@ export function useViewDocument(
   // the same key. The microtask closes the window after the handler.
   const tick = useRef({ n: 0, open: false })
   const dispatch = useCallback(
-    (action: DocAction, opts?: { coalesce?: string }) => {
-      let step: string | undefined
-      if (opts?.coalesce) {
+    (action: DocAction, opts?: { coalesce?: string; step?: string }) => {
+      let step = opts?.step
+      if (!step && opts?.coalesce) {
         const t = tick.current
         if (!t.open) {
           t.n += 1

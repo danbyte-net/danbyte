@@ -1141,6 +1141,12 @@ export interface TopologyCanvasProps {
   emptyState?: ReactNode
   /** Devices just added and not fetched yet, muted where they will land. */
   pending?: readonly PendingCard[]
+  /** Diagram: an arrangement carried over from another view, drawn at
+   * other card sizes. The build pinned at exactly these positions (by
+   * identity) has its overlapping cards moved apart, once, and where they
+   * went is reported to `onSpread` - even when nothing had to move. */
+  spreadFrom?: Record<string, [number, number]>
+  onSpread?: (centres: Record<string, [number, number]>) => void
 }
 
 /** Where to aim the camera for a node: diagram nodes are placed by their
@@ -1220,6 +1226,15 @@ function clearGrown(nodes: Node[], prev: readonly Node[]): Node[] {
     (n) => n.type === "card" && was.has(n.id) && was.get(n.id) !== isPhoto(n)
   )
   if (!grown.length) return nodes
+  const moved = settleGrown(
+    cardBoxes(nodes),
+    grown.map((n) => n.id)
+  )
+  return moved ? movedTo(nodes, moved) : nodes
+}
+
+/** The Diagram cards' boxes; their positions are centres. */
+function cardBoxes(nodes: readonly Node[]): Record<string, Rect> {
   const boxes: Record<string, Rect> = {}
   for (const n of nodes)
     if (n.type === "card" && n.width && n.height && !n.hidden)
@@ -1229,17 +1244,36 @@ function clearGrown(nodes: Node[], prev: readonly Node[]): Node[] {
         w: n.width,
         h: n.height,
       }
-  const moved = settleGrown(
-    boxes,
-    grown.map((n) => n.id)
-  )
-  if (!moved) return nodes
+  return boxes
+}
+
+function movedTo(
+  nodes: Node[],
+  moved: Readonly<Record<string, [number, number]>>
+): Node[] {
   return nodes.map((n) => {
     const c = moved[n.id] as [number, number] | undefined
     return c && (c[0] !== n.position.x || c[1] !== n.position.y)
       ? { ...n, position: { x: c[0], y: c[1] } }
       : n
   })
+}
+
+/** Where the Diagram cards go to stand apart when any two overlap, or
+ * null when none do (`settleGrown` over every card). */
+function spreadCards(
+  nodes: readonly Node[]
+): Record<string, [number, number]> | null {
+  const boxes = cardBoxes(nodes)
+  return settleGrown(boxes, Object.keys(boxes))
+}
+
+/** Where the Diagram cards stand: their centres. */
+function cardCentres(nodes: readonly Node[]): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {}
+  for (const n of nodes)
+    if (n.type === "card") out[n.id] = [n.position.x, n.position.y]
+  return out
 }
 
 /** The cable a Diagram link draws, when it is one part of a breakout -
@@ -1300,6 +1334,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onDropDevices,
     emptyState,
     pending,
+    spreadFrom,
+    onSpread,
   },
   ref
 ) {
@@ -1852,6 +1888,17 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const prevFitKey = useRef(fitKey)
   const prevMode = useRef(diagramMode)
   const shownEmpty = useRef(false)
+  // A carried-over arrangement to spread, read when a build is applied
+  // (not a reason to apply one), and the one last spread.
+  const spreadWant = useRef({ from: spreadFrom, done: onSpread })
+  spreadWant.current = { from: spreadFrom, done: onSpread }
+  const spreadLast = useRef<Record<string, [number, number]> | null>(null)
+  /** The build last spread and where its cards went: an effect run again
+   * on the same build draws them there again. */
+  const spreadDone = useRef<{
+    built: Built
+    moved: Record<string, [number, number]> | null
+  } | null>(null)
   const sLayoutTick = stamp?.layoutTick
   const sNodeStyle = stamp?.nodeStyle
   const sFitKey = stamp?.fitKey
@@ -1918,6 +1965,24 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // way - no new layout.
     if (diagram && keepingDrags)
       nextNodes = clearGrown(nextNodes, prevNodes.current)
+    // An arrangement carried over from another view, drawn at the
+    // Diagram's sizes for the first time: what overlaps moves apart, and
+    // the page keeps where everything went.
+    const want = spreadWant.current
+    let apart = spreadDone.current?.built === built && spreadDone.current.moved
+    if (
+      diagram &&
+      want.from &&
+      stamp.positions === want.from &&
+      spreadLast.current !== want.from
+    ) {
+      spreadLast.current = want.from
+      apart = spreadCards(nextNodes)
+      spreadDone.current = { built, moved: apart }
+      if (apart) nextNodes = movedTo(nextNodes, apart)
+      want.done?.(cardCentres(nextNodes))
+    } else if (apart) nextNodes = movedTo(nextNodes, apart)
+    const relink = keepingDrags || !!apart
     // Built off the main thread: the focused card is selected here.
     if (built.modelId !== undefined)
       nextNodes = nextNodes.map((n) =>
@@ -1930,11 +1995,21 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     adopt(built.model)
     modelIdRef.current = built.modelId ?? null
     const refit = () => requestAnimationFrame(() => fitMap(300))
+    // Any relayout re-fits the viewport - without this the camera keeps
+    // staring at wherever it was while the graph reshapes elsewhere, which
+    // reads as a frozen/blank map on big graphs. A map built off the main
+    // thread arrives after React Flow's own first fit: it fits then.
+    // Never on an empty map: React Flow holds a fit it cannot do yet and
+    // does it when the first card lands - which a map being built by hand
+    // must not.
+    const fit =
+      built.nodes.length > 0 &&
+      (relaidOut || (built.modelId !== undefined && first && !wasEmpty))
     // Diagram: the kept positions are not the ones the links were anchored
     // for - re-anchor (and re-size the Detailed cards) where they are. Off
     // the main thread the worker does it, and the map stays as it was until
     // the answer is back.
-    if (built.model && keepingDrags && built.modelId !== undefined) {
+    if (built.model && relink && built.modelId !== undefined) {
       const id = built.modelId
       const kept = nextNodes
       setBusy((b) => b + 1)
@@ -1950,6 +2025,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               ...noteNodes.current,
             ])
             setEdges(re.edges)
+            if (fit) refit()
           },
           () => lostWorker()
         )
@@ -1957,7 +2033,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       return
     }
     let diagramEdges: Edge[] | null = null
-    if (built.model && keepingDrags) {
+    if (built.model && relink) {
       const re = relinkDiagram(built.model, nextNodes)
       adopt(re.model)
       diagramEdges = re.edges
@@ -1990,18 +2066,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     } else {
       setEdges(built.edges)
     }
-    // Any relayout re-fits the viewport - without this the camera keeps
-    // staring at wherever it was while the graph reshapes elsewhere, which
-    // reads as a frozen/blank map on big graphs. A map built off the main
-    // thread arrives after React Flow's own first fit: it fits then.
-    // Never on an empty map: React Flow holds a fit it cannot do yet and
-    // does it when the first card lands - which a map being built by hand
-    // must not.
-    if (
-      built.nodes.length > 0 &&
-      (relaidOut || (built.modelId !== undefined && first && !wasEmpty))
-    )
-      refit()
+    if (fit) refit()
     // `stamp` is read through its fields: the in-place one is made afresh
     // every render.
   }, [

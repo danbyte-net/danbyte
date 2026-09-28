@@ -108,17 +108,30 @@ import {
 } from "@/components/topology/hidden"
 import { StaleViewDialog } from "@/components/topology/stale-view-dialog"
 import {
+  carryIntoDiagram,
   docFromView,
   emptyDocument,
+  isRetiredStyle,
   isStaleViewError,
   readDefaultMap,
+  RETIRED_STYLES,
   storedDefaultMap,
   toViewState,
   useDocumentKeys,
   useMapLeaveGuard,
   useViewDocument,
 } from "@/components/topology/view-document"
-import type { ViewDocument } from "@/components/topology/view-document"
+import type {
+  RetiredStyle,
+  ViewDocument,
+} from "@/components/topology/view-document"
+import {
+  CENTER_H,
+  CENTER_W,
+  stencilSize,
+} from "@/components/topology/stencil-node"
+import type { StencilData } from "@/components/topology/stencil-node"
+import { FLAT_H, FLAT_W, flatW } from "@/components/topology/flat-node"
 import { HiddenChip } from "@/components/hidden-chip"
 import {
   setHidden as withHidden,
@@ -287,6 +300,13 @@ export const Route = createFileRoute("/topology/")({
     const out: TopologySearch = {}
     const tab = oneOf(s.tab, TAB_STYLES)
     if (tab) out.tab = tab
+    // Wiring and Flat retired into the Diagram: an old link opens it in the
+    // mode that tab drew (the tab it named wins over a `mode` beside it).
+    const retired = typeof s.tab === "string" ? RETIRED_TABS[s.tab] : undefined
+    if (retired) {
+      out.tab = "diagram"
+      out.mode = retired
+    }
     const view = str(s.view)
     if (view) out.view = view
     for (const k of ["site", "location", "role", "status", "tag", "q",
@@ -309,7 +329,7 @@ export const Route = createFileRoute("/topology/")({
     const cables = oneOf(s.cables, ROUTINGS)
     if (cables) out.cables = cables
     const mode = oneOf(s.mode, DIAGRAM_MODES)
-    if (mode) out.mode = mode
+    if (mode && !out.mode) out.mode = mode
     const face = oneOf(s.face, FACES)
     if (face) out.face = face
     const anchor = oneOf(s.anchor, ANCHORS)
@@ -512,20 +532,22 @@ const VIEW_STYLES: ViewStyle[] = [
   "flat",
   "logical",
 ]
-/** Stored values may name a removed view (e.g. the scrapped Faceplates). */
+/** Stored values may name a removed view (e.g. the scrapped Faceplates).
+ * The style an arrangement is kept under: a view saved before styles were
+ * recorded was arranged on Wiring (then the default). */
 function sanitizeViewStyle(v: unknown): ViewStyle {
   return VIEW_STYLES.includes(v as ViewStyle) ? (v as ViewStyle) : "stencil"
 }
-/** The URL says what the tab strip says. "stencil" is an internal name for
- * the renderer; the tab - and the link - call it Wiring. */
-type TabStyle = "diagram" | "wiring" | "hierarchy" | "flat" | "logical"
-const TAB_STYLES = [
-  "diagram",
-  "wiring",
-  "hierarchy",
-  "flat",
-  "logical",
-] as const
+/** The tabs. Wiring (the "stencil" renderer) and Flat are retired: a view
+ * or link that names them opens the Diagram, Detailed or Simple. */
+type TabStyle = "diagram" | "hierarchy" | "logical"
+const TAB_STYLES = ["diagram", "hierarchy", "logical"] as const
+/** Retired tab names a link may still carry, and the mode each opens. */
+const RETIRED_TABS: Record<string, DiagramModeParam | undefined> = {
+  wiring: "detailed",
+  stencil: "detailed",
+  flat: "simple",
+}
 const COLOR_MODES = ["cable", "type", "status", "speed", "none"] as const
 const DIRS = ["lr", "tb"] as const
 const ROUTINGS = ["routed", "straight", "curved"] as const
@@ -550,8 +572,31 @@ type DiagramModeParam = (typeof DIAGRAM_MODES)[number]
 type FaceParam = (typeof FACES)[number]
 type AnchorParam = (typeof ANCHORS)[number]
 type LineParam = (typeof LINE_TYPES)[number]
-const styleOfTab = (t: TabStyle): ViewStyle => (t === "wiring" ? "stencil" : t)
-const tabOfStyle = (v: ViewStyle): TabStyle => (v === "stencil" ? "wiring" : v)
+/** The tab a stored view style opens on. */
+const tabOfStyle = (v: ViewStyle): TabStyle =>
+  isRetiredStyle(v) ? "diagram" : v
+
+/** A card's box on the retired Wiring or Flat tab, which placed cards by
+ * their top-left corner. A Wiring card's ports sit on the sides facing
+ * their neighbours; here they are split evenly over the two sides of the
+ * layout axis, which is near enough to find the card's centre. */
+function retiredBox(
+  style: RetiredStyle,
+  d: TopoNode["data"] | undefined,
+  direction: "LR" | "TB"
+): { w: number; h: number } {
+  if (style === "flat") return { w: d ? flatW(d) : FLAT_W, h: FLAT_H }
+  if (!d) return { w: CENTER_W, h: CENTER_H }
+  const sides =
+    direction === "TB" ? (["T", "B"] as const) : (["L", "R"] as const)
+  const portSide: StencilData["portSide"] = {}
+  let i = 0
+  for (const p of d.ports ?? [])
+    for (const name of p.pair ? [p.name, p.pair] : [p.name])
+      portSide[name] = sides[i++ % 2]
+  const s = stencilSize({ ...d, portSide })
+  return { w: s.width, h: s.height }
+}
 
 /** What a saved view stores in `state.filters` - the map's settings under the
  * page's own names. Unchanged by the URL work: a view saved before it still
@@ -667,6 +712,8 @@ function TopologyPage() {
   // Personal defaults from the last unsaved session (this read is unchanged
   // from before the URL work - same hydration behaviour).
   const stored = useRef(readStoredDisplay()).current
+  /** The style this browser's older, single arrangement was made on. */
+  const legacyStyle = sanitizeViewStyle(stored.viewStyle)
   // The default map's Diagram display, as this browser last saved it with
   // the map (read once - the stored map can be large).
   const [storedDiagram] = useState(() => readStoredMap()?.filters.diagram)
@@ -677,10 +724,13 @@ function TopologyPage() {
   // object. "all" / "none" are spelled out rather than left absent, because a
   // link that turns a saved view's filter OFF has to say so - an absent param
   // would inherit the view's value again.
-  // Nothing saved or stored opens the Diagram (Detailed, below).
-  const dfltTab = tabOfStyle(
-    sanitizeViewStyle(vf.viewStyle ?? stored.viewStyle ?? "diagram")
-  )
+  // A view last shown on Wiring or Flat opens the Diagram in the mode
+  // that tab drew; anything else not set opens Diagram, Detailed.
+  const openedAs = vf.viewStyle ?? stored.viewStyle
+  const dfltTab = tabOfStyle(sanitizeViewStyle(openedAs ?? "diagram"))
+  const retiredMode = isRetiredStyle(openedAs)
+    ? RETIRED_STYLES[openedAs]
+    : undefined
   const dfltFace =
     oneOf(vf.diagram?.face, FACES) ??
     oneOf(storedDiagram?.face, FACES) ??
@@ -713,6 +763,7 @@ function TopologyPage() {
       distance: vf.roleDistance ?? stored.roleDistance ?? {},
     }),
     mode:
+      retiredMode ??
       oneOf(vf.diagram?.mode, DIAGRAM_MODES) ??
       oneOf(storedDiagram?.mode, DIAGRAM_MODES) ??
       "detailed",
@@ -731,8 +782,7 @@ function TopologyPage() {
   } as const
 
   const [tab, setTab] = useUrlEnum<TabStyle>("tab", dflt.tab, TAB_STYLES)
-  const viewStyle = styleOfTab(tab)
-  const setViewStyle = (v: ViewStyle) => setTab(tabOfStyle(v))
+  const viewStyle: ViewStyle = tab
   const [colorMode, setColorMode] = useUrlEnum<EdgeColorMode>(
     "color",
     dflt.color,
@@ -741,13 +791,9 @@ function TopologyPage() {
   const [dirParam, setDirParam] = useUrlEnum("dir", dflt.dir, DIRS)
   const direction: "LR" | "TB" = dirParam === "tb" ? "TB" : "LR"
   const setDirection = (d: "LR" | "TB") => setDirParam(d === "TB" ? "tb" : "lr")
-  // Edge rendering: "routed" bends cables around cards; "straight" is the plain
-  // orthogonal (smoothstep) line. A user choice, not tied to layout mode.
-  const [edgeRouting, setEdgeRouting] = useUrlEnum(
-    "cables",
-    dflt.cables,
-    ROUTINGS
-  )
+  // The retired Wiring tab's cable routing ("routed" bends cables around
+  // cards). No control sets it now; a view still saves the value it had.
+  const [edgeRouting] = useUrlEnum("cables", dflt.cables, ROUTINGS)
   const [lagMode, setLagMode] = useUrlEnum(
     "lag",
     oneOf(vf.lag, LAG_MODES) ?? "on",
@@ -877,7 +923,7 @@ function TopologyPage() {
     if (urlSearch.view) return { doc: emptyDocument(), key: mapKey }
     if (urlDevices !== null)
       return { doc: emptyDocument({ devices: urlDevices }), key: mapKey }
-    return { doc: defaultDocument(styleOfTab(dflt.tab)), key: mapKey }
+    return { doc: defaultDocument(legacyStyle), key: mapKey }
   })
   const { dispatch: send, dirtyRef } = doc
   /** The saved view's own document is on screen, not the blank one shown
@@ -940,14 +986,14 @@ function TopologyPage() {
   const dropAllPositions = () => edit({ type: "clearPositions" })
 
   // What is switched off on this map - by site, location, role, link family
-  // (the sidebar's eyes) or one card by hand ("Remove from view"). Not a
-  // filter: a filter says what kind of thing belongs, this says "not that
-  // one" - the last mile of a diagram you are shaping for someone to read.
+  // (the sidebar's eyes) or one card by hand (Hide). Not a filter: a filter
+  // says what kind of thing belongs, this says "not that one" - the last
+  // mile of a diagram you are shaping for someone to read.
   const hidden = doc.doc.hidden
   const setHiddenNodes = (next: TopoHidden) =>
     edit({ type: "setHidden", hidden: next })
-  // Labelled backdrop boxes, per view style - a box framing Flat chips is
-  // the wrong size around Stencil cards.
+  // Labelled backdrop boxes, per view style - a box framing Diagram cards
+  // is the wrong size around Hierarchy's.
   const zones = logical ? undefined : doc.doc.zones[viewStyle]
   const setZones = (next: Zone[]) => {
     if (logical) return
@@ -1060,7 +1106,7 @@ function TopologyPage() {
     } else if (mapKey === "custom") {
       doc.load(emptyDocument({ devices: urlDevices }), mapKey)
     } else {
-      doc.load(defaultDocument(viewStyle), mapKey)
+      doc.load(defaultDocument(legacyStyle), mapKey)
     }
     loadedKey.current = key
     setLayoutTick((t) => t + 1)
@@ -1400,6 +1446,62 @@ function TopologyPage() {
       seen: q.data?.nodes.map((n) => n.id),
     })
   }
+
+  // ── Wiring and Flat, retired ──
+  // A map last shown on the Wiring or Flat tab opens on the Diagram. The
+  // first time it does with no Diagram arrangement of its own, that tab's
+  // arrangement and zones come across (carryIntoDiagram); once the canvas
+  // has drawn them at the Diagram's card sizes, the cards that now overlap
+  // move apart (`onSpread`). Both are one undo step, and the map is edited:
+  // a view waits for Save, the default map keeps it as it goes.
+  const carryStyle =
+    mapKey === "custom"
+      ? undefined
+      : viewId !== "none"
+        ? vf.viewStyle
+        : stored.viewStyle
+  /** The document (its load key) whose carried cards the canvas spreads. */
+  const [carrying, setCarrying] = useState<string | null>(null)
+  const carriedFor = useRef<string | null>(null)
+  const carryReady = viewId !== "none" ? viewDocReady : doc.docKey === mapKey
+  /** This map's own graph, not the last one kept on screen meanwhile. */
+  const ownGraph = q.isPlaceholderData ? undefined : q.data
+  useEffect(() => {
+    if (!isDiagram || !isRetiredStyle(carryStyle)) return
+    if (!carryReady || !ownGraph) return
+    // Once per document as loaded: undoing the carry must not redo it.
+    const key = loadedKey.current
+    if (carriedFor.current === key) return
+    carriedFor.current = key
+    const data = new Map(ownGraph.nodes.map((n) => [n.id, n.data]))
+    const next = carryIntoDiagram(doc.doc, carryStyle, (id) =>
+      retiredBox(carryStyle, data.get(id), direction)
+    )
+    if (!next) return
+    send({ type: "replace", doc: next }, { step: `carry:${key}` })
+    setCarrying(key)
+    setLayoutTick((t) => t + 1)
+  }, [isDiagram, carryStyle, carryReady, ownGraph])
+  /** The carried cards as the canvas spread them: kept in the carry's own
+   * undo step, beside the cards it did not draw (hidden ones). */
+  const onSpread = (centres: PosMap) => {
+    const key = carrying
+    setCarrying(null)
+    if (!key || !positions) return
+    send(
+      {
+        type: "setPositions",
+        style: "diagram",
+        positions: { ...positions, ...centres },
+      },
+      { step: `carry:${key}` }
+    )
+  }
+  const spreadFrom =
+    isDiagram && carrying !== null && carrying === loadedKey.current
+      ? positions
+      : undefined
+
   const ghosts = useQuery({
     queryKey: ["topology-ghosts", filters.site],
     enabled: !logical,
@@ -2191,7 +2293,9 @@ function TopologyPage() {
             </button>
           </Badge>
         )}
-        {builder && (
+        {/* A view saved as a device set is that set: its name is in the
+            views select and the count beside the title. */}
+        {builder && !(viewId !== "none" && vf.devices) && (
           <Badge variant="default" className="shrink-0 gap-1">
             Custom map · <span className="num">{custom?.length ?? 0}</span>
             <button
@@ -2203,21 +2307,19 @@ function TopologyPage() {
             </button>
           </Badge>
         )}
-        <SegmentedTabs<ViewStyle>
-          value={viewStyle}
+        <SegmentedTabs<TabStyle>
+          value={tab}
           onValueChange={(v) => {
             // Each style keeps its OWN arrangement: switching away doesn't
             // discard it, and switching back restores it. The canvas treats
             // the style change itself as a relayout, so no tick here - a
             // tick fired now would land on the OUTGOING style (the style
             // rides on the URL, which updates a beat later).
-            setViewStyle(v)
+            setTab(v)
           }}
           items={[
             { value: "diagram", label: "Diagram" },
-            { value: "stencil", label: "Wiring" },
             { value: "hierarchy", label: "Hierarchy" },
-            { value: "flat", label: "Flat" },
             { value: "logical", label: "Logical" },
           ]}
         />
@@ -2477,19 +2579,6 @@ function TopologyPage() {
                           />
                         ))}
                       </div>
-                    </PopoverField>
-                  )}
-                  {viewStyle === "stencil" && (
-                    <PopoverField label="Cables">
-                      <SegmentedTabs<"routed" | "straight" | "curved">
-                        value={edgeRouting}
-                        onValueChange={setEdgeRouting}
-                        items={[
-                          { value: "routed", label: "Routed" },
-                          { value: "straight", label: "Straight" },
-                          { value: "curved", label: "Curved" },
-                        ]}
-                      />
                     </PopoverField>
                   )}
                   <PopoverField label="Colour by">
@@ -2908,6 +2997,8 @@ function TopologyPage() {
                 }
                 onDropDevices={canBuild ? dropDevices : undefined}
                 pending={canBuild ? pendingCards : undefined}
+                spreadFrom={spreadFrom}
+                onSpread={onSpread}
                 emptyState={
                   canBuild ? (
                     <EmptyState title="No devices yet." className="bg-card">
@@ -3018,39 +3109,13 @@ function TopologyPage() {
             !hintDismissed && (
               <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
                 <span className="text-muted-foreground">
-                  Hierarchy suits smaller maps - Wiring scales better here.
+                  Hierarchy suits smaller maps - the Diagram scales better.
                 </span>
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-6 px-2 text-[11px]"
-                  onClick={() => setViewStyle("stencil")}
-                >
-                  Switch
-                </Button>
-                <button
-                  onClick={() => setHintDismissed(true)}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Dismiss"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-          {graph &&
-            viewStyle === "stencil" &&
-            !grouped &&
-            count > 80 &&
-            !hintDismissed && (
-              <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
-                <span className="text-muted-foreground">
-                  Large graph - the Flat view reads better at this size.
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 px-2 text-[11px]"
-                  onClick={() => setViewStyle("flat")}
+                  onClick={() => setTab("diagram")}
                 >
                   Switch
                 </Button>
@@ -3220,7 +3285,7 @@ function TopologyPage() {
                       clearSel()
                     }}
                   >
-                    {isDiagram ? "Remove from diagram" : "Remove from map"}
+                    Remove from diagram
                   </MenuItem>
                 )}
                 {!builder && menu.node.device_id && (
@@ -3243,7 +3308,7 @@ function TopologyPage() {
                       setHiddenNodes(withHidden(hidden, "devices", id, true))
                     }}
                   >
-                    {isDiagram ? "Hide" : "Remove from view"}
+                    Hide
                   </MenuItem>
                 )}
                 {isDiagram &&

@@ -6,11 +6,14 @@ import type { TopologyViewSaved } from "@/lib/api"
 import { NO_TOPO_HIDDEN } from "./hidden"
 import {
   HISTORY_LIMIT,
+  RETIRED_STYLES,
+  carryIntoDiagram,
   docFromView,
   docReducer,
   emptyDocument,
   historyReducer,
   initHistory,
+  isRetiredStyle,
   readDefaultMap,
   storedDefaultMap,
   toViewState,
@@ -459,6 +462,29 @@ describe("useViewDocument", () => {
     expect(result.current.canUndo).toBe(true)
   })
 
+  it("a named step spans ticks until another edit comes between", async () => {
+    const { result } = setup()
+    act(() => result.current.dispatch(move(1), { step: "carry:v" }))
+    await act(async () => {
+      await Promise.resolve()
+      result.current.dispatch(move(2), { step: "carry:v" })
+    })
+    expect(result.current.doc.positions.stencil).toEqual({ "dev:a": [2, 0] })
+    act(() => {
+      result.current.undo()
+    })
+    expect(result.current.doc).toEqual(emptyDocument())
+    act(() => {
+      result.current.redo()
+    })
+    act(() => result.current.dispatch(move(3)))
+    act(() => result.current.dispatch(move(4), { step: "carry:v" }))
+    act(() => {
+      result.current.undo()
+    })
+    expect(result.current.doc.positions.stencil).toEqual({ "dev:a": [3, 0] })
+  })
+
   it("load swaps the map and clears the history", () => {
     const { result } = setup()
     act(() => result.current.dispatch(move(1)))
@@ -523,5 +549,125 @@ describe("useDocumentKeys", () => {
     press({ key: "s", ctrlKey: true }, input)
     expect(h.onSave).not.toHaveBeenCalled()
     dlg.remove()
+  })
+})
+
+describe("carryIntoDiagram", () => {
+  const size = { w: 200, h: 60 }
+  const sizeOf = () => size
+  const wiring = (over: Partial<ViewDocument> = {}) =>
+    emptyDocument({
+      positions: {
+        stencil: { "dev:a": [0, 0], "dev:b": [300, 100] },
+        hierarchy: { "dev:a": [5, 5] },
+      },
+      zones: { stencil: [zone("z1")] },
+      ...over,
+    })
+
+  it("names the retired tabs and the mode each opens in", () => {
+    expect(RETIRED_STYLES).toEqual({ stencil: "detailed", flat: "simple" })
+    expect(isRetiredStyle("stencil")).toBe(true)
+    expect(isRetiredStyle("flat")).toBe(true)
+    expect(isRetiredStyle("diagram")).toBe(false)
+    expect(isRetiredStyle(undefined)).toBe(false)
+  })
+
+  it("turns the retired tab's corners into Diagram centres", () => {
+    const out = carryIntoDiagram(wiring(), "stencil", sizeOf)!
+    expect(out.positions.diagram).toEqual({
+      "dev:a": [100, 30],
+      "dev:b": [400, 130],
+    })
+  })
+
+  it("sizes each card by its own box on the retired tab", () => {
+    const boxes: Record<string, { w: number; h: number }> = {
+      "dev:a": { w: 156, h: 46 },
+      "dev:b": { w: 181, h: 46 },
+    }
+    const out = carryIntoDiagram(
+      emptyDocument({
+        positions: { flat: { "dev:a": [10, 10], "dev:b": [0, 0] } },
+      }),
+      "flat",
+      (id) => boxes[id]
+    )!
+    expect(out.positions.diagram).toEqual({
+      "dev:a": [88, 33],
+      "dev:b": [91, 23],
+    })
+  })
+
+  it("copies the zones and keeps every retired key as it was", () => {
+    const doc = wiring()
+    const out = carryIntoDiagram(doc, "stencil", sizeOf)!
+    expect(out.zones.diagram).toEqual([zone("z1")])
+    expect(out.zones.diagram![0]).not.toBe(doc.zones.stencil![0])
+    expect(out.positions.stencil).toBe(doc.positions.stencil)
+    expect(out.positions.hierarchy).toBe(doc.positions.hierarchy)
+    expect(out.zones.stencil).toBe(doc.zones.stencil)
+    expect(doc.positions.diagram).toBeUndefined()
+  })
+
+  it("does nothing once the Diagram has an arrangement", () => {
+    const doc = wiring({
+      positions: {
+        stencil: { "dev:a": [0, 0] },
+        diagram: { "dev:a": [9, 9] },
+      },
+    })
+    expect(carryIntoDiagram(doc, "stencil", sizeOf)).toBeNull()
+  })
+
+  it("keeps the Diagram's own zones", () => {
+    const own = [zone("mine")]
+    const out = carryIntoDiagram(
+      wiring({ zones: { stencil: [zone("z1")], diagram: own } }),
+      "stencil",
+      sizeOf
+    )!
+    expect(out.zones.diagram).toBe(own)
+    expect(out.positions.diagram).toBeDefined()
+  })
+
+  it("carries zones alone, and nothing from a tab never arranged", () => {
+    const zonesOnly = carryIntoDiagram(
+      emptyDocument({ zones: { flat: [zone("z1")] } }),
+      "flat",
+      sizeOf
+    )!
+    expect(zonesOnly.positions.diagram).toBeUndefined()
+    expect(zonesOnly.zones.diagram).toEqual([zone("z1")])
+    expect(carryIntoDiagram(emptyDocument(), "flat", sizeOf)).toBeNull()
+    expect(
+      carryIntoDiagram(
+        emptyDocument({ positions: { stencil: {} } }),
+        "stencil",
+        sizeOf
+      )
+    ).toBeNull()
+  })
+
+  it("carries from the tab it is asked for only", () => {
+    const doc = emptyDocument({
+      positions: { flat: { "dev:a": [0, 0] } },
+    })
+    expect(carryIntoDiagram(doc, "stencil", sizeOf)).toBeNull()
+  })
+
+  it("saves the carried arrangement beside the retired one", () => {
+    const out = carryIntoDiagram(wiring(), "stencil", sizeOf)!
+    const state = toViewState(out, { style: "diagram" })
+    expect(state.positions_by_style).toEqual({
+      stencil: { "dev:a": [0, 0], "dev:b": [300, 100] },
+      hierarchy: { "dev:a": [5, 5] },
+      diagram: { "dev:a": [100, 30], "dev:b": [400, 130] },
+    })
+    expect(state.positions).toEqual({ "dev:a": [100, 30], "dev:b": [400, 130] })
+    expect(Object.keys(state.zones_by_style ?? {}).sort()).toEqual([
+      "diagram",
+      "stencil",
+    ])
   })
 })

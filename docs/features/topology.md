@@ -4,15 +4,13 @@ icon: lucide/network
 
 # Topology map
 
-**DCIM → Topology** draws your network five ways, switched by the
-**Diagram / Wiring / Hierarchy / Flat / Logical** tabs in the header:
+**DCIM → Topology** draws your network three ways, switched by the
+**Diagram / Hierarchy / Logical** tabs in the header:
 
 - **Diagram** (default) - a clean, printable network diagram: one solid
   card per device in its role's colour, in **Detailed** mode (the default:
   a nub and a named line per cabled interface) or **Simple** (one line per
   device pair), with a choice of line. See [Diagram view](#diagram-view).
-- **Wiring** - the port-accurate diagram described below: stencil
-  cards with one row per cabled port, cables drawn port-to-port.
 - **Hierarchy** - tall rounded cards with the identity on a header row and
   **port chips aligned to their peer's height**, so cables run
   near-straight left-to-right. The layout relaxes ports toward their far
@@ -20,13 +18,6 @@ icon: lucide/network
   Cables here are routed from the ports, not the cards: one bends only to
   cross a card standing in its way, and only where a clear vertical street
   exists - otherwise it stays straight at its own port level.
-- **Flat** - the barebones view for big graphs: every device is a small
-  fixed-size chip (role color, name, status pill), parallel cables between
-  two devices merge into a single **×N** edge (click it to list and open
-  the member cables; hover names them). A pair joined by one cable shows
-  that cable - its label on the line, its own colour, its panel on click.
-  The layout packs tight. Hundreds of devices stay
-  readable; Levels, direction, color modes and saved views all still apply.
 - **Logical** - the L2 picture: **VLANs as rails** (grouped by VLAN group,
   colored by the VLAN's own color or its zone's), with everything attached
   to them - physical devices via their interfaces' untagged/tagged VLANs
@@ -40,11 +31,28 @@ The view choice is remembered per browser and saved with
 [saved views](#saved-views); a map opens on the Diagram, Detailed, until
 you choose otherwise.
 
-In the Wiring view, devices render as **stencil cards** - role-colored
-spine, status pill, type and primary IP, and one row per **cabled port** -
-and every cable connects **port-to-port** on the cards, so you can follow
-`asw1:Gi1/0/48 → core:Te1/1/1` visually instead of guessing which line is
-which.
+## Coming from Wiring or Flat
+
+The Wiring and Flat tabs are gone. The Diagram's **Detailed** mode draws
+every cabled interface and its name on its own cable, as Wiring did;
+**Simple** draws one line per device pair, as Flat did.
+
+- **Links** - an old link that names them (`?tab=wiring`, `?tab=stencil`,
+  `?tab=flat`) opens the Diagram in Detailed or Simple instead.
+- **Saved views** - a view last shown on Wiring or Flat opens on the
+  Diagram in Detailed or Simple. The first time it does, while it has no
+  Diagram arrangement of its own, it brings that tab's arrangement and
+  zones across: each card is centred where its old card stood, and the
+  cards that now overlap (Diagram cards are larger than Flat chips) move
+  apart just enough. The view then shows **edited**: **Save** keeps the
+  result, ++ctrl+z++ puts the automatic layout back, and nothing is saved
+  until you do. The Wiring and Flat arrangements stay in the view for one
+  more release.
+- **Your default map** - the map this browser keeps does the same the
+  first time, and keeps the result as it goes.
+
+The port-by-port **stencil cards** Wiring drew live on in the
+[trace maps and a device's Map tab](#big-graphs).
 
 ## Diagram view
 
@@ -388,26 +396,26 @@ greyed out (it would change nothing).
 
 ## Big graphs
 
-Three mechanisms keep a large fabric legible:
+These keep a large map legible:
 
 - **Zoom declutter** - zoomed out, edge labels hide; further out, port text
   hides too, so the map reads as clean boxes and lines. Zoom in and the
   detail returns; **hovering any line always shows its full name** - cable,
-  media, speed, and endpoints - at any zoom, in every view. On graphs over
-  ~80 devices a dismissible hint offers the Flat view.
+  media, speed, and endpoints - at any zoom, in every view. Hierarchy on a
+  graph over ~60 devices offers the Diagram, which scales better.
 - **Per-cable lanes** - the gap between two tiers sizes itself to the number
   of cables crossing it, and each cable rides its own lane, ordered to
   minimize crossings - no more overlapping combs.
-- **Leaf grids** - a switch with many single-cable neighbours (blades,
-  servers, cameras) stacks them in a compact grid beside it instead of
-  stringing them along one endless row; each cable drops down its column's
-  street.
+- **Leaf grids** - on the port-by-port cards, a switch with many
+  single-cable neighbours (blades, servers, cameras) stacks them in a
+  compact grid beside it instead of stringing them along one endless row;
+  each cable drops down its column's street.
 - **Cards slide off cable runs** - a card the layout happened to drop on
   another pair's straight cable nudges sideways just far enough to clear it,
-  when a small move does clear it without overlapping anything. Matters most
-  in the Flat view, whose point-to-point cables are never routed around
-  cards; hand-placed (pinned) cards are never moved.
-- **Dense cards** - past ~24 cabled ports the card's side columns render as
+  when a small move does clear it without overlapping anything;
+  hand-placed (pinned) cards are never moved.
+- **Dense cards** - on the port-by-port stencil cards of the trace maps
+  and a device's Map tab, past ~24 cabled ports the side columns render as
   a faceplate bar: one slim slot per cabled port with a truncated name, and
   a cabled-port count in the middle, so a 48-port stack stays a reasonable
   height. Top and bottom strips always keep full horizontal port names; the
@@ -468,7 +476,6 @@ Three mechanisms keep a large fabric legible:
   each card (or photo) over with its size, so the page draws the cards in
   view and the rest as you pan to them, instead of drawing every card once
   just to measure it.
-- **The Flat view** - see above.
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat
 end-to-end path strip on top, and a **trace map** below - the traced devices
@@ -501,20 +508,24 @@ cable draws it emphasized in the accent color while its panel is open.
 
 ## Reading the map
 
+The Diagram's cards and lines are described under
+[Diagram view](#diagram-view). The Hierarchy tab, and the stencil cards of
+the trace maps and a device's Map tab, read like this:
+
 - **Cards** - the colored spine is the device's role color; the pill after
   the name is its lifecycle status, in that status's own color (the same pill
   as the device list). A long status name widens the card rather than
   squeezing the name. Clicking a card **spotlights** it - everything not
   directly cabled to it fades until you click empty canvas.
-  **Double-clicking** a card opens its device page. Flat chips carry a small
-  `N×` cabled-port count; Hierarchy headers show the primary IP. Patch panels get a dashed border. Port cells show
+  **Double-clicking** a card opens its device page. Hierarchy headers
+  show the primary IP. Patch panels get a dashed border. Port cells show
   the full port name. A cabled front port and its strand's rear port render as **one continuous
   row** (`front1 ⇄ rear`) - the cable enters on the left and leaves on the
   right, the way the light actually travels through a fiber panel.
 - **Edges** - solid lines are cables; a **long-dashed** line is a collapsed
   end-to-end run (labelled `via <panel>…`); a short-dashed *italic* line is an
   **LLDP ghost** - SNMP saw the adjacency but no cable exists (click it to
-  materialise one). On these tabs `×N` marks a breakout/trunk carrying N
+  materialise one). On these cards `×N` marks a breakout/trunk carrying N
   pairs; the Diagram tab draws a breakout as one trunk splitting into legs
   (see [Diagram view](#diagram-view)).
 - **Hover** an edge and it thickens while every other edge fades - the only
@@ -623,15 +634,18 @@ diagram.
 **Saving.** Adding, placing and removing devices are edits to the view: undo
 steps like any other, and **Save** (++ctrl+s++) writes them - see
 [Saved views](#saved-views). On the Diagram tab **Add** and **Arrange** menus
-stand in for the Add device, Zone and Re-layout buttons of the other tabs.
+stand in for the Add device, Zone and Re-layout buttons of the Hierarchy
+tab.
 
 **A map that follows its filters** takes no drops: the device list says so and
 offers **New view**. Right-click a device → *Start custom map here* still
 turns any map into an unsaved one of just that device, grown with *Add
-connected devices* (and, on the other tabs, the **Add device** button). An
-unsaved map keeps its devices in its address (`devices=`), which holds up to
-200 of them; past that, save it as a view to keep adding. A header chip
-shows the set's size and leaves it. Right-click also offers *Open device* and
+connected devices* (and, on the Hierarchy tab, the **Add device** button).
+An unsaved map keeps its devices in its address (`devices=`), which holds up
+to 200 of them; past that, save it as a view to keep adding. A header chip
+(*Custom map · n*) shows the set's size and leaves it. A view saved as a
+device set has no such chip: its name is in the views select, and the
+count beside the title is its devices. Right-click also offers *Open device* and
 *Focus here* in any mode.
 
 ### Hiding things - the eyes
@@ -641,8 +655,7 @@ The map has the same eyes as the [site map](site-map.md) and the
 header has one - a **role**, a **site** or a **location** (whichever the
 Devices list is grouped by), a **link family** (a cable media type, or the
 LLDP-discovered links) - and so does every device row. Right-click a card →
-**Hide** (**Remove from view** on the other tabs) is the same thing for one
-card, from the canvas.
+**Hide** is the same thing for one card, from the canvas.
 
 Hiding is not a filter: a filter says what kind of thing belongs on the map,
 this says "not that one" - the last mile of a diagram you are shaping for
@@ -664,9 +677,9 @@ Keyboard: ++h++ hides the selected card (or, on a grouped map, the selected
 site or location); ++shift+h++ shows everything again. The same two keys
 work on the site map and the floor plans.
 
-(On a map built by hand, *Remove from diagram* - *Remove from map* on the
-other tabs - is the different thing next to *Hide* (*Remove from view*): it
-takes the device out of the hand-picked set the map is built from.)
+(On a map built by hand, *Remove from diagram* is the different thing next
+to *Hide*: it takes the device out of the hand-picked set the map is built
+from.)
 
 ### Bands and zones
 
@@ -771,7 +784,7 @@ The Delete and Backspace keys never remove a band or a zone - that always
 takes one of the explicit actions above - and remove cards only from a
 [diagram built by hand](#building-a-diagram); ++ctrl+z++ puts either back.
 Like the arrangement, bands and zones are kept **per view style**: a box
-that frames four Flat chips would frame half a card in Wiring.
+that frames four Diagram cards would frame part of one of Hierarchy's.
 
 ### Notes
 
@@ -867,24 +880,23 @@ Either way, a cable **auto-snaps** to whichever side (or top/bottom) of a card
 faces its neighbour, so dragging a node never leaves an edge wrapped backwards
 around it. Saved views remember the layout direction.
 
-Two passes keep the wiring readable without manual cleanup:
+Two passes keep the port-by-port cards readable without manual cleanup:
 
 - **Port order** - ports on a given side are ordered by where the cable's other
   end sits, so two cables leaving the same side don't cross each other (one
-  going up, one going down, in the right order).
-- **Routing around cards** - with **Display → Cables = Routed** (the default), a
-  cable that would cross a card it isn't connected to **bends around** it
-  instead. The route is computed from the cards' actual positions, so it works
-  the same in the auto layout, the tiered (Levels) layout, **and a saved view**
-  - not just the fresh auto layout. Switch to **Straight** for plain orthogonal
-  lines, or **Curved** for the Flat view's floating point-to-point curves on
-  the full wiring cards. Dragging a card drops *that card's* cables back to
-  straight; the rest keep their routing.
+  going up, one going down, in the right order). The Diagram's Detailed nubs
+  are ordered the same way.
+- **Routing around cards** - on the stencil cards of the trace maps and a
+  device's Map tab, a cable that would cross a card it isn't connected to
+  **bends around** it instead. The route is computed from the cards' actual
+  positions. The Diagram routes its own lines - see
+  [Line types](#line-types).
 
 The toolbar groups its controls to stay uncluttered: a **Filters** popover
 (site / role / status / tag, with a badge counting active filters) and a
-**Display** popover (layout axis, cables routed/straight, colour-by, and *Show
-patch panels*). **Search** and **Levels** stay on the bar.
+**Display** popover (layout axis, grouping, the Diagram's devices, lines,
+labels and card lines, colour-by, and *Show patch panels*). **Search** and
+**Levels** stay on the bar.
 
 ## Link aggregation bundles
 
@@ -892,11 +904,12 @@ Member cables of one bundle - both ends in an aggregate, the same pair of
 aggregates - draw as **one thicker edge** labelled `Po1 ⇄ Po10 ×2`, the
 logical link rather than its physical legs. A port-channel that fans out to a
 vPC / MLAG pair is two bundles, one per far-end aggregate. Hover names the
-aggregates, the member cables and the speed; click opens the same bundle panel
-as a flat-view `×N` edge, titled by the aggregates. **Display → Bundle
+aggregates, the member cables and the speed; click opens the bundle panel,
+titled by the aggregates, listing every member cable. **Display → Bundle
 aggregates** turns the fold off (`?lag=off` in the URL; a saved view keeps
-the setting) to see every cable; the flat view already bundles every
-parallel cable and simply names the aggregates when all of them share one.
+the setting) to see every cable. The Diagram's Simple mode draws every
+cable between two devices as one line anyway, and names the aggregates on
+its chip when all of them share one.
 
 ## Edge coloring
 
@@ -947,9 +960,9 @@ counts.
 
 Drag cards where you want them, then **Save as…** - a saved view stores,
 per tenant, the **filter set** (or a custom map's device set), the **display
-settings** (colour mode, layout direction, cables, Levels, grouping,
-aggregate bundling, and the Diagram's Simple/Detailed mode, line type and
-its own [card lines](#card-lines)),
+settings** (colour mode, layout direction, Levels, grouping, aggregate
+bundling, and the Diagram's Simple/Detailed mode, line type and its own
+[card lines](#card-lines)),
 **every node position** per view style, the **zones**
 and the **hidden objects**. Load it from the views select; **Save** (or
 ++ctrl+s++, ++cmd+s++ on a Mac) updates it in place after you rearrange;
@@ -972,10 +985,14 @@ you do not use to drop its arrangement and save again. What a view's `state`
 holds, and how a save from an outdated copy is refused, is in
 [Saved views API](#saved-views-api).
 
-Arrangements are kept **per view** - Diagram, Wiring, Hierarchy and Flat each
-remember their own (the Diagram's one arrangement serves Simple and Detailed). The cards are different sizes in each, so one shared set of
-coordinates would hand Hierarchy the spacing you tuned for Flat. Arrange a view,
-switch away, come back: it's as you left it.
+Arrangements are kept **per view** - the Diagram and Hierarchy each
+remember their own (the Diagram's one arrangement serves Simple and
+Detailed). The cards are different sizes in each, so one shared set of
+coordinates would hand Hierarchy the spacing you tuned for the Diagram.
+Arrange a view, switch away, come back: it's as you left it. A view
+arranged on the retired Wiring or Flat tab brings that arrangement into
+the Diagram the first time it opens there - see
+[Coming from Wiring or Flat](#coming-from-wiring-or-flat).
 
 **Save** stores the arrangements you actually made - a view you dragged is
 pinned exactly, a view you left (or returned, with **Re-layout**) to the
@@ -1032,7 +1049,7 @@ back button and a reload all keep it.
 
 | Parameter | Values |
 |---|---|
-| `tab` | `diagram` (default), `wiring`, `hierarchy`, `flat`, `logical` |
+| `tab` | `diagram` (default), `hierarchy`, `logical`. The retired `wiring` (or `stencil`) and `flat` open `diagram` with `mode=detailed` and `mode=simple` |
 | `mode` | Diagram: `detailed` (default), `simple` |
 | `face` | Diagram: devices as `card` (default) or `photo` - see [Photo nodes](#photo-nodes) |
 | `anchor` | Diagram: cables meet a photo at its `ports` (default) or its `edge` |
@@ -1045,7 +1062,6 @@ back button and a reload all keep it.
 | `group` | `site`, `location`, `none` |
 | `dir` | `lr` (default; `tb` on a Diagram showing photos), `tb` |
 | `color` | `cable` (default), `type`, `status`, `speed`, `none` |
-| `cables` | `routed` (default), `straight` |
 | `lag` | `on` (default) bundles aggregate members, `off` |
 | `levels` | the tier order - see below |
 | `device` `depth` | focus on one device, 1-6 hops |
@@ -1095,13 +1111,12 @@ The menu's choices are remembered per browser:
 A file is named after the saved view (else the site, else `topology`) and
 the day: `arhus-dc-2026-09-26.drawio`.
 
-**Wiring, Hierarchy and Flat** export their SVG and draw.io in the Diagram's
-Simple look: a compact role-coloured card with the device's IP, centred
-where its card sits on the tab, and one straight line per device pair with
-a count chip (`2x`) when it stands for several cables. Their port rows and
-routed cables are how those tabs draw rather than what the map says. Their
-PNG is still a picture of the canvas as you see it, in the app's theme. The
-Logical tab has no export.
+**Hierarchy** exports its SVG and draw.io in the Diagram's Simple
+look: a compact role-coloured card with the device's IP, centred where its
+card sits on the tab, and one straight line per device pair with a count
+chip (`2x`) when it stands for several cables. Its port chips are how that
+tab draws rather than what the map says. Its PNG is still a picture of the
+canvas as you see it, in the app's theme. The Logical tab has no export.
 
 ### How Diagram exports are drawn
 
