@@ -5,6 +5,7 @@ import { approxMeasure } from "@/lib/diagram/measure"
 import { CARD, NUB } from "./card-layout"
 import {
   captionRoom,
+  exitTowards,
   faceOf,
   markerOf,
   PHOTO,
@@ -189,6 +190,50 @@ describe("photoAnchors", () => {
     // The bottom row leaves downwards, whatever the far end.
     expect(out.get("l1#1a")?.exit).toBe("B")
     expect(out.has("l1#0b")).toBe(false)
+  })
+
+  it("leaves towards a far end above or below, over the photo", () => {
+    const at = (links: PhotoLink[]) => photoAnchors(photos, boxes, links)
+    const one = (port: string, to: string, end: "a" | "b" = "a") =>
+      at([
+        end === "a"
+          ? { id: "x", source: "P", target: to, cables: [{ a: port }] }
+          : { id: "x", source: to, target: "P", cables: [{ b: port }] },
+      ]).get(`x#0${end}`)?.exit
+    // The bottom row up to a device above; the top row down to one below.
+    expect(one("Eth1/2", "up")).toBe("T")
+    expect(one("Eth1/1", "down", "b")).toBe("B")
+    // Level with the photo: the nearer edge.
+    const level = new Map(boxes).set("side", { x: 900, y: 190, w: 80, h: 40 })
+    const out = photoAnchors(photos, level, [
+      { id: "s", source: "P", target: "side", cables: [{ a: "Eth1/1" }] },
+      { id: "t", source: "P", target: "side", cables: [{ a: "Eth1/2" }] },
+    ])
+    expect(out.get("s#0a")?.exit).toBe("T")
+    expect(out.get("t#0a")?.exit).toBe("B")
+  })
+
+  it("never runs a lead over another cabled port in its column", () => {
+    // Both rows cabled down: the top row's lead would run over the bottom
+    // row's port, so it keeps to the top edge.
+    const out = photoAnchors(photos, boxes, [
+      {
+        id: "d",
+        source: "P",
+        target: "down",
+        cables: [{ a: "Eth1/1" }, { a: "Eth1/2" }],
+      },
+    ])
+    expect(out.get("d#0a")?.exit).toBe("T")
+    expect(out.get("d#1a")?.exit).toBe("B")
+  })
+
+  it("picks the exit from the boxes, the nearer edge without them", () => {
+    const me: Rect = { x: 0, y: 100, w: 480, h: 60 }
+    expect(exitTowards(me, { x: 0, y: 0, w: 10, h: 100 }, 0.9)).toBe("T")
+    expect(exitTowards(me, { x: 0, y: 160, w: 10, h: 10 }, 0.1)).toBe("B")
+    expect(exitTowards(me, { x: 600, y: 150, w: 10, h: 40 }, 0.9)).toBe("B")
+    expect(exitTowards(me, undefined, 0.2)).toBe("T")
   })
 
   it("lands an unmarked port on a stub lead facing its far end", () => {

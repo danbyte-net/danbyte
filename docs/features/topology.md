@@ -314,8 +314,9 @@ greyed out (it would change nothing).
   device's name is a caption under it, the status pill after it, with no
   card fill.
 - **Cables on their ports:** a cable starts at its port's marker, runs
-  straight up or down to the nearer edge of the photo (its lead, drawn over
-  the photo), and from there is routed like any other line - elbows round
+  straight up or down (its lead, drawn over the photo) - towards its far
+  device when that lies above or below the photo, else to the nearer
+  edge - and from there is routed like any other line - elbows round
   the photos, the photo it leaves included, in their own lanes. The port a
   line lands on has a thin outline; the port name sits on the cable just
   past the photo's edge. This holds in **Simple** too: the photo is the
@@ -339,6 +340,10 @@ greyed out (it would change nothing).
   a photo for **Cables to edge** or **Cables to ports** to set just that
   device the other way (kept with the view, one undo step). The view's
   choice is in the link (`anchor=edge`) and saved with the view.
+- **Ports in one column:** a lead never runs over another cabled port.
+  When two cabled ports sit one above the other, each keeps to its own
+  edge - the top one up, the bottom one down - as the cables leave a real
+  switch.
 - **Breakouts on photos:** a breakout whose shared port faces away from its
   far devices keeps the one-trunk look - the trunk goes round as an elbow
   to a junction just short of the far devices, on the side their ports
@@ -353,10 +358,11 @@ greyed out (it would change nothing).
        its ports as those tabs (its drawing has no port positions to land
        on); a file draws it as the device's card;
     4. neither - the normal card.
-- **Layout:** photos are wide and their cables leave up and down, so
-  side-by-side photos keep room above and below them for the cables and
-  their port names. **Tree** layout (Display ▸ Layout) often suits a
-  photo map best. Switching the view between Card and Photo lays a map
+- **Layout:** photos are wide and short, so a photo map opens in **Tree**
+  (Display ▸ Layout), its devices in rows top to bottom like a rack, unless
+  its saved view has a layout of its own or the link names one (`dir=`).
+  Side-to-side photos keep room above and below them for the cables and
+  their port names. Switching the view between Card and Photo lays a map
   laid out automatically out again once the photos have arrived, and fits
   it to the screen. Showing one device's photo or card, or photos arriving
   on a map already on screen, moves nothing else: the camera and every
@@ -364,7 +370,8 @@ greyed out (it would change nothing).
   moves out of its way (a saved arrangement does the same).
 - **Performance:** photos load with the map only while some device shows
   one (`include=photo`). Far out - below 35% zoom on a map with 24 photos
-  or more, 12% on a smaller one - each photo is drawn as a plain box. On a
+  or more, 12% on a smaller one - each photo is drawn as a box, edged and
+  tinted in its role's colour (neutral without a role). On a
   map of 200 devices or more only the photos in view are drawn, as with
   cards.
 - **Exports:** a photo that will not load when a file is made (a network
@@ -715,7 +722,8 @@ like the site map's.
 The **Side-to-side / Tree** toggle picks the layout axis:
 
 - **Side-to-side** (default) - cards flow left→right, ports on the left and
-  right edges.
+  right edges. A Diagram showing photos opens in Tree instead (see
+  [Photo nodes](#photo-nodes)).
 - **Tree (top-down)** - cards flow top→bottom: a device's ports run across the
   **top** and **bottom** of the card with its identity in the middle, so a
   hierarchy (core at the top, access below, servers at the bottom) reads like
@@ -901,7 +909,7 @@ back button and a reload all keep it.
 | `tag` | a tag slug, or `all` |
 | `panels` | `1` shows patch panels |
 | `group` | `site`, `location`, `none` |
-| `dir` | `lr` (default), `tb` |
+| `dir` | `lr` (default; `tb` on a Diagram showing photos), `tb` |
 | `color` | `cable` (default), `type`, `status`, `speed`, `none` |
 | `cables` | `routed` (default), `straight` |
 | `lag` | `on` (default) bundles aggregate members, `off` |

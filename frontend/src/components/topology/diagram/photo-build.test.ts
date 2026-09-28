@@ -7,6 +7,7 @@ import { aarhusId } from "../__fixtures__/aarhus-graph"
 import { aarhusPhotoGraph } from "../__fixtures__/aarhus-photos"
 import {
   boxOf,
+  crowdedRuns,
   drawn,
   labelFaults,
   throughCards,
@@ -288,8 +289,10 @@ describe("photo nodes", () => {
       })
 
   it("runs a breakout's trunk round to its legs when its port faces away", () => {
-    for (const mode of MODES) {
-      const b = build(photos, { mode, line: "straight" })
+    // Detailed lays the firewall out level with the switch its legs land
+    // on: its port leaves by its nearer edge, away from them.
+    {
+      const b = build(photos, { mode: "detailed", line: "straight" })
       const fan = b.edges.filter(
         (e) => (e.data as DiagramEdgeData | undefined)?.fan
       )
@@ -310,6 +313,71 @@ describe("photo nodes", () => {
       expect(t.plan![0].line).toBe("elbow")
     }
   })
+
+  it("points a breakout's trunk at its legs when they lie above it", () => {
+    // Simple puts the switch above the firewall: the trunk's port leaves
+    // by the top edge, straight at them, and the trunk is not bent.
+    const b = build(photos, { mode: "simple", line: "straight" })
+    const fw = boxOf(b.nodes.find((n) => n.id === aarhusId("aarhus-fw1"))!)
+    const asw = boxOf(b.nodes.find((n) => n.id === aarhusId("aarhus-asw1"))!)
+    expect(asw.y + asw.h).toBeLessThanOrEqual(fw.y)
+    const t = b.edges.find(
+      (e) => (e.data as DiagramEdgeData | undefined)?.fan?.role === "trunk"
+    )!.data as DiagramEdgeData
+    expect(t.a[0]).toMatchObject({ k: "point", exit: "T" })
+    expect(t.fan!.bent).toBeUndefined()
+    expect(ownCrossings(b.edges, rects(b.nodes))).toEqual([])
+  })
+
+  // Tree stacks the photos like rack rows: a port leaves towards its far
+  // device, over the photo, rather than round it - unless another cabled
+  // port is in its column that way. No two cables share a run.
+  for (const mode of MODES)
+    it(`${mode} tree: ports leave towards their far ends`, () => {
+      const b = build(photos, { mode, direction: "TB" })
+      const boxes = rects(b.nodes)
+      let towards = 0
+      for (const e of b.edges) {
+        const d = e.data as DiagramEdgeData | undefined
+        if (e.type !== "link" || !d || d.fan) continue
+        d.a.forEach((a, i) => {
+          for (const [end, me, far] of [
+            ["a", e.source, e.target],
+            ["b", e.target, e.source],
+          ] as const) {
+            const x = (end === "a" ? a : d.b[i]) as Anchor | undefined
+            const r = boxes.get(me)
+            const f = boxes.get(far)
+            if (x?.k !== "point" || x.stub || !r || !f) continue
+            const want = f.y + f.h <= r.y ? "T" : f.y >= r.y + r.h ? "B" : null
+            if (!want) continue
+            if (x.exit === want) {
+              towards++
+              continue
+            }
+            // Only a cabled port in its column on the way turns it back.
+            const n = b.nodes.find((q) => q.id === me)!
+            const marks = (n.data as DiagramCardData).diagram.photo!.marks
+            const own = marks.find(
+              (m) => Math.abs(m.x - x.fx) < 1e-9 && x.port === m.port
+            )!
+            expect(
+              marks.some(
+                (m) =>
+                  m !== own &&
+                  Math.abs(m.x - own.x) * PHOTO.W < 8 &&
+                  (want === "B" ? m.y > own.y : m.y < own.y)
+              ),
+              `${e.id}#${i}${end} ${x.port}`
+            ).toBe(true)
+          }
+        })
+      }
+      expect(towards).toBeGreaterThan(4)
+      const cables = drawn(b.nodes, b.edges, approxMeasure)
+      expect(crowdedRuns(cables, 6)).toEqual([])
+      expect(throughCards(cables, boxes)).toEqual([])
+    })
 
   it("puts no count on a line that is one cable to a photo's port", () => {
     for (const mode of MODES) {

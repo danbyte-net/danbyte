@@ -168,7 +168,11 @@ describe("PhotoNode", () => {
   it("is a plain box far out", () => {
     const { container } = renderNode(photoData(), PHOTO.LOD - 0.05)
     expect(container.querySelector("img")).toBeNull()
-    expect(container.querySelector(".topo-photo-lod")).toBeTruthy()
+    const box = container.querySelector(".topo-photo-lod") as HTMLElement
+    expect(box).toBeTruthy()
+    // Neutral without a role: a visible edge on the muted fill.
+    expect(box.className).toContain("border")
+    expect(box.className).toContain("bg-muted")
     // The caption and the markers stay.
     expect(screen.getByText("leaf-01")).toBeTruthy()
     expect(container.querySelectorAll(".topo-mark")).toHaveLength(1)
@@ -225,6 +229,23 @@ describe("PhotoNode", () => {
     expect(nubs[1].style.left).toBe(`${-6}px`)
     // The caption keeps clear of the bottom nub.
     expect(shown.caption.x).toBeGreaterThanOrEqual(30 + 5)
+  })
+
+  it("tints the far-out box with the role colour", () => {
+    const data = photoData()
+    const tinted: DiagramCardData = {
+      ...data,
+      diagram: {
+        ...data.diagram,
+        box: { ...data.diagram.box, fill: "#6366f1" },
+      },
+    }
+    const { container } = renderNode(tinted, PHOTO.LOD - 0.05)
+    const box = container.querySelector(".topo-photo-lod") as HTMLElement
+    expect(box.className).toContain("border")
+    expect(box.className).not.toContain("bg-muted")
+    expect(box.style.borderColor).toBe("rgb(99, 102, 241)")
+    expect(box.getAttribute("style")).toContain("color-mix")
   })
 
   it("shows the type's faceplate when there is no photo", async () => {

@@ -19,8 +19,10 @@ import type { DiagramCardData } from "./types"
 //
 // The cables themselves start at the ports: their leads over the image
 // are drawn by the link edge. Far out (zoom under `photoLod`) the image
-// gives way to a plain box. A type with no photo shows its schematic
-// faceplate instead, on screen only - never artwork made up here.
+// gives way to a plain box, edged and tinted in the device's role colour
+// so the map still shows where each device is. A type with no photo shows
+// its schematic faceplate instead, on screen only - never artwork made up
+// here.
 
 const HANDLE =
   "!pointer-events-none !h-px !min-h-0 !w-px !min-w-0 !border-0 !bg-transparent !opacity-0"
@@ -49,7 +51,23 @@ export const PhotoNode = memo(function PhotoNode({
   const far = useStore((s: ReactFlowState) => s.transform[2] < ph.lod)
   const { pill } = cardContent(d, { monitor: d.monitor })
   const cap = ph.caption
-  const plain = <div className="topo-photo-lod size-full bg-muted" />
+  const fill = box.fill
+  const plain = (
+    <div
+      className={cn(
+        "topo-photo-lod size-full rounded-sm border",
+        fill ? "" : "border-muted-foreground/50 bg-muted"
+      )}
+      style={
+        fill
+          ? {
+              borderColor: fill,
+              backgroundColor: `color-mix(in srgb, ${fill} 28%, transparent)`,
+            }
+          : undefined
+      }
+    />
+  )
   return (
     <div
       className={cn("relative transition-opacity", d.dimmed && "opacity-30")}

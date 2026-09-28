@@ -11,8 +11,9 @@ import type { Anchor, PortRef, Rect } from "./types"
 // A node is a photo when the view (or the node's own override) asks for
 // one and the payload (`include=photo`) has one:
 //   1. the front photo with port markers - a cable leaves its marker's
-//      centre and runs straight up or down to the nearer image edge (its
-//      lead), then routes like any other line;
+//      centre and runs straight up or down (its lead) - towards its far
+//      end, else to the nearer image edge - then routes like any other
+//      line;
 //   2. the front photo without a marker for a port - the cable lands on a
 //      stub lead along the image's top or bottom edge, facing its far end;
 //   3. no photo but a schematic faceplate (`type_faceplate`) - drawn on
@@ -266,20 +267,37 @@ export function markerOf(
 export type PointAnchor = Extract<Anchor, { k: "point" }>
 
 /** Marker `i`'s anchor: its centre as fractions of the node's box, out
- * through the nearer image edge. */
+ * through `exit` - by default the nearer image edge. */
 export function markAnchor(
   face: PhotoFace,
   i: number,
-  port?: string
+  port?: string,
+  exit?: "T" | "B"
 ): PointAnchor {
   const m = face.marks[i]
   return {
     k: "point",
     fx: m.x,
     fy: (m.y * face.imgH) / face.h,
-    exit: m.y < 0.5 ? "T" : "B",
+    exit: exit ?? (m.y < 0.5 ? "T" : "B"),
     port: port ?? m.port,
   }
+}
+
+/** The edge a port leaves its photo `me` by for a far end in `far`:
+ * towards it when it lies wholly above or below the photo - a lead over
+ * the photo is shorter than a line round it - else the edge nearer the
+ * port (`y`, as a fraction of the image). */
+export function exitTowards(
+  me: Rect | undefined,
+  far: Rect | undefined,
+  y: number
+): "T" | "B" {
+  if (me && far) {
+    if (far.y + far.h <= me.y) return "T"
+    if (far.y >= me.y + me.h) return "B"
+  }
+  return y < 0.5 ? "T" : "B"
 }
 
 /** A link as the photo anchoring reads it (`AnchorLink`'s shape). */
@@ -299,10 +317,14 @@ export interface PhotoLink {
 const natural = (a: string, b: string) =>
   a.localeCompare(b, "en", { numeric: true, sensitivity: "base" })
 
+/** Leads closer than this, px, would read as one line. */
+const LEAD_GAP = 8
+
 /**
  * Every cable end on a photo node, keyed `<link>#<cable><end>`: its
- * marker, or a stub lead on the image edge facing its far end (the top
- * when the far node is above, else the bottom). A node's stub leads on
+ * marker, leaving by the edge facing its far end (`exitTowards`), or a
+ * stub lead on the image edge facing its far end (the top when the far
+ * node is above, else the bottom). A node's stub leads on
  * one edge are spread round its middle at the nub pitch, ordered by where
  * their far ends are, so they do not cross. Links without ports (LLDP
  * neighbours, BGP) keep the node's side midpoints.
@@ -327,6 +349,17 @@ export function photoAnchors(
     const r = boxes.get(id)
     return r ? { x: r.x + r.w / 2, y: r.y + r.h / 2 } : null
   }
+  // The marked ports each photo has cables on: a lead may not run over
+  // another's port - the two would share a line.
+  const cabled = new Map<string, Set<number>>()
+  const ends: {
+    key: string
+    node: string
+    face: PhotoFace
+    m: number
+    port?: string
+    far: string
+  }[] = []
   for (const l of links) {
     if (!l.cables?.length) continue
     l.cables.forEach((c, i) => {
@@ -339,7 +372,11 @@ export function photoAnchors(
         const key = `${l.id}#${i}${end}`
         const m = markerOf(face, port, end === "a" ? c.aRef : c.bRef)
         if (m !== undefined) {
-          out.set(key, markAnchor(face, m, port))
+          const far = end === "a" ? l.target : l.source
+          ends.push({ key, node, face, m, port, far })
+          const set = cabled.get(node) ?? new Set<number>()
+          set.add(m)
+          cabled.set(node, set)
           continue
         }
         const me = centre(node)
@@ -351,6 +388,24 @@ export function photoAnchors(
         stubs.set(k, list)
       }
     })
+  }
+  for (const { key, node, face, m, port, far } of ends) {
+    const mark = face.marks[m]
+    let exit = exitTowards(boxes.get(node), boxes.get(far), mark.y)
+    const near = mark.y < 0.5 ? "T" : "B"
+    if (exit !== near) {
+      // Away from its nearer edge only while no other cabled port is in
+      // its column on the way.
+      for (const o of cabled.get(node) ?? []) {
+        const other = face.marks[o]
+        if (o === m || Math.abs(other.x - mark.x) * face.w >= LEAD_GAP) continue
+        if (exit === "B" ? other.y > mark.y : other.y < mark.y) {
+          exit = near
+          break
+        }
+      }
+    }
+    out.set(key, markAnchor(face, m, port, exit))
   }
   for (const list of stubs.values()) {
     list.sort(

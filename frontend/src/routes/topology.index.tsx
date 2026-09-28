@@ -662,10 +662,27 @@ function TopologyPage() {
   // object. "all" / "none" are spelled out rather than left absent, because a
   // link that turns a saved view's filter OFF has to say so - an absent param
   // would inherit the view's value again.
+  const dfltTab = tabOfStyle(
+    sanitizeViewStyle(vf.viewStyle ?? stored.viewStyle)
+  )
+  const dfltFace =
+    oneOf(vf.diagram?.face, FACES) ??
+    oneOf(storedDiagram?.face, FACES) ??
+    "card"
+  // Photos are wide and short: a photo map reads best as rows stacked top
+  // to bottom, like a rack. It opens in Tree unless its view saved a
+  // layout or the link names one.
+  const photoMap =
+    (urlSearch.tab ?? dfltTab) === "diagram" &&
+    (urlSearch.face ?? dfltFace) === "photo"
+  const dirImplied = !vf.direction && !urlSearch.dir && photoMap
   const dflt = {
-    tab: tabOfStyle(sanitizeViewStyle(vf.viewStyle ?? stored.viewStyle)),
+    tab: dfltTab,
     color: vf.colorMode ?? stored.colorMode ?? "cable",
-    dir: (vf.direction ?? stored.direction ?? "LR") === "TB" ? "tb" : "lr",
+    dir:
+      (vf.direction ?? (photoMap ? "TB" : stored.direction) ?? "LR") === "TB"
+        ? "tb"
+        : "lr",
     cables: vf.edgeRouting ?? stored.edgeRouting ?? "routed",
     group: vf.groupBy ?? stored.groupBy ?? "none",
     panels: vf.collapse === undefined ? false : !vf.collapse,
@@ -683,10 +700,7 @@ function TopologyPage() {
       oneOf(vf.diagram?.mode, DIAGRAM_MODES) ??
       oneOf(storedDiagram?.mode, DIAGRAM_MODES) ??
       "simple",
-    face:
-      oneOf(vf.diagram?.face, FACES) ??
-      oneOf(storedDiagram?.face, FACES) ??
-      "card",
+    face: dfltFace,
     anchor:
       oneOf(vf.diagram?.photo_anchor, ANCHORS) ??
       oneOf(storedDiagram?.photo_anchor, ANCHORS) ??
@@ -1156,7 +1170,8 @@ function TopologyPage() {
     if (viewId !== "none") return
     writeStoredDisplay({
       colorMode,
-      direction,
+      // A photo map's own Tree is not the card map's choice.
+      direction: dirImplied ? stored.direction : direction,
       roleOrder,
       roleBonds,
       roleDistance,
@@ -1168,6 +1183,8 @@ function TopologyPage() {
     viewId,
     colorMode,
     direction,
+    dirImplied,
+    stored,
     roleOrder,
     roleBonds,
     roleDistance,
