@@ -109,6 +109,9 @@ export interface BandData {
   /** A row: the x spans of its title strip that lines, cards and labels
    * take, as the Diagram last planned them (canvas px). */
   busy?: readonly (readonly [number, number])[]
+  /** Set by the band's menu (Rename): a new stamp opens the title's
+   * editor. */
+  renameAt?: number
   [key: string]: unknown
 }
 
@@ -174,6 +177,9 @@ export function BandNode({
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => setDraft(d.label), [d.label])
+  useEffect(() => {
+    if (d.renameAt) setEditing(true)
+  }, [d.renameAt])
   useEffect(() => {
     if (editing) input.current?.select()
   }, [editing])

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Building2,
@@ -115,6 +115,14 @@ import {
 import { CanvasLegend, legendRows } from "@/components/topology/legend"
 import { ExportMenu } from "@/components/topology/export/export-menu"
 import {
+  DeviceMenuItems,
+  GroupMenuItems,
+  PaneMenuItems,
+  RegionMenuItems,
+} from "@/components/topology/context-menu"
+import type { CardFace } from "@/components/topology/context-menu"
+import { PointerMenu } from "@/components/pointer-menu"
+import {
   LogicalBar,
   LogicalDisplay,
   LogicalFilters,
@@ -186,7 +194,6 @@ import { useBands } from "@/components/topology/diagram/use-bands"
 import { isRow, isSide, titleStrip } from "@/components/topology/diagram/bands"
 import type { BandBy } from "@/components/topology/diagram/bands"
 import { NOTES_MAX, newNote } from "@/components/topology/diagram/notes"
-import { SWATCH_NAMES } from "@/components/topology/diagram/swatch-names"
 import type { NoteIconName } from "@/components/topology/diagram/notes"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
@@ -903,6 +910,10 @@ function TopologyPage() {
   const [focusId] = useUrlText("device")
   const [focusDepth, setFocusDepth] = useUrlInt("depth", 1, { min: 1, max: 6 })
   const focus = focusId ? { id: focusId, depth: focusDepth } : null
+  /** Focus: this device's neighbourhood from the whole estate, one hop out
+   * - from its menu and from its panel alike. */
+  const focusDevice = (id: string) =>
+    patch({ devices: undefined, device: id, depth: undefined })
   const setFocus = (f: { id: string; depth: number } | null) =>
     patch({
       device: f ? f.id : undefined,
@@ -1025,7 +1036,7 @@ function TopologyPage() {
   }
   const removeZone = (id: string) =>
     setZones((zones ?? []).filter((z) => z.id !== id))
-  const recolorZone = (id: string, color: string) =>
+  const recolorZone = (id: string, color: string | null) =>
     setZones((zones ?? []).map((z) => (z.id === id ? { ...z, color } : z)))
 
   // Notes (diagram/notes.ts): one list per map, on the Diagram only.
@@ -1558,6 +1569,30 @@ function TopologyPage() {
   }, [q.data, ghosts.data, bgp.data])
   // Each device's own Card | Photo and Ports | Edge, over the view's.
   const nodeFaces = doc.doc.nodes
+  /** A Diagram card's face for its menu. The items are named for what is
+   * drawn; a pick keeps the device's own face and anchor only where they
+   * differ from the view's. */
+  const cardFace = (n: TopoNode["data"], id: string): CardFace => {
+    const photo = !!(n as Partial<DiagramCardData>).diagram?.photo
+    const setOwn = (change: { face?: FaceParam; anchor?: AnchorParam }) => {
+      const own = { ...nodeFaces[id], ...change }
+      if (own.face === diagramFace) delete own.face
+      if (own.anchor === diagramAnchor) delete own.anchor
+      edit({ type: "setNode", id, value: own.face || own.anchor ? own : null })
+    }
+    const anchor = anchorOf(id, diagramAnchor, nodeFaces)
+    const next = photo ? "card" : "photo"
+    return {
+      photo,
+      // A type with no photo or faceplate is drawn as its card either way.
+      canPhoto: canShowPhoto(n) !== false,
+      anchor,
+      onFace: () => {
+        if (faceOf(id, diagramFace, nodeFaces) !== next) setOwn({ face: next })
+      },
+      onAnchor: () => setOwn({ anchor: anchor === "edge" ? "ports" : "edge" }),
+    }
+  }
   /** What the canvas draws. How many cards hiding took off THIS map is the
    * chip's count - a view saved against one filter can carry names the
    * current query never returns, and offering to restore those would be a
@@ -2112,11 +2147,14 @@ function TopologyPage() {
     const gone = notes?.length ? (canvas.current?.selectedNotes() ?? []) : []
     // With notes selected, only cards selected with them go - not the
     // card whose panel happens to be open.
-    const ids = !canBuild
-      ? []
-      : gone.length
-        ? (canvas.current?.selectedDevices() ?? [])
-        : selectedDevices()
+    // Cards leave any hand-picked map this way, Diagram or Hierarchy - the
+    // same maps their menu's Remove from map works on.
+    const ids =
+      !builder || logical
+        ? []
+        : gone.length
+          ? (canvas.current?.selectedDevices() ?? [])
+          : selectedDevices()
     if (!gone.length && !ids.length) return false
     if (gone.length) {
       const drop = new Set(gone)
@@ -3056,6 +3094,7 @@ function TopologyPage() {
                   else if (
                     node.type === "device" ||
                     node.type === "flat" ||
+                    node.type === "hier" ||
                     node.type === "card"
                   )
                     setMenu({
@@ -3141,7 +3180,7 @@ function TopologyPage() {
               data={selNode}
               onClose={() => setSelNode(null)}
               onFocus={(id) => {
-                setFocus({ id, depth: 1 })
+                focusDevice(id)
                 setSelNode(null)
               }}
             />
@@ -3215,294 +3254,119 @@ function TopologyPage() {
         )}
       </div>
 
-      {menu && (
-        <>
-          <div
-            className="fixed inset-0 z-[999]"
-            onClick={() => setMenu(null)}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setMenu(null)
-            }}
-          />
-          <div
-            className="fixed z-[1000] w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
-            style={{
-              left: Math.min(menu.x, window.innerWidth - 240),
-              top: Math.min(menu.y, window.innerHeight - 220),
-            }}
-          >
-            {menu.node && (
-              <>
-                {menu.node.device_id && (
-                  <MenuItem
-                    onClick={() => {
-                      setMenu(null)
-                      nav({
-                        to: "/devices/$id",
-                        params: { id: menu.node!.device_id! },
-                      })
-                    }}
-                  >
-                    Open device
-                  </MenuItem>
-                )}
-                {menu.node.device_id && (
-                  <MenuItem
-                    onClick={() => {
-                      setMenu(null)
-                      patch({
-                        devices: undefined,
-                        device: menu.node!.device_id!,
-                        depth: undefined,
-                      })
-                    }}
-                  >
-                    Focus
-                  </MenuItem>
-                )}
-                {builder && menu.node.device_id && (
-                  <MenuItem
-                    onClick={() => {
-                      setMenu(null)
-                      void addConnected([menu.node!.device_id!])
-                    }}
-                  >
-                    Add connected devices
-                  </MenuItem>
-                )}
-                {builder && menu.node.device_id && (
-                  <MenuItem
-                    onClick={() => {
-                      const id = menu.node!.device_id!
-                      setMenu(null)
-                      removeFromSet([id])
-                      clearSel()
-                    }}
-                  >
-                    Remove from map
-                  </MenuItem>
-                )}
-                {!builder && menu.node.device_id && (
-                  <MenuItem
-                    onClick={() => {
-                      setMenu(null)
-                      // One step: leaving focus and seeding the builder are
-                      // the same transition.
-                      startSetAt(menu.node!.device_id!)
-                    }}
-                  >
-                    Start hand-picked map
-                  </MenuItem>
-                )}
-                {menu.nodeId && (
-                  <MenuItem
-                    onClick={() => {
-                      const id = menu.nodeId!
-                      setMenu(null)
-                      setHiddenNodes(withHidden(hidden, "devices", id, true))
-                    }}
-                  >
-                    Hide
-                  </MenuItem>
-                )}
-                {isDiagram &&
-                  !grouped &&
-                  menu.node.device_id &&
-                  (() => {
-                    // Named for what is drawn. A device whose type has no
-                    // photo or faceplate is drawn as its card either way:
-                    // nothing to switch to.
-                    const id = menu.node.device_id
-                    const drawn = !!(menu.node as Partial<DiagramCardData>)
-                      .diagram?.photo
-                    const next = drawn ? "card" : "photo"
-                    /** This device's own face and anchor, each kept only
-                     * where it differs from the view's. */
-                    const setOwn = (change: {
-                      face?: FaceParam
-                      anchor?: AnchorParam
-                    }) => {
-                      const own = { ...nodeFaces[id], ...change }
-                      if (own.face === diagramFace) delete own.face
-                      if (own.anchor === diagramAnchor) delete own.anchor
-                      edit({
-                        type: "setNode",
-                        id,
-                        value: own.face || own.anchor ? own : null,
-                      })
-                    }
-                    const anchor = anchorOf(id, diagramAnchor, nodeFaces)
-                    if (!drawn && canShowPhoto(menu.node) === false)
-                      return (
-                        <div
-                          className={cn(
-                            MENU_ROW,
-                            "text-muted-foreground hover:bg-transparent"
-                          )}
-                          aria-disabled
-                        >
-                          Show photo
-                          <InfoTip
-                            className="ml-auto"
-                            side="right"
-                            contentClassName="z-[1001]"
-                          >
-                            Its type has no front photo or faceplate.
-                          </InfoTip>
-                        </div>
-                      )
-                    return (
-                      <>
-                        <MenuItem
-                          onClick={() => {
-                            setMenu(null)
-                            if (faceOf(id, diagramFace, nodeFaces) === next)
-                              return
-                            setOwn({ face: next })
-                          }}
-                        >
-                          {drawn ? "Show card" : "Show photo"}
-                        </MenuItem>
-                        {drawn && (
-                          <MenuItem
-                            onClick={() => {
-                              setMenu(null)
-                              setOwn({
-                                anchor: anchor === "edge" ? "ports" : "edge",
-                              })
-                            }}
-                          >
-                            {anchor === "edge"
-                              ? "Cables to ports"
-                              : "Cables to edge"}
-                          </MenuItem>
-                        )}
-                      </>
-                    )
-                  })()}
-                {isDiagram &&
-                  menu.node.device_id &&
-                  canDo("device", "change") && (
-                    <MenuItem
-                      onClick={() => {
-                        const n = menu.node!
-                        setMenu(null)
-                        setCardLinesFor({
-                          id: n.device_id!,
-                          name: n.name,
-                          role: n.role,
-                        })
-                      }}
-                    >
-                      Card lines…
-                    </MenuItem>
-                  )}
-                {isDiagram && canManage && menu.node.role?.slug && (
-                  <Link
-                    to="/settings/topology"
-                    search={{ role: menu.node.role.slug }}
-                    onClick={() => setMenu(null)}
-                    className={MENU_ROW}
-                  >
-                    Role card lines
-                  </Link>
-                )}
-              </>
-            )}
-            {menu.zoneId && (
-              <>
-                <div className="flex items-center gap-1 px-2 py-1.5">
-                  {ZONE_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => {
-                        recolorZone(menu.zoneId!, c)
-                        setMenu(null)
-                      }}
-                      aria-label={SWATCH_NAMES[c] ?? c}
-                      className="size-4 rounded-sm border border-border"
-                      style={{ background: c }}
-                    />
-                  ))}
-                </div>
-                <MenuItem
-                  onClick={() => {
-                    const id = menu.zoneId!
-                    setMenu(null)
-                    removeZone(id)
-                  }}
-                >
-                  Delete
-                </MenuItem>
-              </>
-            )}
-            {menu.group && (
-              <MenuItem
-                onClick={() => {
-                  setMenu(null)
-                  drillInto(menu.group!)
+      <PointerMenu
+        menu={menu}
+        onClose={() => setMenu(null)}
+        label={
+          menu?.node
+            ? "Device"
+            : menu?.group
+              ? "Group"
+              : menu?.zoneId
+                ? "Area"
+                : "Map"
+        }
+      >
+        {(m) => {
+          if (m.node) {
+            const n = m.node
+            const id = n.device_id ?? null
+            return (
+              <DeviceMenuItems
+                deviceId={id}
+                builder={builder}
+                onFocus={() => id && focusDevice(id)}
+                onAddConnected={() => id && void addConnected([id])}
+                onRemove={() => {
+                  if (!id) return
+                  removeFromSet([id])
+                  clearSel()
                 }}
-              >
-                Open group
-              </MenuItem>
-            )}
-            {!menu.node && !menu.group && !menu.zoneId && (
-              <>
-                <MenuItem
-                  onClick={() => {
-                    const { fx, fy } = menu
-                    setMenu(null)
-                    if (!isDiagram) {
-                      setAddOpen(true)
-                      return
-                    }
-                    // The list opens, and what it adds next lands here.
-                    if (canBuild && fx !== undefined && fy !== undefined)
-                      setAddAt({ x: fx, y: fy })
-                    setPalette(true)
-                  }}
-                >
-                  {isDiagram ? "Add devices…" : "Add device…"}
-                </MenuItem>
-                {!logical && (
-                  <MenuItem
-                    onClick={() => {
-                      const { fx, fy } = menu
-                      setMenu(null)
-                      addZone(fx ?? 0, fy ?? 0)
-                    }}
-                  >
-                    Add zone
-                  </MenuItem>
-                )}
-                {isDiagram && !notesFull && (
-                  <MenuItem
-                    onClick={() => {
-                      const { fx, fy } = menu
-                      setMenu(null)
-                      addNote(null, { x: fx ?? 0, y: fy ?? 0 })
-                    }}
-                  >
-                    Add text
-                  </MenuItem>
-                )}
-                {builder && (
-                  <MenuItem
-                    onClick={() => {
-                      setMenu(null)
-                      exitBuilder()
-                    }}
-                  >
-                    Back to filtered map
-                  </MenuItem>
-                )}
-              </>
-            )}
-          </div>
-        </>
-      )}
+                // One step: leaving focus and seeding the set are the same
+                // transition.
+                onStartSet={() => id && startSetAt(id)}
+                onHide={
+                  m.nodeId
+                    ? () =>
+                        setHiddenNodes(
+                          withHidden(hidden, "devices", m.nodeId!, true)
+                        )
+                    : undefined
+                }
+                diagram={
+                  isDiagram && id
+                    ? {
+                        face: grouped ? undefined : cardFace(n, id),
+                        onCardLines: canDo("device", "change")
+                          ? () =>
+                              setCardLinesFor({
+                                id,
+                                name: n.name,
+                                role: n.role,
+                              })
+                          : undefined,
+                        roleSlug: (canManage && n.role?.slug) || undefined,
+                      }
+                    : undefined
+                }
+              />
+            )
+          }
+          if (m.group) {
+            const g = m.group
+            return (
+              <GroupMenuItems
+                onOpen={() => drillInto(g)}
+                onHide={() =>
+                  setHiddenNodes(
+                    withHidden(
+                      hidden,
+                      g.kind === "site" ? "sites" : "locations",
+                      g.name,
+                      true
+                    )
+                  )
+                }
+              />
+            )
+          }
+          if (m.zoneId) {
+            const id = m.zoneId
+            const region = zones?.find((z) => z.id === id)
+            return (
+              <RegionMenuItems
+                kind={region?.kind === "band" ? "band" : "zone"}
+                color={region?.color || null}
+                onRename={() => canvas.current?.renameRegion(id)}
+                onRecolor={(c) => recolorZone(id, c)}
+                onDelete={() => removeZone(id)}
+              />
+            )
+          }
+          const { fx, fy } = m
+          return (
+            <PaneMenuItems
+              tab={isDiagram ? "diagram" : "hierarchy"}
+              builder={builder}
+              notesFull={notesFull}
+              onAddDevices={() => {
+                if (!isDiagram) {
+                  setAddOpen(true)
+                  return
+                }
+                // The list opens, and what it adds next lands here.
+                if (canBuild && fx !== undefined && fy !== undefined)
+                  setAddAt({ x: fx, y: fy })
+                setPalette(true)
+              }}
+              onAddBand={bands.addRow}
+              onAddZone={() => addZone(fx ?? 0, fy ?? 0)}
+              onAddText={() => addNote(null, { x: fx ?? 0, y: fy ?? 0 })}
+              onBackToFiltered={exitBuilder}
+            />
+          )
+        }}
+      </PointerMenu>
 
       <AddDeviceDialog
         open={addOpen}
@@ -3821,25 +3685,6 @@ function EdgePanel({
         </OpenLink>
       )}
     </PanelShell>
-  )
-}
-
-/** One row of the right-click context menu; a row that navigates is a
- * router `<Link>` with the same classes. */
-const MENU_ROW =
-  "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
-
-function MenuItem({
-  onClick,
-  children,
-}: {
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button type="button" onClick={onClick} className={MENU_ROW}>
-      {children}
-    </button>
   )
 }
 

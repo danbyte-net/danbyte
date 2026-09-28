@@ -328,6 +328,8 @@ export interface CanvasHandle {
   /** Bring these boxes (canvas coordinates) into view with what is on
    * screen, when any lies outside it. */
   reveal: (boxes: readonly Rect[]) => void
+  /** Open a band's or a zone's label for renaming (its menu's Rename). */
+  renameRegion: (id: string) => void
 }
 
 /** A device just added to the map and not fetched yet: drawn muted, a
@@ -2460,6 +2462,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           .filter((n) => n.selected)
           .map((n) => (n.data as { device_id?: string }).device_id)
           .filter((id): id is string => !!id),
+      renameRegion: (id) => {
+        // A fresh stamp each time: the node opens its editor when it
+        // changes (zone-node.tsx, band-node.tsx).
+        for (const nid of [`zone:${id}`, `band:${id}`])
+          if (flow.getNode(nid))
+            flow.updateNodeData(nid, { renameAt: Date.now() })
+      },
     }),
     [flow, theme]
   )

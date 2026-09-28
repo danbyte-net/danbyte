@@ -639,8 +639,9 @@ widens to show them. When everything cabled to it is already on the map,
 it says *No new connected devices*.
 
 **Removing devices.** Right-click a card → *Remove from map*, or select
-cards and press ++delete++ (or ++backspace++). That takes the device out of
-the view's set, with its position and overrides; ++ctrl+z++ puts it back.
+cards and press ++delete++ (or ++backspace++), on the Diagram and the
+Hierarchy tab alike. That takes the device out of the view's set, with its
+position and overrides; ++ctrl+z++ puts it back.
 *Hide*, next to it, is different - it hides a card and keeps it in the set
 (see [Hiding things](#hiding-things-the-eyes)).
 
@@ -669,7 +670,8 @@ keep adding. A header chip (*Hand-picked · n*) shows the set's size; its ×
 (or right-click empty canvas → *Back to filtered map*) leaves it. A view
 saved as a device set has no such chip: its name is in the **Views** select,
 and the count beside the title is its devices. Right-click also offers
-*Open device* and *Focus* in any mode.
+*Open device* and *Focus* in any mode - see
+[Right-click menus](#right-click-menus).
 
 ### Hiding things - the eyes
 
@@ -794,8 +796,8 @@ rows' edges. Side bands can stand side by side.
   carries the cards whose centre is inside it; a click anywhere else inside
   it still reaches the canvas and the cards on it. A side band carries
   nothing.
-- **Rename** it by double-clicking the title, or with the pencil above a
-  selected band.
+- **Rename** it by double-clicking the title, with the pencil above a
+  selected band, or by right-clicking it → *Rename*.
 - **Reorder** the rows with the arrows above a selected band, or by dragging
   them in the [Objects sidebar](#on-this-map-the-objects-sidebar). The rows
   swap places and their cards go with them.
@@ -805,9 +807,9 @@ rows' edges. Side bands can stand side by side.
   the cards in it.
 - **Tint** it with one of the zone swatches (each named on hover: Slate,
   Sky, Emerald, Amber, Pink, Violet), or back to neutral grey, from the
-  toolbar above it. Rows start neutral, side bands on a pastel swatch.
-  Colour means nothing on its own: it is there to set one part of a picture
-  apart.
+  toolbar above it or its right-click menu. Rows start neutral, side bands
+  on a pastel swatch. Color means nothing on its own: it is there to set one
+  part of a picture apart.
 - **Delete** it from the toolbar or by right-clicking it (**Delete**); its cards stay
   where they are. **Arrange ▸ Clear bands** removes every band (after a
   question when some were drawn by hand).
@@ -837,13 +839,14 @@ to (**Add connected devices**) goes into the band made for its role (or
 type) when there is one, and so does one dropped outside every band. One
 dropped into a band stays in that band.
 
-**Zones** (the **Zone** button, **Add ▸ Zone** on the Diagram tab, or
-right-click empty canvas → *Add zone*) work the same way on every tab:
+**Zones** (**Add ▸ Zone**, or right-click empty canvas → *Add zone*) work
+the same way on every tab:
 
 - **Move** a zone by its label bar - the bar is the grip, so a click
   anywhere else inside the box still reaches the canvas and the cards under
   it.
-- **Rename** it by double-clicking the label.
+- **Rename** it by double-clicking the label, with the pencil above a
+  selected zone, or by right-clicking it → *Rename*.
 - **Resize** it by selecting it and dragging a corner.
 - **Color** it with a swatch (each named on hover: Slate, Sky, Emerald,
   Amber, Pink, Violet) or **Delete** it, from the small toolbar above a
@@ -903,10 +906,11 @@ comboboxes (*Any site*, *Any role*…), so a long site list is a keystroke
 away. Roles and statuses are listed as their colored badges, the same as in
 every table. Click a device → **Focus** (or right-click it → *Focus*) to
 re-query just its neighbourhood, with a **1–6 hop** radius selector in place
-of Filters; the focus chip in the header names the device, and its × clears
-the focus. The **Find on map** box dims everything that doesn't match (name,
-IP, type) - press ++enter++ to zoom to the first hit. What you type there is
-not an edit of a saved view.
+of Filters (from an unsaved hand-picked map, both leave the set); the focus
+chip in the header names the device, and its × clears the focus. The **Find
+on map** box dims everything that doesn't match (name, IP, type) - press
+++enter++ to zoom to the first hit. What you type there is not an edit of a
+saved view.
 
 ### Objects sidebar {#on-this-map-the-objects-sidebar}
 
@@ -1131,16 +1135,33 @@ somebody saved the view in the meantime, Save is refused and offers
 **Reload** (take theirs and drop your changes); nothing is overwritten
 silently.
 
+### Right-click menus
+
+Right-click a card, a band, a zone or empty canvas for what applies to it
+there. The menus are the app's own menus: the arrow keys move through them,
+++enter++ picks, ++esc++ or a click anywhere else closes them, and a
+right-click outside only closes the menu - the browser's own menu stays
+shut. An item that the toolbar also has keeps the toolbar's icon; a key that
+does the same thing is shown at the item's right.
+
+| Right-click | Items, in order |
+|---|---|
+| A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Card lines…*, and *Role card lines* for admins |
+| A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
+| A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), *Delete* |
+| Empty canvas | Diagram: *Add devices…*, *Add band*, *Add zone*, *Add text*. Hierarchy: *Add device…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
+
 ### Keyboard
 
 | Keys | Action |
 |---|---|
-| ++ctrl+s++ / ++cmd+s++ | Save (Save as… on a map that is not a saved view) |
+| ++ctrl+s++ / ++cmd+s++ | Save (Save as… on a map that is not a saved view); the **Save** button's tooltip shows the key |
 | ++ctrl+z++ / ++cmd+z++ | Undo the last edit to the map |
 | ++ctrl+shift+z++ / ++cmd+shift+z++ (or ++ctrl+y++) | Redo |
 | ++delete++ / ++backspace++ | Remove the selected notes, and the selected cards from a hand-picked map |
 | ++h++ | Hide the selected card (or the selected site or location on a grouped map) |
 | ++shift+h++ | Show everything hidden |
+| ++enter++ (Find on map) | Zoom to the first card that matches |
 | ++enter++ (device list) | Place the selected devices in the middle of the screen |
 | ++ctrl++ / ++cmd++ / ++shift++ + click (device list) | Select several devices to drag at once |
 

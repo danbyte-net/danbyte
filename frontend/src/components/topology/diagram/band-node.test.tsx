@@ -126,6 +126,36 @@ describe("BandNode", () => {
     expect(onRename).toHaveBeenCalledWith("CE-lag")
   })
 
+  it("opens its title's editor when its menu asks (renameAt)", () => {
+    const props = (renameAt?: number) =>
+      ({
+        id: "band:b1",
+        data: { label: "Spine-lag", color: null, orient: "h", renameAt },
+        selected: false,
+      }) as unknown as NodeProps
+    const { rerender } = render(
+      <ReactFlowProvider>
+        <BandNode {...props()} />
+      </ReactFlowProvider>
+    )
+    expect(screen.queryByDisplayValue("Spine-lag")).toBeNull()
+    rerender(
+      <ReactFlowProvider>
+        <BandNode {...props(1)} />
+      </ReactFlowProvider>
+    )
+    const input = screen.getByDisplayValue("Spine-lag")
+    fireEvent.keyDown(input, { key: "Escape" })
+    expect(screen.queryByDisplayValue("Spine-lag")).toBeNull()
+    // Rename again: a new stamp opens it again.
+    rerender(
+      <ReactFlowProvider>
+        <BandNode {...props(2)} />
+      </ReactFlowProvider>
+    )
+    expect(screen.getByDisplayValue("Spine-lag")).toBeTruthy()
+  })
+
   it("tints only with a zone swatch", () => {
     expect(bandLook(null).className).toContain("var(--muted)")
     expect(bandLook("#123456")).toEqual(bandLook(null))

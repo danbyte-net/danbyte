@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import { NodeResizer, NodeToolbar, Position } from "@xyflow/react"
 import type { NodeProps } from "@xyflow/react"
-import { Trash2 } from "lucide-react"
+import { Pencil, Trash2 } from "lucide-react"
 
+import { ToolButton } from "./diagram/band-node"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
 import { ZONE_COLORS } from "./view-positions"
 
@@ -27,6 +28,9 @@ export interface ZoneData {
   /** Resizing settles inside React Flow, so the canvas is told to re-read
    * the geometry the same way a drag tells it. */
   onResizeEnd?: () => void
+  /** Set by the zone's menu (Rename): a new stamp opens the label's
+   * editor. */
+  renameAt?: number
   [key: string]: unknown
 }
 
@@ -47,6 +51,9 @@ export function ZoneNode({ data, selected }: NodeProps) {
 
   useEffect(() => setDraft(d.label), [d.label])
   useEffect(() => {
+    if (d.renameAt) setEditing(true)
+  }, [d.renameAt])
+  useEffect(() => {
     if (editing) input.current?.select()
   }, [editing])
 
@@ -62,6 +69,12 @@ export function ZoneNode({ data, selected }: NodeProps) {
           no detail panel and nothing else on the canvas leads to it. */}
       <NodeToolbar isVisible={selected} position={Position.Top} offset={8}>
         <div className="flex items-center gap-1 rounded-md border border-border bg-popover p-1 shadow-md">
+          <ToolButton
+            label="Rename"
+            onClick={() => setEditing(true)}
+            icon={<Pencil className="size-3" />}
+          />
+          <span className="mx-0.5 h-4 w-px bg-border" />
           {ZONE_COLORS.map((c) => (
             <button
               key={c}
@@ -76,15 +89,12 @@ export function ZoneNode({ data, selected }: NodeProps) {
             />
           ))}
           <span className="mx-0.5 h-4 w-px bg-border" />
-          <button
-            type="button"
+          <ToolButton
+            label="Delete"
             onClick={() => d.onDelete?.()}
-            aria-label="Delete"
-            data-tip="Delete"
-            className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 className="size-3" />
-          </button>
+            icon={<Trash2 className="size-3" />}
+            danger
+          />
         </div>
       </NodeToolbar>
 
@@ -121,6 +131,7 @@ export function ZoneNode({ data, selected }: NodeProps) {
               ref={input}
               value={draft}
               autoFocus
+              maxLength={80}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commit}
               onKeyDown={(e) => {
