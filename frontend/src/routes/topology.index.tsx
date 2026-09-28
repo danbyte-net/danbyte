@@ -2249,288 +2249,290 @@ function TopologyPage() {
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {!logical && (
-          <>
-          <Input
-            placeholder="Find device…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && matchedIds?.size)
-                canvas.current?.focusNode([...matchedIds][0])
-            }}
-            className="h-8 w-40 text-xs"
-          />
-          {builder ? null : focus ? (
-            <Select
-              value={String(focus.depth)}
-              onValueChange={(v) => setFocusDepth(Number(v))}
-            >
-              <SelectTrigger className="h-8 w-24 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[1, 2, 3, 4].map((d) => (
-                  <SelectItem key={d} value={String(d)}>
-                    {d} hop{d === 1 ? "" : "s"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 gap-1.5 text-xs"
-                >
-                  <Filter className="h-3.5 w-3.5" />
-                  Filters
-                  {activeFilters > 0 && (
-                    <Badge
-                      variant="secondary"
-                      className="ml-0.5 h-4 px-1 text-[10px]"
-                    >
-                      {activeFilters}
-                    </Badge>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-64 space-y-3 p-3">
-                <PopoverField label="Site">
-                  <FilterSelect
-                    value={filters.site}
-                    onChange={(v) => set({ site: v })}
-                    anyLabel="All sites"
-                    options={(sites.data?.results ?? []).map((s) => ({
-                      value: s.id,
-                      label: s.name,
-                    }))}
-                  />
-                </PopoverField>
-                <PopoverField label="Role">
-                  <FilterSelect
-                    value={filters.role}
-                    onChange={(v) => set({ role: v })}
-                    anyLabel="Any role"
-                    options={(roles.data?.results ?? []).map((r) => ({
-                      value: r.id,
-                      label: r.name,
-                    }))}
-                  />
-                </PopoverField>
-                <PopoverField label="Status">
-                  <FilterSelect
-                    value={filters.status}
-                    onChange={(v) => set({ status: v })}
-                    anyLabel="Any status"
-                    options={(statuses.data?.results ?? []).map((s) => ({
-                      value: s.id,
-                      label: s.name,
-                    }))}
-                  />
-                </PopoverField>
-                <PopoverField label="Tag">
-                  <FilterSelect
-                    value={filters.tag}
-                    onChange={(v) => set({ tag: v })}
-                    anyLabel="Any tag"
-                    options={(tags.data?.results ?? []).map((t) => ({
-                      value: t.slug,
-                      label: t.name,
-                    }))}
-                  />
-                </PopoverField>
-              </PopoverContent>
-            </Popover>
-          )}
-          {!grouped && viewStyle !== "hierarchy" && (
-          <LevelOrganiser
-            roles={rolesInGraph}
-            order={roleOrder}
-            onChange={(o) => {
-              setRoleOrder(o)
-              dropAllPositions()
-              setLayoutTick((t) => t + 1)
-            }}
-            bonds={roleBonds}
-            onBonds={(b) => {
-              setRoleBonds(b)
-              // Bonding changes the tiers, so drop pinned coordinates and
-              // relayout - same as reordering.
-              dropAllPositions()
-              setLayoutTick((t) => t + 1)
-            }}
-            distance={roleDistance}
-            onDistance={(role, step) => {
-              setRoleDistance({ ...roleDistance, [role]: step })
-              dropAllPositions()
-              setLayoutTick((t) => t + 1)
-            }}
-          />
-          )}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 shrink-0 gap-1.5 text-xs"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                Display
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="end"
-              className="max-h-(--radix-popover-content-available-height) w-64 space-y-3 overflow-y-auto p-3"
-            >
-              {viewStyle !== "hierarchy" && (
-              <PopoverField label="Layout">
-                <SegmentedTabs<"LR" | "TB">
-                  value={direction}
-                  onValueChange={(d) => {
-                    setDirection(d)
-                    // A saved LR layout doesn't fit TB - re-run the layout.
-                    dropAllPositions()
-                    setLayoutTick((t) => t + 1)
-                  }}
-                  items={[
-                    { value: "LR", label: "Side-to-side" },
-                    { value: "TB", label: "Tree" },
-                  ]}
-                />
-              </PopoverField>
-              )}
-              <PopoverField label="Group by">
-                <SegmentedTabs<GroupBy>
-                  value={groupBy}
-                  onValueChange={(v) => {
-                    // Grouping starts from the whole estate: clear the focus
-                    // and any group we had drilled into, in one navigation.
-                    patch({
-                      group: v === dflt.group ? undefined : v,
-                      device: undefined,
-                      depth: undefined,
-                      ...(v !== "none" ? { site: "all", location: "all" } : {}),
-                    })
-                    clearSel()
-                    dropAllPositions()
-                  }}
-                  items={[
-                    { value: "none", label: "None" },
-                    { value: "site", label: "Site" },
-                    { value: "location", label: "Location" },
-                  ]}
-                />
-              </PopoverField>
-              {isDiagram && !grouped && (
-                <PopoverField label="Devices">
-                  <SegmentedTabs<FaceParam>
-                    value={diagramFace}
-                    onValueChange={setDiagramFace}
-                    items={[
-                      { value: "card", label: "Card" },
-                      { value: "photo", label: "Photo" },
-                    ]}
-                  />
-                </PopoverField>
-              )}
-              {isDiagram && !grouped && photos && (
-                <PopoverField label="Cables to">
-                  <SegmentedTabs<AnchorParam>
-                    value={diagramAnchor}
-                    onValueChange={setDiagramAnchor}
-                    items={[
-                      { value: "ports", label: "Ports" },
-                      { value: "edge", label: "Edge" },
-                    ]}
-                  />
-                </PopoverField>
-              )}
-              {isDiagram && (
-                <PopoverField label="Lines">
-                  <LineTabs<LineParam>
-                    value={diagramLine}
-                    onChange={setDiagramLine}
-                  />
-                </PopoverField>
-              )}
-              {isDiagram && !grouped && (
-                <PopoverField label="Labels">
-                  <div className="flex items-center gap-4">
-                    {(
-                      [
-                        ["subnet", "Subnet"],
-                        ["ip", "IPs"],
-                        ["port", "Ports"],
-                      ] as const
-                    ).map(([token, label]) => (
-                      <FormCheckbox
-                        key={token}
-                        label={label}
-                        checked={diagramLabels.includes(token)}
-                        onChange={(v) => setLabel(token, v)}
-                        className="items-center whitespace-nowrap"
-                      />
-                    ))}
-                  </div>
-                </PopoverField>
-              )}
-              {viewStyle === "stencil" && (
-                <PopoverField label="Cables">
-                  <SegmentedTabs<"routed" | "straight" | "curved">
-                    value={edgeRouting}
-                    onValueChange={setEdgeRouting}
-                    items={[
-                      { value: "routed", label: "Routed" },
-                      { value: "straight", label: "Straight" },
-                      { value: "curved", label: "Curved" },
-                    ]}
-                  />
-                </PopoverField>
-              )}
-              <PopoverField label="Colour by">
+            <>
+              <Input
+                placeholder="Find device…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && matchedIds?.size)
+                    canvas.current?.focusNode([...matchedIds][0])
+                }}
+                className="h-8 w-40 text-xs"
+              />
+              {builder ? null : focus ? (
                 <Select
-                  value={colorMode}
-                  onValueChange={(v) => setColorMode(v as EdgeColorMode)}
+                  value={String(focus.depth)}
+                  onValueChange={(v) => setFocusDepth(Number(v))}
                 >
-                  <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectTrigger className="h-8 w-24 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cable">Cable color</SelectItem>
-                    <SelectItem value="type">By type</SelectItem>
-                    <SelectItem value="status">By status</SelectItem>
-                    <SelectItem value="speed">By speed</SelectItem>
-                    <SelectItem value="none">No color</SelectItem>
+                    {[1, 2, 3, 4].map((d) => (
+                      <SelectItem key={d} value={String(d)}>
+                        {d} hop{d === 1 ? "" : "s"}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-              </PopoverField>
-              <FormCheckbox
-                label="Bundle aggregates"
-                checked={lagMode === "on"}
-                onChange={(v) => setLagMode(v ? "on" : "off")}
-                className="items-center pt-1"
-              />
-              <FormCheckbox
-                label="Show patch panels"
-                checked={!filters.collapse}
-                onChange={(v) => set({ collapse: !v })}
-                className="items-center pt-1"
-              />
-              {isDiagram && !grouped && (
-                <div className="border-t border-border pt-3">
-                  <PopoverField label="Card lines">
-                    <ViewCardLinesEditor
-                      value={savedDiagram?.fields ?? null}
-                      onChange={setViewCardLines}
+              ) : (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0 gap-1.5 text-xs"
+                    >
+                      <Filter className="h-3.5 w-3.5" />
+                      Filters
+                      {activeFilters > 0 && (
+                        <Badge
+                          variant="secondary"
+                          className="ml-0.5 h-4 px-1 text-[10px]"
+                        >
+                          {activeFilters}
+                        </Badge>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 space-y-3 p-3">
+                    <PopoverField label="Site">
+                      <FilterSelect
+                        value={filters.site}
+                        onChange={(v) => set({ site: v })}
+                        anyLabel="All sites"
+                        options={(sites.data?.results ?? []).map((s) => ({
+                          value: s.id,
+                          label: s.name,
+                        }))}
+                      />
+                    </PopoverField>
+                    <PopoverField label="Role">
+                      <FilterSelect
+                        value={filters.role}
+                        onChange={(v) => set({ role: v })}
+                        anyLabel="Any role"
+                        options={(roles.data?.results ?? []).map((r) => ({
+                          value: r.id,
+                          label: r.name,
+                        }))}
+                      />
+                    </PopoverField>
+                    <PopoverField label="Status">
+                      <FilterSelect
+                        value={filters.status}
+                        onChange={(v) => set({ status: v })}
+                        anyLabel="Any status"
+                        options={(statuses.data?.results ?? []).map((s) => ({
+                          value: s.id,
+                          label: s.name,
+                        }))}
+                      />
+                    </PopoverField>
+                    <PopoverField label="Tag">
+                      <FilterSelect
+                        value={filters.tag}
+                        onChange={(v) => set({ tag: v })}
+                        anyLabel="Any tag"
+                        options={(tags.data?.results ?? []).map((t) => ({
+                          value: t.slug,
+                          label: t.name,
+                        }))}
+                      />
+                    </PopoverField>
+                  </PopoverContent>
+                </Popover>
+              )}
+              {!grouped && viewStyle !== "hierarchy" && (
+                <LevelOrganiser
+                  roles={rolesInGraph}
+                  order={roleOrder}
+                  onChange={(o) => {
+                    setRoleOrder(o)
+                    dropAllPositions()
+                    setLayoutTick((t) => t + 1)
+                  }}
+                  bonds={roleBonds}
+                  onBonds={(b) => {
+                    setRoleBonds(b)
+                    // Bonding changes the tiers, so drop pinned coordinates and
+                    // relayout - same as reordering.
+                    dropAllPositions()
+                    setLayoutTick((t) => t + 1)
+                  }}
+                  distance={roleDistance}
+                  onDistance={(role, step) => {
+                    setRoleDistance({ ...roleDistance, [role]: step })
+                    dropAllPositions()
+                    setLayoutTick((t) => t + 1)
+                  }}
+                />
+              )}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 shrink-0 gap-1.5 text-xs"
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    Display
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="max-h-(--radix-popover-content-available-height) w-64 space-y-3 overflow-y-auto p-3"
+                >
+                  {viewStyle !== "hierarchy" && (
+                    <PopoverField label="Layout">
+                      <SegmentedTabs<"LR" | "TB">
+                        value={direction}
+                        onValueChange={(d) => {
+                          setDirection(d)
+                          // A saved LR layout doesn't fit TB - re-run the layout.
+                          dropAllPositions()
+                          setLayoutTick((t) => t + 1)
+                        }}
+                        items={[
+                          { value: "LR", label: "Side-to-side" },
+                          { value: "TB", label: "Tree" },
+                        ]}
+                      />
+                    </PopoverField>
+                  )}
+                  <PopoverField label="Group by">
+                    <SegmentedTabs<GroupBy>
+                      value={groupBy}
+                      onValueChange={(v) => {
+                        // Grouping starts from the whole estate: clear the focus
+                        // and any group we had drilled into, in one navigation.
+                        patch({
+                          group: v === dflt.group ? undefined : v,
+                          device: undefined,
+                          depth: undefined,
+                          ...(v !== "none"
+                            ? { site: "all", location: "all" }
+                            : {}),
+                        })
+                        clearSel()
+                        dropAllPositions()
+                      }}
+                      items={[
+                        { value: "none", label: "None" },
+                        { value: "site", label: "Site" },
+                        { value: "location", label: "Location" },
+                      ]}
                     />
                   </PopoverField>
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
-          </>
+                  {isDiagram && !grouped && (
+                    <PopoverField label="Devices">
+                      <SegmentedTabs<FaceParam>
+                        value={diagramFace}
+                        onValueChange={setDiagramFace}
+                        items={[
+                          { value: "card", label: "Card" },
+                          { value: "photo", label: "Photo" },
+                        ]}
+                      />
+                    </PopoverField>
+                  )}
+                  {isDiagram && !grouped && photos && (
+                    <PopoverField label="Cables to">
+                      <SegmentedTabs<AnchorParam>
+                        value={diagramAnchor}
+                        onValueChange={setDiagramAnchor}
+                        items={[
+                          { value: "ports", label: "Ports" },
+                          { value: "edge", label: "Edge" },
+                        ]}
+                      />
+                    </PopoverField>
+                  )}
+                  {isDiagram && (
+                    <PopoverField label="Lines">
+                      <LineTabs<LineParam>
+                        value={diagramLine}
+                        onChange={setDiagramLine}
+                      />
+                    </PopoverField>
+                  )}
+                  {isDiagram && !grouped && (
+                    <PopoverField label="Labels">
+                      <div className="flex items-center gap-4">
+                        {(
+                          [
+                            ["subnet", "Subnet"],
+                            ["ip", "IPs"],
+                            ["port", "Ports"],
+                          ] as const
+                        ).map(([token, label]) => (
+                          <FormCheckbox
+                            key={token}
+                            label={label}
+                            checked={diagramLabels.includes(token)}
+                            onChange={(v) => setLabel(token, v)}
+                            className="items-center whitespace-nowrap"
+                          />
+                        ))}
+                      </div>
+                    </PopoverField>
+                  )}
+                  {viewStyle === "stencil" && (
+                    <PopoverField label="Cables">
+                      <SegmentedTabs<"routed" | "straight" | "curved">
+                        value={edgeRouting}
+                        onValueChange={setEdgeRouting}
+                        items={[
+                          { value: "routed", label: "Routed" },
+                          { value: "straight", label: "Straight" },
+                          { value: "curved", label: "Curved" },
+                        ]}
+                      />
+                    </PopoverField>
+                  )}
+                  <PopoverField label="Colour by">
+                    <Select
+                      value={colorMode}
+                      onValueChange={(v) => setColorMode(v as EdgeColorMode)}
+                    >
+                      <SelectTrigger className="h-8 w-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cable">Cable color</SelectItem>
+                        <SelectItem value="type">By type</SelectItem>
+                        <SelectItem value="status">By status</SelectItem>
+                        <SelectItem value="speed">By speed</SelectItem>
+                        <SelectItem value="none">No color</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </PopoverField>
+                  <FormCheckbox
+                    label="Bundle aggregates"
+                    checked={lagMode === "on"}
+                    onChange={(v) => setLagMode(v ? "on" : "off")}
+                    className="items-center pt-1"
+                  />
+                  <FormCheckbox
+                    label="Show patch panels"
+                    checked={!filters.collapse}
+                    onChange={(v) => set({ collapse: !v })}
+                    className="items-center pt-1"
+                  />
+                  {isDiagram && !grouped && (
+                    <div className="border-t border-border pt-3">
+                      <PopoverField label="Card lines">
+                        <ViewCardLinesEditor
+                          value={savedDiagram?.fields ?? null}
+                          onChange={setViewCardLines}
+                        />
+                      </PopoverField>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </>
           )}
         </div>
       </header>
@@ -2539,319 +2541,318 @@ function TopologyPage() {
           narrow screens (scrollbar hidden) instead of panning the page.
           The Logical view has its own toolbar - no saved views/PNG there. */}
       {!logical && (
-      <div className="flex h-10 shrink-0 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden">
-        {isDiagram && (
-          <BarTip tip="Devices to place on the map">
+        <div className="flex h-10 shrink-0 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden">
+          {isDiagram && (
+            <BarTip tip="Devices to place on the map">
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "h-7 shrink-0 text-xs",
+                  !paletteShown && "text-muted-foreground"
+                )}
+                aria-pressed={paletteShown}
+                onClick={() => setPalette(!paletteOpen)}
+              >
+                <PanelLeft className="h-3 w-3" /> Devices
+              </Button>
+            </BarTip>
+          )}
+          <Select
+            value={viewId}
+            onValueChange={(v) => {
+              // Back to the default map: dropping the view (and its overrides)
+              // is enough - the settings fall back to the stored personal
+              // defaults on their own.
+              if (v === "none") {
+                clearView()
+                return
+              }
+              const view = views.data?.results.find((x) => x.id === v)
+              if (view) applyView(view)
+            }}
+          >
+            <SelectTrigger className="h-7 w-44 shrink-0 text-xs">
+              <SelectValue placeholder="Saved views" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No saved view</SelectItem>
+              {(views.data?.results ?? []).map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  {v.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {canAddViews && (
+            <BarTip tip="New view">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-7 shrink-0 px-0"
+                aria-label="New view"
+                onClick={() => setNewViewOpen(true)}
+              >
+                <FilePlus className="h-3 w-3" />
+              </Button>
+            </BarTip>
+          )}
+          {edited && (
+            <Badge variant="secondary" className="shrink-0">
+              edited
+            </Badge>
+          )}
+          {viewId !== "none" && canChangeViews && (
             <Button
               variant="outline"
               size="sm"
-              className={cn(
-                "h-7 shrink-0 text-xs",
-                !paletteShown && "text-muted-foreground"
-              )}
-              aria-pressed={paletteShown}
-              onClick={() => setPalette(!paletteOpen)}
+              className="h-7 shrink-0 text-xs whitespace-nowrap"
+              onClick={() => save(viewId)}
+              disabled={saveView.isPending || !docReady}
             >
-              <PanelLeft className="h-3 w-3" /> Devices
+              <Save className="h-3 w-3" /> {savingInPlace ? "Saving…" : "Save"}
             </Button>
-          </BarTip>
-        )}
-        <Select
-          value={viewId}
-          onValueChange={(v) => {
-            // Back to the default map: dropping the view (and its overrides)
-            // is enough - the settings fall back to the stored personal
-            // defaults on their own.
-            if (v === "none") {
-              clearView()
-              return
-            }
-            const view = views.data?.results.find((x) => x.id === v)
-            if (view) applyView(view)
-          }}
-        >
-          <SelectTrigger className="h-7 w-44 shrink-0 text-xs">
-            <SelectValue placeholder="Saved views" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">No saved view</SelectItem>
-            {(views.data?.results ?? []).map((v) => (
-              <SelectItem key={v.id} value={v.id}>
-                {v.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {canAddViews && (
-          <BarTip tip="New view">
+          )}
+          {canAddViews && (
             <Button
               variant="outline"
               size="sm"
-              className="h-7 w-7 shrink-0 px-0"
-              aria-label="New view"
-              onClick={() => setNewViewOpen(true)}
+              className="h-7 shrink-0 text-xs whitespace-nowrap"
+              onClick={() => openSaveAs()}
             >
-              <FilePlus className="h-3 w-3" />
+              <Save className="h-3 w-3" /> Save as…
             </Button>
-          </BarTip>
-        )}
-        {edited && (
-          <Badge variant="secondary" className="shrink-0">
-            edited
-          </Badge>
-        )}
-        {viewId !== "none" && canChangeViews && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0 text-xs whitespace-nowrap"
-            onClick={() => save(viewId)}
-            disabled={saveView.isPending || !docReady}
-          >
-            <Save className="h-3 w-3" /> {savingInPlace ? "Saving…" : "Save"}
-          </Button>
-        )}
-        {canAddViews && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0 text-xs whitespace-nowrap"
-            onClick={() => openSaveAs()}
-          >
-            <Save className="h-3 w-3" /> Save as…
-          </Button>
-        )}
-        {viewId !== "none" && canDeleteViews && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-destructive hover:text-destructive"
-            onClick={() => deleteView.mutate(viewId)}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        )}
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <BarTip tip="Everything on this map">
+          )}
+          {viewId !== "none" && canDeleteViews && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className={cn(
-                "h-7 text-xs",
-                !showObjects && "text-muted-foreground"
-              )}
-              onClick={toggleObjects}
+              className="h-7 text-xs text-destructive hover:text-destructive"
+              onClick={() => deleteView.mutate(viewId)}
             >
-              <PanelRight className="h-3 w-3" /> Objects
+              <Trash2 className="h-3 w-3" />
             </Button>
-          </BarTip>
-          {isDiagram ? (
-            <>
-              <DropdownMenu>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                      >
-                        <Plus className="h-3 w-3" /> Add
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" variant="panel">
-                    Add to the map
-                  </TooltipContent>
-                </Tooltip>
-                <DropdownMenuContent
-                  align="end"
-                  className="w-48"
-                  onCloseAutoFocus={keepNoteFocus}
-                >
-                  <DropdownMenuItem onSelect={() => setPalette(true)}>
-                    <PanelLeft /> Devices…
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={!canBuild || !selNode?.device_id}
-                    onSelect={() => void addConnected(selectedDevices())}
+          )}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <BarTip tip="Everything on this map">
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "h-7 text-xs",
+                  !showObjects && "text-muted-foreground"
+                )}
+                onClick={toggleObjects}
+              >
+                <PanelRight className="h-3 w-3" /> Objects
+              </Button>
+            </BarTip>
+            {isDiagram ? (
+              <>
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                        >
+                          <Plus className="h-3 w-3" /> Add
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" variant="panel">
+                      Add to the map
+                    </TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-48"
+                    onCloseAutoFocus={keepNoteFocus}
                   >
-                    <LinkIcon /> Connected devices
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={bands.addRow}>
-                    <RectangleHorizontal /> Band
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={bands.addSide}>
-                    <RectangleVertical /> Side band
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={addZoneCentered}>
-                    <Square /> Zone
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={notesFull}
-                    onSelect={() => addNote(null)}
+                    <DropdownMenuItem onSelect={() => setPalette(true)}>
+                      <PanelLeft /> Devices…
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!canBuild || !selNode?.device_id}
+                      onSelect={() => void addConnected(selectedDevices())}
+                    >
+                      <LinkIcon /> Connected devices
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={bands.addRow}>
+                      <RectangleHorizontal /> Band
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={bands.addSide}>
+                      <RectangleVertical /> Side band
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={addZoneCentered}>
+                      <Square /> Zone
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      disabled={notesFull}
+                      onSelect={() => addNote(null)}
+                    >
+                      <Type /> Text
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={notesFull}
+                      onSelect={() => addNote("cloud")}
+                    >
+                      <Cloud /> Cloud
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={notesFull}
+                      onSelect={() => addNote("globe")}
+                    >
+                      <Globe /> Globe
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={notesFull}
+                      onSelect={() => addNote("building")}
+                    >
+                      <Building2 /> Building
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                        >
+                          <LayoutGrid className="h-3 w-3" /> Arrange
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" variant="panel">
+                      Arrange the cards
+                    </TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-auto min-w-48 whitespace-nowrap"
                   >
-                    <Type /> Text
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={notesFull}
-                    onSelect={() => addNote("cloud")}
+                    <DropdownMenuItem
+                      // Rows hold their cards: with rows Arrange made, a new
+                      // layout arranges them again by what they were made
+                      // from; rows drawn by hand are cleared first.
+                      disabled={bands.hasRows && !bands.ruleBy}
+                      onSelect={() => {
+                        if (bands.ruleBy) {
+                          arrangeBands(bands.ruleBy)
+                          return
+                        }
+                        setPositions(undefined)
+                        setLayoutTick((t) => t + 1)
+                      }}
+                    >
+                      <LayoutGrid /> Re-layout
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => arrangeBands("role")}>
+                      <Rows3 /> Bands by role
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => arrangeBands("device_type")}
+                    >
+                      <Rows3 /> Bands by device type
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!bands.hasBands}
+                      onSelect={clearBands}
+                    >
+                      <Eraser /> Clear bands
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            ) : (
+              <>
+                <BarTip tip="Start a custom map">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setAddOpen(true)}
                   >
-                    <Cloud /> Cloud
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={notesFull}
-                    onSelect={() => addNote("globe")}
+                    <Plus className="h-3 w-3" /> Add device
+                  </Button>
+                </BarTip>
+                <BarTip tip="Labelled box behind the cards">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={addZoneCentered}
                   >
-                    <Globe /> Globe
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={notesFull}
-                    onSelect={() => addNote("building")}
-                  >
-                    <Building2 /> Building
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <DropdownMenu>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                      >
-                        <LayoutGrid className="h-3 w-3" /> Arrange
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" variant="panel">
-                    Arrange the cards
-                  </TooltipContent>
-                </Tooltip>
-                <DropdownMenuContent
-                  align="end"
-                  className="w-auto min-w-48 whitespace-nowrap"
-                >
-                  <DropdownMenuItem
-                    // Rows hold their cards: with rows Arrange made, a new
-                    // layout arranges them again by what they were made
-                    // from; rows drawn by hand are cleared first.
-                    disabled={bands.hasRows && !bands.ruleBy}
-                    onSelect={() => {
-                      if (bands.ruleBy) {
-                        arrangeBands(bands.ruleBy)
-                        return
-                      }
+                    <Square className="h-3 w-3" /> Zone
+                  </Button>
+                </BarTip>
+                <BarTip tip="Discard dragged positions">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
                       setPositions(undefined)
                       setLayoutTick((t) => t + 1)
                     }}
                   >
-                    <LayoutGrid /> Re-layout
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => arrangeBands("role")}>
-                    <Rows3 /> Bands by role
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => arrangeBands("device_type")}
-                  >
-                    <Rows3 /> Bands by device type
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={!bands.hasBands}
-                    onSelect={clearBands}
-                  >
-                    <Eraser /> Clear bands
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          ) : (
-            <>
-              <BarTip tip="Start a custom map">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setAddOpen(true)}
-                >
-                  <Plus className="h-3 w-3" /> Add device
-                </Button>
-              </BarTip>
-              <BarTip tip="Labelled box behind the cards">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={addZoneCentered}
-                >
-                  <Square className="h-3 w-3" /> Zone
-                </Button>
-              </BarTip>
-              <BarTip tip="Discard dragged positions">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    setPositions(undefined)
-                    setLayoutTick((t) => t + 1)
-                  }}
-                >
-                  <LayoutGrid className="h-3 w-3" /> Re-layout
-                </Button>
-              </BarTip>
-            </>
-          )}
-          <BarTip tip="Copy a link to this map">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={copyLink}
-            >
-              <LinkIcon className="h-3 w-3" /> Link
-            </Button>
-          </BarTip>
-          <ExportMenu
-            name={exportName}
-            modes={isDiagram}
-            disabled={!graph}
-            // Every file is drawn in the Diagram's look, whatever the tab.
-            legend={legendRows({
-              viewStyle: "diagram",
-              grouped,
-              colorMode,
-              types: presentTypes,
-              roles: rolesInGraph,
-              monitorPill: cardMonitor,
-            })}
-            // The Diagram's PNG is its SVG rasterised; the other tabs keep
-            // the canvas capture.
-            capturePng={
-              isDiagram
-                ? undefined
-                : async (visible) =>
-                    (await canvas.current?.exportPng(visible)) ?? null
-            }
-            document={(req) =>
-              canvas.current?.document({
-                ...req,
-                meta: exportMeta(),
-                notes,
-                origin: window.location.origin,
-              }) ?? null
-            }
-          />
+                    <LayoutGrid className="h-3 w-3" /> Re-layout
+                  </Button>
+                </BarTip>
+              </>
+            )}
+            <BarTip tip="Copy a link to this map">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={copyLink}
+              >
+                <LinkIcon className="h-3 w-3" /> Link
+              </Button>
+            </BarTip>
+            <ExportMenu
+              name={exportName}
+              modes={isDiagram}
+              disabled={!graph}
+              // Every file is drawn in the Diagram's look, whatever the tab.
+              legend={legendRows({
+                viewStyle: "diagram",
+                grouped,
+                colorMode,
+                types: presentTypes,
+                roles: rolesInGraph,
+                monitorPill: cardMonitor,
+              })}
+              // The Diagram's PNG is its SVG rasterised; the other tabs keep
+              // the canvas capture.
+              capturePng={
+                isDiagram
+                  ? undefined
+                  : async (visible) =>
+                      (await canvas.current?.exportPng(visible)) ?? null
+              }
+              document={(req) =>
+                canvas.current?.document({
+                  ...req,
+                  meta: exportMeta(),
+                  notes,
+                  origin: window.location.origin,
+                }) ?? null
+              }
+            />
+          </div>
         </div>
-      </div>
-
       )}
 
       <div className="flex min-h-0 flex-1">
