@@ -549,9 +549,25 @@ the trace maps and a device's Map tab, read like this:
   (see [Diagram view](#diagram-view)).
 - **Hover** an edge and it thickens while every other edge fades - the only
   way crossings stay readable in a dense mesh.
-- **Click** a card or an edge for a detail panel - device summary with *Open
-  device* / *Focus*, or the cable's type, length, status and every port pair
-  with *Open cable*.
+- **Click** a card or an edge for a detail panel (see below).
+
+### Detail panels
+
+Clicking something on the map opens its panel in the top-right corner. Every
+panel has the same layout: the name and a close button, the details as rows,
+the longer parts under small headings, and the actions at the foot - *Open
+device* or *Open cable* first (it leaves the map for that page), then what
+stays on the map.
+
+| Click | Panel |
+|---|---|
+| A device | **Role** and **Status** as their badges, **Monitoring** (the device's worst check state, when it has checks), **Type**, **Site** (with the location), **IP**, and **Cabled** (cabled ports out of all its ports). *Open device*, *Focus*. |
+| A cable | **Type** (as the cable list names it), **Status**, **Length**, **Speed**, **Via** (the patch panels it runs through), then **Line** (Diagram) and **Ports**: each end's port and addresses, and the subnet they share. *Open cable*. |
+| A bundle | Titled by its aggregates (`Po1 ⇄ Po10 · 2 cables`) or by its two devices. **Line** (Diagram), then **Cables**: each member with its type, speed and ports, and its own *Open*. |
+| A site or location card | **Grouped by**, **Devices**, and **Roles** with the number of each. *Open group* drills in on the same map. |
+| The line between two cards | The number of cables and their **Cable types**. |
+
+A status left unset has no row, rather than a dash.
 
 ## Pass-through tracing
 

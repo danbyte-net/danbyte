@@ -130,6 +130,13 @@ import {
 } from "@/components/topology/logical-view"
 import { TopologyObjectsSidebar } from "@/components/topology/map-sidebar"
 import {
+  BundlePanel,
+  EdgePanel,
+  GroupEdgePanel,
+  GroupPanel,
+  NodePanel,
+} from "@/components/topology/detail-panels"
+import {
   NO_TOPO_HIDDEN,
   applyHidden,
   hiddenOnMap,
@@ -172,9 +179,6 @@ import {
   setHidden as withHidden,
   useHideKeys,
 } from "@/components/hidden-objects"
-import { ColorBadge } from "@/components/cells/color-badge"
-import { OpenLink } from "@/components/open-link"
-import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { DevicePicker } from "@/components/device-picker"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
@@ -215,19 +219,17 @@ import {
   wantsPhotos,
   withFaces,
 } from "@/components/topology/diagram/photo-anchors"
-import {
-  typeColor,
-  type BundleMember,
-  type CanvasHandle,
-  type EdgeColorMode,
-  type NodeStyle,
+import type {
+  BundleMember,
+  CanvasHandle,
+  EdgeColorMode,
+  NodeStyle,
 } from "@/components/topology/topology-canvas"
 import type {
   DiagramCardData,
   DiagramLinkRef,
   Pt,
 } from "@/components/topology/diagram/types"
-import { sharedLag } from "@/components/topology/lag-bundles"
 import type {
   GroupEdgeInfo,
   TopoGroupData,
@@ -3178,6 +3180,11 @@ function TopologyPage() {
           {selNode && (
             <NodePanel
               data={selNode}
+              monitor={
+                monQuery.data && selNode.device_id
+                  ? (checks[selNode.device_id]?.status ?? null)
+                  : undefined
+              }
               onClose={() => setSelNode(null)}
               onFocus={(id) => {
                 focusDevice(id)
@@ -3460,234 +3467,6 @@ function TopologyPage() {
   )
 }
 
-// ─── Detail panels ───────────────────────────────────────────────────────────
-
-function PanelShell({
-  title,
-  onClose,
-  children,
-}: {
-  title: React.ReactNode
-  onClose: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <div className="absolute top-3 right-3 z-10 w-80 rounded-lg border border-border bg-card shadow-sm">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <div className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {title}
-        </div>
-        <button
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground"
-          aria-label="Close"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <div className="max-h-[60vh] overflow-auto p-3 text-[12px]">
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Row({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate text-right">{children}</span>
-    </div>
-  )
-}
-
-function NodePanel({
-  data: d,
-  onClose,
-  onFocus,
-}: {
-  data: TopoNode["data"]
-  onClose: () => void
-  onFocus: (deviceId: string) => void
-}) {
-  return (
-    <PanelShell
-      title={<span className="font-mono">{d.name}</span>}
-      onClose={onClose}
-    >
-      <div className="space-y-0.5">
-        {d.role && (
-          <Row label="Role">
-            <ColorBadge name={d.role.name} color={d.role.color || undefined} />
-          </Row>
-        )}
-        {d.status_display && <Row label="Status">{d.status_display}</Row>}
-        {d.device_type && <Row label="Type">{d.device_type}</Row>}
-        {d.site && (
-          <Row label="Site">
-            {d.site}
-            {d.location ? ` · ${d.location}` : ""}
-          </Row>
-        )}
-        {d.primary_ip && (
-          <Row label="IP">
-            <span className="font-mono">{d.primary_ip}</span>
-          </Row>
-        )}
-        <Row label="Cabled ports">
-          <span className="num">
-            {d.ports?.length ?? 0} / {d.interface_count ?? 0}
-          </span>
-        </Row>
-      </div>
-      <div className="mt-3 flex gap-2">
-        {d.device_id && (
-          <>
-            <OpenLink
-              to="/devices/$id"
-              params={{ id: d.device_id }}
-              className="flex-1"
-            >
-              Open device
-            </OpenLink>
-            <BarButton
-              className="flex-1"
-              onClick={() => onFocus(d.device_id!)}
-            >
-              <Crosshair /> Focus
-            </BarButton>
-          </>
-        )}
-      </div>
-    </PanelShell>
-  )
-}
-
-/** A section heading inside a side panel. */
-function PanelHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-      {children}
-    </div>
-  )
-}
-
-type CablePairRow = NonNullable<NonNullable<TopoEdge["data"]>["pairs"]>[number]
-
-/** One cable pair: each end's port and every address it has, and the
- * subnets the two ends share. Full names, wrapped - never clipped. */
-function PairEnds({ pair: p }: { pair: CablePairRow }) {
-  const subnets = (p.subnets ?? []).map((s) => s.cidr)
-  const label = "font-sans text-[10px] text-muted-foreground"
-  return (
-    <div className="grid grid-cols-[auto_1fr] gap-x-2 py-1 font-mono text-[11px] leading-snug">
-      {(["a", "b"] as const).map((end) => (
-        <div key={end} className="contents">
-          <span className={label}>{end.toUpperCase()}</span>
-          <div className="min-w-0 break-all">
-            <div>{end === "a" ? p.a : p.b}</div>
-            {((end === "a" ? p.a_ips : p.b_ips) ?? []).map((ip) => (
-              <div key={ip} className="text-muted-foreground">
-                {ip}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-      {subnets.length > 0 && (
-        <>
-          <span className={label}>Subnet</span>
-          <div className="min-w-0 break-all">
-            {subnets.map((cidr) => (
-              <div key={cidr}>{cidr}</div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-function EdgePanel({
-  data: d,
-  onClose,
-  line,
-}: {
-  data: NonNullable<TopoEdge["data"]>
-  onClose: () => void
-  /** The Diagram link's Line row. */
-  line?: React.ReactNode
-}) {
-  return (
-    <PanelShell
-      title={
-        d.cable_label || (d.cable_numid ? `Cable #${d.cable_numid}` : "Cable")
-      }
-      onClose={onClose}
-    >
-      <div className="space-y-0.5">
-        {d.cable_type && (
-          <Row label="Type">
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{ background: typeColor(d.cable_type) }}
-              />
-              <span className="font-mono">{d.cable_type}</span>
-            </span>
-          </Row>
-        )}
-        {d.status_mini ? (
-          <Row label="Status">
-            <StatusBadge status={d.status_mini} />
-          </Row>
-        ) : (
-          d.status && <Row label="Status">{d.status}</Row>
-        )}
-        {d.length && (
-          <Row label="Length">
-            <span className="num">
-              {d.length} {d.length_unit}
-            </span>
-          </Row>
-        )}
-        {d.speed && (
-          <Row label="Speed">
-            <span className="font-mono">{d.speed}</span>
-          </Row>
-        )}
-        {!!d.via?.length && <Row label="Via">{d.via.join(", ")}</Row>}
-      </div>
-      {line && <div className="mt-2 border-t border-border pt-2">{line}</div>}
-      {!!d.pairs?.length && (
-        <div className="mt-2 border-t border-border pt-2">
-          <PanelHeading>Ports</PanelHeading>
-          <div className="divide-y divide-border">
-            {d.pairs.map((p, i) => (
-              <PairEnds key={i} pair={p} />
-            ))}
-          </div>
-        </div>
-      )}
-      {d.cable_id && (
-        <OpenLink
-          to="/cables/$id"
-          params={{ id: d.cable_id }}
-          className="mt-3 w-full"
-        >
-          Open cable
-        </OpenLink>
-      )}
-    </PanelShell>
-  )
-}
-
 /**
  * Add a device to the hand-picked map (the Hierarchy tab's Add ▸ Device…).
  *
@@ -3727,158 +3506,6 @@ function AddDeviceDialog({
         />
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** Grouped mode: a site/location card's summary + drill-in. */
-function GroupPanel({
-  data: d,
-  onClose,
-  onDrill,
-}: {
-  data: TopoGroupData
-  onClose: () => void
-  onDrill: (d: TopoGroupData) => void
-}) {
-  return (
-    <PanelShell title={d.name} onClose={onClose}>
-      <div className="space-y-0.5">
-        <Row label="Grouped by">
-          {d.kind === "location" ? "Location" : "Site"}
-        </Row>
-        <Row label="Devices">
-          <span className="num">{d.device_count}</span>
-        </Row>
-      </div>
-      {d.roles.length > 0 && (
-        <div className="mt-2 border-t border-border pt-2">
-          <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-            Roles
-          </div>
-          {d.roles.map((r) => (
-            <div key={r.name} className="flex items-center gap-1.5 py-0.5">
-              <span
-                className="h-2 w-2 shrink-0 rounded-full"
-                style={{ background: r.color || "var(--border)" }}
-              />
-              <span className="min-w-0 flex-1 truncate">{r.name}</span>
-              <span className="num text-muted-foreground">{r.count}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {d.group_id && (
-        <BarButton className="mt-3 w-full" onClick={() => onDrill(d)}>
-          Open group
-        </BarButton>
-      )}
-    </PanelShell>
-  )
-}
-
-/** Grouped mode: an aggregated inter-group link. */
-function GroupEdgePanel({
-  data: d,
-  onClose,
-}: {
-  data: GroupEdgeInfo
-  onClose: () => void
-}) {
-  return (
-    <PanelShell
-      title={`${d.cable_count} cable${d.cable_count === 1 ? "" : "s"}`}
-      onClose={onClose}
-    >
-      {d.types.length > 0 ? (
-        <div className="space-y-0.5">
-          {d.types.map((t) => (
-            <div key={t} className="flex items-center gap-1.5 py-0.5">
-              <span
-                className="h-2 w-2 shrink-0 rounded-full"
-                style={{ background: typeColor(t) }}
-              />
-              <span className="font-mono">{t}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-muted-foreground">No cable types</p>
-      )}
-    </PanelShell>
-  )
-}
-
-/** Flat view: the member cables of a bundled edge, each openable. */
-/** "Po1 ⇄ Po10 · " when every cable in the bundle shares that pair. */
-function lagTitle(cables: BundleMember[]): string {
-  const lag = sharedLag(cables)
-  return lag ? `${lag.a?.name} ⇄ ${lag.b?.name} · ` : ""
-}
-
-function BundlePanel({
-  cables,
-  onClose,
-  line,
-}: {
-  cables: BundleMember[]
-  onClose: () => void
-  /** The Diagram link's Line row. */
-  line?: React.ReactNode
-}) {
-  return (
-    <PanelShell
-      title={`${lagTitle(cables)}${cables.length} cable${cables.length === 1 ? "" : "s"}`}
-      onClose={onClose}
-    >
-      {line && <div className="mb-2 border-b border-border pb-2">{line}</div>}
-      <div className="space-y-1.5">
-        {cables.map((c, i) => (
-          <div
-            key={c.cable_id ?? i}
-            className="rounded-md border border-border px-2 py-1.5"
-          >
-            <div className="flex items-center gap-1.5">
-              {c.cable_type && (
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: c.color || typeColor(c.cable_type) }}
-                />
-              )}
-              <span className="min-w-0 flex-1 truncate font-medium">
-                {c.cable_label ||
-                  (c.cable_numid ? `Cable #${c.cable_numid}` : "Cable")}
-              </span>
-              {(c.cable_type || c.speed) && (
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                  {[c.cable_type, c.speed].filter(Boolean).join(" · ")}
-                </span>
-              )}
-            </div>
-            {c.status_mini && (
-              <div className="mt-1">
-                <StatusBadge status={c.status_mini} />
-              </div>
-            )}
-            {!!c.pairs?.length && (
-              <div className="mt-1 divide-y divide-border">
-                {c.pairs.map((p2, j) => (
-                  <PairEnds key={j} pair={p2} />
-                ))}
-              </div>
-            )}
-            {c.cable_id && (
-              <OpenLink
-                to="/cables/$id"
-                params={{ id: c.cable_id }}
-                className="mt-1.5 w-full"
-              >
-                Open cable
-              </OpenLink>
-            )}
-          </div>
-        ))}
-      </div>
-    </PanelShell>
   )
 }
 

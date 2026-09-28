@@ -127,25 +127,21 @@ export function LinkLineRow({
   const arced =
     line === "cyclical" && (!!link.arc || override?.line === "cyclical")
   const side = override?.flip ?? link.arc ?? -1
+  // No heading of its own: the panel's "Line" section heads it.
   return (
-    <div>
-      <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-        Line
-      </div>
-      <div className="flex items-center gap-1">
-        <LineTabs<LineType | "default">
-          inherit
-          value={override?.line ?? "default"}
-          onChange={(v) =>
-            onChange({ ...override, line: v === "default" ? undefined : v })
-          }
+    <div className="flex items-center gap-1">
+      <LineTabs<LineType | "default">
+        inherit
+        value={override?.line ?? "default"}
+        onChange={(v) =>
+          onChange({ ...override, line: v === "default" ? undefined : v })
+        }
+      />
+      {arced && (
+        <FlipArc
+          onFlip={() => onChange({ ...override, flip: side > 0 ? -1 : 1 })}
         />
-        {arced && (
-          <FlipArc
-            onFlip={() => onChange({ ...override, flip: side > 0 ? -1 : 1 })}
-          />
-        )}
-      </div>
+      )}
     </div>
   )
 }
