@@ -174,6 +174,59 @@ describe("PhotoNode", () => {
     expect(container.querySelectorAll(".topo-mark")).toHaveLength(1)
   })
 
+  it("takes its cables at its edge: nubs on the image, no outlines", () => {
+    const data: FacedData = { ...base, anchor: "edge" }
+    const face = photoFace(data)!
+    expect(face.edge).toBe(true)
+    const cap = face.h - face.imgH
+    const shown = photoShown(
+      face,
+      [
+        { k: "side", side: "B", off: 30, port: "Eth1/1", cap },
+        { k: "side", side: "L", off: 20, port: "Eth1/9", cap },
+      ],
+      data.name,
+      ["Planned"],
+      approxMeasure,
+      PHOTO.LOD
+    )
+    const own = photoData()
+    const node: DiagramCardData = {
+      ...own,
+      diagram: {
+        ...own.diagram,
+        photo: shown,
+        nubs: [
+          {
+            link: "l1",
+            cable: 0,
+            end: "a",
+            port: "Eth1/1",
+            side: "B",
+            off: 30,
+          },
+          {
+            link: "l2",
+            cable: 0,
+            end: "a",
+            port: "Eth1/9",
+            side: "L",
+            off: 20,
+          },
+        ],
+      },
+    }
+    const { container } = renderNode(node)
+    expect(container.querySelectorAll(".topo-mark")).toHaveLength(0)
+    const nubs = [...container.querySelectorAll(".topo-nub")] as HTMLElement[]
+    expect(nubs.map((n) => n.dataset.port)).toEqual(["Eth1/1", "Eth1/9"])
+    // On the image's bottom edge, over the caption row; and its left side.
+    expect(nubs[0].style.top).toBe(`${face.imgH}px`)
+    expect(nubs[1].style.left).toBe(`${-6}px`)
+    // The caption keeps clear of the bottom nub.
+    expect(shown.caption.x).toBeGreaterThanOrEqual(30 + 5)
+  })
+
   it("shows the type's faceplate when there is no photo", async () => {
     const data = photoData({
       ...base,

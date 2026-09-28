@@ -53,6 +53,10 @@ export type SideCount = Record<Side, number>
  * Where a link end attaches to its node.
  * - `side`: `off` px along the side from its start (the left end of T/B,
  *   the top end of L/R). `port` names the interface; `id` its handle id.
+ *   `cap`: the side is on a photo taking its cables at its edge - the
+ *   sides are the image's, and the node's box has this many px of
+ *   caption under it. A line off the bottom leaves under the caption;
+ *   the run up to the image is its lead.
  * - `point`: a port on a photo node (photo-anchors.ts) - its marker's
  *   centre as fractions of the node's box (image and caption), or with
  *   `stub` a lead on the image's top or bottom edge for a port without a
@@ -63,7 +67,14 @@ export type SideCount = Record<Side, number>
  *   towards the trunk's card for the trunk.
  */
 export type Anchor =
-  | { k: "side"; side: Side; off: number; port?: string; id?: string }
+  | {
+      k: "side"
+      side: Side
+      off: number
+      port?: string
+      id?: string
+      cap?: number
+    }
   | {
       k: "point"
       fx: number

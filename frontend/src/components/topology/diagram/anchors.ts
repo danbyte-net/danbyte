@@ -77,11 +77,20 @@ export function chooseSides(a: Rect, b: Rect): [Side, Side] {
   return dx >= 0 ? ["R", "L"] : ["L", "R"]
 }
 
+/** The part of a node's box its sides are on: all of it, or - a photo
+ * taking its cables at its edge - the image above its `cap` px of
+ * caption. */
+export function imageBox(box: Rect, cap?: number): Rect {
+  return cap ? { ...box, h: Math.max(0, box.h - cap) } : box
+}
+
 /**
  * A link end in flow coordinates. `out` moves a side anchor out along the
  * side's normal - `NUB.OUT` starts the line at a Detailed nub's tip. A
  * photo port's line starts where its lead leaves the node's box, straight
- * above or below the port (`leadStart` is the port itself).
+ * above or below the port (`leadStart` is the port itself); so does a
+ * line off the bottom of a photo taking its cables at its edge, under the
+ * caption.
  */
 export function anchorPoint(box: Rect, a: Anchor, out = 0): End {
   if (a.k === "junction")
@@ -93,19 +102,26 @@ export function anchorPoint(box: Rect, a: Anchor, out = 0): End {
       dir: a.exit === "T" ? SIDE_DIR.T : SIDE_DIR.B,
     }
   }
-  const [sx, sy] = sideStart(box, a.side)
+  const [sx, sy] = sideStart(imageBox(box, a.cap), a.side)
   const [ax, ay] = ALONG[a.side]
   const d = SIDE_DIR[a.side]
+  const y = sy + ay * a.off + d[1] * out
   return {
     x: sx + ax * a.off + d[0] * out,
-    y: sy + ay * a.off + d[1] * out,
+    y: a.cap && a.side === "B" ? Math.max(y, box.y + box.h) : y,
     dir: d,
   }
 }
 
 /** Where a photo port's lead starts: its marker's centre (or its stub's
- * place on the image edge). Null for any other anchor. */
+ * place on the image edge); for a photo taking its cables at its edge,
+ * the image's bottom edge above a line leaving under the caption. Null
+ * for any other anchor. */
 export function leadStart(box: Rect, a: Anchor | undefined): Pt | null {
+  if (a?.k === "side")
+    return a.cap && a.side === "B"
+      ? { x: box.x + a.off, y: box.y + box.h - a.cap }
+      : null
   if (a?.k !== "point") return null
   return { x: box.x + a.fx * box.w, y: box.y + a.fy * box.h }
 }
@@ -171,6 +187,9 @@ export interface AnchorOptions {
   /** Nodes drawn as photos: their cable ends land on their ports, in
    * either mode (photo-anchors.ts). */
   photos?: ReadonlyMap<string, PhotoFace>
+  /** Photos taking their cables at their edge: anchored like cards on
+   * their image, with this many px of caption under it (`Anchor.cap`). */
+  caps?: ReadonlyMap<string, number>
 }
 
 /** How far out from a side a third card makes it a poor exit: a stub and
@@ -293,11 +312,22 @@ const SPILL: Record<
  * only when the side is too short.
  */
 export function anchorLinks(
-  boxes: ReadonlyMap<string, Rect>,
+  nodeBoxes: ReadonlyMap<string, Rect>,
   links: readonly AnchorLink[],
   mode: DiagramMode,
   opts: AnchorOptions = {}
 ): Anchors {
+  // A photo taking its cables at its edge is anchored on its image.
+  const caps = opts.caps?.size ? opts.caps : null
+  let boxes = nodeBoxes
+  if (caps) {
+    const shrunk = new Map(nodeBoxes)
+    for (const [id, cap] of caps) {
+      const r = nodeBoxes.get(id)
+      if (r) shrunk.set(id, imageBox(r, cap))
+    }
+    boxes = shrunk
+  }
   const out: Anchors = {
     sides: new Map(),
     links: new Map(),
@@ -326,11 +356,16 @@ export function anchorLinks(
     out.sides.set(l.id, sides)
   }
 
+  const capOf = (node: string) => {
+    const cap = caps?.get(node)
+    return cap ? { cap } : {}
+  }
   const midAnchor = (node: string, side: Side, port?: string): Anchor => ({
     k: "side",
     side,
     off: sideLength(boxes.get(node)!, side) / 2,
     ...(port ? { port } : {}),
+    ...capOf(node),
   })
 
   // Cable ends on photo nodes land on their ports whatever the mode.
@@ -555,6 +590,7 @@ export function anchorLinks(
           side: s,
           off,
           ...(e.port ? { port: e.port } : {}),
+          ...capOf(node),
         }
         anchorsOf.get(e.link)![e.end][e.cable] = anchor
         nubs.push({
@@ -592,31 +628,38 @@ export function linkEnds(
 ): [End, End][] {
   const onPhoto =
     link.a.some((a) => a.k === "point") || link.b.some((b) => b.k === "point")
+  // A photo taking its cables at its edge keeps to its image.
+  const capOf = (list: readonly Anchor[]) => {
+    const a = list.find((x) => x.k === "side")
+    return a?.k === "side" ? a.cap : undefined
+  }
+  const [ca, cb] = [capOf(link.a), capOf(link.b)]
+  const mid = (box: Rect, side: Side, cap?: number) =>
+    anchorPoint(box, {
+      k: "side",
+      side,
+      off: sideLength(imageBox(box, cap), side) / 2,
+      ...(cap ? { cap } : {}),
+    })
   if (link.simple && live && onPhoto) {
     // Photo ports stay where they are; a card end meets its side midpoint.
-    const [ss, ts] = chooseSides(s, t)
-    const end = (box: Rect, a: Anchor, side: Side) =>
-      a.k === "side"
-        ? anchorPoint(box, { k: "side", side, off: sideLength(box, side) / 2 })
-        : anchorPoint(box, a)
+    const [ss, ts] = chooseSides(imageBox(s, ca), imageBox(t, cb))
+    const end = (box: Rect, a: Anchor, side: Side, cap?: number) =>
+      a.k === "side" ? mid(box, side, cap) : anchorPoint(box, a)
     const out: [End, End][] = []
     const n = Math.min(link.a.length, link.b.length)
     for (let i = 0; i < n; i++)
-      out.push([end(s, link.a[i], ss), end(t, link.b[i], ts)])
+      out.push([end(s, link.a[i], ss, ca), end(t, link.b[i], ts, cb)])
     return out
   }
   if ((link.simple && live) || !link.a.length || !link.b.length) {
-    const [ss, ts] = chooseSides(s, t)
+    const [ss, ts] = chooseSides(imageBox(s, ca), imageBox(t, cb))
     const ja = link.a[0]?.k === "junction" ? link.a[0] : null
     const jb = link.b[0]?.k === "junction" ? link.b[0] : null
     return [
       [
-        ja
-          ? anchorPoint(s, ja)
-          : anchorPoint(s, { k: "side", side: ss, off: sideLength(s, ss) / 2 }),
-        jb
-          ? anchorPoint(t, jb)
-          : anchorPoint(t, { k: "side", side: ts, off: sideLength(t, ts) / 2 }),
+        ja ? anchorPoint(s, ja) : mid(s, ss, ca),
+        jb ? anchorPoint(t, jb) : mid(t, ts, cb),
       ],
     ]
   }

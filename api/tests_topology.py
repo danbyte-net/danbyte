@@ -453,6 +453,7 @@ class DiagramViewStateTests(_Base):
                 "viewStyle": "diagram",
                 "diagram": {
                     "mode": "detailed", "face": "photo", "line": "cyclical",
+                    "photo_anchor": "edge",
                     "labels": ["subnet", "ip", "port", "ip"],
                     "fields": ["primary_ip", "loopback", "cf_owner", "loopback"],
                 },
@@ -470,7 +471,7 @@ class DiagramViewStateTests(_Base):
             "links": {
                 f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1},
             },
-            "nodes": {self.A: {"face": "card"}, self.B: {}},
+            "nodes": {self.A: {"face": "card"}, self.B: {"anchor": "ports"}},
             "notes": [
                 {"id": "n1", "kind": "text", "x": 5, "y": -5.5, "text": "WAN"},
                 {"id": "n2", "kind": "icon", "x": 100, "y": 0, "icon": "cloud"},
@@ -493,6 +494,8 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(state["positions_by_style"]["diagram"], {f"dev:{self.A}": [10, 20]})
         self.assertEqual(state["links"], {f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1}})
         self.assertEqual(state["nodes"][self.A], {"face": "card"})
+        self.assertEqual(state["nodes"][self.B], {"anchor": "ports"})
+        self.assertEqual(diagram["photo_anchor"], "edge")
         self.assertEqual([n["id"] for n in state["notes"]], ["n1", "n2"])
 
     def test_off_palette_diagram_colour_saves_as_neutral(self):
@@ -528,6 +531,7 @@ class DiagramViewStateTests(_Base):
             {"filters": {"diagram": {"mode": "photo"}}},
             {"filters": {"diagram": {"face": "rear"}}},
             {"filters": {"diagram": {"line": "curved"}}},
+            {"filters": {"diagram": {"photo_anchor": "border"}}},
             {"filters": {"diagram": {"labels": "subnet"}}},
             {"filters": {"diagram": {"labels": ["short"]}}},
             {"filters": {"diagram": {"fields": ["bogus"]}}},
@@ -547,6 +551,7 @@ class DiagramViewStateTests(_Base):
             {"nodes": {f"dev:{a}": {}}},
             {"nodes": {a: "photo"}},
             {"nodes": {a: {"face": "rear"}}},
+            {"nodes": {a: {"anchor": "edges"}}},
             {"notes": {}},
             {"notes": ["x"]},
             {"notes": [{"x": 0, "y": 0}]},

@@ -80,7 +80,8 @@ something.
       nest instead of crossing on their way out.
 - **Devices** (Display popover) - **Card** or **Photo**: each device drawn
   as its card, or as its type's front photo with every cable on the port it
-  is plugged into; one device at a time from its right-click menu. See
+  is plugged into (or, with **Cables to ▸ Edge**, on the photo's edge); one
+  device at a time from its right-click menu. See
   [Photo nodes](#photo-nodes).
 - **Lines** (Display popover) - **Straight**, **Elbow**, **Bendy** or
   **Cyclical**, for the whole view or one link at a time; see
@@ -326,6 +327,18 @@ greyed out (it would change nothing).
   its port name, turns round the side of the photo - on past its other
   edge when the far end lies behind it - and runs straight (or bends) on
   from there. Ports leaving one edge that way nest without crossing.
+- **Cables to: Ports or Edge.** With photos on, **Cables to** in the
+  Display popover picks where the cables meet a photo. **Ports** (the
+  default) is the above. **Edge** leaves the ports alone - none is outlined -
+  and treats the photo like a card: in **Simple** every line on a side meets
+  at that side's midpoint (a pair's cables fold into one line with its
+  `2x` count again); in **Detailed** each cable leaves its own nub, spread
+  along the side facing its far end, with its port name and addresses on
+  the line past the nub. The sides are the image's own; a line off the
+  bottom runs down past the caption, which steps aside for it. Right-click
+  a photo for **Cables to edge** or **Cables to ports** to set just that
+  device the other way (kept with the view, one undo step). The view's
+  choice is in the link (`anchor=edge`) and saved with the view.
 - **Breakouts on photos:** a breakout whose shared port faces away from its
   far devices keeps the one-trunk look - the trunk goes round as an elbow
   to a junction just short of the far devices, on the side their ports
@@ -880,6 +893,7 @@ back button and a reload all keep it.
 | `tab` | `wiring` (default), `diagram`, `hierarchy`, `flat`, `logical` |
 | `mode` | Diagram: `simple` (default), `detailed` |
 | `face` | Diagram: devices as `card` (default) or `photo` - see [Photo nodes](#photo-nodes) |
+| `anchor` | Diagram: cables meet a photo at its `ports` (default) or its `edge` |
 | `line` | Diagram: `straight` (default), `elbow`, `bendy`, `cyclical` |
 | `labels` | Diagram: the link labels, comma-separated `subnet`, `ip`, `port` (all by default); empty for none |
 | `view` | a saved view's id |
@@ -963,8 +977,10 @@ pills, cable colours.
 - **Photos** ([photo nodes](#photo-nodes)) are embedded in the SVG and the
   PNG, scaled down in your browser to twice the size they are drawn at, so
   the file stands alone. Each cable's lead is drawn over its photo into the
-  port, and the ports it lands on are outlined. A photo that will not load
-  is drawn as the device's card; a faceplate, which has no image, is too.
+  port, and the ports it lands on are outlined; a photo taking its cables
+  at its edge has its nubs on the image's edge instead. A photo that will
+  not load is drawn as the device's card; a faceplate, which has no image,
+  is too.
 
 Both show what the canvas shows, from the same plan: role-coloured cards
 with the name, card lines and pill; in Detailed, the interface nubs; the
@@ -1283,9 +1299,9 @@ earlier versions load and save unchanged.
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
 | `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band) and `rule` `{by: role\|device_type, ids}` (at most 100 ids, what the band was generated from). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other colour string saves as `null`. |
-| `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
+| `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
-| `nodes` | per-card overrides keyed by device id: `{face: card\|photo}`, at most 10,000 |
+| `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building}`; `id` is unique, `text` at most 200 characters |
 
 A value outside those shapes is a 400 naming the key. Keys are device ids, so

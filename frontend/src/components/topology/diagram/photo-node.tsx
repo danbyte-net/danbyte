@@ -6,7 +6,7 @@ import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { cn } from "@/lib/utils"
 import { cardContent } from "./card-fields"
-import { CARD, NUB, PILL } from "./card-layout"
+import { CARD, NUB, nubRect, PILL } from "./card-layout"
 import { PHOTO } from "./photo-anchors"
 import type { DiagramCardData } from "./types"
 
@@ -14,6 +14,8 @@ import type { DiagramCardData } from "./types"
 // scale, a thin outline on each port a cable is plugged into, a grey tab
 // on the image edge for a cabled port without a marker, and the name as a
 // caption under the image with the status pill after it. No card fill.
+// Taking its cables at its edge, it has no outlines: in Detailed mode each
+// cable leaves a nub on the image's side, as on a card.
 //
 // The cables themselves start at the ports: their leads over the image
 // are drawn by the link edge. Far out (zoom under `photoLod`) the image
@@ -40,7 +42,7 @@ export const PhotoNode = memo(function PhotoNode({
   selected,
 }: NodeProps) {
   const d = data as DiagramCardData
-  const { box } = d.diagram
+  const { box, nubs } = d.diagram
   const ph = d.diagram.photo!
   // Far out the photos are boxes, never decoded images. A yes/no, so a
   // zoom re-renders a photo only when it crosses the line.
@@ -136,6 +138,19 @@ export const PhotoNode = memo(function PhotoNode({
           data-tip={s.port || undefined}
         />
       ))}
+      {nubs.map((n) => {
+        // On the image's sides: the caption is under it.
+        const r = nubRect(box.w, ph.imgH, n.side, n.off)
+        return (
+          <span
+            key={`${n.link}#${n.cable}${n.end}`}
+            className="topo-nub absolute rounded-[2px] bg-muted-foreground/70"
+            style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
+            data-port={n.port}
+            data-tip={n.port}
+          />
+        )
+      })}
       <div
         className="absolute flex items-center whitespace-nowrap"
         style={{ left: cap.x, top: cap.top, height: PHOTO.CAPTION_LH }}

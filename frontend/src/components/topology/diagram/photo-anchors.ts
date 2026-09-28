@@ -1,4 +1,4 @@
-import type { TopoNode, TopologyGraph } from "@/lib/api"
+import type { TopoNode, TopologyGraph, TopologyPhotoAnchor } from "@/lib/api"
 import { fit } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
 import { CARD, NUB, PILL, pillWidth } from "./card-layout"
@@ -20,6 +20,11 @@ import type { Anchor, PortRef, Rect } from "./types"
 //   4. neither - the normal card.
 // The name is a caption under the image, placed clear of the leads that
 // run down through it.
+//
+// A photo can instead take its cables at its edge (the view's
+// `photo_anchor`, or the device's own `anchor`): it is anchored like a
+// card on its image - Simple lines meet at the facing side's midpoint,
+// Detailed ones spread along it on nubs - and its ports are not used.
 
 export const PHOTO = {
   /** A 19-inch device's width on the diagram: every photo is drawn to
@@ -53,11 +58,20 @@ export const photoLod = (photos: number) =>
 /** Card or photo: the view's default, or one node's override. */
 export type Face = "card" | "photo"
 
-/** The payload node as the page hands it to the Diagram: `face` marks a
- * device the view shows as its photo (`withFaces`). */
-export type FacedData = TopoNode["data"] & { face?: "photo" }
+/** Where a photo's cables meet it: its ports, or its edge. */
+export type PhotoAnchor = TopologyPhotoAnchor
 
-type Overrides = Readonly<Record<string, { face?: Face } | undefined>>
+/** The payload node as the page hands it to the Diagram: `face` marks a
+ * device the view shows as its photo, `anchor` one whose cables meet the
+ * photo's edge (`withFaces`). */
+export type FacedData = TopoNode["data"] & {
+  face?: "photo"
+  anchor?: "edge"
+}
+
+type Overrides = Readonly<
+  Record<string, { face?: Face; anchor?: PhotoAnchor } | undefined>
+>
 
 /** The face a device is drawn with: its own override, else the view's. */
 export function faceOf(
@@ -68,6 +82,16 @@ export function faceOf(
   return (deviceId && nodes?.[deviceId]?.face) || face
 }
 
+/** Where a device's cables meet its photo: its own override, else the
+ * view's. */
+export function anchorOf(
+  deviceId: string | undefined,
+  anchor: PhotoAnchor,
+  nodes?: Overrides
+): PhotoAnchor {
+  return (deviceId && nodes?.[deviceId]?.anchor) || anchor
+}
+
 /** Does any device on the map want its photo (the query then asks for
  * `include=photo`)? */
 export function wantsPhotos(face: Face, nodes?: Overrides): boolean {
@@ -76,22 +100,32 @@ export function wantsPhotos(face: Face, nodes?: Overrides): boolean {
 }
 
 /**
- * The graph with the devices the view shows as photos marked (`face`).
- * The same graph back when nothing changes, so the map is not rebuilt.
+ * The graph with the devices the view shows as photos marked (`face`),
+ * and those of them taking their cables at their edge (`anchor`). The
+ * same graph back when nothing changes, so the map is not rebuilt.
  */
 export function withFaces(
   graph: TopologyGraph,
   face: Face,
-  nodes?: Overrides
+  nodes?: Overrides,
+  anchor: PhotoAnchor = "ports"
 ): TopologyGraph {
   const out = graph.nodes.map((n) => {
     const data = n.data as FacedData
     const want =
       n.type === "device" && faceOf(data.device_id, face, nodes) === "photo"
-    if (want === (data.face === "photo")) return n
-    if (want) return { ...n, data: { ...data, face: "photo" as const } }
-    const { face: _face, ...rest } = data
-    return { ...n, data: rest }
+    const edge = want && anchorOf(data.device_id, anchor, nodes) === "edge"
+    if (want === (data.face === "photo") && edge === (data.anchor === "edge"))
+      return n
+    const { face: _face, anchor: _anchor, ...rest } = data
+    return {
+      ...n,
+      data: {
+        ...rest,
+        ...(want ? { face: "photo" as const } : {}),
+        ...(edge ? { anchor: "edge" as const } : {}),
+      },
+    }
   })
   return out.some((n, i) => n !== graph.nodes[i])
     ? { ...graph, nodes: out }
@@ -121,6 +155,9 @@ export interface PhotoMark {
 /** A photo node's fixed geometry and its markers, from the payload. */
 export interface PhotoFace {
   kind: "photo" | "faceplate"
+  /** Its cables meet its edge, not its ports: it is anchored like a card
+   * on its image (`Anchor.cap`). */
+  edge?: true
   /** The front photo (`photo`). */
   url?: string
   /** The device type, for the faceplate. */
@@ -162,6 +199,7 @@ export function photoFace(data: FacedData): PhotoFace | null {
     return { w, imgH: h, h: h + PHOTO.CAPTION_GAP + PHOTO.CAPTION_LH }
   }
   const vc = p.vc_position ?? null
+  const edge = data.anchor === "edge" ? { edge: true as const } : {}
   if (p.front) {
     const a = p.front.aspect
     const marks: PhotoMark[] = []
@@ -181,6 +219,7 @@ export function photoFace(data: FacedData): PhotoFace | null {
     }
     return {
       kind: "photo",
+      ...edge,
       url: p.front.url,
       vc,
       ...node(a && a > 0 ? w * a : unitsTall(p.u_height)),
@@ -192,6 +231,7 @@ export function photoFace(data: FacedData): PhotoFace | null {
   if (p.type_faceplate && data.device_type_id)
     return {
       kind: "faceplate",
+      ...edge,
       typeId: data.device_type_id,
       vc,
       ...node(unitsTall(p.u_height)),
@@ -392,11 +432,16 @@ export function captionRoom(
   return { x: 0, room: Math.min(w, need) }
 }
 
+/** The px of a photo node's box under its image: the caption's room. A
+ * photo taking its cables at its edge is anchored on the image above it. */
+export const captionCap = (face: Pick<PhotoFace, "h" | "imgH">) =>
+  face.h - face.imgH
+
 /**
- * A photo node as drawn for its anchored ends (`ends`: the point anchors
- * of every line landing on it). The caption - the name, then room for
- * the widest pill the card fields can show (`slot`) - steps round the
- * leads running down through it.
+ * A photo node as drawn for its anchored ends (`ends`: the anchors of
+ * every line landing on it). The caption - the name, then room for the
+ * widest pill the card fields can show (`slot`) - steps round the leads
+ * running down through it: from its ports, or from its bottom edge.
  */
 export function photoShown(
   face: PhotoFace,
@@ -426,9 +471,10 @@ export function photoShown(
     })
     .sort((p, q) => p.x - q.x)
   const half = NUB.ALONG / 2 + PHOTO.CAPTION_PAD
-  const blocked = points
-    .filter((a) => a.exit === "B")
-    .map((a): [number, number] => [a.fx * face.w - half, a.fx * face.w + half])
+  const blocked = [
+    ...points.filter((a) => a.exit === "B").map((a) => a.fx * face.w),
+    ...ends.flatMap((a) => (a.k === "side" && a.side === "B" ? [a.off] : [])),
+  ].map((x): [number, number] => [x - half, x + half])
   const slotW = Math.max(0, ...slot.map((t) => pillWidth(t, measure)))
   const extra = slotW ? PILL.GAP + slotW : 0
   const nameW = Math.ceil(measure(name, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))

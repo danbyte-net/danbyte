@@ -247,8 +247,10 @@ export function cardNode(
 /**
  * A photo node as a document node, centred at `c`: the image with the
  * markers its lines land on, the stub leads as nubs on the image edge, and
- * the caption (and pill) where the canvas put them. A faceplate node - it
- * has no image to export - is a card of the same box, its name at the top.
+ * the caption (and pill) where the canvas put them. A photo taking its
+ * cables at its edge has its Detailed nubs (`nubs`) on the image's sides
+ * instead, after any stub leads. A faceplate node - it has no image to
+ * export - is a card of the same box, its name at the top.
  */
 export function photoDocNode(
   id: string,
@@ -261,6 +263,7 @@ export function photoDocNode(
     checks?: CheckLook
     link?: string
     measure?: Measure
+    nubs?: readonly Nub[]
   } = {}
 ): DiagramNode {
   const { w, h, imgH } = p.face
@@ -278,6 +281,18 @@ export function photoDocNode(
     side: s.side === "T" ? "top" : "bottom",
     ...(s.port ? { label: s.port } : {}),
   }))
+  for (const n of opts.nubs ?? []) {
+    // On the image's sides; drawn as a card, the bottom ones on its edge.
+    const r = nubRect(w, n.side === "B" && !photo ? h : imgH, n.side, n.off)
+    nubs.push({
+      x: x + r.x,
+      y: y + r.y,
+      w: r.w,
+      h: r.h,
+      side: DOC_SIDE[n.side],
+      ...(n.port ? { label: n.port } : {}),
+    })
+  }
   const common = {
     id,
     x,
@@ -616,8 +631,14 @@ function foldPairs<TEdge extends LiveEdge>(
  * the Simple ones. */
 function simpleModel(model: DiagramModel): DiagramModel {
   const byId = new Map(model.links.map((l) => [l.id, l]))
+  // Lines to a photo's ports; a photo taking its cables at its edge folds
+  // them like a card.
+  const onPorts = (id: string) => {
+    const p = model.photos?.get(id)
+    return !!p && !p.face.edge
+  }
   const photo = (e: { source: string; target: string }) =>
-    !!model.photos?.has(e.source) || !!model.photos?.has(e.target)
+    onPorts(e.source) || onPorts(e.target)
   const folded = foldPairs(model.edges, photo)
   const links: AnchorLink[] = []
   for (const [e, from] of folded) {
@@ -721,8 +742,17 @@ export function toDocument(
         ? opts.monitor?.[data.device_id]?.status
         : undefined
       rects.set(n.id, r)
+      // Edge nubs, numbered after the stub leads.
+      const edgeNubs =
+        mode === "detailed" && photo.face.edge
+          ? (shown.get(n.id)?.nubs ?? data.diagram?.nubs ?? [])
+          : []
+      edgeNubs.forEach((u, i) =>
+        nubIndex.set(`${u.link}#${u.cable}${u.end}`, drawn.stubs.length + i)
+      )
       nodes.push(
         photoDocNode(n.id, c, photo, drawn, data.role?.color, {
+          nubs: edgeNubs,
           pill: cardContent(data, {
             monitor,
             checkLabels: checkNames(opts.checkLabels),
@@ -851,8 +881,19 @@ export function toDocument(
       // exports as a card, so its lines start at its edge.
       const leadA = leadStart(s, aa)
       const leadB = leadStart(t, ba)
-      const imageA = !!leadA && drawsPhoto(e.source)
-      const imageB = !!leadB && drawsPhoto(e.target)
+      const na = detailed ? nubIndex.get(`${e.id}#${i}a`) : undefined
+      const nb = detailed ? nubIndex.get(`${e.id}#${i}b`) : undefined
+      // On a photo's image: at a port, or on the image's edge off a nub.
+      const onImage = (
+        node: string,
+        lead: Pt | null,
+        anchor: Anchor | undefined,
+        nub: number | undefined
+      ) =>
+        drawsPhoto(node) &&
+        (!!lead || (anchor?.k === "side" && !!anchor.cap && nub === undefined))
+      const imageA = onImage(e.source, leadA, aa, na)
+      const imageB = onImage(e.target, leadB, ba, nb)
       const planned = p?.pts.slice(
         leadA && !imageA ? 1 : 0,
         leadB && !imageB ? -1 : undefined
@@ -865,17 +906,15 @@ export function toDocument(
         pts: planned
           ? drawn.pts
           : [
-              ...(imageA ? [leadA] : []),
+              ...(imageA && leadA ? [leadA] : []),
               ...drawn.pts,
-              ...(imageB ? [leadB] : []),
+              ...(imageB && leadB ? [leadB] : []),
             ],
       }
       const first = route.pts[0]
       const last = route.pts[route.pts.length - 1]
       const a = { ...a0, x: first.x, y: first.y }
       const b = { ...b0, x: last.x, y: last.y }
-      const na = detailed ? nubIndex.get(`${e.id}#${i}a`) : undefined
-      const nb = detailed ? nubIndex.get(`${e.id}#${i}b`) : undefined
       // The end labels on the line: where the plan seated them, or (a
       // drag in progress) one after another from the end.
       const named = !d.labels.noPorts && (detailed || d.sem === "cable")

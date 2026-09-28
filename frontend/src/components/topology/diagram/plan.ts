@@ -56,7 +56,9 @@ import type {
 // ends), then where each port name, middle chip and end address goes -
 // end labels on their own cable, which breaks for them. A cable on a photo
 // port is planned from where its lead leaves the photo, like a nub's; its
-// planned points then start at the port itself.
+// planned points then start at the port itself. So is one off the bottom
+// of a photo taking its cables at its edge: its lead is the run past the
+// caption, up to the image.
 // The canvas, the SVG and the draw.io file all draw from this plan, so
 // they agree. Pure.
 
@@ -135,9 +137,13 @@ interface Item {
   nubA: boolean
   nubB: boolean
   /** The end is a photo port: where its lead starts. Its line is planned
-   * from where the lead leaves the photo, as a nub's is. */
+   * from where the lead leaves the photo, as a nub's is. An end off the
+   * bottom of a photo taking its cables at its edge has a lead too. */
   leadA?: Pt
   leadB?: Pt
+  /** The end is on a photo's port (not a side). */
+  portA: boolean
+  portB: boolean
   fanLeg: boolean
   /** A bendy breakout leg no curve gets clear of the cards, or a trunk
    * whose port faces away from its legs: routed as an elbow instead. */
@@ -168,8 +174,10 @@ function items(input: PlanInput): Item[] {
       const leadA = leadStart(s, aa)
       const leadB = leadStart(t, ba)
       // A photo port's end runs straight out of the photo like a nub's.
-      const nubA = (detailed && !d.simple && aa?.k === "side") || !!leadA
-      const nubB = (detailed && !d.simple && ba?.k === "side") || !!leadB
+      const portA = aa?.k === "point"
+      const portB = ba?.k === "point"
+      const nubA = (detailed && !d.simple && aa?.k === "side") || portA
+      const nubB = (detailed && !d.simple && ba?.k === "side") || portB
       // Port names at a nub or a photo port, or on a Simple line that is
       // one cable (a bundle's line is named by its chip).
       const ports = !d.labels.noPorts && (detailed || d.sem === "cable")
@@ -258,6 +266,8 @@ function items(input: PlanInput): Item[] {
         nubB,
         ...(leadA ? { leadA } : {}),
         ...(leadB ? { leadB } : {}),
+        portA,
+        portB,
         fanLeg: d.fan?.role === "leg",
       })
     })
@@ -668,12 +678,12 @@ export function planEdges(
   })
   elbows.forEach((it, j) => {
     const pts = routes[j].pts
-    if (it.nubA && !it.leadA)
+    if (it.nubA && !it.portA)
       turns.set(
         nubKey({ link: it.edge.id, cable: it.i, end: "a" }),
         endTurn(pts, it.a)
       )
-    if (it.nubB && !it.leadB)
+    if (it.nubB && !it.portB)
       turns.set(
         nubKey({ link: it.edge.id, cable: it.i, end: "b" }),
         endTurn(reversed(pts), it.b)

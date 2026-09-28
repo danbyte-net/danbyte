@@ -3082,7 +3082,13 @@ export interface TopologyDiagramDisplay {
   labels: ("subnet" | "ip" | "port")[]
   /** The view's own card lines; absent inherits, `[]` = name only. */
   fields?: string[]
+  /** Where cables meet a photo: on its ports (absent), or spread along
+   * its edge like a card's. */
+  photo_anchor?: TopologyPhotoAnchor
 }
+
+/** Where cables meet a device drawn as its photo. */
+export type TopologyPhotoAnchor = "ports" | "edge"
 
 /** `state.filters`: the map's settings under the page's own names. */
 export interface TopologyViewFilters {
@@ -3125,7 +3131,10 @@ export interface TopologyViewState {
   /** Per-link line overrides (at most 20,000). */
   links?: Record<string, TopologyLinkOverride>
   /** Per-device overrides, keyed by device id. */
-  nodes?: Record<string, { face?: "card" | "photo" }>
+  nodes?: Record<
+    string,
+    { face?: "card" | "photo"; anchor?: TopologyPhotoAnchor }
+  >
   /** Diagram annotations (at most 500). */
   notes?: TopologyViewNote[]
 }

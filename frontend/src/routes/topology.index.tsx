@@ -145,6 +145,7 @@ import {
 import { DEFAULT_LABELS } from "@/components/topology/diagram/link-labels"
 import type { LabelToken } from "@/components/topology/diagram/link-labels"
 import {
+  anchorOf,
   canShowPhoto,
   faceOf,
   wantsPhotos,
@@ -231,6 +232,8 @@ export interface TopologySearch {
   mode?: DiagramModeParam
   /** Diagram tab: devices as cards or as their front photos. */
   face?: FaceParam
+  /** Diagram tab: cables meet a photo's ports or its edge. */
+  anchor?: AnchorParam
   /** Diagram tab: the line type. */
   line?: LineParam
   /** Diagram tab: the labels on the links, comma-separated `subnet`, `ip`,
@@ -294,6 +297,8 @@ export const Route = createFileRoute("/topology/")({
     if (mode) out.mode = mode
     const face = oneOf(s.face, FACES)
     if (face) out.face = face
+    const anchor = oneOf(s.anchor, ANCHORS)
+    if (anchor) out.anchor = anchor
     const line = oneOf(s.line, LINE_TYPES)
     if (line) out.line = line
     const depth = Number(s.depth)
@@ -312,7 +317,7 @@ export const Route = createFileRoute("/topology/")({
  * the user has edited the view. */
 const OVERRIDE_KEYS = [
   "tab", "site", "location", "role", "status", "tag", "panels", "group",
-  "dir", "color", "cables", "mode", "face", "line", "labels", "lag",
+  "dir", "color", "cables", "mode", "face", "anchor", "line", "labels", "lag",
   "levels", "device", "depth", "devices", "q", "vlangroup", "vms",
 ] as const
 
@@ -516,6 +521,8 @@ const GROUPS = ["none", "site", "location"] as const
 const DIAGRAM_MODES = ["simple", "detailed"] as const
 /** Card | Photo: the view's default face; a device may override it. */
 const FACES = ["card", "photo"] as const
+/** Ports | Edge: where cables meet a photo; a device may override it. */
+const ANCHORS = ["ports", "edge"] as const
 const LINE_TYPES = ["straight", "elbow", "bendy", "cyclical"] as const
 const LABEL_TOKENS: readonly LabelToken[] = ["subnet", "ip", "port"]
 /** The known Labels tokens in `v`, in their own order; undefined for
@@ -526,6 +533,7 @@ const labelsOf = (v: unknown): LabelToken[] | undefined =>
     : undefined
 type DiagramModeParam = (typeof DIAGRAM_MODES)[number]
 type FaceParam = (typeof FACES)[number]
+type AnchorParam = (typeof ANCHORS)[number]
 type LineParam = (typeof LINE_TYPES)[number]
 const styleOfTab = (t: TabStyle): ViewStyle => (t === "wiring" ? "stencil" : t)
 const tabOfStyle = (v: ViewStyle): TabStyle => (v === "stencil" ? "wiring" : v)
@@ -679,6 +687,10 @@ function TopologyPage() {
       oneOf(vf.diagram?.face, FACES) ??
       oneOf(storedDiagram?.face, FACES) ??
       "card",
+    anchor:
+      oneOf(vf.diagram?.photo_anchor, ANCHORS) ??
+      oneOf(storedDiagram?.photo_anchor, ANCHORS) ??
+      "ports",
     line:
       oneOf(vf.diagram?.line, LINE_TYPES) ??
       oneOf(storedDiagram?.line, LINE_TYPES) ??
@@ -720,6 +732,11 @@ function TopologyPage() {
     "face",
     dflt.face,
     FACES
+  )
+  const [diagramAnchor, setDiagramAnchor] = useUrlEnum<AnchorParam>(
+    "anchor",
+    dflt.anchor,
+    ANCHORS
   )
   const [diagramLine, setDiagramLine] = useUrlEnum<LineParam>(
     "line",
@@ -859,8 +876,16 @@ function TopologyPage() {
         : {}),
       mode: diagramMode,
       line: diagramLine,
+      ...(diagramAnchor === "edge" ? { photo_anchor: diagramAnchor } : {}),
     }),
-    [savedDiagram, diagramMode, diagramFace, diagramLine, diagramLabels]
+    [
+      savedDiagram,
+      diagramMode,
+      diagramFace,
+      diagramLine,
+      diagramLabels,
+      diagramAnchor,
+    ]
   )
   /** A view gains the Diagram display once the Diagram tab is used on it. */
   const withDiagram = isDiagram || !!savedDiagram
@@ -1330,7 +1355,7 @@ function TopologyPage() {
     const bgpEdges = (bgp.data?.edges ?? []).filter(between)
     return { ...q.data, edges: [...q.data.edges, ...ghostEdges, ...bgpEdges] }
   }, [q.data, ghosts.data, bgp.data])
-  // Each device's own Card | Photo, over the view's.
+  // Each device's own Card | Photo and Ports | Edge, over the view's.
   const nodeFaces = doc.doc.nodes
   /** What the canvas draws. How many cards hiding took off THIS map is the
    * chip's count - a view saved against one filter can carry names the
@@ -1342,10 +1367,11 @@ function TopologyPage() {
         ? withFaces(
             applyHidden(fullGraph, hidden),
             isDiagram ? diagramFace : "card",
-            isDiagram ? nodeFaces : undefined
+            isDiagram ? nodeFaces : undefined,
+            diagramAnchor
           )
         : undefined,
-    [fullGraph, hidden, isDiagram, diagramFace, nodeFaces]
+    [fullGraph, hidden, isDiagram, diagramFace, nodeFaces, diagramAnchor]
   )
   const hiddenHere = fullGraph ? hiddenOnMap(fullGraph, hidden) : 0
   // The view's own Card | Photo lays an automatic map out again and
@@ -2275,6 +2301,18 @@ function TopologyPage() {
                   />
                 </PopoverField>
               )}
+                  {isDiagram && !grouped && photos && (
+                    <PopoverField label="Cables to">
+                      <SegmentedTabs<AnchorParam>
+                        value={diagramAnchor}
+                        onValueChange={setDiagramAnchor}
+                        items={[
+                          { value: "ports", label: "Ports" },
+                          { value: "edge", label: "Edge" },
+                        ]}
+                      />
+                    </PopoverField>
+                  )}
               {isDiagram && (
                 <PopoverField label="Lines">
                   <LineTabs<LineParam>
@@ -3015,6 +3053,22 @@ function TopologyPage() {
                     const drawn = !!(menu.node as Partial<DiagramCardData>)
                       .diagram?.photo
                     const next = drawn ? "card" : "photo"
+                    /** This device's own face and anchor, each kept only
+                     * where it differs from the view's. */
+                    const setOwn = (change: {
+                      face?: FaceParam
+                      anchor?: AnchorParam
+                    }) => {
+                      const own = { ...nodeFaces[id], ...change }
+                      if (own.face === diagramFace) delete own.face
+                      if (own.anchor === diagramAnchor) delete own.anchor
+                      edit({
+                        type: "setNode",
+                        id,
+                        value: own.face || own.anchor ? own : null,
+                      })
+                    }
+                    const anchor = anchorOf(id, diagramAnchor, nodeFaces)
                     if (!drawn && canShowPhoto(menu.node) === false)
                       return (
                         <div
@@ -3035,22 +3089,32 @@ function TopologyPage() {
                         </div>
                       )
                     return (
-                      <MenuItem
-                        onClick={() => {
-                          setMenu(null)
-                          // The view's face, or this device's own - kept
-                          // only where it differs from the view's.
-                          if (faceOf(id, diagramFace, nodeFaces) === next)
-                            return
-                          edit({
-                            type: "setNode",
-                            id,
-                            value: next === diagramFace ? null : { face: next },
-                          })
-                        }}
-                      >
-                        {drawn ? "Show card" : "Show photo"}
-                      </MenuItem>
+                      <>
+                        <MenuItem
+                          onClick={() => {
+                            setMenu(null)
+                            if (faceOf(id, diagramFace, nodeFaces) === next)
+                              return
+                            setOwn({ face: next })
+                          }}
+                        >
+                          {drawn ? "Show card" : "Show photo"}
+                        </MenuItem>
+                        {drawn && (
+                          <MenuItem
+                            onClick={() => {
+                              setMenu(null)
+                              setOwn({
+                                anchor: anchor === "edge" ? "ports" : "edge",
+                              })
+                            }}
+                          >
+                            {anchor === "edge"
+                              ? "Cables to ports"
+                              : "Cables to edge"}
+                          </MenuItem>
+                        )}
+                      </>
                     )
                   })()}
                 {isDiagram &&

@@ -3866,6 +3866,8 @@ class TopologyViewSerializer(NumIdModelSerializer):
     MAX_BAND_RULE_IDS = 100
     DIAGRAM_MODES = ("simple", "detailed")
     DIAGRAM_FACES = ("card", "photo")
+    #: Where cables meet a photo: on its ports, or spread along its edge.
+    PHOTO_ANCHORS = ("ports", "edge")
     LINE_TYPES = ("straight", "elbow", "bendy", "cyclical")
     LINK_LABELS = ("subnet", "ip", "port")
     #: Per-link overrides, keyed by the sorted device pair.
@@ -4042,6 +4044,10 @@ class TopologyViewSerializer(NumIdModelSerializer):
         self._choice(display.get("mode"), self.DIAGRAM_MODES, "filters.diagram.mode")
         self._choice(display.get("face"), self.DIAGRAM_FACES, "filters.diagram.face")
         self._choice(display.get("line"), self.LINE_TYPES, "filters.diagram.line")
+        self._choice(
+            display.get("photo_anchor"), self.PHOTO_ANCHORS,
+            "filters.diagram.photo_anchor",
+        )
         if "labels" in display:
             labels = display["labels"]
             if not isinstance(labels, list) or not all(
@@ -4097,6 +4103,9 @@ class TopologyViewSerializer(NumIdModelSerializer):
                 raise serializers.ValidationError(f"nodes.{key} must be an object")
             self._choice(
                 override.get("face"), self.DIAGRAM_FACES, f"nodes.{key}.face"
+            )
+            self._choice(
+                override.get("anchor"), self.PHOTO_ANCHORS, f"nodes.{key}.anchor"
             )
 
     def _notes(self, notes):

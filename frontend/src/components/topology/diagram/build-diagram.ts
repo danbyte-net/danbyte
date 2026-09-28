@@ -61,7 +61,13 @@ import {
 } from "./link-labels"
 import type { LabelToken, LinkLabelSet } from "./link-labels"
 import { ELBOW_RADIUS } from "./link-geometry"
-import { PHOTO, photoFace, photoLod, photoShown } from "./photo-anchors"
+import {
+  captionCap,
+  PHOTO,
+  photoFace,
+  photoLod,
+  photoShown,
+} from "./photo-anchors"
 import type { PhotoFace, PhotoShown } from "./photo-anchors"
 import { settleGrown } from "./placement"
 import { endRun, planEdges, portStub } from "./plan"
@@ -111,7 +117,9 @@ import type {
 // A device the page marked for its photo (`withFaces`) is drawn as its
 // front photo when the payload has one (photo-anchors.ts): a fixed box to
 // scale, every cable on its port in either mode - the photo is the
-// detail - and an obstacle like any card.
+// detail - and an obstacle like any card. One taking its cables at its
+// edge is anchored like a card on its image instead: Simple lines meet
+// at a side's midpoint, Detailed ones leave nubs along it.
 
 /** Diagram nodes: `position` is the node's centre. */
 export const CENTRE: [number, number] = [0.5, 0.5]
@@ -1258,7 +1266,7 @@ function photosShown(
   const note = (node: string, list: readonly Anchor[]) => {
     if (!photos.has(node)) return
     const mine = ends.get(node) ?? []
-    for (const a of list) if (a.k === "point") mine.push(a)
+    for (const a of list) if (a.k !== "junction") mine.push(a)
     ends.set(node, mine)
   }
   for (const l of model.links) {
@@ -1276,10 +1284,22 @@ function photosShown(
   return out
 }
 
-/** The photo faces the anchoring lands cable ends on. */
+/** The photo faces the anchoring lands cable ends on: those taking
+ * their cables on their ports. */
 function facesOf(model: DiagramModel): Map<string, PhotoFace> | undefined {
-  if (!model.photos?.size) return undefined
-  return new Map([...model.photos].map(([id, p]) => [id, p.face]))
+  const out = new Map<string, PhotoFace>()
+  for (const [id, p] of model.photos ?? [])
+    if (!p.face.edge) out.set(id, p.face)
+  return out.size ? out : undefined
+}
+
+/** The photos taking their cables at their edge: anchored on the image,
+ * their caption's room under it. */
+function capsOf(model: DiagramModel): Map<string, number> | undefined {
+  const out = new Map<string, number>()
+  for (const [id, p] of model.photos ?? [])
+    if (p.face.edge) out.set(id, captionCap(p.face))
+  return out.size ? out : undefined
 }
 
 interface Anchored {
@@ -1364,6 +1384,7 @@ function anchorAll(
   let solid = obstacles(rects)
   let junctions = placeJunctions(model, rects, solid)
   const photos = facesOf(model)
+  const caps = capsOf(model)
   // An arc leaves both its cards through the side it bulges to.
   const arcs = arcsOf(model, rects, solid)
   const links = arcs.size
@@ -1384,6 +1405,7 @@ function anchorAll(
         blockers: solid,
         ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
         ...(photos ? { photos } : {}),
+        ...(caps ? { caps } : {}),
       }
     )
   if (model.mode === "simple") {
@@ -1645,9 +1667,14 @@ export function buildDiagram(
     return false
   }
   const tokens = opts.labels ?? DEFAULT_LABELS
-  // A line to a photo lands on its port: one per cable, labels too.
+  // A line to a photo's ports lands on its port: one per cable, labels
+  // too. A photo taking its cables at its edge folds them like a card.
+  const onPorts = (id: string) => {
+    const p = photos.get(id)
+    return !!p && !p.face.edge
+  }
   const onPhoto = (e: { source: string; target: string }) =>
-    photos.has(e.source) || photos.has(e.target)
+    onPorts(e.source) || onPorts(e.target)
   const edges = [
     ...oriented.map((e0) => {
       const flip = flipped.has(e0.id)
