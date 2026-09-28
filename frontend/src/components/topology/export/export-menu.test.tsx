@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
+import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DRAWIO_MIME } from "@/lib/diagram/drawio"
@@ -17,6 +18,9 @@ import { ExportMenu, exportFileName } from "./export-menu"
 // and the area and draw.io mode choices reach the document builder.
 
 vi.mock("@/lib/table-export", () => ({ downloadBlob: vi.fn() }))
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
+}))
 
 class ResizeObserverStub {
   observe() {}
@@ -155,6 +159,153 @@ describe("ExportMenu", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "draw.io" }))
     await waitFor(() => expect(download).toHaveBeenCalledTimes(1))
     expect(doc).toHaveBeenCalledWith({ area: "all", mode: "simple" })
+  })
+})
+
+describe("ExportMenu PDF and Print", () => {
+  const LINK = "/api/topology/export/pdf/abcdefghijklmnopqrstuvwxyz0123/"
+  let posted: { url: string; body: Record<string, unknown> }[] = []
+  let clicks: HTMLAnchorElement[] = []
+
+  function answer(res: () => Response) {
+    return vi.spyOn(globalThis, "fetch").mockImplementation((url, init) => {
+      posted.push({
+        url: String(url),
+        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+      })
+      return Promise.resolve(res())
+    })
+  }
+  const ok = () =>
+    new Response(JSON.stringify({ url: LINK }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+
+  function fakeTab() {
+    return {
+      opener: {} as unknown,
+      document: { title: "" },
+      location: { replace: vi.fn() },
+      close: vi.fn(),
+    }
+  }
+
+  beforeEach(() => {
+    posted = []
+    clicks = []
+    vi.mocked(toast.error).mockClear()
+    vi.mocked(toast.warning).mockClear()
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      clicks.push(this)
+    })
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it("posts the SVG drawing on A3 landscape and saves the PDF", async () => {
+    const fetch = answer(ok)
+    const doc = vi.fn(() => fabric)
+    render(<ExportMenu document={doc} name="DC1 fabric" modes />)
+    open()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "PDF" }))
+    await waitFor(() => expect(clicks).toHaveLength(1))
+    expect(fetch).toHaveBeenCalledTimes(1)
+    const { url, body } = posted[0]
+    expect(url).toBe("/api/topology/export/pdf/?print=1")
+    expect(body.paper).toEqual({ size: "a3", orientation: "landscape" })
+    expect(body.title).toBe(fabric.meta.title)
+    expect(body.title_block).toBe(true)
+    expect(body.meta).toMatchObject({
+      view: "DC1 fabric",
+      generated_at: fabric.meta.generated_at,
+    })
+    const svg = String(body.svg)
+    expect(svg).toMatch(/^<svg /)
+    // The sheet has its own title block, and paper has no links.
+    expect(svg).not.toContain("<a ")
+    expect(doc).toHaveBeenCalledWith({ area: "all", mode: undefined })
+    expect(clicks[0].getAttribute("href")).toBe(`${LINK}?download=1`)
+    expect(clicks[0].download).toBe(`${today}.pdf`)
+    expect(download).not.toHaveBeenCalled()
+  })
+
+  it("remembers the paper", async () => {
+    answer(ok)
+    render(<ExportMenu document={() => fabric} name="Map" />)
+    open()
+    fireEvent.click(await screen.findByText("Paper"))
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "A4" }))
+    fireEvent.click(
+      await screen.findByRole("menuitemradio", { name: "Portrait" })
+    )
+    expect(JSON.parse(localStorage.getItem("topology:export")!)).toMatchObject({
+      paper: "a4",
+      orientation: "portrait",
+    })
+    expect(screen.getByText("A4 portrait")).toBeTruthy()
+    cleanup()
+    render(<ExportMenu document={() => fabric} name="Map" />)
+    open()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "PDF" }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].body.paper).toEqual({
+      size: "a4",
+      orientation: "portrait",
+    })
+  })
+
+  it("prints in a tab opened by the click", async () => {
+    answer(ok)
+    const tab = fakeTab()
+    const openTab = vi
+      .spyOn(window, "open")
+      .mockReturnValue(tab as unknown as Window)
+    render(<ExportMenu document={() => fabric} name="Map" />)
+    open()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Print" }))
+    // Opened before the drawing is made, so it isn't taken for a pop-up.
+    expect(openTab).toHaveBeenCalledWith("", "_blank")
+    await waitFor(() => expect(tab.location.replace).toHaveBeenCalledWith(LINK))
+    expect(tab.opener).toBeNull()
+    expect(tab.close).not.toHaveBeenCalled()
+    expect(clicks).toHaveLength(0)
+  })
+
+  it("downloads when pop-ups are blocked", async () => {
+    answer(ok)
+    vi.spyOn(window, "open").mockReturnValue(null)
+    render(<ExportMenu document={() => fabric} name="Map" />)
+    open()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Print" }))
+    await waitFor(() => expect(clicks).toHaveLength(1))
+    expect(clicks[0].getAttribute("href")).toBe(`${LINK}?download=1`)
+    expect(toast.warning).toHaveBeenCalled()
+  })
+
+  it("closes the tab and says why when the server refuses", async () => {
+    answer(
+      () =>
+        new Response(
+          JSON.stringify({
+            detail: "The drawing has over 80,000 characters of text.",
+          }),
+          { status: 413, headers: { "Content-Type": "application/json" } }
+        )
+    )
+    const tab = fakeTab()
+    vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window)
+    render(<ExportMenu document={() => fabric} name="Map" />)
+    open()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Print" }))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "The drawing has over 80,000 characters of text."
+      )
+    )
+    expect(tab.close).toHaveBeenCalled()
+    expect(tab.location.replace).not.toHaveBeenCalled()
   })
 })
 

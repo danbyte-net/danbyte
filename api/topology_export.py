@@ -119,8 +119,8 @@ def plan_sheet(
     title_block: bool = True,
 ) -> dict:
     """Where a ``width_px``×``height_px`` drawing sits on the page, in mm:
-    fitted to the printable area (never enlarged past ``MAX_SCALE``) and
-    centred in it, above the title block."""
+    fitted to the printable area (never enlarged past ``MAX_SCALE``), at its
+    top and centred across it, above the title block."""
     pw, ph = PAPERS_MM[paper]
     if orientation == "portrait":
         pw, ph = ph, pw
@@ -133,7 +133,7 @@ def plan_sheet(
     return {
         "page": (pw, ph),
         "area": (MARGIN_MM, MARGIN_MM, aw, ah),
-        "at": (MARGIN_MM + (aw - dw) / 2, MARGIN_MM + (ah - dh) / 2, dw, dh),
+        "at": (MARGIN_MM + (aw - dw) / 2, MARGIN_MM, dw, dh),
         "scale": scale,
     }
 

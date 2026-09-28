@@ -313,7 +313,7 @@ class SheetTests(SimpleTestCase):
         self.assertAlmostEqual(plan["scale"], 0.2)
         x, y, w, h = plan["at"]
         self.assertAlmostEqual(x, 10.0)
-        self.assertAlmostEqual(y, 39.5)
+        self.assertAlmostEqual(y, 10.0)  # top of the area, centred across
         self.assertAlmostEqual(w, 400.0)
         self.assertAlmostEqual(h, 200.0)
 

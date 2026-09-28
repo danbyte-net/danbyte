@@ -4,6 +4,8 @@ import {
   Download,
   FileCode,
   FileImage,
+  FileText,
+  Printer,
   Workflow,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -18,6 +20,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -26,21 +31,36 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
+import { api } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import {
+  MIN_PRINT_PT,
+  PAPERS,
+  PAPER_LABELS,
+  paperLabel,
+  planSheet,
+  printedPt,
+} from "@/lib/diagram/sheet"
+import type { Orientation, Paper } from "@/lib/diagram/sheet"
 import type { DiagramDocument } from "@/lib/diagram/types"
 import { downloadBlob } from "@/lib/table-export"
 import type { LegendItem } from "../legend"
 
-// One Export menu for the topology map: PNG, SVG and draw.io, with the few
-// choices that change the file - whole map or what is on screen, Simple or
-// Detailed for draw.io (and its photos, off by default: a card is what a
-// draw.io user edits), and the title block with the legend. The files are
-// drawn from the map's data (to-document.ts / from-flow.ts), never from the
-// screen, so they are light-themed and carry every card. Photos go into
-// the PNG and SVG as downscaled `data:` images, so the files stand alone.
-// The writers load on first use.
+// One Export menu for the topology map: PNG, SVG, PDF and draw.io, and
+// Print, with the few choices that change the file - whole map or what is on
+// screen, Simple or Detailed for draw.io (and its photos, off by default: a
+// card is what a draw.io user edits), the PDF's paper, and the title block
+// with the legend. The files are drawn from the map's data (to-document.ts /
+// from-flow.ts), never from the screen, so they are light-themed and carry
+// every card. Photos go into the PNG, SVG and PDF as downscaled `data:`
+// images, so the files stand alone. The writers load on first use.
+//
+// The PDF is the SVG laid out on real paper by the server (a browser can't
+// be made to print at a paper size): it answers with a short-lived link,
+// which PDF downloads and Print opens in a new tab for the browser's viewer.
 
 export type ExportArea = "all" | "visible"
-export type ExportFormat = "png" | "svg" | "drawio"
+export type ExportFormat = "png" | "svg" | "pdf" | "print" | "drawio"
 
 export interface ExportRequest {
   area: ExportArea
@@ -53,8 +73,11 @@ interface Prefs {
   drawio: "simple" | "detailed"
   /** draw.io: photo nodes as their photos, not cards. */
   photos: boolean
-  /** Title block and legend under PNG and SVG drawings. */
+  /** Title block and legend under the drawing (PNG, SVG and PDF). */
   extras: boolean
+  /** The PDF's paper. */
+  paper: Paper
+  orientation: Orientation
 }
 
 const KEY = "topology:export"
@@ -63,7 +86,12 @@ const DEFAULTS: Prefs = {
   drawio: "simple",
   photos: false,
   extras: true,
+  paper: "a3",
+  orientation: "landscape",
 }
+
+const isPaper = (v: unknown): v is Paper =>
+  typeof v === "string" && Object.hasOwn(PAPERS, v)
 
 function readPrefs(): Prefs {
   try {
@@ -73,6 +101,8 @@ function readPrefs(): Prefs {
       drawio: raw.drawio === "detailed" ? "detailed" : "simple",
       photos: raw.photos === true,
       extras: raw.extras !== false,
+      paper: isPaper(raw.paper) ? raw.paper : DEFAULTS.paper,
+      orientation: raw.orientation === "portrait" ? "portrait" : "landscape",
     }
   } catch {
     return DEFAULTS
@@ -109,6 +139,19 @@ export function exportFileName(
 
 /** Menu radio and checkbox rows adjust the export without closing it. */
 const keepOpen = (e: Event) => e.preventDefault()
+
+/** The smallest text the writers draw (port names, pills), px. */
+const SMALLEST_TEXT_PX = 9
+
+const PDF_URL = "/api/topology/export/pdf/?print=1"
+
+/** Save a same-origin file URL (the server names it as an attachment). */
+function saveUrl(url: string, fileName: string) {
+  const a = window.document.createElement("a")
+  a.href = url
+  a.download = fileName
+  a.click()
+}
 
 export function ExportMenu({
   document: buildDocument,
@@ -152,6 +195,17 @@ export function ExportMenu({
   }
 
   const run = async (format: ExportFormat) => {
+    // Print's tab opens now, while the click still counts as the user's:
+    // a tab opened after the render would be taken for a pop-up.
+    const tab = format === "print" ? window.open("", "_blank") : null
+    if (tab)
+      try {
+        tab.opener = null
+        tab.document.title = "Preparing PDF…"
+      } catch {
+        /* a browser that keeps the blank tab to itself: it still navigates */
+      }
+    let printing = false
     setBusy(true)
     try {
       if (format === "png" && capturePng) {
@@ -174,7 +228,47 @@ export function ExportMenu({
       const onMissing = (n: number) => {
         missing = n
       }
-      if (format === "png") {
+      if (format === "pdf" || format === "print") {
+        const [{ toSvg }, { inlinePhotos, svgSize }] = await Promise.all([
+          import("@/lib/diagram/svg"),
+          import("@/lib/diagram/png"),
+        ])
+        // The SVG export's drawing and legend; the server draws the title
+        // block on the sheet itself.
+        const svg = toSvg(await inlinePhotos(doc, { onMissing }), {
+          legend: prefs.extras,
+        })
+        const paper = { size: prefs.paper, orientation: prefs.orientation }
+        const { url } = await api<{ url: string }>(PDF_URL, {
+          method: "POST",
+          body: JSON.stringify({
+            svg,
+            title: doc.meta.title || name,
+            paper,
+            meta: {
+              view: name,
+              filters: doc.meta.filters ?? "",
+              generated_at: doc.meta.generated_at,
+            },
+            title_block: prefs.extras,
+          }),
+        })
+        if (format === "print" && tab) {
+          tab.location.replace(url)
+          printing = true
+        } else {
+          if (format === "print")
+            toast.warning("Pop-ups are blocked, so the PDF was downloaded")
+          saveUrl(`${url}?download=1`, exportFileName(name, "pdf"))
+        }
+        const plan = planSheet(svgSize(svg), paper, {
+          titleBlock: prefs.extras,
+        })
+        if (printedPt(SMALLEST_TEXT_PX, plan) < MIN_PRINT_PT)
+          toast.warning(
+            `Labels print under ${MIN_PRINT_PT} pt on ${paperLabel(paper)}`
+          )
+      } else if (format === "png") {
         const { diagramToPng } = await import("@/lib/diagram/png")
         const blob = await diagramToPng(doc, { ...extras, scale: 2, onMissing })
         downloadBlob(exportFileName(name, "png"), "image/png", blob)
@@ -215,9 +309,13 @@ export function ExportMenu({
             ? "1 photo didn't load and is drawn as a card"
             : `${missing} photos didn't load and are drawn as cards`
         )
-    } catch {
-      toast.error("Couldn't export the map")
+    } catch (err) {
+      if (format === "pdf" || format === "print")
+        apiErrorToast(err, "Couldn't make the PDF")
+      else toast.error("Couldn't export the map")
     } finally {
+      // A Print that didn't get as far as its PDF leaves no blank tab.
+      if (tab && !printing) tab.close()
       setBusy(false)
     }
   }
@@ -243,15 +341,21 @@ export function ExportMenu({
           Download this map
         </TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="end" className="w-44">
+      <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuItem onSelect={() => void run("png")}>
           <FileImage /> PNG
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void run("svg")}>
           <FileCode /> SVG
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void run("pdf")}>
+          <FileText /> PDF
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void run("drawio")}>
           <Workflow /> draw.io
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void run("print")}>
+          <Printer /> Print
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Area</DropdownMenuLabel>
@@ -294,6 +398,48 @@ export function ExportMenu({
             </DropdownMenuCheckboxItem>
           </>
         )}
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="whitespace-nowrap">
+            Paper
+            <span className="ml-auto pl-3 text-xs text-muted-foreground">
+              {paperLabel({
+                size: prefs.paper,
+                orientation: prefs.orientation,
+              })}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-36">
+            <DropdownMenuRadioGroup
+              value={prefs.paper}
+              onValueChange={(v) => {
+                if (isPaper(v)) set({ paper: v })
+              }}
+            >
+              {(Object.keys(PAPERS) as Paper[]).map((p) => (
+                <DropdownMenuRadioItem key={p} value={p} onSelect={keepOpen}>
+                  {PAPER_LABELS[p]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup
+              value={prefs.orientation}
+              onValueChange={(v) =>
+                set({
+                  orientation: v === "portrait" ? "portrait" : "landscape",
+                })
+              }
+            >
+              <DropdownMenuRadioItem value="landscape" onSelect={keepOpen}>
+                Landscape
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="portrait" onSelect={keepOpen}>
+                Portrait
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuCheckboxItem
           checked={prefs.extras}

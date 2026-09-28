@@ -1095,8 +1095,14 @@ however far off screen it sits.
 | Format | What you get | Good for |
 |---|---|---|
 | **PNG** | An image at twice screen resolution | A wiki page, a change ticket, a chat message |
-| **SVG** | A vector drawing: cards, lines and text, each card and cable a link back to Danbyte | Printing at any size, Inkscape or Illustrator, documentation |
+| **SVG** | A vector drawing: cards, lines and text, each card and cable a link back to Danbyte | Inkscape or Illustrator, documentation |
+| **PDF** | The map on one sheet of paper, fitted to the page, with a title block | Printing, a change record, a handover pack |
 | **draw.io** | An editable `.drawio` file (see [draw.io](#drawio) below) | A diagram you keep editing in draw.io |
+
+**Print** makes the same PDF and opens it in a new tab, where the browser's
+PDF viewer prints it. The page is already the paper's size, so print it at
+**Actual size** (100%), not "Fit". If the browser blocks the new tab, the
+PDF is downloaded instead.
 
 The menu's choices are remembered per browser:
 
@@ -1106,14 +1112,19 @@ The menu's choices are remembered per browser:
   whichever mode the map is in on screen, and **Photos**: off by default,
   so a photo is drawn as the device's card - the shape you edit in draw.io;
   on, it is the photo (see [draw.io](#drawio)).
+- **Paper** - for PDF and Print: A4, A3, Letter or Tabloid, landscape or
+  portrait. A3 landscape until you choose.
 - **Title and legend** - a strip under a PNG or SVG: the view name, the
   tenant, the filters, the date and a link back to this map, beside the
-  legend (role colours, the monitoring pill, line styles).
+  legend (role colours, the monitoring pill, line styles). On a PDF the
+  legend runs under the drawing, and the title block sits in the sheet's
+  bottom-right corner: the view name; the tenant and filters; the date, the
+  Danbyte version and the page.
 
 A file is named after the saved view (else the site, else `topology`) and
 the day: `arhus-dc-2026-09-26.drawio`.
 
-**Hierarchy** exports its SVG and draw.io in the Diagram's Simple
+**Hierarchy** exports its SVG, PDF and draw.io in the Diagram's Simple
 look: a compact role-coloured card with the device's IP, centred where its
 card sits on the tab, and one straight line per device pair with a count
 chip (`2x`) when it stands for several cables. Its port chips are how that
@@ -1133,8 +1144,17 @@ pills, cable colours.
 - **PNG** is that SVG rasterised (2x), with Inter embedded so names never
   reflow in another font. A very large map is scaled down to stay under
   about 16.7 million pixels - Safari draws nothing above that.
-- **Photos** ([photo nodes](#photo-nodes)) are embedded in the SVG and the
-  PNG, scaled down in your browser to twice the size they are drawn at, so
+- **PDF** is that SVG laid out on the paper by the server: vector, so it
+  stays sharp at any zoom, with Inter embedded and the names selectable and
+  searchable. The drawing is scaled to fit inside 10 mm margins, keeping its
+  shape; a small map is enlarged to at most 1.5 times its size on screen.
+  When the smallest labels would print under 4 pt, the page says so - try a
+  larger paper or **Visible area**. A map too large for one sheet (over
+  8 MB of drawing, or over 80,000 characters of text) is refused with the
+  reason; export the visible area or a smaller view. See
+  [PDF export API](#pdf-export-api) for the limits.
+- **Photos** ([photo nodes](#photo-nodes)) are embedded in the SVG, PNG
+  and PDF, scaled down in your browser to twice the size they are drawn at, so
   the file stands alone. Each cable's lead is drawn over its photo into the
   port, and the ports it lands on are outlined; a photo taking its cables
   at its edge has its nubs on the image's edge instead. A photo that will
@@ -1543,7 +1563,7 @@ returns the PDF as a download (`Content-Disposition: attachment`). The body:
 | `title_block` | `false` leaves the title block off; `true` by default |
 
 The drawing is scaled to fit inside 10 mm margins, keeping its shape, and
-centred above a 14 mm title block: the title, then the tenant and filters,
+placed at the top of the page, centred across it, above a 14 mm title block: the title, then the tenant and filters,
 then the date, the Danbyte version and `Page 1 / 1`. A small drawing is
 enlarged to at most 1.5 times its size on screen. Text is Inter, embedded
 from the server's own copy (`api/pdf_fonts/`, SIL Open Font License).
