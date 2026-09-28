@@ -74,10 +74,12 @@ import {
   type MarkerTypeOption,
 } from "@/components/site-map/map-sidebar"
 import {
+  hiddenCount,
   setHidden as withHidden,
   useHideKeys,
   useStoredHidden,
 } from "@/components/hidden-objects"
+import { HiddenChip } from "@/components/hidden-chip"
 import {
   ConnectionInspector,
   DeviceInspector,
@@ -1689,6 +1691,18 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           )}
 
           <MapLegend open={legendOpen} onToggle={toggleLegend} />
+
+          {/* The sidebar carries the count while it is open. Top right is
+              the corner the map leaves free: zoom is top left, the legend
+              and scale bottom left, the tile attribution bottom right. */}
+          {!showObjects && (
+            <HiddenChip
+              count={hiddenCount(hidden)}
+              position="top-right"
+              className="z-[900]"
+              onShowAll={() => setHidden(NO_HIDDEN)}
+            />
+          )}
 
           {mode === "view" &&
             placed.length === 0 &&

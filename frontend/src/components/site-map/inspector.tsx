@@ -33,7 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { CheckDot } from "@/components/foldable-group"
+import { RowCheckBadge } from "@/components/foldable-group"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { Field } from "@/components/forms"
 import { CableForm } from "@/components/cable-form"
@@ -292,10 +292,12 @@ export function SiteInspector({
         <span className="min-w-0 truncate font-medium">{s.name}</span>
       </div>
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-        <CheckDot check={s.check} />
-        {s.device_count} device{s.device_count === 1 ? "" : "s"}
-        {s.floor_plan_count > 0 &&
-          ` · ${s.floor_plan_count} floor plan${s.floor_plan_count === 1 ? "" : "s"}`}
+        <span>
+          {s.device_count} device{s.device_count === 1 ? "" : "s"}
+          {s.floor_plan_count > 0 &&
+            ` · ${s.floor_plan_count} floor plan${s.floor_plan_count === 1 ? "" : "s"}`}
+        </span>
+        <RowCheckBadge check={s.check} />
       </div>
       <div className="grid gap-1.5">
         <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">

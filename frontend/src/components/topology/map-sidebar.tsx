@@ -14,7 +14,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { EyeOff, GripVertical, Layers, Search } from "lucide-react"
+import { GripVertical, Layers } from "lucide-react"
 
 import type {
   BulkStatusEntry,
@@ -31,12 +31,20 @@ import {
 import { cn } from "@/lib/utils"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
-  CheckChip,
-  CheckCountChip,
+  CheckCountBadge,
   FoldableGroup,
+  RowCheckBadge,
   VisibilityToggle,
 } from "@/components/foldable-group"
 import { hiddenCount, setHidden } from "@/components/hidden-objects"
+import {
+  ObjectsEmpty,
+  ObjectsPanel,
+  ObjectsSection,
+  checkCounts,
+} from "@/components/objects-panel"
+import type { CheckFilter } from "@/components/objects-panel"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import type { TopoGroupData } from "./group-node"
 import {
   BGP_SESSIONS,
@@ -47,6 +55,7 @@ import {
   NO_TOPO_HIDDEN,
   UNTYPED,
   edgeHidden,
+  familyLabel,
   linkFamily,
   nodeHidden,
 } from "./hidden"
@@ -58,8 +67,8 @@ import type { Zone } from "./view-positions"
 import { isRow, isSide } from "./diagram/bands"
 import { bandLook } from "./diagram/band-node"
 
-// "On this map" for the topology page - the site map's sidebar with the
-// graph's own objects: device cards grouped by role, site or location, the
+// The topology page's Objects sidebar - the site map's, with the graph's own
+// objects: device cards grouped by role, site or location, the
 // site/location aggregates when the map is grouped, the links by media
 // type, and the bands and zones drawn behind the cards. Click flies to and
 // selects, like clicking the card; a band or zone row pans to the box and
@@ -86,8 +95,6 @@ export function readGroupMode(): GroupMode {
     return "role"
   }
 }
-
-type StatusFilter = "down" | "degraded" | "up" | null
 
 // A row's height (px) before it is drawn - see LazyRows: a device or
 // problem row, a site/location row, a link row with its cable's label.
@@ -161,7 +168,7 @@ export function TopologyObjectsSidebar({
   onReorderBands?: (ids: string[]) => void
 }) {
   const [q, setQ] = useState("")
-  const [status, setStatus] = useState<StatusFilter>(null)
+  const [status, setStatus] = useState<CheckFilter>(null)
   const [mode, setModeState] = useState<GroupMode>(readGroupMode)
   const setMode = (m: GroupMode) => {
     try {
@@ -245,6 +252,18 @@ export function TopologyObjectsSidebar({
   const nodeById = useMemo(
     () => new Map(graph.nodes.map((n) => [n.id, n])),
     [graph]
+  )
+
+  // The filter's counts: every device the search matches, before the status
+  // filter narrows the list - so each tab says what picking it would show.
+  const statusCounts = checkCounts(
+    graph.nodes
+      .filter((n) => n.type === "device" && n.data.device_id)
+      .filter((n) => matchNode(n.data))
+      .map(
+        (n) =>
+          (checks[n.data.device_id!] as BulkStatusEntry | undefined)?.status
+      )
   )
 
   // Everything unhealthy, worst-first - the sidebar's own triage list.
@@ -345,7 +364,7 @@ export function TopologyObjectsSidebar({
                   {z.rule!.ids.length}
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="left" variant="panel">
+              <TooltipContent side="left" variant="default">
                 {z.rule!.ids.length} layers
               </TooltipContent>
             </Tooltip>
@@ -376,82 +395,28 @@ export function TopologyObjectsSidebar({
     }`
 
   return (
-    <aside
+    <ObjectsPanel
       ref={setScroller}
-      className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3"
+      total={total}
+      query={q}
+      onQueryChange={setQ}
+      onSearchEnter={() => {
+        // Enter jumps straight to the first hit.
+        const g = groupRows.at(0)
+        const d = deviceGroups.at(0)?.rows.at(0)
+        if (g) onPickGroup(g)
+        else if (d) onPickNode(nodeById.get(d.id)!)
+      }}
+      status={status}
+      onStatusChange={setStatus}
+      statusCounts={statusCounts}
+      hiddenCount={hiddenCount(hidden)}
+      onShowAll={() => onHiddenChange(NO_TOPO_HIDDEN)}
     >
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-[11px] font-semibold tracking-wide uppercase">
-          On this map
-        </p>
-        <span className="num text-[11px] text-muted-foreground">{total}</span>
-      </div>
-      <div className="relative mb-2">
-        <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter jumps straight to the first hit.
-            if (e.key !== "Enter") return
-            const g = groupRows.at(0)
-            const d = deviceGroups.at(0)?.rows.at(0)
-            if (g) onPickGroup(g)
-            else if (d) onPickNode(nodeById.get(d.id)!)
-          }}
-          placeholder="Search the map…"
-          className="h-8 pl-7 text-[13px]"
-        />
-      </div>
-
-      <div className="mb-3 flex items-center gap-1">
-        {(
-          [
-            [null, "All"],
-            ["down", "down"],
-            ["degraded", "degraded"],
-            ["up", "up"],
-          ] as [StatusFilter, string][]
-        ).map(([value, label]) => (
-          <button
-            key={label}
-            type="button"
-            onClick={() => setStatus(value)}
-            className={cn(
-              "rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium",
-              status === value
-                ? "bg-foreground text-background"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {hiddenCount(hidden) > 0 && (
-        <button
-          type="button"
-          onClick={() => onHiddenChange(NO_TOPO_HIDDEN)}
-          className="mb-3 flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-        >
-          <EyeOff className="size-3 shrink-0" />
-          <span className="num">{hiddenCount(hidden)}</span> hidden
-          <span className="ml-auto underline underline-offset-2">Show all</span>
-        </button>
-      )}
-
-      {total === 0 && (
-        <p className="px-1 text-[13px] text-muted-foreground">
-          {filter || status ? "No matches." : "Nothing on the map."}
-        </p>
-      )}
+      {total === 0 && <ObjectsEmpty filtered={!!filter || !!status} />}
 
       {problems.length > 0 && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Problems
-          </p>
+        <ObjectsSection heading="Problems">
           <LazyRows
             root={scroller}
             rows={problems}
@@ -462,7 +427,7 @@ export function TopologyObjectsSidebar({
                 type="button"
                 onClick={() => onPickNode(nodeById.get(p.id)!)}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono text-[12px]",
+                  "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
                   selectedDeviceId === p.device_id
                     ? "bg-muted font-medium"
                     : "hover:bg-muted/60"
@@ -470,21 +435,22 @@ export function TopologyObjectsSidebar({
               >
                 <span className="min-w-0 truncate">{p.name}</span>
                 <span className="ml-auto shrink-0">
-                  <CheckChip check={p.check} />
+                  <RowCheckBadge check={p.check} />
                 </span>
               </button>
             )}
           />
-        </div>
+        </ObjectsSection>
       )}
 
       {groupRows.length > 0 && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            {(groupRows[0].data as unknown as TopoGroupData).kind === "site"
+        <ObjectsSection
+          heading={
+            (groupRows[0].data as unknown as TopoGroupData).kind === "site"
               ? "Sites"
-              : "Locations"}
-          </p>
+              : "Locations"
+          }
+        >
           <LazyRows
             root={scroller}
             rows={groupRows}
@@ -523,43 +489,33 @@ export function TopologyObjectsSidebar({
               )
             }}
           />
-        </div>
+        </ObjectsSection>
       )}
 
       {!grouped && deviceCount > 0 && (
-        <div className="mb-3">
-          <div className="mb-1 flex items-center px-1">
-            <p className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-              Devices
-            </p>
-            <span className="ml-auto flex items-center gap-0.5">
-              {GROUP_MODES.map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setMode(value)}
-                  className={cn(
-                    "rounded-[4px] px-1 py-0.5 text-[10px]",
-                    mode === value
-                      ? "bg-muted font-medium text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </span>
-          </div>
+        <ObjectsSection
+          heading="Devices"
+          action={
+            <SegmentedTabs<GroupMode>
+              className="[&>button]:h-6 [&>button]:px-2 [&>button]:text-[12px]"
+              value={mode}
+              onValueChange={setMode}
+              items={GROUP_MODES.map(([value, label]) => ({ value, label }))}
+            />
+          }
+        >
           {deviceGroups.map((g) => (
             <FoldableGroup
               key={`${mode}:${g.title}`}
-              title={g.title}
+              name={g.title}
               count={g.rows.length}
               label={
-                g.role ? (
+                // A role is a colored catalog object - its badge, and
+                // "No role" as the plain one. Sites and locations are names.
+                mode === "role" ? (
                   <ColorBadge
                     name={g.title}
-                    color={g.role.color || undefined}
+                    color={g.role?.color || undefined}
                     className="max-w-44"
                   />
                 ) : undefined
@@ -568,12 +524,12 @@ export function TopologyObjectsSidebar({
               visibility={{
                 shown: !hidden[GROUP_KEY[mode]].includes(g.title),
                 onChange: (v) => toggle(GROUP_KEY[mode], g.title, v),
-                what: `${g.title} devices`,
+                what: g.title,
               }}
               extra={
                 <>
-                  <CheckCountChip check="down" n={g.down} />
-                  <CheckCountChip check="degraded" n={g.degraded} />
+                  <CheckCountBadge check="down" n={g.down} />
+                  <CheckCountBadge check="degraded" n={g.degraded} />
                 </>
               }
             >
@@ -587,7 +543,7 @@ export function TopologyObjectsSidebar({
                     type="button"
                     onClick={() => onPickNode(d.node)}
                     className={cn(
-                      "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left font-mono text-[12px]",
+                      "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[13px]",
                       !shown(d.node) && "text-muted-foreground/60",
                       selectedDeviceId === d.device_id
                         ? "bg-muted font-medium"
@@ -599,11 +555,11 @@ export function TopologyObjectsSidebar({
                       <ColorBadge
                         name={d.data.role.name}
                         color={d.data.role.color || undefined}
-                        className="h-4 max-w-28 min-w-0 truncate px-1.5 font-sans text-[10px]"
+                        className="h-4 max-w-28 min-w-0 truncate px-1.5 text-[10px]"
                       />
                     )}
                     {filter && d.data.device_type && (
-                      <span className="min-w-0 truncate font-sans text-[10px] text-muted-foreground/70">
+                      <span className="min-w-0 truncate text-[10px] text-muted-foreground/70">
                         {d.data.device_type}
                       </span>
                     )}
@@ -615,33 +571,32 @@ export function TopologyObjectsSidebar({
                           what: d.name,
                         }}
                       />
-                      <CheckChip check={d.check} />
+                      <RowCheckBadge check={d.check} />
                     </span>
                   </button>
                 )}
               />
             </FoldableGroup>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {linkGroups.length > 0 && !status && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Links
-          </p>
+        <ObjectsSection heading="Links">
           {linkGroups.map(([fam, rows]) => (
             <FoldableGroup
               key={fam}
-              title={fam}
+              // The stored family key: the fold state and the hidden set
+              // keep it, while the badge shows the family's display name.
+              name={fam}
               count={rows.length}
               defaultOpen={false}
               storageId={FOLDS}
               label={
                 <ColorBadge
-                  name={fam}
+                  name={familyLabel(fam)}
                   color={
-                    // Coloured as a cable of its type is on the map; the
+                    // Colored as a cable of its type is on the map; the
                     // families that are not a media type stay neutral.
                     fam === DISCOVERED ||
                     fam === BGP_SESSIONS ||
@@ -655,7 +610,7 @@ export function TopologyObjectsSidebar({
               visibility={{
                 shown: !hidden.kinds.includes(fam),
                 onChange: (v) => toggle("kinds", fam, v),
-                what: `${fam} links`,
+                what: familyLabel(fam),
               }}
             >
               <LazyRows
@@ -680,11 +635,9 @@ export function TopologyObjectsSidebar({
                     )}
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono">
-                        {edgeEnds(e)}
-                      </span>
+                      <span className="block truncate">{edgeEnds(e)}</span>
                       {(e.data?.cable_label || e.data?.cable_numid) && (
-                        <span className="block truncate text-[11px] text-muted-foreground">
+                        <span className="block truncate font-mono text-[11px] text-muted-foreground">
                           {e.data.cable_label || `#${e.data.cable_numid}`}
                         </span>
                       )}
@@ -694,14 +647,11 @@ export function TopologyObjectsSidebar({
               />
             </FoldableGroup>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {shownZones.length > 0 && !status && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
-            Bands and zones
-          </p>
+        <ObjectsSection heading="Bands and zones">
           {sortable ? (
             <DndContext
               sensors={sensors}
@@ -724,9 +674,9 @@ export function TopologyObjectsSidebar({
           )}
           {sideRows.map((z) => regionRow(z))}
           {zoneRows.map((z) => regionRow(z))}
-        </div>
+        </ObjectsSection>
       )}
-    </aside>
+    </ObjectsPanel>
   )
 }
 
@@ -753,15 +703,22 @@ function SortableBand({
       className={cn(isDragging && "opacity-60")}
     >
       {children(
-        <button
-          type="button"
-          aria-label="Drag to reorder"
-          className="cursor-grab px-0.5 text-muted-foreground active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label="Reorder"
+              className="cursor-grab px-0.5 text-muted-foreground active:cursor-grabbing"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left" variant="default">
+            Reorder
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   )
@@ -785,6 +742,7 @@ function ZoneLabelInput({
         if (e.key === "Enter") onDone(value.trim())
         if (e.key === "Escape") onDone(zone.label)
       }}
+      aria-label="Rename"
       className="mb-0.5 h-7 text-[13px]"
     />
   )

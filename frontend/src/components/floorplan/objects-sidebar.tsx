@@ -1,25 +1,35 @@
 import { useMemo, useState } from "react"
-import { EyeOff, Search } from "lucide-react"
 
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
-import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
   tileFill,
   tileIsZone,
   tileName,
 } from "@/components/floorplan/floor-canvas"
-import { TileBadge } from "@/components/floorplan/tile-badge"
-import { FoldableGroup, VisibilityToggle } from "@/components/foldable-group"
+import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  CheckCountBadge,
+  FoldableGroup,
+  RowCheckBadge,
+  VisibilityToggle,
+} from "@/components/foldable-group"
 import { NO_FLOOR_HIDDEN, tileHidden } from "@/components/floorplan/hidden"
 import type { FloorHidden } from "@/components/floorplan/hidden"
 import { hiddenCount, isHidden, setHidden } from "@/components/hidden-objects"
+import {
+  ObjectsEmpty,
+  ObjectsPanel,
+  ObjectsSection,
+  checkCounts,
+} from "@/components/objects-panel"
+import type { CheckFilter } from "@/components/objects-panel"
+import { TruncatedText } from "@/components/ui/truncated-text"
 
 interface Group {
   key: string
   title: string
   color: string
-  icon: string
   tiles: FloorPlanTile[]
 }
 
@@ -28,7 +38,7 @@ function groupBy(
   tiles: FloorPlanTile[],
   pick: (
     t: FloorPlanTile
-  ) => { id: string; name: string; icon?: string } | null | undefined
+  ) => { id: string; name: string; color?: string | null } | null | undefined
 ): Group[] {
   const map = new Map<string, Group>()
   for (const t of tiles) {
@@ -37,10 +47,8 @@ function groupBy(
     const g = map.get(k.id) ?? {
       key: k.id,
       title: k.name,
-      color: tileFill(t),
-      // Device roles carry no icon - TileBadge falls back to a colour chip,
-      // exactly as the palette draws them.
-      icon: k.icon ?? "",
+      // The type's own color - a tile's override paints only that tile.
+      color: k.color || tileFill(t),
       tiles: [],
     }
     g.tiles.push(t)
@@ -56,15 +64,9 @@ function groupBy(
     .sort((a, b) => a.title.localeCompare(b.title))
 }
 
-const CHECK_TONE: Record<string, string> = {
-  down: "bg-red-500",
-  stale: "bg-red-500",
-  degraded: "bg-amber-500",
-  up: "bg-emerald-500",
-}
-
 /**
- * What's placed on this plan, listed and grouped.
+ * The floor plan's Objects sidebar: what's placed on this plan, listed and
+ * grouped - the same panel the site map and the topology map open.
  *
  * A tile carries EITHER a `role_type` (placed from the device-role palette) or
  * a `tile_type` - never both - so these are two disjoint sections rather than
@@ -92,27 +94,38 @@ export function ObjectsSidebar({
   onHiddenChange?: (next: FloorHidden) => void
 }) {
   const [q, setQ] = useState("")
+  const [status, setStatus] = useState<CheckFilter>(null)
   const eyes = !!onHiddenChange
   const toggle = (key: keyof FloorHidden, value: string, shown: boolean) =>
     onHiddenChange?.(setHidden(hidden, key, value, !shown))
+  const checkOf = (t: FloorPlanTile) => liveState?.tiles[t.id]?.check ?? null
 
-  const { roleGroups, typeGroups, total } = useMemo(() => {
+  const { roleGroups, typeGroups, total, statusCounts, first } = useMemo(() => {
     const needle = q.trim().toLowerCase()
     // Zones are background paint, not placed objects - they'd drown the list.
     const placed = tiles.filter((t) => !tileIsZone(t))
-    const match = needle
+    const searched = needle
       ? placed.filter((t) =>
           [tileName(t), t.linked?.name, t.role_type?.name, t.tile_type?.name]
             .filter(Boolean)
             .some((s) => s!.toLowerCase().includes(needle))
         )
       : placed
+    const match = status
+      ? searched.filter((t) => liveState?.tiles[t.id]?.check === status)
+      : searched
+    const byRole = groupBy(match, (t) => t.role_type)
+    const byType = groupBy(match, (t) => t.tile_type)
     return {
-      roleGroups: groupBy(match, (t) => t.role_type),
-      typeGroups: groupBy(match, (t) => t.tile_type),
+      roleGroups: byRole,
+      typeGroups: byType,
       total: match.length,
+      statusCounts: checkCounts(
+        searched.map((t) => liveState?.tiles[t.id]?.check)
+      ),
+      first: byRole.at(0)?.tiles.at(0) ?? byType.at(0)?.tiles.at(0),
     }
-  }, [tiles, q])
+  }, [tiles, q, status, liveState])
 
   const section = (
     label: string,
@@ -120,29 +133,42 @@ export function ObjectsSidebar({
     groupKey: "tileTypes" | "roleTypes"
   ) =>
     groups.length > 0 && (
-      <div className="mb-3">
-        <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-          {label}
-        </p>
+      <ObjectsSection heading={label}>
         {groups.map((g) => (
           <FoldableGroup
             key={g.key}
-            title={g.title}
-            badge={<TileBadge color={g.color} icon={g.icon} />}
+            name={g.title}
+            label={
+              <ColorBadge
+                name={g.title}
+                color={g.color || undefined}
+                className="max-w-44"
+              />
+            }
             count={g.tiles.length}
             visibility={
               eyes
                 ? {
                     shown: !isHidden(hidden, groupKey, g.key),
                     onChange: (shown) => toggle(groupKey, g.key, shown),
-                    what: `${g.title} tiles`,
+                    what: g.title,
                   }
                 : undefined
             }
+            extra={
+              <>
+                <CheckCountBadge
+                  check="down"
+                  n={g.tiles.filter((t) => checkOf(t) === "down").length}
+                />
+                <CheckCountBadge
+                  check="degraded"
+                  n={g.tiles.filter((t) => checkOf(t) === "degraded").length}
+                />
+              </>
+            }
           >
             {g.tiles.map((t) => {
-              const live = liveState?.tiles[t.id]
-              const tone = live?.check ? CHECK_TONE[live.check] : null
               const name = tileName(t)
               const off = eyes && tileHidden(t, hidden)
               // A labelled tile hides its linked object's real name - surface
@@ -153,7 +179,7 @@ export function ObjectsSidebar({
                 <div
                   key={t.id}
                   className={cn(
-                    "flex items-center gap-1 rounded pr-1 hover:bg-muted/60",
+                    "flex items-center gap-1.5 rounded pr-1 hover:bg-muted/60",
                     t.id === selectedId && "bg-muted font-medium",
                     off && "opacity-50"
                   )}
@@ -161,40 +187,26 @@ export function ObjectsSidebar({
                   <button
                     type="button"
                     onClick={() => onPick(t)}
-                    className={cn(
-                      "flex min-w-0 flex-1 gap-2 px-1.5 py-1 pl-6 text-left text-[13px]",
-                      sub ? "items-start" : "items-center"
-                    )}
-                    title={sub ? `${name} · ${sub}` : name || undefined}
+                    className="flex min-w-0 flex-1 flex-col px-1.5 py-1 pl-6 text-left text-[13px]"
                   >
-                    {tone && (
-                      <span
-                        className={cn(
-                          "size-1.5 shrink-0 rounded-full",
-                          sub && "mt-[5px]",
-                          tone
-                        )}
-                      />
+                    {name ? (
+                      <TruncatedText className="block">{name}</TruncatedText>
+                    ) : (
+                      <span className="text-muted-foreground">Unnamed</span>
                     )}
-                    <span className="min-w-0">
-                      <span className="block truncate">
-                        {name || (
-                          <span className="text-muted-foreground">Unnamed</span>
-                        )}
-                      </span>
-                      {sub && (
-                        <span className="block truncate text-[11px] leading-tight font-normal text-muted-foreground">
-                          {sub}
-                        </span>
-                      )}
-                    </span>
+                    {sub && (
+                      <TruncatedText className="block text-[11px] leading-tight font-normal text-muted-foreground">
+                        {sub}
+                      </TruncatedText>
+                    )}
                   </button>
+                  <RowCheckBadge check={checkOf(t)} />
                   {eyes && (
                     <VisibilityToggle
                       vis={{
                         shown: !isHidden(hidden, "tiles", t.id),
                         onChange: (shown) => toggle("tiles", t.id, shown),
-                        what: name || "this tile",
+                        what: name || "tile",
                       }}
                     />
                   )}
@@ -203,46 +215,33 @@ export function ObjectsSidebar({
             })}
           </FoldableGroup>
         ))}
-      </div>
+      </ObjectsSection>
     )
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-[11px] font-semibold tracking-wide uppercase">
-          On this plan
-        </p>
-        <span className="num text-[11px] text-muted-foreground">{total}</span>
-      </div>
-      {eyes && hiddenCount(hidden) > 0 && (
-        <button
-          type="button"
-          onClick={() => onHiddenChange?.(NO_FLOOR_HIDDEN)}
-          className="mb-2 flex items-center gap-1.5 rounded px-1 text-[11px] text-muted-foreground hover:text-foreground"
-        >
-          <EyeOff className="size-3" />
-          <span className="num">{hiddenCount(hidden)}</span> hidden · show all
-        </button>
-      )}
-      <div className="relative mb-3">
-        <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search placed objects…"
-          className="h-8 pl-7 text-[13px]"
-        />
-      </div>
+    <ObjectsPanel
+      total={total}
+      query={q}
+      onQueryChange={setQ}
+      onSearchEnter={() => {
+        if (first) onPick(first)
+      }}
+      status={status}
+      onStatusChange={setStatus}
+      statusCounts={statusCounts}
+      hiddenCount={hiddenCount(hidden)}
+      onShowAll={
+        onHiddenChange ? () => onHiddenChange(NO_FLOOR_HIDDEN) : undefined
+      }
+    >
       {total === 0 ? (
-        <p className="px-1 text-[13px] text-muted-foreground">
-          {tiles.length === 0 ? "Nothing placed yet." : "No matches."}
-        </p>
+        <ObjectsEmpty filtered={!!q.trim() || !!status} />
       ) : (
         <>
           {section("Device roles", roleGroups, "roleTypes")}
           {section("Tile types", typeGroups, "tileTypes")}
         </>
       )}
-    </aside>
+    </ObjectsPanel>
   )
 }

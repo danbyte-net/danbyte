@@ -1,32 +1,49 @@
 import { useState } from "react"
 import { ChevronDown, Eye, EyeOff } from "lucide-react"
 
-import { CHECK_TONE } from "@/components/site-map/status-colors"
+import type { CheckStatus } from "@/lib/api"
+import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import {
+  statusColor,
+  statusLabel,
+  statusTextColor,
+  useStatusLabels,
+} from "@/components/monitoring/status-palette"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 /**
- * A foldable list group - header with an optional leading badge, name, count
- * and a chevron that rotates -90 when closed. Extracted from the floorplan
- * objects sidebar so the site map's sidebar folds look identical.
+ * A foldable list group - header with the group's name (or its ColorBadge),
+ * count and a chevron that rotates -90 when closed. Every Maps page's Objects
+ * sidebar (topology, site map, floor plan) folds with this, so the three read
+ * the same.
  */
-function readFold(storageId: string, title: string): boolean | undefined {
+function readFold(storageId: string, name: string): boolean | undefined {
   try {
-    const v = JSON.parse(localStorage.getItem(storageId)!)[title]
+    const v = JSON.parse(localStorage.getItem(storageId)!)[name]
     return typeof v === "boolean" ? v : undefined
   } catch {
     return undefined
   }
 }
 
-function writeFold(storageId: string, title: string, open: boolean) {
+function writeFold(storageId: string, name: string, open: boolean) {
   let map: Record<string, boolean> = {}
   try {
     map = JSON.parse(localStorage.getItem(storageId)!) ?? {}
   } catch {
     /* first write */
   }
-  map[title] = open
-  localStorage.setItem(storageId, JSON.stringify(map))
+  map[name] = open
+  try {
+    localStorage.setItem(storageId, JSON.stringify(map))
+  } catch {
+    /* private mode - the fold just doesn't stick */
+  }
 }
 
 /** Show/hide this group's objects on the map. Separate from folding: folding
@@ -34,48 +51,52 @@ function writeFold(storageId: string, title: string, open: boolean) {
 export interface GroupVisibility {
   shown: boolean
   onChange: (shown: boolean) => void
-  /** What is being hidden, for the tooltip - e.g. "Access Point devices". */
+  /** The group or object's name, for the tooltip: "Hide {what}". */
   what: string
 }
 
-/** The eye button both the group headers and the site rows use, so hiding a
- * role and hiding one site look and behave the same. */
+/** The eye button both the group headers and the object rows use, so hiding
+ * a role and hiding one device look and behave the same. */
 export function VisibilityToggle({ vis }: { vis: GroupVisibility }) {
   const Icon = vis.shown ? Eye : EyeOff
+  const label = `${vis.shown ? "Hide" : "Show"} ${vis.what}`
   return (
-    <span
-      role="button"
-      tabIndex={0}
-      // Inside a <button> header, so it cannot be a nested button - and the
-      // click must not reach the fold underneath.
-      onClick={(e) => {
-        e.stopPropagation()
-        vis.onChange(!vis.shown)
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== "Enter" && e.key !== " ") return
-        e.preventDefault()
-        e.stopPropagation()
-        vis.onChange(!vis.shown)
-      }}
-      aria-label={`${vis.shown ? "Hide" : "Show"} ${vis.what} on the map`}
-      title={`${vis.shown ? "Hide" : "Show"} ${vis.what} on the map`}
-      className={cn(
-        "flex size-4 shrink-0 items-center justify-center rounded",
-        vis.shown
-          ? "text-muted-foreground/60 hover:text-foreground"
-          : "text-foreground"
-      )}
-    >
-      <Icon className="size-3" />
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="button"
+          tabIndex={0}
+          // Inside a <button> header, so it cannot be a nested button - and
+          // the click must not reach the fold underneath.
+          onClick={(e) => {
+            e.stopPropagation()
+            vis.onChange(!vis.shown)
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" && e.key !== " ") return
+            e.preventDefault()
+            e.stopPropagation()
+            vis.onChange(!vis.shown)
+          }}
+          aria-label={label}
+          className={cn(
+            "flex size-4 shrink-0 items-center justify-center rounded",
+            vis.shown
+              ? "text-muted-foreground/60 hover:text-foreground"
+              : "text-foreground"
+          )}
+        >
+          <Icon className="size-3" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent variant="default">{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
 export function FoldableGroup({
-  title,
+  name,
   label,
-  badge,
   count,
   extra,
   visibility,
@@ -83,30 +104,30 @@ export function FoldableGroup({
   storageId,
   children,
 }: {
-  title: string
-  /** Drawn in place of the title: a ColorBadge for a coloured catalog
-   * object (never a swatch beside its name). */
+  /** The group's name: drawn when there is no `label`, and the key its fold
+   * state is stored under. */
+  name: string
+  /** Drawn in place of the name: the group's ColorBadge for a colored
+   * catalog object (never a swatch beside its name). */
   label?: React.ReactNode
-  /** Leading icon - e.g. the floorplan's TileBadge. */
-  badge?: React.ReactNode
   count: number
-  /** Trailing header content before the count - e.g. health count chips,
+  /** Trailing header content before the count - e.g. health count badges,
    * visible even when the group is folded. */
   extra?: React.ReactNode
   /** Adds the eye toggle to the header. Omit for a group that is only a list. */
   visibility?: GroupVisibility
   defaultOpen?: boolean
-  /** localStorage key of a {title: open} map; set it and the fold survives
+  /** localStorage key of a {name: open} map; set it and the fold survives
    * the visit (per browser, like the other sidebar prefs). */
   storageId?: string
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(
-    () => (storageId && readFold(storageId, title)) ?? defaultOpen
+    () => (storageId ? readFold(storageId, name) : undefined) ?? defaultOpen
   )
   const toggle = () =>
     setOpen((v) => {
-      if (storageId) writeFold(storageId, title, !v)
+      if (storageId) writeFold(storageId, name, !v)
       return !v
     })
   return (
@@ -114,6 +135,7 @@ export function FoldableGroup({
       <button
         type="button"
         onClick={toggle}
+        aria-expanded={open}
         className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[12px] font-medium hover:bg-muted/60"
       >
         <ChevronDown
@@ -122,7 +144,6 @@ export function FoldableGroup({
             !open && "-rotate-90"
           )}
         />
-        {badge}
         <span
           className={cn(
             "min-w-0 truncate",
@@ -131,7 +152,7 @@ export function FoldableGroup({
               (label ? "opacity-60" : "text-muted-foreground/60")
           )}
         >
-          {label ?? title}
+          {label ?? name}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {visibility && <VisibilityToggle vis={visibility} />}
@@ -146,61 +167,46 @@ export function FoldableGroup({
   )
 }
 
-/** Monitoring worst-status → dot colour class; re-exported from the shared
- *  status palette so map, MiniMap and sidebars can't drift apart. */
-export { CHECK_TONE }
-
-/** Mini status badge - the Badge primitive's semantic tints at list-row
- *  scale, showing the status word itself. Friendlier than a bare dot. */
-const CHECK_CHIP: Record<string, string> = {
-  up: "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300",
-  degraded:
-    "bg-amber-500/15 text-amber-800 dark:bg-amber-400/15 dark:text-amber-300",
-  down: "bg-destructive/10 text-destructive dark:bg-destructive/20",
-  stale: "bg-muted text-muted-foreground",
-  unknown: "bg-muted text-muted-foreground",
+/** A check state from the API (a plain string) as the badge's union: a state
+ * Danbyte does not ship reads as Unknown, as CheckStatusBadge draws it. */
+function asStatus(check: string): CheckStatus {
+  return check as CheckStatus
 }
 
-export function CheckChip({ check }: { check: string | null | undefined }) {
+/** An object's monitoring state in a sidebar row: the CheckStatusBadge pill
+ * (the tenant's name and color for the state) at list-row scale. */
+export function RowCheckBadge({ check }: { check: string | null | undefined }) {
   if (!check) return null
   return (
-    <span
-      className={cn(
-        "inline-flex h-4 shrink-0 items-center rounded-[4px] px-1 text-[10px] font-medium",
-        CHECK_CHIP[check] ?? CHECK_CHIP.unknown
-      )}
-      title={`Monitoring: ${check}`}
-    >
-      {check}
-    </span>
-  )
-}
-
-/** Count-in-tint variant for group headers: "2" in the status colour. */
-export function CheckCountChip({ check, n }: { check: string; n: number }) {
-  if (n === 0) return null
-  return (
-    <span
-      className={cn(
-        "num inline-flex h-4 shrink-0 items-center rounded-[4px] px-1 text-[10px] font-medium",
-        CHECK_CHIP[check] ?? CHECK_CHIP.unknown
-      )}
-      title={`${n} ${check}`}
-    >
-      {n}
-    </span>
-  )
-}
-
-export function CheckDot({ check }: { check: string | null | undefined }) {
-  if (!check) return null
-  return (
-    <span
-      className={cn(
-        "size-1.5 shrink-0 rounded-full",
-        CHECK_TONE[check] ?? "bg-zinc-400"
-      )}
-      title={`Monitoring: ${check}`}
+    <CheckStatusBadge
+      status={asStatus(check)}
+      className="h-4 shrink-0 px-1.5 text-[10px]"
     />
+  )
+}
+
+/** How many of a group's objects are in one state, for a group header: the
+ * count on the state's own pill color, the state's name on hover. */
+export function CheckCountBadge({ check, n }: { check: string; n: number }) {
+  const labels = useStatusLabels()
+  if (n === 0) return null
+  const s = asStatus(check)
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="num inline-flex h-4 shrink-0 items-center rounded-[5px] px-1 text-[10px] font-medium ring-1 ring-black/10 ring-inset dark:ring-white/10"
+          style={{
+            backgroundColor: statusColor(s, labels),
+            color: statusTextColor(s, labels),
+          }}
+        >
+          {n}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent variant="default">
+        {statusLabel(s, labels)}
+      </TooltipContent>
+    </Tooltip>
   )
 }

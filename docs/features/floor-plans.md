@@ -568,9 +568,6 @@ cable runs, just the trays, or both.
 
 - **Search** (Layout mode, header): type a tile's label, linked object, or
   type name and jump straight to it - the canvas pans and zooms to the hit.
-- **On this plan** (right rail): every placed tile grouped by device role and
-  tile type, with its own search over the same fields. A labelled tile shows
-  its linked object's real name as a muted second line.
 - **Fit** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
@@ -579,16 +576,23 @@ cable runs, just the trays, or both.
   outside dismisses it. Which rows appear is configurable - see
   [Popover fields](#popover-fields).
 - **Objects** (header toggle) opens a side list of everything placed on the
-  plan, in foldable groups by **device role** and by **tile type**, each with a
-  count and a live health dot. Search it, or click a row to select and zoom to
-  that tile. Editors' toggle state is saved with the plan.
+  plan - the same Objects sidebar the [site map](site-map.md) and the
+  [topology map](topology.md) open. Tiles fold into groups by **device role**
+  and by **tile type**, each headed by the role's or type's color badge with a
+  count, and the down/degraded counts on the header even while it is folded.
+  A tile with live monitoring carries its status pill. The *Search…* box
+  covers each tile's label, linked object and type (Enter jumps to the first
+  hit), the **All · Down · Degraded · Up** tabs narrow the list to one
+  monitoring state, and a labelled tile shows its linked object's real name as
+  a muted second line. Click a row to select and zoom to that tile. Editors'
+  toggle state is saved with the plan.
 - **Hiding things** - the same eyes the [site map](site-map.md) and the
   [topology map](topology.md) have. Every group header in
   the Objects list (a device role, a tile type) and every tile row carries an
   eye: click it and that role, that type or that one tile leaves the plan -
   the 2D canvas, the 3D room and a cable whose end it was all follow, and the
   PNG export draws the plan as you see it. Hidden rows stay in the list,
-  dimmed, so they can be brought back; a count and **show all** sit at the top
+  dimmed, so they can be brought back; a count and **Show all** sit at the top
   of the list, and a chip in the canvas corner says how many are hidden while
   the list is closed. A hidden tile cannot be selected, nudged or deleted
   until it is shown again. What is hidden is part of the plan (saved with its

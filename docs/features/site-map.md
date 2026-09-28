@@ -65,17 +65,19 @@ The page is a clone of the floor-plan editor's shell:
   width is remembered per browser; a small reset button restores the
   default), and the sliders button in its header picks exactly **which
   detail rows to show** - also remembered per browser.
-- **"On this map"** (Objects) - the far-right objects sidebar: one search
-  box over foldable groups - sites by region (a flat list until regions are
-  in use), devices by role, markers, links grouped by kind, and a
-  **Regions** list (regions with a stored boundary; click one to fit the
-  map to it). Click a row to fly to it; Enter in the search box jumps
-  to the first hit. Every site/device row carries its status as a small
-  tinted badge, a **Problems** section at the top collects everything down
-  or degraded (worst first), and the `all · down · degraded · up` chips
-  under the search box filter the whole list. Group headers show
-  down/degraded counts even when folded, and fold state is remembered per
-  browser.
+- **Objects** - the far-right Objects sidebar, the same one the
+  [floor plans](floor-plans.md) and the [topology map](topology.md) open:
+  one *Search…* box over foldable groups - sites by region (a flat list
+  until regions are in use), devices by role (each role headed by its color
+  badge), markers, links grouped by kind, and a **Regions** list (regions
+  with a stored boundary; click one to fit the map to it). Click a row to
+  fly to it; Enter in the search box jumps to the first hit. Every
+  site/device row carries its monitoring status pill, a **Problems** section
+  at the top collects everything down or degraded (worst first), and the
+  **All · Down · Degraded · Up** tabs under the search box (each with its
+  count, named as your status catalog names the states) filter the whole
+  list. Group headers show down/degraded counts even when folded, and fold
+  state is remembered per browser.
 - **Hiding part of the map** - the eye on a group header takes that group
   off the map: a device role, or a region's sites. Individual sites have
   their own eye, since sites are the map's top-level objects and there are
@@ -92,7 +94,8 @@ The page is a clone of the floor-plan editor's shell:
     out of Problems, the triage pill, **Find on map**, Fit-to-all, the Links
     and Cable routes lists, and a device's cable count. A **"n hidden · Show
     all"** line appears at the top of the sidebar whenever anything is off,
-    and the choice is remembered per browser. This is finer-grained than
+    and a chip in the map's top-right corner says the same while the sidebar
+    is closed. The choice is remembered per browser. This is finer-grained than
     **View**, which switches whole kinds on and off. The
     [floor plans](floor-plans.md) and the [topology map](topology.md) have
     the same eyes. Keyboard: ++h++ hides the selected site, or the selected
