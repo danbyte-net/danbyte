@@ -26,7 +26,7 @@ dev:@leaf-04  card @598,334.7 182x71
   title "leaf-04" top 6
   lines primary_ip="10.0.1.4" loopback="10.255.0.5" serial="SN FDO22004X"
   nubs T83:Ethernet1/49 T99:Ethernet1/51 B75:Ethernet1/48 B91:Ethernet1/2 B107:Ethernet1/1
-dev:@oob-con-01  card @1339.5,35.5 207x71
+dev:@oob-con-01  card @103.5,825 207x71
   fill #a855f7 ink #fff
   title "oob-con-01" top 6
   lines primary_ip="10.0.9.1" loopback="10.255.0.6" serial="SN FDO22005X"

@@ -439,6 +439,15 @@ Three mechanisms keep a large fabric legible:
   and zooms the same. A card too small to see there is still drawn a
   screen pixel across (a selected one two), so a big site's minimap shows
   where everything is.
+- **Devices with no cable are packed apart** - in the Diagram's automatic
+  layout, devices with no cable at all (spare stock, servers not cabled
+  yet) are laid out in a compact grid under the wired map instead of
+  spreading it over far rows: one group per role, alphabetical with *no
+  role* last, each group's devices by name, the block at least as wide as
+  the map. A device placed by hand stays where it was put; with Levels on
+  each keeps its role's tier. On the 2,400-device test site (1,600 not
+  cabled) the Simple map went from about 71,000 x 119,000 px to 27,000 x
+  33,000 px, and its layout from 1.8 s to 1.2 s.
 - **A map too big to fit opens on part of it** - a site whose whole map
   would need less than 5% zoom (the least there is) opens on the focused
   device, else the one with the most cables, with the devices cabled to it

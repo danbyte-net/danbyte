@@ -21,7 +21,7 @@ dev:@leaf-04  card @96,302.7 182x71
   fill #0ea5e9 ink #fff
   title "leaf-04" top 6
   lines primary_ip="10.0.1.4" loopback="10.255.0.5" serial="SN FDO22004X"
-dev:@oob-con-01  card @1026,35.5 207x71
+dev:@oob-con-01  card @103.5,761 207x71
   fill #a855f7 ink #fff
   title "oob-con-01" top 6
   lines primary_ip="10.0.9.1" loopback="10.255.0.6" serial="SN FDO22005X"

@@ -69,6 +69,7 @@ import {
   photoShown,
 } from "./photo-anchors"
 import type { PhotoFace, PhotoShown } from "./photo-anchors"
+import { packLoose } from "./pack"
 import { settleGrown } from "./placement"
 import { endRun, planEdges, portStub } from "./plan"
 import { pairKey } from "./types"
@@ -92,7 +93,8 @@ import type {
 //
 //   1. classify and fold the edges, orient them hub → leaf;
 //   2. size each card from its text (Simple's compact box);
-//   3. lay out (dagre, or the saved arrangement);
+//   3. lay out (dagre, or the saved arrangement) - devices with no cable
+//      at all packed in a grid under the rest (pack.ts);
 //   4. Detailed: count each card's nubs per side, grow the cards to fit,
 //      lay out again with the real boxes, and anchor every cable end;
 //   5. plan every line (plan.ts): elbows in their own lanes clear of the
@@ -1773,6 +1775,14 @@ export function buildDiagram(
   const all = reserve(
     new Map<string, { w: number; h: number }>([...fixed, ...base])
   )
+  // Devices with no wiring at all are packed apart, under the wired map -
+  // not with Levels on (a role's tier holds its devices) or on a grouped
+  // map.
+  const wired = new Set(wiring.flatMap((e) => [e.source, e.target]))
+  const loose =
+    grouped || levels
+      ? []
+      : rfNodes.filter((n) => n.type === "card" && !wired.has(n.id))
   const layout = (boxes: Map<string, { w: number; h: number }>): Laid => {
     // Saved positions are centres; the layout pins top-left corners.
     const pins = opts.positions
@@ -1794,32 +1804,69 @@ export function buildDiagram(
       }
       return { centres }
     }
-    const res = layoutNodes(
-      rfNodes,
-      wiring,
-      // No leaf grids: a straight line from the hub would cross every
-      // card stacked in front of the one it serves.
-      {
-        sizeOf: sizer(boxes, sizeOf),
-        compact: mode === "simple",
-        leafGrids: false,
-        ...(rankGap ? { rankGap } : {}),
-        reuseRanks: true,
-        waypoints: false,
-      },
-      pins,
-      direction,
-      levels,
-      mainOffsets
-    )
+    // A device placed by hand stays where it was put.
+    const packed = new Set(loose.filter((n) => !pins?.[n.id]).map((n) => n.id))
+    const rest = packed.size
+      ? rfNodes.filter((n) => !packed.has(n.id))
+      : rfNodes
     const centres = new Map<string, Pt>()
-    for (const n of res.nodes) {
-      const b = boxes.get(n.id)
-      if (b)
-        centres.set(n.id, {
-          x: n.position.x + b.w / 2,
-          y: n.position.y + b.h / 2,
-        })
+    if (rest.length) {
+      const res = layoutNodes(
+        rest,
+        wiring,
+        // No leaf grids: a straight line from the hub would cross every
+        // card stacked in front of the one it serves.
+        {
+          sizeOf: sizer(boxes, sizeOf),
+          compact: mode === "simple",
+          leafGrids: false,
+          ...(rankGap ? { rankGap } : {}),
+          reuseRanks: true,
+          waypoints: false,
+        },
+        pins,
+        direction,
+        levels,
+        mainOffsets
+      )
+      for (const n of res.nodes) {
+        const b = boxes.get(n.id)
+        if (b)
+          centres.set(n.id, {
+            x: n.position.x + b.w / 2,
+            y: n.position.y + b.h / 2,
+          })
+      }
+    }
+    if (packed.size) {
+      let x0 = Infinity
+      let y0 = Infinity
+      let x1 = -Infinity
+      let y1 = -Infinity
+      for (const [id, c] of centres) {
+        const b = boxes.get(id)
+        if (!b) continue
+        x0 = Math.min(x0, c.x - b.w / 2)
+        y0 = Math.min(y0, c.y - b.h / 2)
+        x1 = Math.max(x1, c.x + b.w / 2)
+        y1 = Math.max(y1, c.y + b.h / 2)
+      }
+      const above = x1 > x0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null
+      const items = rfNodes.flatMap((n) => {
+        const b = packed.has(n.id) ? boxes.get(n.id) : undefined
+        if (!b) return []
+        const d = n.data as { name?: string; role?: { name?: string } | null }
+        return [
+          {
+            id: n.id,
+            group: d.role?.name ?? "",
+            name: d.name ?? n.id,
+            w: b.w,
+            h: b.h,
+          },
+        ]
+      })
+      for (const [id, c] of packLoose(items, above)) centres.set(id, c)
     }
     return { centres }
   }
