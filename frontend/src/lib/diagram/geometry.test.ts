@@ -12,6 +12,8 @@ import {
   linkPath,
   inlinePlace,
   inlineSpan,
+  NOTE,
+  noteLayout,
   PORT_H,
   routePoints,
   routePolyline,
@@ -273,6 +275,81 @@ describe("cardText", () => {
   })
 })
 
+describe("noteLayout", () => {
+  // 7px a character, so widths are easy to follow.
+  const measure = (t: string) => t.length * 7
+
+  it("centres a text note on its point, a line per line", () => {
+    const lay = noteLayout(
+      { id: "n", x: 100, y: 50, text: "MPLS\nL3VPN" },
+      measure
+    )
+    const { size, lh } = NOTE.TEXT.m
+    expect(lay.size).toBe(size)
+    expect(lay.box).toEqual({ x: 100 - 17.5, y: 50 - lh, w: 35, h: 2 * lh })
+    expect(lay.lines.map((l) => [l.text, l.x])).toEqual([
+      ["MPLS", 100],
+      ["L3VPN", 100],
+    ])
+    expect(lay.lines[1].y - lay.lines[0].y).toBe(lh)
+    expect(lay.icon).toBeUndefined()
+    expect(lay.frame).toBeUndefined()
+  })
+
+  it("sizes text by the note's size", () => {
+    const at = { id: "n", x: 0, y: 0, text: "PNI" }
+    const s = noteLayout({ ...at, size: "s" }, measure)
+    const l = noteLayout({ ...at, size: "l" }, measure)
+    expect([s.size, l.size]).toEqual([NOTE.TEXT.s.size, NOTE.TEXT.l.size])
+    expect(s.box.h).toBeLessThan(l.box.h)
+    // Anything else is medium.
+    const odd = { ...at, size: "xl" } as unknown as Parameters<
+      typeof noteLayout
+    >[0]
+    expect(noteLayout(odd, measure).size).toBe(NOTE.TEXT.m.size)
+  })
+
+  it("pads an outlined note, and its outline is its box", () => {
+    const lay = noteLayout(
+      { id: "n", x: 0, y: 0, text: "PNI", outline: true },
+      measure
+    )
+    expect(lay.frame).toEqual(lay.box)
+    expect(lay.box.w).toBe(21 + 2 * NOTE.PAD_X)
+    expect(lay.box.h).toBe(NOTE.TEXT.m.lh + 2 * NOTE.PAD_Y)
+  })
+
+  it("puts an icon's caption under it, both centred", () => {
+    const { icon, lh } = NOTE.ICON.m
+    const lay = noteLayout(
+      { id: "n", x: 200, y: 100, icon: "cloud", text: "Internet · DC02" },
+      measure
+    )
+    const w = 15 * 7
+    expect(lay.box).toEqual({
+      x: 200 - w / 2,
+      y: 100 - (icon + NOTE.GAP + lh) / 2,
+      w,
+      h: icon + NOTE.GAP + lh,
+    })
+    expect(lay.icon).toEqual({
+      x: 200 - icon / 2,
+      y: lay.box.y,
+      w: icon,
+      h: icon,
+    })
+    expect(lay.lines[0].x).toBe(200)
+    expect(lay.lines[0].y).toBeGreaterThan(lay.icon!.y + icon + NOTE.GAP)
+    // An icon is never outlined; without a caption it is the icon alone.
+    const bare = noteLayout(
+      { id: "n", x: 0, y: 0, icon: "globe", outline: true },
+      measure
+    )
+    expect(bare.frame).toBeUndefined()
+    expect(bare.box).toEqual({ x: -icon / 2, y: -icon / 2, w: icon, h: icon })
+  })
+})
+
 describe("documentBounds", () => {
   it("holds every band, card, nub, route point and label", () => {
     const b = documentBounds(fabric)
@@ -288,6 +365,10 @@ describe("documentBounds", () => {
       linkLabels(l)
         .flatMap(labelCorners)
         .forEach((p) => expect(inside(p)).toBe(true))
+    }
+    for (const n of fabric.notes) {
+      const r = noteLayout(n).box
+      expect(inside(r) && inside({ x: r.x + r.w, y: r.y + r.h })).toBe(true)
     }
     expect(fabric.bounds).toEqual(b)
   })

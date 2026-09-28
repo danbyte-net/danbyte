@@ -9,7 +9,6 @@ import {
   NOTE,
 } from "./geometry"
 import type { LabelBlock } from "./geometry"
-import { NOTE_ICONS } from "./icons"
 import { baselineAt, measureText } from "./measure"
 import type { Measure } from "./measure"
 import { toSvg } from "./svg"
@@ -399,24 +398,6 @@ const holds = (o: Rect, r: Rect) =>
   r.y + r.h <= o.y + o.h + 0.5
 const contains = (o: Rect, p: Pt) =>
   p.x >= o.x && p.x <= o.x + o.w && p.y >= o.y && p.y <= o.y + o.h
-
-function lucideDataUri(name: keyof typeof NOTE_ICONS): string {
-  const body = NOTE_ICONS[name]
-    .map(
-      ([tag, a]) =>
-        `<${tag}${Object.entries(a)
-          .map(([k, v]) => ` ${k}="${xmlEscape(v)}"`)
-          .join("")}/>`
-    )
-    .join("")
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" ` +
-    `viewBox="0 0 24 24" fill="none" stroke="${PRINT.subtle}" ` +
-    `stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
-    `${body}</svg>`
-  // draw.io's own form: `;base64` is left out, as `;` separates styles.
-  return `data:image/svg+xml,${btoa(svg)}`
-}
 
 function page(
   doc: DiagramDocument,
@@ -896,58 +877,81 @@ function page(
   }
 
   // ── Notes ──
+  /** A note as draw.io's own shapes, to restyle there like any other: text
+   * as a text cell; a cloud as draw.io's cloud, a building as the network
+   * library's and a globe as a circle, each with its caption under it. */
   function note(n: DiagramNote) {
-    const id = noteIds.get(n) ?? ""
     const lay = noteLayout(n, measure)
-    const icon = (x: number, y: number, cid: string, pid: string) =>
-      `<mxCell${attrs({
-        id: cid,
-        value: "",
-        style: style(["shape=image"], {
-          html: 1,
-          aspect: "fixed",
-          imageAspect: 0,
-          movable: cid === id ? undefined : 0,
-          image: n.icon ? lucideDataUri(n.icon) : undefined,
-        }),
-        vertex: "1",
-        parent: pid,
-      })}>${geometry({ x, y, w: NOTE.ICON, h: NOTE.ICON })}</mxCell>`
-    if (!lay.lines.length) {
-      if (n.icon) {
-        const p = abs(n)
-        out.push(icon(p.x, p.y, id, "1"))
-      }
-      return
+    const value = lay.lines.map((l) => h(l.text)).join("<br>")
+    const font = {
+      fontFamily: FONT,
+      fontSize: lay.size,
+      fontColor: PRINT.body,
     }
-    const tx = lay.lines[0].x
-    const box = {
-      x: tx,
-      y: n.y,
-      w: Math.ceil(lay.box.x + lay.box.w - tx),
-      h: lay.lines.length * NOTE.LH,
-    }
-    out.push(
-      `<mxCell${attrs({
-        id,
-        value: lay.lines.map((l) => h(l.text)).join("<br>"),
-        style: style(["text"], {
+    const cell = (st: string, r: Rect) =>
+      out.push(
+        `<mxCell${attrs({
+          id: noteIds.get(n),
+          value,
+          style: st,
+          vertex: "1",
+          parent: "1",
+        })}>${geometry(rel(r, null))}</mxCell>`
+      )
+    if (!lay.icon) {
+      if (!lay.lines.length) return
+      cell(
+        style(["text"], {
           html: 1,
-          strokeColor: "none",
-          fillColor: "none",
-          align: "left",
-          verticalAlign: "top",
+          align: "center",
+          verticalAlign: "middle",
           whiteSpace: "nowrap",
           spacing: 0,
-          fontFamily: FONT,
-          fontSize: NOTE.SIZE,
-          fontColor: PRINT.body,
+          ...(lay.frame
+            ? {
+                rounded: 1,
+                absoluteArcSize: 1,
+                arcSize: 2 * NOTE.RADIUS,
+                strokeColor: PRINT.border,
+                fillColor: PRINT.paper,
+              }
+            : { strokeColor: "none", fillColor: "none" }),
+          ...font,
         }),
-        vertex: "1",
-        parent: "1",
-      })}>${geometry(rel(box, null))}</mxCell>`
+        lay.box
+      )
+      return
+    }
+    // The shape covers what the Lucide glyph draws of its 24px box.
+    const ic = lay.icon
+    const k = ic.w / 24
+    const [shape, gx, gy, gw, gh] =
+      n.icon === "cloud"
+        ? (["ellipse;shape=cloud", 2, 5, 20, 14] as const)
+        : n.icon === "globe"
+          ? (["ellipse", 2, 2, 20, 20] as const)
+          : (["shape=mxgraph.networks.business_center", 4, 3, 16, 18] as const)
+    const box = { x: ic.x + gx * k, y: ic.y + gy * k, w: gw * k, h: gh * k }
+    cell(
+      style([shape], {
+        html: 1,
+        aspect: n.icon === "cloud" ? undefined : "fixed",
+        outlineConnect: 0,
+        fillColor: "none",
+        strokeColor: PRINT.subtle,
+        strokeWidth: NOTE.STROKE,
+        verticalLabelPosition: "bottom",
+        verticalAlign: "top",
+        labelPosition: "center",
+        align: "center",
+        whiteSpace: "nowrap",
+        spacing: 0,
+        // The caption where the canvas puts it: under the icon's box.
+        spacingTop: ic.y + ic.h + NOTE.GAP - (box.y + box.h),
+        ...font,
+      }),
+      box
     )
-    if (n.icon) out.push(icon(n.x - tx, 0, take(`${id}-icon`), id))
   }
 
   // ── Junctions ──

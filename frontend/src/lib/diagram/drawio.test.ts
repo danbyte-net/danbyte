@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { fabric } from "./__fixtures__/fabric"
 import { fabricSimple } from "./__fixtures__/fabric-simple"
 import { drawioPointAt, toDrawio, toDrawioSvg } from "./drawio"
-import { linkLabels, polylineLength } from "./geometry"
+import { linkLabels, NOTE, noteLayout, polylineLength } from "./geometry"
 import type { LabelBlock } from "./geometry"
 import { BAND, bandPaint, LABEL, PRINT } from "./theme"
 import type { DiagramDocument, DiagramLink, Pt, Rect } from "./types"
@@ -618,16 +618,72 @@ describe("toDrawio", () => {
     ])
   })
 
-  it("writes notes as text, with the Lucide icon beside them", () => {
+  it("writes notes as draw.io's own shapes, where the canvas draws them", () => {
     const page = pages(SIMPLE())[0]
-    const note = page.get("note-internet")!
-    expect(note.value).toBe("Internet")
-    expect(note.style).toMatchObject({ text: "", align: "left" })
-    expect(page.get("note-rack")!.value).toBe("Rack A12<br>row 3")
-    const icon = page.get("note-internet-icon")!
-    expect(icon.parent).toBe("note-internet")
-    const image = /^data:image\/svg\+xml,(.+)$/.exec(icon.style.image)!
-    expect(atob(image[1])).toContain('d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79')
+    const s = shiftOf(fabricSimple)
+    const layout = (id: string) =>
+      noteLayout(fabricSimple.notes.find((n) => n.id === id)!)
+
+    // An outlined text note: a text cell, centred, on a hairline chip.
+    const rack = page.get("note-rack")!
+    expect(rack.value).toBe("Rack A12<br>row 3")
+    expect(rack.parent).toBe("1")
+    expect(rack.style).toMatchObject({
+      text: "",
+      align: "center",
+      verticalAlign: "middle",
+      strokeColor: PRINT.border,
+      fillColor: PRINT.paper,
+      fontSize: String(NOTE.TEXT.m.size),
+    })
+    const box = layout("note-rack").box
+    const r = absBox(page, "note-rack")
+    expect(r.x).toBeCloseTo(box.x + s.x, 1)
+    expect(r.y).toBeCloseTo(box.y + s.y, 1)
+    expect(r.w).toBeCloseTo(box.w, 1)
+    expect(r.h).toBeCloseTo(box.h, 1)
+
+    // A cloud: the built-in cloud over the glyph, its caption under it.
+    const cloud = page.get("note-internet")!
+    expect(cloud.value).toBe("Internet · DC02")
+    expect(cloud.style).toMatchObject({
+      ellipse: "",
+      shape: "cloud",
+      fillColor: "none",
+      strokeColor: PRINT.subtle,
+      verticalLabelPosition: "bottom",
+      verticalAlign: "top",
+      fontSize: String(NOTE.ICON.m.size),
+    })
+    const ic = layout("note-internet").icon!
+    const g = absBox(page, "note-internet")
+    expect(g.x).toBeCloseTo(ic.x + s.x + (2 * ic.w) / 24, 1)
+    expect(g.w).toBeCloseTo((20 * ic.w) / 24, 1)
+    // The caption starts where the canvas puts it.
+    expect(g.y + g.h + Number(cloud.style.spacingTop)).toBeCloseTo(
+      ic.y + s.y + ic.h + NOTE.GAP,
+      1
+    )
+
+    // A building: the network library's, small.
+    const site = page.get("note-site")!
+    expect(site.value).toBe("Oslo DC1")
+    expect(site.style.shape).toBe("mxgraph.networks.business_center")
+    expect(site.style.fontSize).toBe(String(NOTE.ICON.s.size))
+    // No pictures: every note is a shape draw.io can restyle.
+    expect(SIMPLE()).not.toContain("data:image/svg+xml")
+  })
+
+  it("draws a globe as a circle, and skips a note with nothing to draw", () => {
+    const doc = clone(fabricSimple)
+    doc.notes = [
+      { id: "g", x: 10, y: 10, icon: "globe" },
+      { id: "empty", x: 50, y: 50, text: "" },
+    ]
+    const page = pages(toDrawio([doc]))[0]
+    expect(page.get("g")!.style).toMatchObject({ ellipse: "", aspect: "fixed" })
+    expect(page.get("g")!.value).toBe("")
+    expect(page.has("empty")).toBe(false)
   })
 
   it("writes a page per document", () => {

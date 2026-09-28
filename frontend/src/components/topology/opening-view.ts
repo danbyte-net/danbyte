@@ -20,9 +20,9 @@ export const OPEN_ZOOM = 0.1
  * it stops taking the nearest: the fewer, the closer the camera. */
 export const OPEN_CARDS = 24
 
-/** Nodes that are not devices on the map: zones, bands and breakout
- * junctions. */
-const OTHER = new Set(["zone", "band", "junction"])
+/** Nodes that are not devices on the map: zones, bands, notes and
+ * breakout junctions. */
+const OTHER = new Set(["zone", "band", "note", "junction"])
 
 export interface Box {
   x: number

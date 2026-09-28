@@ -207,6 +207,36 @@ describe("toSvg", () => {
     expect(out.match(/<use /g)).toHaveLength(2)
   })
 
+  it("draws notes over everything: centred text, icons, an outline", () => {
+    const root = parse(toSvg(fabric)).documentElement
+    const g = root.querySelector("#notes")!
+    // Last but the footer: over the cards and the labels.
+    expect(root.querySelector("#labels ~ #notes")).toBe(g)
+    const [cloud, rack, site] = Array.from(g.children)
+    const texts = (el: Element) =>
+      Array.from(el.querySelectorAll("text")).map((t) => [
+        t.textContent,
+        t.getAttribute("text-anchor"),
+        t.getAttribute("x"),
+      ])
+    expect(texts(cloud)).toEqual([["Internet · DC02", "middle", "1060"]])
+    expect(texts(rack)).toEqual([
+      ["Rack A12", "middle", "400"],
+      ["row 3", "middle", "400"],
+    ])
+    // The icon scaled from Lucide's 24px grid, its stroke kept at 1.5px.
+    const icon = cloud.querySelector("g")!
+    expect(icon.getAttribute("transform")).toMatch(/scale\(2\.0000\)$/)
+    expect(icon.getAttribute("stroke-width")).toBe("0.75")
+    expect(icon.getAttribute("stroke")).toBe(PRINT.subtle)
+    expect(site.querySelector("g")!.getAttribute("transform")).toMatch(
+      /scale\(1\.3333\)$/
+    )
+    // Only the outlined note has a chip.
+    expect(rack.querySelector("rect")!.getAttribute("fill")).toBe(PRINT.paper)
+    expect(cloud.querySelector("rect")).toBeNull()
+  })
+
   it("grows the page to fit the title block under a small drawing", () => {
     const tiny: DiagramDocument = {
       ...clone(fabric),

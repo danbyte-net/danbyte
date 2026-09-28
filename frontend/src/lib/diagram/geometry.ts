@@ -523,29 +523,75 @@ export function cardText(
 
 // ── Notes ────────────────────────────────────────────────────────────────
 
-export const NOTE = { ICON: 16, GAP: 4, SIZE: 12, LH: 16 } as const
+/** Notes, per size: a text note's font and line height; an icon note's
+ * icon box, and the font and line height of the caption under it. The
+ * canvas note (annotation-node.tsx) is drawn from the same numbers. */
+export const NOTE = {
+  TEXT: {
+    s: { size: 12, lh: 16 },
+    m: { size: 14, lh: 20 },
+    l: { size: 18, lh: 24 },
+  },
+  ICON: {
+    s: { icon: 32, size: 12, lh: 16 },
+    m: { icon: 48, size: 13, lh: 18 },
+    l: { icon: 72, size: 15, lh: 20 },
+  },
+  WEIGHT: 500 as Weight,
+  /** Between an icon and its caption. */
+  GAP: 4,
+  /** An outlined note's padding (its 1px edge included) and corners. */
+  PAD_X: 8,
+  PAD_Y: 3,
+  RADIUS: 6,
+  /** An icon's stroke, px at every size. */
+  STROKE: 1.5,
+} as const
 
-/** A note's text lines with baselines, and its box. */
+export interface NoteLayout {
+  /** The icon's box (an icon note). */
+  icon?: Rect
+  /** The text lines, centred on the note (`text-anchor: middle`). */
+  lines: PlacedText[]
+  size: number
+  lh: number
+  /** The outline (an outlined text note). */
+  frame?: Rect
+  /** Everything the note draws, centred on its point. */
+  box: Rect
+}
+
+/** Where a note's icon, text and outline go. */
 export function noteLayout(
   note: DiagramNote,
   measure: Measure = measureText
-): { lines: PlacedText[]; box: Rect } {
-  const tx = note.x + (note.icon ? NOTE.ICON + NOTE.GAP : 0)
+): NoteLayout {
+  const sz = note.size === "s" || note.size === "l" ? note.size : "m"
   const texts = note.text ? note.text.split("\n") : []
-  const lines = texts.map((text, i) => ({
-    text,
-    x: tx,
-    y: baselineAt(note.y + i * NOTE.LH, NOTE.SIZE, NOTE.LH),
-  }))
-  const textW = Math.max(0, ...texts.map((t) => measure(t, NOTE.SIZE)))
+  const icon = note.icon ? NOTE.ICON[sz].icon : 0
+  const { size, lh } = note.icon ? NOTE.ICON[sz] : NOTE.TEXT[sz]
+  const outline = !note.icon && !!note.outline && texts.length > 0
+  const padX = outline ? NOTE.PAD_X : 0
+  const padY = outline ? NOTE.PAD_Y : 0
+  const gap = icon && texts.length ? NOTE.GAP : 0
+  const textW = Math.max(0, ...texts.map((t) => measure(t, size, NOTE.WEIGHT)))
+  const w = Math.max(icon, textW) + 2 * padX
+  const h = icon + gap + texts.length * lh + 2 * padY
+  const box = { x: note.x - w / 2, y: note.y - h / 2, w, h }
+  const top = box.y + padY + icon + gap
   return {
-    lines,
-    box: {
+    ...(icon
+      ? { icon: { x: note.x - icon / 2, y: box.y, w: icon, h: icon } }
+      : {}),
+    lines: texts.map((text, i) => ({
+      text,
       x: note.x,
-      y: note.y,
-      w: tx - note.x + textW,
-      h: Math.max(note.icon ? NOTE.ICON : 0, lines.length * NOTE.LH),
-    },
+      y: baselineAt(top + i * lh, size, lh),
+    })),
+    size,
+    lh,
+    ...(outline ? { frame: box } : {}),
+    box,
   }
 }
 

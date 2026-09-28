@@ -465,7 +465,8 @@ export function regionBands(
     }))
 }
 
-/** Saved-view notes as document notes. */
+/** Saved-view notes as document notes. A note is in an area when its
+ * centre is. */
 export function viewNotes(
   notes: readonly TopologyViewNote[] = [],
   area?: Rect | null
@@ -486,6 +487,8 @@ export function viewNotes(
       y: n.y,
       ...(n.text ? { text: n.text } : {}),
       ...(n.icon ? { icon: n.icon } : {}),
+      ...(n.size && n.size !== "m" ? { size: n.size } : {}),
+      ...(n.outline ? { outline: true } : {}),
     }))
 }
 

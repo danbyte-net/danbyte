@@ -608,6 +608,8 @@ out automatically pin the cards already there, so nothing moves under you.
 **Arrange ▸ Bands by role** (or *by device type*) stacks the diagram into
 labelled layers - see [Bands and zones](#bands-and-zones). A device
 dropped into a band lands in that band's row, beside the cards there.
+**Add ▸ Text**, *Cloud*, *Globe* and *Building* put [notes](#notes) on the
+diagram.
 
 **Saving.** Adding, placing and removing devices are edits to the view: undo
 steps like any other, and **Save** (++ctrl+s++) writes them - see
@@ -728,6 +730,34 @@ takes one of the explicit actions above - and remove cards only from a
 [diagram built by hand](#building-a-diagram); ++ctrl+z++ puts either back.
 Like the arrangement, bands and zones are kept **per view style**: a box
 that frames four Flat chips would frame half a card in Wiring.
+
+### Notes
+
+Notes (Diagram tab only) are the words and markers a hand-drawn diagram
+carries beside its devices: "NSP1" over a column, "MPLS L3VPN" across a
+band, "PNI" next to a line, a cloud captioned "Internet · DC02".
+
+- **Add ▸ Text** puts a text note in the middle of the screen, open for
+  typing (right-click empty canvas → *Add text* puts it where you clicked).
+  **Add ▸ Cloud**, **Globe** or **Building** puts a Lucide icon there, with
+  a caption to type under it.
+- **Edit** by double-clicking, or with the pencil above a selected note.
+  ++enter++ keeps the text, ++shift+enter++ starts a new line, ++esc++
+  leaves it as it was. Up to 200 characters. A text note left empty is
+  deleted; an icon without a caption stays.
+- **Size:** **S**, **M** or **L** from the toolbar above a selected note.
+- **Outline** (text notes): puts the text on a small chip with a hairline
+  edge, so it reads on top of a line.
+- **Icon** (icon notes): switch between cloud, globe and building.
+- **Move** a note by dragging it. It sits on top of the cards and the lines
+  and nothing attaches to it: a cable never ends on a note, and a band does
+  not carry one.
+- **Delete** it from the toolbar, or select it and press ++delete++ (or
+  ++backspace++).
+
+Notes are in muted ink and never coloured. Every change is one undo step,
+and they save with the view (the default map keeps its own in this
+browser). The SVG, PNG and draw.io exports draw them where they stand.
 
 The arrangement, zones and hidden objects belong to the map you made them
 on. A saved view carries its own, the default map keeps its own in this
@@ -942,7 +972,7 @@ your changes); nothing is overwritten silently.
 | ++ctrl+s++ / ++cmd+s++ | Save (Save as… on a map that is not a saved view) |
 | ++ctrl+z++ / ++cmd+z++ | Undo the last edit to the map |
 | ++ctrl+shift+z++ / ++cmd+shift+z++ (or ++ctrl+y++) | Redo |
-| ++delete++ / ++backspace++ | Remove the selected cards from a diagram built by hand |
+| ++delete++ / ++backspace++ | Remove the selected notes, and the selected cards from a diagram built by hand |
 | ++enter++ (device list) | Place the selected devices in the middle of the screen |
 | ++ctrl++ / ++cmd++ / ++shift++ + click (device list) | Select several devices to drag at once |
 
@@ -1059,7 +1089,8 @@ every elbow in its lane; the same line types, Cyclical arcs and each link's
 own line (curves follow draw.io's curved rule, so the draw.io file
 matches); a breakout's split points; the subnet and count chips where the
 map shows them (a chip the map only shows on hover is left out); bands,
-titled as on the canvas, and zones. The monitoring pill is
+titled as on the canvas, and zones; and the [notes](#notes), over
+everything. The monitoring pill is
 the one on screen when the file is made. Selection, hover, search dimming
 and hidden devices or link families never reach a file.
 
@@ -1098,6 +1129,10 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   carries them when you drag it. Zones hold their cards the same way. A
   side band is a shape behind the rows with its label turned to read
   upwards, as a card can sit in only one container.
+- **Notes** are draw.io's own shapes, to restyle there like anything else:
+  a text note is a text cell (on a rounded box when it is outlined); a
+  cloud is draw.io's cloud, a building the network library's *Business
+  Center* and a globe a circle, each with its caption underneath.
 - **Layers:** LLDP neighbours and BGP sessions are on their own layers,
   *Discovered (LLDP)* and *BGP sessions*, so you can hide them in one click
   (*View ▸ Layers*, Ctrl+Shift+L).
@@ -1374,7 +1409,7 @@ earlier versions load and save unchanged.
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |
-| `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building}`; `id` is unique, `text` at most 200 characters |
+| `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building, size: s\|m\|l, outline: bool}`; `x, y` is the note's centre, `id` is unique, `text` at most 200 characters, `size` absent = `m` |
 
 A value outside those shapes is a 400 naming the key. Keys are device ids, so
 a shared view's `links`, `nodes` and positions can name devices a viewer may

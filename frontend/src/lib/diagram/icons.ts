@@ -16,17 +16,17 @@ export const NOTE_ICONS: Record<NoteIcon, IconNode> = {
     ["path", { d: "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" }],
     ["path", { d: "M2 12h20" }],
   ],
+  // Lucide's `Building2`, stored as "building".
   building: [
-    ["path", { d: "M12 10h.01" }],
-    ["path", { d: "M12 14h.01" }],
-    ["path", { d: "M12 6h.01" }],
-    ["path", { d: "M16 10h.01" }],
-    ["path", { d: "M16 14h.01" }],
-    ["path", { d: "M16 6h.01" }],
-    ["path", { d: "M8 10h.01" }],
-    ["path", { d: "M8 14h.01" }],
-    ["path", { d: "M8 6h.01" }],
-    ["path", { d: "M9 22v-3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" }],
-    ["rect", { x: "4", y: "2", width: "16", height: "20", rx: "2" }],
+    ["path", { d: "M10 12h4" }],
+    ["path", { d: "M10 8h4" }],
+    ["path", { d: "M14 21v-3a2 2 0 0 0-4 0v3" }],
+    [
+      "path",
+      {
+        d: "M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2",
+      },
+    ],
+    ["path", { d: "M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" }],
   ],
 }

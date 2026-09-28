@@ -33,6 +33,7 @@ import type {
   TopoEdge,
   TopologyGraph,
   TopologyLinkOverride,
+  TopologyViewNote,
 } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
 import { EmptyState } from "@/components/empty-state"
@@ -64,6 +65,9 @@ import { OverlayEdge } from "./overlay-edge"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { BAND_DRAG_HANDLE, BAND_NODE_CLASS } from "./diagram/band-node"
+import { noteToNode, notesAt, selectedNotes } from "./diagram/annotation-node"
+import type { NoteCallbacks, NoteData } from "./diagram/annotation-node"
+import { patchNote, readNotes, removeNotes } from "./diagram/notes"
 import type { BandData } from "./diagram/band-node"
 import { isRow, membersOf, paintOrder } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
@@ -143,6 +147,9 @@ const ZONE_Z = 0
  * graph - the canvas keeps them across rebuilds and out of the
  * arrangement. */
 const isRegionNode = (n: Node) => n.type === "zone" || n.type === "band"
+/** Regions and Diagram notes: drawn on the map, but not part of the
+ * arrangement, the export's cards, the search or the device panel. */
+const isOverlayNode = (n: Node) => isRegionNode(n) || n.type === "note"
 
 /** A band edit that moves cards with it (diagram/bands.ts), for the parent
  * to apply to the arrangement and the bands together. */
@@ -264,6 +271,8 @@ export interface CanvasHandle {
   focusEdge: (id: string) => void
   /** Fit the viewport to one zone's box. */
   focusZone: (box: { x: number; y: number; w: number; h: number }) => void
+  /** The ids of the selected Diagram notes. */
+  selectedNotes: () => string[]
   /** Render the graph to a PNG data URL - the whole diagram, or just the
    * visible viewport. */
   exportPng: (viewportOnly?: boolean) => Promise<string | null>
@@ -1038,6 +1047,12 @@ export interface TopologyCanvasProps {
    * moves cards too, so the parent applies it (without it, a resize is a
    * plain `onZonesChange`). */
   onBandEdit?: (edit: CanvasBandEdit) => void
+  /** Diagram notes (diagram/notes.ts), drawn over the map. */
+  notes?: TopologyViewNote[]
+  /** A note was moved, edited or deleted - the parent keeps the list. */
+  onNotesChange?: (notes: TopologyViewNote[]) => void
+  /** A note just added: it opens selected, in its editor. */
+  editNoteId?: string | null
   /** Bump to discard drags/saved positions and re-run the auto layout. */
   layoutTick?: number
   /** Identity of the underlying query (filters/focus/grouping). When it
@@ -1236,6 +1251,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     zones,
     onZonesChange,
     onBandEdit,
+    notes,
+    onNotesChange,
+    editNoteId,
     layoutTick = 0,
     fitKey = "",
     matchedIds,
@@ -1564,6 +1582,31 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     )
     .join("|")
 
+  // ── notes ──────────────────────────────────────────────────────────
+  // Held like the zones: outside `built`, re-seeded when the parent's list
+  // changes, callbacks built once and reading the list through a ref.
+  const notesRef = useRef<TopologyViewNote[]>([])
+  notesRef.current = useMemo(() => readNotes(notes), [notes])
+  const onNotesChangeRef = useRef(onNotesChange)
+  onNotesChangeRef.current = onNotesChange
+  const editNoteRef = useRef(editNoteId)
+  editNoteRef.current = editNoteId
+  const noteCb = useMemo<NoteCallbacks>(
+    () => ({
+      onChange: (id, patch) => {
+        const next = patchNote(notesRef.current, id, patch)
+        if (next !== notesRef.current) onNotesChangeRef.current?.(next)
+      },
+      onDelete: (id) =>
+        onNotesChangeRef.current?.(removeNotes(notesRef.current, [id])),
+    }),
+    []
+  )
+  const noteNodes = useRef<Node[]>([])
+  /** Notes this canvas has drawn: only a note new to it opens its editor. */
+  const seenNotes = useRef(new Set<string>())
+  const noteSig = useMemo(() => JSON.stringify(notes ?? []), [notes])
+
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges)
   // Zoom level-of-detail: far out, edge labels (and further out, port text)
@@ -1684,7 +1727,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const unmatched =
         !!searchSet &&
         !searchSet.has(n.id) &&
-        !isRegionNode(n) &&
+        !isOverlayNode(n) &&
         n.type !== "junction"
       return !unmatched &&
         (!spotSet || spotSet.has(n.id) || n.type === "sitegroup")
@@ -1699,7 +1742,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     setNodes((cur) =>
       cur.some((n) => n.selected !== (n.id === focusNodeId))
         ? cur.map((n) =>
-            isRegionNode(n) || n.selected === (n.id === focusNodeId)
+            isOverlayNode(n) || n.selected === (n.id === focusNodeId)
               ? n
               : { ...n, selected: n.id === focusNodeId }
           )
@@ -1804,7 +1847,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // A new layout is a new map - a stale spotlight would dim everything
     // with no visible cause.
     if (relaidOut) setSpotId(null)
-    const first = !prevNodes.current.some((n) => !isRegionNode(n))
+    const first = !prevNodes.current.some((n) => !isOverlayNode(n))
     // The map was on screen empty (a view being built from scratch): its
     // first cards were dropped where the camera is, so it stays there.
     const wasEmpty = shownEmpty.current
@@ -1852,6 +1895,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             setNodes([
               ...zoneNodes.current,
               ...withCards(kept, re.cards, re.junctions),
+              ...noteNodes.current,
             ])
             setEdges(re.edges)
           },
@@ -1867,8 +1911,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       diagramEdges = re.edges
       nextNodes = withCards(nextNodes, re.cards, re.junctions)
     }
-    // Zones are not part of the built graph, so a rebuild would drop them.
-    setNodes([...zoneNodes.current, ...nextNodes])
+    // Zones and notes are not part of the built graph, so a rebuild would
+    // drop them.
+    setNodes([...zoneNodes.current, ...nextNodes, ...noteNodes.current])
     if (diagramEdges) {
       setEdges(diagramEdges)
     } else if (routingActive && keepingDrags) {
@@ -1961,6 +2006,37 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     })
   }, [zoneSig, zoneCb, setNodes])
 
+  // Note nodes: last in the array, so they paint over the cards. A note
+  // just added is the selection, in its editor.
+  useEffect(() => {
+    const want = editNoteRef.current
+    const fresh =
+      !!want &&
+      !seenNotes.current.has(want) &&
+      notesRef.current.some((n) => n.id === want)
+    for (const n of notesRef.current) seenNotes.current.add(n.id)
+    const made = notesRef.current.map((n) =>
+      noteToNode(n, noteCb, { autoEdit: fresh && n.id === want })
+    )
+    setNodes((cur) => {
+      const sel = new Set(
+        cur.filter((n) => n.type === "note" && n.selected).map((n) => n.id)
+      )
+      noteNodes.current = made.map((n) =>
+        (fresh ? !!(n.data as NoteData).autoEdit : sel.has(n.id))
+          ? { ...n, selected: true }
+          : n
+      )
+      const rest = cur.filter((n) => n.type !== "note")
+      return [
+        ...(fresh
+          ? rest.map((n) => (n.selected ? { ...n, selected: false } : n))
+          : rest),
+        ...noteNodes.current,
+      ]
+    })
+  }, [noteSig, noteCb, setNodes])
+
   // What an export reads, through a ref so the handle keeps one identity:
   // the canvas's own state (not the rendered nodes and edges, which carry
   // the spotlight, hover emphasis and search dimming).
@@ -1974,9 +2050,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         ...Object.fromEntries(
           flow
             .getNodes()
-            // Zones and bands carry their own geometry - one in the
+            // Zones, bands and notes carry their own geometry - one in the
             // arrangement would be a node the layout keeps trying to place.
-            .filter((n) => !isRegionNode(n))
+            .filter((n) => !isOverlayNode(n))
             .map((n) => [
               n.id,
               [n.position.x, n.position.y] as [number, number],
@@ -2053,6 +2129,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           { duration: 500, padding: 0.2 }
         )
       },
+      selectedNotes: () => selectedNotes(flow.getNodes()),
       exportPng: async (viewportOnly = false) => {
         const el = wrapper.current?.querySelector<HTMLElement>(
           ".react-flow__viewport"
@@ -2175,7 +2252,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             h: el.clientHeight / vp.zoom,
           }
         }
-        const cards = live.nodes.filter((n) => !isRegionNode(n))
+        const cards = live.nodes.filter((n) => !isOverlayNode(n))
         const model = modelRef.current
         if (live.diagram && model)
           return toDocument(
@@ -2197,7 +2274,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       boxes: () => {
         const out: Record<string, Rect> = {}
         for (const n of flow.getNodes()) {
-          if (isRegionNode(n) || n.type === "junction" || n.hidden) continue
+          if (isOverlayNode(n) || n.type === "junction" || n.hidden) continue
           const w = n.width ?? n.measured?.width
           const h = n.height ?? n.measured?.height
           if (!w || !h) continue
@@ -2251,8 +2328,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   const onNodeClick = useCallback(
     (_: unknown, node: Node) => {
-      // A band or zone is selected for its own toolbar - not a device.
-      if (isRegionNode(node)) return
+      // A band, zone or note is selected for its own toolbar - not a
+      // device.
+      if (isOverlayNode(node)) return
       // A breakout's junction is part of its cable.
       if (node.type === "junction") {
         const { raw, trunk } = node.data as {
@@ -2352,7 +2430,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const boxes: Record<string, Rect> = {}
       for (const n of all) {
         // Selected cards already move with the drag.
-        if (isRegionNode(n) || n.type === "junction" || n.hidden) continue
+        if (isOverlayNode(n) || n.type === "junction" || n.hidden) continue
         if (n.selected) continue
         const w = n.width ?? n.measured?.width
         const h = n.height ?? n.measured?.height
@@ -2573,9 +2651,20 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     lostWorker,
   ])
 
-  /** A drag ends: a band's cards land with it, then as any drag. */
+  /** Where the notes were dragged, back to the parent. */
+  const emitNotes = useCallback(() => {
+    if (!onNotesChangeRef.current) return
+    const next = notesAt(flow.getNodes(), notesRef.current)
+    if (next) onNotesChangeRef.current(next)
+  }, [flow])
+
+  /** A drag ends: a band's cards land with it, then as any drag. Notes
+   * alone moved nothing the lines or the arrangement care about. */
   const onDragStop = useCallback(
-    (_: unknown, node: Node) => {
+    (_: unknown, node: Node, dragged?: Node[]) => {
+      emitNotes()
+      if ((dragged?.length ? dragged : [node]).every((n) => n.type === "note"))
+        return
       const at = carry(node)
       bandDrag.current = null
       if (at)
@@ -2584,7 +2673,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         )
       onNodeDragStop()
     },
-    [carry, onNodeDragStop]
+    [carry, onNodeDragStop, emitNotes]
   )
 
   if (!mounted)

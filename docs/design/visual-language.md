@@ -67,6 +67,9 @@ a lot of data fast - typography and spacing serve that, not decoration.
   toward `--border`, title centred on top - with an optional zone swatch as a
   pastel tint; never a free colour picker, never the role colour the cards
   already carry.
+- **Canvas notes** are text in `text-foreground/75` and Lucide icons in
+  `--muted-foreground`, no box unless outlined (`border-border` on
+  `bg-card`); never coloured.
 - **Shadows**: don't. Borders define edges. Exception: dropdowns/popovers get `shadow-sm`.
 
 See `/CLAUDE.md` for the canonical class snippets per component (button,

@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1218" height="678" viewBox="-24 -24 1218 678" role="img" font-family="Inter, Inter Variable, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1218" height="684" viewBox="-24 -24 1218 684" role="img" font-family="Inter, Inter Variable, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
 <title>DC1 fabric</title>
 <desc>Acme · 2026-09-26 12:00 UTC · 11 devices · 11 links</desc>
 <defs>
 <symbol id="dg-ph0" viewBox="0 0 100 100" preserveAspectRatio="none"><image width="100" height="100" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="/></symbol>
 </defs>
-<rect x="-24" y="-24" width="1218" height="678" fill="#ffffff"/>
+<rect x="-24" y="-24" width="1218" height="684" fill="#ffffff"/>
 <g id="bands">
 <g><rect x="0" y="0" width="920" height="130" rx="8" fill="#efeff1"/><rect x="0" y="0" width="920" height="130" rx="8" fill="none" stroke="#e4e4e7" stroke-width="1"/></g>
 <g><rect x="0" y="170" width="920" height="140" rx="8" fill="#e2f4fc"/><rect x="0" y="170" width="920" height="140" rx="8" fill="none" stroke="#9fdbf6" stroke-width="1"/></g>
@@ -61,8 +61,8 @@
 <g><rect x="777.79" y="65.5" width="104.42" height="16" rx="3" fill="#ffffff" stroke="#e4e4e7" stroke-width="0.75"/><text x="830" y="77.14" text-anchor="middle" font-size="10" fill="#3f3f46">AS65001 – AS64500</text></g>
 </g>
 <g id="notes">
-<g><g transform="translate(990 440) scale(0.6667)" fill="none" stroke="#71717b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></g><text x="1010" y="452.37" font-size="12" fill="#3f3f46">Internet</text></g>
-<g><text x="400" y="552.37" font-size="12" fill="#3f3f46">Rack A12</text><text x="400" y="568.37" font-size="12" fill="#3f3f46">row 3</text></g>
-<g><g transform="translate(400 600) scale(0.6667)" fill="none" stroke="#71717b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M12 6h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/><path d="M8 6h.01"/><path d="M9 22v-3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><rect x="4" y="2" width="16" height="20" rx="2"/></g><text x="420" y="612.37" font-size="12" fill="#3f3f46">Oslo DC1</text></g>
+<g><g transform="translate(1036 515) scale(2.0000)" fill="none" stroke="#71717b" stroke-width="0.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></g><text x="1060" y="580.73" text-anchor="middle" font-size="13" font-weight="500" fill="#3f3f46">Internet · DC02</text></g>
+<g><rect x="361.99" y="517.5" width="76.02" height="45" rx="5.5" fill="#ffffff" stroke="#e4e4e7"/><text x="400" y="535.09" text-anchor="middle" font-size="14" font-weight="500" fill="#3f3f46">Rack A12</text><text x="400" y="555.09" text-anchor="middle" font-size="14" font-weight="500" fill="#3f3f46">row 3</text></g>
+<g><g transform="translate(384 584) scale(1.3333)" fill="none" stroke="#71717b" stroke-width="1.13" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/></g><text x="400" y="632.37" text-anchor="middle" font-size="12" font-weight="500" fill="#3f3f46">Oslo DC1</text></g>
 </g>
 </svg>

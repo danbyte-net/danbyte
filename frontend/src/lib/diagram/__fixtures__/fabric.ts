@@ -438,10 +438,25 @@ const bands: DiagramBand[] = [
   },
 ]
 
+// Centred on their points: an icon with its caption, an outlined text
+// note, a small icon.
 const notes: DiagramNote[] = [
-  { id: "note-internet", x: 990, y: 440, icon: "cloud", text: "Internet" },
-  { id: "note-rack", x: 400, y: 540, text: "Rack A12\nrow 3" },
-  { id: "note-site", x: 400, y: 600, icon: "building", text: "Oslo DC1" },
+  {
+    id: "note-internet",
+    x: 1060,
+    y: 550,
+    icon: "cloud",
+    text: "Internet · DC02",
+  },
+  { id: "note-rack", x: 400, y: 540, text: "Rack A12\nrow 3", outline: true },
+  {
+    id: "note-site",
+    x: 400,
+    y: 610,
+    icon: "building",
+    text: "Oslo DC1",
+    size: "s",
+  },
 ]
 
 const nodes = [

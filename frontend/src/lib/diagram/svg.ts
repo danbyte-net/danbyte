@@ -446,16 +446,21 @@ function nodeSvg(
 
 // ── Notes ────────────────────────────────────────────────────────────────
 
+/** A note: its icon in the muted line colour with the caption centred
+ * under it, or its text - on a paper chip with a hairline edge when it is
+ * outlined, so it can sit on a line. */
 function noteSvg(n: DiagramNote, measure: Measure): string {
   const out: string[] = []
+  const lay = noteLayout(n, measure)
   const icon = n.icon ? NOTE_ICONS[n.icon] : undefined
-  if (icon) {
+  if (icon && lay.icon) {
+    const k = lay.icon.w / 24
     out.push(
       `<g${attrs({
-        transform: `translate(${fmt(n.x)} ${fmt(n.y)}) scale(${(NOTE.ICON / 24).toFixed(4)})`,
+        transform: `translate(${fmt(lay.icon.x)} ${fmt(lay.icon.y)}) scale(${k.toFixed(4)})`,
         fill: "none",
         stroke: PRINT.subtle,
-        "stroke-width": 2,
+        "stroke-width": fmt(NOTE.STROKE / k),
         "stroke-linecap": "round",
         "stroke-linejoin": "round",
       })}>` +
@@ -463,12 +468,26 @@ function noteSvg(n: DiagramNote, measure: Measure): string {
         `</g>`
     )
   }
-  for (const line of noteLayout(n, measure).lines)
+  if (lay.frame)
+    out.push(
+      el("rect", {
+        x: lay.frame.x + 0.5,
+        y: lay.frame.y + 0.5,
+        width: lay.frame.w - 1,
+        height: lay.frame.h - 1,
+        rx: NOTE.RADIUS - 0.5,
+        fill: PRINT.paper,
+        stroke: PRINT.border,
+      })
+    )
+  for (const line of lay.lines)
     out.push(
       text(line.text, {
         x: line.x,
         y: line.y,
-        "font-size": NOTE.SIZE,
+        "text-anchor": "middle",
+        "font-size": lay.size,
+        "font-weight": NOTE.WEIGHT,
         fill: PRINT.body,
       })
     )

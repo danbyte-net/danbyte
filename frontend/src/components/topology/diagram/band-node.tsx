@@ -272,25 +272,31 @@ export function BandNode({
   )
 }
 
-function ToolButton({
+/** A small button in a region's or note's toolbar. `active` marks the
+ * current choice of a set (a note's size). */
+export function ToolButton({
   label,
   icon,
   onClick,
   danger,
+  active,
 }: {
   label: string
   icon: React.ReactNode
   onClick: () => void
   danger?: boolean
+  active?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
+      aria-pressed={active}
       data-tip={label}
       className={cn(
         "flex size-5 items-center justify-center rounded-sm text-muted-foreground",
+        active && "bg-muted text-foreground",
         danger ? "hover:text-destructive" : "hover:text-foreground"
       )}
     >

@@ -167,13 +167,18 @@ export interface DiagramBand extends Rect {
 }
 
 export type NoteIcon = "cloud" | "globe" | "building"
+export type NoteSize = "s" | "m" | "l"
 
-/** A free-text annotation, optionally with a Lucide icon marker. `x/y` is
- * the top-left corner. */
+/** An annotation: free text, or a Lucide icon with its caption under it.
+ * `x/y` is its centre, as a card's is on the canvas. */
 export interface DiagramNote extends Pt {
   id: string
   text?: string
   icon?: NoteIcon
+  /** Absent = "m". */
+  size?: NoteSize
+  /** A text note drawn on a paper chip with a hairline edge. */
+  outline?: boolean
 }
 
 /** One legend entry: a role swatch, a pill, or a line style. */

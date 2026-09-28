@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 // @ts-expect-error -- Lucide's per-icon modules ship without types
-import { __iconNode as lucideBuilding } from "lucide-react/dist/esm/icons/building.mjs"
+import { __iconNode as lucideBuilding } from "lucide-react/dist/esm/icons/building-2.mjs"
 // @ts-expect-error -- Lucide's per-icon modules ship without types
 import { __iconNode as lucideCloud } from "lucide-react/dist/esm/icons/cloud.mjs"
 // @ts-expect-error -- Lucide's per-icon modules ship without types

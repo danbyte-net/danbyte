@@ -3104,13 +3104,19 @@ export interface TopologyLinkOverride {
 }
 
 /** A free-text or icon annotation on the Diagram tab. */
+/** A Diagram note: free text, or an icon with a caption under it. */
 export interface TopologyViewNote {
   id: string
   kind: "text" | "icon"
+  /** Its centre, as a card's. */
   x: number
   y: number
   text?: string
   icon?: "cloud" | "globe" | "building"
+  /** Absent = "m". */
+  size?: "s" | "m" | "l"
+  /** A text note on a chip with a hairline edge. */
+  outline?: boolean
 }
 
 export interface TopologyViewState {

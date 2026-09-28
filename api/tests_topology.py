@@ -473,8 +473,10 @@ class DiagramViewStateTests(_Base):
             },
             "nodes": {self.A: {"face": "card"}, self.B: {"anchor": "ports"}},
             "notes": [
-                {"id": "n1", "kind": "text", "x": 5, "y": -5.5, "text": "WAN"},
-                {"id": "n2", "kind": "icon", "x": 100, "y": 0, "icon": "cloud"},
+                {"id": "n1", "kind": "text", "x": 5, "y": -5.5, "text": "WAN",
+                 "size": "l", "outline": True},
+                {"id": "n2", "kind": "icon", "x": 100, "y": 0, "icon": "cloud",
+                 "size": "s"},
             ],
         }
 
@@ -497,6 +499,8 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(state["nodes"][self.B], {"anchor": "ports"})
         self.assertEqual(diagram["photo_anchor"], "edge")
         self.assertEqual([n["id"] for n in state["notes"]], ["n1", "n2"])
+        self.assertEqual(state["notes"][0]["size"], "l")
+        self.assertIs(state["notes"][0]["outline"], True)
 
     def test_off_palette_diagram_colour_saves_as_neutral(self):
         zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
@@ -562,6 +566,9 @@ class DiagramViewStateTests(_Base):
             {"notes": [{"id": "n", "x": 0, "y": 0, "text": "x" * 201}]},
             {"notes": [{"id": "n", "x": 0, "y": 0, "icon": "rocket"}]},
             {"notes": [{"id": "n", "x": 0, "y": 0, "kind": "line"}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "size": "xl"}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "outline": "yes"}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "outline": 1}]},
         )
         for i, state in enumerate(bad):
             with self.subTest(state=state):

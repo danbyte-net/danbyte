@@ -1,11 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  Building2,
   ChevronDown,
+  Cloud,
   Crosshair,
   Eraser,
   FilePlus,
   Filter,
+  Globe,
   LayoutGrid,
   Link2 as LinkIcon,
   PanelLeft,
@@ -18,6 +21,7 @@ import {
   SlidersHorizontal,
   Square,
   Trash2,
+  Type,
   X,
 } from "lucide-react"
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
@@ -37,6 +41,7 @@ import type {
   TopologyDiagramDisplay,
   TopologyLinkOverride,
   TopologyQuery,
+  TopologyViewNote,
   TopologyViewSaved,
   TopologyViewState,
   TopologyViewSummary,
@@ -138,6 +143,8 @@ import {
 } from "@/components/topology/diagram/placement"
 import { useBands } from "@/components/topology/diagram/use-bands"
 import type { BandBy } from "@/components/topology/diagram/bands"
+import { NOTES_MAX, newNote } from "@/components/topology/diagram/notes"
+import type { NoteIconName } from "@/components/topology/diagram/notes"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
   CardLinesDialog,
@@ -968,6 +975,41 @@ function TopologyPage() {
     setZones((zones ?? []).filter((z) => z.id !== id))
   const recolorZone = (id: string, color: string) =>
     setZones((zones ?? []).map((z) => (z.id === id ? { ...z, color } : z)))
+
+  // Notes (diagram/notes.ts): one list per map, on the Diagram only.
+  const notes = isDiagram ? doc.doc.notes : undefined
+  const setNotes = (next: TopologyViewNote[]) =>
+    edit({ type: "setNotes", notes: next })
+  /** The note just added, which opens in its editor. Handed to the canvas
+   * for the one render that adds it, so a later remount never reopens it. */
+  const [freshNote, setFreshNote] = useState<string | null>(null)
+  useEffect(() => {
+    if (freshNote) setFreshNote(null)
+  }, [freshNote])
+  /** The Add menu leaves the focus in the new note's editor instead of
+   * handing it back to its button, which would close the editor. */
+  const noteFocus = useRef(false)
+  const keepNoteFocus = (e: Event) => {
+    if (noteFocus.current) e.preventDefault()
+    noteFocus.current = false
+  }
+  const notesFull = doc.doc.notes.length >= NOTES_MAX
+  /** A note in the middle of the screen, or where the menu was opened. */
+  const addNote = (
+    icon: NoteIconName | null,
+    at?: { x: number; y: number }
+  ) => {
+    if (notesFull) return
+    const n = newNote(
+      doc.doc.notes,
+      `n${Date.now().toString(36)}`,
+      icon ? { kind: "icon", icon } : { kind: "text" },
+      at ?? canvas.current?.center() ?? { x: 0, y: 0 }
+    )
+    setNotes([...doc.doc.notes, n])
+    setFreshNote(n.id)
+    noteFocus.current = true
+  }
 
   const [layoutTick, setLayoutTick] = useState(0)
 
@@ -1911,18 +1953,30 @@ function TopologyPage() {
     const ids = canvas.current?.selectedDevices() ?? []
     return ids.length ? ids : selNode?.device_id ? [selNode.device_id] : []
   }
-  // Delete and Backspace take the selected cards off a map built by hand.
-  // React Flow's own delete key is off (cards leave only on purpose).
+  // Delete and Backspace take the selected notes off the Diagram, and the
+  // selected cards off a map built by hand. React Flow's own delete key is
+  // off (cards leave only on purpose).
   const deleteKey = useRef<(() => boolean) | null>(null)
-  deleteKey.current = canBuild
-    ? () => {
-        const ids = selectedDevices()
-        if (!ids.length) return false
-        removeFromSet(ids)
-        clearSel()
-        return true
-      }
-    : null
+  deleteKey.current = () => {
+    const gone = notes?.length ? (canvas.current?.selectedNotes() ?? []) : []
+    // With notes selected, only cards selected with them go - not the
+    // card whose panel happens to be open.
+    const ids = !canBuild
+      ? []
+      : gone.length
+        ? (canvas.current?.selectedDevices() ?? [])
+        : selectedDevices()
+    if (!gone.length && !ids.length) return false
+    if (gone.length) {
+      const drop = new Set(gone)
+      setNotes(doc.doc.notes.filter((n) => !drop.has(n.id)))
+    }
+    if (ids.length) {
+      removeFromSet(ids)
+      clearSel()
+    }
+    return true
+  }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return
@@ -2586,7 +2640,11 @@ function TopologyPage() {
                     Add to the map
                   </TooltipContent>
                 </Tooltip>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent
+                  align="end"
+                  className="w-48"
+                  onCloseAutoFocus={keepNoteFocus}
+                >
                   <DropdownMenuItem onSelect={() => setPalette(true)}>
                     <PanelLeft /> Devices…
                   </DropdownMenuItem>
@@ -2605,6 +2663,31 @@ function TopologyPage() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={addZoneCentered}>
                     <Square /> Zone
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={notesFull}
+                    onSelect={() => addNote(null)}
+                  >
+                    <Type /> Text
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={notesFull}
+                    onSelect={() => addNote("cloud")}
+                  >
+                    <Cloud /> Cloud
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={notesFull}
+                    onSelect={() => addNote("globe")}
+                  >
+                    <Globe /> Globe
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={notesFull}
+                    onSelect={() => addNote("building")}
+                  >
+                    <Building2 /> Building
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -2728,7 +2811,7 @@ function TopologyPage() {
               canvas.current?.document({
                 ...req,
                 meta: exportMeta(),
-                notes: doc.doc.notes,
+                notes,
                 origin: window.location.origin,
               }) ?? null
             }
@@ -2847,6 +2930,9 @@ function TopologyPage() {
                 zones={zones}
                 onZonesChange={isDiagram ? bands.onRegionsChange : setZones}
                 onBandEdit={isDiagram ? bands.edit : undefined}
+                notes={notes}
+                onNotesChange={isDiagram ? setNotes : undefined}
+                editNoteId={freshNote}
                 onNodeContext={(node, x, y) => {
                   if (node.type === "zone" || node.type === "band")
                     setMenu({ x, y, zoneId: node.id.slice(5) })
@@ -3294,6 +3380,17 @@ function TopologyPage() {
                     }}
                   >
                     Add zone
+                  </MenuItem>
+                )}
+                {isDiagram && !notesFull && (
+                  <MenuItem
+                    onClick={() => {
+                      const { fx, fy } = menu
+                      setMenu(null)
+                      addNote(null, { x: fx ?? 0, y: fy ?? 0 })
+                    }}
+                  >
+                    Add text
                   </MenuItem>
                 )}
                 {builder && (

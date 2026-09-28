@@ -3878,6 +3878,7 @@ class TopologyViewSerializer(NumIdModelSerializer):
     MAX_NOTE_TEXT = 200
     NOTE_KINDS = ("text", "icon")
     NOTE_ICONS = ("cloud", "globe", "building")
+    NOTE_SIZES = ("s", "m", "l")
     #: A coordinate further out than this is a bug, not a layout.
     MAX_COORD = 10_000_000
 
@@ -4135,6 +4136,12 @@ class TopologyViewSerializer(NumIdModelSerializer):
                 )
             self._choice(note.get("kind"), self.NOTE_KINDS, f"{where}.kind")
             self._choice(note.get("icon"), self.NOTE_ICONS, f"{where}.icon")
+            self._choice(note.get("size"), self.NOTE_SIZES, f"{where}.size")
+            outline = note.get("outline")
+            if outline is not None and not isinstance(outline, bool):
+                raise serializers.ValidationError(
+                    f"{where}.outline must be true or false"
+                )
 
     def create(self, validated_data):
         validated_data.pop("base_updated_at", None)
