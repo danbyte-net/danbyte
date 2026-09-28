@@ -322,7 +322,8 @@ const LEAD_GAP = 8
 
 /**
  * Every cable end on a photo node, keyed `<link>#<cable><end>`: its
- * marker, leaving by the edge facing its far end (`exitTowards`), or a
+ * marker, leaving by the edge facing its far end (`exitTowards`; with
+ * `towards` false, always the nearer edge), or a
  * stub lead on the image edge facing its far end (the top when the far
  * node is above, else the bottom). A node's stub leads on
  * one edge are spread round its middle at the nub pitch, ordered by where
@@ -332,7 +333,8 @@ const LEAD_GAP = 8
 export function photoAnchors(
   photos: ReadonlyMap<string, PhotoFace>,
   boxes: ReadonlyMap<string, Rect>,
-  links: readonly PhotoLink[]
+  links: readonly PhotoLink[],
+  towards = true
 ): Map<string, PointAnchor> {
   const out = new Map<string, PointAnchor>()
   const stubs = new Map<
@@ -391,8 +393,10 @@ export function photoAnchors(
   }
   for (const { key, node, face, m, port, far } of ends) {
     const mark = face.marks[m]
-    let exit = exitTowards(boxes.get(node), boxes.get(far), mark.y)
     const near = mark.y < 0.5 ? "T" : "B"
+    let exit = towards
+      ? exitTowards(boxes.get(node), boxes.get(far), mark.y)
+      : near
     if (exit !== near) {
       // Away from its nearer edge only while no other cabled port is in
       // its column on the way.

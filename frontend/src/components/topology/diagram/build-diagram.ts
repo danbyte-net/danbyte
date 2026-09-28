@@ -62,7 +62,7 @@ import {
   orientPair,
 } from "./link-labels"
 import type { LabelToken, LinkLabelSet } from "./link-labels"
-import { ELBOW_RADIUS } from "./link-geometry"
+import { ELBOW_RADIUS, leaves, routeThrough } from "./link-geometry"
 import {
   captionCap,
   PHOTO,
@@ -200,6 +200,9 @@ export interface DiagramModel {
   rows?: BandRow[]
   /** The saved rows those were fitted from (`rowsSig`). */
   rowsFrom?: string
+  /** Photo ports leave by their nearer image edge: the build found the
+   * lines cross less that way than leaving towards their far ends. */
+  nearExits?: true
   /** Per row, the x spans of its title strip that lines, cards and labels
    * take, as last planned: where its title chip may not go. */
   titles?: Map<string, [number, number][]>
@@ -225,8 +228,11 @@ export interface FanModel {
    * room for the trunk's port name and its chip. */
   reach: Record<DiagramMode, number>
   /** What the legs need between the junction and the far cards, per
-   * mode: their lanes and far port names. */
+   * mode: their lanes and far port names, half the legs turning off each
+   * way. */
   legRoom: Record<DiagramMode, number>
+  /** The card each leg lands on, per mode (Simple folds a card's legs). */
+  legs?: Record<DiagramMode, string[]>
   /** The trunk's own port name, per mode: what the junction keeps room
    * for before the legs' room. */
   trunkRoom: Record<DiagramMode, number>
@@ -735,6 +741,7 @@ function fanParts(
           SHARED_STUB + LANE * Math.ceil(f.legs.length / 2) + portStub(legRun),
       },
       trunkRoom: { simple: 24, detailed: portStub(trunkRun) },
+      legs: { simple: far, detailed: f.legs.map((l) => l.node) },
     },
   }
 }
@@ -1114,7 +1121,21 @@ function placeJunctions(
     // short of the room the legs need. Short of room, the chip gives way
     // first, then the legs' lanes; the trunk's name last.
     const want = f.reach[model.mode]
-    const room = proj - f.legRoom[model.mode]
+    // `legRoom` stacks half the legs on each side of the trunk; when more
+    // of their cards lie one way, those legs need a lane each there.
+    const legNodes = f.legs?.[model.mode] ?? []
+    let pos = 0
+    let neg = 0
+    for (const id of legNodes) {
+      const r = rects.get(id)
+      if (!r) continue
+      const v = (r.x + r.w / 2 - start.x) * -ny + (r.y + r.h / 2 - start.y) * nx
+      if (v > 1) pos++
+      else if (v < -1) neg++
+    }
+    const extra =
+      Math.max(0, Math.max(pos, neg) - Math.ceil(legNodes.length / 2)) * LANE
+    const room = proj - f.legRoom[model.mode] - extra
     const least = Math.min(f.trunkRoom[model.mode], Math.max(12, proj / 2))
     let d = Math.max(Math.min(Math.max(proj / 3, want), room), least)
     if (proj <= 0) d = want
@@ -1446,6 +1467,7 @@ function anchorAll(
         ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
         ...(photos ? { photos } : {}),
         ...(caps ? { caps } : {}),
+        ...(model.nearExits ? { nearExits: true } : {}),
       }
     )
   if (model.mode === "simple") {
@@ -1587,6 +1609,43 @@ function plannedEdges(
     }
   })
   return { edges: planned, ...(busy ? { titles: busy } : {}) }
+}
+
+/** The most links a photo map may have to be planned a second time with
+ * its ports leaving by their nearer edges. */
+const NEAR_EXIT_CHECK = 600
+
+/** How many times the planned lines cross each other: every pair of
+ * runs, curves sampled. */
+function crossings(edges: readonly Edge[]): number {
+  const runs: [Pt, Pt][] = []
+  for (const e of edges) {
+    const d = e.data as DiagramEdgeData | undefined
+    if (e.type !== "link" || !d?.plan) continue
+    for (const c of d.plan) {
+      const line = c.line ?? d.line
+      let pts = c.pts
+      if ((line === "bendy" || line === "cyclical") && pts.length > 2) {
+        const route = routeThrough(line, pts, leaves(pts))
+        pts = Array.from({ length: 17 }, (_, i) => route.at(i / 16))
+      }
+      for (let i = 1; i < pts.length; i++) runs.push([pts[i - 1], pts[i]])
+    }
+  }
+  const cross = (p: Pt, q: Pt, r: Pt, s: Pt) => {
+    const d = (a: Pt, b: Pt, c: Pt) =>
+      (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+    const d1 = d(r, s, p)
+    const d2 = d(r, s, q)
+    const d3 = d(p, q, r)
+    const d4 = d(p, q, s)
+    return d1 * d2 < 0 && d3 * d4 < 0
+  }
+  let n = 0
+  for (let i = 0; i < runs.length; i++)
+    for (let j = i + 1; j < runs.length; j++)
+      if (cross(runs[i][0], runs[i][1], runs[j][0], runs[j][1])) n++
+  return n
 }
 
 /** Node → the box the layout reserves: a card's current box, else the
@@ -1995,7 +2054,22 @@ export function buildDiagram(
     }
   }
 
-  const { edges: planned, titles } = plannedEdges(model, anchored)
+  let { edges: planned, titles } = plannedEdges(model, anchored)
+  // Photo ports leave towards their far ends, which mostly untangles a
+  // photo map - but not always: a map small enough to plan twice is also
+  // planned with every port leaving by its nearer edge, and keeps that
+  // when its lines cross less.
+  if (facesOf(model) && model.links.length <= NEAR_EXIT_CHECK) {
+    const near: DiagramModel = { ...model, nearExits: true }
+    const again = anchorAll(near, laid.centres)
+    const alt = plannedEdges(near, again)
+    if (crossings(alt.edges) < crossings(planned)) {
+      model.nearExits = true
+      anchored = again
+      planned = alt.edges
+      titles = alt.titles
+    }
+  }
   if (titles) model.titles = titles
   const { anchors, boxes, junctions } = anchored
   const drawn = photosShown(model, anchors)

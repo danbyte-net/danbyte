@@ -1,4 +1,5 @@
 import { NUB } from "./card-layout"
+import { LANE } from "./lanes"
 import type { Obstacles } from "./lanes"
 import { photoAnchors } from "./photo-anchors"
 import type { PhotoFace, PointAnchor } from "./photo-anchors"
@@ -190,6 +191,9 @@ export interface AnchorOptions {
   /** Photos taking their cables at their edge: anchored like cards on
    * their image, with this many px of caption under it (`Anchor.cap`). */
   caps?: ReadonlyMap<string, number>
+  /** Photo ports leave by their nearer image edge, never towards their
+   * far end (`photoAnchors`). */
+  nearExits?: boolean
 }
 
 /** How far out from a side a third card makes it a poor exit: a stub and
@@ -370,7 +374,7 @@ export function anchorLinks(
 
   // Cable ends on photo nodes land on their ports whatever the mode.
   const photo: ReadonlyMap<string, PointAnchor> = opts.photos?.size
-    ? photoAnchors(opts.photos, boxes, live)
+    ? photoAnchors(opts.photos, boxes, live, !opts.nearExits)
     : new Map()
   const photoEnd = (l: AnchorLink, i: number, end: "a" | "b") =>
     photo.size ? photo.get(`${l.id}#${i}${end}`) : undefined
@@ -576,11 +580,19 @@ export function anchorLinks(
       demand[s] = ordered.length
       const len = sideLength(box, s)
       const n = ordered.length
+      // A photo cannot grow for its nubs: on a short side they keep a
+      // lane apart, closer to its corners, before they close up.
+      const inset = caps?.has(node)
+        ? Math.min(
+            NUB.INSET,
+            Math.max(0, (len - NUB.ALONG - LANE * (n - 1)) / 2)
+          )
+        : NUB.INSET
       const pitch =
         n > 1
           ? Math.max(
               0,
-              Math.min(NUB.PITCH, (len - 2 * NUB.INSET - NUB.ALONG) / (n - 1))
+              Math.min(NUB.PITCH, (len - 2 * inset - NUB.ALONG) / (n - 1))
             )
           : 0
       ordered.forEach((e, i) => {

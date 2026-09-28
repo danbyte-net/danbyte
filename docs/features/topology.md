@@ -91,7 +91,8 @@ something.
   is drawn as **one cable**: a single nub for the shared port, one trunk out
   of it to a small dot where the cable splits, then one leg to each far
   port - its own nub and port name on the far card, legs to one card in
-  lanes side by side. The trunk carries the cable's label and type
+  lanes side by side (the dot sits far enough out for a lane per leg that
+  turns off the same way). The trunk carries the cable's label and type
   (`TEST · cat5e`; on a trunk too short for it, the longest leg carries
   it). Hovering or clicking any part lights up and opens the whole cable.
   With Bendy lines, legs converging on one card end in a straight run long
@@ -316,7 +317,10 @@ greyed out (it would change nothing).
 - **Cables on their ports:** a cable starts at its port's marker, runs
   straight up or down (its lead, drawn over the photo) - towards its far
   device when that lies above or below the photo, else to the nearer
-  edge - and from there is routed like any other line - elbows round
+  edge; on a map where that makes more lines cross than every port
+  leaving by its nearer edge would, all of them do that instead (a map of
+  up to 600 links is planned both ways) - and from there is routed like
+  any other line - elbows round
   the photos, the photo it leaves included, in their own lanes. The port a
   line lands on has a thin outline; the port name sits on the cable just
   past the photo's edge. This holds in **Simple** too: the photo is the
@@ -334,8 +338,9 @@ greyed out (it would change nothing).
   and treats the photo like a card: in **Simple** every line on a side meets
   at that side's midpoint (a pair's cables fold into one line with its
   `2x` count again); in **Detailed** each cable leaves its own nub, spread
-  along the side facing its far end, with its port name and addresses on
-  the line past the nub. The sides are the image's own; a line off the
+  along the side facing its far end - a lane apart, closer to the corners
+  on a short side - with its port name and addresses on the line past the
+  nub. The sides are the image's own; a line off the
   bottom runs down past the caption, which steps aside for it. Right-click
   a photo for **Cables to edge** or **Cables to ports** to set just that
   device the other way (kept with the view, one undo step). The view's
