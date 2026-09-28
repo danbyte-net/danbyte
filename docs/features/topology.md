@@ -168,15 +168,22 @@ top to bottom - by default the monitoring pill, **IP**, **Loopback** and
 
 - **All devices** - the list every device starts from.
 - **A device role** - pick the role on the left (each is drawn as its
-  colour badge) and **Override** to give it lines of its own; the role is
-  then marked **Custom**. **Inherit** drops its list again.
+  color badge). **Inherit** (the default) shows the All devices list it
+  uses, marked **From All devices**; **Custom** gives it lines of its own,
+  starting from that list, and the role is then marked **Custom** in the
+  list. Going back to **Inherit** drops its list; **Custom** again before
+  you save puts it back.
 - **This tenant / Deployment default** - a tenant uses the deployment's
   lines, shown read-only, until its switch is on; turning it on starts
   from the deployment's lists. The deployment tier needs a deployment
   admin.
 
+**Save card lines** stores the card; **Discard** drops the changes you
+have not saved.
+
 The most specific list wins, and it replaces the ones below it rather
-than adding to them:
+than adding to them - the (i) beside the page title sums it up as
+*Device, then view, then role, then All devices*:
 
 1. the device's own list;
 2. the saved view's list;

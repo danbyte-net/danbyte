@@ -165,7 +165,7 @@
     {
       "key": "topology",
       "label": "Topology",
-      "description": "What a diagram card shows",
+      "description": "What a Diagram card shows",
       "to": "/settings/topology",
       "group": "data",
       "scopes": ["tenant", "deployment"],
@@ -658,7 +658,7 @@
     {
       "key": "data.topology-card-lines",
       "label": "Card lines",
-      "description": "What a Diagram card shows under the device name",
+      "description": "What a Diagram card shows",
       "page": "topology",
       "keywords": [
         "card",

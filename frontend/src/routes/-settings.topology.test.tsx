@@ -189,9 +189,15 @@ describe("topology card-line settings", () => {
     await screen.findByText("Applies to")
     await within(scopes()).findByText("Leaf")
     fireEvent.click(within(scopes()).getByText("Leaf"))
-    expect(screen.getByText("Uses All devices.")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Override" }))
-    expect(screen.getByText("This role's own lines.")).toBeTruthy()
+    expect(screen.getByText("From All devices")).toBeTruthy()
+    expect(
+      screen
+        .getByRole("button", { name: "Inherit" })
+        .getAttribute("aria-current")
+    ).toBe("page")
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }))
+    expect(screen.queryByText("From All devices")).toBeNull()
+    expect(screen.getByText("2 of 8")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("switch", { name: "Name only" }))
     expect(
@@ -224,12 +230,39 @@ describe("topology card-line settings", () => {
     url.scope = "deployment"
     url.role = "spine"
     renderPage()
-    await screen.findByText("This role's own lines.")
+    await screen.findByText("1 of 8")
     fireEvent.click(screen.getByRole("button", { name: "Inherit" }))
-    expect(screen.getByText("Uses All devices.")).toBeTruthy()
+    expect(screen.getByText("From All devices")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Save card lines" }))
     await waitFor(() => expect(puts()).toHaveLength(1))
     expect(puts()[0].body.role_overrides).toEqual({})
+  })
+
+  it("gives a role its own list back when it goes Custom again", async () => {
+    url.scope = "deployment"
+    url.role = "spine"
+    renderPage()
+    await screen.findByText("1 of 8")
+    fireEvent.click(screen.getByRole("button", { name: "Inherit" }))
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }))
+    // Its own one line, not a copy of All devices' two.
+    expect(screen.getByText("1 of 8")).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Discard" }).hasAttribute("disabled")
+    ).toBe(true)
+  })
+
+  it("discards unsaved edits", async () => {
+    url.scope = "deployment"
+    renderPage()
+    await screen.findByText("Applies to")
+    const discard = screen.getByRole("button", { name: "Discard" })
+    expect(discard.hasAttribute("disabled")).toBe(true)
+    fireEvent.click(screen.getByRole("switch", { name: "Name only" }))
+    expect(screen.getByText("0 of 8")).toBeTruthy()
+    fireEvent.click(discard)
+    expect(screen.getByText("2 of 8")).toBeTruthy()
+    expect(puts()).toHaveLength(0)
   })
 
   it("restores the built-in default as a reset, not a copy", async () => {

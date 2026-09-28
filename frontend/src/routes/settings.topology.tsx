@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -11,6 +10,7 @@ import { openingScope } from "@/lib/settings-catalog"
 import { useMe } from "@/lib/use-me"
 import { useUrlEnum, useUrlPatch, useUrlText } from "@/lib/use-url-state"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
@@ -50,6 +50,12 @@ const GLOBAL = ""
 
 const CF_MODELS = ["device"] as const
 
+/** Which list a card uses, first hit wins - the same words as the device
+ * form's Card lines. */
+const CARD_LINE_ORDER = "Device, then view, then role, then All devices."
+
+type Mode = "inherit" | "custom"
+
 function TopologySettingsPage() {
   const { canManage, canManageDeployment, isLoading } = useMe()
   const allowed = TIERS.filter((t) =>
@@ -70,8 +76,7 @@ function TopologySettingsPage() {
       patch({ scope: undefined, role: rawScope.slice(5) }, { replace: true })
   }, [rawScope, patch])
 
-  if (isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (isLoading) return <Loading />
   if (allowed.length === 0)
     return (
       <p className="text-sm text-muted-foreground">
@@ -84,14 +89,9 @@ function TopologySettingsPage() {
     <div className="space-y-6">
       <SettingsHeader
         title="Topology"
-        badge={
-          <InfoTip>
-            A device&apos;s own lines win, then its saved view&apos;s, then its
-            role&apos;s, then All devices. An empty list shows the name only.
-          </InfoTip>
-        }
+        badge={<InfoTip>{CARD_LINE_ORDER}</InfoTip>}
       >
-        What a device card on the topology Diagram shows under its name.
+        What a Diagram card shows
       </SettingsHeader>
 
       {allowed.length > 1 && (
@@ -161,6 +161,8 @@ function CardLines({ tier }: { tier: Tier }) {
   const [draft, setDraft] = useState<Draft | null>(null)
   // The list each scope had before "Name only", to put back when it goes off.
   const [stash, setStash] = useState<Record<string, string[]>>({})
+  // A role's own list before it went back to Inherit, to put back on Custom.
+  const [kept, setKept] = useState<Record<string, string[]>>({})
 
   const save = useMutation({
     mutationFn: (d: Draft) =>
@@ -184,7 +186,7 @@ function CardLines({ tier }: { tier: Tier }) {
   })
 
   if (q.isError) return <QueryError error={q.error} />
-  if (!q.data) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!q.data) return <Loading />
   const data = q.data
   const saved = fromData(data)
   const cur = draft ?? saved
@@ -217,10 +219,17 @@ function CardLines({ tier }: { tier: Tier }) {
     isGlobal
       ? update({ fields: next, isDefault: false })
       : update({ roles: { ...cur.roles, [scope]: next } })
-  const startOverride = () =>
-    update({ roles: { ...cur.roles, [scope]: [...cur.fields] } })
-  const resetToInherit = () => {
+  const setMode = (m: Mode) => {
+    if (m === "custom") {
+      if (!overriding)
+        update({
+          roles: { ...cur.roles, [scope]: kept[scope] ?? [...cur.fields] },
+        })
+      return
+    }
+    if (!(scope in cur.roles)) return
     const next = { ...cur.roles }
+    setKept({ ...kept, [scope]: next[scope] })
     delete next[scope]
     update({ roles: next })
   }
@@ -248,7 +257,6 @@ function CardLines({ tier }: { tier: Tier }) {
   return (
     <SettingsCard
       title="Card lines"
-      description="The lines under a device's name, for every device or for one role."
       layout="flush"
       inherit={
         editingTenant
@@ -289,9 +297,10 @@ function CardLines({ tier }: { tier: Tier }) {
             onClick={() => {
               setDraft(null)
               setStash({})
+              setKept({})
             }}
           >
-            Reset
+            Discard
           </Button>
           {isGlobal && overriding && (
             <Button
@@ -342,32 +351,25 @@ function CardLines({ tier }: { tier: Tier }) {
         </aside>
 
         <div className="min-w-0 flex-1 p-4">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold">
-                {isGlobal ? "All devices" : scopeBadge(scope)}
-              </h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {isGlobal
-                  ? "Top to bottom under the name. A line with no value for a device is skipped."
-                  : overriding
-                    ? "This role's own lines."
-                    : "Uses All devices."}
-              </p>
-            </div>
-            {!isGlobal &&
-              (overriding ? (
-                <Button variant="outline" size="sm" onClick={resetToInherit}>
-                  <RotateCcw className="h-3.5 w-3.5" /> Inherit
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" onClick={startOverride}>
-                  Override
-                </Button>
-              ))}
-          </div>
+          <h2 className="mb-3 text-sm font-semibold">
+            {isGlobal ? "All devices" : scopeBadge(scope)}
+          </h2>
 
-          {overriding && (
+          {/* A role inherits All devices or has its own list: the same
+              Inherit / Custom the device form and the map's editors use. */}
+          {!isGlobal && (
+            <SegmentedTabs<Mode>
+              className="mb-3"
+              value={overriding ? "custom" : "inherit"}
+              onValueChange={setMode}
+              items={[
+                { value: "inherit", label: "Inherit" },
+                { value: "custom", label: "Custom" },
+              ]}
+            />
+          )}
+
+          {overriding ? (
             <div className="mb-3 flex items-center gap-3">
               <label className="flex items-center gap-2 text-[13px] whitespace-nowrap">
                 <Switch
@@ -382,6 +384,10 @@ function CardLines({ tier }: { tier: Tier }) {
                 {current.length} of {data.max_fields}
               </span>
             </div>
+          ) : (
+            <p className="mb-3 text-[11px] whitespace-nowrap text-muted-foreground">
+              From All devices
+            </p>
           )}
 
           <FieldListEditor

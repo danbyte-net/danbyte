@@ -642,7 +642,7 @@ export function DeviceForm({
           <FormSection title="Topology card" card>
             <Field
               label="Card lines"
-              info="The lines under the device's name on the topology Diagram. Inherit follows the map's saved view, then the role, then All devices."
+              info="Device, then view, then role, then All devices."
               error={fieldErrors.topology_card}
             >
               <CardLinesEditor
