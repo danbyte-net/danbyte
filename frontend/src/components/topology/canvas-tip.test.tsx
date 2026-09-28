@@ -28,6 +28,9 @@ function Canvas() {
     <div ref={root}>
       <span data-tip="Leaf">spine</span>
       <span data-tip="Ethernet1/49">port</span>
+      <span data-tip="Move" data-tip-plain="">
+        grip
+      </span>
       <span>plain</span>
       <CanvasTip
         root={root}
@@ -90,6 +93,25 @@ describe("CanvasTip", () => {
       relatedTarget: screen.getByText("plain"),
     })
     expect(tip()).toBeNull()
+  })
+
+  it("draws a name as the mono panel and a control word as the plain chip", () => {
+    render(<Canvas />)
+    fireEvent.pointerOver(screen.getByText("port"))
+    expect(tip()?.className).toContain("font-mono")
+    expect(tip()?.className).toContain("bg-popover")
+    fireEvent.pointerOut(screen.getByText("port"), {
+      relatedTarget: screen.getByText("grip"),
+    })
+    fireEvent.pointerOver(screen.getByText("grip"))
+    expect(tip()?.textContent).toContain("Move")
+    expect(tip()?.className).not.toContain("font-mono")
+    expect(tip()?.className).toContain("bg-foreground")
+    // Driven imperatively, a line's name is the panel unless asked.
+    act(() => api?.show("Slate", { clientX: 1, clientY: 1 }, true))
+    expect(tip()?.className).toContain("bg-foreground")
+    act(() => api?.show("Cable #4", { clientX: 1, clientY: 1 }))
+    expect(tip()?.className).toContain("font-mono")
   })
 
   it("uses no native title tooltip", () => {

@@ -63,7 +63,8 @@ import {
 import type { NodeSizing } from "./layout"
 import { resolveLevels } from "./level-organiser"
 import { graphLevels } from "./levels-param"
-import { OverlayEdge } from "./overlay-edge"
+import { OverlayEdge, bgpLabel } from "./overlay-edge"
+import { FLOW_ARIA_LABELS } from "./flow-aria"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { BAND_DRAG_HANDLE, BAND_NODE_CLASS } from "./diagram/band-node"
@@ -383,18 +384,21 @@ export interface CanvasDocumentOptions extends Omit<
 }
 
 /** The full name a cable edge announces on hover - label/number, media,
- * speed, and its endpoint pair(s). Bundles and group edges summarize. */
-function hoverLabel(e: Edge): string | undefined {
+ * speed, and its endpoint pair(s). Bundles and group edges summarize; a
+ * BGP session names its peers. (Exported for its tests.) */
+export function hoverLabel(e: Edge): string | undefined {
   const d = e.data as
     | {
         sem?: string
         raw?: TopoEdge["data"]
+        bgp?: Parameters<typeof bgpLabel>[0]
         cables?: BundleMember[]
         group?: GroupEdgeInfo
         fan?: { ports?: string[] }
       }
     | undefined
   if (!d) return undefined
+  if (d.sem === "bgp" && d.bgp) return bgpLabel(d.bgp)
   if (d.sem === "cable" && d.raw) {
     const r = d.raw
     const bits = [
@@ -2929,6 +2933,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         // context menu, the zone toolbar) - never a stray Backspace.
         deleteKeyCode={null}
         minZoom={MIN_ZOOM}
+        ariaLabelConfig={FLOW_ARIA_LABELS}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls showInteractive={false} onFitView={() => fitMap(0)} />

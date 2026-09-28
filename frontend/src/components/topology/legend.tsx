@@ -1,13 +1,17 @@
 import { useState } from "react"
-import { Info, X } from "lucide-react"
+import { List, X } from "lucide-react"
 
 import { ColorBadge } from "@/components/cells/color-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { SectionLabel } from "@/components/map-panel"
+import { Button } from "@/components/ui/button"
 import {
-  typeColor,
-  type EdgeColorMode,
-  type NodeStyle,
-} from "./topology-canvas"
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { typeColor } from "./edge-style"
+import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
 
 // Line-key legend for the topology views. Collapsible, remembered per
 // browser, and its rows adapt to the active view + color mode so it only
@@ -201,15 +205,17 @@ export function CanvasLegend(props: LegendOptions) {
     localStorage.setItem(KEY, v ? "open" : "closed")
   }
 
+  // A chip on the canvas: bordered, no shadow (shadows are for overlays).
   if (!open)
     return (
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="xs"
         onClick={() => toggle(true)}
-        className="flex items-center gap-1.5 rounded-md border border-border bg-card/95 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+        className="bg-background/95 text-muted-foreground shadow-none"
       >
-        <Info className="h-3 w-3" /> Legend
-      </button>
+        <List /> Legend
+      </Button>
     )
 
   const items = legendRows(props)
@@ -217,19 +223,25 @@ export function CanvasLegend(props: LegendOptions) {
   const tones = items.filter((i) => i.kind === "tone")
   const note = items.find((i) => i.kind === "note")
   return (
-    <div className="w-60 rounded-md border border-border bg-card/95 p-2.5 text-[11px] shadow-sm backdrop-blur">
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="font-semibold tracking-wide text-muted-foreground uppercase">
-          Legend
-        </span>
-        <button
-          type="button"
-          onClick={() => toggle(false)}
-          className="text-muted-foreground hover:text-foreground"
-          aria-label="Hide legend"
-        >
-          <X className="h-3 w-3" />
-        </button>
+    <div className="w-60 rounded-md border border-border bg-background/95 p-2.5 pt-1.5 text-[11px]">
+      <div className="mb-1 flex items-center justify-between">
+        <SectionLabel className="mb-0">Legend</SectionLabel>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="-mr-1.5"
+              aria-label="Hide legend"
+              onClick={() => toggle(false)}
+            >
+              <X />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" variant="default">
+            Hide legend
+          </TooltipContent>
+        </Tooltip>
       </div>
       <div className="space-y-1">
         {roles.length > 0 && (

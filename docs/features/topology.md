@@ -19,8 +19,8 @@ icon: lucide/share-2
   Cables here are routed from the ports, not the cards: one bends only to
   cross a card standing in its way, and only where a clear vertical street
   exists - otherwise it stays straight at its own port level. Past 60
-  devices a **Large map** chip offers **Switch to Diagram**; closed, it
-  stays closed in this browser.
+  devices a **Large map** chip in the top-left corner offers **Switch to
+  Diagram**; closed, it stays closed in this browser.
 - **Logical** - the L2 picture: **VLANs as rails** (grouped by VLAN group,
   colored by the VLAN's own color or its zone's), with everything attached
   to them - physical devices via their interfaces' untagged/tagged VLANs
@@ -239,7 +239,8 @@ Admins also get **Role card lines** in the card's menu, which opens
 
 **Lines** in the Display popover sets the view's line, as icon tabs (hover
 one for its name). LLDP ghosts stay straight and dashed; BGP sessions stay
-the faint dotted overlay from card centre to card centre.
+the faint dotted overlay from card centre to card centre, and hovering one
+names its peers, the session kind and the VRF.
 
 - **Straight** - the direct line; a card's side is still chosen so the line
   does not leave it straight into a neighbour.
@@ -440,9 +441,10 @@ These keep a large map legible:
   height. Top and bottom strips always keep full horizontal port names; the
   full name is also on the cable's hover label and its panel.
 - **Group by site / location** (Display popover) - the graph aggregates to
-  **one card per site** (or location): device count, role breakdown, and
-  one edge per group pair labelled with its cable count (click it for the
-  cable types). **Double-click a group** (or its panel's *Open group*) to
+  **one card per site** (or location): its device count, its biggest
+  roles as their badges with the number of each (hover one for its full
+  name), and one edge per group pair labelled with its cable count (click it
+  for the cable types). **Double-click a group** (or its panel's *Open group*) to
   drill into that group's device view; the header chip pops back out.
   Levels and focus pause while grouped. Devices without a site collect
   under *Unassigned*.
@@ -529,8 +531,9 @@ diagram); its open/closed state is remembered per browser. On the Diagram
 it lists the roles on the map as their badges. With **Color by** on *Type*
 or *Speed* it keys the cable types on the map, or the speed tiers, as short
 lines in their colours; on *Cable* or *Status* it says so in one line
-(*Color by cable*). Clicking a cable draws it emphasized in the accent
-color while its panel is open.
+(*Color by cable*). Its **Hide legend** button folds it to a small
+**Legend** chip, which opens it again. Clicking a cable draws it emphasized
+in the accent color while its panel is open.
 
 ## Reading the map
 
@@ -715,8 +718,8 @@ hidden link family goes without touching the cards. Positions are kept -
 hiding never re-runs the layout, and *Reset layout* ignores hidden cards so they
 do not hold empty space. Hidden objects stay in the sidebar, dimmed, with the
 eye lit, so "where did my core switch go" answers itself; **Show all** at the
-top of the sidebar - or the **"n hidden · Show all"** chip in the corner when
-the sidebar is closed - puts everything back.
+top of the sidebar - or the **"n hidden · Show all"** chip in the map's
+top-left corner when the sidebar is closed - puts everything back.
 
 The hidden set saves with the view, and the default map remembers it per
 browser. Views saved before the eyes existed hold their removed cards under

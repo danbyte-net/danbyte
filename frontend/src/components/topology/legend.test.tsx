@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { CanvasLegend, legendRows } from "./legend"
 
 // The map's legend: roles as their badges and colour keys as lines -
 // never a coloured dot beside a name.
 
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+if (!("ResizeObserver" in globalThis)) {
+  globalThis.ResizeObserver = ResizeObserverStub
+}
 afterEach(cleanup)
 
 describe("CanvasLegend", () => {
@@ -41,6 +50,32 @@ describe("CanvasLegend", () => {
     )
     expect(screen.getByText("cat6")).toBeTruthy()
     expect(container.querySelector(".rounded-full")).toBeNull()
+  })
+})
+
+describe("CanvasLegend chrome", () => {
+  it("is a bordered chip without a shadow, closed with a tipped icon button", () => {
+    localStorage.removeItem("topology:legend")
+    const { container } = render(
+      <TooltipProvider>
+        <CanvasLegend viewStyle="diagram" grouped={false} colorMode="cable" />
+      </TooltipProvider>
+    )
+    const box = container.firstElementChild as HTMLElement
+    expect(box.className).not.toMatch(/shadow|backdrop-blur/)
+    const hide = screen.getByRole("button", { name: "Hide legend" })
+    expect(hide.getAttribute("data-size")).toBe("icon-xs")
+    fireEvent.focus(hide)
+    expect(screen.getByRole("tooltip").textContent).toContain("Hide legend")
+    fireEvent.click(hide)
+    // Collapsed: a list icon, not the info icon InfoTip uses.
+    const show = screen.getByRole("button", { name: "Legend" })
+    expect(show.querySelector(".lucide-list")).not.toBeNull()
+    expect(show.querySelector(".lucide-info")).toBeNull()
+    expect(show.className).toContain("shadow-none")
+    expect(localStorage.getItem("topology:legend")).toBe("closed")
+    fireEvent.click(show)
+    expect(screen.getByRole("button", { name: "Hide legend" })).toBeTruthy()
   })
 })
 

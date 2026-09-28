@@ -230,6 +230,7 @@ export function BandNode({
             onClick={() => d.onRecolor?.(null)}
             aria-label="Neutral"
             data-tip="Neutral"
+            data-tip-plain=""
             className={cn(
               "size-4 rounded-sm border",
               bandLook(null).className,
@@ -245,6 +246,7 @@ export function BandNode({
               onClick={() => d.onRecolor?.(c)}
               aria-label={SWATCH_NAMES[c] ?? c}
               data-tip={SWATCH_NAMES[c] ?? c}
+              data-tip-plain=""
               className={cn(
                 "size-4 rounded-sm border",
                 c === d.color ? "border-foreground" : "border-border"
@@ -330,6 +332,7 @@ export function BandNode({
           <div
             className={`${BAND_DRAG_HANDLE} pointer-events-auto flex h-full w-full cursor-grab items-center justify-center overflow-hidden active:cursor-grabbing`}
             data-tip="Move"
+            data-tip-plain=""
           >
             {editing ? (
               field
@@ -350,6 +353,7 @@ export function BandNode({
             style={{ height: BAND.TITLE }}
             onDoubleClick={rename}
             data-tip="Move"
+            data-tip-plain=""
           >
             {editing && field}
           </div>
@@ -713,6 +717,7 @@ export function ToolButton({
       aria-label={label}
       aria-pressed={active}
       data-tip={label}
+      data-tip-plain=""
       className={cn(
         "flex size-5 items-center justify-center rounded-sm text-muted-foreground",
         active && "bg-muted text-foreground",

@@ -2993,7 +2993,7 @@ function TopologyPage() {
             <Loading className="absolute inset-0" />
           )}
           {!logical && q.isError && (
-            <div className="p-6">
+            <div className="absolute inset-0 flex items-center justify-center p-6">
               <QueryError error={q.error} />
             </div>
           )}
@@ -3122,48 +3122,55 @@ function TopologyPage() {
             </Suspense>
           )}
 
-          {!showObjects && (
-            <HiddenChip
-              count={hiddenHere}
-              onShowAll={() => setHiddenNodes(NO_TOPO_HIDDEN)}
-            />
-          )}
-
-          {graph &&
-            viewStyle === "hierarchy" &&
-            count > 60 &&
-            !hintDismissed && (
-              <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-background/95 px-2.5 py-1.5 text-xs">
-                <span className="whitespace-nowrap text-muted-foreground">
-                  Large map
-                </span>
-                <InfoTip>
-                  Hierarchy suits smaller maps; the Diagram scales better.
-                </InfoTip>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={() => setTab("diagram")}
-                >
-                  Switch to Diagram
-                </Button>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={dismissHint}
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label="Close"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" variant="default">
-                    Close
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+          {/* The top-left corner is the one the canvas leaves free: the
+              MiniMap is bottom-right, the legend and zoom controls
+              bottom-left, and a detail panel opens top-right. */}
+          <div className="pointer-events-none absolute top-3 left-3 z-10 flex flex-col items-start gap-2 [&>*]:pointer-events-auto">
+            {graph &&
+              viewStyle === "hierarchy" &&
+              count > 60 &&
+              !hintDismissed && (
+                <div className="flex items-center gap-2 rounded-md border border-border bg-background/95 px-2.5 py-1.5 text-xs">
+                  <span className="whitespace-nowrap text-muted-foreground">
+                    Large map
+                  </span>
+                  <InfoTip>
+                    Hierarchy suits smaller maps; the Diagram scales better.
+                  </InfoTip>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => setTab("diagram")}
+                  >
+                    Switch to Diagram
+                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={dismissHint}
+                        aria-label="Close"
+                      >
+                        <X />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" variant="default">
+                      Close
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
+            {!showObjects && (
+              <HiddenChip
+                count={hiddenHere}
+                position="top-left"
+                // Stacked under the hint rather than on top of it.
+                className="static"
+                onShowAll={() => setHiddenNodes(NO_TOPO_HIDDEN)}
+              />
             )}
+          </div>
           {!logical && graph && (
             // left-16 clears React Flow's zoom controls in the corner.
             <div className="absolute bottom-4 left-16 z-10">

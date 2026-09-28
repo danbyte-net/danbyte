@@ -27,9 +27,19 @@ import {
 // The trigger is a zero-size fixed anchor moved with the pointer (straight
 // to the DOM - no re-render per mousemove), so a tip on a long cable can
 // never sit off-screen the way a midpoint label does.
+//
+// Two looks, as everywhere else: a name on the map (a port, a device, a
+// cable's identity) is the mono panel tip; a short word for a control
+// ("Move", "Rename", "Slate") is the plain chip. An element opts into the
+// chip with `data-tip-plain`.
 
 /** The attribute a canvas element sets to name itself on hover. */
 export const TIP_ATTR = "data-tip"
+/** Present (any value) on a `data-tip` element whose tip is a plain word for
+ * a control rather than a name: it gets the default chip, not the panel. */
+export const TIP_PLAIN_ATTR = "data-tip-plain"
+
+type Tip = { text: string; plain: boolean }
 
 /** The anchor sits this far down-right of the pointer, so the tip clears
  * the cursor. */
@@ -39,8 +49,13 @@ const NUDGE_Y = 8
 type PointerLike = { clientX: number; clientY: number }
 
 export interface CanvasTipHandle {
-  /** Show `text` at the pointer; empty text hides. */
-  show: (text: string | null | undefined, ev: PointerLike) => void
+  /** Show `text` at the pointer; empty text hides. `plain` = the chip look,
+   * for a word rather than a name. */
+  show: (
+    text: string | null | undefined,
+    ev: PointerLike,
+    plain?: boolean
+  ) => void
   move: (ev: PointerLike) => void
   hide: () => void
 }
@@ -55,7 +70,14 @@ export const CanvasTip = forwardRef<
   CanvasTipHandle,
   { root: RefObject<HTMLElement | null> }
 >(function CanvasTip({ root }, ref) {
-  const [text, setText] = useState<string | null>(null)
+  const [tip, setShown] = useState<Tip | null>(null)
+  // The last tip shown, which the chip keeps drawing while it fades out -
+  // so a closing tip neither empties nor changes its look.
+  const [last, setLast] = useState<Tip | null>(null)
+  const setTip = useCallback((next: Tip | null) => {
+    setShown(next)
+    if (next) setLast(next)
+  }, [])
   const anchor = useRef<HTMLSpanElement>(null)
   // The delegated `data-tip` element that owns the tip, or null while an
   // edge (or nothing) does. Leaving a cable straight onto a port fires the
@@ -73,17 +95,17 @@ export const CanvasTip = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      show: (next, ev) => {
+      show: (next, ev, plain = false) => {
         owner.current = null
         place(ev)
-        setText(next || null)
+        setTip(next ? { text: next, plain } : null)
       },
       move: place,
       hide: () => {
-        if (!owner.current) setText(null)
+        if (!owner.current) setTip(null)
       },
     }),
-    [place]
+    [place, setTip]
   )
 
   // Delegated hover for every `data-tip` element under the canvas root.
@@ -95,7 +117,8 @@ export const CanvasTip = forwardRef<
       if (!t || t === owner.current) return
       owner.current = t
       place(ev)
-      setText(t.getAttribute(TIP_ATTR) || null)
+      const text = t.getAttribute(TIP_ATTR)
+      setTip(text ? { text, plain: t.hasAttribute(TIP_PLAIN_ATTR) } : null)
     }
     const move = (ev: PointerEvent) => {
       if (owner.current) place(ev)
@@ -107,12 +130,12 @@ export const CanvasTip = forwardRef<
       owner.current = null
       // Moving straight onto another tip element: its pointerover follows
       // and takes over.
-      if (!next) setText(null)
+      if (!next) setTip(null)
     }
     // A drag or click is not a hover - get out of the way.
     const down = () => {
       owner.current = null
-      setText(null)
+      setTip(null)
     }
     el.addEventListener("pointerover", over)
     el.addEventListener("pointermove", move)
@@ -124,10 +147,10 @@ export const CanvasTip = forwardRef<
       el.removeEventListener("pointerout", out)
       el.removeEventListener("pointerdown", down)
     }
-  }, [root, place])
+  }, [root, place, setTip])
 
   return (
-    <Tooltip open={!!text} onOpenChange={(open) => !open && setText(null)}>
+    <Tooltip open={!!tip} onOpenChange={(open) => !open && setTip(null)}>
       <TooltipTrigger asChild>
         <span
           ref={anchor}
@@ -136,15 +159,19 @@ export const CanvasTip = forwardRef<
         />
       </TooltipTrigger>
       <TooltipContent
-        variant="panel"
+        variant={last?.plain ? "default" : "panel"}
         side="bottom"
         align="start"
         // Re-place every frame while open: the anchor moves with the
         // pointer without React knowing.
         updatePositionStrategy="always"
-        className="pointer-events-none max-w-96 px-2 py-1 font-mono text-[11px]"
+        className={
+          last?.plain
+            ? "pointer-events-none"
+            : "pointer-events-none max-w-96 px-2 py-1 font-mono text-[11px]"
+        }
       >
-        {text}
+        {last?.text}
       </TooltipContent>
     </Tooltip>
   )
