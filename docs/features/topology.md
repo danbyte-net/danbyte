@@ -18,7 +18,9 @@ icon: lucide/share-2
   ends over the rank structure; drag a card and its chips ride along.
   Cables here are routed from the ports, not the cards: one bends only to
   cross a card standing in its way, and only where a clear vertical street
-  exists - otherwise it stays straight at its own port level.
+  exists - otherwise it stays straight at its own port level. Past 60
+  devices a **Large map** chip offers **Switch to Diagram**; closed, it
+  stays closed in this browser.
 - **Logical** - the L2 picture: **VLANs as rails** (grouped by VLAN group,
   colored by the VLAN's own color or its zone's), with everything attached
   to them - physical devices via their interfaces' untagged/tagged VLANs
@@ -50,7 +52,7 @@ every cabled interface and its name on its own cable, as Wiring did;
   Diagram arrangement of its own, it brings that tab's arrangement and
   zones across: each card is centred where its old card stood, and the
   cards that now overlap (Diagram cards are larger than Flat chips) move
-  apart just enough. The view then shows **edited**: **Save** keeps the
+  apart just enough. The view then shows **Edited**: **Save** keeps the
   result, ++ctrl+z++ puts the automatic layout back, and nothing is saved
   until you do. The Wiring and Flat arrangements stay in the view for one
   more release.
@@ -204,7 +206,7 @@ lines** section, open to anyone who can see the map:
   as above.
 
 It is part of the map's document: every change is one undo step
-(++ctrl+z++ / ++cmd+z++), marks the view **edited**, redraws the cards at
+(++ctrl+z++ / ++cmd+z++), marks the view **Edited**, redraws the cards at
 once, and is kept by **Save** like the rest of the view. On the default map
 it stays in this browser.
 
@@ -265,11 +267,11 @@ or column it goes round whichever way - over their tops or past their sides
 turns it over to the other side of the cards. The choice covers every cable
 between the two devices, in Simple and Detailed alike, and is part of the
 view like its arrangement: each change is one undo step, marks the view
-**edited**, and is kept by **Save** (on the default map, in this browser).
+**Edited**, and is kept by **Save** (on the default map, in this browser).
 
 ### Link labels
 
-**Labels** in the Display popover picks what the links carry - **Subnet**,
+**Labels** in the Display popover picks what the links carry - **Subnets**,
 **IPs** and **Ports**, all on by default. The choice is part of the view,
 and of the link (`labels=`).
 
@@ -285,7 +287,7 @@ and of the link (`labels=`).
 - **IPs** - each end's full address in the subnet the two ends share, the
   same way on the same cable, after its port name (a dual-stack end shows
   both, one after the other).
-- **Subnet** - the shared subnet as the chip on the middle of the line
+- **Subnets** - the shared subnet as the chip on the middle of the line
   (both, stacked, on a dual-stack link; under a bundle's count).
 
 The gaps are the canvas's own colour, in the light and the dark theme, and
@@ -300,7 +302,7 @@ link's chip sits over its raised line. Which labels exist:
 - A LAG's address, on the aggregate, is shown once. A breakout gets a
   subnet per leg (one that every leg shares goes on its trunk, once) and the
   shared port's addresses on its trunk.
-- The addresses load with the map only while Subnet or IPs is on
+- The addresses load with the map only while Subnets or IPs is on
   (`include=link_ips`), and only the ones you may see: without permission to
   view IP addresses - or with none recorded - there are no subnet or address
   labels, and no error. The cable's panel lists every address of each end,
@@ -312,12 +314,12 @@ link's chip sits over its raised line. Which labels exist:
 
 ### Photo nodes
 
-**Devices ▸ Photo** in the Display popover draws each device as its device
+**Draw as ▸ Photo** in the Display popover draws each device as its device
 type's **front photo**, with every cable landing on the port it is plugged
 into - the picture you would take of the rack, wired up. **Card** is the
 default. Right-click a device for **Show photo** or **Show card** to draw
 just that one the other way; the choice is kept with the view (one undo
-step, marks the view edited) and the view's own choice is in the link
+step, marks the view **Edited**) and the view's own choice is in the link
 (`face=photo`). The item is named for how the device is drawn now; for a
 device whose type has neither a photo nor a faceplate, *Show photo* is
 greyed out (it would change nothing).
@@ -380,10 +382,10 @@ greyed out (it would change nothing).
        its ports as those tabs (its drawing has no port positions to land
        on); a file draws it as the device's card;
     4. neither - the normal card.
-- **Layout:** photos are wide and short, so a photo map opens in **Tree**
-  (Display ▸ Layout), its devices in rows top to bottom like a rack, unless
+- **Layout:** photos are wide and short, so a photo map opens **Top to
+  bottom** (Display ▸ Layout), its devices in rows like a rack, unless
   its saved view has a layout of its own or the link names one (`dir=`).
-  Side-to-side photos keep room above and below them for the cables and
+  Photos laid out left to right keep room above and below them for the cables and
   their port names. Switching the view between Card and Photo lays a map
   laid out automatically out again once the photos have arrived, and fits
   it to the screen. Showing one device's photo or card, or photos arriving
@@ -429,20 +431,20 @@ These keep a large map legible:
 - **Group by site / location** (Display popover) - the graph aggregates to
   **one card per site** (or location): device count, role breakdown, and
   one edge per group pair labelled with its cable count (click it for the
-  media types). **Double-click a group** (or its panel's *Open group*) to
+  cable types). **Double-click a group** (or its panel's *Open group*) to
   drill into that group's device view; the header chip pops back out.
   Levels and focus pause while grouped. Devices without a site collect
   under *Unassigned*.
 - **The Diagram is built in the background** - its layout and line
   planning run in a web worker, so a big site never freezes the page: the
-  map shows a muted *Loading...* while the first build runs, and keeps the
-  last layout on screen (with *Loading...* at the top) while a new one is
+  map shows the loading spinner while the first build runs, and keeps the
+  last layout on screen (with the spinner at the top) while a new one is
   built after a change of mode, line or labels, or re-routed after a drag.
   Search dimming and the focused card are applied on the page and need no
   rebuild. The worker loads the app's own Inter font and measures text on
   an offscreen canvas, so its cards and labels are sized exactly as the
   page would size them; it waits for the font before the first layout, so
-  a map opens as a *Re-layout* would draw it once fonts are loaded. A
+  a map opens as *Reset layout* would draw it once fonts are loaded. A
   browser without workers (or one that fails to start it) builds on the
   page as before.
 - **Diagram work is reused** - the Diagram ranks a map's devices once:
@@ -476,8 +478,9 @@ These keep a large map legible:
   and the nearest other cabled devices that fit on screen with it (at 30%
   zoom or closer, so the card names read, and on a photo map so the photos
   are pictures) - never the devices nothing is cabled to, packed under the
-  rest - and a note to search or focus a device for the rest. The fit
-  button does the same; the note goes as soon as you move the map.
+  rest - and a **Partial map** chip (its ⓘ says to search or focus a device
+  for the rest). The fit button does the same; the chip goes as soon as you
+  move the map.
 - **Only the cards in view are drawn** - above 200 cards the Diagram hands
   each card (or photo) over with its size, so the page draws the cards in
   view and the rest as you pan to them, instead of drawing every card once
@@ -485,7 +488,7 @@ These keep a large map legible:
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat
 end-to-end path strip on top, and a **trace map** below - the traced devices
-as full stencil cards (Side-to-side or Tree) with the traced cable drawn as a
+as full stencil cards (laid out left to right or top to bottom) with the traced cable drawn as a
 thick animated primary line. The interface **Overview** also carries the
 end-to-end path on the right.
 
@@ -509,9 +512,10 @@ map scoped to them.
 A collapsible **Legend** in the map's corner explains the line styles for
 whichever view is active (the Logical view carries its own under the
 diagram); its open/closed state is remembered per browser. On the Diagram
-it lists the roles on the map as their badges. In *By type* or *By speed*
-color mode it keys the media types on the map, or the speed tiers, as short
-lines in their colours. Clicking a cable draws it emphasized in the accent
+it lists the roles on the map as their badges. With **Color by** on *Type*
+or *Speed* it keys the cable types on the map, or the speed tiers, as short
+lines in their colours; on *Cable* or *Status* it says so in one line
+(*Color by cable*). Clicking a cable draws it emphasized in the accent
 color while its panel is open.
 
 ## Reading the map
@@ -533,7 +537,7 @@ the trace maps and a device's Map tab, read like this:
 - **Edges** - solid lines are cables; a **long-dashed** line is a collapsed
   end-to-end run (labelled `via <panel>…`); a short-dashed *italic* line is an
   **LLDP ghost** - SNMP saw the adjacency but no cable exists (click it to
-  materialise one). On these cards `×N` marks a breakout/trunk carrying N
+  materialise one). On these cards `Nx` marks a breakout/trunk carrying N
   pairs; the Diagram tab draws a breakout as one trunk splitting into legs
   (see [Diagram view](#diagram-view)).
 - **Hover** an edge and it thickens while every other edge fades - the only
@@ -565,12 +569,12 @@ itself - a dialog doesn't rewrite the page behind it.
 ## Patch panels
 
 Passive panels are hidden by default - their runs collapse so cables read
-end-to-end. The **Show patch panels** toggle reveals them as nodes between the
+end-to-end. **Patch panels** in the Display popover reveals them as nodes between the
 cables. A device counts as a panel when its cabled ports are all patch-panel
 front/rear ports **or** its device role is flagged **Patch-panel role** (on the
 role's edit page) - so you can designate any role (e.g. a fibre-tray role) as
-passive. Panel roles are also kept out of the **Levels** tiers, since a panel
-isn't a device tier.
+passive. Panel roles are also kept out of the **Levels**, since a panel
+isn't a device level.
 
 ## Panels: collapsed or raw
 
@@ -579,14 +583,15 @@ server-to-switch run through two patch panels is **one edge**, annotated
 `via panel-a, panel-b`. Untick it to see the raw physical hops with the
 panels as nodes - the truth on the wall vs the truth in the racks.
 
-## Building a diagram
+## Hand-picked maps {#building-a-diagram}
 
-A map normally shows whatever its filters match. A diagram built by hand
-shows exactly the devices you put on it, where you put them - "core row",
-"customer X hand-off" - and keeps them there as the network grows around it.
+A map normally shows whatever its filters match - a **filtered map**. A
+**hand-picked map** shows exactly the devices you put on it, where you put
+them - "core row", "customer X hand-off" - and keeps them there as the
+network grows around it.
 
 **Start from a blank view.** The **New view** button (the page icon beside
-the saved-views select) asks for a name and where to start:
+the **Views** select) asks for a name and where to start:
 
 - **Blank** - a view with no devices at all.
 - **This map** - the devices the map shows now become the view's fixed set,
@@ -611,27 +616,29 @@ lands where you let go. To place several, click one, ++ctrl++-click
 them: they land in a small grid from that point, clear of the cards already
 there. Double-click a device, press ++enter++ on it, or use **Add** at the
 bottom of the list to place the selection in the middle of the screen (after
-right-clicking the canvas → *Add device…*, where you clicked). Cables between
+right-clicking the canvas → *Add devices…*, where you clicked). Cables between
 the devices on the map draw themselves - there is nothing to connect. A card
 shows muted until the map has fetched it; the camera stays where it is.
 
-Patch panels cannot be placed while **Show patch panels** is off: their
-cables are walked through, so the panel would never appear.
+Patch panels cannot be placed while **Patch panels** (Display) is off: their
+cables are walked through, so the panel would never appear. The device
+list says *Patch panels are hidden* on them.
 
 **Add connected devices.** Right-click a card → *Add connected devices*, or
 select it and use **Add ▸ Connected devices**, to bring in everything cabled
 to it. Each newcomer goes to the free spot nearest the cards it is cabled
 to, below them where there is room; if any lands off screen, the camera
-widens to show them.
+widens to show them. When everything cabled to it is already on the map,
+it says *No new connected devices*.
 
-**Removing devices.** Right-click a card → *Remove from diagram*, or select
+**Removing devices.** Right-click a card → *Remove from map*, or select
 cards and press ++delete++ (or ++backspace++). That takes the device out of
 the view's set, with its position and overrides; ++ctrl+z++ puts it back.
 *Hide*, next to it, is different - it hides a card and keeps it in the set
 (see [Hiding things](#hiding-things-the-eyes)).
 
-**Arranging.** Drag cards where you want them. **Arrange ▸ Re-layout** lays
-the diagram out automatically again. Devices added to a diagram that was laid
+**Arranging.** Drag cards where you want them. **Arrange ▸ Reset layout** lays
+the map out automatically again. Devices added to a diagram that was laid
 out automatically pin the cards already there, so nothing moves under you.
 **Arrange ▸ Bands by role** (or *by device type*) stacks the diagram into
 labelled layers - see [Bands and zones](#bands-and-zones). A device
@@ -641,28 +648,30 @@ diagram.
 
 **Saving.** Adding, placing and removing devices are edits to the view: undo
 steps like any other, and **Save** (++ctrl+s++) writes them - see
-[Saved views](#saved-views). On the Diagram tab **Add** and **Arrange** menus
-stand in for the Add device, Zone and Re-layout buttons of the Hierarchy
-tab.
+[Saved views](#saved-views). The Hierarchy tab has its own **Add** menu
+(*Device…*, which picks one device in a dialog, and *Zone*) and
+**Arrange ▸ Reset layout**.
 
-**A map that follows its filters** takes no drops: the device list says so and
-offers **New view**. Right-click a device → *Start custom map here* still
-turns any map into an unsaved one of just that device, grown with *Add
-connected devices* (and, on the Hierarchy tab, the **Add device** button).
-An unsaved map keeps its devices in its address (`devices=`), which holds up
-to 200 of them; past that, save it as a view to keep adding. A header chip
-(*Custom map · n*) shows the set's size and leaves it. A view saved as a
-device set has no such chip: its name is in the views select, and the
-count beside the title is its devices. Right-click also offers *Open device* and
-*Focus here* in any mode.
+**A filtered map** takes no drops: the device list says *Filtered map* (only
+a hand-picked map takes new devices) and offers **New view…**. Right-click a
+device → *Start hand-picked map* still turns any map into an unsaved one of
+just that device, grown with *Add connected devices* (and, on the Hierarchy
+tab, **Add ▸ Device…**). An unsaved map keeps its devices in its address
+(`devices=`), which holds up to 200 of them; past that, save it as a view to
+keep adding. A header chip (*Hand-picked · n*) shows the set's size; its ×
+(or right-click empty canvas → *Back to filtered map*) leaves it. A view
+saved as a device set has no such chip: its name is in the **Views** select,
+and the count beside the title is its devices. Right-click also offers
+*Open device* and *Focus* in any mode.
 
 ### Hiding things - the eyes
 
 The map has the same eyes as the [site map](site-map.md) and the
 [floor plans](floor-plans.md). In the **Objects** sidebar, every group
 header has one - a **role**, a **site** or a **location** (whichever the
-Devices list is grouped by), a **link family** (a cable media type, or the
-LLDP-discovered links) - and so does every device row. Right-click a card →
+Devices list is grouped by), a **link family** (a cable type, **No type**
+for cables without one, **LLDP** for discovered links, or **BGP sessions**)
+- and so does every device row. Right-click a card →
 **Hide** is the same thing for one card, from the canvas.
 
 Hiding is not a filter: a filter says what kind of thing belongs on the map,
@@ -671,7 +680,7 @@ someone else to read. What is hidden is kept by *group*, so a role hidden
 today hides the switch that gets that role tomorrow. A hidden card takes its
 cables with it (a cable to a card that is not drawn has nowhere to land); a
 hidden link family goes without touching the cards. Positions are kept -
-hiding never re-runs the layout, and re-layout ignores hidden cards so they
+hiding never re-runs the layout, and *Reset layout* ignores hidden cards so they
 do not hold empty space. Hidden objects stay in the sidebar, dimmed, with the
 eye lit, so "where did my core switch go" answers itself; **Show all** at the
 top of the sidebar - or the **"n hidden · Show all"** chip in the corner when
@@ -685,7 +694,7 @@ Keyboard: ++h++ hides the selected card (or, on a grouped map, the selected
 site or location); ++shift+h++ shows everything again. The same two keys
 work on the site map and the floor plans.
 
-(On a map built by hand, *Remove from diagram* is the different thing next
+(On a hand-picked map, *Remove from map* is the different thing next
 to *Hide*: it takes the device out of the hand-picked set the map is built
 from.)
 
@@ -721,14 +730,14 @@ the roles now in it ("Leaf" becomes "Leaf + Border"); a level's band is
 named after the roles in it that are on the map. Bands you drew by hand
 are replaced, after a question.
 
-**Re-layout** with bands on the map arranges the bands again by what they
+**Reset layout** with bands on the map arranges the bands again by what they
 were made from (as the menu entry above) instead of throwing the cards into
 a fresh layout across them - rows hold their cards. With only bands drawn
-by hand, Re-layout is off: clear the bands first.
+by hand, Reset layout is off: clear the bands first.
 
 **Several layers in one band.** A band can hold more than one role (or
 device type): "Data Center fabric" holding Access and Server, under one
-title. Select a band and pick its layers with **Layers…** in the toolbar
+title. Select a band and pick its layers with **Layers** in the toolbar
 above it: the roles on the map, each as its badge, or - on the
 *Types* tab - the device types. A tick takes effect at once and is one undo
 step:
@@ -792,7 +801,7 @@ rows' edges. Side bands can stand side by side.
   toolbar above it. Rows start neutral, side bands on a pastel swatch.
   Colour means nothing on its own: it is there to set one part of a picture
   apart.
-- **Delete** it from the toolbar or by right-clicking it; its cards stay
+- **Delete** it from the toolbar or by right-clicking it (**Delete**); its cards stay
   where they are. **Arrange ▸ Clear bands** removes every band (after a
   question when some were drawn by hand).
 
@@ -829,8 +838,9 @@ right-click empty canvas → *Add zone*) work the same way on every tab:
   it.
 - **Rename** it by double-clicking the label.
 - **Resize** it by selecting it and dragging a corner.
-- **Recolour or delete** it from the small toolbar above a selected zone, or
-  by right-clicking it.
+- **Color** it with a swatch (each named on hover: Slate, Sky, Emerald,
+  Amber, Pink, Violet) or **Delete** it, from the small toolbar above a
+  selected zone or by right-clicking it.
 
 A zone is an **annotation, not a container** - it owns nothing inside it, so
 dragging one moves the box and leaves every card exactly where it was. That
@@ -838,7 +848,7 @@ is what makes it safe to draw one across a map somebody else arranged.
 
 The Delete and Backspace keys never remove a band or a zone - that always
 takes one of the explicit actions above - and remove cards only from a
-[diagram built by hand](#building-a-diagram); ++ctrl+z++ puts either back.
+[hand-picked map](#building-a-diagram); ++ctrl+z++ puts either back.
 Like the arrangement, bands and zones are kept **per view style**: a box
 that frames four Diagram cards would frame part of one of Hierarchy's.
 
@@ -874,38 +884,41 @@ browser). The SVG, PNG and draw.io exports draw them where they stand.
 
 The arrangement, zones and hidden objects belong to the map you made them
 on. A saved view carries its own, the default map keeps its own in this
-browser, and a **custom map is a scratch map** - what you arrange and draw
-there stays there until you save it as a view, and exiting the custom map
-neither carries it back to the default map nor disturbs the default map's
-own arrangement.
+browser, and an unsaved **hand-picked map is a scratch map** - what you
+arrange and draw there stays there until you save it as a view, and going
+**Back to filtered map** neither carries it back to the default map nor
+disturbs the default map's own arrangement.
 
 ## Filters, focus, search
 
 Filter by **site / role / status / tag** - the filter fields are searchable
-comboboxes, so a long site list is a keystroke away. Click a device → **Focus** to
-re-query just its neighbourhood, with a **1–4 hop** radius selector; the
-focus chip in the header clears it. The **Find device** box dims everything
-that doesn't match (name, IP, type) - press ++enter++ to zoom to the first
-hit.
+comboboxes (*Any site*, *Any role*…), so a long site list is a keystroke
+away. Click a device → **Focus** (or right-click it → *Focus*) to re-query
+just its neighbourhood, with a **1–6 hop** radius selector in place of
+Filters; the focus chip in the header clears it. The **Find on map** box
+dims everything that doesn't match (name, IP, type) - press ++enter++ to
+zoom to the first hit. What you type there is not an edit of a saved view.
 
-### On this map - the objects sidebar
+### Objects sidebar {#on-this-map-the-objects-sidebar}
 
 **Objects** in the toolbar opens the same sidebar the site map and the floor
-plans have: one search box, status chips, and every object on the map in
-foldable groups. It is the answer to "where is that switch" on a 70-card
-map.
+plans have: one **Search…** box, the monitoring state tabs, and every object
+on the map in foldable groups. It is the answer to "where is that switch" on
+a 70-card map.
 
 - **Problems** first: every card whose monitoring roll-up is down or
-  degraded, worst first. The **down / degraded / up** chips narrow the whole
+  degraded, worst first. The state tabs (**All**, then down, degraded and
+  up under your own status names, each with its count) narrow the whole
   list to one state.
-- **Devices** grouped by **role**, **site** or **location** - the switch at
-  the group header, remembered per browser - with the monitoring chip on
+- **Devices** grouped by **Role**, **Site** or **Location** - the tabs at
+  the group header, remembered per browser - with the monitoring badge on
   each row. A role group is headed by its role's badge, and a row grouped
   by site or location carries its role's badge. When the map is grouped by
   site or location, the groups are listed instead; double-click one to open
   it.
-- **Links** by media type, each family headed by a badge in its line
-  colour, with LLDP-discovered links and **BGP sessions**
+- **Links** by cable type (**No type** for cables without one), each family
+  headed by a badge in its line colour, with **LLDP** (discovered links) and
+  **BGP sessions**
   (a dotted line per peering device pair and table, labelled with the two
   AS numbers, iBGP or eBGP and the VRF; click it to open the session) as
   their own families;
@@ -923,14 +936,14 @@ opens as if you had clicked the card. The eyes on the headers and rows are
 [hiding](#hiding-things-the-eyes). The sidebar is a per-browser preference,
 like the site map's.
 
-## Layout: side-to-side or tree
+## Layout: left to right or top to bottom {#layout-side-to-side-or-tree}
 
-The **Side-to-side / Tree** toggle picks the layout axis:
+**Layout** in the Display popover picks the axis:
 
-- **Side-to-side** (default) - cards flow left→right, ports on the left and
-  right edges. A Diagram showing photos opens in Tree instead (see
+- **Left to right** (default) - cards flow left→right, ports on the left and
+  right edges. A Diagram showing photos opens Top to bottom instead (see
   [Photo nodes](#photo-nodes)).
-- **Tree (top-down)** - cards flow top→bottom: a device's ports run across the
+- **Top to bottom** - cards flow top→bottom: a device's ports run across the
   **top** and **bottom** of the card with its identity in the middle, so a
   hierarchy (core at the top, access below, servers at the bottom) reads like
   a real network diagram.
@@ -953,61 +966,72 @@ Two passes keep the port-by-port cards readable without manual cleanup:
 
 The toolbar groups its controls to stay uncluttered: a **Filters** popover
 (site / role / status / tag, with a badge counting active filters) and a
-**Display** popover (layout axis, grouping, the Diagram's devices, lines,
-labels and card lines, colour-by, and *Show patch panels*). **Search** and
-**Levels** stay on the bar.
+**Display** popover (layout axis, grouping, the Diagram's *Draw as*, lines,
+labels and card lines, *Color by*, *LAG bundles* and *Patch panels*).
+**Find on map** and **Levels** stay on the bar.
+
+Both bars fit a 1280 px screen with the sidebar open. Where the room runs
+out, the header's **Simple / Detailed** and the second bar's **Objects** and
+**Copy link** move into a **More** (⋯) menu at the end of their bar, and
+while a scope chip (hand-picked, focus or a group drilled into) is showing,
+the device count gives way to it. Narrower still, a bar scrolls sideways,
+its scrollbar showing.
 
 ## Link aggregation bundles
 
 Member cables of one bundle - both ends in an aggregate, the same pair of
-aggregates - draw as **one thicker edge** labelled `Po1 ⇄ Po10 ×2`, the
+aggregates - draw as **one thicker edge** labelled `Po1 ⇄ Po10 · 2x`, the
 logical link rather than its physical legs. A port-channel that fans out to a
 vPC / MLAG pair is two bundles, one per far-end aggregate. Hover names the
 aggregates, the member cables and the speed; click opens the bundle panel,
-titled by the aggregates, listing every member cable. **Display → Bundle
-aggregates** turns the fold off (`?lag=off` in the URL; a saved view keeps
+titled by the aggregates, listing every member cable. **Display ▸ LAG
+bundles** turns the fold off (`?lag=off` in the URL; a saved view keeps
 the setting) to see every cable. The Diagram's Simple mode draws every
 cable between two devices as one line anyway, and names the aggregates on
 its chip when all of them share one.
 
 ## Edge coloring
 
-The **color mode** select paints edges by:
+**Color by** in the Display popover paints the lines by:
 
-| Mode | Meaning |
+| Color by | Meaning |
 |---|---|
-| **Cable color** | the literal color recorded on each cable (default) |
-| **By type** | a stable hue per media type (cat6, OM4, DAC…) |
-| **By status** | each cable's status color from your [status catalog](catalogs-and-settings.md) |
-| **By speed** | link speed from the endpoint interface's **speed** field - green 1G, blue 10G, violet 25G, amber 40G, red 100G+ - with the speed as the edge label |
-| **No color** | monochrome |
+| **Cable** | the literal color recorded on each cable (default) |
+| **Type** | a stable hue per cable type (cat6, OM4, DAC…) |
+| **Status** | each cable's status color from your [status catalog](catalogs-and-settings.md) |
+| **Speed** | link speed from the endpoint interface's **speed** field - green 1G, blue 10G, violet 25G, amber 40G, red 100G+ - with the speed as the edge label |
+| **None** | monochrome |
 
-## Levels (role tiers)
+## Levels {#levels-role-tiers}
 
 The panel-lane and distance behaviour below is part of **Levels**, so it needs
-the tier order set (at least one role dragged into the list). A saved view
-restores the arrangement it was saved with, tiers or not; the tier order still
-places anything you never dragged, and changing a tier order, bond or distance
-re-runs the layout. **Re-layout** regenerates the view you're on from its tiers
-whenever you want it back. With **Show patch panels**
-on and tiers active, each panel gets its
-**own lane between the two device tiers it joins** - so panels never land on a
-device row and the fabric spaces out by a layer. Each tier's **distance dot**
-controls the gap directly **above** its own row, so dragging a role's dot moves
+the level order set (at least one role dragged into the list). A saved view
+restores the arrangement it was saved with, levels or not; the level order
+still places anything you never dragged, and changing the order, a link or a
+gap re-runs the layout. **Arrange ▸ Reset layout** lays the view you're on
+out from its levels again whenever you want it back. With **Patch panels**
+on and levels set, each panel gets its
+**own lane between the two device levels it joins** - so panels never land on a
+device row and the fabric spaces out by a layer. Each level's **Gap above**
+dots control the gap directly **above** its own row, so a role's dots move
 that row up or down.
 
-The **Levels** button opens a list of the device roles on the map - drag them
-into the tier order you want (top of the list = first level). Nodes then stack
-strictly by role: firewalls, then distribution, then access, then servers, so
-the map reads as a hierarchy instead of following raw cable structure. Roles
-left off, and devices with no role, fall to the last tier. **Clear** returns to
-the structural layout. Each tier (except the first) has a **distance** control - five dots adding
-room above it. The gap's **minimum is computed, not chosen**: every cable
-crossing a gap gets its own 14px lane, so a tier fed by eighty cables opens
-up automatically and the dots only ever add space on top - a distance
-setting can no longer be "too small" for the cabling. Tiers are centred on a common axis, so
-levels even out from the middle into a symmetric tree. The tier order and
-distances are saved with the view.
+The **Levels** button opens a list of the device roles on the map, each as
+its badge - drag them into the order you want (top of the list = first
+level). Nodes then stack strictly by role: firewalls, then distribution, then
+access, then servers, so the map reads as a hierarchy instead of following
+raw cable structure. Roles left off, and devices with no role, fall to the
+last level. The link between two rows puts the lower role on the **Same
+level** as the one above (its tooltip says which: *Same level as Core*, or
+*Own level* to split it off again). **Reset levels** returns to the
+structural layout; *No roles on this map* when there are none. Each level
+(except the first) has **Gap above** - five dots adding room above it. The
+gap's **minimum is computed, not chosen**: every cable crossing a gap gets
+its own 14px lane, so a level fed by eighty cables opens up automatically
+and the dots only ever add space on top - a gap can no longer be "too
+small" for the cabling. Levels are centred on a common axis, so they even
+out from the middle into a symmetric tree. The level order and gaps are
+saved with the view.
 
 Ports **auto-snap**: each cabled port renders once, on whichever side of its
 card faces its neighbour - so an HA link between two side-by-side firewalls
@@ -1018,21 +1042,23 @@ counts.
 ## Saved views
 
 Drag cards where you want them, then **Save as…** - a saved view stores,
-per tenant, the **filter set** (or a custom map's device set), the **display
-settings** (colour mode, layout direction, Levels, grouping, aggregate
+per tenant, the **filter set** (or a hand-picked map's device set), the **display
+settings** (Color by, layout direction, Levels, grouping, LAG
 bundling, and the Diagram's Simple/Detailed mode, line type and its own
 [card lines](#card-lines)),
 **every node position** per view style, the **zones**
-and the **hidden objects**. Load it from the views select - the map, its
+and the **hidden objects**. Load it from the **Views** select (*No view* is
+the default map) - the map, its
 LLDP links and its BGP sessions are fetched once the view's settings are in,
 never for the whole tenant first; **Save** (or
 ++ctrl+s++, ++cmd+s++ on a Mac) updates it in place after you rearrange;
-**Re-layout** discards hand positions and re-runs the automatic
-left-to-right layout. **Save** needs the change permission on topology
+**Arrange ▸ Reset layout** discards hand positions and re-runs the automatic
+layout. **Save** needs the change permission on topology
 views, **Save as…** the add permission (++ctrl+s++ on a map that is not a
 saved view opens **Save as…**), and deleting a view the delete permission.
-The delete button beside **Save** asks first - a view's layout, bands and
-notes go with it.
+The delete button (the bin after **Save as…**) asks first - *Delete
+"name"?*, since a view's layout, bands, zones and text go with it - and
+reports *Deleted "name"*.
 Views are plain API objects
 (`/api/topology-views/`), change-logged like everything else - except that
 the change log keeps a summary of a view's `state`, not the arrangement
@@ -1043,7 +1069,7 @@ The pre- and post-change snapshots carry `state` in the same form over all
 its keys. `bytes` is measured the way the 8 MB cap is.
 
 A view can hold up to 50,000 positioned or hidden cards per list and 8 MB in
-all. A map that outgrows that is refused with its size; **Re-layout** a style
+all. A map that outgrows that is refused with its size; **Reset layout** on a style
 you do not use to drop its arrangement and save again. What a view's `state`
 holds, and how a save from an outdated copy is refused, is in
 [Saved views API](#saved-views-api).
@@ -1058,36 +1084,40 @@ the Diagram the first time it opens there - see
 [Coming from Wiring or Flat](#coming-from-wiring-or-flat).
 
 **Save** stores the arrangements you actually made - a view you dragged is
-pinned exactly, a view you left (or returned, with **Re-layout**) to the
+pinned exactly, a view you left (or returned, with **Reset layout**) to the
 automatic layout stays automatic, so it keeps laying itself out as the map's
-devices change. **Re-layout** only re-runs the view you're looking at. A
+devices change. **Reset layout** only re-runs the view you're looking at. A
 drag stores the whole arrangement of that view as it stands; the only
 positions it keeps from before are those of cards your permissions do not
 let you see, so saving a shared view never scrambles somebody else's. The
 saved arrangements come back however the view is opened - picked from the
 select, or as a `?view=` link in a fresh tab. Views saved before the per-view
 split keep their arrangement under the style they were saved in; if one opens
-scrambled, **Re-layout** and **Save** once.
+scrambled, **Reset layout** and **Save** once.
 
 A view is addressable: `?view=<id>` opens it. Change anything afterwards -
-a setting, a drag, a zone, a hidden card - and the toolbar says **edited**:
+a setting, a drag, a zone, a hidden card - and the toolbar says **Edited**:
 what you're looking at is no longer what the view describes. **Save** writes
-it back and the address collapses to the plain `?view=<id>` again.
+it back and the address collapses to the plain `?view=<id>` again. Typing in
+**Find on map** is not an edit: it only dims cards, and Save never stores it.
 
 Edits to a map are **undoable**: every drag, zone change, hide and
-**Re-layout** is one step, up to 100 steps back, and a save can be undone
-too. Settings that live in the URL (filters, tab, colour mode…) are not on
+**Reset layout** is one step, up to 100 steps back, and a save can be undone
+too. Settings that live in the URL (filters, tab, Color by…) are not on
 the undo list - the browser's Back button takes those back.
 
-**Unsaved changes.** Leaving a saved view or a custom map with unsaved edits -
-another view from the select, the default map, a sidebar link, the browser's
-Back button, closing the tab - asks first: **Keep editing** or **Discard and
-leave**. The default map never asks; it is kept in this browser as you go.
+**Unsaved changes.** Leaving a saved view or a hand-picked map with unsaved
+edits - another view from the select, the default map, a sidebar link, the
+browser's Back button, closing the tab - asks first, in the same dialog as
+the [floor plans](floor-plans.md): *Discard unsaved changes?* with **Keep
+editing** or **Discard and leave**. The default map never asks; it is kept
+in this browser as you go.
 
 **Changed by someone else.** Save only writes over the version you opened. If
-somebody saved the view in the meantime, Save is refused and offers **Save as
-copy** (keep your version as a new view) or **Reload** (take theirs and drop
-your changes); nothing is overwritten silently.
+somebody saved the view in the meantime, Save is refused and offers
+**Save as…** (keep your version as a new view, named "<view> (copy)") or
+**Reload** (take theirs and drop your changes); nothing is overwritten
+silently.
 
 ### Keyboard
 
@@ -1096,7 +1126,9 @@ your changes); nothing is overwritten silently.
 | ++ctrl+s++ / ++cmd+s++ | Save (Save as… on a map that is not a saved view) |
 | ++ctrl+z++ / ++cmd+z++ | Undo the last edit to the map |
 | ++ctrl+shift+z++ / ++cmd+shift+z++ (or ++ctrl+y++) | Redo |
-| ++delete++ / ++backspace++ | Remove the selected notes, and the selected cards from a diagram built by hand |
+| ++delete++ / ++backspace++ | Remove the selected notes, and the selected cards from a hand-picked map |
+| ++h++ | Hide the selected card (or the selected site or location on a grouped map) |
+| ++shift+h++ | Show everything hidden |
 | ++enter++ (device list) | Place the selected devices in the middle of the screen |
 | ++ctrl++ / ++cmd++ / ++shift++ + click (device list) | Select several devices to drag at once |
 
@@ -1106,8 +1138,8 @@ Undo and redo leave a text field's own undo alone while you type in it.
 
 ## Linking and sharing
 
-The map is its address. Every control writes to the URL, so **Link** in the
-toolbar copies exactly what you're looking at - and a browser bookmark, the
+The map is its address. Every control writes to the URL, so **Copy link** in the
+toolbar copies exactly what you're looking at (*Link copied*) - and a browser bookmark, the
 back button and a reload all keep it.
 
 | Parameter | Values |
@@ -1126,10 +1158,10 @@ back button and a reload all keep it.
 | `dir` | `lr` (default; `tb` on a Diagram showing photos), `tb` |
 | `color` | `cable` (default), `type`, `status`, `speed`, `none` |
 | `lag` | `on` (default) bundles aggregate members, `off` |
-| `levels` | the tier order - see below |
+| `levels` | the level order - see below |
 | `device` `depth` | focus on one device, 1-6 hops |
-| `devices` | a comma-separated device set - an unsaved map built by hand, up to 200 |
-| `q` | the search box |
+| `devices` | a comma-separated device set - an unsaved hand-picked map, up to 200 |
+| `q` | the **Find on map** box (never an edit of a saved view) |
 | `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
 
 A setting on its default is left out, so a plain map stays `/topology`. A value
@@ -1138,10 +1170,10 @@ Grouping by site while scoped to one site *is* that site's device view, so
 `?group=site&site=<id>` is the drill-in - the same link the breadcrumb gives
 you.
 
-**Levels** ride in one parameter: the roles in tier order, `+` for a role
-bonded to the level above it and `:n` for extra distance, e.g.
+**Levels** ride in one parameter: the roles in level order, `+` for a role
+on the same level as the one above it and `:n` for extra gap, e.g.
 `levels=Firewall|Core%20switch+|Distribution:2|Access`. `levels=none` turns a
-saved view's tiers off.
+saved view's levels off.
 
 Node positions are **not** in the URL - a hand-dragged arrangement lives in the
 saved view (or your browser). A link reproduces the map's settings and lets the
@@ -1163,7 +1195,8 @@ however far off screen it sits.
 **Print** makes the same PDF and opens it in a new tab, where the browser's
 PDF viewer prints it. The page is already the paper's size, so print it at
 **Actual size** (100%), not "Fit". If the browser blocks the new tab, the
-PDF is downloaded instead.
+PDF is downloaded instead. A file that can't be made says so: *Couldn't
+export map*, or *Couldn't make PDF* with the server's reason.
 
 The menu's choices are remembered per browser:
 
@@ -1284,7 +1317,7 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   cloud is draw.io's cloud, a building the network library's *Business
   Center* and a globe a circle, each with its caption underneath.
 - **Layers:** LLDP neighbours and BGP sessions are on their own layers,
-  *Discovered (LLDP)* and *BGP sessions*, so you can hide them in one click
+  *LLDP* and *BGP sessions*, so you can hide them in one click
   (*View ▸ Layers*, Ctrl+Shift+L).
 - Text is Helvetica, as few machines have Inter installed.
 - **Photos:** by default a photo node is drawn as the device's card, at the
@@ -1490,7 +1523,7 @@ empty `devices=` is still the device-set mode: an empty map.
 
 In the **Logical** view, a leg's interface name clicks through to that
 interface's page (device interfaces; VM interfaces have no page). Cable
-detail pages have a **Topology** button opening a custom map of the cable's
+detail pages have a **Topology** button opening a hand-picked map of the cable's
 whole end-to-end run - every device it passes through, with patch panels
 shown when the run threads one.
 

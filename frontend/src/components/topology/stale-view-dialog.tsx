@@ -38,8 +38,7 @@ export function StaleViewDialog({
         <DialogHeader>
           <DialogTitle>Changed by someone else</DialogTitle>
           <DialogDescription>
-            “{name}” was saved again after you opened it. Reload drops your
-            changes.
+            “{name}” was saved again after you opened it.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -48,7 +47,7 @@ export function StaleViewDialog({
           </Button>
           {canCopy && (
             <Button onClick={onSaveCopy} disabled={reloading}>
-              Save as copy
+              Save as…
             </Button>
           )}
         </DialogFooter>

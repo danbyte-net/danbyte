@@ -25,11 +25,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
 import { api } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -327,8 +322,8 @@ export function ExportMenu({
         )
     } catch (err) {
       if (format === "pdf" || format === "print")
-        apiErrorToast(err, "Couldn't make the PDF")
-      else toast.error("Couldn't export the map")
+        apiErrorToast(err, "Couldn't make PDF")
+      else toast.error("Couldn't export map")
     } finally {
       // A Print that didn't get as far as its PDF leaves no blank tab.
       if (tab && !printing) tab.close()
@@ -338,25 +333,18 @@ export function ExportMenu({
 
   return (
     <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 min-w-24 text-xs"
-              disabled={disabled || busy}
-            >
-              <Download className="h-3 w-3" />
-              {busy ? "Exporting…" : "Export"}
-              {!busy && <ChevronDown className="h-3 w-3" />}
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" variant="panel">
-          Download this map
-        </TooltipContent>
-      </Tooltip>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 min-w-24 text-xs"
+          disabled={disabled || busy}
+        >
+          <Download className="h-3 w-3" />
+          {busy ? "Exporting…" : "Export"}
+          {!busy && <ChevronDown className="h-3 w-3" />}
+        </Button>
+      </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuItem onSelect={() => void run("png")}>
           <FileImage /> PNG

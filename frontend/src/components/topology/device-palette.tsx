@@ -29,6 +29,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { Loading } from "@/components/loading"
 import { DEVICE_PICKER_FILTERS } from "@/components/device-picker"
 import type { PickerFilter } from "@/components/object-picker"
 import { QueryError } from "@/components/query-error"
@@ -410,10 +411,7 @@ export function DevicePalette({
           <span className="text-[11px] whitespace-nowrap text-muted-foreground">
             Filtered map
           </span>
-          <InfoTip>
-            A filtered map shows what its filters match. Devices are placed on a
-            view built by hand - start one with New view.
-          </InfoTip>
+          <InfoTip>Only a hand-picked map takes new devices.</InfoTip>
           {onNewView && (
             <Button
               variant="outline"
@@ -470,9 +468,7 @@ export function DevicePalette({
             : undefined
         }
       >
-        {q.isLoading && (
-          <p className="px-1 py-2 text-xs text-muted-foreground">Loading...</p>
-        )}
+        {q.isLoading && <Loading />}
         {q.isError && <QueryError error={q.error} />}
         {q.data && !all.length && (
           <p className="px-1 py-2 text-xs text-muted-foreground">
@@ -482,7 +478,7 @@ export function DevicePalette({
         {q.data && all.length > 0 && !shown.length && (
           <p className="px-1 py-2 text-xs text-muted-foreground">
             {show === "unplaced" && !needle && !activeFilters
-              ? "Every device is on the map."
+              ? "All devices placed."
               : "No matches."}
           </p>
         )}
@@ -663,7 +659,7 @@ function PaletteRow({
     <Tooltip>
       <TooltipTrigger asChild>{body}</TooltipTrigger>
       <TooltipContent side="right" variant="default">
-        Turn on Show patch panels to place it
+        Patch panels are hidden
       </TooltipContent>
     </Tooltip>
   )

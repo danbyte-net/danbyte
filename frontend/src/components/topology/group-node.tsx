@@ -40,7 +40,6 @@ export function GroupNode({ data, selected }: NodeProps) {
         selected ? "border-primary ring-2 ring-primary/30" : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
       style={{ width: GROUP_W, height: GROUP_H }}
-      data-tip="Double-click to open this group"
     >
       {SIDES.map(({ side, pos }) => (
         <span key={side}>

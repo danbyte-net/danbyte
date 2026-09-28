@@ -143,7 +143,7 @@ link even when it runs through three panels to get there.
 The **Topology** page (sidebar, under Maps) draws an interactive **device-to-
 device map** of your cabling. Filter it by **site** to focus on one location, or
 by **device** to pull in just that device's neighbours. Drag nodes around, use
-the minimap to navigate, and click **re-layout** to tidy it up. Cable colors
+the minimap to navigate, and use **Arrange ▸ Reset layout** to tidy it up. Cable colors
 carry through to the links. On very large networks, filter by site first - the
 map will prompt you.
 

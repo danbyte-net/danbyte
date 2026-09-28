@@ -300,7 +300,7 @@ describe("a band of several layers", () => {
     expect(
       screen.queryByRole("button", { name: "Merge with band below" })
     ).toBeNull()
-    expect(screen.getByRole("button", { name: "Layers…" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Layers" })).toBeTruthy()
   })
 
   it("merges with the band below, and splits into layers", async () => {
@@ -339,7 +339,7 @@ describe("a band of several layers", () => {
     await onCanvas({ rule: { by: "role", ids: [ACCESS.id] }, onLayers }, [
       other,
     ])
-    fireEvent.click(screen.getByRole("button", { name: "Layers…" }))
+    fireEvent.click(screen.getByRole("button", { name: "Layers" }))
     await settle()
     const options = screen.getAllByRole("option")
     expect(options.map((o) => o.textContent)).toEqual([

@@ -566,7 +566,7 @@ describe("toDrawio", () => {
     expect(page.get("cab-1")!.style.dashed).toBeUndefined()
     expect(page.get("layer-lldp")).toMatchObject({
       parent: "0",
-      value: "Discovered (LLDP)",
+      value: "LLDP",
     })
     expect(page.get("layer-bgp")).toMatchObject({
       parent: "0",

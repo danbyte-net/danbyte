@@ -37,6 +37,8 @@ import type {
 } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
+import { InfoTip } from "@/components/ui/info-tip"
 import { readableText } from "@/lib/color"
 import { cn, cssColor } from "@/lib/utils"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
@@ -404,7 +406,7 @@ function hoverLabel(e: Edge): string | undefined {
     else if (pair)
       bits.push(
         `${pair.a} ↔ ${pair.b}${
-          (r.pairs?.length ?? 0) > 1 ? `  ×${r.pairs!.length}` : ""
+          (r.pairs?.length ?? 0) > 1 ? ` · ${r.pairs!.length}x` : ""
         }`
       )
     if (r.via?.length) bits.push(`via ${r.via.join(", ")}`)
@@ -556,7 +558,7 @@ const smoothstep = () => ({
 function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
   const ends = { id: c.id, source: c.source, target: c.target }
   switch (c.sem) {
-    // Aggregated group-to-group edge (group_by mode): ×N cables, width
+    // Aggregated group-to-group edge (group_by mode): Nx cables, width
     // scaled gently by the bundle size.
     case "groupedge": {
       const n = c.group?.cable_count ?? 1
@@ -565,7 +567,7 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
         sourceHandle: "n",
         targetHandle: "n",
         ...smoothstep(),
-        label: `×${n}`,
+        label: `${n}x`,
         data: { sem: "groupedge", group: c.group, baseS: "n", baseT: "n" },
         ...flowEdgeStyle(edgeLook("groupedge", { count: n })),
       }
@@ -641,7 +643,7 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
       const via = r?.via ?? []
       const count = pairs.length
       const labelBits: string[] = []
-      if (count > 1) labelBits.push(`×${count}`)
+      if (count > 1) labelBits.push(`${count}x`)
       if (via.length) labelBits.push(`via ${via.join(", ")}`)
       if (r?.cable_label) labelBits.push(r.cable_label)
       if (colorMode === "speed" && r?.speed) labelBits.push(r.speed)
@@ -688,7 +690,7 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
           ? [...speeds][0] || undefined
           : undefined
       const lag = sharedLag(c.cables)
-      const base = lag ? lagBundleLabel(lag, n) : `×${n}`
+      const base = lag ? lagBundleLabel(lag, n) : `${n}x`
       return {
         ...ends,
         sourceHandle: "n",
@@ -1443,7 +1445,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     workerRef.current = null
     setWorkerFailed(true)
   }, [])
-  // Builds and relinks in flight: the map shows "Loading..." meanwhile.
+  // Builds and relinks in flight: the map shows its loader meanwhile.
   const [busy, setBusy] = useState(0)
 
   const inPlace = useMemo<Built | null>(
@@ -2839,8 +2841,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     [carry, onNodeDragStop, emitNotes]
   )
 
-  if (!mounted)
-    return <div className="h-full w-full animate-pulse bg-muted/30" />
+  if (!mounted) return <Loading />
   // A map built by hand stays a live canvas while empty: it is where the
   // first devices get dropped.
   const empty = graph.nodes.length === 0
@@ -2849,9 +2850,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   if (empty && !takesDrops)
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <EmptyState title="Nothing to map yet." className="bg-card">
-          Cable some devices first.
-        </EmptyState>
+        <EmptyState title="No cabled devices yet." className="bg-card" />
       </div>
     )
 
@@ -2958,23 +2957,24 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       )}
       {partial && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4">
-          <div className="rounded-md border bg-card px-2 py-1 text-xs whitespace-nowrap text-muted-foreground">
-            Part of a large map. Search or focus a device.
+          <div className="pointer-events-auto flex items-center gap-1 rounded-md border bg-background/95 px-2 py-1 text-xs whitespace-nowrap text-muted-foreground">
+            Partial map
+            <InfoTip side="top">
+              Part of a large map. Search or focus a device to see the rest.
+            </InfoTip>
           </div>
         </div>
       )}
       <CanvasTip ref={tipApi} root={wrapper} />
       {offThread && (busy > 0 || !offBuilt) && (
         // Laid out off the main thread: the map stays usable, and the last
-        // layout stays up until the new one lands.
-        <div
+        // layout stays up (the loader at its top) until the new one lands.
+        <Loading
           className={cn(
-            "pointer-events-none absolute inset-x-0 z-10 flex justify-center text-sm text-muted-foreground",
-            offBuilt ? "top-3" : "inset-y-0 items-center"
+            "pointer-events-none absolute inset-x-0 z-10",
+            offBuilt ? "top-3 h-auto min-h-0" : "inset-y-0"
           )}
-        >
-          Loading...
-        </div>
+        />
       )}
     </div>
   )

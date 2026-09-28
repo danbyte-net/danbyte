@@ -545,7 +545,7 @@ describe("printLegend", () => {
     expect(bgp.stroke).toMatch(/^#[0-9a-f]{6}$/)
     expect(bgp.dash).toBe("3 5")
     // Screen-only entries (the colour-mode note) stay off paper.
-    expect(rows.map((r) => r.label)).not.toContain("Color: cable")
+    expect(rows.map((r) => r.label)).not.toContain("Color by cable")
   })
 })
 

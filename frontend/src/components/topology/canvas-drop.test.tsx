@@ -66,7 +66,7 @@ describe("canvas drop target", () => {
       </div>
     )
     await settle()
-    expect(screen.getByText("Nothing to map yet.")).toBeTruthy()
+    expect(screen.getByText("No cabled devices yet.")).toBeTruthy()
     expect(container.querySelector(".react-flow")).toBeNull()
   })
 

@@ -25,12 +25,24 @@ export function readTopoHidden(raw: unknown): TopoHidden {
 export const NO_SITE = "No site"
 export const NO_LOCATION = "No location"
 export const NO_ROLE = "No role"
-/** The link family LLDP ghosts are listed and hidden under. */
+/** The link family LLDP ghosts are listed and hidden under. The key is
+ * what every saved view's `state.hidden.kinds` stores - show it with
+ * `familyLabel`, never rename it. */
 export const DISCOVERED = "Discovered"
 /** The link family BGP sessions are listed and hidden under. */
 export const BGP_SESSIONS = "BGP sessions"
-/** The link family of cables with no media type. */
+/** The link family of cables with no cable type. A stored key, like
+ * DISCOVERED. */
 export const UNTYPED = "Untyped"
+
+/** A link family as the page names it: LLDP neighbours are "LLDP" and
+ * untyped cables "No type", while the stored keys stay as saved views and
+ * this browser's hidden set already hold them. */
+export function familyLabel(family: string): string {
+  if (family === DISCOVERED) return "LLDP"
+  if (family === UNTYPED) return "No type"
+  return family
+}
 
 /** The family a link is listed and hidden under - cables by media type,
  * LLDP ghosts as their own; null for the aggregates and pass-through

@@ -8,6 +8,7 @@ import type { Device, TopologyCardConfig } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useSaveObject } from "@/lib/save-object"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
@@ -83,7 +84,7 @@ export function CardLinesEditor({
   const stash = useRef<{ custom?: string[]; list?: string[] }>({})
   const [adding, setAdding] = useState(false)
 
-  if (!config) return <p className="text-xs text-muted-foreground">Loading…</p>
+  if (!config) return <Loading />
 
   const opts = cardLineOptions(config.available, cfMeta)
   const meta = compact
@@ -320,7 +321,7 @@ function DeviceCardLines({
         {device.isError ? (
           <QueryError error={device.error} />
         ) : !device.data ? (
-          <p className="text-xs text-muted-foreground">Loading…</p>
+          <Loading />
         ) : (
           <CardLinesEditor
             value={value}
@@ -333,7 +334,7 @@ function DeviceCardLines({
         )}
       </div>
       <DialogFooter>
-        <Button variant="secondary" size="sm" onClick={onClose}>
+        <Button variant="ghost" size="sm" onClick={onClose}>
           Cancel
         </Button>
         <Button

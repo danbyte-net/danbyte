@@ -4,7 +4,9 @@ import type { TopoEdge, TopoNode, TopologyGraph } from "@/lib/api"
 import {
   NO_TOPO_HIDDEN,
   applyHidden,
+  familyLabel,
   hiddenOnMap,
+  linkFamily,
   readTopoHidden,
 } from "./hidden"
 
@@ -127,5 +129,22 @@ describe("hiddenOnMap", () => {
         roles: ["Core"],
       })
     ).toBe(2)
+  })
+})
+
+describe("familyLabel", () => {
+  // The stored keys are what saved views hold in state.hidden.kinds: they
+  // stay, and only the words on screen change.
+  it("names LLDP and untyped cables for the page, keeping the stored keys", () => {
+    const ghost: TopoEdge = { id: "g", source: "a", target: "b", type: "ghost" }
+    const bare: TopoEdge = { id: "c", source: "a", target: "b", type: "cable" }
+    expect(linkFamily(ghost)).toBe("Discovered")
+    expect(linkFamily(bare)).toBe("Untyped")
+    expect(familyLabel(linkFamily(ghost)!)).toBe("LLDP")
+    expect(familyLabel(linkFamily(bare)!)).toBe("No type")
+  })
+  it("leaves cable types and BGP sessions as they are", () => {
+    expect(familyLabel("smf")).toBe("smf")
+    expect(familyLabel("BGP sessions")).toBe("BGP sessions")
   })
 })

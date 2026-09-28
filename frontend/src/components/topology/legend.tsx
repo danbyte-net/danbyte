@@ -57,11 +57,12 @@ function RowItem({
   )
 }
 
-// One terse line per mode - the docs explain, the legend just labels.
+// One terse line per mode - the docs explain, the legend just labels. The
+// words are the Display popover's Color by options.
 const COLOR_MODE_NOTE: Record<EdgeColorMode, string> = {
-  cable: "Color: cable",
-  type: "Color: media type",
-  status: "Color: status",
+  cable: "Color by cable",
+  type: "Color by type",
+  status: "Color by status",
   speed: "",
   none: "",
 }
@@ -76,7 +77,7 @@ const SPEED_TIERS: [string, string][] = [
 
 /** The most role fills the Diagram legend lists; the rest are on the map. */
 const MAX_ROLES = 12
-/** The most media types the legend swatches. */
+/** The most cable types the legend swatches. */
 const MAX_TYPES = 8
 
 /** One legend entry. The canvas legend draws these, and the exports turn
@@ -98,16 +99,16 @@ export type LegendItem =
     }
   /** A box: a site/location card, or a patch panel's dashed outline. */
   | { kind: "box"; label: string; dashed?: boolean }
-  /** A colour-mode swatch: a media type or a speed tier. */
+  /** A color-mode swatch: a cable type or a speed tier. */
   | { kind: "tone"; label: string; color: string; mono?: boolean }
-  /** A colour-mode note. */
+  /** A color-mode note. */
   | { kind: "note"; label: string }
 
 export interface LegendOptions {
   viewStyle: NodeStyle
   grouped: boolean
   colorMode: EdgeColorMode
-  /** Media types present on the map - swatched when coloring by type. */
+  /** Cable types present on the map - swatched when coloring by type. */
   types?: string[]
   /** Diagram: the roles on the map - each card is filled with its role's
    * colour. */
@@ -137,7 +138,7 @@ export function legendRows({
     if (monitorPill) out.push({ kind: "pill", label: "Monitoring" })
     out.push(
       { kind: "line", label: "Cable", sem: "cable" },
-      { kind: "line", label: "Bundle (2x)", width: 2.5, sem: "bundle" },
+      { kind: "line", label: "Bundle", width: 2.5, sem: "bundle" },
       { kind: "line", label: "Via patch panels", dash: "10 4" },
       {
         kind: "line",
@@ -160,7 +161,7 @@ export function legendRows({
       { kind: "line", label: "Cable", sem: "cable" },
       {
         kind: "line",
-        label: "LAG bundle (Po1 ⇄ Po10 ×N)",
+        label: "LAG bundle",
         width: 2.5,
         sem: "bundle",
       },

@@ -1093,7 +1093,7 @@ function page(
     if (!nodeParent.get(n) && !early(n)) node(n, null, "1")
   for (const n of doc.notes) note(n)
   for (const [layer, name] of [
-    [LAYER_LLDP, "Discovered (LLDP)"],
+    [LAYER_LLDP, "LLDP"],
     [LAYER_BGP, "BGP sessions"],
   ] as const) {
     const links = doc.links.filter((l) => onLayer(l.sem) === layer)

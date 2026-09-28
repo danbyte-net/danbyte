@@ -45,7 +45,7 @@ export function OverlayEdge({ id, source, target, data, style }: EdgeProps) {
   const ep = bgp.pairs?.[0]
   const kind =
     bgp.kind === "ibgp" ? "iBGP" : bgp.kind === "ebgp" ? "eBGP" : null
-  const label = [ep ? `${ep.a} ⇄ ${ep.b}` : "BGP", kind, bgp.vrf ?? null]
+  const label = [ep ? `${ep.a} ↔ ${ep.b}` : "BGP", kind, bgp.vrf ?? null]
     .filter(Boolean)
     .join(" · ")
   const path = `M ${a.x} ${a.y} L ${b.x} ${b.y}`

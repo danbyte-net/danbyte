@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -164,7 +165,7 @@ export function NewViewDialog({
               </p>
             )}
           </Field>
-          <div className="flex justify-end gap-2">
+          <DialogFooter>
             <Button
               type="button"
               variant="ghost"
@@ -176,9 +177,9 @@ export function NewViewDialog({
               type="submit"
               disabled={!trimmed || mapBlocked || create.isPending}
             >
-              {create.isPending ? "Creating..." : "Create"}
+              {create.isPending ? "Creating…" : "Create"}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

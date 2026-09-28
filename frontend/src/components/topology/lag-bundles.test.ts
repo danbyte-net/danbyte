@@ -41,7 +41,7 @@ describe("groupLagEdges", () => {
   })
 
   it("labels and shared-lag detection", () => {
-    expect(lagBundleLabel({ a: po1, b: po10 }, 2)).toBe("Po1 ⇄ Po10 ×2")
+    expect(lagBundleLabel({ a: po1, b: po10 }, 2)).toBe("Po1 ⇄ Po10 · 2x")
     expect(sharedLag([{ lag: { a: po1, b: po10 } }, { lag: { a: po1, b: po10 } }])).toEqual({
       a: po1,
       b: po10,

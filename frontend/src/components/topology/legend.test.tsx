@@ -55,4 +55,21 @@ describe("legendRows", () => {
     expect(rows[0]).toEqual({ kind: "role", label: "Spine", color: "#6366f1" })
     expect(rows.some((r) => r.kind === "line" && r.sem === "cable")).toBe(true)
   })
+
+  it("names bundles plainly and repeats the Color by option", () => {
+    const labels = (viewStyle: "diagram" | "hierarchy", colorMode = "cable") =>
+      legendRows({
+        viewStyle,
+        grouped: false,
+        colorMode: colorMode as "cable" | "type" | "status",
+      }).map((r) => r.label)
+    expect(labels("diagram")).toContain("Bundle")
+    expect(labels("hierarchy")).toContain("LAG bundle")
+    expect(labels("diagram")).toContain("Color by cable")
+    expect(labels("hierarchy", "status")).toContain("Color by status")
+    // A type legend with no types on the map says which mode it is.
+    expect(labels("diagram", "type")).toContain("Color by type")
+    // No parenthesised counts: the chips on the lines carry those.
+    expect(labels("diagram").some((l) => l.includes("("))).toBe(false)
+  })
 })

@@ -11,7 +11,7 @@ import { diagramHost } from "./diagram/diagram-host"
 import type { HostReply, HostRequest } from "./diagram/diagram-host"
 
 // A browser with workers: the Diagram is built off the main thread. The
-// page shows "Loading..." until the build lands, never builds in place,
+// page shows "Loading…" until the build lands, never builds in place,
 // and builds in place after all when the worker fails.
 
 const worker = vi.hoisted(() => ({ fail: false, builds: 0 }))
@@ -84,7 +84,7 @@ const settle = () =>
   })
 
 describe("Diagram built off the main thread", () => {
-  it("shows Loading... until the worker's build lands", async () => {
+  it("shows Loading… until the worker's build lands", async () => {
     const { container } = render(
       <div style={{ width: 800, height: 600 }}>
         <TopologyCanvas graph={fanoutGraph} nodeStyle="diagram" />
@@ -93,9 +93,9 @@ describe("Diagram built off the main thread", () => {
     await act(async () => {
       await Promise.resolve()
     })
-    expect(screen.getByText("Loading...")).toBeTruthy()
+    expect(screen.getByText("Loading…")).toBeTruthy()
     await settle()
-    expect(screen.queryByText("Loading...")).toBeNull()
+    expect(screen.queryByText("Loading…")).toBeNull()
     expect(worker.builds).toBe(1)
     // Only the worker built it (the handler runs in this test's thread).
     expect(buildDiagram).toHaveBeenCalledTimes(1)
@@ -114,7 +114,7 @@ describe("Diagram built off the main thread", () => {
     await settle()
     expect(worker.builds).toBe(0)
     expect(buildDiagram).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText("Loading...")).toBeNull()
+    expect(screen.queryByText("Loading…")).toBeNull()
     expect(container.querySelectorAll("[data-card]").length).toBe(
       fanoutGraph.nodes.length
     )

@@ -52,6 +52,7 @@ import {
   titleSpot,
 } from "./bands"
 import type { ArrangeCard, BandBy, BandLayout, Region, SubRow } from "./bands"
+import { SWATCH_NAMES } from "./swatch-names"
 import type { Rect } from "./types"
 
 /**
@@ -71,7 +72,7 @@ import type { Rect } from "./types"
  * crosses there - moved along it to the nearest clear spot the plan found
  * (`busy`), so it never hides one.
  *
- * A row can hold several layers (roles or device types, Layers…). Stacked,
+ * A row can hold several layers (roles or device types, Layers). Stacked,
  * each layer's cards stand on a sub-row of their own under the one title,
  * its badge at the left and a faint rule between sub-rows - read off the
  * cards where they stand, like the band's membership.
@@ -109,16 +110,6 @@ export interface BandData {
    * take, as the Diagram last planned them (canvas px). */
   busy?: readonly (readonly [number, number])[]
   [key: string]: unknown
-}
-
-/** The swatches' names, for their buttons. */
-const SWATCH_NAMES: Record<string, string> = {
-  "#64748b": "Slate",
-  "#0ea5e9": "Sky",
-  "#10b981": "Emerald",
-  "#f59e0b": "Amber",
-  "#ec4899": "Pink",
-  "#8b5cf6": "Violet",
 }
 
 /** The grip class - the node's `dragHandle`. */
@@ -564,7 +555,7 @@ function optionsOf(s: ReactFlowState, band: string) {
 }
 
 /**
- * A row's Layers… popover: the roles (as their badges) or device types
+ * A row's Layers popover: the roles (as their badges) or device types
  * on the map, ticked for the ones the row holds. A tick takes effect at
  * once: a layer another row holds moves here, cards and all (that row is
  * named beside it).
@@ -590,7 +581,7 @@ function LayersPicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <ToolButton
-          label="Layers…"
+          label="Layers"
           active={open}
           icon={<Layers className="size-3" />}
         />

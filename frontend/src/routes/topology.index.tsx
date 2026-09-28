@@ -2,22 +2,27 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Building2,
-  ChevronDown,
+  Cable,
   Cloud,
+  CopyPlus,
   Crosshair,
   Eraser,
   FilePlus,
   Filter,
   Globe,
   LayoutGrid,
-  Link2 as LinkIcon,
+  Link as LinkIcon,
+  MoreHorizontal,
   PanelLeft,
   PanelRight,
   Plus,
   RectangleHorizontal,
   RectangleVertical,
+  RefreshCw,
   Rows3,
   Save,
+  Search,
+  Server,
   SlidersHorizontal,
   Square,
   Trash2,
@@ -46,22 +51,13 @@ import type {
   TopologyViewState,
   TopologyViewSummary,
 } from "@/lib/api"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -84,13 +80,26 @@ import {
 } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { EmptyState } from "@/components/empty-state"
+import {
+  BarButton,
+  BarIconButton,
+  BarMenuTrigger,
+  BarTip,
+  BarToggle,
+} from "@/components/map-toolbar"
+import { LeaveGuardDialog } from "@/components/leave-guard-dialog"
+import { Loading } from "@/components/loading"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Combobox } from "@/components/ui/combobox"
 import { FormCheckbox } from "@/components/forms"
@@ -107,6 +116,10 @@ import {
   type TopoHidden,
 } from "@/components/topology/hidden"
 import { StaleViewDialog } from "@/components/topology/stale-view-dialog"
+import {
+  OVERRIDE_KEYS,
+  overridesView,
+} from "@/components/topology/view-overrides"
 import {
   carryIntoDiagram,
   docFromView,
@@ -139,6 +152,7 @@ import {
   useHideKeys,
 } from "@/components/hidden-objects"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { OpenLink } from "@/components/open-link"
 import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { DevicePicker } from "@/components/device-picker"
@@ -159,6 +173,7 @@ import { useBands } from "@/components/topology/diagram/use-bands"
 import { isRow, isSide, titleStrip } from "@/components/topology/diagram/bands"
 import type { BandBy } from "@/components/topology/diagram/bands"
 import { NOTES_MAX, newNote } from "@/components/topology/diagram/notes"
+import { SWATCH_NAMES } from "@/components/topology/diagram/swatch-names"
 import type { NoteIconName } from "@/components/topology/diagram/notes"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import {
@@ -223,6 +238,7 @@ import {
   type PosByStyle,
   type PosMap,
 } from "@/components/topology/view-positions"
+import { modKey } from "@/lib/mod-key"
 import { usePageTitle } from "@/lib/page-title"
 import { cn } from "@/lib/utils"
 
@@ -244,7 +260,7 @@ export interface TopologySearch {
   /** The view tab - public names, not the internal node style. */
   tab?: TabStyle
   /** Applied saved view (`/api/topology-views/`). Any other param present
-   * alongside it is an override of that view - the toolbar says "edited". */
+   * alongside it is an override of that view - the toolbar says "Edited". */
   view?: string
   site?: string
   location?: string
@@ -353,19 +369,6 @@ export const Route = createFileRoute("/topology/")({
   },
 })
 
-/** Params that describe the map itself - everything except the saved-view id.
- * Applying a view clears them all, so any one of them present afterwards means
- * the user has edited the view. */
-const OVERRIDE_KEYS = [
-  "tab", "site", "location", "role", "status", "tag", "panels", "group",
-  "dir", "color", "cables", "mode", "face", "anchor", "line", "labels", "lag",
-  "levels", "device", "depth", "devices", "q", "vlangroup", "vms",
-] as const
-
-const Skeleton = () => (
-  <div className="h-full w-full animate-pulse bg-muted/30" />
-)
-
 type Filters = {
   site: string
   role: string
@@ -417,19 +420,23 @@ function PopoverField({
   )
 }
 
-/** A toolbar button's hover hint, on the shared tooltip. */
-function BarTip({
-  tip,
-  children,
-}: {
-  tip: string
-  children: React.ReactElement
-}) {
+/** A scope chip's X - the drill, hand-picked and focus chips. A plain
+ * button: the Badge is too short for a Button. */
+function ChipClose({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="bottom" variant="panel">
-        {tip}
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="ml-0.5 opacity-80 hover:opacity-100"
+          onClick={onClick}
+          aria-label={label}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" variant="default">
+        {label}
       </TooltipContent>
     </Tooltip>
   )
@@ -510,6 +517,8 @@ const DISPLAY_KEY = "danbyte-topology-display"
 const SIDEBAR_KEY = "topology:sidebar"
 /** Whether the Diagram's device list is open, per browser. */
 const PALETTE_KEY = "topology:palette"
+/** The Hierarchy tab's large-map hint was closed, per browser. */
+const HINT_KEY = "topology:hierarchy-hint"
 /** An unsaved map's device set rides in the URL, and the page's own
  * address has to fit a request line: past this many ids it is saved as a
  * view instead. */
@@ -562,6 +571,8 @@ const RETIRED_TAB_STYLE: Record<string, RetiredStyle | undefined> = {
 }
 const COLOR_MODES = ["cable", "type", "status", "speed", "none"] as const
 const DIRS = ["lr", "tb"] as const
+/** Focus depths the hops select offers - all the URL and the API accept. */
+const HOPS = [1, 2, 3, 4, 5, 6] as const
 const ROUTINGS = ["routed", "straight", "curved"] as const
 const LAG_MODES = ["on", "off"] as const
 const GROUPS = ["none", "site", "location"] as const
@@ -1201,7 +1212,22 @@ function TopologyPage() {
   const [selLink, setSelLink] = useState<DiagramLinkRef | null>(null)
   const [selGroup, setSelGroup] = useState<TopoGroupData | null>(null)
   const [selGroupEdge, setSelGroupEdge] = useState<GroupEdgeInfo | null>(null)
-  const [hintDismissed, setHintDismissed] = useState(false)
+  // The Hierarchy tab's large-map hint, once closed, stays closed here.
+  const [hintDismissed, setHintDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(HINT_KEY) === "closed"
+    } catch {
+      return false
+    }
+  })
+  const dismissHint = () => {
+    setHintDismissed(true)
+    try {
+      localStorage.setItem(HINT_KEY, "closed")
+    } catch {
+      /* private mode - non-fatal */
+    }
+  }
   // The objects sidebar is a per-browser preference, as on the site map.
   const [showObjects, setShowObjects] = useState(
     () => localStorage.getItem(SIDEBAR_KEY) !== "closed"
@@ -1266,7 +1292,7 @@ function TopologyPage() {
    * the same tick would overwrite each other) and drops hand-tuned positions,
    * since the map is about to hold different devices. An applied saved view
    * stays applied - the change rides on top of it as an override, which is
-   * what the toolbar's "edited" reports. */
+   * what the toolbar's "Edited" reports. */
   const set = (next: Partial<Filters>) => {
     // A value that already matches this map's default is written as no param,
     // the same rule the single-value hooks follow - so a filter set back to
@@ -1716,13 +1742,11 @@ function TopologyPage() {
   const clearView = () => patch({ view: undefined, ...noOverrides() })
 
   /** The applied view is no longer what it saved - the URL carries at least
-   * one override on top of `?view=`, or the map itself was edited. */
+   * one override on top of `?view=` (the Find box aside), or the map itself
+   * was edited. */
   const edited =
     viewId !== "none" &&
-    (doc.dirty ||
-      OVERRIDE_KEYS.some(
-        (k) => (urlSearch as Record<string, unknown>)[k] !== undefined
-      ))
+    (doc.dirty || overridesView(urlSearch))
   /** A view's own document is on screen (not the blank one shown while it
    * loads) - saving before that would write an empty map over it. */
   const docReady =
@@ -1750,7 +1774,8 @@ function TopologyPage() {
 
   const [stale, setStale] = useState(false)
   const [reloading, setReloading] = useState(false)
-  // A fresh dialog per opening, so "Save as copy" can hand it a name.
+  // A fresh dialog per opening, so the stale-view dialog's Save as… can
+  // hand it a name.
   const [saveAsSeed, setSaveAsSeed] = useState({ n: 0, name: "" })
   const openSaveAs = (name = "") => {
     setSaveAsSeed((cur) => ({ n: cur.n + 1, name }))
@@ -1836,16 +1861,16 @@ function TopologyPage() {
   /** Delete asks first: a view holds a diagram built by hand. */
   const [confirmDelete, setConfirmDelete] = useState(false)
   const deleteView = useMutation({
-    mutationFn: (id: string) =>
-      api<void>(`/api/topology-views/${id}/`, { method: "DELETE" }),
-    onSuccess: () => {
+    mutationFn: (a: { id: string; name?: string }) =>
+      api<void>(`/api/topology-views/${a.id}/`, { method: "DELETE" }),
+    onSuccess: (_, a) => {
       setConfirmDelete(false)
       qc.invalidateQueries({ queryKey: ["topology-views"] })
       // Nothing is left to keep the edits in, so there is nothing for the
       // leave guard to ask; the default map loads on the way out.
       doc.load(emptyDocument(), mapKey)
       clearView()
-      toast.success("View deleted")
+      toast.success(a.name ? `Deleted “${a.name}”` : "View deleted")
     },
     onError: (err) => apiErrorToast(err),
   })
@@ -1966,7 +1991,7 @@ function TopologyPage() {
     edit({ type: "removeDevices", ids })
     setUrlDevices(custom.filter((id) => !ids.includes(id)))
   }
-  /** "Start custom map here": the map shrinks to this one device. */
+  /** "Start hand-picked map": the map shrinks to this one device. */
   const startSetAt = (id: string) => {
     if (viewId !== "none") {
       if (!viewDocReady) return
@@ -2059,7 +2084,7 @@ function TopologyPage() {
           if (id && !have.has(id) && !fresh.has(id)) fresh.set(id, n)
         }
       if (!fresh.size) {
-        toast("Nothing new is cabled to it")
+        toast("No new connected devices")
         return
       }
       const ids = [...fresh.keys()]
@@ -2290,13 +2315,37 @@ function TopologyPage() {
     ? (graph?.nodes.find((n) => n.data.device_id === focus.id)?.data.name ??
       "device")
     : null
+  /** A view saved as a device set is that set: no chip of its own. */
+  const handPickedChip = builder && !(viewId !== "none" && vf.devices)
+  const scopeChip = !!drill || handPickedChip || !!focus
+  // The header's widths (container px) below which Simple | Detailed moves
+  // into More: a scope chip needs the room. Literal classes, for Tailwind.
+  const headNarrow = scopeChip
+    ? {
+        hide: "@max-[1240px]/head:hidden",
+        show: "@max-[1240px]/head:inline-flex",
+        find: "@max-[1240px]/head:w-36",
+      }
+    : {
+        hide: "@max-[1040px]/head:hidden",
+        show: "@max-[1040px]/head:inline-flex",
+        find: "@max-[1040px]/head:w-36",
+      }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden">
-        <h1 className="text-base font-semibold">Topology</h1>
+      {/* Both bars fit a 1280px screen with the sidebar open: past the
+          widths below, the header's Simple | Detailed and the second bar's
+          Objects and Copy link move into a More menu (and the header's
+          count gives way to a scope chip). Anything narrower scrolls, with
+          its scrollbar showing. */}
+      <header className="@container/head flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
+        <h1 className="shrink-0 text-base font-semibold">Topology</h1>
         {q.data && (
-          <Badge variant="secondary" className="shrink-0">
+          <Badge
+            variant="secondary"
+            className={cn("shrink-0", scopeChip && headNarrow.hide)}
+          >
             {count}{" "}
             {grouped
               ? count === 1
@@ -2310,27 +2359,15 @@ function TopologyPage() {
         {drill && (
           <Badge variant="default" className="shrink-0 gap-1">
             {drill.name}
-            <button
-              className="ml-0.5 opacity-80 hover:opacity-100"
-              onClick={leaveDrill}
-              aria-label="Back to groups"
-            >
-              <X className="h-3 w-3" />
-            </button>
+            <ChipClose label="Back to groups" onClick={leaveDrill} />
           </Badge>
         )}
         {/* A view saved as a device set is that set: its name is in the
             views select and the count beside the title. */}
-        {builder && !(viewId !== "none" && vf.devices) && (
+        {handPickedChip && (
           <Badge variant="default" className="shrink-0 gap-1">
-            Custom map · <span className="num">{custom?.length ?? 0}</span>
-            <button
-              className="ml-0.5 opacity-80 hover:opacity-100"
-              onClick={exitBuilder}
-              aria-label="Exit custom map"
-            >
-              <X className="h-3 w-3" />
-            </button>
+            Hand-picked · <span className="num">{custom?.length ?? 0}</span>
+            <ChipClose label="Back to filtered map" onClick={exitBuilder} />
           </Badge>
         )}
         <SegmentedTabs<TabStyle>
@@ -2350,7 +2387,9 @@ function TopologyPage() {
           ]}
         />
         {isDiagram && (
-          <>
+          <div
+            className={cn("flex shrink-0 items-center gap-2", headNarrow.hide)}
+          >
             <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
             <SegmentedTabs<DiagramModeParam>
               value={diagramMode}
@@ -2360,35 +2399,33 @@ function TopologyPage() {
                 { value: "detailed", label: "Detailed" },
               ]}
             />
-          </>
+          </div>
         )}
         {focus && (
           <Badge variant="default" className="shrink-0 gap-1">
             <Crosshair className="h-3 w-3" />
             {focusName} · {focus.depth} hop{focus.depth === 1 ? "" : "s"}
-            <button
-              className="ml-0.5 opacity-80 hover:opacity-100"
-              onClick={() => setFocus(null)}
-              aria-label="Clear focus"
-            >
-              <X className="h-3 w-3" />
-            </button>
+            <ChipClose label="Clear focus" onClick={() => setFocus(null)} />
           </Badge>
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {!logical && (
             <>
-              <Input
-                placeholder="Find device…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && matchedIds?.size)
-                    canvas.current?.focusNode([...matchedIds][0])
-                }}
-                className="h-8 w-40 text-xs"
-              />
+              <div className="relative shrink-0">
+                <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Find on map…"
+                  aria-label="Find on map"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && matchedIds?.size)
+                      canvas.current?.focusNode([...matchedIds][0])
+                  }}
+                  className={cn("h-8 w-40 pl-8 text-xs", headNarrow.find)}
+                />
+              </div>
               {builder ? null : focus ? (
                 <Select
                   value={String(focus.depth)}
@@ -2398,7 +2435,7 @@ function TopologyPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[1, 2, 3, 4].map((d) => (
+                    {HOPS.map((d) => (
                       <SelectItem key={d} value={String(d)}>
                         {d} hop{d === 1 ? "" : "s"}
                       </SelectItem>
@@ -2430,7 +2467,7 @@ function TopologyPage() {
                       <FilterSelect
                         value={filters.site}
                         onChange={(v) => set({ site: v })}
-                        anyLabel="All sites"
+                        anyLabel="Any site"
                         options={(sites.data?.results ?? []).map((s) => ({
                           value: s.id,
                           label: s.name,
@@ -2524,8 +2561,8 @@ function TopologyPage() {
                           setLayoutTick((t) => t + 1)
                         }}
                         items={[
-                          { value: "LR", label: "Side-to-side" },
-                          { value: "TB", label: "Tree" },
+                          { value: "LR", label: "Left to right" },
+                          { value: "TB", label: "Top to bottom" },
                         ]}
                       />
                     </PopoverField>
@@ -2555,7 +2592,7 @@ function TopologyPage() {
                     />
                   </PopoverField>
                   {isDiagram && !grouped && (
-                    <PopoverField label="Devices">
+                    <PopoverField label="Draw as">
                       <SegmentedTabs<FaceParam>
                         value={diagramFace}
                         onValueChange={setDiagramFace}
@@ -2591,7 +2628,7 @@ function TopologyPage() {
                       <div className="flex items-center gap-4">
                         {(
                           [
-                            ["subnet", "Subnet"],
+                            ["subnet", "Subnets"],
                             ["ip", "IPs"],
                             ["port", "Ports"],
                           ] as const
@@ -2607,7 +2644,7 @@ function TopologyPage() {
                       </div>
                     </PopoverField>
                   )}
-                  <PopoverField label="Colour by">
+                  <PopoverField label="Color by">
                     <Select
                       value={colorMode}
                       onValueChange={(v) => setColorMode(v as EdgeColorMode)}
@@ -2616,22 +2653,22 @@ function TopologyPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="cable">Cable color</SelectItem>
-                        <SelectItem value="type">By type</SelectItem>
-                        <SelectItem value="status">By status</SelectItem>
-                        <SelectItem value="speed">By speed</SelectItem>
-                        <SelectItem value="none">No color</SelectItem>
+                        <SelectItem value="cable">Cable</SelectItem>
+                        <SelectItem value="type">Type</SelectItem>
+                        <SelectItem value="status">Status</SelectItem>
+                        <SelectItem value="speed">Speed</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                       </SelectContent>
                     </Select>
                   </PopoverField>
                   <FormCheckbox
-                    label="Bundle aggregates"
+                    label="LAG bundles"
                     checked={lagMode === "on"}
                     onChange={(v) => setLagMode(v ? "on" : "off")}
                     className="items-center pt-1"
                   />
                   <FormCheckbox
-                    label="Show patch panels"
+                    label="Patch panels"
                     checked={!filters.collapse}
                     onChange={(v) => set({ collapse: !v })}
                     className="items-center pt-1"
@@ -2648,31 +2685,54 @@ function TopologyPage() {
                   )}
                 </PopoverContent>
               </Popover>
+              {isDiagram && (
+                <DropdownMenu>
+                  <BarTip tip="More">
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        aria-label="More"
+                        className={cn("hidden shrink-0", headNarrow.show)}
+                      >
+                        <MoreHorizontal className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </BarTip>
+                  <DropdownMenuContent align="end" className="min-w-40">
+                    <DropdownMenuLabel>Diagram</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={diagramMode}
+                      onValueChange={(v) =>
+                        setDiagramMode(v as DiagramModeParam)
+                      }
+                    >
+                      <DropdownMenuRadioItem value="simple">
+                        Simple
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="detailed">
+                        Detailed
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </>
           )}
         </div>
       </header>
 
-      {/* Second bar: saved views + actions. Scrolls within itself on
-          narrow screens (scrollbar hidden) instead of panning the page.
-          The Logical view has its own toolbar - no saved views/PNG there. */}
+      {/* Second bar: saved views + actions. The Logical view has its own
+          controls - no saved views or exports there. */}
       {!logical && (
-        <div className="flex h-10 shrink-0 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden">
+        <div className="@container/bar flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
           {isDiagram && (
-            <BarTip tip="Devices to place on the map">
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "h-7 shrink-0 text-xs",
-                  !paletteShown && "text-muted-foreground"
-                )}
-                aria-pressed={paletteShown}
-                onClick={() => setPalette(!paletteOpen)}
-              >
-                <PanelLeft className="h-3 w-3" /> Devices
-              </Button>
-            </BarTip>
+            <BarToggle
+              pressed={paletteShown}
+              onClick={() => setPalette(!paletteOpen)}
+            >
+              <PanelLeft /> Devices
+            </BarToggle>
           )}
           <Select
             value={viewId}
@@ -2688,11 +2748,14 @@ function TopologyPage() {
               if (view) applyView(view)
             }}
           >
-            <SelectTrigger className="h-7 w-44 shrink-0 text-xs">
-              <SelectValue placeholder="Saved views" />
+            <SelectTrigger
+              className="h-7 w-44 shrink-0 text-xs @max-[1080px]/bar:w-36"
+              aria-label="Views"
+            >
+              <SelectValue placeholder="Views" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">No saved view</SelectItem>
+              <SelectItem value="none">No view</SelectItem>
               {(views.data?.results ?? []).map((v) => (
                 <SelectItem key={v.id} value={v.id}>
                   {v.name}
@@ -2701,91 +2764,58 @@ function TopologyPage() {
             </SelectContent>
           </Select>
           {canAddViews && (
-            <BarTip tip="New view">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 w-7 shrink-0 px-0"
-                aria-label="New view"
-                onClick={() => setNewViewOpen(true)}
-              >
-                <FilePlus className="h-3 w-3" />
-              </Button>
-            </BarTip>
+            <BarIconButton
+              label="New view"
+              onClick={() => setNewViewOpen(true)}
+            >
+              <FilePlus />
+            </BarIconButton>
           )}
           {edited && (
             <Badge variant="secondary" className="shrink-0">
-              edited
+              Edited
             </Badge>
           )}
           {viewId !== "none" && canChangeViews && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 shrink-0 text-xs whitespace-nowrap"
-              onClick={() => save(viewId)}
-              disabled={saveView.isPending || !docReady}
-            >
-              <Save className="h-3 w-3" /> {savingInPlace ? "Saving…" : "Save"}
-            </Button>
+            <BarTip tip="Save" shortcut={`${modKey()}S`}>
+              <BarButton
+                onClick={() => save(viewId)}
+                disabled={saveView.isPending || !docReady}
+              >
+                <Save /> {savingInPlace ? "Saving…" : "Save"}
+              </BarButton>
+            </BarTip>
           )}
           {canAddViews && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 shrink-0 text-xs whitespace-nowrap"
-              onClick={() => openSaveAs()}
-            >
-              <Save className="h-3 w-3" /> Save as…
-            </Button>
+            <BarButton onClick={() => openSaveAs()}>
+              <CopyPlus /> Save as…
+            </BarButton>
           )}
           {viewId !== "none" && canDeleteViews && (
-            <BarTip tip="Delete view">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-destructive hover:text-destructive"
-                aria-label="Delete view"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </BarTip>
+            <BarIconButton
+              label="Delete view"
+              destructive
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 />
+            </BarIconButton>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <BarTip tip="Everything on this map">
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "h-7 text-xs",
-                  !showObjects && "text-muted-foreground"
-                )}
-                onClick={toggleObjects}
-              >
-                <PanelRight className="h-3 w-3" /> Objects
-              </Button>
-            </BarTip>
+            <BarToggle
+              pressed={showObjects}
+              onClick={toggleObjects}
+              className="@max-[1080px]/bar:hidden"
+            >
+              <PanelRight /> Objects
+            </BarToggle>
             {isDiagram ? (
               <>
                 <DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                        >
-                          <Plus className="h-3 w-3" /> Add
-                          <ChevronDown className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" variant="panel">
-                      Add to the map
-                    </TooltipContent>
-                  </Tooltip>
+                  <DropdownMenuTrigger asChild>
+                    <BarMenuTrigger>
+                      <Plus /> Add
+                    </BarMenuTrigger>
+                  </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="end"
                     className="w-48"
@@ -2798,7 +2828,7 @@ function TopologyPage() {
                       disabled={!canBuild || !selNode?.device_id}
                       onSelect={() => void addConnected(selectedDevices())}
                     >
-                      <LinkIcon /> Connected devices
+                      <Cable /> Connected devices
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={bands.addRow}>
@@ -2838,23 +2868,11 @@ function TopologyPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                        >
-                          <LayoutGrid className="h-3 w-3" /> Arrange
-                          <ChevronDown className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" variant="panel">
-                      Arrange the cards
-                    </TooltipContent>
-                  </Tooltip>
+                  <DropdownMenuTrigger asChild>
+                    <BarMenuTrigger>
+                      <LayoutGrid /> Arrange
+                    </BarMenuTrigger>
+                  </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="end"
                     className="w-auto min-w-48 whitespace-nowrap"
@@ -2873,7 +2891,7 @@ function TopologyPage() {
                         setLayoutTick((t) => t + 1)
                       }}
                     >
-                      <LayoutGrid /> Re-layout
+                      <RefreshCw /> Reset layout
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={() => arrangeBands("role")}>
@@ -2895,51 +2913,50 @@ function TopologyPage() {
               </>
             ) : (
               <>
-                <BarTip tip="Start a custom map">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => setAddOpen(true)}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <BarMenuTrigger>
+                      <Plus /> Add
+                    </BarMenuTrigger>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem onSelect={() => setAddOpen(true)}>
+                      <Server /> Device…
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={addZoneCentered}>
+                      <Square /> Zone
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <BarMenuTrigger>
+                      <LayoutGrid /> Arrange
+                    </BarMenuTrigger>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-auto min-w-48 whitespace-nowrap"
                   >
-                    <Plus className="h-3 w-3" /> Add device
-                  </Button>
-                </BarTip>
-                <BarTip tip="Labelled box behind the cards">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={addZoneCentered}
-                  >
-                    <Square className="h-3 w-3" /> Zone
-                  </Button>
-                </BarTip>
-                <BarTip tip="Discard dragged positions">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => {
-                      setPositions(undefined)
-                      setLayoutTick((t) => t + 1)
-                    }}
-                  >
-                    <LayoutGrid className="h-3 w-3" /> Re-layout
-                  </Button>
-                </BarTip>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setPositions(undefined)
+                        setLayoutTick((t) => t + 1)
+                      }}
+                    >
+                      <RefreshCw /> Reset layout
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             )}
-            <BarTip tip="Copy a link to this map">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={copyLink}
-              >
-                <LinkIcon className="h-3 w-3" /> Link
-              </Button>
-            </BarTip>
+            <BarButton
+              onClick={copyLink}
+              className="@max-[1080px]/bar:hidden"
+            >
+              <LinkIcon /> Copy link
+            </BarButton>
             <ExportMenu
               name={exportName}
               modes={isDiagram}
@@ -2971,6 +2988,28 @@ function TopologyPage() {
                 }) ?? null
               }
             />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <BarIconButton
+                  label="More"
+                  className="hidden @max-[1080px]/bar:inline-flex"
+                >
+                  <MoreHorizontal />
+                </BarIconButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-40">
+                <DropdownMenuCheckboxItem
+                  checked={showObjects}
+                  onCheckedChange={toggleObjects}
+                >
+                  Objects
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void copyLink()}>
+                  <LinkIcon /> Copy link
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       )}
@@ -2993,7 +3032,7 @@ function TopologyPage() {
         <div className="relative min-h-0 flex-1">
           {logical && <LogicalTopologyView />}
           {!logical && (q.isLoading || (!viewSettled && !graph)) && (
-            <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+            <Loading className="absolute inset-0" />
           )}
           {!logical && q.isError && (
             <div className="p-6">
@@ -3001,7 +3040,7 @@ function TopologyPage() {
             </div>
           )}
           {!logical && graph && (
-            <Suspense fallback={<Skeleton />}>
+            <Suspense fallback={<Loading className="absolute inset-0" />}>
               <TopologyCanvas
                 ref={canvas}
                 graph={graph}
@@ -3035,14 +3074,12 @@ function TopologyPage() {
                       {paletteShown ? (
                         "Drag devices in from the list."
                       ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-2 h-7 text-xs"
+                        <BarButton
+                          className="mt-2"
                           onClick={() => setPalette(true)}
                         >
-                          <PanelLeft className="h-3 w-3" /> Devices
-                        </Button>
+                          <PanelLeft /> Add devices…
+                        </BarButton>
                       )}
                     </EmptyState>
                   ) : undefined
@@ -3137,25 +3174,35 @@ function TopologyPage() {
             viewStyle === "hierarchy" &&
             count > 60 &&
             !hintDismissed && (
-              <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
-                <span className="text-muted-foreground">
-                  Hierarchy suits smaller maps - the Diagram scales better.
+              <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-background/95 px-2.5 py-1.5 text-xs">
+                <span className="whitespace-nowrap text-muted-foreground">
+                  Large map
                 </span>
+                <InfoTip>
+                  Hierarchy suits smaller maps; the Diagram scales better.
+                </InfoTip>
                 <Button
-                  size="sm"
+                  size="xs"
                   variant="outline"
-                  className="h-6 px-2 text-[11px]"
                   onClick={() => setTab("diagram")}
                 >
-                  Switch
+                  Switch to Diagram
                 </Button>
-                <button
-                  onClick={() => setHintDismissed(true)}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Dismiss"
-                >
-                  <X className="h-3 w-3" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={dismissHint}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Close"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" variant="default">
+                    Close
+                  </TooltipContent>
+                </Tooltip>
               </div>
             )}
           {!logical && graph && (
@@ -3293,7 +3340,7 @@ function TopologyPage() {
                       })
                     }}
                   >
-                    Focus here (1 hop)
+                    Focus
                   </MenuItem>
                 )}
                 {builder && menu.node.device_id && (
@@ -3315,7 +3362,7 @@ function TopologyPage() {
                       clearSel()
                     }}
                   >
-                    Remove from diagram
+                    Remove from map
                   </MenuItem>
                 )}
                 {!builder && menu.node.device_id && (
@@ -3327,7 +3374,7 @@ function TopologyPage() {
                       startSetAt(menu.node!.device_id!)
                     }}
                   >
-                    Start custom map here
+                    Start hand-picked map
                   </MenuItem>
                 )}
                 {menu.nodeId && (
@@ -3456,7 +3503,7 @@ function TopologyPage() {
                         recolorZone(menu.zoneId!, c)
                         setMenu(null)
                       }}
-                      aria-label={`Colour this zone ${c}`}
+                      aria-label={SWATCH_NAMES[c] ?? c}
                       className="size-4 rounded-sm border border-border"
                       style={{ background: c }}
                     />
@@ -3469,9 +3516,7 @@ function TopologyPage() {
                     removeZone(id)
                   }}
                 >
-                  {zones?.find((z) => z.id === menu.zoneId)?.kind === "band"
-                    ? "Delete band"
-                    : "Delete zone"}
+                  Delete
                 </MenuItem>
               </>
             )}
@@ -3501,7 +3546,7 @@ function TopologyPage() {
                     setPalette(true)
                   }}
                 >
-                  Add device…
+                  {isDiagram ? "Add devices…" : "Add device…"}
                 </MenuItem>
                 {!logical && (
                   <MenuItem
@@ -3532,7 +3577,7 @@ function TopologyPage() {
                       exitBuilder()
                     }}
                   >
-                    Exit custom map
+                    Back to filtered map
                   </MenuItem>
                 )}
               </>
@@ -3613,70 +3658,22 @@ function TopologyPage() {
         }}
       />
 
-      <AlertDialog
+      <ConfirmDialog
         open={confirmDelete}
         onOpenChange={(open) => {
           if (!deleteView.isPending) setConfirmDelete(open)
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete “{appliedView?.name ?? "this view"}”?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Its layout, bands and notes go with it. This can't be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteView.isPending}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={deleteView.isPending}
-              onClick={(e) => {
-                e.preventDefault()
-                deleteView.mutate(viewId)
-              }}
-            >
-              {deleteView.isPending ? "Deleting…" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={
+          appliedView?.name ? `Delete “${appliedView.name}”?` : "Delete view?"
+        }
+        description="Its layout, bands, zones and text go with it. This can't be undone."
+        pending={deleteView.isPending}
+        onConfirm={() =>
+          deleteView.mutate({ id: viewId, name: appliedView?.name })
+        }
+      />
 
-      {/* The leave guard's one dialog. The router holds the navigation open
-          until this resolves, so every close path must settle it: leave the
-          blocker hanging and the next navigation is stuck behind it. */}
-      <AlertDialog
-        open={leaveGuard.status === "blocked"}
-        onOpenChange={(open) => {
-          // Escape, an overlay click and "Keep editing" all mean stay.
-          if (!open) leaveGuard.reset?.()
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This map has unsaved changes. Leaving it drops them.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            {/* Radix closes on action too, so onOpenChange's reset() lands
-                right after this proceed(). Both settle the same promise and
-                only the first wins, so the navigation still goes through. */}
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => leaveGuard.proceed?.()}
-            >
-              Discard and leave
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <LeaveGuardDialog blocker={leaveGuard} />
     </div>
   )
 }
@@ -3770,24 +3767,19 @@ function NodePanel({
       <div className="mt-3 flex gap-2">
         {d.device_id && (
           <>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 flex-1 text-xs"
-              asChild
+            <OpenLink
+              to="/devices/$id"
+              params={{ id: d.device_id }}
+              className="flex-1"
             >
-              <Link to="/devices/$id" params={{ id: d.device_id }}>
-                Open device
-              </Link>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 flex-1 text-xs"
+              Open device
+            </OpenLink>
+            <BarButton
+              className="flex-1"
               onClick={() => onFocus(d.device_id!)}
             >
-              <Crosshair className="h-3 w-3" /> Focus
-            </Button>
+              <Crosshair /> Focus
+            </BarButton>
           </>
         )}
       </div>
@@ -3893,7 +3885,7 @@ function EdgePanel({
       {line && <div className="mt-2 border-t border-border pt-2">{line}</div>}
       {!!d.pairs?.length && (
         <div className="mt-2 border-t border-border pt-2">
-          <PanelHeading>Connections</PanelHeading>
+          <PanelHeading>Ports</PanelHeading>
           <div className="divide-y divide-border">
             {d.pairs.map((p, i) => (
               <PairEnds key={i} pair={p} />
@@ -3902,16 +3894,13 @@ function EdgePanel({
         </div>
       )}
       {d.cable_id && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-3 h-7 w-full text-xs"
-          asChild
+        <OpenLink
+          to="/cables/$id"
+          params={{ id: d.cable_id }}
+          className="mt-3 w-full"
         >
-          <Link to="/cables/$id" params={{ id: d.cable_id }}>
-            Open cable
-          </Link>
-        </Button>
+          Open cable
+        </OpenLink>
       )}
     </PanelShell>
   )
@@ -3936,9 +3925,8 @@ function MenuItem({
   )
 }
 
-/** Device picker for the custom-map builder's + button. */
 /**
- * Add a device to the map.
+ * Add a device to the hand-picked map (the Hierarchy tab's Add ▸ Device…).
  *
  * The shared `DevicePicker`, not a bare combobox: a flat list of every name
  * is unusable past a few hundred devices, and the advanced search behind it
@@ -3961,7 +3949,7 @@ function AddDeviceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Add device to the map</DialogTitle>
+          <DialogTitle>Add device</DialogTitle>
         </DialogHeader>
         <DevicePicker
           label=""
@@ -3972,7 +3960,7 @@ function AddDeviceDialog({
             onPick(v)
             onOpenChange(false)
           }}
-          placeholder="Pick a device…"
+          placeholder="Search devices…"
         />
       </DialogContent>
     </Dialog>
@@ -3992,7 +3980,9 @@ function GroupPanel({
   return (
     <PanelShell title={d.name} onClose={onClose}>
       <div className="space-y-0.5">
-        <Row label="Grouped by">{d.kind}</Row>
+        <Row label="Grouped by">
+          {d.kind === "location" ? "Location" : "Site"}
+        </Row>
         <Row label="Devices">
           <span className="num">{d.device_count}</span>
         </Row>
@@ -4015,14 +4005,9 @@ function GroupPanel({
         </div>
       )}
       {d.group_id && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-3 h-7 w-full text-xs"
-          onClick={() => onDrill(d)}
-        >
-          <Crosshair className="h-3 w-3" /> Open group
-        </Button>
+        <BarButton className="mt-3 w-full" onClick={() => onDrill(d)}>
+          Open group
+        </BarButton>
       )}
     </PanelShell>
   )
@@ -4054,7 +4039,7 @@ function GroupEdgePanel({
           ))}
         </div>
       ) : (
-        <p className="text-muted-foreground">No media types recorded.</p>
+        <p className="text-muted-foreground">No cable types</p>
       )}
     </PanelShell>
   )
@@ -4119,16 +4104,13 @@ function BundlePanel({
               </div>
             )}
             {c.cable_id && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-1.5 h-6 w-full text-[11px]"
-                asChild
+              <OpenLink
+                to="/cables/$id"
+                params={{ id: c.cable_id }}
+                className="mt-1.5 w-full"
               >
-                <Link to="/cables/$id" params={{ id: c.cable_id }}>
-                  Open cable
-                </Link>
-              </Button>
+                Open cable
+              </OpenLink>
             )}
           </div>
         ))}
@@ -4148,7 +4130,8 @@ function SaveAsDialog({
   onOpenChange: (o: boolean) => void
   onSave: (name: string) => void
   busy: boolean
-  /** Prefilled name ("Save as copy" offers "<view> (copy)"). */
+  /** Prefilled name (the stale-view dialog's Save as… offers "<view>
+   * (copy)"). */
   defaultName?: string
 }) {
   const [name, setName] = useState(defaultName)
@@ -4177,7 +4160,7 @@ function SaveAsDialog({
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <div className="flex justify-end gap-2">
+          <DialogFooter>
             <Button
               type="button"
               variant="ghost"
@@ -4188,7 +4171,7 @@ function SaveAsDialog({
             <Button type="submit" disabled={!name.trim() || busy}>
               {busy ? "Saving…" : "Save"}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
