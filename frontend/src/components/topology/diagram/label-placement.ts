@@ -177,8 +177,8 @@ export class LabelScene {
     }
     const out: [number, number][] = []
     for (const [a, b] of spans
-      .map(([a, b]): [number, number] => [a - pad, b + pad])
-      .filter(([a, b]) => b > r.x && a < r.x + r.w)
+      .map(([lo, hi]): [number, number] => [lo - pad, hi + pad])
+      .filter(([lo, hi]) => hi > r.x && lo < r.x + r.w)
       .sort((x, y) => x[0] - y[0] || x[1] - y[1])) {
       const last = out.at(-1)
       if (last && a <= last[1]) last[1] = Math.max(last[1], b)

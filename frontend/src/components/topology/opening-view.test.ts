@@ -139,12 +139,12 @@ describe("openingPart", () => {
     expect(got.map((n) => n.id)).toContain("core")
     expect(got.length).toBeGreaterThan(3)
     expect(got.some((n) => n.id.startsWith("lone"))).toBe(false)
-    const box = got.map(cards).reduce((a, b) => ({
+    const span = got.map(cards).reduce((a, b) => ({
       x: Math.min(a.x, b.x),
       y: Math.min(a.y, b.y),
       width: Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x),
       height: Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y),
     }))
-    expect(zoomFor(box)).toBeGreaterThanOrEqual(0.3)
+    expect(zoomFor(span)).toBeGreaterThanOrEqual(0.3)
   })
 })

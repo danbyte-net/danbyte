@@ -346,8 +346,7 @@ describe("labels on the Diagram", () => {
       }
     }
     const bare = hubGraph()
-    for (const e of bare.edges)
-      for (const p of e.data!.pairs!) delete (p as CablePair).subnets
+    for (const e of bare.edges) for (const p of e.data!.pairs!) delete p.subnets
     for (const e of build(bare).edges.filter((x) => x.type === "link")) {
       const d = dataOf(e)
       expect(d.labels.mid ?? []).toEqual([])

@@ -29,7 +29,7 @@ export function migratePositions(raw: unknown, style: NodeStyle): PosByStyle {
   if (!raw || typeof raw !== "object") return {}
   const obj = raw as Record<string, unknown>
   const isNew = POSITION_STYLES.some((k) => k in obj)
-  if (isNew) return obj as PosByStyle
+  if (isNew) return obj
   // Logical owns no arrangement: stamping a legacy map under "logical" made
   // every later Save-as POST a 400 for anyone who last used that tab.
   if (!POSITION_STYLES.includes(style)) return {}
@@ -42,7 +42,7 @@ export function viewPositions(
   v: Pick<TopologyViewSaved, "state">,
   styleOf: (raw: unknown) => string
 ): PosByStyle {
-  const byStyle = v.state.positions_by_style as PosByStyle | undefined
+  const byStyle = v.state.positions_by_style
   if (byStyle && typeof byStyle === "object") return byStyle
   const style = styleOf(
     (v.state.filters as { viewStyle?: unknown } | undefined)?.viewStyle

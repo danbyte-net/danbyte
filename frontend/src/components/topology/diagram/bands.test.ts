@@ -676,34 +676,40 @@ describe("fitRows", () => {
   const arranged = () => {
     const cards = fabric()
     const { positions, regions } = arrangeBands({ cards, by: "role" })
-    const at = (c: ArrangeCard, w = c.box.w, h = c.box.h) =>
+    const boxAt = (c: ArrangeCard, w = c.box.w, h = c.box.h) =>
       boxAround({ x: positions[c.id][0], y: positions[c.id][1] }, { w, h })
-    return { cards, regions, at }
+    return { cards, regions, boxAt }
   }
 
   it("leaves an arrangement that fits exactly as it is", () => {
-    const { cards, regions, at } = arranged()
+    const { cards, regions, boxAt } = arranged()
     const rows = bandRows(regions)
     const fit = fitRows(
       rows,
-      Object.fromEntries(cards.map((c) => [c.id, at(c)]))
+      Object.fromEntries(cards.map((c) => [c.id, boxAt(c)]))
     )
     expect(fit.moves).toEqual({})
     expect(fit.rows).toEqual(rows)
   })
 
   it("re-fits the rows round cards drawn as photos, each card in its row", () => {
-    const { cards, regions, at } = arranged()
+    const { cards, regions, boxAt } = arranged()
     const rows = bandRows(regions)
     // Arranged as cards, drawn as 480 px photos.
-    const photos = Object.fromEntries(cards.map((c) => [c.id, at(c, 480, 80)]))
+    const photos = Object.fromEntries(
+      cards.map((c) => [c.id, boxAt(c, 480, 80)])
+    )
     const was = membersOf(regions, photos)
     const fit = fitRows(rows, photos)
     const moved: Record<string, Rect> = {}
-    for (const [id, b] of Object.entries(photos)) {
-      const c = fit.moves[id]
-      moved[id] = c ? boxAround({ x: c[0], y: c[1] }, { w: b.w, h: b.h }) : b
-    }
+    for (const [id, b] of Object.entries(photos))
+      moved[id] =
+        id in fit.moves
+          ? boxAround(
+              { x: fit.moves[id][0], y: fit.moves[id][1] },
+              { w: b.w, h: b.h }
+            )
+          : b
     const drawn = fit.rows.map((r) => ({
       ...r,
       kind: "band" as const,
