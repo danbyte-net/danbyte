@@ -36,6 +36,8 @@ export function TraceSection({
   const local = useState<"LR" | "TB">("LR")
   const linked = useUrlEnum<"LR" | "TB">(urlKey ?? "dir", "LR", AXES)
   const [direction, setDirection] = urlKey ? linked : local
+  // Two devices or more make a map; one is an uncabled port.
+  const drawn = (q.data?.device_graph?.nodes.length ?? 0) > 1
 
   return (
     <div>
@@ -44,7 +46,7 @@ export function TraceSection({
           Trace
         </h2>
         {q.data && !q.data.complete && <IncompleteBadge />}
-        {q.data && q.data.nodes.length > 1 && (
+        {drawn && (
           <div className="ml-auto">
             <SegmentedTabs<"LR" | "TB">
               value={direction}
@@ -59,10 +61,8 @@ export function TraceSection({
       </div>
       {q.isLoading && <Loading />}
       {q.isError && <QueryError error={q.error} />}
-      {q.data && (q.data.device_graph?.nodes.length ?? 0) <= 1 && (
-        <EmptyState title="Not cabled." />
-      )}
-      {q.data && (q.data.device_graph?.nodes.length ?? 0) > 1 && (
+      {q.data && !drawn && <EmptyState title="Not cabled." />}
+      {q.data && drawn && (
         <div className="h-[440px] overflow-hidden rounded-lg border border-border">
           <Suspense fallback={<Loading />}>
             <TopologyCanvas

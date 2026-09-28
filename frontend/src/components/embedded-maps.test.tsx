@@ -106,9 +106,9 @@ function linear(complete: boolean): TraceGraph {
   } as unknown as TraceGraph
 }
 
-/** A trace with nothing on the far side. */
+/** A trace with nothing on the far side: the port and its own device. */
 const UNCABLED = {
-  nodes: [],
+  nodes: [node("if:a", "sw-01", "ge-0/0/1"), node("dev:1", "sw-01", "sw-01")],
   edges: [],
   origin: { type: "interface", id: "i1" },
   complete: true,
@@ -175,6 +175,8 @@ describe("TraceSection", () => {
     mount(<TraceSection url="/api/t/" queryKey={["t", 2]} />)
     expect(await screen.findByText("Not cabled.")).toBeTruthy()
     expect(screen.queryByText(/nothing to trace/)).toBeNull()
+    // No map, so no axis to choose.
+    expect(screen.queryByRole("button", { name: "Left to right" })).toBeNull()
   })
 
   it("loads with the shared loader", async () => {
