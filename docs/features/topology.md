@@ -1508,3 +1508,51 @@ top-left corner: `monitor` shows the monitoring pill while the device is
 down or degraded and wins over `status`, which shows the lifecycle status
 pill whenever it is listed. A card keeps room for the pill whenever its
 list can show one, so a device going down never resizes it.
+
+### PDF export API
+
+`POST /api/topology/export/pdf/` lays a drawing out on one sheet of paper and
+returns the PDF as a download (`Content-Disposition: attachment`). The body:
+
+| Field | Shape |
+|---|---|
+| `svg` | the drawing, as the Diagram's SVG export draws it (required) |
+| `title` | the sheet's title, usually the view name; else `meta.view`, else `Topology` |
+| `paper` | `{size: a4\|a3\|letter\|tabloid, orientation: landscape\|portrait}`; A3 landscape when absent |
+| `meta` | `{view, filters, generated_at}` for the title block. `tenant` is accepted and ignored: the block names the session's tenant. |
+| `title_block` | `false` leaves the title block off; `true` by default |
+
+The drawing is scaled to fit inside 10 mm margins, keeping its shape, and
+centred above a 14 mm title block: the title, then the tenant and filters,
+then the date, the Danbyte version and `Page 1 / 1`. A small drawing is
+enlarged to at most 1.5 times its size on screen. Text is Inter, embedded
+from the server's own copy (`api/pdf_fonts/`, SIL Open Font License).
+
+Anyone signed in with an active tenant and `device.view` (at any scope) may
+call it; otherwise it is a 403. One PDF is made at a time per user; a second
+request while one is rendering is a 429.
+
+The SVG is rebuilt from an allowlist before it is drawn: shapes, paths,
+text, clip paths, `<symbol>`/`<use>` and `<image>`, with each attribute
+value checked. A DOCTYPE or entity declaration, markup that is not an SVG,
+or an embedded image that is not what it claims is a 400. Scripts,
+`foreignObject`, event handlers, `style` and `class` attributes, CSS
+`@import` and `url()` values, and external references are dropped; a
+`<use>` must point at a `<symbol>` in the same drawing. The renderer reads
+nothing from the network: only the posted drawing, `data:` images, the
+vendored fonts and device-type photos under `/media/device-type-images/`.
+
+| Limit | |
+|---|---|
+| Request body | 10 MB (413) |
+| SVG | 8 MB, 60,000 elements, 80,000 characters of text (413) |
+| Each embedded image | PNG, JPEG or WebP as a `data:` URI; 3 MB and 36 million pixels (413) |
+
+Rendering time grows with the text on the map: 600 cards with 1,500
+labelled links take about 7 seconds.
+
+`?print=1` answers `{"url": "/api/topology/export/pdf/<token>/"}` instead of
+the file. The PDF is kept for five minutes, and only the same user in the
+same tenant can open the link; anyone else gets a 404. `GET` it to open the
+PDF in the browser, whose viewer prints it at the paper size, or add
+`?download=1` to save it.

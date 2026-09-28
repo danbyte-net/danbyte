@@ -168,6 +168,7 @@ from .presence_views import (
 from .search_views import search as search_view
 from .site_map_views import site_map, site_map_cables, site_map_connections
 from .terraform_views import vm_render_view
+from .topology_export import topology_pdf_file_view, topology_pdf_view
 from .topology_views import (
     topology_logical_view,
     topology_summary_view,
@@ -534,6 +535,10 @@ urlpatterns = [
     path("routing/topology/bgp/", bgp_topology_view, name="routing-topology-bgp"),
     path("topology/logical/", topology_logical_view, name="topology-logical"),
     path("topology/summary/", topology_summary_view, name="topology-summary"),
+    # The Diagram as a PDF (WeasyPrint); ?print=1 answers with a short-lived link.
+    path("topology/export/pdf/", topology_pdf_view, name="topology-export-pdf"),
+    path("topology/export/pdf/<str:token>/", topology_pdf_file_view,
+         name="topology-export-pdf-file"),
     path("customization/meta/", customization_meta, name="customization-meta"),
     path("customization/object-labels/", object_labels, name="customization-object-labels"),
     path("oui/status/", oui_status, name="oui-status"),
