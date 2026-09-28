@@ -51,7 +51,7 @@ export const fetchPalette = () =>
 export const paletteQuery = {
   queryKey: PALETTE_QUERY_KEY,
   queryFn: fetchPalette,
-  staleTime: 60_000,
+  staleTime: 5 * 60_000,
 }
 
 /** What the palette narrows by; null or absent = any. */

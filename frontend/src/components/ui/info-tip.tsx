@@ -15,9 +15,16 @@ import {
 export function InfoTip({
   children,
   className,
+  side,
+  contentClassName,
 }: {
   children: ReactNode
   className?: string
+  /** Where the explanation opens (below by default). */
+  side?: "top" | "right" | "bottom" | "left"
+  /** Extra classes for the explanation - e.g. a z-index to clear the
+   * floating menu it sits in. */
+  contentClassName?: string
 }) {
   return (
     <HoverCard openDelay={100} closeDelay={60}>
@@ -34,7 +41,10 @@ export function InfoTip({
           <Info className="h-3.5 w-3.5" />
         </button>
       </HoverCardTrigger>
-      <HoverCardContent className="w-auto max-w-md text-xs leading-relaxed text-muted-foreground">
+      <HoverCardContent
+        side={side}
+        className={`w-auto max-w-md text-xs leading-relaxed text-muted-foreground ${contentClassName ?? ""}`}
+      >
         {children}
       </HoverCardContent>
     </HoverCard>

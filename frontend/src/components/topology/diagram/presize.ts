@@ -1,8 +1,6 @@
 import { Position } from "@xyflow/react"
 import type { Node, NodeHandle } from "@xyflow/react"
 
-import type { DiagramCardData } from "./types"
-
 // A big Diagram's cards, given to React Flow already measured. React Flow
 // mounts every node it has not measured yet, visible or not, to find the
 // handles its edges start from - on a 2,400-device map that is every card
@@ -11,7 +9,8 @@ import type { DiagramCardData } from "./types"
 // and overlays find their own ends from the boxes), and its box is known
 // from the build. So the box and the handles go in with the node, where
 // React Flow's CSS puts them, and only the cards in view mount. A card
-// that does mount is measured as before.
+// that does mount is measured as before. A photo is its fixed box, with
+// the card's two handles: it goes in measured too.
 
 /** Nodes from which the Diagram's cards are handed over measured. A small
  * map is measured by mounting it: that costs little. */
@@ -41,17 +40,16 @@ function handle(
 }
 
 /**
- * `n` with its measured box and its handles, when it is a Diagram card
- * (not one drawn as its photo) or junction with a size; any other node as
- * it is.
+ * `n` with its measured box and its handles, when it is a Diagram card -
+ * drawn as its card or its photo, which put their handles in the same
+ * places - or a junction with a size; any other node as it is.
  */
 export function presized(n: Node): Node {
   const w = n.width
   const h = n.height
   if (w === undefined || h === undefined || n.hidden) return n
   let sides: [Position, Position]
-  if (n.type === "card" && !(n.data as Partial<DiagramCardData>).diagram?.photo)
-    sides = [Position.Top, Position.Bottom]
+  if (n.type === "card") sides = [Position.Top, Position.Bottom]
   else if (n.type === "junction") sides = [Position.Left, Position.Right]
   else return n
   if (n.handles && n.measured?.width === w && n.measured.height === h) return n

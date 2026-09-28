@@ -98,6 +98,14 @@ export function withFaces(
     : graph
 }
 
+/** Can a device be drawn as its photo (or faceplate)? From the payload's
+ * photo (`include=photo`); undefined when the map did not ask for it. */
+export function canShowPhoto(data: TopoNode["data"]): boolean | undefined {
+  const p = data.photo
+  if (p === undefined) return undefined
+  return !!p.front || (p.type_faceplate && !!data.device_type_id)
+}
+
 /** A marker a cable lands on: its port's current name and kind, its box
  * as fractions of the image (centre and size). */
 export interface PhotoMark {

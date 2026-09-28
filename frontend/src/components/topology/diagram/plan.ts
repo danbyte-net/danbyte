@@ -16,9 +16,11 @@ import {
 import type { ChipAsk, ChipPlace, InlineAsk } from "./label-placement"
 import {
   assignLanes,
+  CLEAR,
   elbowBase,
   endTurn,
   obstacles,
+  LANE,
   pathClear,
   sharedPins,
   SHARED_STUB,
@@ -39,6 +41,7 @@ import type {
   CablePlan,
   DiagramEdgeData,
   DiagramMode,
+  Dir,
   End,
   LineType,
   Pt,
@@ -136,8 +139,8 @@ interface Item {
   leadA?: Pt
   leadB?: Pt
   fanLeg: boolean
-  /** A bendy breakout leg no curve gets clear of the cards: routed as an
-   * elbow instead. */
+  /** A bendy breakout leg no curve gets clear of the cards, or a trunk
+   * whose port faces away from its legs: routed as an elbow instead. */
   rerouted?: true
 }
 
@@ -211,6 +214,9 @@ function items(input: PlanInput): Item[] {
             : undefined
       const sa = shared(a, e.source, aa)
       const sb = shared(b, e.target, ba)
+      // A trunk is straight - unless its port faces away from its legs,
+      // and it goes round to the junction by the far cards.
+      const bentTrunk = d.fan?.role === "trunk" && !!d.fan.bent
       out.push({
         edge: e,
         i,
@@ -218,10 +224,13 @@ function items(input: PlanInput): Item[] {
         // A cyclical link the view's default leaves unarched is bendy.
         line:
           d.fan?.role === "trunk"
-            ? "straight"
+            ? bentTrunk
+              ? "elbow"
+              : "straight"
             : d.line === "cyclical" && !arc
               ? "bendy"
               : d.line,
+        ...(bentTrunk ? { rerouted: true as const } : {}),
         a: {
           ...a,
           node: e.source,
@@ -363,6 +372,142 @@ export function withLeads(pts: Pt[], needA: number, needB: number): Pt[] {
   return reversed(lead(reversed(lead(pts, needA)), needB))
 }
 
+/** A photo port's line facing away from its far end: out along its lead
+ * and round its photo (`pts`, from the end), then on towards the far end
+ * from the last of them, along `dir`. */
+interface Hook {
+  pts: Pt[]
+  dir: Dir
+}
+
+/** How far past a photo's side a hook turns. */
+const HOOK_CLEAR = CLEAR + 4
+
+/** Which way a hook goes: across to the photo's far (`side` 1) or near
+ * side, and on past the photo's other edge or not. */
+type HookWay = { side: 1 | -1; past: boolean }
+
+const HOOK_WAYS: readonly HookWay[] = [
+  { side: 1, past: false },
+  { side: -1, past: false },
+  { side: 1, past: true },
+  { side: -1, past: true },
+]
+
+/**
+ * Straight and bendy lines out of photo ports that face away from the far
+ * end - a port on the top edge cabled to something below. Drawn straight,
+ * the line would run back across its own photo; instead it runs out
+ * along its lead as far as its labels need, turns round a side of the
+ * photo and, where the far end lies behind the photo, on past it, then
+ * goes on from there. Of the ways round (both ends' together, when both
+ * face away), the shortest that keeps clear of every card - its own
+ * included - else the shortest. Ports leaving one edge the same way nest:
+ * the one nearer the side turns first and closest, so the runs never
+ * cross. Keyed `<item key><a|b>`.
+ */
+function hooks(
+  all: readonly Item[],
+  rects: ReadonlyMap<string, Rect>,
+  obs: ReturnType<typeof obstacles>
+): Map<string, Hook> {
+  type Ask = { key: string; at: PlanEnd; r: Rect; way: HookWay; far: number }
+  const groups = new Map<string, Ask[]>()
+  const facesAway = (at: PlanEnd, to: Pt) =>
+    (to.x - at.x) * at.dir[0] + (to.y - at.y) * at.dir[1] < -2
+  const length = (pts: readonly Pt[]) =>
+    pts.reduce(
+      (sum, p, i) =>
+        i ? sum + Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y) : 0,
+      0
+    )
+  for (const it of all) {
+    if (it.line !== "straight" && it.line !== "bendy") continue
+    if (it.a.node === it.b.node) continue
+    const ra = it.leadA && facesAway(it.a, it.b) ? rects.get(it.a.node) : null
+    const rb = it.leadB && facesAway(it.b, it.a) ? rects.get(it.b.node) : null
+    if (!ra && !rb) continue
+    let best: { a?: HookWay; b?: HookWay; cost: number } | null = null
+    for (const wa of ra ? HOOK_WAYS : [undefined])
+      for (const wb of rb ? HOOK_WAYS : [undefined]) {
+        const pa = wa && ra ? hookPts(it.a, ra, wa, it.a.stub, HOOK_CLEAR) : []
+        const pb = wb && rb ? hookPts(it.b, rb, wb, it.b.stub, HOOK_CLEAR) : []
+        const pts = [it.a, ...pa, ...[...pb].reverse(), it.b]
+        const cost =
+          length(pts) + (pathClear(obs, pts, [it.a.node, it.b.node]) ? 0 : 1e6)
+        if (!best || cost < best.cost - 1e-6) best = { a: wa, b: wb, cost }
+      }
+    for (const [end, r, way] of [
+      ["a", ra, best!.a],
+      ["b", rb, best!.b],
+    ] as const) {
+      if (!r || !way) continue
+      const at = it[end]
+      const vertical = Math.abs(at.dir[1]) > 0.5
+      const pos = vertical ? at.x : at.y
+      const edge = vertical
+        ? way.side > 0
+          ? r.x + r.w
+          : r.x
+        : way.side > 0
+          ? r.y + r.h
+          : r.y
+      const g = `${at.node}\u0000${at.dir[0]},${at.dir[1]}\u0000${way.side}`
+      const list = groups.get(g) ?? []
+      list.push({
+        key: `${it.key}${end}`,
+        at,
+        r,
+        way,
+        far: Math.abs(edge - pos),
+      })
+      groups.set(g, list)
+    }
+  }
+  const out = new Map<string, Hook>()
+  for (const list of groups.values()) {
+    // Nearest the side first: it turns off lowest, the others round it.
+    list.sort((p, q) => p.far - q.far || (p.key < q.key ? -1 : 1))
+    const base = Math.max(...list.map((x) => x.at.stub))
+    list.forEach(({ key, at, r, way }, k) => {
+      const [dx, dy] = at.dir
+      out.set(key, {
+        pts: hookPts(at, r, way, base + k * LANE, HOOK_CLEAR + k * LANE),
+        dir: way.past
+          ? [-dx, -dy]
+          : Math.abs(dy) > 0.5
+            ? [way.side, 0]
+            : [0, way.side],
+      })
+    })
+  }
+  return out
+}
+
+/** A hook's points from the end `at` on photo `r`: `len` out, across to
+ * `clear` past one side of the photo and, going `past`, on beyond its
+ * other edge. */
+function hookPts(
+  at: End,
+  r: Rect,
+  way: HookWay,
+  len: number,
+  clear: number
+): Pt[] {
+  const [dx, dy] = at.dir
+  const o = { x: at.x + dx * len, y: at.y + dy * len }
+  if (Math.abs(dy) > 0.5) {
+    const x = way.side > 0 ? r.x + r.w + clear : r.x - clear
+    return way.past
+      ? [o, { x, y: o.y }, { x, y: dy < 0 ? r.y + r.h + clear : r.y - clear }]
+      : [o, { x, y: o.y }]
+  }
+  const y = way.side > 0 ? r.y + r.h + clear : r.y - clear
+  return way.past
+    ? [o, { x: o.x, y }, { x: dx < 0 ? r.x + r.w + clear : r.x - clear, y }]
+    : [o, { x: o.x, y }]
+}
+
 /** A planned route walked from one of its ends: the point `d` px along
  * it and the direction of travel there, away from that end. */
 function walker(route: Route, fromEnd: boolean) {
@@ -373,14 +518,21 @@ function walker(route: Route, fromEnd: boolean) {
   }
 }
 
-/** A route that is one straight line, walked from one of its ends: where
- * it starts and which way it runs (`InlineAsk.line`). */
-function lineOf(route: Route, fromEnd: boolean): InlineAsk["line"] {
-  if (route.pts.length !== 2) return undefined
-  const [p, q] = fromEnd ? [route.pts[1], route.pts[0]] : route.pts
+/** A line that is one straight run past its end's lead (`pts`, leads
+ * left out), walked from one of its ends: where the walk would start
+ * were it all one line, and which way it runs (`InlineAsk.line`). The
+ * walk's first `lead` px go over the photo, off that line. */
+function lineOf(
+  pts: readonly Pt[],
+  fromEnd: boolean,
+  lead: number
+): InlineAsk["line"] {
+  if (pts.length !== 2) return undefined
+  const [p, q] = fromEnd ? [pts[1], pts[0]] : pts
   const len = Math.hypot(q.x - p.x, q.y - p.y)
   if (!(len > 0)) return undefined
-  return { at: p, u: { x: (q.x - p.x) / len, y: (q.y - p.y) / len } }
+  const u = { x: (q.x - p.x) / len, y: (q.y - p.y) / len }
+  return { at: { x: p.x - u.x * lead, y: p.y - u.y * lead }, u }
 }
 
 /** How far out along its route an end's labels may reach: near their
@@ -402,9 +554,12 @@ const labelledAt = (it: Item, end: "a" | "b") =>
 /** The route as a polyline, curves sampled - what labels keep clear of. */
 function polyline(line: LineType, pts: Pt[], route: Route): Pt[] {
   if ((line !== "bendy" && line !== "cyclical") || pts.length < 3) return pts
+  // Every 8px or so: a long curve's chords stray from it further than a
+  // label clears it by.
+  const n = Math.max(32, Math.ceil(route.length / 8))
   const out: Pt[] = []
-  for (let i = 0; i <= 32; i++) {
-    const p = route.at(i / 32)
+  for (let i = 0; i <= n; i++) {
+    const p = route.at(i / n)
     out.push({ x: p.x, y: p.y })
   }
   return out
@@ -428,12 +583,60 @@ export function planEdges(
     { turn: -1 | 0 | 1; depth: number; extent: number }
   >()
 
+  // Photo ports facing away from their far ends: their straight and
+  // bendy lines go round their photos first.
+  const hooked = hooks(all, input.rects, obs)
+  const straight = (it: Item): Pt[] => [
+    { x: it.a.x, y: it.a.y },
+    { x: it.b.x, y: it.b.y },
+  ]
+  /** An item's line (`line`, from its ends), each hooked end first out
+   * along its lead and round its photo; null when `line` gives none. */
+  const withHooks = (
+    it: Item,
+    line: (it: Item) => Pt[] | null
+  ): Pt[] | null => {
+    const ha = hooked.get(`${it.key}a`)
+    const hb = hooked.get(`${it.key}b`)
+    if (!ha && !hb) return line(it)
+    // Past a hook the line leaves its photo's side: the photo is in its
+    // way like any card, and its labels are on the hook.
+    const from = (end: PlanEnd, h: Hook): PlanEnd => ({
+      ...end,
+      ...h.pts[h.pts.length - 1],
+      dir: h.dir,
+      node: "",
+      stub: STUB,
+    })
+    const mid = line({
+      ...it,
+      a: ha ? from(it.a, ha) : it.a,
+      b: hb ? from(it.b, hb) : it.b,
+      runA: ha ? 0 : it.runA,
+      runB: hb ? 0 : it.runB,
+    })
+    if (!mid) return null
+    // The hooks' last points are where `mid` starts and ends.
+    const pts = [
+      ...(ha ? [{ x: it.a.x, y: it.a.y }, ...ha.pts.slice(0, -1)] : []),
+      ...mid,
+      ...(hb
+        ? [...hb.pts.slice(0, -1).reverse(), { x: it.b.x, y: it.b.y }]
+        : []),
+    ]
+    // A curve runs straight out along the hook for its labels.
+    return it.line === "straight"
+      ? pts
+      : withLeads(pts, ha ? it.runA : 0, hb ? it.runB : 0)
+  }
+  const curve = (it: Item) => bendyPts(it, obs)
+
   // Bendy breakout legs first: one no curve gets clear of the cards goes
   // round them as an elbow, in the lanes with the others.
   const bent = new Map<string, Pt[]>()
   for (const it of all) {
     if (!it.fanLeg || it.line !== "bendy") continue
-    const pts = bendyPts(it, obs)
+    const pts = withHooks(it, curve)
     if (pts) bent.set(it.key, pts)
     else {
       it.line = "elbow"
@@ -514,20 +717,42 @@ export function planEdges(
       arc
         ? arc.pts
         : it.line === "bendy" || it.line === "cyclical"
-          ? (bent.get(it.key) ?? bendyPts(it, obs) ?? [A, B])
-          : [A, B]
+          ? (bent.get(it.key) ?? withHooks(it, curve) ?? [A, B])
+          : (withHooks(it, straight) ?? [A, B])
     )
   }
+  // A photo port's lead joins its route: the planned points start (or
+  // end) at the port. Every label is placed on the route as drawn, lead
+  // included - a curve through one point more is another curve.
+  const withLead = (it: Item) => {
+    const pts = ptsOf.get(it.key)!
+    if (!it.leadA && !it.leadB) return pts
+    return [
+      ...(it.leadA ? [it.leadA] : []),
+      ...pts,
+      ...(it.leadB ? [it.leadB] : []),
+    ]
+  }
+  /** How far an end's lead runs over its photo before the line leaves. */
+  const leadOf = (it: Item, end: "a" | "b") => {
+    const from = end === "a" ? it.leadA : it.leadB
+    const to = it[end]
+    return from ? Math.hypot(to.x - from.x, to.y - from.y) : 0
+  }
+  const drawnPts = new Map<string, Pt[]>()
   const routeOf = new Map<string, Route>()
-  for (const it of all)
-    routeOf.set(it.key, routeThrough(it.line, ptsOf.get(it.key)!, it.a.dir))
+  for (const it of all) {
+    const pts = withLead(it)
+    drawnPts.set(it.key, pts)
+    routeOf.set(it.key, routeThrough(it.line, pts, it.a.dir))
+  }
 
   // Labels: port names first (they belong to one spot), then the chips,
   // then the addresses after each port name.
   const scene = new LabelScene(
     all.map((it): [string, Pt[]] => [
       it.key,
-      polyline(it.line, ptsOf.get(it.key)!, routeOf.get(it.key)!),
+      polyline(it.line, drawnPts.get(it.key)!, routeOf.get(it.key)!),
     ]),
     [...input.rects].filter(([id]) => input.solid(id)).map(([, r]) => r)
   )
@@ -540,26 +765,24 @@ export function planEdges(
       if (!text) continue
       const ws = [end === "a" ? it.wa : it.wb]
       const nub = end === "a" ? it.nubA : it.nubB
-      const line = lineOf(route, end === "b")
+      const line = lineOf(ptsOf.get(it.key)!, end === "b", leadOf(it, end))
+      // Past the lead: a photo port's name starts where its line leaves
+      // the photo, as a nub's does.
+      const from = leadOf(it, end) + LABEL.LEAD
       asks.push({
         key: `${it.key}${end}`,
         cable: it.key,
         ws,
         walk: walker(route, end === "b"),
         ...(line ? { line } : {}),
-        from: LABEL.LEAD,
+        from,
         // A nub's name keeps to its run; a Simple line's finds its own.
         until: nub
           ? labelledAt(it, end === "a" ? "b" : "a")
             ? route.length / 2
             : route.length - LABEL.LEAD
-          : reach(
-              route,
-              LABEL.LEAD,
-              ws,
-              labelledAt(it, end === "a" ? "b" : "a")
-            ),
-        ...(nub ? { first: true } : {}),
+          : reach(route, from, ws, labelledAt(it, end === "a" ? "b" : "a")),
+        ...(nub ? { first: true, run: leadOf(it, end) } : {}),
       })
     }
   }
@@ -633,8 +856,8 @@ export function planEdges(
       if (!lines) continue
       const ws = end === "a" ? it.wia : it.wib
       const port = ports.get(`${it.key}${end}`)
-      const from = port ? port.reach + LABEL.LEAD : LABEL.LEAD
-      const line = lineOf(route, end === "b")
+      const from = port ? port.reach + LABEL.LEAD : leadOf(it, end) + LABEL.LEAD
+      const line = lineOf(ptsOf.get(it.key)!, end === "b", leadOf(it, end))
       addrAsks.push({
         key: `${it.key}${end}`,
         cable: it.key,
@@ -656,32 +879,6 @@ export function planEdges(
   for (const [id, c] of placed)
     chipFor.set(c.on, { at: c, mid: midOf(id), from: id })
 
-  // A photo port's lead joins its route: the planned points start (or
-  // end) at the port. A chip's place along the route that carries it is
-  // re-measured on the longer route.
-  const withLead = (it: Item) => {
-    const pts = ptsOf.get(it.key)!
-    if (!it.leadA && !it.leadB) return pts
-    return [
-      ...(it.leadA ? [it.leadA] : []),
-      ...pts,
-      ...(it.leadB ? [it.leadB] : []),
-    ]
-  }
-  const leadT = (edge: string, t: number) => {
-    const list = byEdge.get(edge)
-    const it = list?.[Math.floor(list.length / 2)]
-    if (!it || (!it.leadA && !it.leadB)) return t
-    const len = routeOf.get(it.key)!.length
-    const la = it.leadA
-      ? Math.hypot(it.leadA.x - it.a.x, it.leadA.y - it.a.y)
-      : 0
-    const lb = it.leadB
-      ? Math.hypot(it.leadB.x - it.b.x, it.leadB.y - it.b.y)
-      : 0
-    return len + la + lb > 0 ? (la + t * len) / (len + la + lb) : t
-  }
-
   const plans = new Map<string, EdgePlan>()
   for (const [id, list] of byEdge) {
     const own = placed.get(id)
@@ -692,7 +889,7 @@ export function planEdges(
     })
     plans.set(id, {
       cables: list.map((it) => ({
-        pts: withLead(it),
+        pts: drawnPts.get(it.key)!,
         ...(it.rerouted ? { line: "elbow" as const } : {}),
         ...(it.ta ? { a: ports.get(`${it.key}a`)?.at[0] ?? null } : {}),
         ...(it.tb ? { b: ports.get(`${it.key}b`)?.at[0] ?? null } : {}),
@@ -718,7 +915,7 @@ export function planEdges(
       ...(chip
         ? {
             ...(chip.from !== id ? { mid: chip.mid } : {}),
-            midT: leadT(id, chip.at.t),
+            midT: chip.at.t,
             ...(chip.at.off ? { midOff: chip.at.off } : {}),
             ...(chip.at.crowded ? { crowded: true } : {}),
           }

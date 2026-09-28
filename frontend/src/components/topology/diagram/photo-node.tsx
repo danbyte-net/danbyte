@@ -89,7 +89,12 @@ export const PhotoNode = memo(function PhotoNode({
             style={{ objectFit: "fill" }}
           />
         ) : ph.typeId ? (
-          <div className="flex size-full items-center overflow-hidden">
+          // The faceplate is port outlines only: the node's own frame
+          // shows where the device is.
+          <div
+            className="flex size-full items-center overflow-hidden rounded-sm border border-border bg-card"
+            data-faceplate
+          >
             <Suspense fallback={plain}>
               <TypeFaceplate
                 deviceTypeId={ph.typeId}

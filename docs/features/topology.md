@@ -299,7 +299,9 @@ into - the picture you would take of the rack, wired up. **Card** is the
 default. Right-click a device for **Show photo** or **Show card** to draw
 just that one the other way; the choice is kept with the view (one undo
 step, marks the view edited) and the view's own choice is in the link
-(`face=photo`).
+(`face=photo`). The item is named for how the device is drawn now; for a
+device whose type has neither a photo nor a faceplate, *Show photo* is
+greyed out (it would change nothing).
 
 - **What it needs:** a front photo on the device type, with its
   [photo ports](../dcim/device-catalog.md#photo-ports) marked. Markers
@@ -317,9 +319,17 @@ step, marks the view edited) and the view's own choice is in the link
   line lands on has a thin outline; the port name sits on the cable just
   past the photo's edge. This holds in **Simple** too: the photo is the
   detail, so each cable to a photo keeps its own port rather than meeting
-  at the side's midpoint. Straight and Bendy lines keep their shape, so one
-  can cross a photo where its port faces away from the far end - Elbow
-  goes round.
+  at the side's midpoint - and, being one cable each, those lines carry no
+  `2x` count (a LAG keeps its name). A Straight or Bendy line from a port
+  that faces away from its far end (a port on the top edge cabled to
+  something below) never runs back across its own photo: it goes out past
+  its port name, turns round the side of the photo - on past its other
+  edge when the far end lies behind it - and runs straight (or bends) on
+  from there. Ports leaving one edge that way nest without crossing.
+- **Breakouts on photos:** a breakout whose shared port faces away from its
+  far devices keeps the one-trunk look - the trunk goes round as an elbow
+  to a junction just short of the far devices, on the side their ports
+  face, and the legs there are short.
 - **The caption** sits at the left under the photo, or steps right to the
   first gap between the leads running down through it.
 - **What stands in** (never artwork made up for the map):
@@ -333,12 +343,20 @@ step, marks the view edited) and the view's own choice is in the link
 - **Layout:** photos are wide and their cables leave up and down, so
   side-by-side photos keep room above and below them for the cables and
   their port names. **Tree** layout (Display ▸ Layout) often suits a
-  photo map best. When devices change between card and photo, a map laid
-  out automatically is laid out again; a saved arrangement keeps each
-  device's centre, and whatever a photo now covers moves out of its way.
+  photo map best. Switching the view between Card and Photo lays a map
+  laid out automatically out again once the photos have arrived, and fits
+  it to the screen. Showing one device's photo or card, or photos arriving
+  on a map already on screen, moves nothing else: the camera and every
+  other device stay where they are, and whatever the photo now covers
+  moves out of its way (a saved arrangement does the same).
 - **Performance:** photos load with the map only while some device shows
   one (`include=photo`). Far out - below 35% zoom on a map with 24 photos
-  or more, 12% on a smaller one - each photo is drawn as a plain box.
+  or more, 12% on a smaller one - each photo is drawn as a plain box. On a
+  map of 200 devices or more only the photos in view are drawn, as with
+  cards.
+- **Exports:** a photo that will not load when a file is made (a network
+  blip) is asked for once more, then drawn as the device's card - and a
+  note says how many were, so the file can be made again.
 
 ## Big graphs
 
@@ -397,12 +415,21 @@ Three mechanisms keep a large fabric legible:
   the same choices, so every card lands exactly where it did, but a
   2,400-device site ranks in a fraction of a second instead of seconds.
 - **A big minimap is one picture** - above 500 cards the minimap paints its
-  cards on a single canvas instead of drawing each one as a shape; it
-  looks, pans and zooms the same.
+  cards on a single canvas instead of drawing each one as a shape; it pans
+  and zooms the same. A card too small to see there is still drawn a
+  screen pixel across (a selected one two), so a big site's minimap shows
+  where everything is.
+- **A map too big to fit opens on part of it** - a site whose whole map
+  would need less than 5% zoom (the least there is) opens on the focused
+  device, else the one with the most cables, with the devices cabled to it
+  and the nearest others that fit on screen with it (close enough that the
+  cards are told apart, and on a photo map that the photos are pictures),
+  and a note to search or focus a device for the rest. The fit button does
+  the same; the note goes as soon as you move the map.
 - **Only the cards in view are drawn** - above 200 cards the Diagram hands
-  each card over with its size, so the page draws the cards in view and
-  the rest as you pan to them, instead of drawing every card once just to
-  measure it.
+  each card (or photo) over with its size, so the page draws the cards in
+  view and the rest as you pan to them, instead of drawing every card once
+  just to measure it.
 - **The Flat view** - see above.
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat
@@ -518,6 +545,8 @@ by its header). Type to search names, models, sites and racks; the filter
 button narrows by site, role, type, status, tag and rack. **All** and **Not
 placed** switch between every device and the ones not on the map yet. A
 device already on the map is dimmed and ticked - click it to find its card.
+The list loads once (about 100 KB compressed for 2,500 devices) and is
+reused for five minutes; filtering and search happen in the browser.
 
 **Placing devices.** Drag a device from the list onto the canvas and its card
 lands where you let go. To place several, click one, ++ctrl++-click
@@ -534,12 +563,14 @@ cables are walked through, so the panel would never appear.
 
 **Add connected devices.** Right-click a card → *Add connected devices*, or
 select it and use **Add ▸ Connected devices**, to bring in everything cabled
-to it. Each newcomer is placed under the cards it is cabled to.
+to it. Each newcomer goes to the free spot nearest the cards it is cabled
+to, below them where there is room; if any lands off screen, the camera
+widens to show them.
 
 **Removing devices.** Right-click a card → *Remove from diagram*, or select
 cards and press ++delete++ (or ++backspace++). That takes the device out of
 the view's set, with its position and overrides; ++ctrl+z++ puts it back.
-*Remove from view* is different - it hides a card and keeps it in the set
+*Hide*, next to it, is different - it hides a card and keeps it in the set
 (see [Hiding things](#hiding-things-the-eyes)).
 
 **Arranging.** Drag cards where you want them. **Arrange ▸ Re-layout** lays
@@ -567,7 +598,8 @@ The map has the same eyes as the [site map](site-map.md) and the
 header has one - a **role**, a **site** or a **location** (whichever the
 Devices list is grouped by), a **link family** (a cable media type, or the
 LLDP-discovered links) - and so does every device row. Right-click a card →
-**Remove from view** is the same thing for one card, from the canvas.
+**Hide** (**Remove from view** on the other tabs) is the same thing for one
+card, from the canvas.
 
 Hiding is not a filter: a filter says what kind of thing belongs on the map,
 this says "not that one" - the last mile of a diagram you are shaping for
@@ -590,8 +622,8 @@ site or location); ++shift+h++ shows everything again. The same two keys
 work on the site map and the floor plans.
 
 (On a map built by hand, *Remove from diagram* - *Remove from map* on the
-other tabs - is the different thing next to *Remove from view*: it takes the
-device out of the hand-picked set the map is built from.)
+other tabs - is the different thing next to *Hide* (*Remove from view*): it
+takes the device out of the hand-picked set the map is built from.)
 
 ### Zones - boxes to group things by eye
 

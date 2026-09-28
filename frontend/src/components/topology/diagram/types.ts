@@ -175,6 +175,9 @@ export interface FanPart {
   /** A Simple leg folding several ports: all of them, in natural order.
    * Its label names the first and counts the rest. */
   ports?: string[]
+  /** A trunk whose port faces away from its legs: it runs round to the
+   * junction by the far cards as an elbow. */
+  bent?: true
 }
 
 /**

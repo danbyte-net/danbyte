@@ -150,11 +150,25 @@ export async function photoDataUri(url: string, maxW: number): Promise<string> {
 export interface InlineOptions {
   /** Pixels kept per px the photo is drawn at (2: sharp in a 2x PNG). */
   scale?: number
+  /** Told how many devices are drawn as their cards because their photo
+   * would not load (never with 0). */
+  onMissing?: (devices: number) => void
+}
+
+/** A photo inlined, asked for again once when the first try fails (a
+ * network blip mid-export); null when it will not load. */
+async function inlineOne(href: string, maxW: number): Promise<string | null> {
+  try {
+    return await photoDataUri(href, maxW)
+  } catch {
+    await new Promise((r) => setTimeout(r, 250))
+    return photoDataUri(href, maxW).catch(() => null)
+  }
 }
 
 /** The document with every photo inlined as a `data:` URI, downscaled to
  * the size it is drawn at. A photo that will not load is drawn as its
- * card instead - never an empty frame. */
+ * card instead - never an empty frame - and `onMissing` says how many. */
 export async function inlinePhotos(
   doc: DiagramDocument,
   opts: InlineOptions = {}
@@ -171,21 +185,19 @@ export async function inlinePhotos(
   const inlined = new Map<string, string | null>()
   await Promise.all(
     [...widest].map(async ([href, w]) => {
-      inlined.set(
-        href,
-        await photoDataUri(href, Math.ceil(w * scale)).catch(() => null)
-      )
+      inlined.set(href, await inlineOne(href, Math.ceil(w * scale)))
     })
   )
-  return {
-    ...doc,
-    nodes: doc.nodes.map((n) => {
-      if (!n.photo || n.photo.href.startsWith("data:")) return n
-      const href = inlined.get(n.photo.href)
-      if (href) return { ...n, photo: { ...n.photo, href } }
-      return { ...n, kind: "card" as const, photo: undefined }
-    }),
-  }
+  let missing = 0
+  const nodes = doc.nodes.map((n) => {
+    if (!n.photo || n.photo.href.startsWith("data:")) return n
+    const href = inlined.get(n.photo.href)
+    if (href) return { ...n, photo: { ...n.photo, href } }
+    missing++
+    return { ...n, kind: "card" as const, photo: undefined }
+  })
+  if (missing) opts.onMissing?.(missing)
+  return { ...doc, nodes }
 }
 
 export interface PngOptions {
@@ -233,10 +245,12 @@ export async function svgToPng(
  * fallback stack. */
 export async function diagramToPng(
   doc: DiagramDocument,
-  opts: Omit<SvgOptions, "embedFont"> & PngOptions = {}
+  opts: Omit<SvgOptions, "embedFont"> &
+    PngOptions &
+    Pick<InlineOptions, "onMissing"> = {}
 ): Promise<Blob> {
   const [withPhotos, fonts] = await Promise.all([
-    inlinePhotos(doc, { scale: opts.scale ?? 2 }),
+    inlinePhotos(doc, { scale: opts.scale ?? 2, onMissing: opts.onMissing }),
     interFonts().catch(() => [] as EmbeddedFont[]),
   ])
   return svgToPng(toSvg(withPhotos, { ...opts, embedFont: fonts }), opts)

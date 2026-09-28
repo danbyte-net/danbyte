@@ -269,3 +269,24 @@ export function separateOverlaps(
   }
   return out
 }
+
+/**
+ * Boxes that grew where they stand - a device now drawn as its photo -
+ * against the rest: nothing moves unless one of `grown` overlaps another
+ * box, and then every box is settled by `separateOverlaps`, so whatever
+ * the grown box covers moves out of its way. Returns each id's centre,
+ * or null when nothing moves.
+ */
+export function settleGrown(
+  boxes: Readonly<Record<string, Rect>>,
+  grown: Iterable<string>
+): Record<string, Centre> | null {
+  const grid = new Grid<{ id: string; r: Rect }>(256)
+  for (const [id, r] of Object.entries(boxes)) grid.add(r, { id, r })
+  for (const id of grown) {
+    const r = boxes[id] as Rect | undefined
+    if (r && grid.near(r).some((o) => o.id !== id && overlaps(o.r, r)))
+      return separateOverlaps(boxes)
+  }
+  return null
+}

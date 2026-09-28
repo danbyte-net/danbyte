@@ -68,8 +68,21 @@ describe("presized", () => {
     ])
   })
 
-  it("leaves photos, hidden, unsized and other nodes to be measured", () => {
-    const photo = card("p", 0, 0, { data: { diagram: { photo: {} } } })
+  it("gives a photo its box and the card's handles", () => {
+    const photo = card("p", 0, 0, {
+      width: 480,
+      height: 90,
+      data: { diagram: { photo: {} } },
+    })
+    const n = presized(photo)
+    expect(n.measured).toEqual({ width: 480, height: 90 })
+    expect(n.handles?.map((h) => [h.type, h.position, h.x, h.y])).toEqual([
+      ["target", Position.Top, 239.5, -0.5],
+      ["source", Position.Bottom, 239.5, 89.5],
+    ])
+  })
+
+  it("leaves hidden, unsized and other nodes to be measured", () => {
     const hidden = card("h", 0, 0, { hidden: true })
     const unsized: Node = {
       id: "u",
@@ -78,7 +91,7 @@ describe("presized", () => {
       data: {},
     }
     const zone = { ...card("z", 0, 0), type: "zone" }
-    for (const n of [photo, hidden, unsized, zone]) expect(presized(n)).toBe(n)
+    for (const n of [hidden, unsized, zone]) expect(presized(n)).toBe(n)
   })
 
   it("is the same node once done, and redone for a new size", () => {

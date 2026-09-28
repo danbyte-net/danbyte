@@ -57,10 +57,13 @@ export function drawn(
     d.plan.forEach((p, i) => {
       const line = p.line ?? d.line
       const route = routeThrough(line, p.pts, leaves(p.pts))
+      // Curves sampled every 8px or so: a long curve's chords stray from
+      // it further than a label may.
+      const n = Math.max(32, Math.ceil(route.length / 8))
       const pts =
         line === "bendy" || line === "cyclical"
-          ? Array.from({ length: 33 }, (_, k) => {
-              const q = route.at(k / 32)
+          ? Array.from({ length: n + 1 }, (_, k) => {
+              const q = route.at(k / n)
               return { x: q.x, y: q.y }
             })
           : route.pts

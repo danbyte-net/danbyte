@@ -48,9 +48,12 @@ export interface InlineAsk {
   until: number
   /** Keep to the straight run out of the end (a port name at its nub). */
   first?: boolean
-  /** The route is one straight line: `walk(d)` is `at` plus `d` times
-   * the unit vector `u`. Lets a label skip the stretch something is
-   * sure to block. */
+  /** Where that run starts, px from the end: past a photo port's lead,
+   * which turns where it leaves the photo. */
+  run?: number
+  /** The route is one straight line - past `run` - where `walk(d)` is
+   * `at` plus `d` times the unit vector `u`. Lets a label skip the
+   * stretch something is sure to block. */
   line?: { at: Pt; u: Pt }
 }
 
@@ -296,7 +299,7 @@ export function placeInline(
     // stretch whose directions spread more than twice STRAIGHT cannot lie
     // within STRAIGHT of one chord; one that spreads less does when both
     // of those do).
-    let upto = 0
+    let upto = ask.run ?? 0
     let ref = NaN
     let lo = Infinity
     let hi = -Infinity

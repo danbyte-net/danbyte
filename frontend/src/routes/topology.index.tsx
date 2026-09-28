@@ -82,6 +82,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { EmptyState } from "@/components/empty-state"
+import { InfoTip } from "@/components/ui/info-tip"
 import { Combobox } from "@/components/ui/combobox"
 import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
@@ -144,6 +145,7 @@ import {
 import { DEFAULT_LABELS } from "@/components/topology/diagram/link-labels"
 import type { LabelToken } from "@/components/topology/diagram/link-labels"
 import {
+  canShowPhoto,
   faceOf,
   wantsPhotos,
   withFaces,
@@ -155,7 +157,11 @@ import {
   type EdgeColorMode,
   type NodeStyle,
 } from "@/components/topology/topology-canvas"
-import type { DiagramLinkRef, Pt } from "@/components/topology/diagram/types"
+import type {
+  DiagramCardData,
+  DiagramLinkRef,
+  Pt,
+} from "@/components/topology/diagram/types"
 import { sharedLag } from "@/components/topology/lag-bundles"
 import type {
   GroupEdgeInfo,
@@ -1342,18 +1348,14 @@ function TopologyPage() {
     [fullGraph, hidden, isDiagram, diagramFace, nodeFaces]
   )
   const hiddenHere = fullGraph ? hiddenOnMap(fullGraph, hidden) : 0
-  // Devices turning into photos (or back) change size a lot: the map is
-  // laid out again rather than kept where the cards were - once the
-  // photos have arrived. A device added to a hand-built map is not that.
-  const photoKey = useMemo(() => {
-    if (!isDiagram || !wantsPhotos(diagramFace, nodeFaces)) return ""
-    const own = Object.entries(nodeFaces)
-      .flatMap(([id, v]) => (v.face ? [`${id}=${v.face}`] : []))
-      .sort()
-      .join(",")
-    const loaded = !!graph?.nodes.some((n) => n.data.photo)
-    return `${diagramFace}:${own}:${loaded ? 1 : 0}`
-  }, [isDiagram, diagramFace, nodeFaces, graph])
+  // The view's own Card | Photo lays an automatic map out again and
+  // refits the camera - once the map asked for with it has arrived, so it
+  // is laid out once, with the photos. A device's own face, or photos
+  // arriving, do neither: the canvas keeps the camera and the centres and
+  // moves only what a photo now covers.
+  const [shownFace, setShownFace] = useState(diagramFace)
+  if (shownFace !== diagramFace && q.data && !q.isPlaceholderData)
+    setShownFace(diagramFace)
 
   // Media types on the map - the legend swatches them in type color mode.
   const presentTypes = useMemo(() => {
@@ -1815,6 +1817,10 @@ function TopologyPage() {
         name: fresh.get(id)?.data.name ?? "…",
         color: fresh.get(id)?.data.role?.color,
       }))
+      // Where they land may be off screen: bring them into view.
+      canvas.current?.reveal(
+        Object.values(place).map(([x, y]) => boxAround({ x, y }, NEW_CARD))
+      )
     } catch (err) {
       apiErrorToast(err)
     }
@@ -2660,7 +2666,11 @@ function TopologyPage() {
                 bundleLags={lagMode === "on"}
                 positions={positions}
                 layoutTick={layoutTick}
-                fitKey={photoKey ? `${fitKey}|${photoKey}` : fitKey}
+                fitKey={
+                  isDiagram && shownFace === "photo"
+                    ? `${fitKey}|photo`
+                    : fitKey
+                }
                 onDropDevices={canBuild ? dropDevices : undefined}
                 pending={canBuild ? pendingCards : undefined}
                 emptyState={
@@ -2991,33 +3001,58 @@ function TopologyPage() {
                       setHiddenNodes(withHidden(hidden, "devices", id, true))
                     }}
                   >
-                    Remove from view
+                    {isDiagram ? "Hide" : "Remove from view"}
                   </MenuItem>
                 )}
-                {isDiagram && !grouped && menu.node.device_id && (
-                  <MenuItem
-                    onClick={() => {
-                      // The view's face, or this device's own - kept only
-                      // where it differs from the view's.
-                      const id = menu.node!.device_id!
-                      const next =
-                        faceOf(id, diagramFace, nodeFaces) === "photo"
-                          ? "card"
-                          : "photo"
-                      setMenu(null)
-                      edit({
-                        type: "setNode",
-                        id,
-                        value: next === diagramFace ? null : { face: next },
-                      })
-                    }}
-                  >
-                    {faceOf(menu.node.device_id, diagramFace, nodeFaces) ===
-                    "photo"
-                      ? "Show card"
-                      : "Show photo"}
-                  </MenuItem>
-                )}
+                {isDiagram &&
+                  !grouped &&
+                  menu.node.device_id &&
+                  (() => {
+                    // Named for what is drawn. A device whose type has no
+                    // photo or faceplate is drawn as its card either way:
+                    // nothing to switch to.
+                    const id = menu.node.device_id
+                    const drawn = !!(menu.node as Partial<DiagramCardData>)
+                      .diagram?.photo
+                    const next = drawn ? "card" : "photo"
+                    if (!drawn && canShowPhoto(menu.node) === false)
+                      return (
+                        <div
+                          className={cn(
+                            MENU_ROW,
+                            "text-muted-foreground hover:bg-transparent"
+                          )}
+                          aria-disabled
+                        >
+                          Show photo
+                          <InfoTip
+                            className="ml-auto"
+                            side="right"
+                            contentClassName="z-[1001]"
+                          >
+                            Its type has no front photo or faceplate.
+                          </InfoTip>
+                        </div>
+                      )
+                    return (
+                      <MenuItem
+                        onClick={() => {
+                          setMenu(null)
+                          // The view's face, or this device's own - kept
+                          // only where it differs from the view's.
+                          if (faceOf(id, diagramFace, nodeFaces) === next)
+                            return
+                          edit({
+                            type: "setNode",
+                            id,
+                            value: next === diagramFace ? null : { face: next },
+                          })
+                        }}
+                      >
+                        {drawn ? "Show card" : "Show photo"}
+                      </MenuItem>
+                    )
+                  })()}
                 {isDiagram &&
                   menu.node.device_id &&
                   canDo("device", "change") && (

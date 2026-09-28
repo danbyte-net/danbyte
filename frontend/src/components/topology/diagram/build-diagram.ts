@@ -63,7 +63,7 @@ import type { LabelToken, LinkLabelSet } from "./link-labels"
 import { ELBOW_RADIUS } from "./link-geometry"
 import { PHOTO, photoFace, photoLod, photoShown } from "./photo-anchors"
 import type { PhotoFace, PhotoShown } from "./photo-anchors"
-import { separateOverlaps } from "./placement"
+import { settleGrown } from "./placement"
 import { endRun, planEdges, portStub } from "./plan"
 import { pairKey } from "./types"
 import type {
@@ -246,10 +246,11 @@ export function distinctCables(
 
 /** A bundle's chip: "2x", with the aggregates' names when they share one.
  * One cable is no bundle - its port names already say where it runs. */
-function bundleLabel(n: number, lag: EdgeLag | null): string[] {
+function bundleLabel(n: number, lag: EdgeLag | null, count = true): string[] {
   if (n < 2) return []
-  const count = `${n}x`
-  return [lag?.a && lag.b ? `${lag.a.name} ⇄ ${lag.b.name} · ${count}` : count]
+  const name = lag?.a && lag.b ? `${lag.a.name} ⇄ ${lag.b.name}` : ""
+  if (!count) return name ? [name] : []
+  return [name ? `${name} · ${n}x` : `${n}x`]
 }
 
 type Pair = NonNullable<BundleMember["pairs"]>[number]
@@ -449,15 +450,27 @@ function foldLabels(
  * each has its own nub (Detailed) or its own port on a photo
  * (`perCable`), one set for the one line of Simple. */
 function withLinkLabels(
-  e: Edge<DiagramEdgeData>,
+  e0: Edge<DiagramEdgeData>,
   flipped: boolean,
   mode: DiagramMode,
   tokens: readonly LabelToken[],
   perCable = false
 ): Edge<DiagramEdgeData> {
-  const d = e.data
-  if (e.type !== "link" || !d || d.simple) return e
-  if (d.sem !== "cable" && d.sem !== "lagbundle" && d.sem !== "bundle") return e
+  let e = e0
+  if (e.type !== "link" || !e.data || e.data.simple) return e
+  const sem = e.data.sem
+  if (sem !== "cable" && sem !== "lagbundle" && sem !== "bundle") return e
+  // Each cable its own line (to a photo's ports): no line stands for the
+  // others, so none carries their count - an aggregate keeps its name.
+  if (perCable && sem !== "cable") {
+    const { mid: _count, ...rest } = e.data.labels
+    const name = bundleLabel(2, e.data.lag ?? null, false)
+    e = {
+      ...e,
+      data: { ...e.data, labels: name.length ? { ...rest, mid: name } : rest },
+    }
+  }
+  const d = e.data!
   const pairs = linkPairs(d, flipped)
   const set = pairs.length
     ? linkLabelSet(
@@ -933,6 +946,31 @@ const rectAt = (c: Pt, s: { w: number; h: number }): Rect => ({
   h: s.h,
 })
 
+/** Where a breakout's junction sits and which way its legs leave it;
+ * `bent`: its trunk goes round to it (placeJunctions). */
+interface Junction {
+  c: Pt
+  dir: Dir
+  bent?: true
+}
+
+const overlaps = (a: Rect, b: Rect) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
+/** The middle of a box's side. */
+function sideMiddle(box: Rect, side: Side): Pt {
+  switch (side) {
+    case "T":
+      return { x: box.x + box.w / 2, y: box.y }
+    case "B":
+      return { x: box.x + box.w / 2, y: box.y + box.h }
+    case "L":
+      return { x: box.x, y: box.y + box.h / 2 }
+    case "R":
+      return { x: box.x + box.w, y: box.y + box.h / 2 }
+  }
+}
+
 /** How far along its (axis-aligned) direction a ray from `from` first
  * meets a card other than `own`, grown by `CLEAR`, within `reach`; null
  * when it meets none. */
@@ -977,9 +1015,20 @@ function placeJunctions(
   model: DiagramModel,
   rects: ReadonlyMap<string, Rect>,
   solid: Obstacles,
-  ends?: ReadonlyMap<string, End>
-): Map<string, { c: Pt; dir: Dir }> {
-  const out = new Map<string, { c: Pt; dir: Dir }>()
+  ends?: ReadonlyMap<string, End>,
+  sides?: ReadonlyMap<string, Side>
+): Map<string, Junction> {
+  const out = new Map<string, Junction>()
+  const inCard = (p: Pt) =>
+    solid
+      .near({ x: p.x - 1, y: p.y - 1, w: 2, h: 2 })
+      .some(
+        ({ r }) =>
+          p.x > r.x - CLEAR &&
+          p.x < r.x + r.w + CLEAR &&
+          p.y > r.y - CLEAR &&
+          p.y < r.y + r.h + CLEAR
+      )
   for (const f of model.fans) {
     const tb = rects.get(f.trunk)
     const farR = f.far.map((id) => rects.get(id)).filter((r): r is Rect => !!r)
@@ -1010,6 +1059,21 @@ function placeJunctions(
           : ny > 0.5
             ? box.y - start.y
             : start.y - (box.y + box.h)
+    if (proj <= 0 && !overlaps(tb, box)) {
+      // The trunk's port faces away from the far cards (a photo's port):
+      // straight out from it, the legs would run the whole way back side
+      // by side. The trunk goes round instead, to a junction short of the
+      // far cards' near side, and the legs fan out from there.
+      // On the side the legs' ports leave by, else the one facing back.
+      const side = sides?.get(f.id) ?? chooseSides(tb, box)[1]
+      const n = SIDE_DIR[side]
+      const m = sideMiddle(box, side)
+      let e = Math.max(f.legRoom[model.mode], 2 * LANE)
+      const past = () => ({ x: m.x + n[0] * e, y: m.y + n[1] * e })
+      for (let k = 0; k < 40 && inCard(past()); k++) e += 12
+      out.set(f.id, { c: past(), dir: [-n[0], -n[1]], bent: true })
+      continue
+    }
     // A third of the way, far enough for the trunk's name and chip, and
     // short of the room the legs need. Short of room, the chip gives way
     // first, then the legs' lanes; the trunk's name last.
@@ -1025,20 +1089,7 @@ function placeJunctions(
     if (block !== null && block - CLEAR - 3 >= 12)
       d = Math.min(d, block - CLEAR - 3)
     const at = () => ({ x: start.x + nx * d, y: start.y + ny * d })
-    for (let k = 0; k < 40; k++) {
-      const p = at()
-      const inCard = solid
-        .near({ x: p.x - 1, y: p.y - 1, w: 2, h: 2 })
-        .some(
-          ({ r }) =>
-            p.x > r.x - CLEAR &&
-            p.x < r.x + r.w + CLEAR &&
-            p.y > r.y - CLEAR &&
-            p.y < r.y + r.h + CLEAR
-        )
-      if (!inCard) break
-      d += 12
-    }
+    for (let k = 0; k < 40 && inCard(at()); k++) d += 12
     out.set(f.id, { c: at(), dir: start.dir })
   }
   for (const [id, j] of placeMeshes(model, rects, solid)) out.set(id, j)
@@ -1099,6 +1150,26 @@ function withJunctionDirs(
       },
     }
   })
+}
+
+/** The side of its far cards a breakout's legs all land on, when every
+ * one lands on a photo port leaving that way: where a junction whose
+ * trunk goes round (placeJunctions) waits for them. */
+function legSides(model: DiagramModel, anchors: Anchors): Map<string, Side> {
+  const out = new Map<string, Side>()
+  for (const f of model.fans) {
+    let side: Side | null | undefined
+    for (let i = 0; ; i++) {
+      const leg = anchors.links.get(`${f.id}:l${i}`)
+      if (!leg) break
+      for (const b of leg.b) {
+        const s = b.k === "point" ? b.exit : null
+        side = side === undefined || side === s ? s : null
+      }
+    }
+    if (side) out.set(f.id, side)
+  }
+  return out
 }
 
 /** Each trunk's end at its card, as anchored. */
@@ -1216,7 +1287,7 @@ interface Anchored {
   boxes: Map<string, CardBox>
   /** Every node's box, junctions included. */
   rects: Map<string, Rect>
-  junctions: Map<string, { c: Pt; dir: Dir }>
+  junctions: Map<string, Junction>
   /** The cyclical links drawn as arcs: their axis and side. */
   arcs: Map<string, { axis: ArcAxis; s: ArcSide }>
 }
@@ -1322,7 +1393,8 @@ function anchorAll(
         model,
         rects,
         solid,
-        trunkEnds(model, anchors, rects)
+        trunkEnds(model, anchors, rects),
+        legSides(model, anchors)
       )
       anchors = pass("simple")
     }
@@ -1345,7 +1417,8 @@ function anchorAll(
       model,
       rects,
       solid,
-      trunkEnds(model, first, rects)
+      trunkEnds(model, first, rects),
+      legSides(model, first)
     )
   anchors = pass("detailed", first.sides)
   if (junctioned)
@@ -1353,7 +1426,8 @@ function anchorAll(
       model,
       rects,
       solid,
-      trunkEnds(model, anchors, rects)
+      trunkEnds(model, anchors, rects),
+      legSides(model, anchors)
     )
   return { anchors, boxes, rects: withJ(junctions), junctions, arcs }
 }
@@ -1361,14 +1435,15 @@ function anchorAll(
 /** The edges with their anchors filled in, and each arc's side. */
 function withAnchors(
   model: DiagramModel,
-  anchors: Anchors,
-  arcs: Anchored["arcs"]
+  a: Anchored
 ): Edge<DiagramEdgeData>[] {
   return model.edges.map((e) => {
     const d = e.data!
-    const ends = anchors.links.get(e.id)
+    const ends = a.anchors.links.get(e.id)
     if (e.type !== "link" || !ends) return e
-    const arc = arcs.get(e.id)
+    const arc = a.arcs.get(e.id)
+    const bent =
+      d.fan?.role === "trunk" && !!a.junctions.get(d.fan.junction)?.bent
     return {
       ...e,
       data: {
@@ -1377,6 +1452,7 @@ function withAnchors(
         b: ends.b,
         ...(model.mode === "simple" ? { simple: true } : {}),
         ...(arc ? { arc: { flip: arc.s, h: 0 } } : {}),
+        ...(bent ? { fan: { ...d.fan!, bent: true as const } } : {}),
       },
     }
   })
@@ -1408,7 +1484,7 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
     measure: model.measure,
     routes: routeCache(model),
   })
-  let edges = withAnchors(model, a.anchors, a.arcs)
+  let edges = withAnchors(model, a)
   const elbows = edges.filter(
     (e) => e.type === "link" && e.data?.line === "elbow"
   ).length
@@ -1418,7 +1494,7 @@ function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
     for (let round = 0; round < (elbows > 400 ? 1 : 2); round++) {
       const { turns } = planEdges(input(edges), { turnsOnly: true })
       if (!reorderNubs(a.anchors, turns)) break
-      edges = withAnchors(model, a.anchors, a.arcs)
+      edges = withAnchors(model, a)
     }
   const { plans } = planEdges(input(edges))
   return edges.map((e) => {
@@ -1747,27 +1823,10 @@ export function buildDiagram(
       const b = sizes.get(id)
       if (b) rects[id] = rectAt(c, b)
     }
-    const grid = obstacles(Object.entries(rects))
-    const covers = [...photos.keys()].some((id) => {
-      const r = rects[id] as Rect | undefined
-      return (
-        !!r &&
-        grid
-          .near(r)
-          .some(
-            (o) =>
-              o.id !== id &&
-              o.r.x < r.x + r.w &&
-              r.x < o.r.x + o.r.w &&
-              o.r.y < r.y + r.h &&
-              r.y < o.r.y + o.r.h
-          )
-      )
-    })
-    if (!covers) return l
+    const moved = settleGrown(rects, photos.keys())
+    if (!moved) return l
     const centres = new Map(l.centres)
-    for (const [id, [x, y]] of Object.entries(separateOverlaps(rects)))
-      centres.set(id, { x, y })
+    for (const [id, [x, y]] of Object.entries(moved)) centres.set(id, { x, y })
     return { centres }
   }
 

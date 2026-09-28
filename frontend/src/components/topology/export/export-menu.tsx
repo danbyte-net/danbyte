@@ -168,9 +168,15 @@ export function ExportMenu({
       )
       if (!doc) return
       const extras = { titleBlock: prefs.extras, legend: prefs.extras }
+      // Photos that would not load are drawn as cards: said once the file
+      // is out, so it can be exported again.
+      let missing = 0
+      const onMissing = (n: number) => {
+        missing = n
+      }
       if (format === "png") {
         const { diagramToPng } = await import("@/lib/diagram/png")
-        const blob = await diagramToPng(doc, { ...extras, scale: 2 })
+        const blob = await diagramToPng(doc, { ...extras, scale: 2, onMissing })
         downloadBlob(exportFileName(name, "png"), "image/png", blob)
       } else if (format === "svg") {
         const [{ toSvg }, { inlinePhotos }] = await Promise.all([
@@ -180,7 +186,10 @@ export function ExportMenu({
         downloadBlob(
           exportFileName(name, "svg"),
           "image/svg+xml",
-          toSvg(await inlinePhotos(doc), { ...extras, links: true })
+          toSvg(await inlinePhotos(doc, { onMissing }), {
+            ...extras,
+            links: true,
+          })
         )
       } else {
         const [{ DRAWIO_MIME, toDrawio }, { inlinePhotos }] = await Promise.all(
@@ -190,12 +199,22 @@ export function ExportMenu({
         downloadBlob(
           exportFileName(name, "drawio"),
           DRAWIO_MIME,
-          toDrawio([photos ? await inlinePhotos(doc, { scale: 1.25 }) : doc], {
-            mode: doc.meta.mode ?? "simple",
-            photos,
-          })
+          toDrawio(
+            [
+              photos
+                ? await inlinePhotos(doc, { scale: 1.25, onMissing })
+                : doc,
+            ],
+            { mode: doc.meta.mode ?? "simple", photos }
+          )
         )
       }
+      if (missing)
+        toast.warning(
+          missing === 1
+            ? "1 photo didn't load and is drawn as a card"
+            : `${missing} photos didn't load and are drawn as cards`
+        )
     } catch {
       toast.error("Couldn't export the map")
     } finally {

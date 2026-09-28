@@ -8,7 +8,8 @@ import type { MiniMapNodeProps, Node, ReactFlowState } from "@xyflow/react"
 // the page recalculates styles. Above CANVAS_MINIMAP_AT nodes the MiniMap
 // keeps its frame, viewport mask, panning and zooming but draws no nodes
 // (`NoMiniMapNode`), and this panel - the same box, underneath it - paints
-// them: the same rects, in the same colours, where the SVG put them.
+// them: the same rects, in the same colours, where the SVG put them - a
+// card too small to see drawn a device pixel across all the same.
 
 /** Nodes above which the minimap's cards go on the canvas. */
 export const CANVAS_MINIMAP_AT = 500
@@ -169,12 +170,15 @@ export function MiniMapCanvas({
           current = fill
         }
         const { x, y } = n.internals.positionAbsolute
-        // Where the SVG puts it, in device pixels. A card smaller than a
-        // pixel is left to the canvas to blend in, as the SVG's is.
-        const left = (x - box.x) * k + ox
-        const top = (y - box.y) * k + oy
-        const width = w * k
-        const height = h * k
+        // Where the SVG puts it, in device pixels - but never under a
+        // pixel (a selected card never under two), centred where it is:
+        // blended to nothing, a big site's cards would leave the minimap
+        // blank, with nothing to steer by.
+        const least = node.selected ? 2 : 1
+        const width = Math.max(least, w * k)
+        const height = Math.max(least, h * k)
+        const left = (x - box.x + w / 2) * k + ox - width / 2
+        const top = (y - box.y + h / 2) * k + oy - height / 2
         const r = RADIUS * k
         if (r >= 1 && width > 2 * r && height > 2 * r) {
           ctx.beginPath()

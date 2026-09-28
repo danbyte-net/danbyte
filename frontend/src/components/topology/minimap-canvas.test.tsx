@@ -131,4 +131,31 @@ describe("MiniMapCanvas", () => {
       expect(y + h).toBeLessThanOrEqual(150 * devicePixelRatio)
     }
   })
+
+  it("draws a card too small to see a device pixel across", async () => {
+    // A site's width in cards: each far under a pixel in the minimap.
+    const wide = grid(30).map((n, i) => ({
+      ...n,
+      position: { x: i * 40_000, y: (i % 3) * 30_000 },
+      selected: i === 7,
+    }))
+    render(
+      <div style={{ width: 800, height: 600 }}>
+        <ReactFlowProvider>
+          <ReactFlow nodes={wide} edges={[]} fitView>
+            <MiniMapCanvas nodeColor={colorOf} theme="light" />
+            <MiniMap nodeColor={colorOf} nodeComponent={NoMiniMapNode} />
+          </ReactFlow>
+        </ReactFlowProvider>
+      </div>
+    )
+    await frames()
+    const last = rec.drawn.slice(-30)
+    expect(last.length).toBe(30)
+    for (const [i, { rect }] of last.entries()) {
+      const least = (i === 7 ? 2 : 1) - 1e-9
+      expect(rect[2]).toBeGreaterThanOrEqual(least)
+      expect(rect[3]).toBeGreaterThanOrEqual(least)
+    }
+  })
 })

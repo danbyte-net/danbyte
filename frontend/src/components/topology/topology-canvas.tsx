@@ -88,8 +88,15 @@ import {
   relinkedModel,
 } from "./diagram/diagram-client"
 import { LinkEdge } from "./diagram/link-edge"
-import { DEVICE_IDS_MIME, NEW_CARD, parseDragIds } from "./diagram/placement"
+import {
+  DEVICE_IDS_MIME,
+  NEW_CARD,
+  parseDragIds,
+  settleGrown,
+} from "./diagram/placement"
+import { photoLod } from "./diagram/photo-anchors"
 import { PRESIZE_AT, presized } from "./diagram/presize"
+import { MIN_ZOOM, OPEN_ZOOM, openingPart } from "./opening-view"
 import type { LabelToken } from "./diagram/link-labels"
 import { toDocument } from "./diagram/to-document"
 import type { DocumentOptions } from "./diagram/to-document"
@@ -221,6 +228,9 @@ export interface CanvasHandle {
   boxes: () => Record<string, Rect>
   /** The devices behind the selected cards. */
   selectedDevices: () => string[]
+  /** Bring these boxes (canvas coordinates) into view with what is on
+   * screen, when any lies outside it. */
+  reveal: (boxes: readonly Rect[]) => void
 }
 
 /** A device just added to the map and not fetched yet: drawn muted, a
@@ -1078,6 +1088,9 @@ interface Stamp {
 
 const EMPTY_BUILT: Built = { nodes: [], edges: [], model: null }
 
+/** Room kept round a fitted map, as a fraction of the screen. */
+const FIT_PAD = 0.15
+
 /** Nodes carrying the Diagram cards' new boxes and nubs, and the
  * breakout junctions where they now sit (relinkDiagram). */
 function withCards(
@@ -1101,6 +1114,44 @@ function withCards(
     const j = junctions?.get(n.id)
     return j && (j.x !== n.position.x || j.y !== n.position.y)
       ? { ...n, position: { x: j.x, y: j.y }, hidden: false }
+      : n
+  })
+}
+
+/** Is a Diagram node drawn as its photo? */
+const isPhoto = (n: Node) =>
+  !!(n.data as Partial<DiagramCardData>).diagram?.photo
+
+/**
+ * Diagram nodes kept where they stood, with those that changed between
+ * card and photo since `prev` (the photos arrived, or a device's face was
+ * switched) cleared of what their new boxes cover (`settleGrown`).
+ * Positions are centres.
+ */
+function clearGrown(nodes: Node[], prev: readonly Node[]): Node[] {
+  const was = new Map(prev.map((n) => [n.id, isPhoto(n)]))
+  const grown = nodes.filter(
+    (n) => n.type === "card" && was.has(n.id) && was.get(n.id) !== isPhoto(n)
+  )
+  if (!grown.length) return nodes
+  const boxes: Record<string, Rect> = {}
+  for (const n of nodes)
+    if (n.type === "card" && n.width && n.height && !n.hidden)
+      boxes[n.id] = {
+        x: n.position.x - n.width / 2,
+        y: n.position.y - n.height / 2,
+        w: n.width,
+        h: n.height,
+      }
+  const moved = settleGrown(
+    boxes,
+    grown.map((n) => n.id)
+  )
+  if (!moved) return nodes
+  return nodes.map((n) => {
+    const c = moved[n.id] as [number, number] | undefined
+    return c && (c[0] !== n.position.x || c[1] !== n.position.y)
+      ? { ...n, position: { x: c[0], y: c[1] } }
       : n
   })
 }
@@ -1591,6 +1642,48 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         : cur
     )
   }, [offThread, focusNodeId, setNodes])
+  // The camera on a whole map - or, on one too big to fit at the least
+  // zoom, on a part of it that means something (opening-view.ts), with a
+  // word on how to find the rest.
+  const [partial, setPartial] = useState(false)
+  const fitMap = useCallback(
+    (duration: number) => {
+      const el = wrapper.current
+      const shown = flow.getNodes().filter((n) => !n.hidden)
+      if (!el || !shown.length) return
+      const { width, height } = el.getBoundingClientRect()
+      const whole = flow.getNodesBounds(shown)
+      const need = getViewportForBounds(whole, width, height, 0, 2, FIT_PAD)
+      // A map of photos opens where they are pictures, not boxes.
+      const photos = shown.filter(isPhoto).length
+      const least = photos ? Math.max(OPEN_ZOOM, photoLod(photos)) : OPEN_ZOOM
+      const part =
+        width > 0 && height > 0 && need.zoom < MIN_ZOOM
+          ? openingPart(
+              shown,
+              flow.getEdges(),
+              (n) => flow.getNodesBounds([n]),
+              (b) =>
+                getViewportForBounds(b, width, height, 0, 1, FIT_PAD).zoom >=
+                least,
+              focusRef.current
+            )
+          : []
+      if (!part.length) {
+        setPartial(false)
+        void flow.fitView({ padding: FIT_PAD, duration })
+        return
+      }
+      const box = flow.getNodesBounds(part)
+      setPartial(true)
+      void flow.setViewport(
+        getViewportForBounds(box, width, height, MIN_ZOOM, 1, FIT_PAD),
+        { duration }
+      )
+    },
+    [flow]
+  )
+
   // Re-sync when the built graph changes, but keep user-dragged positions
   // for nodes that are still present (so a color-mode flip doesn't shuffle).
   const prevNodes = useRef<Node[]>([])
@@ -1661,6 +1754,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const kept = prev.get(n.id)
       return kept && keepingDrags ? { ...n, position: kept } : n
     })
+    // A device turned photo (or card) where it stands: the camera and the
+    // other centres stay, and what its new box covers moves out of its
+    // way - no new layout.
+    if (diagram && keepingDrags)
+      nextNodes = clearGrown(nextNodes, prevNodes.current)
     // Built off the main thread: the focused card is selected here.
     if (built.modelId !== undefined)
       nextNodes = nextNodes.map((n) =>
@@ -1672,10 +1770,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     if (nextNodes.length >= PRESIZE_AT) nextNodes = nextNodes.map(presized)
     modelRef.current = built.model
     modelIdRef.current = built.modelId ?? null
-    const refit = () =>
-      requestAnimationFrame(() =>
-        flow.fitView({ padding: 0.15, duration: 300 })
-      )
+    const refit = () => requestAnimationFrame(() => fitMap(300))
     // Diagram: the kept positions are not the ones the links were anchored
     // for - re-anchor (and re-size the Detailed cards) where they are. Off
     // the main thread the worker does it, and the map stays as it was until
@@ -1763,6 +1858,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     sMode,
     worker,
     lostWorker,
+    fitMap,
   ])
   useEffect(() => {
     prevNodes.current = nodes
@@ -1829,6 +1925,32 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           x: r.left + r.width / 2,
           y: r.top + r.height / 2,
         })
+      },
+      reveal: (boxes) => {
+        const el = wrapper.current
+        if (!el || !boxes.length) return
+        const r = el.getBoundingClientRect()
+        const tl = flow.screenToFlowPosition({ x: r.left, y: r.top })
+        const br = flow.screenToFlowPosition({ x: r.right, y: r.bottom })
+        const view = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }
+        const inside = (b: Rect) =>
+          b.x >= view.x &&
+          b.y >= view.y &&
+          b.x + b.w <= view.x + view.w &&
+          b.y + b.h <= view.y + view.h
+        if (boxes.every(inside)) return
+        const all = [view, ...boxes]
+        const x = Math.min(...all.map((b) => b.x))
+        const y = Math.min(...all.map((b) => b.y))
+        void flow.fitBounds(
+          {
+            x,
+            y,
+            width: Math.max(...all.map((b) => b.x + b.w)) - x,
+            height: Math.max(...all.map((b) => b.y + b.h)) - y,
+          },
+          { duration: 400, padding: 0.05 }
+        )
       },
       focusNode: (id: string) => {
         const n = flow.getNode(id)
@@ -2364,14 +2486,18 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           onCanvasClick?.()
         }}
         onMove={onMove}
+        onMoveStart={(ev) => {
+          // The user takes the camera: the word on the part shown goes.
+          if (ev) setPartial(false)
+        }}
         onlyRenderVisibleElements={!capturing}
         // Cards and zones leave the map through explicit actions (the
         // context menu, the zone toolbar) - never a stray Backspace.
         deleteKeyCode={null}
-        minZoom={0.05}
+        minZoom={MIN_ZOOM}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-        <Controls showInteractive={false} />
+        <Controls showInteractive={false} onFitView={() => fitMap(0)} />
         {bigMap && (
           <MiniMapCanvas
             nodeColor={diagram ? miniColor : undefined}
@@ -2402,6 +2528,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         // controls take the pointer.
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
           <div className="pointer-events-auto">{emptyState}</div>
+        </div>
+      )}
+      {partial && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4">
+          <div className="rounded-md border bg-card px-2 py-1 text-xs whitespace-nowrap text-muted-foreground">
+            Part of a large map. Search or focus a device.
+          </div>
         </div>
       )}
       <CanvasTip ref={tipApi} root={wrapper} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Node } from "@xyflow/react"
+import type { Edge, Node } from "@xyflow/react"
 
 import type { TopologyGraph } from "@/lib/api"
 import { approxMeasure } from "@/lib/diagram/measure"
@@ -13,6 +13,7 @@ import {
 } from "../__fixtures__/route-checks"
 import { segHitsRect } from "./spatial"
 import { anchorPoint, leadStart } from "./anchors"
+import { leaves, routeThrough } from "./link-geometry"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
 import { PHOTO, withFaces } from "./photo-anchors"
@@ -55,6 +56,50 @@ const inset = (r: Rect, d: number): Rect => ({
 })
 
 const MODES: DiagramMode[] = ["detailed", "simple"]
+
+const runLength = (pts: readonly { x: number; y: number }[]) =>
+  pts.reduce(
+    (sum, p, i) =>
+      i ? sum + Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y) : 0,
+    0
+  )
+
+/** Cables whose line, past the leads over their photos, runs through a
+ * photo at either end - the curves sampled every 2px. */
+function ownCrossings(
+  edges: readonly Edge[],
+  boxes: ReadonlyMap<string, Rect>
+): string[] {
+  const out: string[] = []
+  for (const e of edges) {
+    const d = e.data as DiagramEdgeData | undefined
+    if (e.type !== "link" || !d?.plan) continue
+    d.plan.forEach((p, i) => {
+      const route = routeThrough(p.line ?? d.line, p.pts, leaves(p.pts))
+      const lead = (a: Anchor | undefined, x: number, y: number) =>
+        a?.k === "point"
+          ? Math.hypot(p.pts[x].x - p.pts[y].x, p.pts[x].y - p.pts[y].y)
+          : 0
+      const n = p.pts.length
+      const la = lead(d.a[i], 0, 1)
+      const lb = lead(d.b[i], n - 1, n - 2)
+      const steps = Math.max(2, Math.ceil(route.length / 2))
+      const pts = Array.from({ length: steps + 1 }, (_, k) => ({
+        at: route.at(k / steps),
+        d: (k / steps) * route.length,
+      })).filter((q) => q.d > la + 1 && q.d < route.length - lb - 1)
+      for (let k = 1; k < pts.length; k++)
+        for (const id of [e.source, e.target]) {
+          const r = boxes.get(id)
+          if (r && segHitsRect(pts[k - 1].at, pts[k].at, inset(r, 1))) {
+            out.push(`${e.id}#${i} x ${id}`)
+            return
+          }
+        }
+    })
+  }
+  return out
+}
 
 describe("photo nodes", () => {
   for (const mode of MODES) {
@@ -228,6 +273,59 @@ describe("photo nodes", () => {
     expect(
       throughCards(drawn(b.nodes, b.edges, approxMeasure), rects(b.nodes))
     ).toEqual([])
+  })
+
+  // Straight and bendy lines keep the rules the elbows keep: never back
+  // across their own photos (a port facing away from its far end hooks
+  // round the photo), and each port name on its own line.
+  for (const mode of MODES)
+    for (const line of ["straight", "bendy"] as const)
+      it(`${mode} ${line}: lines leave their photos and keep their labels`, () => {
+        const b = build(photos, { mode, line })
+        const boxes = rects(b.nodes)
+        expect(ownCrossings(b.edges, boxes)).toEqual([])
+        expect(labelFaults(drawn(b.nodes, b.edges, approxMeasure))).toEqual([])
+      })
+
+  it("runs a breakout's trunk round to its legs when its port faces away", () => {
+    for (const mode of MODES) {
+      const b = build(photos, { mode, line: "straight" })
+      const fan = b.edges.filter(
+        (e) => (e.data as DiagramEdgeData | undefined)?.fan
+      )
+      const lengths = (role: "trunk" | "leg") =>
+        fan
+          .filter((e) => (e.data as DiagramEdgeData).fan!.role === role)
+          .map((e) => runLength((e.data as DiagramEdgeData).plan![0].pts))
+          .sort((x, y) => x - y)
+      const [trunk] = lengths("trunk")
+      const legs = lengths("leg")
+      expect(legs.length).toBeGreaterThan(0)
+      // One nub, then the trunk carries the distance; the legs are short.
+      expect(trunk).toBeGreaterThan(legs[Math.floor(legs.length / 2)])
+      const t = fan.find(
+        (e) => (e.data as DiagramEdgeData).fan!.role === "trunk"
+      )!.data as DiagramEdgeData
+      expect(t.fan!.bent).toBe(true)
+      expect(t.plan![0].line).toBe("elbow")
+    }
+  })
+
+  it("puts no count on a line that is one cable to a photo's port", () => {
+    for (const mode of MODES) {
+      const b = build(photos, { mode })
+      const chips = b.edges.flatMap((e) => {
+        const d = e.data as DiagramEdgeData | undefined
+        return d?.plan ? (d.labels.mid ?? []) : []
+      })
+      expect(chips.filter((c) => /\d+x$/.test(c))).toEqual([])
+    }
+    // The same links between cards keep their count.
+    const cards = build(aarhusPhotoGraph, { mode: "simple" })
+    const counted = cards.edges.flatMap(
+      (e) => (e.data as DiagramEdgeData | undefined)?.labels.mid ?? []
+    )
+    expect(counted.some((c) => /\d+x$/.test(c))).toBe(true)
   })
 
   it("re-anchors a moved photo: its ports go with it", () => {

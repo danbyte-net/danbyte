@@ -76,9 +76,42 @@ describe("inlinePhotos", () => {
       "fetch",
       vi.fn(async () => new Response("", { status: 404 }))
     )
-    const out = await inlinePhotos(withPhoto("/media/missing.png"))
+    const missing = vi.fn()
+    const out = await inlinePhotos(withPhoto("/media/missing.png"), {
+      onMissing: missing,
+    })
     const node = out.nodes.find((n) => n.id === "dev:patch-a")!
     expect(node.kind).toBe("card")
     expect(node.photo).toBeUndefined()
+    // Asked for twice, then said.
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2)
+    expect(missing).toHaveBeenCalledWith(
+      fabric.nodes.filter((n) => n.photo).length
+    )
+  })
+
+  it("asks again for a photo that failed once", async () => {
+    let calls = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        ++calls === 1
+          ? Promise.reject(new TypeError("network changed"))
+          : new Response(new Uint8Array([1, 2, 3]), {
+              headers: { "content-type": "image/png" },
+            })
+      )
+    )
+    const missing = vi.fn()
+    const out = await inlinePhotos(
+      withPhoto("/media/device-type-images/a.png"),
+      {
+        onMissing: missing,
+      }
+    )
+    expect(out.nodes.find((n) => n.id === "dev:patch-a")!.photo!.href).toBe(
+      "data:image/png;base64,AQID"
+    )
+    expect(missing).not.toHaveBeenCalled()
   })
 })

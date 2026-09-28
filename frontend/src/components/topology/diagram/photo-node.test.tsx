@@ -185,6 +185,11 @@ describe("PhotoNode", () => {
     ).toBe("faceplate")
     expect(container.querySelector("img")).toBeNull()
     expect((await screen.findByTestId("faceplate")).textContent).toBe("t1")
+    // In a frame of its own: the outlines alone do not show the device.
+    const frame = container.querySelector("[data-faceplate]")!
+    expect(frame.className).toContain("border")
+    expect(frame.className).toContain("bg-card")
+    expect(frame.contains(screen.getByTestId("faceplate"))).toBe(true)
   })
 
   it("stays a card when the node is not a photo", () => {
