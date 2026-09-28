@@ -2473,7 +2473,11 @@ function TopologyPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-7 text-xs">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
                         <Plus className="h-3 w-3" /> Add
                         <ChevronDown className="h-3 w-3" />
                       </Button>
@@ -2503,7 +2507,11 @@ function TopologyPage() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-7 text-xs">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
                         <LayoutGrid className="h-3 w-3" /> Arrange
                         <ChevronDown className="h-3 w-3" />
                       </Button>
@@ -2527,39 +2535,39 @@ function TopologyPage() {
             </>
           ) : (
             <>
-          <BarTip tip="Start a custom map">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => setAddOpen(true)}
-            >
-              <Plus className="h-3 w-3" /> Add device
-            </Button>
-          </BarTip>
-          <BarTip tip="Labelled box behind the cards">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={addZoneCentered}
-            >
-              <Square className="h-3 w-3" /> Zone
-            </Button>
-          </BarTip>
-          <BarTip tip="Discard dragged positions">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => {
-                setPositions(undefined)
-                setLayoutTick((t) => t + 1)
-              }}
-            >
-              <LayoutGrid className="h-3 w-3" /> Re-layout
-            </Button>
-          </BarTip>
+              <BarTip tip="Start a custom map">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus className="h-3 w-3" /> Add device
+                </Button>
+              </BarTip>
+              <BarTip tip="Labelled box behind the cards">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={addZoneCentered}
+                >
+                  <Square className="h-3 w-3" /> Zone
+                </Button>
+              </BarTip>
+              <BarTip tip="Discard dragged positions">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    setPositions(undefined)
+                    setLayoutTick((t) => t + 1)
+                  }}
+                >
+                  <LayoutGrid className="h-3 w-3" /> Re-layout
+                </Button>
+              </BarTip>
             </>
           )}
           <BarTip tip="Copy a link to this map">
@@ -2608,280 +2616,291 @@ function TopologyPage() {
       )}
 
       <div className="flex min-h-0 flex-1">
-      {paletteShown && (
-        <DevicePalette
-          placed={placedIds}
-          editable={canBuild}
-          panelsHidden={filters.collapse}
-          onAdd={addFromList}
-          onFocus={(id) => {
-            canvas.current?.focusNode(devNode(id))
-            canvas.current?.selectNode(devNode(id))
-          }}
-          onNewView={canAddViews ? () => setNewViewOpen(true) : undefined}
-          onClose={() => setPalette(false)}
-        />
-      )}
-      <div className="relative min-h-0 flex-1">
-        {logical && <LogicalTopologyView />}
-        {!logical && q.isLoading && (
-          <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-        )}
-        {!logical && q.isError && (
-          <div className="p-6">
-            <QueryError error={q.error} />
-          </div>
-        )}
-        {!logical && graph && (
-          <Suspense fallback={<Skeleton />}>
-            <TopologyCanvas
-              ref={canvas}
-              graph={graph}
-              colorMode={colorMode}
-              direction={direction}
-              roleOrder={roleOrder}
-              roleBonds={roleBonds}
-              roleDistance={roleDistance}
-              edgeRouting={edgeRouting}
-              nodeStyle={viewStyle}
-              diagramMode={diagramMode}
-              diagramLine={diagramLine}
-              linkOverrides={doc.doc.links}
-              diagramLabels={isDiagram ? diagramLabels : undefined}
-              monitor={isDiagram ? checks : undefined}
-              bundleLags={lagMode === "on"}
-              positions={positions}
-              layoutTick={layoutTick}
-              fitKey={photoKey ? `${fitKey}|${photoKey}` : fitKey}
-              onDropDevices={canBuild ? dropDevices : undefined}
-              pending={canBuild ? pendingCards : undefined}
-              emptyState={
-                canBuild ? (
-                  <EmptyState title="No devices yet." className="bg-card">
-                    {paletteShown ? (
-                      "Drag devices in from the list."
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2 h-7 text-xs"
-                        onClick={() => setPalette(true)}
-                      >
-                        <PanelLeft className="h-3 w-3" /> Devices
-                      </Button>
-                    )}
-                  </EmptyState>
-                ) : undefined
-              }
-              matchedIds={matchedIds}
-              selectedEdgeId={selEdgeId}
-              onGhostEdge={setGhost}
-              onBgpEdge={(d) => {
-                const id = d.sessions?.[0]
-                if (id) nav({ to: "/bgp-sessions/$id", params: { id } })
-              }}
-              onSelectNode={(d) => {
-                clearSel()
-                setSelNode(d)
-              }}
-              onSelectEdge={(d, id, link) => {
-                clearSel()
-                setSelEdge(d)
-                setSelEdgeId(id)
-                setSelLink(link ?? null)
-              }}
-              onSelectBundle={(cables, id, link) => {
-                clearSel()
-                setSelBundle(cables)
-                setSelEdgeId(id)
-                setSelLink(link ?? null)
-              }}
-              onSelectGroup={(d) => {
-                clearSel()
-                setSelGroup(d)
-              }}
-              onSelectGroupEdge={(d, id) => {
-                clearSel()
-                setSelGroupEdge(d)
-                setSelEdgeId(id)
-              }}
-              onDrillGroup={drillInto}
-              onOpenDevice={(id) =>
-                nav({ to: "/devices/$id", params: { id } })
-              }
-              zones={zones}
-              onZonesChange={setZones}
-              onNodeContext={(node, x, y) => {
-                if (node.type === "zone")
-                  setMenu({ x, y, zoneId: node.id.slice(5) })
-                else if (node.type === "sitegroup")
-                  setMenu({ x, y, group: node.data as unknown as TopoGroupData })
-                else if (
-                  node.type === "device" ||
-                  node.type === "flat" ||
-                  node.type === "card"
-                )
-                  setMenu({
-                    x,
-                    y,
-                    node: node.data as TopoNode["data"],
-                    nodeId: node.id,
-                  })
-              }}
-              onPaneContext={(x, y, fx, fy) => setMenu({ x, y, fx, fy })}
-              onCanvasClick={clearSel}
-              onDragEnd={() => {
-                const p = canvas.current?.positions()
-                if (!p) return
-                // Keep the arrangement in-session (so an incidental rebuild -
-                // colour/search - doesn't snap cards back) and, on the default
-                // view, persist it across reloads. Saved views persist via Save.
-                setPositions(p)
-              }}
-            />
-          </Suspense>
-        )}
-
-        {!showObjects && (
-          <HiddenChip
-            count={hiddenHere}
-            onShowAll={() => setHiddenNodes(NO_TOPO_HIDDEN)}
-          />
-        )}
-
-        {graph && viewStyle === "hierarchy" && count > 60 && !hintDismissed && (
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
-            <span className="text-muted-foreground">
-              Hierarchy suits smaller maps - Wiring scales better here.
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-[11px]"
-              onClick={() => setViewStyle("stencil")}
-            >
-              Switch
-            </Button>
-            <button
-              onClick={() => setHintDismissed(true)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Dismiss"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-        {graph && viewStyle === "stencil" && !grouped && count > 80 && !hintDismissed && (
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
-            <span className="text-muted-foreground">
-              Large graph - the Flat view reads better at this size.
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-[11px]"
-              onClick={() => setViewStyle("flat")}
-            >
-              Switch
-            </Button>
-            <button
-              onClick={() => setHintDismissed(true)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Dismiss"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-        {!logical && graph && (
-          // left-16 clears React Flow's zoom controls in the corner.
-          <div className="absolute bottom-4 left-16 z-10">
-            <CanvasLegend
-              viewStyle={viewStyle}
-              grouped={grouped}
-              colorMode={colorMode}
-              types={presentTypes}
-              roles={rolesInGraph}
-              monitorPill={cardMonitor}
-            />
-          </div>
-        )}
-        {selNode && (
-          <NodePanel
-            data={selNode}
-            onClose={() => setSelNode(null)}
+        {paletteShown && (
+          <DevicePalette
+            placed={placedIds}
+            editable={canBuild}
+            panelsHidden={filters.collapse}
+            onAdd={addFromList}
             onFocus={(id) => {
-              setFocus({ id, depth: 1 })
-              setSelNode(null)
+              canvas.current?.focusNode(devNode(id))
+              canvas.current?.selectNode(devNode(id))
             }}
+            onNewView={canAddViews ? () => setNewViewOpen(true) : undefined}
+            onClose={() => setPalette(false)}
           />
         )}
-        {selEdge && (
-          <EdgePanel
-            data={selEdge}
-            onClose={() => setSelEdge(null)}
-            line={lineRow}
-          />
-        )}
-        {selBundle && (
-          <BundlePanel
-            cables={selBundle}
-            onClose={() => setSelBundle(null)}
-            line={lineRow}
-          />
-        )}
-        {selGroup && (
-          <GroupPanel
-            data={selGroup}
-            onClose={() => setSelGroup(null)}
-            onDrill={drillInto}
-          />
-        )}
-        {selGroupEdge && (
-          <GroupEdgePanel
-            data={selGroupEdge}
-            onClose={() => setSelGroupEdge(null)}
-          />
-        )}
-      </div>
+        <div className="relative min-h-0 flex-1">
+          {logical && <LogicalTopologyView />}
+          {!logical && q.isLoading && (
+            <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+          )}
+          {!logical && q.isError && (
+            <div className="p-6">
+              <QueryError error={q.error} />
+            </div>
+          )}
+          {!logical && graph && (
+            <Suspense fallback={<Skeleton />}>
+              <TopologyCanvas
+                ref={canvas}
+                graph={graph}
+                colorMode={colorMode}
+                direction={direction}
+                roleOrder={roleOrder}
+                roleBonds={roleBonds}
+                roleDistance={roleDistance}
+                edgeRouting={edgeRouting}
+                nodeStyle={viewStyle}
+                diagramMode={diagramMode}
+                diagramLine={diagramLine}
+                linkOverrides={doc.doc.links}
+                diagramLabels={isDiagram ? diagramLabels : undefined}
+                monitor={isDiagram ? checks : undefined}
+                bundleLags={lagMode === "on"}
+                positions={positions}
+                layoutTick={layoutTick}
+                fitKey={photoKey ? `${fitKey}|${photoKey}` : fitKey}
+                onDropDevices={canBuild ? dropDevices : undefined}
+                pending={canBuild ? pendingCards : undefined}
+                emptyState={
+                  canBuild ? (
+                    <EmptyState title="No devices yet." className="bg-card">
+                      {paletteShown ? (
+                        "Drag devices in from the list."
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-7 text-xs"
+                          onClick={() => setPalette(true)}
+                        >
+                          <PanelLeft className="h-3 w-3" /> Devices
+                        </Button>
+                      )}
+                    </EmptyState>
+                  ) : undefined
+                }
+                matchedIds={matchedIds}
+                selectedEdgeId={selEdgeId}
+                onGhostEdge={setGhost}
+                onBgpEdge={(d) => {
+                  const id = d.sessions?.[0]
+                  if (id) nav({ to: "/bgp-sessions/$id", params: { id } })
+                }}
+                onSelectNode={(d) => {
+                  clearSel()
+                  setSelNode(d)
+                }}
+                onSelectEdge={(d, id, link) => {
+                  clearSel()
+                  setSelEdge(d)
+                  setSelEdgeId(id)
+                  setSelLink(link ?? null)
+                }}
+                onSelectBundle={(cables, id, link) => {
+                  clearSel()
+                  setSelBundle(cables)
+                  setSelEdgeId(id)
+                  setSelLink(link ?? null)
+                }}
+                onSelectGroup={(d) => {
+                  clearSel()
+                  setSelGroup(d)
+                }}
+                onSelectGroupEdge={(d, id) => {
+                  clearSel()
+                  setSelGroupEdge(d)
+                  setSelEdgeId(id)
+                }}
+                onDrillGroup={drillInto}
+                onOpenDevice={(id) =>
+                  nav({ to: "/devices/$id", params: { id } })
+                }
+                zones={zones}
+                onZonesChange={setZones}
+                onNodeContext={(node, x, y) => {
+                  if (node.type === "zone")
+                    setMenu({ x, y, zoneId: node.id.slice(5) })
+                  else if (node.type === "sitegroup")
+                    setMenu({
+                      x,
+                      y,
+                      group: node.data as unknown as TopoGroupData,
+                    })
+                  else if (
+                    node.type === "device" ||
+                    node.type === "flat" ||
+                    node.type === "card"
+                  )
+                    setMenu({
+                      x,
+                      y,
+                      node: node.data as TopoNode["data"],
+                      nodeId: node.id,
+                    })
+                }}
+                onPaneContext={(x, y, fx, fy) => setMenu({ x, y, fx, fy })}
+                onCanvasClick={clearSel}
+                onDragEnd={() => {
+                  const p = canvas.current?.positions()
+                  if (!p) return
+                  // Keep the arrangement in-session (so an incidental rebuild -
+                  // colour/search - doesn't snap cards back) and, on the default
+                  // view, persist it across reloads. Saved views persist via Save.
+                  setPositions(p)
+                }}
+              />
+            </Suspense>
+          )}
 
-      {showObjects && !logical && graph && (
-        <TopologyObjectsSidebar
-          graph={fullGraph!}
-          checks={checks}
-          zones={zones}
-          hidden={hidden}
-          onHiddenChange={setHiddenNodes}
-          selectedDeviceId={selNode?.device_id ?? null}
-          selectedGroupId={selGroup?.group_id ?? null}
-          selectedEdgeId={selEdgeId}
-          onPickNode={(n) => {
-            canvas.current?.focusNode(n.id)
-            canvas.current?.selectNode(n.id)
-            clearSel()
-            setSelNode(n.data)
-          }}
-          onPickGroup={(n) => {
-            canvas.current?.focusNode(n.id)
-            canvas.current?.selectNode(n.id)
-            clearSel()
-            setSelGroup(n.data as unknown as TopoGroupData)
-          }}
-          onDrillGroup={drillInto}
-          onPickEdge={(e) => {
-            canvas.current?.focusEdge(e.id)
-            clearSel()
-            if (e.data) setSelEdge(e.data)
-            setSelEdgeId(e.id)
-          }}
-          onFocusZone={(z) => canvas.current?.focusZone(z)}
-          onRenameZone={(id, label) =>
-            setZones(
-              (zones ?? []).map((z) => (z.id === id ? { ...z, label } : z))
-            )
-          }
-        />
-      )}
+          {!showObjects && (
+            <HiddenChip
+              count={hiddenHere}
+              onShowAll={() => setHiddenNodes(NO_TOPO_HIDDEN)}
+            />
+          )}
+
+          {graph &&
+            viewStyle === "hierarchy" &&
+            count > 60 &&
+            !hintDismissed && (
+              <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
+                <span className="text-muted-foreground">
+                  Hierarchy suits smaller maps - Wiring scales better here.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => setViewStyle("stencil")}
+                >
+                  Switch
+                </Button>
+                <button
+                  onClick={() => setHintDismissed(true)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          {graph &&
+            viewStyle === "stencil" &&
+            !grouped &&
+            count > 80 &&
+            !hintDismissed && (
+              <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
+                <span className="text-muted-foreground">
+                  Large graph - the Flat view reads better at this size.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => setViewStyle("flat")}
+                >
+                  Switch
+                </Button>
+                <button
+                  onClick={() => setHintDismissed(true)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          {!logical && graph && (
+            // left-16 clears React Flow's zoom controls in the corner.
+            <div className="absolute bottom-4 left-16 z-10">
+              <CanvasLegend
+                viewStyle={viewStyle}
+                grouped={grouped}
+                colorMode={colorMode}
+                types={presentTypes}
+                roles={rolesInGraph}
+                monitorPill={cardMonitor}
+              />
+            </div>
+          )}
+          {selNode && (
+            <NodePanel
+              data={selNode}
+              onClose={() => setSelNode(null)}
+              onFocus={(id) => {
+                setFocus({ id, depth: 1 })
+                setSelNode(null)
+              }}
+            />
+          )}
+          {selEdge && (
+            <EdgePanel
+              data={selEdge}
+              onClose={() => setSelEdge(null)}
+              line={lineRow}
+            />
+          )}
+          {selBundle && (
+            <BundlePanel
+              cables={selBundle}
+              onClose={() => setSelBundle(null)}
+              line={lineRow}
+            />
+          )}
+          {selGroup && (
+            <GroupPanel
+              data={selGroup}
+              onClose={() => setSelGroup(null)}
+              onDrill={drillInto}
+            />
+          )}
+          {selGroupEdge && (
+            <GroupEdgePanel
+              data={selGroupEdge}
+              onClose={() => setSelGroupEdge(null)}
+            />
+          )}
+        </div>
+
+        {showObjects && !logical && graph && (
+          <TopologyObjectsSidebar
+            graph={fullGraph!}
+            checks={checks}
+            zones={zones}
+            hidden={hidden}
+            onHiddenChange={setHiddenNodes}
+            selectedDeviceId={selNode?.device_id ?? null}
+            selectedGroupId={selGroup?.group_id ?? null}
+            selectedEdgeId={selEdgeId}
+            onPickNode={(n) => {
+              canvas.current?.focusNode(n.id)
+              canvas.current?.selectNode(n.id)
+              clearSel()
+              setSelNode(n.data)
+            }}
+            onPickGroup={(n) => {
+              canvas.current?.focusNode(n.id)
+              canvas.current?.selectNode(n.id)
+              clearSel()
+              setSelGroup(n.data as unknown as TopoGroupData)
+            }}
+            onDrillGroup={drillInto}
+            onPickEdge={(e) => {
+              canvas.current?.focusEdge(e.id)
+              clearSel()
+              if (e.data) setSelEdge(e.data)
+              setSelEdgeId(e.id)
+            }}
+            onFocusZone={(z) => canvas.current?.focusZone(z)}
+            onRenameZone={(id, label) =>
+              setZones(
+                (zones ?? []).map((z) => (z.id === id ? { ...z, label } : z))
+              )
+            }
+          />
+        )}
       </div>
 
       {menu && (
