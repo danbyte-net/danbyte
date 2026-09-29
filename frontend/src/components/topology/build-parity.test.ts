@@ -7,27 +7,20 @@ import {
   devId,
   fabricGraph,
   groupedGraph,
-  miniHiddenPort,
-  miniMapGraph,
-  miniOrigin,
-  traceGraph,
 } from "./__fixtures__/fabric-graph"
 import { build } from "./topology-canvas"
-import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
-import { flatHeight, flatWidth } from "./flat-node"
-import type { FlatData } from "./flat-node"
+import type { EdgeColorMode } from "./topology-canvas"
 import { GROUP_H, GROUP_W } from "./group-node"
 import { hierHead, hierHeight, hierarchyWidth } from "./layout"
 import type { CardBox } from "./diagram/card-layout"
-import { stencilSize } from "./stencil-node"
-import type { StencilData } from "./stencil-node"
 
-// Golden parity for build(): what the Wiring, Hierarchy and Flat views, the
-// trace map and the device mini-map hand React Flow - node positions and
-// rendered sizes, edge types, handles, styles, labels and routes. Refactors
-// of the edge styling, node registry or layout sizing must leave these files
-// unchanged; a deliberate change updates them (`npx vitest run -u`) and the
-// diff shows exactly what moved.
+// Golden parity for build(): what the Hierarchy hands React Flow - node
+// positions and rendered sizes, edge types, handles, styles, labels and
+// routes. Refactors of the edge styling, node registry or layout sizing
+// must leave these files unchanged; a deliberate change updates them
+// (`npx vitest run -u`) and the diff shows exactly what moved. The Diagram,
+// the trace maps and a device's map have their own golden files
+// (diagram/build-diagram.test.ts).
 
 type Opts = Parameters<typeof build>[1]
 
@@ -89,14 +82,8 @@ function headerBox(b: CardBox) {
 
 /** The size each node renders at (what dagre reserved for it). */
 function renderedSize(n: Node): { w: number; h: number } | undefined {
-  const d = n.data as StencilData & FlatData & { portSpan?: number }
+  const d = n.data as { name?: string; portSpan?: number }
   switch (n.type) {
-    case "device": {
-      const s = stencilSize(d)
-      return { w: s.width, h: s.height }
-    }
-    case "flat":
-      return { w: flatWidth(d), h: flatHeight(d) }
     case "hier":
       return {
         w: hierarchyWidth(d),
@@ -168,11 +155,10 @@ function projectEdge(e: Edge) {
 }
 
 function header(opts: Opts): string {
-  const { matched, hiddenPorts, ...plain } = opts
+  const { matched, ...plain } = opts
   return `# build(graph, ${canon({
     ...plain,
     ...(matched ? { matched: [...matched].sort() } : {}),
-    ...(hiddenPorts ? { hiddenPorts: [...hiddenPorts].sort() } : {}),
   })})`
 }
 
@@ -218,7 +204,6 @@ function expectGolden(name: string, graph: TopologyGraph, opts: Opts) {
   return expectGoldenText(name, () => golden(graph, opts))
 }
 
-const STYLES: NodeStyle[] = ["stencil", "hierarchy", "flat"]
 const ROUTINGS = ["routed", "straight", "curved"] as const
 const COLOR_MODES: EdgeColorMode[] = [
   "cable",
@@ -230,119 +215,39 @@ const COLOR_MODES: EdgeColorMode[] = [
 
 describe("build() golden parity", () => {
   describe("fabric", () => {
-    for (const nodeStyle of STYLES)
-      for (const edgeRouting of ROUTINGS)
-        it(`${nodeStyle} · ${edgeRouting}`, async () => {
-          await expectGolden(
-            `fabric-${nodeStyle}-${edgeRouting}`,
-            fabricGraph,
-            {
-              nodeStyle,
-              edgeRouting,
-              colorMode: "cable",
-            }
-          )
-        })
-
-    for (const nodeStyle of STYLES)
-      it(`${nodeStyle} · tree (TB)`, async () => {
-        await expectGolden(`fabric-${nodeStyle}-tb`, fabricGraph, {
-          nodeStyle,
-          edgeRouting: "routed",
+    for (const edgeRouting of ROUTINGS)
+      it(`hierarchy · ${edgeRouting}`, async () => {
+        await expectGolden(`fabric-hierarchy-${edgeRouting}`, fabricGraph, {
+          edgeRouting,
           colorMode: "cable",
-          direction: "TB",
         })
       })
 
-    it("stencil · every cable (LAGs unfolded)", async () => {
-      await expectGolden("fabric-stencil-unbundled", fabricGraph, {
-        nodeStyle: "stencil",
-        edgeRouting: "routed",
-        colorMode: "cable",
-        bundleLags: false,
-      })
-    })
-
-    it("stencil · role levels", async () => {
-      await expectGolden("fabric-stencil-levels", fabricGraph, {
-        nodeStyle: "stencil",
-        edgeRouting: "routed",
-        colorMode: "cable",
-        roleOrder: ["Spine", "Leaf", "Firewall", "Server", "Console server"],
-        roleBonds: ["Firewall"],
-        roleDistance: { Leaf: 3 },
-      })
-    })
-
-    it("stencil · search dims the misses", async () => {
-      await expectGolden("fabric-stencil-matched", fabricGraph, {
-        nodeStyle: "stencil",
+    it("hierarchy · search dims the misses", async () => {
+      await expectGolden("fabric-hierarchy-matched", fabricGraph, {
         edgeRouting: "routed",
         colorMode: "cable",
         matched: new Set([devId("leaf1"), devId("leaf2")]),
       })
     })
 
-    // Edge colour and speed labels per mode, on the two edge builders
-    // (per-cable in Wiring/Hierarchy, bundled in Flat).
-    for (const nodeStyle of ["stencil", "flat"] as const)
-      it(`${nodeStyle} · every colour mode`, async () => {
-        await expectGoldenText(`fabric-${nodeStyle}-colors`, () =>
-          COLOR_MODES.map((colorMode) =>
-            golden(
-              fabricGraph,
-              { nodeStyle, edgeRouting: "straight", colorMode },
-              true
-            )
-          ).join("\n")
-        )
-      })
+    // Edge colour and speed labels per mode.
+    it("hierarchy · every colour mode", async () => {
+      await expectGoldenText("fabric-hierarchy-colors", () =>
+        COLOR_MODES.map((colorMode) =>
+          golden(fabricGraph, { edgeRouting: "straight", colorMode }, true)
+        ).join("\n")
+      )
+    })
   })
 
   describe("grouped by site", () => {
-    for (const nodeStyle of STYLES)
-      for (const edgeRouting of ["routed", "curved"] as const)
-        it(`${nodeStyle} · ${edgeRouting}`, async () => {
-          await expectGolden(
-            `grouped-${nodeStyle}-${edgeRouting}`,
-            groupedGraph,
-            { nodeStyle, edgeRouting, colorMode: "cable" }
-          )
-        })
-  })
-
-  describe("trace map", () => {
-    for (const direction of ["LR", "TB"] as const)
-      it(`marked run · ${direction}`, async () => {
-        await expectGolden(`trace-${direction.toLowerCase()}`, traceGraph, {
-          nodeStyle: "stencil",
-          edgeRouting: "routed",
+    for (const edgeRouting of ["routed", "curved"] as const)
+      it(`hierarchy · ${edgeRouting}`, async () => {
+        await expectGolden(`grouped-hierarchy-${edgeRouting}`, groupedGraph, {
+          edgeRouting,
           colorMode: "cable",
-          direction,
         })
       })
-  })
-
-  describe("device mini-map", () => {
-    it("focus and origin", async () => {
-      await expectGolden("mini-focus", miniMapGraph, {
-        focusNodeId: miniOrigin,
-        originId: miniOrigin,
-        nodeStyle: "stencil",
-        edgeRouting: "routed",
-        colorMode: "cable",
-      })
-    })
-
-    it("an origin port toggled off", async () => {
-      await expectGolden("mini-hidden-port", miniMapGraph, {
-        focusNodeId: miniOrigin,
-        originId: miniOrigin,
-        hiddenPorts: new Set([miniHiddenPort]),
-        nodeStyle: "stencil",
-        edgeRouting: "routed",
-        colorMode: "cable",
-      })
-    })
   })
 })

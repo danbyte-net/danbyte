@@ -3,7 +3,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react"
 import { ColorBadge } from "@/components/cells/color-badge"
 
 import { GROUP_H, GROUP_W } from "./group-size"
-import { handleId } from "./stencil-node"
+import { handleId } from "./port-handles"
 
 // Aggregated topology node: one card per site (or location) with its device
 // count and its biggest roles as their badges. Double-click drills into the

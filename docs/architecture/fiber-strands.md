@@ -275,8 +275,8 @@ the topology/trace deep-view.
   cable can render as a **thin multi-line bus** or carry a small
   `count`-strand legend; hovering a strand in the `<FiberMap>` **highlights that
   strand's path** through the trace (reusing the existing highlight machinery).
-- The topology port-row dots (`stencil-node.tsx`) can show the terminating
-  **strand colour** for a fibre link instead of the generic kind dot.
+- The Diagram's port nubs (`diagram/card-node.tsx`) can show the terminating
+  **strand colour** for a fibre link instead of the plain grey nub.
 
 ### 6.5 Exports
 

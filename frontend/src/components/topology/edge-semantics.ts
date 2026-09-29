@@ -35,8 +35,7 @@ export type EdgeClass =
   | (Ends & {
       sem: "cable"
       raw: TopoEdge["data"]
-      /** Flat view: the one cable joining a device pair - drawn card to
-       * card rather than port to port. */
+      /** Folded by pair: the one cable joining a device pair. */
       byPair?: boolean
     })
   | (Ends & {
@@ -49,11 +48,9 @@ export type EdgeClass =
 
 export interface ClassifyOptions {
   /** "lag" folds an aggregate's member cables into one edge; "pair" folds
-   * every cable between a device pair (Flat view); "none" keeps each. */
+   * every cable between a device pair (the Diagram's Simple mode); "none"
+   * keeps each. */
   fold: "lag" | "pair" | "none"
-  /** Device mini-map: drop the cables leaving these ports of the origin. */
-  originId?: string
-  hiddenPorts?: Set<string>
 }
 
 /**
@@ -98,21 +95,6 @@ export function classifyEdges(
       out.push({ ...ends, sem: e.type, raw: e.data })
       continue
     }
-
-    // Hide edges whose origin-side port was toggled off (device mini map).
-    const first: { a_port?: string; b_port?: string } | undefined =
-      e.data?.pairs?.[0]
-    if (
-      opts.hiddenPorts?.size &&
-      opts.originId &&
-      ((e.source === opts.originId &&
-        first?.a_port &&
-        opts.hiddenPorts.has(first.a_port)) ||
-        (e.target === opts.originId &&
-          first?.b_port &&
-          opts.hiddenPorts.has(first.b_port)))
-    )
-      continue
 
     if (opts.fold === "pair") {
       const key = [e.source, e.target].sort().join(">")

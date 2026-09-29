@@ -33,8 +33,8 @@ export const CARD = {
   RADIUS: 10,
 } as const
 
-/** The status pill: the shared badge shrunk to card scale (NodeStatusPill's
- * sizes), inside the card's top-left corner. */
+/** The status pill: the shared badge shrunk to card scale, inside the
+ * card's top-left corner. */
 export const PILL = {
   H: 16,
   /** Horizontal padding plus the badge's 1px border. */

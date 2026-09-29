@@ -121,7 +121,7 @@ describe("canvas drop target", () => {
     expect(onDrop).not.toHaveBeenCalled()
     rerender(
       <div style={{ width: 800, height: 600 }}>
-        <TopologyCanvas graph={fanoutGraph} nodeStyle="stencil" />
+        <TopologyCanvas graph={fanoutGraph} nodeStyle="hierarchy" />
       </div>
     )
     await settle()

@@ -1,4 +1,4 @@
-# build(graph, {"colorMode":"cable","edgeRouting":"curved","nodeStyle":"hierarchy"})
+# build(graph, {"colorMode":"cable","edgeRouting":"curved"})
 
 nodes 10
 dev:@fw-01  {"data":{"dimmed":false,"hierCard":{"fill":"#ef4444","h":43,"lines":["10.0.2.1"],"title":"fw-01","w":88},"portPos":{"ethernet1/1":{"off":55,"side":"R"}},"portSpan":0},"h":127,"type":"hier","w":190,"x":0,"y":507.5}

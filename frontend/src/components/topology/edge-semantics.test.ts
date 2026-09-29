@@ -52,7 +52,7 @@ describe("classifyEdges", () => {
     ])
   })
 
-  it("folds every cable between a device pair in the Flat view", () => {
+  it("folds every cable between a device pair in Simple mode", () => {
     const out = classifyEdges(graph(edges), { fold: "pair" })
     expect(out.map((c) => `${c.sem}:${c.id}`)).toEqual([
       "ghost:g",
@@ -61,15 +61,6 @@ describe("classifyEdges", () => {
     ])
     const one = classifyEdges(graph([cable("c1", "a", "b")]), { fold: "pair" })
     expect(one).toMatchObject([{ sem: "cable", id: "f:a>b", byPair: true }])
-  })
-
-  it("drops the cables leaving a hidden origin port", () => {
-    const out = classifyEdges(graph(edges), {
-      fold: "none",
-      originId: "a",
-      hiddenPorts: new Set(["c3a"]),
-    })
-    expect(out.map((c) => c.id)).toEqual(["c1", "c2", "c4", "g"])
   })
 })
 

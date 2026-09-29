@@ -1,12 +1,11 @@
 import type { ComponentType } from "react"
 import type { Node, NodeProps, NodeTypes } from "@xyflow/react"
 
-import { FlatNode, flatHeight, flatWidth } from "./flat-node"
 import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
 import { HierarchyNode } from "./hierarchy-node"
 import { hierHead, hierHeight, hierarchyWidth } from "./layout"
-import { PortNode, StencilNode, stencilSize } from "./stencil-node"
-import type { StencilData } from "./stencil-node"
+import { PortNode, portSize } from "./port-node"
+import type { PortData } from "./port-node"
 import { ZoneNode } from "./zone-node"
 import { AnnotationNode } from "./diagram/annotation-node"
 import { BandNode } from "./diagram/band-node"
@@ -26,22 +25,17 @@ export interface NodeSize {
 
 export interface NodeKind {
   component: ComponentType<NodeProps>
-  /** The rendered box the layout reserves. Kinds without one (trace-map
-   * ports, zones, bands, notes) are reserved a stencil card's box. */
+  /** The rendered box the layout reserves. Kinds without one (zones, bands,
+   * notes: never laid out) are reserved `PLAIN`. */
   size?: (n: Node) => NodeSize
 }
 
-const stencilBox = (n: Node): NodeSize => stencilSize(n.data as StencilData)
+/** The box of a node with no size of its own. */
+export const PLAIN: NodeSize = { width: 156, height: 46 }
+
+const portBox = (n: Node): NodeSize => portSize(n.data as unknown as PortData)
 
 export const NODE_KINDS = {
-  device: { component: StencilNode, size: stencilBox },
-  flat: {
-    component: FlatNode,
-    size: (n: Node) => ({
-      width: flatWidth(n.data),
-      height: flatHeight(n.data),
-    }),
-  },
   // "sitegroup", not "group": React Flow reserves "group" and paints its own
   // grey stock box behind it.
   sitegroup: {
@@ -63,7 +57,7 @@ export const NODE_KINDS = {
     component: CardNode,
     size: (n: Node) => {
       const box = (n.data as Partial<DiagramCardData>).diagram?.box
-      return box ? { width: box.w, height: box.h } : stencilBox(n)
+      return box ? { width: box.w, height: box.h } : PLAIN
     },
   },
   // Where a breakout cable splits (diagram/fanout.ts).
@@ -71,9 +65,10 @@ export const NODE_KINDS = {
     component: JunctionNode,
     size: () => ({ width: JUNCTION.w, height: JUNCTION.h }),
   },
-  interface: { component: PortNode },
-  front_port: { component: PortNode },
-  rear_port: { component: PortNode },
+  // A port-level trace graph's ports (port-node.tsx).
+  interface: { component: PortNode, size: portBox },
+  front_port: { component: PortNode, size: portBox },
+  rear_port: { component: PortNode, size: portBox },
   zone: { component: ZoneNode },
   // A Diagram layer band (diagram/bands.ts): a region, never laid out.
   band: { component: BandNode },
@@ -90,7 +85,7 @@ export const nodeTypes: NodeTypes = Object.fromEntries(
 /** The box a node renders at - what the layout reserves and routes around. */
 export function sizeOf(n: Node): NodeSize {
   const kind = (NODE_KINDS as Record<string, NodeKind | undefined>)[
-    n.type ?? "device"
+    n.type ?? ""
   ]
-  return (kind?.size ?? stencilBox)(n)
+  return kind?.size?.(n) ?? PLAIN
 }

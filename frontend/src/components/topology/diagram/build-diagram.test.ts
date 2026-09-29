@@ -9,6 +9,9 @@ import {
   devId,
   fabricGraph,
   groupedGraph,
+  miniMapGraph,
+  miniOrigin,
+  traceGraph,
 } from "../__fixtures__/fabric-graph"
 import { meshGraph } from "../__fixtures__/fanout-graph"
 import {
@@ -221,6 +224,73 @@ describe("buildDiagram golden", () => {
       line: "straight",
       colorMode: "cable",
     })
+  })
+
+  // The trace maps and a device's map (embedded-map.tsx): Detailed with
+  // Elbow lines. A trace crosses two patch panels, each a card with a nub
+  // on the front and the rear port its run uses, and draws its run in the
+  // accent colour; the device map carries an LLDP ghost.
+  for (const direction of ["LR", "TB"] as const)
+    it(`trace map · ${direction}`, async () => {
+      await expectGolden(`trace-${direction.toLowerCase()}`, traceGraph, {
+        mode: "detailed",
+        line: "elbow",
+        colorMode: "cable",
+        direction,
+      })
+    })
+
+  it("device map", async () => {
+    await expectGolden("mini-focus", miniMapGraph, {
+      mode: "detailed",
+      line: "elbow",
+      colorMode: "cable",
+      focusNodeId: miniOrigin,
+    })
+  })
+})
+
+describe("the trace maps and a device's map", () => {
+  const opts: DiagramOptions = {
+    mode: "detailed",
+    line: "elbow",
+    colorMode: "cable",
+    measure: approxMeasure,
+  }
+
+  it("outline the device the map is about", () => {
+    const b = buildDiagram(miniMapGraph, { ...opts, focusNodeId: miniOrigin })
+    expect(b.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual([
+      miniOrigin,
+    ])
+  })
+
+  it("draw the traced run thick in the accent colour", () => {
+    const b = buildDiagram(traceGraph, opts)
+    const cables = b.edges.filter(
+      (e) => (e.data as DiagramEdgeData).sem === "cable"
+    )
+    const run = cables.filter((e) => (e.data as DiagramEdgeData).raw?.marked)
+    expect(run.length).toBeGreaterThan(1)
+    for (const e of run) {
+      expect(e.style).toMatchObject({
+        stroke: "var(--primary)",
+        strokeWidth: 2.5,
+      })
+      expect(e.animated).toBe(true)
+    }
+    // The spare cable beside the run keeps its own look.
+    const spare = cables.filter((e) => !(e.data as DiagramEdgeData).raw?.marked)
+    expect(spare.length).toBeGreaterThan(0)
+    for (const e of spare) expect(e.style?.stroke).not.toBe("var(--primary)")
+  })
+
+  it("give a patch panel a nub on each front and rear port of the run", () => {
+    const b = buildDiagram(traceGraph, opts)
+    const panel = b.nodes.find((n) => n.id === devId("ppa"))!
+    const d = panel.data as DiagramCardData
+    expect(d.panel).toBe(true)
+    expect(d.diagram.nubs.map((u) => u.port).sort()).toEqual(["1", "R1"])
   })
 })
 

@@ -37,17 +37,16 @@ import type { BundleMember } from "../edge-semantics"
 import type { GroupEdgeInfo, TopoGroupData } from "../group-node"
 import { sizeOf } from "../node-registry"
 
-// The Wiring, Hierarchy and Flat tabs as an export document, in the
-// Diagram's Simple look: each device a compact role-coloured card centred
-// where its card sits on the tab, and one straight line per device pair
-// between the facing side midpoints, with a count chip when it stands for
-// several cables. Their port rows and routed cables are how those tabs
-// draw, not what the map says, so the PNG, SVG, PDF and draw.io files of
-// every tab read the same. Built from the canvas's nodes and edges - never
-// the DOM.
+// The Hierarchy tab as an export document, in the Diagram's Simple look:
+// each device a compact role-coloured card centred where its card sits on
+// the tab, and one straight line per device pair between the facing side
+// midpoints, with a count chip when it stands for several cables. Its port
+// chips and aligned cables are how that tab draws, not what the map says,
+// so the PNG, SVG, PDF and draw.io files of every tab read the same. Built
+// from the canvas's nodes and edges - never the DOM.
 
 /** Node kinds drawn as device cards. */
-const DEVICE_KINDS = new Set(["device", "hier", "flat", "card"])
+const DEVICE_KINDS = new Set(["hier", "card"])
 
 type FlowEdgeData = {
   sem?: string
@@ -57,7 +56,7 @@ type FlowEdgeData = {
   group?: GroupEdgeInfo
 }
 
-/** A legacy node's card: the payload's own card lines when it has them
+/** A Hierarchy node's card: the payload's own card lines when it has them
  * (the Hierarchy asks for them), else the primary IP - the one default line
  * those tabs' payload carries. The pill follows the card lines as on a
  * Diagram card: none unless they list the status or monitoring. */
@@ -84,7 +83,7 @@ function cardInput(
   }
 }
 
-/** How many cables a legacy edge stands for: a breakout cable's port
+/** How many cables a Hierarchy edge stands for: a breakout cable's port
  * pairs are one cable. */
 function cables(d: FlowEdgeData): number {
   if (d.group) return Math.max(1, d.group.cable_count)
@@ -97,7 +96,7 @@ const WIRING = new Set(["cable", "lagbundle", "bundle", "groupedge"])
 const overlaps = (a: Rect, b: Rect) =>
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 
-/** A legacy tab's canvas as a Simple document. `regions` are its zones. */
+/** The Hierarchy's canvas as a Simple document. `regions` are its zones. */
 export function fromFlow(
   flowNodes: readonly Node[],
   flowEdges: readonly Edge[],
@@ -111,9 +110,9 @@ export function fromFlow(
   const nodes: DiagramNode[] = []
   for (const n of flowNodes) {
     if (n.hidden) continue
-    const device = DEVICE_KINDS.has(n.type ?? "device")
+    const device = DEVICE_KINDS.has(n.type ?? "")
     if (!device && n.type !== "sitegroup") continue
-    // Legacy cards are placed by their top-left corner; each export card is
+    // Hierarchy cards are placed by their top-left corner; each export card is
     // centred on the card it stands for.
     const s = sizeOf(n)
     const c = n.origin

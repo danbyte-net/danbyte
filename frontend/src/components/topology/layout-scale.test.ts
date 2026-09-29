@@ -12,13 +12,12 @@ import {
   type HierPortPos,
 } from "./layout"
 import { sizeOf } from "./node-registry"
-import { stencilSize } from "./stencil-node"
 
 // Scale guard: the layout pipeline must stay interactive on a ~150-device
 // fabric (3 sites × core pair + 4 dist + 12 access + 24 servers). A
 // regression here is what a user experiences as "the topology froze".
 
-/** Wiring cards: registered sizes, roomy spacing. */
+/** Cards at their registered size (a plain box here), roomy spacing. */
 const CARDS = { sizeOf, compact: false }
 
 function fabric(): { nodes: Node[]; edges: Edge[] } {
@@ -215,20 +214,6 @@ describe("density-adaptive gaps and lanes", () => {
       .filter((x): x is number => x !== undefined)
     expect(lanes.length).toBe(12)
     expect(new Set(lanes).size).toBe(12)
-  })
-})
-
-describe("dense cards render as a faceplate bar", () => {
-  it("a 100-port card is long on the port axis, slim on the other", () => {
-    const ports = Array.from({ length: 100 }, (_, i) => ({
-      name: `Gi1/${i}`,
-      kind: "interface" as const,
-    }))
-    const { width, height } = stencilSize({ name: "big", ports } as never)
-    // One 16px slot per port along the bar; the perpendicular stays a slim
-    // label band + identity row.
-    expect(Math.max(width, height)).toBeGreaterThanOrEqual(100 * 14)
-    expect(Math.min(width, height)).toBeLessThanOrEqual(320)
   })
 })
 

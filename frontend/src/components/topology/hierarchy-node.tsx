@@ -1,6 +1,6 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
-import type { CheckStatus } from "@/lib/api"
+import type { CheckStatus, TopoNode } from "@/lib/api"
 import { CARD as INK, mix } from "@/lib/diagram/theme"
 import { cn } from "@/lib/utils"
 import { cardContent, withCardLines } from "./diagram/card-fields"
@@ -9,7 +9,7 @@ import { CardPillBadge } from "./diagram/card-node"
 import { hierCardBox } from "./hier-card"
 import type { HierCardData } from "./hier-card"
 import { hierHeight, hierarchyWidth, type HierPortPos } from "./layout"
-import { handleId, type StencilData } from "./stencil-node"
+import { handleId } from "./port-handles"
 
 export { hierarchyWidth } from "./layout"
 
@@ -20,8 +20,10 @@ export { hierarchyWidth } from "./layout"
 // near-straight between them. The header box comes from the build
 // (hier-card.ts); the layout sized the card from the same numbers.
 
-export type HierData = StencilData &
+export type HierData = TopoNode["data"] &
   HierCardData & {
+    /** Search miss or out of the spotlight: drawn faded. */
+    dimmed?: boolean
     portPos?: Record<string, HierPortPos>
     portSpan?: number
     /** The device's monitoring state, merged in by the canvas. */

@@ -1,4 +1,4 @@
-# build(graph, {"colorMode":"cable","edgeRouting":"straight","nodeStyle":"stencil"})
+# build(graph, {"colorMode":"cable","edgeRouting":"straight"})
 
 edges 17
 e:@c1:@leaf-01:@spine-01  {"style":{"strokeWidth":1.25}}
@@ -19,7 +19,7 @@ bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strok
 bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
 lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 · 2x","style":{"strokeWidth":2.5}}
 
-# build(graph, {"colorMode":"type","edgeRouting":"straight","nodeStyle":"stencil"})
+# build(graph, {"colorMode":"type","edgeRouting":"straight"})
 
 edges 17
 e:@c1:@leaf-01:@spine-01  {"style":{"stroke":"#6366f1","strokeWidth":1.25}}
@@ -40,7 +40,7 @@ bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strok
 bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
 lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 · 2x","style":{"stroke":"#84cc16","strokeWidth":2.5}}
 
-# build(graph, {"colorMode":"status","edgeRouting":"straight","nodeStyle":"stencil"})
+# build(graph, {"colorMode":"status","edgeRouting":"straight"})
 
 edges 17
 e:@c1:@leaf-01:@spine-01  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
@@ -61,7 +61,7 @@ bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strok
 bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
 lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 · 2x","style":{"stroke":"#10b981","strokeWidth":2.5}}
 
-# build(graph, {"colorMode":"speed","edgeRouting":"straight","nodeStyle":"stencil"})
+# build(graph, {"colorMode":"speed","edgeRouting":"straight"})
 
 edges 17
 e:@c1:@leaf-01:@spine-01  {"label":"100G","style":{"stroke":"#e11d48","strokeWidth":1.25}}
@@ -82,7 +82,7 @@ bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strok
 bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
 lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 · 2x","style":{"stroke":"#e11d48","strokeWidth":2.5}}
 
-# build(graph, {"colorMode":"none","edgeRouting":"straight","nodeStyle":"stencil"})
+# build(graph, {"colorMode":"none","edgeRouting":"straight"})
 
 edges 17
 e:@c1:@leaf-01:@spine-01  {"style":{"strokeWidth":1.25}}

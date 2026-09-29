@@ -29,8 +29,8 @@ import type { DiagramCardData } from "./types"
 const HANDLE =
   "!pointer-events-none !h-px !min-h-0 !w-px !min-w-0 !border-0 !bg-transparent !opacity-0"
 
-/** The pill at card scale (NodeStatusPill's size), 1px border included
- * in `PILL.PAD_X`. */
+/** The shared status pill at card scale, 1px border included in
+ * `PILL.PAD_X`. */
 const STATUS_PILL =
   "block h-4 max-w-24 shrink-0 truncate px-1.5 py-0 text-[9px] leading-[14px]"
 /** The monitoring badge draws its edge inside (a ring), so its padding

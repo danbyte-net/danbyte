@@ -1,4 +1,4 @@
-# build(graph, {"colorMode":"cable","edgeRouting":"routed","nodeStyle":"hierarchy"})
+# build(graph, {"colorMode":"cable","edgeRouting":"routed"})
 
 nodes 4
 grp:@dc1  {"data":{"dimmed":false,"portPos":{"n":{"off":42,"side":"R"}},"portSpan":0},"h":76,"type":"sitegroup","w":212,"x":0,"y":154}

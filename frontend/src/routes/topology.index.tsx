@@ -177,13 +177,7 @@ import type {
   RetiredStyle,
   ViewDocument,
 } from "@/components/topology/view-document"
-import {
-  CENTER_H,
-  CENTER_W,
-  stencilSize,
-} from "@/components/topology/stencil-node"
-import type { StencilData } from "@/components/topology/stencil-node"
-import { FLAT_H, FLAT_W, flatW } from "@/components/topology/flat-node"
+import { retiredBox } from "@/components/topology/retired-box"
 import { HiddenChip } from "@/components/hidden-chip"
 import {
   setHidden as withHidden,
@@ -589,28 +583,6 @@ type LineParam = (typeof LINE_TYPES)[number]
 /** The tab a stored view style opens on. */
 const tabOfStyle = (v: ViewStyle): TabStyle =>
   isRetiredStyle(v) ? "diagram" : v
-
-/** A card's box on the retired Wiring or Flat tab, which placed cards by
- * their top-left corner. A Wiring card's ports sit on the sides facing
- * their neighbours; here they are split evenly over the two sides of the
- * layout axis, which is near enough to find the card's centre. */
-function retiredBox(
-  style: RetiredStyle,
-  d: TopoNode["data"] | undefined,
-  direction: "LR" | "TB"
-): { w: number; h: number } {
-  if (style === "flat") return { w: d ? flatW(d) : FLAT_W, h: FLAT_H }
-  if (!d) return { w: CENTER_W, h: CENTER_H }
-  const sides =
-    direction === "TB" ? (["T", "B"] as const) : (["L", "R"] as const)
-  const portSide: StencilData["portSide"] = {}
-  let i = 0
-  for (const p of d.ports ?? [])
-    for (const name of p.pair ? [p.name, p.pair] : [p.name])
-      portSide[name] = sides[i++ % 2]
-  const s = stencilSize({ ...d, portSide })
-  return { w: s.width, h: s.height }
-}
 
 /** What a saved view stores in `state.filters` - the map's settings under the
  * page's own names. Unchanged by the URL work: a view saved before it still

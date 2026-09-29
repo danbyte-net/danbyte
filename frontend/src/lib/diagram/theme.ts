@@ -118,7 +118,7 @@ export const CARD = {
   CAPTION_GAP: 4,
 } as const
 
-/** The card's pill (NodeStatusPill at card scale). */
+/** The card's pill (the shared status pill at card scale). */
 export const PILL = {
   H: 16,
   /** Horizontal padding plus the badge's 1px border. */

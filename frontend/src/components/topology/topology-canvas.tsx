@@ -44,25 +44,16 @@ import type { DiagramDocument } from "@/lib/diagram/types"
 import { CanvasTip } from "./canvas-tip"
 import { PartialMapChip } from "./partial-map-chip"
 import type { CanvasTipHandle } from "./canvas-tip"
-import { ABOVE, BELOW, RIGHT, handleId } from "./stencil-node"
-import type { PortSide } from "./stencil-node"
-import { FLAT_H, flatHeight, flatW, flatWidth } from "./flat-node"
-import type { FlatAnchor, FlatData } from "./flat-node"
-import { GROUP_H, GROUP_W } from "./group-node"
+import { handleId } from "./port-handles"
 import { hierarchyWidth } from "./hierarchy-node"
 import { hierCardBox } from "./hier-card"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import {
-  edgeWaypoints,
   hierarchyWaypoints,
   layoutHierarchy,
-  layoutNodes,
   layoutOutOfBounds,
   realignHierPorts,
 } from "./layout"
-import type { NodeSizing } from "./layout"
-import { resolveLevels } from "./level-organiser"
-import { graphLevels } from "./levels-param"
 import { OverlayEdge, bgpLabel } from "./overlay-edge"
 import { FLOW_ARIA_LABELS } from "./flow-aria"
 import { drawnEdgeIds } from "./hidden"
@@ -93,7 +84,7 @@ import {
 } from "./minimap-canvas"
 import { bundleStroke, edgeLook, edgeStroke, flowEdgeStyle } from "./edge-style"
 import type { EdgeColorMode } from "./edge-style"
-import { ROUTABLE, classifyEdges, orientHubToLeaf } from "./edge-semantics"
+import { classifyEdges, orientHubToLeaf } from "./edge-semantics"
 import type { BundleMember, EdgeClass } from "./edge-semantics"
 import { nodeTypes, sizeOf } from "./node-registry"
 import {
@@ -320,20 +311,16 @@ function nodesToZones(nodes: Node[], previous: Zone[]): Zone[] {
   return out
 }
 
-/** "stencil" = wiring cards with port rows; "hierarchy" = tall cards with
- * peer-aligned port chips (near-straight cables); "flat" = barebones fixed
- * chips with parallel cables bundled into one ×N edge; "diagram" = the
- * role-coloured cards of the Diagram tab (diagram/build-diagram.ts). */
-export type NodeStyle = "stencil" | "hierarchy" | "flat" | "diagram"
+/** What the canvas draws: "diagram" = the role-coloured cards of the
+ * Diagram tab (diagram/build-diagram.ts); "hierarchy" = tall cards with
+ * peer-aligned port chips (near-straight cables). */
+export type CanvasStyle = "diagram" | "hierarchy"
 
-const flatSize = (n: Node) => ({
-  width: flatW(n.data as { name?: string }),
-  height: FLAT_H,
-})
-const groupSize = () => ({ width: GROUP_W, height: GROUP_H })
-/** Wiring cards (and trace-map ports) at their registered size, with the
- * roomy spacing port-anchored cables need. */
-const CARD_SIZING: NodeSizing = { sizeOf, compact: false }
+/** Every style an arrangement may be saved under: the canvas's, and the
+ * retired Wiring ("stencil") and Flat tabs, whose arrangements a view
+ * keeps one more release and carries into the Diagram once
+ * (view-document.ts, retired-box.ts). */
+export type NodeStyle = CanvasStyle | "stencil" | "flat"
 
 export interface CanvasHandle {
   /** Current node positions (for saving a view). */
@@ -497,101 +484,6 @@ export function hoverLabel(e: Edge): string | undefined {
   return undefined
 }
 
-type PosOf = (id: string) => { x: number; y: number } | undefined
-
-/** Point each cable edge at the port-handle side facing its neighbour, and
- * record which side each port landed on. Idempotent - the base (unsuffixed)
- * port names live in edge.data so this can re-run with fresh positions after
- * a drag. */
-// Two cards count as "adjacent" (same rank) when their main-axis centres are
-// within this - closer than a rank gap. Only then do we connect them on the
-// cross axis (side by side); otherwise the link runs along the main axis.
-const ADJACENCY = 120
-
-function assignSides(
-  edges: Edge[],
-  posOf: PosOf,
-  direction: "LR" | "TB"
-): {
-  edges: Edge[]
-  sides: Map<string, Record<string, PortSide>>
-  orders: Map<string, Record<string, number>>
-} {
-  const tb = direction === "TB"
-  const sides = new Map<string, Record<string, PortSide>>()
-  // Per node+port: the neighbour's cross-axis position, used to order ports
-  // on a side so their edges don't cross.
-  const orders = new Map<string, Record<string, number>>()
-  const set = (nodeId: string, port: string, side: PortSide) => {
-    let m = sides.get(nodeId)
-    if (!m) sides.set(nodeId, (m = {}))
-    m[port] = side
-  }
-  // A port on a vertical side (L/R) orders by the neighbour's y; on a
-  // horizontal side (T/B) by the neighbour's x.
-  const order = (
-    nodeId: string,
-    port: string,
-    side: PortSide,
-    nbr: { x: number; y: number }
-  ) => {
-    let m = orders.get(nodeId)
-    if (!m) orders.set(nodeId, (m = {}))
-    m[port] = side === "L" || side === "R" ? nbr.y : nbr.x
-  }
-  const out = edges.map((e) => {
-    const a = posOf(e.source)
-    const b = posOf(e.target)
-    const data = e.data as { baseS?: string; baseT?: string } | undefined
-    const baseS =
-      data?.baseS ?? (e.sourceHandle ? String(e.sourceHandle) : null)
-    const baseT =
-      data?.baseT ?? (e.targetHandle ? String(e.targetHandle) : null)
-    if (!a || !b || !baseS || !baseT) return e
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    // Main axis follows the layout direction (x in side-to-side, y in tree);
-    // the cross axis is the other one. Side-by-side (cross-axis) links are
-    // only for cards on the same rank - far-apart cards across ranks connect
-    // along the main axis so the tree stays legible.
-    const mainD = tb ? dy : dx
-    const crossD = tb ? dx : dy
-    const sameRank = Math.abs(mainD) < ADJACENCY
-    let sSide: PortSide
-    let tSide: PortSide
-    if (!sameRank) {
-      // Different ranks → connect on the main axis.
-      if (tb) {
-        sSide = mainD >= 0 ? "B" : "T"
-        tSide = mainD >= 0 ? "T" : "B"
-      } else {
-        sSide = mainD >= 0 ? "R" : "L"
-        tSide = mainD >= 0 ? "L" : "R"
-      }
-    } else {
-      // Same rank, adjacent → connect on the cross axis (facing sides).
-      if (tb) {
-        sSide = crossD >= 0 ? "R" : "L"
-        tSide = crossD >= 0 ? "L" : "R"
-      } else {
-        sSide = crossD >= 0 ? "B" : "T"
-        tSide = crossD >= 0 ? "T" : "B"
-      }
-    }
-    set(e.source, baseS, sSide)
-    set(e.target, baseT, tSide)
-    order(e.source, baseS, sSide, b) // source port faces its target
-    order(e.target, baseT, tSide, a) // target port faces its source
-    return {
-      ...e,
-      sourceHandle: handleId(baseS, sSide),
-      targetHandle: handleId(baseT, tSide),
-      data: { ...e.data, baseS, baseT },
-    }
-  })
-  return { edges: out, sides, orders }
-}
-
 type CablePair = NonNullable<BundleMember["pairs"]>[number]
 
 /** Port handles for an edge whose ends are real ports. */
@@ -664,32 +556,6 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
     case "cable": {
       const r = c.raw
       const stroke = edgeStroke(r, colorMode)
-      // Flat view: a pair joined by ONE cable is that cable, not a bundle of
-      // one - it carries the cable's real label, colours by its own data,
-      // gets the full hover identity, and clicking it opens the cable panel
-      // rather than a one-row bundle list.
-      if (c.byPair) {
-        const bits: string[] = []
-        if (r?.via?.length) bits.push(`via ${r.via.join(", ")}`)
-        if (r?.cable_label) bits.push(r.cable_label)
-        if (colorMode === "speed" && r?.speed) bits.push(r.speed)
-        return {
-          ...ends,
-          sourceHandle: "n",
-          targetHandle: "n",
-          ...smoothstep(),
-          label: bits.length ? bits.join(" · ") : undefined,
-          animated: r?.marked,
-          data: { sem: "cable", raw: r },
-          ...flowEdgeStyle(
-            edgeLook("cable", {
-              stroke,
-              via: !!r?.via?.length,
-              marked: r?.marked,
-            })
-          ),
-        }
-      }
       const pairs = r?.pairs ?? []
       const first: CablePair | undefined = pairs[0]
       const via = r?.via ?? []
@@ -758,36 +624,27 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
   }
 }
 
-/** Graph payload → React Flow nodes and edges, laid out. Exported for the
- * golden parity test (`build-parity.test.ts`). */
+/** Graph payload → the Hierarchy's React Flow nodes and edges, laid out:
+ * port-aligned cards, near-straight cables, no channel routing (alignment
+ * removes the need). Levels and the layout direction don't apply - the
+ * rank structure IS the hierarchy. (The Diagram builds in
+ * diagram/build-diagram.ts.) Exported for the golden parity test
+ * (`build-parity.test.ts`). */
 export function build(
   graph: TopologyGraph,
   opts: {
     focusNodeId?: string
-    direction?: "LR" | "TB"
-    roleOrder?: string[]
-    roleBonds?: string[]
-    roleDistance?: Record<string, number>
     edgeRouting?: "routed" | "straight" | "curved"
     colorMode: EdgeColorMode
-    nodeStyle?: NodeStyle
-    /** Fold a link aggregation's member cables into one edge (stencil and
-     * hierarchy views; the flat view bundles every parallel cable anyway). */
+    /** Fold a link aggregation's member cables into one edge. */
     bundleLags?: boolean
     positions?: Record<string, [number, number]>
     matched?: Set<string> | null
-    hiddenPorts?: Set<string>
-    originId?: string
-    /** Hierarchy: the tenant's names for the monitoring states, so a
-     * header keeps room for its pill as it will read. */
+    /** The tenant's names for the monitoring states, so a header keeps
+     * room for its pill as it will read. */
     checkLabels?: Partial<Record<"down" | "degraded", string>>
   }
 ) {
-  const flat = opts.nodeStyle === "flat"
-  const hier = opts.nodeStyle === "hierarchy"
-  // A grouped payload (group_by=site|location) renders like the flat view:
-  // fixed-size cards, whole-node edges, one compact layout pass.
-  const grouped = graph.nodes.some((n) => n.type === "group")
   const nodes: Node[] = graph.nodes.map((n) => ({
     id: n.id,
     type:
@@ -795,11 +652,7 @@ export function build(
         ? "sitegroup"
         : (n.type ?? "device") !== "device"
           ? (n.type ?? "device")
-          : flat
-            ? "flat"
-            : hier
-              ? "hier"
-              : "device",
+          : "hier",
     position: { x: 0, y: 0 },
     selected: opts.focusNodeId === n.id,
     data: {
@@ -811,339 +664,95 @@ export function build(
     classifyEdges(graph, {
       // Link aggregation: member cables of one bundle draw as ONE edge - the
       // logical link people think in - unless the view asks for every
-      // cable. Flat collapses every parallel cable between a device pair.
-      fold: flat ? "pair" : opts.bundleLags !== false ? "lag" : "none",
-      originId: opts.originId,
-      hiddenPorts: opts.hiddenPorts,
+      // cable.
+      fold: opts.bundleLags !== false ? "lag" : "none",
     }).map((c) => flowEdge(c, opts.colorMode))
   ).edges
 
-  // Hierarchy view: port-aligned layout, near-straight cables, no channel
-  // routing (alignment removes the need). Levels don't apply here - the
-  // rank structure IS the hierarchy. Each device card's header is the
-  // Diagram's Simple card, laid out once here: the layout sizes the card
-  // from it and the node draws it.
-  if (hier) {
-    const carded = nodes.map((n) =>
-      n.type === "hier"
-        ? {
-            ...n,
-            data: {
-              ...n.data,
-              hierCard: hierCardBox(n.data as TopoNode["data"], {
-                checkLabels: opts.checkLabels,
-              }),
-            },
-          }
-        : n
-    )
-    const widthOf = (n: Node) => hierarchyWidth(n.data as { name?: string })
-    const res = layoutHierarchy(carded, allEdges, widthOf, opts.positions)
-    const laid = res.nodes.map((n) => ({
-      ...n,
-      data: {
-        ...n.data,
-        portPos: res.portPos.get(n.id),
-        portSpan: res.span.get(n.id) ?? 0,
-      },
-    }))
-    const hedges = allEdges.map((e) => {
-      const sem = (e.data as { sem?: string } | undefined)?.sem
-      if (sem !== "cable" && sem !== "lagbundle") return e
-      const baseS = e.sourceHandle ? String(e.sourceHandle) : null
-      const baseT = e.targetHandle ? String(e.targetHandle) : null
-      if (!baseS || !baseT) return e
-      const sS = res.sides.get(e.source)?.[baseS] ?? "R"
-      const tS = res.sides.get(e.target)?.[baseT] ?? "L"
-      return {
-        ...e,
-        sourceHandle: handleId(baseS, sS),
-        targetHandle: handleId(baseT, tS),
-        pathOptions: { borderRadius: 4 },
-        data: { ...e.data, baseS, baseT },
-      }
-    })
-    // Port-anchored routing: a cable bends only to get past a card that
-    // stands in its way, and always leaves and arrives at its own port
-    // level - never at the card's centre.
-    // Curved skips port-anchored routing here too - one control, one
-    // meaning in every view.
-    if (opts.edgeRouting === "curved")
-      return {
-        nodes: laid,
-        edges: hedges.map((e) => {
-          const sem = (e.data as { sem?: string } | undefined)?.sem
-          if (sem !== "cable" && sem !== "lagbundle") return e
-          return { ...e, type: "default", pathOptions: undefined }
-        }),
-      }
-    const hwp = hierarchyWaypoints(laid, hedges, res.portPos)
-    const hrouted = hedges.map((e) => {
-      const sem = (e.data as { sem?: string } | undefined)?.sem
-      if (sem !== "cable" && sem !== "lagbundle") return e
-      const pts = hwp.get(e.id)
-      return pts?.length
-        ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
-        : e
-    })
-    return { nodes: laid, edges: hrouted }
-  }
-
-  // Role tiers from the Level organiser, if any: node id → level index.
-  let levels: Map<string, number> | undefined
-  let mainOffsets: number[] | undefined
-  if (opts.roleOrder && opts.roleOrder.length) {
-    // Bonded roles share one level, so a level can hold several roles - rank by
-    // LEVEL index, not by position in the order.
-    ;({ levels, mainOffsets } = graphLevels(
-      graph.nodes,
-      resolveLevels(opts.roleOrder, opts.roleBonds ?? []),
-      opts.direction,
-      opts.roleDistance
-    ))
-  }
-
-  // Flat + grouped views: compact dagre passes with fixed card sizes and no
-  // per-port split. Flat chips EXTEND with their fan and spread distributed
-  // anchors along the side facing each neighbour (ordered so links don't
-  // cross); grouped cards keep single-point edges. Both still route around
-  // cards in the way.
-  if (flat || grouped) {
-    const dir = opts.direction ?? "LR"
-    const pre = layoutNodes(
-      nodes,
-      allEdges,
-      { sizeOf: grouped ? groupSize : flatSize, compact: true },
-      opts.positions,
-      dir,
-      levels,
-      mainOffsets
-    )
-    const posPre = new Map(pre.nodes.map((n) => [n.id, n.position]))
-    const { edges: sided } = assignSides(allEdges, (id) => posPre.get(id), dir)
-    let outNodes = pre.nodes
-    let outEdges = sided
-    let wpMap = pre.waypoints
-    if (flat) {
-      const sideOf = (h?: string | null): PortSide =>
-        h?.endsWith(RIGHT)
-          ? "R"
-          : h?.endsWith(ABOVE)
-            ? "T"
-            : h?.endsWith(BELOW)
-              ? "B"
-              : "L"
-      type Slot = { e: Edge; end: "s" | "t"; side: PortSide; order: number }
-      const perNode = new Map<string, Slot[]>()
-      const crossOf = (id: string, side: PortSide) => {
-        const p = posPre.get(id)
-        if (!p) return 0
-        return side === "L" || side === "R" ? p.y : p.x
-      }
-      for (const e of sided) {
-        const sem = (e.data as { sem?: string } | undefined)?.sem
-        if (!sem || !ROUTABLE.has(sem)) continue
-        const sS = sideOf(e.sourceHandle as string | undefined)
-        const tS = sideOf(e.targetHandle as string | undefined)
-        ;(
-          perNode.get(e.source) ?? perNode.set(e.source, []).get(e.source)!
-        ).push({ e, end: "s", side: sS, order: crossOf(e.target, sS) })
-        ;(
-          perNode.get(e.target) ?? perNode.set(e.target, []).get(e.target)!
-        ).push({ e, end: "t", side: tS, order: crossOf(e.source, tS) })
-      }
-      const anchorsOf = new Map<string, FlatAnchor[]>()
-      const fanH = new Map<string, number>()
-      const fanW = new Map<string, number>()
-      const patched = new Map<Edge, { s?: string; t?: string }>()
-      for (const [nid, slots] of perNode) {
-        const bySide = new Map<PortSide, Slot[]>()
-        for (const s of slots)
-          (bySide.get(s.side) ?? bySide.set(s.side, []).get(s.side)!).push(s)
-        const anchors: FlatAnchor[] = []
-        for (const [side, list] of bySide) {
-          list.sort((a, b) => a.order - b.order)
-          // The card grows along the axis the fan occupies: left/right
-          // fans stretch it down, top/bottom fans stretch it wide.
-          if (side === "L" || side === "R")
-            fanH.set(nid, Math.max(fanH.get(nid) ?? 0, list.length))
-          else fanW.set(nid, Math.max(fanW.get(nid) ?? 0, list.length))
-          list.forEach((s, i) => {
-            const id = `a${side}${i}`
-            anchors.push({ id, side, frac: (i + 1) / (list.length + 1) })
-            const rec = patched.get(s.e) ?? patched.set(s.e, {}).get(s.e)!
-            if (s.end === "s") rec.s = id
-            else rec.t = id
-          })
-        }
-        anchorsOf.set(nid, anchors)
-      }
-      outEdges = sided.map((e) => {
-        const rec = patched.get(e)
-        if (!rec) return e
-        return {
-          ...e,
-          sourceHandle: rec.s ?? e.sourceHandle,
-          targetHandle: rec.t ?? e.targetHandle,
-        }
-      })
-      const nodes2 = pre.nodes.map((n) => ({
-        ...n,
-        data: {
-          ...n.data,
-          flatAnchors: anchorsOf.get(n.id) ?? [],
-          flatFanH: fanH.get(n.id) ?? 0,
-          flatFanW: fanW.get(n.id) ?? 0,
-        },
-      }))
-      const grown = layoutNodes(
-        nodes2,
-        outEdges,
-        {
-          sizeOf: (n) => ({
-            width: flatWidth(n.data as FlatData),
-            height: flatHeight(n.data as FlatData),
-          }),
-          compact: true,
-        },
-        opts.positions,
-        dir,
-        levels,
-        mainOffsets
-      )
-      outNodes = grown.nodes
-      wpMap = grown.waypoints
-    }
-    if (flat) {
-      // Floating point-to-point: plain beziers between the distributed
-      // anchors, never routed or locked into channels.
-      return {
-        nodes: outNodes,
-        edges: outEdges.map((e) => {
-          const sem = (e.data as { sem?: string } | undefined)?.sem
-          if (!sem || !ROUTABLE.has(sem)) return e
-          return { ...e, type: "default", pathOptions: undefined }
-        }),
-      }
-    }
-    // Curved: the Flat view's floating beziers on the wiring cards - no
-    // channels, no orthogonal bends, just point-to-point curves.
-    if (opts.edgeRouting === "curved")
-      return {
-        nodes: outNodes,
-        edges: outEdges.map((e) => {
-          const sem = (e.data as { sem?: string } | undefined)?.sem
-          if (!sem || !ROUTABLE.has(sem)) return e
-          return { ...e, type: "default", pathOptions: undefined }
-        }),
-      }
-    const routeThem = opts.edgeRouting !== "straight"
-    const routedOut = outEdges.map((e) => {
-      const sem = (e.data as { sem?: string } | undefined)?.sem
-      if (!routeThem || !sem || !ROUTABLE.has(sem)) return e
-      const wp = wpMap.get(e.id)
-      return wp?.length
-        ? { ...e, type: "routed", data: { ...e.data, waypoints: wp } }
-        : e
-    })
-    return { nodes: outNodes, edges: routedOut }
-  }
-
-  // Pass 1: a nominal layout (no port sides yet) just to learn each card's
-  // rank/position, so we can decide which side of a card faces each neighbour.
-  const pass1 = layoutNodes(
-    nodes,
-    allEdges,
-    CARD_SIZING,
-    opts.positions,
-    opts.direction,
-    levels,
-    mainOffsets
-  ).nodes
-  const pos1 = new Map(pass1.map((n) => [n.id, n.position]))
-
-  // Point each edge at the card side facing its neighbour (dominant axis:
-  // side-by-side → left/right, stacked → top/bottom), and learn per-node
-  // port sides. Re-runnable on drag via assignSides.
-  const { edges, sides, orders } = assignSides(
-    allEdges,
-    (id) => pos1.get(id),
-    opts.direction ?? "LR"
-  )
-
-  // Inject the sides + port order so each card sizes to its per-side port
-  // split and its ports render in crossing-free order, then lay out again
-  // with the real dimensions.
-  const sized = nodes.map((n) =>
-    sides.has(n.id)
+  // Each device card's header is the Diagram's Simple card, laid out once
+  // here: the layout sizes the card from it and the node draws it.
+  const carded = nodes.map((n) =>
+    n.type === "hier"
       ? {
           ...n,
           data: {
             ...n.data,
-            portSide: sides.get(n.id),
-            portOrder: orders.get(n.id),
+            hierCard: hierCardBox(n.data as TopoNode["data"], {
+              checkLabels: opts.checkLabels,
+            }),
           },
         }
       : n
   )
-  const { nodes: laid, waypoints } = layoutNodes(
-    sized,
-    edges,
-    CARD_SIZING,
-    opts.positions,
-    opts.direction,
-    levels,
-    mainOffsets
-  )
-  // Curved: floating point-to-point beziers on the wiring cards - no
-  // channels, no orthogonal bends. The curved branch above only covers the
-  // flat/grouped payloads, so without this the Cables control silently did
-  // nothing in the Wiring view (it fell through to routed).
+  const widthOf = (n: Node) => hierarchyWidth(n.data as { name?: string })
+  const res = layoutHierarchy(carded, allEdges, widthOf, opts.positions)
+  const laid = res.nodes.map((n) => ({
+    ...n,
+    data: {
+      ...n.data,
+      portPos: res.portPos.get(n.id),
+      portSpan: res.span.get(n.id) ?? 0,
+    },
+  }))
+  const hedges = allEdges.map((e) => {
+    const sem = (e.data as { sem?: string } | undefined)?.sem
+    if (sem !== "cable" && sem !== "lagbundle") return e
+    const baseS = e.sourceHandle ? String(e.sourceHandle) : null
+    const baseT = e.targetHandle ? String(e.targetHandle) : null
+    if (!baseS || !baseT) return e
+    const sS = res.sides.get(e.source)?.[baseS] ?? "R"
+    const tS = res.sides.get(e.target)?.[baseT] ?? "L"
+    return {
+      ...e,
+      sourceHandle: handleId(baseS, sS),
+      targetHandle: handleId(baseT, tS),
+      pathOptions: { borderRadius: 4 },
+      data: { ...e.data, baseS, baseT },
+    }
+  })
+  // Port-anchored routing: a cable bends only to get past a card that
+  // stands in its way, and always leaves and arrives at its own port
+  // level - never at the card's centre. Curved skips it: one control, one
+  // meaning in every view.
   if (opts.edgeRouting === "curved")
     return {
       nodes: laid,
-      edges: edges.map((e) => {
+      edges: hedges.map((e) => {
         const sem = (e.data as { sem?: string } | undefined)?.sem
-        if (!sem || !ROUTABLE.has(sem)) return e
+        if (sem !== "cable" && sem !== "lagbundle") return e
         return { ...e, type: "default", pathOptions: undefined }
       }),
     }
-  // Route cable edges along the node-avoiding interior bends (the ends snap to
-  // the port handles). Skipped in "straight" mode.
-  const routeEdges = opts.edgeRouting !== "straight"
-  const routed = edges.map((e) => {
+  const hwp = hierarchyWaypoints(laid, hedges, res.portPos)
+  const hrouted = hedges.map((e) => {
     const sem = (e.data as { sem?: string } | undefined)?.sem
-    const wp = routeEdges ? waypoints.get(e.id) : undefined
-    if ((sem === "cable" || sem === "lagbundle") && wp && wp.length > 0) {
-      return {
-        ...e,
-        type: "routed",
-        data: { ...e.data, waypoints: wp },
-      }
-    }
-    return e
+    if (sem !== "cable" && sem !== "lagbundle") return e
+    const pts = hwp.get(e.id)
+    return pts?.length
+      ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
+      : e
   })
-  return { nodes: laid, edges: routed }
+  return { nodes: laid, edges: hrouted }
 }
 
 export interface TopologyCanvasProps {
   graph: TopologyGraph
   focusNodeId?: string
-  /** "LR" side-to-side (default) or "TB" tree (top-down). */
+  /** Diagram: "LR" left to right (default) or "TB" top to bottom. */
   direction?: "LR" | "TB"
-  /** Role names in tier order (Level organiser); [] → structural layout. */
+  /** Diagram: role names in level order (Level organiser); [] →
+   * structural layout. */
   roleOrder?: string[]
   /** Roles sharing the level of the role above them in `roleOrder` - so several
    * roles can occupy one level. */
   roleBonds?: string[]
   /** Role name → distance step (0–4) for the gap above its tier. */
   roleDistance?: Record<string, number>
-  /** "routed" bends cables around cards (where the auto-layout supplies a
-   * node-avoiding route); "straight" forces the plain smoothstep line. */
+  /** Hierarchy: "curved" draws free curves in place of its port-anchored
+   * routes. */
   edgeRouting?: "routed" | "straight" | "curved"
-  /** "stencil" (default) wiring cards; "flat" barebones chips with bundled
-   * edges - the view for big graphs. */
-  nodeStyle?: NodeStyle
+  /** "diagram" (default) or "hierarchy". */
+  nodeStyle?: CanvasStyle
   colorMode?: EdgeColorMode
   /** Fold a link aggregation's member cables into one edge. Default on. */
   bundleLags?: boolean
@@ -1174,9 +783,6 @@ export interface TopologyCanvasProps {
   matchedIds?: Set<string> | null
   /** The edge whose panel is open - drawn emphasized in primary. */
   selectedEdgeId?: string | null
-  /** Device mini map: hide edges leaving these origin ports. */
-  hiddenPorts?: Set<string>
-  originId?: string
   onSelectNode?: (data: TopologyGraph["nodes"][number]["data"]) => void
   /** A cable was clicked. `link`: the Diagram link it draws. */
   onSelectEdge?: (
@@ -1184,7 +790,7 @@ export interface TopologyCanvasProps {
     edgeId: string,
     link?: DiagramLinkRef
   ) => void
-  /** Flat view: a bundled edge was clicked - its member cables. */
+  /** A bundle or LAG was clicked - its member cables. */
   onSelectBundle?: (
     cables: BundleMember[],
     edgeId: string,
@@ -1200,7 +806,7 @@ export interface TopologyCanvasProps {
    * still drills). Disables React Flow's double-click zoom when set. */
   onOpenDevice?: (deviceId: string) => void
   /** Right-click on a node - screen coords + the raw RF node for branching
-   * on type (device/flat vs sitegroup). */
+   * on type (a device card vs a sitegroup). */
   onNodeContext?: (node: Node, x: number, y: number) => void
   /** Right-click on empty canvas. `fx`/`fy` are the same point in canvas
    * coordinates, so a zone can be created where the click landed. */
@@ -1257,7 +863,7 @@ export interface TopologyCanvasProps {
 }
 
 /** Where to aim the camera for a node: diagram nodes are placed by their
- * centre, the older cards by their corner. */
+ * centre, Hierarchy and site cards by their corner. */
 function nodeCentre(n: Node): { x: number; y: number } {
   return n.origin ? n.position : { x: n.position.x + 110, y: n.position.y + 40 }
 }
@@ -1276,7 +882,7 @@ interface Built {
 /** The inputs that decide whether an applied build restarts the layout. */
 interface Stamp {
   layoutTick: number
-  nodeStyle: NodeStyle
+  nodeStyle: CanvasStyle
   fitKey: string
   direction: "LR" | "TB"
   diagramMode: DiagramMode
@@ -1406,7 +1012,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     roleDistance,
     edgeRouting = "routed",
     bundleLags = true,
-    nodeStyle = "stencil",
+    nodeStyle = "diagram",
     positions,
     zones,
     onZonesChange,
@@ -1418,8 +1024,6 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     fitKey = "",
     matchedIds,
     selectedEdgeId = null,
-    hiddenPorts,
-    originId,
     onSelectNode,
     onSelectEdge,
     onSelectBundle,
@@ -1461,17 +1065,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     () => !(onDropDevices && graph.nodes.length === 0)
   )
 
-  // Aligned hierarchy cables are already near-straight; flat draws floating
-  // point-to-point beziers - neither re-routes orthogonally. The Diagram
-  // re-anchors its own links (relinkDiagram).
+  // The Diagram re-anchors its own links (relinkDiagram); the Hierarchy's
+  // aligned cables re-align on a drag (realignHierPorts).
   const diagram = nodeStyle === "diagram"
-  /** Cards in their role's colour, the minimap's too. */
-  const roleColored = diagram || nodeStyle === "hierarchy"
-  const routingActive =
-    edgeRouting === "routed" &&
-    nodeStyle !== "hierarchy" &&
-    nodeStyle !== "flat" &&
-    !diagram
 
   // The tenant's names for "down" and "degraded": a card keeps room for its
   // pill as it will actually read.
@@ -1564,13 +1160,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           : {
               ...build(graph, {
                 focusNodeId,
-                direction,
-                roleOrder,
-                roleBonds,
-                roleDistance,
                 edgeRouting,
                 colorMode,
-                nodeStyle,
                 bundleLags,
                 // Positions pin whenever the parent supplies them. A
                 // deliberate relayout CLEARS them at the source (the page
@@ -1579,8 +1170,6 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
                 // relayout snap straight back.
                 positions,
                 matched: matchedIds,
-                hiddenPorts,
-                originId,
                 checkLabels,
               }),
               model: null,
@@ -1600,8 +1189,6 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       positions,
       layoutTick,
       matchedIds,
-      hiddenPorts,
-      originId,
       diagram,
       diagramMode,
       diagramLine,
@@ -2035,8 +1622,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // layout genuinely restarted. Three things restart it:
     //  - `layoutTick` bumped (Re-layout, direction, Levels, applying a view);
     //  - the NODE STYLE changed - node ids are identical across styles, so
-    //    keeping "positions of nodes still present" here would hand Flat's
-    //    coordinates to Hierarchy's cards (with port spans computed for a
+    //    keeping "positions of nodes still present" here would hand the
+    //    Diagram's centres to Hierarchy's cards (with port spans computed for a
     //    completely different arrangement). The page can't signal this via
     //    the tick: the style rides on the URL, so its render arrives a beat
     //    after any tick bump and the bump is consumed on the wrong style;
@@ -2163,30 +1750,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // Zones and notes are not part of the built graph, so a rebuild would
     // drop them.
     setNodes([...zoneNodes.current, ...nextNodes, ...noteNodes.current])
-    if (diagramEdges) {
-      setEdges(diagramEdges)
-    } else if (routingActive && keepingDrags) {
-      // When we kept dragged positions, `built.edges` were routed for the
-      // layout's positions, not the kept ones - re-route from the actual
-      // rendered positions so cables always match their cards.
-      const wp = edgeWaypoints(nextNodes, built.edges, sizeOf, stamp.direction)
-      setEdges(
-        built.edges.map((e) => {
-          const sem = (e.data as { sem?: string } | undefined)?.sem
-          if (!sem || !ROUTABLE.has(sem)) return e
-          const pts = wp.get(e.id)
-          return pts?.length
-            ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
-            : {
-                ...e,
-                type: "smoothstep",
-                data: { ...e.data, waypoints: undefined },
-              }
-        })
-      )
-    } else {
-      setEdges(built.edges)
-    }
+    setEdges(diagramEdges ?? built.edges)
     if (fit) refit()
     // `stamp` is read through its fields: the in-place one is made afresh
     // every render.
@@ -2197,7 +1761,6 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     sLayoutTick,
     sPositions,
     sDirection,
-    routingActive,
     flow,
     sFitKey,
     sNodeStyle,
@@ -2430,8 +1993,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           const w = fixed?.width ?? n.width ?? n.measured?.width
           const h = fixed?.height ?? n.height ?? n.measured?.height
           if (!w || !h) continue
-          // Diagram cards stand on their centre, the older cards on
-          // their corner.
+          // Diagram cards stand on their centre, Hierarchy and site
+          // cards on their corner.
           const [ox, oy] = n.origin ?? [0, 0]
           out[n.id] = {
             x: n.position.x - ox * w,
@@ -2766,52 +2329,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       onDragEnd?.()
       return
     }
-    const liveNodes = flow.getNodes()
-    const live = new Map(liveNodes.map((n) => [n.id, n.position]))
-    setEdges((cur) => {
-      const {
-        edges: next,
-        sides,
-        orders,
-      } = assignSides(cur, (id) => live.get(id), direction)
-      setNodes((ns) =>
-        ns.map((n) =>
-          sides.has(n.id)
-            ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  portSide: sides.get(n.id),
-                  portOrder: orders.get(n.id),
-                },
-              }
-            : n
-        )
-      )
-      // Straight mode (and the flat view): only re-snapped sides, nothing
-      // to route.
-      if (!routingActive) return next
-      const wp = edgeWaypoints(liveNodes, next, sizeOf, direction)
-      return next.map((e) => {
-        const sem = (e.data as { sem?: string } | undefined)?.sem
-        if (!sem || !ROUTABLE.has(sem)) return e
-        const pts = wp.get(e.id)
-        return pts?.length
-          ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
-          : {
-              ...e,
-              type: "smoothstep",
-              data: { ...e.data, waypoints: undefined },
-            }
-      })
-    })
     onDragEnd?.()
   }, [
     flow,
     setEdges,
     setNodes,
-    direction,
-    routingActive,
     onDragEnd,
     nodeStyle,
     emitZones,
@@ -2944,16 +2466,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <ZoomControls onFit={() => fitMap(0)} />
         {minimap && bigMap && (
-          <MiniMapCanvas
-            nodeColor={roleColored ? miniColor : undefined}
-            theme={theme}
-          />
+          <MiniMapCanvas nodeColor={miniColor} theme={theme} />
         )}
         {minimap && (
           <MiniMap
             pannable
             zoomable
-            nodeColor={roleColored ? miniColor : undefined}
+            nodeColor={miniColor}
             // A big map's cards are painted underneath, on one canvas.
             nodeComponent={bigMap ? NoMiniMapNode : undefined}
             className={cn(

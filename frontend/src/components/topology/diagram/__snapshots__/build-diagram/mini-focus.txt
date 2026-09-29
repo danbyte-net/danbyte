@@ -1,0 +1,69 @@
+# buildDiagram(graph, {"mode":"detailed","line":"elbow","colorMode":"cable","focusNodeId":"dev:@leaf-02"})
+
+nodes 5
+dev:@leaf-01  card @44,252 88x66
+  fill #0ea5e9 ink #fff
+  title "leaf-01" top 6
+  nubs T36:Ethernet1/54 T52:Ethernet1/53 R17:Ethernet1/51 R33:Ethernet1/50 R49:Ethernet1/49
+dev:@leaf-02  card @44,25 88x50
+  fill #0ea5e9 ink #fff
+  title "leaf-02" top 6
+  nubs R17:Ethernet1/51 R33:Ethernet1/49 B36:Ethernet1/54 B52:Ethernet1/53
+dev:@spine-01  card @360.2,234 88x66
+  fill #6366f1 ink #fff
+  title "spine-01" top 6
+  nubs L17:Ethernet1/3 L33:Ethernet1/2 L49:Ethernet1/1
+dev:@spine-02  card @360.2,120 88x50
+  fill #6366f1 ink #fff
+  title "spine-02" top 6
+  nubs L17:Ethernet1/2 L33:Ethernet1/1
+dev:@fw-01  card @360.2,25 88x28
+  fill neutral ink theme
+  title "fw-01" top 6
+
+edges 7
+e:@c1:@leaf-01:@spine-01  link cable elbow
+  style {"strokeWidth":1.25}
+  a R49:Ethernet1/49
+  b L49:Ethernet1/1
+  path M 94,268 L 208.11865234375,268 Q 214.11865234375,268 214.11865234375,262 L 214.11865234375,256 Q 214.11865234375,250 220.11865234375,250 L 310.2373046875,250
+    ports a 130.1,268@0 b 278,250@0
+e:@c2:@leaf-01:@spine-01  link cable elbow
+  style {"strokeWidth":1.25}
+  a R33:Ethernet1/50
+  b L33:Ethernet1/2
+  path M 94,252 L 196.11865234375,252 Q 202.11865234375,252 202.11865234375,246 L 202.11865234375,240 Q 202.11865234375,234 208.11865234375,234 L 310.2373046875,234
+    ports a 129.9,252@0 b 277.1,234@0
+e:@c3:@leaf-02:@spine-01  link cable elbow
+  style {"strokeWidth":1.25}
+  a R33:Ethernet1/49
+  b L17:Ethernet1/3
+  path M 94,33 L 172.11865234375,33 Q 178.11865234375,33 178.11865234375,39 L 178.11865234375,212 Q 178.11865234375,218 184.11865234375,218 L 310.2373046875,218
+    ports a 130.1,33@0 b 277.1,218@0
+e:@c6:@leaf-01:@spine-02  link cable elbow
+  style {"strokeWidth":1.25}
+  a R17:Ethernet1/51
+  b L33:Ethernet1/1
+  path M 94,236 L 184.11865234375,236 Q 190.11865234375,236 190.11865234375,230 L 190.11865234375,134 Q 190.11865234375,128 196.11865234375,128 L 310.2373046875,128
+    ports a 128.9,236@0 b 278,128@0
+e:@c7:@leaf-02:@spine-02  link cable elbow
+  style {"strokeWidth":1.25}
+  a R17:Ethernet1/51
+  b L17:Ethernet1/2
+  path M 94,17 L 220.11865234375,17 Q 226.11865234375,17 226.11865234375,23 L 226.11865234375,106 Q 226.11865234375,112 232.11865234375,112 L 310.2373046875,112
+    ports a 128.9,17@0 b 277.1,112@0
+ghost:@leaf-02:@fw-01  link ghost straight simple mid ["LLDP"]
+  style {"strokeWidth":1.5,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","opacity":0.8}
+  a R25
+  b L14
+  mid at 0.74
+  path M 88,25 L 316.24,25
+lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  link lagbundle elbow mid ["Po10 ⇄ Po10 · 2x"]
+  style {"strokeWidth":2.5}
+  a T52:Ethernet1/53 T36:Ethernet1/54
+  b B52:Ethernet1/53 B36:Ethernet1/54
+  mid at 0.5
+  path M 52,213 L 52,56
+    ports a 52,177.2@-90 b 52,91.8@-90
+  path M 36,213 L 36,56
+    ports a 36,177.1@-90 b 36,91.9@-90
