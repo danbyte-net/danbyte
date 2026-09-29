@@ -554,14 +554,30 @@ export interface ColumnPrefSummary {
 
 // ─── Space map ─────────────────────────────────────────────────────────
 
+/** `full` - inside (or exactly) a child prefix. `partial` - no child covers
+ * it, but smaller children sit inside it. `free` - no child touches it. */
+export type SpaceMapCellState = "free" | "partial" | "full"
+
 export interface SpaceMapCell {
   cidr: string
+  state: SpaceMapCellState
+  /** Any child prefix touches the cell (full or partial). */
   used: boolean
+  /** The cell is exactly an existing child prefix. */
+  exact: boolean
   dirty: boolean
   ip_count: number
+  /** Full: the covering prefixes, most specific first. Partial: the
+   * outermost children inside the cell. At most three. */
   overlap_with: string[]
-  /** Only populated for used cells - UUID of the prefix already covering
-   * this CIDR, so the map can deep-link to its detail page. */
+  /** How many prefixes `overlap_with` was cut from. */
+  overlap_count: number
+  /** Share of the cell's addresses the children take, 0-1. */
+  used_fraction: number
+  /** Where they sit: `[start, end)` fractions of the cell. */
+  used_spans: [number, number][]
+  /** Only populated for used cells - UUID of `overlap_with[0]`, so the map
+   * can deep-link to its detail page. */
   prefix_id?: string | null
 }
 
@@ -569,6 +585,7 @@ export interface SpaceMapRow {
   prefixlen: number
   count: number
   free_count: number
+  partial_count: number
   dirty_count: number
   cells: SpaceMapCell[]
 }

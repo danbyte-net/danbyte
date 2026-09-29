@@ -140,21 +140,67 @@ def _parse_int(value, default, min_value=1):
         return default
 
 
-def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
-    """Build the space-map row list for ``net``, marking cells as ``used``
-    (overlap with a child prefix), ``dirty`` (free but contains IPs that
-    would have to be re-parented on selection), or plain free.
+# Most used-span segments one partly used cell carries. Past this the closest
+# neighbours are merged, so a cell holding a thousand /32s stays a few bars.
+SPACE_MAP_MAX_SPANS = 16
 
-    ``dirty`` cells are the new bit: anywhere an IPAddress row in the same
-    tenant + VRF falls inside the cell's network range but no child prefix
-    covers that range, we flag it amber so the operator sees stray IPs
-    before creating a new prefix on top of them.
+
+def _space_map_spans(intervals, cell_first, size, limit=SPACE_MAP_MAX_SPANS):
+    """Fractions ``[start, end)`` of a cell covered by ``intervals``.
+
+    ``intervals`` are sorted, disjoint ``(first, last)`` address ints inside
+    the cell. Touching blocks merge into one span; past ``limit`` spans the
+    smallest gaps close, so the bar keeps its shape without growing unbounded.
+    """
+    merged: list[list[int]] = []
+    for first, last in intervals:
+        if merged and first == merged[-1][1] + 1:
+            merged[-1][1] = last
+        else:
+            merged.append([first, last])
+    if len(merged) > limit:
+        gaps = sorted(
+            range(len(merged) - 1),
+            key=lambda i: merged[i + 1][0] - merged[i][1],
+        )
+        close = set(gaps[: len(merged) - limit])
+        joined: list[list[int]] = []
+        for i, span in enumerate(merged):
+            if joined and (i - 1) in close:
+                joined[-1][1] = span[1]
+            else:
+                joined.append(list(span))
+        merged = joined
+    return [
+        [(first - cell_first) / size, (last + 1 - cell_first) / size]
+        for first, last in merged
+    ]
+
+
+def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
+    """Build the space-map row list for ``net``.
+
+    Every aligned subnet (a cell) gets a ``state``:
+
+    - ``full`` - the cell sits inside (or is) a child prefix. ``exact`` says
+      the cell *is* that prefix; ``overlap_with`` lists the covering prefixes,
+      most specific first.
+    - ``partial`` - no child covers the cell, but smaller children sit inside
+      it. ``overlap_with`` lists those children (outermost only), and
+      ``used_fraction`` / ``used_spans`` say how much of the cell they take and
+      where, so the map can draw the used part and let the operator zoom in.
+    - ``free`` - no child prefix touches the cell. ``dirty`` flags one that
+      already holds IPs (stray addresses a new prefix would adopt).
+
+    ``used`` stays true for any cell a child touches (full or partial).
+
+    A child equal to ``net`` itself is the context the map is drawn inside
+    (the operator zoomed into an existing prefix), not a child: it is skipped,
+    so its own free space shows as free.
 
     ``max_v4`` / ``max_v6`` are the user's per-family "deepest prefix length to
     show" preference. They can only make the map *shallower* - clamped after the
     +8 / 256-cell safety cap, never beyond it.
-
-    Returns the list shape ``_space_map.html`` consumes.
     """
     rows = []
     if net is None:
@@ -165,6 +211,7 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
     deepest = 31 if v4 else 128
     if net.prefixlen >= deepest:
         return rows
+    width = net.max_prefixlen
 
     # Pre-fetch every IP in this tenant + VRF whose address sits inside
     # ``net``. We do the range check in Python with a sorted int list so
@@ -189,6 +236,22 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
             ip_ints.append(n)
     ip_ints.sort()
 
+    # Children strictly inside ``net``, sorted by first address and then
+    # largest block first, so a parent always precedes its own children.
+    # CIDR blocks either nest or are disjoint, which is what makes the two
+    # lookups below exact: the children *covering* a cell are its supernets
+    # (a dict hit per length), and the children *inside* it are a contiguous
+    # run of first addresses (a bisect).
+    kids = sorted(
+        {
+            c for c in child_nets
+            if c.version == net.version and c != net and c.subnet_of(net)
+        },
+        key=lambda c: (int(c.network_address), c.prefixlen),
+    )
+    by_block = {(int(c.network_address), c.prefixlen): c for c in kids}
+    kid_firsts = [int(c.network_address) for c in kids]
+
     # Which child prefix-lengths to render as rows. We never go deeper than
     # +8 bits, so every row has ≤256 cells. v4 steps one bit at a time. v6
     # steps a nibble (4 bits) for readability - a /64 shows /68·/72, not eight
@@ -212,28 +275,80 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
     for new_prefixlen in steps:
         cells = []
         for s in net.subnets(new_prefix=new_prefixlen):
-            overlap_with = [c for c in child_nets if s.overlaps(c)]
             cell_first = int(s.network_address)
             cell_last = int(s.broadcast_address)
-            lo = bisect_left(ip_ints, cell_first)
-            hi = bisect_right(ip_ints, cell_last)
-            ip_count = hi - lo
-            used = bool(overlap_with)
+            size = cell_last - cell_first + 1
+
+            # Covering children: the cell itself or one of its supernets
+            # down to (not including) ``net``. Most specific first.
+            covering = []
+            for plen in range(new_prefixlen, net.prefixlen, -1):
+                block_first = cell_first & ~((1 << (width - plen)) - 1)
+                hit = by_block.get((block_first, plen))
+                if hit is not None:
+                    covering.append(hit)
+
+            # Children inside the cell, outermost only (a grandchild inside
+            # a child adds nothing to what is used).
+            inside = []
+            if not covering:
+                end = -1
+                lo = bisect_left(kid_firsts, cell_first)
+                upto = bisect_right(kid_firsts, cell_last)
+                for kid in kids[lo:upto]:
+                    k_first = int(kid.network_address)
+                    if k_first <= end:
+                        continue
+                    inside.append(kid)
+                    end = int(kid.broadcast_address)
+
+            if covering:
+                state = "full"
+                listed = covering
+                used_fraction = 1.0
+                spans = [[0.0, 1.0]]
+            elif inside:
+                state = "partial"
+                listed = inside
+                intervals = [
+                    (int(k.network_address), int(k.broadcast_address))
+                    for k in inside
+                ]
+                used_fraction = sum(b - a + 1 for a, b in intervals) / size
+                spans = _space_map_spans(intervals, cell_first, size)
+            else:
+                state = "free"
+                listed = []
+                used_fraction = 0.0
+                spans = []
+
+            ip_count = (
+                bisect_right(ip_ints, cell_last) - bisect_left(ip_ints, cell_first)
+            )
+            used = state != "free"
             cells.append({
                 "cidr": str(s),
+                "state": state,
                 "used": used,
-                "overlap_with": [str(c) for c in overlap_with[:3]],
+                # The cell is exactly an existing child prefix.
+                "exact": bool(covering) and covering[0].prefixlen == new_prefixlen,
+                "overlap_with": [str(c) for c in listed[:3]],
+                "overlap_count": len(listed),
+                "used_fraction": used_fraction,
+                "used_spans": spans,
                 # "dirty" = free but the address range already holds IPs.
                 # Creating a new prefix here would have to re-parent them.
                 "dirty": (not used) and (ip_count > 0),
                 "ip_count": ip_count,
             })
-        free_count = sum(1 for c in cells if not c["used"])
+        free_count = sum(1 for c in cells if c["state"] == "free")
+        partial_count = sum(1 for c in cells if c["state"] == "partial")
         dirty_count = sum(1 for c in cells if c["dirty"])
         rows.append({
             "prefixlen": new_prefixlen,
             "count": len(cells),
             "free_count": free_count,
+            "partial_count": partial_count,
             "dirty_count": dirty_count,
             "cells": cells,
         })
