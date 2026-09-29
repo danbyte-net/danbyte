@@ -81,6 +81,7 @@ A new script is private to you. On the **Sharing** tab:
 | Chosen groups | Everyone in the groups you pick |
 | Everyone in the tenant | Published - needs the publish permission |
 
+The pickers list the members of the tenant and the groups they are in.
 Sharing only ever narrows: a colleague also needs the `view` permission on
 scripts, and running one needs `run`. Deleting and editing follow the same
 permissions as any other object.

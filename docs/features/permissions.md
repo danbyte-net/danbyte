@@ -176,7 +176,9 @@ they edit. They can grant **read-only** access to **their own site only** -
 nothing wider:
 
 - they can't create new *editors* (that stays an admin job),
-- they can't reach any site they don't already edit.
+- they can't reach any site they don't already edit,
+- they pick from the **members of the tenant**, and grant to people, not
+  groups.
 
 This is enforced on the server, not just hidden in the UI, so it's safe to hand
 to local IT in a big multi-site deployment. The toggle is off by default.
@@ -212,6 +214,15 @@ fail:
 !!! warning "The interface hides buttons; the server enforces the rule"
     Hidden buttons are a convenience. Even if someone reaches a restricted action
     another way (an old browser tab, a saved link), the server still refuses it.
+
+### Picking people outside Admin
+
+Some features name people without being user administration: notification
+subscriptions, script sharing, a site editor's viewer invite, and user or
+group [custom fields](tags-and-custom-fields.md). Their pickers list the
+**active members of the tenant** and the groups those members are in, for
+anyone who works with the feature - no permission on users needed. The
+address is shown only to people who may view users.
 
 ## Inviting people
 

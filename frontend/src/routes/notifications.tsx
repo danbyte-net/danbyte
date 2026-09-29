@@ -13,9 +13,8 @@ import {
   type NotificationMeRow,
   type NotificationSubscription,
   type Paginated,
-  type RBACGroup,
-  type RBACUser,
 } from "@/lib/api"
+import { usePeople, usePeopleGroups } from "@/lib/people"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -442,14 +441,10 @@ function AddSubscriptionDialog({
     queryFn: () =>
       api<Paginated<NotificationChannel>>("/api/monitoring/channels/"),
   })
-  const groupsQ = useQuery({
-    queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
-  })
-  const usersQ = useQuery({
-    queryKey: ["users", ""],
-    queryFn: () => api<Paginated<RBACUser>>("/api/users/"),
-  })
+  // Tenant members, not /api/users/: adding a subscription is not user
+  // administration.
+  const groupsQ = usePeopleGroups(open)
+  const usersQ = usePeople(open)
 
   const save = useMutation({
     mutationFn: () =>

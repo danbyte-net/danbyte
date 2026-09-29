@@ -50,6 +50,12 @@ from auth_api.login_api import (
     totp_disable_api,
     totp_setup_api,
 )
+from auth_api.people_api import (
+    PeopleGroupDetail,
+    PeopleGroupList,
+    PeopleList,
+    PersonDetail,
+)
 from auth_api.sso_admin import IdentityProviderViewSet, SsoGroupMappingViewSet
 from auth_api.sso_api import (
     sso_acs,
@@ -512,6 +518,13 @@ urlpatterns = [
     path("rbac/site-role/", create_site_role, name="rbac-site-role"),
     path("users/<int:user_id>/access-summary/", user_access_summary,
          name="user-access-summary"),
+    # Tenant members for pickers outside user administration. The literal
+    # "groups/" routes come before "<int:pk>/".
+    path("people/", PeopleList.as_view(), name="people-list"),
+    path("people/groups/", PeopleGroupList.as_view(), name="people-group-list"),
+    path("people/groups/<int:pk>/", PeopleGroupDetail.as_view(),
+         name="people-group-detail"),
+    path("people/<int:pk>/", PersonDetail.as_view(), name="people-detail"),
     path("inventory/ansible/", ansible_inventory, name="inventory-ansible"),
     path("virtual-machines/<uuid:pk>/render/", vm_render_view, name="vm-render"),
     # Generic round-trip export/import (any IO-capable object type).

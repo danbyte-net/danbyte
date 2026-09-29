@@ -64,6 +64,14 @@ to its raw id, never an error. So does a target you may not view: the name is
 resolved with your own access (the object type's *view* permission and the
 sites it covers), and with no active tenant nothing resolves.
 
+**Users and groups** are the exception, because listing accounts is user
+administration. A user field's picker lists the active members of the
+tenant, and a group field's picker the groups they are in, for anyone who
+may add or change one of the types the field applies to. Without a
+permission on users, the address is left out. On detail pages the value
+still reads as a name when it is one of the tenant's members or their
+groups.
+
 ### Which objects can have custom fields
 
 Every model that carries the `custom_fields` mixin - the list is
