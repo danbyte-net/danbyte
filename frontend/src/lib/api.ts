@@ -10523,11 +10523,19 @@ export interface SlaExclusion {
   created_at: string
 }
 
+/** One day of a holiday calendar. A yearly day repeats on its month and day
+ * in every year; `date` is where it was entered. */
+export interface HolidayDay {
+  date: string
+  name: string
+  yearly: boolean
+}
+
 export interface HolidayCalendar {
   id: string
   name: string
   description: string
-  dates: string[]
+  dates: HolidayDay[]
   agreement_count: number
 }
 

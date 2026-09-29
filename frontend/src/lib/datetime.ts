@@ -177,6 +177,22 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000)
 }
 
+/** Whether `v` is a real `YYYY-MM-DD` calendar date. `Date.parse` alone is
+ * not enough: it rolls "2026-02-30" over into March. */
+export function isIsoDate(v: string): boolean {
+  if (!DATE_ONLY_RE.test(v)) return false
+  const t = Date.parse(`${v}T00:00:00Z`)
+  return !isNaN(t) && new Date(t).toISOString().slice(0, 10) === v
+}
+
+/** A bare `YYYY-MM-DD` date moved by `days` (negative goes back). Counted at
+ * UTC midnight, so no DST drift; "" for an invalid date. */
+export function addDays(iso: string, days: number): string {
+  if (!isIsoDate(iso)) return ""
+  const t = Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000
+  return new Date(t).toISOString().slice(0, 10)
+}
+
 /** The effective settings + bound formatters. Reads `me.datetime` (already
  * resolved user → tenant → deployment on the server). */
 export function useDateFormat() {

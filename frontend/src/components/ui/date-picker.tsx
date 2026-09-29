@@ -45,7 +45,17 @@ function sameDay(a: Date, b: Date): boolean {
 }
 
 // Monday-first weekday header.
-const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+export const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+
+/** The 42 days (six Monday-first weeks) a month grid shows for month `m`
+ * (0-11) of year `y`, spilling into the months either side. Local dates. */
+export function monthCells(y: number, m: number): Date[] {
+  const first = new Date(y, m, 1)
+  const lead = (first.getDay() + 6) % 7 // days shown from the previous month
+  const cells: Date[] = []
+  for (let i = 0; i < 42; i++) cells.push(new Date(y, m, 1 - lead + i))
+  return cells
+}
 
 function MonthGrid({
   selected,
@@ -77,10 +87,7 @@ function MonthGrid({
 
   // 6 fixed rows keep the popover height stable while paging months.
   const first = new Date(view.y, view.m, 1)
-  const lead = (first.getDay() + 6) % 7 // days shown from the previous month
-  const cells: Date[] = []
-  for (let i = 0; i < 42; i++)
-    cells.push(new Date(view.y, view.m, 1 - lead + i))
+  const cells = monthCells(view.y, view.m)
 
   const monthLabel = new Intl.DateTimeFormat("en-GB", {
     month: "long",

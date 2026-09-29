@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { formatCustom } from "./datetime"
+import { addDays, formatCustom, isIsoDate } from "./datetime"
 import type { DateTimeSettings } from "./api"
 
 const at = "2026-09-24T17:00:00Z"
@@ -29,5 +29,20 @@ describe("formatCustom follows the clock setting", () => {
     expect(formatCustom(at, { month: "short", day: "numeric" }, s("24h"))).toBe(
       "Sep 24"
     )
+  })
+})
+
+describe("bare dates", () => {
+  it("knows a real calendar date", () => {
+    expect(isIsoDate("2028-02-29")).toBe(true)
+    expect(isIsoDate("2026-02-29")).toBe(false)
+    expect(isIsoDate("2026-02-30")).toBe(false)
+    expect(isIsoDate("20261225")).toBe(false)
+  })
+
+  it("moves by days across months and years", () => {
+    expect(addDays("2026-12-31", 1)).toBe("2027-01-01")
+    expect(addDays("2026-03-01", -1)).toBe("2026-02-28")
+    expect(addDays("2026-02-30", 1)).toBe("")
   })
 })
