@@ -7559,7 +7559,7 @@ class ExportTemplateSerializer(NumIdModelSerializer):
     def validate_object_type(self, value):
         from auth_api.object_types import is_registered, model_for
 
-        from .export_templates import has_secret_fields
+        from .export_templates import has_secret_fields, template_subject_allowed
 
         if not is_registered(value):
             raise serializers.ValidationError("Unknown object type.")
@@ -7569,6 +7569,10 @@ class ExportTemplateSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(
                 "This type carries credentials and cannot be exported by template."
             )
+        # Nor are accounts, groups and grants: a template shows them by name
+        # at most.
+        if not template_subject_allowed(model_for(value)):
+            raise serializers.ValidationError("This type cannot be exported by template.")
         return value
 
     def validate_template_code(self, value):
@@ -7681,7 +7685,7 @@ class LabelTemplateSerializer(NumIdModelSerializer):
     def validate_object_type(self, value):
         from auth_api.object_types import is_registered, model_for
 
-        from .export_templates import has_secret_fields
+        from .export_templates import has_secret_fields, template_subject_allowed
 
         if not is_registered(value):
             raise serializers.ValidationError("Unknown object type.")
@@ -7690,6 +7694,8 @@ class LabelTemplateSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(
                 "This type carries credentials and cannot be labelled by template."
             )
+        if not template_subject_allowed(model_for(value)):
+            raise serializers.ValidationError("This type cannot be labelled by template.")
         return value
 
     def _check_jinja(self, value):

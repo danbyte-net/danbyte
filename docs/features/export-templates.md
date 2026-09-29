@@ -103,7 +103,21 @@ prefix; a router config needs the pieces. These filters take a string
     and a secret-bearing field is unreadable from any row a template reaches.
     A model's **methods** are refused too - only a `get_…_display()` choice
     label is callable - so an accessor that opens the secret store cannot be
-    reached through a relation either. Output is always served as a download of an inert type:
+    reached through a relation either.
+
+    Walking a relation stays inside your tenant and your permissions: a
+    related list (`rack.devices.all()`) holds only this tenant's rows that
+    you may view, and a row of another tenant reads as nothing. Accounts,
+    groups and the tenant show their name at most - `owner.username`,
+    `tenant.name` - never an address, a membership or the organisation
+    behind them. Accounts, groups and grants cannot be a template's subject,
+    and a tenant template covers the tenant it runs in. On a related list
+    a template may call `all`, `count`, `exists`, `first`, `last`,
+    `filter`, `exclude`, `get`, `order_by`, `reverse`, `distinct` and
+    `none`; a lookup names one field of that row (`name__startswith`), never
+    a path into another table (`site__name`).
+
+    Output is always served as a download of an inert type:
     `text/plain`, CSV, JSON, XML or YAML. A template declaring `text/html`
     downloads as plain text.
 | `prefixlen` | `24` |

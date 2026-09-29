@@ -8077,7 +8077,10 @@ class LabelTemplateViewSet(TenantScopedViewSet):
             qr_content=d.get("qr_content") or "",
         )
         try:
-            out = render_label(draft, objs[0], base_url=self._base_url(request))
+            out = render_label(
+                draft, objs[0], base_url=self._base_url(request),
+                tenant=_get_active_tenant(request), user=request.user,
+            )
         except TemplateError as exc:
             return Response(
                 {"detail": f"Template error: {exc}"},
@@ -8096,10 +8099,13 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
         objs = self._objects(tmpl.object_type, ids) or []
         base = self._base_url(request)
+        tenant = _get_active_tenant(request)
         out = []
         for obj in objs:
             try:
-                rendered = render_label(tmpl, obj, base_url=base)
+                rendered = render_label(
+                    tmpl, obj, base_url=base, tenant=tenant, user=request.user
+                )
             except TemplateError as exc:
                 rendered = {"html": f"<pre>{exc}</pre>", "qr": ""}
             out.append({"id": str(obj.pk), **rendered})
@@ -8117,10 +8123,13 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
         objs = self._objects(tmpl.object_type, ids) or []
         base = self._base_url(request)
+        tenant = _get_active_tenant(request)
         out = []
         for obj in objs:
             try:
-                text = render_label_text(tmpl, obj, base_url=base)
+                text = render_label_text(
+                    tmpl, obj, base_url=base, tenant=tenant, user=request.user
+                )
             except TemplateError as exc:
                 text = f"Template error: {exc}"
             out.append({"id": str(obj.pk), "name": str(obj), "text": text})
@@ -8148,11 +8157,14 @@ class LabelTemplateViewSet(TenantScopedViewSet):
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         base = self._base_url(request)
+        tenant = _get_active_tenant(request)
         rows = []
         max_lines = 0
         for obj in objs:
             try:
-                text = render_label_text(tmpl, obj, base_url=base)
+                text = render_label_text(
+                    tmpl, obj, base_url=base, tenant=tenant, user=request.user
+                )
             except TemplateError as exc:
                 text = f"Template error: {exc}"
             lines = text.split("\n") if text else []
@@ -8206,7 +8218,8 @@ class LabelTemplateViewSet(TenantScopedViewSet):
             )
         try:
             pdf = render_sheet_pdf(
-                tmpl, objs, base_url=self._base_url(request), paper=paper
+                tmpl, objs, base_url=self._base_url(request), paper=paper,
+                tenant=_get_active_tenant(request), user=request.user,
             )
         except TemplateError as exc:
             return Response(

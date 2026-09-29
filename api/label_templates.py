@@ -317,7 +317,8 @@ def _sheet_css(template, paper: str = "label") -> str:
 
 
 def render_sheet_pdf(
-    template, objects, *, base_url: str = "", paper: str = "label"
+    template, objects, *, base_url: str = "", paper: str = "label",
+    tenant=None, user=None,
 ) -> bytes:
     """Render ``template`` against ``objects`` into a print-ready PDF.
 
@@ -334,7 +335,7 @@ def render_sheet_pdf(
 
     cells = []
     for obj in objects:
-        rendered = render_label(template, obj, base_url=base_url)
+        rendered = render_label(template, obj, base_url=base_url, tenant=tenant, user=user)
         body = rendered["html"]
         if template.qr_enabled:
             body = _inject_qr(body, rendered["qr"], template.qr_size_mm)
@@ -347,7 +348,7 @@ def render_sheet_pdf(
     return weasyprint.HTML(string=doc, base_url=base_url or None).write_pdf()
 
 
-def render_label_text(template, obj, *, base_url: str = "") -> str:
+def render_label_text(template, obj, *, base_url: str = "", tenant=None, user=None) -> str:
     """The label's visible text as plain multi-line text - for copying into an
     external label printer's software (Phoenix Contact, Weidmüller, DYMO, …).
     Renders the template, drops the markup, and keeps one line per block."""
@@ -355,7 +356,7 @@ def render_label_text(template, obj, *, base_url: str = "") -> str:
 
     from django.utils.html import strip_tags
 
-    body = render_label(template, obj, base_url=base_url)["html"]
+    body = render_label(template, obj, base_url=base_url, tenant=tenant, user=user)["html"]
     # Turn block boundaries into newlines before stripping tags so the lines
     # survive (e.g. name / serial / site each on their own line).
     body = re.sub(r"(?i)<\s*br\s*/?>", "\n", body)
@@ -365,13 +366,20 @@ def render_label_text(template, obj, *, base_url: str = "") -> str:
     return "\n".join(ln for ln in lines if ln)
 
 
-def render_label(template, obj, *, base_url: str = "") -> dict:
+def render_label(template, obj, *, base_url: str = "", tenant=None, user=None) -> dict:
     """Render ``template`` against ``obj``. Returns ``{"html", "qr"}``.
 
     ``base_url`` (scheme+host) is prepended to the object's detail path for
-    ``{{ url }}`` and for the default QR. Raises ``jinja2.TemplateError`` on a
-    template problem.
+    ``{{ url }}`` and for the default QR. The sandbox is fenced to ``tenant``
+    (else the template's, else the object's) and, with ``user``, cuts every
+    relation to the rows that user may view. Raises ``jinja2.TemplateError``
+    on a template problem.
     """
+    if tenant is None:
+        tenant = (
+            template.tenant if getattr(template, "tenant_id", None)
+            else getattr(obj, "tenant", None)
+        )
 
     url = f"{base_url}{detail_path(obj)}" if base_url else detail_path(obj)
     short_path = short_link_path(obj)
@@ -394,7 +402,8 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
     from .export_templates import _template_environment_class
 
     html_env = _register_filters(_template_environment_class()(
-        trim_blocks=True, lstrip_blocks=True, autoescape=True
+        trim_blocks=True, lstrip_blocks=True, autoescape=True,
+        tenant=tenant, user=user,
     ))
     html = html_env.from_string(template.template_html or "").render(**ctx)
     # Strip anything executable - the label prints inline in the app origin.
@@ -404,7 +413,9 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
         # The QR payload is a scannable string, NOT HTML - render it with
         # autoescape OFF so e.g. a name with `<`/`&` encodes verbatim in the QR
         # instead of as `&lt;`/`&amp;`.
-        qr_env = _register_filters(_template_environment_class()(autoescape=False))
+        qr_env = _register_filters(_template_environment_class()(
+            autoescape=False, tenant=tenant, user=user,
+        ))
         qr = qr_env.from_string(template.qr_content).render(**ctx)
     else:
         # Default QR: the compact short link when the object has a numid (smaller
