@@ -81,6 +81,11 @@ edits it. It shows the parent region plus a **Sites** tab (the sites that sit
 directly in the region) and a **Sub-regions** tab, each with counts, backed by
 `GET /api/sites/?region=<id>` and `?parent=<id>` on regions.
 
+Devices, racks and virtual machines carry their site's region on every row
+(`site.region` in the list API), so their lists can show a **Region** column -
+tick it under **Columns**. The region is the site's; a row without a site has
+no region.
+
 The chain continues on the objects themselves: a **site** page has a
 **Locations** tab listing the locations inside it (`GET /api/locations/?site=<id>`);
 a **location** links back to its site and parent location and lists its racks;

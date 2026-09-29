@@ -100,7 +100,10 @@ total unfiltered.
 
 Click a rule name to open its detail page. It shows the rule's configuration plus
 an **affected objects** table - the rows it currently fails, rendered with the
-same columns you'd see on that object type's normal list. A **Re-evaluate**
+same columns you'd see on that object type's normal list. The rows follow your
+access to that object type: the compliance permission shows which rules fail and
+how many objects, while the rows themselves need *view* on the type and are cut
+to the sites that grant covers. A **Re-evaluate**
 button refreshes it on demand. If the rule has a **How to fix** guide, it is
 rendered above the affected-objects table.
 

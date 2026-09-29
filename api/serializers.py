@@ -656,6 +656,25 @@ class SiteMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name"]
 
 
+class RegionMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = Region
+        fields = ["id", "name", "slug"]
+
+
+class SiteRegionMiniSerializer(SiteMiniSerializer):
+    """A site plus its region, for the lists whose rows are placed at a site
+    (devices, racks, VMs) - "which region is this in" is a column there. The
+    plain SiteMiniSerializer stays two fields: a dozen other serializers embed
+    it and their viewsets do not join the region. Callers must
+    ``select_related("site__region")``."""
+
+    region = RegionMiniSerializer(read_only=True)
+
+    class Meta(SiteMiniSerializer.Meta):
+        fields = ["id", "name", "region"]
+
+
 class VLANMiniSerializer(NumIdModelSerializer):
     # zone rides along so tables embedding a VLAN (prefixes, interfaces) can
     # render its zone chip without a second fetch. Callers embedding this in
@@ -2508,7 +2527,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     cf_model = "device"
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
-    site = SiteMiniSerializer(read_only=True)
+    site = SiteRegionMiniSerializer(read_only=True)
     primary_ip = serializers.SerializerMethodField()
     secondary_ip = serializers.SerializerMethodField()
     oob_ip = serializers.SerializerMethodField()
@@ -5208,13 +5227,9 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     certificate_count = serializers.SerializerMethodField()
     routing_count = serializers.SerializerMethodField()
 
-    def _detail(self) -> bool:
-        return isinstance(self.instance, VirtualMachine)
-
+    @detail_only(0)
     def get_routing_count(self, obj) -> int:
         """The Routing tab's count, as on the device page (#217)."""
-        if not self._detail():
-            return 0
         return (
             obj.static_routes.count() + obj.bgpinstances.count()
             + sum(i.sessions.count() for i in obj.bgpinstances.all())
@@ -5222,18 +5237,20 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
             + obj.eigrpinstances.count()
         )
 
+    @detail_only(0)
     def get_interface_count(self, obj) -> int:
-        return obj.interfaces.count() if self._detail() else 0
+        return obj.interfaces.count()
 
+    @detail_only(0)
     def get_disk_count(self, obj) -> int:
-        return obj.disks.count() if self._detail() else 0
+        return obj.disks.count()
 
+    @detail_only(0)
     def get_service_count(self, obj) -> int:
-        return obj.services.count() if self._detail() else 0
+        return obj.services.count()
 
+    @detail_only(0)
     def get_certificate_count(self, obj) -> int:
-        if not self._detail():
-            return 0
         from monitoring.models import CertificateAssignment
 
         return CertificateAssignment.objects.filter(
@@ -5262,7 +5279,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         source="device", queryset=Device.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
-    site = SiteMiniSerializer(read_only=True)
+    site = SiteRegionMiniSerializer(read_only=True)
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(),
         write_only=True, required=False, allow_null=True,
@@ -5523,7 +5540,7 @@ class RackMiniSerializer(NumIdModelSerializer):
 
 
 class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
-    site = SiteMiniSerializer(read_only=True)
+    site = SiteRegionMiniSerializer(read_only=True)
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True
     )
@@ -7267,12 +7284,6 @@ class TunnelSerializer(StatusSerializerMixin,
 
 
 # ─── Regions & Locations ─────────────────────────────────────────────────────
-class RegionMiniSerializer(NumIdModelSerializer):
-    class Meta:
-        model = Region
-        fields = ["id", "name", "slug"]
-
-
 class RegionSerializer(NumIdModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
     parent = RegionMiniSerializer(read_only=True)

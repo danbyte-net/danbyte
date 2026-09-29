@@ -126,9 +126,10 @@ class RackListTests(_Base):
     comes from the page's prefetches (#188)."""
 
     def test_page_cost_is_flat_and_figures_match(self):
-        from .models import Rack
+        from .models import Rack, Region
 
-        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        region = Region.objects.create(tenant=self.tenant, name="Nordics")
+        site = Site.objects.create(tenant=self.tenant, name="HQ", region=region)
         for i in range(6):
             r = Rack.objects.create(tenant=self.tenant, site=site, name=f"r{i}")
             for k in range(8):
@@ -139,6 +140,7 @@ class RackListTests(_Base):
         big, body = self._queries("/api/racks/?page_size=6")
         self.assertEqual(small, big, "a bigger page must not cost more queries")
         row = body["results"][0]
+        self.assertEqual(row["site"]["region"]["name"], "Nordics")
         self.assertEqual(row["device_count"], 8)
         self.assertEqual(row["used_units"], 8)
         self.assertEqual(row["document_count"], 0)
@@ -216,8 +218,12 @@ class VirtualMachineListTests(_Base):
         from .models import (
             Cluster,
             ClusterType,
+            Region,
             VirtualMachineGroup,
         )
+
+        region = Region.objects.create(tenant=self.tenant, name="Nordics")
+        site = Site.objects.create(tenant=self.tenant, name="HQ", region=region)
 
         ctype = ClusterType.objects.create(
             tenant=self.tenant, name="Cloud Director", slug="cd"
@@ -235,7 +241,7 @@ class VirtualMachineListTests(_Base):
         for i in range(20):
             VirtualMachine.objects.create(
                 tenant=self.tenant, name=f"vm-{i:02d}", cluster=cluster,
-                group=groups[i % 5],
+                group=groups[i % 5], site=site if i % 2 else None,
             )
 
     def test_page_cost_is_flat_with_groups_on_every_row(self):
@@ -246,6 +252,8 @@ class VirtualMachineListTests(_Base):
         rows = {r["name"]: r for r in body["results"]}
         self.assertEqual(rows["vm-03"]["group"]["name"], "vapp-3")
         self.assertEqual(rows["vm-07"]["group"]["name"], "vapp-2")
+        self.assertEqual(rows["vm-07"]["site"]["region"]["name"], "Nordics")
+        self.assertIsNone(rows["vm-08"]["site"])
 
 
 class DeviceListTests(_Base):
@@ -253,18 +261,44 @@ class DeviceListTests(_Base):
     tenant is resolved once per request - not once per row's permissions."""
 
     def _seed(self):
-        site = Site.objects.create(tenant=self.tenant, name="HQ")
-        from .models import Interface
+        from .models import DeviceRole, ExportTemplate, Interface, Platform, Region
 
+        region = Region.objects.create(tenant=self.tenant, name="Nordics")
+        site = Site.objects.create(tenant=self.tenant, name="HQ", region=region)
+        # Templates bound at all three levels the row resolves through.
+        tpl = {
+            k: ExportTemplate.objects.create(
+                tenant=self.tenant, name=f"{k}-tpl", object_type="api.device",
+                template_code="x" * 2000,
+            )
+            for k in ("own", "role", "platform")
+        }
+        role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Access", slug="access", config_template=tpl["role"]
+        )
+        platform = Platform.objects.create(
+            tenant=self.tenant, name="EOS", slug="eos", config_template=tpl["platform"]
+        )
         for i in range(20):
-            d = Device.objects.create(tenant=self.tenant, name=f"sw-{i:02d}", site=site)
+            d = Device.objects.create(
+                tenant=self.tenant, name=f"sw-{i:02d}", site=site,
+                role=role if i % 3 == 1 else None,
+                platform=platform if i % 3 == 2 else None,
+                config_template=tpl["own"] if i % 3 == 0 else None,
+            )
             for k in range(i % 4):
                 Interface.objects.create(device=d, name=f"eth{k}")
             if i % 2:
                 p = Prefix.objects.create(tenant=self.tenant, cidr=f"10.{i}.0.0/24")
-                IPAddress.objects.create(
-                    tenant=self.tenant, ip_address=f"10.{i}.0.1", prefix=p, assigned_device=d
-                )
+                ips = [
+                    IPAddress.objects.create(
+                        tenant=self.tenant, ip_address=f"10.{i}.0.{h}", prefix=p,
+                        assigned_device=d,
+                    )
+                    for h in (1, 2, 3)
+                ]
+                d.primary_ip, d.secondary_ip, d.oob_ip = ips
+                d.save()
 
     def test_page_cost_is_flat_and_counts_match(self):
         self._seed()
@@ -273,7 +307,23 @@ class DeviceListTests(_Base):
         self.assertEqual(small, big, "a bigger page must not cost more queries")
         rows = {r["name"]: r for r in body["results"]}
         self.assertEqual(rows["sw-03"]["interface_count"], 3)
-        self.assertEqual(rows["sw-03"]["ip_count"], 1)
+        self.assertEqual(rows["sw-03"]["ip_count"], 3)
+        self.assertEqual(rows["sw-03"]["site"]["region"]["name"], "Nordics")
+        self.assertEqual(rows["sw-03"]["secondary_ip"]["ip_address"], "10.3.0.2")
+        self.assertEqual(rows["sw-03"]["oob_ip"]["ip_address"], "10.3.0.3")
+        resolved = {
+            name: rows[name]["config_template"]["resolved"]["name"]
+            for name in ("sw-03", "sw-04", "sw-05")
+        }
+        self.assertEqual(
+            resolved, {"sw-03": "own-tpl", "sw-04": "role-tpl", "sw-05": "platform-tpl"}
+        )
+        # The template bodies stay in the database.
+        with CaptureQueriesContext(connection) as ctx:
+            self.client.get("/api/devices/?page_size=20")
+        self.assertFalse(
+            any("template_code" in q["sql"] for q in ctx.captured_queries)
+        )
         self.assertEqual(rows["sw-04"]["interface_count"], 0)
         self.assertEqual(rows["sw-04"]["ip_count"], 0)
 

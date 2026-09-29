@@ -1,6 +1,8 @@
 """Compliance rule CRUD + on-demand evaluation for the SPA."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -36,9 +38,26 @@ def _type_registry():
     }
 
 
+def _list_queryset(model):
+    """The type's own list queryset - its joins and per-page annotations - so
+    a page of violating rows costs what a page of that list costs."""
+    from api.api_urls import router
+
+    for _prefix, viewset, _basename in router.registry:
+        qs = getattr(viewset, "queryset", None)
+        if qs is not None and qs.model is model:
+            return qs.all()
+    return model.objects.all()
+
+
 def _serialize_violating_objects(rule, violations, request):
     """The failing rows for one rule, serialized with the type's real
-    serializer, in violation order. Empty list if the type has no serializer."""
+    serializer as its list serializes them, in violation order.
+
+    A compliance grant says which rules fail, not what the failing objects
+    hold: the rows are cut to what the caller may view of that type, and a
+    caller who cannot view it gets none. Empty list if the type has no
+    serializer."""
     entry = _type_registry().get(rule.object_type)
     if entry is None:
         return []
@@ -46,12 +65,21 @@ def _serialize_violating_objects(rule, violations, request):
     ids = [v["object_id"] for v in violations]
     if not ids:
         return []
-    by_id = {
-        str(obj.pk): obj
-        for obj in model.objects.filter(tenant=rule.tenant, pk__in=ids)
-    }
+    slug = model._meta.model_name
+    if not rbac.has_action(request.user, rule.tenant, slug, "view"):
+        return []
+    qs = rbac.restrict_queryset(
+        _list_queryset(model).filter(tenant=rule.tenant, pk__in=ids),
+        request.user, rule.tenant, slug, "view",
+    )
+    by_id = {str(obj.pk): obj for obj in qs}
     ordered = [by_id[i] for i in ids if i in by_id]
-    return serializer_cls(ordered, many=True, context={"request": request}).data
+    # A list context, so the detail-only tab counts are skipped exactly as
+    # on the type's own list page.
+    view = SimpleNamespace(action="list", request=request)
+    return serializer_cls(
+        ordered, many=True, context={"request": request, "view": view}
+    ).data
 
 
 class ComplianceRuleSerializer(serializers.ModelSerializer):

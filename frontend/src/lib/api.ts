@@ -1341,6 +1341,13 @@ export interface Document {
   updated_at: string
 }
 
+/** A site with its region - what device, rack and VM rows embed. */
+export interface SiteRegionMini {
+  id: string
+  name: string
+  region?: { id: string; name: string; slug: string } | null
+}
+
 export interface Device {
   id: string
   numid: number | null
@@ -1364,7 +1371,7 @@ export interface Device {
     end_of_support?: string | null
     lifecycle_state?: LifecycleState
   } | null
-  site: { id: string; name: string } | null
+  site: SiteRegionMini | null
   role: {
     id: string
     name: string
@@ -1389,6 +1396,8 @@ export interface Device {
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
   airflow: string
+  /** Read-only: the device's own airflow, else its type's default. */
+  effective_airflow?: string
   /** Port labels on this device's faceplate renders: inherit / on / off. */
   port_labels: DevicePortLabels
   latitude: string | null
@@ -1757,7 +1766,7 @@ export interface Rack {
   numid: number | null
   name: string
   facility_id: string
-  site: { id: string; name: string }
+  site: SiteRegionMini
   role: {
     id: string
     name: string
@@ -4202,7 +4211,7 @@ export interface VirtualMachine {
   cluster: { id: string; name: string; status: StatusMini | null }
   group: { id: string; name: string; kind: string } | null
   device: { id: string; name: string } | null
-  site: { id: string; name: string } | null
+  site: SiteRegionMini | null
   role: {
     id: string
     name: string

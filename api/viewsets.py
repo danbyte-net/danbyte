@@ -3348,8 +3348,20 @@ class DeviceViewSet(
         # to a handful of queries.
         Device.objects.select_related(
             "device_type", "device_type__platform", "device_type__manufacturer",
-            "site", "primary_ip",
+            "site", "site__region", "primary_ip", "secondary_ip", "oob_ip",
             "role", "rack", "status", "platform", "location", "cluster",
+            # The config template resolves device -> role -> platform. Join
+            # all three but leave the template bodies behind: a page is up to
+            # 10,000 rows and the row only shows the template's name.
+            "config_template", "role__config_template",
+            "platform__config_template",
+        )
+        .defer(
+            *(
+                f"{path}config_template__{f}"
+                for path in ("", "role__", "platform__")
+                for f in ("template_code", "description")
+            )
         )
         .prefetch_related("tags")
         # ip_count + interface_count are shown/served on the list, as
@@ -5704,7 +5716,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("cluster", "device", "site", "primary_ip",
+            .select_related("cluster", "device", "site", "site__region", "primary_ip",
                             # Serialised inline; a 2,000-row list would
                             # otherwise fire one query per VM for it.
                             "group")
@@ -5945,7 +5957,9 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         )
         qs = (
             super().get_queryset()
-            .select_related("site", "role", "location", "rack_type__manufacturer")
+            .select_related(
+                "site", "site__region", "role", "location", "rack_type__manufacturer"
+            )
             .prefetch_related("tags", Prefetch("devices", queryset=racked), "power_feeds")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
         )
