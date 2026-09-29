@@ -32,6 +32,7 @@ from auth_api.permissions import (
 from core.models import Organization, Tenant
 
 MIGRATION = importlib.import_module("auth_api.migrations.0024_wildcard_excludes_access")
+NARROW = importlib.import_module("auth_api.migrations.0025_narrow_kept_access")
 CRUD = ["view", "add", "change", "delete"]
 BUILTIN = ("Administrator", "Operator", "Read-only")
 
@@ -60,6 +61,12 @@ class GrantCoversTests(SimpleTestCase):
 
     def test_the_migration_froze_the_same_list(self):
         self.assertEqual(tuple(MIGRATION.ACCESS_TYPES), ACCESS_TYPES)
+
+    def test_the_narrowing_migration_froze_the_same_names(self):
+        from core.upgrade_notes import KEPT_ACCESS_GRANT
+
+        self.assertEqual(NARROW.ACCESS_TYPES, list(ACCESS_TYPES))
+        self.assertEqual(NARROW.KEPT_NAME, KEPT_ACCESS_GRANT)
 
 
 class BuiltinGroupEngineTests(TestCase):
@@ -279,6 +286,68 @@ class AdministratorGrantGuardTests(APITestCase):
         self.assertEqual(self._patch(custom, ["*"]).status_code, 200)
 
 
+class AccessGrantLimitTests(APITestCase):
+    """Users, groups and permissions have no site and nothing reads row
+    constraints for them, so a grant naming them refuses either limit - it
+    would look narrower than it is."""
+
+    @classmethod
+    def setUpTestData(cls):
+        org = Organization.objects.create(name="O", slug="o")
+        cls.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        cls.site = Site.objects.create(tenant=cls.tenant, name="HQ")
+        cls.root = User.objects.create_superuser("root", "r@example.com", "x")
+
+    def setUp(self):
+        self.client.force_login(self.root)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+
+    def _post(self, **body):
+        body = {"name": "g", "actions": ["view", "change"], **body}
+        return self.client.post("/api/object-permissions/", body, format="json")
+
+    def test_sites_or_constraints_on_access_types_are_refused(self):
+        for body, field in (
+            ({"object_types": ["*", "user"], "site_ids": [str(self.site.id)]}, "site_ids"),
+            ({"object_types": ["group"], "constraints": {"name": "x"}}, "constraints"),
+            ({"object_types": ["device", "objectpermission"],
+              "constraints": [{"status__slug": "active"}]}, "constraints"),
+        ):
+            with self.subTest(body=body):
+                r = self._post(**body)
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertIn(field, r.json())
+
+    def test_other_limits_are_fine(self):
+        for body in (
+            {"object_types": ["*"], "site_ids": [str(self.site.id)],
+             "constraints": {"status__slug": "active"}},
+            {"object_types": ["user"], "tenant_ids": [str(self.tenant.id)]},
+            {"object_types": ["user"], "constraints": {}},
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(self._post(**body).status_code, 201)
+
+    def test_an_existing_limited_grant_can_still_be_disabled(self):
+        old = ObjectPermission.objects.create(
+            name="old", object_types=["*", *ACCESS_TYPES], actions=CRUD,
+            constraints={"status__slug": "active"},
+        )
+        old.sites.add(self.site)
+        url = f"/api/object-permissions/{old.id}/"
+        self.assertEqual(
+            self.client.patch(url, {"enabled": False}, format="json").status_code, 200
+        )
+        r = self.client.patch(url, {"object_types": ["*", "user"]}, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self.client.patch(
+            url, {"object_types": ["*"]}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+
 class MigrationTests(TestCase):
     """0024 names the access types on the grants that were administrator
     grants, and on no others."""
@@ -401,48 +470,170 @@ class MigrationTests(TestCase):
         )
 
 
+class NarrowedUpgradeTests(MigrationTests):
+    """0025 runs right after 0024 in the same upgrade: a grant limited to
+    sites or by row constraints does not keep users, groups and
+    permissions - neither limit narrows them."""
+
+    def _migrate(self):
+        MIGRATION.forwards(django_apps, None)
+        NARROW.forwards(django_apps, None)
+
+    def test_administrator_grants_gain_the_access_types(self):
+        holder = _member("site-lead", self.tenant)
+        row_only = self._grant(
+            "planned only", CRUD, users=[holder], constraints={"status__slug": "planned"},
+        )
+        site_only = self._grant("site only", CRUD, users=[holder], sites=[self.site])
+        self._migrate()
+        full = ["*", *ACCESS_TYPES]
+        for perm in (
+            *self.seeded, self.custom_admin, self.tenant_admin, self.disabled_admin,
+            self.edited_down, self.promoter,
+        ):
+            with self.subTest(grant=perm.name):
+                self.assertEqual(self._types(perm), full)
+        for perm in (self.site_admin, row_only, site_only):
+            with self.subTest(grant=perm.name):
+                self.assertEqual(self._types(perm), ["*"])
+        self.assertFalse(can_manage_deployment(holder))
+        self.assertFalse(can_manage_admin(holder, self.tenant))
+        # Their everyday reach is untouched.
+        self.assertTrue(rbac.has_action(holder, self.tenant, "device", "delete"))
+        # Somebody else could still manage users, so nothing was kept.
+        from core.upgrade_notes import KEPT_ACCESS_GRANT
+
+        self.assertFalse(ObjectPermission.objects.filter(name=KEPT_ACCESS_GRANT).exists())
+
+
 class LockoutGuardTests(TestCase):
-    """An install whose only way to manage users was an Operator-style "*"
-    grant keeps it, and the upgrade note says so until someone cleans up."""
+    """An install whose only way to manage users was an all-object grant
+    keeps user management for the accounts that had it - in a grant of
+    their own, not on the shared grant - and the upgrade note says so until
+    someone cleans up."""
 
     def setUp(self):
         from core import upgrade_notes
 
-        self.check = upgrade_notes._no_kept_wildcard_access
+        self.check = upgrade_notes._no_kept_access_grant
+        self.kept_name = upgrade_notes.KEPT_ACCESS_GRANT
+        ensure_builtin_groups()
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
-        self.lead = _member("lead", self.tenant)
-        team = Group.objects.create(name="noc")
-        self.lead.groups.add(team)
-        self.grant = ObjectPermission.objects.create(
-            name="noc all", object_types=["*"], actions=["view", "add", "change"],
+        # The pre-0.17 shape: bare "*" on the built-in grants.
+        ObjectPermission.objects.filter(
+            name__in=[n for g in BUILTIN for n in grant_names(g)]
+        ).update(object_types=["*"])
+        self.operators = [_member(f"op{i}", self.tenant, "Operator") for i in (1, 2)]
+        self.operator_grant = ObjectPermission.objects.get(
+            name__in=grant_names("Operator")
         )
-        self.grant.groups.add(team)
         # Nobody else can manage users: no superuser, no legacy admin, and
         # the seeded Administrator grant reaches no active account.
         self.assertFalse(User.objects.filter(is_superuser=True).exists())
 
-    def test_the_only_admin_path_is_kept_and_flagged(self):
-        self.assertTrue(self.check())
+    def _team_lead(self):
+        lead = _member("lead", self.tenant)
+        team = Group.objects.create(name="noc")
+        lead.groups.add(team)
+        grant = ObjectPermission.objects.create(
+            name="noc all", object_types=["*"], actions=["view", "add", "change"],
+        )
+        grant.groups.add(team)
+        return lead, grant
+
+    def _upgrade(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             MIGRATION.forwards(django_apps, None)
-        self.assertIn("noc all", out.getvalue())
-        self.grant.refresh_from_db()
-        self.assertEqual(self.grant.object_types, ["*", *ACCESS_TYPES])
-        self.assertTrue(can_manage_deployment(self.lead))
+            NARROW.forwards(django_apps, None)
+        return out.getvalue()
+
+    def _kept(self):
+        return ObjectPermission.objects.get(name=self.kept_name)
+
+    def test_a_custom_grant_holder_keeps_it_and_operators_do_not(self):
+        lead, grant = self._team_lead()
+        self.assertTrue(self.check())
+        out = self._upgrade()
+        self.assertIn(self.kept_name, out)
+        self.assertIn("lead", out)
+        kept = self._kept()
+        self.assertEqual(kept.object_types, list(ACCESS_TYPES))
+        self.assertEqual(kept.actions, ["view", "add", "change"])
+        self.assertEqual(list(kept.users.all()), [lead])
+        for perm in (grant, self.operator_grant):
+            perm.refresh_from_db()
+            self.assertEqual(perm.object_types, ["*"])
+        self.assertTrue(can_manage_deployment(lead))
+        for op in self.operators:
+            self.assertFalse(can_manage_deployment(op))
         self.assertFalse(self.check())
-        # Naming an administrator and trimming the grant clears the note.
-        self.grant.object_types = ["*"]
-        self.grant.save()
+        # Naming an administrator and deleting the grant clears the note.
+        lead.groups.add(Group.objects.get(name="Administrator"))
+        kept.delete()
+        self.assertTrue(can_manage_deployment(lead))
         self.assertTrue(self.check())
 
+    def test_only_operators_could_so_they_keep_it_but_not_the_group(self):
+        self._upgrade()
+        kept = self._kept()
+        self.assertEqual(set(kept.users.all()), set(self.operators))
+        self.assertEqual(kept.groups.count(), 0)
+        self.operator_grant.refresh_from_db()
+        self.assertEqual(self.operator_grant.object_types, ["*"])
+        # Someone who joins Operator later does not inherit it.
+        late = _member("late", self.tenant, "Operator")
+        self.assertFalse(can_manage_deployment(late))
+        self.assertFalse(self.check())
+
+    def test_a_site_limited_admin_is_kept_only_when_nobody_else_is(self):
+        lead = _member("site-lead", self.tenant)
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        grant = ObjectPermission.objects.create(
+            name="site all", object_types=["*"], actions=CRUD,
+        )
+        grant.users.add(lead)
+        grant.sites.add(site)
+        # The Operator grant would reach this install too; turn it off so the
+        # site grant is the only path.
+        self.operator_grant.enabled = False
+        self.operator_grant.save()
+        self._upgrade()
+        grant.refresh_from_db()
+        self.assertEqual(grant.object_types, ["*"])
+        self.assertEqual(list(self._kept().users.all()), [lead])
+        self.assertEqual(self._kept().actions, CRUD)
+
     def test_not_kept_when_another_admin_exists(self):
+        lead, grant = self._team_lead()
         User.objects.create_superuser("root", "r@example.com", "x")
-        MIGRATION.forwards(django_apps, None)
-        self.grant.refresh_from_db()
-        self.assertEqual(self.grant.object_types, ["*"])
-        self.assertFalse(can_manage_deployment(self.lead))
+        self._upgrade()
+        grant.refresh_from_db()
+        self.assertEqual(grant.object_types, ["*"])
+        self.assertFalse(can_manage_deployment(lead))
+        self.assertFalse(ObjectPermission.objects.filter(name=self.kept_name).exists())
+        self.assertTrue(self.check())
+
+    def test_running_the_upgrade_twice_keeps_one_grant(self):
+        self._team_lead()
+        self._upgrade()
+        self._upgrade()
+        self.assertEqual(ObjectPermission.objects.filter(name=self.kept_name).count(), 1)
+
+    def test_a_deliberate_access_grant_does_not_raise_the_note(self):
+        User.objects.create_superuser("root", "r@example.com", "x")
+        self._upgrade()
+        auditors = ObjectPermission.objects.create(
+            name="auditors", object_types=["*", "user"], actions=["view"],
+        )
+        auditors.users.add(self.operators[0])
+        helpdesk = ObjectPermission.objects.create(
+            name="helpdesk", object_types=["*", "group"],
+            actions=["view", "add", "change"],
+        )
+        helpdesk.users.add(self.operators[1])
+        self.assertTrue(self.check())
 
 
 class EnsureBuiltinGroupsTests(TestCase):

@@ -478,6 +478,44 @@ class ObjectPermissionSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate(self, attrs):
+        # Users, groups and permissions have no site, and nothing that checks
+        # them reads row constraints, so either limit on a grant naming them
+        # would look narrower than it is: its holders manage every account.
+        attrs = super().validate(attrs)
+        if not {"object_types", "site_ids", "constraints"} & set(attrs):
+            return attrs  # an enable/rename of an existing grant
+        inst = self.instance
+        types = attrs.get("object_types", getattr(inst, "object_types", None)) or []
+        if not any(t in types for t in ACCESS_TYPES):
+            return attrs
+        if "site_ids" in attrs:
+            has_sites = bool(attrs["site_ids"])
+        else:
+            has_sites = inst is not None and inst.sites.exists()
+        constraints = attrs.get("constraints", getattr(inst, "constraints", None))
+        if isinstance(constraints, dict):
+            constrained = bool(constraints)
+        elif isinstance(constraints, list):
+            constrained = any(isinstance(d, dict) and d for d in constraints)
+        else:
+            constrained = False
+        errors = {}
+        if has_sites:
+            errors["site_ids"] = [
+                "Users, groups and permissions have no site, so a site limit "
+                "does not narrow them. Remove the sites, or grant those types "
+                "on their own."
+            ]
+        if constrained:
+            errors["constraints"] = [
+                "Row constraints do not narrow users, groups or permissions. "
+                "Remove them, or grant those types on their own."
+            ]
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
     def _tenants(self, instance, tenant_ids):
         from core.models import Tenant
 

@@ -87,16 +87,22 @@ the three types; Operator and Read-only do not.
 Upgrading to 0.17, where this rule arrived, names the three types on every
 all-object grant that was an administrator grant:
 
-- one with view, add, change *and* delete - tenant- and site-scoped ones
-  too, but never the built-in Operator and Read-only grants,
+- one with view, add, change *and* delete that is limited neither to
+  sites nor by row constraints (a tenant limit is fine - it stays a tenant
+  admin), and is not the built-in Operator or Read-only grant,
 - one carrying *grant superuser*,
 - one held only by the Administrator group.
 
-Every other all-object grant - Operator-style, view-only, a site editor's
-"read all" - loses them. If that would have left nobody able to manage
-users, the upgrade keeps the old access on the grants that had it and
-raises an upgrade note: put your administrators in the Administrator group,
-then remove the three types from those grants.
+Every other all-object grant loses them: Operator-style, view-only, a site
+editor's "read all", and a "full control" grant limited to sites or rows -
+neither limit ever narrowed users, groups and permissions, so its holders
+would have managed every account. If that would have left nobody able to
+manage users, the accounts that could get a grant of their own, **Kept user
+management (0.17 upgrade)**, with the three types and the verbs they had -
+people a custom grant reached first, the Operator group's members only when
+nobody else could - and an upgrade note asks you to put your administrators
+in the Administrator group, then delete that grant. The shared grants stay
+trimmed, so nobody who joins those groups later inherits user management.
 
 ## Managing access
 
@@ -151,6 +157,10 @@ rows*.
 7. (Optional) Add **row constraints** to narrow it to matching rows only - for
    example, only prefixes whose status is active. Without a constraint, the
    permission covers every row of the chosen types.
+
+    A grant that names Users, Groups or Permissions takes neither a site
+    limit nor row constraints: neither narrows those types, so the save is
+    refused rather than looking narrower than it is. Grant them on their own.
 8. Assign the permission to **groups** and/or **users**.
 9. Save.
 
