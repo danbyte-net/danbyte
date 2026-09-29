@@ -340,3 +340,103 @@ class ExecutionFieldTests(_Base):
         r = self._patch(self.shared, {"source": "print('reviewed')", "run_as": "owner"})
         self.assertEqual(r.status_code, 200, r.content)
 
+
+
+class SharingTests(_Base):
+    """Who a script is shared with decides who may act as its owner when it
+    runs as the owner, so sharing is the owner's too - and only ever with
+    the tenant's own people."""
+
+    def setUp(self):
+        super().setUp()
+        U = get_user_model()
+        self.editor = U.objects.create_user("editor", "e@e.com", "x")
+        UserProfile.objects.create(user=self.editor, role="custom").tenants.add(self.tenant)
+        grant(self.editor, self.tenant, ["view", "add", "change"])
+        self.runner = U.objects.create_user("runner", "r2@e.com", "x")
+        UserProfile.objects.create(user=self.runner, role="custom").tenants.add(self.tenant)
+        grant(self.runner, self.tenant, ["view", "run"])
+        other = Tenant.objects.create(org=self.tenant.org, name="Other", slug="other")
+        self.outsider = U.objects.create_user("outsider", "o@e.com", "x")
+        UserProfile.objects.create(user=self.outsider, role="custom").tenants.add(other)
+        self.far_team = Group.objects.create(name="far-team")
+        self.outsider.groups.add(self.far_team)
+        self.script = self._script(visibility="users", run_as="owner")
+        self.script.shared_users.add(self.editor)
+
+    def _patch(self, body, user):
+        self.client.force_login(user)
+        return self.client.patch(f"/api/scripts/{self.script.id}/", body, format="json")
+
+    def test_a_colleague_cannot_reshare_a_script(self):
+        for body in (
+            {"shared_users": [self.editor.id, self.runner.id]},
+            {"visibility": "owner"},
+            {"visibility": "groups", "shared_groups": []},
+        ):
+            with self.subTest(body=body):
+                r = self._patch(body, self.editor)
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertIn("owner", str(r.json()))
+        self.assertEqual(list(self.script.shared_users.all()), [self.editor])
+        # The runner never saw it, so cannot run it as the owner.
+        self.client.force_login(self.runner)
+        r = self.client.post(f"/api/scripts/{self.script.id}/run/", {}, format="json")
+        self.assertEqual(r.status_code, 404, r.content)
+
+    def test_unchanged_sharing_sent_back_is_fine(self):
+        r = self._patch(
+            {"description": "d", "visibility": "users", "shared_users": [self.editor.id]},
+            self.editor,
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_the_owner_shares_within_the_tenant_only(self):
+        r = self._patch({"shared_users": [self.editor.id, self.runner.id]}, self.author)
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._patch({"shared_users": [self.editor.id, self.outsider.id]}, self.author)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("shared_users", r.json())
+        r = self._patch(
+            {"visibility": "groups", "shared_groups": [self.far_team.id]}, self.author
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("shared_groups", r.json())
+
+
+class ScheduleStopTests(_Base):
+    """Anyone who may change a script can turn its schedule off, and the
+    script says why a schedule skips its runs."""
+
+    def setUp(self):
+        super().setUp()
+        U = get_user_model()
+        self.editor = U.objects.create_user("editor", "e@e.com", "x")
+        UserProfile.objects.create(user=self.editor, role="custom").tenants.add(self.tenant)
+        grant(self.editor, self.tenant, ["view", "change"])
+        self.script = self._script(
+            visibility="users", schedule_enabled=True,
+            cadence={"frequency": "daily", "at": "02:00"},
+        )
+        self.script.shared_users.add(self.editor)
+
+    def test_a_colleague_may_turn_the_schedule_off_but_not_on(self):
+        self.client.force_login(self.editor)
+        url = f"/api/scripts/{self.script.id}/"
+        r = self.client.patch(url, {"schedule_enabled": False}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(Script.objects.get(pk=self.script.pk).schedule_enabled)
+        r = self.client.patch(url, {"schedule_enabled": True}, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_a_skipped_schedule_says_why(self):
+        self.client.force_login(self.author)
+        row = self.client.get(f"/api/scripts/{self.script.id}/").json()
+        self.assertEqual(row["schedule_blocked"], "")
+        self.assertIsNotNone(row["next_run_at"])
+        ObjectPermission.objects.filter(users=self.author).update(
+            actions=["view", "add", "change", "delete"]
+        )
+        row = self.client.get(f"/api/scripts/{self.script.id}/").json()
+        self.assertIn("run permission", row["schedule_blocked"])
+        self.assertIsNone(row["next_run_at"])

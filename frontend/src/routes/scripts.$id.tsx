@@ -86,8 +86,9 @@ function ScriptDetailPage() {
   if (!script) return <Loading />
 
   const canEdit = objCan(script, "change", canDo("script", "change"))
-  // The code and the schedule are the owner's: the server refuses anyone
-  // else, so a colleague the script is shared with reads them.
+  // The code, the schedule and the sharing are the owner's: the server
+  // refuses anyone else, so a colleague the script is shared with reads
+  // them - and may only turn the schedule off.
   const canEditCode =
     canEdit && (!!me.is_superuser || script.owner_name === me.username)
   const canRun = script.permissions?.run ?? canDo("script", "run")
@@ -219,11 +220,15 @@ function ScriptDetailPage() {
       </DetailTab>
 
       <DetailTab value="schedule">
-        <ScriptSchedulePanel script={script} canEdit={canEditCode} />
+        <ScriptSchedulePanel
+          script={script}
+          canEdit={canEditCode}
+          canStop={canEdit}
+        />
       </DetailTab>
 
       <DetailTab value="sharing">
-        <ScriptSharingPanel script={script} canEdit={canEdit} />
+        <ScriptSharingPanel script={script} canEdit={canEditCode} />
       </DetailTab>
 
       <DetailTab value="journal">

@@ -191,3 +191,59 @@ class TickTests(_Base):
         out = StringIO()
         call_command("run_scripts", stdout=out)
         self.assertIn("nothing due", out.getvalue())
+
+
+class UpgradeKeepsSchedulesTests(_Base):
+    """0.17 made a schedule need run. An existing schedule whose owner could
+    not run it - an Administrator or Operator, say - keeps firing through a
+    grant limited to that script, and only that script."""
+
+    def _migrate(self):
+        import contextlib
+        import importlib
+        import io
+
+        from django.apps import apps
+
+        mig = importlib.import_module("scripting.migrations.0002_keep_scheduled_scripts")
+        with contextlib.redirect_stdout(io.StringIO()):
+            mig.forwards(apps, None)
+
+    def test_an_owner_without_run_keeps_their_schedules_and_nothing_more(self):
+        from auth_api import rbac
+        from scripting.schedules import owner_may_run
+
+        self.run_grant.actions = ["view", "add", "change", "delete"]
+        self.run_grant.save()
+        scheduled = self._script(name="nightly")
+        trusted = self._script(name="trusted", trusted=True)
+        unscheduled = self._script(name="adhoc", schedule_enabled=False)
+        self.assertFalse(owner_may_run(scheduled))
+
+        self._migrate()
+        for s in (scheduled, trusted):
+            self.assertTrue(owner_may_run(Script.objects.get(pk=s.pk)), s.name)
+        # Limited to the scheduled scripts: nothing else runs, and trust
+        # covers the trusted one only.
+        for action, script, ok in (
+            ("run", unscheduled, False),
+            ("trust", scheduled, False),
+            ("trust", trusted, True),
+        ):
+            with self.subTest(action=action, script=script.name):
+                self.assertEqual(
+                    rbac.can_act_on(self.user, self.tenant, "script", action, script), ok
+                )
+
+        before = ObjectPermission.objects.count()
+        self._migrate()
+        self.assertEqual(ObjectPermission.objects.count(), before)
+
+    def test_owners_who_may_run_or_should_not_are_left_alone(self):
+        self._script(name="fine")
+        gone = get_user_model().objects.create_user("gone", "", "x", is_active=False)
+        UserProfile.objects.create(user=gone).tenants.add(self.tenant)
+        self._script(name="orphaned", owner=gone)
+        before = ObjectPermission.objects.count()
+        self._migrate()
+        self.assertEqual(ObjectPermission.objects.count(), before)

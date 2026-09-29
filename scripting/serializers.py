@@ -12,13 +12,17 @@ from .models import MAX_TIMEOUT, Script, ScriptOutput, ScriptRun
 
 PARAM_TYPES = ("string", "text", "integer", "decimal", "boolean", "choice", "object")
 
-#: What the script does and whose access it does it with. Only the owner (or a
-#: superuser) changes these: a colleague the script is shared with could
-#: otherwise rewrite code that runs as the owner.
+#: What the script does, whose access it does it with and who else may run
+#: it. Only the owner (or a superuser) changes these: a colleague the script
+#: is shared with could otherwise rewrite code that runs as the owner, or
+#: share a run-as-owner script with someone who then acts as the owner.
+#: Anyone who may change the script can still turn its schedule off.
 OWNER_ONLY_FIELDS = (
     "source", "language", "params_schema", "run_as", "token_scope",
     "schedule_enabled", "cadence", "schedule_params",
+    "visibility", "shared_users", "shared_groups",
 )
+_M2M_FIELDS = ("shared_users", "shared_groups")
 #: A schedule runs the code unattended, as the owner. Turning one on, or
 #: changing any of these while one is on, needs the run permission.
 SCHEDULE_FIELDS = (
@@ -112,6 +116,7 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
     )
     cadence_label = serializers.SerializerMethodField()
     next_run_at = serializers.SerializerMethodField()
+    schedule_blocked = serializers.SerializerMethodField()
     # Annotated by the viewset (one subquery, not one query per row). The
     # model's own last_run_at belongs to the schedule, so the newest run is
     # reported separately.
@@ -125,7 +130,8 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
             "id", "name", "slug", "description", "language", "source", "params_schema",
             "token_scope", "timeout_seconds", "trusted", "run_as", "owner", "owner_name",
             "visibility", "shared_users", "shared_groups", "schedule_enabled", "cadence",
-            "cadence_label", "next_run_at", "retention", "schedule_params",
+            "cadence_label", "next_run_at", "schedule_blocked", "retention",
+            "schedule_params",
             "last_run_at", "last_run_time", "last_run_status", "run_count", "enabled",
             "permissions",
             "created_at", "updated_at",
@@ -141,7 +147,7 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
             return ""
 
     def get_next_run_at(self, obj):
-        if not (obj.schedule_enabled and obj.enabled):
+        if not (obj.schedule_enabled and obj.enabled) or self.get_schedule_blocked(obj):
             return None
         from .schedules import next_run
 
@@ -149,6 +155,18 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
             return next_run(obj)
         except CadenceError:
             return None
+
+    def get_schedule_blocked(self, obj) -> str:
+        """Why an enabled schedule skips its runs (the owner may no longer
+        run the script unattended), or empty."""
+        if not (obj.schedule_enabled and obj.enabled):
+            return ""
+        cache = self.context.setdefault("_schedule_blocked", {})
+        if obj.pk not in cache:
+            from .schedules import schedule_block_reason
+
+            cache[obj.pk] = schedule_block_reason(obj)
+        return cache[obj.pk]
 
     def validate_params_schema(self, value):
         return validate_params_schema(value)
@@ -199,11 +217,49 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
             self._check_execution_fields(attrs, request, user, schedule_on)
         return attrs
 
+    def _current(self, field):
+        value = getattr(self.instance, field)
+        if field in _M2M_FIELDS:
+            return {o.pk for o in value.all()}
+        return value
+
     def _changed(self, attrs, fields):
         instance = self.instance
         if instance is None:
             return [f for f in fields if f in attrs]
-        return [f for f in fields if f in attrs and attrs[f] != getattr(instance, f)]
+        out = []
+        for f in fields:
+            if f not in attrs:
+                continue
+            new = {o.pk for o in attrs[f]} if f in _M2M_FIELDS else attrs[f]
+            if new != self._current(f):
+                out.append(f)
+        return out
+
+    def _check_share_targets(self, attrs, request, tenant):
+        """Sharing names people and groups of the tenant - the ones its
+        pickers list. Someone already on the list stays even if they have
+        since left; nobody new comes from outside."""
+        from auth_api.people_api import tenant_groups, tenant_members
+
+        user = getattr(request, "user", None)
+        errors = {}
+        for field, allowed in (
+            ("shared_users", lambda ids: tenant_members(tenant, user).filter(pk__in=ids)),
+            ("shared_groups", lambda ids: tenant_groups(tenant, user).filter(pk__in=ids)),
+        ):
+            if field not in attrs or tenant is None:
+                continue
+            wanted = {o.pk for o in attrs[field]}
+            if self.instance is not None:
+                wanted -= self._current(field)
+            if not wanted:
+                continue
+            ok = set(allowed(wanted).values_list("pk", flat=True))
+            if wanted - ok:
+                errors[field] = ["Share only with people and groups of this tenant."]
+        if errors:
+            raise serializers.ValidationError(errors)
 
     def _check_execution_fields(self, attrs, request, user, schedule_on):
         """Who may change what a script runs and whose access it runs with."""
@@ -214,12 +270,22 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
         tenant = getattr(instance, "tenant", None) or _get_active_tenant(request)
         if instance is not None and instance.owner_id != user.pk:
             touched = self._changed(attrs, OWNER_ONLY_FIELDS)
+            # Stopping a schedule takes nothing from anyone: whoever may
+            # change the script may turn a runaway schedule off.
+            if attrs.get("schedule_enabled") is False and "schedule_enabled" in touched:
+                touched.remove("schedule_enabled")
             if touched:
                 raise serializers.ValidationError({
                     f: ["Only the script's owner can change this."] for f in touched
                 })
+        self._check_share_targets(attrs, request, tenant)
         if schedule_on and (instance is None or self._changed(attrs, SCHEDULE_FIELDS)):
-            if not rbac.has_action(user, tenant, "script", "run"):
+            may_run = (
+                rbac.can_act_on(user, tenant, "script", "run", instance)
+                if instance is not None
+                else rbac.has_action(user, tenant, "script", "run")
+            )
+            if not may_run:
                 raise serializers.ValidationError({
                     "schedule_enabled": [
                         "Scheduling a script needs the run permission."
@@ -232,7 +298,7 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
             instance is not None
             and instance.trusted
             and self._changed(attrs, ("source",))
-            and not rbac.has_action(user, tenant, "script", "trust")
+            and not rbac.can_act_on(user, tenant, "script", "trust", instance)
         ):
             attrs["trusted"] = False
 

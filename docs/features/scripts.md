@@ -81,13 +81,15 @@ A new script is private to you. On the **Sharing** tab:
 | Chosen groups | Everyone in the groups you pick |
 | Everyone in the tenant | Published - needs the publish permission |
 
-The pickers list the members of the tenant and the groups they are in.
-Sharing only ever narrows: a colleague also needs the `view` permission on
-scripts, and running one needs `run`. Deleting and editing follow the same
-permissions as any other object, with one exception: only the owner (or a
-superuser) changes the code, the parameters, the API access, who it runs as
-and the schedule. A script that runs as its owner would otherwise run
-whatever a colleague wrote with the owner's access.
+The pickers list the members of the tenant and the groups they are in,
+and a script is shared with nobody else. Sharing only ever narrows: a
+colleague also needs the `view` permission on scripts, and running one
+needs `run`. Deleting and editing follow the same permissions as any other
+object, with one exception: only the owner (or a superuser) changes the
+code, the parameters, the API access, who it runs as, the schedule and who
+it is shared with. A script that runs as its owner would otherwise run
+whatever a colleague wrote - or whoever a colleague shared it with - with
+the owner's access.
 
 ## Schedules
 
@@ -97,10 +99,22 @@ scheduled run belongs to the owner and uses the owner's access. The
 occurrence even if the machine was asleep.
 
 A schedule is code running unattended, so turning one on - or changing a
-scheduled script's code, parameters or access - needs the `run` permission.
-The owner is checked again each time it fires: one who has been
-deactivated, removed from the tenant, or has lost `run` (or `trust`, for a
-trusted script) runs nothing, and the tick logs the skip.
+scheduled script's code, parameters or access - needs the `run` permission
+on that script. The owner is checked again each time it fires: one who has
+been deactivated, removed from the tenant, or has lost `run` (or `trust`,
+for a trusted script) runs nothing. The tick logs the skip, and the
+Schedule tab says why runs are skipped and shows no next run. Anyone who may
+change the script can turn its schedule off.
+
+!!! note "Upgrading to 0.17"
+    Before 0.17 a schedule ran whatever its owner's permissions, and the
+    built-in Administrator and Operator groups do not carry `run`. So that
+    those schedules keep running, the upgrade gives each such owner a grant
+    named *Scheduled scripts (0.17 upgrade): …* with `run` - and, for a
+    trusted script, *Trusted scheduled scripts (0.17 upgrade): …* with
+    `trust` - limited to the scripts they had scheduled. A schedule whose
+    owner is deactivated or no longer in the script's tenant is not carried
+    over: it skips its runs, and the upgrade lists it.
 
 **Keep runs** prunes finished runs and their files after each scheduled
 run, by count or by age.
