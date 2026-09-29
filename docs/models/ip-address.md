@@ -22,6 +22,10 @@ A single IP address. Lives inside exactly one `Prefix`, inherits its VRF.
 | `mac_address` | char(17) | `""` | Hardware address paired with this IP (e.g. a DHCP reservation) |
 | `dns_name` | char(255) | `""` | Hostname / DNS name (PTR). Auto-filled by reverse-DNS monitoring when enabled |
 | `last_seen` | datetime | NULL | Last time the check engine saw this IP reachable. Engine-set, read-only |
+| `monitoring_excluded` | bool | `false` | Every check on the address is parked: nothing runs, no alerts, the time off is not counted. Read-only here; set with `POST /api/monitoring/ips/<id>/exclude/`. The IP list filters on it: `?monitoring_excluded=true` |
+| `monitoring_excluded_at` / `_by` / `_reason` | datetime / char(150) / char(200) | NULL / `""` / `""` | When, who (username) and why it was excluded. Cleared when it is included again; the change log keeps the history. Not in the API row - the Monitoring tab reads them |
+| `availability_since` | datetime | NULL | Availability counts from here: uptime, SLA and availability figures leave out what came before. History is kept. Read-only here; set with `POST /api/monitoring/ips/<id>/reset-availability/` |
+| `availability_reset_at` / `_by` / `_reason` | datetime / char(150) / char(200) | NULL / `""` / `""` | When, who and why the availability was last reset. The reason is required. Not in the API row |
 | `custom_fields` | JSONB | `{}` | Anything org-specific lives here, not as a hardcoded column |
 | `tags` | M2M Tag | empty | |
 

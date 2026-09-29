@@ -1600,6 +1600,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     def validate(self, attrs):
         attrs = super().validate(attrs)
         self._reject_nested_relation_inputs()
+        self._reject_monitoring_writes()
         import ipaddress as _ipa
 
         ip_str = attrs.get("ip_address", getattr(self.instance, "ip_address", None))
@@ -1645,6 +1646,35 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
                     )
                 })
         return attrs
+
+    def _reject_monitoring_writes(self):
+        """Exclusion and the availability reset park checks, write the change
+        log and refresh SLA figures - a field write would silently do none of
+        it. A value sent back unchanged (a form echoing the record) passes."""
+        data = getattr(self, "initial_data", None)
+        if not hasattr(data, "get"):
+            return
+        where = {
+            "monitoring_excluded": "/api/monitoring/ips/<id>/exclude/",
+            "availability_since": "/api/monitoring/ips/<id>/reset-availability/",
+        }
+        errors = {}
+        for field, endpoint in where.items():
+            if field not in data:
+                continue
+            current = getattr(self.instance, field, None) if self.instance else None
+            sent = data.get(field)
+            if field == "monitoring_excluded":
+                truthy = ("true", "1") if current else ("false", "0", "", "none")
+                same = str(sent).lower() in truthy
+            else:
+                same = (sent in (None, "") and current is None) or (
+                    current is not None and str(sent) in (current.isoformat(), str(current))
+                )
+            if not same:
+                errors[field] = f"Read-only here. Use POST {endpoint}."
+        if errors:
+            raise serializers.ValidationError(errors)
 
     def get_is_primary_for_device(self, obj) -> bool:
         dev = obj.assigned_device
@@ -1743,6 +1773,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "last_seen",
             "discovered",
             "flap_exclude",
+            "monitoring_excluded", "availability_since",
             "is_primary_for_device",
             "is_primary_for_vm",
             "is_secondary_for_device",
@@ -1755,7 +1786,11 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "permissions",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "numid", "last_seen", "discovered", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "numid", "last_seen", "discovered", "created_at", "updated_at",
+            # Set through their monitoring endpoints, which do the rest.
+            "monitoring_excluded", "availability_since",
+        ]
 
 
 # ─── IP picker serializers ─────────────────────────────────────────────

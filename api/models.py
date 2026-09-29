@@ -2640,6 +2640,27 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text=("Exclude this IP from the flapping monitor - for a known "
                    "noisy host you don't want flagged."),
     )
+    # Monitoring exclusion and the availability reset. Written only through
+    # their monitoring endpoints (monitoring.exclusion / monitoring.counting),
+    # which park the checks, write the change log and journal, and refresh
+    # SLA figures - a plain PATCH could do none of that. The *_by fields keep
+    # the username, like ChangeLogEntry.user_name: it survives the user.
+    monitoring_excluded = models.BooleanField(
+        "excluded from monitoring", default=False,
+        help_text=("Every check on this address is parked: nothing runs, no "
+                   "alerts, and the time off is not counted as availability."),
+    )
+    monitoring_excluded_at = models.DateTimeField(null=True, blank=True)
+    monitoring_excluded_by = models.CharField(max_length=150, blank=True, default="")
+    monitoring_excluded_reason = models.CharField(max_length=200, blank=True, default="")
+    availability_since = models.DateTimeField(
+        "availability counts from", null=True, blank=True,
+        help_text=("Uptime, SLA and availability for this address count from "
+                   "here. Earlier history is kept but not counted."),
+    )
+    availability_reset_at = models.DateTimeField(null=True, blank=True)
+    availability_reset_by = models.CharField(max_length=150, blank=True, default="")
+    availability_reset_reason = models.CharField(max_length=200, blank=True, default="")
 
     class Meta:
         ordering = ["ip_address"]
@@ -2659,6 +2680,17 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             models.Index(fields=["tenant", "site"], name="ip_tenant_site_idx"),
             models.Index(
                 "tenant", Upper("dns_name"), name="ip_tenant_dns_upper_idx"
+            ),
+            # Both sets are tiny next to the table; the figures and counts
+            # that leave them out read them on every request.
+            models.Index(
+                fields=["tenant", "availability_since"],
+                condition=models.Q(availability_since__isnull=False),
+                name="ip_counted_from_idx",
+            ),
+            models.Index(
+                fields=["tenant"], condition=models.Q(monitoring_excluded=True),
+                name="ip_mon_excluded_idx",
             ),
         ]
 

@@ -1722,7 +1722,8 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         """Tenant/RBAC-scoped, with optional server-side narrowing so the
         IP-assign picker scales to very large address spaces (filter, don't
         ship millions of rows): ``?search=`` (address or DNS), ``?prefix=``,
-        ``?vrf=``, ``?site=``, ``?assigned_interface=``, ``?assigned_vm=``."""
+        ``?vrf=``, ``?site=``, ``?assigned_interface=``, ``?assigned_vm=``,
+        ``?monitoring_excluded=true|false``."""
         qs = annotate_dhcp(super().get_queryset())
         if not self.request:
             return qs
@@ -1777,6 +1778,9 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             qs = qs.filter(role_id=role)
         if status := p.get("status"):
             qs = qs.filter(status_id=status)
+        excluded = (p.get("monitoring_excluded") or "").lower()
+        if excluded in ("true", "1", "false", "0"):
+            qs = qs.filter(monitoring_excluded=excluded in ("true", "1"))
         if scope := p.get("scope"):
             # Scope is derived from the address, not a DB column, so it can't be
             # a plain ``.filter()``. Classify only the already-narrowed set and
