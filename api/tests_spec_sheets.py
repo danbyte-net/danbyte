@@ -188,6 +188,34 @@ class DeviceSheetTests(_Base):
         self.assertEqual(at, sorted(at))
         self.assertIn("1024 GB", html)
 
+    def test_mixed_sizes_count_each_size(self):
+        """Two 2 TB and eight 10 TB disks read "2 × 2 TB · 8 × 10 TB", not ten
+        times the most common size; mixed DIMMs likewise."""
+        from .models import InventoryItem
+
+        mk = InventoryItem.objects.create
+        for n in range(8):
+            mk(device=self.device, name=f"Data {n}", kind="disk", media="hdd",
+               capacity_bytes=10_000_000_000_000)
+        for n in range(2):
+            mk(device=self.device, name=f"Boot {n}", kind="disk", media="hdd",
+               capacity_bytes=2_000_000_000_000)
+        for n, size in enumerate((32, 32, 64, 64, 64, 64)):
+            mk(device=self.device, name=f"DIMM {n}", kind="ram",
+               capacity_bytes=size * 1024**3)
+        stats = {s["label"]: s for s in device_hardware_context(self.device)["stats"]}
+        self.assertEqual(stats["Storage"]["value"], "84 TB")
+        self.assertIn("2 × 2 TB · 8 × 10 TB", stats["Storage"]["hint"])
+        self.assertNotIn("10 × ", stats["Storage"]["hint"])
+        self.assertEqual(stats["Memory"]["value"], "320 GB")
+        self.assertIn("2 × 32 GB · 4 × 64 GB", stats["Memory"]["hint"])
+
+        # Mixed media: each size names its medium, and no medium trails.
+        InventoryItem.objects.filter(name__startswith="Boot").update(media="ssd")
+        hint = {s["label"]: s for s in device_hardware_context(self.device)["stats"]}["Storage"]["hint"]
+        self.assertTrue(hint.startswith("2 × 2 TB SSD"), hint)
+        self.assertIn("8 × 10 TB HDD", hint)
+
     def test_slots_order_before_names(self):
         from .models import InventoryItem
 

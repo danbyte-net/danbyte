@@ -515,6 +515,37 @@ def _most_common(values) -> str:
     return max(set(vals), key=vals.count)
 
 
+def size_mix(items, fmt, media_labels=None) -> str:
+    """"2 × 2 TB · 8 × 10 TB": one count per distinct size, smallest first.
+
+    A multiplier over the most common size would read "10 × 2 TB" for two
+    2 TB and eight 10 TB disks. With ``media_labels`` and more than one medium
+    among the parts, each group names its medium ("2 × 2 TB SSD"). Parts with
+    no size are counted at the end ("2 more")."""
+    sized = [i for i in items if i.capacity_bytes]
+    if not sized:
+        return ""
+    mixed = media_labels is not None and len({i.media for i in sized}) > 1
+    # Grouped by the size as printed, so two "960 GB" disks a few bytes
+    # apart count together; ordered by the smallest part in each group.
+    groups: dict[tuple, list] = {}
+    for i in sized:
+        key = (fmt(i.capacity_bytes), i.media if mixed else "")
+        g = groups.setdefault(key, [0, i.capacity_bytes])
+        g[0] += 1
+        g[1] = min(g[1], i.capacity_bytes)
+    bits = []
+    for (size, medium), (n, _) in sorted(groups.items(), key=lambda kv: (kv[1][1], kv[0][1])):
+        label = f"{n} × {size}"
+        if mixed and media_labels.get(medium):
+            label += f" {media_labels[medium]}"
+        bits.append(label)
+    unsized = len(items) - len(sized)
+    if unsized:
+        bits.append(f"{unsized} more")
+    return " · ".join(bits)
+
+
 _CORES_IN_TEXT = re.compile(r"^\s*(\d+)\s*[x×]\s")
 
 
@@ -559,6 +590,7 @@ def hardware_totals(items) -> dict:
             "total": format_gb(ram_gb),
             "sticks": len(rams),
             "stick": _most_common(format_memory(i.capacity_bytes) for i in rams),
+            "mix": size_mix(rams, format_memory),
             "speed": _most_common(i.speed for i in rams),
         },
         "disk": {
@@ -566,7 +598,13 @@ def hardware_totals(items) -> dict:
             "total": format_bytes(disk_bytes),
             "count": len(disks),
             "each": _most_common(format_bytes(i.capacity_bytes) for i in disks),
-            "media": media_labels.get(_most_common(i.media for i in disks), ""),
+            "mix": size_mix(disks, format_bytes, media_labels),
+            # One medium for all: said once after the sizes. Mixed media are
+            # named per size in "mix" instead.
+            "media": (
+                media_labels.get(_most_common(i.media for i in disks), "")
+                if len({i.media for i in disks if i.capacity_bytes}) <= 1 else ""
+            ),
         },
     }
 
@@ -582,11 +620,11 @@ def _hardware_stats(totals: dict) -> list[dict]:
         cpu_value = f"{cpu['sockets']} CPU{'s' if cpu['sockets'] != 1 else ''}" if cpu["sockets"] else "—"
         cpu_hint = " · ".join(x for x in (cpu["clock"], cpu["model"]) if x)
     ram_hint = " · ".join(x for x in (
-        f"{ram['sticks']} × {ram['stick']}" if ram["sticks"] and ram["stick"] else
+        ram["mix"] if ram["mix"] else
         f"{ram['sticks']} module{'s' if ram['sticks'] != 1 else ''}" if ram["sticks"] else "",
         ram["speed"]) if x)
     disk_hint = " · ".join(x for x in (
-        f"{disk['count']} × {disk['each']}" if disk["count"] and disk["each"] else
+        disk["mix"] if disk["mix"] else
         f"{disk['count']} disk{'s' if disk['count'] != 1 else ''}" if disk["count"] else "",
         disk["media"]) if x)
     return [

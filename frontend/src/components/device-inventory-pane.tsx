@@ -110,6 +110,43 @@ function mostCommon(values: string[]): string {
   return best
 }
 
+/** "2 × 2 TB · 8 × 10 TB": one count per distinct size, smallest first, the
+ * same as the spec sheet. A multiplier over the most common size read
+ * "10 × 2 TB" for two 2 TB and eight 10 TB disks. With `media`, mixed media
+ * name each group ("2 × 2 TB SSD"); parts with no size count at the end. */
+function sizeMix(
+  items: InventoryItemRow[],
+  fmt: (n: number) => string,
+  media?: Record<string, string>
+): string {
+  const sized = items.filter((i) => i.capacity_bytes)
+  if (!sized.length) return ""
+  const mixed = !!media && new Set(sized.map((i) => i.media)).size > 1
+  const groups = new Map<string, { n: number; min: number; label: string }>()
+  for (const i of sized) {
+    const size = fmt(i.capacity_bytes ?? 0)
+    const medium = mixed ? (media[i.media] ?? "") : ""
+    const key = `${size}\u0000${medium}`
+    const g = groups.get(key)
+    if (g) {
+      g.n += 1
+      g.min = Math.min(g.min, i.capacity_bytes ?? 0)
+    } else {
+      groups.set(key, {
+        n: 1,
+        min: i.capacity_bytes ?? 0,
+        label: medium ? `${size} ${medium}` : size,
+      })
+    }
+  }
+  const bits = [...groups.values()]
+    .sort((a, b) => a.min - b.min || a.label.localeCompare(b.label))
+    .map((g) => `${g.n} × ${g.label}`)
+  const unsized = items.length - sized.length
+  if (unsized) bits.push(`${unsized} more`)
+  return bits.join(" · ")
+}
+
 /** What the parts add up to - the same figures the hardware spec sheet
  * prints: sockets and cores, total memory, total storage. */
 function hardwareTotals(items: InventoryItemRow[]) {
@@ -133,26 +170,33 @@ function hardwareTotals(items: InventoryItemRow[]) {
       ),
     })
   if (rams.length) {
-    const each = mostCommon(rams.map((i) => formatMemory(i.capacity_bytes)))
+    const mix = sizeMix(rams, (n) => formatMemory(n))
     tiles.push({
       label: "Memory",
       value:
         formatMemory(rams.map((i) => i.capacity_bytes)) ||
         plural(rams.length, "module"),
       hint: join(
-        each ? `${rams.length} × ${each}` : plural(rams.length, "module"),
+        mix || plural(rams.length, "module"),
         mostCommon(rams.map((i) => i.speed))
       ),
     })
   }
   if (disks.length) {
-    const each = mostCommon(disks.map((i) => formatBytes(i.capacity_bytes)))
+    const mix = sizeMix(disks, (n) => formatBytes(n), MEDIA_LABEL)
+    // One medium for all is said once after the sizes; mixed media are
+    // named per size in the mix instead.
+    const oneMedium =
+      new Set(disks.filter((i) => i.capacity_bytes).map((i) => i.media)).size <=
+      1
     tiles.push({
       label: "Storage",
       value: formatBytes(sum(disks)) || plural(disks.length, "disk"),
       hint: join(
-        each ? `${disks.length} × ${each}` : plural(disks.length, "disk"),
-        MEDIA_LABEL[mostCommon(disks.map((i) => i.media))] ?? ""
+        mix || plural(disks.length, "disk"),
+        oneMedium
+          ? (MEDIA_LABEL[mostCommon(disks.map((i) => i.media))] ?? "")
+          : ""
       ),
     })
   }
