@@ -29,6 +29,7 @@ from rest_framework.response import Response
 from auth_api.rbac import restrict_queryset
 
 from .config_context import render_config_context
+from .natural import natural
 from .views import _get_active_tenant
 
 
@@ -81,7 +82,7 @@ def with_inventory_relations(qs):
                 queryset=IPAddress.objects.select_related("prefix").order_by("ip_address"),
             ),
         )
-        .order_by("name")
+        .order_by(natural("name"))
     )
     return qs.select_related(
         "site", "site__region", "role", "platform",
@@ -188,7 +189,7 @@ def with_vm_inventory_relations(qs):
                 queryset=IPAddress.objects.select_related("prefix").order_by("ip_address"),
             ),
         )
-        .order_by("name")
+        .order_by(natural("name"))
     )
     return qs.select_related(
         "site", "site__region", "role", "platform", "status",
@@ -320,7 +321,7 @@ def ansible_inventory(request):
 
     qs = with_inventory_relations(
         Device.objects.filter(tenant=tenant)
-    ).order_by("name")
+    ).order_by(natural("name"))
     qs = restrict_queryset(qs, request.user, tenant, "device", "view")
 
     p = request.query_params
@@ -355,7 +356,7 @@ def ansible_inventory(request):
 
         vqs = with_vm_inventory_relations(
             VirtualMachine.objects.filter(tenant=tenant)
-        ).order_by("name")
+        ).order_by(natural("name"))
         vqs = restrict_queryset(vqs, request.user, tenant, "virtualmachine", "view")
         if p.get("has_primary_ip") in ("1", "true", "yes"):
             vqs = vqs.exclude(primary_ip__isnull=True)

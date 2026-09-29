@@ -21,6 +21,7 @@ from .dcim_choices import (
     POWER_PORT_TYPE_CHOICES,
     RF_CONNECTOR_CHOICES,
 )
+from .natural import natural
 from .speed import normalize_speed
 from core.models import (
     CustomFieldsMixin,
@@ -566,7 +567,7 @@ class InterfaceTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class ConsolePortTemplate(_ComponentTemplate):
@@ -580,7 +581,7 @@ class ConsolePortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class ConsoleServerPortTemplate(_ComponentTemplate):
@@ -594,7 +595,7 @@ class ConsoleServerPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class AuxPortTemplate(_ComponentTemplate):
@@ -611,7 +612,7 @@ class AuxPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 def validate_antenna_bands(value):
@@ -658,7 +659,7 @@ class AntennaTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class PowerPortTemplate(_ComponentTemplate):
@@ -678,7 +679,7 @@ class PowerPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class PowerOutletTemplate(_ComponentTemplate):
@@ -703,7 +704,7 @@ class PowerOutletTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class RearPortTemplate(_ComponentTemplate):
@@ -723,7 +724,7 @@ class RearPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class FrontPortTemplate(_ComponentTemplate):
@@ -743,7 +744,7 @@ class FrontPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
         # A connector spans a range of positions; overlap isn't a DB constraint.
 
 
@@ -770,7 +771,7 @@ class ModuleBayTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class DeviceBayTemplate(_ComponentTemplate):
@@ -785,7 +786,7 @@ class DeviceBayTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 # Hardware kind of an inventory item/template - what the part IS. "other"
@@ -844,7 +845,7 @@ class InventoryItemTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 # ─── Module types (pluggable line cards / network modules) ───────────────────
@@ -900,7 +901,7 @@ class ModuleInterfaceTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("module_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.module_type.name}:{self.name}"
@@ -3111,7 +3112,7 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def save(self, *args, **kwargs):
         # An aggregate has no physical port, and LACP knobs mean nothing
@@ -3297,7 +3298,7 @@ class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def clean(self):
         """A splitter broadcasts one input to all outputs - the front→rear
@@ -3353,7 +3354,7 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        ordering = ["name"]
+        ordering = [natural("name")]
         constraints = [
             models.UniqueConstraint(
                 fields=["device", "name"], name="uniq_frontport_device_name"
@@ -3419,7 +3420,7 @@ class ConsolePort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3444,7 +3445,7 @@ class ConsoleServerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3505,7 +3506,7 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3528,7 +3529,7 @@ class DeviceBay(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3552,7 +3553,7 @@ class ModuleBay(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3578,7 +3579,7 @@ class Module(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        ordering = ["module_bay__name"]
+        ordering = [natural("module_bay__name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.module_bay.name} ({self.module_type.name})"
@@ -3602,7 +3603,7 @@ class AuxPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3654,7 +3655,7 @@ class Antenna(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3685,7 +3686,7 @@ class PowerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3720,7 +3721,7 @@ class PowerOutlet(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -4509,7 +4510,7 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.TextField(blank=True)
 
     class Meta:
-        ordering = ["name"]
+        ordering = [natural("name")]
         constraints = [
             models.UniqueConstraint(
                 fields=["vm", "name"], name="uniq_vminterface_vm_name"
@@ -4552,7 +4553,7 @@ class VirtualDisk(TimestampedModel):
     description = models.TextField(blank=True)
 
     class Meta:
-        ordering = ["key"]
+        ordering = [natural("key")]
         constraints = [
             models.UniqueConstraint(
                 fields=["vm", "key"], name="uniq_virtualdisk_vm_key"
@@ -4818,7 +4819,7 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.TextField(blank=True)
 
     class Meta:
-        ordering = ["site__name", "name"]
+        ordering = [natural("site__name"), natural("name")]
         constraints = [
             models.UniqueConstraint(
                 fields=["site", "name"], name="uniq_rack_site_name"
@@ -5304,7 +5305,7 @@ class DeviceTypeService(ProtocolPortsMixin, _ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 # ─── IP ranges (a contiguous span of addresses, VRF-scoped) ──────────────────
@@ -6715,7 +6716,7 @@ class Location(NumIdMixin, TimestampedModel):
     description = models.TextField(blank=True, default="")
 
     class Meta:
-        ordering = ["site__name", "name"]
+        ordering = [natural("site__name"), natural("name")]
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "site", "slug"],

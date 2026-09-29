@@ -10,6 +10,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.cf_search import cf_text_q
+from api.natural import natural
 from api.views import _get_active_tenant
 from api.viewsets import (
     NATURAL_NAME,
@@ -710,7 +711,7 @@ class OSPFInterfaceViewSet(_RuleViewSet):
     queryset = OSPFInterface.objects.select_related(
         "instance__device", "instance__virtual_machine", "interface__device",
         "vm_interface__vm", "area", "keychain"
-    ).order_by("interface__name")
+    ).order_by(natural("interface__name"))
     serializer_class = OSPFInterfaceSerializer
 
     def get_queryset(self):
@@ -731,7 +732,7 @@ class ISISInterfaceViewSet(_RuleViewSet):
     queryset = ISISInterface.objects.select_related(
         "instance__device", "instance__virtual_machine", "interface__device",
         "vm_interface__vm", "keychain"
-    ).order_by("interface__name")
+    ).order_by(natural("interface__name"))
     serializer_class = ISISInterfaceSerializer
 
     def get_queryset(self):
@@ -763,7 +764,7 @@ class EIGRPInterfaceViewSet(_RuleViewSet):
     queryset = EIGRPInterface.objects.select_related(
         "instance__device", "instance__virtual_machine", "interface__device",
         "vm_interface__vm", "keychain"
-    ).order_by("interface__name")
+    ).order_by(natural("interface__name"))
     serializer_class = EIGRPInterfaceSerializer
 
     def get_queryset(self):

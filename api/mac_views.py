@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from auth_api import rbac
 
 from .models import Interface, IPAddress, MACAddress, VMInterface
+from .natural import natural
 from .oui import hexkey, vendor_for, vendors_for
 from .serializers import TagSerializer
 from .views import _get_active_tenant
@@ -231,12 +232,12 @@ def mac_detail_view(request, mac):
     ifaces = (
         Interface.objects.filter(device__tenant=tenant, mac_address__iexact=key)
         .select_related("device")
-        .order_by("device__name", "name")
+        .order_by(natural("device__name"), natural("name"))
     )
     vm_ifaces = (
         VMInterface.objects.filter(vm__tenant=tenant, mac_address__iexact=key)
         .select_related("vm")
-        .order_by("vm__name", "name")
+        .order_by(natural("vm__name"), natural("name"))
     )
     ips = (
         IPAddress.objects.filter(tenant=tenant, mac_address__iexact=key)
@@ -247,7 +248,9 @@ def mac_detail_view(request, mac):
         MACAddress.objects.filter(tenant=tenant, mac_address__iexact=key)
         .select_related("assigned_interface__device")
         .prefetch_related("tags")
-        .order_by("assigned_interface__device__name", "assigned_interface__name")
+        .order_by(
+            natural("assigned_interface__device__name"), natural("assigned_interface__name")
+        )
     )
     seen = _snmp_sightings(tenant, key)
     if (

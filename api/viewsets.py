@@ -9,7 +9,7 @@ import re
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models.functions import Coalesce, Collate
+from django.db.models.functions import Coalesce
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils.text import slugify
 from drf_spectacular.types import OpenApiTypes
@@ -34,6 +34,7 @@ from auth_api.drf import RBACViewSetMixin, restrict_for_view
 from core.models import Organization, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
 from .filters import apply_tag_filter
+from .natural import natural, natural_key
 from .cf_search import cf_text_q
 from .face_ports import (
     FACE_PORT_KINDS,
@@ -392,8 +393,8 @@ from .views import (
 
 # Human/natural name ordering ("disk2" before "disk10") - backed by the
 # `natural_sort` ICU collation (migration 0099). Used wherever a list orders
-# by a user-visible name.
-NATURAL_NAME = Collate("name", "natural_sort")
+# by a user-visible name; `natural()` does the same for any other field.
+NATURAL_NAME = natural("name")
 
 # A device's map and the traces: the topology map's opt-in enrichments.
 MAP_INCLUDE_PARAMETER = OpenApiParameter(
@@ -2304,7 +2305,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     """Tenant-scoped CRUD for custom-field section headings. Deleting a group
     just un-groups its fields (FK is SET_NULL), so no destroy guard is needed."""
 
-    queryset = CustomFieldGroup.objects.all().order_by("weight", "name")
+    queryset = CustomFieldGroup.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = CustomFieldGroupSerializer
 
     def get_queryset(self):
@@ -2313,7 +2314,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-        return qs.order_by("weight", "name")
+        return qs.order_by("weight", NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -2617,7 +2618,7 @@ def _status_usage_expr():
 
 
 class StatusViewSet(_IpCatalogViewSet):
-    queryset = Status.objects.all().order_by("weight", "name")
+    queryset = Status.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = StatusSerializer
     picker_serializer_class = StatusPickerSerializer
     # usage spans 13 models - the serializer sums them (no single-relation count).
@@ -2644,7 +2645,7 @@ class StatusViewSet(_IpCatalogViewSet):
 
 
 class IPRoleViewSet(_IpCatalogViewSet):
-    queryset = IPRole.objects.all().order_by("weight", "name")
+    queryset = IPRole.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = IPRoleSerializer
     picker_serializer_class = IPRolePickerSerializer
 
@@ -2660,7 +2661,7 @@ class ZoneViewSet(_IpCatalogViewSet):
     """Security zones (zone-based firewalling). Zero pre-filled - users
     define their own zone catalog; VLANs link to zones via ``VLAN.zone``."""
 
-    queryset = Zone.objects.all().order_by("weight", "name")
+    queryset = Zone.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = ZoneSerializer
     picker_serializer_class = ZonePickerSerializer
     usage_relation = "vlans"
@@ -3396,7 +3397,7 @@ class DeviceViewSet(
             "status", "status__name", "status__slug", "status__color",
         )
         .order_by(
-            Collate("role__name", "natural_sort").asc(nulls_last=True),
+            natural("role__name").asc(nulls_last=True),
             NATURAL_NAME,
         )
     )
@@ -4318,7 +4319,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "tunnel_terminations__tunnel",
             *FAR_END_PREFETCH,
         )
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = InterfaceSerializer
     pagination_class = StandardPagination
@@ -4467,7 +4468,10 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "degraded": (
                 iface.lag_min_links is not None and len(members) < iface.lag_min_links
             ),
-            "peers": sorted(peers.values(), key=lambda p: (p["device"]["name"], p["name"])),
+            "peers": sorted(
+                peers.values(),
+                key=lambda p: (natural_key(p["device"]["name"]), natural_key(p["name"])),
+            ),
             "unpaired": unpaired,
             "mixed_peers": len(peers) > 1,
         })
@@ -5038,7 +5042,7 @@ class RearPortViewSet(_DevicePortViewSet):
     queryset = (
         RearPort.objects.select_related("device")
         .prefetch_related("tags", "terminations__cable__status", "reservations", "front_ports")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = RearPortSerializer
     bulk_int_fields = ("positions",)
@@ -5049,7 +5053,7 @@ class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
         FrontPort.objects.select_related("device", "rear_port")
         .prefetch_related("tags", "terminations__cable__status", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = FrontPortSerializer
     bulk_bool_fields = ("mark_connected",)
@@ -5059,7 +5063,7 @@ class ConsolePortViewSet(_DevicePortViewSet):
     queryset = (
         ConsolePort.objects.select_related("device")
         .prefetch_related("tags", "terminations__cable__status", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ConsolePortSerializer
 
@@ -5068,7 +5072,7 @@ class AuxPortViewSet(_DevicePortViewSet):
     queryset = (
         AuxPort.objects.select_related("device")
         .prefetch_related("tags", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = AuxPortSerializer
 
@@ -5080,7 +5084,7 @@ class AntennaViewSet(_DevicePortViewSet):
     queryset = (
         Antenna.objects.select_related("device")
         .prefetch_related("tags")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = AntennaSerializer
     bulk_str_fields = ("antenna_type", "polarization", "connector",
@@ -5091,7 +5095,7 @@ class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
         .prefetch_related("tags", "terminations__cable__status", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ConsoleServerPortSerializer
     bulk_int_fields = ("speed",)
@@ -5101,7 +5105,7 @@ class PowerPortViewSet(_DevicePortViewSet):
     queryset = (
         PowerPort.objects.select_related("device")
         .prefetch_related("tags", "terminations__cable__status", "reservations", "outlets")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = PowerPortSerializer
 
@@ -5110,7 +5114,7 @@ class PowerOutletViewSet(_DevicePortViewSet):
     queryset = (
         PowerOutlet.objects.select_related("device", "power_port")
         .prefetch_related("tags", "terminations__cable__status", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = PowerOutletSerializer
     bulk_str_fields = ("type", "description", "feed_leg")
@@ -5238,7 +5242,7 @@ class InventoryItemViewSet(_DevicePortViewSet):
         InventoryItem.objects
         .select_related("device", "manufacturer", "parent")
         .prefetch_related("tags")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = InventoryItemSerializer
     # InventoryItem has no `type` column - its own allowlist. kind/media are
@@ -5265,7 +5269,7 @@ class DeviceBayViewSet(_DevicePortViewSet):
     queryset = (
         DeviceBay.objects.select_related("device", "installed_device")
         .prefetch_related("tags")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = DeviceBaySerializer
 
@@ -5381,7 +5385,7 @@ class ModuleBayViewSet(_DevicePortViewSet):
     queryset = (
         ModuleBay.objects.select_related("device")
         .prefetch_related("tags", "module__module_type")
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ModuleBaySerializer
 
@@ -5393,7 +5397,7 @@ class ModuleViewSet(TenantScopedViewSet):
     queryset = (
         Module.objects.select_related(
             "device", "module_bay", "module_type"
-        ).prefetch_related("tags").order_by("device__name", "module_bay__name")
+        ).prefetch_related("tags").order_by(natural("device__name"), natural("module_bay__name"))
     )
     serializer_class = ModuleSerializer
     pagination_class = StandardPagination
@@ -5923,7 +5927,7 @@ class RackTypeAccessoryViewSet(TenantScopedViewSet):
 
 
 class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
-    queryset = Rack.objects.all().order_by("site__name", "name")
+    queryset = Rack.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = RackSerializer
     pagination_class = StandardPagination
 
@@ -6948,7 +6952,7 @@ class CircuitTypeViewSet(TenantScopedViewSet):
 
 
 class CircuitViewSet(TenantScopedViewSet):
-    queryset = Circuit.objects.all().order_by("cid")
+    queryset = Circuit.objects.all().order_by(natural("cid"))
     serializer_class = CircuitSerializer
     pagination_class = StandardPagination
 
@@ -7267,7 +7271,7 @@ class WirelessLANViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
 
     psk_object_label = "Wireless LAN"
 
-    queryset = WirelessLAN.objects.all().order_by("ssid")
+    queryset = WirelessLAN.objects.all().order_by(natural("ssid"))
     serializer_class = WirelessLANSerializer
     pagination_class = StandardPagination
 
@@ -7741,7 +7745,7 @@ class RegionViewSet(TenantScopedViewSet):
 
 
 class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
-    queryset = Location.objects.all().order_by("site__name", "name")
+    queryset = Location.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = LocationSerializer
     pagination_class = StandardPagination
 
@@ -7804,7 +7808,7 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
 # ─── Config Contexts ─────────────────────────────────────────────────────────
 class ConfigContextViewSet(TenantScopedViewSet):
-    queryset = ConfigContext.objects.all().order_by("weight", "name")
+    queryset = ConfigContext.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = ConfigContextSerializer
     pagination_class = StandardPagination
 
@@ -7816,7 +7820,7 @@ class ConfigContextViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-        return qs.order_by("weight", "name")
+        return qs.order_by("weight", NATURAL_NAME)
 
 
 # ─── Export templates ────────────────────────────────────────────────────────
@@ -9074,7 +9078,7 @@ class SiteMarkerViewSet(TenantScopedViewSet):
 
     queryset = SiteMarker.objects.select_related(
         "tile_type", "role_type"
-    ).order_by("label")
+    ).order_by(natural("label"))
     serializer_class = SiteMarkerSerializer
     pagination_class = StandardPagination
 

@@ -21,6 +21,8 @@ from collections import defaultdict
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from api.natural import natural_key
+
 from . import sla
 from . import sla_time as st
 
@@ -92,12 +94,12 @@ def options(agreement, now) -> dict:
         })
     names = {str(k): v for k, v in Site.objects.filter(pk__in=list(sites)).values_list("pk", "name")}
     return {
-        "groups": sorted(groups.values(), key=lambda x: x["name"]),
+        "groups": sorted(groups.values(), key=lambda x: natural_key(x["name"])),
         "sites": sorted(
             ({"id": k, "name": names.get(k, k), "count": n} for k, n in sites.items()),
-            key=lambda x: str(x["name"]),
+            key=lambda x: natural_key(x["name"]),
         ),
-        "members": sorted(rows, key=lambda x: x["name"]),
+        "members": sorted(rows, key=lambda x: natural_key(x["name"])),
         "kinds": sorted(kinds),
         "redundancy": [{"name": k, "count": n} for k, n in sorted(redundancy.items())],
     }

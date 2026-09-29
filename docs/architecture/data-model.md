@@ -96,6 +96,28 @@ on UUID values).
 | `DeviceType` | `(tenant, name)` |
 | `Device` | `(tenant, name)` |
 
+## Natural name order
+
+Names that carry numbers sort the way people read them - `DIMM 2` before
+`DIMM 10`, `Ethernet1/2` before `Ethernet1/10`, `R2` before `R10` - never
+the plain `1, 10, 11, 2` of a byte compare. In PostgreSQL that is the
+`natural_sort` ICU collation (`und-u-kn-true`, migration `api/0099`);
+`api.natural` wraps it:
+
+| Helper | Use |
+|---|---|
+| `natural("name")` | `Collate(field, "natural_sort")` for `order_by` and `Meta.ordering`; works across relations (`natural("device__name")`) and reverses with `.desc()`. `NATURAL_NAME` in `api/viewsets.py` is `natural("name")`. |
+| `natural_key(value)` | A Python sort key for a list already in memory (`sorted(rows, key=lambda r: natural_key(r["name"]))`). |
+
+Every device and VM component (interfaces, front/rear/console/power ports,
+outlets, bays, modules, inventory items, antennas, VM interfaces, virtual
+disks), every component template, and racks and locations (site, then name)
+carry a natural `Meta.ordering`, so a related list such as
+`device.interfaces.all()` - serializer nesting, spec sheets, config
+rendering - is in that order without an explicit `order_by`. List endpoints
+order the same way, including the device name that leads a cross-device
+component list.
+
 ## Conventional VRF = NULL
 
 We don't seed a "Global" VRF row. `vrf=NULL` *is* the Global VRF - that's why

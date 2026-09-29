@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
+from .natural import natural
+
 #: What ``include`` may name; anything else is ignored.
 INCLUDE_TOKENS = frozenset({"card", "link_ips", "photo"})
 
@@ -366,7 +368,7 @@ def _link_children(tenant, ports) -> dict:
         return children
     rows = (
         Interface.objects.filter(device__tenant=tenant, parent_id__in=parents)
-        .order_by("name", "id")
+        .order_by(natural("name"), "id")
         .values_list("id", "parent_id", "name")
     )
     for cid, pid, name in rows:
@@ -602,7 +604,7 @@ def _face_components(wanted) -> dict:
         cols = ["id", "device_id", "name"] + (["marker_key"] if keyed else [])
         rows = (
             model.objects.filter(device_id__in=device_ids)
-            .order_by("name", "id")
+            .order_by(natural("name"), "id")
             .values_list(*cols)
         )
         for row in rows:

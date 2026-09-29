@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 
+from api.natural import natural_key
 from core.ssrf import safe_post
 
 
@@ -281,7 +282,7 @@ class ZabbixClient:
             {"value": t["host"], "label": t.get("name") or t["host"]}
             for t in found
         ]
-        return sorted(rows, key=lambda r: r["label"].lower())
+        return sorted(rows, key=lambda r: natural_key(r["label"]))
 
     def host_templates(self, hostid: str) -> set:
         """Template names already linked to a host, so Danbyte only ever adds."""

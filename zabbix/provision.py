@@ -26,6 +26,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from api.natural import natural_key
 from integrations.toggles import integration_enabled
 
 from . import facts
@@ -227,7 +228,7 @@ def scope_report(conn) -> list[dict]:
                 kind for (did, kind) in pending if did == device.id
             ),
         })
-    return sorted(out, key=lambda r: r["device"]["name"].lower())
+    return sorted(out, key=lambda r: natural_key(r["device"]["name"]))
 
 
 def host_proxy_id(host) -> str:

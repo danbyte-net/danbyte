@@ -42,6 +42,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Cable, CableTermination, Device
+from .natural import natural_key
 from .views import _get_active_tenant
 from auth_api import rbac
 
@@ -951,7 +952,7 @@ def topology_logical_view(request):
         n["attachments"] = [a for a in n["attachments"] if a["rail"] in kept]
         if n["attachments"]:
             out_nodes.append(n)
-    out_nodes.sort(key=lambda n: (n["kind"], n["name"].lower()))
+    out_nodes.sort(key=lambda n: (n["kind"], natural_key(n["name"])))
     return Response({"rails": rails, "nodes": out_nodes})
 
 
@@ -1050,11 +1051,11 @@ def topology_summary_view(request):
             "device": name_of[nid],
             "role": role_of[nid],
             "site": site_of[nid],
-            "neighbors": sorted(nbrs, key=lambda r: r["device"]),
+            "neighbors": sorted(nbrs, key=lambda r: natural_key(r["device"])),
         }
         for nid, nbrs in neighbors.items()
     ]
-    adjacency.sort(key=lambda r: r["device"])
+    adjacency.sort(key=lambda r: natural_key(r["device"]))
     return Response({
         "device_count": len(name_of),
         "cable_count": len(g["edges"]),
@@ -1134,7 +1135,7 @@ def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
                 ),
             },
         }
-        for gid, v in sorted(groups.items(), key=lambda kv: kv[1]["name"])
+        for gid, v in sorted(groups.items(), key=lambda kv: natural_key(kv[1]["name"]))
     ]
     edges = [
         {
@@ -1605,7 +1606,7 @@ def device_paths(device, viewable_ids=None):
         first.setdefault("legs", [first["steps"][head:]])
         first["legs"].append(r["steps"][head:])
         first["complete"] = first["complete"] and r["complete"]
-    grouped.sort(key=lambda r: r["origin"]["name"])
+    grouped.sort(key=lambda r: natural_key(r["origin"]["name"]))
     return {"runs": grouped}
 
 

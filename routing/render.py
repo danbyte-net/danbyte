@@ -13,6 +13,7 @@ import re
 from django.db.models import F
 
 from api.models import FHRPGroupAssignment
+from api.natural import natural, natural_key
 
 from .models import (
     VTEP,
@@ -332,7 +333,7 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
     ordered = sorted(
         inst.sessions.all(),
         key=lambda s: (not s.remote_address, s.remote_address,
-                       s.port.name if s.port is not None else ""),
+                       natural_key(s.port.name if s.port is not None else "")),
     )
     sessions = [session_dict(s, policies) for s in ordered]
     groups = {}
@@ -464,7 +465,7 @@ def ospf_dict(inst: OSPFInstance, policies: set[str]) -> dict:
         "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "redistribute": _redistribute(inst.redistributions.all(), policies),
         "areas": [areas[k] for k in sorted(areas)],
-        "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
+        "interfaces": sorted(ifaces, key=lambda i: natural_key(i["interface"])),
         "description": inst.description or "",
         "extra": inst.extra or {},
     }
@@ -531,7 +532,7 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
         "redistribute": _redistribute(
             inst.redistributions.all(), policies, level=inst.level
         ),
-        "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
+        "interfaces": sorted(ifaces, key=lambda i: natural_key(i["interface"])),
         "description": inst.description or "",
         "extra": inst.extra or {},
     }
@@ -550,7 +551,7 @@ def es_dict(seg: EthernetSegment) -> dict:
         "members": sorted(
             ({"device": i.device.name, "interface": i.name}
              for i in seg.interfaces.all()),
-            key=lambda m: (m["device"], m["interface"]),
+            key=lambda m: (natural_key(m["device"]), natural_key(m["interface"])),
         ),
         "description": seg.description or "",
     }
@@ -562,7 +563,7 @@ def ldp_dict(inst: LDPInstance) -> dict:
         "router_id": inst.router_id or None,
         "transport_address": inst.transport_address or inst.router_id or None,
         "label_allocation": inst.label_allocation,
-        "interfaces": sorted(i.name for i in inst.interfaces.all()),
+        "interfaces": sorted((i.name for i in inst.interfaces.all()), key=natural_key),
         "bfd": inst.bfd,
         "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "description": inst.description or "",
@@ -602,7 +603,7 @@ def eigrp_dict(inst: EIGRPInstance, policies: set[str]) -> dict:
         "bfd": inst.bfd,
         "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "redistribute": _redistribute(inst.redistributions.all(), policies),
-        "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
+        "interfaces": sorted(ifaces, key=lambda i: natural_key(i["interface"])),
         "description": inst.description or "",
         "extra": inst.extra or {},
     }
@@ -754,7 +755,7 @@ def routing_context(device) -> dict:
     for a in () if is_vm else (
         FHRPGroupAssignment.objects.filter(interface__device=device)
         .select_related("interface", "fhrp_group__virtual_ip__prefix")
-        .order_by("interface__name", "fhrp_group__group_id")
+        .order_by(natural("interface__name"), "fhrp_group__group_id")
     ):
         g = a.fhrp_group
         vip = g.virtual_ip if g.virtual_ip_id else None
@@ -834,7 +835,7 @@ def routing_context(device) -> dict:
         "ospf": ospf,
         "isis": isis,
         "eigrp": eigrp,
-        "by_interface": dict(sorted(by_interface.items())),
+        "by_interface": dict(sorted(by_interface.items(), key=lambda kv: natural_key(kv[0]))),
         "vtep": vtep,
         "ldp": ldp,
         # The segments this leaf is part of, once each, and how many - a
