@@ -5580,6 +5580,9 @@ class RackMiniSerializer(NumIdModelSerializer):
 
 
 class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+    # The power roll-up is a set of figures the rack page draws, not one
+    # value a column can show (see api.list_fields).
+    list_columns_exclude = ("power",)
     site = SiteRegionMiniSerializer(read_only=True)
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True

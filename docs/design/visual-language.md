@@ -232,6 +232,10 @@ can't drift page to page (source of truth:
 
 Row actions always go through `RowActions` / `actionsColumn()`, and every
 list-page table names a `tableId` so it gets the persistent column picker.
+Every `tableId` is registered in `frontend/src/lib/tables.ts` with the `api`
+list path its rows come from (`null` when they are not one list's rows) -
+`routes/-table-registry.test.ts` fails on an unregistered id, and an id built
+at runtime passes `autoColumns` (an api path, or `false`) itself.
 
 ## Column factories
 
@@ -288,6 +292,23 @@ Each takes options - never per-caller branches inside the factory:
   position, monitoring bindings, a virtual-chassis Member column, the cables
   list's trace-plus-row-actions pair) - see `routes/locations.$id.tsx`,
   `routes/racks.$id.tsx`, and `routes/cables.index.tsx`.
+
+### Catalog columns
+
+`DataTable` adds the rest by itself (#243): for a registered table it asks
+`/api/list-fields/` what the list's rows carry and offers every field no
+factory column covers - and every custom field (`cf_<key>`) - as a column that
+starts hidden, sorts, exports, and renders by its kind
+(`components/columns/auto-columns.tsx`). So a factory **hand-writes only the
+columns that need a look of their own** (a badge, a link, a facet), and:
+
+- a column whose id is not the row key it shows sets `meta.field` (the device
+  factory's `type` shows `device_type`), else the menu offers the field twice;
+- a page that leaves a field out on purpose passes `autoColumns={{ exclude }}`;
+- rows that wrap the list row (`{ kind, ip }`) pass `autoColumns={{ get }}`;
+- a new field worth a column goes into the **list serializer**, with the joins
+  that keep `api/tests_list_queries.py` flat - it then appears in the menu
+  with no frontend change. Detail-only getters use `@detail_only`.
 
 Object references inside a cell come from `components/cells/`: `siteColumn` /
 `SiteCell`, `deviceColumn` / `DeviceCell`, plus `locationColumn`,

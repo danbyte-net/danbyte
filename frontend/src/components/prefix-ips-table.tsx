@@ -391,17 +391,17 @@ function PrefixIpsTableImpl({
     [onSelectedRowsChange]
   )
 
-  // Extras + custom fields ship hidden so the table stays lean; users reveal
-  // any of them from the Columns menu (the choice persists per-table).
+  // Extras ship hidden so the table stays lean (custom-field columns are
+  // hidden by default themselves); users reveal any of them from the Columns
+  // menu, and the choice persists per-table.
   const initialVisibility = useMemo(
     () => ({
       reservation_note: false,
       mac: false,
       dns: false,
       last_seen: false,
-      ...Object.fromEntries(cfDefs.map((d) => [`cf_${d.key}`, false])),
     }),
-    [cfDefs]
+    []
   )
 
   if (query.isLoading) {
@@ -442,6 +442,12 @@ function PrefixIpsTableImpl({
             onSelectedRowsChange={handleSelected}
             initialColumnVisibility={initialVisibility}
             tableId="prefix-ips"
+            // Registered rows carry the address list's row; the free
+            // addresses and range rows between them carry none.
+            autoColumns={{
+              api: "/api/ips/",
+              get: (r) => (r.kind === "registered" ? r.ip : undefined),
+            }}
           />
         </div>
       </div>
@@ -609,6 +615,7 @@ function buildColumns({
       id: "mac",
       accessorFn: (r) => (r.kind === "registered" ? r.ip.mac_address : ""),
       header: "MAC",
+      meta: { field: "mac_address" },
       cell: ({ row }) => {
         if (row.original.kind !== "registered") return null
         const v = row.original.ip.mac_address

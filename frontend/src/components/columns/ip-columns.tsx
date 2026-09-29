@@ -16,7 +16,7 @@ import { dash } from "@/components/cells/dash"
 import { DeviceCell } from "@/components/cells/device-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { formatCustomValue } from "@/components/custom-field-display"
+import { customFieldColumns } from "@/components/columns/auto-columns"
 import {
   actionsColumn,
   type ActionsColumnOpts,
@@ -116,14 +116,6 @@ function ipBucket(
   return ip ? (key(ip) ?? "__none__") : null
 }
 
-/** Stable facet bucket for a custom-field value (null = not counted). */
-function cfFacetKey(v: unknown): string | null {
-  if (v === null || v === undefined || v === "") return null
-  if (typeof v === "boolean") return v ? "Yes" : "No"
-  if (Array.isArray(v)) return v.map(String).join(", ")
-  return String(v)
-}
-
 export function buildIpColumns<T = IPAddress>(
   opts: IpColumnOpts<T> = {}
 ): ColumnDef<T, unknown>[] {
@@ -142,6 +134,7 @@ export function buildIpColumns<T = IPAddress>(
       id: "ip",
       accessorFn: (r) => getIp(r)?.ip_address ?? opts.freeRow?.address(r) ?? "",
       header: ({ column }) => <SortHeader column={column} label="Address" />,
+      meta: { label: "Address", field: "ip_address" },
       cell: ({ row }) => {
         const ip = getIp(row.original)
         if (!ip) {
@@ -317,6 +310,7 @@ export function buildIpColumns<T = IPAddress>(
         return v ? <VlanBadge vlan={v} /> : dash
       },
       meta: {
+        field: "prefix.vlan",
         facet: {
           kind: "enum",
           label: "VLAN",
@@ -374,6 +368,7 @@ export function buildIpColumns<T = IPAddress>(
       id: "dns",
       accessorFn: (r) => getIp(r)?.dns_name ?? "",
       header: "DNS name",
+      meta: { field: "dns_name" },
       cell: ({ row }) => {
         const v = getIp(row.original)?.dns_name
         return v ? <DnsNameLink name={v} className="text-xs" /> : dash
@@ -386,6 +381,14 @@ export function buildIpColumns<T = IPAddress>(
         return ip?.assigned_device?.name ?? ip?.assigned_vm?.name ?? ""
       },
       header: "Assigned to",
+      meta: {
+        field: [
+          "assigned_device",
+          "assigned_interface",
+          "assigned_vm",
+          "assigned_vm_interface",
+        ],
+      },
       cell: ({ row }) => {
         const ip = getIp(row.original)
         if (ip?.assigned_device)
@@ -484,28 +487,13 @@ export function buildIpColumns<T = IPAddress>(
   // One column per tenant IP custom field - hidden by default, toggleable.
   // Each carries an enum facet over its observed values so any facet rail
   // built from these columns adapts to the tenant's custom fields.
-  for (const d of opts.cfDefs ?? []) {
-    cols.push({
-      id: `cf_${d.key}`,
-      header: d.label,
-      enableSorting: false,
-      accessorFn: (r) => getIp(r)?.custom_fields?.[d.key],
-      cell: ({ row }) => {
-        const ip = getIp(row.original)
-        return ip ? formatCustomValue(d, ip.custom_fields?.[d.key]) : null
-      },
-      meta: {
-        facet: {
-          kind: "enum",
-          label: d.label,
-          get: (r: T) => {
-            const ip = getIp(r)
-            return ip ? cfFacetKey(ip.custom_fields?.[d.key]) : null
-          },
-        },
-      },
+  cols.push(
+    ...customFieldColumns<T>(opts.cfDefs ?? [], {
+      get: getIp,
+      facet: true,
+      defaultHidden: true,
     })
-  }
+  )
 
   if (opts.actions) cols.push(actionsColumn<T>(opts.actions))
   return cols

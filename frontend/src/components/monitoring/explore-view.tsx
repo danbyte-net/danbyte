@@ -85,6 +85,7 @@ export function ExploreView() {
         columns={columns}
         data={rows}
         tableId={`monitoring-explore-${groupBy}`}
+        autoColumns={false}
         exportName={`monitoring-${groupBy}`}
         exportTitle="Monitoring by group"
         flexColumn="latency"

@@ -182,16 +182,18 @@ def _model_field(model, source: str):
 
 
 def _is_fk_id(model, field, name: str) -> bool:
-    """A foreign key's raw id column (``site_id``, a ReadOnlyField sourced
-    from ``manufacturer_id``). A real field whose name happens to end in
+    """A raw id column: a foreign key's (``site_id``, a ReadOnlyField sourced
+    from ``manufacturer_id``) or an annotated one with no model field behind
+    it (``synced_from_id``). A real field whose name happens to end in
     ``_id`` - VLAN ``vlan_id``, rack ``facility_id``, ``router_id`` - is data."""
     source = field.source if field.source not in (None, "*") else name
     if model is None or not source.endswith("_id"):
         return False
+    attname = source.split(".")[-1]
     for f in model._meta.concrete_fields:
-        if f.is_relation and f.attname == source.split(".")[-1]:
-            return True
-    return False
+        if f.attname == attname:
+            return f.is_relation
+    return "." not in source and not isinstance(field, serializers.SerializerMethodField)
 
 
 def _method(serializer, field):

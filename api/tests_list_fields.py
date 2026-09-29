@@ -325,6 +325,30 @@ class EveryListTests(_Base):
         self.assertEqual(_at(row, "site.region")["name"], "Nordics")
         self.assertEqual(_at(row, "config_template.resolved")["name"], "tpl")
 
+    def test_every_table_registry_api_is_a_list(self):
+        """frontend/src/lib/tables.ts names the list each table's rows come
+        from; a path that is not a list would offer no columns (or wrong
+        ones)."""
+        import re
+        from pathlib import Path
+
+        from django.conf import settings
+
+        tables = Path(settings.BASE_DIR) / "frontend/src/lib/tables.ts"
+        if not tables.exists():
+            self.skipTest("frontend source not present")
+        paths = sorted(set(re.findall(r'"(/api/[a-z0-9/_-]+/)"', tables.read_text())))
+        self.assertGreater(len(paths), 50)
+        bad = []
+        for path in paths:
+            r = self.client.get("/api/list-fields/", {"path": path})
+            if r.status_code == 200:
+                continue
+            listed = self.client.get(path).status_code
+            if listed == 200 or r.status_code != listed:
+                bad.append(f"{path}: {r.status_code}, list {listed}")
+        self.assertEqual(bad, [])
+
     def test_every_customizable_list_serializes_custom_fields(self):
         """A model that can carry custom fields shows them on its list - else
         a field defined for it could never be seen or set."""

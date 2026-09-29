@@ -109,6 +109,19 @@ declare module "@tanstack/react-table" {
       header?: string
       value: (row: TData) => string | number | null | undefined
     }
+    /** Runs before an export when the column is shown - e.g. fetching the
+     * labels an object reference exports as, so the file holds names. */
+    prepareExport?: (rows: TData[]) => Promise<void>
+    /** Hidden until ticked in the Columns menu (a saved layout that ticked
+     * it wins). Catalog and custom-field columns set it. */
+    defaultHidden?: boolean
+    /** Section in the Columns menu's "Available" list; hand-written columns
+     * default to "Columns". */
+    group?: "fields" | "related" | "custom"
+    /** The list-row key(s) this column shows, when its id is not that key
+     * (`type` shows `device_type`) - so the catalog does not offer the same
+     * field twice. */
+    field?: string | string[]
   }
 }
 

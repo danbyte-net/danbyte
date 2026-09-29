@@ -59,6 +59,15 @@ function buildColumns(
   }))
 }
 
+/** `plugin-<plugin>-<path>`, lower-case with anything but letters, digits,
+ * `-` and `_` turned into `-`. */
+export function pluginTableId(page: Pick<PluginPage, "plugin" | "path">) {
+  return `plugin-${page.plugin}-${page.path}`
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+$/, "")
+}
+
 function PluginListPage({ page }: { page: PluginPage }) {
   const query = useQuery({
     queryKey: ["plugin-list", page.endpoint],
@@ -73,7 +82,9 @@ function PluginListPage({ page }: { page: PluginPage }) {
         columns={columns}
         data={rows}
         total={query.data?.count}
-        tableId={`plugin:${page.plugin}:${page.path}`}
+        // Slug-safe: the id is a URL segment of the saved-layout endpoint.
+        tableId={pluginTableId(page)}
+        autoColumns={{ api: page.endpoint }}
       />
     </ListPageShell>
   )

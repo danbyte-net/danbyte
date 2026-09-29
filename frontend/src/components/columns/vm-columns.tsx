@@ -204,6 +204,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
           dash
         ),
       meta: {
+        field: "power_state",
         facet: {
           kind: "enum",
           label: "Power",

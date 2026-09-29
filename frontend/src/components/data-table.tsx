@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { useDateFormat } from "@/lib/datetime"
 import {
   type ColumnDef,
   type ColumnFiltersState,
-  type ColumnOrderState,
   type ExpandedState,
   type SortingState,
   type Updater,
@@ -29,6 +29,19 @@ import {
 } from "lucide-react"
 
 import { ColumnsMenu } from "@/components/column-menu"
+import type { ColumnGroup } from "@/components/column-menu"
+import {
+  collectRowKeys,
+  customFieldColumns,
+  inlineChoiceLabel,
+  listFieldColumns,
+  mergeAutoColumns,
+} from "@/components/columns/auto-columns"
+import type { ChoiceLabel } from "@/components/columns/auto-columns"
+import { api } from "@/lib/api"
+import type { DcimChoices } from "@/lib/api"
+import { useDeviceFieldVisibility, useListFields } from "@/lib/list-fields"
+import { tableApi } from "@/lib/tables"
 import { useTablePreference } from "@/lib/use-table-preference"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { exportTable, type ExportFormat } from "@/lib/table-export"
@@ -155,13 +168,26 @@ interface DataTableProps<T> {
     sorting: SortingState
     onSortingChange: (sorting: SortingState) => void
   }
+  /** Catalog columns (#243): every field the list's rows carry and every
+   * custom field, offered hidden in the Columns menu. On by default for a
+   * `tableId` registered with an `api` in lib/tables.ts. `false` opts out;
+   * `api` points at a list path directly (a table without a registry entry);
+   * `get` finds the list row inside a wrapped row; `exclude` names fields a
+   * page leaves out on purpose. */
+  autoColumns?:
+    | false
+    | {
+        api?: string | null
+        get?: (row: T) => unknown
+        exclude?: string[]
+      }
 }
 
 // Headless data table for every list page in Danbyte. Hands the column
 // definitions in - TanStack Table handles sort + filter + group +
 // selection + visibility. The shadcn primitives provide the visual layer.
 export function DataTable<T>({
-  columns,
+  columns: ownColumns,
   data,
   total,
   groupBy,
@@ -185,6 +211,7 @@ export function DataTable<T>({
   searchPlaceholder,
   serverPagination,
   serverSorting,
+  autoColumns,
 }: DataTableProps<T>) {
   const [localSorting, setLocalSorting] = useState<SortingState>([])
   const sorting = serverSorting ? serverSorting.sorting : localSorting
@@ -195,10 +222,10 @@ export function DataTable<T>({
   }
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState("")
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
-    initialColumnVisibility ?? {}
+  // Show/hide ticks made in this session on a table without saved layouts.
+  const [sessionVisibility, setSessionVisibility] = useState<VisibilityState>(
+    {}
   )
-  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [grouping] = useState(groupBy ? [groupBy] : [])
 
@@ -233,6 +260,96 @@ export function DataTable<T>({
 
   // ─── Saved column preferences ──────────────────────────────────────────
   const pref = useTablePreference(tableId)
+
+  // ─── Catalog columns (#243) ────────────────────────────────────────────
+  // Every field the list's rows carry, and every custom field, as a hidden
+  // column the Columns menu offers. Fetched lazily - when the menu is about to
+  // open, or when the saved layout shows a column no factory wrote - so a
+  // table nobody customises costs no extra request.
+  const autoApi =
+    embedded || autoColumns === false
+      ? null
+      : autoColumns?.api !== undefined
+        ? autoColumns.api
+        : tableApi(tableId)
+  const ownIds = useMemo(
+    () => new Set(ownColumns.map((c) => c.id).filter(Boolean) as string[]),
+    [ownColumns]
+  )
+  const savedAutoShown = pref.order.some(
+    (id) => !ownIds.has(id) && !pref.hidden.includes(id)
+  )
+  const [catalogWanted, setCatalogWanted] = useState(false)
+  const catalogQuery = useListFields(autoApi, catalogWanted || savedAutoShown)
+  const catalog = catalogQuery.data
+  const deviceFields = useDeviceFieldVisibility(
+    !!catalog?.fields.some((f) => f.setting)
+  )
+  const dcimQuery = useQuery({
+    queryKey: ["dcim-choices"],
+    queryFn: () => api<DcimChoices>("/api/dcim/choices/"),
+    enabled: !!catalog?.fields.some((f) => f.choices),
+    staleTime: 60 * 60_000,
+  })
+  const qc = useQueryClient()
+  // Pages pass `get` inline; a ref keeps the built columns stable.
+  const getRow = useRef<(row: T) => unknown>((r) => r)
+  getRow.current = (autoColumns && autoColumns.get) || ((r: T): unknown => r)
+  // Offer a field only when the rows carry its top-level key; remembered so a
+  // filter that empties the table does not make columns vanish.
+  const seenKeys = useRef(new Set<string>())
+  const rowKeySig = catalog
+    ? [...collectRowKeys(data, (r) => getRow.current(r), seenKeys.current)]
+        .sort()
+        .join(" ")
+    : ""
+  const autoCols = useMemo(() => {
+    if (!catalog) return []
+    const keys = new Set(rowKeySig.split(" "))
+    const get = (r: T) => getRow.current(r)
+    const dcim = dcimQuery.data as Record<string, unknown> | undefined
+    const choiceLabel: ChoiceLabel = (f, v) => {
+      if (f.options) return inlineChoiceLabel(f, v)
+      const list = f.choices ? dcim?.[f.choices] : undefined
+      const hit = Array.isArray(list)
+        ? (list as { value: string; label: string }[]).find(
+            (o) => o.value === v
+          )
+        : undefined
+      return hit?.label ?? v
+    }
+    const fields = catalog.fields.filter(
+      (f) =>
+        keys.has(f.key.split(".")[0]) &&
+        !(f.setting && deviceFields[f.setting] === false)
+    )
+    return [
+      ...listFieldColumns<T>(fields, {
+        get,
+        sortable: !serverSorting,
+        choiceLabel,
+      }),
+      ...(keys.has("custom_fields")
+        ? customFieldColumns<T>(catalog.custom_fields, {
+            get,
+            defaultHidden: true,
+            sortable: !serverSorting,
+            queryClient: qc,
+          })
+        : []),
+    ]
+  }, [catalog, rowKeySig, deviceFields, dcimQuery.data, serverSorting, qc])
+  const excludeSig = (autoColumns && autoColumns.exclude?.join(" ")) || ""
+  const columns = useMemo(
+    () =>
+      mergeAutoColumns(
+        ownColumns,
+        autoCols,
+        excludeSig ? excludeSig.split(" ") : []
+      ),
+    [ownColumns, autoCols, excludeSig]
+  )
+
   // Natural leaf-column ids (in definition order) and the subset the user is
   // allowed to manage (hide / reorder). Pinned columns (select, actions) have
   // enableHiding === false and stay put.
@@ -249,77 +366,98 @@ export function DataTable<T>({
     return { allIds: all, manageableIds: manageable }
   }, [columns])
 
-  // Apply the saved layout. The ORDER is re-derived whenever the column set
-  // changes - data-gated columns (monitoring, range) mount only after their
-  // fetch resolves, and an order computed without them would exile them past
-  // the pinned actions column at the far right. Re-deriving is safe: pref.order
-  // tracks in-session reorders optimistically, so this is idempotent for them.
-  // HIDDEN is applied once per id (late-mounting ids included) so a user's
-  // in-session show/hide toggles are never clobbered.
-  const appliedHiddenIds = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    if (!tableId || !pref.loaded) return
-    if (pref.order.length) {
-      setColumnOrder(applyManageableOrder(allIds, manageableIds, pref.order))
+  // Visibility is derived, never copied into state once: a session tick, else
+  // the saved layout, else the column's default. The saved `order` is the set
+  // of columns a layout knows about - an id in it and not in `hidden` is
+  // shown, so ticking a hidden-by-default column sticks; an id the layout has
+  // never seen (a column added since) takes its default. A layout saved as
+  // `hidden` only (older rows) still hides exactly those.
+  const columnVisibility = useMemo<VisibilityState>(() => {
+    const known = new Set(tableId && pref.loaded ? pref.order : [])
+    const hidden = new Set(tableId && pref.loaded ? pref.hidden : [])
+    const vis: VisibilityState = {}
+    for (const c of columns) {
+      const id = c.id
+      if (!id) continue
+      vis[id] =
+        id in sessionVisibility
+          ? sessionVisibility[id]
+          : known.has(id)
+            ? !hidden.has(id)
+            : hidden.has(id)
+              ? false
+              : !(
+                  initialColumnVisibility?.[id] === false ||
+                  c.meta?.defaultHidden
+                )
     }
-    const fresh = pref.hidden.filter(
-      (id) => manageableIds.includes(id) && !appliedHiddenIds.current.has(id)
-    )
-    if (fresh.length) {
-      for (const id of fresh) appliedHiddenIds.current.add(id)
-      setColumnVisibility((v) => {
-        const next = { ...v }
-        for (const id of fresh) next[id] = false
-        return next
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return vis
   }, [
+    columns,
+    sessionVisibility,
     tableId,
     pref.loaded,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    allIds.join(" "),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    pref.order.join(" "),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    pref.hidden.join(" "),
+    pref.order,
+    pref.hidden,
+    initialColumnVisibility,
   ])
 
-  // Persisted change handlers - write through to the pref hook (no-op when
-  // there's no tableId or the layout is forced).
-  const persistHidden = (vis: VisibilityState) => {
-    if (!tableId || pref.isForced) return
-    const hidden = manageableIds.filter((id) => vis[id] === false)
-    pref.setLayout({ hidden })
-  }
+  // The saved order, re-derived whenever the column set changes - data-gated
+  // columns (monitoring, range) and catalog columns mount after their fetch,
+  // and an order computed without them would exile them past the pinned
+  // actions column. pref.order tracks edits optimistically, so this is live.
+  const columnOrder = useMemo(
+    () =>
+      tableId && pref.order.length
+        ? applyManageableOrder(
+            allIds,
+            manageableIds,
+            pref.order,
+            (id) => columnVisibility[id] !== false
+          )
+        : [],
+    [tableId, pref.order, allIds, manageableIds, columnVisibility]
+  )
+
+  // A show/hide toggle from TanStack (the plain Columns dropdown): a session
+  // tick, and on a saved-layout table also written through as a layout.
   const onColumnVisibilityChange = (updater: Updater<VisibilityState>) => {
-    setColumnVisibility((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater
-      persistHidden(next)
-      return next
+    const next =
+      typeof updater === "function" ? updater(columnVisibility) : updater
+    const changed: VisibilityState = {}
+    for (const [id, v] of Object.entries(next))
+      if (columnVisibility[id] !== v) changed[id] = v
+    setSessionVisibility((prev) => ({ ...prev, ...changed }))
+    if (!tableId || pref.isForced) return
+    const seq = manageableSeq(columnOrder, allIds, manageableIds)
+    const vis = { ...columnVisibility, ...changed }
+    pref.setLayout({
+      order: seq,
+      hidden: seq.filter((id) => vis[id] === false),
     })
   }
   // Commit a full layout from the Columns menu in ONE atomic write - order +
   // hidden together. (The old per-toggle auto-save could race itself and drop
   // changes / re-check boxes; staging a draft and saving once fixes that.)
+  // Saved ids that are not mounted right now - a catalog column before the
+  // catalog loaded, a data-gated column - are carried through, not dropped.
   const applyLayout = (order: string[], hidden: string[]) => {
     if (pref.isForced) return
-    setColumnOrder(applyManageableOrder(allIds, manageableIds, order))
-    // Raw visibility set (bypasses the per-toggle persist wrapper) - the single
-    // pref.setLayout below is the one and only write.
-    setColumnVisibility(() => {
-      const vis: VisibilityState = {}
-      for (const id of hidden) if (manageableIds.includes(id)) vis[id] = false
-      return vis
-    })
-    if (tableId) pref.setLayout({ order, hidden })
+    const mounted = new Set(manageableIds)
+    const nextOrder = carryUnmounted(order, pref.order, mounted)
+    const nextHidden = [
+      ...hidden,
+      ...pref.hidden.filter((id) => !mounted.has(id) && !hidden.includes(id)),
+    ]
+    setSessionVisibility({})
+    if (tableId) pref.setLayout({ order: nextOrder, hidden: nextHidden })
   }
   const resetLayout = () => {
-    setColumnOrder([])
-    setColumnVisibility(initialColumnVisibility ?? {})
-    appliedHiddenIds.current.clear()
+    setSessionVisibility({})
     pref.reset()
   }
+  const groupFor = (id: string): ColumnGroup =>
+    columns.find((c) => c.id === id)?.meta?.group ?? "columns"
   // Default to every group expanded so the child rows show on first
   // render - collapsing is interactive but a fresh page should reveal
   // its data, not hide it. When the data changes (filter applied, new
@@ -351,7 +489,6 @@ export function DataTable<T>({
     defaultColumn: { sortingFn: naturalSortingFn },
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: onColumnVisibilityChange,
-    onColumnOrderChange: setColumnOrder,
     onRowSelectionChange: setRowSelection,
     onExpandedChange: setExpanded,
     onPaginationChange: setPagination,
@@ -473,13 +610,26 @@ export function DataTable<T>({
                           }
                           // A selection always wins; otherwise a server-paged
                           // table exports everything its filters match.
-                          if (exportAll && selectedCount === 0) {
-                            void exportAll().then((rows) =>
-                              exportTable(table, fmt, opts, rows)
-                            )
+                          const all =
+                            exportAll && selectedCount === 0
+                              ? exportAll
+                              : undefined
+                          // Shown columns that need data first (object
+                          // references export as names, not ids).
+                          const prepares = table
+                            .getVisibleLeafColumns()
+                            .map((c) => c.columnDef.meta?.prepareExport)
+                            .filter((f) => !!f)
+                          if (!all && !prepares.length) {
+                            exportTable(table, fmt, opts)
                             return
                           }
-                          exportTable(table, fmt, opts)
+                          void (async () => {
+                            const rows = all ? await all() : undefined
+                            const source = rows ?? exportSourceRows(table)
+                            await Promise.all(prepares.map((f) => f(source)))
+                            exportTable(table, fmt, opts, rows)
+                          })()
                         }}
                       >
                         {label}
@@ -500,14 +650,17 @@ export function DataTable<T>({
                   labelFor={(id) =>
                     resolveColumnLabel(id, table.getColumn(id)?.columnDef)
                   }
-                  isHidden={(id) =>
-                    !(table.getColumn(id)?.getIsVisible() ?? true)
-                  }
+                  isHidden={(id) => columnVisibility[id] === false}
+                  groupFor={groupFor}
+                  loading={!!autoApi && catalogWanted && catalogQuery.isLoading}
+                  onIntent={() => autoApi && setCatalogWanted(true)}
                   onApply={applyLayout}
                   onReset={resetLayout}
                 />
               ) : (
-                <DropdownMenu>
+                <DropdownMenu
+                  onOpenChange={(o) => o && autoApi && setCatalogWanted(true)}
+                >
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
@@ -518,18 +671,22 @@ export function DataTable<T>({
                       <ChevronDown className="ml-1 h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuContent
+                    align="end"
+                    className="max-h-[55vh] w-56 overflow-y-auto"
+                  >
                     {table
                       .getAllColumns()
                       .filter((c) => c.getCanHide())
                       .map((c) => (
                         <DropdownMenuCheckboxItem
                           key={c.id}
-                          className="capitalize"
                           checked={c.getIsVisible()}
                           onCheckedChange={(v) => c.toggleVisibility(!!v)}
                         >
-                          {c.id}
+                          <span className="truncate">
+                            {resolveColumnLabel(c.id, c.columnDef)}
+                          </span>
                         </DropdownMenuCheckboxItem>
                       ))}
                   </DropdownMenuContent>
@@ -603,7 +760,10 @@ export function DataTable<T>({
                       key={row.id}
                       className="bg-muted/30 hover:bg-muted/40"
                     >
-                      <TableCell colSpan={columns.length} className="py-2">
+                      <TableCell
+                        colSpan={table.getVisibleLeafColumns().length}
+                        className="py-2"
+                      >
                         <button
                           type="button"
                           onClick={row.getToggleExpandedHandler()}
@@ -680,7 +840,7 @@ export function DataTable<T>({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  colSpan={table.getVisibleLeafColumns().length}
                   className="h-24 text-center text-sm text-muted-foreground"
                 >
                   No results.
@@ -811,19 +971,48 @@ function prettifyName(s: string): string {
   return s.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-// Prettify a column id for the Columns menu: split on `_`/`-`, capitalize each
-// word, join with spaces ("primary_ip" → "Primary Ip").
+// Words a column id spells in lower case that read as acronyms.
+const ACRONYMS: Record<string, string> = {
+  ip: "IP",
+  ips: "IPs",
+  vm: "VM",
+  vms: "VMs",
+  vlan: "VLAN",
+  vlans: "VLANs",
+  vrf: "VRF",
+  vrfs: "VRFs",
+  sla: "SLA",
+  dhcp: "DHCP",
+  dns: "DNS",
+  mac: "MAC",
+  mtu: "MTU",
+  rd: "RD",
+  cidr: "CIDR",
+  cid: "CID",
+  id: "ID",
+  asn: "ASN",
+  vcpus: "vCPUs",
+  oob: "OOB",
+  u: "U",
+}
+
+// Prettify a column id for the Columns menu: split on `_`/`-`, sentence case,
+// acronyms kept ("primary_ip" → "Primary IP", "vlan_id" → "VLAN ID").
 function prettifyColumnId(id: string): string {
   return id
     .split(/[_-]/)
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w, i) => {
+      const lower = w.toLowerCase()
+      if (ACRONYMS[lower]) return ACRONYMS[lower]
+      return i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : lower
+    })
     .join(" ")
 }
 
 // Resolve the human-readable label shown for a column in the Columns menu, in
 // priority order: explicit `meta.label` → plain-string `header` → prettified id.
-function resolveColumnLabel(
+export function resolveColumnLabel(
   id: string,
   columnDef?: { header?: unknown; meta?: { label?: string } }
 ): string {
@@ -843,36 +1032,81 @@ function resolveColumnLabel(
 /** Slot ids the sequence has never seen (new feature columns) at their
  * *designed* position - right after the nearest preceding column the sequence
  * knows - instead of appending them at the far end, where a saved layout from
- * before the column existed would banish it off-screen. */
+ * before the column existed would banish it off-screen. A saved layout lists
+ * its shown columns before its hidden ones, so the anchor is the nearest
+ * *shown* predecessor when `isShown` says which those are - a hidden one sits
+ * in the tail and would drag the new column past everything on screen. */
 function insertUnknownAtDesignedPosition(
   norm: string[],
-  manageableIds: string[]
+  manageableIds: string[],
+  isShown?: (id: string) => boolean
 ): void {
   for (const id of manageableIds) {
     if (norm.includes(id)) continue
     const defIdx = manageableIds.indexOf(id)
-    let insertAt = 0
-    for (let j = defIdx - 1; j >= 0; j--) {
-      const at = norm.indexOf(manageableIds[j])
-      if (at !== -1) {
-        insertAt = at + 1
-        break
+    let insertAt = -1
+    for (const wantShown of isShown ? [true, false] : [false]) {
+      for (let j = defIdx - 1; j >= 0; j--) {
+        const prev = manageableIds[j]
+        const at = norm.indexOf(prev)
+        if (at !== -1 && (!wantShown || isShown!(prev))) {
+          insertAt = at + 1
+          break
+        }
       }
+      if (insertAt !== -1) break
     }
-    norm.splice(insertAt, 0, id)
+    norm.splice(Math.max(insertAt, 0), 0, id)
   }
 }
 
 export function applyManageableOrder(
   allIds: string[],
   manageableIds: string[],
-  seq: string[]
+  seq: string[],
+  isShown?: (id: string) => boolean
 ): string[] {
   const mset = new Set(manageableIds)
   const norm = seq.filter((id) => mset.has(id))
-  insertUnknownAtDesignedPosition(norm, manageableIds)
+  insertUnknownAtDesignedPosition(norm, manageableIds, isShown)
   let i = 0
   return allIds.map((id) => (mset.has(id) ? norm[i++] : id))
+}
+
+/** `order` from the Columns menu, with the saved ids it could not show (not
+ * mounted right now) put back after the nearest saved predecessor it kept. */
+export function carryUnmounted(
+  order: string[],
+  saved: string[],
+  mounted: Set<string>
+): string[] {
+  const out = [...order]
+  saved.forEach((id, i) => {
+    if (mounted.has(id) || out.includes(id)) return
+    let at = -1
+    for (let j = i - 1; j >= 0 && at === -1; j--) at = out.indexOf(saved[j])
+    out.splice(at + 1, 0, id)
+  })
+  return out
+}
+
+/** The rows an export writes when it is not handed any: the selection, else
+ * everything the filters match. */
+function exportSourceRows<T>(table: {
+  getSelectedRowModel: () => {
+    flatRows: { original: T; getIsGrouped: () => boolean }[]
+  }
+  getFilteredRowModel: () => {
+    flatRows: { original: T; getIsGrouped: () => boolean }[]
+  }
+}): T[] {
+  const selected = table
+    .getSelectedRowModel()
+    .flatRows.filter((r) => !r.getIsGrouped())
+  const source = selected.length
+    ? selected
+    : table.getFilteredRowModel().flatRows.filter((r) => !r.getIsGrouped())
+  return source.map((r) => r.original)
 }
 
 function manageableSeq(

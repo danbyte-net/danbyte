@@ -30,7 +30,7 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { vrfColumn } from "@/components/cells/vrf-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { formatCustomValue } from "@/components/custom-field-display"
+import { customFieldColumns } from "@/components/columns/auto-columns"
 import {
   actionsColumn,
   type ActionsColumnOpts,
@@ -110,14 +110,6 @@ export interface PrefixColumnOpts<T extends Prefix = Prefix> {
   vrfGroupColumn?: boolean
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
-}
-
-/** Stable facet bucket for a custom-field value (null = not counted). */
-function cfFacetKey(v: unknown): string | null {
-  if (v === null || v === undefined || v === "") return null
-  if (typeof v === "boolean") return v ? "Yes" : "No"
-  if (Array.isArray(v)) return v.map(String).join(", ")
-  return String(v)
 }
 
 export function buildPrefixColumns<T extends Prefix = Prefix>(
@@ -289,6 +281,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
         )
       },
       meta: {
+        field: "vlan.zone",
         facet: {
           kind: "enum",
           label: "Zone",
@@ -370,23 +363,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
   // custom_fields blob; hide any you don't want via the Columns menu. Each
   // carries an enum facet over its observed values, so the filter rail
   // adapts to whatever custom fields the tenant defined.
-  for (const d of opts.cfDefs ?? []) {
-    cols.push({
-      id: `cf_${d.key}`,
-      header: d.label,
-      enableSorting: false,
-      accessorFn: (r) => r.custom_fields?.[d.key],
-      cell: ({ row }) =>
-        formatCustomValue(d, row.original.custom_fields?.[d.key]),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: d.label,
-          get: (r: T) => cfFacetKey(r.custom_fields?.[d.key]),
-        },
-      },
-    })
-  }
+  cols.push(...customFieldColumns<T>(opts.cfDefs ?? [], { facet: true }))
 
   if (opts.vrfGroupColumn) {
     cols.push({
@@ -399,6 +376,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
       header: "VRF",
       cell: ({ row }) => row.original.vrf?.name ?? "Global",
       meta: {
+        field: "vrf",
         facet: {
           kind: "enum",
           label: "VRF",

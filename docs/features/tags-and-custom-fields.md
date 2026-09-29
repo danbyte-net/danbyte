@@ -121,7 +121,13 @@ the API like any other.
 6. Save.
 
 The field now appears on every matching object's form, with the right kind of
-input for its type, and on the object's overview.
+input for its type, and on the object's overview. It is also a column on every
+list of those objects: open the list's **Columns** menu and tick it under
+**Custom fields** (it starts hidden). The column sorts - numbers by value,
+dates by date - and exports with its value as text (an object reference
+exports its name). Anyone who can view the list sees the column; a field local
+to one site is offered only to people who work at that site. See
+[Table columns](table-preferences.md).
 
 !!! note "Required and choice fields are enforced"
     When you save an object, Danbyte checks its custom fields: required fields

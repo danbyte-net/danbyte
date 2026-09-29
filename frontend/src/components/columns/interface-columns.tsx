@@ -481,6 +481,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
       id: "cables",
       accessorKey: "cable_count",
       header: opts.cableControl ? "Cable" : "Cables",
+      meta: { field: ["cable", "reservation", "mark_connected"] },
       cell: ({ row }) => {
         const cable = row.original.cable
         if (opts.cableControl && cable)

@@ -44,6 +44,7 @@ ACRONYM_WORDS: dict[str, str] = {
     "u": "U", "oui": "OUI", "wlan": "WLAN", "vpn": "VPN", "cidr": "CIDR",
     "wwn": "WWN", "vrfs": "VRFs", "vlans": "VLANs", "ips": "IPs", "vms": "VMs",
     "macs": "MACs", "asns": "ASNs", "rirs": "RIRs", "l2vpns": "L2VPNs",
+    "mh": "MH",
 }
 
 # Timestamps read as the moment, not the column name.

@@ -298,6 +298,7 @@ export function buildDeviceColumns<T extends Device = Device>(
           dash
         ),
       meta: {
+        field: "device_type",
         facet: {
           kind: "enum",
           label: "Type",
@@ -330,6 +331,7 @@ export function buildDeviceColumns<T extends Device = Device>(
         )
       },
       meta: {
+        field: "device_type.manufacturer",
         facet: {
           kind: "enum",
           label: "Manufacturer",

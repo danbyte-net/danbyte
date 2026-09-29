@@ -1,15 +1,12 @@
 import { useMemo, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Lock } from "lucide-react"
 import { toast } from "sonner"
 
 import { TABLES, type TableMeta } from "@/lib/tables"
-import {
-  useTablePreference,
-  putTableDefault,
-  deleteTableDefault,
-} from "@/lib/use-table-preference"
+import { putTableDefault, deleteTableDefault } from "@/lib/use-table-preference"
+import { api, type ColumnPref, type ColumnPrefSummary } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -26,6 +23,15 @@ export const Route = createFileRoute("/settings/table-defaults")({
 function TableDefaultsPage() {
   const { canManageDeployment, isLoading } = useMe()
   const [q, setQ] = useState("")
+  // One summary for every table (lock state), not one request per row - the
+  // full layout is only fetched when a row is published.
+  const summary = useQuery({
+    queryKey: ["col-prefs-bulk"],
+    queryFn: () =>
+      api<Record<string, ColumnPrefSummary>>("/api/prefs/columns/"),
+    staleTime: 60_000,
+    enabled: canManageDeployment,
+  })
 
   // Fifty tables in one flat list, each repeating its area underneath the
   // name and throwing its actions at the far edge of a full-width card, was
@@ -97,7 +103,11 @@ function TableDefaultsPage() {
               </h3>
               <div className="divide-y divide-border rounded-md border border-border">
                 {list.map((t) => (
-                  <AdminTableRow key={t.id} table={t} />
+                  <AdminTableRow
+                    key={t.id}
+                    table={t}
+                    isForced={summary.data?.[t.id]?.is_forced ?? false}
+                  />
                 ))}
               </div>
             </div>
@@ -108,19 +118,32 @@ function TableDefaultsPage() {
   )
 }
 
-function AdminTableRow({ table }: { table: TableMeta }) {
+function AdminTableRow({
+  table,
+  isForced,
+}: {
+  table: TableMeta
+  isForced: boolean
+}) {
   const qc = useQueryClient()
-  const pref = useTablePreference(table.id)
-  const invalidate = () =>
+  const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["col-pref", table.id] })
+    qc.invalidateQueries({ queryKey: ["col-prefs-bulk"] })
+  }
 
+  // Publishes the layout you have on that table right now.
   const publish = useMutation({
-    mutationFn: (forced: boolean) =>
-      putTableDefault(table.id, {
-        order: pref.order,
-        hidden: pref.hidden,
+    mutationFn: async (forced: boolean) => {
+      const mine = await qc.fetchQuery({
+        queryKey: ["col-pref", table.id],
+        queryFn: () => api<ColumnPref>(`/api/prefs/columns/${table.id}/`),
+      })
+      return putTableDefault(table.id, {
+        order: mine.data?.order ?? [],
+        hidden: mine.data?.hidden ?? [],
         forced,
-      }),
+      })
+    },
     onSuccess: (_d, forced) => {
       toast.success(
         forced
@@ -146,7 +169,7 @@ function AdminTableRow({ table }: { table: TableMeta }) {
   return (
     <div className="flex items-center gap-1 px-3 py-1.5 text-sm">
       <span className="min-w-0 flex-1 truncate">{table.label}</span>
-      {pref.isForced && (
+      {isForced && (
         <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
           <Lock className="h-3 w-3" /> Locked
         </span>
@@ -165,9 +188,9 @@ function AdminTableRow({ table }: { table: TableMeta }) {
         size="sm"
         className="h-7 shrink-0 px-2 text-xs"
         disabled={busy}
-        onClick={() => publish.mutate(!pref.isForced)}
+        onClick={() => publish.mutate(!isForced)}
       >
-        {pref.isForced ? "Unlock" : "Lock"}
+        {isForced ? "Unlock" : "Lock"}
       </Button>
       <Button
         variant="ghost"
