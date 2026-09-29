@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from django.apps import apps
+from django.core.exceptions import ValidationError
 
 # ─── Customizable models (applies_to) ────────────────────────────────────────
 
@@ -164,7 +165,18 @@ def resolve_labels(slug: str, ids: list[str], tenant=None, user=None) -> list[di
     ref = reference_model(slug)
     if ref is None or not ids:
         return []
-    qs = ref.model.objects.filter(pk__in=ids)
+    # A malformed stored value (not a UUID, not a number) would make the
+    # whole batch's query fail; it is only an unknown id.
+    pk = ref.model._meta.pk
+    valid = []
+    for i in ids:
+        try:
+            valid.append(pk.to_python(i))
+        except (ValidationError, TypeError, ValueError):
+            continue
+    if not valid:
+        return []
+    qs = ref.model.objects.filter(pk__in=valid)
     if ref.select_related:
         qs = qs.select_related(*ref.select_related)
     if ref.tenant_field and tenant is not None:

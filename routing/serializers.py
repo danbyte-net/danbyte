@@ -947,6 +947,9 @@ class BGPSessionSerializer(
     NumIdModelSerializer,
 ):
     cf_model = "bgpsession"
+    # The resolved knob set the session page draws, not one value a column
+    # can show (see api.list_fields).
+    list_columns_exclude = ("effective",)
 
     instance = BGPInstanceMiniSerializer(read_only=True)
     instance_id = TenantScopedPrimaryKeyRelatedField(

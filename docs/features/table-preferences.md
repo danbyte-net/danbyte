@@ -35,7 +35,7 @@ A table is not limited to the columns its page was designed with. The
 |---|---|
 | **Columns** | The table's own columns you have hidden. |
 | **Fields** | Every other field the list's rows carry - a device's asset tag, airflow, rack position, created date. |
-| **Related** | Linked objects, including one step further out: a device's **Region** (its site's region), location, rack, platform, primary / secondary / OOB IP, config template. |
+| **Related** | Linked objects, including one step further out: a device's **Region** (its site's region), location, rack, platform, primary / secondary / OOB IP, config template. An interface's **Link peer** reads as the far device and port (`sw1 · Gi1/0/1`). |
 | **Custom fields** | Every custom field defined for that object type. |
 
 These columns start hidden, so a table looks the same until you tick one. They
@@ -47,12 +47,14 @@ The list is built from what the list's rows actually contain (see
 added to a list later appears here on its own - nobody maintains a list of
 columns per table. It never adds data: you only see fields the list already
 sends to you. Device fields an administrator has switched off (**Settings →
-Device fields**, e.g. airflow and cluster) are not offered.
+Device fields**, e.g. airflow and cluster) are not offered, and neither are
+fields with nothing to show in a cell - internal flags, sets of figures, and
+counts the detail page computes for one object only.
 
 !!! tip "Filtering by one of these columns"
     The filter rail keeps its designed facets. To filter on any other field,
-    use the advanced filter expression (for example `location.name = "Hall A"`
-    or `custom_fields.owner = "noc"`).
+    use the advanced filter expression (for example `location.name = "Hall A"`,
+    `site.region = "Nordics"` or `custom_fields.owner = "noc"`).
 
 ## Sorting
 
@@ -85,9 +87,10 @@ under **Settings → Table layouts**:
     Danbyte shows the most specific layout that applies: a **locked** tenant
     default wins over everything; otherwise **your own** saved layout; otherwise
     the tenant default; otherwise the table's natural order. When a table is
-    locked, its column controls are disabled and a lock icon appears - and a
-    column added to the table since the lock stays hidden until the
-    administrator publishes again.
+    locked, its column controls are disabled and a lock icon appears. A
+    column added to Danbyte since the lock takes its default, as in any saved
+    layout: a new built-in column is shown, fields and custom fields stay
+    hidden until the administrator publishes a layout that shows them.
 
 !!! note "What a saved layout records"
     A layout remembers the columns it knew about and which of them were

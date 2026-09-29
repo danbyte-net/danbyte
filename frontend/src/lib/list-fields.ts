@@ -35,7 +35,8 @@ export interface ListField {
   related?: string
   /** The parent's label for a nested field ("Site" for `site.region`). */
   via?: string
-  options?: { value: string; label: string }[]
+  /** Inline options; a value may be a number (rack width 19). */
+  options?: { value: string | number; label: string }[]
   /** A /api/dcim/choices/ list key, for long taxonomies. */
   choices?: string
   /** The device-field switch (Settings → Device fields) that hides it. */

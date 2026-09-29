@@ -12,8 +12,12 @@ the exclusions are curated:
 
 * ``@detail_only`` getters (``api.serializers.detail_only``) - they read 0 or
   empty on a list, so a column of them would be a column of lies;
-* a serializer's ``list_columns_exclude`` - internal render settings nobody
-  wants as a column.
+* a serializer's ``list_columns_exclude`` - internal render settings, flags
+  and figure sets nobody wants as a column, and single-instance tab counts
+  that are not ``@detail_only`` (they gate on ``isinstance(self.instance, …)``
+  because the serializer is also nested ``many=True`` elsewhere);
+* a nested list of records none of which has a name (a circuit's
+  terminations, an OSPF instance's interfaces) - a cell has nothing to say.
 
 The catalog never adds data. It describes what the list serializer already
 returns; a new column comes from a reviewed serializer change (with its
@@ -52,6 +56,13 @@ SKIP_FIELD_CLASSES = (
     serializers.HStoreField, serializers.FileField, serializers.HiddenField,
     serializers.ManyRelatedField, serializers.PrimaryKeyRelatedField,
     serializers.MultipleChoiceField,
+)
+
+# Keys that name an object in a cell - the SPA's objectName() reads the same
+# (frontend/src/components/columns/auto-columns.tsx).
+NAME_KEYS = (
+    "name", "label", "display", "cidr", "ip_address", "prefix", "address",
+    "mac_address", "cid", "username", "slug", "asn",
 )
 
 # Inline an option list up to this long; longer lists are either named in
@@ -243,7 +254,12 @@ def _kind_from_method(serializer, field) -> str | None:
     fn = _method(serializer, field)
     if fn is None:
         return None
-    annotated = getattr(fn, "_spectacular_annotation", None)
+    # ``@extend_schema_field(X)`` stores ``{"field": X, …}`` on the getter.
+    # Only a scalar type decides the kind here: a getter typed as a list or
+    # dict field often returns named objects (MAC addresses), which the
+    # model field or the value's own shape describes better.
+    ann = getattr(fn, "_spectacular_annotation", None)
+    annotated = ann.get("field") if isinstance(ann, dict) else ann
     if annotated is not None:
         if isinstance(annotated, OpenApiTypes):
             kind = _OPENAPI_KINDS.get(annotated)
@@ -253,7 +269,7 @@ def _kind_from_method(serializer, field) -> str | None:
             inst = annotated() if isinstance(annotated, type) else annotated
             if isinstance(inst, serializers.Field):
                 kind = _kind_from_field_class(inst)
-                if kind:
+                if kind and kind != "skip-structure":
                     return kind
     try:
         hints = typing.get_type_hints(fn)
@@ -361,6 +377,9 @@ def _describe(serializer, name, field, model, model_label, *, nested=False) -> L
         child_model = getattr(getattr(field.child, "Meta", None), "model", None)
         from core.models import Tag
 
+        child_fields = getattr(field.child, "fields", {})
+        if not any(k in child_fields for k in NAME_KEYS):
+            return None  # records without a name: nothing for a cell to say
         kind = "tags" if child_model is Tag else "objects"
         related = child_model._meta.label_lower if child_model else None
     elif isinstance(field, serializers.BaseSerializer):

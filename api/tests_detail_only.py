@@ -55,6 +55,31 @@ def _compares_action_to_list(fn: ast.FunctionDef) -> bool:
     return False
 
 
+def _gates_on_one_instance(fn: ast.FunctionDef) -> bool:
+    """True when the body asks ``isinstance(self.instance, …)`` - a getter
+    that only answers for a single object and reads 0 or empty otherwise."""
+    for node in ast.walk(fn):
+        if (
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "isinstance"
+            and node.args
+            and isinstance(node.args[0], ast.Attribute)
+            and node.args[0].attr == "instance"
+            and getattr(node.args[0].value, "id", None) == "self"
+        ):
+            return True
+    return False
+
+
+def _list_columns_exclude(cls: ast.ClassDef) -> set[str]:
+    for node in cls.body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(t, "id", None) == "list_columns_exclude" for t in node.targets
+        ):
+            return set(ast.literal_eval(node.value))
+    return set()
+
+
 def _decorated_detail_only(fn: ast.FunctionDef) -> bool:
     for d in fn.decorator_list:
         target = d.func if isinstance(d, ast.Call) else d
@@ -84,6 +109,33 @@ class DetailOnlyConventionTests(SimpleTestCase):
         self.assertEqual(
             offenders, [],
             "branch on the list action with @detail_only(default) instead",
+        )
+
+    def test_single_instance_getters_are_not_list_columns(self):
+        """A getter gated on ``isinstance(self.instance, …)`` (kept because
+        the serializer is also nested ``many=True``) reads 0 on every list
+        row, so it must be ``@detail_only`` or in ``list_columns_exclude``."""
+        root = Path(settings.BASE_DIR)
+        offenders = []
+        for rel in SERIALIZER_MODULES:
+            path = root / rel
+            if not path.exists():
+                continue
+            tree = ast.parse(path.read_text(), filename=rel)
+            for cls in ast.walk(tree):
+                if not isinstance(cls, ast.ClassDef):
+                    continue
+                excluded = _list_columns_exclude(cls)
+                for fn in cls.body:
+                    if not isinstance(fn, ast.FunctionDef) or not fn.name.startswith("get_"):
+                        continue
+                    if not _gates_on_one_instance(fn) or _decorated_detail_only(fn):
+                        continue
+                    if fn.name[len("get_"):] not in excluded:
+                        offenders.append(f"{rel}:{fn.lineno} {cls.name}.{fn.name}")
+        self.assertEqual(
+            offenders, [],
+            "add the field to the serializer's list_columns_exclude",
         )
 
 

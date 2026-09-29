@@ -106,6 +106,9 @@ class HolidayCalendarViewSet(TenantScopedViewSet):
 
 
 class SlaAgreementSerializer(serializers.ModelSerializer):
+    # The period headline is a set of figures the SLA page draws, not one
+    # value a column can show (see api.list_fields).
+    list_columns_exclude = ("current",)
     customer_detail = serializers.SerializerMethodField()
     sites = serializers.PrimaryKeyRelatedField(
         queryset=Site.objects.all(), many=True, required=False

@@ -387,7 +387,10 @@ export function discoverFields(rows: unknown[]): FieldInfo[] {
         note(key, v) // the object itself (name/slug)
         for (const [k2, v2] of Object.entries(v as Record<string, unknown>)) {
           if (SKIP_KEYS.has(k2) || isRawId(k2, v2)) continue
-          if (v2 !== null && typeof v2 !== "object") note(`${key}.${k2}`, v2)
+          if (v2 === null || Array.isArray(v2)) continue
+          // A scalar, or a named object one step out (a device's
+          // site.region) - it filters by its name like a top-level one.
+          note(`${key}.${k2}`, v2)
         }
       } else {
         note(key, v)

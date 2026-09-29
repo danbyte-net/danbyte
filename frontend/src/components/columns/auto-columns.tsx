@@ -42,6 +42,7 @@ export function getPath(row: unknown, path: string): unknown {
   return v
 }
 
+// The backend's list_fields.NAME_KEYS reads the same keys.
 const NAME_KEYS = [
   "name",
   "label",
@@ -54,6 +55,7 @@ const NAME_KEYS = [
   "cid",
   "username",
   "slug",
+  "asn",
 ]
 
 /** The text an object-shaped value reads as ("HQ", "10.0.0.0/24"). */
@@ -66,6 +68,40 @@ export function objectName(v: unknown): string {
     if (x != null && x !== "" && typeof x !== "object") return String(x)
   }
   return ""
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const NOT_A_PART = /^(id|numid|slug|color)$|_(id|at|color)$/
+
+/** What a single record with no name of its own reads as: its first few
+ * words - text values and the names of the records it points at, skipping
+ * ids, timestamps and colour-carrying catalogs (a status describes a
+ * record, it does not name it). A link peer reads "sw1 · Gi1/0/1", a BGP
+ * instance "core1 · 64599", an unlabelled cable "#50". */
+function objectSummary(o: Row): string {
+  const parts: string[] = []
+  for (const [k, x] of Object.entries(o)) {
+    if (parts.length === 3) break
+    if (NOT_A_PART.test(k) || x == null || x === "") continue
+    if (typeof x === "string") {
+      if (!UUID.test(x)) parts.push(x)
+    } else if (typeof x === "object" && !Array.isArray(x) && !("color" in x)) {
+      const n = objectName(x)
+      if (n) parts.push(n)
+    }
+  }
+  if (parts.length) return parts.join(" · ")
+  return typeof o.numid === "number" ? `#${o.numid}` : ""
+}
+
+/** The text one object-shaped value reads as: its name, else a summary of
+ * it. Items of a list use `objectName` alone - a list of records with no
+ * name has nothing a cell can say. */
+export function objectText(v: unknown): string {
+  const name = objectName(v)
+  if (name || v == null || typeof v !== "object" || Array.isArray(v))
+    return name
+  return objectSummary(v as Row)
 }
 
 function isEmpty(v: unknown): boolean {
@@ -82,7 +118,7 @@ function isEmpty(v: unknown): boolean {
 export type ChoiceLabel = (field: ListField, value: string) => string
 
 export const inlineChoiceLabel: ChoiceLabel = (field, value) =>
-  field.options?.find((o) => o.value === value)?.label ?? value
+  field.options?.find((o) => String(o.value) === value)?.label ?? value
 
 /** Plain text for a catalog value - what an export writes. */
 export function autoText(
@@ -92,14 +128,17 @@ export function autoText(
 ): string {
   if (isEmpty(v)) return ""
   if (typeof v === "boolean") return v ? "Yes" : "No"
-  if (field.kind === "choice" && typeof v === "string")
-    return choiceLabel(field, v)
+  if (
+    field.kind === "choice" &&
+    (typeof v === "string" || typeof v === "number")
+  )
+    return choiceLabel(field, String(v))
   if (Array.isArray(v))
     return v
       .map((x) => objectName(x))
       .filter(Boolean)
       .join(", ")
-  if (typeof v === "object") return objectName(v)
+  if (typeof v === "object") return objectText(v)
   return String(v)
 }
 
@@ -111,6 +150,8 @@ export function autoSortValue(
   choiceLabel: ChoiceLabel = inlineChoiceLabel
 ): string | number | undefined {
   if (isEmpty(v)) return undefined
+  if (field.kind === "choice")
+    return autoText(field, v, choiceLabel) || undefined
   if (typeof v === "number") return v
   if (typeof v === "boolean") return v ? 1 : 0
   if (field.kind === "number") {
@@ -126,13 +167,21 @@ function relatedSlug(related?: string): string | undefined {
 
 /** One object value: a colour badge when it carries a colour (statuses,
  * roles, zones), else its name - linked to its page when it has one and you
- * may view it. */
-function ObjectRef({ value, related }: { value: unknown; related?: string }) {
+ * may view it. `item` is one of a list, which reads by its name alone. */
+function ObjectRef({
+  value,
+  related,
+  item,
+}: {
+  value: unknown
+  related?: string
+  item?: boolean
+}) {
   const { canDo } = useMe()
   if (value == null || typeof value !== "object")
     return value == null ? dash : <span>{String(value)}</span>
   const o = value as Row
-  const name = objectName(o)
+  const name = item ? objectName(o) : objectText(o)
   if (!name) return dash
   const id = typeof o.id === "string" ? o.id : undefined
   const route = related ? objectDetailRoute(related) : undefined
@@ -186,7 +235,7 @@ export function AutoCell({
       <span className="inline-flex items-center gap-1">
         {shown.map((x, i) => (
           <span key={i} className="inline-flex items-center">
-            <ObjectRef value={x} related={field.related} />
+            <ObjectRef value={x} related={field.related} item />
             {i < shown.length - 1 && <span>,</span>}
           </span>
         ))}
@@ -474,6 +523,36 @@ export function collectRowKeys<T>(
     if (o && typeof o === "object") for (const k of Object.keys(o)) seen.add(k)
   }
   return seen
+}
+
+/** Catalog fields whose values read as nothing: every value seen so far
+ * that is not empty renders no text (a figure set, a list of records with no
+ * name), so a column of them would be a column of dashes. `readable` and
+ * `unreadable` persist across calls, like `collectRowKeys`' `seen`; one
+ * readable value keeps a field for good. */
+export function unreadableFields<T>(
+  fields: ListField[],
+  rows: T[],
+  get: (row: T) => unknown,
+  readable: Set<string>,
+  unreadable: Set<string>,
+  limit = 50
+): string[] {
+  const sample = rows.slice(0, limit)
+  for (const f of fields) {
+    if (readable.has(f.key)) continue
+    const path = f.path ?? f.key
+    for (const r of sample) {
+      const v = getPath(get(r), path)
+      if (isEmpty(v)) continue
+      if (autoText(f, v)) {
+        readable.add(f.key)
+        break
+      }
+      unreadable.add(f.key)
+    }
+  }
+  return [...unreadable].filter((k) => !readable.has(k)).sort()
 }
 
 /** The custom-field keys any of the first rows holds a value for. */

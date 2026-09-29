@@ -20,6 +20,8 @@ LABEL_OVERRIDES: dict[tuple[str, str], str] = {
     ("api.interface", "poe_type"): "PoE type",
     ("api.interface", "vlan"): "Untagged VLAN",
     ("api.vminterface", "vlan"): "Untagged VLAN",
+    ("api.rack", "desc_units"): "Descending units",
+    ("api.racktype", "desc_units"): "Descending units",
 }
 
 # Field names whose verbose_name is an acronym, on every model.
@@ -44,8 +46,17 @@ ACRONYM_WORDS: dict[str, str] = {
     "u": "U", "oui": "OUI", "wlan": "WLAN", "vpn": "VPN", "cidr": "CIDR",
     "wwn": "WWN", "vrfs": "VRFs", "vlans": "VLANs", "ips": "IPs", "vms": "VMs",
     "macs": "MACs", "asns": "ASNs", "rirs": "RIRs", "l2vpns": "L2VPNs",
-    "mh": "MH",
+    "mh": "MH", "pmf": "PMF", "qr": "QR", "cn": "CN", "dn": "DN", "ca": "CA",
+    "csr": "CSR", "pem": "PEM", "ldap": "LDAP", "saml": "SAML", "idp": "IdP",
+    "sso": "SSO", "mfa": "MFA", "ssl": "SSL", "rq": "RQ", "eab": "EAB",
+    "hmac": "HMAC", "tsig": "TSIG", "cf": "CF", "vid": "VID", "tx": "TX",
+    "rx": "RX", "med": "MED", "lsp": "LSP", "spf": "SPF", "nd": "ND", "ra": "RA",
+    "dbi": "dBi", "fov": "FOV", "ptz": "PTZ", "tz": "TZ",
 }
+
+# A unit as the last word of a name reads as the forms write it:
+# "outer_width_mm" -> "Outer width (mm)", "utilisation_pct" -> "Utilisation %".
+UNIT_SUFFIXES: dict[str, str] = {"mm": "(mm)", "kg": "(kg)", "ms": "(ms)", "pct": "%"}
 
 # Timestamps read as the moment, not the column name.
 NAME_LABELS: dict[str, str] = {
@@ -58,13 +69,16 @@ def humanize(text: str) -> str:
     """``"oob_ip"`` → ``"OOB IP"``; ``"primary ip"`` → ``"Primary IP"``.
 
     Splits on underscores and spaces, upper-cases known acronyms word by word
-    and capitalises the first word. Anything already mixed-case is kept.
+    and capitalises the first word. A trailing unit reads as the forms write
+    it (``UNIT_SUFFIXES``). Anything already mixed-case is kept.
     """
     words = [w for w in text.replace("_", " ").split(" ") if w]
     out = []
     for i, w in enumerate(words):
         acronym = ACRONYM_WORDS.get(w.lower())
-        if acronym and (w.islower() or w.isupper()):
+        if i and i == len(words) - 1 and w in UNIT_SUFFIXES:
+            out.append(UNIT_SUFFIXES[w])
+        elif acronym and (w.islower() or w.isupper()):
             out.append(acronym)
         elif i == 0:
             out.append(w[:1].upper() + w[1:])

@@ -6,8 +6,11 @@ every key in it really is a path into a row of that list.
 """
 from __future__ import annotations
 
+import re
+
 from django.contrib.auth import get_user_model
 from django.db import connection
+from django.test import SimpleTestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import get_resolver
 from rest_framework.test import APITestCase
@@ -16,17 +19,28 @@ from auth_api.models import ObjectPermission, UserProfile
 from core.models import DeploymentSettings, Organization, Tenant
 from customization.models import CustomField
 
+from .list_fields import NAME_KEYS
 from .models import (
+    RIR,
     VLAN,
+    Aggregate,
+    Cable,
+    CableTermination,
+    Cluster,
+    ClusterType,
     Device,
     DeviceRole,
     ExportTemplate,
+    Interface,
     IPAddress,
+    IPRange,
     Location,
+    PortReservation,
     Prefix,
     Rack,
     Region,
     Site,
+    VirtualMachine,
 )
 
 User = get_user_model()
@@ -65,6 +79,37 @@ def _at(row, key: str):
             return None
         value = value[part]
     return value
+
+
+_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+_NOT_A_PART = re.compile(r"^(id|numid|slug|color)$|_(id|at|color)$")
+
+
+def _named(v) -> bool:
+    """objectName() in frontend/src/components/columns/auto-columns.tsx."""
+    if not isinstance(v, dict):
+        return v not in (None, "")
+    return any(
+        v.get(k) not in (None, "") and not isinstance(v.get(k), (dict, list))
+        for k in NAME_KEYS
+    )
+
+
+def _reads(v) -> bool:
+    """Whether the SPA's cell for ``v`` shows text: a list by its items'
+    names, one record by its name or else its parts (objectText())."""
+    if isinstance(v, list):
+        return any(_named(x) for x in v)
+    if not isinstance(v, dict) or _named(v):
+        return True
+    for k, x in v.items():
+        if _NOT_A_PART.search(k) or x in (None, ""):
+            continue
+        if isinstance(x, str) and not _UUID.match(x):
+            return True
+        if isinstance(x, dict) and "color" not in x and _named(x):
+            return True
+    return isinstance(v.get("numid"), int)
 
 
 class _Base(APITestCase):
@@ -165,11 +210,143 @@ class DeviceCatalogTests(_Base):
         body = self._catalog("/api/monitoring/templates/")
         self.assertEqual(body["model"], "monitoring.checktemplate")
 
+    def test_single_instance_counts_and_flags_are_not_offered(self):
+        """Tab counts computed for one object only (they read 0 on a list),
+        row flags and the allocation figure set are not columns."""
+        prefix = {f["key"] for f in self._catalog("/api/prefixes/")["fields"]}
+        for key in ("dns_record_count", "static_route_count", "allocation",
+                    "is_enumerable", "has_descendants", "vlan_vrf_mismatch", "family"):
+            self.assertNotIn(key, prefix)
+        self.assertIn("ip_count", prefix)
+        ips = {f["key"] for f in self._catalog("/api/ips/")["fields"]}
+        for key in ("certificate_count", "is_primary_for_device", "is_primary_for_vm",
+                    "is_secondary_for_device", "is_oob_for_device"):
+            self.assertNotIn(key, ips)
+        racks = {f["key"] for f in self._catalog("/api/racks/")["fields"]}
+        self.assertNotIn("max_weight_kg", racks)
+        self.assertIn("total_weight_kg", racks)
+
+    def test_labels_read_like_the_forms(self):
+        racks = {f["key"]: f for f in self._catalog("/api/racks/")["fields"]}
+        self.assertEqual(racks["outer_width_mm"]["label"], "Outer width (mm)")
+        self.assertEqual(racks["total_weight_kg"]["label"], "Total weight (kg)")
+        self.assertEqual(racks["desc_units"]["label"], "Descending units")
+        agg = {f["key"]: f for f in self._catalog("/api/aggregates/")["fields"]}
+        self.assertEqual(
+            (agg["utilisation_pct"]["label"], agg["utilisation_pct"]["kind"]),
+            ("Utilisation %", "number"),
+        )
+        wlan = {f["key"]: f for f in self._catalog("/api/wireless-lans/")["fields"]}
+        self.assertEqual(wlan["pmf"]["label"], "PMF")
+
+    def test_lists_of_unnamed_records_are_not_offered(self):
+        keys = {f["key"] for f in self._catalog("/api/circuits/")["fields"]}
+        self.assertNotIn("terminations", keys)
+        keys = {f["key"] for f in self._catalog("/api/fhrp-groups/")["fields"]}
+        self.assertNotIn("assignments", keys)
+        keys = {f["key"] for f in self._catalog("/api/virtual-machines/")["fields"]}
+        self.assertIn("disks", keys)
+
     def test_only_list_paths_resolve(self):
         self._catalog("/api/nope/", 404)
         self._catalog("/api/devices/00000000-0000-0000-0000-000000000000/", 404)
         self._catalog("/admin/", 404)
         self._catalog("", 404)
+
+
+class MethodKindTests(SimpleTestCase):
+    def test_extend_schema_field_types_a_getter_with_no_hint(self):
+        from drf_spectacular.types import OpenApiTypes
+        from drf_spectacular.utils import extend_schema_field
+        from rest_framework import serializers
+
+        from .list_fields import _kind_from_method
+
+        class S(serializers.Serializer):
+            pct = serializers.SerializerMethodField()
+            macs = serializers.SerializerMethodField()
+
+            @extend_schema_field(OpenApiTypes.INT)
+            def get_pct(self, obj):
+                return 1
+
+            @extend_schema_field(serializers.ListField())
+            def get_macs(self, obj):
+                return []
+
+        s = S()
+        self.assertEqual(_kind_from_method(s, s.fields["pct"]), "number")
+        # A list-typed getter is left to the model field or the value's shape.
+        self.assertIsNone(_kind_from_method(s, s.fields["macs"]))
+
+
+class RenderedValueTests(_Base):
+    """Every column the catalog offers reads as text on real rows - the first
+    non-empty value of each field renders something in the SPA's cell
+    (``_reads`` mirrors objectName/objectText in auto-columns.tsx)."""
+
+    PATHS = (
+        "/api/devices/", "/api/interfaces/", "/api/prefixes/", "/api/ips/",
+        "/api/racks/", "/api/virtual-machines/", "/api/cables/", "/api/sites/",
+        "/api/vlans/", "/api/aggregates/",
+    )
+
+    def setUp(self):
+        super().setUp()
+        t = self.tenant
+        region = Region.objects.create(tenant=t, name="Nordics")
+        site = Site.objects.create(tenant=t, name="HQ", region=region)
+        loc = Location.objects.create(tenant=t, site=site, name="Hall")
+        rack = Rack.objects.create(tenant=t, site=site, location=loc, name="R1")
+        sw = Device.objects.create(tenant=t, name="sw1", site=site, rack=rack, position=1)
+        srv = Device.objects.create(tenant=t, name="srv1", site=site, location=loc)
+        gi1 = Interface.objects.create(device=sw, name="Gi1/0/1")
+        gi2 = Interface.objects.create(device=sw, name="Gi1/0/2")
+        eno1 = Interface.objects.create(device=srv, name="eno1")
+        cable = Cable.objects.create(tenant=t, type="cat6")
+        CableTermination.objects.create(cable=cable, end="A", interface=gi1)
+        CableTermination.objects.create(cable=cable, end="B", interface=eno1)
+        PortReservation.objects.create(tenant=t, interface=gi2, claimed_by=self.admin,
+                                       note="spare")
+        p = Prefix.objects.create(tenant=t, cidr="10.0.0.0/24", site=site,
+                                  allocate_from_ranges=True)
+        IPRange.objects.create(tenant=t, prefix=p, start_address="10.0.0.10",
+                               end_address="10.0.0.20")
+        sw.primary_ip = IPAddress.objects.create(
+            tenant=t, ip_address="10.0.0.1", prefix=p, assigned_device=sw,
+            assigned_interface=gi1,
+        )
+        sw.save()
+        VLAN.objects.create(tenant=t, site=site, vlan_id=10, name="v10")
+        ct = ClusterType.objects.create(tenant=t, name="t", slug="t")
+        cl = Cluster.objects.create(tenant=t, name="c", type=ct)
+        VirtualMachine.objects.create(tenant=t, name="vm1", cluster=cl, site=site)
+        rir = RIR.objects.create(tenant=t, name="RIPE", slug="ripe")
+        Aggregate.objects.create(tenant=t, prefix="10.0.0.0/8", rir=rir)
+
+    def test_every_offered_value_reads_as_text(self):
+        failures = []
+        for path in self.PATHS:
+            rows = self.client.get(path).json()["results"]
+            self.assertTrue(rows, path)
+            for f in self._catalog(path)["fields"]:
+                values = []
+                for row in rows:
+                    try:
+                        v = _at(row, f.get("path") or f["key"])
+                    except (KeyError, TypeError):
+                        v = None
+                    if v not in (None, "", []):
+                        values.append(v)
+                if values and not _reads(values[0]):
+                    failures.append(f"{path} {f['key']}: {values[0]!r}")
+        self.assertEqual(failures, [])
+
+    def test_a_link_peer_reads_as_its_device_and_port(self):
+        rows = self.client.get("/api/interfaces/").json()["results"]
+        peer = next(r["link_peer"] for r in rows if r["name"] == "Gi1/0/1")
+        self.assertEqual((peer["device"], peer["port"]), ("srv1", "eno1"))
+        self.assertTrue(_reads(peer))
 
 
 class CustomFieldTests(_Base):

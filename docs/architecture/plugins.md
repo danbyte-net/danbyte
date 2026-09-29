@@ -184,7 +184,15 @@ serializer knobs keep that honest:
   the field is not offered as a column (it would read 0 on every row).
   Branching on `view.action == "list"` by hand is rejected by a test.
 - `list_columns_exclude = ("field", …)` on the serializer for real fields that
-  are render settings or plumbing rather than something to read in a table.
+  are render settings, flags or sets of figures rather than something to read
+  in a table - and for a getter that answers only for a single object
+  (`isinstance(self.instance, …)`, kept where the serializer is also nested
+  `many=True`), which reads 0 on a list. A test rejects such a getter that is
+  in neither place.
+
+A nested list of records none of which has a name (a circuit's terminations)
+is not offered either, and the table drops a column whose values render no
+text on the rows it has seen.
 
 To add a column, add the field to the list serializer (with the joins that
 keep the list at a fixed number of queries) - the table picks it up.

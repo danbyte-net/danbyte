@@ -148,6 +148,22 @@ describe("discoverFields", () => {
     expect(paths).not.toContain("site_id")
     expect(paths).not.toContain("device_type.manufacturer_id")
   })
+
+  it("offers a named object one step out, like a device's site region", () => {
+    const devices = [
+      {
+        name: "sw1",
+        site: { name: "HQ", region: { id: "r1", name: "Nordics" } },
+      },
+      { name: "sw2", site: { name: "Lab", region: null } },
+    ]
+    const region = discoverFields(devices).find((f) => f.path === "site.region")
+    expect(region?.samples).toEqual(["Nordics"])
+    const e = parse("site.region = nordics")!
+    expect(devices.filter((d) => evaluate(e, d)).map((d) => d.name)).toEqual([
+      "sw1",
+    ])
+  })
 })
 
 describe("multi-line input", () => {

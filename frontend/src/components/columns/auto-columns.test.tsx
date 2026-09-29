@@ -17,11 +17,14 @@ import {
   getPath,
   listFieldColumns,
   mergeAutoColumns,
+  objectText,
+  unreadableFields,
 } from "./auto-columns"
+import { buildCableColumns } from "./cable-columns"
 import { buildDeviceColumns } from "./device-columns"
 import { resolveColumnLabel } from "@/components/data-table"
 import type { ListField } from "@/lib/list-fields"
-import type { Device } from "@/lib/api"
+import type { Cable, Device } from "@/lib/api"
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -136,6 +139,114 @@ describe("catalog columns", () => {
     cleanup()
     wrap(<AutoCell field={position} value={false} />)
     expect(screen.getByText("No")).toBeTruthy()
+  })
+
+  it("read a record with no name by its parts, the same in cell, sort and export", () => {
+    const peer: ListField = {
+      key: "link_peer",
+      label: "Link peer",
+      kind: "auto",
+      group: "fields",
+    }
+    const value = { device: "aalborg-asw1", port: "Gi1/0/1", port_label: "" }
+    expect(autoText(peer, value)).toBe("aalborg-asw1 · Gi1/0/1")
+    expect(autoSortValue(peer, value)).toBe("aalborg-asw1 · Gi1/0/1")
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AutoCell field={peer} value={value} />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText("aalborg-asw1 · Gi1/0/1")).toBeTruthy()
+    // Ids, timestamps and colour-carrying catalogs are not parts; a nested
+    // record reads by its name.
+    expect(
+      objectText({
+        numid: 1,
+        id: "3f5a8ab4-4bc2-4a81-a2ba-96e97393b63b",
+        device: { id: "d1", name: "core1" },
+        vrf: null,
+        asn: { numid: 1, id: "a1", asn: 64599 },
+      })
+    ).toBe("core1 · 64599")
+    expect(
+      objectText({
+        id: "r1",
+        claimed_by: "noc",
+        note: "spare",
+        created_at: "2026-08-23T14:16:09Z",
+      })
+    ).toBe("noc · spare")
+    expect(
+      objectText({
+        numid: 50,
+        label: "",
+        color: "",
+        status: { name: "Connected", color: "#10b981" },
+      })
+    ).toBe("#50")
+    expect(
+      objectText({ template: "420901a6-c329-4cdd-8e26-5bb1162d88d8" })
+    ).toBe("")
+    // A list's items read by their name alone.
+    expect(autoText(region, [{ interface: { name: "Vlan100" } }])).toBe("")
+  })
+
+  it("match choice options whose value is a number", () => {
+    const width: ListField = {
+      key: "width",
+      label: "Width",
+      kind: "choice",
+      group: "fields",
+      options: [
+        { value: 19, label: '19"' },
+        { value: 23, label: '23"' },
+      ],
+    }
+    expect(autoText(width, 19)).toBe('19"')
+    expect(autoSortValue(width, 23)).toBe('23"')
+    render(<AutoCell field={width} value={19} />)
+    expect(screen.getByText('19"')).toBeTruthy()
+  })
+
+  it("are dropped while every value read renders no text", () => {
+    const allocation: ListField = {
+      key: "allocation",
+      label: "Allocation",
+      kind: "auto",
+      group: "fields",
+    }
+    const readable = new Set<string>()
+    const unreadable = new Set<string>()
+    const get = (r: Record<string, unknown>) => r
+    const figures = { size: 7, used: 4, ranges: [{ id: "x" }] }
+    expect(
+      unreadableFields(
+        [allocation, region],
+        [{ allocation: figures, site: { region: null } }, { allocation: null }],
+        get,
+        readable,
+        unreadable
+      )
+    ).toEqual(["allocation"])
+    // One readable value keeps a field for good.
+    expect(
+      unreadableFields(
+        [allocation],
+        [{ allocation: { name: "pool" } }],
+        get,
+        readable,
+        unreadable
+      )
+    ).toEqual([])
+    expect(
+      unreadableFields(
+        [allocation],
+        [{ allocation: figures }],
+        get,
+        readable,
+        unreadable
+      )
+    ).toEqual([])
   })
 
   it("are offered only for keys the rows carry, remembered across empty pages", () => {
@@ -262,5 +373,35 @@ describe("merging into a factory's columns", () => {
     expect(merged.map((c) => c.id)).toContain("site.region")
     expect(merged.map((c) => c.id)).not.toContain("device_type")
     expect(merged.map((c) => c.id)).not.toContain("serial_number")
+  })
+
+  it("leaves the cable factory with no second copy of its ends", () => {
+    const catalog: ListField[] = [
+      "label:Label:text",
+      "type:Type:choice",
+      "status:Status:object",
+      "length:Length:number",
+      "color:Color:color",
+      "description:Description:longtext",
+      "fiber_count:Fiber count:number",
+      "a_terminations:A terminations:auto",
+      "b_terminations:B terminations:auto",
+      "tags:Tags:tags",
+      "created_at:Created:datetime",
+      "updated_at:Updated:datetime",
+    ].map((s) => {
+      const [key, label, kind] = s.split(":")
+      return { key, label, kind, group: "fields" } as ListField
+    })
+    const base = buildCableColumns({ selection: true })
+    const merged = mergeAutoColumns(base, listFieldColumns<Cable>(catalog))
+    const ids = merged.map((c) => c.id)
+    expect(ids).not.toContain("a_terminations")
+    expect(ids).not.toContain("b_terminations")
+    expect(ids).toContain("length")
+    const labels = merged
+      .filter((c) => c.enableHiding !== false && c.id !== "link")
+      .map((c) => resolveColumnLabel(c.id!, c))
+    expect(labels.filter((l, i) => labels.indexOf(l) !== i)).toEqual([])
   })
 })

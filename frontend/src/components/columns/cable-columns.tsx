@@ -206,6 +206,8 @@ export function buildCableColumns(
     id,
     header,
     enableSorting: false,
+    // The row's a_/b_terminations: the catalog does not offer them again.
+    meta: { field: `${id}_terminations` },
     cell: ({ row }) =>
       linked ? (
         <Link

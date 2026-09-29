@@ -36,6 +36,7 @@ import {
   inlineChoiceLabel,
   listFieldColumns,
   mergeAutoColumns,
+  unreadableFields,
 } from "@/components/columns/auto-columns"
 import type { ChoiceLabel } from "@/components/columns/auto-columns"
 import { api } from "@/lib/api"
@@ -303,17 +304,31 @@ export function DataTable<T>({
         .sort()
         .join(" ")
     : ""
+  // …and only while its values read as something: a field whose every value
+  // so far renders no text (a set of figures) would be a column of dashes.
+  const readable = useRef(new Set<string>())
+  const unreadable = useRef(new Set<string>())
+  const unreadableSig = catalog
+    ? unreadableFields(
+        catalog.fields,
+        data,
+        (r) => getRow.current(r),
+        readable.current,
+        unreadable.current
+      ).join(" ")
+    : ""
   const autoCols = useMemo(() => {
     if (!catalog) return []
     const keys = new Set(rowKeySig.split(" "))
+    const blank = new Set(unreadableSig.split(" "))
     const get = (r: T) => getRow.current(r)
     const dcim = dcimQuery.data as Record<string, unknown> | undefined
     const choiceLabel: ChoiceLabel = (f, v) => {
       if (f.options) return inlineChoiceLabel(f, v)
       const list = f.choices ? dcim?.[f.choices] : undefined
       const hit = Array.isArray(list)
-        ? (list as { value: string; label: string }[]).find(
-            (o) => o.value === v
+        ? (list as { value: string | number; label: string }[]).find(
+            (o) => String(o.value) === v
           )
         : undefined
       return hit?.label ?? v
@@ -321,6 +336,7 @@ export function DataTable<T>({
     const fields = catalog.fields.filter(
       (f) =>
         keys.has(f.key.split(".")[0]) &&
+        !blank.has(f.key) &&
         !(f.setting && deviceFields[f.setting] === false)
     )
     return [
@@ -338,7 +354,15 @@ export function DataTable<T>({
           })
         : []),
     ]
-  }, [catalog, rowKeySig, deviceFields, dcimQuery.data, serverSorting, qc])
+  }, [
+    catalog,
+    rowKeySig,
+    unreadableSig,
+    deviceFields,
+    dcimQuery.data,
+    serverSorting,
+    qc,
+  ])
   const excludeSig = (autoColumns && autoColumns.exclude?.join(" ")) || ""
   const columns = useMemo(
     () =>

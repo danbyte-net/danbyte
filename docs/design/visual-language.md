@@ -303,12 +303,18 @@ starts hidden, sorts, exports, and renders by its kind
 columns that need a look of their own** (a badge, a link, a facet), and:
 
 - a column whose id is not the row key it shows sets `meta.field` (the device
-  factory's `type` shows `device_type`), else the menu offers the field twice;
+  factory's `type` shows `device_type`, the cable factory's `a` shows
+  `a_terminations`), else the menu offers the field twice;
 - a page that leaves a field out on purpose passes `autoColumns={{ exclude }}`;
 - rows that wrap the list row (`{ kind, ip }`) pass `autoColumns={{ get }}`;
 - a new field worth a column goes into the **list serializer**, with the joins
   that keep `api/tests_list_queries.py` flat - it then appears in the menu
   with no frontend change. Detail-only getters use `@detail_only`.
+
+An object value reads as its name; a record with no name of its own reads as
+its parts (a link peer `sw1 · Gi1/0/1`, an unlabelled cable `#50`), the same
+in the cell, the sort and the export. A field whose values render no text on
+the rows seen so far is not offered.
 
 Object references inside a cell come from `components/cells/`: `siteColumn` /
 `SiteCell`, `deviceColumn` / `DeviceCell`, plus `locationColumn`,

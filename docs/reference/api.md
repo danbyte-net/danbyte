@@ -108,8 +108,9 @@ hard-code a list that can go stale:
   Everything is derived from the list's own serializer: the catalog never
   adds data, it describes what the list already returns. Left out are ids and
   plumbing (`id`, `numid`, `permissions`, raw foreign-key ids), structures
-  (JSON, lists), `get_<x>_display` twins, `@detail_only` getters and names in
-  the serializer's `list_columns_exclude`. The request is **gated exactly like
+  (JSON, lists), nested lists of records that have no name, `get_<x>_display`
+  twins, `@detail_only` getters and names in the serializer's
+  `list_columns_exclude`. The request is **gated exactly like
   the list** - 403 without view permission on it, 404 for a path that is not
   a list or a list that is not enabled.
 

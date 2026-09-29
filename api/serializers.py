@@ -1144,6 +1144,13 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     """
 
     cf_model = "prefix"
+    # Not columns (see api.list_fields): flags the page reads to draw a row,
+    # the allocation figures the prefix page charts, and tab counts that are
+    # computed for a single prefix only and read 0 on a list.
+    list_columns_exclude = (
+        "family", "is_enumerable", "has_descendants", "vlan_vrf_mismatch",
+        "allocation", "dns_record_count", "static_route_count",
+    )
 
     # ── read-only nested projections ────────────────────────────────────
     site = SiteMiniSerializer(read_only=True)
@@ -1204,7 +1211,6 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             ) from None
         return str(net)  # normalised (compressed IPv6, canonical form)
 
-    @extend_schema_field(OpenApiTypes.BOOL)
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_allocation(self, obj):
         """``{size, used, free, ranges}`` when the prefix allocates only from
@@ -1469,6 +1475,13 @@ class PrefixMiniSerializer(NumIdModelSerializer):
 
 class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "ipaddress"
+    # Not columns (see api.list_fields): the role flags the address cell
+    # already draws as a badge, and a tab count computed for a single
+    # address only - it reads 0 on a list.
+    list_columns_exclude = (
+        "is_primary_for_device", "is_primary_for_vm", "is_secondary_for_device",
+        "is_oob_for_device", "certificate_count",
+    )
     status = StatusMiniSerializer(read_only=True)
     role = IPRoleMiniSerializer(read_only=True)
     assigned_device = DeviceMiniSerializer(read_only=True)
@@ -5581,8 +5594,9 @@ class RackMiniSerializer(NumIdModelSerializer):
 
 class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     # The power roll-up is a set of figures the rack page draws, not one
-    # value a column can show (see api.list_fields).
-    list_columns_exclude = ("power",)
+    # value a column can show; max_weight_kg repeats Max weight in kg for the
+    # load bar (see api.list_fields).
+    list_columns_exclude = ("power", "max_weight_kg")
     site = SiteRegionMiniSerializer(read_only=True)
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True

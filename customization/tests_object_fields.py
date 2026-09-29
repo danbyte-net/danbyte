@@ -122,6 +122,18 @@ class LabelResolverTests(_Base):
         ).json()
         self.assertEqual(data["results"], [])
 
+    def test_a_malformed_id_does_not_sink_the_batch(self):
+        d = Device.objects.create(tenant=self.tenant, name="core-1")
+        r = self.client.get(
+            f"/api/customization/object-labels/?model=device&ids=nope,{d.id},12"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual([h["label"] for h in r.json()["results"]], ["core-1"])
+        r = self.client.get(
+            f"/api/customization/object-labels/?model=user&ids=x,{self.admin.pk}"
+        )
+        self.assertEqual([h["label"] for h in r.json()["results"]], ["admin"])
+
     def test_users_resolve_globally(self):
         data = self.client.get(
             f"/api/customization/object-labels/?model=user&ids={self.admin.pk}"
