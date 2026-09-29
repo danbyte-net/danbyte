@@ -193,6 +193,20 @@ class FigureTests(_Base):
         member = next(u for u in self.compute()["units"] if u.get("member"))
         self.assertEqual(member["service_s"], 7 * 9 * 3600)
 
+    def test_yearly_holiday_calendar(self):
+        dev, _ip = self.device("leaf1", 1)
+        self.member(dev)
+        cal = HolidayCalendar.objects.create(
+            tenant=self.tenant, name="DK", dates=[{"date": "2020-09-01", "yearly": True}]
+        )
+        self.agreement.service_hours = {
+            d: [["08:00", "17:00"]] for d in ("mon", "tue", "wed", "thu", "fri")
+        }
+        self.agreement.holiday_calendar = cal
+        self.agreement.save()
+        member = next(u for u in self.compute()["units"] if u.get("member"))
+        self.assertEqual(member["service_s"], 7 * 9 * 3600)
+
     def test_maintenance_and_exclusions_are_excused(self):
         dev, ip = self.device("leaf1", 1)
         self.member(dev)

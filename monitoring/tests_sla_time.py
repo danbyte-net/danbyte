@@ -1,7 +1,7 @@
 """The interval arithmetic under every SLA figure."""
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from django.test import SimpleTestCase
 
@@ -9,10 +9,12 @@ from .sla_time import (
     DOWN,
     UNMEASURED,
     UP,
+    Holidays,
     Rules,
     apply_grace,
     classify,
     combine,
+    holiday,
     restrict,
     service_windows,
     subtract,
@@ -47,6 +49,44 @@ class WindowTests(SimpleTestCase):
             {d: [["00:00", "24:00"]] for d in ("mon", "tue")}, holidays=["2026-09-07"],
         )
         self.assertEqual(w, [(at(24), at(48))])
+
+    def test_yearly_holidays_match_every_year(self):
+        w = service_windows(
+            at(0), at(48), "UTC",
+            {d: [["00:00", "24:00"]] for d in ("mon", "tue")},
+            holidays=[{"date": "2020-09-07", "name": "Old", "yearly": True}],
+        )
+        self.assertEqual(w, [(at(24), at(48))])
+
+    def test_yearly_leap_day_only_in_leap_years(self):
+        hol = Holidays([{"date": "2024-02-29", "yearly": True}])
+        self.assertIn(date(2028, 2, 29), hol)
+        self.assertNotIn(date(2027, 2, 28), hol)
+        self.assertNotIn(date(2027, 3, 1), hol)
+        start = datetime(2027, 2, 28, tzinfo=UTC)
+        w = service_windows(start, start + timedelta(days=2), "UTC", holidays=hol)
+        self.assertEqual(w, [(start, start + timedelta(days=2))])
+
+    def test_holiday_shapes(self):
+        hol = Holidays([date(2026, 9, 7), "2026-09-08", {"date": "2026-09-09", "name": "X"}])
+        self.assertEqual(hol.once, {date(2026, 9, 7), date(2026, 9, 8), date(2026, 9, 9)})
+        self.assertFalse(hol.yearly)
+        self.assertEqual(
+            holiday({"date": "2026-12-25", "name": " Christmas Day ", "yearly": True}),
+            (date(2026, 12, 25), "Christmas Day", True),
+        )
+        self.assertFalse(Holidays([]))
+
+    def test_bad_entries_raise(self):
+        for bad in (
+            "20261225", "2026-W52-5", "2026-02-30", None, 20261225,
+            {"date": "2026-01-01", "yearly": "yes"},
+            {"date": "2026-01-01", "name": 5},
+            {"date": "2026-01-01", "x": 1},
+            {"name": "No date"},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                holiday(bad)
 
     def test_subtract(self):
         self.assertEqual(

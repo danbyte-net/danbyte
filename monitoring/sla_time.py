@@ -15,6 +15,7 @@ group's members with :func:`combine`, and counts with :func:`tally`.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -62,6 +63,69 @@ def total(ivs) -> float:
     return sum((e - s).total_seconds() for s, e in ivs)
 
 
+# ─── holidays ───────────────────────────────────────────────────────────────
+
+
+_ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def holiday(raw) -> tuple[date, str, bool]:
+    """One holiday calendar entry as ``(day, name, yearly)``.
+
+    An entry is ``{"date": "2026-12-25", "name": "Christmas Day", "yearly":
+    true}``; ``name`` and ``yearly`` may be left out. A plain ISO string (the
+    shape calendars were first stored in) or a ``date`` is a one-off day.
+    Raises ``ValueError`` on anything else.
+    """
+    if isinstance(raw, date) and not isinstance(raw, datetime):
+        return raw, "", False
+    if isinstance(raw, dict):
+        extra = set(raw) - {"date", "name", "yearly"}
+        if extra:
+            raise ValueError(f"unknown key «{sorted(extra)[0]}».")
+        name = raw.get("name") or ""
+        yearly = raw.get("yearly", False)
+        if not isinstance(name, str):
+            raise ValueError("the name must be text.")
+        if not isinstance(yearly, bool):
+            raise ValueError("yearly must be true or false.")
+        return _iso_day(raw.get("date")), name.strip(), yearly
+    return _iso_day(raw), "", False
+
+
+def _iso_day(value) -> date:
+    # Strict on purpose: date.fromisoformat also takes "20261225" and
+    # "2026-W52-5" since Python 3.11.
+    if not isinstance(value, str) or not _ISO_DAY.fullmatch(value):
+        raise ValueError(f"«{value}» is not a date (YYYY-MM-DD).")
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"«{value}» is not a date (YYYY-MM-DD).") from None
+
+
+class Holidays:
+    """The days a holiday calendar takes out of service: one-off dates, and
+    yearly ones on their month and day in every year, earlier years included.
+    A yearly 29 February falls in leap years only."""
+
+    def __init__(self, items=()):
+        self.once: set[date] = set()
+        self.yearly: set[tuple[int, int]] = set()
+        for raw in items:
+            day, _name, every = holiday(raw)
+            if every:
+                self.yearly.add((day.month, day.day))
+            else:
+                self.once.add(day)
+
+    def __contains__(self, day: date) -> bool:
+        return day in self.once or (day.month, day.day) in self.yearly
+
+    def __bool__(self) -> bool:
+        return bool(self.once or self.yearly)
+
+
 def service_windows(
     start: datetime, end: datetime, tz: str, weekly: dict | None = None,
     holidays=(),
@@ -69,10 +133,11 @@ def service_windows(
     """The covered hours inside ``[start, end)``.
 
     ``weekly`` is ``{"mon": [["08:00", "17:00"]], ...}`` in the agreement's
-    timezone; empty or None means around the clock. A day in ``holidays``
-    (dates, or ISO strings) is not covered at all. "24:00" ends at midnight.
+    timezone; empty or None means around the clock. A day in ``holidays`` (a
+    :class:`Holidays`, or calendar entries :func:`holiday` reads) is not
+    covered at all. "24:00" ends at midnight.
     """
-    hol = {d if isinstance(d, date) else date.fromisoformat(str(d)) for d in holidays}
+    hol = holidays if isinstance(holidays, Holidays) else Holidays(holidays)
     if not weekly and not hol:
         return [(start, end)] if end > start else []
     zone = ZoneInfo(tz or "UTC")

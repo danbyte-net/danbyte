@@ -43,7 +43,7 @@ from .models import (
     SlaMember,
     SlaPeriodResult,
 )
-from .sla_time import WEEKDAYS
+from .sla_time import WEEKDAYS, holiday
 
 #: Member object types → their RBAC slug.
 MEMBER_TYPES = {
@@ -73,6 +73,15 @@ def _same_tenant(tenant, **objs):
 HISTORY_PERIODS = 12
 
 
+#: A calendar holds at most this many days, and a day's name this many characters.
+HOLIDAY_LIMIT = 1000
+HOLIDAY_NAME_MAX = 100
+
+
+def _holiday_entry(day: dt.date, name: str, yearly: bool) -> dict:
+    return {"date": day.isoformat(), "name": name, "yearly": yearly}
+
+
 class HolidayCalendarSerializer(serializers.ModelSerializer):
     agreement_count = serializers.IntegerField(read_only=True, default=0)
 
@@ -82,16 +91,69 @@ class HolidayCalendarSerializer(serializers.ModelSerializer):
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def validate_name(self, value):
+        # The (tenant, name) constraint is not checked by DRF - the tenant is
+        # not a serializer field - and would surface as a bare 409.
+        tenant = _tenant_of(self)
+        if tenant is not None:
+            clash = HolidayCalendar.objects.filter(tenant=tenant, name=value)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError("A calendar with this name exists.")
+        return value
+
     def validate_dates(self, value):
+        """Entries as ``{date, name, yearly}``, sorted by date. A date given
+        twice is kept once, and a one-off day on a yearly day's month and day
+        is folded into it; the first name given wins."""
         if not isinstance(value, list):
-            raise serializers.ValidationError("Expected a list of dates.")
-        out = set()
-        for raw in value:
+            raise serializers.ValidationError("Expected a list of days.")
+        if len(value) > HOLIDAY_LIMIT:
+            raise serializers.ValidationError(f"At most {HOLIDAY_LIMIT:,} days.")
+        errors = []
+        parsed = []
+        for i, raw in enumerate(value, 1):
             try:
-                out.add(dt.date.fromisoformat(str(raw)).isoformat())
-            except ValueError:
-                raise serializers.ValidationError(f"«{raw}» is not a date (YYYY-MM-DD).") from None
-        return sorted(out)
+                day, name, yearly = holiday(raw)
+            except (TypeError, ValueError) as e:
+                errors.append(f"Day {i}: {e}")
+                continue
+            if len(name) > HOLIDAY_NAME_MAX:
+                errors.append(f"Day {i}: the name is longer than {HOLIDAY_NAME_MAX} characters.")
+                continue
+            parsed.append((day, name, yearly))
+        if errors:
+            raise serializers.ValidationError(errors)
+        every_year: dict[tuple[int, int], list] = {}
+        for day, name, every in parsed:
+            if every:
+                cur = every_year.setdefault((day.month, day.day), [day, ""])
+                cur[1] = cur[1] or name
+        once: dict[dt.date, str] = {}
+        for day, name, every in parsed:
+            if every:
+                continue
+            cur = every_year.get((day.month, day.day))
+            if cur is not None:
+                cur[1] = cur[1] or name
+            else:
+                once[day] = once.get(day) or name
+        out = [(d, n, False) for d, n in once.items()]
+        out += [(d, n, True) for d, n in every_year.values()]
+        return [_holiday_entry(*e) for e in sorted(out, key=lambda e: e[0])]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Calendars saved before days had names hold plain ISO strings.
+        days = []
+        for raw in instance.dates or []:
+            try:
+                days.append(_holiday_entry(*holiday(raw)))
+            except (TypeError, ValueError):
+                continue
+        data["dates"] = days
+        return data
 
 
 class HolidayCalendarViewSet(TenantScopedViewSet):

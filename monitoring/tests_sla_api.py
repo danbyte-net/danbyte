@@ -17,6 +17,7 @@ from . import sla
 from .models import (
     CheckState,
     CheckTemplate,
+    HolidayCalendar,
     SlaAgreement,
     SlaCheckGroup,
     SlaMember,
@@ -25,6 +26,7 @@ from .models import (
 )
 
 A = "/api/monitoring/sla-agreements/"
+H = "/api/monitoring/holiday-calendars/"
 
 
 class _Base(APITestCase):
@@ -197,6 +199,69 @@ class ExclusionTests(_Base):
         r = self.client.post("/api/monitoring/sla-exclusions/", body, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertIn("frozen", str(r.json()))
+
+
+class HolidayCalendarTests(_Base):
+    def create(self, dates, name="Denmark"):
+        return self.client.post(H, {"name": name, "dates": dates}, format="json")
+
+    def test_days_are_normalised_and_merged(self):
+        r = self.create([
+            "2026-12-26",
+            {"date": "2026-12-24", "name": "  Christmas Eve "},
+            {"date": "2026-12-26", "name": ""},
+            {"date": "2026-12-26", "name": "Boxing Day"},
+            {"date": "2026-12-26", "name": "Second"},
+            {"date": "2027-01-01", "name": "New Year"},
+            {"date": "2020-01-01", "yearly": True},
+            "2028-01-01",
+        ])
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["dates"], [
+            {"date": "2020-01-01", "name": "New Year", "yearly": True},
+            {"date": "2026-12-24", "name": "Christmas Eve", "yearly": False},
+            {"date": "2026-12-26", "name": "Boxing Day", "yearly": False},
+        ])
+
+    def test_bad_days_are_refused_by_position(self):
+        r = self.create(["2026-12-24", "2026-02-30", {"date": "2026-01-01", "yearly": "yes"}])
+        self.assertEqual(r.status_code, 400)
+        errors = r.json()["dates"]
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(errors[0].startswith("Day 2: "), errors)
+        self.assertTrue(errors[1].startswith("Day 3: "), errors)
+        self.assertEqual(self.create("2026-12-24").status_code, 400)
+
+    def test_limits(self):
+        many = [f"{2000 + i // 365:04d}-01-01" for i in range(1001)]
+        r = self.create(many)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("1,000", r.json()["dates"][0])
+        r = self.create([{"date": "2026-12-24", "name": "x" * 101}])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("100 characters", r.json()["dates"][0])
+
+    def test_plain_strings_read_as_days(self):
+        cal = HolidayCalendar.objects.create(
+            tenant=self.tenant, name="Old", dates=["2026-09-01"]
+        )
+        r = self.client.get(f"{H}{cal.id}/")
+        self.assertEqual(r.json()["dates"], [{"date": "2026-09-01", "name": "", "yearly": False}])
+
+    def test_names_are_unique_in_the_tenant(self):
+        first = self.create(["2026-12-24"]).json()
+        r = self.create([], name="Denmark")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("name", r.json())
+        # Saving a calendar under its own name is not a clash.
+        r = self.client.patch(f"{H}{first['id']}/", {"name": "Denmark"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_agreement_count(self):
+        cal = self.create(["2026-12-24"]).json()
+        self.agreement(holiday_calendar=cal["id"])
+        rows = self.client.get(H).json()["results"]
+        self.assertEqual(rows[0]["agreement_count"], 1)
 
 
 class _WithFigures(_Base):

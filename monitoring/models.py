@@ -3582,7 +3582,8 @@ class HolidayCalendar(TimestampedModel):
     )
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, default="")
-    #: ISO dates, ["2026-12-25", ...].
+    #: [{"date": "2026-12-25", "name": "Christmas Day", "yearly": true}, ...]; early
+    #: rows hold plain ISO strings (sla_time.holiday reads both).
     dates = models.JSONField(default=list, blank=True)
 
     class Meta:
