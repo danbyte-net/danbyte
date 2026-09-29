@@ -42,7 +42,11 @@ import {
   type AssignIpTarget,
 } from "@/components/assign-ip-dialog"
 import { TraceSection } from "@/components/topology/trace-section"
-import { TracePathStrip, TracePreview } from "@/components/cable-trace-path"
+import {
+  TracePathStrip,
+  TracePreview,
+  traceUrl,
+} from "@/components/cable-trace-path"
 import { PathRow } from "@/components/device-paths-list"
 import {
   DetailHero,
@@ -332,15 +336,16 @@ function Body({ iface: i }: { iface: Interface }) {
       <DetailTab value="trace">
         <div className="space-y-6">
           <TracePathStrip
-            url={`/api/interfaces/${i.id}/trace/`}
+            url={traceUrl("interface", i.id)}
             queryKey={["trace", "interface", i.id]}
             highlightPort={i.name}
           />
           <TraceSection
-            url={`/api/interfaces/${i.id}/trace/`}
+            url={traceUrl("interface", i.id)}
             queryKey={["trace", "interface", i.id]}
             focusNodeId={`dev:${i.device.id}`}
             urlKey="dir"
+            name={`Trace · ${i.device.name} ${i.name}`}
           />
         </div>
       </DetailTab>
@@ -742,7 +747,7 @@ function InterfaceOverview({
         {i.cable && (
           <div className="rounded-lg border border-border bg-card p-4">
             <TracePreview
-              url={`/api/interfaces/${i.id}/trace/`}
+              url={traceUrl("interface", i.id)}
               queryKey={["trace", "interface", i.id]}
               highlightPort={i.name}
               originInterfaceId={i.id}

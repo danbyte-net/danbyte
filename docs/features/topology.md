@@ -79,8 +79,8 @@ every cabled interface and its name on its own cable, as Wiring did;
 - **Your default map** - the map this browser keeps does the same the
   first time, and keeps the result as it goes.
 
-The port-by-port **stencil cards** Wiring drew live on in the
-[trace maps and a device's Map tab](#big-graphs).
+The trace maps and a device's Map tab draw the Diagram's cards too (see
+[Trace maps and a device's map](#trace-maps)).
 
 ## Diagram view
 
@@ -443,20 +443,10 @@ These keep a large map legible:
 - **Per-cable lanes** - the gap between two tiers sizes itself to the number
   of cables crossing it, and each cable rides its own lane, ordered to
   minimize crossings - no more overlapping combs.
-- **Leaf grids** - on the port-by-port cards, a switch with many
-  single-cable neighbours (blades, servers, cameras) stacks them in a
-  compact grid beside it instead of stringing them along one endless row;
-  each cable drops down its column's street.
 - **Cards slide off cable runs** - a card the layout happened to drop on
   another pair's straight cable nudges sideways just far enough to clear it,
   when a small move does clear it without overlapping anything;
   hand-placed (pinned) cards are never moved.
-- **Dense cards** - on the port-by-port stencil cards of the trace maps
-  and a device's Map tab, past ~24 cabled ports the side columns render as
-  a faceplate bar: one slim slot per cabled port with a truncated name, and
-  a cabled-port count in the middle, so a 48-port stack stays a reasonable
-  height. Top and bottom strips always keep full horizontal port names; the
-  full name is also on the cable's hover label and its panel.
 - **Group by site / location** (Display popover) - the graph aggregates to
   **one card per site** (or location): its device count, its biggest
   roles as their badges with the number of each (hover one for its full
@@ -516,14 +506,42 @@ These keep a large map legible:
   view and the rest as you pan to them, instead of drawing every card once
   just to measure it.
 
+A collapsible **Legend** in the map's corner explains the line styles for
+whichever view is active (the Logical view keys its own roles, rails and
+legs); its open/closed state is remembered per browser. On the Diagram
+and the Hierarchy it lists the roles on the map as their badges, and the
+monitoring pill when a card can show it. With **Color by** on *Type*
+or *Speed* it keys the cable types on the map, or the speed tiers, as short
+lines in their colors; on *Cable* or *Status* it says so in one line
+(*Color by cable*). Its **Hide legend** button folds it to a small
+**Legend** chip, which opens it again. Clicking a cable draws it emphasized
+in the accent color while its panel is open.
+
+### Trace maps and a device's map {#trace-maps}
+
 A cable's or interface's **Trace** tab shows the run two ways: the flat
-end-to-end path strip on top, and the trace map below, headed **Trace** -
-the traced devices as full stencil cards (**Left to right** or **Top to
-bottom**) with the traced cable drawn as a thick animated primary line. A
-run that dead-ends before it reaches a far port carries an **Incomplete**
-badge, here, in the trace dialogs and on a device's runs; an uncabled
-port says *Not cabled.* The interface **Overview** also carries the
-end-to-end path on the right.
+end-to-end path strip on top, and the trace map below, headed **Trace**.
+The trace map is drawn as the Diagram draws this page, Detailed with
+**Elbow** lines: each traced device a card in its role's color with its
+[card lines](#card-lines), every cabled interface a nub with its port name
+and addresses on its own cable, and the subnet a cable carries on its
+chip. A patch panel is a dashed card with a nub on each front and rear
+port the run uses: the run comes in on one and leaves on the other. The
+traced cables are drawn thick and animated in the accent color, a
+breakout as one trunk splitting into legs, and on an interface's trace
+its own device is outlined. **Left to right** or **Top to bottom** turns
+the map, and **Export** saves it as PNG, SVG, PDF or draw.io, or prints
+it (see [Export](#export)). A run that dead-ends before it reaches a far
+port carries an **Incomplete** badge, here, in the trace dialogs and on a
+device's runs; an uncabled port says *Not cabled.* The interface
+**Overview** also carries the end-to-end path on the right.
+
+These maps and a device's Map tab leave out the overview in the corner,
+which would cover a small map's cards. Their **Legend** waits on its chip
+in the corner: it keys the roles on the map, the monitoring pill when a
+card shows it, and only the lines the map draws - the traced run and the
+dashed patch panel among them. Whether it is open is remembered apart
+from this page's legend.
 
 Port names in a path strip that resolve to a real interface are **clickable** (pointer cursor) - jump straight to the interface. The device card lists its first five runs with a **Show all** toggle.
 
@@ -536,48 +554,32 @@ to a single strip).
 Every **device page** carries the same language: its Topology card defaults
 to **Paths** - one flat end-to-end strip per cabled port (linked chips,
 panels crossed `front ⇄ rear`, segments in the cable's color) - with a
-**Map** tab for the React Flow 1-hop neighbourhood and **Open in Topology**
-jumping here focused. That choice is on the address (`?sub=map`), so a link can open
+**Map** tab for the 1-hop neighbourhood, drawn as the trace maps are with
+this device outlined and its LLDP links seen with no cable dashed, and
+**Open in Topology** jumping here focused. That choice is on the address (`?sub=map`), so a link can open
 the device straight on its map. The **cable page** hero draws its own run the
 same way. Site and location pages have a **Topology** button that opens this
 map scoped to them.
 
-A collapsible **Legend** in the map's corner explains the line styles for
-whichever view is active (the Logical view keys its own roles, rails and
-legs); its open/closed state is remembered per browser. On the Diagram
-and the Hierarchy it lists the roles on the map as their badges, and the
-monitoring pill when a card can show it. With **Color by** on *Type*
-or *Speed* it keys the cable types on the map, or the speed tiers, as short
-lines in their colors; on *Cable* or *Status* it says so in one line
-(*Color by cable*). Its **Hide legend** button folds it to a small
-**Legend** chip, which opens it again. Clicking a cable draws it emphasized
-in the accent color while its panel is open.
-
 ## Reading the map
 
 The Diagram's cards and lines are described under
-[Diagram view](#diagram-view). A Hierarchy card's header is the same card:
+[Diagram view](#diagram-view); the trace maps and a device's Map tab draw
+the same cards and lines. A Hierarchy card's header is the same card:
 its role's color, the name bold, its card lines, and the monitoring or
 status pill only when the card lines list it; a selected card is outlined.
-The stencil cards of the trace maps and a device's Map tab, and the port
-chips on a Hierarchy card, read like this:
+On every map:
 
-- **Cards** - the colored spine is the device's role color; the pill after
-  the name is its lifecycle status, in that status's own color (the same pill
-  as the device list). A long status name widens the card rather than
-  squeezing the name. Clicking a card **spotlights** it - everything not
-  directly cabled to it fades until you click empty canvas.
-  **Double-clicking** a card opens its device page. Patch panels get a
-  dashed border. Port cells show
-  the full port name. A cabled front port and its strand's rear port render as **one continuous
-  row** (`front1 ⇄ rear`) - the cable enters on the left and leaves on the
-  right, the way the light actually travels through a fiber panel.
+- **Cards** - clicking a card **spotlights** it - everything not directly
+  cabled to it fades until you click empty canvas. **Double-clicking** a
+  card opens its device page. Patch panels get a dashed border. A
+  Hierarchy card's port chips show the full port name.
 - **Edges** - solid lines are cables; a **long-dashed** line is a collapsed
   end-to-end run (labelled `via <panel>…`); a short-dashed *italic* line is an
   **LLDP ghost** - SNMP saw the adjacency but no cable exists (click it to
-  materialise one). On these cards `Nx` marks a breakout/trunk carrying N
-  pairs; the Diagram tab draws a breakout as one trunk splitting into legs
-  (see [Diagram view](#diagram-view)).
+  materialise one). On a Hierarchy card `Nx` marks a breakout/trunk
+  carrying N pairs; the Diagram draws a breakout as one trunk splitting
+  into legs (see [Diagram view](#diagram-view)).
 - **Hover** an edge and it thickens while every other edge fades - the only
   way crossings stay readable in a dense mesh.
 - **Click** a card or an edge for a detail panel (see below).
@@ -1020,17 +1022,12 @@ Either way, a cable **auto-snaps** to whichever side (or top/bottom) of a card
 faces its neighbour, so dragging a node never leaves an edge wrapped backwards
 around it. Saved views remember the layout direction.
 
-Two passes keep the port-by-port cards readable without manual cleanup:
-
-- **Port order** - ports on a given side are ordered by where the cable's other
-  end sits, so two cables leaving the same side don't cross each other (one
-  going up, one going down, in the right order). The Diagram's Detailed nubs
-  are ordered the same way.
-- **Routing around cards** - on the stencil cards of the trace maps and a
-  device's Map tab, a cable that would cross a card it isn't connected to
-  **bends around** it instead. The route is computed from the cards' actual
-  positions. The Diagram routes its own lines - see
-  [Line types](#line-types).
+**Port order** keeps the cards readable without manual cleanup: the
+Diagram's Detailed nubs on a given side are ordered by where each cable's
+other end sits, so two cables leaving the same side don't cross each
+other (one going up, one going down, in the right order), and a Hierarchy
+card's port chips line up with their peers. The Diagram routes its own
+lines - see [Line types](#line-types).
 
 The toolbar groups its controls to stay uncluttered: a **Filters** popover
 (site / role / status / tag, with a badge counting active filters) and a
@@ -1295,7 +1292,8 @@ layout run.
 
 **Export** in the second bar downloads the map as a file. It is drawn from
 the map's data, not captured from the screen, so every card is in the file
-however far off screen it sits.
+however far off screen it sits. A [trace map](#trace-maps) has the same
+menu beside its axis, and its files are titled after the cable or port.
 
 | Format | What you get | Good for |
 |---|---|---|
@@ -1459,9 +1457,9 @@ neighbourhood, `devices=<id,id,…>` for the induced subgraph on an explicit
 device set (the custom-map builder), and `group_by=site|location` for the
 aggregated group graph
 (one node per group with device count + role breakdown, cable-count edges).
-Nodes carry the cabled ports + role/IP used by the stencil; edges carry the
-cable id/type/label/length, every port pair, and the `via` panel list when
-collapsed.
+Nodes carry the cabled ports, role and IP the cards are drawn from; edges
+carry the cable id/type/label/length, every port pair, and the `via` panel
+list when collapsed.
 
 `POST /api/topology/` takes the same query as a JSON body and returns the same
 graph: `devices` (a list), `device`, `depth`, `site`, `location`, `role`,
@@ -1509,6 +1507,12 @@ mini-graph - returns its nodes in a reduced shape: name, site, `status` and
 `status_mini`, with no role or ports. The device nodes of a trace
 (`GET /api/interfaces/<id>/trace/`, `GET /api/cables/<id>/trace/`) carry
 `status_mini` as well.
+
+A device's map (`GET /api/devices/<id>/map/`) and a trace's `device_graph`
+take `include` too, with `card` and `link_ips` (any other token is
+ignored): the device page and the trace maps ask with both, so their cards
+show their card lines and their cables their addresses. The same scopes
+apply as on the map, and without `include` their payload is unchanged.
 
 **`include=card`** adds `card` to every device node and `card` to `meta`:
 

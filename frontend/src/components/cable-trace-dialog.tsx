@@ -13,6 +13,7 @@ import {
   IncompleteBadge,
   linearizeTrace,
   PathStrip,
+  traceUrl,
 } from "@/components/cable-trace-path"
 import { Loading } from "@/components/loading"
 import { OpenLink } from "@/components/open-link"
@@ -35,7 +36,7 @@ export function CableTraceDialog({
 }) {
   const q = useQuery({
     queryKey: ["trace", "cable", target?.id],
-    queryFn: () => api<TraceGraph>(`/api/cables/${target!.id}/trace/`),
+    queryFn: () => api<TraceGraph>(traceUrl("cable", target!.id)),
     enabled: !!target,
   })
   const steps = q.data ? linearizeTrace(q.data, target?.id ?? "") : null
@@ -67,8 +68,9 @@ export function CableTraceDialog({
           // strip - render the full trace graph inline (shares this dialog's
           // trace cache) instead of sending the user off to the cable page.
           <TraceSection
-            url={`/api/cables/${target.id}/trace/`}
+            url={traceUrl("cable", target.id)}
             queryKey={["trace", "cable", target.id]}
+            name={`Trace · ${target.label}`}
           />
         ) : null}
         {target && (

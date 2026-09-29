@@ -1251,6 +1251,9 @@ export interface TopologyCanvasProps {
    * "Partial map" chip where its other chips are; without it the canvas
    * draws the chip at its foot. */
   onPartialChange?: (partial: boolean) => void
+  /** The overview in the corner. A map another page embeds leaves it out:
+   * it would cover a small map's cards. */
+  minimap?: boolean
 }
 
 /** Where to aim the camera for a node: diagram nodes are placed by their
@@ -1443,6 +1446,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     spreadFrom,
     onSpread,
     onPartialChange,
+    minimap = true,
   },
   ref
 ) {
@@ -2939,23 +2943,25 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <ZoomControls onFit={() => fitMap(0)} />
-        {bigMap && (
+        {minimap && bigMap && (
           <MiniMapCanvas
             nodeColor={roleColored ? miniColor : undefined}
             theme={theme}
           />
         )}
-        <MiniMap
-          pannable
-          zoomable
-          nodeColor={roleColored ? miniColor : undefined}
-          // A big map's cards are painted underneath, on one canvas.
-          nodeComponent={bigMap ? NoMiniMapNode : undefined}
-          className={cn(
-            "rounded-md border !border-border",
-            bigMap ? "!bg-transparent" : "!bg-card"
-          )}
-        />
+        {minimap && (
+          <MiniMap
+            pannable
+            zoomable
+            nodeColor={roleColored ? miniColor : undefined}
+            // A big map's cards are painted underneath, on one canvas.
+            nodeComponent={bigMap ? NoMiniMapNode : undefined}
+            className={cn(
+              "rounded-md border !border-border",
+              bigMap ? "!bg-transparent" : "!bg-card"
+            )}
+          />
+        )}
         {!!pending?.length && (
           <ViewportPortal>
             {pending.map((p) => (

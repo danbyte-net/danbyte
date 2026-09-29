@@ -10,6 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import type { TopologyGraph } from "@/lib/api"
 import { typeColor } from "./edge-style"
 import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
 
@@ -119,6 +120,48 @@ export interface LegendOptions {
   roles?: { name: string; color?: string }[]
   /** Diagram and Hierarchy: some card shows the monitoring pill. */
   monitorPill?: boolean
+  /** A map another page embeds (`graphLegend`): only the lines it draws,
+   * with a trace's run and the patch panels it passes. */
+  present?: LegendPresence
+}
+
+/** What an embedded map draws beyond plain cables. */
+export interface LegendPresence {
+  bundle?: boolean
+  via?: boolean
+  ghost?: boolean
+  bgp?: boolean
+  /** A trace's run: its cables drawn thick in the accent colour. */
+  traced?: boolean
+  panel?: boolean
+}
+
+/** The legend options a map another page embeds (a device's Map tab, a
+ * trace map) needs, read off its payload: the roles on it, whether a card
+ * can show the monitoring pill, and the lines it draws. */
+export function graphLegend(
+  graph: TopologyGraph
+): Required<Pick<LegendOptions, "roles" | "monitorPill" | "present">> {
+  const roles = new Map<string, string | undefined>()
+  for (const n of graph.nodes)
+    if (n.data.role?.name && !roles.has(n.data.role.name))
+      roles.set(n.data.role.name, n.data.role.color || undefined)
+  const has = (test: (e: TopologyGraph["edges"][number]) => boolean) =>
+    graph.edges.some(test)
+  return {
+    roles: [...roles]
+      .map(([name, color]) => ({ name, color }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    monitorPill: !!graph.meta?.card?.uses_monitor,
+    present: {
+      bundle: has((e) => !!(e.data?.lag?.a && e.data.lag.b)),
+      via: has((e) => !!e.data?.via?.length),
+      ghost: has((e) => e.type === "ghost"),
+      bgp: has((e) => e.type === "bgp"),
+      traced: has((e) => !!e.data?.marked),
+      panel: graph.nodes.some((n) => !!n.data.panel),
+    },
+  }
 }
 
 /** The legend's entries for a view, in order: only what is on screen. */
@@ -129,8 +172,11 @@ export function legendRows({
   types = [],
   roles = [],
   monitorPill = false,
+  present,
 }: LegendOptions): LegendItem[] {
   const out: LegendItem[] = []
+  // Every line row, or on an embedded map only those it draws.
+  const shows = (k: keyof LegendPresence) => !present || !!present[k]
   if (grouped)
     out.push(
       { kind: "line", label: "Cables between groups", sem: "cable" },
@@ -140,26 +186,37 @@ export function legendRows({
     for (const r of roles)
       out.push({ kind: "role", label: r.name, color: r.color || undefined })
     if (monitorPill) out.push({ kind: "pill", label: "Monitoring" })
-    out.push(
-      { kind: "line", label: "Cable", sem: "cable" },
-      { kind: "line", label: "Bundle", width: 2.5, sem: "bundle" },
-      { kind: "line", label: "Via patch panels", dash: "10 4" },
-      {
+    out.push({ kind: "line", label: "Cable", sem: "cable" })
+    if (present?.traced)
+      out.push({
+        kind: "line",
+        label: "Traced run",
+        width: 2.5,
+        color: "var(--primary)",
+      })
+    if (shows("bundle"))
+      out.push({ kind: "line", label: "Bundle", width: 2.5, sem: "bundle" })
+    if (shows("via"))
+      out.push({ kind: "line", label: "Via patch panels", dash: "10 4" })
+    if (shows("ghost"))
+      out.push({
         kind: "line",
         label: "LLDP, no cable",
         dash: "6 4",
         width: 1.5,
         sem: "ghost",
-      },
-      {
+      })
+    if (shows("bgp"))
+      out.push({
         kind: "line",
         label: "BGP session",
         dash: "3 5",
         width: 1.25,
         color: "var(--primary)",
         sem: "bgp",
-      }
-    )
+      })
+    if (present?.panel)
+      out.push({ kind: "box", label: "Patch panel", dashed: true })
   } else {
     // The Hierarchy's headers are Diagram cards: the same role fills and
     // pill.
@@ -206,11 +263,32 @@ export function legendRows({
   return out
 }
 
-export function CanvasLegend(props: LegendOptions) {
-  const [open, setOpen] = useState(() => localStorage.getItem(KEY) !== "closed")
+export function CanvasLegend({
+  storageKey = KEY,
+  defaultOpen = true,
+  ...props
+}: LegendOptions & {
+  /** Where the open state is remembered: the map's legend and an embedded
+   * map's are remembered apart. */
+  storageKey?: string
+  /** Open until the viewer closes it; an embedded map starts on the chip. */
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem(storageKey)
+      return v ? v !== "closed" : defaultOpen
+    } catch {
+      return defaultOpen
+    }
+  })
   const toggle = (v: boolean) => {
     setOpen(v)
-    localStorage.setItem(KEY, v ? "open" : "closed")
+    try {
+      localStorage.setItem(storageKey, v ? "open" : "closed")
+    } catch {
+      /* private window or blocked storage: the choice lasts this visit */
+    }
   }
 
   // A chip on the canvas: bordered, no shadow (shadows are for overlays).

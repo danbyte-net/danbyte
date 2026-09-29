@@ -583,3 +583,78 @@ class CostTests(_Base):
             g = self._graph(collapse_panels=False)
         self.assertEqual(counted, [0])
         self.assertEqual(g["edges"][0]["data"]["subnets"], [])
+
+
+class EmbeddedMapTests(_Base):
+    """A device's map and the traces take the map's ``include``: their device
+    graph carries card lines and link addresses, as the caller may see them."""
+
+    def setUp(self):
+        super().setUp()
+        self.r1 = self._device("r1")
+        self.r2 = self._device("r2")
+        self.a = self._iface(self.r1, "eth0")
+        b = self._iface(self.r2, "eth1")
+        self._ip(self.a, "10.1.0.0", "10.1.0.0/31")
+        self._ip(b, "10.1.0.1", "10.1.0.0/31")
+        self.cab = self._cable(self.a, b)
+        self.urls = {
+            "map": f"/api/devices/{self.r1.id}/map/",
+            "interface": f"/api/interfaces/{self.a.id}/trace/",
+            "cable": f"/api/cables/{self.cab.id}/trace/",
+        }
+
+    def _get(self, url, include=None):
+        r = self.client.get(url + (f"?include={include}" if include else ""))
+        self.assertEqual(r.status_code, 200, r.content)
+        g = r.json()
+        return g if url.endswith("/map/") else g["device_graph"]
+
+    def test_without_include_nothing_is_added(self):
+        self._login(self._superuser())
+        for name, url in self.urls.items():
+            with self.subTest(name):
+                g = self._get(url)
+                self.assertNotIn("meta", g)
+                self.assertTrue(all("card" not in n["data"] for n in g["nodes"]))
+                self.assertNotIn("a_ips", g["edges"][0]["data"]["pairs"][0])
+
+    def test_card_lines_and_link_addresses(self):
+        self._login(self._superuser())
+        for name, url in self.urls.items():
+            with self.subTest(name):
+                g = self._get(url, "card,link_ips")
+                self.assertIn("card", g["meta"])
+                self.assertTrue(all("card" in n["data"] for n in g["nodes"]))
+                e, [p] = self._link(g, self.r1, self.r2)
+                self.assertEqual(p["a_ips"], ["10.1.0.0/31"])
+                self.assertEqual(p["b_ips"], ["10.1.0.1/31"])
+                self.assertEqual(e["data"]["subnets"], ["10.1.0.0/31"])
+
+    def test_a_trace_still_marks_its_run(self):
+        self._login(self._superuser())
+        g = self._get(self.urls["cable"], "card,link_ips")
+        self.assertEqual([e["data"]["marked"] for e in g["edges"]], [True])
+
+    def test_photo_and_unknown_tokens_are_ignored(self):
+        self._login(self._superuser())
+        g = self._get(self.urls["map"], "photo,bogus")
+        self.assertNotIn("meta", g)
+        self.assertTrue(all("photo" not in n["data"] for n in g["nodes"]))
+
+    def test_addresses_follow_the_ip_scope(self):
+        user = User.objects.create_user("m", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(
+            self.tenant
+        )
+        perm = ObjectPermission.objects.create(
+            name="device-view", object_types=["device"], actions=["view"]
+        )
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        self._login(user)
+        g = self._get(self.urls["map"], "card,link_ips")
+        e = g["edges"][0]["data"]
+        self.assertNotIn("subnets", e)
+        self.assertNotIn("a_ips", e["pairs"][0])
+        self.assertTrue(all("card" in n["data"] for n in g["nodes"]))

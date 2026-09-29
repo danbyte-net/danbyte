@@ -2,8 +2,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
+import type { TopologyGraph } from "@/lib/api"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { CanvasLegend, legendRows } from "./legend"
+import { CanvasLegend, graphLegend, legendRows } from "./legend"
 
 // The map's legend: roles as their badges and colour keys as lines -
 // never a coloured dot beside a name.
@@ -123,5 +124,103 @@ describe("legendRows", () => {
     expect(labels("diagram", "type")).toContain("Color by type")
     // No parenthesised counts: the chips on the lines carry those.
     expect(labels("diagram").some((l) => l.includes("("))).toBe(false)
+  })
+})
+
+describe("an embedded map's legend", () => {
+  const graph: TopologyGraph = {
+    nodes: [
+      {
+        id: "dev:a",
+        type: "device",
+        data: { name: "leaf-01", role: { name: "Leaf", color: "0ea5e9" } },
+      },
+      {
+        id: "dev:b",
+        type: "device",
+        data: { name: "spine-01", role: { name: "Spine", color: "6366f1" } },
+      },
+      {
+        id: "dev:p",
+        type: "device",
+        data: {
+          name: "pp-01",
+          panel: true,
+          role: { name: "Leaf", color: "0ea5e9" },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: "c1",
+        source: "dev:a",
+        target: "dev:p",
+        type: "cable",
+        data: { marked: true },
+      },
+      { id: "c2", source: "dev:p", target: "dev:b", type: "cable", data: {} },
+    ],
+    meta: { card: { fields: [], source: "default", uses_monitor: true } },
+  }
+
+  it("reads the roles, the pill and the lines off the payload", () => {
+    expect(graphLegend(graph)).toEqual({
+      roles: [
+        { name: "Leaf", color: "0ea5e9" },
+        { name: "Spine", color: "6366f1" },
+      ],
+      monitorPill: true,
+      present: {
+        bundle: false,
+        via: false,
+        ghost: false,
+        bgp: false,
+        traced: true,
+        panel: true,
+      },
+    })
+  })
+
+  it("lists only what the map draws: the run, and the dashed panel", () => {
+    const rows = legendRows({
+      viewStyle: "diagram",
+      grouped: false,
+      colorMode: "cable",
+      ...graphLegend(graph),
+    })
+    expect(rows.map((r) => r.label)).toEqual([
+      "Leaf",
+      "Spine",
+      "Monitoring",
+      "Cable",
+      "Traced run",
+      "Patch panel",
+      "Color by cable",
+    ])
+    expect(rows.find((r) => r.label === "Traced run")).toMatchObject({
+      kind: "line",
+      color: "var(--primary)",
+      width: 2.5,
+    })
+  })
+
+  it("starts on its chip and is remembered apart from the map's", () => {
+    localStorage.removeItem("embedded-test")
+    localStorage.setItem("topology:legend", "open")
+    render(
+      <TooltipProvider>
+        <CanvasLegend
+          viewStyle="diagram"
+          grouped={false}
+          colorMode="cable"
+          storageKey="embedded-test"
+          defaultOpen={false}
+        />
+      </TooltipProvider>
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Legend" }))
+    expect(localStorage.getItem("embedded-test")).toBe("open")
+    expect(localStorage.getItem("topology:legend")).toBe("open")
+    expect(screen.getByRole("button", { name: "Hide legend" })).toBeTruthy()
   })
 })

@@ -12,7 +12,12 @@ from django.db import transaction
 from django.db.models.functions import Coalesce, Collate
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils.text import slugify
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import permissions, status as drf_status, viewsets
 from rest_framework.decorators import (
     action,
@@ -389,6 +394,18 @@ from .views import (
 # `natural_sort` ICU collation (migration 0099). Used wherever a list orders
 # by a user-visible name.
 NATURAL_NAME = Collate("name", "natural_sort")
+
+# A device's map and the traces: the topology map's opt-in enrichments.
+MAP_INCLUDE_PARAMETER = OpenApiParameter(
+    name="include",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    description=(
+        "Comma-separated opt-in enrichment of the device graph, as on "
+        "`/api/topology/`: `card`, `link_ips`. Unknown tokens are ignored. "
+        "Adds `meta` to the graph."
+    ),
+)
 
 class StandardPagination(PageNumberPagination):
     # The SPA loads the full result set and paginates/filters client-side (the
@@ -4181,14 +4198,16 @@ class DeviceViewSet(
             ).data,
         })
 
+    @extend_schema(parameters=[MAP_INCLUDE_PARAMETER])
     @action(detail=True, methods=["get"], url_path="map")
     def map(self, request, pk=None):
         """Device-level topology: trace through any patch panels and show the
         chain of devices reached, collapsing front/rear ports away."""
-        from .topology_views import device_scope_q, device_trace_map
+        from .topology_views import device_scope_q, device_trace_map, map_include
         dev = self.get_object()
         return Response(device_trace_map(
-            dev, scope_q=device_scope_q(request.user, dev.tenant)
+            dev, scope_q=device_scope_q(request.user, dev.tenant),
+            include=map_include(request), request=request,
         ))
 
     @action(detail=True, methods=["get"], url_path="paths")
@@ -4517,10 +4536,11 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             status=drf_status.HTTP_200_OK,
         )
 
+    @extend_schema(parameters=[MAP_INCLUDE_PARAMETER])
     @action(detail=True, methods=["get"], url_path="trace")
     def trace(self, request, pk=None):
         from .trace import trace as run_trace
-        from .topology_views import device_scope_q, trace_device_graph
+        from .topology_views import device_scope_q, map_include, trace_device_graph
         iface = self.get_object()
         graph = run_trace([("interface", iface)])
         return Response({
@@ -4528,6 +4548,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "device_graph": trace_device_graph(
                 iface.device.tenant, graph,
                 scope_q=device_scope_q(request.user, iface.device.tenant),
+                include=map_include(request), request=request,
             ),
             **graph,
         })
@@ -4672,10 +4693,11 @@ class CableViewSet(TenantScopedViewSet):
                 "Your cable permission does not cover every termination site."
             )
 
+    @extend_schema(parameters=[MAP_INCLUDE_PARAMETER])
     @action(detail=True, methods=["get"], url_path="trace")
     def trace(self, request, pk=None):
         from .trace import trace as run_trace, point_from_termination
-        from .topology_views import device_scope_q, trace_device_graph
+        from .topology_views import device_scope_q, map_include, trace_device_graph
         cable = self.get_object()
         starts = [point_from_termination(t) for t in cable.terminations.all()]
         graph = run_trace(starts)
@@ -4684,6 +4706,7 @@ class CableViewSet(TenantScopedViewSet):
             "device_graph": trace_device_graph(
                 cable.tenant, graph,
                 scope_q=device_scope_q(request.user, cable.tenant),
+                include=map_include(request), request=request,
             ),
             **graph,
         })

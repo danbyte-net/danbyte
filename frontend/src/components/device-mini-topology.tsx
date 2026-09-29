@@ -23,16 +23,17 @@ import { useUrlSubTab } from "@/lib/use-url-tab"
 
 const MINI_VIEWS = ["paths", "map"] as const
 
-const TopologyCanvas = lazy(() =>
-  import("@/components/topology/topology-canvas").then((m) => ({
-    default: m.TopologyCanvas,
+const EmbeddedMap = lazy(() =>
+  import("@/components/topology/embedded-map").then((m) => ({
+    default: m.EmbeddedMap,
   }))
 )
 
 // Topology widget for the device detail page. Default view is **Paths** -
 // one flat end-to-end strip per cabled port (the cable page's design),
-// panels crossed front ⇄ rear. **Map** keeps the React Flow neighbourhood
-// with LLDP ghosts; "Open in Topology" jumps to /topology focused here.
+// panels crossed front ⇄ rear. **Map** draws the 1-hop neighbourhood with
+// its LLDP ghosts as the Topology page's Diagram does, this device
+// outlined; "Open in Topology" jumps to /topology focused here.
 export function DeviceMiniTopology({
   deviceId,
   onTraceCables,
@@ -54,7 +55,9 @@ export function DeviceMiniTopology({
   })
   const q = useQuery({
     queryKey: ["device-topology", deviceId],
-    queryFn: () => api<TopologyGraph>(`/api/devices/${deviceId}/map/`),
+    // With the Diagram's card lines and the addresses on each cable.
+    queryFn: () =>
+      api<TopologyGraph>(`/api/devices/${deviceId}/map/?include=card,link_ips`),
     enabled: view === "map",
   })
   const ghosts = useQuery({
@@ -142,10 +145,9 @@ export function DeviceMiniTopology({
             </div>
           ) : (
             <Suspense fallback={<Loading />}>
-              <TopologyCanvas
+              <EmbeddedMap
                 graph={graph}
                 focusNodeId={`dev:${deviceId}`}
-                originId={`dev:${deviceId}`}
                 onGhostEdge={setGhost}
                 onSelectNode={(d) => {
                   if (d.device_id && d.device_id !== deviceId)

@@ -18,6 +18,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
+/** A cable's or an interface's trace. Every view of one asks the same way,
+ * with the map's card lines and link addresses for its trace map, so the
+ * page, its strips and the dialogs share one cached answer
+ * (`["trace", kind, id]`). */
+export function traceUrl(kind: "cable" | "interface", id: string): string {
+  return `/api/${kind}s/${id}/trace/?include=card,link_ips`
+}
+
 /** A run that dead-ends before it reaches a far port. One badge for it on
  * every trace: path strips, the trace map, the dialogs and a device's runs. */
 export function IncompleteBadge() {
@@ -914,7 +922,7 @@ export function CableTracePath({
   const q = useQuery({
     // Same key as the Trace tab, so opening it later is a cache hit.
     queryKey: ["trace", "cable", cableId],
-    queryFn: () => api<TraceGraph>(`/api/cables/${cableId}/trace/`),
+    queryFn: () => api<TraceGraph>(traceUrl("cable", cableId)),
   })
   if (!q.data) return <>{fallback}</>
   const steps = linearizeTrace(q.data, cableId)

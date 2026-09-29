@@ -1739,11 +1739,26 @@ def cable_strand_path(cable, strand):
     }
 
 
-def trace_device_graph(tenant, trace_graph, scope_q=None):
-    """A device-level graph (the same adaptive stencil cards as the main map)
-    for the devices a trace passes through, with the traced cables marked.
-    Panels are shown (collapse off) so the full physical path renders.
-    ``scope_q`` bounds nodes to the caller's viewable devices (site scope)."""
+def _enriched(graph, collect, include, request, tenant):
+    """``graph`` with the ``include`` enrichments and their ``meta`` (the
+    map's ``include=card,link_ips``), as the caller may see them."""
+    if include:
+        from .topology_enrich import enrich
+
+        graph["meta"] = enrich(
+            graph, collect, include,
+            request=request, user=getattr(request, "user", None), tenant=tenant,
+        )
+    return graph
+
+
+def trace_device_graph(tenant, trace_graph, scope_q=None, include=frozenset(),
+                       request=None):
+    """A device-level graph (the map's device cards) for the devices a trace
+    passes through, with the traced cables marked. Panels are shown
+    (collapse off) so the full physical path renders. ``scope_q`` bounds
+    nodes to the caller's viewable devices (site scope); ``include`` adds the
+    map's enrichments (``card``, ``link_ips``) and ``meta``."""
     from django.db.models import Q
 
     dev_ids = {
@@ -1758,18 +1773,28 @@ def trace_device_graph(tenant, trace_graph, scope_q=None):
     }
     if not dev_ids:
         return {"nodes": [], "edges": []}
+    collect = {} if include else None
     g = _build_graph(tenant, device_filter_q=Q(id__in=dev_ids), collapse=False,
-                     scope_q=scope_q)
+                     scope_q=scope_q, collect=collect)
     for e in g["edges"]:
         e["data"]["marked"] = e["data"].get("cable_id") in cable_ids
-    return g
+    return _enriched(g, collect, include, request, tenant)
 
 
-def device_trace_map(device, scope_q=None):
+def device_trace_map(device, scope_q=None, include=frozenset(), request=None):
     """Device-page mini map: the device's 1-hop neighbourhood with panels
     collapsed. Kept as the DeviceViewSet ``map`` action's implementation.
-    ``scope_q`` bounds the graph to the caller's viewable devices (site scope)."""
-    return _build_graph(
+    ``scope_q`` bounds the graph to the caller's viewable devices (site
+    scope); ``include`` adds the map's enrichments and ``meta``."""
+    collect = {} if include else None
+    graph = _build_graph(
         device.tenant, focus_id=str(device.id), depth=1, collapse=True,
-        scope_q=scope_q,
+        scope_q=scope_q, collect=collect,
     )
+    return _enriched(graph, collect, include, request, device.tenant)
+
+
+def map_include(request):
+    """The ``include`` a device map or a trace asks for: ``card`` and
+    ``link_ips`` (a photo is the map's own). Unknown tokens are ignored."""
+    return _include_param(request.query_params) & {"card", "link_ips"}

@@ -12,7 +12,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CableTraceDialog } from "./cable-trace-dialog"
-import { IncompleteBadge, PathStrip } from "./cable-trace-path"
+import { IncompleteBadge, PathStrip, traceUrl } from "./cable-trace-path"
 import { DeviceMiniTopology } from "./device-mini-topology"
 import { DevicePathsList } from "./device-paths-list"
 import { InterfaceTraceDialog } from "./interface-trace-dialog"
@@ -26,14 +26,18 @@ import type { DevicePathRun, Tunnel, TraceGraph } from "@/lib/api"
 // trace section and dialogs, a tunnel's map, a VM's Topology card - speak
 // the topology page's words and use its loading, empty and badge parts.
 
-const { apiMock } = vi.hoisted(() => ({
+const { apiMock, canvasProps } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string) => Promise<unknown>>(),
+  canvasProps: [] as Record<string, unknown>[],
 }))
 vi.mock("@/lib/api", () => ({ api: apiMock }))
 // React Flow has no layout to measure in jsdom; the canvas is not what
-// these tests are about.
+// these tests are about - only what it is asked to draw.
 vi.mock("@/components/topology/topology-canvas", () => ({
-  TopologyCanvas: () => <div data-testid="canvas" />,
+  TopologyCanvas: (props: Record<string, unknown>) => {
+    canvasProps.push(props)
+    return <div data-testid="canvas" />
+  },
 }))
 
 class ResizeObserverStub {
@@ -52,6 +56,7 @@ afterEach(cleanup)
 let answers: Record<string, unknown> = {}
 beforeEach(() => {
   answers = {}
+  canvasProps.length = 0
   apiMock.mockReset()
   apiMock.mockImplementation((path: string) => {
     const key = Object.keys(answers).find((k) => path.startsWith(k))
@@ -61,7 +66,7 @@ beforeEach(() => {
 
 /** Mount inside a real in-memory router (the parts link and navigate) and
  * a fresh query cache. */
-function mount(ui: React.ReactNode) {
+function mount(ui: React.ReactNode, at = "/here") {
   const root = createRootRoute({ component: () => <Outlet /> })
   const page = createRoute({
     getParentRoute: () => root,
@@ -70,7 +75,7 @@ function mount(ui: React.ReactNode) {
   })
   const router = createRouter({
     routeTree: root.addChildren([page]),
-    history: createMemoryHistory({ initialEntries: ["/here"] }),
+    history: createMemoryHistory({ initialEntries: [at] }),
   })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -170,6 +175,37 @@ describe("TraceSection", () => {
     expect(await screen.findByTestId("canvas")).toBeTruthy()
   })
 
+  it("draws the run as the Diagram does, with an Export menu", async () => {
+    answers["/api/t/"] = {
+      ...linear(true),
+      device_graph: {
+        nodes: [node("dev:1", "sw-01", "sw-01"), node("dev:2", "b", "b")],
+        edges: [],
+      },
+    }
+    mount(
+      <TraceSection
+        url="/api/t/"
+        queryKey={["t", 4]}
+        focusNodeId="dev:1"
+        name="Trace · C-001"
+      />
+    )
+    await screen.findByTestId("canvas")
+    expect(canvasProps.at(-1)).toMatchObject({
+      nodeStyle: "diagram",
+      diagramMode: "detailed",
+      diagramLine: "elbow",
+      direction: "LR",
+      focusNodeId: "dev:1",
+    })
+    expect(screen.getByRole("button", { name: /Export/ })).toBeTruthy()
+    // The legend waits on its chip.
+    expect(screen.getByRole("button", { name: "Legend" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Top to bottom" }))
+    expect(canvasProps.at(-1)).toMatchObject({ direction: "TB" })
+  })
+
   it("says Not cabled. as an empty state", async () => {
     answers["/api/t/"] = UNCABLED
     mount(<TraceSection url="/api/t/" queryKey={["t", 2]} />)
@@ -200,6 +236,23 @@ describe("trace dialogs", () => {
     const open = screen.getByRole("link", { name: "Open cable" })
     expect(open.getAttribute("href")).toBe("/cables/c1")
     expect(open.querySelector("svg.lucide-arrow-up-right")).not.toBeNull()
+  })
+
+  it("asks for the trace the way every view of it does", async () => {
+    answers["/api/cables/c1/trace/"] = linear(true)
+    mount(
+      <CableTraceDialog
+        target={{ id: "c1", label: "C-001" }}
+        onOpenChange={() => {}}
+      />
+    )
+    await screen.findByText("srv-01")
+    expect(apiMock).toHaveBeenCalledWith(
+      "/api/cables/c1/trace/?include=card,link_ips"
+    )
+    expect(traceUrl("interface", "i1")).toBe(
+      "/api/interfaces/i1/trace/?include=card,link_ips"
+    )
   })
 
   it("has no badge on a complete run", async () => {
@@ -285,6 +338,28 @@ describe("DeviceMiniTopology", () => {
     expect(open.getAttribute("href")).toBe("/topology?device=d1")
     expect(open.querySelector("svg.lucide-share-2")).not.toBeNull()
     expect(screen.queryByText("Full map")).toBeNull()
+  })
+
+  it("draws its map as the Diagram does, this device outlined", async () => {
+    answers["/api/devices/d1/paths/"] = { runs: [run(true)] }
+    answers["/api/monitoring/topology/ghosts/"] = { nodes: [], edges: [] }
+    answers["/api/devices/d1/map/"] = {
+      nodes: [node("dev:d1", "sw-01", "sw-01"), node("dev:d2", "b", "b")],
+      edges: [],
+    }
+    mount(<DeviceMiniTopology deviceId="d1" />, "/here?sub=map")
+    await screen.findByTestId("canvas")
+    expect(apiMock).toHaveBeenCalledWith(
+      "/api/devices/d1/map/?include=card,link_ips"
+    )
+    expect(canvasProps.at(-1)).toMatchObject({
+      nodeStyle: "diagram",
+      diagramMode: "detailed",
+      diagramLine: "elbow",
+      focusNodeId: "dev:d1",
+    })
+    expect(canvasProps.at(-1)).not.toHaveProperty("originId")
+    expect(screen.getByRole("button", { name: "Legend" })).toBeTruthy()
   })
 
   it("says one run in the singular", async () => {
