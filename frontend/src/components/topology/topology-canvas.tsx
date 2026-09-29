@@ -13,7 +13,6 @@ import type { DragEvent, ReactNode } from "react"
 import {
   Background,
   BackgroundVariant,
-  Controls,
   MiniMap,
   ReactFlow,
   ViewportPortal,
@@ -66,6 +65,8 @@ import { resolveLevels } from "./level-organiser"
 import { graphLevels } from "./levels-param"
 import { OverlayEdge, bgpLabel } from "./overlay-edge"
 import { FLOW_ARIA_LABELS } from "./flow-aria"
+import { drawnEdgeIds } from "./hidden"
+import { ZoomControls } from "./zoom-controls"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { BAND_DRAG_HANDLE, BAND_NODE_CLASS } from "./diagram/band-node"
@@ -142,6 +143,48 @@ function linkRef(e: Edge): DiagramLinkRef | undefined {
   if (d.sem !== "cable" && d.sem !== "bundle" && d.sem !== "lagbundle")
     return undefined
   return { pairKey: d.pairKey, ...(d.arc ? { arc: d.arc.flip } : {}) }
+}
+
+/** A drawn line, as its right-click menu and Hide see it. */
+export interface LineTarget {
+  /** What the line draws: a cable, a bundle or LAG, an LLDP neighbour, a
+   * BGP session, or a grouped map's edge. */
+  sem: string
+  /** The payload edges it stands for - what Hide hides. */
+  edgeIds: string[]
+  /** The one cable it draws, when it draws one (Open cable). */
+  cableId?: string
+  /** The Diagram link behind it, for its own line. */
+  link?: DiagramLinkRef
+}
+
+/** The lines a menu is offered on: wiring, LLDP, BGP and group edges -
+ * not a trace map's port membership or pass-through strands. */
+const MENU_SEMS = new Set([
+  "cable",
+  "bundle",
+  "lagbundle",
+  "ghost",
+  "bgp",
+  "groupedge",
+])
+
+/** What a drawn line is, for its menu; null for one that has none. */
+export function lineTarget(e: Edge, graph: TopologyGraph): LineTarget | null {
+  const d = e.data as
+    | { sem?: string; cableId?: string; raw?: { cable_id?: string } }
+    | undefined
+  if (!d?.sem || !MENU_SEMS.has(d.sem)) return null
+  const edgeIds = drawnEdgeIds(e, graph)
+  if (!edgeIds.length) return null
+  const cableId = d.sem === "cable" ? (d.raw?.cable_id ?? d.cableId) : undefined
+  const link = linkRef(e)
+  return {
+    sem: d.sem,
+    edgeIds,
+    ...(cableId ? { cableId } : {}),
+    ...(link ? { link } : {}),
+  }
 }
 
 const edgeTypes = { routed: RoutedEdge, overlay: OverlayEdge, link: LinkEdge }
@@ -332,6 +375,8 @@ export interface CanvasHandle {
   reveal: (boxes: readonly Rect[]) => void
   /** Open a band's or a zone's label for renaming (its menu's Rename). */
   renameRegion: (id: string) => void
+  /** A drawn line by its id, as its menu sees it (H on a selected line). */
+  line: (id: string) => LineTarget | null
 }
 
 /** A device just added to the map and not fetched yet: drawn muted, a
@@ -1139,10 +1184,12 @@ export interface TopologyCanvasProps {
   /** Right-click on a node - screen coords + the raw RF node for branching
    * on type (device/flat vs sitegroup). */
   onNodeContext?: (node: Node, x: number, y: number) => void
-  /** Right-click on empty canvas. */
   /** Right-click on empty canvas. `fx`/`fy` are the same point in canvas
    * coordinates, so a zone can be created where the click landed. */
   onPaneContext?: (x: number, y: number, fx: number, fy: number) => void
+  /** Right-click on a line that has a menu (`lineTarget`). Without it the
+   * browser's own menu shows. */
+  onEdgeContext?: (line: LineTarget, x: number, y: number) => void
   onGhostEdge?: (ghost: GhostEdgeData) => void
   /** A BGP overlay line was clicked - its sessions, both directions. */
   onBgpEdge?: (bgp: NonNullable<TopoEdge["data"]>) => void
@@ -1360,6 +1407,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onOpenDevice,
     onNodeContext,
     onPaneContext,
+    onEdgeContext,
     onGhostEdge,
     onBgpEdge,
     onCanvasClick,
@@ -1661,6 +1709,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   /** The worker's name for that model, when it was built there. */
   const modelIdRef = useRef<number | null>(null)
   const focusRef = useRef(focusNodeId)
+  // The payload the handle's `line` reads, as of the last render.
+  const graphRef = useRef(graph)
+  graphRef.current = graph
   focusRef.current = focusNodeId
 
   // ── zones ──────────────────────────────────────────────────────────
@@ -2488,6 +2539,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           if (flow.getNode(nid))
             flow.updateNodeData(nid, { renameAt: Date.now() })
       },
+      line: (id) => {
+        const e = flow.getEdge(id)
+        return e ? lineTarget(e, graphRef.current) : null
+      },
     }),
     [flow, theme]
   )
@@ -2930,6 +2985,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onDragStop}
         onEdgeClick={onEdgeClick}
+        onEdgeContextMenu={(ev, e) => {
+          if (!onEdgeContext) return
+          const line = lineTarget(e, graph)
+          if (!line) return
+          ev.preventDefault()
+          onEdgeContext(line, ev.clientX, ev.clientY)
+        }}
         onEdgeMouseEnter={(ev, e) => {
           setHotEdge(e.id)
           tipApi.current?.show(
@@ -2959,7 +3021,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         ariaLabelConfig={FLOW_ARIA_LABELS}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-        <Controls showInteractive={false} onFitView={() => fitMap(0)} />
+        <ZoomControls onFit={() => fitMap(0)} />
         {bigMap && (
           <MiniMapCanvas
             nodeColor={diagram ? miniColor : undefined}

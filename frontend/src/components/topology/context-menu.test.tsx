@@ -21,10 +21,12 @@ import { useHideKeys } from "@/components/hidden-objects"
 import { PointerMenu } from "@/components/pointer-menu"
 import {
   DeviceMenuItems,
+  EdgeMenuItems,
   GroupMenuItems,
   PaneMenuItems,
   RegionMenuItems,
   deviceMenuKeys,
+  edgeMenuKeys,
   groupMenuKeys,
 } from "./context-menu"
 import type { CardFace, DeviceMenuProps } from "./context-menu"
@@ -72,8 +74,13 @@ async function inRouter(page: () => React.ReactNode) {
     path: "/settings/topology",
     component: () => <p>settings page</p>,
   })
+  const cablePage = createRoute({
+    getParentRoute: () => root,
+    path: "/cables/$id",
+    component: () => <p>cable page</p>,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([map, devicePage, settings]),
+    routeTree: root.addChildren([map, devicePage, settings, cablePage]),
     history: createMemoryHistory({ initialEntries: ["/topology"] }),
   })
   render(<RouterProvider router={router as never} />)
@@ -271,6 +278,74 @@ describe("GroupMenuItems", () => {
     ).toBeNull()
     fireEvent.click(screen.getByRole("menuitem", { name: "Open group" }))
     expect(onOpen).toHaveBeenCalledOnce()
+  })
+})
+
+describe("EdgeMenuItems", () => {
+  const line = (value: "default" | "elbow" = "default") => ({
+    value,
+    onChange: vi.fn(),
+  })
+
+  it("offers a cable Open cable, its own line and Hide", async () => {
+    await openMenu(
+      <EdgeMenuItems cableId="c1" line={line()} onHide={vi.fn()} />
+    )
+    expect(rows()).toEqual(["Open cable", "Line", "--", "HideH"])
+    // Leaves the map, like Open device; Hide reuses the eye.
+    for (const name of ["Open cable", "Hide"])
+      expect(
+        screen
+          .getByRole("menuitem", { name: new RegExp(name) })
+          .querySelector("svg")
+      ).not.toBeNull()
+  })
+
+  it("opens the cable page as a router link", async () => {
+    const { router } = await openMenu(
+      <EdgeMenuItems cableId="c1" onHide={vi.fn()} />
+    )
+    const open = screen.getByRole("menuitem", { name: "Open cable" })
+    expect(open.getAttribute("href")).toBe("/cables/c1")
+    fireEvent.click(open)
+    await screen.findByText("cable page")
+    expect(router.state.location.pathname).toBe("/cables/c1")
+  })
+
+  it("sets the line from its submenu, as the panel's Line row does", async () => {
+    const own = line()
+    await openMenu(<EdgeMenuItems line={own} onHide={vi.fn()} />)
+    fireEvent.click(screen.getByRole("menuitem", { name: "Line" }))
+    const radios = await screen.findAllByRole("menuitemradio")
+    expect(radios.map((r) => r.textContent.trim())).toEqual([
+      "Default",
+      "Straight",
+      "Elbow",
+      "Bendy",
+      "Cyclical",
+    ])
+    expect(radios[0].getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(radios[0])
+    expect(own.onChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Line" }))
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "Elbow" }))
+    expect(own.onChange).toHaveBeenCalledWith("elbow")
+  })
+
+  it("gives an LLDP neighbour, a BGP session or a bundle only Hide", async () => {
+    const onHide = vi.fn()
+    await openMenu(<EdgeMenuItems onHide={onHide} />)
+    expect(rows()).toEqual(["HideH"])
+    fireEvent.click(screen.getByRole("menuitem", { name: /Hide/ }))
+    expect(onHide).toHaveBeenCalledOnce()
+  })
+
+  it("answers H for the line right-clicked", () => {
+    const onHide = vi.fn()
+    const keys = edgeMenuKeys({ onHide })
+    expect(Object.keys(keys)).toEqual(["h"])
+    keys.h?.()
+    expect(onHide).toHaveBeenCalledOnce()
   })
 })
 

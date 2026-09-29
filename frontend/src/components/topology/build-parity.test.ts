@@ -127,7 +127,7 @@ function projectEdgeData(data: Record<string, unknown> | undefined) {
       out.ghost = `${g.local_port} ↔ ${g.remote_port}`
     } else if (k === "bgp") {
       const b = v as { kind?: string; sessions?: string[] }
-      out.bgp = `${b.kind} ×${b.sessions?.length ?? 0}`
+      out.bgp = `${b.kind} · ${b.sessions?.length ?? 0}x`
     } else if (k === "waypoints") {
       out.waypoints = coord(v)
     } else out[k] = v

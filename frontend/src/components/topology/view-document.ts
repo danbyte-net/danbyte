@@ -13,7 +13,7 @@ import type {
   TopologyViewSaved,
   TopologyViewState,
 } from "@/lib/api"
-import { NO_TOPO_HIDDEN, readTopoHidden } from "./hidden"
+import { NO_TOPO_HIDDEN, readTopoHidden, savedTopoHidden } from "./hidden"
 import type { TopoHidden } from "./hidden"
 import { viewPositions } from "./view-positions"
 import type { PosMap, Zone } from "./view-positions"
@@ -166,7 +166,7 @@ export function toViewState(
     // Kept in step for anything still reading the single-map field.
     positions: (opts.style && doc.positions[opts.style as DocStyle]) || {},
     zones_by_style: doc.zones,
-    hidden: doc.hidden,
+    hidden: savedTopoHidden(doc.hidden),
   }
   if (Object.keys(doc.links).length) state.links = doc.links
   if (Object.keys(doc.nodes).length) state.nodes = doc.nodes

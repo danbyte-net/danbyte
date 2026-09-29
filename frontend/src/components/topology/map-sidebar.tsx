@@ -589,7 +589,7 @@ export function TopologyObjectsSidebar({
       )}
 
       {linkGroups.length > 0 && !status && (
-        <ObjectsSection heading="Links">
+        <ObjectsSection heading="Cables">
           {linkGroups.map(([fam, rows]) => (
             <FoldableGroup
               key={fam}
@@ -648,6 +648,17 @@ export function TopologyObjectsSidebar({
                           {e.data.cable_label || `#${e.data.cable_numid}`}
                         </span>
                       )}
+                    </span>
+                    {/* A line hidden on its own (its right-click menu's
+                        Hide) comes back here. */}
+                    <span className="flex shrink-0 items-center">
+                      <VisibilityToggle
+                        vis={{
+                          shown: !hidden.edges.includes(e.id),
+                          onChange: (v) => toggle("edges", e.id, v),
+                          what: edgeEnds(e),
+                        }}
+                      />
                     </span>
                   </button>
                 )}

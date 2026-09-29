@@ -29,20 +29,24 @@ type ButtonProps = React.ComponentProps<typeof Button>
 /**
  * A one-line hint under a toolbar control: the plain chip tooltip, never the
  * rich panel. `shortcut` adds its key (e.g. `${modKey()}S`) after the text.
+ * `side` moves it off the bottom for a control that is not in a top bar,
+ * such as a map's zoom buttons.
  */
 export function BarTip({
   tip,
   shortcut,
+  side = "bottom",
   children,
 }: {
   tip: React.ReactNode
   shortcut?: string
+  side?: "top" | "right" | "bottom" | "left"
   children: React.ReactElement
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="bottom" variant="default">
+      <TooltipContent side={side} variant="default">
         {tip}
         {shortcut && <Kbd>{shortcut}</Kbd>}
       </TooltipContent>
@@ -74,16 +78,19 @@ export function BarButton({
 export function BarIconButton({
   label,
   shortcut,
+  tipSide,
   destructive = false,
   className,
   ...props
 }: Omit<ButtonProps, "size" | "variant" | "aria-label"> & {
   label: string
   shortcut?: string
+  /** Where the tooltip opens; under the button by default. */
+  tipSide?: "top" | "right" | "bottom" | "left"
   destructive?: boolean
 }) {
   return (
-    <BarTip tip={label} shortcut={shortcut}>
+    <BarTip tip={label} shortcut={shortcut} side={tipSide}>
       <Button
         variant={destructive ? "ghost" : "outline"}
         size="icon-sm"

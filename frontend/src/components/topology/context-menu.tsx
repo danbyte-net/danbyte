@@ -15,8 +15,13 @@ import {
 
 import {
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
   Tooltip,
@@ -26,6 +31,8 @@ import {
 import type { MenuKeys } from "@/components/pointer-menu"
 import { cn } from "@/lib/utils"
 import { bandLook } from "./diagram/band-node"
+import { LINE_LOOKS } from "./diagram/line-tabs"
+import type { LineType } from "./diagram/types"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
 import { ZONE_COLORS } from "./view-positions"
 
@@ -219,6 +226,68 @@ export function GroupMenuItems({
 
 /** The shortcut a group menu shows: H hides the group right-clicked. */
 export function groupMenuKeys({ onHide }: { onHide: () => void }): MenuKeys {
+  return { h: onHide }
+}
+
+/** A line's own look in a Diagram view, or the view's (`default`). */
+export type LinkLine = LineType | "default"
+
+export interface EdgeMenuProps {
+  /** The one cable the line draws; Open cable is offered only then. */
+  cableId?: string
+  /** A Diagram link: its own line, as its panel's Line row sets it. */
+  line?: { value: LinkLine; onChange: (value: LinkLine) => void }
+  /** Hide the line, as its eye in the Objects sidebar would. */
+  onHide: () => void
+}
+
+/** Right-click on a line: a cable, a bundle, an LLDP neighbour or a BGP
+ * session. The last two, and a bundle, have only Hide. */
+export function EdgeMenuItems({ cableId, line, onHide }: EdgeMenuProps) {
+  return (
+    <>
+      {cableId && (
+        <DropdownMenuItem asChild>
+          <Link to="/cables/$id" params={{ id: cableId }}>
+            <ArrowUpRight /> Open cable
+          </Link>
+        </DropdownMenuItem>
+      )}
+      {line && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger inset>Line</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-36">
+            <DropdownMenuRadioGroup
+              value={line.value}
+              onValueChange={(v) => {
+                if (v !== line.value) line.onChange(v as LinkLine)
+              }}
+            >
+              <DropdownMenuRadioItem value="default" inset>
+                Default
+              </DropdownMenuRadioItem>
+              {LINE_LOOKS.map(({ value, label, icon: Icon }) => (
+                <DropdownMenuRadioItem key={value} value={value}>
+                  <Icon /> {label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
+      {(cableId || line) && <DropdownMenuSeparator />}
+      <DropdownMenuItem onSelect={onHide}>
+        <EyeOff /> Hide
+        <DropdownMenuShortcut>H</DropdownMenuShortcut>
+      </DropdownMenuItem>
+    </>
+  )
+}
+
+/** The shortcut a line's menu shows: H hides the line right-clicked. */
+export function edgeMenuKeys({
+  onHide,
+}: Pick<EdgeMenuProps, "onHide">): MenuKeys {
   return { h: onHide }
 }
 

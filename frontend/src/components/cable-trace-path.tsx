@@ -42,8 +42,9 @@ function Tip({
 }
 
 /** The fibre cable's strands as a compact row of coloured dots (the same
- * swatch used on the cable page, tracer stripes and all), capped at 12 with a
- * ×N count - so a trunk reads as "12 fibres" right in the trace. */
+ * swatch used on the cable page, tracer stripes and all), capped at 12 with
+ * an Nx count, as a bundle's - so a trunk reads as "12x" right in the
+ * trace. */
 function StrandStrip({
   count,
   palette,
@@ -65,7 +66,7 @@ function StrandStrip({
           />
         ))}
       </span>
-      <span className="num font-medium text-foreground">×{count}</span>
+      <span className="num font-medium text-foreground">{count}x</span>
     </span>
   )
 }
@@ -152,7 +153,7 @@ export type PathSegment = {
   self: boolean
   /** This segment is an optical-fibre cable. */
   fiber?: boolean
-  /** How many strands the fibre cable carries (for the ×N badge). */
+  /** How many strands the fibre cable carries (for the Nx count). */
   fiberCount?: number | null
   /** On a fibre trunk, the strand this run threads through + its colour. */
   strand?: number

@@ -3892,8 +3892,9 @@ class TopologyViewSerializer(NumIdModelSerializer):
     #: A saved view, serialised. Big enough for every style's arrangement of
     #: a very large map, small enough that loading a view stays instant.
     MAX_STATE_BYTES = 8 * 1024 * 1024
-    #: The groups the map's eye toggles hide by (topology/hidden.ts).
-    HIDDEN_GROUPS = ("sites", "locations", "roles", "kinds", "devices")
+    #: The groups the map's eye toggles hide by (topology/hidden.ts);
+    #: ``edges`` holds single lines hidden from their right-click menu.
+    HIDDEN_GROUPS = ("sites", "locations", "roles", "kinds", "devices", "edges")
 
     def _ids(self, value, label):
         if not isinstance(value, list) or len(value) > self.MAX_NODES:

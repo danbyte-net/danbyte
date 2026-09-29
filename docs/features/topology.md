@@ -721,8 +721,10 @@ The map has the same eyes as the [site map](site-map.md) and the
 header has one - a **role**, a **site** or a **location** (whichever the
 Devices list is grouped by), a **link family** (a cable type, **No type**
 for cables without one, **LLDP** for discovered links, or **BGP sessions**)
-- and so does every device row. Right-click a card →
-**Hide** is the same thing for one card, from the canvas.
+- and so does every device row and every cable row. Right-click a card →
+**Hide** is the same thing for one card, from the canvas, and right-click a
+line → **Hide** for one line: a cable, a bundle or LAG (its cables), a
+breakout (the whole cable), an LLDP neighbour or a BGP session.
 
 Hiding is not a filter: a filter says what kind of thing belongs on the map,
 this says "not that one" - the last mile of a diagram you are shaping for
@@ -740,9 +742,9 @@ The hidden set saves with the view, and the default map remembers it per
 browser. Views saved before the eyes existed hold their removed cards under
 the same model.
 
-Keyboard: ++h++ hides the selected card (or, on a grouped map, the selected
-site or location); ++shift+h++ shows everything again. The same two keys
-work on the site map and the floor plans.
+Keyboard: ++h++ hides the selected card or line (or, on a grouped map, the
+selected site or location); ++shift+h++ shows everything again. The same two
+keys work on the site map and the floor plans.
 
 (On a hand-picked map, *Remove from map* is the different thing next
 to *Hide*: it takes the device out of the hand-picked set the map is built
@@ -970,13 +972,14 @@ a 70-card map.
   by site or location carries its role's badge. When the map is grouped by
   site or location, the groups are listed instead; double-click one to open
   it.
-- **Links** by cable type (**No type** for cables without one), each family
+- **Cables** by cable type (**No type** for cables without one), each family
   headed by a badge in its line color, with **LLDP** (discovered links) and
   **BGP sessions**
   (a dotted line per peering device pair and table, labelled with the two
   AS numbers, iBGP or eBGP and the VRF; click it to open the session) as
   their own families;
-  each row names its two ends and the cable label.
+  each row names its two ends and the cable label, and has its own eye - the
+  way back for a line hidden from its right-click menu.
 - **Bands and zones** on this view style: the layer bands top to bottom,
   then side bands, then zones. Click one to fit it, double-click to rename;
   drag a layer band by its grip to reorder the stack, cards and all.
@@ -1039,13 +1042,17 @@ toggles and menu triggers as the [site map](site-map.md) and the
 [floor plans](floor-plans.md) bars. The device count beside the title keeps
 one width as the number changes, so the tabs after it stay put.
 
-Both bars fit a 1280 px screen with the sidebar open. Where the room runs
-out, the header's **Simple / Detailed** and the second bar's **Objects** and
-**Copy link** move into a **More** (⋯) menu at the end of their bar, and
-while a scope chip (hand-picked, focus or a group drilled into) is showing,
-the device count gives way to it. A long device or group name in a chip is
-shortened, with the full name on hover. Narrower still, a bar scrolls
-sideways, its scrollbar showing.
+The second bar reads **Devices** · **Views** and their buttons ·
+**Objects** · **Undo** · **Redo** · **Add** · **Arrange** · **Copy link** ·
+**Export**. Both bars fit a 1280 px screen with the sidebar open. Where the
+room runs out, the header's **Simple / Detailed** moves into a **More** (⋯)
+menu at the end of the header, and the second bar's **Copy link**, then
+**Objects**, then **Undo** and **Redo** move into one at the end of the bar,
+which lists exactly what left it. While a scope chip (hand-picked, focus or
+a group drilled into) is showing, **Simple / Detailed** gives way to it
+sooner. A long device or group name in a chip is shortened, with the full
+name on hover. Narrower still, a bar scrolls sideways, its scrollbar
+showing.
 
 ## Link aggregation bundles
 
@@ -1203,6 +1210,7 @@ is open it acts on what you right-clicked, not on what is selected.
 |---|---|
 | A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Card lines…*, and *Role card lines* for admins |
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
+| A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide* |
 | A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), *Delete* |
 | Empty canvas | Diagram: *Add devices…*, *Add band*, *Add zone*, *Add text*. Hierarchy: *Add device…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
 
@@ -1211,18 +1219,24 @@ is open it acts on what you right-clicked, not on what is selected.
 | Keys | Action |
 |---|---|
 | ++ctrl+s++ / ++cmd+s++ | Save (Save as… on a map that is not a saved view); the **Save** button's tooltip shows the key |
-| ++ctrl+z++ / ++cmd+z++ | Undo the last edit to the map |
-| ++ctrl+shift+z++ / ++cmd+shift+z++ (or ++ctrl+y++) | Redo |
+| ++ctrl+z++ / ++cmd+z++ | Undo the last edit to the map (the second bar's **Undo** button) |
+| ++ctrl+shift+z++ / ++cmd+shift+z++ (or ++ctrl+y++) | Redo (the **Redo** button) |
 | ++delete++ / ++backspace++ | Remove the selected notes, and the selected cards from a hand-picked map |
-| ++h++ | Hide the selected card (or the selected site or location on a grouped map) |
+| ++h++ | Hide the selected card or line (or the selected site or location on a grouped map) |
 | ++shift+h++ | Show everything hidden |
 | ++enter++ (Find on map) | Zoom to the first card that matches |
 | ++enter++ (device list) | Place the selected devices in the middle of the screen |
 | ++ctrl++ / ++cmd++ / ++shift++ + click (device list) | Select several devices to drag at once |
 
 Undo and redo leave a text field's own undo alone while you type in it.
-++h++ and ++shift+h++ hide and show cards - see
+The second bar's **Undo** and **Redo** buttons do the same, their keys in
+their tooltips, and are greyed out with nothing to step to. ++h++ and
+++shift+h++ hide and show cards and lines - see
 [Hiding things](#hiding-things-the-eyes).
+
+The map's zoom buttons sit in its bottom-left corner: **Zoom in**, **Zoom
+out** and **Fit view** (the whole map, or the part a very large one opens
+on), drawn like the toolbars' icon buttons.
 
 ## Linking and sharing
 
@@ -1694,6 +1708,7 @@ earlier versions load and save unchanged.
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building, size: s\|m\|l, outline: bool}`; `x, y` is the note's centre, `id` is unique, `text` at most 200 characters, `size` absent = `m` |
+| `hidden` | what the eyes switched off: `{sites, locations, roles, kinds, devices, edges}`, each a list of names (or ids); `edges` holds single lines hidden from their right-click menu, by the map's edge id, and is written only when there is one. Any other group is a 400; the flat list older views saved still loads as `devices`. |
 
 A value outside those shapes is a 400 naming the key. Keys are device ids, so
 a shared view's `links`, `nodes` and positions can name devices a viewer may

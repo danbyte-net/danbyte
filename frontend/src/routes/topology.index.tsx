@@ -104,6 +104,11 @@ import { InfoTip } from "@/components/ui/info-tip"
 import { TruncatedText } from "@/components/ui/truncated-text"
 import { FormCheckbox } from "@/components/forms"
 import { ArrangeMenu } from "@/components/topology/arrange-menu"
+import {
+  HistoryButtons,
+  HistoryMenuItems,
+} from "@/components/topology/history-buttons"
+import { barFit, useContentWidth } from "@/components/topology/bar-fit"
 import type { LevelsProps } from "@/components/topology/level-organiser"
 import {
   PopoverField,
@@ -114,15 +119,18 @@ import { PartialMapChip } from "@/components/topology/partial-map-chip"
 import { ExportMenu } from "@/components/topology/export/export-menu"
 import {
   DeviceMenuItems,
+  EdgeMenuItems,
   GroupMenuItems,
   PaneMenuItems,
   RegionMenuItems,
   deviceMenuKeys,
+  edgeMenuKeys,
   groupMenuKeys,
 } from "@/components/topology/context-menu"
 import type {
   CardFace,
   DeviceMenuProps,
+  EdgeMenuProps,
 } from "@/components/topology/context-menu"
 import { PointerMenu } from "@/components/pointer-menu"
 import {
@@ -226,6 +234,7 @@ import type {
   BundleMember,
   CanvasHandle,
   EdgeColorMode,
+  LineTarget,
   NodeStyle,
 } from "@/components/topology/topology-canvas"
 import type {
@@ -896,6 +905,7 @@ function TopologyPage() {
   // so adding and removing devices is undoable and saved with the view.
   const [urlDevices, setUrlDevices] = useUrlCsv("devices")
   const urlSetKey = urlDevices?.join(",") ?? null
+  const [barRef, barWidth] = useContentWidth()
   const [menu, setMenu] = useState<{
     x: number
     y: number
@@ -907,6 +917,8 @@ function TopologyPage() {
     nodeId?: string
     group?: TopoGroupData
     zoneId?: string
+    /** A line: a cable, a bundle, an LLDP neighbour, a BGP session. */
+    line?: LineTarget
   } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   // The camera shows a part of a map too large to open whole.
@@ -1679,8 +1691,18 @@ function TopologyPage() {
     )
   }, [search, graph])
 
-  // H hides the selected card (or, when grouped, the selected site or
-  // location) as its eye would; Shift+H shows all.
+  /** Hide lines one by one (their menu's Hide, or H on a selected one):
+   * the payload edges they draw, as the Objects sidebar's cable rows
+   * would. */
+  const hideLines = (ids: readonly string[]) => {
+    const add = ids.filter((id) => !hidden.edges.includes(id))
+    if (add.length)
+      setHiddenNodes({ ...hidden, edges: [...hidden.edges, ...add] })
+    clearSel()
+  }
+
+  // H hides the selected card or line (or, when grouped, the selected site
+  // or location) as its eye would; Shift+H shows all.
   const selNodeId = selNode?.device_id ? `dev:${selNode.device_id}` : null
   useHideKeys(
     !logical && selNodeId
@@ -1688,19 +1710,24 @@ function TopologyPage() {
           setHiddenNodes(withHidden(hidden, "devices", selNodeId, true))
           clearSel()
         }
-      : !logical && selGroup
+      : !logical && selEdgeId
         ? () => {
-            setHiddenNodes(
-              withHidden(
-                hidden,
-                selGroup.kind === "site" ? "sites" : "locations",
-                selGroup.name,
-                true
-              )
-            )
-            clearSel()
+            const line = canvas.current?.line(selEdgeId)
+            if (line) hideLines(line.edgeIds)
           }
-        : null,
+        : !logical && selGroup
+          ? () => {
+              setHiddenNodes(
+                withHidden(
+                  hidden,
+                  selGroup.kind === "site" ? "sites" : "locations",
+                  selGroup.name,
+                  true
+                )
+              )
+              clearSel()
+            }
+          : null,
     () => setHiddenNodes(NO_TOPO_HIDDEN)
   )
 
@@ -2265,6 +2292,14 @@ function TopologyPage() {
     onUndo: () => stepHistory(true),
     onRedo: () => stepHistory(false),
   })
+  /** The same steps from the second bar (a view's own document once it is
+   * on screen). */
+  const steps = {
+    canUndo: docReady && doc.canUndo,
+    canRedo: docReady && doc.canRedo,
+    onUndo: () => stepHistory(true),
+    onRedo: () => stepHistory(false),
+  }
 
   // ── Unsaved-edit guard ──
   // See useMapLeaveGuard: another map (view, default, custom) is a leave, a
@@ -2366,20 +2401,14 @@ function TopologyPage() {
         show: "@max-[900px]/head:inline-flex",
         find: "@max-[1040px]/head:w-32",
       }
-  // The second bar's widths below which Objects and Copy link move into
-  // More: an applied view's Edited, Save and Delete need the room.
-  const barNarrow =
+  // What of the second bar gives way to its More menu at its width: Copy
+  // link, then Objects, then Undo and Redo (an applied view's Edited, Save
+  // and Delete need the room).
+  const barRoom = barFit(
+    barWidth,
+    isDiagram ? "diagram" : "hierarchy",
     viewId !== "none"
-      ? {
-          hide: "@max-[1080px]/bar:hidden",
-          show: "@max-[1080px]/bar:inline-flex",
-          views: "@max-[1080px]/bar:w-36",
-        }
-      : {
-          hide: "@max-[920px]/bar:hidden",
-          show: "@max-[920px]/bar:inline-flex",
-          views: "@max-[920px]/bar:w-36",
-        }
+  )
 
   /** A device card's right-click menu: its items and the keys they show
    * act on this card, not on the canvas selection. */
@@ -2429,6 +2458,28 @@ function TopologyPage() {
         )
       ),
   })
+  /** A line's right-click menu: Open cable for one cable, its own line on
+   * the Diagram (an undo step, like its panel's Line row), and Hide. */
+  const lineMenu = (line: LineTarget): EdgeMenuProps => {
+    const key = isDiagram ? line.link?.pairKey : undefined
+    const own = key ? doc.doc.links[key] : undefined
+    return {
+      ...(line.cableId ? { cableId: line.cableId } : {}),
+      ...(key
+        ? {
+            line: {
+              value: own?.line ?? "default",
+              onChange: (v) =>
+                setLinkOverride(key, {
+                  ...own,
+                  line: v === "default" ? undefined : v,
+                }),
+            },
+          }
+        : {}),
+      onHide: () => hideLines(line.edgeIds),
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -2732,7 +2783,10 @@ function TopologyPage() {
           views or exports: its bar is Copy link. */}
       {logical && <LogicalBar />}
       {!logical && (
-        <div className="@container/bar flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
+        <div
+          ref={barRef}
+          className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6"
+        >
           {isDiagram && (
             <BarToggle
               pressed={paletteShown}
@@ -2759,7 +2813,7 @@ function TopologyPage() {
               size="sm"
               className={cn(
                 "w-44 shrink-0 text-xs data-[size=sm]:h-7",
-                barNarrow.views
+                barRoom.objects && "w-36"
               )}
               aria-label="Views"
             >
@@ -2812,13 +2866,12 @@ function TopologyPage() {
             </BarIconButton>
           )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <BarToggle
-              pressed={showObjects}
-              onClick={toggleObjects}
-              className={barNarrow.hide}
-            >
-              <PanelRight /> Objects
-            </BarToggle>
+            {!barRoom.objects && (
+              <BarToggle pressed={showObjects} onClick={toggleObjects}>
+                <PanelRight /> Objects
+              </BarToggle>
+            )}
+            {!barRoom.history && <HistoryButtons {...steps} />}
             {isDiagram ? (
               <>
                 <DropdownMenu>
@@ -2935,9 +2988,11 @@ function TopologyPage() {
                 />
               </>
             )}
-            <BarButton onClick={copyLink} className={barNarrow.hide}>
-              <LinkIcon /> Copy link
-            </BarButton>
+            {!barRoom.copyLink && (
+              <BarButton onClick={copyLink}>
+                <LinkIcon /> Copy link
+              </BarButton>
+            )}
             <ExportMenu
               name={exportName}
               modes={isDiagram}
@@ -2969,28 +3024,37 @@ function TopologyPage() {
                 }) ?? null
               }
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <BarIconButton
-                  label="More"
-                  className={cn("hidden", barNarrow.show)}
-                >
-                  <MoreHorizontal />
-                </BarIconButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-40">
-                <DropdownMenuCheckboxItem
-                  checked={showObjects}
-                  onCheckedChange={toggleObjects}
-                >
-                  Objects
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => void copyLink()}>
-                  <LinkIcon /> Copy link
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {barRoom.copyLink && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <BarIconButton label="More">
+                    <MoreHorizontal />
+                  </BarIconButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-44">
+                  {barRoom.history && (
+                    <>
+                      <HistoryMenuItems {...steps} />
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  {barRoom.objects && (
+                    <>
+                      <DropdownMenuCheckboxItem
+                        checked={showObjects}
+                        onCheckedChange={toggleObjects}
+                      >
+                        Objects
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  <DropdownMenuItem onSelect={() => void copyLink()}>
+                    <LinkIcon /> Copy link
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       )}
@@ -3140,6 +3204,7 @@ function TopologyPage() {
                     })
                 }}
                 onPaneContext={(x, y, fx, fy) => setMenu({ x, y, fx, fy })}
+                onEdgeContext={(line, x, y) => setMenu({ x, y, line })}
                 onPartialChange={setPartialMap}
                 onCanvasClick={clearSel}
                 onDragEnd={() => {
@@ -3314,20 +3379,25 @@ function TopologyPage() {
               ? "Group"
               : menu?.zoneId
                 ? "Area"
-                : "Map"
+                : menu?.line
+                  ? "Line"
+                  : "Map"
         }
         keys={(m) =>
           m.node
             ? deviceMenuKeys(deviceMenu(m.node, m.nodeId))
             : m.group
               ? groupMenuKeys(groupMenu(m.group))
-              : {}
+              : m.line
+                ? edgeMenuKeys(lineMenu(m.line))
+                : {}
         }
       >
         {(m) => {
           if (m.node)
             return <DeviceMenuItems {...deviceMenu(m.node, m.nodeId)} />
           if (m.group) return <GroupMenuItems {...groupMenu(m.group)} />
+          if (m.line) return <EdgeMenuItems {...lineMenu(m.line)} />
           if (m.zoneId) {
             const id = m.zoneId
             const region = zones?.find((z) => z.id === id)

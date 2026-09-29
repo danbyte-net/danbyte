@@ -10,7 +10,7 @@ import { ToolButton } from "./diagram/band-node"
 import { GroupNode } from "./group-node"
 import type { TopoGroupData } from "./group-node"
 import { bgpLabel } from "./overlay-edge"
-import { TopologyCanvas, hoverLabel } from "./topology-canvas"
+import { TopologyCanvas, hoverLabel, lineTarget } from "./topology-canvas"
 import { ZONE_DRAG_HANDLE, ZoneNode } from "./zone-node"
 
 // The canvas's own furniture: React Flow's controls in sentence case, a BGP
@@ -32,8 +32,8 @@ const settle = () =>
     for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0))
   })
 
-describe("React Flow controls", () => {
-  it("are named in sentence case", async () => {
+describe("zoom controls", () => {
+  it("are the toolbars' icon buttons, named in sentence case", async () => {
     const empty: TopologyGraph = { nodes: [], edges: [] }
     render(
       <div style={{ width: 800, height: 600 }}>
@@ -45,10 +45,93 @@ describe("React Flow controls", () => {
       </div>
     )
     await settle()
-    for (const name of ["Zoom in", "Zoom out", "Fit view"])
-      expect(screen.getByRole("button", { name })).toBeTruthy()
+    const icons = {
+      "Zoom in": "lucide-zoom-in",
+      "Zoom out": "lucide-zoom-out",
+      "Fit view": "lucide-maximize",
+    }
+    for (const [name, icon] of Object.entries(icons)) {
+      const button = screen.getByRole("button", { name })
+      expect(button.querySelector(`svg.${icon}`)).not.toBeNull()
+      expect(button.className).toContain("size-7")
+      expect(button.className).toContain("shadow-none")
+    }
     expect(screen.queryByRole("button", { name: "Zoom In" })).toBeNull()
-    expect(document.querySelector("[aria-label='Map controls']")).not.toBeNull()
+    // React Flow's own Controls are gone; the group keeps their name.
+    expect(document.querySelector(".react-flow__controls")).toBeNull()
+    expect(screen.getByRole("group", { name: "Map controls" })).toBeTruthy()
+  })
+})
+
+describe("lineTarget", () => {
+  const graph = {
+    nodes: [],
+    edges: [
+      {
+        id: "e:c1:a:b",
+        source: "dev:a",
+        target: "dev:b",
+        type: "cable",
+        data: { cable_id: "c1" },
+      },
+      {
+        id: "e:c2:a:b",
+        source: "dev:a",
+        target: "dev:b",
+        type: "cable",
+        data: { cable_id: "c2" },
+      },
+      { id: "bgp:a:b:", source: "dev:a", target: "dev:b", type: "bgp" },
+    ],
+  } as unknown as TopologyGraph
+
+  it("opens a Diagram cable, with its link for the line", () => {
+    const edge = {
+      id: "e:c1:a:b",
+      source: "dev:a",
+      target: "dev:b",
+      type: "link",
+      data: { sem: "cable", pairKey: "a|b", raw: { cable_id: "c1" } },
+    } as Edge
+    expect(lineTarget(edge, graph)).toEqual({
+      sem: "cable",
+      edgeIds: ["e:c1:a:b"],
+      cableId: "c1",
+      link: { pairKey: "a|b" },
+    })
+  })
+
+  it("hides a bundle's cables, with no one cable to open", () => {
+    const edge = {
+      id: "f:dev:a>dev:b",
+      source: "dev:a",
+      target: "dev:b",
+      type: "link",
+      data: {
+        sem: "bundle",
+        pairKey: "a|b",
+        cables: [{ cable_id: "c1" }, { cable_id: "c2" }],
+      },
+    } as Edge
+    const line = lineTarget(edge, graph)!
+    expect(line.edgeIds).toEqual(["e:c1:a:b", "e:c2:a:b"])
+    expect(line.cableId).toBeUndefined()
+  })
+
+  it("gives a BGP session Hide only, and a trace strand no menu", () => {
+    const bgp = {
+      id: "bgp:a:b:",
+      source: "dev:a",
+      target: "dev:b",
+      type: "overlay",
+      data: { sem: "bgp" },
+    } as Edge
+    expect(lineTarget(bgp, graph)).toEqual({
+      sem: "bgp",
+      edgeIds: ["bgp:a:b:"],
+    })
+    const strand = { ...bgp, id: "t:1", data: { sem: "through" } } as Edge
+    expect(lineTarget(strand, graph)).toBeNull()
   })
 })
 

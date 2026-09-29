@@ -406,6 +406,25 @@ class SavedViewTests(_Base):
         ).json()["state"]
         self.assertEqual(state["hidden"], hidden)
 
+    def test_single_hidden_lines_are_accepted(self):
+        """A line hidden from its right-click menu saves under ``edges``;
+        the rest of the rules still apply to it."""
+        hidden = {"devices": [], "edges": ["e:c1:a:b", "ghost:a:b"]}
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "lines", "state": {"hidden": hidden}}, format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        state = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]
+        self.assertEqual(state["hidden"], hidden)
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "bad", "state": {"hidden": {"edges": [1]}}}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
     def test_a_map_bigger_than_five_thousand_nodes_saves(self):
         positions = {f"dev:{i:08x}-0000-0000-0000-000000000000": [i, i * 2]
                      for i in range(12_000)}
