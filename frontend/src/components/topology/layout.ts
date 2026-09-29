@@ -1,9 +1,9 @@
 import dagre from "@dagrejs/dagre"
 import type { Edge, Node } from "@xyflow/react"
 
-import { statusPillReserve } from "./card-metrics"
-import type { HasStatusPill } from "./card-metrics"
 import { Grid } from "./diagram/spatial"
+import { HIER_MIN_W, hierBox } from "./hier-card"
+import type { HierCardData } from "./hier-card"
 import { networkSimplex } from "./network-simplex"
 
 // Lay nodes out left-to-right with dagre and write positions back. Node
@@ -614,7 +614,7 @@ export function hierarchyWaypoints(
       x: n.position.x,
       y: n.position.y,
       w: hierarchyWidth(d),
-      h: hierHeight(d.portSpan ?? 0),
+      h: hierHeight(d.portSpan ?? 0, hierHead(d)),
     })
   }
   /** Where a port's cable actually leaves its card. */
@@ -789,10 +789,14 @@ export function hierarchyWaypoints(
 }
 
 // ── Hierarchy (port-aligned) layout ─────────────────────────────────────────
-// The NetBox-style renderer: tall cards whose port chips sit at the height
-// of their PEER's port, so cables run near-straight. dagre gives ranks;
-// relaxation sweeps pull ports (and their cards) toward their peers.
+// Tall cards whose port chips sit at the height of their PEER's port, so
+// cables run near-straight. dagre gives ranks; relaxation sweeps pull ports
+// (and their cards) toward their peers. A card's header is the Diagram's
+// Simple card (hier-card.ts), as tall as its card lines: the chips start
+// under it.
 export const HIER_PORT_PITCH = 18
+/** A plain header - the name alone. The chips' spread and cards laid out
+ * without a header box (a grouped map's site cards) use it. */
 export const HIER_HEADER = 30
 export const HIER_PAD = 12
 export const HIER_MIN_SPAN = 60
@@ -817,27 +821,24 @@ export interface HierPortPos {
   off: number
 }
 
-export function hierHeight(span: number): number {
-  return HIER_HEADER + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
+/** A Hierarchy card's height: its header, then its port chips' span
+ * padded above and below. */
+export function hierHeight(span: number, head = HIER_HEADER): number {
+  return head + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
 }
 
-/** The most of a Hierarchy card's width its name takes before it
- * truncates. */
-export const HIER_NAME_MAX = 180
+/** How tall a card's header is: its card box, laid out by the build. */
+export function hierHead(d: unknown): number {
+  return hierBox(d)?.h ?? HIER_HEADER
+}
 
-/** Sized to the header: the device name (whole up to 180px), the status
- * pill beside it, then its address and site - capped. */
-export function hierarchyWidth(
-  d: {
-    name?: string
-    primary_ip?: string | null
-    site?: string | null
-  } & HasStatusPill
-): number {
-  const name = Math.min(HIER_NAME_MAX, (d.name?.length ?? 0) * 6.6)
-  const sub = [d.primary_ip, d.site].filter(Boolean).join(" · ")
-  const tail = sub ? 8 + Math.min(140, sub.length * 5) : 0
-  return Math.max(190, Math.min(360, 40 + name + tail) + statusPillReserve(d))
+/** As wide as its header card, and never narrower than `HIER_MIN_W`. A
+ * card without a header box (a grouped map's site card) is sized to its
+ * name. */
+export function hierarchyWidth(d: { name?: string } & HierCardData): number {
+  const box = hierBox(d)
+  if (box) return Math.max(HIER_MIN_W, box.w)
+  return Math.max(HIER_MIN_W, 40 + Math.min(180, (d.name?.length ?? 0) * 6.6))
 }
 
 /** Past this a layout is broken, not big: a saved view refuses coordinates
@@ -902,7 +903,10 @@ export function layoutHierarchy(
   const laid = packComponents(
     nodes.map((n) => ({ ...n, position: at.get(n.id) ?? { x: 0, y: 0 } })),
     edges,
-    (n) => ({ width: widthOf(n), height: hierHeight(span.get(n.id) ?? 0) }),
+    (n) => ({
+      width: widthOf(n),
+      height: hierHeight(span.get(n.id) ?? 0, hierHead(n.data)),
+    }),
     pinned
   )
   return { nodes: laid, portPos, span, sides }
@@ -947,6 +951,10 @@ function layoutHierarchyPart(
   positions?: Record<string, [number, number]>
 ): HierResult {
   const pinned = positions ? new Set(Object.keys(positions)) : undefined
+  // Each card's header height: its chips start under it.
+  const heads = new Map(nodes.map((n) => [n.id, hierHead(n.data)]))
+  const head = (id: string) => heads.get(id) ?? HIER_HEADER
+  const heightOf = (id: string, sp: number) => hierHeight(sp, head(id))
   // Port lists per node from the cable edges (base port names ride on the
   // edge handles at this stage).
   type P = { name: string; peer: string; peerPort: string }
@@ -975,7 +983,7 @@ function layoutHierarchyPart(
     align: "UL",
   })
   const provH = (id: string) =>
-    hierHeight((ports.get(id)?.length ?? 0) * HIER_PORT_PITCH)
+    heightOf(id, (ports.get(id)?.length ?? 0) * HIER_PORT_PITCH)
   for (const n of nodes) g.setNode(n.id, { width: widthOf(n), height: provH(n.id) })
   for (const e of edges) g.setEdge(e.source, e.target, { weight: 1, minlen: 1 })
   dagre.layout(g)
@@ -1007,7 +1015,7 @@ function layoutHierarchyPart(
       (a, b) => (top.get(a.peer) ?? 0) - (top.get(b.peer) ?? 0)
     )
     list.forEach((pt, i) =>
-      portY.set(`${id}:${pt.name}`, (top.get(id) ?? 0) + HIER_HEADER + HIER_PAD + i * HIER_PORT_PITCH)
+      portY.set(`${id}:${pt.name}`, (top.get(id) ?? 0) + head(id) + HIER_PAD + i * HIER_PORT_PITCH)
     )
   }
 
@@ -1052,10 +1060,10 @@ function layoutHierarchyPart(
     }
     const first = abs[0].y
     const last = abs[abs.length - 1].y
-    if (!pinned?.has(id)) top.set(id, first - HIER_HEADER - HIER_PAD)
+    if (!pinned?.has(id)) top.set(id, first - head(id) - HIER_PAD)
     const base = top.get(id)!
     // Pinned cards keep their position - ports re-stack inside from the top.
-    let off = base + HIER_HEADER + HIER_PAD
+    let off = base + head(id) + HIER_PAD
     for (const { pt, y } of abs) {
       const yy = pinned?.has(id) ? off : y
       portY.set(`${id}:${pt.name}`, yy)
@@ -1079,7 +1087,7 @@ function layoutHierarchyPart(
       let bottom = -Infinity
       for (const n of group) {
         if (pinned?.has(n.id)) {
-          bottom = Math.max(bottom, (top.get(n.id) ?? 0) + hierHeight(span.get(n.id) ?? 0))
+          bottom = Math.max(bottom, (top.get(n.id) ?? 0) + heightOf(n.id, span.get(n.id) ?? 0))
           continue
         }
         let t = top.get(n.id) ?? 0
@@ -1090,7 +1098,7 @@ function layoutHierarchyPart(
           for (const pt of ports.get(n.id) ?? [])
             portY.set(`${n.id}:${pt.name}`, (portY.get(`${n.id}:${pt.name}`) ?? 0) + delta)
         }
-        bottom = t + hierHeight(span.get(n.id) ?? 0)
+        bottom = t + heightOf(n.id, span.get(n.id) ?? 0)
       }
     }
   }
@@ -1103,7 +1111,7 @@ function layoutHierarchyPart(
     for (const n of seq) {
       const list = ports.get(n.id)
       if (!list?.length) continue
-      const base = (top.get(n.id) ?? 0) + HIER_HEADER + HIER_PAD
+      const base = (top.get(n.id) ?? 0) + head(n.id) + HIER_PAD
       const targets = list
         .map((pt) => ({
           pt,
@@ -1138,7 +1146,7 @@ function layoutHierarchyPart(
       x: x.get(id) ?? 0,
       w: widthOf(byId2.get(id)!),
       t: top.get(id) ?? 0,
-      h: hierHeight(span.get(id) ?? 0),
+      h: heightOf(id, span.get(id) ?? 0),
     })
     const byId2 = new Map(nodes.map((n) => [n.id, n]))
     const order2 = [...nodes].sort(
@@ -1212,6 +1220,8 @@ export function realignHierPorts(
     add(e.target, d.baseT, e.source, d.baseS)
   }
   const pos = new Map(nodes.map((n) => [n.id, n.position]))
+  const heads = new Map(nodes.map((n) => [n.id, hierHead(n.data)]))
+  const head = (id: string) => heads.get(id) ?? HIER_HEADER
   const sides = new Map<string, Record<string, "L" | "R">>()
   const portY = new Map<string, number>()
   for (const [id, list] of ports) {
@@ -1223,14 +1233,14 @@ export function realignHierPorts(
     list.forEach((pt, i) =>
       portY.set(
         `${id}:${pt.name}`,
-        (pos.get(id)?.y ?? 0) + HIER_HEADER + HIER_PAD + i * HIER_PORT_PITCH
+        (pos.get(id)?.y ?? 0) + head(id) + HIER_PAD + i * HIER_PORT_PITCH
       )
     )
   }
   const span = new Map<string, number>()
   for (let sweep = 0; sweep < 2; sweep++) {
     for (const [id, list] of ports) {
-      const base = (pos.get(id)?.y ?? 0) + HIER_HEADER + HIER_PAD
+      const base = (pos.get(id)?.y ?? 0) + head(id) + HIER_PAD
       const targets = list
         .map((pt) => ({
           pt,

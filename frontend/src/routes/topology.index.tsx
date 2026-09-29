@@ -1401,8 +1401,8 @@ function TopologyPage() {
   // ── Graph ──
   // A device set is POSTed (fetchTopology): a builder map of a few hundred
   // ids would overflow the server's request line as a query string.
-  // The Diagram's cards ask for their lines (`include=card`), under the
-  // view's own list when it has one.
+  // The cards - the Diagram's, and the Hierarchy's headers - ask for their
+  // lines (`include=card`), under the view's own list when it has one.
   const cardFields = savedDiagram?.fields
   const cardFieldsKey = cardFields ? cardFields.join(",") : null
   // The links' subnets and addresses (`include=link_ips`) only when a
@@ -1413,19 +1413,18 @@ function TopologyPage() {
   const photos = wantsPhotos(diagramFace, doc.doc.nodes)
   const graphQuery = useMemo<TopologyQuery>(() => {
     const collapse_panels = filters.collapse
-    const cards: Partial<TopologyQuery> =
-      isDiagram && !grouped
-        ? {
-            include: [
-              "card",
-              ...(linkIps ? (["link_ips"] as const) : []),
-              ...(photos ? (["photo"] as const) : []),
-            ],
-            ...(cardFieldsKey !== null
-              ? { card_fields: cardFieldsKey ? cardFieldsKey.split(",") : [] }
-              : {}),
-          }
-        : {}
+    const cards: Partial<TopologyQuery> = !grouped
+      ? {
+          include: [
+            "card",
+            ...(isDiagram && linkIps ? (["link_ips"] as const) : []),
+            ...(isDiagram && photos ? (["photo"] as const) : []),
+          ],
+          ...(cardFieldsKey !== null
+            ? { card_fields: cardFieldsKey ? cardFieldsKey.split(",") : [] }
+            : {}),
+        }
+      : {}
     // Builder mode: exactly this set, nothing else.
     if (custom !== null) return { devices: custom, collapse_panels, ...cards }
     if (focus && !grouped)
@@ -1749,12 +1748,9 @@ function TopologyPage() {
         method: "POST",
         body: JSON.stringify({ devices: deviceIds }),
       }),
-    // The sidebar's chips, and the Diagram cards' pill when some card
-    // lists `monitor`.
-    enabled:
-      !logical &&
-      deviceIds.length > 0 &&
-      (showObjects || (isDiagram && cardMonitor)),
+    // The sidebar's chips, and the cards' pill when some card lists
+    // `monitor`.
+    enabled: !logical && deviceIds.length > 0 && (showObjects || cardMonitor),
     staleTime: 30_000,
   })
   const checks = monQuery.data?.statuses ?? EMPTY_MON
@@ -3007,14 +3003,6 @@ function TopologyPage() {
                 roles: rolesInGraph,
                 monitorPill: cardMonitor,
               })}
-              // The Diagram's PNG is its SVG rasterised; the other tabs keep
-              // the canvas capture.
-              capturePng={
-                isDiagram
-                  ? undefined
-                  : async (visible) =>
-                      (await canvas.current?.exportPng(visible)) ?? null
-              }
               document={(req) =>
                 canvas.current?.document({
                   ...req,
@@ -3100,7 +3088,7 @@ function TopologyPage() {
                 diagramLine={diagramLine}
                 linkOverrides={doc.doc.links}
                 diagramLabels={isDiagram ? diagramLabels : undefined}
-                monitor={isDiagram ? checks : undefined}
+                monitor={checks}
                 bundleLags={lagMode === "on"}
                 positions={positions}
                 layoutTick={layoutTick}

@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/status-badge"
 import { CARD as INK, mix } from "@/lib/diagram/theme"
 import { cn } from "@/lib/utils"
 import { cardContent } from "./card-fields"
+import type { CardPill } from "./card-fields"
 import { CARD, PILL, nubRect, pillTop } from "./card-layout"
 import { PhotoNode } from "./photo-node"
 import type { DiagramCardData } from "./types"
@@ -35,6 +36,17 @@ const STATUS_PILL =
 /** The monitoring badge draws its edge inside (a ring), so its padding
  * takes the border's pixel too. */
 const CHECK_PILL = "h-4 max-w-24 px-[7px] text-[9px] leading-[14px]"
+
+/** A card's one pill at card scale: the monitoring badge while the device
+ * is down or degraded, else its lifecycle status. The Hierarchy's header
+ * wears the same. */
+export function CardPillBadge({ pill }: { pill: CardPill }) {
+  return pill.kind === "check" ? (
+    <CheckStatusBadge status={pill.status} className={CHECK_PILL} />
+  ) : (
+    <StatusBadge status={pill.status} className={STATUS_PILL} />
+  )
+}
 
 export const CardNode = memo(function CardNode(props: NodeProps) {
   const { data, selected } = props
@@ -90,11 +102,7 @@ export const CardNode = memo(function CardNode(props: NodeProps) {
           className="absolute flex"
           style={{ left: PILL.X, top: pillTop(box.stacked) }}
         >
-          {pill.kind === "check" ? (
-            <CheckStatusBadge status={pill.status} className={CHECK_PILL} />
-          ) : (
-            <StatusBadge status={pill.status} className={STATUS_PILL} />
-          )}
+          <CardPillBadge pill={pill} />
         </span>
       )}
       <div

@@ -113,6 +113,42 @@ describe("fromFlow", () => {
     expect(fw.link).toMatch(/^https:\/\/danbyte\.example\/cables\//)
   })
 
+  it("draws a Hierarchy header's card lines and monitoring pill", () => {
+    const graph = {
+      ...fabricGraph,
+      nodes: fabricGraph.nodes.map((n) =>
+        n.id === devId("spine1")
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                card: {
+                  fields: ["monitor", "serial"],
+                  source: "default" as const,
+                  values: { serial: "SPN1" },
+                },
+              },
+            }
+          : n
+      ),
+    }
+    const { nodes, edges } = build(graph, {
+      colorMode: "cable",
+      nodeStyle: "hierarchy",
+    })
+    const doc = fromFlow(nodes, edges, [], {
+      meta: META,
+      measure: approxMeasure,
+      monitor: { [DEV.spine1]: { status: "down" } },
+      checkLabels: { down: { name: "Critical", color: "#dc2626" } },
+    })
+    const spine = doc.nodes.find((n) => n.id === devId("spine1"))!
+    expect(spine.lines).toEqual(["SN SPN1"])
+    expect(spine.pill).toMatchObject({ text: "Critical", fill: "#dc2626" })
+    // A card whose lines list no pill wears none, down or not.
+    expect(doc.nodes.filter((n) => n.pill)).toHaveLength(1)
+  })
+
   it("leaves hidden cards out, with their lines", () => {
     const { nodes, edges } = flow("flat")
     const doc = fromFlow(

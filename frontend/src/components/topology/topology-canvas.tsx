@@ -16,7 +16,6 @@ import {
   MiniMap,
   ReactFlow,
   ViewportPortal,
-  getNodesBounds,
   getViewportForBounds,
   useEdgesState,
   useNodesState,
@@ -24,12 +23,12 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react"
 import type { Edge, Node } from "@xyflow/react"
-import { toPng } from "html-to-image"
 
 import type {
   BulkStatusEntry,
   GhostEdgeData,
   TopoEdge,
+  TopoNode,
   TopologyGraph,
   TopologyLinkOverride,
   TopologyViewNote,
@@ -51,6 +50,7 @@ import { FLAT_H, flatHeight, flatW, flatWidth } from "./flat-node"
 import type { FlatAnchor, FlatData } from "./flat-node"
 import { GROUP_H, GROUP_W } from "./group-node"
 import { hierarchyWidth } from "./hierarchy-node"
+import { hierCardBox } from "./hier-card"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import {
   edgeWaypoints,
@@ -351,9 +351,6 @@ export interface CanvasHandle {
   focusZone: (box: { x: number; y: number; w: number; h: number }) => void
   /** The ids of the selected Diagram notes. */
   selectedNotes: () => string[]
-  /** Render the graph to a PNG data URL - the whole diagram, or just the
-   * visible viewport. */
-  exportPng: (viewportOnly?: boolean) => Promise<string | null>
   /** The map as an export document (lib/diagram): the Diagram from its
    * model, the other tabs in the Diagram's Simple look. Built from the
    * canvas's data - every card, on screen or not - never the DOM. */
@@ -778,6 +775,9 @@ export function build(
     matched?: Set<string> | null
     hiddenPorts?: Set<string>
     originId?: string
+    /** Hierarchy: the tenant's names for the monitoring states, so a
+     * header keeps room for its pill as it will read. */
+    checkLabels?: Partial<Record<"down" | "degraded", string>>
   }
 ) {
   const flat = opts.nodeStyle === "flat"
@@ -817,10 +817,25 @@ export function build(
 
   // Hierarchy view: port-aligned layout, near-straight cables, no channel
   // routing (alignment removes the need). Levels don't apply here - the
-  // rank structure IS the hierarchy.
+  // rank structure IS the hierarchy. Each device card's header is the
+  // Diagram's Simple card, laid out once here: the layout sizes the card
+  // from it and the node draws it.
   if (hier) {
+    const carded = nodes.map((n) =>
+      n.type === "hier"
+        ? {
+            ...n,
+            data: {
+              ...n.data,
+              hierCard: hierCardBox(n.data as TopoNode["data"], {
+                checkLabels: opts.checkLabels,
+              }),
+            },
+          }
+        : n
+    )
     const widthOf = (n: Node) => hierarchyWidth(n.data as { name?: string })
-    const res = layoutHierarchy(nodes, allEdges, widthOf, opts.positions)
+    const res = layoutHierarchy(carded, allEdges, widthOf, opts.positions)
     const laid = res.nodes.map((n) => ({
       ...n,
       data: {
@@ -1206,8 +1221,9 @@ export interface TopologyCanvasProps {
   /** Diagram: which labels the links carry (subnets, addresses, port
    * names); all three when absent. Keep the array stable. */
   diagramLabels?: readonly LabelToken[]
-  /** Diagram: monitoring state per device id, for the cards' pills. Kept
-   * out of the build so a refresh never re-lays the map out. */
+  /** Diagram and Hierarchy: monitoring state per device id, for the
+   * cards' pills. Kept out of the build so a refresh never re-lays the
+   * map out. */
   monitor?: Record<string, BulkStatusEntry | undefined>
   /** A map built by hand: the canvas takes devices dragged in from a
    * device list (`DEVICE_IDS_MIME`), and an empty one still draws so
@@ -1442,6 +1458,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // point-to-point beziers - neither re-routes orthogonally. The Diagram
   // re-anchors its own links (relinkDiagram).
   const diagram = nodeStyle === "diagram"
+  /** Cards in their role's colour, the minimap's too. */
+  const roleColored = diagram || nodeStyle === "hierarchy"
   const routingActive =
     edgeRouting === "routed" &&
     nodeStyle !== "hierarchy" &&
@@ -1556,6 +1574,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
                 matched: matchedIds,
                 hiddenPorts,
                 originId,
+                checkLabels,
               }),
               model: null,
             },
@@ -1819,7 +1838,6 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const tipApi = useRef<CanvasTipHandle>(null)
   // A whole-map PNG needs every card in the DOM, but React Flow only mounts
   // what is on screen. Set for the length of that capture.
-  const [capturing, setCapturing] = useState(false)
   // The spotlight card's direct neighbours - everything else fades.
   const spotSet = useMemo(() => {
     if (!spotId) return null
@@ -1895,7 +1913,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     const memo = monMemo.current
     return nodes.map((n) => {
       let out = n
-      if (monitor && n.type === "card") {
+      if (monitor && (n.type === "card" || n.type === "hier")) {
         const dev = (n.data as DiagramCardData).device_id
         const status = (dev && monitor[dev]?.status) || null
         const hit = memo.get(n.id)
@@ -2360,115 +2378,6 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         )
       },
       selectedNotes: () => selectedNotes(flow.getNodes()),
-      exportPng: async (viewportOnly = false) => {
-        const el = wrapper.current?.querySelector<HTMLElement>(
-          ".react-flow__viewport"
-        )
-        if (!el) return null
-        // The whole map: onlyRenderVisibleElements keeps offscreen cards
-        // and cables out of the DOM, so the snapshot would silently drop
-        // them. Mount everything, wait until React Flow has, then capture.
-        if (!viewportOnly) {
-          setCapturing(true)
-          const want = flow.getNodes().filter((n) => !n.hidden).length
-          const frame = () =>
-            new Promise<void>((r) => requestAnimationFrame(() => r()))
-          // At least two frames (commit, then React Flow placing the new
-          // nodes and their edges), bounded so a stray count can't hang it.
-          for (let i = 0; i < 60; i++) {
-            await frame()
-            if (
-              i >= 1 &&
-              el.querySelectorAll(".react-flow__node").length >= want
-            )
-              break
-          }
-        }
-        // React Flow v12 draws each edge in an <svg> with NO width/height -
-        // live it renders through `overflow: visible`, but the PNG rasterizer
-        // clips every svg to its 0×0 box, exporting a map with no cables.
-        // Give each such svg an explicit box covering its own content for the
-        // duration of the export, then restore.
-        const bare = [...el.querySelectorAll("svg")].filter(
-          (svg) => !svg.getAttribute("width")
-        )
-        const restore = bare.map((svg) => {
-          const prev = {
-            svg,
-            viewBox: svg.getAttribute("viewBox"),
-            style: svg.getAttribute("style"),
-          }
-          try {
-            const b = (svg as unknown as SVGGraphicsElement).getBBox()
-            if (b.width > 0 || b.height > 0) {
-              const pad = 24 // stroke width + labels overhang the bbox
-              const x = b.x - pad
-              const y = b.y - pad
-              const w = b.width + pad * 2
-              const h = b.height + pad * 2
-              svg.setAttribute("width", String(w))
-              svg.setAttribute("height", String(h))
-              svg.setAttribute("viewBox", `${x} ${y} ${w} ${h}`)
-              svg.style.position = "absolute"
-              svg.style.left = `${x}px`
-              svg.style.top = `${y}px`
-              svg.style.overflow = "visible"
-            }
-          } catch {
-            /* detached/empty svg - leave it alone */
-          }
-          return prev
-        })
-        const undo = () => {
-          for (const r of restore) {
-            r.svg.removeAttribute("width")
-            r.svg.removeAttribute("height")
-            if (r.viewBox) r.svg.setAttribute("viewBox", r.viewBox)
-            else r.svg.removeAttribute("viewBox")
-            if (r.style) r.svg.setAttribute("style", r.style)
-            else r.svg.removeAttribute("style")
-          }
-        }
-        try {
-          if (viewportOnly) {
-            // Just what's on screen - for pasting a detail into a ticket
-            // without shipping the whole estate.
-            const w = wrapper.current?.clientWidth ?? 1200
-            const h = wrapper.current?.clientHeight ?? 800
-            const vp = flow.getViewport()
-            return await toPng(el, {
-              backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
-              width: w,
-              height: h,
-              style: {
-                width: `${w}px`,
-                height: `${h}px`,
-                transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`,
-              },
-            })
-          }
-          const bounds = getNodesBounds(flow.getNodes())
-          const w = Math.min(4096, Math.max(800, Math.ceil(bounds.width) + 160))
-          const h = Math.min(
-            4096,
-            Math.max(600, Math.ceil(bounds.height) + 160)
-          )
-          const vp = getViewportForBounds(bounds, w, h, 0.2, 2, 0.06)
-          return await toPng(el, {
-            backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
-            width: w,
-            height: h,
-            style: {
-              width: `${w}px`,
-              height: `${h}px`,
-              transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`,
-            },
-          })
-        } finally {
-          undo()
-          if (!viewportOnly) setCapturing(false)
-        }
-      },
       document: ({ area = "all", ...opts }) => {
         const live = exportRef.current
         let box: Rect | null = null
@@ -2500,6 +2409,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         return fromFlow(cards, live.edges, regions, {
           ...opts,
           area: box,
+          monitor: live.monitor,
+          checkLabels: live.statusLabels,
         })
       },
       boxes: () => {
@@ -2544,7 +2455,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         return e ? lineTarget(e, graphRef.current) : null
       },
     }),
-    [flow, theme]
+    [flow]
   )
 
   // Devices dragged in from a device list. Only a map built by hand takes
@@ -3013,7 +2924,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           // The user takes the camera: the word on the part shown goes.
           if (ev) setPartial(false)
         }}
-        onlyRenderVisibleElements={!capturing}
+        onlyRenderVisibleElements
         // Cards and zones leave the map through explicit actions (the
         // context menu, the zone toolbar) - never a stray Backspace.
         deleteKeyCode={null}
@@ -3024,14 +2935,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         <ZoomControls onFit={() => fitMap(0)} />
         {bigMap && (
           <MiniMapCanvas
-            nodeColor={diagram ? miniColor : undefined}
+            nodeColor={roleColored ? miniColor : undefined}
             theme={theme}
           />
         )}
         <MiniMap
           pannable
           zoomable
-          nodeColor={diagram ? miniColor : undefined}
+          nodeColor={roleColored ? miniColor : undefined}
           // A big map's cards are painted underneath, on one canvas.
           nodeComponent={bigMap ? NoMiniMapNode : undefined}
           className={cn(

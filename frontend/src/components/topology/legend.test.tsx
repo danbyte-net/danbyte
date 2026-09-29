@@ -91,6 +91,23 @@ describe("legendRows", () => {
     expect(rows.some((r) => r.kind === "line" && r.sem === "cable")).toBe(true)
   })
 
+  it("keys the Hierarchy's role headers and pill as the Diagram does", () => {
+    const rows = legendRows({
+      viewStyle: "hierarchy",
+      grouped: false,
+      colorMode: "cable",
+      roles: [{ name: "Spine", color: "#6366f1" }],
+      monitorPill: true,
+    })
+    expect(rows.slice(0, 2)).toEqual([
+      { kind: "role", label: "Spine", color: "#6366f1" },
+      { kind: "pill", label: "Monitoring" },
+    ])
+    // Its own lines and the dashed patch panel follow.
+    expect(rows.map((r) => r.label)).toContain("LAG bundle")
+    expect(rows.map((r) => r.label)).toContain("Patch panel")
+  })
+
   it("names bundles plainly and repeats the Color by option", () => {
     const labels = (viewStyle: "diagram" | "hierarchy", colorMode = "cable") =>
       legendRows({

@@ -6,14 +6,14 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import type { StatusMini } from "@/lib/api"
 import { FlatNode, flatW } from "./flat-node"
-import { HierarchyNode } from "./hierarchy-node"
 import { statusPillReserve } from "./card-metrics"
-import { hierarchyWidth } from "./layout"
 import { NodeStatusPill } from "./node-status-pill"
 import { StencilNode, stencilSize } from "./stencil-node"
 
 // A card's lifecycle status is the shared StatusBadge pill, coloured from the
-// status row - never a coloured dot - and the card grows to fit it.
+// status row - never a coloured dot - and the card grows to fit it. The
+// Hierarchy's header is a Diagram card and follows its rules instead
+// (hierarchy-node.test.tsx).
 
 afterEach(cleanup)
 
@@ -74,7 +74,6 @@ describe("statusPillReserve", () => {
     }
     expect(stencilSize(withPill).width).toBeGreaterThan(stencilSize(base).width)
     expect(flatW(withPill)).toBeGreaterThan(flatW(base))
-    expect(hierarchyWidth(withPill)).toBeGreaterThan(hierarchyWidth(base))
   })
 })
 
@@ -96,7 +95,6 @@ describe("NodeStatusPill", () => {
 describe.each([
   ["Wiring", StencilNode],
   ["Flat", FlatNode],
-  ["Hierarchy", HierarchyNode],
 ])("%s card", (_label, Node) => {
   it("shows the status as a pill and draws no status dot", () => {
     const { container } = renderNode(Node, device)

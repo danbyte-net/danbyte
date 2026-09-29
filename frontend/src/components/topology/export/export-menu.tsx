@@ -157,7 +157,6 @@ function saveUrl(url: string, fileName: string) {
 
 export function ExportMenu({
   document: buildDocument,
-  capturePng,
   modes = false,
   shownMode = "detailed",
   legend,
@@ -166,9 +165,6 @@ export function ExportMenu({
 }: {
   /** The map as an export document. */
   document: (req: ExportRequest) => DiagramDocument | null
-  /** The legacy tabs' PNG: a capture of the canvas (a data URL). Absent =
-   * the PNG is the SVG rasterised. */
-  capturePng?: (visibleOnly: boolean) => Promise<string | null>
   /** Offer Simple and Detailed for draw.io (the Diagram tab). */
   modes?: boolean
   /** The mode the map is shown in; draw.io follows it by default. */
@@ -213,15 +209,6 @@ export function ExportMenu({
     let printing = false
     setBusy(true)
     try {
-      if (format === "png" && capturePng) {
-        const url = await capturePng(prefs.area === "visible")
-        if (!url) return
-        const a = window.document.createElement("a")
-        a.href = url
-        a.download = exportFileName(name, "png")
-        a.click()
-        return
-      }
       const doc = await build(
         format !== "drawio"
           ? undefined

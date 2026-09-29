@@ -17,7 +17,8 @@ import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
 import { flatHeight, flatWidth } from "./flat-node"
 import type { FlatData } from "./flat-node"
 import { GROUP_H, GROUP_W } from "./group-node"
-import { hierHeight, hierarchyWidth } from "./layout"
+import { hierHead, hierHeight, hierarchyWidth } from "./layout"
+import type { CardBox } from "./diagram/card-layout"
 import { stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
 
@@ -73,6 +74,19 @@ function canon(v: unknown): string {
   return JSON.stringify(v)
 }
 
+/** A Hierarchy header as the layout sees it: its box and what it says.
+ * The text's own placement is card-layout's, covered by its tests. */
+function headerBox(b: CardBox) {
+  return {
+    w: coord(b.w),
+    h: coord(b.h),
+    fill: b.fill,
+    title: b.title.text,
+    lines: b.lines.map((l) => l.text),
+    ...(b.stacked ? { stacked: true } : {}),
+  }
+}
+
 /** The size each node renders at (what dagre reserved for it). */
 function renderedSize(n: Node): { w: number; h: number } | undefined {
   const d = n.data as StencilData & FlatData & { portSpan?: number }
@@ -84,7 +98,10 @@ function renderedSize(n: Node): { w: number; h: number } | undefined {
     case "flat":
       return { w: flatWidth(d), h: flatHeight(d) }
     case "hier":
-      return { w: hierarchyWidth(d), h: hierHeight(d.portSpan ?? 0) }
+      return {
+        w: hierarchyWidth(d),
+        h: hierHeight(d.portSpan ?? 0, hierHead(d)),
+      }
     case "sitegroup":
       return { w: GROUP_W, h: GROUP_H }
     default:
@@ -100,7 +117,12 @@ function projectNode(n: Node, input: Map<string, Record<string, unknown>>) {
   const computed: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(d)) {
     if (k in src && canon(exact(src[k])) === canon(exact(v))) continue
-    computed[k] = COORD_DATA.has(k) ? coord(v) : v
+    computed[k] =
+      k === "hierCard"
+        ? headerBox(v as CardBox)
+        : COORD_DATA.has(k)
+          ? coord(v)
+          : v
   }
   return {
     type,

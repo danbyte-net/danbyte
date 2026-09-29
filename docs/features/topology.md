@@ -11,10 +11,11 @@ icon: lucide/share-2
   card per device in its role's color, in **Detailed** mode (the default:
   a nub and a named line per cabled interface) or **Simple** (one line per
   device pair), with a choice of line. See [Diagram view](#diagram-view).
-- **Hierarchy** - tall rounded cards with the identity on a header row (the
-  device name kept whole up to 180 px; its address and site give way
-  first) and **port chips aligned to their peer's height**, so cables run
-  near-straight left-to-right. The layout relaxes ports toward their far
+- **Hierarchy** - tall cards whose header is the Diagram's card - the
+  role's color, the name bold, the [card lines](#card-lines) under it and
+  the status pill in the top-left corner, by the same rules - with **port
+  chips aligned to their peer's height** on the plain body below, so
+  cables run near-straight left-to-right. The layout relaxes ports toward their far
   ends over the rank structure; drag a card and its chips ride along.
   Cables here are routed from the ports, not the cards: one bends only to
   cross a card standing in its way, and only where a clear vertical street
@@ -170,14 +171,15 @@ trunk). Zoomed out, the port names and addresses go first (the lines close
 up behind them), then the chips and the card lines; hovering a line still
 names it at any zoom.
 
-The cards fetch their lines with the map (`include=card`), and the
-monitoring states load whenever a card lists the monitoring pill - not only
-with the sidebar open. The legend lists the roles on the map in their card
+The cards fetch their lines with the map (`include=card`, on the Hierarchy
+tab too), and the monitoring states load whenever a card lists the
+monitoring pill - not only with the sidebar open. The legend lists the roles on the map in their card
 colors, and the monitoring pill when a card can show it.
 
 ### Card lines
 
-What a card says under the device name is a short list of **card lines**,
+What a card says under the device name - on the Diagram, and in a
+Hierarchy card's header - is a short list of **card lines**,
 top to bottom - by default the monitoring pill, **IP**, **Loopback** and
 **Serial**. Admins choose them under **Settings → Topology → Card lines**:
 
@@ -543,7 +545,8 @@ map scoped to them.
 A collapsible **Legend** in the map's corner explains the line styles for
 whichever view is active (the Logical view keys its own roles, rails and
 legs); its open/closed state is remembered per browser. On the Diagram
-it lists the roles on the map as their badges. With **Color by** on *Type*
+and the Hierarchy it lists the roles on the map as their badges, and the
+monitoring pill when a card can show it. With **Color by** on *Type*
 or *Speed* it keys the cable types on the map, or the speed tiers, as short
 lines in their colors; on *Cable* or *Status* it says so in one line
 (*Color by cable*). Its **Hide legend** button folds it to a small
@@ -553,16 +556,19 @@ in the accent color while its panel is open.
 ## Reading the map
 
 The Diagram's cards and lines are described under
-[Diagram view](#diagram-view). The Hierarchy tab, and the stencil cards of
-the trace maps and a device's Map tab, read like this:
+[Diagram view](#diagram-view). A Hierarchy card's header is the same card:
+its role's color, the name bold, its card lines, and the monitoring or
+status pill only when the card lines list it; a selected card is outlined.
+The stencil cards of the trace maps and a device's Map tab, and the port
+chips on a Hierarchy card, read like this:
 
 - **Cards** - the colored spine is the device's role color; the pill after
   the name is its lifecycle status, in that status's own color (the same pill
   as the device list). A long status name widens the card rather than
   squeezing the name. Clicking a card **spotlights** it - everything not
   directly cabled to it fades until you click empty canvas.
-  **Double-clicking** a card opens its device page. Hierarchy headers
-  show the primary IP. Patch panels get a dashed border. Port cells show
+  **Double-clicking** a card opens its device page. Patch panels get a
+  dashed border. Port cells show
   the full port name. A cabled front port and its strand's rear port render as **one continuous
   row** (`front1 ⇄ rear`) - the cable enters on the left and leaves on the
   right, the way the light actually travels through a fiber panel.
@@ -1320,12 +1326,13 @@ The menu's choices are remembered per browser:
 A file is named after the saved view (else the site, else `topology`) and
 the day: `arhus-dc-2026-09-26.drawio`.
 
-**Hierarchy** exports its SVG, PDF and draw.io in the Diagram's Simple
-look: a compact role-colored card with the device's IP, centred where its
-card sits on the tab, and one straight line per device pair with a count
-chip (`2x`) when it stands for several cables. Its port chips are how that
-tab draws rather than what the map says. Its PNG is still a picture of the
-canvas as you see it, in the app's theme.
+**Hierarchy** exports its PNG, SVG, PDF and draw.io in the Diagram's
+Simple look, so the four files match: its card headers as compact
+role-colored cards with their card lines and pill, centred where each card
+sits on the tab, and one straight line per device pair with a count chip
+(`2x`) when it stands for several cables. Its port chips are how that tab
+draws rather than what the map says. The PNG is the SVG drawn at twice its
+size, light-themed like the other files, not a picture of the canvas.
 
 **Logical** exports its rail diagram as drawn: the rails in their VLANs'
 colors with their status pills, the cards in their roles' colors with

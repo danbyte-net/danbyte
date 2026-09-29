@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DRAWIO_MIME } from "@/lib/diagram/drawio"
 import { fabric } from "@/lib/diagram/__fixtures__/fabric"
+import type * as PngModule from "@/lib/diagram/png"
 import { downloadBlob } from "@/lib/table-export"
 import { ExportMenu, exportFileName } from "./export-menu"
 
@@ -18,6 +19,13 @@ import { ExportMenu, exportFileName } from "./export-menu"
 // and the area and draw.io mode choices reach the document builder.
 
 vi.mock("@/lib/table-export", () => ({ downloadBlob: vi.fn() }))
+// jsdom draws no canvas: the PNG writer answers with an empty image.
+vi.mock("@/lib/diagram/png", async (load) => ({
+  ...(await load<typeof PngModule>()),
+  diagramToPng: vi.fn(() =>
+    Promise.resolve(new Blob([], { type: "image/png" }))
+  ),
+}))
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }))
@@ -157,19 +165,22 @@ describe("ExportMenu", () => {
     }
   })
 
-  it("keeps the canvas capture for a legacy tab's PNG, and draw.io Simple", async () => {
-    const capture = vi.fn(() => Promise.resolve(null))
+  it("draws every tab's PNG from its document, and draw.io Simple", async () => {
     const doc = vi.fn(() => fabric)
-    render(<ExportMenu document={doc} capturePng={capture} name="Map" />)
+    render(<ExportMenu document={doc} name="Map" />)
     open()
     expect(screen.queryByText("Detailed")).toBeNull()
     fireEvent.click(await screen.findByText("PNG"))
-    await waitFor(() => expect(capture).toHaveBeenCalledWith(false))
-    expect(doc).not.toHaveBeenCalled()
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1))
+    // The same document the SVG, PDF and draw.io files are written from.
+    expect(doc).toHaveBeenCalledWith({ area: "all", mode: undefined })
+    const [file, mime] = download.mock.calls[0]
+    expect(file).toBe(`${exportFileName("Map", "x").slice(0, -2)}.png`)
+    expect(mime).toBe("image/png")
     open()
     fireEvent.click(await screen.findByRole("menuitem", { name: "draw.io" }))
-    await waitFor(() => expect(download).toHaveBeenCalledTimes(1))
-    expect(doc).toHaveBeenCalledWith({ area: "all", mode: "simple" })
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(2))
+    expect(doc).toHaveBeenLastCalledWith({ area: "all", mode: "simple" })
   })
 })
 

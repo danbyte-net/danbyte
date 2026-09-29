@@ -4,7 +4,7 @@ import type { Node, NodeProps, NodeTypes } from "@xyflow/react"
 import { FlatNode, flatHeight, flatWidth } from "./flat-node"
 import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
 import { HierarchyNode } from "./hierarchy-node"
-import { hierHeight, hierarchyWidth } from "./layout"
+import { hierHead, hierHeight, hierarchyWidth } from "./layout"
 import { PortNode, StencilNode, stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
 import { ZoneNode } from "./zone-node"
@@ -52,7 +52,10 @@ export const NODE_KINDS = {
     component: HierarchyNode,
     size: (n: Node) => {
       const d = n.data as { name?: string; portSpan?: number }
-      return { width: hierarchyWidth(d), height: hierHeight(d.portSpan ?? 0) }
+      return {
+        width: hierarchyWidth(d),
+        height: hierHeight(d.portSpan ?? 0, hierHead(d)),
+      }
     },
   },
   // The Diagram tab's card: its box is laid out in code (card-layout.ts).

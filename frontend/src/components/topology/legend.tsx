@@ -114,10 +114,10 @@ export interface LegendOptions {
   colorMode: EdgeColorMode
   /** Cable types present on the map - swatched when coloring by type. */
   types?: string[]
-  /** Diagram: the roles on the map - each card is filled with its role's
-   * colour. */
+  /** Diagram and Hierarchy: the roles on the map - each card (a
+   * Hierarchy card's header) is filled with its role's colour. */
   roles?: { name: string; color?: string }[]
-  /** Diagram: some card shows the monitoring pill. */
+  /** Diagram and Hierarchy: some card shows the monitoring pill. */
   monitorPill?: boolean
 }
 
@@ -160,7 +160,14 @@ export function legendRows({
         sem: "bgp",
       }
     )
-  } else
+  } else {
+    // The Hierarchy's headers are Diagram cards: the same role fills and
+    // pill.
+    if (viewStyle === "hierarchy") {
+      for (const r of roles)
+        out.push({ kind: "role", label: r.name, color: r.color || undefined })
+      if (monitorPill) out.push({ kind: "pill", label: "Monitoring" })
+    }
     out.push(
       { kind: "line", label: "Cable", sem: "cable" },
       {
@@ -187,6 +194,7 @@ export function legendRows({
       },
       { kind: "box", label: "Patch panel", dashed: true }
     )
+  }
   if (colorMode === "type" && types.length > 0)
     for (const t of types.slice(0, MAX_TYPES))
       out.push({ kind: "tone", label: t, color: typeColor(t), mono: true })

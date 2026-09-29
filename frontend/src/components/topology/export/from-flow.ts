@@ -10,13 +10,14 @@ import type {
   DiagramNode,
 } from "@/lib/diagram/types"
 import { linkEnds } from "../diagram/anchors"
-import { cardContent } from "../diagram/card-fields"
+import { cardContent, withCardLines } from "../diagram/card-fields"
 import { cardLayout } from "../diagram/card-layout"
 import type { CardLayoutInput } from "../diagram/card-layout"
 import { distinctCables } from "../diagram/build-diagram"
 import { linkRoute } from "../diagram/link-geometry"
 import {
   cardNode,
+  checkNames,
   danbyteUrl,
   endSide,
   fitBox,
@@ -25,7 +26,12 @@ import {
   routeLink,
   viewNotes,
 } from "../diagram/to-document"
-import type { DocumentOptions, Region } from "../diagram/to-document"
+import type {
+  CheckLook,
+  DocumentOptions,
+  MonitorMap,
+  Region,
+} from "../diagram/to-document"
 import type { Rect } from "../diagram/types"
 import type { BundleMember } from "../edge-semantics"
 import type { GroupEdgeInfo, TopoGroupData } from "../group-node"
@@ -36,8 +42,9 @@ import { sizeOf } from "../node-registry"
 // where its card sits on the tab, and one straight line per device pair
 // between the facing side midpoints, with a count chip when it stands for
 // several cables. Their port rows and routed cables are how those tabs
-// draw, not what the map says, so the SVG and draw.io files of every tab
-// read the same. Built from the canvas's nodes and edges - never the DOM.
+// draw, not what the map says, so the PNG, SVG, PDF and draw.io files of
+// every tab read the same. Built from the canvas's nodes and edges - never
+// the DOM.
 
 /** Node kinds drawn as device cards. */
 const DEVICE_KINDS = new Set(["device", "hier", "flat", "card"])
@@ -50,33 +57,22 @@ type FlowEdgeData = {
   group?: GroupEdgeInfo
 }
 
-/** A legacy node's card: the payload's own card lines when it has them,
- * else the primary IP - the one default line those tabs' payload carries.
- * No status pill, as on a Diagram card by default: a pill on every card is
- * noise, not information. */
-function cardInput(d: TopoNode["data"]): {
+/** A legacy node's card: the payload's own card lines when it has them
+ * (the Hierarchy asks for them), else the primary IP - the one default line
+ * those tabs' payload carries. The pill follows the card lines as on a
+ * Diagram card: none unless they list the status or monitoring. */
+function cardInput(
+  d: TopoNode["data"],
+  monitor: MonitorMap | undefined,
+  checks: CheckLook | undefined
+): {
   input: CardLayoutInput
   pill: ReturnType<typeof cardContent>["pill"]
 } {
-  const data: TopoNode["data"] = d.card
-    ? d
-    : {
-        ...d,
-        card: {
-          fields: ["primary_ip"],
-          source: "default",
-          values: d.primary_ip
-            ? {
-                primary_ip: {
-                  id: "",
-                  address: d.primary_ip,
-                  cidr: d.primary_ip,
-                },
-              }
-            : {},
-        },
-      }
-  const content = cardContent(data)
+  const content = cardContent(withCardLines(d), {
+    monitor: d.device_id ? monitor?.[d.device_id]?.status : undefined,
+    checkLabels: checkNames(checks),
+  })
   return {
     input: {
       name: content.name,
@@ -106,7 +102,7 @@ export function fromFlow(
   flowNodes: readonly Node[],
   flowEdges: readonly Edge[],
   regions: readonly Region[],
-  opts: Omit<DocumentOptions, "mode" | "monitor" | "checkLabels">
+  opts: Omit<DocumentOptions, "mode">
 ): DiagramDocument {
   const measure: Measure = opts.measure ?? measureText
   const area = opts.area ?? null
@@ -125,7 +121,7 @@ export function fromFlow(
       : { x: n.position.x + s.width / 2, y: n.position.y + s.height / 2 }
     if (device) {
       const d = n.data as TopoNode["data"]
-      const { input, pill } = cardInput(d)
+      const { input, pill } = cardInput(d, opts.monitor, opts.checkLabels)
       const box = cardLayout(input, null, measure)
       const r = { x: c.x - box.w / 2, y: c.y - box.h / 2, w: box.w, h: box.h }
       if (area && !overlaps(area, r)) continue
@@ -133,6 +129,7 @@ export function fromFlow(
       nodes.push(
         cardNode(n.id, c, box, input, {
           pill,
+          checks: opts.checkLabels,
           link: d.device_id
             ? danbyteUrl(opts.origin, `/devices/${d.device_id}`)
             : undefined,

@@ -120,6 +120,29 @@ function cfText(v: unknown): string {
   return ""
 }
 
+/** A node's data with card lines to show: its own when the payload
+ * carries them (`include=card`), else its primary IP - the one line every
+ * map payload has. Without a card the node shows no pill. */
+export function withCardLines(data: NodeData): NodeData {
+  if (data.card) return data
+  return {
+    ...data,
+    card: {
+      fields: ["primary_ip"],
+      source: "default",
+      values: data.primary_ip
+        ? {
+            primary_ip: {
+              id: "",
+              address: data.primary_ip,
+              cidr: data.primary_ip,
+            },
+          }
+        : {},
+    },
+  }
+}
+
 const ip = (v: TopoCardIp | null | undefined) => v?.address ?? ""
 
 /** One line key's text for a device, or "" when it has no value. */
