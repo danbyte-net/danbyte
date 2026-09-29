@@ -42,6 +42,7 @@ export interface RailFilters {
   tag?: string
   port?: string
   flapping?: string
+  excluded?: string
 }
 
 export type RailPatch = Partial<
@@ -87,7 +88,7 @@ export function MonitoringRail({
   showFlapping = false,
 }: {
   facets: Partial<
-    Record<TransitionFacet | "status" | "flapping", FacetBucket[]>
+    Record<TransitionFacet | "status" | "flapping" | "excluded", FacetBucket[]>
   >
   filters: RailFilters
   onChange: (patch: RailPatch) => void
@@ -151,6 +152,14 @@ export function MonitoringRail({
           options={plain(facets.flapping)}
           selected={csv(filters.flapping)}
           onToggle={() => patch("flapping", filters.flapping ? undefined : "1")}
+        />
+      )}
+      {showFlapping && (
+        <FacetGroup
+          label="Excluded"
+          options={plain(facets.excluded)}
+          selected={csv(filters.excluded)}
+          onToggle={() => patch("excluded", filters.excluded ? undefined : "1")}
         />
       )}
       {showFrom && (
@@ -334,4 +343,5 @@ export const RAIL_KEYS: (keyof RailFilters)[] = [
   "tag",
   "port",
   "flapping",
+  "excluded",
 ]

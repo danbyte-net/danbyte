@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronRight, Play, Plus, Radio, Trash2 } from "lucide-react"
+import type { QueryClient } from "@tanstack/react-query"
+import {
+  ChevronRight,
+  MoreHorizontal,
+  Play,
+  Plus,
+  Radio,
+  Trash2,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { ExternalDetailPanel } from "./external-detail"
@@ -13,6 +21,7 @@ import {
   type CheckStatus,
   type EffectiveCheck,
   type IpChecksResponse,
+  type IpMonitoringInfo,
   type IpTimeline,
   type ScheduleMode,
   type StatusSegment,
@@ -44,18 +53,56 @@ import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
 import { InfoTip } from "@/components/ui/info-tip"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useDateFormat } from "@/lib/datetime"
 import { POLL_MS, useLiveMonitoring } from "@/lib/use-live-monitoring"
 import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Loading } from "@/components/loading"
+import { ExcludedPill } from "./excluded-pill"
+import { ExcludeMonitoringDialog } from "./exclude-monitoring-dialog"
+import {
+  ResetAvailabilityDialog,
+  type ResetMode,
+} from "./reset-availability-dialog"
+
+/** Everything an exclusion or a reset changes: the tab, the strips and
+ * history, SLA columns and panels, flapping lists and every list's
+ * monitoring column. */
+function invalidateMonitoring(qc: QueryClient, ipId: string) {
+  for (const key of [
+    ["ip", ipId],
+    ["ip-checks", ipId],
+    ["monitoring-timeline"],
+    ["monitoring-transitions"],
+    ["sla-status"],
+    ["monitoring-flapping"],
+  ])
+    void qc.invalidateQueries({ queryKey: key })
+  void qc.invalidateQueries({
+    predicate: (q) => String(q.queryKey[0]).endsWith("-mon-status"),
+  })
+}
 
 export function IpMonitoring({
   ip,
+  canChange = false,
 }: {
   ip: { id: string; ip_address: string; flap_exclude?: boolean }
+  /** May exclude the address and reset its availability (ipaddress.change;
+   * the server also asks for the SLA grant when an agreement counts it). */
+  canChange?: boolean
 }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [flapExclude, setFlapExclude] = useState(ip.flap_exclude ?? false)
+  const [excluding, setExcluding] = useState(false)
+  const [resetMode, setResetMode] = useState<ResetMode | null>(null)
   // One fetch for every row's seven-day strip - the panel below has its own
   // window and its own query, so changing that never redraws the rows.
   const strips = useQuery({
@@ -117,6 +164,22 @@ export function IpMonitoring({
     onError: (err) => apiErrorToast(err),
   })
 
+  const exclude = useMutation({
+    mutationFn: (body: { excluded: boolean; reason?: string }) =>
+      api<{ monitoring: IpMonitoringInfo }>(
+        `/api/monitoring/ips/${ip.id}/exclude/`,
+        { method: "POST", body: JSON.stringify(body) }
+      ),
+    onSuccess: (_d, body) => {
+      toast.success(
+        body.excluded ? "Excluded from monitoring" : "Back in monitoring"
+      )
+      setExcluding(false)
+      invalidateMonitoring(qc, ip.id)
+    },
+    onError: (err) => apiErrorToast(err),
+  })
+
   const checkNow = useMutation({
     mutationFn: () =>
       api<CheckNowResponse>(`/api/monitoring/ips/${ip.id}/check-now/`, {
@@ -143,6 +206,8 @@ export function IpMonitoring({
   )
 
   const flapping = q.data?.flapping ?? 0
+  const mon = q.data?.monitoring
+  const excluded = mon?.excluded ?? false
 
   return (
     <div className="space-y-6">
@@ -154,7 +219,11 @@ export function IpMonitoring({
         count={checks.length || undefined}
         badge={
           <>
-            {checks.length > 0 && <MixedStatusBadge counts={counts} />}
+            {excluded ? (
+              <ExcludedPill />
+            ) : (
+              checks.length > 0 && <MixedStatusBadge counts={counts} />
+            )}
             {flapping > 0 && <FlappingPill count={flapping} />}
             {live && (
               <Badge variant="outline" className="gap-1">
@@ -191,11 +260,28 @@ export function IpMonitoring({
                 raised at all.
               </InfoTip>
             </label>
+            {canChange && mon && (
+              <label className="flex items-center gap-1.5 text-[12px] whitespace-nowrap text-muted-foreground">
+                <Checkbox
+                  checked={excluded}
+                  disabled={exclude.isPending}
+                  onCheckedChange={(v) =>
+                    v ? setExcluding(true) : exclude.mutate({ excluded: false })
+                  }
+                />
+                Exclude from monitoring
+                <InfoTip>
+                  Stops every check on this address, closes its open alerts, and
+                  leaves it out of availability, SLA figures and counts until it
+                  is included again.
+                </InfoTip>
+              </label>
+            )}
             <Button
               variant="outline"
               size="sm"
               onClick={() => checkNow.mutate()}
-              disabled={checkNow.isPending || checks.length === 0}
+              disabled={checkNow.isPending || checks.length === 0 || excluded}
             >
               <Play className="h-3.5 w-3.5" />
               {checkNow.isPending ? "Checking…" : "Check now"}
@@ -204,12 +290,31 @@ export function IpMonitoring({
             <Button size="sm" onClick={() => setAdding(true)}>
               <Plus className="h-3.5 w-3.5" /> Add check
             </Button>
+            {canChange && mon && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7">
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                    <span className="sr-only">More actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setResetMode("reset")}>
+                    Reset availability…
+                  </DropdownMenuItem>
+                  {mon.counts_from && (
+                    <DropdownMenuItem onSelect={() => setResetMode("clear")}>
+                      Clear reset…
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </>
         }
       >
-        {q.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
+        {mon && <MonitoringNote info={mon} />}
+        {q.isLoading && <Loading />}
         {q.data && checks.length === 0 && (
           <EmptyState title="No checks yet.">
             Add one to start monitoring this address.
@@ -222,6 +327,7 @@ export function IpMonitoring({
                 key={c.template_id}
                 ipId={ip.id}
                 check={c}
+                excluded={excluded}
                 expanded={expanded === c.template_id}
                 onToggle={() =>
                   setExpanded(expanded === c.template_id ? null : c.template_id)
@@ -249,6 +355,57 @@ export function IpMonitoring({
         open={adding}
         onOpenChange={setAdding}
       />
+      <ExcludeMonitoringDialog
+        open={excluding}
+        onOpenChange={setExcluding}
+        pending={exclude.isPending}
+        onConfirm={(reason) =>
+          exclude.mutate({ excluded: true, ...(reason ? { reason } : {}) })
+        }
+      />
+      <ResetAvailabilityDialog
+        open={resetMode != null}
+        onOpenChange={(o) => !o && setResetMode(null)}
+        ipId={ip.id}
+        mode={resetMode ?? "reset"}
+        info={mon}
+        onDone={() => invalidateMonitoring(qc, ip.id)}
+      />
+    </div>
+  )
+}
+
+/** Who excluded the address or reset its availability, when, and why -
+ * from the address's own record. Nothing when neither applies. */
+function MonitoringNote({ info }: { info: IpMonitoringInfo }) {
+  const { formatDate, formatDateTime } = useDateFormat()
+  const lines: string[] = []
+  if (info.excluded && info.excluded_at) {
+    let line = `Excluded by ${info.excluded_by ?? "system"} on ${formatDateTime(
+      info.excluded_at
+    )}`
+    if (info.excluded_reason) line += `: ${info.excluded_reason}`
+    lines.push(line)
+  }
+  if (info.counts_from && info.reset_at) {
+    let line = `Availability reset by ${info.reset_by ?? "system"} on ${formatDateTime(
+      info.reset_at
+    )}`
+    if (info.reset_reason) line += `: ${info.reset_reason}`
+    // Backdated: say where counting starts, which is not when it was done.
+    const backdated =
+      Math.abs(
+        new Date(info.reset_at).getTime() - new Date(info.counts_from).getTime()
+      ) > 60_000
+    if (backdated) line += ` · counts from ${formatDate(info.counts_from)}`
+    lines.push(line)
+  }
+  if (lines.length === 0) return null
+  return (
+    <div className="mb-2 space-y-0.5 text-[12px] text-muted-foreground">
+      {lines.map((l) => (
+        <p key={l}>{l}</p>
+      ))}
     </div>
   )
 }
@@ -256,12 +413,15 @@ export function IpMonitoring({
 function CheckRow({
   ipId,
   check,
+  excluded = false,
   expanded,
   onToggle,
   strip,
 }: {
   ipId: string
   check: EffectiveCheck
+  /** The address is excluded: the row says so rather than "Skipped". */
+  excluded?: boolean
   expanded: boolean
   onToggle: () => void
   /** Seven days of status to scale - the row's one picture. The latency
@@ -301,7 +461,7 @@ function CheckRow({
               (expanded ? "rotate-90" : "")
             }
           />
-          <CheckStatusBadge status={status} />
+          {excluded ? <ExcludedPill /> : <CheckStatusBadge status={status} />}
           <span className="font-medium">{check.template_name}</span>
           <span className="font-mono text-[11px] text-muted-foreground uppercase">
             {check.kind}

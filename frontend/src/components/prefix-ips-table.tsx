@@ -28,6 +28,7 @@ import { ipToBigInt, bigIntToIp, enumerableHostInts } from "@/lib/prefix-tree"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
+import { ExcludedPill } from "@/components/monitoring/excluded-pill"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { dash } from "@/components/cells/dash"
@@ -539,13 +540,20 @@ function buildColumns({
 
   const rollup = (r: IpRow) =>
     r.kind === "registered" ? monitoring[r.ip.id] : null
+  // An excluded address is its own bucket: its checks read "skipped", but
+  // that is not what it is.
+  const monFacet = monitoringFacet<IpRow>(rollup)
   insertAfter("status", {
     id: "monitoring",
-    accessorFn: (r) => monitoringBucket(rollup(r) ?? undefined),
+    accessorFn: (r) =>
+      rollup(r)?.excluded
+        ? "excluded"
+        : monitoringBucket(rollup(r) ?? undefined),
     header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
     cell: ({ row }) => {
       if (row.original.kind !== "registered") return null
       const e = monitoring[row.original.ip.id]
+      if (e?.excluded) return <ExcludedPill />
       if (!e || !e.status) return dash
       return (
         <ExternalStatusHover entry={e}>
@@ -554,7 +562,14 @@ function buildColumns({
         </ExternalStatusHover>
       )
     },
-    meta: { facet: monitoringFacet<IpRow>(rollup) },
+    meta: {
+      facet: {
+        ...monFacet,
+        get: (r: IpRow) => (rollup(r)?.excluded ? "excluded" : monFacet.get(r)),
+        formatValue: (v: string) =>
+          v === "excluded" ? { label: "Excluded" } : monFacet.formatValue(v),
+      },
+    },
   })
 
   if (hasRanges) {

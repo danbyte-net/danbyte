@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select"
 import { CheckStatusBadge } from "./status-badge"
 import { MixedStatusBadge } from "./mixed-status-badge"
+import { ExcludedPill } from "./excluded-pill"
 import { statusColor, statusLabel } from "./status-palette"
 import { AddCheckDialog } from "./add-check-dialog"
 import { DiscoverNowButton } from "./auto-discover-button"
@@ -130,7 +131,11 @@ export function PrefixMonitoring({
                 params={{ id: ip.id }}
                 className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-muted"
               >
-                <MixedStatusBadge counts={ip.counts} status={ip.status} />
+                {ip.excluded ? (
+                  <ExcludedPill />
+                ) : (
+                  <MixedStatusBadge counts={ip.counts} status={ip.status} />
+                )}
                 <span className="font-mono">{ip.ip_address}</span>
                 <span className="ml-auto text-[11px] text-muted-foreground">
                   {ip.checks} check{ip.checks === 1 ? "" : "s"}

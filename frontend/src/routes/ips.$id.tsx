@@ -593,6 +593,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
             ip_address: ip.ip_address,
             flap_exclude: ip.flap_exclude,
           }}
+          canChange={objCan(ip, "change", canDo("ipaddress", "change"))}
         />
       </DetailTab>
 

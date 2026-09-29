@@ -36,17 +36,26 @@ export function IpBulkBar({ selected, onCleared, returnTo }: IpBulkBarProps) {
 
   const checkNow = useMutation({
     mutationFn: (ipIds: string[]) =>
-      api<{ targets: number; checks: number; run_id?: string }>(
-        "/api/monitoring/bulk-check-now/",
-        { method: "POST", body: JSON.stringify({ ip_ids: ipIds }) }
-      ),
+      api<{
+        targets: number
+        checks: number
+        run_id?: string
+        excluded?: number
+      }>("/api/monitoring/bulk-check-now/", {
+        method: "POST",
+        body: JSON.stringify({ ip_ids: ipIds }),
+      }),
     onSuccess: (res) => {
+      // Addresses excluded from monitoring are left alone.
+      const left = res.excluded
+        ? ` ${res.excluded} excluded IP${res.excluded === 1 ? "" : "s"} left out.`
+        : ""
       if (res.checks > 0) {
         toast.success(
-          `Checking ${res.checks} check${res.checks === 1 ? "" : "s"} across ${res.targets} IP${res.targets === 1 ? "" : "s"}…`
+          `Checking ${res.checks} check${res.checks === 1 ? "" : "s"} across ${res.targets} IP${res.targets === 1 ? "" : "s"}…${left}`
         )
         if (res.run_id) checkRun.start(res.run_id)
-      } else toast.info("No monitored checks on the selected IPs.")
+      } else toast.info("No monitored checks on the selected IPs." + left)
     },
     onError: (err) => apiErrorToast(err),
   })

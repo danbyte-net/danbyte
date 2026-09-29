@@ -114,6 +114,7 @@ const FILTER_KEYS = [
   "until",
   "strip",
   "flapping",
+  "excluded",
   "dow",
   "hour",
   "group_by",

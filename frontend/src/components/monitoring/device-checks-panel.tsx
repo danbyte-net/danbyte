@@ -12,6 +12,7 @@ import { ExternalChips } from "./external-chips"
 import { ExternalStatusHover } from "./external-status"
 import { HistoryPanel } from "./history-panel"
 import { MixedStatusBadge } from "./mixed-status-badge"
+import { ExcludedPill } from "./excluded-pill"
 import { NotifyMeButton } from "./notify-me-button"
 import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
@@ -128,9 +129,13 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
                 key={ip.id}
                 className="flex items-center gap-3 px-3 py-2 text-[13px]"
               >
-                <ExternalStatusHover entry={ip}>
-                  <MixedStatusBadge counts={ip.counts} status={ip.status} />
-                </ExternalStatusHover>
+                {ip.excluded ? (
+                  <ExcludedPill />
+                ) : (
+                  <ExternalStatusHover entry={ip}>
+                    <MixedStatusBadge counts={ip.counts} status={ip.status} />
+                  </ExternalStatusHover>
+                )}
                 <Link
                   to="/ips/$id"
                   params={{ id: ip.id }}

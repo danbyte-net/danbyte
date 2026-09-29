@@ -877,6 +877,11 @@ export interface IPAddress {
   last_seen: string | null
   discovered: boolean
   flap_exclude: boolean
+  /** Every check parked: nothing runs, nothing counts. Read-only here - set
+   * with POST /api/monitoring/ips/<id>/exclude/. */
+  monitoring_excluded?: boolean
+  /** Availability counts from here (a reset); null = all history counts. */
+  availability_since?: string | null
   is_primary_for_device: boolean
   /** This address is its VM's primary IP (#122). */
   is_primary_for_vm?: boolean
@@ -5738,6 +5743,23 @@ export interface IpChecksResponse extends ExternalRollup {
   checks: EffectiveCheck[]
   /** How many of the address's checks are flagged as flapping. */
   flapping?: number
+  /** Excluded from monitoring, and the availability reset - who and why. */
+  monitoring?: IpMonitoringInfo
+}
+
+/** An address's exclusion and availability reset, from its own columns. */
+export interface IpMonitoringInfo {
+  excluded: boolean
+  excluded_at: string | null
+  excluded_by: string | null
+  excluded_reason: string | null
+  /** Availability counts from here; null = all history counts. */
+  counts_from: string | null
+  reset_at: string | null
+  reset_by: string | null
+  reset_reason: string | null
+  /** The earliest day a reset may count from. */
+  created_at: string
 }
 
 export interface CheckNowResult {
@@ -5801,6 +5823,8 @@ export interface PrefixIpStatus extends ExternalRollup {
   status: CheckStatus | null
   checks: number
   counts?: Partial<Record<CheckStatus, number>>
+  /** Excluded from monitoring - shown, but not in the roll-up. */
+  excluded?: boolean
 }
 
 export interface PrefixChecksResponse {
@@ -5853,6 +5877,8 @@ export interface BulkStatusEntry extends ExternalRollup {
   checks?: number
   counts?: Partial<Record<CheckStatus, number>>
   monitored_ips?: number
+  /** An address excluded from monitoring (IP rows only). */
+  excluded?: boolean
 }
 
 /** An engine kind a driver registered - configured on its own page rather
@@ -6208,6 +6234,8 @@ export interface CheckListRow {
   flap_count: number
   /** Set when the check runs on the fast lane. */
   interval_ms: number | null
+  /** Parked because its address is excluded from monitoring. */
+  excluded?: boolean
   device: { id: string; name: string } | null
   /** The address's own site, else its prefix's, else its device's. */
   site: { id: string; name: string } | null
@@ -6322,7 +6350,7 @@ export interface CheckListResponse {
   /** Checks flagged as flapping under every filter but `flapping` itself. */
   flapping_count: number
   facets: Partial<
-    Record<TransitionFacet | "status" | "flapping", FacetBucket[]>
+    Record<TransitionFacet | "status" | "flapping" | "excluded", FacetBucket[]>
   >
   /** The strip window, when `?strip=` was asked for. */
   since?: string
@@ -6429,6 +6457,9 @@ export interface StatusSegment {
   start: string
   end: string
   status: CheckStatus
+  /** Why it is not counted: before an availability reset, or while the
+   * address was excluded from monitoring. */
+  note?: "not_counted" | "excluded"
 }
 
 export interface TransitionRow {
@@ -6587,6 +6618,8 @@ export interface IpTimeline {
   checks: TimelineCheck[]
   summary: WindowSummary
   days: DayAvailability[]
+  /** Where an availability reset cuts the window, if it does. */
+  counts_from?: string | null
 }
 
 /** A bucket of latency for one check: sample-weighted average with the

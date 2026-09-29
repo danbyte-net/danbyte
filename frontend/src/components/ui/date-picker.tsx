@@ -51,9 +51,14 @@ function MonthGrid({
   selected,
   onPick,
   today,
+  min,
+  max,
 }: {
   selected: Date | null
   onPick: (d: Date) => void
+  /** Days before `min` or after `max` cannot be picked. */
+  min?: Date | null
+  max?: Date | null
   /** Today in the *effective display timezone*, not the browser's. Passed in
    *  because the picker already resolves that zone for formatting, and a grid
    *  that highlights the browser's today contradicts the value beside it. */
@@ -118,10 +123,12 @@ function MonthGrid({
           const outside = d.getMonth() !== view.m
           const isSelected = selected !== null && sameDay(d, selected)
           const isToday = sameDay(d, today)
+          const out = (min != null && d < min) || (max != null && d > max)
           return (
             <button
               key={d.toDateString()}
               type="button"
+              disabled={out}
               onClick={() => onPick(d)}
               className={cn(
                 "num mx-auto flex size-7 items-center justify-center rounded-md text-xs",
@@ -129,7 +136,8 @@ function MonthGrid({
                 isSelected
                   ? "bg-primary text-primary-foreground"
                   : "hover:bg-accent hover:text-accent-foreground",
-                isToday && !isSelected && "font-semibold text-primary"
+                isToday && !isSelected && "font-semibold text-primary",
+                out && "pointer-events-none opacity-30"
               )}
             >
               {d.getDate()}
@@ -150,6 +158,10 @@ export interface DatePickerProps {
   disabled?: boolean
   className?: string
   id?: string
+  /** Earliest pickable day, ISO `YYYY-MM-DD`. */
+  min?: string
+  /** Latest pickable day, ISO `YYYY-MM-DD`. */
+  max?: string
 }
 
 export function DatePicker({
@@ -159,6 +171,8 @@ export function DatePicker({
   disabled,
   className,
   id,
+  min,
+  max,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
   const { formatDate, today: todayIso } = useDateFormat()
@@ -194,6 +208,8 @@ export function DatePicker({
         <MonthGrid
           selected={selected}
           today={today}
+          min={parseIso(min)}
+          max={parseIso(max)}
           onPick={(d) => {
             onChange(toIso(d))
             setOpen(false)

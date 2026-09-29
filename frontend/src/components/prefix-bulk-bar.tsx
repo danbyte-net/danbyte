@@ -43,17 +43,26 @@ export function PrefixBulkBar({ selected, onCleared }: PrefixBulkBarProps) {
 
   const checkNow = useMutation({
     mutationFn: (prefixIds: string[]) =>
-      api<{ targets: number; checks: number; run_id?: string }>(
-        "/api/monitoring/bulk-check-now/",
-        { method: "POST", body: JSON.stringify({ prefix_ids: prefixIds }) }
-      ),
+      api<{
+        targets: number
+        checks: number
+        run_id?: string
+        excluded?: number
+      }>("/api/monitoring/bulk-check-now/", {
+        method: "POST",
+        body: JSON.stringify({ prefix_ids: prefixIds }),
+      }),
     onSuccess: (res) => {
+      // Addresses excluded from monitoring are left alone.
+      const left = res.excluded
+        ? ` ${res.excluded} excluded IP${res.excluded === 1 ? "" : "s"} left out.`
+        : ""
       if (res.checks > 0) {
         toast.success(
-          `Checking ${res.checks} check${res.checks === 1 ? "" : "s"} across ${res.targets} IP${res.targets === 1 ? "" : "s"}…`
+          `Checking ${res.checks} check${res.checks === 1 ? "" : "s"} across ${res.targets} IP${res.targets === 1 ? "" : "s"}…${left}`
         )
         if (res.run_id) checkRun.start(res.run_id)
-      } else toast.info("No monitoring checks on the selected prefixes.")
+      } else toast.info("No monitoring checks on the selected prefixes." + left)
     },
     onError: (err) => apiErrorToast(err),
   })
