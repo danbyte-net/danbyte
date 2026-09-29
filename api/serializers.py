@@ -4,6 +4,8 @@ matching list / detail page actually renders, no kitchen-sink output.
 """
 from __future__ import annotations
 
+import copy
+import functools
 import ipaddress
 import math
 import os
@@ -59,6 +61,31 @@ from .models import (
     L2VPN, L2VPNTermination, VirtualChassis,
     materialize_device_components, render_component_name, render_module_name,
 )
+
+
+def detail_only(default=None):
+    """Mark a ``get_*`` method field as detail-page only.
+
+    On a list action the wrapped getter is skipped and ``default`` (copied, so a
+    ``{}`` or ``[]`` is never shared between rows) is returned instead - these
+    are the per-object tab counts and blobs the detail page renders and a list
+    page must not pay a query per row for. The ``detail_only`` flag on the
+    wrapper is what ``api.list_fields`` reads to keep such a field out of the
+    list-column catalog, where it would only ever read 0 or empty.
+    """
+
+    def decorate(fn):
+        @functools.wraps(fn)
+        def wrapper(self, obj):
+            view = self.context.get("view")
+            if view is not None and getattr(view, "action", None) == "list":
+                return copy.copy(default)
+            return fn(self, obj)
+
+        wrapper.detail_only = True
+        return wrapper
+
+    return decorate
 
 
 class NumIdModelSerializer(serializers.ModelSerializer):
@@ -713,11 +740,9 @@ class VLANSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Taggabl
         n = getattr(obj, "prefix_n", None)
         return n if n is not None else obj.prefixes.count()
 
+    @detail_only(0)
     def get_l2vpn_count(self, obj) -> int:
         """L2VPNs terminating on this VLAN - the detail page's tab count."""
-        view = self.context.get("view")
-        if view is not None and getattr(view, "action", None) == "list":
-            return 0
         return obj.l2vpn_terminations.count()
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -890,11 +915,8 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     location_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
 
-    def _detail_only(self) -> bool:
-        # The tab counts below are for the site page; the list renders four
-        # counts, annotated once per page by the viewset (#180).
-        view = self.context.get("view")
-        return view is None or getattr(view, "action", None) != "list"
+    # The tab counts marked @detail_only are for the site page; the list
+    # renders four counts, annotated once per page by the viewset (#180).
 
     def get_prefix_count(self, obj) -> int:
         n = getattr(obj, "prefix_n", None)
@@ -912,36 +934,31 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
         n = getattr(obj, "vm_n", None)
         return n if n is not None else obj.virtual_machines.count()
 
+    @detail_only(0)
     def get_rack_count(self, obj) -> int:
-        if not self._detail_only():
-            return 0
         return obj.racks.count()
 
+    @detail_only(0)
     def get_contact_count(self, obj) -> int:
-        if not self._detail_only():
-            return 0
         # ContactAssignment binds by a "app.model" label + object_id string,
         # not a ContentType FK.
         return ContactAssignment.objects.filter(
             object_type="api.site", object_id=str(obj.id)
         ).count()
 
+    @detail_only(0)
     def get_circuit_count(self, obj) -> int:
-        if not self._detail_only():
-            return 0
         # Distinct circuits landing here, not raw terminations - a circuit with
         # both ends at one site still counts once.
         return obj.circuit_terminations.values("circuit").distinct().count()
 
+    @detail_only(0)
     def get_location_count(self, obj) -> int:
-        if not self._detail_only():
-            return 0
         # Every location at the site, whatever its depth in the tree.
         return obj.locations.count()
 
+    @detail_only(0)
     def get_document_count(self, obj) -> int:
-        if not self._detail_only():
-            return 0
         # Document binds by "app.model" label + object_id, like contacts.
         # Own rows only - a superseded version is still a row on the tab.
         return Document.objects.filter(
@@ -1072,18 +1089,14 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
         n = getattr(obj, "ip_n", None)
         return n if n is not None else obj.ip_addresses.count()
 
-    def _one(self) -> bool:
-        # The routing tab counts are for the VRF's own page; the list never
-        # renders them and they are a query per row.
-        view = self.context.get("view")
-        return view is None or getattr(view, "action", None) != "list"
-
+    # The routing tab counts are for the VRF's own page; the list never
+    # renders them and they are a query per row.
+    @detail_only(0)
     def get_static_route_count(self, obj) -> int:
-        return obj.static_routes.count() if self._one() else 0
+        return obj.static_routes.count()
 
+    @detail_only(0)
     def get_bgp_session_count(self, obj) -> int:
-        if not self._one():
-            return 0
         return sum(i.sessions.count() for i in obj.bgpinstances.all())
 
     class Meta:
@@ -2076,21 +2089,15 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         v = getattr(obj, "device_count_annotated", None)
         return v if v is not None else obj.device_set.count()
 
-    def _is_list(self) -> bool:
-        view = self.context.get("view")
-        return view is not None and getattr(view, "action", None) == "list"
-
+    @detail_only(0)
     def get_sensor_count(self, obj) -> int:
         # SNMP sensors bound to this type only (the Sensors tab's
         # ``device_type_only`` filter; all-types sensors are not its rows).
         # Detail page only, like component_count.
-        if self._is_list():
-            return 0
         return obj.snmp_sensors.count()
 
+    @detail_only(0)
     def get_document_count(self, obj) -> int:
-        if self._is_list():
-            return 0
         return Document.objects.filter(
             object_type="api.devicetype", object_id=obj.id
         ).count()
@@ -2113,23 +2120,19 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     ]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only({})
     def get_component_counts(self, obj):
-        view = self.context.get("view")
-        if view is not None and getattr(view, "action", None) == "list":
-            return {}
         return {
             slug: n
             for slug, rel in self._COMPONENT_COUNT_RELS
             if (n := getattr(obj, rel).count())
         }
 
+    @detail_only(0)
     def get_component_count(self, obj) -> int:
         # The Components tab's total - every template kind summed. Detail
         # page only: eleven counts per row would be an N+1 on the list, and
         # the list never renders it.
-        view = self.context.get("view")
-        if view is not None and getattr(view, "action", None) == "list":
-            return 0
         return (
             obj.interface_templates.count()
             + obj.console_port_templates.count()
@@ -2678,11 +2681,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return getattr(obj, "_vc_renamed_interfaces", None)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
     def get_virtual_chassis(self, obj):
         # Detail-only - the list table doesn't render it, so skip the FK lookup
         # and the members COUNT on list rows.
-        if not self._detail_only():
-            return None
         vc = obj.virtual_chassis
         if vc is None:
             return None
@@ -2844,17 +2846,13 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         annotated = getattr(obj, "ip_count_annotated", None)
         return annotated if annotated is not None else obj.ip_addresses.count()
 
-    def _detail_only(self) -> bool:
-        # These per-tab counts are only for the device detail page; skip the
-        # extra queries on the list (it doesn't render them) to avoid an N+1.
-        view = self.context.get("view")
-        return view is None or getattr(view, "action", None) != "list"
+    # The @detail_only per-tab counts are only for the device detail page;
+    # the list doesn't render them, so it skips their queries (no N+1).
 
+    @detail_only(0)
     def get_hardware_count(self, obj) -> int:
         # Everything on the Hardware tab: bays, modules, inventory, antennas,
         # front/rear.
-        if not self._detail_only():
-            return 0
         return (
             obj.device_bays.count() + obj.module_bays.count()
             + obj.modules.count() + obj.inventory_items.count()
@@ -2862,27 +2860,23 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             + obj.front_ports.count() + obj.rear_ports.count()
         )
 
+    @detail_only(0)
     def get_console_count(self, obj) -> int:
-        if not self._detail_only():
-            return 0
         return obj.console_ports.count() + obj.console_server_ports.count()
 
+    @detail_only(0)
     def get_power_count(self, obj) -> int:
-        if not self._detail_only():
-            return 0
         return obj.power_ports.count() + obj.power_outlets.count()
 
+    @detail_only(0)
     def get_service_count(self, obj) -> int:
-        if not self._detail_only():
-            return 0
         return obj.services.count()
 
+    @detail_only(0)
     def get_routing_count(self, obj) -> int:
         """The Routing tab's count: static routes, protocol instances and
         sessions, the VTEP. The routing app owns the rows; this reads the
         reverse relations it hangs on Device."""
-        if not self._detail_only():
-            return 0
         return (
             obj.static_routes.count() + obj.bgpinstances.count()
             + sum(i.sessions.count() for i in obj.bgpinstances.all())
@@ -2891,11 +2885,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             + (1 if hasattr(obj, "vtep") else 0)
         )
 
+    @detail_only(0)
     def get_image_count(self, obj) -> int:
         # ImageAttachment is a real GenericFK (content_type + object_id) with
         # no reverse accessor on Device.
-        if not self._detail_only():
-            return 0
         from django.contrib.contenttypes.models import ContentType
 
         return ImageAttachment.objects.filter(
@@ -2903,12 +2896,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             object_id=obj.pk,
         ).count()
 
+    @detail_only(0)
     def get_certificate_count(self, obj) -> int:
         # Everything on the "Certificates & keys" tab: certificate
         # assignments plus the device's SSH host keys. ``monitoring`` imports
         # ``api``, never the reverse, so the import stays local.
-        if not self._detail_only():
-            return 0
         from monitoring.models import CertificateAssignment
 
         return (
@@ -2918,19 +2910,17 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             + obj.ssh_host_keys.count()
         )
 
+    @detail_only(0)
     def get_contact_count(self, obj) -> int:
         # Same label-keyed lookup as SiteSerializer.get_contact_count.
-        if not self._detail_only():
-            return 0
         return ContactAssignment.objects.filter(
             object_type="api.device", object_id=str(obj.id)
         ).count()
 
+    @detail_only(0)
     def get_document_count(self, obj) -> int:
         # Own rows only; the documents inherited from the device type are
         # listed read-only under their own heading on the tab.
-        if not self._detail_only():
-            return 0
         return Document.objects.filter(
             object_type="api.device", object_id=obj.id
         ).count()

@@ -39,6 +39,7 @@ from api.serializers import (
     TenantScopedPrimaryKeyRelatedField,
     VLANMiniSerializer,
     VRFMiniSerializer,
+    detail_only,
 )
 from core.models import Tag
 
@@ -391,12 +392,10 @@ class _ListSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSeriali
     rules = serializers.SerializerMethodField()
     rule_count = serializers.SerializerMethodField()
 
+    @detail_only([])
     def get_rules(self, obj) -> list:
         # The list page does not draw rules; the detail does. Cheap either
         # way, but a 300-list page should not carry 3,000 rule rows.
-        view = self.context.get("view")
-        if view is not None and getattr(view, "action", None) == "list":
-            return []
         return self.rule_serializer(obj.rules.all(), many=True, context=self.context).data
 
     def get_rule_count(self, obj) -> int:
