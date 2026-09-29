@@ -130,7 +130,7 @@ errors.
 | Detail | Behavior |
 |---|---|
 | Columns | Match object fields by name; unknown columns are ignored. |
-| Links to other objects | Resolved by name, slug, or id within your active tenant. An unresolved link is a clean per-row error. |
+| Links to other objects | Resolved by name, slug, or id within your active tenant, among the objects you may view. A person or group cell (`created_by`, `owner`, `assigned_group`, …) resolves among the tenant's people when you have no permission on users or groups. An unresolved link is a clean per-row error. |
 | Validation | Each row is checked and saved on its own, so one bad row doesn't stop the rest. |
 | **Validate** | A dry run - checks everything, writes nothing. |
 | Limit | Up to 5000 rows per import. |

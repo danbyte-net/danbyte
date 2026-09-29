@@ -3,9 +3,10 @@
 Notification subscriptions, script sharing, a site editor's "Invite viewer"
 and user/group custom fields all need to name people. ``/api/users/`` and
 ``/api/groups/`` are user administration and need a grant on those types.
-These endpoints list the active members of the active tenant (and the groups
-they are in) for anyone who works with one of those features, with no email
-unless the caller may read users.
+These endpoints list the active accounts that may work in the active tenant
+(and the groups they are in) for anyone who works with one of those
+features, with no email unless the caller may read users. Superusers and
+deployment admins get every account, as the task board's picker does.
 
 Plain path routes, deliberately not router registrations: a second User
 viewset on the main router would confuse the code that maps a model to its
@@ -83,19 +84,64 @@ def may_pick_people(user, tenant, *, kind: str = "user", custom_field=None) -> b
     return False
 
 
-def tenant_members(tenant):
-    """Active accounts that are members of ``tenant``."""
+def member_q(tenant) -> Q:
+    """Accounts that may work in ``tenant``: the rule
+    :func:`permissions.user_tenants` applies from the other side. Superusers
+    and the legacy admin role reach every tenant; everyone else through the
+    tenants on their profile or an enabled grant scoped to ``tenant``, held
+    directly or through a group."""
+    from .models import ObjectPermission, UserProfile
+
+    User = get_user_model()
+    by_profile = UserProfile.objects.filter(tenants=tenant).values("user_id")
+    by_grant = ObjectPermission.objects.filter(
+        enabled=True, tenants=tenant, users__isnull=False
+    ).values("users")
+    by_group = User.groups.through.objects.filter(
+        group__object_permissions__enabled=True,
+        group__object_permissions__tenants=tenant,
+    ).values("user_id")
     return (
-        get_user_model()
-        .objects.filter(is_active=True, profile__tenants=tenant)
-        .distinct()
+        Q(is_superuser=True)
+        | Q(profile__role="admin")
+        | Q(pk__in=by_profile)
+        | Q(pk__in=by_grant)
+        | Q(pk__in=by_group)
     )
 
 
+def _sees_everyone(viewer) -> bool:
+    """Superusers and deployment admins work across tenants, so their pickers
+    offer every account, as the task board's assignee picker does."""
+    if viewer is None or not getattr(viewer, "is_authenticated", False):
+        return False
+    from .permissions import can_manage_deployment
+
+    return viewer.is_superuser or can_manage_deployment(viewer)
+
+
+def tenant_members(tenant, viewer=None, *, active_only=True):
+    """Accounts that may work in ``tenant`` (see :func:`member_q`), or every
+    account when ``viewer`` works across tenants. ``active_only=False`` keeps
+    deactivated accounts, for resolving a name an old row still carries."""
+    qs = get_user_model().objects.all()
+    if active_only:
+        qs = qs.filter(is_active=True)
+    if _sees_everyone(viewer):
+        return qs
+    return qs.filter(member_q(tenant))
+
+
 def tenant_groups(tenant, user=None):
-    """Groups with at least one active member in ``tenant``, plus ``user``'s
-    own groups."""
-    q = Q(user__is_active=True, user__profile__tenants=tenant)
+    """Groups with a member in ``tenant``, groups holding a grant scoped to
+    it, and ``user``'s own groups; every group when ``user`` works across
+    tenants."""
+    if _sees_everyone(user):
+        return Group.objects.all()
+    members = tenant_members(tenant).values("pk")
+    q = Q(user__in=members) | Q(
+        object_permissions__enabled=True, object_permissions__tenants=tenant
+    )
     if user is not None and getattr(user, "is_authenticated", False):
         q |= Q(pk__in=user.groups.values("pk"))
     return Group.objects.filter(q).distinct()
@@ -164,7 +210,7 @@ class _PersonBase(_PeopleBase):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return get_user_model().objects.none()
-        qs = tenant_members(self.tenant)
+        qs = tenant_members(self.tenant, self.request.user)
         s = self._search()
         if s:
             q = (

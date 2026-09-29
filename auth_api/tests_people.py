@@ -8,6 +8,7 @@ list never leaves the active tenant or hands out addresses.
 from __future__ import annotations
 
 from django.contrib.auth.models import Group, User
+from django.test import TestCase
 from rest_framework.test import APITestCase
 
 from api.models import Site
@@ -153,8 +154,54 @@ class PeopleApiTests(APITestCase):
         self.assertNotIn("stranger", names)
         self.assertNotIn("gone", names)
 
-    def test_superuser_list_is_also_tenant_bound(self):
-        self._as(self.root)
+    def test_members_follow_tenant_access_not_only_the_profile(self):
+        # A superuser, the legacy admin role and a grant scoped to the tenant
+        # (held directly or through a group) reach it without it being on the
+        # profile - user_tenants() lets them in, so the pickers offer them.
+        User.objects.create_superuser("su", "", "x")
+        legacy = User.objects.create_user("legacy", "", "x")
+        UserProfile.objects.create(user=legacy, role="admin")
+        direct = User.objects.create_user("granted", "", "x")
+        UserProfile.objects.create(user=direct)
+        via_group = User.objects.create_user("via-group", "", "x")
+        UserProfile.objects.create(user=via_group)
+        elsewhere = User.objects.create_user("elsewhere", "", "x")
+        UserProfile.objects.create(user=elsewhere)
+        team = Group.objects.create(name="t-team")
+        via_group.groups.add(team)
+        here = ObjectPermission.objects.create(
+            name="here", object_types=["device"], actions=["view"],
+        )
+        here.tenants.add(self.tenant)
+        here.users.add(direct)
+        here.groups.add(team)
+        there = ObjectPermission.objects.create(
+            name="there", object_types=["device"], actions=["view"],
+        )
+        there.tenants.add(self.other)
+        there.users.add(elsewhere)
+
+        self._as(self.noc)
+        names = self._names()
+        for name in ("su", "legacy", "granted", "via-group"):
+            with self.subTest(name=name):
+                self.assertIn(name, names)
+        self.assertNotIn("elsewhere", names)
+        self.assertNotIn("stranger", names)
+        self.assertIn("t-team", self._names("/api/people/groups/"))
+
+    def test_superusers_and_deployment_admins_see_every_account(self):
+        # As the task board's assignee picker does: they work across tenants.
+        boss = self._member("boss", "Administrator")
+        for user in (self.root, boss):
+            with self.subTest(user=user.username):
+                self._as(user)
+                names = self._names()
+                self.assertIn("stranger", names)
+                self.assertNotIn("gone", names)
+                self.assertIn("their-team", self._names("/api/people/groups/"))
+        # Operators stay tenant-bound.
+        self._as(self.operator)
         self.assertNotIn("stranger", self._names())
 
     def test_email_needs_a_grant_on_users(self):
@@ -249,3 +296,42 @@ class ReferenceLabelFallbackTests(APITestCase):
     def test_other_models_still_need_their_grant(self):
         site = Site.objects.create(tenant=self.tenant, name="HQ")
         self.assertEqual(self._labels("site", [site.id]), set())
+
+
+class ImportPeopleTests(TestCase):
+    """An import cell naming a person or a group resolves against the
+    tenant's people for an account with no grant on users or groups, so an
+    Operator can re-import its own export."""
+
+    def test_operator_round_trips_a_task_that_names_people(self):
+        from api.io import io_for
+        from planning.models import Board, Task, seed_default_statuses
+
+        ensure_builtin_groups()
+        org = Organization.objects.create(name="O", slug="o")
+        tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        other = Tenant.objects.create(org=org, name="Other", slug="other")
+        op = User.objects.create_user("op", "", "x")
+        UserProfile.objects.create(user=op).tenants.add(tenant)
+        op.groups.add(Group.objects.get(name="Operator"))
+        stranger = User.objects.create_user("stranger", "", "x")
+        UserProfile.objects.create(user=stranger).tenants.add(other)
+        team = Group.objects.create(name="noc")
+        op.groups.add(team)
+
+        board = Board.objects.create(tenant=tenant, name="Ops", slug="ops")
+        seed_default_statuses(board)
+        task = Task.objects.create(
+            tenant=tenant, board=board, status=board.statuses.get(name="To do"),
+            title="Swap PSU", created_by=op, assigned_group=team,
+        )
+        handler = io_for("task")
+        row = handler.to_row(task)
+        self.assertEqual(row["created_by"], str(op.pk))
+        handler.apply(task, row, tenant, op)
+
+        # Someone outside the tenant still does not resolve.
+        from django.core.exceptions import ValidationError
+
+        with self.assertRaises(ValidationError):
+            handler.apply(task, {**row, "created_by": str(stranger.pk)}, tenant, op)

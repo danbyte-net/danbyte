@@ -74,7 +74,20 @@ def _resolve_fk(field, value, tenant, user=None):
             slug = slug_for_model(related)
         except Exception:  # noqa: BLE001
             slug = None
-        if slug and is_registered(slug):
+        if slug in ("user", "group") and not rbac.has_action(user, tenant, slug, "view"):
+            # People and groups are not user administration here: a created_by
+            # or assigned_group cell names someone in the tenant, the same
+            # accounts the tenant's pickers offer (deactivated ones too, so an
+            # old row still round-trips).
+            from auth_api.people_api import tenant_groups, tenant_members
+
+            members = (
+                tenant_members(tenant, user, active_only=False)
+                if slug == "user"
+                else tenant_groups(tenant, user)
+            )
+            qs = qs.filter(pk__in=members.values("pk"))
+        elif slug and is_registered(slug):
             qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
     for lookup in _FK_LOOKUPS:
         try:

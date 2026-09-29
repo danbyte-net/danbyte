@@ -57,8 +57,11 @@ A status that still has tasks can't be deleted - move them first.
 ## Assignees & teams
 
 Assign a task to one or more people from the task sheet. The picker reads
-`/api/planning/assignable-users/`, which lists active users **of the current
-tenant** and is gated on *task* rights rather than user-administration rights -
+`/api/planning/assignable-users/`, which lists the active accounts that can
+work in **the current tenant** (the same list as the other
+[people pickers](permissions.md#picking-people-outside-admin); superusers and
+deployment admins see everyone) and is gated on *task* rights rather than
+user-administration rights -
 so an engineer who can edit tasks can assign them without also being able to
 administer accounts. Email addresses are included only for callers who may
 already read users.

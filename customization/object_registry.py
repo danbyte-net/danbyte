@@ -168,7 +168,7 @@ def _member_labels(ref: ReferenceModel, qs, tenant, user):
     if ref.model is get_user_model():
         from auth_api.people_api import tenant_members
 
-        return qs.filter(pk__in=tenant_members(tenant).values("pk"))
+        return qs.filter(pk__in=tenant_members(tenant, user).values("pk"))
     if ref.model is Group:
         from auth_api.people_api import tenant_groups
 

@@ -250,9 +250,13 @@ fail:
 Some features name people without being user administration: notification
 subscriptions, script sharing, a site editor's viewer invite, and user or
 group [custom fields](tags-and-custom-fields.md). Their pickers list the
-**active members of the tenant** and the groups those members are in, for
-anyone who works with the feature - no permission on users needed. The
-address is shown only to people who may view users.
+**active accounts that can work in the tenant** - the tenant is on their
+user page, a permission limited to the tenant names them or their group,
+or they are a superuser - and the groups those accounts are in, for anyone
+who works with the feature - no permission on users needed. Superusers and
+deployment admins see every account. The address is shown only to people
+who may view users. A spreadsheet import resolves person and group cells
+against the same list for people without a permission on users.
 
 ## Inviting people
 
