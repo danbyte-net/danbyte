@@ -1,5 +1,5 @@
 import type { DateFormat, HolidayDay } from "@/lib/api"
-import { addDays, isIsoDate } from "@/lib/datetime"
+import { addDays, daysBetween, isIsoDate } from "@/lib/datetime"
 import type { IcsEvent } from "@/lib/ics"
 
 // The days of a holiday calendar, as the editor works on them. Pure, and the
@@ -19,9 +19,11 @@ import type { IcsEvent } from "@/lib/ics"
 export const MAX_DAYS = 1000
 /** A day's name is at most this long. */
 export const NAME_MAX = 100
-/** The years the editor steps through. */
+/** The years the editor steps through, and the server takes. */
 export const MIN_YEAR = 1970
 export const MAX_YEAR = 2099
+/** The longest range a paste expands, in days. */
+const MAX_RANGE = 366
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const WEEKDAY_LONG = [
@@ -52,6 +54,26 @@ const monthDay = (iso: string) => iso.slice(5)
 const yearOf = (iso: string) => Number(iso.slice(0, 4))
 const utcDay = (iso: string) => new Date(`${iso}T00:00:00Z`).getUTCDay()
 const pad = (n: number, w = 2) => String(n).padStart(w, "0")
+const YEARS = `${MIN_YEAR}–${MAX_YEAR}`
+const plural = (n: number, one: string) =>
+  `${n.toLocaleString("en-US")} ${one}${n === 1 ? "" : "s"}`
+
+export const yearInRange = (y: number) => y >= MIN_YEAR && y <= MAX_YEAR
+
+/** A yearly day's stored year means nothing, so one outside the range moves
+ * to the nearest year in it that has its month and day (29 February: a
+ * leap year). */
+function intoRange(iso: string): string {
+  const y = yearOf(iso)
+  if (yearInRange(y)) return iso
+  const step = y < MIN_YEAR ? 1 : -1
+  let to = y < MIN_YEAR ? MIN_YEAR : MAX_YEAR
+  for (let i = 0; i < 8; i++, to += step) {
+    const moved = `${pad(to, 4)}-${monthDay(iso)}`
+    if (isIsoDate(moved)) return moved
+  }
+  return iso
+}
 
 /** The row key: a one-off day's date, or "y-MM-DD" for a yearly day. */
 export function dayKey(d: HolidayDay): string {
@@ -246,10 +268,24 @@ export function pasteFormats(format?: DateFormat): string {
 }
 
 const SEPARATORS = /^[\s,;:|–—-]+|[\s,;:|–—-]+$/g
+/** What between two dates makes them a range: "2026-12-24 – 2026-12-26". */
+const RANGE = /^\s*(?:[–—-]|to|until|till|through)\s*$/i
 
-/** Dates typed or pasted: any number per line, separated by anything. Text
- * beside a line's only date names it ("2026-12-25 Christmas Day", "Christmas
- * Day: 2026-12-25"); with several, the text after each date names it. */
+const cleanName = (s: string) =>
+  s.replace(/\s+/g, " ").replace(SEPARATORS, "").slice(0, NAME_MAX)
+
+interface Hit {
+  at: number
+  end: number
+  iso: string
+  raw: string
+}
+
+/** Dates typed or pasted: any number per line, separated by anything, and
+ * "date – date" ranges, which add each day. Text beside a line's only date
+ * or range names it ("2026-12-25 Christmas Day", "Christmas Day: 2026-12-25").
+ * With several, the text before each names it when the line starts with
+ * text ("Christmas 2026-12-25, Boxing 2026-12-26"), else the text after. */
 export function parsePasted(
   text: string,
   format?: DateFormat
@@ -259,7 +295,8 @@ export function parsePasted(
   const patterns = datePatterns(format)
   text.split(/\r?\n/).forEach((line, i) => {
     if (!line.trim()) return
-    const hits: { at: number; end: number; iso: string; raw: string }[] = []
+    const where = `Line ${i + 1}`
+    const hits: Hit[] = []
     for (const p of patterns) {
       p.re.lastIndex = 0
       for (let m = p.re.exec(line); m; m = p.re.exec(line)) {
@@ -270,47 +307,82 @@ export function parsePasted(
       }
     }
     if (hits.length === 0) {
-      errors.push(`Line ${i + 1}: no date.`)
+      errors.push(`${where}: no date.`)
       return
     }
     hits.sort((a, b) => a.at - b.at)
-    hits.forEach((h, j) => {
-      if (!isIsoDate(h.iso)) {
-        errors.push(`Line ${i + 1}: «${h.raw}» is not a date.`)
+    const items: { from: Hit; to: Hit }[] = []
+    for (let j = 0; j < hits.length; j++) {
+      const next = hits[j + 1] as Hit | undefined
+      if (next && RANGE.test(line.slice(hits[j].end, next.at))) {
+        items.push({ from: hits[j], to: next })
+        j++
+      } else items.push({ from: hits[j], to: hits[j] })
+    }
+    const lead = cleanName(line.slice(0, items[0].from.at)) !== ""
+    items.forEach(({ from, to }, j) => {
+      const name = cleanName(
+        items.length === 1
+          ? line.slice(0, from.at) + " " + line.slice(to.end)
+          : lead
+            ? line.slice(j ? items[j - 1].to.end : 0, from.at)
+            : line.slice(to.end, items[j + 1]?.from.at ?? line.length)
+      )
+      const bad = [from, to].find((h) => !isIsoDate(h.iso))
+      if (bad) {
+        errors.push(`${where}: «${bad.raw}» is not a date.`)
         return
       }
-      const name =
-        hits.length === 1
-          ? line.slice(0, h.at) + " " + line.slice(h.end)
-          : line.slice(h.end, hits[j + 1]?.at ?? line.length)
-      days.push({
-        date: h.iso,
-        name: name
-          .replace(/\s+/g, " ")
-          .replace(SEPARATORS, "")
-          .slice(0, NAME_MAX),
-        yearly: false,
-      })
+      const outside = [from, to].find((h) => !yearInRange(yearOf(h.iso)))
+      if (outside) {
+        errors.push(`${where}: ${yearOf(outside.iso)} is outside ${YEARS}.`)
+        return
+      }
+      const span = daysBetween(from.iso, to.iso)
+      if (span < 0) {
+        errors.push(
+          `${where}: «${line.slice(from.at, to.end)}» ends before it starts.`
+        )
+        return
+      }
+      if (span >= MAX_RANGE) {
+        errors.push(`${where}: a range is longer than a year.`)
+        return
+      }
+      for (let d = from.iso; d <= to.iso; d = addDays(d, 1))
+        days.push({ date: d, name, yearly: false })
     })
   })
   return { days, errors }
 }
 
-/** Every day of each event: a three-day event is three holidays. */
-export function daysFromIcs(events: IcsEvent[]): HolidayDay[] {
-  const out: HolidayDay[] = []
+/** Every day of each event: a three-day event is three holidays. Days in a
+ * year the editor cannot show are left out and counted in `outside`; a
+ * yearly day keeps its month and day in a year it can. */
+export function daysFromIcs(events: IcsEvent[]): {
+  days: HolidayDay[]
+  outside: number
+} {
+  const days: HolidayDay[] = []
+  let outside = 0
   for (const e of events) {
     const name = e.summary.slice(0, NAME_MAX)
-    for (let d = e.start; d && d <= e.end; d = addDays(d, 1))
-      out.push({ date: d, name, yearly: e.yearly })
+    for (let d = e.start; d && d <= e.end; d = addDays(d, 1)) {
+      if (e.yearly) days.push({ date: intoRange(d), name, yearly: true })
+      else if (yearInRange(yearOf(d)))
+        days.push({ date: d, name, yearly: false })
+      else outside++
+    }
   }
-  return out
+  return { days, outside }
+}
+
+/** "3 days outside 1970–2099 skipped", for an import's summary. */
+export function outsideSkipped(n: number): string {
+  return n ? `${plural(n, "day")} outside ${YEARS} skipped` : ""
 }
 
 // ─── showing ────────────────────────────────────────────────────────────────
-
-const plural = (n: number, one: string) =>
-  `${n.toLocaleString("en-US")} ${one}${n === 1 ? "" : "s"}`
 
 /** "11 days in 2026 · 2 agreements" - the year's holidays, yearly included. */
 export function calendarSummary(

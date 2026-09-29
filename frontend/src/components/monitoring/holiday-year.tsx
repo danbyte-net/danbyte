@@ -36,6 +36,36 @@ export interface HolidayYearProps {
 
 const pad = (n: number) => String(n).padStart(2, "0")
 
+/** A holiday's square, and the inner ring that marks one that repeats every
+ * year - a click on it takes it off every year, so it must not look like a
+ * one-off. */
+const PICKED = "bg-primary text-primary-foreground"
+const YEARLY = "ring-2 ring-inset ring-primary-foreground/50"
+
+/** What the two kinds of filled day mean. */
+export function HolidayLegend({ className }: { className?: string }) {
+  const swatch = (yearly: boolean, label: string) => (
+    <span className="flex items-center gap-1.5">
+      <span
+        aria-hidden
+        className={cn("size-3.5 rounded-[4px]", PICKED, yearly && YEARLY)}
+      />
+      {label}
+    </span>
+  )
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 text-[11px] whitespace-nowrap text-muted-foreground",
+        className
+      )}
+    >
+      {swatch(false, "Holiday")}
+      {swatch(true, "Every year")}
+    </div>
+  )
+}
+
 /**
  * A year of month grids where a click makes a day a holiday or takes it off.
  * Arrow keys move a day or a week, Home/End to the week's ends, Page Up/Down
@@ -229,7 +259,7 @@ function Day({
           className={cn(
             "num flex size-6 items-center justify-center rounded-md text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             day
-              ? "bg-primary text-primary-foreground"
+              ? cn(PICKED, day.yearly && YEARLY)
               : cn(
                   isWeekend(iso) && "text-muted-foreground",
                   !readOnly && "hover:bg-accent hover:text-accent-foreground"

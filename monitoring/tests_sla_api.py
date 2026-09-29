@@ -241,6 +241,15 @@ class HolidayCalendarTests(_Base):
         self.assertEqual(r.status_code, 400)
         self.assertIn("100 characters", r.json()["dates"][0])
 
+    def test_years_outside_the_editor_are_refused(self):
+        r = self.create(["1970-01-01", "2099-12-31", "0001-01-01",
+                         {"date": "2206-12-25", "yearly": True}])
+        self.assertEqual(r.status_code, 400)
+        errors = r.json()["dates"]
+        self.assertEqual(len(errors), 2, errors)
+        self.assertTrue(errors[0].startswith("Day 3: "), errors)
+        self.assertIn("1970-2099", errors[1])
+
     def test_plain_strings_read_as_days(self):
         cal = HolidayCalendar.objects.create(
             tenant=self.tenant, name="Old", dates=["2026-09-01"]

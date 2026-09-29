@@ -132,6 +132,59 @@ describe("parsePasted", () => {
     expect(days.map((d) => d.name)).toEqual(["Christmas Eve", "Christmas Day"])
   })
 
+  it("names each of several dates by the text before it when a line starts with text", () => {
+    const { days, errors } = parsePasted(
+      "Christmas 2026-12-25, Boxing 2026-12-26"
+    )
+    expect(errors).toEqual([])
+    expect(days).toEqual([
+      once("2026-12-25", "Christmas"),
+      once("2026-12-26", "Boxing"),
+    ])
+  })
+
+  it("adds every day of a range", () => {
+    const { days, errors } = parsePasted(
+      [
+        "2026-12-24 – 2026-12-26 Christmas",
+        "Easter: 2027-03-28 to 2027-03-29",
+        "2027-05-13-2027-05-14",
+      ].join("\n")
+    )
+    expect(errors).toEqual([])
+    expect(days).toEqual([
+      once("2026-12-24", "Christmas"),
+      once("2026-12-25", "Christmas"),
+      once("2026-12-26", "Christmas"),
+      once("2027-03-28", "Easter"),
+      once("2027-03-29", "Easter"),
+      once("2027-05-13"),
+      once("2027-05-14"),
+    ])
+  })
+
+  it("refuses a range that runs backwards or past a year", () => {
+    const { days, errors } = parsePasted(
+      "2026-12-26 - 2026-12-24\n2026-01-01 - 2027-01-02"
+    )
+    expect(days).toEqual([])
+    expect(errors).toEqual([
+      "Line 1: «2026-12-26 - 2026-12-24» ends before it starts.",
+      "Line 2: a range is longer than a year.",
+    ])
+  })
+
+  it("refuses years the editor cannot show", () => {
+    const { days, errors } = parsePasted(
+      "2206-12-25 Typo\n0000-01-01\n1970-01-01\n2099-12-31"
+    )
+    expect(days).toEqual([once("1970-01-01"), once("2099-12-31")])
+    expect(errors).toEqual([
+      "Line 1: 2206 is outside 1970–2099.",
+      "Line 2: 0 is outside 1970–2099.",
+    ])
+  })
+
   it("reports bad dates and lines without one by line", () => {
     const { days, errors } = parsePasted("2026-12-24\nholiday\n2026-02-30 Nope")
     expect(days).toEqual([once("2026-12-24")])
@@ -164,8 +217,27 @@ describe("daysFromIcs", () => {
           summary: "Closed",
           yearly: false,
         },
-      ]).map((d) => d.date)
+      ]).days.map((d) => d.date)
     ).toEqual(["2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02"])
+  })
+
+  it("counts days in years the editor cannot show, and moves yearly ones in", () => {
+    const read = daysFromIcs([
+      { start: "1965-06-01", end: "1965-06-02", summary: "Old", yearly: false },
+      {
+        start: "2206-12-25",
+        end: "2206-12-25",
+        summary: "Typo",
+        yearly: false,
+      },
+      { start: "1900-12-25", end: "1900-12-25", summary: "Xmas", yearly: true },
+      { start: "2104-02-29", end: "2104-02-29", summary: "Leap", yearly: true },
+    ])
+    expect(read.outside).toBe(3)
+    expect(read.days).toEqual([
+      every("1970-12-25", "Xmas"),
+      every("2096-02-29", "Leap"),
+    ])
   })
 })
 

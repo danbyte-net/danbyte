@@ -53,9 +53,11 @@ import {
   dayMonth,
   daysFromIcs,
   daysInYear,
+  holidayOn,
   isWeekend,
   mergeDays,
   normaliseDays,
+  outsideSkipped,
   parsePasted,
   pasteFormats,
   removeDay,
@@ -64,7 +66,7 @@ import {
   setYearly,
   toggleDay,
 } from "./holiday-days"
-import { HolidayYear } from "./holiday-year"
+import { HolidayLegend, HolidayYear } from "./holiday-year"
 
 const URL = "/api/monitoring/holiday-calendars/"
 /** Holiday feeds are a few kilobytes; anything this big is not one. */
@@ -73,9 +75,9 @@ const ICS_MAX_BYTES = 2 * 1024 * 1024
 const plural = (n: number, one: string) =>
   `${n.toLocaleString("en-US")} ${one}${n === 1 ? "" : "s"}`
 
-/** What the last import did, with the days from before it for Undo. The
- * strip lives in the editor, not a toast: a modal dialog makes the page
- * behind it, toasts included, unclickable. */
+/** What the last import, or removal of an every-year day, did, with the
+ * days from before it for Undo. The strip lives in the editor, not a toast:
+ * a modal dialog makes the page behind it, toasts included, unclickable. */
 interface Notice {
   title: string
   detail: string
@@ -108,13 +110,20 @@ export function HolidayCalendarEditor({
   const [year, setYear] = useState(thisYear)
   const [focusIso, setFocusIso] = useState(today)
   const [pasting, setPasting] = useState(false)
+  const [pasteText, setPasteText] = useState("")
   const [notice, setNotice] = useState<Notice | null>(null)
   const [askDiscard, setAskDiscard] = useState(false)
   /** A day just added by a click, to scroll its row into view. */
   const [reveal, setReveal] = useState<string | null>(null)
 
+  /** The days as of the last change, for handlers that must not wait for a
+   * render (two quick clicks) and keep a stable identity. */
+  const daysRef = useRef(days)
   const fileRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
+  /** A row's remove button was pressed: the row index to focus next. */
+  const focusRow = useRef<number | null>(null)
   /** Paste was picked from the menu: focus goes to its box, not back to the
    * menu's button (Enter typed there would open the menu again). */
   const toPaste = useRef(false)
@@ -122,22 +131,46 @@ export function HolidayCalendarEditor({
 
   const dirty =
     name.trim() !== (calendar?.name ?? "") ||
-    JSON.stringify(days) !== JSON.stringify(initial)
+    JSON.stringify(days) !== JSON.stringify(initial) ||
+    (pasting && pasteText.trim() !== "")
 
   const requestClose = () => {
     if (dirty && !readOnly) setAskDiscard(true)
     else onClose()
   }
 
-  /** Any hand edit: the import strip's Undo would now throw it away. */
-  const edit = useCallback((fn: (d: HolidayDay[]) => HolidayDay[]) => {
-    setDays(fn)
-    setNotice(null)
+  const apply = useCallback((next: HolidayDay[], note: Notice | null) => {
+    daysRef.current = next
+    setDays(next)
+    setNotice(note)
   }, [])
+
+  /** A hand edit. The Undo strip goes: its Undo would throw the edit away,
+   * unless the edit took an every-year day off - that gets a strip of its
+   * own, since one click on a day in any year does it. */
+  const edit = useCallback(
+    (fn: (d: HolidayDay[]) => HolidayDay[], iso?: string) => {
+      const before = daysRef.current
+      const hit = iso ? holidayOn(before, iso) : undefined
+      const next = fn(before)
+      const gone = hit?.yearly && !next.includes(hit)
+      apply(
+        next,
+        gone
+          ? {
+              title: `Removed ${hit.name || dayMonth(hit.date)}`,
+              detail: "every year",
+              before,
+            }
+          : null
+      )
+    },
+    [apply]
+  )
 
   const onToggle = useCallback(
     (iso: string) => {
-      edit((d) => toggleDay(d, iso))
+      edit((d) => toggleDay(d, iso), iso)
       setReveal(iso)
     },
     [edit]
@@ -157,6 +190,22 @@ export function HolidayCalendarEditor({
 
   const shown = useMemo(() => daysInYear(days, year), [days, year])
 
+  // After a row's remove button, the focus goes to the row that took its
+  // place, the one above when it was the last, or the year when none is left
+  // - not back to the top of the dialog.
+  useEffect(() => {
+    const at = focusRow.current
+    if (at === null) return
+    focusRow.current = null
+    const buttons =
+      listRef.current?.querySelectorAll<HTMLElement>("[data-remove]") ?? []
+    if (buttons.length) buttons[Math.min(at, buttons.length - 1)].focus()
+    else
+      gridRef.current
+        ?.querySelector<HTMLElement>('[data-day][tabindex="0"]')
+        ?.focus()
+  }, [shown])
+
   // A click that adds a day brings its row into view in the list - only the
   // list scrolls, so the calendar stays where it is.
   useEffect(() => {
@@ -173,7 +222,8 @@ export function HolidayCalendarEditor({
 
   /** Add imported days, or say why not. */
   const importDays = (incoming: HolidayDay[], skipped: string[]): boolean => {
-    const merged = mergeDays(days, incoming)
+    const before = daysRef.current
+    const merged = mergeDays(before, incoming)
     if (merged.days.length > MAX_DAYS) {
       toast.error(
         `A calendar holds at most ${MAX_DAYS.toLocaleString("en-US")} days.`
@@ -201,14 +251,13 @@ export function HolidayCalendarEditor({
         : "",
       ...skipped,
     ].filter(Boolean)
-    setNotice({
+    apply(merged.days, {
       title: merged.added
         ? `Added ${plural(merged.added, "day")}`
         : `Named ${plural(merged.named, "day")}`,
       detail: parts.join(" · "),
-      before: days,
+      before,
     })
-    setDays(merged.days)
     // Show where the days went when none landed in the year in view.
     if (!merged.yearly && years.length && !years.includes(year))
       changeYear(years[0])
@@ -231,12 +280,14 @@ export function HolidayCalendarEditor({
       return
     }
     const read = readAllDayEvents(text)
+    const found = daysFromIcs(read.events)
     const skipped = [
       read.timed ? `${plural(read.timed, "timed event")} skipped` : "",
       read.repeating
         ? `${plural(read.repeating, "repeating event")} skipped`
         : "",
       read.other ? `${plural(read.other, "other event")} skipped` : "",
+      outsideSkipped(found.outside),
     ].filter(Boolean)
     if (read.events.length === 0) {
       toast.error("No all-day events in that file", {
@@ -244,7 +295,7 @@ export function HolidayCalendarEditor({
       })
       return
     }
-    importDays(daysFromIcs(read.events), skipped)
+    importDays(found.days, skipped)
   }
 
   const save = useMutation({
@@ -368,7 +419,7 @@ export function HolidayCalendarEditor({
 
           <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6">
             <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_21rem]">
-              <div className="min-w-0">
+              <div ref={gridRef} className="min-w-0">
                 <YearStepper
                   year={year}
                   thisYear={thisYear}
@@ -384,15 +435,24 @@ export function HolidayCalendarEditor({
                   readOnly={readOnly}
                 />
               </div>
-              <div className="relative min-h-64">
+              {/* Beside the year on a wide screen; above it on a narrow one,
+                  where the year runs a long way down. */}
+              <div className="relative order-first lg:order-none lg:min-h-64">
                 <div className="flex flex-col gap-2 lg:absolute lg:inset-0">
                   {pasting ? (
                     <PastePanel
                       boxRef={pasteBox}
+                      text={pasteText}
+                      onText={setPasteText}
                       format={settings.date_format}
-                      onCancel={() => setPasting(false)}
+                      onCancel={() => {
+                        setPasting(false)
+                        setPasteText("")
+                      }}
                       onAdd={(incoming) => {
-                        if (importDays(incoming, [])) setPasting(false)
+                        if (!importDays(incoming, [])) return
+                        setPasting(false)
+                        setPasteText("")
                       }}
                     />
                   ) : (
@@ -412,10 +472,7 @@ export function HolidayCalendarEditor({
                             type="button"
                             size="xs"
                             variant="ghost"
-                            onClick={() => {
-                              setDays(notice.before)
-                              setNotice(null)
-                            }}
+                            onClick={() => apply(notice.before, null)}
                           >
                             Undo
                           </Button>
@@ -441,11 +498,6 @@ export function HolidayCalendarEditor({
                           <p className="text-sm font-medium">
                             No holidays in {year}.
                           </p>
-                          {!readOnly && (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Click a day to add it.
-                            </p>
-                          )}
                         </div>
                       ) : (
                         <DayList
@@ -459,7 +511,10 @@ export function HolidayCalendarEditor({
                           onYearly={(key, on, iso) =>
                             edit((d) => setYearly(d, key, on, iso))
                           }
-                          onRemove={(key) => edit((d) => removeDay(d, key))}
+                          onRemove={(key, iso, row) => {
+                            focusRow.current = row
+                            edit((d) => removeDay(d, key), iso)
+                          }}
                         />
                       )}
                     </>
@@ -531,7 +586,7 @@ function YearStepper({
     </Tooltip>
   )
   return (
-    <div className="mb-3 flex items-center gap-1">
+    <div className="mb-3 flex flex-wrap items-center gap-1">
       {step("Previous year", -1, ChevronLeft)}
       <span
         aria-live="polite"
@@ -550,6 +605,7 @@ function YearStepper({
       >
         This year
       </Button>
+      <HolidayLegend className="ml-auto" />
     </div>
   )
 }
@@ -569,10 +625,16 @@ function DayList({
   readOnly: boolean
   onRename: (key: string, name: string) => void
   onYearly: (key: string, on: boolean, iso: string) => void
-  onRemove: (key: string) => void
+  /** `row` is the row's index, for where the focus goes next. */
+  onRemove: (key: string, iso: string, row: number) => void
 }) {
   return (
-    <div ref={listRef} className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
+    <div
+      ref={listRef}
+      // A narrow screen shows the list above the year: it scrolls on its
+      // own there too, so the year stays close.
+      className="-mx-1 max-h-72 min-h-0 flex-1 overflow-y-auto px-1 lg:max-h-none"
+    >
       <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto_auto] items-center gap-x-2">
         <div className="col-span-4 grid grid-cols-subgrid pb-1 text-[11px] whitespace-nowrap text-muted-foreground">
           <span>Day</span>
@@ -586,7 +648,7 @@ function DayList({
           </span>
           <span />
         </div>
-        {shown.map(({ iso, day }) => {
+        {shown.map(({ iso, day }, row) => {
           const key = dayKey(day)
           return (
             <div
@@ -631,8 +693,9 @@ function DayList({
                       type="button"
                       size="icon-xs"
                       variant="ghost"
+                      data-remove
                       aria-label={`Remove ${dayMonth(iso)}`}
-                      onClick={() => onRemove(key)}
+                      onClick={() => onRemove(key, iso, row)}
                     >
                       <X />
                     </Button>
@@ -650,6 +713,8 @@ function DayList({
 
 function PastePanel({
   boxRef,
+  text,
+  onText,
   format,
   onCancel,
   onAdd,
@@ -657,11 +722,14 @@ function PastePanel({
   /** The dates box. The menu that opens this panel focuses it as it closes:
    * while the menu is open it holds the focus. */
   boxRef: RefObject<HTMLTextAreaElement | null>
+  /** The editor holds the text: dates typed but not yet added are unsaved
+   * work its close guard counts. */
+  text: string
+  onText: (text: string) => void
   format: DateFormat
   onCancel: () => void
   onAdd: (days: HolidayDay[]) => void
 }) {
-  const [text, setText] = useState("")
   const parsed = useMemo(() => parsePasted(text, format), [text, format])
   const n = parsed.days.length
   const root = useRef<HTMLDivElement>(null)
@@ -690,12 +758,12 @@ function PastePanel({
     <div ref={root} className="flex min-h-0 flex-1 flex-col gap-2">
       <Field
         label="Dates"
-        info={`${pasteFormats(format)}, one per line or separated by commas. Text beside a date names it.`}
+        info={`${pasteFormats(format)}, one per line or separated by commas. A dash between two dates adds the days from one to the other. Text beside a date names it.`}
       >
         <Textarea
           ref={boxRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => onText(e.target.value)}
           placeholder={"2026-12-24 Christmas Eve\n2026-12-25 Christmas Day"}
           aria-label="Dates"
           // It grows with what is pasted, up to a point, then scrolls.

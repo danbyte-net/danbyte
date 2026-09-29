@@ -76,6 +76,8 @@ HISTORY_PERIODS = 12
 #: A calendar holds at most this many days, and a day's name this many characters.
 HOLIDAY_LIMIT = 1000
 HOLIDAY_NAME_MAX = 100
+#: The years a day may fall in - the years the calendar editor shows.
+HOLIDAY_YEARS = (1970, 2099)
 
 
 def _holiday_entry(day: dt.date, name: str, yearly: bool) -> dict:
@@ -121,6 +123,10 @@ class HolidayCalendarSerializer(serializers.ModelSerializer):
                 continue
             if len(name) > HOLIDAY_NAME_MAX:
                 errors.append(f"Day {i}: the name is longer than {HOLIDAY_NAME_MAX} characters.")
+                continue
+            if not HOLIDAY_YEARS[0] <= day.year <= HOLIDAY_YEARS[1]:
+                first, last = HOLIDAY_YEARS
+                errors.append(f"Day {i}: {day.isoformat()} is outside {first}-{last}.")
                 continue
             parsed.append((day, name, yearly))
         if errors:

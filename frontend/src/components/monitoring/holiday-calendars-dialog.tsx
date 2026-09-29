@@ -132,9 +132,7 @@ function Calendars({
   return (
     <div className="grid gap-3">
       {rows.length === 0 ? (
-        <EmptyState title="No holiday calendars yet.">
-          A calendar holds the days agreements do not measure.
-        </EmptyState>
+        <EmptyState title="No holiday calendars yet." />
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border">
           {rows.map((c) => {
