@@ -211,5 +211,13 @@ ordered **directory chain** (`ldap_directory_chain(username)`):
 
 Alert/notification channels resolve via `channel.tenant`; MFA codes via the
 user's `current_tenant` (best-effort - a user with no tenant yet gets the
-deployment relay); invites via the inviting admin's active tenant. Deep-link
-URLs always use the deployment `public_base_url`.
+deployment relay); invites and reset links via the inviting admin's active
+tenant. Deep-link URLs always use the deployment `public_base_url`.
+
+A tenant admin runs the tenant's relay and can read what passes through it,
+so an MFA code, invite or reset link takes the tenant relay only when the
+account works in that tenant alone and is no deployment admin
+(`login_api.mail_tenant_for`). A superuser, a deployment admin, a
+`grant_superuser` holder or anyone who also works in another tenant gets
+them through the deployment relay - otherwise that tenant's admin could take
+the account over from the relay's log.

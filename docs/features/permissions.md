@@ -284,6 +284,12 @@ link**.
     for your deployment. People who sign in through your company directory don't
     need a Danbyte password at all.
 
+Invite and reset links, and emailed sign-in codes, go through a tenant's own
+mail server only for accounts that work in that tenant alone. Those for
+administrators, and for people in more than one tenant, go through the
+deployment's mail settings, so a tenant's admin never sees them in their
+relay.
+
 ## Two-factor sign-in (MFA)
 
 You can require a second step at sign-in for any account.

@@ -160,6 +160,30 @@ def _gen_code() -> str:
     return f"{pysecrets.randbelow(1_000_000):06d}"
 
 
+def mail_tenant_for(user, tenant):
+    """The tenant whose own mail relay may carry a sign-in secret for
+    ``user`` - an invite or reset link, a sign-in code - else ``None``, the
+    deployment relay.
+
+    A tenant's admin runs that tenant's relay and can read what passes
+    through it. So only an account that works in that tenant alone, and is
+    no deployment admin, gets its links and codes that way; anyone else's
+    would let a tenant admin take the account over from the relay's log.
+    ``tenant`` may be a Tenant or its id; the same kind comes back.
+    """
+    if tenant is None or user is None:
+        return None
+    if user.is_superuser:
+        return None
+    from .permissions import can_grant_superuser, can_manage_deployment, user_tenants
+
+    if can_manage_deployment(user) or can_grant_superuser(user):
+        return None
+    tid = getattr(tenant, "pk", tenant)
+    reach = set(user_tenants(user).values_list("pk", flat=True))
+    return tenant if reach == {tid} else None
+
+
 def _send_email_code(user, code: str) -> None:
     from core import email as ek
     from core.models import DeploymentSettings
@@ -185,14 +209,15 @@ def _send_email_code(user, code: str) -> None:
         preheader=f"Your {name} verification code",
     )
     # No active tenant at login time - best-effort: the user's last tenant's
-    # SMTP override, else the deployment relay. (No-tenant users → deployment.)
+    # SMTP override when that tenant is all the account reaches, else the
+    # deployment relay.
     profile = getattr(user, "profile", None)
     ek.send_html_email(
         f"{name} sign-in code: {code}",
         [user.email],
         html_body=html,
         text_body=text,
-        tenant=profile.current_tenant_id if profile else None,
+        tenant=mail_tenant_for(user, profile.current_tenant_id if profile else None),
     )
 
 
@@ -384,7 +409,8 @@ def send_invite_email(request, user) -> None:
 
     dep = DeploymentSettings.load()
     name = dep.deployment_name or "Danbyte"
-    # The inviting admin acts inside a tenant - use its SMTP override if any.
+    # The inviting admin acts inside a tenant - use its SMTP override, but
+    # only for an account that works in that tenant alone (mail_tenant_for).
     from api.views import _get_active_tenant
 
     url = build_set_password_url(request, user)
@@ -411,7 +437,7 @@ def send_invite_email(request, user) -> None:
         [user.email],
         html_body=html,
         text_body=text,
-        tenant=_get_active_tenant(request),
+        tenant=mail_tenant_for(user, _get_active_tenant(request)),
     )
 
 
