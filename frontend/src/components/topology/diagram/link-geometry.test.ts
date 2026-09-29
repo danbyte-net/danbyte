@@ -4,9 +4,13 @@ import {
   BENDY,
   ELBOW_RADIUS,
   STUB,
+  bendyArms,
   bendyControls,
+  bendyLine,
   curvedPath,
+  curvedPolyline,
   linkRoute,
+  portStub,
   roundedPath,
   stubbedPts,
 } from "./link-geometry"
@@ -251,6 +255,49 @@ describe("bendy", () => {
       parse(curvedPath(pts.slice(0, 3))),
       paintCurvedLine(pts.slice(0, 3))
     )
+  })
+
+  it("holds facing ends in line short of the middle of the gap", () => {
+    // Straight under, labels asking for long arms: past the middle, the
+    // curve would wave back.
+    expect(
+      bendyArms(end(0, 0, [0, 1]), end(40, 200, [0, -1]), 150, 150)
+    ).toEqual([100, 100])
+    // Offset as far as the gap: still held.
+    expect(bendyArms(end(0, 0, [0, 1]), end(240, 240, [0, -1]))).toEqual([
+      120, 120,
+    ])
+  })
+
+  it("gives facing ends far apart sideways their full reach", () => {
+    // The owner's firewall to a server 1000 px across and 240 down.
+    const a = end(0, 0, [0, 1])
+    const b = end(1000, 240, [0, -1])
+    expect(bendyArms(a, b)).toEqual([BENDY.MAX, BENDY.MAX])
+    // The hold eases off as the ends move apart, with no jump.
+    let last = 0
+    for (let x = 200; x <= 400; x += 10) {
+      const [k] = bendyArms(a, end(x, 240, [0, -1]))
+      expect(k).toBeGreaterThanOrEqual(last)
+      expect(k - last).toBeLessThan(last ? 12 : Infinity)
+      last = k
+    }
+  })
+
+  it("reaches past a labelled end's run and runs straight past it", () => {
+    const a = end(0, 0, [0, 1])
+    const b = end(600, 900, [0, -1])
+    const [ka] = bendyArms(a, b, 180)
+    expect(ka).toBe(portStub(180))
+    const pts = bendyLine(a, b, 72, 0)
+    // A point put in on the first arm: the curve starts straight down
+    // for the labels' run and more.
+    expect(pts).toHaveLength(5)
+    const line = curvedPolyline(pts)
+    const straight = line.filter((p) => p.x === 0)
+    expect(Math.max(...straight.map((p) => p.y))).toBeGreaterThanOrEqual(74)
+    // The unplanned route draws the same points.
+    expect(linkRoute("bendy", a, b, { runs: [72, 0] }).pts).toEqual(pts)
   })
 
   it("is how a cyclical link draws until arcs land", () => {

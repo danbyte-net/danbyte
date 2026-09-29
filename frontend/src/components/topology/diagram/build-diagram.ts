@@ -62,7 +62,7 @@ import {
   orientPair,
 } from "./link-labels"
 import type { LabelToken, LinkLabelSet } from "./link-labels"
-import { ELBOW_RADIUS, leaves, routeThrough } from "./link-geometry"
+import { ELBOW_RADIUS, leaves, portStub, routeThrough } from "./link-geometry"
 import {
   captionCap,
   PHOTO,
@@ -73,7 +73,7 @@ import {
 import type { PhotoFace, PhotoShown } from "./photo-anchors"
 import { packLoose } from "./pack"
 import { settleGrown } from "./placement"
-import { endRun, planEdges, portStub } from "./plan"
+import { endRun, planEdges } from "./plan"
 import type { TitleStrip } from "./plan"
 import { pairKey } from "./types"
 import type {

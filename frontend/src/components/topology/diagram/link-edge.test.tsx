@@ -7,8 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { TopologyGraph } from "@/lib/api"
 import { approxMeasure } from "@/lib/diagram/measure"
-import { buildDiagram } from "./build-diagram"
+import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
+import { leaves, routeThrough } from "./link-geometry"
 import type { DiagramEdgeData } from "./types"
 
 // The link as drawn on the canvas: each end's port name, then its
@@ -98,6 +99,11 @@ function draw(o: Partial<DiagramOptions> = {}, move = 0) {
         : n
     )
   const e = b.edges.find((x) => x.type === "link") as Edge<DiagramEdgeData>
+  // Where the drop plans it: the model relinked with the card moved.
+  const dropped = () =>
+    relinkDiagram(b.model, [...nodes.values()]).edges.find(
+      (x) => x.id === e.id
+    )!.data as DiagramEdgeData
   const { container } = render(
     <svg>
       <LinkEdge
@@ -111,7 +117,7 @@ function draw(o: Partial<DiagramOptions> = {}, move = 0) {
       />
     </svg>
   )
-  return { container, data: e.data! }
+  return { container, data: e.data!, dropped }
 }
 
 /** Each end label: its text, and whether it sits on a gap box. */
@@ -176,5 +182,14 @@ describe("LinkEdge", () => {
     )
     // A slanted line: every label turned along it.
     expect(turned.every((t) => t?.startsWith("rotate("))).toBe(true)
+  })
+
+  it("draws a Bendy line while a card is dragged as the drop settles it", () => {
+    const { container, dropped } = draw({ line: "bendy" }, 120)
+    const path = container.querySelector(".react-flow__edge-path")
+    const plan = dropped().plan![0]
+    expect(path?.getAttribute("d")).toBe(
+      routeThrough("bendy", plan.pts, leaves(plan.pts)).d
+    )
   })
 })

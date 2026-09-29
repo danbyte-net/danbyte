@@ -19,8 +19,15 @@ import { baselineAt, measureText } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
 import { anchorPoint, leadStart, linkEnds } from "./anchors"
 import { chipCentre } from "./label-placement"
-import { linkRoute, leaves, planOf, routeThrough } from "./link-geometry"
-import type { Anchor, DiagramEdgeData, Pt, Rect, Route } from "./types"
+import {
+  bendyLine,
+  linkRoute,
+  leaves,
+  planOf,
+  routeThrough,
+} from "./link-geometry"
+import { nubRun } from "./plan"
+import type { Anchor, DiagramEdgeData, End, Pt, Rect, Route } from "./types"
 
 // A Diagram link: one line per cable between two cards, drawn from the
 // shared plan (plan.ts) so the screen and every export agree.
@@ -33,9 +40,10 @@ import type { Anchor, DiagramEdgeData, Pt, Rect, Route } from "./types"
 // cable: the line breaks for each (a box in the canvas's colour behind the
 // text), so side by side every name is on its own line. While a card is
 // dragged its lines are drawn unplanned (plain routes, labels one after
-// another from each end) until the drop plans them again. The middle chip
-// (a bundle's count, the link's subnet) sits on the line; a breakout's
-// trunk carries the cable's label and type.
+// another from each end) until the drop plans them again - a bendy line
+// as the curve the drop settles on when no card is in its way. The middle
+// chip (a bundle's count, the link's subnet) sits on the line; a
+// breakout's trunk carries the cable's label and type.
 //
 // A cable on a photo port starts at the port: its lead runs straight to
 // the photo's edge over the image, so it is drawn a second time above the
@@ -102,6 +110,45 @@ function EndLabel({
   )
 }
 
+const leadLength = (lead: Pt, e: End) => Math.hypot(e.x - lead.x, e.y - lead.y)
+
+/** One end of an unplanned cable: its labels (port name, then
+ * addresses) and their widths, the straight run they need (`nubRun`),
+ * and the photo lead its line starts with - only where that lead runs
+ * straight into the end as it stands. */
+function unplannedEnd(
+  data: DiagramEdgeData,
+  i: number,
+  end: "a" | "b",
+  at: End,
+  box: Rect
+): { texts: string[]; ws: number[]; run: number; lead: Pt | null } {
+  const anchor = (end === "a" ? data.a[i] : data.b[i]) as Anchor | undefined
+  const card =
+    anchor?.k === "side" || anchor?.k === "point" ? anchor : undefined
+  const named =
+    !data.labels.noPorts &&
+    (!data.simple || data.sem === "cable" || anchor?.k === "point")
+  const port = named ? portName(card) : undefined
+  const texts = [
+    ...(port ? [port] : []),
+    ...(card ? (data.labels.ends?.[i]?.[end] ?? []) : []),
+  ]
+  const ws = texts.map(width)
+  const from = leadStart(box, anchor)
+  const behind = (p: Pt) => {
+    const [dx, dy] = [at.x - p.x, at.y - p.y]
+    return (
+      Math.abs(dx * at.dir[1] - dy * at.dir[0]) < 0.5 &&
+      dx * at.dir[0] + dy * at.dir[1] >= 0
+    )
+  }
+  const lead = from && behind(from) ? from : null
+  // A Detailed nub or a photo port: its labels run straight out of it.
+  const nub = anchor?.k === "point" || (!data.simple && anchor?.k === "side")
+  return { texts, ws, run: nubRun(nub, !!from, ws), lead }
+}
+
 interface Drawn {
   route: Route
   /** Each end's labels, nearest the end first, with their places. */
@@ -150,28 +197,33 @@ export const LinkEdge = memo(function LinkEdge({
     : linkEnds(data, s, t).map(([a, b], i) => {
         // Unplanned: the port name, then the addresses, one after
         // another from each end - where the drop will seat them.
-        const route = linkRoute(data.line, a, b)
+        const ea = unplannedEnd(data, i, "a", a, s)
+        const eb = unplannedEnd(data, i, "b", b, t)
+        // A bendy line is the curve the drop settles on when nothing is
+        // in its way: its photo leads, and straight past its labels.
+        const pts =
+          data.line === "bendy" || data.line === "cyclical"
+            ? [
+                ...(ea.lead ? [ea.lead] : []),
+                ...bendyLine(a, b, ea.run, eb.run),
+                ...(eb.lead ? [eb.lead] : []),
+              ]
+            : null
+        const route = pts
+          ? routeThrough(data.line, pts, leaves(pts))
+          : linkRoute(data.line, a, b)
         const len = route.length
         const side = (end: "a" | "b") => {
-          const anchor = (end === "a" ? data.a[i] : data.b[i]) as
-            | Anchor
-            | undefined
-          const card =
-            anchor?.k === "side" || anchor?.k === "point" ? anchor : undefined
-          const named =
-            !data.labels.noPorts &&
-            (!data.simple || data.sem === "cable" || anchor?.k === "point")
-          const port = named ? portName(card) : undefined
-          const texts = [
-            ...(port ? [port] : []),
-            ...(card ? (data.labels.ends?.[i]?.[end] ?? []) : []),
-          ]
+          const { texts, ws, lead } = end === "a" ? ea : eb
           if (!texts.length || len < 1) return []
           const back = end === "b"
+          // Past the lead: labels start where the line leaves the photo.
+          const from = pts && lead ? leadLength(lead, end === "a" ? a : b) : 0
           const places = inlinePlaces((d) => {
-            const at = route.at(back ? 1 - d / len : d / len)
+            const u = (from + d) / len
+            const at = route.at(back ? 1 - u : u)
             return { ...at, angle: back ? at.angle + 180 : at.angle }
-          }, texts.map(width))
+          }, ws)
           return texts.map((text, k) => ({ text, place: places[k] }))
         }
         return { route, a: side("a"), b: side("b") }

@@ -62,44 +62,44 @@ f:dev:@leaf-02>dev:@spine-01  link cable bendy simple
   style {"strokeWidth":1.25}
   a B95:Ethernet1/3
   b T91:Ethernet1/49
-  path M 737.5,71 Q 737.5,169.12 628,169.12 Q 518.5,169.12 518.5,267.24
+  path M 737.5,71 Q 737.5,188.62 628,169.12 Q 518.5,149.61 518.5,267.24
     ports a off b off
 f:dev:@spine-01>dev:@leaf-03  link cable bendy simple
   style {"strokeWidth":1.25,"stroke":"#f59e0b"}
   a B95:Ethernet1/4
   b T91:Ethernet1/49
-  path M 737.5,71 Q 737.5,169.12 521.75,169.12 Q 306,169.12 306,267.24
-    ports a 658.9,153.6@-17.1 b off
+  path M 737.5,71 Q 737.5,231 521.75,169.12 Q 306,107.24 306,267.24
+    ports a off b off
 f:dev:@spine-01>dev:@leaf-04  link cable bendy simple
   style {"strokeWidth":1.25}
   a B95:Ethernet1/5
   b T91:Ethernet1/49
-  path M 737.5,71 Q 737.5,169.12 416.75,169.12 Q 96,169.12 96,267.24
-    ports a off b 169.8,195.8@-18.9
+  path M 737.5,71 Q 737.5,231 416.75,169.12 Q 96,107.24 96,267.24
+    ports a off b off
 f:dev:@leaf-01>dev:@spine-02  link cable bendy simple
   style {"strokeWidth":1.25}
   a B96:Ethernet1/1
   b T90:Ethernet1/51
-  path M 96,71 Q 96,169.12 411.75,169.12 Q 727.5,169.12 727.5,267.24
-    ports a 162.1,140.1@20.7 b 657,196.6@19.6
+  path M 96,71 Q 96,231 411.75,169.12 Q 727.5,107.24 727.5,267.24
+    ports a off b off
 f:dev:@leaf-02>dev:@spine-02  link cable bendy simple
   style {"strokeWidth":1.25}
   a B96:Ethernet1/2
   b T91:Ethernet1/51
-  path M 96,71 Q 96,169.12 307.25,169.12 Q 518.5,169.12 518.5,267.24
+  path M 96,71 Q 96,231 307.25,169.12 Q 518.5,107.24 518.5,267.24
     ports a off b off
 f:dev:@spine-02>dev:@leaf-03  link cable bendy simple
   style {"strokeWidth":1.25,"stroke":"#f59e0b"}
   a B96:Ethernet1/3
   b T91:Ethernet1/51
-  path M 96,71 Q 96,169.12 201,169.12 Q 306,169.12 306,267.24
+  path M 96,71 Q 96,182.88 201,169.12 Q 306,155.36 306,267.24
     ports a off b off
 f:dev:@spine-02>dev:@leaf-04  link cable bendy simple
   style {"strokeWidth":1.25}
   a B96:Ethernet1/4
   b T91:Ethernet1/51
   path M 96,71 Q 96,149.49 96,169.12 Q 96,188.74 96,267.24
-    ports a 96,140.3@-90 b 96,212.4@-90
+    ports a off b 96,198.4@-90
 f:dev:@leaf-01>dev:@leaf-02  link bundle bendy simple mid ["Po10 ⇄ Po10 · 2x"]
   style {"strokeWidth":1.75}
   a R35.5:Ethernet1/53
@@ -110,8 +110,8 @@ f:dev:@fw-01>dev:@leaf-04  link cable bendy simple
   style {"strokeWidth":1.25,"stroke":"#3b82f6"}
   a B91:Ethernet1/1
   b T86:ethernet1/1
-  path M 96,338.24 Q 96,436.36 307.25,436.36 Q 518.5,436.36 518.5,534.47
-    ports a 171.2,420.2@18 b 443.4,452.5@18
+  path M 96,338.24 Q 96,498.24 307.25,436.36 Q 518.5,374.47 518.5,534.47
+    ports a off b off
 f:dev:@leaf-03>dev:@srv-db-01  link bundle bendy simple mid ["2x"]
   style {"strokeWidth":1.75}
   a B91:Ethernet1/48
@@ -123,4 +123,4 @@ f:dev:@pp-c01>dev:@leaf-04  link cable bendy simple
   a B91:Ethernet1/48
   b T44:1
   path M 96,338.24 Q 96,425.33 96,447.11 Q 96,468.88 96,555.97
-    ports a 96,398.3@-90 b 96,545.1@-90
+    ports a 96,414.3@-90 b 96,545.1@-90

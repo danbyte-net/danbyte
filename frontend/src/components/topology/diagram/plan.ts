@@ -25,16 +25,24 @@ import {
   sharedPins,
   SHARED_STUB,
 } from "./lanes"
-import type { ElbowCable, ElbowRoute, PlanEnd, RouteCache } from "./lanes"
+import type {
+  ElbowCable,
+  ElbowRoute,
+  Obstacles,
+  PlanEnd,
+  RouteCache,
+} from "./lanes"
 import {
   BENDY,
-  bendyControls,
-  bendyReach,
-  ELBOW_RADIUS,
+  bendyArms,
+  bendyLine,
+  curvedPolyline,
   FAN_BEND,
   fanControls,
+  portStub,
   routeThrough,
   STUB,
+  withLeads,
 } from "./link-geometry"
 import type {
   Anchor,
@@ -51,9 +59,11 @@ import type {
 
 // A Diagram's links planned together, once the cards are placed and every
 // end is anchored: each cable's route (elbows in their own lanes, clear of
-// the cards they do not connect; bendy curves reined in where they would
-// sweep through a card; cyclical arcs raised round the cards between their
-// ends), then where each port name, middle chip and end address goes -
+// the cards they do not connect; bendy curves as drawn while a card is
+// dragged, bent otherwise only where that curve would run through a card,
+// and round it as an elbow where no curve gets clear; cyclical arcs raised
+// round the cards between their ends), then where each port name, middle
+// chip and end address goes -
 // end labels on their own cable, which breaks for them. A cable on a photo
 // port is planned from where its lead leaves the photo, like a nub's; its
 // planned points then start at the port itself. So is one off the bottom
@@ -108,9 +118,6 @@ export interface PlanOutput {
   turns: EndTurns
 }
 
-/** The most of its line an end's labels may ask to run straight for. */
-const RUN_MAX = 200
-
 /** How far along its line an end's labels reach (texts `ws` wide, port
  * name first): the lead out of the nub, then the labels one after
  * another. */
@@ -118,10 +125,16 @@ export function endRun(ws: readonly number[]): number {
   return ws.length ? LABEL.LEAD + inlineLength(ws) : 0
 }
 
-/** The straight run out of a nub its labels need (`endRun`) before the
- * cable may bend. */
-export function portStub(run: number): number {
-  return Math.max(STUB, Math.min(run, RUN_MAX) + ELBOW_RADIUS + 2)
+/** The straight run an end's labels (texts `ws` wide, port name first)
+ * need before its line may bend: at a Detailed nub or a photo port
+ * (`nub`), and there at least a pixel past a photo's `lead`, so a curve
+ * carries on from it. 0 for any other end. */
+export function nubRun(
+  nub: boolean,
+  lead: boolean,
+  ws: readonly number[]
+): number {
+  return nub ? Math.max(lead ? 1 : 0, endRun(ws)) : 0
 }
 
 interface Item {
@@ -159,8 +172,8 @@ interface Item {
   portA: boolean
   portB: boolean
   fanLeg: boolean
-  /** A bendy breakout leg no curve gets clear of the cards, or a trunk
-   * whose port faces away from its legs: routed as an elbow instead. */
+  /** A bendy line no curve gets clear of the cards, or a trunk whose port
+   * faces away from its legs: routed as an elbow instead. */
   rerouted?: true
 }
 
@@ -215,12 +228,8 @@ function items(input: PlanInput): Item[] {
       // A nub's straight run holds its port name, then its addresses; a
       // photo port's runs straight out even with no labels, so a curve
       // carries on from its lead.
-      const runA = nubA
-        ? Math.max(leadA ? 1 : 0, endRun([...(ta ? [wa] : []), ...wia]))
-        : 0
-      const runB = nubB
-        ? Math.max(leadB ? 1 : 0, endRun([...(tb ? [wb] : []), ...wib]))
-        : 0
+      const runA = nubRun(nubA, !!leadA, [...(ta ? [wa] : []), ...wia])
+      const runB = nubRun(nubB, !!leadB, [...(tb ? [wb] : []), ...wib])
       const arc: Item["arc"] =
         d.arc && aa?.k === "side" && ba?.k === "side"
           ? {
@@ -300,13 +309,54 @@ function fanBends(first: number): number[] {
   return out
 }
 
-/** A bendy cable's control points: out along each end's normal, at least
- * far enough that a port name runs along the curve's straight start, and
- * pulled in until the control polygon keeps clear of the cards it does
- * not connect. A breakout leg curves like the cable page's fan-out,
- * bending nearer the junction or the port where that keeps it clear;
- * null for one no curve gets clear (it goes as an elbow). */
-function bendyPts(it: Item, obs: ReturnType<typeof obstacles>): Pt[] | null {
+/** Reach scales a bendy cable tries when a card is in its way, `[a, b]`
+ * for its two ends: its free curve first, then ever further from it.
+ * Longer arms swing the curve out past a card, shorter ones tuck it in,
+ * and one longer than the other moves its middle towards the shorter
+ * one's end; 0 is as short as the arm may go. */
+const BENDY_WAYS: readonly (readonly [number, number])[] = (() => {
+  const f = [1, 1.3, 0.75, 1.7, 0.55, 2.2, 0.4, 0]
+  const off = (x: number) => (x ? Math.abs(Math.log(x)) : 3)
+  return f
+    .flatMap((a) => f.map((b) => [a, b] as const))
+    .sort((p, q) => off(p[0]) + off(p[1]) - off(q[0]) - off(q[1]))
+})()
+
+/** Is `c` on from `b` straight along the line from `a` through `b`? */
+function onward(a: Pt, b: Pt, c: Pt): boolean {
+  const [ux, uy, vx, vy] = [b.x - a.x, b.y - a.y, c.x - b.x, c.y - b.y]
+  const size = Math.hypot(ux, uy) * Math.hypot(vx, vy)
+  return Math.abs(ux * vy - uy * vx) <= 1e-9 * size && ux * vx + uy * vy >= 0
+}
+
+/** Does the curve through `pts` (the curved rule, as drawn) keep clear of
+ * the cards it does not connect? Its straight run out of each end is one
+ * run, which may touch the card it leaves (`pathClear`). */
+function curveClear(obs: Obstacles, pts: Pt[], own: readonly string[]) {
+  const line = curvedPolyline(pts)
+  const n = line.length
+  let i = 1
+  while (i < n - 2 && onward(line[0], line[i], line[i + 1])) i++
+  let j = n - 2
+  while (j > i && onward(line[n - 1], line[j], line[j - 1])) j--
+  return pathClear(obs, [line[0], ...line.slice(i, j + 1), line[n - 1]], own)
+}
+
+/** A bendy cable's curve with nothing in its way: what it draws while a
+ * card is dragged (`bendyLine`). */
+const freeBendy = (it: Item): Pt[] => bendyLine(it.a, it.b, it.runA, it.runB)
+
+/**
+ * A bendy cable's points: its free curve (`freeBendy`: out along each
+ * end's normal, straight past its labels), unless that curve runs through
+ * a card it does not connect - then the nearest curve that keeps clear,
+ * its arms made longer or shorter (`BENDY_WAYS`), no shorter than its
+ * labels' straight run while one of those gets clear. A breakout leg
+ * curves like the cable page's fan-out, bending nearer the junction or
+ * the port where that keeps it clear. Null for a cable no curve gets
+ * clear: it goes round the cards as an elbow.
+ */
+function bendyPts(it: Item, obs: Obstacles): Pt[] | null {
   const A = { x: it.a.x, y: it.a.y }
   const B = { x: it.b.x, y: it.b.y }
   const own = [it.a.node, it.b.node]
@@ -340,60 +390,26 @@ function bendyPts(it: Item, obs: ReturnType<typeof obstacles>): Pt[] | null {
       if (pathClear(obs, pts, own)) return pts
     }
   }
-  const k = bendyReach(A, B)
-  let ka = Math.max(k, it.runA ? portStub(it.runA) : 0)
-  let kb = Math.max(k, it.runB ? portStub(it.runB) : 0)
-  // Ends facing each other: control points past the middle of the gap
-  // make the curve overshoot and wave back.
-  const facing = it.a.dir[0] * it.b.dir[0] + it.a.dir[1] * it.b.dir[1] < -0.99
-  const gap = (B.x - A.x) * it.a.dir[0] + (B.y - A.y) * it.a.dir[1]
-  if (facing && gap > 0) {
-    ka = Math.min(ka, Math.max(BENDY.MIN, gap / 2))
-    kb = Math.min(kb, Math.max(BENDY.MIN, gap / 2))
-  }
-  for (const f of [1, 0.75, 0.5, 0.35]) {
-    const pts = [
-      A,
-      ...bendyControls(
-        it.a,
-        it.b,
-        Math.max(BENDY.MIN, ka * f),
-        Math.max(BENDY.MIN, kb * f)
-      ),
-      B,
-    ]
-    if (pathClear(obs, pts, own)) return withLeads(pts, it.runA, it.runB)
-  }
-  if (it.fanLeg) return null
-  return withLeads(
-    [A, ...bendyControls(it.a, it.b, BENDY.MIN, BENDY.MIN), B],
-    it.runA,
-    it.runB
-  )
-}
-
-/**
- * A curve's points with one put in on the arm from each labelled end to
- * its first control point, so the curved rule runs straight out of that
- * end for `need` px (a nub's labels sit there): the first piece then
- * runs from the end to half-way between the new point and the control
- * point, all on one line. Moves the curve towards its control polygon,
- * never into what that polygon keeps clear of.
- */
-export function withLeads(pts: Pt[], needA: number, needB: number): Pt[] {
-  const lead = (p: Pt[], need: number): Pt[] => {
-    if (need <= 0 || p.length < 3) return p
-    const [A, P1] = p
-    const arm = Math.hypot(P1.x - A.x, P1.y - A.y)
-    if (arm < 4) return p
-    const s = Math.min(arm - 1, Math.max(1, 2 * (need + 2) - arm))
-    return [
-      A,
-      { x: A.x + ((P1.x - A.x) * s) / arm, y: A.y + ((P1.y - A.y) * s) / arm },
-      ...p.slice(1),
-    ]
-  }
-  return reversed(lead(reversed(lead(pts, needA)), needB))
+  const [ka, kb] = bendyArms(it.a, it.b, it.runA, it.runB)
+  // Pulled in, an arm reaches past its labels while any such curve gets
+  // clear; failing that, as short as a curve goes (its labels may then
+  // be left off).
+  const least = (k: number, run: number) =>
+    Math.min(k, Math.max(BENDY.MIN, run ? portStub(run) : 0))
+  const tried = new Set<string>()
+  for (const [la, lb] of [
+    [least(ka, it.runA), least(kb, it.runB)],
+    [Math.min(ka, BENDY.MIN), Math.min(kb, BENDY.MIN)],
+  ])
+    for (const [fa, fb] of BENDY_WAYS) {
+      const arms = [Math.max(la, ka * fa), Math.max(lb, kb * fb)] as const
+      const key = `${arms[0]},${arms[1]}`
+      if (tried.has(key)) continue
+      tried.add(key)
+      const pts = bendyLine(it.a, it.b, it.runA, it.runB, arms)
+      if (curveClear(obs, pts, own)) return pts
+    }
+  return null
 }
 
 /** A photo port's line facing away from its far end: out along its lead
@@ -661,11 +677,11 @@ export function planEdges(
   }
   const curve = (it: Item) => bendyPts(it, obs)
 
-  // Bendy breakout legs first: one no curve gets clear of the cards goes
-  // round them as an elbow, in the lanes with the others.
+  // Bendy lines first: one no curve gets clear of the cards goes round
+  // them as an elbow, in the lanes with the others.
   const bent = new Map<string, Pt[]>()
   for (const it of all) {
-    if (!it.fanLeg || it.line !== "bendy") continue
+    if (it.line !== "bendy") continue
     const pts = withHooks(it, curve)
     if (pts) bent.set(it.key, pts)
     else {
@@ -747,7 +763,9 @@ export function planEdges(
       arc
         ? arc.pts
         : it.line === "bendy" || it.line === "cyclical"
-          ? (bent.get(it.key) ?? withHooks(it, curve) ?? [A, B])
+          ? (bent.get(it.key) ??
+            withHooks(it, curve) ??
+            withHooks(it, freeBendy) ?? [A, B])
           : (withHooks(it, straight) ?? [A, B])
     )
   }

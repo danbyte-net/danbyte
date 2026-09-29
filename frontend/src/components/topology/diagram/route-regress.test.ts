@@ -13,6 +13,15 @@ import type { LineType } from "./types"
 // cross more than they did before photo ports learned to leave towards
 // their far ends, and cables to a photo's edge never run closer than half
 // a lane.
+//
+// Bendy lines settle on the curve they are drawn with while a card is
+// dragged: an S that sweeps out past the middle of the gap, where they
+// were squashed to a corner, a level run halfway and a second corner. Two
+// S-curves side by side cross twice where they pass, which two level runs
+// did not, so the Bendy ceilings on the TB maps rose (test-view Simple 23
+// to 27, dc1-view Detailed 16 to 18 and Simple 9 to 19) and fell on LR.
+// No Bendy line runs through a card it does not connect any more (five
+// did on test-view Simple).
 
 type Key =
   `${"ports" | "edge"}:${"LR" | "TB"}:${"detailed" | "simple"}:${LineType}`
@@ -22,16 +31,16 @@ const CEILING: Record<string, Partial<Record<Key, number>>> = {
   "test-view": {
     "ports:LR:detailed:elbow": 23,
     "ports:LR:detailed:straight": 26,
-    "ports:LR:detailed:bendy": 23,
+    "ports:LR:detailed:bendy": 21,
     "ports:LR:simple:elbow": 25,
     "ports:LR:simple:straight": 28,
-    "ports:LR:simple:bendy": 31,
+    "ports:LR:simple:bendy": 27,
     "ports:TB:detailed:elbow": 21,
     "ports:TB:detailed:straight": 25,
     "ports:TB:detailed:bendy": 40,
     "ports:TB:simple:elbow": 18,
     "ports:TB:simple:straight": 20,
-    "ports:TB:simple:bendy": 23,
+    "ports:TB:simple:bendy": 27,
     "edge:LR:detailed:elbow": 0,
     "edge:LR:simple:elbow": 5,
     "edge:TB:detailed:elbow": 1,
@@ -46,10 +55,10 @@ const CEILING: Record<string, Partial<Record<Key, number>>> = {
     "ports:LR:simple:bendy": 19,
     "ports:TB:detailed:elbow": 14,
     "ports:TB:detailed:straight": 14,
-    "ports:TB:detailed:bendy": 16,
+    "ports:TB:detailed:bendy": 18,
     "ports:TB:simple:elbow": 12,
     "ports:TB:simple:straight": 9,
-    "ports:TB:simple:bendy": 9,
+    "ports:TB:simple:bendy": 19,
     "edge:LR:detailed:elbow": 2,
     "edge:LR:simple:elbow": 4,
     "edge:TB:detailed:elbow": 2,

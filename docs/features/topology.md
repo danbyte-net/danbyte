@@ -275,10 +275,15 @@ names its peers, the session kind and the VRF.
   order that keeps them from crossing. In a tight gap the labels give way
   first (a cable keeps its lane and loses the name), and only then do the
   lanes close up.
-- **Bendy** - a smooth curve that leaves each card square to its edge,
-  reined in where it would sweep through a card and never overshooting the
-  middle of the gap between two facing cards. Where a nub has labels the
-  curve runs straight out of it far enough for them.
+- **Bendy** - a smooth curve that leaves each card square to its edge and
+  sweeps across to the other end: the curve you see while dragging a card
+  is the one it keeps when you drop it. Only a card in its way changes it -
+  the curve then takes the nearest shape that clears the card (reaching
+  further or less far out of either end), and where no curve gets clear it
+  goes round the cards as an Elbow. Between two facing cards nearly in line
+  it stops short of the middle of the gap, so it never overshoots and waves
+  back. Where a nub has labels the curve runs straight out of it far enough
+  for them.
 - **Cyclical** - an arc that loops round the cards between its two ends
   instead of crossing them, both ends leaving through the side it bulges to
   (the top of a row, say). In Detailed each end first runs straight out of
@@ -1454,9 +1459,9 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   hold their cards the same way. A side band is a shape behind the rows
   with its label turned to read upwards, as a card can sit in only one
   container. A card in a swimlane is drawn with it, before the lines, so a
-  Straight, Bendy or Cyclical line that crosses such a card passes over it,
-  while one crossing a card outside every band passes under it (elbows never
-  cross a card).
+  Straight or Cyclical line that crosses such a card passes over it, while
+  one crossing a card outside every band passes under it (Elbow and Bendy
+  lines go round the cards they do not connect).
 - **Notes** are draw.io's own shapes, to restyle there like anything else:
   a text note is a text cell (on a rounded box when it is outlined); a
   cloud is draw.io's cloud, a building the network library's *Business

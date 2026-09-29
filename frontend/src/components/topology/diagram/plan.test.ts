@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import type { Edge } from "@xyflow/react"
 
 import type { TopoNode, TopologyGraph } from "@/lib/api"
 import { approxMeasure } from "@/lib/diagram/measure"
@@ -17,10 +18,28 @@ import {
   labelFaults,
   throughCards,
 } from "../__fixtures__/route-checks"
+import { endTextWidth } from "@/lib/diagram/geometry"
+import { leadStart, linkEnds } from "./anchors"
 import { buildDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
-import { LANE } from "./lanes"
-import type { DiagramEdgeData, DiagramMode, LineType, Rect } from "./types"
+import { LANE, obstacles, pathClear } from "./lanes"
+import {
+  bendyLine,
+  curvedPolyline,
+  leaves,
+  linkRoute,
+  routeThrough,
+} from "./link-geometry"
+import { nubRun, planEdges } from "./plan"
+import { segHitsRect } from "./spatial"
+import type {
+  Anchor,
+  DiagramEdgeData,
+  DiagramMode,
+  LineType,
+  Pt,
+  Rect,
+} from "./types"
 
 // The planned lines on real maps: the owner's Århus DC view (the saved
 // arrangement and the auto layout, with and without Levels) and the parity
@@ -180,6 +199,149 @@ describe("middle chips", () => {
       const d = e.data as DiagramEdgeData
       expect(d.midT).toBeGreaterThanOrEqual(0.18)
       expect(d.midT).toBeLessThanOrEqual(0.82)
+    }
+  })
+})
+
+// The owner's firewall to server, Bendy in Detailed: the firewall's nub on
+// its bottom edge, the server a photo lower down and 1000 px to the right,
+// its port on its top edge. While the server was dragged the cable was a
+// sweeping S; dropped, it went straight down past its label, turned hard
+// and ran flat along the middle of the gap (the control points were held
+// to half the gap, and a card near the control polygon pulled them in
+// further). Settled, it is the curve drawn while dragging.
+describe("Bendy lines", () => {
+  const fw: Rect = { x: 0, y: 0, w: 200, h: 60 }
+  const srv: Rect = { x: 980, y: 320, w: 240, h: 100 }
+  const nub: Anchor = { k: "side", side: "B", off: 40, port: "ethernet1/1" }
+  const port: Anchor = {
+    k: "point",
+    fx: 0.25,
+    fy: 0.2,
+    exit: "T",
+    port: "Ethernet 1",
+  }
+  const data = {
+    sem: "cable",
+    pairKey: "fw|srv",
+    line: "bendy",
+    a: [nub],
+    b: [port],
+    labels: {},
+  } as unknown as DiagramEdgeData
+  const edge: Edge<DiagramEdgeData> = {
+    id: "fw-srv",
+    source: "fw",
+    target: "srv",
+    type: "link",
+    data,
+  }
+  const [[a, b]] = linkEnds(data, fw, srv, false)
+  const lead = leadStart(srv, port)!
+  const w = (text: string) => endTextWidth(text, approxMeasure)
+  const runs = [
+    nubRun(true, false, [w("ethernet1/1")]),
+    nubRun(true, true, [w("Ethernet 1")]),
+  ] as const
+  /** The line drawn while the server is dragged: the unplanned route
+   * through the ends as they stand, then the photo port's lead. */
+  const dragged = [...linkRoute("bendy", a, b, { runs }).pts, lead]
+  const plan = (others: [string, Rect][] = [], to = srv) =>
+    planEdges({
+      edges: [edge],
+      rects: new Map<string, Rect>([["fw", fw], ["srv", to], ...others]),
+      solid: () => true,
+      mode: "detailed",
+      measure: approxMeasure,
+    }).plans.get(edge.id)!.cables[0]
+  const route = (pts: Pt[]) => routeThrough("bendy", pts, leaves(pts))
+  /** The sharpest the drawn line turns over 8 px, degrees. */
+  const sharpest = (pts: Pt[]) => {
+    const r = route(pts)
+    let most = 0
+    for (let d = 0; d + 8 <= r.length; d++) {
+      const p = r.at(d / r.length).angle
+      const q = r.at((d + 8) / r.length).angle
+      most = Math.max(most, Math.abs(((q - p + 540) % 360) - 180))
+    }
+    return most
+  }
+  /** The longest stretch, px, that runs level (within 1 degree). */
+  const level = (pts: Pt[]) => {
+    const r = route(pts)
+    let most = 0
+    let run = 0
+    for (let d = 0; d <= r.length; d++) {
+      const h = ((r.at(d / r.length).angle % 180) + 180) % 180
+      run = Math.min(h, 180 - h) <= 1 ? run + 1 : 0
+      most = Math.max(most, run)
+    }
+    return most
+  }
+  const through = (pts: Pt[], box: Rect) => {
+    const line = curvedPolyline(pts)
+    return line.some((p, i) => i > 0 && segHitsRect(line[i - 1], p, box))
+  }
+  // What it used to settle on: control points held to half the gap.
+  const gap = b.y - a.y
+  const held = [...bendyLine(a, b, runs[0], runs[1], [gap / 2, gap / 2]), lead]
+  // Cards near the curve: in its control polygon's reach, clear of it.
+  const lenovo: [string, Rect] = ["lenovo", { x: 48, y: 214, w: 72, h: 46 }]
+  const palo: [string, Rect] = ["palo", { x: 960, y: 120, w: 72, h: 50 }]
+
+  it("settles on the curve drawn while dragging, cards close by", () => {
+    const got = plan([lenovo, palo])
+    expect(got.line).toBeUndefined()
+    expect(got.pts).toEqual(dragged)
+    // Both port names on their straight runs.
+    expect(got.a).toBeTruthy()
+    expect(got.b).toBeTruthy()
+    // The cards touch the control polygon - which used to pull the curve
+    // in - but not the curve.
+    const obs = obstacles([lenovo, palo])
+    expect(pathClear(obs, bendyLine(a, b), ["fw", "srv"])).toBe(false)
+    expect(through(got.pts, lenovo[1]) || through(got.pts, palo[1])).toBe(false)
+  })
+
+  it("sweeps from its labels instead of turning hard and running flat", () => {
+    const got = plan([lenovo, palo]).pts
+    // Down past the middle of the gap, across, and up above it before it
+    // comes down into the port: an S, not a level run halfway.
+    const r = route(got)
+    const half = a.y + gap / 2
+    const at = Array.from({ length: 101 }, (_, i) => r.at(i / 100))
+    const mid = (a.x + b.x) / 2
+    expect(
+      Math.max(...at.filter((p) => p.x < mid).map((p) => p.y))
+    ).toBeGreaterThan(half + 5)
+    expect(
+      Math.min(...at.filter((p) => p.x > mid).map((p) => p.y))
+    ).toBeLessThan(half - 5)
+    expect(level(got)).toBeLessThan(100)
+    expect(level(held)).toBeGreaterThan(200)
+    expect(sharpest(held)).toBeGreaterThan(sharpest(got) + 5)
+  })
+
+  it("bends round a card in its way, still a curve", () => {
+    const block: [string, Rect] = ["block", { x: 480, y: 150, w: 120, h: 60 }]
+    expect(through(dragged, block[1])).toBe(true)
+    const got = plan([block])
+    expect(got.line).toBeUndefined()
+    expect(got.pts).not.toEqual(dragged)
+    expect(through(got.pts, block[1])).toBe(false)
+    expect(level(got.pts)).toBeLessThan(100)
+    expect(sharpest(got.pts)).toBeLessThan(sharpest(held) - 5)
+  })
+
+  it("keeps facing ends in line short of the middle of the gap", () => {
+    // The server straight under the firewall: no overshoot, no wave -
+    // the line only ever goes down.
+    const r = route(plan([], { ...srv, x: -30 }).pts)
+    let y = -Infinity
+    for (let i = 0; i <= 200; i++) {
+      const at = r.at(i / 200)
+      expect(at.y).toBeGreaterThanOrEqual(y - 0.01)
+      y = at.y
     }
   })
 })

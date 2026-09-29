@@ -8,7 +8,7 @@ import type {
   TopologyViewZone,
 } from "@/lib/api"
 import { readableText } from "@/lib/color"
-import { documentBounds } from "@/lib/diagram/geometry"
+import { documentBounds, endTextWidth } from "@/lib/diagram/geometry"
 import type { PortPlace } from "@/lib/diagram/geometry"
 import { baselineAt, fit, measureText } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
@@ -57,6 +57,7 @@ import {
 import type { CardBox, CardLayoutInput } from "./card-layout"
 import { leaves, linkRoute, planOf, routeThrough } from "./link-geometry"
 import { captionPill, PHOTO } from "./photo-anchors"
+import { nubRun } from "./plan"
 import type { PhotoShown } from "./photo-anchors"
 import type {
   Anchor,
@@ -967,27 +968,6 @@ export function toDocument(
         (!!lead || (anchor?.k === "side" && !!anchor.cap && nub === undefined))
       const imageA = onImage(e.source, leadA, aa, na)
       const imageB = onImage(e.target, leadB, ba, nb)
-      const planned = p?.pts.slice(
-        leadA && !imageA ? 1 : 0,
-        leadB && !imageB ? -1 : undefined
-      )
-      const drawn = planned
-        ? routeThrough(p!.line ?? line, planned, leaves(planned))
-        : linkRoute(line, a0, b0)
-      const route = {
-        kind: drawn.kind,
-        pts: planned
-          ? drawn.pts
-          : [
-              ...(imageA && leadA ? [leadA] : []),
-              ...drawn.pts,
-              ...(imageB && leadB ? [leadB] : []),
-            ],
-      }
-      const first = route.pts[0]
-      const last = route.pts[route.pts.length - 1]
-      const a = { ...a0, x: first.x, y: first.y }
-      const b = { ...b0, x: last.x, y: last.y }
       // The end labels on the line: where the plan seated them, or (a
       // drag in progress) one after another from the end.
       const named = !d.labels.noPorts && (detailed || d.sem === "cable")
@@ -1022,6 +1002,44 @@ export function toDocument(
       const ends = d.labels.ends?.[i]
       const ia = addresses(aa, ends?.a, p?.ips?.a)
       const ib = addresses(ba, ends?.b, p?.ips?.b)
+      const planned = p?.pts.slice(
+        leadA && !imageA ? 1 : 0,
+        leadB && !imageB ? -1 : undefined
+      )
+      // Unplanned (a card is being dragged), a bendy line is the curve
+      // the canvas draws meanwhile: straight past each nub's labels.
+      const runOf = (
+        anchor: typeof aa,
+        lead: Pt | null,
+        texts: readonly (DiagramEndLabel | undefined)[]
+      ) =>
+        nubRun(
+          anchor?.k === "point" || (detailed && anchor?.k === "side"),
+          !!lead,
+          texts.flatMap((l) => (l ? [endTextWidth(l.text, measure)] : []))
+        )
+      const drawn = planned
+        ? routeThrough(p!.line ?? line, planned, leaves(planned))
+        : linkRoute(line, a0, b0, {
+            runs: [
+              runOf(aa, leadA, [la, ...(ia ?? [])]),
+              runOf(ba, leadB, [lb, ...(ib ?? [])]),
+            ],
+          })
+      const route = {
+        kind: drawn.kind,
+        pts: planned
+          ? drawn.pts
+          : [
+              ...(imageA && leadA ? [leadA] : []),
+              ...drawn.pts,
+              ...(imageB && leadB ? [leadB] : []),
+            ],
+      }
+      const first = route.pts[0]
+      const last = route.pts[route.pts.length - 1]
+      const a = { ...a0, x: first.x, y: first.y }
+      const b = { ...b0, x: last.x, y: last.y }
       const end = (
         node: string,
         at: End,

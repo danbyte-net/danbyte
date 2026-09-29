@@ -171,6 +171,97 @@ export function bendyControls(
   ]
 }
 
+/** The most of its line an end's labels may ask to run straight for. */
+export const RUN_MAX = 200
+
+/** The straight run out of a nub its labels need (`endRun`, `run` px)
+ * before the cable may bend. */
+export function portStub(run: number): number {
+  return Math.max(STUB, Math.min(run, RUN_MAX) + ELBOW_RADIUS + 2)
+}
+
+/**
+ * A bendy line's control-point reach at each end: `bendyReach`, and at
+ * least the `portStub` a labelled end's `run` needs. Ends facing each
+ * other nearly in line keep both short of the middle of the gap between
+ * them - past it the curve would overshoot and wave back. The cap eases
+ * off as the ends move apart sideways (by as much as they are offset past
+ * the gap), so a far card lower down gets the full sweep.
+ */
+export function bendyArms(
+  a: End,
+  b: End,
+  runA = 0,
+  runB = 0
+): [number, number] {
+  const k = bendyReach(a, b)
+  let ka = Math.max(k, runA ? portStub(runA) : 0)
+  let kb = Math.max(k, runB ? portStub(runB) : 0)
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const facing = a.dir[0] * b.dir[0] + a.dir[1] * b.dir[1] < -0.99
+  const gap = dx * a.dir[0] + dy * a.dir[1]
+  if (facing && gap > 0) {
+    const aside = Math.abs(dx * a.dir[1] - dy * a.dir[0])
+    const cap = Math.max(BENDY.MIN, gap / 2 + Math.max(0, aside - gap))
+    ka = Math.min(ka, cap)
+    kb = Math.min(kb, cap)
+  }
+  return [ka, kb]
+}
+
+/**
+ * A curve's points with one put in on the arm from each labelled end to
+ * its first control point, so the curved rule runs straight out of that
+ * end for `need` px (a nub's labels sit there): the first piece then
+ * runs from the end to half-way between the new point and the control
+ * point, all on one line. Moves the curve towards its control polygon,
+ * never into what that polygon keeps clear of.
+ */
+export function withLeads(pts: Pt[], needA: number, needB: number): Pt[] {
+  const lead = (p: Pt[], need: number): Pt[] => {
+    if (need <= 0 || p.length < 3) return p
+    const [A, P1] = p
+    const arm = Math.hypot(P1.x - A.x, P1.y - A.y)
+    if (arm < 4) return p
+    const s = Math.min(arm - 1, Math.max(1, 2 * (need + 2) - arm))
+    return [
+      A,
+      { x: A.x + ((P1.x - A.x) * s) / arm, y: A.y + ((P1.y - A.y) * s) / arm },
+      ...p.slice(1),
+    ]
+  }
+  const back = (p: Pt[]) => [...p].reverse()
+  return back(lead(back(lead(pts, needA)), needB))
+}
+
+/**
+ * A bendy line's points between two ends, terminals included - draw.io's
+ * curved rule through them is the line: a control point out along each
+ * end's normal, `reach` px (`bendyArms` by default), and on the arm of an
+ * end whose labels need a straight run of `runA`/`runB` px, a point that
+ * keeps the curve straight past them (`withLeads`). The canvas draws this
+ * while a card is dragged, and the planner settles on it unless a card is
+ * in its way - so a line looks the same during and after a drag.
+ */
+export function bendyLine(
+  a: End,
+  b: End,
+  runA = 0,
+  runB = 0,
+  reach: readonly [number, number] = bendyArms(a, b, runA, runB)
+): Pt[] {
+  return withLeads(
+    [
+      { x: a.x, y: a.y },
+      ...bendyControls(a, b, reach[0], reach[1]),
+      { x: b.x, y: b.y },
+    ],
+    runA,
+    runB
+  )
+}
+
 /** How far along its trunk's axis a breakout leg bends, as on the cable
  * page's fan-out. */
 export const FAN_BEND = 0.55
@@ -257,6 +348,16 @@ function quadTo(f: Flat, c: Pt, to: Pt) {
   }
 }
 
+/** draw.io's curved line through `pts` (terminals included) as a
+ * polyline: each quadratic piece in `QUAD_STEPS` chords, which stray from
+ * it by a pixel or so - what a curve keeps clear of cards with. */
+export function curvedPolyline(pts: Pt[]): Pt[] {
+  if (pts.length < 3) return pts
+  const flat: Flat = { pts: [pts[0]], tans: [] }
+  for (const { c, to } of curvedSegs(pts)) quadTo(flat, c, to)
+  return flat.pts
+}
+
 /** Arc-length lookups over a flattened path. `dir` is the direction of a
  * route with no length. */
 function sampler(f: Flat, dir: Dir): Pick<Route, "length" | "at"> {
@@ -337,6 +438,8 @@ export interface RouteOptions {
   /** Elbow without a channel: shift the mid-channel by this many px, so
    * lines leaving one Simple-mode midpoint separate. */
   lane?: number
+  /** Bendy: the straight run each end's labels need (`bendyLine`). */
+  runs?: readonly [number, number]
 }
 
 /**
@@ -391,7 +494,7 @@ export function routeThrough(kind: LineType, pts: Pt[], dir: Dir): Route {
  * - `elbow`: leaves and enters along the ends' normals (a `STUB` each),
  *   crosses a channel, corners rounded to `ELBOW_RADIUS`.
  * - `bendy`: draw.io's curved line through a control point out along each
- *   normal (`bendyControls`).
+ *   normal (`bendyLine`), straight past each end's labels (`runs`).
  * - `cyclical`: drawn as bendy until arcs land; the kind is kept.
  *
  * `at(t)` walks the drawn path (rounded corners and curves included) by
@@ -426,7 +529,9 @@ export function linkRoute(
       a.dir
     )
   }
-  if (kind === "bendy" || kind === "cyclical")
-    return routeThrough(kind, [A, ...bendyControls(a, b), B], a.dir)
+  if (kind === "bendy" || kind === "cyclical") {
+    const [ra, rb] = opts.runs ?? [0, 0]
+    return routeThrough(kind, bendyLine(a, b, ra, rb), a.dir)
+  }
   return routeThrough(kind, [A, B], a.dir)
 }
