@@ -20,11 +20,11 @@ import { LABEL } from "@/lib/diagram/theme"
 import { anchorPoint, leadStart, linkEnds } from "./anchors"
 import { chipCentre } from "./label-placement"
 import {
-  bendyLine,
   linkRoute,
   leaves,
   planOf,
   routeThrough,
+  staleBend,
 } from "./link-geometry"
 import { nubRun } from "./plan"
 import type { Anchor, DiagramEdgeData, End, Pt, Rect, Route } from "./types"
@@ -40,10 +40,13 @@ import type { Anchor, DiagramEdgeData, End, Pt, Rect, Route } from "./types"
 // cable: the line breaks for each (a box in the canvas's colour behind the
 // text), so side by side every name is on its own line. While a card is
 // dragged its lines are drawn unplanned (plain routes, labels one after
-// another from each end) until the drop plans them again - a bendy line
-// as the curve the drop settles on when no card is in its way. The middle
-// chip (a bundle's count, the link's subnet) sits on the line; a
-// breakout's trunk carries the cable's label and type.
+// another from each end) until the drop plans them again. A bendy line
+// keeps the straight runs and reaches its last plan gave it, so it is
+// drawn as the drop settles it when no card is in its way - except a
+// breakout leg (the drop curves it as the cable page's fan-out) and a
+// photo port facing away from its far end (the drop hooks it round its
+// photo). The middle chip (a bundle's count, the link's subnet) sits on
+// the line; a breakout's trunk carries the cable's label and type.
 //
 // A cable on a photo port starts at the port: its lead runs straight to
 // the photo's edge over the image, so it is drawn a second time above the
@@ -113,9 +116,10 @@ function EndLabel({
 const leadLength = (lead: Pt, e: End) => Math.hypot(e.x - lead.x, e.y - lead.y)
 
 /** One end of an unplanned cable: its labels (port name, then
- * addresses) and their widths, the straight run they need (`nubRun`),
- * and the photo lead its line starts with - only where that lead runs
- * straight into the end as it stands. */
+ * addresses) and their widths, the straight run they need (`nubRun`,
+ * measured here: a bendy line keeps its plan's instead, measured as the
+ * plan was), and the photo lead its line starts with - only where that
+ * lead runs straight into the end as it stands. */
 function unplannedEnd(
   data: DiagramEdgeData,
   i: number,
@@ -200,12 +204,14 @@ export const LinkEdge = memo(function LinkEdge({
         const ea = unplannedEnd(data, i, "a", a, s)
         const eb = unplannedEnd(data, i, "b", b, t)
         // A bendy line is the curve the drop settles on when nothing is
-        // in its way: its photo leads, and straight past its labels.
+        // in its way: its photo leads, straight past its labels, each end
+        // reaching as its last plan had it (`staleBend`).
+        const bend = staleBend(data.plan?.[i], () => [ea.run, eb.run])
         const pts =
           data.line === "bendy" || data.line === "cyclical"
             ? [
                 ...(ea.lead ? [ea.lead] : []),
-                ...bendyLine(a, b, ea.run, eb.run),
+                ...linkRoute(data.line, a, b, bend).pts,
                 ...(eb.lead ? [eb.lead] : []),
               ]
             : null

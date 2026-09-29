@@ -12,6 +12,7 @@ import {
 import { fabricGraph } from "../__fixtures__/fabric-graph"
 import {
   boxOf,
+  crosses,
   crowdedRuns,
   drawn,
   earlyCrossings,
@@ -167,8 +168,8 @@ describe("port names", () => {
         expect(labelFaults(cables)).toEqual([])
       })
 
-  it("show on most cables of the saved Århus view", () => {
-    const b = build(aarhusGraph, { positions: aarhusPositions })
+  /** How many of the port names a map's lines carry are shown. */
+  const names = (b: ReturnType<typeof build>) => {
     let shown = 0
     let all = 0
     for (const e of b.edges) {
@@ -180,9 +181,84 @@ describe("port names", () => {
             if (p[end]) shown++
           }
     }
+    return { shown, all }
+  }
+
+  it("show on most cables of the saved Århus view", () => {
+    const { shown, all } = names(
+      build(aarhusGraph, { positions: aarhusPositions })
+    )
     expect(all).toBeGreaterThan(20)
     expect(shown / all).toBeGreaterThan(0.9)
   })
+
+  // Simple Bendy lines leaving one side's midpoint each bend within a
+  // reach of their own, so they part soon after it and their names fit:
+  // at one reach they ran over each other, and 5 of these 14 names had
+  // no room (3 with the old half-gap hold).
+  for (const [name, o] of [
+    ["saved", {}],
+    ["saved with Levels", aarhusLevels],
+  ] as const)
+    it(`show on most Simple Bendy lines of the Århus view, ${name}`, () => {
+      const { shown, all } = names(
+        build(aarhusGraph, {
+          positions: aarhusPositions,
+          ...o,
+          mode: "simple",
+          line: "bendy",
+        })
+      )
+      expect(all).toBe(14)
+      expect(shown).toBeGreaterThanOrEqual(12)
+    })
+})
+
+// Bendy lines on the parity fabric cross no more than this. Across one
+// tier gap they keep to half the gap and run side by side until their
+// ends are offset sideways by more than twice the gap; further apart they
+// sweep past the middle in an S, and two S-curves cross twice where they
+// pass. Detailed crossed 9 times when every facing line was held to half
+// the gap - its leaf-to-leaf LAG then ran straight through two cards - and
+// 44 when the hold eased off from an offset of one gap.
+const TB: Partial<DiagramOptions> = { direction: "TB" }
+const LEVELS: Partial<DiagramOptions> = {
+  ...TB,
+  roleOrder: ["Spine", "Leaf", "Server"],
+}
+const BENDY_CROSSINGS: [
+  string,
+  Partial<DiagramOptions>,
+  DiagramMode,
+  number,
+][] = [
+  ["fabric", TB, "detailed", 24],
+  ["fabric", TB, "simple", 7],
+  ["fabric, Levels", LEVELS, "detailed", 12],
+  ["fabric, Levels", LEVELS, "simple", 7],
+]
+
+describe("Bendy crossings", () => {
+  for (const [name, o, mode, most] of BENDY_CROSSINGS)
+    it(`${name} · ${mode}: at most ${most}`, () => {
+      const b = build(fabric, { ...o, mode, line: "bendy" })
+      const lines = drawn(b.nodes, b.edges, approxMeasure).map((c) => c.pts)
+      let n = 0
+      for (let i = 0; i < lines.length; i++)
+        for (let j = i + 1; j < lines.length; j++)
+          for (let s = 1; s < lines[i].length; s++)
+            for (let t = 1; t < lines[j].length; t++)
+              if (
+                crosses(
+                  lines[i][s - 1],
+                  lines[i][s],
+                  lines[j][t - 1],
+                  lines[j][t]
+                )
+              )
+                n++
+      expect(n).toBeLessThanOrEqual(most)
+    })
 })
 
 describe("middle chips", () => {
@@ -208,7 +284,7 @@ describe("middle chips", () => {
 // its port on its top edge. While the server was dragged the cable was a
 // sweeping S; dropped, it went straight down past its label, turned hard
 // and ran flat along the middle of the gap (the control points were held
-// to half the gap, and a card near the control polygon pulled them in
+// to half the gap; a card touching the control polygon would pull them in
 // further). Settled, it is the curve drawn while dragging.
 describe("Bendy lines", () => {
   const fw: Rect = { x: 0, y: 0, w: 200, h: 60 }
@@ -285,7 +361,8 @@ describe("Bendy lines", () => {
   // What it used to settle on: control points held to half the gap.
   const gap = b.y - a.y
   const held = [...bendyLine(a, b, runs[0], runs[1], [gap / 2, gap / 2]), lead]
-  // Cards near the curve: in its control polygon's reach, clear of it.
+  // Cards near the curve: touching the free curve's control polygon (not
+  // the held one's, which kept clear of them), clear of the curve.
   const lenovo: [string, Rect] = ["lenovo", { x: 48, y: 214, w: 72, h: 46 }]
   const palo: [string, Rect] = ["palo", { x: 960, y: 120, w: 72, h: 50 }]
 
@@ -296,8 +373,8 @@ describe("Bendy lines", () => {
     // Both port names on their straight runs.
     expect(got.a).toBeTruthy()
     expect(got.b).toBeTruthy()
-    // The cards touch the control polygon - which used to pull the curve
-    // in - but not the curve.
+    // The cards touch the free curve's control polygon - a clearance
+    // check on that polygon would pull the curve in - but not the curve.
     const obs = obstacles([lenovo, palo])
     expect(pathClear(obs, bendyLine(a, b), ["fw", "srv"])).toBe(false)
     expect(through(got.pts, lenovo[1]) || through(got.pts, palo[1])).toBe(false)
@@ -333,15 +410,48 @@ describe("Bendy lines", () => {
     expect(sharpest(got.pts)).toBeLessThan(sharpest(held) - 5)
   })
 
-  it("keeps facing ends in line short of the middle of the gap", () => {
-    // The server straight under the firewall: no overshoot, no wave -
-    // the line only ever goes down.
-    const r = route(plan([], { ...srv, x: -30 }).pts)
+  /** Does the drawn line only ever go down? */
+  const downOnly = (pts: Pt[]) => {
+    const r = route(pts)
     let y = -Infinity
     for (let i = 0; i <= 200; i++) {
       const at = r.at(i / 200)
-      expect(at.y).toBeGreaterThanOrEqual(y - 0.01)
+      if (at.y < y - 0.01) return false
       y = at.y
     }
+    return true
+  }
+
+  it("keeps facing ends in line short of the middle of the gap", () => {
+    // The server straight under the firewall: no overshoot, no wave -
+    // the line only ever goes down.
+    expect(downOnly(plan([], { ...srv, x: -30 }).pts)).toBe(true)
+  })
+
+  it("keeps them short of it bending round a card beside the line", () => {
+    // Nearly in line, with a card beside or across the line: a curve that
+    // clears it reaches no further than the free curve may, so it still
+    // never overshoots and waves back.
+    let bent = 0
+    for (const aside of [20, 40, 60])
+      for (const down of [200, 250, 300])
+        for (const by of [-74, -40, 6, 30]) {
+          const to = { ...srv, x: -20 + aside, y: a.y + down }
+          const card: Rect = {
+            x: a.x + aside / 2 + by,
+            y: a.y + down / 2 - 20,
+            w: 60,
+            h: 40,
+          }
+          const got = plan([["card", card]], to)
+          // A card across the line: no curve gets past, it goes round.
+          if (got.line === "elbow") continue
+          expect(through(got.pts, card), `${aside} ${down} ${by}`).toBe(false)
+          expect(downOnly(got.pts), `${aside} ${down} ${by}`).toBe(true)
+          const free = plan([], to).pts
+          if (JSON.stringify(got.pts) !== JSON.stringify(free)) bent++
+        }
+    // Of these 36, 19 bend round the card (10 go round as elbows).
+    expect(bent).toBeGreaterThanOrEqual(15)
   })
 })

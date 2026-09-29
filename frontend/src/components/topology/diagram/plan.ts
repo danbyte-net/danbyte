@@ -35,6 +35,7 @@ import type {
 import {
   BENDY,
   bendyArms,
+  bendyCap,
   bendyLine,
   curvedPolyline,
   FAN_BEND,
@@ -172,6 +173,9 @@ interface Item {
   portA: boolean
   portB: boolean
   fanLeg: boolean
+  /** A bendy line leaving a point it shares: the part of its reach each
+   * end bends within (`sharedShares`). */
+  share?: [number, number]
   /** A bendy line no curve gets clear of the cards, or a trunk whose port
    * faces away from its legs: routed as an elbow instead. */
   rerouted?: true
@@ -342,9 +346,74 @@ function curveClear(obs: Obstacles, pts: Pt[], own: readonly string[]) {
   return pathClear(obs, [line[0], ...line.slice(i, j + 1), line[n - 1]], own)
 }
 
+/** A bendy cable's arms: `bendyArms`, shortened where it shares a point
+ * (`Item.share`). */
+const armsOf = (it: Item) =>
+  bendyArms(it.a, it.b, it.runA, it.runB, it.share ?? [1, 1])
+
 /** A bendy cable's curve with nothing in its way: what it draws while a
- * card is dragged (`bendyLine`). */
-const freeBendy = (it: Item): Pt[] => bendyLine(it.a, it.b, it.runA, it.runB)
+ * card is dragged (`bendyLine`, `staleBend`). */
+const freeBendy = (it: Item): Pt[] =>
+  bendyLine(it.a, it.b, it.runA, it.runB, armsOf(it))
+
+/** How far off straight on a line leaving a shared point may head and
+ * still run close by the lines turning off to either side of it
+ * (radians). */
+const ON_AHEAD = 0.35
+
+/**
+ * Bendy lines leaving one shared point (a Simple side's midpoint): the
+ * part of its reach each end bends within there (`bendyArms`), keyed
+ * `<item key><a|b>`. At the same reach they would run over each other
+ * well out of the point, where none of their names fits. The line heading
+ * most nearly straight on keeps its whole reach; of the others heading
+ * off to one side of it, the one heading most steeply out bends soonest,
+ * as elbows turn off there (`sharedPins`), so they part and nest instead
+ * of crossing.
+ */
+function sharedShares(all: readonly Item[]): Map<string, number> {
+  type Leg = { key: string; angle: number }
+  const groups = new Map<string, Leg[]>()
+  for (const it of all) {
+    if (it.line !== "bendy" || it.fanLeg || it.arc) continue
+    for (const end of ["a", "b"] as const) {
+      const e = it[end]
+      if (!e.shared) continue
+      const o = end === "a" ? it.b : it.a
+      const [dx, dy] = [o.x - e.x, o.y - e.y]
+      const on = dx * e.dir[0] + dy * e.dir[1]
+      const aside = dy * e.dir[0] - dx * e.dir[1]
+      const list = groups.get(e.shared) ?? []
+      list.push({ key: `${it.key}${end}`, angle: Math.atan2(aside, on) })
+      groups.set(e.shared, list)
+    }
+  }
+  const out = new Map<string, number>()
+  for (const list of groups.values()) {
+    if (list.length < 2) continue
+    const ahead = list.reduce((p, q) =>
+      Math.abs(q.angle) < Math.abs(p.angle) ||
+      (Math.abs(q.angle) === Math.abs(p.angle) && q.key < p.key)
+        ? q
+        : p
+    )
+    for (const side of [1, -1]) {
+      const legs = list
+        .filter((m) => m !== ahead && Math.sign(m.angle) === side)
+        .sort(
+          (p, q) =>
+            Math.abs(q.angle) - Math.abs(p.angle) || (p.key < q.key ? -1 : 1)
+        )
+      const n =
+        legs.length +
+        (Math.abs(ahead.angle) < ON_AHEAD || Math.sign(ahead.angle) === side
+          ? 1
+          : 0)
+      if (n > 1) legs.forEach((m, rank) => out.set(m.key, (rank + 1) / n))
+    }
+  }
+  return out
+}
 
 /**
  * A bendy cable's points: its free curve (`freeBendy`: out along each
@@ -390,19 +459,24 @@ function bendyPts(it: Item, obs: Obstacles): Pt[] | null {
       if (pathClear(obs, pts, own)) return pts
     }
   }
-  const [ka, kb] = bendyArms(it.a, it.b, it.runA, it.runB)
+  const [ka, kb] = armsOf(it)
   // Pulled in, an arm reaches past its labels while any such curve gets
   // clear; failing that, as short as a curve goes (its labels may then
-  // be left off).
+  // be left off). Reaching further, never past the cap that keeps facing
+  // ends from overshooting and waving back.
   const least = (k: number, run: number) =>
     Math.min(k, Math.max(BENDY.MIN, run ? portStub(run) : 0))
+  const cap = bendyCap(it.a, it.b)
   const tried = new Set<string>()
   for (const [la, lb] of [
     [least(ka, it.runA), least(kb, it.runB)],
     [Math.min(ka, BENDY.MIN), Math.min(kb, BENDY.MIN)],
   ])
     for (const [fa, fb] of BENDY_WAYS) {
-      const arms = [Math.max(la, ka * fa), Math.max(lb, kb * fb)] as const
+      const arms = [
+        Math.min(cap, Math.max(la, ka * fa)),
+        Math.min(cap, Math.max(lb, kb * fb)),
+      ] as const
       const key = `${arms[0]},${arms[1]}`
       if (tried.has(key)) continue
       tried.add(key)
@@ -677,8 +751,15 @@ export function planEdges(
   }
   const curve = (it: Item) => bendyPts(it, obs)
 
-  // Bendy lines first: one no curve gets clear of the cards goes round
-  // them as an elbow, in the lanes with the others.
+  // Bendy lines first, those sharing a point each bending within a reach
+  // of its own: one no curve gets clear of the cards goes round them as
+  // an elbow, in the lanes with the others.
+  const shares = sharedShares(all)
+  for (const it of all) {
+    const sa = shares.get(`${it.key}a`)
+    const sb = shares.get(`${it.key}b`)
+    if (sa || sb) it.share = [sa ?? 1, sb ?? 1]
+  }
   const bent = new Map<string, Pt[]>()
   for (const it of all) {
     if (it.line !== "bendy") continue
@@ -939,6 +1020,14 @@ export function planEdges(
       cables: list.map((it) => ({
         pts: drawnPts.get(it.key)!,
         ...(it.rerouted ? { line: "elbow" as const } : {}),
+        ...((it.line === "bendy" || it.line === "cyclical") && !arcs.has(it.key)
+          ? {
+              bend: {
+                runs: [it.runA, it.runB] as [number, number],
+                ...(it.share ? { share: it.share } : {}),
+              },
+            }
+          : {}),
         ...(it.ta ? { a: ports.get(`${it.key}a`)?.at[0] ?? null } : {}),
         ...(it.tb ? { b: ports.get(`${it.key}b`)?.at[0] ?? null } : {}),
         ...(it.ia || it.ib

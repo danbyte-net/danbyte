@@ -166,9 +166,13 @@ export interface CablePlan {
    * straight line's ends. */
   pts: Pt[]
   /** The line this cable is drawn as where it is not its link's: a bendy
-   * breakout leg no curve gets clear of the cards goes round them as an
-   * elbow. */
+   * line no curve gets clear of the cards goes round them as an elbow. */
   line?: LineType
+  /** A bendy line's shape as planned: the straight run each end's labels
+   * need, and the part of its reach each end bends within where it
+   * shares a point with other lines (`bendyArms`). Kept while a card of
+   * its is dragged (`staleBend`). */
+  bend?: { runs: [number, number]; share?: [number, number] }
   /** The port name on the line at each end; null = no room, left off. */
   a?: PortPlace | null
   b?: PortPlace | null

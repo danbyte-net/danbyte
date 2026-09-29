@@ -55,7 +55,13 @@ import {
   pillWidth,
 } from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
-import { leaves, linkRoute, planOf, routeThrough } from "./link-geometry"
+import {
+  leaves,
+  linkRoute,
+  planOf,
+  routeThrough,
+  staleBend,
+} from "./link-geometry"
 import { captionPill, PHOTO } from "./photo-anchors"
 import { nubRun } from "./plan"
 import type { PhotoShown } from "./photo-anchors"
@@ -1007,7 +1013,8 @@ export function toDocument(
         leadB && !imageB ? -1 : undefined
       )
       // Unplanned (a card is being dragged), a bendy line is the curve
-      // the canvas draws meanwhile: straight past each nub's labels.
+      // the canvas draws meanwhile: straight past each nub's labels and
+      // reaching out of each end as its last plan had it (`staleBend`).
       const runOf = (
         anchor: typeof aa,
         lead: Pt | null,
@@ -1020,12 +1027,15 @@ export function toDocument(
         )
       const drawn = planned
         ? routeThrough(p!.line ?? line, planned, leaves(planned))
-        : linkRoute(line, a0, b0, {
-            runs: [
+        : linkRoute(
+            line,
+            a0,
+            b0,
+            staleBend(d.plan?.[i], () => [
               runOf(aa, leadA, [la, ...(ia ?? [])]),
               runOf(ba, leadB, [lb, ...(ib ?? [])]),
-            ],
-          })
+            ])
+          )
       const route = {
         kind: drawn.kind,
         pts: planned

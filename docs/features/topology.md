@@ -277,13 +277,18 @@ names its peers, the session kind and the VRF.
   lanes close up.
 - **Bendy** - a smooth curve that leaves each card square to its edge and
   sweeps across to the other end: the curve you see while dragging a card
-  is the one it keeps when you drop it. Only a card in its way changes it -
-  the curve then takes the nearest shape that clears the card (reaching
-  further or less far out of either end), and where no curve gets clear it
-  goes round the cards as an Elbow. Between two facing cards nearly in line
-  it stops short of the middle of the gap, so it never overshoots and waves
-  back. Where a nub has labels the curve runs straight out of it far enough
-  for them.
+  is the one it keeps when you drop it, unless a card is in its way. Then
+  it takes the nearest shape that clears the card (reaching further or
+  less far out of either end), and where no curve gets clear it goes round
+  the cards as an Elbow - so a line drawn as a curve while you drag can
+  turn into an Elbow when you drop, and on a crowded map many Bendy lines
+  are Elbows. Between two facing cards it stops short of the middle of the
+  gap, so it never overshoots and waves back, until the cards are offset
+  sideways by more than twice the gap; further apart it sweeps out past
+  the middle in an S. Lines leaving one Simple midpoint each bend within a
+  reach of their own, the one heading most steeply out soonest, so they
+  part right after it and keep room for their names. Where a nub has
+  labels the curve runs straight out of it far enough for them.
 - **Cyclical** - an arc that loops round the cards between its two ends
   instead of crossing them, both ends leaving through the side it bulges to
   (the top of a row, say). In Detailed each end first runs straight out of

@@ -181,33 +181,46 @@ export function portStub(run: number): number {
 }
 
 /**
+ * The furthest a bendy line's control points may reach out of two ends.
+ * Ends facing each other keep both short of the middle of the gap between
+ * them - past it the curve would overshoot and wave back - until they are
+ * offset sideways by more than twice the gap; from there the cap eases off
+ * by as much again, so a far card lower down gets the full sweep, while
+ * cables across one tier gap run side by side instead of braiding.
+ * Unlimited for ends that do not face each other.
+ */
+export function bendyCap(a: End, b: End): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const facing = a.dir[0] * b.dir[0] + a.dir[1] * b.dir[1] < -0.99
+  const gap = dx * a.dir[0] + dy * a.dir[1]
+  if (!facing || gap <= 0) return Infinity
+  const aside = Math.abs(dx * a.dir[1] - dy * a.dir[0])
+  return Math.max(BENDY.MIN, gap / 2 + Math.max(0, aside - 2 * gap))
+}
+
+/**
  * A bendy line's control-point reach at each end: `bendyReach`, and at
- * least the `portStub` a labelled end's `run` needs. Ends facing each
- * other nearly in line keep both short of the middle of the gap between
- * them - past it the curve would overshoot and wave back. The cap eases
- * off as the ends move apart sideways (by as much as they are offset past
- * the gap), so a far card lower down gets the full sweep.
+ * least the `portStub` a labelled end's `run` needs, within `bendyCap`.
+ * `share` shortens an end's reach to that part of it (never under
+ * `BENDY.MIN` or its labels' run): lines leaving one shared point bend
+ * within different reaches, so they part soon after it.
  */
 export function bendyArms(
   a: End,
   b: End,
   runA = 0,
-  runB = 0
+  runB = 0,
+  share: readonly [number, number] = [1, 1]
 ): [number, number] {
   const k = bendyReach(a, b)
-  let ka = Math.max(k, runA ? portStub(runA) : 0)
-  let kb = Math.max(k, runB ? portStub(runB) : 0)
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const facing = a.dir[0] * b.dir[0] + a.dir[1] * b.dir[1] < -0.99
-  const gap = dx * a.dir[0] + dy * a.dir[1]
-  if (facing && gap > 0) {
-    const aside = Math.abs(dx * a.dir[1] - dy * a.dir[0])
-    const cap = Math.max(BENDY.MIN, gap / 2 + Math.max(0, aside - gap))
-    ka = Math.min(ka, cap)
-    kb = Math.min(kb, cap)
+  const cap = bendyCap(a, b)
+  const arm = (run: number, part: number) => {
+    const full = Math.min(cap, Math.max(k, run ? portStub(run) : 0))
+    const least = Math.min(full, Math.max(BENDY.MIN, run ? portStub(run) : 0))
+    return part < 1 ? Math.max(least, full * part) : full
   }
-  return [ka, kb]
+  return [arm(runA, share[0]), arm(runB, share[1])]
 }
 
 /**
@@ -241,8 +254,9 @@ export function withLeads(pts: Pt[], needA: number, needB: number): Pt[] {
  * end's normal, `reach` px (`bendyArms` by default), and on the arm of an
  * end whose labels need a straight run of `runA`/`runB` px, a point that
  * keeps the curve straight past them (`withLeads`). The canvas draws this
- * while a card is dragged, and the planner settles on it unless a card is
- * in its way - so a line looks the same during and after a drag.
+ * while a card is dragged (`staleBend`), and the planner settles on it
+ * unless a card is in its way - so a line looks the same during and after
+ * a drag.
  */
 export function bendyLine(
   a: End,
@@ -440,6 +454,25 @@ export interface RouteOptions {
   lane?: number
   /** Bendy: the straight run each end's labels need (`bendyLine`). */
   runs?: readonly [number, number]
+  /** Bendy: the part of its reach each end bends within (`bendyArms`). */
+  share?: readonly [number, number]
+}
+
+/**
+ * A bendy line's shape while its plan is stale (a card of its is being
+ * dragged): the straight runs and reach shares its last plan settled on
+ * (`CablePlan.bend`), which stay the same while the card moves, else
+ * `runs()` - so the line is drawn as the drop will plan it when no card
+ * is in its way.
+ */
+export function staleBend(
+  stale: CablePlan | undefined,
+  runs: () => readonly [number, number]
+): Pick<RouteOptions, "runs" | "share"> {
+  const bend = stale?.bend
+  return bend
+    ? { runs: bend.runs, ...(bend.share ? { share: bend.share } : {}) }
+    : { runs: runs() }
 }
 
 /**
@@ -494,7 +527,8 @@ export function routeThrough(kind: LineType, pts: Pt[], dir: Dir): Route {
  * - `elbow`: leaves and enters along the ends' normals (a `STUB` each),
  *   crosses a channel, corners rounded to `ELBOW_RADIUS`.
  * - `bendy`: draw.io's curved line through a control point out along each
- *   normal (`bendyLine`), straight past each end's labels (`runs`).
+ *   normal (`bendyLine`), straight past each end's labels (`runs`), each
+ *   reaching its `share` of the way (`bendyArms`).
  * - `cyclical`: drawn as bendy until arcs land; the kind is kept.
  *
  * `at(t)` walks the drawn path (rounded corners and curves included) by
@@ -531,7 +565,8 @@ export function linkRoute(
   }
   if (kind === "bendy" || kind === "cyclical") {
     const [ra, rb] = opts.runs ?? [0, 0]
-    return routeThrough(kind, bendyLine(a, b, ra, rb), a.dir)
+    const arms = bendyArms(a, b, ra, rb, opts.share)
+    return routeThrough(kind, bendyLine(a, b, ra, rb, arms), a.dir)
   }
   return routeThrough(kind, [A, B], a.dir)
 }

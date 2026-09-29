@@ -9,8 +9,8 @@ import type { TopologyGraph } from "@/lib/api"
 import { approxMeasure } from "@/lib/diagram/measure"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
-import { leaves, routeThrough } from "./link-geometry"
-import type { DiagramEdgeData } from "./types"
+import { leaves, linkRoute, routeThrough } from "./link-geometry"
+import type { DiagramEdgeData, End, Pt } from "./types"
 
 // The link as drawn on the canvas: each end's port name, then its
 // address, ON the cable - every label over a box that breaks the line -
@@ -81,8 +81,10 @@ const graph: TopologyGraph = {
   ],
 }
 
-function draw(o: Partial<DiagramOptions> = {}, move = 0) {
-  const b = buildDiagram(graph, {
+/** The link drawn with card B moved `move` px down (dragged, not yet
+ * dropped) - or the link from A to `to`, of `g`. */
+function draw(o: Partial<DiagramOptions> = {}, move = 0, g = graph, to = B) {
+  const b = buildDiagram(g, {
     mode: "detailed",
     line: "straight",
     colorMode: "cable",
@@ -98,7 +100,9 @@ function draw(o: Partial<DiagramOptions> = {}, move = 0) {
         ? { ...n, position: { x: n.position.x, y: n.position.y + move } }
         : n
     )
-  const e = b.edges.find((x) => x.type === "link") as Edge<DiagramEdgeData>
+  const e = b.edges.find(
+    (x) => x.type === "link" && x.target === to
+  ) as Edge<DiagramEdgeData>
   // Where the drop plans it: the model relinked with the card moved.
   const dropped = () =>
     relinkDiagram(b.model, [...nodes.values()]).edges.find(
@@ -191,5 +195,57 @@ describe("LinkEdge", () => {
     expect(path?.getAttribute("d")).toBe(
       routeThrough("bendy", plan.pts, leaves(plan.pts)).d
     )
+  })
+
+  it("keeps the reach a shared Simple midpoint gave a Bendy line while dragged", () => {
+    // A cabled to B and to C: in Simple both lines leave A's side at its
+    // midpoint. The one heading further out bends within half its reach,
+    // so they part soon after it - dragged, and dropped.
+    const C = "dev:30000000-0000-4000-8000-000000000003"
+    const three: TopologyGraph = {
+      nodes: [
+        ...graph.nodes,
+        { id: C, type: "device", data: { name: "sw2", device_id: C.slice(4) } },
+      ],
+      edges: [
+        ...graph.edges,
+        {
+          id: "e:c2",
+          source: A,
+          target: C,
+          type: "cable",
+          data: {
+            cable_id: "c2",
+            pairs: [{ a: "sw0:Gi1/0/5", b: "sw2:Gi1/0/6" }],
+          },
+        },
+      ],
+    }
+    const o: Partial<DiagramOptions> = {
+      mode: "simple",
+      line: "bendy",
+      positions: { [A]: [0, 0], [B]: [300, 300], [C]: [40, 300] },
+    }
+    const { container, data, dropped } = draw(o, 40, three, B)
+    const share = data.plan![0].bend?.share
+    expect(share?.some((x) => x < 1)).toBe(true)
+    const plan = dropped().plan![0]
+    expect(plan.bend?.share).toEqual(share)
+    const d = container
+      .querySelector(".react-flow__edge-path")
+      ?.getAttribute("d")
+    expect(d).toBe(routeThrough("bendy", plan.pts, leaves(plan.pts)).d)
+    // At its whole reach it would be drawn otherwise.
+    const end = (p: Pt, q: Pt): End => {
+      const l = Math.hypot(q.x - p.x, q.y - p.y)
+      return { x: p.x, y: p.y, dir: [(q.x - p.x) / l, (q.y - p.y) / l] }
+    }
+    const pts = plan.pts
+    const whole = linkRoute(
+      "bendy",
+      end(pts[0], pts[1]),
+      end(pts[pts.length - 1], pts[pts.length - 2])
+    )
+    expect(whole.d).not.toBe(d)
   })
 })

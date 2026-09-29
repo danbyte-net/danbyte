@@ -263,10 +263,12 @@ describe("bendy", () => {
     expect(
       bendyArms(end(0, 0, [0, 1]), end(40, 200, [0, -1]), 150, 150)
     ).toEqual([100, 100])
-    // Offset as far as the gap: still held.
-    expect(bendyArms(end(0, 0, [0, 1]), end(240, 240, [0, -1]))).toEqual([
-      120, 120,
-    ])
+    // Offset as far as the gap, or twice as far: still held, so lines
+    // across one tier gap run side by side.
+    for (const x of [240, 480])
+      expect(bendyArms(end(0, 0, [0, 1]), end(x, 240, [0, -1]))).toEqual([
+        120, 120,
+      ])
   })
 
   it("gives facing ends far apart sideways their full reach", () => {
@@ -274,14 +276,24 @@ describe("bendy", () => {
     const a = end(0, 0, [0, 1])
     const b = end(1000, 240, [0, -1])
     expect(bendyArms(a, b)).toEqual([BENDY.MAX, BENDY.MAX])
-    // The hold eases off as the ends move apart, with no jump.
+    // Further apart the hold eases off, with no jump.
     let last = 0
-    for (let x = 200; x <= 400; x += 10) {
+    for (let x = 440; x <= 640; x += 10) {
       const [k] = bendyArms(a, end(x, 240, [0, -1]))
       expect(k).toBeGreaterThanOrEqual(last)
       expect(k - last).toBeLessThan(last ? 12 : Infinity)
       last = k
     }
+  })
+
+  it("shortens an end's reach to its share, never under the least", () => {
+    // Far apart: whole reach BENDY.MAX at each end.
+    const a = end(0, 0, [0, 1])
+    const b = end(600, 900, [0, -1])
+    expect(bendyArms(a, b, 0, 0, [0.5, 1])).toEqual([BENDY.MAX / 2, BENDY.MAX])
+    expect(bendyArms(a, b, 0, 0, [0.1, 1])[0]).toBe(BENDY.MIN)
+    // A labelled end still runs straight past its labels.
+    expect(bendyArms(a, b, 100, 0, [0.1, 1])[0]).toBe(portStub(100))
   })
 
   it("reaches past a labelled end's run and runs straight past it", () => {
