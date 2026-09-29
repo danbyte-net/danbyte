@@ -45,12 +45,40 @@ def due_scripts(now=None) -> list[Script]:
     return [s for s in qs if is_due(s, now)]
 
 
+def owner_may_run(script: Script) -> bool:
+    """May the owner still run this script unattended? Checked when the
+    schedule fires, not only when it was set: an owner who has since been
+    deactivated, removed from the tenant or lost the run permission (or trust,
+    for a trusted script) no longer runs anything."""
+    from auth_api import rbac
+    from auth_api.permissions import user_can_access_tenant
+
+    owner = script.owner
+    if owner is None or not owner.is_active:
+        return False
+    if owner.is_superuser:
+        return True
+    if not user_can_access_tenant(owner, script.tenant):
+        return False
+    if not rbac.has_action(owner, script.tenant, "script", "run"):
+        return False
+    return not script.trusted or rbac.has_action(owner, script.tenant, "script", "trust")
+
+
 def fire(script: Script, now=None) -> ScriptRun | None:
     """Queue one scheduled run. A script with no owner cannot run itself -
-    there would be nobody to run as."""
+    there would be nobody to run as - and neither can one whose owner may no
+    longer run it."""
     now = now or timezone.now()
     if script.owner_id is None:
         logger.warning("script %s is scheduled but has no owner; skipping", script.pk)
+        return None
+    if not owner_may_run(script):
+        logger.warning(
+            "script %s is scheduled but its owner may not run it; skipping", script.pk
+        )
+        # Once per occurrence, not every tick.
+        Script.objects.filter(pk=script.pk).update(last_run_at=now)
         return None
     run = create_run(script, user=script.owner, params=script.schedule_params or {},
                      scheduled=True)

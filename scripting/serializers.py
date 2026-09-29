@@ -12,6 +12,20 @@ from .models import MAX_TIMEOUT, Script, ScriptOutput, ScriptRun
 
 PARAM_TYPES = ("string", "text", "integer", "decimal", "boolean", "choice", "object")
 
+#: What the script does and whose access it does it with. Only the owner (or a
+#: superuser) changes these: a colleague the script is shared with could
+#: otherwise rewrite code that runs as the owner.
+OWNER_ONLY_FIELDS = (
+    "source", "language", "params_schema", "run_as", "token_scope",
+    "schedule_enabled", "cadence", "schedule_params",
+)
+#: A schedule runs the code unattended, as the owner. Turning one on, or
+#: changing any of these while one is on, needs the run permission.
+SCHEDULE_FIELDS = (
+    "schedule_enabled", "cadence", "schedule_params", "source", "run_as",
+    "token_scope",
+)
+
 
 def validate_params_schema(value):
     """One flat list of parameter definitions, each with a name and type."""
@@ -180,7 +194,47 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"visibility": ["You cannot publish a script to everyone."]}
                 )
+        user = getattr(request, "user", None)
+        if user is not None and not getattr(user, "is_superuser", False):
+            self._check_execution_fields(attrs, request, user, schedule_on)
         return attrs
+
+    def _changed(self, attrs, fields):
+        instance = self.instance
+        if instance is None:
+            return [f for f in fields if f in attrs]
+        return [f for f in fields if f in attrs and attrs[f] != getattr(instance, f)]
+
+    def _check_execution_fields(self, attrs, request, user, schedule_on):
+        """Who may change what a script runs and whose access it runs with."""
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        instance = self.instance
+        tenant = getattr(instance, "tenant", None) or _get_active_tenant(request)
+        if instance is not None and instance.owner_id != user.pk:
+            touched = self._changed(attrs, OWNER_ONLY_FIELDS)
+            if touched:
+                raise serializers.ValidationError({
+                    f: ["Only the script's owner can change this."] for f in touched
+                })
+        if schedule_on and (instance is None or self._changed(attrs, SCHEDULE_FIELDS)):
+            if not rbac.has_action(user, tenant, "script", "run"):
+                raise serializers.ValidationError({
+                    "schedule_enabled": [
+                        "Scheduling a script needs the run permission."
+                    ],
+                })
+        # A trusted script reaches the database directly; whoever marked it
+        # trusted vouched for the code as it was. New code without the trust
+        # permission loses the mark.
+        if (
+            instance is not None
+            and instance.trusted
+            and self._changed(attrs, ("source",))
+            and not rbac.has_action(user, tenant, "script", "trust")
+        ):
+            attrs["trusted"] = False
 
 
 class ScriptOutputSerializer(serializers.ModelSerializer):

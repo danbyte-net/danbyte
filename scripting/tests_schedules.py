@@ -13,7 +13,7 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from auth_api.models import ApiToken
+from auth_api.models import ApiToken, ObjectPermission, UserProfile
 from core.models import Organization, Tenant
 from scripting.models import Script, ScriptOutput, ScriptRun
 from scripting.schedules import due_scripts, fire, is_due, next_run, prune
@@ -29,6 +29,13 @@ class _Base(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
         self.user = get_user_model().objects.create_user("owner", "o@e.com", "x")
+        # A schedule runs as its owner, who must still hold `run` when it fires.
+        UserProfile.objects.create(user=self.user).tenants.add(self.tenant)
+        self.run_grant = ObjectPermission.objects.create(
+            name="owner runs scripts", object_types=["script"],
+            actions=["view", "add", "change", "run"],
+        )
+        self.run_grant.users.add(self.user)
         # Nothing in these tests should reach a worker.
         p = mock.patch("scripting.schedules.enqueue")
         p.start()
@@ -83,6 +90,44 @@ class DueTests(_Base):
         script = self._script()
         Script.objects.filter(pk=script.pk).update(owner=None)
         self.assertIsNone(fire(Script.objects.get(pk=script.pk)))
+
+
+class OwnerRecheckTests(_Base):
+    """The owner's right to run is checked when the schedule fires, not only
+    when it was set."""
+
+    def _skipped(self, script):
+        now = timezone.now()
+        self.assertIsNone(fire(Script.objects.get(pk=script.pk), now))
+        self.assertFalse(script.runs.exists())
+        # Skipped once per occurrence, not retried every tick.
+        self.assertEqual(Script.objects.get(pk=script.pk).last_run_at, now)
+
+    def test_an_owner_who_lost_run_does_not_fire(self):
+        script = self._script()
+        self.run_grant.actions = ["view", "add", "change"]
+        self.run_grant.save()
+        self._skipped(script)
+
+    def test_a_deactivated_owner_does_not_fire(self):
+        script = self._script()
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        self._skipped(script)
+
+    def test_an_owner_removed_from_the_tenant_does_not_fire(self):
+        script = self._script()
+        self.user.profile.tenants.clear()
+        self._skipped(script)
+
+    def test_a_trusted_script_needs_the_owner_to_hold_trust(self):
+        script = self._script(trusted=True)
+        self._skipped(script)
+        self.run_grant.actions = [*self.run_grant.actions, "trust"]
+        self.run_grant.save()
+        run = fire(Script.objects.get(pk=script.pk))
+        self.assertIsNotNone(run)
+        self.assertTrue(run.trusted)
 
 
 class RetentionTests(_Base):

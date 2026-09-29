@@ -84,7 +84,10 @@ A new script is private to you. On the **Sharing** tab:
 The pickers list the members of the tenant and the groups they are in.
 Sharing only ever narrows: a colleague also needs the `view` permission on
 scripts, and running one needs `run`. Deleting and editing follow the same
-permissions as any other object.
+permissions as any other object, with one exception: only the owner (or a
+superuser) changes the code, the parameters, the API access, who it runs as
+and the schedule. A script that runs as its owner would otherwise run
+whatever a colleague wrote with the owner's access.
 
 ## Schedules
 
@@ -92,6 +95,12 @@ The **Schedule** tab runs a script hourly, daily, weekly or monthly. A
 scheduled run belongs to the owner and uses the owner's access. The
 `danbyte-scripts` timer checks every minute, and a schedule fires once per
 occurrence even if the machine was asleep.
+
+A schedule is code running unattended, so turning one on - or changing a
+scheduled script's code, parameters or access - needs the `run` permission.
+The owner is checked again each time it fires: one who has been
+deactivated, removed from the tenant, or has lost `run` (or `trust`, for a
+trusted script) runs nothing, and the tick logs the skip.
 
 **Keep runs** prunes finished runs and their files after each scheduled
 run, by count or by age.
@@ -128,9 +137,11 @@ view. `orm.model(slug)` is not, and neither is anything else the script
 imports.
 
 Marking a script trusted is a separate permission (`trust` on scripts) for
-that reason. **A trusted script runs with the worker's own privileges: it
-can reach the database and the host as the Danbyte service account.** Only
-grant it to people you would give a shell.
+that reason. The mark vouches for the code as it was: changing a trusted
+script's code without `trust` makes it sandboxed again. **A trusted script
+runs with the worker's own privileges: it can reach the database and the
+host as the Danbyte service account.** Only grant it to people you would
+give a shell.
 
 ## What a sandboxed script cannot do
 
@@ -151,7 +162,7 @@ which is why publishing to everyone and marking trusted each need one.
 |---|---|
 | `script: view` | See the scripts shared with them |
 | `script: add` / `change` / `delete` | Author and manage scripts |
-| `script: run` | Run one, and stop a run |
+| `script: run` | Run one, stop a run, and schedule one |
 | `script: trust` | Mark a script trusted |
 | `scripts.publish` | Publish a script to everyone in the tenant |
 

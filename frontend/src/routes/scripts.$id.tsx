@@ -12,6 +12,7 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -41,7 +42,7 @@ export const Route = createFileRoute("/scripts/$id")({
 
 function ScriptDetailPage() {
   const { id } = Route.useParams()
-  const { canDo } = useMe()
+  const { canDo, me } = useMe()
   const qc = useQueryClient()
   const [tab, setTab] = useUrlTab<Tab>("overview", "tab", TABS)
   const [running, setRunning] = useState(false)
@@ -82,10 +83,13 @@ function ScriptDetailPage() {
   })
 
   if (query.error) return <QueryError error={query.error} />
-  if (!script)
-    return <p className="text-sm text-muted-foreground">Loading...</p>
+  if (!script) return <Loading />
 
   const canEdit = objCan(script, "change", canDo("script", "change"))
+  // The code and the schedule are the owner's: the server refuses anyone
+  // else, so a colleague the script is shared with reads them.
+  const canEditCode =
+    canEdit && (!!me.is_superuser || script.owner_name === me.username)
   const canRun = script.permissions?.run ?? canDo("script", "run")
   const dirty = source !== script.source
 
@@ -133,19 +137,19 @@ function ScriptDetailPage() {
           </div>
           <CodeEditor
             value={source}
-            onChange={canEdit ? setSource : undefined}
+            onChange={canEditCode ? setSource : undefined}
             language="python"
-            readOnly={!canEdit}
+            readOnly={!canEditCode}
             height="30rem"
           />
-          {canEdit && (
+          {canEditCode && (
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 disabled={!dirty || save.isPending}
                 onClick={() => save.mutate({ source })}
               >
-                {save.isPending ? "Saving..." : "Save"}
+                {save.isPending ? "Saving…" : "Save"}
               </Button>
               {dirty && (
                 <Button
@@ -215,7 +219,7 @@ function ScriptDetailPage() {
       </DetailTab>
 
       <DetailTab value="schedule">
-        <ScriptSchedulePanel script={script} canEdit={canEdit} />
+        <ScriptSchedulePanel script={script} canEdit={canEditCode} />
       </DetailTab>
 
       <DetailTab value="sharing">

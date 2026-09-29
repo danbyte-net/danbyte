@@ -246,3 +246,97 @@ class ValidationTests(_Base):
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(r.json()["cadence_label"], "daily at 02:00")
         self.assertIsNotNone(r.json()["next_run_at"])
+
+
+class ExecutionFieldTests(_Base):
+    """What a script runs, and whose access it runs with, stay the owner's:
+    a colleague it is shared with can't trojan it, and a schedule - code
+    running unattended as the owner - needs the run permission."""
+
+    def setUp(self):
+        super().setUp()
+        U = get_user_model()
+        self.editor = U.objects.create_user("editor", "e@e.com", "x")
+        UserProfile.objects.create(user=self.editor, role="custom").tenants.add(self.tenant)
+        grant(self.editor, self.tenant, ["view", "add", "change"])
+        self.shared = self._script(visibility="users", run_as="caller")
+        self.shared.shared_users.add(self.editor)
+
+    def _patch(self, script, body):
+        return self.client.patch(f"/api/scripts/{script.id}/", body, format="json")
+
+    def test_a_colleague_cannot_change_code_or_who_it_runs_as(self):
+        self.client.force_login(self.editor)
+        for body in (
+            {"source": "import os"},
+            {"run_as": "owner"},
+            {"token_scope": "read"},
+            {"params_schema": [{"name": "x", "type": "string"}]},
+            {"schedule_enabled": True, "cadence": {"frequency": "daily", "at": "02:00"}},
+        ):
+            with self.subTest(body=body):
+                r = self._patch(self.shared, body)
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertIn("owner", str(r.json()))
+        self.shared.refresh_from_db()
+        self.assertEqual(self.shared.source, "print('hi')")
+        self.assertEqual(self.shared.run_as, "caller")
+
+    def test_a_colleague_may_still_edit_the_rest(self):
+        self.client.force_login(self.editor)
+        # The page sends unchanged fields back; only a real change counts.
+        r = self._patch(self.shared, {
+            "name": "Renamed", "description": "d", "source": "print('hi')",
+            "run_as": "caller", "enabled": False,
+        })
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_scheduling_needs_the_run_permission(self):
+        mine = self._script(owner=self.editor, name="mine")
+        self.client.force_login(self.editor)
+        schedule = {
+            "schedule_enabled": True, "cadence": {"frequency": "daily", "at": "02:00"},
+        }
+        r = self._patch(mine, schedule)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("run permission", str(r.json()))
+        r = self.client.post("/api/scripts/", {"name": "new", **schedule}, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        grant(self.editor, self.tenant, ["run"])
+        self.assertEqual(self._patch(mine, schedule).status_code, 200)
+
+    def test_new_code_on_a_scheduled_script_needs_run(self):
+        mine = self._script(
+            owner=self.editor, name="mine", schedule_enabled=True,
+            cadence={"frequency": "daily", "at": "02:00"},
+        )
+        self.client.force_login(self.editor)
+        r = self._patch(mine, {"source": "print('changed')"})
+        self.assertEqual(r.status_code, 400, r.content)
+        # Unscheduled, the owner edits code freely.
+        self.assertEqual(self._patch(self.shared, {}).status_code, 200)
+        unscheduled = self._script(owner=self.editor, name="plain")
+        self.assertEqual(
+            self._patch(unscheduled, {"source": "print('ok')"}).status_code, 200
+        )
+
+    def test_new_code_without_trust_clears_the_trusted_mark(self):
+        script = self._script(trusted=True, name="trusted")
+        self.client.force_login(self.author)
+        r = self._patch(script, {"description": "same code"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(Script.objects.get(pk=script.pk).trusted)
+        r = self._patch(script, {"source": "print('new')"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(Script.objects.get(pk=script.pk).trusted)
+        # With trust, the owner keeps the mark.
+        grant(self.author, self.tenant, ["trust"])
+        Script.objects.filter(pk=script.pk).update(trusted=True)
+        self._patch(script, {"source": "print('newer')"})
+        self.assertTrue(Script.objects.get(pk=script.pk).trusted)
+
+    def test_a_superuser_may_edit_anyones_script(self):
+        self.client.force_login(self.admin)
+        r = self._patch(self.shared, {"source": "print('reviewed')", "run_as": "owner"})
+        self.assertEqual(r.status_code, 200, r.content)
+
