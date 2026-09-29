@@ -64,6 +64,27 @@ class CanManageAdminUnitTests(TestCase):
         perm.users.add(u)
         self.assertFalse(can_manage_admin(u, self.tenant))
 
+    def test_all_object_types_alone_is_not_admin(self):
+        # "*" no longer reaches users, groups or permissions: even all four
+        # verbs on every other type does not make a user administrator.
+        u = self._user("wildcard")
+        perm = ObjectPermission.objects.create(
+            name="everything else", object_types=["*"],
+            actions=["view", "add", "change", "delete"],
+        )
+        perm.users.add(u)
+        self.assertFalse(can_manage_admin(u, self.tenant))
+        self.assertFalse(can_manage_admin(u, None))
+
+    def test_all_object_types_naming_user_is_admin(self):
+        u = self._user("wildcardadmin")
+        perm = ObjectPermission.objects.create(
+            name="everything plus users", object_types=["*", "user"],
+            actions=["change"],
+        )
+        perm.users.add(u)
+        self.assertTrue(can_manage_admin(u, self.tenant))
+
     def test_view_only_on_user_is_not_enough(self):
         u = self._user("userviewer")
         perm = ObjectPermission.objects.create(

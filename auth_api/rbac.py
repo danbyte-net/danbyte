@@ -88,20 +88,26 @@ def applicable_permissions(user, tenant):
 def effective_actions(user, tenant) -> dict[str, set[str]]:
     """``{object_type_slug: {actions}}`` granted to the user in this tenant.
 
-    ``object_types`` may contain the wildcard ``"*"`` meaning "every registered
-    type" - the built-in Administrator/Operator/Read-only groups use it so new
-    object types are covered automatically.
+    ``object_types`` may contain the wildcard ``"*"``: every registered type
+    except the access types (users, groups, permissions - see
+    ``object_types.ACCESS_TYPES``), which a grant reaches only by naming them.
+    The built-in groups use it so new object types are covered automatically;
+    the Administrator grant names the access types as well.
     """
-    from .object_types import ACTIONS, registry_payload
+    from .object_types import ACTIONS, WILDCARD_EXCLUDED, registry_payload
 
     all_slugs = [e["slug"] for e in registry_payload()]
     if _is_super(user):
         return {slug: set(ACTIONS) for slug in all_slugs}
+    known = set(all_slugs)
+    wildcard_slugs = [s for s in all_slugs if s not in WILDCARD_EXCLUDED]
     out: dict[str, set[str]] = {}
     for perm in applicable_permissions(user, tenant):
         acts = {a for a in (perm.actions or []) if a in ACTIONS}
         types = perm.object_types or []
-        slugs = all_slugs if "*" in types else [t for t in types if t in all_slugs]
+        slugs = {t for t in types if t in known}
+        if "*" in types:
+            slugs.update(wildcard_slugs)
         for slug in slugs:
             out.setdefault(slug, set()).update(acts)
     return out
@@ -123,11 +129,12 @@ def constraints_for(user, tenant, slug: str, action: str):
     """
     if _is_super(user):
         return []
+    from .object_types import grant_covers
+
     granted = False
     dicts: list[dict] = []
     for perm in applicable_permissions(user, tenant):
-        types = perm.object_types or []
-        if slug not in types and "*" not in types:
+        if not grant_covers(perm.object_types, slug):
             continue
         if action not in (perm.actions or []):
             continue
@@ -146,10 +153,11 @@ def constraints_for(user, tenant, slug: str, action: str):
 
 def _granting_perms(user, tenant, slug: str, action: str):
     """Applicable permissions that grant ``(slug, action)``."""
+    from .object_types import grant_covers
+
     out = []
     for perm in applicable_permissions(user, tenant):
-        types = perm.object_types or []
-        if slug not in types and "*" not in types:
+        if not grant_covers(perm.object_types, slug):
             continue
         if action not in (perm.actions or []):
             continue

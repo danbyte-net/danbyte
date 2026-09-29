@@ -9,8 +9,10 @@ Permissions control who can see and change what in Danbyte. Access is
 rules. A person's access is the sum of everything granted to them directly and
 through the groups they belong to.
 
-!!! note "Administrators see everything"
-    A full administrator account bypasses all permission checks. Use the
+!!! note "Superusers see everything"
+    A **superuser** account bypasses all permission checks. The built-in
+    **Administrator** group is the everyday admin role: full access through
+    ordinary grants, including users, groups and permissions. Use the
     built-in roles and groups below to give everyone else exactly the access
     they need.
 
@@ -62,19 +64,44 @@ hand. They can't be deleted.
 
 | Group | What members can do |
 |---|---|
-| **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions. |
-| **Operator** | View, add, and change every object - but not delete. |
-| **Read-only** | View everything; change nothing. |
+| **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions (its grant names those types). |
+| **Operator** | View, add, and change every object except users, groups and permissions - but not delete. No Admin pages or tenant settings. |
+| **Read-only** | View every object except users, groups and permissions; change nothing. |
 
 !!! tip "Upgrades don't lock anyone out"
     When permissions were introduced, every existing user was placed into a
     sensible role automatically (admins → Administrator, read-only accounts →
     Read-only, everyone else → Operator). Tighten access from there as needed.
 
+### All object types leaves out access management
+
+**All object types** covers every kind of object except **Users**,
+**Groups** and **Permissions**. A grant reaches those only by naming them,
+because adding or changing them *is* administration: whoever may change
+users, group membership or grants can give themselves anything. Holding
+*change* on **Users** is what makes someone an administrator - it opens the
+Admin pages and the tenant settings, and the deployment settings too when
+the grant is not limited to tenants. The Administrator group's grant names
+the three types; Operator and Read-only do not.
+
+Upgrading to 0.17, where this rule arrived, names the three types on every
+all-object grant that was an administrator grant:
+
+- one with view, add, change *and* delete - tenant- and site-scoped ones
+  too, but never the built-in Operator and Read-only grants,
+- one carrying *grant superuser*,
+- one held only by the Administrator group.
+
+Every other all-object grant - Operator-style, view-only, a site editor's
+"read all" - loses them. If that would have left nobody able to manage
+users, the upgrade keeps the old access on the grants that had it and
+raises an upgrade note: put your administrators in the Administrator group,
+then remove the three types from those grants.
+
 ## Managing access
 
 These pages live under **Admin → Access** in the sidebar and are only visible to
-people who can manage users.
+Administrators and anyone else granted *change* on **Users**.
 
 ### Users
 
@@ -102,7 +129,9 @@ rows*.
 1. Go to **Admin → Access → Permissions** and click **Add permission**.
 2. Give it a clear **name** (e.g. "Edit production prefixes").
 3. Choose the **object types** it applies to - pick specific ones, or **All
-   object types**.
+   object types**. All object types leaves out Users, Groups and
+   Permissions; with it ticked, those three are offered on their own, and
+   ticking them makes the grant an administrator grant.
 4. Tick the **actions** you're granting: view, add, change, delete.
 5. (Optional) Limit it to certain **tenants**. A tenant named here also
    **grants access to that tenant**: members of the group can switch to it
@@ -132,8 +161,9 @@ Rather than hand-build the grants, open **Admin → Access → Permissions** and
 click **Site role**:
 
 - **Site editor** - can add, edit, and delete everything **in the chosen
-  site(s)**, and can **read everything elsewhere**. This is the local-IT recipe:
-  full control of their own site, look-but-don't-touch everywhere else.
+  site(s)**, and can **read everything elsewhere** except users, groups and
+  permissions. This is the local-IT recipe: full control of their own site,
+  look-but-don't-touch everywhere else.
 - **Site viewer** - read-only access to the chosen site(s), and **nothing
   outside them**. Use this when someone should only see their own site.
 

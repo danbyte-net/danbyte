@@ -143,9 +143,13 @@ class PlannedChangeSerializer(serializers.ModelSerializer):
     def validate_object_type(self, value):
         from auth_api.object_types import label_for
 
+        from .planned_changes import ACCESS_NOT_PLANNED, is_access_type
+
         label = label_for(value)
         if label is None:
             raise serializers.ValidationError("Unknown object type.")
+        if is_access_type(label):
+            raise serializers.ValidationError(ACCESS_NOT_PLANNED)
         return label
 
     def validate(self, attrs):

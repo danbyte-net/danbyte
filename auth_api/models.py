@@ -162,7 +162,9 @@ class ObjectPermission(TimestampedModel):
 
     object_types = models.JSONField(
         default=list,
-        help_text="Object-type slugs this permission covers (see object_types registry).",
+        help_text='Object-type slugs this permission covers (see object_types '
+                  'registry). "*" = every type except user, group and '
+                  'objectpermission, which must be named.',
     )
     actions = models.JSONField(
         default=list,

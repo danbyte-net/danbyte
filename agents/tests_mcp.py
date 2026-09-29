@@ -539,8 +539,8 @@ class CallLogTests(_Base):
 
     def test_the_log_endpoint_needs_a_tenant_admin(self):
         self.tool("list", {"type": "device"})
-        # A wildcard grant includes `user: change`, which *is* tenant admin;
-        # narrow this account first so the gate is actually exercised.
+        # Narrow this account to one plain grant so the gate is exercised by
+        # an account that plainly is not a tenant admin.
         ObjectPermission.objects.all().delete()
         self.grant(["view"], ["device"])
         self.client.force_login(self.user)

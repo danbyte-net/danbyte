@@ -190,8 +190,64 @@ def _proxied_blocks_forward_proto() -> bool:
     return True
 
 
+def _no_kept_wildcard_access() -> bool:
+    """Done when no enabled all-object grant names users, groups or
+    permissions without being an administrator grant.
+
+    That shape is what the 0.17 migration (auth_api 0024) leaves when it had
+    to keep the old access to avoid a lockout: an all-object grant short of
+    delete that names the access types. Administrator grants - all four
+    verbs, grant_superuser, or held only by the built-in Administrator group -
+    are the intended shape and never count.
+    """
+    from auth_api.models import ObjectPermission
+    from auth_api.object_types import ACCESS_TYPES, CRUD_ACTIONS
+
+    for perm in ObjectPermission.objects.filter(
+        enabled=True, object_types__contains=["*"]
+    ).prefetch_related("groups__profile", "users"):
+        types = perm.object_types or []
+        actions = set(perm.actions or [])
+        if not any(t in types for t in ACCESS_TYPES):
+            continue
+        if set(CRUD_ACTIONS) <= actions or "grant_superuser" in actions:
+            continue
+        groups = list(perm.groups.all())
+        admin_only = (
+            groups
+            and not perm.users.all()
+            and all(
+                g.name == "Administrator"
+                and getattr(getattr(g, "profile", None), "built_in", False)
+                for g in groups
+            )
+        )
+        if not admin_only:
+            return False
+    return True
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.17.0-wildcard-access",
+        version="0.17.0",
+        title="Name an administrator, then trim the grant that kept access",
+        body=(
+            "All object types no longer covers users, groups and permissions, "
+            "so only the Administrator group and grants that name those types "
+            "manage access. This install had no other account that could "
+            "manage users, so the upgrade kept the three types on the "
+            "all-object grants that could change users - an Operator-style "
+            "grant there still administers access. Put your administrators in "
+            "the Administrator group, then remove Users, Groups and "
+            "Permissions from those grants. Locked out? Create an "
+            "administrator on the server."
+        ),
+        snippet="scripts/danbyte-admin users create",
+        docs="features/permissions/#all-object-types-leaves-out-access-management",
+        check=_no_kept_wildcard_access,
+    ),
     UpgradeNote(
         id="0.16.13-nginx-temp-size",
         version="0.16.13",

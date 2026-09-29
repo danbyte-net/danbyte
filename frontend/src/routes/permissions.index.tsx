@@ -138,8 +138,9 @@ function buildColumns({
       header: "Object types",
       cell: ({ row }) => {
         const ts = row.original.object_types
+        // "*" leaves out users, groups and permissions; name any added back.
         const label = ts.includes("*")
-          ? "All object types"
+          ? ["All object types", ...ts.filter((t) => t !== "*")].join(" + ")
           : ts.join(", ") || "-"
         return (
           <span className="line-clamp-1 block font-mono text-[11px] text-muted-foreground">

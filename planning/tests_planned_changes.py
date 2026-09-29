@@ -621,3 +621,52 @@ class MapTests(_PlanBase):
             self.client.get("/api/planning/planned-changes/map/").json()["targets"],
             {},
         )
+
+
+class AccessTypesAreNotPlannedTests(_PlanBase):
+    """Users, groups and permissions are never planned: applying writes
+    through the target's serializer, which skips the deployment-admin gate
+    their own endpoints enforce, and staging needs no right on the target -
+    an Operator could otherwise queue "make me an administrator" for an admin
+    to apply."""
+
+    def test_staging_is_refused_for_each_access_type(self):
+        task = self._task()
+        grant = ObjectPermission.objects.create(
+            name="edit prefixes", object_types=["prefix"], actions=["change"],
+        )
+        cases = [
+            ("update", "auth_api.objectpermission", grant.id,
+             {"object_types": ["*", "user"]}),
+            ("update", "objectpermission", grant.id, {"actions": ["delete"]}),
+            ("create", "auth.user", None,
+             {"username": "sleeper", "group_ids": [1]}),
+            ("create", "group", None, {"name": "admins-2"}),
+        ]
+        for kind, otype, oid, payload in cases:
+            with self.subTest(otype=otype, kind=kind):
+                if kind == "create":
+                    r = self._plan_create(task, otype, payload)
+                else:
+                    r = self._plan(task, otype, oid, payload)
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertIn("changed directly", str(r.json()))
+        self.assertFalse(PlannedChange.objects.exists())
+
+    def test_a_row_staged_before_the_upgrade_does_not_apply(self):
+        task = self._task()
+        grant = ObjectPermission.objects.create(
+            name="edit prefixes", object_types=["prefix"], actions=["change"],
+        )
+        pc = PlannedChange.objects.create(
+            tenant=self.tenant, task=task, kind="update",
+            object_type="auth_api.objectpermission", object_id=grant.id,
+            payload={"object_types": ["*", "user", "group", "objectpermission"]},
+            before={"object_types": ["prefix"]}, display=[],
+        )
+        r = self._apply(pc.id)
+        self.assertEqual(r.status_code, 400, r.content)
+        grant.refresh_from_db()
+        self.assertEqual(grant.object_types, ["prefix"])
+        pc.refresh_from_db()
+        self.assertEqual(pc.state, "planned")

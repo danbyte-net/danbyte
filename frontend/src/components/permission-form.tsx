@@ -27,6 +27,11 @@ import {
   type CheckOption,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import {
+  picksUnderWildcard,
+  stateToTypes,
+  typesToState,
+} from "@/lib/permission-types"
 
 const CRUD_ACTIONS: RBACAction[] = ["view", "add", "change", "delete"]
 // Canonical display order; capability verbs sort after the CRUD verbs.
@@ -50,7 +55,9 @@ const ACTION_HINT: Partial<Record<RBACAction, string>> = {
     "Set or clear superuser on accounts. Counts only on a grant with no " +
     "tenant scoping - superuser is global.",
 }
-const WILDCARD = "*"
+/** The registry, plus the types "*" does not reach (read locally so the
+ *  shared API types stay untouched). */
+type ObjectTypesRegistry = RBACObjectTypes & { wildcard_excluded?: string[] }
 
 export interface PermissionFormProps {
   permission?: ObjectPermission
@@ -71,12 +78,9 @@ export function PermissionForm({
   const [name, setName] = useState(permission?.name ?? "")
   const [description, setDescription] = useState(permission?.description ?? "")
   const [enabled, setEnabled] = useState(permission?.enabled ?? true)
-  const [allTypes, setAllTypes] = useState(
-    permission?.object_types.includes(WILDCARD) ?? false
-  )
-  const [objectTypes, setObjectTypes] = useState<string[]>(
-    permission?.object_types.filter((t) => t !== WILDCARD) ?? []
-  )
+  const initialTypes = typesToState(permission?.object_types ?? [])
+  const [allTypes, setAllTypes] = useState(initialTypes.allTypes)
+  const [objectTypes, setObjectTypes] = useState<string[]>(initialTypes.picked)
   const [actions, setActions] = useState<RBACAction[]>(
     permission?.actions ?? ["view"]
   )
@@ -104,8 +108,9 @@ export function PermissionForm({
     setName(permission.name)
     setDescription(permission.description)
     setEnabled(permission.enabled)
-    setAllTypes(permission.object_types.includes(WILDCARD))
-    setObjectTypes(permission.object_types.filter((t) => t !== WILDCARD))
+    const types = typesToState(permission.object_types)
+    setAllTypes(types.allTypes)
+    setObjectTypes(types.picked)
     setActions(permission.actions)
     setGroupIds(permission.groups.map((g) => g.id))
     setUserIds(permission.users.map((u) => u.id))
@@ -121,8 +126,12 @@ export function PermissionForm({
 
   const typesQuery = useQuery({
     queryKey: ["rbac", "object-types"],
-    queryFn: () => api<RBACObjectTypes>("/api/rbac/object-types/"),
+    queryFn: () => api<ObjectTypesRegistry>("/api/rbac/object-types/"),
   })
+  const wildcardExcluded = useMemo(
+    () => typesQuery.data?.wildcard_excluded ?? [],
+    [typesQuery.data]
+  )
   const groupsQuery = useQuery({
     queryKey: ["groups"],
     queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
@@ -148,6 +157,11 @@ export function PermissionForm({
         hint: t.group,
       })),
     [typesQuery.data]
+  )
+  // With the wildcard on, only the types it does not reach are offered.
+  const excludedOptions = useMemo(
+    () => typeOptions.filter((o) => wildcardExcluded.includes(o.value)),
+    [typeOptions, wildcardExcluded]
   )
   const groupOptions: CheckOption<number>[] = (
     groupsQuery.data?.results ?? []
@@ -187,9 +201,10 @@ export function PermissionForm({
 
   const handleAllTypesChange = (checked: boolean) => {
     setAllTypes(checked)
-    // Enabling the wildcard clears any specific picks so nothing is silently
-    // retained in state and then quietly discarded by the submit payload.
-    if (checked) setObjectTypes([])
+    // The wildcard covers every other type, so only the picks it does not
+    // reach stay named - and stay visible, so nothing is kept unseen.
+    if (checked)
+      setObjectTypes((prev) => picksUnderWildcard(prev, wildcardExcluded))
   }
 
   const mutation = useMutation({
@@ -209,7 +224,7 @@ export function PermissionForm({
         name: name.trim(),
         description: description.trim(),
         enabled,
-        object_types: allTypes ? [WILDCARD] : objectTypes,
+        object_types: stateToTypes({ allTypes, picked: objectTypes }),
         actions,
         constraints,
         group_ids: groupIds,
@@ -299,15 +314,23 @@ export function PermissionForm({
                 label="All object types"
                 checked={allTypes}
                 onChange={handleAllTypesChange}
-                hint="Wildcard - grants on every model"
+                disabled={!typesQuery.data}
+                hint="Every model except users, groups and permissions"
                 className="mb-2"
               />
               {allTypes ? (
-                <p className="text-[13px] text-muted-foreground">
-                  Grants on every model. Enabling this clears any specific
-                  object-type picks - turn it off to choose individual models
-                  again.
-                </p>
+                <>
+                  <p className="mb-2 text-[13px] text-muted-foreground">
+                    Tick these to manage access too - that makes this an
+                    administrator grant.
+                  </p>
+                  <CheckList
+                    options={excludedOptions}
+                    value={objectTypes}
+                    onChange={setObjectTypes}
+                    empty="Loading object types…"
+                  />
+                </>
               ) : (
                 <CheckList
                   options={typeOptions}

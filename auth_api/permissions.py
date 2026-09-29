@@ -78,6 +78,10 @@ def can_manage_admin(user, tenant=None) -> bool:
     RBAC group (no legacy ``role``) isn't wrongly blocked. Pass the active
     ``tenant`` when you have one; ``None`` still honours tenant-unscoped grants
     (the built-in Administrator permission is unscoped).
+
+    The ``"*"`` wildcard does not reach ``user`` (see
+    ``object_types.ACCESS_TYPES``): the grant has to name it, which the
+    built-in Administrator grant does and Operator / Read-only do not.
     """
     if not getattr(user, "is_authenticated", False):
         return False
@@ -97,7 +101,8 @@ def can_manage_deployment(user) -> bool:
     slugs are inherently global), or an RBAC ``change``-on-``user`` grant whose
     ObjectPermission has NO tenant narrowing - ``effective_actions(user, None)``
     skips every tenant-scoped grant (see rbac.applicable_permissions), so it is
-    exactly the unscoped grant set.
+    exactly the unscoped grant set. As in :func:`can_manage_admin`, only a
+    grant that names ``user`` counts; ``"*"`` alone does not.
     """
     if not getattr(user, "is_authenticated", False):
         return False

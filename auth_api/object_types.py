@@ -26,6 +26,25 @@ CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
            "view_credits"]
 
+# Types an "all object types" ("*") grant does NOT reach. Adding or changing
+# these IS administration - accounts, group membership and the grants
+# themselves - so a grant reaches them only by naming them, and change on
+# "user" is what makes someone an administrator. Keyed on fixed slugs, never on
+# the "Access" group label, so a plugin cannot join or leave the set by picking
+# a label. Migration auth_api 0024 keeps a frozen copy; a test pins the two.
+ACCESS_TYPES: tuple[str, ...] = ("user", "group", "objectpermission")
+WILDCARD_EXCLUDED: frozenset[str] = frozenset(ACCESS_TYPES)
+
+
+def grant_covers(object_types, slug: str) -> bool:
+    """Whether a grant's ``object_types`` reaches ``slug``: named outright, or
+    through the ``"*"`` wildcard when ``slug`` is not one of ACCESS_TYPES."""
+    types = object_types or []
+    if slug in types:
+        return True
+    return "*" in types and slug not in WILDCARD_EXCLUDED
+
+
 # Which capability verbs a *specific* type actually honours - only these are
 # advertised for that type in the permission form, so the UI never offers e.g.
 # "reveal on a Site". A type absent here advertises the CRUD verbs alone. The
