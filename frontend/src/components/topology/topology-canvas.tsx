@@ -22,7 +22,7 @@ import {
   useReactFlow,
   ReactFlowProvider,
 } from "@xyflow/react"
-import type { Edge, Node } from "@xyflow/react"
+import type { Edge, FitViewOptions, Node } from "@xyflow/react"
 
 import type {
   BulkStatusEntry,
@@ -432,6 +432,13 @@ export function hoverLabel(e: Edge): string | undefined {
     | undefined
   if (!d) return undefined
   if (d.sem === "bgp" && d.bgp) return bgpLabel(d.bgp)
+  // A tunnel map's line: the tunnel, and a plain link's two ends. A hub's
+  // trunk and legs are the one tunnel interface: the name alone.
+  if (d.sem === "cable" && d.raw?.tunnel) {
+    const pair = d.fan ? undefined : d.raw.pairs?.[0]
+    const name = d.raw.tunnel.name
+    return pair ? `${name} · ${pair.a} ↔ ${pair.b}` : name
+  }
   if (d.sem === "cable" && d.raw) {
     const r = d.raw
     const bits = [
@@ -860,6 +867,10 @@ export interface TopologyCanvasProps {
   /** The overview in the corner. A map another page embeds leaves it out:
    * it would cover a small map's cards. */
   minimap?: boolean
+  /** How a fit frames the map, over the page's own: a map another page
+   * embeds keeps its foot clear of its corner chips, and a map of two
+   * cards is not blown up to twice their size. */
+  fitOptions?: Pick<FitViewOptions, "padding" | "maxZoom">
 }
 
 /** Where to aim the camera for a node: diagram nodes are placed by their
@@ -1051,6 +1062,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onSpread,
     onPartialChange,
     minimap = true,
+    fitOptions,
   },
   ref
 ) {
@@ -1548,6 +1560,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const [partial, setPartial] = useState(false)
   const partialRef = useRef(onPartialChange)
   partialRef.current = onPartialChange
+  const fitRef = useRef(fitOptions)
+  fitRef.current = fitOptions
   useEffect(() => partialRef.current?.(partial), [partial])
   const fitMap = useCallback(
     (duration: number) => {
@@ -1574,7 +1588,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           : []
       if (!part.length) {
         setPartial(false)
-        void flow.fitView({ padding: FIT_PAD, duration })
+        void flow.fitView({ padding: FIT_PAD, ...fitRef.current, duration })
         return
       }
       const box = flow.getNodesBounds(part)
@@ -2405,6 +2419,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView={fitOnOpen}
+        fitViewOptions={
+          fitOptions ? { padding: FIT_PAD, ...fitOptions } : undefined
+        }
         colorMode={theme}
         proOptions={{ hideAttribution: true }}
         nodesConnectable={false}

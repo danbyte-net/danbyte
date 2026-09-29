@@ -180,6 +180,27 @@ describe("BGP hover", () => {
   })
 })
 
+describe("tunnel hover", () => {
+  const raw = {
+    cable_label: "HQ-VPN",
+    tunnel: { id: "t1", name: "HQ-VPN" },
+    pairs: [{ a: "fw1:tun0", b: "fw2:tun0" }],
+  }
+  const edge = (data: Record<string, unknown>) =>
+    ({ id: "e", source: "a", target: "b", type: "link", data }) as Edge
+
+  it("names the tunnel and a plain link's two ends", () => {
+    expect(hoverLabel(edge({ sem: "cable", raw }))).toBe(
+      "HQ-VPN · fw1:tun0 ↔ fw2:tun0"
+    )
+  })
+
+  it("names only the tunnel on a hub's trunk and legs", () => {
+    const leg = { role: "leg", junction: "fan:h" }
+    expect(hoverLabel(edge({ sem: "cable", raw, fan: leg }))).toBe("HQ-VPN")
+  })
+})
+
 function group(over: Partial<TopoGroupData> = {}) {
   return {
     id: "grp:s1",

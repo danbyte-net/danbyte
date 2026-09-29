@@ -123,6 +123,39 @@ describe("linkLabelSet", () => {
   })
 })
 
+describe("a tunnel's end addresses", () => {
+  it("puts each end's outside address after its interface, IPv4 first", () => {
+    const p = pair(undefined, {
+      a_outside: "198.51.100.1",
+      b_outside: "2001:db8::9",
+    })
+    expect(linkLabelSet([[p]])).toEqual({
+      mid: [],
+      ends: [{ a: ["198.51.100.1"], b: ["2001:db8::9"] }],
+    })
+    // Addresses off: none; no outside address: nothing at that end.
+    expect(linkLabelSet([[p]], ["port"]).ends).toEqual([{}])
+    expect(linkLabelSet([[pair(undefined, { b_outside: null })]])).toEqual({
+      mid: [],
+      ends: [{}],
+    })
+  })
+
+  it("keeps a hub's address on the trunk, each spoke's on its leg", () => {
+    const hub = (b: string) =>
+      pair(undefined, { a_outside: "198.51.100.1", b_outside: b })
+    const sets = fanLabelSets(
+      [hub("203.0.113.1"), hub("203.0.113.2")],
+      [[0], [1]]
+    )
+    expect(sets.trunk.ends).toEqual([{ a: ["198.51.100.1"] }])
+    expect(sets.legs.map((l) => l.ends)).toEqual([
+      [{ b: ["203.0.113.1"] }],
+      [{ b: ["203.0.113.2"] }],
+    ])
+  })
+})
+
 describe("orientPair", () => {
   it("trades every end field on a flipped edge", () => {
     const p = pair([v4(1)], {
@@ -132,6 +165,8 @@ describe("orientPair", () => {
       b_end: "B",
       a_ips: ["10.0.1.0/31"],
       b_ips: ["10.0.1.1/31"],
+      a_outside: "198.51.100.1",
+      b_outside: null,
     })
     const f = orientPair(p, true)
     expect(f).toMatchObject({
@@ -141,6 +176,8 @@ describe("orientPair", () => {
       b_end: "A",
       a_ips: ["10.0.1.1/31"],
       b_ips: ["10.0.1.0/31"],
+      a_outside: null,
+      b_outside: "198.51.100.1",
     })
     expect(f.subnets![0]).toMatchObject({ a: "10.0.1.1", b: "10.0.1.0" })
     expect(orientPair(p, false)).toBe(p)

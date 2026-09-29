@@ -392,6 +392,7 @@ function diagramEdge(
             stroke: edgeStroke(r, opts.colorMode),
             via: !!r?.via?.length,
             marked: r?.marked,
+            tunnel: !!r?.tunnel,
           })
         ),
       }
@@ -582,12 +583,15 @@ function fanParts(
       stroke,
       via: !!raw.via?.length,
       marked: raw.marked,
+      tunnel: !!raw.tunnel,
     })
   )
   const far = [...new Set(f.legs.map((l) => l.node))]
   const lineTo = (node: string): LineType =>
     opts.links?.[pairKey(keyOf(f.trunk.node), keyOf(node))]?.line ?? opts.line
-  const chip = fanChip(raw)
+  // A tunnel map's hub needs no name on its trunk: the map is the one
+  // tunnel, and its outside address goes there.
+  const chip = raw.tunnel ? [] : fanChip(raw)
   const tokens = opts.labels ?? DEFAULT_LABELS
   const legs =
     mode === "simple"

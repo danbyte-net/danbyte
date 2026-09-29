@@ -64,6 +64,8 @@ export function swapPair(p: Pair): Pair {
     b_end,
     a_ips,
     b_ips,
+    a_outside,
+    b_outside,
     subnets,
     ...rest
   } = p
@@ -81,6 +83,8 @@ export function swapPair(p: Pair): Pair {
     ...(a_end !== undefined ? { b_end: a_end } : {}),
     ...(b_ips !== undefined ? { a_ips: b_ips } : {}),
     ...(a_ips !== undefined ? { b_ips: a_ips } : {}),
+    ...(b_outside !== undefined ? { a_outside: b_outside } : {}),
+    ...(a_outside !== undefined ? { b_outside: a_outside } : {}),
     ...(subnets
       ? {
           subnets: subnets.map(({ a_via, b_via, ...s }) => ({

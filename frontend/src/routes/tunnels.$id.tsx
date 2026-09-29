@@ -34,6 +34,7 @@ import {
   DetailTab,
 } from "@/components/detail-shell"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { TunnelDeleteDialog } from "@/components/tunnel-delete-dialog"
@@ -160,11 +161,7 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
         <TunnelOverview tunnel={t} />
       </DetailTab>
       <DetailTab value="map">
-        <Suspense
-          fallback={
-            <div className="h-96 animate-pulse rounded-lg bg-muted/30" />
-          }
-        >
+        <Suspense fallback={<Loading />}>
           <TunnelMap tunnel={t} />
         </Suspense>
       </DetailTab>

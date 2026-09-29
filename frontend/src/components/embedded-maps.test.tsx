@@ -20,17 +20,23 @@ import { TraceSection } from "./topology/trace-section"
 import { TunnelMap } from "./tunnels/tunnel-map"
 import { VmTopologyCard } from "./vm-topology-card"
 
-import type { DevicePathRun, Tunnel, TraceGraph } from "@/lib/api"
+import type {
+  DevicePathRun,
+  TopologyGraph,
+  TraceGraph,
+  Tunnel,
+} from "@/lib/api"
 
 // The maps other pages embed - a device's Topology card and its runs, the
 // trace section and dialogs, a tunnel's map, a VM's Topology card - speak
 // the topology page's words and use its loading, empty and badge parts.
 
-const { apiMock, canvasProps } = vi.hoisted(() => ({
+const { apiMock, fetchMock, canvasProps } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string) => Promise<unknown>>(),
+  fetchMock: vi.fn<(q: unknown, init?: unknown) => Promise<unknown>>(),
   canvasProps: [] as Record<string, unknown>[],
 }))
-vi.mock("@/lib/api", () => ({ api: apiMock }))
+vi.mock("@/lib/api", () => ({ api: apiMock, fetchTopology: fetchMock }))
 // React Flow has no layout to measure in jsdom; the canvas is not what
 // these tests are about - only what it is asked to draw.
 vi.mock("@/components/topology/topology-canvas", () => ({
@@ -48,6 +54,8 @@ class ResizeObserverStub {
 if (!("ResizeObserver" in globalThis)) {
   globalThis.ResizeObserver = ResizeObserverStub
 }
+// The router restores the scroll on a navigation; jsdom has no scrolling.
+window.scrollTo = () => undefined
 
 afterEach(cleanup)
 
@@ -57,6 +65,8 @@ let answers: Record<string, unknown> = {}
 beforeEach(() => {
   answers = {}
   canvasProps.length = 0
+  fetchMock.mockReset()
+  fetchMock.mockImplementation(() => apiMock("/api/topology/"))
   apiMock.mockReset()
   apiMock.mockImplementation((path: string) => {
     const key = Object.keys(answers).find((k) => path.startsWith(k))
@@ -83,6 +93,7 @@ function mount(ui: React.ReactNode, at = "/here") {
       <RouterProvider router={router as never} />
     </QueryClientProvider>
   )
+  return router
 }
 
 const node = (id: string, device: string, name: string) => ({
@@ -377,6 +388,88 @@ describe("TunnelMap", () => {
     return screen.findByText("No terminations yet.").then((t) => {
       expect(t.nextElementSibling).toBeNull()
     })
+  })
+
+  const end = (i: number, device: boolean) => ({
+    id: `t${i}`,
+    role: "peer",
+    role_display: "Peer",
+    interface: device
+      ? { id: `i${i}`, name: "tun0", device: { id: `d${i}`, name: `fw${i}` } }
+      : null,
+    vm_interface: device
+      ? null
+      : { id: `vi${i}`, name: "wg0", vm: { id: `v${i}`, name: `vm${i}` } },
+    outside_ip: null,
+  })
+  const TUNNEL = {
+    id: "tun-1",
+    name: "HQ-VPN",
+    terminations: [end(1, true), end(2, false)],
+  } as unknown as Tunnel
+
+  it("draws its ends on the Diagram from the devices' own cards", async () => {
+    answers["/api/topology/"] = {
+      nodes: [
+        {
+          id: "dev:d1",
+          type: "device",
+          data: {
+            name: "fw1",
+            device_id: "d1",
+            role: { name: "Firewall", color: "f59e0b" },
+          },
+        },
+      ],
+      edges: [],
+    }
+    mount(<TunnelMap tunnel={TUNNEL} />)
+    await screen.findByTestId("canvas")
+    expect(fetchMock).toHaveBeenCalledWith(
+      { devices: ["d1"], include: ["card"] },
+      expect.anything()
+    )
+    const props = canvasProps.at(-1)!
+    expect(props).toMatchObject({
+      nodeStyle: "diagram",
+      diagramMode: "detailed",
+      diagramLine: "elbow",
+      direction: "LR",
+      minimap: false,
+      fitOptions: { maxZoom: 1.25 },
+    })
+    const graph = props.graph as TopologyGraph
+    expect(graph.nodes.map((n) => n.id)).toEqual(["dev:d1", "vm:v2"])
+    expect(graph.nodes[0].data.role?.color).toBe("f59e0b")
+    expect(graph.edges[0].data?.tunnel).toEqual({ id: "tun-1", name: "HQ-VPN" })
+    expect(screen.getByRole("button", { name: /Export/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Legend" })).toBeTruthy()
+  })
+
+  it("still draws, card by name, when the cards cannot be had", async () => {
+    fetchMock.mockImplementation(() => Promise.reject(new Error("403")))
+    mount(<TunnelMap tunnel={TUNNEL} />)
+    await screen.findByTestId("canvas")
+    const graph = canvasProps.at(-1)!.graph as TopologyGraph
+    expect(graph.nodes[0].data).toMatchObject({ name: "fw1", device_id: "d1" })
+  })
+
+  it("opens a card's device, or its VM", async () => {
+    answers["/api/topology/"] = { nodes: [], edges: [] }
+    const router = mount(<TunnelMap tunnel={TUNNEL} />)
+    await screen.findByTestId("canvas")
+    const graph = canvasProps.at(-1)!.graph as TopologyGraph
+    const open = canvasProps.at(-1)!.onSelectNode as (
+      d: TopologyGraph["nodes"][number]["data"]
+    ) => void
+    open(graph.nodes[0].data)
+    await vi.waitFor(() =>
+      expect(router.state.location.pathname).toBe("/devices/d1")
+    )
+    open(graph.nodes[1].data)
+    await vi.waitFor(() =>
+      expect(router.state.location.pathname).toBe("/virtual-machines/v2")
+    )
   })
 })
 

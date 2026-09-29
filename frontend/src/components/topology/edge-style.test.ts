@@ -7,6 +7,7 @@ import {
   flowEdgeStyle,
   speedColor,
   statusColor,
+  TUNNEL_DASH,
   typeColor,
 } from "./edge-style"
 
@@ -85,6 +86,24 @@ describe("edge style table", () => {
     expect(flow("membership")).toEqual({
       style: { strokeWidth: 1, stroke: "var(--border)", opacity: 0.6 },
     })
+  })
+
+  it("dashes a tunnel's line its own way, whatever else it carries", () => {
+    expect(
+      flowEdgeStyle(edgeLook("cable", { tunnel: true, stroke: "#123456" }))
+        .style
+    ).toEqual({
+      strokeWidth: 1.5,
+      stroke: "#123456",
+      strokeDasharray: TUNNEL_DASH,
+    })
+    // Not a ghost's, a BGP session's, a panel run's or a pass-through's.
+    const others = (["ghost", "bgp", "through"] as const).map(
+      (k) => edgeLook(k).dash
+    )
+    expect([...others, edgeLook("cable", { via: true }).dash]).not.toContain(
+      TUNNEL_DASH
+    )
   })
 
   it("widens a grouped edge gently with its cable count, capped", () => {

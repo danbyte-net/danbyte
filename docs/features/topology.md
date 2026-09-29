@@ -79,8 +79,8 @@ every cabled interface and its name on its own cable, as Wiring did;
 - **Your default map** - the map this browser keeps does the same the
   first time, and keeps the result as it goes.
 
-The trace maps and a device's Map tab draw the Diagram's cards too (see
-[Trace maps and a device's map](#trace-maps)).
+The trace maps, a device's Map tab and a tunnel's Map tab draw the
+Diagram's cards too (see [Trace maps and a device's map](#trace-maps)).
 
 ## Diagram view
 
@@ -536,12 +536,15 @@ port carries an **Incomplete** badge, here, in the trace dialogs and on a
 device's runs; an uncabled port says *Not cabled.* The interface
 **Overview** also carries the end-to-end path on the right.
 
-These maps and a device's Map tab leave out the overview in the corner,
-which would cover a small map's cards. Their **Legend** waits on its chip
-in the corner: it keys the roles on the map, the monitoring pill when a
-card shows it, and only the lines the map draws - the traced run and the
-dashed patch panel among them. Whether it is open is remembered apart
-from this page's legend.
+These maps, a device's Map tab and a
+[tunnel's map](vpn.md#tunnel-map) leave out the overview in the corner,
+which would cover a small map's cards. They open no closer than a little
+over life size, so two cards stay cards, and keep the foot of the map
+clear of the chips there. Their **Legend** waits on its chip in the
+corner: it keys the roles on the map, the monitoring pill when a card
+shows it, and only the lines the map draws - the traced run, the dashed
+patch panel and a tunnel's dash-dot line among them. Whether it is open
+is remembered apart from this page's legend.
 
 Port names in a path strip that resolve to a real interface are **clickable** (pointer cursor) - jump straight to the interface. The device card lists its first five runs with a **Show all** toggle.
 

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import type { TopologyGraph } from "@/lib/api"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { TUNNEL_DASH } from "./edge-style"
 import { CanvasLegend, graphLegend, legendRows } from "./legend"
 
 // The map's legend: roles as their badges and colour keys as lines -
@@ -171,6 +172,8 @@ describe("an embedded map's legend", () => {
       ],
       monitorPill: true,
       present: {
+        cable: true,
+        tunnel: false,
         bundle: false,
         via: false,
         ghost: false,
@@ -201,6 +204,34 @@ describe("an embedded map's legend", () => {
       kind: "line",
       color: "var(--primary)",
       width: 2.5,
+    })
+  })
+
+  it("keys a tunnel map's dashed line, and no cable it does not draw", () => {
+    const tunnels: TopologyGraph = {
+      nodes: graph.nodes.slice(0, 2),
+      edges: [
+        {
+          id: "tun:1:2",
+          source: "dev:a",
+          target: "dev:b",
+          data: { tunnel: { id: "t1", name: "HQ-VPN" }, pairs: [] },
+        },
+      ],
+    }
+    const legend = graphLegend(tunnels)
+    expect(legend.present).toMatchObject({ cable: false, tunnel: true })
+    const rows = legendRows({
+      viewStyle: "diagram",
+      grouped: false,
+      colorMode: "none",
+      ...legend,
+    })
+    expect(rows.map((r) => r.label)).toEqual(["Leaf", "Spine", "Tunnel"])
+    expect(rows.at(-1)).toMatchObject({
+      kind: "line",
+      dash: TUNNEL_DASH,
+      sem: "cable",
     })
   })
 

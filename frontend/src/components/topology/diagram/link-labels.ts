@@ -13,7 +13,9 @@ import type { CablePair, EndAddresses } from "./types"
 // Only a subnet both ends sit in counts, and only a link-sized one: /24 or
 // smaller (IPv4), /64 or smaller (IPv6). A larger shared subnet is a LAN,
 // not the link. A pair without addresses (no `ipaddress.view`, or the
-// addresses were not asked for) gives no label and no error. Pure.
+// addresses were not asked for) gives no label and no error. A tunnel
+// map's link (`a_outside`/`b_outside`) puts each end's outside address
+// after its interface name, as the end addresses. Pure.
 
 /** A token of the Labels setting. */
 export type LabelToken = TopologyDiagramDisplay["labels"][number]
@@ -55,6 +57,9 @@ function shared(p: CablePair): TopoLinkSubnet[] {
 
 const familyOf = (s: Pick<TopoLinkSubnet, "cidr">) =>
   s.cidr.includes(":") ? 6 : 4
+
+/** An address's slot in the per-family lists: 0 for IPv4, 1 for IPv6. */
+const ipFamily = (ip: string) => (ip.includes(":") ? 1 : 0)
 
 /** `list` cut to `max` lines, the last one counting what was cut. */
 function cap(list: string[], max: number): string[] {
@@ -110,7 +115,7 @@ export function linkLabelSet(
     const b: [string[], string[]] = [[], []]
     const sa = new Set<string>()
     const sb = new Set<string>()
-    for (const p of pairs)
+    for (const p of pairs) {
       for (const s of shared(p)) {
         if (!seenMid.has(s.cidr)) {
           seenMid.add(s.cidr)
@@ -120,6 +125,10 @@ export function linkLabelSet(
         push(a[f], sa, s.a)
         push(b[f], sb, s.b)
       }
+      // A tunnel end's outside address: the one its end rides on.
+      if (p.a_outside) push(a[ipFamily(p.a_outside)], sa, p.a_outside)
+      if (p.b_outside) push(b[ipFamily(p.b_outside)], sb, p.b_outside)
+    }
     return { a: [...a[0], ...a[1]], b: [...b[0], ...b[1]] }
   })
   const ends: EndAddresses[] = cables.map(() => ({}))

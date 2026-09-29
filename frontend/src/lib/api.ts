@@ -2962,11 +2962,17 @@ export interface TopoEdge {
       subnets?: TopoLinkSubnet[]
       /** More than 8 shared subnets; the rest were left out. */
       subnets_truncated?: boolean
+      /** A tunnel map's link: each end's outside (underlay) address,
+       * drawn after its interface name. */
+      a_outside?: string | null
+      b_outside?: string | null
     }[]
     /** `include=link_ips`: every pair's shared subnets, de-duplicated. */
     subnets?: string[]
     cable_numid?: number | null
     cable_label?: string
+    /** A tunnel map's link (tunnels/tunnel-graph.ts): the tunnel it is. */
+    tunnel?: { id: string; name: string }
     length?: string | null
     length_unit?: string
     /** Link speed from an endpoint interface (free-form, e.g. "10G"). */

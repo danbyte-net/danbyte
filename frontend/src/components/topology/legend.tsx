@@ -11,7 +11,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { TopologyGraph } from "@/lib/api"
-import { typeColor } from "./edge-style"
+import { TUNNEL_DASH, typeColor } from "./edge-style"
 import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
 
 // Line-key legend for the topology views. Collapsible, remembered per
@@ -127,6 +127,10 @@ export interface LegendOptions {
 
 /** What an embedded map draws beyond plain cables. */
 export interface LegendPresence {
+  /** Cables at all: false on a map of tunnels only. Absent = yes. */
+  cable?: boolean
+  /** A tunnel map's links (tunnels/tunnel-graph.ts). */
+  tunnel?: boolean
   bundle?: boolean
   via?: boolean
   ghost?: boolean
@@ -154,6 +158,8 @@ export function graphLegend(
       .sort((a, b) => a.name.localeCompare(b.name)),
     monitorPill: !!graph.meta?.card?.uses_monitor,
     present: {
+      cable: has((e) => (!e.type || e.type === "cable") && !e.data?.tunnel),
+      tunnel: has((e) => !!e.data?.tunnel),
       bundle: has((e) => !!(e.data?.lag?.a && e.data.lag.b)),
       via: has((e) => !!e.data?.via?.length),
       ghost: has((e) => e.type === "ghost"),
@@ -186,7 +192,16 @@ export function legendRows({
     for (const r of roles)
       out.push({ kind: "role", label: r.name, color: r.color || undefined })
     if (monitorPill) out.push({ kind: "pill", label: "Monitoring" })
-    out.push({ kind: "line", label: "Cable", sem: "cable" })
+    if (present?.cable !== false)
+      out.push({ kind: "line", label: "Cable", sem: "cable" })
+    if (present?.tunnel)
+      out.push({
+        kind: "line",
+        label: "Tunnel",
+        width: 1.5,
+        dash: TUNNEL_DASH,
+        sem: "cable",
+      })
     if (present?.traced)
       out.push({
         kind: "line",

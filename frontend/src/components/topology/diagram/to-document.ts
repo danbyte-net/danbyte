@@ -586,8 +586,9 @@ export function printLegend(
 type CardData = TopoNode["data"]
 
 /** The cables an edge stands for, by id: a bundle's members, a breakout
- * part's cable, or its own. */
+ * part's cable, or its own. A tunnel's line stands for none. */
 function cableIds(d: DiagramEdgeData): string[] {
+  if (d.raw?.tunnel) return []
   if (d.cables?.length) return d.cables.map((c, i) => c.cable_id ?? `#${i}`)
   const id = d.cableId ?? d.raw?.cable_id
   return id ? [id] : []
@@ -710,11 +711,14 @@ function simpleModel(model: DiagramModel): DiagramModel {
   }
 }
 
-/** A link's way back into Danbyte: its cable, or its BGP session. */
+/** A link's way back into Danbyte: its tunnel, its cable, or its BGP
+ * session. A tunnel map's breakout parts carry their hub end's id where a
+ * cable's id goes, so the tunnel is asked first. */
 function edgeUrl(
   d: DiagramEdgeData,
   origin: string | undefined
 ): string | undefined {
+  if (d.raw?.tunnel) return danbyteUrl(origin, `/tunnels/${d.raw.tunnel.id}`)
   if (d.sem === "cable" && d.raw?.cable_id)
     return danbyteUrl(origin, `/cables/${d.raw.cable_id}`)
   const session = d.bgp?.sessions?.[0]
@@ -903,6 +907,7 @@ export function toDocument(
       (e) => (e.data as DiagramEdgeData | undefined)?.fan?.junction === id
     )
     const d = trunk?.data as DiagramEdgeData | undefined
+    const url = d ? edgeUrl(d, opts.origin) : undefined
     rects.set(id, rectAt(c, JUNCTION))
     junctions.push({
       id,
@@ -910,10 +915,8 @@ export function toDocument(
       y: c.y,
       r: JUNCTION.w / 2,
       fill: linkPaint("cable", trunk?.style).stroke,
-      ...(d?.cableId ? { cable: d.cableId } : {}),
-      ...(d?.cableId
-        ? { link: danbyteUrl(opts.origin, `/cables/${d.cableId}`) }
-        : {}),
+      ...(d?.cableId && !d.raw?.tunnel ? { cable: d.cableId } : {}),
+      ...(url ? { link: url } : {}),
     })
   }
 

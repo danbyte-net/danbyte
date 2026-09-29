@@ -130,7 +130,13 @@ export interface EdgeLookContext {
   via?: boolean
   /** Trace map: the edge is part of the traced run. */
   marked?: boolean
+  /** A tunnel map's link (`TopoEdge.data.tunnel`): drawn in its own dash. */
+  tunnel?: boolean
 }
+
+/** A tunnel's dash: dash-dot, apart from the LLDP ghost's, the BGP
+ * session's and the patch-panel run's. */
+export const TUNNEL_DASH = "8 3 2 3"
 
 /** The drawn look of one edge kind. */
 export function edgeLook(sem: EdgeSem, ctx: EdgeLookContext = {}): EdgeLook {
@@ -139,6 +145,8 @@ export function edgeLook(sem: EdgeSem, ctx: EdgeLookContext = {}): EdgeLook {
     case "cable":
       // Traced cable (trace map): thick primary stroke so the run stands out.
       if (ctx.marked) return { width: 2.5, stroke: "var(--primary)", label: {} }
+      if (ctx.tunnel)
+        return { width: 1.5, ...stroke, dash: TUNNEL_DASH, label: {} }
       return {
         width: (ctx.count ?? 1) > 1 ? 1.75 : 1.25,
         ...stroke,

@@ -97,18 +97,32 @@ one *hub* and many *spokes*.
 
 ## Tunnel map
 
-The tunnel's detail page has a **Map** tab - a read-only topology view of the
-tunnel drawn from its terminations:
+The tunnel's detail page has a **Map** tab: the tunnel drawn from its
+terminations the way the [Topology](topology.md) Diagram draws a map,
+Detailed with Elbow lines.
 
-- **Hub-and-spoke** tunnels put the hub(s) in the centre with every spoke on a
-  ring around them, one link per hub ↔ spoke.
-- **Point-to-point / peer** tunnels show the peers side by side (three or more
-  form a ring, fully meshed).
+- Each end is a **card**. A device's card is the one the Topology page
+  draws: its role's color and its [card lines](topology.md#card-lines). A
+  VM's is a neutral card that says *Virtual machine*. The end's role -
+  **Hub**, **Spoke** or **Peer** - is the pill in the card's corner; while
+  a device is down, the monitoring pill takes its place if the card lines
+  show it.
+- Each link is a **dash-dot line** with the terminating interface's name
+  and the end's **outside IP** on the line at each end. Hovering a line
+  names the tunnel.
+- **Hub-and-spoke** tunnels read top to bottom. The hub's tunnel interface
+  is one nub: its line runs to a split point and on to every spoke, the
+  way a breakout cable is drawn. With two hubs, each reaches every spoke.
+- **Point-to-point / peer** tunnels put two peers side by side. Three or
+  more sit on a ring, each linked to every other.
 
-Each card shows the terminating device (or VM), the interface, the **outside
-IP**, and the end's role (*Hub*, *Spoke* or *Peer*); clicking a card jumps to
-that interface (or VM). The map fills in as you add terminations on the
-**Terminations** tab; until then it says *No terminations yet.*
+Clicking a card opens its device (or VM). A device you may not view shows
+its name only. **Legend** keys the roles, the monitoring pill and the
+Tunnel line. **Export** saves the map as PNG, SVG, PDF or draw.io, or
+prints it, titled after the tunnel, with every line linking back to it
+(see [Export](topology.md#export)). The map fills in as you add
+terminations on the **Terminations** tab; until then it says *No
+terminations yet.*
 
 ## Where tunnels show up on interfaces
 
