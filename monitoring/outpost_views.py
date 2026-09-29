@@ -54,8 +54,11 @@ def claim_and_build_work(engine, now=None, limit: int = WORK_BATCH) -> list[dict
     from .worker import _resolved_from_state
 
     now = now or timezone.now()
+    # A parked row has no next_run; the exclusion test is for one a racing
+    # write re-armed (the join is already there for select_related).
     due = CheckState.objects.filter(
-        engine=engine, next_run__lte=now, in_flight=False
+        engine=engine, next_run__lte=now, in_flight=False,
+        target_ip__monitoring_excluded=False,
     ).select_related("target_ip", "template", "assignment")
     # An agent with a lane of its own owns its sub-minute checks from
     # /fast-work; an older agent gets them here at the fallback interval.

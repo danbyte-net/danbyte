@@ -247,22 +247,26 @@ def _without_excluded(states):
     return [s for s in states if not s.target_ip.monitoring_excluded]
 
 
-def _heal_excluded(state_ids, now) -> None:
+def _heal_excluded(state_ids, now) -> set:
     """After a write: re-park any row whose address was excluded between the
-    writer's read and its write. One query, usually empty."""
+    writer's read and its write. Returns the excluded addresses among the
+    rows, whose verdicts the caller must not act on - a stale "down" would
+    open an alert that nothing ever clears. One query, usually empty."""
     if not state_ids:
-        return
-    from django.db.models import Q
-
-    stray = list(
+        return set()
+    rows = list(
         CheckState.objects.filter(id__in=list(state_ids), target_ip__monitoring_excluded=True)
-        .filter(Q(next_run__isnull=False) | ~Q(status="skipped") | Q(in_flight=True))
-        .values_list("id", flat=True)
+        .values_list("id", "target_ip_id", "status", "next_run", "in_flight", "fast_owned")
     )
+    stray = [
+        sid for sid, _ip, status, next_run, in_flight, fast in rows
+        if next_run is not None or status != "skipped" or in_flight or fast
+    ]
     if stray:
         from .exclusion import repark
 
         repark(stray, now)
+    return {ip for _sid, ip, *_rest in rows}
 
 
 def _partition_skipped(states, settings_map):
@@ -490,8 +494,13 @@ def _persist(
 
         IPAddress.objects.filter(id__in=seen_ids).update(last_seen=now)
 
-    # Excluded between the read above and the write: park it again.
-    _heal_excluded([s.id for s in states], now)
+    # Excluded between the read above and the write: park it again, and
+    # leave what it said out of alerts and the live push (the re-park
+    # announces the parked state).
+    gone = _heal_excluded([s.id for s in states], now)
+    if gone:
+        transitions = [t for t in transitions if t.target_ip_id not in gone]
+        states = [s for s in states if s.target_ip_id not in gone]
 
     if transitions:
         from .alerts import process_transitions

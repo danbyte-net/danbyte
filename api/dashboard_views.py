@@ -554,7 +554,8 @@ def _monitoring_charts(request, user, tenant, scoped_ips=None, hours: int = 168)
     from monitoring.counting import trim_results
 
     # Each address counted from its availability reset.
-    results = trim_results(CheckResult.objects.filter(tenant=tenant, timestamp__gte=since))
+    results = trim_results(CheckResult.objects.filter(tenant=tenant, timestamp__gte=since),
+                           since=since, tenant_id=tenant.id)
     if ip_filter is not None:
         results = results.filter(target_ip__in=ip_filter)
     by_status = {

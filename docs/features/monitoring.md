@@ -480,10 +480,12 @@ the Monitoring stats, the prefix, device and VM roll-ups, and the flapping
 lists (a flapping flag clears at once). *Check now* is refused (`409`), and
 a bulk *Check now* leaves it out and says how many it skipped. Discovery's
 stale cleanup never deletes an excluded address - nothing checks it, so its
-*last seen* stops moving. Unticking it includes it again at once: the checks
-are due immediately (one whose own schedule is *Off* stays off) and read
-*Skipped* until their first answer. The time it spent excluded is not
-measured - see [Uptime / SLA](#uptime-sla).
+*last seen* stops moving. An alert a check had already raised as the switch
+was thrown is closed too, by the next alert-maintenance run at the latest.
+Unticking it asks the same way, again with an optional reason, and includes
+it again: the checks are due immediately (one whose own schedule is *Off*
+stays off) and read *Skipped* until their first answer. The time it spent
+excluded is not measured - see [Uptime / SLA](#uptime-sla).
 
 **Reset availability…** - in the **⋯** menu. For an address reused for a new
 host: uptime, SLA and availability figures count from **now** or from **a
@@ -500,9 +502,13 @@ Under the section title a line says who did it, when and why:
 *Availability reset by bob on 12 Sep 2026 14:05: New host on the address*,
 with *· counts from 1 Sep 2026* when the reset was backdated. It is read
 from the address itself. Both actions also write the address's **Change
-log** (with the user) and a **Journal** entry; a reset that changes an SLA
-agreement's figures writes a journal entry on the agreement too, and needs
-`slaagreement.change` on it - see [SLA](sla.md#resetting-an-address).
+log** (with the user and the reason) and a **Journal** entry, such as
+*Availability reset - counts from 12 Sep 2026 14:05 (Europe/Copenhagen).
+Reason: New host on the address. Affects 1 SLA agreement.* The address's
+journal gives only the number of agreements; a reset that changes an SLA
+agreement's figures writes a journal entry naming the address on that
+agreement, and needs `slaagreement.change` on it - see
+[SLA](sla.md#resetting-an-address).
 
 These are not the other exclusions:
 
@@ -523,10 +529,14 @@ The API: `POST /api/monitoring/ips/<id>/exclude/` with
 `POST /api/monitoring/ips/<id>/reset-availability/` with
 `{"reason": "…"}` (from now), `{"since": "2026-09-01", "reason": "…"}` or
 `{"clear": true, "reason": "…"}`. A missing or blank reason, a future date or
-one before the address existed is a `400` field error. Both answer with the
+one before the address existed is a `400` field error; clearing when no reset
+is in force is a `409`. Including (`"excluded": false`) takes an optional
+`reason` too, which goes to the change log and journal. Both answer with the
 address's `monitoring` block, which `GET /api/monitoring/ips/<id>/checks/`
 also carries. The IP list filters on `?monitoring_excluded=true`; the fields
-themselves are read-only on `/api/ips/<id>/`.
+themselves are read-only on `/api/ips/<id>/` - a write that changes one is a
+`400`, while sending back the value a `GET` returned (a form or a script
+echoing the record) saves.
 
 ### On a prefix
 
@@ -681,9 +691,10 @@ never written into them, so moving or clearing a reset needs no rebuild.
 Figures read from the records (the checks list, Explore, the SLA status
 columns and latency objectives) count an address from the first whole hour
 after its reset, and from the first whole UTC day for daily records - the
-rest of the reset day comes from its hourly records. Hourly records are kept
-30 days, so for a reset older than that its own day is not counted. The
-uptime, strips and SLA figures, which read status changes, are exact.
+rest of the reset day comes from its hourly records (a reset on UTC midnight
+counts that day's daily record whole). Hourly records are kept 30 days, so
+for a reset older than that its own day is not counted. The uptime, strips
+and SLA figures, which read status changes, are exact.
 
 A new install starts recording from its first run. To build records from the
 history already on disk, run `manage.py rollup_checks --backfill 90`. Daily
@@ -711,8 +722,9 @@ the rise/fall counters, can move the status, logs the change, and fires alerts
 exactly like an automatic scan.
 
 An address [excluded from monitoring](#excluding-an-address) is not run: its
-**Check now** is disabled (the API answers `409`), and a bulk run leaves it
-out. A run already under way when the address is excluded writes nothing.
+**Check now** is disabled, on the Monitoring tab and in the page header (the
+API answers `409`), and a bulk run leaves it out. A run already under way when
+the address is excluded writes nothing and raises no alert.
 
 !!! tip "Large prefixes are fast"
     Sweeping a very large prefix (a `/16` is ~65,000 hosts) completes in seconds,

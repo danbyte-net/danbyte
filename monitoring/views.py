@@ -1251,7 +1251,7 @@ def stats_view(request):
 
     scoped_results = trim_results(_scope_ip_keyed(
         request, tenant, CheckResult.objects.filter(tenant=tenant)
-    ))
+    ), since=since, tenant_id=tenant.id)
     tz = viewer_tz(request, tenant)
     q = rbac.row_filter(request.user, tenant, "ipaddress", "view")
     ip_filter = None if q is True else (
@@ -1323,7 +1323,7 @@ def _result_series(request, tenant, hours: int = 24) -> tuple[list[dict], str]:
         trim_results(_scope_ip_keyed(
             request, tenant,
             CheckResult.objects.filter(tenant=tenant, timestamp__gte=since),
-        ))
+        ), since=since, tenant_id=tenant.id)
         .annotate(h=TruncHour("timestamp") if hourly else TruncDay("timestamp"))
         .values("h", "status")
         .annotate(n=Count("id"))
@@ -1411,7 +1411,11 @@ def bulk_check_now_view(request):
     index = PrefixIndex(tenant.id)
     for ip in ips:
         materialise_ip(ip, now=now, prefix_index=index)
-    states = CheckState.objects.filter(tenant=tenant, target_ip__in=ips)
+    # Re-read at each step: an address excluded since the read above stays
+    # parked - never re-armed, where an Outpost's /work would claim it.
+    states = CheckState.objects.filter(
+        tenant=tenant, target_ip__in=ips, target_ip__monitoring_excluded=False
+    )
     # Progress tracks every selected check, including one a worker is running
     # right now - it finishes on its own and counts as done like the rest.
     armed_ids = [str(i) for i in states.values_list("id", flat=True)]
@@ -1844,7 +1848,7 @@ def ip_reset_availability_view(request, ip_id):
     from datetime import datetime, time
 
     from .charts import viewer_tz
-    from .counting import affected_agreements, reset
+    from .counting import affected_agreements, reset, touched_from
     from .models import SlaAgreement
 
     ip, tenant, denied = _changeable_ip(request, ip_id)
@@ -1856,6 +1860,8 @@ def ip_reset_availability_view(request, ip_id):
     tz = viewer_tz(request, tenant)
     now = timezone.now()
     if data.get("clear"):
+        if ip.availability_since is None:
+            return Response({"detail": "No reset to clear."}, status=409)
         counts_from = None
     elif data.get("since") is None:
         counts_from = now
@@ -1869,8 +1875,8 @@ def ip_reset_availability_view(request, ip_id):
 
     # A reset rewrites the open (and not yet frozen) periods of every
     # agreement that counts the address - an SLA change, and needs the grant
-    # for one.
-    agreements = affected_agreements(ip)
+    # for one. A closed period that ended before it is not touched.
+    agreements = affected_agreements(ip, touched_from(ip.availability_since, counts_from))
     if agreements and not request.user.is_superuser:
         allowed = rbac.restrict_queryset(
             SlaAgreement.objects.filter(tenant=tenant, pk__in=[a.pk for a in agreements]),

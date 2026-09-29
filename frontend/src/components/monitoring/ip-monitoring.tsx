@@ -101,8 +101,16 @@ export function IpMonitoring({
   const [adding, setAdding] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [flapExclude, setFlapExclude] = useState(ip.flap_exclude ?? false)
-  const [excluding, setExcluding] = useState(false)
-  const [resetMode, setResetMode] = useState<ResetMode | null>(null)
+  // The exclude / include and reset dialogs: open, and which way. The way
+  // outlives the close, so a closing dialog keeps its title.
+  const [switching, setSwitching] = useState(false)
+  const [switchTo, setSwitchTo] = useState<"exclude" | "include">("exclude")
+  const [resetting, setResetting] = useState(false)
+  const [resetMode, setResetMode] = useState<ResetMode>("reset")
+  const openReset = (mode: ResetMode) => {
+    setResetMode(mode)
+    setResetting(true)
+  }
   // One fetch for every row's seven-day strip - the panel below has its own
   // window and its own query, so changing that never redraws the rows.
   const strips = useQuery({
@@ -174,7 +182,7 @@ export function IpMonitoring({
       toast.success(
         body.excluded ? "Excluded from monitoring" : "Back in monitoring"
       )
-      setExcluding(false)
+      setSwitching(false)
       invalidateMonitoring(qc, ip.id)
     },
     onError: (err) => apiErrorToast(err),
@@ -265,9 +273,10 @@ export function IpMonitoring({
                 <Checkbox
                   checked={excluded}
                   disabled={exclude.isPending}
-                  onCheckedChange={(v) =>
-                    v ? setExcluding(true) : exclude.mutate({ excluded: false })
-                  }
+                  onCheckedChange={(v) => {
+                    setSwitchTo(v ? "exclude" : "include")
+                    setSwitching(true)
+                  }}
                 />
                 Exclude from monitoring
                 <InfoTip>
@@ -299,11 +308,11 @@ export function IpMonitoring({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => setResetMode("reset")}>
+                  <DropdownMenuItem onSelect={() => openReset("reset")}>
                     Reset availability…
                   </DropdownMenuItem>
                   {mon.counts_from && (
-                    <DropdownMenuItem onSelect={() => setResetMode("clear")}>
+                    <DropdownMenuItem onSelect={() => openReset("clear")}>
                       Clear reset…
                     </DropdownMenuItem>
                   )}
@@ -356,18 +365,22 @@ export function IpMonitoring({
         onOpenChange={setAdding}
       />
       <ExcludeMonitoringDialog
-        open={excluding}
-        onOpenChange={setExcluding}
+        open={switching}
+        onOpenChange={setSwitching}
+        mode={switchTo}
         pending={exclude.isPending}
         onConfirm={(reason) =>
-          exclude.mutate({ excluded: true, ...(reason ? { reason } : {}) })
+          exclude.mutate({
+            excluded: switchTo === "exclude",
+            ...(reason ? { reason } : {}),
+          })
         }
       />
       <ResetAvailabilityDialog
-        open={resetMode != null}
-        onOpenChange={(o) => !o && setResetMode(null)}
+        open={resetting}
+        onOpenChange={setResetting}
         ipId={ip.id}
-        mode={resetMode ?? "reset"}
+        mode={resetMode}
         info={mon}
         onDone={() => invalidateMonitoring(qc, ip.id)}
       />

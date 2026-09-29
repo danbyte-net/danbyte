@@ -289,7 +289,7 @@ def _latency(agreement, bounds, filters, tz, bucket, rules=None) -> list[dict]:
     qs = trim_rollups(model.objects.filter(
         tenant_id=agreement.tenant_id, target_ip_id__in=ips,
         bucket__gte=bounds[0][0], bucket__lt=bounds[-1][1],
-    ))
+    ), since=bounds[0][0], tenant_id=agreement.tenant_id, before=bounds[-1][1])
     if filters.get("kind"):
         qs = qs.filter(kind__in=filters["kind"])
     acc: dict = defaultdict(dict)

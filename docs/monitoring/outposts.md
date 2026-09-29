@@ -112,7 +112,8 @@ ordinary interval - it keeps working, just not faster.
 
 An address [excluded from monitoring](../features/monitoring.md#excluding-an-address)
 is not handed to an Outpost at all: its checks are parked, so `/work` never
-finds them due, and `/fast-work` leaves the address out of the set (the agent
+finds them due (and skips the address even if a racing write re-armed one),
+and `/fast-work` leaves the address out of the set (the agent
 drops it on its next refresh, within 15 s). Whatever still arrives for it - a
 check claimed before the switch reported to `/results`, buffered probes to
 `/fast-results` - is discarded, and the check is parked again. No agent change

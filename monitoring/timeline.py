@@ -18,7 +18,8 @@ from .models import StateTransition
 from .rollup import worst_status
 
 
-def segments_for_pairs(tenant_id, pairs, since, until, *, counted: bool = True) -> dict:
+def segments_for_pairs(tenant_id, pairs, since, until, *, counted: bool = True,
+                       resets_before=None) -> dict:
     """``{(ip_id, template_id): [segment, ...]}`` for every pair asked about.
 
     ``pairs`` are ``(target_ip_id, template_id)`` tuples. A pair with no
@@ -28,7 +29,9 @@ def segments_for_pairs(tenant_id, pairs, since, until, *, counted: bool = True) 
     ``counted`` applies each address's cut: the time before an availability
     reset, and the time it has been excluded from monitoring, come back as
     ``skipped`` segments with a ``note``. ``counted=False`` is what actually
-    happened, for the rollups, which store that.
+    happened, for the rollups, which store that. ``resets_before`` ignores
+    the resets made from then on (an SLA period's end - see
+    :func:`monitoring.counting.cuts`).
     """
     pairs = list({(str(a), str(b)) for a, b in pairs})
     if not pairs:
@@ -80,7 +83,7 @@ def segments_for_pairs(tenant_id, pairs, since, until, *, counted: bool = True) 
     if counted:
         from .counting import clip, cuts
 
-        cut_by_ip = cuts(tenant_id, since, ip_ids)
+        cut_by_ip = cuts(tenant_id, since, ip_ids, resets_before=resets_before)
         if cut_by_ip:
             for key, segs in out.items():
                 cut = cut_by_ip.get(key[0])

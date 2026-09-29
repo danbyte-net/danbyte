@@ -513,6 +513,19 @@ class ClaimTests(_Base):
             ZabbixDriver().claim(self.engine, timezone.now())
         self.assertEqual(h.call_args[0][0], {"10.8.0.11"})
 
+    def test_a_rearmed_row_on_an_excluded_address_is_not_claimed(self):
+        """A racing write re-armed a parked row: still not claimed."""
+        from api.models import IPAddress
+        from monitoring.models import CheckState
+
+        IPAddress.objects.filter(pk=self.ips[0].pk).update(monitoring_excluded=True)
+        CheckState.objects.filter(target_ip=self.ips[0]).update(
+            next_run=timezone.now() - timedelta(seconds=5))
+        with mock.patch.object(ZabbixClient, "hosts_by_ip", return_value={}) as h, \
+             mock.patch.object(ZabbixClient, "problems_by_host", return_value={}):
+            ZabbixDriver().claim(self.engine, timezone.now())
+        self.assertEqual(h.call_args[0][0], {"10.8.0.11"})
+
     def test_a_claim_racing_the_exclusion_is_parked_again(self):
         """The driver claims without SKIP LOCKED: an exclusion that lands
         while Zabbix is being asked is caught by the write guard - the answer

@@ -229,6 +229,27 @@ class SlaTests(_Base):
         self.cut_at(self.ip, self.SEP + timedelta(days=5))
         self.assertEqual(self.compute()["coverage"], 100.0)
 
+    def test_a_period_that_ended_before_the_reset_keeps_its_figures(self):
+        """August closed before the reset on 3 September: recomputing it
+        (closed, not yet frozen) gives what it closed with."""
+        aug = datetime(2026, 8, 1, tzinfo=UTC)
+        now = self.SEP + timedelta(days=10)
+
+        def august():
+            return sla.compute(self.agreement, aug, self.SEP, now=now)["figures"]
+
+        before = august()
+        self.assertIsNotNone(before["availability"])
+        self.cut_at(self.ip, self.SEP + timedelta(days=2))
+        after = august()
+        self.assertEqual(
+            (after["availability"], after["coverage"]),
+            (before["availability"], before["coverage"]),
+        )
+        # A reset exactly at the period's end is not inside it either.
+        self.cut_at(self.ip, self.SEP)
+        self.assertEqual(august()["coverage"], before["coverage"])
+
     def test_unknown_as_down_does_not_charge_the_time_before(self):
         SlaAgreement.objects.filter(pk=self.agreement.pk).update(count_unknown_as="down")
         self.agreement.refresh_from_db()
@@ -283,6 +304,25 @@ class RollupFigureTests(_Base):
         other = self.figures(window(days=3, now=self.NOW), ip=self.ip2)
         self.assertEqual(other["down_s"], 2 * 86400)
 
+    def test_a_reset_on_utc_midnight_counts_its_day_once(self):
+        """Reset at 00:00 UTC on the 9th: the 9th's daily row counts, and its
+        hourly rows do not come in on top of it."""
+        self.cut_at(self.ip, datetime(2026, 9, 9, tzinfo=UTC))
+        row = self.figures(window(days=3, now=self.NOW))
+        self.assertEqual(row["down_s"], 86400)
+        self.assertEqual(row["up_s"], 12 * 3600)
+
+    def test_many_resets_join_and_count_the_same(self):
+        """Past the inline limit the cut joins the address table - with the
+        same answers, midnight included."""
+        with mock.patch("monitoring.counting._INLINE_MAX", 0):
+            self.cut_at(self.ip, datetime(2026, 9, 9, 14, 10, tzinfo=UTC))
+            row = self.figures(window(days=3, now=self.NOW))
+            self.assertEqual((row["down_s"], row["up_s"]), (9 * 3600, 12 * 3600))
+            self.cut_at(self.ip, datetime(2026, 9, 9, tzinfo=UTC))
+            row = self.figures(window(days=3, now=self.NOW))
+            self.assertEqual((row["down_s"], row["up_s"]), (86400, 12 * 3600))
+
     def test_a_viewer_ahead_of_utc_counts_nothing_twice(self):
         """Month to date for a viewer in UTC+2: the reset day is still bounded
         by the daily rows' own (UTC) midnight."""
@@ -295,15 +335,32 @@ class RollupFigureTests(_Base):
         self.assertEqual(row["up_s"], 12 * 3600)
 
     def test_the_query_count_does_not_grow_with_resets(self):
+        """One look-up for the resets, one query per slice - and one for the
+        reset day's hours when a reset falls on a daily slice, however many."""
         win = window(days=3, now=self.NOW)
         narrow = lambda qs: qs.filter(tenant=self.tenant)  # noqa: E731
-        with self.assertNumQueries(len(win.parts) + 1) as ctx:
+        with self.assertNumQueries(1 + len(win.parts)) as ctx:
             sums(win, narrow, ())
-        n = len(ctx.captured_queries)
-        for ip in (self.ip, self.ip2):
-            self.cut_at(ip, datetime(2026, 9, 9, 14, 10, tzinfo=UTC))
-        with self.assertNumQueries(n):
+        # No reset: the figure queries are what they were, with no join.
+        for q in ctx.captured_queries[1:]:
+            self.assertNotIn("api_ipaddress", q["sql"])
+        self.cut_at(self.ip, datetime(2026, 9, 9, 14, 10, tzinfo=UTC))
+        with self.assertNumQueries(2 + len(win.parts)) as ctx:
             sums(win, narrow, ())
+        for q in ctx.captured_queries[1:]:
+            self.assertNotIn("api_ipaddress", q["sql"])
+        self.cut_at(self.ip2, datetime(2026, 9, 9, 16, 10, tzinfo=UTC))
+        with self.assertNumQueries(2 + len(win.parts)):
+            sums(win, narrow, ())
+
+    def test_a_reset_after_a_span_does_not_cut_it(self):
+        """An SLA period's rollups (a span window) keep what they said
+        when it ended."""
+        from .figures import span_window
+
+        span = span_window(datetime(2026, 9, 8, tzinfo=UTC), datetime(2026, 9, 10, tzinfo=UTC))
+        self.cut_at(self.ip, datetime(2026, 9, 10, 5, tzinfo=UTC))
+        self.assertEqual(self.figures(span)["down_s"], 2 * 86400)
 
     def test_rerolling_after_a_reset_changes_no_rollup(self):
         from .rollups import HOUR, roll
@@ -387,7 +444,7 @@ class ResetApiTests(APITestCase, _Base):
                          "New host on the address")
         note = JournalEntry.objects.get(object_id=str(self.ip.id))
         self.assertTrue(note.comments.startswith("Availability reset - counts from "))
-        self.assertTrue(note.comments.endswith("Reason: New host on the address"))
+        self.assertTrue(note.comments.endswith("Reason: New host on the address."))
         # The old host's flapping says nothing about the new one.
         self.state.refresh_from_db()
         self.assertIsNone(self.state.flapping_since)
@@ -410,6 +467,46 @@ class ResetApiTests(APITestCase, _Base):
         self.assertEqual(r.json(), {"since": ["Can't be in the future."]})
         r = self.post({"since": "2020-01-01", "reason": "x"})
         self.assertEqual(r.json(), {"since": ["Before the address existed."]})
+
+    def test_an_echoed_reset_passes_the_ip_api(self):
+        """GET, then PATCH back exactly what it said - the rendered form of
+        the counts-from moment - saves."""
+        self.login()
+        self.post({"reason": "New host"})
+        got = self.client.get(f"/api/ips/{self.ip.id}/").json()
+        self.assertIsNotNone(got["availability_since"])
+        r = self.client.patch(
+            f"/api/ips/{self.ip.id}/",
+            {"availability_since": got["availability_since"], "description": "x"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.patch(f"/api/ips/{self.ip.id}/",
+                              {"availability_since": "2026-01-01T00:00:00Z"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("availability_since", r.json())
+        r = self.client.patch(f"/api/ips/{self.ip.id}/",
+                              {"availability_since": "not a date"}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_clearing_with_no_reset_in_force_is_refused(self):
+        self.login()
+        r = self.post({"clear": True, "reason": "Nothing"})
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.json(), {"detail": "No reset to clear."})
+        self.assertEqual(self.queued, [])
+        self.assertFalse(JournalEntry.objects.filter(object_id=str(self.ip.id)).exists())
+        self.assertFalse(ChangeLogEntry.objects.filter(
+            object_id=str(self.ip.id), changes__has_key="reason").exists())
+
+    def test_the_helper_needs_a_reason_too(self):
+        for reason in ("", "   "):
+            with self.assertRaises(ValueError):
+                reset(self.ip, counts_from=T0, user=self.user, reason=reason)
+            with self.assertRaises(ValueError):
+                reset(self.ip, counts_from=None, user=self.user, reason=reason)
+        self.ip.refresh_from_db()
+        self.assertIsNone(self.ip.availability_since)
 
     def test_clearing_counts_everything_again(self):
         self.login()
@@ -468,7 +565,32 @@ class ResetApiTests(APITestCase, _Base):
         # The agreement's own journal names the address and the reason.
         note = JournalEntry.objects.get(object_id=str(gold.id))
         self.assertIn("10.7.0.5", note.comments)
-        self.assertIn("Reason: Reused", note.comments)
+        self.assertTrue(note.comments.endswith("Reason: Reused."))
+        # The address's gives a count: its readers may not see the agreement.
+        own = JournalEntry.objects.get(object_id=str(self.ip.id))
+        self.assertTrue(own.comments.endswith("Reason: Reused. Affects 1 SLA agreement."))
+        self.assertNotIn("Gold", own.comments)
+
+    def test_a_closed_period_that_ended_before_the_reset_is_left_alone(self):
+        """Not counted as affected - no SLA grant asked, no journal, no
+        refresh - unless the reset reaches back into it."""
+        bronze = SlaAgreement.objects.create(
+            tenant=self.tenant, name="Bronze", target_pct=Decimal("99.000"), timezone="UTC")
+        ended = timezone.now() - timedelta(days=3)
+        SlaPeriodResult.objects.create(
+            tenant=self.tenant, agreement=bronze, period_key="2026-08", state="closed",
+            period_start=ended - timedelta(days=30), period_end=ended,
+            units=[{"member": True, "items": [{"ip_id": str(self.ip.id)}]}],
+        )
+        editor = self._member("editor", {"ipaddress": ["view", "change"]})
+        self.login(editor)
+        r = self.post({"reason": "New host"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["agreements"], 0)
+        self.assertFalse(JournalEntry.objects.filter(object_id=str(bronze.id)).exists())
+        # Backdated into that period: now it is affected, and needs the grant.
+        day = (ended - timedelta(days=2)).date().isoformat()
+        self.assertEqual(self.post({"since": day, "reason": "Earlier"}).status_code, 403)
 
     def test_the_job_refreshes_only_the_agreements_that_count_it(self):
         from .counting import refresh_after_reset
@@ -477,6 +599,19 @@ class ResetApiTests(APITestCase, _Base):
         with mock.patch("monitoring.sla.refresh_agreement") as refresh:
             self.assertEqual(refresh_after_reset(str(self.ip.id)), 1)
         self.assertEqual([c.args[0].pk for c in refresh.call_args_list], [gold.pk])
+
+    def test_the_job_leaves_a_period_that_ended_before_the_change(self):
+        from .counting import refresh_after_reset
+
+        gold, _silver = self._agreement()
+        SlaPeriodResult.objects.filter(agreement=gold).update(state="closed")
+        end = SlaPeriodResult.objects.get(agreement=gold).period_end
+        with mock.patch("monitoring.sla.refresh_agreement") as refresh:
+            self.assertEqual(refresh_after_reset(str(self.ip.id), end.isoformat()), 0)
+            self.assertEqual(
+                refresh_after_reset(str(self.ip.id),
+                                    (end - timedelta(days=1)).isoformat()), 1)
+        self.assertEqual(refresh.call_count, 1)
 
     def test_reset_through_the_helper_without_a_request(self):
         """A job or script: the user is still named on the record."""

@@ -122,7 +122,7 @@ class ParkingTests(_Base):
         self.assertEqual(entry.user_name, "alice")
         self.assertEqual(entry.changes["monitoring_excluded"], {"old": False, "new": True})
         note = JournalEntry.objects.get(object_id=str(self.ip.id))
-        self.assertEqual(note.comments, "Excluded from monitoring. Reason: Host decommissioned")
+        self.assertEqual(note.comments, "Excluded from monitoring. Reason: Host decommissioned.")
         self.assertEqual(note.author_name, "alice")
         d = describe(self.ip)
         self.assertTrue(d["excluded"])
@@ -285,6 +285,60 @@ class LateWritesTests(_Base):
         self.s2.refresh_from_db()
         self.assertEqual(self.s2.status, "skipped")
         self.assertIsNone(self.s2.next_run)
+
+    def test_a_verdict_racing_the_switch_opens_no_alert(self):
+        """The write guard read the address before the exclusion committed
+        (``excluded=set()``): the stale down is parked again and opens no
+        alert, and nothing is announced."""
+        from .worker import _persist
+
+        self.exclude()
+        stale = CheckState.objects.select_related("target_ip").get(pk=self.s2.pk)
+        stale.target_ip.monitoring_excluded = False  # what the writer read
+        stale.status = "down"
+        stale.next_run = self.now + timedelta(minutes=1)
+        res = CheckResult(tenant=self.tenant, target_ip=self.ip, template=self.tcp,
+                          kind="tcp", status="down", timestamp=self.now)
+        tr = StateTransition(tenant=self.tenant, target_ip=self.ip, template=self.tcp,
+                             kind="tcp", from_status="up", to_status="down", at=self.now)
+        with mock.patch("monitoring.alerts._dispatch_notifications") as sent, \
+                mock.patch("monitoring.live.publish") as pushed, \
+                self.captureOnCommitCallbacks(execute=True):
+            kept = _persist([res], [tr], [stale], self.now, excluded=set())
+        self.assertEqual(kept, set())
+        self.assertFalse(Alert.objects.filter(target_ip=self.ip, status="firing").exists())
+        self.assertFalse(any(c.args[0] for c in sent.call_args_list))
+        # The re-park's own announcement carries the parked row, not the verdict.
+        for call in pushed.call_args_list:
+            self.assertNotIn("down", {t.to_status for t in call.args[1]})
+        self.s2.refresh_from_db()
+        self.assertEqual(self.s2.status, "skipped")
+        self.assertIsNone(self.s2.next_run)
+
+    def test_an_alert_is_never_opened_on_an_excluded_address(self):
+        from .alerts import process_transitions
+
+        self.exclude()
+        tr = StateTransition(tenant=self.tenant, target_ip=self.ip, template=self.ping,
+                             kind="icmp", from_status="up", to_status="down", at=self.now)
+        process_transitions([tr], self.now)
+        self.assertFalse(Alert.objects.filter(target_ip=self.ip, status="firing").exists())
+
+    def test_alert_maintenance_closes_one_that_slipped_through(self):
+        from .escalation import run_alert_maintenance
+
+        self.exclude(reason="Spare")
+        alert = self.fire(self.s1)  # opened after the switch closed the rest
+        keep = self.fire(self.s3)
+        with mock.patch("monitoring.notify.notify_alert") as notify:
+            r = run_alert_maintenance(self.now)
+        self.assertEqual(r["closed_excluded"], 1)
+        alert.refresh_from_db()
+        self.assertEqual(alert.status, "resolved")
+        self.assertEqual(alert.detail["closed_by"], {"reason": "excluded", "by": "alice"})
+        notify.assert_any_call(mock.ANY, "resolved")
+        keep.refresh_from_db()
+        self.assertEqual(keep.status, "firing")
 
     def test_dns_names_stay_on_their_own_address(self):
         """A dropped state must not shift the outcomes after it onto the
@@ -507,6 +561,18 @@ class OutpostTests(_Base):
         self.assertEqual({c["target"] for c in work}, {"10.9.0.6"})
         self.assertEqual(build_fast_work(self.engine), [])
 
+    def test_a_rearmed_row_is_not_handed_out(self):
+        """A racing write re-armed a parked row: /work still leaves it out."""
+        from .outpost_views import claim_and_build_work
+
+        self.exclude()
+        CheckState.objects.filter(pk=self.s1.pk).update(
+            next_run=self.now - timedelta(seconds=5))
+        work = claim_and_build_work(self.engine, self.now)
+        self.assertEqual({c["target"] for c in work}, {"10.9.0.6"})
+        self.s1.refresh_from_db()
+        self.assertFalse(self.s1.in_flight)
+
     def test_samples_for_it_are_dropped(self):
         from .fastlane import ingest_samples
 
@@ -582,6 +648,32 @@ class ApiTests(APITestCase, _Base):
         self.assertEqual(r.json()["targets"], 0)
         self.s1.refresh_from_db()
         self.assertIsNone(self.s1.next_run)
+
+    def test_bulk_check_now_does_not_rearm_one_excluded_meanwhile(self):
+        self.login()
+        CheckState.objects.filter(target_ip=self.ip).update(next_run=None)
+
+        def excluded_meanwhile(ip, **_kw):
+            IPAddress.objects.filter(pk=self.ip.pk).update(monitoring_excluded=True)
+
+        with mock.patch("monitoring.scheduler.materialise_ip", side_effect=excluded_meanwhile), \
+                mock.patch("monitoring.scheduler.dispatch", return_value={"jobs": 0}):
+            r = self.client.post("/api/monitoring/bulk-check-now/",
+                                 {"ip_ids": [str(self.ip.id)]}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["checks"], 0)
+        self.s1.refresh_from_db()
+        self.assertIsNone(self.s1.next_run)
+
+    def test_including_takes_an_optional_reason(self):
+        self.login()
+        self.post(self.ip, {"excluded": True, "reason": "Spare"})
+        r = self.post(self.ip, {"excluded": False, "reason": "Back in service"})
+        self.assertEqual(r.status_code, 200, r.content)
+        notes = list(JournalEntry.objects.filter(object_id=str(self.ip.id))
+                     .order_by("created_at").values_list("comments", flat=True))
+        self.assertEqual(notes, ["Excluded from monitoring. Reason: Spare.",
+                                 "Included in monitoring. Reason: Back in service."])
 
     def test_status_columns_and_lists(self):
         self.login()

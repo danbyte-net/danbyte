@@ -461,16 +461,18 @@ def _keep_member(m, filters: dict) -> bool:
     return True
 
 
-def _join_at_reset(tenant_id, members, addresses, start) -> None:
+def _join_at_reset(tenant_id, members, addresses, start, end) -> None:
     """A member whose every address has had its availability reset inside the
     period joins at the earliest reset - as if it had been added then, which
     is what a reset says: a new host behind the address. Without it the time
     before the reset is unmeasured service time and drags coverage down
     (and raises "coverage low") for a figure the reset was meant to clean.
-    A member with only some addresses reset keeps them clipped per check."""
+    A member with only some addresses reset keeps them clipped per check.
+    A reset at or after the period's ``end`` is not inside it: a period that
+    had ended keeps the figures it closed with."""
     from .counting import cuts
 
-    cut_by_ip = cuts(tenant_id, start)
+    cut_by_ip = cuts(tenant_id, start, resets_before=end)
     if not cut_by_ip:
         return
     for m in members:
@@ -527,7 +529,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     members = [m for m in resolve_members(agreement, start, until) if _keep_member(m, filters)]
     objects = _objects(members)
     addresses = _addresses(members, objects)
-    _join_at_reset(agreement.tenant_id, members, addresses, start)
+    _join_at_reset(agreement.tenant_id, members, addresses, start, end)
     groups = {m["group"].id: m["group"] for m in members}
     items = defaultdict(list)
     for it in SlaCheckItem.objects.filter(group_id__in=groups).select_related("template"):
@@ -565,7 +567,10 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
         pairs.update((c[0], c[1]) for c in checks)
         plan.append(checks)
 
-    segments = segments_for_pairs(agreement.tenant_id, pairs, start, until) if pairs else {}
+    segments = (
+        segments_for_pairs(agreement.tenant_id, pairs, start, until, resets_before=end)
+        if pairs else {}
+    )
     maint = (
         _maintenance(agreement, start, until, members, objects)
         if rules.get("exclude_maintenance", True) else {}

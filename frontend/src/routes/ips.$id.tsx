@@ -38,6 +38,7 @@ import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { IpMonitoringSummary } from "@/components/monitoring/ip-monitoring-summary"
 import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
 import {
   DnsRecordsTable,
   useDnsEnabled,
@@ -56,8 +57,7 @@ function IPDetail() {
     queryFn: () => api<IPAddress>(`/api/ips/${id}/`),
   })
 
-  if (query.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (query.isLoading) return <Loading />
   if (query.isError)
     return (
       <div className="p-6">
@@ -445,7 +445,8 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
             variant="outline"
             size="sm"
             onClick={() => checkNow.mutate()}
-            disabled={checkNow.isPending}
+            // An excluded address is not checked (the server answers 409).
+            disabled={checkNow.isPending || !!ip.monitoring_excluded}
           >
             <Play className="h-3.5 w-3.5" />
             {checkNow.isPending ? "Checking…" : "Check now"}

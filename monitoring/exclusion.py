@@ -43,6 +43,13 @@ _STATE_FIELDS = [
 ]
 
 
+def sentence(text: str) -> str:
+    """``text`` ended as a sentence, so a reason reads apart from what
+    follows it in a journal entry."""
+    text = (text or "").strip()
+    return text if not text or text[-1] in ".!?" else text + "."
+
+
 def _username(user) -> str:
     if user is None:
         return ""
@@ -352,7 +359,7 @@ def set_excluded(ip, excluded: bool, user, *, reason: str = "", now=None) -> boo
         log_change(locked, old, {**new, **extra}, user)
         text = "Excluded from monitoring." if excluded else "Included in monitoring."
         if reason:
-            text += f" Reason: {reason}"
+            text += f" Reason: {sentence(reason)}"
         _journal(locked, user, text)
 
         states = list(

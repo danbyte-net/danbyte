@@ -1667,10 +1667,17 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             if field == "monitoring_excluded":
                 truthy = ("true", "1") if current else ("false", "0", "", "none")
                 same = str(sent).lower() in truthy
+            elif sent in (None, ""):
+                same = current is None
             else:
-                same = (sent in (None, "") and current is None) or (
-                    current is not None and str(sent) in (current.isoformat(), str(current))
-                )
+                # As a moment: the API renders it in the viewer's offset,
+                # with microseconds - a string compare refused a GET echoed.
+                try:
+                    same = current is not None and (
+                        serializers.DateTimeField().to_internal_value(sent) == current
+                    )
+                except serializers.ValidationError:
+                    same = False
             if not same:
                 errors[field] = f"Read-only here. Use POST {endpoint}."
         if errors:

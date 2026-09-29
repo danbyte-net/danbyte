@@ -5,9 +5,10 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { IpMonitoringInfo } from "@/lib/api"
 import { useDateFormat } from "@/lib/datetime"
-import { Field, FormText, useFieldErrors } from "@/components/forms"
+import { Field, useFieldErrors } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -192,14 +193,18 @@ export function ResetAvailabilityDialog({
               </RadioGroup>
             </Field>
           )}
-          <FormText
-            label="Reason"
-            required
-            value={reason}
-            onChange={(v) => setReason(v.slice(0, REASON_MAX))}
-            placeholder="New host on the address"
-            error={fieldErrors.reason}
-          />
+          {/* Field + Input rather than FormText, which leaves the label's
+              required mark off. */}
+          <Field label="Reason" required error={fieldErrors.reason}>
+            <Input
+              type="text"
+              required
+              value={reason}
+              maxLength={REASON_MAX}
+              onChange={(e) => setReason(e.target.value.slice(0, REASON_MAX))}
+              placeholder="New host on the address"
+            />
+          </Field>
           <DialogFooter>
             <Button
               type="button"

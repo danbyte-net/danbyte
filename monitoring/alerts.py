@@ -116,6 +116,10 @@ def process_transitions(transitions, now) -> dict:
     for tr in bad:
         rules = rules_by_tenant.get(tr.tenant_id, [])
         ip = ip_map.get(tr.target_ip_id)
+        if ip is not None and ip.monitoring_excluded:
+            # A verdict that raced the exclusion: the address is not
+            # monitored, and nothing would ever clear the alert.
+            continue
         severity, rule_id, should_open = _resolve_severity(
             rules, ip, tr.kind, tr.to_status
         )
