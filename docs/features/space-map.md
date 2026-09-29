@@ -22,10 +22,20 @@ aligned subnet at that size:
 - **Rose** - used. The block is an existing child prefix, or sits inside one.
 - **Green with a small number** - free, but already holding stray IPs. See
   [Stray IPs](#stray-ips) below.
+- **Amber strip along the bottom** - an IP range sits there. See
+  [IP ranges](#ip-ranges) below.
+
+A rose bar is the same fill as a used block, so a bar reads exactly as used as
+a rose chip. The map never paints free space as taken: children at most a pixel
+apart are drawn as one stretch, fainter when there are gaps in it, and when a
+block holds many small children scattered across it (more than 16 separate
+runs), each sixteenth of the block that holds any gets one thin bar, as wide as
+what it holds and placed where it sits. A `/9` with a few dozen `/24`s spread
+through it shows a row of slivers over a green block, not a half-rose one.
 
 Each row is one subnet size, labelled with a free-count (for example
-`5/8 free /19 subnets · 2 partly used`), so you can read availability top to
-bottom.
+`5/8 free /19 subnets · 2 partly used · 1 holds an IP range`), so you can read
+availability top to bottom.
 
 ```text
 2/2     free  /25 subnets    [ 10.20.30.0/25 ] [ 10.20.30.128/25 ]
@@ -34,8 +44,9 @@ bottom.
 …
 ```
 
-Hover any chip for what it is: `Free`, `25% used · 10.196.238.128/28` (the
-child prefixes inside a partly used block), `Existing prefix`, or
+Hover any chip for what it is: `Free`, `Free · 2 IPs inside`,
+`Free · range 10.196.196.10–50`, `25% used · 10.196.238.128/28` (the child
+prefixes inside a partly used block), `Existing prefix`, or
 `In 10.196.200.0/24` (the prefix a used block sits in).
 
 ## Clicking a chip
@@ -57,7 +68,12 @@ without leaving the map you started on. Blocks too small to split further
 
 **New child prefix here** opens the new-prefix form with that block pre-filled
 and the site and VRF inherited from the smallest prefix containing it, so you
-only confirm and save.
+only confirm and save. Saving (or cancelling) brings you back to the map, zoomed
+where you were, with the new prefix drawn - so the next block is one click away.
+**Register an IP here** does the same.
+
+The two create actions only show when you may add prefixes or IPs. Without
+either, a free block has just **Zoom into …**, so a click zooms straight in.
 
 ## Zooming
 
@@ -65,12 +81,18 @@ Zooming re-roots the map at a block. A breadcrumb above the grid shows the path
 from the prefix down to the block on screen; click any step to go back to it,
 or the zoom-out button to go up one level.
 
+The zoom path is part of the page address
+(`?tab=map&zoom=10.196.224.0/19,10.196.238.128/26`), and every zoom is a step
+in the browser history. The browser's Back button zooms out again; Back from a
+prefix you opened off the map, or from the create form, lands on the same
+zoomed view; and a reload or a shared link opens it directly.
+
 When the block on screen is, or sits inside, an existing child prefix, the
 breadcrumb links to it (`in 10.196.200.0/24`). Free blocks there belong to that
 prefix: **Register an IP here** parents the new IP under it, not under the
 prefix the map started from.
 
-Zooming is also how you get past the row limit below. A `/18` draws its
+Zooming is also how you get past the eight-bit limit below. A `/18` draws its
 `/19`-`/26` rows; zoom into a `/26` and the map carries on to `/31`.
 
 Everything on the map works from the keyboard: Tab to a chip, Enter to click it
@@ -80,9 +102,11 @@ map.
 ## Stray IPs
 
 Sometimes a free block has no child prefix but *does* already contain
-individual IP addresses - IPs recorded directly, with no prefix wrapping them.
-The space map marks those chips with a small count of the IPs inside, so loose
-addresses don't hide behind a plain "looks free" chip.
+individual IP addresses - IPs that are not inside any child prefix drawn on the
+map. That includes IPs parented straight to the prefix you are viewing: zoomed
+into `10.196.238.128/28`, its own `.129` and `.130` count as stray, since no
+smaller prefix holds them. The space map marks those chips with a small count of the
+IPs inside, so loose addresses don't hide behind a plain "looks free" chip.
 
 Create a prefix over one of those chips and the form warns that the existing
 IPs will be **adopted** - re-parented under the new prefix when you save, so
@@ -92,6 +116,19 @@ the new prefix correctly owns them.
     Without it, you could create a prefix on top of existing addresses and the
     addresses would still be parented elsewhere - a silent mismatch. Adopting
     them keeps everything consistent.
+
+## IP ranges
+
+An [IP range](ipam-objects.md#ip-ranges) (a DHCP pool, a reservation) is not
+a prefix, so it doesn't make a block used: carving a subnet around a pool is
+normal. But the map shows where ranges sit, so you don't carve over one by
+accident. A free or partly used chip a range reaches gets an amber strip along
+its bottom edge, placed where the range is, and its tooltip names it
+(`Free · range 10.196.196.10–50`, or `3 ranges`). The row label counts those
+chips.
+
+A range that sits wholly inside a child prefix belongs to that prefix, and is
+not marked. Only ranges in the prefix's VRF count.
 
 ## IPv6
 
@@ -104,11 +141,18 @@ sparse v6 plan one level at a time. A bar for a tiny child in a huge block
 
 ## How deep it draws
 
-By default the map goes to the host boundary. If that's more than you want to
-scan, set a shallower cap under **Preferences → Display → Space map depth**
-(separately for IPv4 and IPv6) - e.g. stop IPv4 at `/29`. You can always zoom
-into a block to go past the cap. The preference only ever makes the map
-*shallower*, never deeper than the safety limit below.
+Each view draws at most eight bits below the block on screen (256 chips per
+row), stopping at `/31` for IPv4 and `/128` for IPv6; zooming carries on from
+there, down to `/31` or `/128`.
+
+If that's more than you want to scan, set a shallower cap under
+**Preferences → Space map (IPv4 / IPv6)** - e.g. stop IPv4 at `/24`. The
+preference only ever makes a view *shallower*, never deeper than the eight-bit
+limit. It trims the views above it: with `/24`, a `/18` shows `/19`-`/24`, and
+a zoom into a `/20` shows `/21`-`/24`. Once you zoom into a block at or below
+the cap (a `/24` here), there is nothing left for the cap to trim, so that view
+draws its full eight bits (`/25`-`/31`) rather than one row per click. IPv6
+zooms keep their nibble steps the same way.
 
 ## Limits
 
@@ -120,4 +164,5 @@ into a block to go past the cap. The preference only ever makes the map
   [IPs tab](../dcim/ip-assignment.md) is for.
 - Only child prefixes you can view count. A prefix hidden from you by site
   scope leaves its block looking free.
-- IP ranges are not drawn; IPs are, as the stray-IP count on free chips.
+- IP ranges and IPs don't make a block used; they are marked on free and partly
+  used chips (the amber strip, the stray-IP count).

@@ -6,7 +6,8 @@ import {
   cellNote,
   formatUsed,
   isDescendable,
-  zoomStep,
+  parseZoomPath,
+  zoomParam,
 } from "@/lib/space-map"
 
 function cell(over: Partial<SpaceMapCell> & { cidr: string }): SpaceMapCell {
@@ -20,6 +21,9 @@ function cell(over: Partial<SpaceMapCell> & { cidr: string }): SpaceMapCell {
     overlap_count: 0,
     used_fraction: 0,
     used_spans: [],
+    range_count: 0,
+    ranges: [],
+    range_spans: [],
     ...over,
   }
 }
@@ -32,7 +36,7 @@ const partial26 = cell({
   overlap_with: ["10.196.238.128/28"],
   overlap_count: 1,
   used_fraction: 0.25,
-  used_spans: [[0, 0.25]],
+  used_spans: [[0, 0.25, 1]],
   prefix_id: "p28",
 })
 const exact28 = cell({
@@ -43,7 +47,7 @@ const exact28 = cell({
   overlap_with: ["10.196.238.128/28"],
   overlap_count: 1,
   used_fraction: 1,
-  used_spans: [[0, 1]],
+  used_spans: [[0, 1, 1]],
   prefix_id: "p28",
 })
 const covered = cell({
@@ -53,7 +57,7 @@ const covered = cell({
   overlap_with: ["10.196.200.0/24"],
   overlap_count: 1,
   used_fraction: 1,
-  used_spans: [[0, 1]],
+  used_spans: [[0, 1, 1]],
   prefix_id: "p24",
 })
 
@@ -133,7 +137,7 @@ describe("cellActions", () => {
       overlap_with: ["2001:db8:0:140::/64"],
       overlap_count: 1,
       used_fraction: 1 / 256,
-      used_spans: [[0.25, 0.25390625]],
+      used_spans: [[0.25, 0.25390625, 1]],
       prefix_id: "v6",
     })
     expect(cellActions(v6)).toEqual([
@@ -142,26 +146,56 @@ describe("cellActions", () => {
   })
 })
 
-describe("zoomStep", () => {
-  it("enters the prefix a full cell belongs to", () => {
-    expect(zoomStep(covered, undefined)).toEqual({
-      cidr: "10.196.200.64/26",
-      prefix: { cidr: "10.196.200.0/24", id: "p24" },
-    })
+describe("parseZoomPath", () => {
+  const root = "10.196.192.0/18"
+
+  it("reads a path of nested blocks", () => {
+    expect(parseZoomPath("10.196.224.0/19,10.196.238.128/26", root)).toEqual([
+      "10.196.224.0/19",
+      "10.196.238.128/26",
+    ])
+    expect(zoomParam(["10.196.224.0/19", "10.196.238.128/26"])).toBe(
+      "10.196.224.0/19,10.196.238.128/26"
+    )
+    expect(zoomParam([])).toBeUndefined()
   })
 
-  it("keeps the current prefix for a partial or free cell", () => {
-    const inside = {
-      cidr: "10.196.200.0/24",
-      prefix: { cidr: "10.196.200.0/24", id: "p24" },
-    }
-    expect(zoomStep(partial26, undefined)).toEqual({
-      cidr: "10.196.238.128/26",
-      prefix: null,
-    })
+  it("cuts the path at the first block that isn't inside the one before", () => {
+    expect(parseZoomPath("10.196.238.128/26,10.0.0.0/28", root)).toEqual([
+      "10.196.238.128/26",
+    ])
+    expect(parseZoomPath("10.0.0.0/24", root)).toEqual([])
+    expect(parseZoomPath("10.196.192.0/18", root)).toEqual([])
+    expect(parseZoomPath("2001:db8::/64", root)).toEqual([])
+    expect(parseZoomPath("10.196.238.128/40", root)).toEqual([])
+    expect(parseZoomPath("10.196.238.128/31", root)).toEqual([])
+    expect(parseZoomPath("junk", root)).toEqual([])
+    expect(parseZoomPath(undefined, root)).toEqual([])
+    expect(parseZoomPath(42, root)).toEqual([])
+  })
+
+  it("reads IPv6 paths", () => {
     expect(
-      zoomStep(cell({ cidr: "10.196.200.128/25" }), inside).prefix
-    ).toEqual(inside.prefix)
+      parseZoomPath("2001:db8:0:100::/56,2001:db8:0:140::/64", "2001:db8::/48")
+    ).toEqual(["2001:db8:0:100::/56", "2001:db8:0:140::/64"])
+  })
+})
+
+describe("cellActions permissions", () => {
+  it("drops the create actions the user may not use", () => {
+    const free = cell({ cidr: "10.196.238.192/26" })
+    expect(cellActions(free, { allowPrefix: false, allowIp: false })).toEqual([
+      { kind: "zoom", cidr: "10.196.238.192/26" },
+    ])
+    expect(
+      cellActions(free, { allowPrefix: false }).map((a) => a.kind)
+    ).toEqual(["zoom", "new-ip"])
+    expect(
+      cellActions(cell({ cidr: "10.0.0.0/31" }), {
+        allowPrefix: false,
+        allowIp: false,
+      })
+    ).toEqual([])
   })
 })
 
@@ -173,6 +207,21 @@ describe("cellNote", () => {
     expect(
       cellNote(cell({ cidr: "10.0.0.0/26", dirty: true, ip_count: 2 }))
     ).toBe("Free · 2 IPs inside")
+  })
+
+  it("names the IP ranges in a block", () => {
+    const pool = { range_count: 1, ranges: ["10.196.196.10–50"] }
+    expect(cellNote(cell({ cidr: "10.196.196.0/26", ...pool }))).toBe(
+      "Free · range 10.196.196.10–50"
+    )
+    expect(
+      cellNote(
+        cell({ cidr: "10.196.196.0/26", dirty: true, ip_count: 1, ...pool })
+      )
+    ).toBe("Free · 1 IP inside · range 10.196.196.10–50")
+    expect(
+      cellNote({ ...partial26, range_count: 4, ranges: ["a", "b", "c"] })
+    ).toBe("25% used · 10.196.238.128/28 · 4 ranges")
   })
 
   it("counts children past the listed three", () => {

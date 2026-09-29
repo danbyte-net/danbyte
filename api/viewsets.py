@@ -1310,7 +1310,16 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # ── Space map (existing) ────────────────────────────────────────────
     @action(detail=True, methods=["get"], url_path="space-map")
     def space_map(self, request, pk=None):
+        """The prefix's space map, its subnet details and next free IPs.
+
+        ``within`` re-roots the map at a block inside the prefix (a zoom).
+        ``rows=0`` skips the map (the Overview only wants the details) and
+        ``details=0`` skips the details (the map tab only wants the rows).
+        """
         import ipaddress
+
+        from django.db.models import BooleanField
+        from django.db.models.expressions import RawSQL
 
         def _int_param(name):
             try:
@@ -1320,52 +1329,74 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
         max_v4 = _int_param("v4_max")
         max_v6 = _int_param("v6_max")
+        want_rows = request.query_params.get("rows") != "0"
+        want_details = request.query_params.get("details") != "0"
 
         prefix = self.get_object()
         net = prefix.network
 
         # Optionally re-root the map at a sub-network of this prefix (the
-        # frontend "descend into a free cell" interaction). It must be a real
-        # network inside the prefix.
+        # frontend zoom). It must be a real network inside the prefix, of the
+        # same family (subnet_of raises across families).
         map_net = net
         within = request.query_params.get("within")
-        if within:
+        if within and want_rows:
             try:
                 wn = ipaddress.ip_network(within, strict=False)
             except (ValueError, TypeError):
                 wn = None
-            if wn is None or net is None or not (wn == net or wn.subnet_of(net)):
+            if (
+                wn is None or net is None or wn.version != net.version
+                or not (wn == net or wn.subnet_of(net))
+            ):
                 return Response(
                     {"detail": "within must be a network inside this prefix."},
                     status=400,
                 )
             map_net = wn
 
-        deepest = 31 if (map_net and map_net.version == 4) else 128
-        if map_net is None or map_net.prefixlen >= deepest:
-            return Response({
-                "supported": False,
-                "root": str(map_net) if map_net else None,
+        def _details():
+            if not want_details:
+                return {"subnet_details": None, "next_available": []}
+            return {
                 "subnet_details": _subnet_details(prefix),
                 "next_available": _next_available_ips(prefix, count=8),
+            }
+
+        deepest = 31 if (map_net and map_net.version == 4) else 128
+        if map_net is None or map_net.prefixlen >= deepest or not want_rows:
+            return Response({
+                "supported": map_net is not None and map_net.prefixlen < deepest,
+                "root": str(map_net) if map_net else None,
+                "context": None,
+                **_details(),
                 "rows": [],
             })
 
         # child_nets are ipaddress network instances; cidr_to_pk lets the
         # frontend deep-link a "used" cell to /prefixes/{id}/ without a second
-        # round trip.
+        # round trip. ``context`` is the most specific prefix holding a zoomed
+        # view - the prefix its free blocks belong to.
         from auth_api import rbac
 
         child_nets = []
         cidr_to_pk: dict[str, str] = {}
+        context = None
+        zoomed = map_net != net
         # Only sibling prefixes the caller may view feed the space map - a
         # site-scoped user must not learn another site's child prefixes.
+        # Postgres narrows them to the ones inside this prefix.
         for sib in (
             rbac.restrict_queryset(
                 Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf)
                 .exclude(pk=prefix.pk),
                 request.user, prefix.tenant, "prefix", "view",
             )
+            .annotate(_inside=RawSQL(
+                "cidr::inet <<= %s::inet", (str(net),),
+                output_field=BooleanField(),
+            ))
+            .filter(_inside=True)
             .only("id", "cidr")
         ):
             sn = sib.network
@@ -1375,8 +1406,20 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 if sn.subnet_of(map_net):
                     child_nets.append(sn)
                     cidr_to_pk[str(sn)] = str(sib.id)
+                if zoomed and map_net.subnet_of(sn) and (
+                    context is None or sn.prefixlen > context[0]
+                ):
+                    context = (sn.prefixlen, str(sib.id), str(sn))
             except (TypeError, ValueError):
                 continue
+
+        # The depth preference trims the overview. Once a zoom has gone past
+        # it, it has nothing left to trim, so the zoomed view draws its full
+        # window instead of a single row per click.
+        if zoomed:
+            cap = max_v4 if map_net.version == 4 else max_v6
+            if cap is not None and map_net.prefixlen >= cap:
+                max_v4 = max_v6 = None
 
         rows = _build_space_map(
             map_net, child_nets=child_nets, tenant=prefix.tenant,
@@ -1391,8 +1434,10 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         return Response({
             "supported": True,
             "root": str(map_net),
-            "subnet_details": _subnet_details(prefix),
-            "next_available": _next_available_ips(prefix, count=8),
+            "context": (
+                {"id": context[1], "cidr": context[2]} if context else None
+            ),
+            **_details(),
             "rows": rows,
         })
 

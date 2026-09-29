@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/spinner"
 import type { Prefix } from "@/lib/api"
 import { useCloneSeed } from "@/lib/use-clone"
 import { planSearch } from "@/lib/save-object"
+import { useReturnTo } from "@/lib/return-to"
 
 export const Route = createFileRoute("/prefixes/new")({
   // `clone` is spread in so it stays an OPTIONAL search key - the other four are
@@ -21,14 +22,18 @@ export const Route = createFileRoute("/prefixes/new")({
     // Optional, like clone: the VLAN page's "Add prefix" seeds it - the same
     // spread trick, so existing Links needn't pass vlan: undefined.
     ...(typeof s.vlan === "string" ? { vlan: s.vlan } : {}),
+    // Optional too: where to go back to on save / cancel (the space map
+    // passes its own zoomed view, so the next block is one click away).
+    ...(typeof s.from === "string" ? { from: s.from } : {}),
     ...planSearch(s),
   }),
   component: NewPrefixPage,
 })
 
 function NewPrefixPage() {
-  const { cidr, vrf, site, location, vlan, clone } = Route.useSearch()
+  const { cidr, vrf, site, location, vlan, clone, from } = Route.useSearch()
   const nav = useNavigate()
+  const goBack = useReturnTo(from)
   const cloneQ = useCloneSeed<Partial<Prefix>>("prefixes", clone)
   const cloning = !!clone
 
@@ -60,8 +65,10 @@ function NewPrefixPage() {
             vlanId: vlan ?? null,
           }}
           clone={cloning ? cloneQ.data?.initial : undefined}
-          onSaved={(p) => nav({ to: "/prefixes/$id", params: { id: p.id } })}
-          onCancel={() => nav({ to: "/prefixes" })}
+          onSaved={(p) =>
+            goBack(() => nav({ to: "/prefixes/$id", params: { id: p.id } }))
+          }
+          onCancel={() => goBack(() => nav({ to: "/prefixes" }))}
         />
       )}
     </EditPageShell>

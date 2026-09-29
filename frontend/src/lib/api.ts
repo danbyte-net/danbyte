@@ -558,6 +558,10 @@ export interface ColumnPrefSummary {
  * it, but smaller children sit inside it. `free` - no child touches it. */
 export type SpaceMapCellState = "free" | "partial" | "full"
 
+/** A stretch of a cell, as `[start, end)` fractions of it, and the share of
+ * that stretch really in use (1 = solid; less when it spans free gaps). */
+export type SpaceMapSpan = [start: number, end: number, share: number]
+
 export interface SpaceMapCell {
   cidr: string
   state: SpaceMapCellState
@@ -574,8 +578,13 @@ export interface SpaceMapCell {
   overlap_count: number
   /** Share of the cell's addresses the children take, 0-1. */
   used_fraction: number
-  /** Where they sit: `[start, end)` fractions of the cell. */
-  used_spans: [number, number][]
+  /** Where they sit. */
+  used_spans: SpaceMapSpan[]
+  /** IP ranges reaching a free or partly used cell (not ones wholly inside
+   * a child prefix): how many, up to three labels, and where they sit. */
+  range_count: number
+  ranges: string[]
+  range_spans: SpaceMapSpan[]
   /** Only populated for used cells - UUID of `overlap_with[0]`, so the map
    * can deep-link to its detail page. */
   prefix_id?: string | null
@@ -587,6 +596,8 @@ export interface SpaceMapRow {
   free_count: number
   partial_count: number
   dirty_count: number
+  /** Cells an IP range reaches. */
+  ranged_count: number
   cells: SpaceMapCell[]
 }
 
@@ -601,6 +612,9 @@ export interface SpaceMap {
   supported: boolean
   /** The CIDR the map is currently rooted at (the prefix, or a descended cell). */
   root?: string | null
+  /** The most specific child prefix holding a zoomed view (null = the map's
+   * own prefix) - free blocks on screen belong to it. */
+  context?: { id: string; cidr: string } | null
   subnet_details: SubnetDetailRow[] | null
   next_available: string[]
   rows: SpaceMapRow[]

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react"
 import { SiteCell } from "@/components/cells/site-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
+import { useUrlText } from "@/lib/use-url-state"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { ChevronRight, CopyPlus, Layers, Pencil, Plus } from "lucide-react"
@@ -33,6 +34,7 @@ import { TagList } from "@/components/cells/tag-list"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { SpaceMap } from "@/components/space-map"
+import { parseZoomPath, zoomParam } from "@/lib/space-map"
 import { PrefixIpsTable } from "@/components/prefix-ips-table"
 import { PrefixMonitoring } from "@/components/monitoring/prefix-monitoring"
 import {
@@ -406,7 +408,13 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="map">
-        <MapPane prefixId={p.id} vrfId={p.vrf?.id ?? null} rootCidr={p.cidr} />
+        <MapPane
+          prefixId={p.id}
+          vrfId={p.vrf?.id ?? null}
+          rootCidr={p.cidr}
+          canAddPrefix={canAddPrefix}
+          canAddIp={canAddIp}
+        />
       </DetailTab>
 
       <DetailTab value="monitoring">
@@ -628,8 +636,10 @@ function SubnetDetailsCard({
   onOpenAddIp: (addr: string) => void
 }) {
   const space = useQuery({
-    queryKey: ["prefix-space-map", prefix.id],
-    queryFn: () => api<SpaceMapData>(`/api/prefixes/${prefix.id}/space-map/`),
+    // Details only - the map's grid is the Map tab's to build.
+    queryKey: ["prefix-space-map", prefix.id, "details"],
+    queryFn: () =>
+      api<SpaceMapData>(`/api/prefixes/${prefix.id}/space-map/?rows=0`),
   })
   const details = space.data?.subnet_details ?? []
   const next = space.data?.next_available ?? []
@@ -806,16 +816,37 @@ function MastersChain({ prefix }: { prefix: Prefix }) {
   )
 }
 
+// The map's zoom path lives in the URL (`?zoom=a,b`), one history entry per
+// zoom, so Back from a zoom, from a prefix opened off the map, or from the
+// create form lands on the same view, and a zoomed view can be linked.
 function MapPane({
   prefixId,
   vrfId,
   rootCidr,
+  canAddPrefix,
+  canAddIp,
 }: {
   prefixId: string
   vrfId: string | null
   rootCidr: string
+  canAddPrefix: boolean
+  canAddIp: boolean
 }) {
-  return <SpaceMap prefixId={prefixId} vrfId={vrfId} rootCidr={rootCidr} />
+  const [rawZoom, setRawZoom] = useUrlText("zoom")
+  const zoom = parseZoomPath(rawZoom, rootCidr)
+  const returnTo = useCurrentHref()
+  return (
+    <SpaceMap
+      prefixId={prefixId}
+      vrfId={vrfId}
+      rootCidr={rootCidr}
+      zoom={zoom}
+      onZoomChange={(next) => setRawZoom(zoomParam(next) ?? "")}
+      canAddPrefix={canAddPrefix}
+      canAddIp={canAddIp}
+      returnTo={returnTo}
+    />
+  )
 }
 
 function ChildPrefixesPane({

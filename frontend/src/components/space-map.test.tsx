@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import type { ReactNode } from "react"
+import { useState } from "react"
+import type { ComponentProps, ReactNode } from "react"
 import {
   cleanup,
   fireEvent,
@@ -13,11 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { SpaceMap as SpaceMapData, SpaceMapCell } from "@/lib/api"
 import { SpaceMap } from "./space-map"
 
-const { apiMock, navMock, prefs } = vi.hoisted(() => {
+const { apiMock, navMock, zoomMock, prefs } = vi.hoisted(() => {
   const values: Record<string, unknown> = {}
   return {
     apiMock: vi.fn<(path: string) => Promise<unknown>>(),
     navMock: vi.fn(),
+    zoomMock: vi.fn<(zoom: string[]) => void>(),
     prefs: { values },
   }
 })
@@ -65,6 +67,9 @@ function cell(over: Partial<SpaceMapCell> & { cidr: string }): SpaceMapCell {
     overlap_count: 0,
     used_fraction: 0,
     used_spans: [],
+    range_count: 0,
+    ranges: [],
+    range_spans: [],
     ...over,
   }
 }
@@ -72,11 +77,13 @@ function cell(over: Partial<SpaceMapCell> & { cidr: string }): SpaceMapCell {
 function map(
   root: string,
   cells: SpaceMapCell[],
-  prefixlen: number
+  prefixlen: number,
+  context: SpaceMapData["context"] = null
 ): SpaceMapData {
   return {
     supported: true,
     root,
+    context,
     subnet_details: null,
     next_available: [],
     rows: [
@@ -86,6 +93,7 @@ function map(
         free_count: cells.filter((c) => c.state === "free").length,
         partial_count: cells.filter((c) => c.state === "partial").length,
         dirty_count: 0,
+        ranged_count: cells.filter((c) => c.range_count > 0).length,
         cells,
       },
     ],
@@ -105,7 +113,7 @@ const overview = map(
       overlap_with: ["10.196.238.128/28"],
       overlap_count: 1,
       used_fraction: 0.25,
-      used_spans: [[0, 0.25]],
+      used_spans: [[0, 0.25, 1]],
       prefix_id: "p28",
     }),
     cell({
@@ -115,7 +123,7 @@ const overview = map(
       overlap_with: ["10.196.255.255/32"],
       overlap_count: 1,
       used_fraction: 1 / 64,
-      used_spans: [[63 / 64, 1]],
+      used_spans: [[63 / 64, 1, 1]],
       prefix_id: "h1",
     }),
     cell({
@@ -125,7 +133,7 @@ const overview = map(
       overlap_with: ["10.196.200.0/24"],
       overlap_count: 1,
       used_fraction: 1,
-      used_spans: [[0, 1]],
+      used_spans: [[0, 1, 1]],
       prefix_id: "p24",
     }),
   ],
@@ -142,7 +150,7 @@ const zoomed = map(
       overlap_with: ["10.196.238.128/28"],
       overlap_count: 1,
       used_fraction: 1,
-      used_spans: [[0, 1]],
+      used_spans: [[0, 1, 1]],
       prefix_id: "p28",
     }),
     cell({ cidr: "10.196.238.144/28" }),
@@ -156,11 +164,32 @@ function within(path: string): string | null {
   return new URLSearchParams(path.split("?")[1] ?? "").get("within")
 }
 
-function renderMap(rootCidr = "10.196.192.0/18") {
+type Extra = Partial<ComponentProps<typeof SpaceMap>> & {
+  initialZoom?: string[]
+}
+
+// The prefix page keeps the zoom path in the URL; here it is plain state.
+function Harness({ initialZoom = [], ...rest }: Extra) {
+  const [zoom, setZoom] = useState<string[]>(initialZoom)
+  return (
+    <SpaceMap
+      prefixId="p18"
+      rootCidr="10.196.192.0/18"
+      zoom={zoom}
+      onZoomChange={(next) => {
+        zoomMock(next)
+        setZoom(next)
+      }}
+      {...rest}
+    />
+  )
+}
+
+function renderMap(rootCidr = "10.196.192.0/18", extra: Extra = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <SpaceMap prefixId="p18" rootCidr={rootCidr} />
+      <Harness rootCidr={rootCidr} {...extra} />
     </QueryClientProvider>
   )
 }
@@ -174,13 +203,17 @@ describe("SpaceMap", () => {
   beforeEach(() => {
     prefs.values = {}
     navMock.mockReset()
+    zoomMock.mockReset()
     apiMock.mockReset()
     apiMock.mockImplementation((path: string) => {
       const w = within(path)
       if (w === "10.196.238.128/26") return Promise.resolve(zoomed)
       if (w === "10.196.200.0/26")
         return Promise.resolve(
-          map("10.196.200.0/26", [cell({ cidr: "10.196.200.0/27" })], 27)
+          map("10.196.200.0/26", [cell({ cidr: "10.196.200.0/27" })], 27, {
+            id: "p24",
+            cidr: "10.196.200.0/24",
+          })
         )
       return Promise.resolve(overview)
     })
@@ -317,7 +350,7 @@ describe("SpaceMap", () => {
                   overlap_with: ["2001:db8:0:140::/64"],
                   overlap_count: 1,
                   used_fraction: 1 / 256,
-                  used_spans: [[0.25, 0.25390625]],
+                  used_spans: [[0.25, 0.25390625, 1]],
                   prefix_id: "v6",
                 }),
               ],
@@ -332,5 +365,115 @@ describe("SpaceMap", () => {
     fireEvent.click(block)
     await screen.findByRole("button", { name: /^2001:db8:0:100::\/60/ })
     expect(within(apiMock.mock.calls.at(-1)![0])).toBe("2001:db8:0:100::/56")
+  })
+
+  it("reports each zoom as a path and restores a zoomed view from one", async () => {
+    renderMap()
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^10\.196\.238\.128\/26/ })
+    )
+    expect(zoomMock).toHaveBeenLastCalledWith(["10.196.238.128/26"])
+    cleanup()
+    apiMock.mockClear()
+    // A reload (or Back) hands the same path in: the zoomed view, no clicks.
+    renderMap("10.196.192.0/18", { initialZoom: ["10.196.238.128/26"] })
+    await screen.findByRole("button", { name: /^10\.196\.238\.144\/28/ })
+    expect(within(apiMock.mock.calls[0][0])).toBe("10.196.238.128/26")
+    expect(screen.getByRole("button", { name: "Zoom out" })).toBeTruthy()
+  })
+
+  it("asks for the rows only - the details live on the Overview", async () => {
+    renderMap()
+    await screen.findByRole("button", { name: /^10\.196\.238\.128\/26/ })
+    const q = new URLSearchParams(apiMock.mock.calls[0][0].split("?")[1])
+    expect(q.get("details")).toBe("0")
+  })
+
+  it("zooms a free block on click when the user can't add to it", async () => {
+    renderMap("10.196.192.0/18", { canAddPrefix: false, canAddIp: false })
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^10\.196\.238\.64\/26, Free/ })
+    )
+    expect(zoomMock).toHaveBeenLastCalledWith(["10.196.238.64/26"])
+    expect(screen.queryByRole("menuitem")).toBeNull()
+  })
+
+  it("sends the create forms back to the map", async () => {
+    renderMap("10.196.192.0/18", { returnTo: "/prefixes/p18?tab=map" })
+    openMenu(
+      await screen.findByRole("button", { name: /^10\.196\.238\.64\/26/ })
+    )
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /New child prefix here/ })
+    )
+    expect(navMock).toHaveBeenCalledWith({
+      to: "/prefixes/new",
+      search: {
+        cidr: "10.196.238.64/26",
+        vrf: undefined,
+        site: undefined,
+        location: undefined,
+        from: "/prefixes/p18?tab=map",
+      },
+    })
+  })
+
+  it("marks an IP range in a free block and names it", async () => {
+    apiMock.mockImplementation(() =>
+      Promise.resolve(
+        map(
+          "10.196.192.0/18",
+          [
+            cell({
+              cidr: "10.196.196.0/26",
+              range_count: 1,
+              ranges: ["10.196.196.10–50"],
+              range_spans: [[10 / 64, 51 / 64, 1]],
+            }),
+          ],
+          26
+        )
+      )
+    )
+    renderMap()
+    const block = await screen.findByRole("button", {
+      name: "10.196.196.0/26, Free · range 10.196.196.10–50",
+    })
+    const strip = block.querySelector<HTMLElement>("[data-slot=range-span]")!
+    expect(strip.style.left).toBe(`${(10 / 64) * 100}%`)
+    expect(screen.getByText(/holds an IP range/)).toBeTruthy()
+  })
+
+  it("draws a span that holds free gaps fainter than a solid one", async () => {
+    apiMock.mockImplementation(() =>
+      Promise.resolve(
+        map(
+          "11.0.0.0/8",
+          [
+            cell({
+              cidr: "11.0.0.0/9",
+              state: "partial",
+              used: true,
+              overlap_with: ["11.0.0.0/24"],
+              overlap_count: 45,
+              used_fraction: 0.0008,
+              used_spans: [
+                [0, 0.0625, 0.001],
+                [0.5, 0.5001, 1],
+              ],
+              prefix_id: "x",
+            }),
+          ],
+          9
+        )
+      )
+    )
+    renderMap("11.0.0.0/8")
+    const block = await screen.findByRole("button", { name: /^11\.0\.0\.0\/9/ })
+    const [faint, solid] = block.querySelectorAll<HTMLElement>(
+      "[data-slot=used-span]"
+    )
+    expect(Number(faint.style.opacity)).toBeLessThan(0.5)
+    expect(solid.style.opacity).toBe("")
   })
 })

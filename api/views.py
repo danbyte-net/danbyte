@@ -140,41 +140,150 @@ def _parse_int(value, default, min_value=1):
         return default
 
 
-# Most used-span segments one partly used cell carries. Past this the closest
-# neighbours are merged, so a cell holding a thousand /32s stays a few bars.
+# Most used-span segments one cell carries. Past this the cell is cut into
+# this many equal bins instead, so a cell holding a thousand /32s stays a few
+# bars.
 SPACE_MAP_MAX_SPANS = 16
+
+# A gap narrower than this share of a cell is at most a pixel wide on any
+# cell the map draws, so the spans either side of it are drawn as one.
+SPACE_MAP_GAP_SLACK = 1024
 
 
 def _space_map_spans(intervals, cell_first, size, limit=SPACE_MAP_MAX_SPANS):
-    """Fractions ``[start, end)`` of a cell covered by ``intervals``.
+    """``[start, end, share]`` spans of a cell covered by ``intervals``.
 
     ``intervals`` are sorted, disjoint ``(first, last)`` address ints inside
-    the cell. Touching blocks merge into one span; past ``limit`` spans the
-    smallest gaps close, so the bar keeps its shape without growing unbounded.
+    the cell. ``start`` / ``end`` are fractions of the cell and ``share`` is how
+    much of that stretch is really in use (1 for a solid span), so the map can
+    draw a stretch that holds pixel-wide gaps fainter instead of as taken.
+
+    Touching blocks, and blocks at most a pixel apart, merge into one span.
+    Past ``limit`` spans the cell is cut into ``limit`` equal bins, and each
+    bin that holds anything becomes one solid sliver as wide as what it holds,
+    centred on where it sits. Free space is never drawn as used: the used
+    addresses always add up to ``sum((end - start) * share)``.
     """
-    merged: list[list[int]] = []
+    slack = size // SPACE_MAP_GAP_SLACK
+    merged: list[list[int]] = []  # [first, last, used]
     for first, last in intervals:
-        if merged and first == merged[-1][1] + 1:
+        if merged and first - merged[-1][1] - 1 <= slack:
             merged[-1][1] = last
+            merged[-1][2] += last - first + 1
         else:
-            merged.append([first, last])
-    if len(merged) > limit:
-        gaps = sorted(
-            range(len(merged) - 1),
-            key=lambda i: merged[i + 1][0] - merged[i][1],
-        )
-        close = set(gaps[: len(merged) - limit])
-        joined: list[list[int]] = []
-        for i, span in enumerate(merged):
-            if joined and (i - 1) in close:
-                joined[-1][1] = span[1]
-            else:
-                joined.append(list(span))
-        merged = joined
-    return [
-        [(first - cell_first) / size, (last + 1 - cell_first) / size]
-        for first, last in merged
-    ]
+            merged.append([first, last, last - first + 1])
+    if len(merged) <= limit or size < limit:
+        return [
+            [
+                (first - cell_first) / size,
+                (last + 1 - cell_first) / size,
+                used / (last - first + 1),
+            ]
+            for first, last, used in merged
+        ]
+    width = size // limit
+    bins: dict[int, list[int]] = {}  # bin -> [used, sum of used * midpoint x2]
+    for first, last in intervals:
+        a, b = first - cell_first, last - cell_first
+        while a <= b:
+            i = a // width
+            end = min(b, (i + 1) * width - 1)
+            n = end - a + 1
+            slot = bins.setdefault(i, [0, 0])
+            slot[0] += n
+            slot[1] += n * (a + end + 1)
+            a = end + 1
+    spans = []
+    for i in sorted(bins):
+        used, weighted = bins[i]
+        lo = i * width
+        start = min(max(weighted // (2 * used) - used // 2, lo), lo + width - used)
+        spans.append([start / size, (start + used) / size, 1.0])
+    return spans
+
+
+def _range_label(first: int, last: int, version: int) -> str:
+    """A compact IP range label: ``10.0.0.10–50``, ``10.0.0.250–1.5``."""
+    a = ipaddress.ip_address(first)
+    if first == last:
+        return str(a)
+    b = ipaddress.ip_address(last)
+    if version == 4:
+        sa, sb = str(a).split("."), str(b).split(".")
+        k = next(i for i in range(4) if sa[i] != sb[i])
+        return f"{a}–{'.'.join(sb[k:])}"
+    return f"{a}–{b}"
+
+
+def _space_map_ips(net, *, tenant, vrf) -> list[int]:
+    """Sorted address ints of the IPs in ``tenant`` + ``vrf`` inside ``net``.
+
+    The containment test runs in Postgres, so a zoom into a /28 reads the
+    handful of IPs in it, not every IP the tenant holds.
+    """
+    from django.db.models import BooleanField
+
+    rows = (
+        IPAddress.objects
+        .filter(tenant=tenant, vrf=vrf)
+        .annotate(_inside=RawSQL(
+            "ip_address::inet <<= %s::inet", (str(net),),
+            output_field=BooleanField(),
+        ))
+        .filter(_inside=True)
+        .values_list("ip_address", flat=True)
+    )
+    out = []
+    for s in rows:
+        try:
+            out.append(int(ipaddress.ip_address(s)))
+        except ValueError:
+            continue
+    out.sort()
+    return out
+
+
+def _space_map_ranges(net, *, tenant, vrf) -> list[tuple[int, int]]:
+    """``(first, last)`` of every IP range in ``tenant`` + ``vrf`` that
+    overlaps ``net``, sorted by first address."""
+    from django.db.models import BooleanField
+
+    from api.models import IPRange
+
+    rows = (
+        IPRange.objects
+        .filter(tenant=tenant, vrf=vrf)
+        .annotate(_hit=RawSQL(
+            "family(start_address::inet) = %s"
+            " AND start_address::inet <= %s::inet"
+            " AND end_address::inet >= %s::inet",
+            (net.version, str(net.broadcast_address), str(net.network_address)),
+            output_field=BooleanField(),
+        ))
+        .filter(_hit=True)
+        .values_list("start_address", "end_address")
+    )
+    out = []
+    for s, e in rows:
+        try:
+            a, b = int(ipaddress.ip_address(s)), int(ipaddress.ip_address(e))
+        except ValueError:
+            continue
+        if a <= b:
+            out.append((a, b))
+    out.sort()
+    return out
+
+
+def _union(intervals):
+    """Sorted, overlapping ``(first, last)`` pairs → sorted disjoint ones."""
+    out: list[list[int]] = []
+    for a, b in intervals:
+        if out and a <= out[-1][1] + 1:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return [(a, b) for a, b in out]
 
 
 def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
@@ -191,6 +300,13 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
       where, so the map can draw the used part and let the operator zoom in.
     - ``free`` - no child prefix touches the cell. ``dirty`` flags one that
       already holds IPs (stray addresses a new prefix would adopt).
+
+    IP ranges don't change the state - a range is not a prefix, and a new
+    child prefix over a pool is how the pool gets its subnet. A free or partly
+    used cell a range reaches carries ``range_count``, ``ranges`` (labels) and
+    ``range_spans`` instead, so the operator sees the pool before carving over
+    it. Ranges that sit wholly inside a child prefix belong to that prefix and
+    are left out.
 
     ``used`` stays true for any cell a child touches (full or partial).
 
@@ -213,28 +329,11 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
         return rows
     width = net.max_prefixlen
 
-    # Pre-fetch every IP in this tenant + VRF whose address sits inside
-    # ``net``. We do the range check in Python with a sorted int list so
-    # the per-cell test is O(log n) - beats N * IP_count. Python ints are
-    # arbitrary-precision, so this is v6-safe (a /64 never explodes - we only
-    # range-check the *registered* IPs, never the address space).
+    # The IPs inside ``net`` as a sorted int list, so the per-cell count is
+    # O(log n). Python ints are arbitrary-precision, so this is v6-safe (a /64
+    # never explodes - only the *registered* IPs are listed, never the space).
     from bisect import bisect_left, bisect_right
-    net_first = int(net.network_address)
-    net_last = int(net.broadcast_address)
-    ip_strings = (
-        IPAddress.objects
-        .filter(tenant=tenant, vrf=vrf)
-        .values_list("ip_address", flat=True)
-    )
-    ip_ints = []
-    for s in ip_strings:
-        try:
-            n = int(ipaddress.ip_address(s))
-        except ValueError:
-            continue
-        if net_first <= n <= net_last:
-            ip_ints.append(n)
-    ip_ints.sort()
+    ip_ints = _space_map_ips(net, tenant=tenant, vrf=vrf)
 
     # Children strictly inside ``net``, sorted by first address and then
     # largest block first, so a parent always precedes its own children.
@@ -251,6 +350,28 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
     )
     by_block = {(int(c.network_address), c.prefixlen): c for c in kids}
     kid_firsts = [int(c.network_address) for c in kids]
+
+    # IP ranges not wholly inside a child prefix. The outermost children are
+    # disjoint, so the one that could hold a range is the last starting at or
+    # before it.
+    tops: list[tuple[int, int]] = []
+    for c in kids:
+        a, b = int(c.network_address), int(c.broadcast_address)
+        if not tops or a > tops[-1][1]:
+            tops.append((a, b))
+    top_firsts = [a for a, _ in tops]
+    ranges = []
+    for a, b in _space_map_ranges(net, tenant=tenant, vrf=vrf):
+        i = bisect_right(top_firsts, a) - 1
+        if i >= 0 and tops[i][1] >= b:
+            continue
+        ranges.append((a, b))
+    range_firsts = [a for a, _ in ranges]
+    # Running max of the range ends: ranges may overlap or nest, so the first
+    # one that can reach a cell is found by the end, not the start.
+    range_reach = []
+    for _, b in ranges:
+        range_reach.append(max(b, range_reach[-1]) if range_reach else b)
 
     # Which child prefix-lengths to render as rows. We never go deeper than
     # +8 bits, so every row has ≤256 cells. v4 steps one bit at a time. v6
@@ -306,7 +427,7 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
                 state = "full"
                 listed = covering
                 used_fraction = 1.0
-                spans = [[0.0, 1.0]]
+                spans = [[0.0, 1.0, 1.0]]
             elif inside:
                 state = "partial"
                 listed = inside
@@ -321,6 +442,23 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
                 listed = []
                 used_fraction = 0.0
                 spans = []
+
+            # IP ranges reaching the cell (a full cell's belong to its prefix).
+            cell_ranges = []
+            if state != "full" and ranges:
+                lo = bisect_left(range_reach, cell_first)
+                upto = bisect_right(range_firsts, cell_last)
+                cell_ranges = [r for r in ranges[lo:upto] if r[1] >= cell_first]
+            range_spans = (
+                _space_map_spans(
+                    _union(sorted(
+                        (max(a, cell_first), min(b, cell_last))
+                        for a, b in cell_ranges
+                    )),
+                    cell_first, size,
+                )
+                if cell_ranges else []
+            )
 
             ip_count = (
                 bisect_right(ip_ints, cell_last) - bisect_left(ip_ints, cell_first)
@@ -340,16 +478,23 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
                 # Creating a new prefix here would have to re-parent them.
                 "dirty": (not used) and (ip_count > 0),
                 "ip_count": ip_count,
+                "range_count": len(cell_ranges),
+                "ranges": [
+                    _range_label(a, b, net.version) for a, b in cell_ranges[:3]
+                ],
+                "range_spans": range_spans,
             })
         free_count = sum(1 for c in cells if c["state"] == "free")
         partial_count = sum(1 for c in cells if c["state"] == "partial")
         dirty_count = sum(1 for c in cells if c["dirty"])
+        ranged_count = sum(1 for c in cells if c["range_count"])
         rows.append({
             "prefixlen": new_prefixlen,
             "count": len(cells),
             "free_count": free_count,
             "partial_count": partial_count,
             "dirty_count": dirty_count,
+            "ranged_count": ranged_count,
             "cells": cells,
         })
     return rows

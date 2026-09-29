@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/spinner"
 import type { IPAddress } from "@/lib/api"
 import { useCloneSeed } from "@/lib/use-clone"
 import { planSearch, type PlanSearch } from "@/lib/save-object"
+import { useReturnTo } from "@/lib/return-to"
 
 export const Route = createFileRoute("/ips/new")({
   // Keys are optional so partial callers (the prefix flow passes only
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/ips/new")({
     vm?: string
     vm_interface?: string
     clone?: string
+    from?: string
   } & PlanSearch => ({
     address: typeof s.address === "string" ? s.address : undefined,
     prefix: typeof s.prefix === "string" ? s.prefix : undefined,
@@ -31,6 +33,8 @@ export const Route = createFileRoute("/ips/new")({
     vm_interface:
       typeof s.vm_interface === "string" ? s.vm_interface : undefined,
     clone: typeof s.clone === "string" ? s.clone : undefined,
+    // Where to go back to on save / cancel (the space map's zoomed view).
+    from: typeof s.from === "string" ? s.from : undefined,
     ...planSearch(s),
   }),
   component: NewIpPage,
@@ -45,8 +49,10 @@ function NewIpPage() {
     vm,
     vm_interface: vmInterfaceId,
     clone,
+    from,
   } = Route.useSearch()
   const nav = useNavigate()
+  const goBack = useReturnTo(from)
   const cloneQ = useCloneSeed<Partial<IPAddress>>("ips", clone)
   const cloning = !!clone
   // When launched from a device's interface, send the user back there; the
@@ -88,8 +94,10 @@ function NewIpPage() {
             vmInterfaceId,
           }}
           clone={cloning ? cloneQ.data?.initial : undefined}
-          onSaved={(ip) => nav({ to: "/ips/$id", params: { id: ip.id } })}
-          onCancel={back}
+          onSaved={(ip) =>
+            goBack(() => nav({ to: "/ips/$id", params: { id: ip.id } }))
+          }
+          onCancel={() => goBack(back)}
         />
       )}
     </EditPageShell>
