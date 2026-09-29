@@ -17,7 +17,6 @@ import {
   RectangleVertical,
   Save,
   Search,
-  Server,
   SlidersHorizontal,
   Square,
   Trash2,
@@ -191,7 +190,6 @@ import {
   useHideKeys,
 } from "@/components/hidden-objects"
 import { QueryError } from "@/components/query-error"
-import { DevicePicker } from "@/components/device-picker"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
 import {
   DevicePalette,
@@ -205,6 +203,8 @@ import {
   dropPlacement,
   placeNewcomers,
 } from "@/components/topology/diagram/placement"
+import type { Centre } from "@/components/topology/diagram/placement"
+import { HIER_NEW_CARD } from "@/components/topology/layout"
 import { useBands } from "@/components/topology/diagram/use-bands"
 import { isRow, isSide, titleStrip } from "@/components/topology/diagram/bands"
 import type { BandBy } from "@/components/topology/diagram/bands"
@@ -920,7 +920,6 @@ function TopologyPage() {
     /** A line: a cable, a bundle, an LLDP neighbour, a BGP session. */
     line?: LineTarget
   } | null>(null)
-  const [addOpen, setAddOpen] = useState(false)
   // The camera shows a part of a map too large to open whole.
   const [partialMap, setPartialMap] = useState(false)
   // The device whose own card lines the "Card lines…" dialog edits.
@@ -1911,9 +1910,10 @@ function TopologyPage() {
   })
 
   // ── Building a map by hand ──
-  // The device list (Diagram tab) and New view. Cards added by hand get a
-  // Diagram position before the map is fetched again, so the build pins
-  // them where they were put; until they arrive they are drawn muted.
+  // The device list (Diagram and Hierarchy tabs) and New view. Cards added
+  // by hand get a position on the tab before the map is fetched again, so
+  // the build pins them where they were put; until they arrive they are
+  // drawn muted.
   const [paletteOpen, setPaletteOpen] = useState(() => {
     try {
       return localStorage.getItem(PALETTE_KEY) === "open"
@@ -1929,9 +1929,17 @@ function TopologyPage() {
       /* private mode - non-fatal */
     }
   }
-  const paletteShown = isDiagram && paletteOpen
-  /** A Diagram whose set is picked by hand takes dropped devices. */
-  const canBuild = isDiagram && builder
+  const paletteShown = !logical && paletteOpen
+  /** A map whose set is picked by hand takes dropped devices. */
+  const canBuild = !logical && builder
+  /** Where a card added by hand is kept: the tab's own arrangement. A
+   * Diagram card stands on its centre, a Hierarchy card on its top-left
+   * corner; each is its tab's new-card size until the map fetches it. */
+  const placeStyle = isDiagram ? ("diagram" as const) : ("hierarchy" as const)
+  const newCard = isDiagram ? NEW_CARD : HIER_NEW_CARD
+  /** A new card's position from the middle of its box. */
+  const placeAt = ([x, y]: Centre): [number, number] =>
+    isDiagram ? [x, y] : [x - newCard.w / 2, y - newCard.h / 2]
   /** Where the next device added from the list lands (a right-click on
    * the canvas); null = the middle of the screen. */
   const [addAt, setAddAt] = useState<Pt | null>(null)
@@ -1955,14 +1963,19 @@ function TopologyPage() {
   const pendingCards = useMemo(() => {
     if (!pending.size) return []
     const present = new Set((q.data?.nodes ?? []).map((n) => n.id))
-    const pos = doc.doc.positions.diagram ?? {}
+    const pos = doc.doc.positions[placeStyle] ?? {}
     return [...pending].flatMap(([id, info]) => {
       const key = devNode(id)
-      return !present.has(key) && key in pos
-        ? [{ id: key, name: info.name, color: info.color, at: pos[key] }]
-        : []
+      if (present.has(key) || !(key in pos)) return []
+      const [x, y] = pos[key]
+      const at: [number, number] = isDiagram
+        ? [x, y]
+        : [x + newCard.w / 2, y + newCard.h / 2]
+      return [
+        { id: key, name: info.name, color: info.color, at, size: newCard },
+      ]
     })
-  }, [pending, q.data, doc.doc.positions])
+  }, [pending, q.data, doc.doc.positions, placeStyle, isDiagram, newCard])
   // Once the map is fetched with them, the added devices are either on it
   // or out of this user's sight - they stay in the set either way (another
   // user may see them).
@@ -1983,8 +1996,8 @@ function TopologyPage() {
   }, [pending, q.data, q.isPlaceholderData, q.isFetching, customKey])
 
   /**
-   * Devices join the hand-picked set - with `place`, their Diagram
-   * positions, in the same undo step. A view's set is in its document; an
+   * Devices join the hand-picked set - with `place`, their positions on
+   * the tab on screen, in the same undo step. A view's set is in its document; an
    * unsaved map's in the URL as well (the document follows it for undo).
    * On a map that follows its filters this starts a set of just `ids`, as
    * the older tabs' Add device always has. False when nothing was added.
@@ -1994,7 +2007,7 @@ function TopologyPage() {
     const fresh = ids.filter((id) => !have.includes(id))
     if (!fresh.length) return false
     const next = [...have, ...fresh]
-    const placed = place ? { style: "diagram" as const, place } : {}
+    const placed = place ? { style: placeStyle, place } : {}
     if (viewId !== "none") {
       // Not before the view's own document is on screen: the load would
       // throw the edit away.
@@ -2036,20 +2049,21 @@ function TopologyPage() {
     }
     patch({ device: undefined, depth: undefined, devices: id })
   }
-  /** Diagram cards laid out automatically so far keep their place when a
-   * device is added by hand: their centres, to pin with it. */
+  /** Cards laid out automatically so far keep their place when a device
+   * is added by hand: where they stand (a Diagram card's centre, a
+   * Hierarchy card's corner), to pin with it. */
   const freezeLayout = (): PosMap => {
-    const saved = doc.doc.positions.diagram ?? {}
+    const saved = doc.doc.positions[placeStyle] ?? {}
     const out: PosMap = {}
     for (const [id, b] of Object.entries(canvas.current?.boxes() ?? {}))
       if (id.startsWith("dev:") && !(id in saved))
-        out[id] = [b.x + b.w / 2, b.y + b.h / 2]
+        out[id] = isDiagram ? [b.x + b.w / 2, b.y + b.h / 2] : [b.x, b.y]
     return out
   }
   /** What a new card must not land on: the cards, and those on the way. */
   const occupied = () => [
     ...Object.values(canvas.current?.boxes() ?? {}),
-    ...pendingCards.map((p) => boxAround({ x: p.at[0], y: p.at[1] }, NEW_CARD)),
+    ...pendingCards.map((p) => boxAround({ x: p.at[0], y: p.at[1] }, newCard)),
   ]
   const markPending = (
     ids: string[],
@@ -2065,22 +2079,30 @@ function TopologyPage() {
     qc
       .getQueryData<Paginated<DevicePaletteRow>>(PALETTE_QUERY_KEY)
       ?.results.find((r) => r.id === id)
-  /** Devices dropped on the Diagram (or added from the list) at `at`. */
+  /** Devices dropped on the map (or added from the list) at `at`. On the
+   * Diagram a device lands in its band's row. */
   const dropDevices = (ids: string[], at: Pt) => {
     if (!canBuild) return
     const onMap = new Set(custom)
     const fresh = ids.filter((id) => !onMap.has(id))
     if (!fresh.length) return
-    const place = dropPlacement(fresh.map(devNode), at, occupied(), {
-      rowsAt: bands.rowsAt,
-      ruleRow: (nid) => {
-        const row = paletteRow(nid.slice(4))
-        return bands.ruleRow({
-          role: row?.role?.id,
-          type: row?.device_type?.id,
-        })
-      },
+    const centres = dropPlacement(fresh.map(devNode), at, occupied(), {
+      size: newCard,
+      ...(isDiagram
+        ? {
+            rowsAt: bands.rowsAt,
+            ruleRow: (nid: string) => {
+              const row = paletteRow(nid.slice(4))
+              return bands.ruleRow({
+                role: row?.role?.id,
+                type: row?.device_type?.id,
+              })
+            },
+          }
+        : {}),
     })
+    const place: PosMap = {}
+    for (const [id, c] of Object.entries(centres)) place[id] = placeAt(c)
     // Placed among the bands as drawn: those are what gets saved.
     if (isDiagram) bands.keepDrawn()
     if (!addToSet(fresh, { ...freezeLayout(), ...place })) return
@@ -2123,7 +2145,8 @@ function TopologyPage() {
         return
       }
       const ids = [...fresh.keys()]
-      if (!canBuild) {
+      // The Hierarchy ranks newcomers by their cabling: it lays them out.
+      if (!canBuild || !isDiagram) {
         addToSet(ids)
         return
       }
@@ -2150,7 +2173,7 @@ function TopologyPage() {
           return bands.ruleRow({ role: d?.role?.id, type: d?.device_type_id })
         },
       })
-      if (isDiagram) bands.keepDrawn()
+      bands.keepDrawn()
       if (!addToSet(ids, { ...freezeLayout(), ...place })) return
       markPending(ids, (id) => ({
         name: fresh.get(id)?.data.name ?? "…",
@@ -2400,11 +2423,7 @@ function TopologyPage() {
   // What of the second bar gives way to its More menu at its width: Copy
   // link, then Objects, then Undo and Redo (an applied view's Edited, Save
   // and Delete need the room).
-  const barRoom = barFit(
-    barWidth,
-    isDiagram ? "diagram" : "hierarchy",
-    viewId !== "none"
-  )
+  const barRoom = barFit(barWidth, viewId !== "none")
 
   /** A device card's right-click menu: its items and the keys they show
    * act on this card, not on the canvas selection. */
@@ -2783,14 +2802,12 @@ function TopologyPage() {
           ref={barRef}
           className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6"
         >
-          {isDiagram && (
-            <BarToggle
-              pressed={paletteShown}
-              onClick={() => setPalette(!paletteOpen)}
-            >
-              <PanelLeft /> Devices
-            </BarToggle>
-          )}
+          <BarToggle
+            pressed={paletteShown}
+            onClick={() => setPalette(!paletteOpen)}
+          >
+            <PanelLeft /> Devices
+          </BarToggle>
           <Select
             value={viewId}
             onValueChange={(v) => {
@@ -2967,8 +2984,14 @@ function TopologyPage() {
                     </BarMenuTrigger>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onSelect={() => setAddOpen(true)}>
-                      <Server /> Device…
+                    <DropdownMenuItem onSelect={() => setPalette(true)}>
+                      <PanelLeft /> Devices…
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!canBuild || !selNode?.device_id}
+                      onSelect={() => void addConnected(selectedDevices())}
+                    >
+                      <Cable /> Connected devices
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={addZoneCentered}>
@@ -3406,10 +3429,6 @@ function TopologyPage() {
               builder={builder}
               notesFull={notesFull}
               onAddDevices={() => {
-                if (!isDiagram) {
-                  setAddOpen(true)
-                  return
-                }
                 // The list opens, and what it adds next lands here.
                 if (canBuild && fx !== undefined && fy !== undefined)
                   setAddAt({ x: fx, y: fy })
@@ -3424,12 +3443,6 @@ function TopologyPage() {
         }}
       </PointerMenu>
 
-      <AddDeviceDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        excludeIds={custom ?? undefined}
-        onPick={(id) => addToSet([id])}
-      />
       <NewViewDialog
         open={newViewOpen}
         onOpenChange={setNewViewOpen}
@@ -3513,48 +3526,6 @@ function TopologyPage() {
 
       <LeaveGuardDialog blocker={leaveGuard} />
     </div>
-  )
-}
-
-/**
- * Add a device to the hand-picked map (the Hierarchy tab's Add ▸ Device…).
- *
- * The shared `DevicePicker`, not a bare combobox: a flat list of every name
- * is unusable past a few hundred devices, and the advanced search behind it
- * filters on site, role, type, manufacturer, status and tag server-side -
- * which is exactly how someone finds the card they want to add.
- */
-function AddDeviceDialog({
-  open,
-  onOpenChange,
-  onPick,
-  excludeIds,
-}: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
-  onPick: (deviceId: string) => void
-  /** Already on the map - offering them again just adds nothing. */
-  excludeIds?: string[]
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="sm">
-        <DialogHeader>
-          <DialogTitle>Add device</DialogTitle>
-        </DialogHeader>
-        <DevicePicker
-          label=""
-          value={null}
-          excludeIds={excludeIds}
-          onChange={(v) => {
-            if (!v) return
-            onPick(v)
-            onOpenChange(false)
-          }}
-          placeholder="Search devices…"
-        />
-      </DialogContent>
-    </Dialog>
   )
 }
 

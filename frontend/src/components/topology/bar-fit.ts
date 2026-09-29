@@ -6,13 +6,11 @@ import { useCallback, useRef, useState } from "react"
 // More menu - which opens in a portal, outside the bar - can list exactly
 // what left the bar and nothing that is still on it.
 
-/** The content width (px) the bar needs with every control on it, by tab
- * and whether a view is applied (its Edited, Save and Delete). Measured at
- * the widest, with a few px to spare. */
-const NEEDS = {
-  diagram: { none: 956, view: 1128 },
-  hierarchy: { none: 864, view: 1036 },
-} as const
+/** The content width (px) the bar needs with every control on it, by
+ * whether a view is applied (its Edited, Save and Delete). The Diagram and
+ * the Hierarchy show the same controls. Measured at the widest, with a few
+ * px to spare. */
+const NEEDS = { none: 956, view: 1128 } as const
 
 /** What each control frees when it moves into More: its width and the gap
  * after it. More itself costs its button. */
@@ -31,12 +29,8 @@ const ALL_ON_BAR: BarFit = { copyLink: false, objects: false, history: false }
 
 /** What gives way at `width` (null: not measured yet - everything stays,
  * as the server renders it). Past the last step the bar scrolls. */
-export function barFit(
-  width: number | null,
-  tab: "diagram" | "hierarchy",
-  view: boolean
-): BarFit {
-  const all = NEEDS[tab][view ? "view" : "none"]
+export function barFit(width: number | null, view: boolean): BarFit {
+  const all = NEEDS[view ? "view" : "none"]
   if (width === null || width >= all) return ALL_ON_BAR
   const noCopy = all - COPY_LINK + MORE
   if (width >= noCopy) return { ...ALL_ON_BAR, copyLink: true }

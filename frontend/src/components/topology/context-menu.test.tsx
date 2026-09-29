@@ -434,9 +434,12 @@ describe("PaneMenuItems", () => {
     expect(rows()).toEqual(["Add devices…", "Add band", "Add zone", "Add text"])
   })
 
-  it("adds one device or a zone on Hierarchy", async () => {
-    await openMenu(<PaneMenuItems {...pane({ tab: "hierarchy" })} />)
-    expect(rows()).toEqual(["Add device…", "Add zone"])
+  it("adds devices from the list or a zone on Hierarchy", async () => {
+    const p = pane({ tab: "hierarchy" })
+    await openMenu(<PaneMenuItems {...p} />)
+    expect(rows()).toEqual(["Add devices…", "Add zone"])
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add devices…" }))
+    expect(p.onAddDevices).toHaveBeenCalledOnce()
   })
 
   it("goes back to the filtered map from a hand-picked one", async () => {

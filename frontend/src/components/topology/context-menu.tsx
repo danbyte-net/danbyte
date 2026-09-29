@@ -7,7 +7,6 @@ import {
   PanelLeft,
   Pencil,
   RectangleHorizontal,
-  Server,
   Square,
   Trash2,
   Type,
@@ -381,7 +380,7 @@ export function PaneMenuItems({
   builder: boolean
   /** The map holds as many notes as it can. */
   notesFull: boolean
-  /** The device list (Diagram) or the Add device dialog (Hierarchy). */
+  /** The device list. */
   onAddDevices: () => void
   onAddBand: () => void
   onAddZone: () => void
@@ -391,15 +390,9 @@ export function PaneMenuItems({
   const diagram = tab === "diagram"
   return (
     <>
-      {diagram ? (
-        <DropdownMenuItem onSelect={onAddDevices}>
-          <PanelLeft /> Add devices…
-        </DropdownMenuItem>
-      ) : (
-        <DropdownMenuItem onSelect={onAddDevices}>
-          <Server /> Add device…
-        </DropdownMenuItem>
-      )}
+      <DropdownMenuItem onSelect={onAddDevices}>
+        <PanelLeft /> Add devices…
+      </DropdownMenuItem>
       {diagram && (
         <DropdownMenuItem onSelect={onAddBand}>
           <RectangleHorizontal /> Add band

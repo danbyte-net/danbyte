@@ -386,10 +386,13 @@ export interface PendingCard {
   color?: string | null
   /** Its centre, in canvas coordinates. */
   at: [number, number]
+  /** Its box; a Diagram card's (`NEW_CARD`) when absent. */
+  size?: { w: number; h: number }
 }
 
 function PendingCardView({ card }: { card: PendingCard }) {
   const fill = cssColor(card.color)
+  const size = card.size ?? NEW_CARD
   return (
     <div
       aria-busy
@@ -399,10 +402,10 @@ function PendingCardView({ card }: { card: PendingCard }) {
         !fill && "border-border bg-muted text-foreground"
       )}
       style={{
-        width: NEW_CARD.w,
-        height: NEW_CARD.h,
-        transform: `translate(${card.at[0] - NEW_CARD.w / 2}px, ${
-          card.at[1] - NEW_CARD.h / 2
+        width: size.w,
+        height: size.h,
+        transform: `translate(${card.at[0] - size.w / 2}px, ${
+          card.at[1] - size.h / 2
         }px)`,
         ...(fill
           ? {
@@ -2417,8 +2420,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         const out: Record<string, Rect> = {}
         for (const n of flow.getNodes()) {
           if (isOverlayNode(n) || n.type === "junction" || n.hidden) continue
-          const w = n.width ?? n.measured?.width
-          const h = n.height ?? n.measured?.height
+          // A Hierarchy card's size is computed, so one off screen (never
+          // mounted, never measured) still counts.
+          const fixed = n.type === "hier" ? sizeOf(n) : null
+          const w = fixed?.width ?? n.width ?? n.measured?.width
+          const h = fixed?.height ?? n.height ?? n.measured?.height
           if (!w || !h) continue
           // Diagram cards stand on their centre, the older cards on
           // their corner.

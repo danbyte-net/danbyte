@@ -151,4 +151,29 @@ describe("canvas drop target", () => {
     // A card on its way is not an empty map.
     expect(screen.queryByText("No devices yet.")).toBeNull()
   })
+
+  it("draws a Hierarchy card on its way at the size it asks for", async () => {
+    const { container } = render(
+      <div style={{ width: 800, height: 600 }}>
+        <TopologyCanvas
+          graph={EMPTY}
+          nodeStyle="hierarchy"
+          onDropDevices={vi.fn()}
+          pending={[
+            {
+              id: "dev:a",
+              name: "leaf1",
+              at: [100, 50],
+              size: { w: 190, h: 130 },
+            },
+          ]}
+        />
+      </div>
+    )
+    await settle()
+    const card = container.querySelector<HTMLElement>('[data-pending="dev:a"]')!
+    expect(card.style.width).toBe("190px")
+    expect(card.style.height).toBe("130px")
+    expect(card.style.transform).toBe("translate(5px, -15px)")
+  })
 })

@@ -655,7 +655,8 @@ the **Views** select) asks for a name and where to start:
 The new view opens on the Diagram tab with the device list open. It needs the
 add permission on topology views.
 
-**The device list.** **Devices** at the left of the second bar opens it: every
+**The device list.** **Devices** at the left of the second bar opens it, on
+the Diagram and the Hierarchy tab alike (so does **Add ▸ Devices…**): every
 device you may see, grouped by role under the role's own badge (fold a group
 by its header). Type to search names, models, sites and racks; the filter
 button narrows by site, role, type, status, tag and rack. **All** and **Not
@@ -672,7 +673,9 @@ there. Double-click a device, press ++enter++ on it, or use **Add** at the
 bottom of the list to place the selection in the middle of the screen (after
 right-clicking the canvas → *Add devices…*, where you clicked). Cables between
 the devices on the map draw themselves - there is nothing to connect. A card
-shows muted until the map has fetched it; the camera stays where it is.
+shows muted until the map has fetched it; the camera stays where it is. On
+the Hierarchy the card is pinned where it lands, its port chips facing its
+peers once it is fetched.
 
 Patch panels cannot be placed while **Patch panels** (Display) is off: their
 cables are walked through, so the panel would never appear. The device
@@ -680,9 +683,10 @@ list says *Patch panels are hidden* on them.
 
 **Add connected devices.** Right-click a card → *Add connected devices*, or
 select it and use **Add ▸ Connected devices**, to bring in everything cabled
-to it. Each newcomer goes to the free spot nearest the cards it is cabled
-to, below them where there is room; if any lands off screen, the camera
-widens to show them. When everything cabled to it is already on the map,
+to it. On the Diagram each newcomer goes to the free spot nearest the cards
+it is cabled to, below them where there is room; if any lands off screen,
+the camera widens to show them. On the Hierarchy the newcomers are ranked
+by their cabling like the rest of the tab. When everything cabled to it is already on the map,
 it says *No new connected devices*.
 
 **Removing devices.** Right-click a card → *Remove from map*, or select
@@ -693,8 +697,9 @@ position and overrides; ++ctrl+z++ puts it back.
 (see [Hiding things](#hiding-things-the-eyes)).
 
 **Arranging.** Drag cards where you want them. **Arrange ▸ Reset layout** lays
-the map out automatically again. Devices added to a diagram that was laid
-out automatically pin the cards already there, so nothing moves under you.
+the map out automatically again. Devices placed on a map that was laid
+out automatically - on the Diagram or the Hierarchy - pin the cards already
+there, so nothing moves under you.
 **Arrange ▸ Bands by role** (or *by device type*) stacks the diagram into
 labelled layers - see [Bands and zones](#bands-and-zones). A device
 dropped into a band lands in that band's row, beside the cards there.
@@ -703,17 +708,16 @@ diagram.
 
 **Saving.** Adding, placing and removing devices are edits to the view: undo
 steps like any other, and **Save** (++ctrl+s++) writes them - see
-[Saved views](#saved-views). The Hierarchy tab has its own **Add** menu
-(*Device…*, which picks one device in a dialog, and *Zone*) and
-**Arrange ▸ Reset layout**.
+[Saved views](#saved-views). The Hierarchy tab's **Add** menu has
+*Devices…*, *Connected devices* and *Zone*, and its **Arrange** menu
+*Reset layout*.
 
 **A filtered map** takes no drops: the device list says *Filtered map* (only
 a hand-picked map takes new devices) and offers **New view…**. Right-click a
 device → *Start hand-picked map* still turns any map into an unsaved one of
-just that device, grown with *Add connected devices* (and, on the Hierarchy
-tab, **Add ▸ Device…**). An unsaved map keeps its devices in its address
-(`devices=`), which holds up to 200 of them; past that, save it as a view to
-keep adding. A header chip (*Hand-picked · n*) shows the set's size; its ×
+just that device, grown with *Add connected devices* and the device list.
+An unsaved map keeps its devices in its address (`devices=`), which holds
+up to 200 of them; past that, save it as a view to keep adding. A header chip (*Hand-picked · n*) shows the set's size; its ×
 (or right-click empty canvas → *Back to filtered map*) leaves it. A view
 saved as a device set has no such chip: its name is in the **Views** select,
 and the count beside the title is its devices. Right-click also offers
@@ -1218,7 +1222,7 @@ is open it acts on what you right-clicked, not on what is selected.
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
 | A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide* |
 | A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), *Delete* |
-| Empty canvas | Diagram: *Add devices…*, *Add band*, *Add zone*, *Add text*. Hierarchy: *Add device…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
+| Empty canvas | Diagram: *Add devices…*, *Add band*, *Add zone*, *Add text*. Hierarchy: *Add devices…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
 
 ### Keyboard
 

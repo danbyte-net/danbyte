@@ -1,6 +1,7 @@
 import dagre from "@dagrejs/dagre"
 import type { Edge, Node } from "@xyflow/react"
 
+import { CARD } from "./diagram/card-layout"
 import { Grid } from "./diagram/spatial"
 import { HIER_MIN_W, hierBox } from "./hier-card"
 import type { HierCardData } from "./hier-card"
@@ -826,6 +827,17 @@ export interface HierPortPos {
 export function hierHeight(span: number, head = HIER_HEADER): number {
   return head + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
 }
+
+/** A Hierarchy card's box before the map has fetched it - a header with
+ * one card line over the least body: what a device dropped on the tab is
+ * placed and drawn at meanwhile. */
+export const HIER_NEW_CARD = {
+  w: HIER_MIN_W,
+  h: hierHeight(
+    0,
+    2 * CARD.PAD_Y + CARD.TITLE_LH + CARD.LINES_GAP + CARD.LINE_LH
+  ),
+} as const
 
 /** How tall a card's header is: its card box, laid out by the build. */
 export function hierHead(d: unknown): number {

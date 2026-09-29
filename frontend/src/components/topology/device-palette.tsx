@@ -37,11 +37,11 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { cn } from "@/lib/utils"
 import { DEVICE_IDS_MIME } from "./diagram/placement"
 
-// The Diagram's device list: every device the user may see, loaded once
-// in its light palette shape and filtered here, grouped by role. Rows drag
-// onto the canvas (DEVICE_IDS_MIME); double-click or Enter adds them in
-// the middle of the screen. A device already on the map is dimmed and
-// ticked, and a click on it finds its card.
+// The map's device list (Diagram and Hierarchy): every device the user may
+// see, loaded once in its light palette shape and filtered here, grouped
+// by role. Rows drag onto the canvas (DEVICE_IDS_MIME); double-click or
+// Enter adds them in the middle of the screen. A device already on the map
+// is dimmed and ticked, and a click on it finds its card.
 
 export const PALETTE_QUERY_KEY = ["devices-palette"] as const
 
