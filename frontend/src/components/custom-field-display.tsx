@@ -45,9 +45,15 @@ export function hasCustomValue(v: unknown): boolean {
   )
 }
 
+/** What rendering a value needs from its definition - a full CustomField or
+ * the subset the list-column catalog serves. */
+export type CustomFieldLike = Pick<CustomField, "type"> & {
+  related_model?: string
+}
+
 // Render a stored custom-field value, formatted by its definition's type.
 export function formatCustomValue(
-  def: CustomField | undefined,
+  def: CustomFieldLike | undefined,
   v: unknown
 ): React.ReactNode {
   if (!hasCustomValue(v))
@@ -101,18 +107,85 @@ export function formatCustomValue(
   return <span>{String(v)}</span>
 }
 
+export interface ObjectLabel {
+  id: string
+  label: string
+  route: string | null
+}
+
+// Object-reference labels are fetched in batches: a table of 200 rows with an
+// object custom field would otherwise fire 200 requests. Every id asked for in
+// the same tick joins one request per model, cut into chunks that keep the URL
+// under the proxy's request-line limit (gunicorn 400s at ~110 UUIDs).
+const LABEL_BATCH = 80
+const pendingLabels = new Map<
+  string,
+  Map<string, ((hit: ObjectLabel | null) => void)[]>
+>()
+let labelFlushScheduled = false
+
+function flushObjectLabels() {
+  labelFlushScheduled = false
+  const batch = new Map(pendingLabels)
+  pendingLabels.clear()
+  for (const [slug, waiters] of batch) {
+    const ids = [...waiters.keys()]
+    for (let i = 0; i < ids.length; i += LABEL_BATCH) {
+      const chunk = ids.slice(i, i + LABEL_BATCH)
+      const settle = (by: Map<string, ObjectLabel>) => {
+        for (const id of chunk)
+          for (const done of waiters.get(id) ?? []) done(by.get(id) ?? null)
+      }
+      api<{ results: ObjectLabel[] }>(
+        `/api/customization/object-labels/?${new URLSearchParams({
+          model: slug,
+          ids: chunk.join(","),
+        })}`
+      )
+        .then((r) => settle(new Map(r.results.map((h) => [h.id, h]))))
+        .catch(() => settle(new Map()))
+    }
+  }
+}
+
+/** One object-reference label, batched with every other asked for in the same
+ * tick. Null when the id does not resolve (deleted, or not visible to you). */
+export function loadObjectLabel(
+  slug: string,
+  id: string
+): Promise<ObjectLabel | null> {
+  return new Promise((resolve) => {
+    let bySlug = pendingLabels.get(slug)
+    if (!bySlug) pendingLabels.set(slug, (bySlug = new Map()))
+    const waiting = bySlug.get(id)
+    if (waiting) waiting.push(resolve)
+    else bySlug.set(id, [resolve])
+    if (!labelFlushScheduled) {
+      labelFlushScheduled = true
+      setTimeout(flushObjectLabels, 0)
+    }
+  })
+}
+
+export const objectLabelKey = (slug: string, id: string) =>
+  ["cf-object-label", slug, id] as const
+
+/** The id an object-reference value holds - a bare id or a serialized dict. */
+export function objectRefId(v: unknown): string {
+  if (v && typeof v === "object")
+    return String((v as Record<string, unknown>).id ?? "")
+  return v == null ? "" : String(v)
+}
+
 /** Resolve a stored object-reference id to its label (+ link when the model
- * has a detail route) via the bulk label endpoint. */
+ * has a detail route), batched through the bulk label endpoint. */
 function ObjectValue({ slug, id }: { slug: string; id: string }) {
   const q = useQuery({
-    queryKey: ["cf-object-label", slug, id],
-    queryFn: () =>
-      api<{ results: { id: string; label: string; route: string | null }[] }>(
-        `/api/customization/object-labels/?model=${slug}&ids=${id}`
-      ),
+    queryKey: objectLabelKey(slug, id),
+    queryFn: () => loadObjectLabel(slug, id),
     staleTime: 5 * 60_000,
   })
-  const hit = q.data?.results[0]
+  const hit = q.data
   if (!hit)
     return (
       <span className="font-mono text-[11px] text-muted-foreground">

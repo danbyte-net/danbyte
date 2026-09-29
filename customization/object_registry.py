@@ -153,9 +153,14 @@ for _e in [
     register_reference_model(_e)
 
 
-def resolve_labels(slug: str, ids: list[str], tenant=None) -> list[dict]:
+def resolve_labels(slug: str, ids: list[str], tenant=None, user=None) -> list[dict]:
     """Bulk id → {id, label, route} for display of object-field values.
-    Unknown ids are silently dropped (the caller shows the raw id)."""
+    Unknown ids are silently dropped (the caller shows the raw id).
+
+    With ``user`` (a request's caller), a label is served only for an object
+    that user may view: an RBAC-controlled type needs its view grant, cut to
+    the rows that grant reaches - a label names the object, so it is read
+    access like any other."""
     ref = reference_model(slug)
     if ref is None or not ids:
         return []
@@ -164,6 +169,15 @@ def resolve_labels(slug: str, ids: list[str], tenant=None) -> list[dict]:
         qs = qs.select_related(*ref.select_related)
     if ref.tenant_field and tenant is not None:
         qs = qs.filter(**{ref.tenant_field: tenant})
+    if user is not None:
+        from auth_api import rbac
+        from auth_api.object_types import is_registered
+
+        rbac_slug = ref.model._meta.model_name
+        if is_registered(rbac_slug):
+            if not rbac.has_action(user, tenant, rbac_slug, "view"):
+                return []
+            qs = rbac.restrict_queryset(qs, user, tenant, rbac_slug, "view")
     out = []
     for obj in qs:
         label = getattr(obj, ref.label_field, None) if ref.label_field else None

@@ -60,7 +60,9 @@ filter-modal pickers; every other model - including users and groups - gets
 a searchable picker automatically). Values are validated against live rows
 (tenant-scoped where the model is), and detail pages render the object's
 name as a link, resolved through the registry - a deleted target degrades
-to its raw id, never an error.
+to its raw id, never an error. So does a target you may not view: the name is
+resolved with your own access (the object type's *view* permission and the
+sites it covers), and with no active tenant nothing resolves.
 
 ### Which objects can have custom fields
 

@@ -95,4 +95,9 @@ def object_labels(request):
         i for i in request.query_params.get("ids", "").split(",") if i
     ][:200]
     tenant = _get_active_tenant(request)
-    return Response({"results": resolve_labels(slug, ids, tenant=tenant)})
+    if tenant is None:
+        # No tenant, no scope: nothing is resolved rather than everything.
+        return Response({"results": []})
+    return Response({
+        "results": resolve_labels(slug, ids, tenant=tenant, user=request.user)
+    })

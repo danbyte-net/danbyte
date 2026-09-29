@@ -129,6 +129,55 @@ class LabelResolverTests(_Base):
         self.assertEqual(data["results"][0]["label"], "admin")
 
 
+class LabelAccessTests(_Base):
+    """A label names an object, so it is served only where the caller could
+    read the object itself (#243 - lists now resolve them in batches)."""
+
+    def _as(self, name, object_types=(), sites=()):
+        from auth_api.models import ObjectPermission, UserProfile
+
+        user = User.objects.create_user(name, password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        if object_types:
+            perm = ObjectPermission.objects.create(
+                name=name, object_types=list(object_types), actions=["view"]
+            )
+            perm.users.add(user)
+            perm.tenants.add(self.tenant)
+            if sites:
+                perm.sites.set(sites)
+        self.client.force_login(user)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+
+    def _labels(self, *devices):
+        ids = ",".join(str(d.id) for d in devices)
+        r = self.client.get(f"/api/customization/object-labels/?model=device&ids={ids}")
+        self.assertEqual(r.status_code, 200, r.content)
+        return sorted(h["label"] for h in r.json()["results"])
+
+    def test_labels_follow_the_view_grant_and_its_sites(self):
+        from api.models import Site
+
+        hq = Site.objects.create(tenant=self.tenant, name="HQ")
+        branch = Site.objects.create(tenant=self.tenant, name="Branch")
+        a = Device.objects.create(tenant=self.tenant, name="core-hq", site=hq)
+        b = Device.objects.create(tenant=self.tenant, name="core-branch", site=branch)
+        self.assertEqual(self._labels(a, b), ["core-branch", "core-hq"])
+        self._as("nobody")
+        self.assertEqual(self._labels(a, b), [])
+        self._as("hq-viewer", ["device"], sites=[hq])
+        self.assertEqual(self._labels(a, b), ["core-hq"])
+
+    def test_no_tenant_resolves_nothing(self):
+        d = Device.objects.create(tenant=self.tenant, name="core-1")
+        lonely = User.objects.create_user("lonely", password="x")
+        self.client.force_login(lonely)
+        r = self.client.get(f"/api/customization/object-labels/?model=device&ids={d.id}")
+        self.assertEqual(r.json()["results"], [])
+
+
 class TenantScopedReferenceTests(_Base):
     """Object-reference CFs whose target is tenant-scoped exercise the
     tenant-filter branch of _coerce - which raised NameError before the fix
