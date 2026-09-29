@@ -461,6 +461,27 @@ def _keep_member(m, filters: dict) -> bool:
     return True
 
 
+def _join_at_reset(tenant_id, members, addresses, start) -> None:
+    """A member whose every address has had its availability reset inside the
+    period joins at the earliest reset - as if it had been added then, which
+    is what a reset says: a new host behind the address. Without it the time
+    before the reset is unmeasured service time and drags coverage down
+    (and raises "coverage low") for a figure the reset was meant to clean.
+    A member with only some addresses reset keeps them clipped per check."""
+    from .counting import cuts
+
+    cut_by_ip = cuts(tenant_id, start)
+    if not cut_by_ip:
+        return
+    for m in members:
+        ips = [str(i) for i in addresses.get(address_key(m), [])]
+        froms = [cut_by_ip[i].counts_from for i in ips if i in cut_by_ip]
+        if not ips or len(froms) != len(ips) or any(f is None for f in froms):
+            continue
+        a, b = m["active"]
+        m["active"] = (min(max(a, min(froms)), b), b)
+
+
 def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = None,
             now: datetime | None = None, filters: dict | None = None,
             detail: bool = False) -> dict:
@@ -506,6 +527,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     members = [m for m in resolve_members(agreement, start, until) if _keep_member(m, filters)]
     objects = _objects(members)
     addresses = _addresses(members, objects)
+    _join_at_reset(agreement.tenant_id, members, addresses, start)
     groups = {m["group"].id: m["group"] for m in members}
     items = defaultdict(list)
     for it in SlaCheckItem.objects.filter(group_id__in=groups).select_related("template"):

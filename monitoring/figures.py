@@ -146,10 +146,13 @@ def sums(win: Window, narrow, group_by: tuple = ()) -> dict:
     ``narrow(qs)`` applies tenant, RBAC scope and filters to one rollup
     queryset; it is called once per slice. ``group_by`` names fields or
     annotations on the rollup rows; the key is a tuple of their values
-    (``()`` for no grouping)."""
+    (``()`` for no grouping). Each address counts from its availability
+    reset (:func:`monitoring.counting.rollup_slices`)."""
+    from .counting import rollup_slices
+
     out: dict = {}
-    for model, start, stop in win.parts:
-        qs = narrow(model.objects.filter(bucket__gte=start, bucket__lt=stop))
+    for model, where in rollup_slices(win):
+        qs = narrow(model.objects.filter(where))
         for row in qs.values(*group_by).annotate(**_aggregates()).order_by():
             _fold(out.setdefault(tuple(row[g] for g in group_by), {}), row)
     return out
@@ -187,9 +190,11 @@ def figures(row: dict, rules: CountingRules = CountingRules()) -> dict:
 def series(win: Window, narrow) -> list[dict]:
     """One point per bucket of the window - hourly for an hours window,
     daily for a days window (today as one point summed from its hours)."""
+    from .counting import rollup_slices
+
     points: dict = {}
-    for model, start, stop in win.parts:
-        qs = narrow(model.objects.filter(bucket__gte=start, bucket__lt=stop))
+    for model, where in rollup_slices(win):
+        qs = narrow(model.objects.filter(where))
         for row in qs.values("bucket").annotate(**_aggregates()).order_by("bucket"):
             b = row.pop("bucket")
             if win.daily:

@@ -116,6 +116,13 @@ entered once, and every agreement using that calendar skips it.
 the probe or its network, not in the service, so by default it is not charged
 as downtime.
 
+An address [excluded from monitoring](monitoring.md#excluding-an-address) is
+*skipped* for as long as it is excluded: not measured, even when unknown
+counts as down. Its time still belongs to the member, so a long exclusion
+lowers the member's **coverage** - which is the truth: nothing was measured.
+When it is included again its checks stay *skipped* until their first answer,
+so the gap is not charged either.
+
 **Ignore outages under** sets a number of seconds. Outages shorter than that
 count as up.
 
@@ -169,6 +176,25 @@ no cable and no monitor address has no data.
 Removing a member marks it as having left; it is not deleted. Periods it was
 part of still count the time it was in. A member you cannot view cannot be
 added.
+
+### Resetting an address {#resetting-an-address}
+
+When an address is reused for a new host, its
+[availability can be reset](monitoring.md#excluding-an-address): the figures
+count it from the reset, and what the old host did before it is kept but not
+counted. A member whose addresses have all been reset in a period joins that
+period at the (earliest) reset - as if it had been added then - so the time
+before it is outside the member's service time rather than unmeasured, and
+coverage stays whole. A member with only some addresses reset counts those
+addresses from their reset and the others as usual.
+
+A reset recomputes the agreements that count the address straight away
+(queued, rather than on the next 15-minute tick): the open period and the
+closed ones still inside their seven days. **Frozen periods never change.**
+Because it rewrites figures, a reset of an address an active agreement counts
+needs `slaagreement.change` on that agreement as well as `ipaddress.change`
+on the address, and needs a reason; the agreement's journal records the
+address, who, when and why, as the address's own does.
 
 **Redundancy group** is a label shared by members that back each other up,
 such as a leaf pair. A redundancy group counts as one unit, and it is down only

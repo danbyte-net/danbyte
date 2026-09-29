@@ -108,6 +108,17 @@ Additive, protocol version unchanged: an agent older than 0.8 never says
 `fast`, and its sub-minute checks are handed out on the minute beat at their
 ordinary interval - it keeps working, just not faster.
 
+## Excluded addresses {#excluded-addresses}
+
+An address [excluded from monitoring](../features/monitoring.md#excluding-an-address)
+is not handed to an Outpost at all: its checks are parked, so `/work` never
+finds them due, and `/fast-work` leaves the address out of the set (the agent
+drops it on its next refresh, within 15 s). Whatever still arrives for it - a
+check claimed before the switch reported to `/results`, buffered probes to
+`/fast-results` - is discarded, and the check is parked again. No agent change
+is needed: the core simply stops asking. Only checks stop; an SNMP poll or a
+discovery sweep an Outpost runs for the core carries on.
+
 ## Reverse DNS from an Outpost
 
 PTR is the one lookup whose right answer depends on **where you ask from**. A

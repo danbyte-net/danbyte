@@ -551,7 +551,10 @@ def _monitoring_charts(request, user, tenant, scoped_ips=None, hours: int = 168)
     now = timezone.now()
     since = now - timedelta(hours=hours)
     bucket = 3600 if hours <= 168 else 86400
-    results = CheckResult.objects.filter(tenant=tenant, timestamp__gte=since)
+    from monitoring.counting import trim_results
+
+    # Each address counted from its availability reset.
+    results = trim_results(CheckResult.objects.filter(tenant=tenant, timestamp__gte=since))
     if ip_filter is not None:
         results = results.filter(target_ip__in=ip_filter)
     by_status = {
@@ -584,7 +587,11 @@ def _monitoring_block(tenant, ip_filter=None) -> dict:
         "skipped": "var(--color-zinc-300)",
         "unknown": "var(--color-zinc-400)",
     }
-    states = CheckState.objects.filter(tenant=tenant)
+    from monitoring.exclusion import monitored
+
+    # Excluded addresses are not monitored: not in the counts, not in
+    # the reachable share.
+    states = monitored(CheckState.objects.filter(tenant=tenant), tenant.id)
     if ip_filter is not None:
         states = states.filter(target_ip__in=ip_filter)
     by_status = {

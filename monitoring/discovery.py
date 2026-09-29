@@ -527,7 +527,10 @@ def run_discovery(now=None) -> dict:
 
 
 def cleanup_stale_ips(now=None) -> dict:
-    """Delete discovered IPs unreachable past each tenant's grace period."""
+    """Delete discovered IPs unreachable past each tenant's grace period.
+
+    Never an address excluded from monitoring: nothing checks it, so its
+    ``last_seen`` stops moving - that is the exclusion, not the host gone."""
     from datetime import timedelta
 
     from api.models import IPAddress
@@ -539,7 +542,9 @@ def cleanup_stale_ips(now=None) -> dict:
     enabled = MonitoringSettings.objects.filter(cleanup_enabled=True)
     for s in enabled.select_related("tenant"):
         cutoff = now - timedelta(days=s.cleanup_after_days)
-        qs = IPAddress.objects.filter(tenant=s.tenant, discovered=True).filter(
+        qs = IPAddress.objects.filter(
+            tenant=s.tenant, discovered=True, monitoring_excluded=False
+        ).filter(
             Q(last_seen__lt=cutoff) | Q(last_seen__isnull=True, created_at__lt=cutoff)
         )
         deleted, _ = qs.delete()

@@ -15,8 +15,10 @@ be asked turns on ``auto_clear_flapping``, and a state then clears itself
 once the check has been quiet for ``auto_clear_flapping_after_minutes``.
 
 Exclusions keep expected churn out: addresses whose status is in
-``flap_exclude_ip_statuses`` (a DHCP scope) and addresses flagged
-``IPAddress.flap_exclude`` are never flagged, and are cleared if they were.
+``flap_exclude_ip_statuses`` (a DHCP scope), addresses flagged
+``IPAddress.flap_exclude`` and addresses excluded from monitoring
+(``IPAddress.monitoring_excluded``) are never flagged, and are cleared if
+they were.
 """
 from __future__ import annotations
 
@@ -55,10 +57,12 @@ def _excluded_ip_ids(ms, ip_ids) -> set:
 
     status_ids = set(ms.flap_exclude_ip_statuses.values_list("id", flat=True))
     out = set()
-    for ip_id, excl, status_id in IPAddress.objects.filter(id__in=ip_ids).values_list(
-        "id", "flap_exclude", "status_id"
+    for ip_id, excl, off, status_id in IPAddress.objects.filter(id__in=ip_ids).values_list(
+        "id", "flap_exclude", "monitoring_excluded", "status_id"
     ):
-        if excl or (status_id and status_id in status_ids):
+        # Excluded from monitoring: nothing runs, so nothing to flag - and a
+        # flag it carried is cleared rather than left to page nobody.
+        if excl or off or (status_id and status_id in status_ids):
             out.add(ip_id)
     return out
 

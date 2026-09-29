@@ -376,6 +376,8 @@ To avoid flapping on a single blip, status changes require a streak:
   chronic outage versus a fresh one.
 - **Skipped** - IPs whose status is on your skip list (for example *reserved*)
   are never dialled; their checks are marked *skipped* and no result is recorded.
+  An address [excluded from monitoring](#excluding-an-address) is *skipped* too,
+  but shows as **Excluded**.
 
 Every status change is logged so you get a history timeline and can drive
 notifications.
@@ -460,6 +462,72 @@ figure and table come from the same log, so they cannot disagree. *Open in
 Monitoring* carries the address into the tenant-wide History view with its
 filters set.
 
+### Excluding an address and resetting availability {#excluding-an-address}
+
+Two actions on the IP's **Monitoring** tab, for the editors of the address
+(`ipaddress.change` on it):
+
+**Exclude from monitoring** - the checkbox beside *Ignore flapping*. After a
+confirmation (with an optional reason), every check on the address stops:
+the ones it inherits from a prefix or a policy as well as its own, on the
+core, on an Outpost and in Zabbix. Its open alerts close, and the notice
+says *Closed - excluded from monitoring by alice* rather than *Resolved*;
+the status-change channels and digests leave it out. The address shows an
+**Excluded** pill here, on its Overview card, in the prefix's address list
+(an *Excluded* filter bucket too) and on its check rows. It is left out of
+every count: the dashboard's status chart and reachable share, the digest,
+the Monitoring stats, the prefix, device and VM roll-ups, and the flapping
+lists (a flapping flag clears at once). *Check now* is refused (`409`), and
+a bulk *Check now* leaves it out and says how many it skipped. Discovery's
+stale cleanup never deletes an excluded address - nothing checks it, so its
+*last seen* stops moving. Unticking it includes it again at once: the checks
+are due immediately (one whose own schedule is *Off* stays off) and read
+*Skipped* until their first answer. The time it spent excluded is not
+measured - see [Uptime / SLA](#uptime-sla).
+
+**Reset availability…** - in the **⋯** menu. For an address reused for a new
+host: uptime, SLA and availability figures count from **now** or from **a
+date** (midnight in your timezone, no earlier than the day the address was
+created). A **reason is required**. The history before it is kept - the
+results, the status changes and the latency charts still show it - but no
+figure counts it; the strips draw that stretch as bare track with a mark
+where counting starts (hover: *Not counted*). The reset also clears a
+flapping flag. **Clear reset…** (in the same menu, reason required) counts
+all history again.
+
+Under the section title a line says who did it, when and why:
+*Excluded by alice on 12 Sep 2026 14:02: Host decommissioned*, and
+*Availability reset by bob on 12 Sep 2026 14:05: New host on the address*,
+with *· counts from 1 Sep 2026* when the reset was backdated. It is read
+from the address itself. Both actions also write the address's **Change
+log** (with the user) and a **Journal** entry; a reset that changes an SLA
+agreement's figures writes a journal entry on the agreement too, and needs
+`slaagreement.change` on it - see [SLA](sla.md#resetting-an-address).
+
+These are not the other exclusions:
+
+| | What it does |
+|---|---|
+| **Exclude from monitoring** (this) | One address: every check parked, nothing counted |
+| Prefix-check *exclusions* | Addresses a prefix's check does not inherit; other checks still run |
+| Monitoring *deny subnets* | Ranges no check or discovery may ever touch |
+| The IP status *skip list* | Every address in a status (for example *reserved*) is skipped |
+| [SLA exclusions](sla.md) | Time an agreement does not count, for everything in it |
+
+Only **checks** stop. Device SNMP polling through the address, Redfish,
+watched endpoints, subnet discovery sweeps and Zabbix's own polling of a host
+Danbyte provisioned are not checks and carry on.
+
+The API: `POST /api/monitoring/ips/<id>/exclude/` with
+`{"excluded": true, "reason": "…"}`, and
+`POST /api/monitoring/ips/<id>/reset-availability/` with
+`{"reason": "…"}` (from now), `{"since": "2026-09-01", "reason": "…"}` or
+`{"clear": true, "reason": "…"}`. A missing or blank reason, a future date or
+one before the address existed is a `400` field error. Both answer with the
+address's `monitoring` block, which `GET /api/monitoring/ips/<id>/checks/`
+also carries. The IP list filters on `?monitoring_excluded=true`; the fields
+themselves are read-only on `/api/ips/<id>/`.
+
 ### On a prefix
 
 The prefix Monitoring tab shows:
@@ -503,7 +571,7 @@ showing the row's worst-status badge with a tooltip breakdown (a device rolls
 up across its assigned IPs), so you can scan health across many subnets or
 devices at a glance.
 
-### Uptime / SLA
+### Uptime / SLA {#uptime-sla}
 
 The IP Monitoring tab includes an **Uptime (SLA)** card with a window selector
 (24h / 7d / 30d / 90d). Availability is **time-weighted** - measured from how long
@@ -512,6 +580,12 @@ doesn't skew the number. Time spent in *unknown* or *skipped* is excluded from t
 calculation and reported separately, so a check that simply wasn't running can't
 read as 100% uptime. The card also shows the number of **incidents** in the window
 and the **mean time to recovery (MTTR)**.
+
+Time while the address was [excluded from monitoring](#excluding-an-address) is
+*skipped* - not measured - and so is everything before an
+[availability reset](#excluding-an-address): the figures count from the reset.
+A host that was already down at the reset is down from there, not a new
+incident.
 
 ### History
 
@@ -601,6 +675,16 @@ Availability is up ÷ (up + down). **Coverage** is the measured time ÷ all
 time. A 99.99 % figure measured over three days of a thirty-day month shows
 10 % coverage beside it.
 
+The records keep what actually happened: an
+[availability reset](#excluding-an-address) is applied when they are read,
+never written into them, so moving or clearing a reset needs no rebuild.
+Figures read from the records (the checks list, Explore, the SLA status
+columns and latency objectives) count an address from the first whole hour
+after its reset, and from the first whole UTC day for daily records - the
+rest of the reset day comes from its hourly records. Hourly records are kept
+30 days, so for a reset older than that its own day is not counted. The
+uptime, strips and SLA figures, which read status changes, are exact.
+
 A new install starts recording from its first run. To build records from the
 history already on disk, run `manage.py rollup_checks --backfill 90`. Daily
 records go back as far as status changes do. Latency goes back only as far as
@@ -625,6 +709,10 @@ the schedule:
 A manual check rolls into the same state machine as a scheduled one - it advances
 the rise/fall counters, can move the status, logs the change, and fires alerts
 exactly like an automatic scan.
+
+An address [excluded from monitoring](#excluding-an-address) is not run: its
+**Check now** is disabled (the API answers `409`), and a bulk run leaves it
+out. A run already under way when the address is excluded writes nothing.
 
 !!! tip "Large prefixes are fast"
     Sweeping a very large prefix (a `/16` is ~65,000 hosts) completes in seconds,
@@ -773,7 +861,9 @@ status badge wherever the status is: the prefix, device and VM lists, the
 address's summary and Monitoring tab (one pill per check), the device's
 Overview and Monitoring tab, every row of the Checks list and every change
 of a flagged check on the History tab - both of which have a **Flapping**
-facet on the rail to keep only those. The pill's hover says how many checks
+facet on the rail to keep only those. (The Checks list's rail also has an
+**Excluded** facet, for the checks of
+[excluded addresses](#excluding-an-address).) The pill's hover says how many checks
 under the target are flagged. A flapping alert stops sending reminders, so a bouncing
 host cannot page on a loop.
 
@@ -794,7 +884,9 @@ Two things keep expected churn out: exclude whole IP statuses (the
 DHCP-scope escape hatch, in settings) or tick **Ignore flapping** on one
 known-noisy address - neither is ever flagged, and either clears a flag
 already raised. That is different from confirming: confirming clears the
-flag once, ignoring stops it being raised at all.
+flag once, ignoring stops it being raised at all. An address
+[excluded from monitoring](#excluding-an-address) is never flagged either,
+and excluding it or resetting its availability clears its flag at once.
 
 **What gets mailed.** A flapping check is not mailed one change at a time.
 The moment the sweep flags it, every status-change channel in scope of the
@@ -1130,6 +1222,10 @@ configurable number of days are deleted automatically.
     Cleanup only touches IPs that Danbyte discovered itself. IPs you created by
     hand are **never** deleted by cleanup - the discovered flag is the safety
     boundary between "the tool made this" and "a person entered this".
+
+An address [excluded from monitoring](#excluding-an-address) is never
+cleaned up: nothing checks it, so it is never seen, and that is the
+exclusion rather than the host being gone.
 
 ## Settings
 

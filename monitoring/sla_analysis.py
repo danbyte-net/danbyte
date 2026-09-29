@@ -283,11 +283,13 @@ def _latency(agreement, bounds, filters, tz, bucket, rules=None) -> list[dict]:
     ips = _window_ips(agreement, bounds[0][0], bounds[-1][1], filters)
     if not ips:
         return []
+    from .counting import trim_rollups
+
     model = CheckRollupHourly if bucket == "hour" else CheckRollupDaily
-    qs = model.objects.filter(
+    qs = trim_rollups(model.objects.filter(
         tenant_id=agreement.tenant_id, target_ip_id__in=ips,
         bucket__gte=bounds[0][0], bucket__lt=bounds[-1][1],
-    )
+    ))
     if filters.get("kind"):
         qs = qs.filter(kind__in=filters["kind"])
     acc: dict = defaultdict(dict)

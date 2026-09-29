@@ -6,9 +6,11 @@ runs over a window - the same integration :mod:`uptime` does to add up
 availability, kept in one place so a strip drawn on a page and a percentage
 printed beside it can never disagree.
 
-Two queries for any number of checks: one for the status each was in as the
-window opened, one for every change inside it. PostgreSQL's ``DISTINCT ON``
-does the first; this is a Postgres-only application.
+Three queries for any number of checks: one for the status each was in as
+the window opened, one for every change inside it, and one for the addresses
+whose window is cut (an availability reset, an exclusion - see
+:mod:`monitoring.counting`). PostgreSQL's ``DISTINCT ON`` does the first; this
+is a Postgres-only application.
 """
 from __future__ import annotations
 
@@ -16,12 +18,17 @@ from .models import StateTransition
 from .rollup import worst_status
 
 
-def segments_for_pairs(tenant_id, pairs, since, until) -> dict:
+def segments_for_pairs(tenant_id, pairs, since, until, *, counted: bool = True) -> dict:
     """``{(ip_id, template_id): [segment, ...]}`` for every pair asked about.
 
     ``pairs`` are ``(target_ip_id, template_id)`` tuples. A pair with no
     history at all gets one ``unknown`` segment spanning the window - which
     is the truth, and draws as grey rather than as nothing.
+
+    ``counted`` applies each address's cut: the time before an availability
+    reset, and the time it has been excluded from monitoring, come back as
+    ``skipped`` segments with a ``note``. ``counted=False`` is what actually
+    happened, for the rollups, which store that.
     """
     pairs = list({(str(a), str(b)) for a, b in pairs})
     if not pairs:
@@ -70,6 +77,15 @@ def segments_for_pairs(tenant_id, pairs, since, until) -> dict:
         if until > cursor:
             segs.append({"start": cursor, "end": until, "status": status})
         out[key] = segs
+    if counted:
+        from .counting import clip, cuts
+
+        cut_by_ip = cuts(tenant_id, since, ip_ids)
+        if cut_by_ip:
+            for key, segs in out.items():
+                cut = cut_by_ip.get(key[0])
+                if cut is not None:
+                    out[key] = clip(segs, since, until, cut)
     return out
 
 
@@ -91,21 +107,41 @@ def merge_worst(segment_lists) -> list[dict]:
             if seg["start"] <= start and seg["end"] >= end
         ]
         status = worst_status(present) or "unknown"
-        if out and out[-1]["status"] == status and out[-1]["end"] == start:
+        # Not counted or excluded only when every list says so here.
+        notes = {
+            seg.get("note")
+            for s in lists
+            for seg in s
+            if seg["start"] <= start and seg["end"] >= end
+        }
+        note = notes.pop() if len(notes) == 1 else None
+        if (out and out[-1]["status"] == status and out[-1]["end"] == start
+                and out[-1].get("note") == note):
             out[-1]["end"] = end
         else:
-            out.append({"start": start, "end": end, "status": status})
+            out.append({"start": start, "end": end, "status": status,
+                        **({"note": note} if note else {})})
     return out
 
 
 def integrate(segments, *, up, down) -> dict:
     """Seconds in each class over a run of segments, plus the incident count -
-    the arithmetic :mod:`uptime` reports."""
+    the arithmetic :mod:`uptime` reports.
+
+    A segment before an availability reset is not counted, and what follows
+    it starts afresh: a host that was already down at the cut is not a new
+    incident (the rollups treat a window's opening the same way)."""
+    from .counting import NOT_COUNTED
+
     up_s = down_s = excluded = 0.0
     incidents = 0
     prev = None
     for seg in segments:
         length = (seg["end"] - seg["start"]).total_seconds()
+        if seg.get("note") == NOT_COUNTED:
+            excluded += length
+            prev = None
+            continue
         status = seg["status"]
         if status in up:
             up_s += length

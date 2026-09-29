@@ -183,7 +183,9 @@ def roll(tenant_id, size: timedelta, start: datetime, end: datetime,
         # Open a microsecond early so the first segment carries the status
         # the bucket inherited: a check that went down on the bucket edge is
         # an incident in this bucket, one that was already down is not.
-        segs = segments_for_pairs(tenant_id, pairs, bucket - EDGE, until)
+        # What actually happened: an availability reset is a reader's cut
+        # (monitoring.counting), so the rows never need rolling again.
+        segs = segments_for_pairs(tenant_id, pairs, bucket - EDGE, until, counted=False)
         base = baselines(tenant_id, bucket) if size == HOUR else {}
         lat = {
             (str(r["target_ip_id"]), str(r["template_id"])): r

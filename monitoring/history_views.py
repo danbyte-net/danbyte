@@ -246,10 +246,13 @@ def ip_timeline_view(request, ip_id):
         CheckState.objects.filter(target_ip=ip).select_related("template", "target_ip", "engine")
     )
     checks, rollup = _check_rows(tenant.id, states, since, until)
+    counts_from = ip.availability_since
     return Response({
         "since": since, "until": until, "rollup": rollup, "checks": checks,
         "summary": _summary(rollup),
         "days": per_day(rollup, since, until, viewer_tz(request, tenant)),
+        # Where an availability reset cuts this window (the strips mark it).
+        "counts_from": counts_from if counts_from and since < counts_from < until else None,
     })
 
 

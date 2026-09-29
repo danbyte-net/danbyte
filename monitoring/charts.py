@@ -263,7 +263,8 @@ def per_day(segments, since, until, tz: ZoneInfo) -> list[dict]:
         nxt = day + timedelta(days=1)
         lo, hi = max(day, since), min(nxt, until)
         clipped = [
-            {"start": max(s["start"], lo), "end": min(s["end"], hi), "status": s["status"]}
+            {"start": max(s["start"], lo), "end": min(s["end"], hi), "status": s["status"],
+             **({"note": s["note"]} if s.get("note") else {})}
             for s in segments
             if s["end"] > lo and s["start"] < hi
         ]

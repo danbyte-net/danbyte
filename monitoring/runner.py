@@ -22,6 +22,7 @@ import asyncio
 from dataclasses import dataclass
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from .checkers import CheckOutcome, get_checker
@@ -136,21 +137,40 @@ def _serialise(item: RunItem) -> dict:
 
 def check_now(ip) -> list[dict]:
     """Resolve this IP's effective checks, run them all concurrently in one
-    event loop, persist the results + roll up state, and return the outcomes."""
+    event loop, persist the results + roll up state, and return the outcomes.
+
+    Nothing for an address excluded from monitoring - refused up front, and
+    discarded if the exclusion landed while the checks ran: the write takes
+    the address row lock that excluding it takes, so the two cannot cross."""
+    if ip.monitoring_excluded:
+        return []
     resolved = resolve_effective_checks(ip)
     if not resolved:
         return []
     items = asyncio.run(_run_all(resolved, ip.ip_address))
     now = timezone.now()
-    record_results(ip, items)
-    _rollup_states(ip, items, now)
+    with transaction.atomic():
+        excluded = (
+            type(ip).objects.select_for_update(of=("self",)).filter(pk=ip.pk)
+            .values_list("monitoring_excluded", flat=True).first()
+        )
+        if excluded is None or excluded:
+            return []
+        record_results(ip, items)
+        transitions = _rollup_states(ip, items, now)
+    if transitions:
+        # Alerts and their notices after the commit, not under the lock.
+        from .alerts import process_transitions
+
+        process_transitions(transitions, now)
     return [_serialise(item) for item in items]
 
 
-def _rollup_states(ip, items: list[RunItem], now) -> None:
+def _rollup_states(ip, items: list[RunItem], now) -> list[StateTransition]:
     """Fold check-now outcomes into ``CheckState`` (status, counters,
-    last_checked), log transitions, and fire alerts - the same rollup the
-    scheduled worker's ``_finalise`` does, so a manual check is authoritative."""
+    last_checked) and log transitions - the same rollup the scheduled
+    worker's ``_finalise`` does, so a manual check is authoritative. Returns
+    the transitions, for the caller to raise alerts from."""
     from .state import apply_outcome
     from .worker import _cfg, _load_settings
 
@@ -203,6 +223,4 @@ def _rollup_states(ip, items: list[RunItem], now) -> None:
         type(ip).objects.filter(id=ip.id).update(last_seen=now)
     if transitions:
         StateTransition.objects.bulk_create(transitions, batch_size=500)
-        from .alerts import process_transitions
-
-        process_transitions(transitions, now)
+    return transitions

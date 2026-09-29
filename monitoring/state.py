@@ -62,7 +62,10 @@ def apply_outcome(
         if state.consecutive_fail >= max(fall, 1):
             new = "down"
     elif s == "unknown":
-        new = "unknown" if old == "unknown" else old
+        # Skipped is no verdict either: an address back from an exclusion
+        # whose check only says "unknown" is unknown, not still skipped.
+        # (A skip-listed address never gets here - it is not run.)
+        new = "unknown" if old in ("unknown", "skipped") else old
 
     # Stale = chronic down. Escalate a down result once it has failed for enough
     # consecutive scans, or (if already down) been down long enough. The

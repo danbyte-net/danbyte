@@ -104,6 +104,8 @@ def materialise_ip(ip: IPAddress, now=None, prefix_index=None) -> int:
     resolved = resolve_effective_checks(ip, prefix_index)
     keep_template_ids = set()
     engine = engine_for_ip(ip) if resolved else None
+    # A check that appears on an excluded address starts parked.
+    new_parked = []
     for rc in resolved:
         keep_template_ids.add(rc.template.id)
         # Persist the resolved per-target frequency override for policy checks
@@ -125,9 +127,15 @@ def materialise_ip(ip: IPAddress, now=None, prefix_index=None) -> int:
                 "interval_ms": rc.interval_ms,
             },
         )
-        if created:
+        if created and ip.monitoring_excluded:
+            new_parked.append(state)
+        elif created:
             state.next_run = now
             state.save(update_fields=["next_run"])
+    if new_parked:
+        from .exclusion import park_new
+
+        park_new(new_parked, now)
     CheckState.objects.filter(target_ip=ip).exclude(
         template_id__in=keep_template_ids
     ).delete()
@@ -139,7 +147,10 @@ def materialise_states(tenant: Tenant | None = None, now=None) -> dict:
     tenants = [tenant] if tenant else list(Tenant.objects.all())
     total_ips = 0
     total_checks = 0
+    from .exclusion import heal_orphans
+
     for t in tenants:
+        heal_orphans(t, now)
         ids = _candidate_ips(t)
         total_ips += len(ids)
         index = PrefixIndex(t.id) if ids else None
@@ -211,7 +222,11 @@ def check_engine_health(now=None) -> dict:
                 eng.stale_since = None
                 eng.save(update_fields=["stale_since"])
             continue
-        assigned = CheckState.objects.filter(engine=eng).count()
+        # Excluded addresses' checks are parked and never answered: an
+        # engine left with only those is not unreachable, it is not asked.
+        from .exclusion import monitored
+
+        assigned = monitored(CheckState.objects.filter(engine=eng), eng.tenant_id).count()
         if assigned == 0:
             # Nothing depends on it - quietly clear any leftover flag.
             if eng.stale_since:
@@ -357,7 +372,13 @@ def claim_states(due: list, now) -> list:
     write landed, and both would run them (#221). The claim is taken under
     ``SELECT ... FOR UPDATE SKIP LOCKED`` and re-checks ``in_flight=False``
     on the locked row, so a row another dispatcher is claiming is skipped,
-    and one it has already claimed no longer matches.
+    and one it has already claimed no longer matches. A row parked since it
+    was selected (its address excluded: ``next_run`` NULL) no longer matches
+    either.
+
+    Every due query - this dispatcher's, an Outpost's ``/work``, a driver's
+    claim - asks for ``next_run <= now``, which a parked row never is: that
+    is the whole of how an excluded address stops being checked.
     """
     if not due:
         return []
@@ -365,7 +386,7 @@ def claim_states(due: list, now) -> list:
     with transaction.atomic():
         won = set(
             CheckState.objects.select_for_update(skip_locked=True, of=("self",))
-            .filter(pk__in=list(by_id), in_flight=False)
+            .filter(pk__in=list(by_id), in_flight=False, next_run__isnull=False)
             .values_list("pk", flat=True)
         )
         claimed = [s for pk, s in by_id.items() if pk in won]

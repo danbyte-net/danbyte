@@ -247,6 +247,8 @@ def check_now_view(request, ip_id):
         return Response({"detail": "No active tenant."}, status=403)
     if ip is None:
         return Response({"detail": "Not found."}, status=404)
+    if ip.monitoring_excluded:
+        return Response({"detail": "Excluded from monitoring."}, status=409)
 
     results = check_now(ip)
     return Response(
@@ -348,10 +350,14 @@ def ip_checks_view(request, ip_id):
     # said nothing about open problems or an unreachable protocol while the
     # prefix's row for that very address showed both, which reads as the detail
     # page disagreeing with the list it was opened from.
+    from .exclusion import describe
+
     return Response({
         "ip_id": str(ip.id),
         "ip_address": ip.ip_address,
         "checks": checks,
+        # Excluded / reset, who and why - from the address's own columns.
+        "monitoring": describe(ip),
         **_external_detail([s.last_detail for s in states.values()]),
         **_flap_rollup(s.flapping_since for s in states.values()),
     })
@@ -531,13 +537,15 @@ def prefix_checks_view(request, prefix_id):
             CheckState.objects.filter(target_ip_id__in=child_ids),
         )
         .select_related("target_ip")
-        .values("target_ip_id", "target_ip__ip_address", "status")
+        .values("target_ip_id", "target_ip__ip_address", "status",
+                "target_ip__monitoring_excluded")
     )
     by_ip: dict = {}
     for s in states:
         e = by_ip.setdefault(
             s["target_ip_id"],
-            {"id": str(s["target_ip_id"]), "ip_address": s["target_ip__ip_address"], "statuses": []},
+            {"id": str(s["target_ip_id"]), "ip_address": s["target_ip__ip_address"],
+             "statuses": [], "excluded": s["target_ip__monitoring_excluded"]},
         )
         e["statuses"].append(s["status"])
 
@@ -549,12 +557,15 @@ def prefix_checks_view(request, prefix_id):
                 "status": worst_status(e["statuses"]),
                 "checks": len(e["statuses"]),
                 "counts": status_counts(e["statuses"]),
+                **({"excluded": True} if e["excluded"] else {}),
             }
             for e in by_ip.values()
         ),
         key=lambda r: r["ip_address"],
     )
-    rollup_status = worst_status([g["status"] for g in grid]) if grid else None
+    # The roll-up is over monitored addresses: an excluded one is not.
+    counted = [g for g in grid if not g.get("excluded")]
+    rollup_status = worst_status([g["status"] for g in counted]) if counted else None
 
     # Which engine (Outpost, or the built-in local) monitors this prefix.
     from .engines import engine_for_prefix
@@ -574,8 +585,8 @@ def prefix_checks_view(request, prefix_id):
             "assignments": assignment_rows,
             "rollup": {
                 "status": rollup_status,
-                "counts": status_counts([g["status"] for g in grid]),
-                "monitored_ips": len(grid),
+                "counts": status_counts([g["status"] for g in counted]),
+                "monitored_ips": len(counted),
                 "total_ips": len(child_ids),
             },
             "ips": grid[:GRID_CAP],
@@ -625,7 +636,7 @@ def device_checks_view(request, device_id):
         .select_related("target_ip")
         .values(
             "target_ip_id", "target_ip__ip_address", "status", "last_detail",
-            "flapping_since",
+            "flapping_since", "target_ip__monitoring_excluded",
         )
     )
     by_ip: dict = {}
@@ -638,6 +649,7 @@ def device_checks_view(request, device_id):
                 "statuses": [],
                 "details": [],
                 "flapping": [],
+                "excluded": s["target_ip__monitoring_excluded"],
             },
         )
         e["statuses"].append(s["status"])
@@ -657,12 +669,15 @@ def device_checks_view(request, device_id):
                 "counts": status_counts(e["statuses"]),
                 **_external_detail(e["details"]),
                 **_flap_rollup(e["flapping"]),
+                **({"excluded": True} if e["excluded"] else {}),
             }
             for e in by_ip.values()
         ),
         key=lambda r: r["ip_address"],
     )
-    rollup_status = worst_status([g["status"] for g in grid]) if grid else None
+    # The roll-up is over monitored addresses: an excluded one is not.
+    counted = [g for g in grid if not g.get("excluded")]
+    rollup_status = worst_status([g["status"] for g in counted]) if counted else None
 
     return Response(
         {
@@ -670,8 +685,8 @@ def device_checks_view(request, device_id):
             "name": device.name,
             "rollup": {
                 "status": rollup_status,
-                "counts": status_counts([g["status"] for g in grid]),
-                "monitored_ips": len(grid),
+                "counts": status_counts([g["status"] for g in counted]),
+                "monitored_ips": len(counted),
                 "total_ips": len(ip_ids),
                 **_flap_rollup(s["flapping_since"] for s in states),
             },
@@ -1187,7 +1202,12 @@ def stats_view(request):
 
     # Site-aware: the dashboard counts/series must reflect only the IPs the
     # caller may view, or a Site-A viewer would learn Site-B's totals.
-    states = _scope_ip_keyed(request, tenant, CheckState.objects.filter(tenant=tenant))
+    # Excluded addresses are not monitored, so they are not counted.
+    from .exclusion import monitored
+
+    states = monitored(
+        _scope_ip_keyed(request, tenant, CheckState.objects.filter(tenant=tenant)), tenant.id
+    )
     by_status = {
         row["status"]: row["n"]
         for row in states.values("status").annotate(n=Count("id"))
@@ -1227,9 +1247,11 @@ def stats_view(request):
     )
 
     since = timezone.now() - timedelta(hours=hours)
-    scoped_results = _scope_ip_keyed(
+    from .counting import trim_results
+
+    scoped_results = trim_results(_scope_ip_keyed(
         request, tenant, CheckResult.objects.filter(tenant=tenant)
-    )
+    ))
     tz = viewer_tz(request, tenant)
     q = rbac.row_filter(request.user, tenant, "ipaddress", "view")
     ip_filter = None if q is True else (
@@ -1293,13 +1315,15 @@ def _result_series(request, tenant, hours: int = 24) -> tuple[list[dict], str]:
     from django.db.models.functions import TruncDay, TruncHour
     from django.utils import timezone
 
+    from .counting import trim_results
+
     since = timezone.now() - timedelta(hours=hours)
     hourly = hours <= 72
     rows = (
-        _scope_ip_keyed(
+        trim_results(_scope_ip_keyed(
             request, tenant,
             CheckResult.objects.filter(tenant=tenant, timestamp__gte=since),
-        )
+        ))
         .annotate(h=TruncHour("timestamp") if hourly else TruncDay("timestamp"))
         .values("h", "status")
         .annotate(n=Count("id"))
@@ -1374,9 +1398,12 @@ def bulk_check_now_view(request):
                 IPAddress.objects.filter(id__in=child_ids),
             )
         )
+    # Excluded addresses are left alone - not materialised, not armed.
+    excluded = sum(1 for ip in ips if ip.monitoring_excluded)
+    ips = {ip for ip in ips if not ip.monitoring_excluded}
 
     if not ips:
-        return Response({"targets": 0, "checks": 0})
+        return Response({"targets": 0, "checks": 0, "excluded": excluded})
 
     now = timezone.now()
     from .resolver import PrefixIndex
@@ -1397,7 +1424,7 @@ def bulk_check_now_view(request):
     run_id = _seed_check_run(armed_ids, tenant, request.user)
     return Response(
         {"targets": len(ips), "checks": armed, "already_running": running,
-         "jobs": result["jobs"], "run_id": run_id}
+         "jobs": result["jobs"], "run_id": run_id, "excluded": excluded}
     )
 
 
@@ -1733,6 +1760,139 @@ def ip_flapping_clear_view(request, ip_id):
     return _clear_flapping_states(request, tenant, qs)
 
 
+# ─── exclusion and the availability reset ────────────────────────────────
+
+
+class IpExcludeBody(serializers.Serializer):
+    excluded = serializers.BooleanField()
+    reason = serializers.CharField(
+        required=False, allow_blank=True, max_length=200, default="",
+    )
+
+
+class IpResetBody(serializers.Serializer):
+    #: A day, counted from midnight in the viewer's timezone. Omitted: now.
+    since = serializers.DateField(required=False, allow_null=True)
+    #: Count all history again (the reset removed).
+    clear = serializers.BooleanField(required=False, default=False)
+    #: Required: a reset changes what SLA figures say.
+    reason = serializers.CharField(max_length=200)
+
+
+def _changeable_ip(request, ip_id):
+    """``(ip, tenant, None)``, or ``(None, None, response)``: 404 when the
+    caller cannot see the address, 403 when they cannot change it - the
+    grant "Confirm not flapping" needs, for the same reason."""
+    ip, tenant = _get_ip(request, ip_id)
+    if tenant is None:
+        return None, None, Response({"detail": "No active tenant."}, status=403)
+    if ip is None:
+        return None, None, Response({"detail": "Not found."}, status=404)
+    ip, _ = _scoped_get(request, IPAddress, "ipaddress", "change", ip_id)
+    if ip is None:
+        return None, None, Response({"detail": "Forbidden."}, status=403)
+    return ip, tenant, None
+
+
+@extend_schema(
+    summary="Exclude an address from monitoring, or include it again",
+    tags=["monitoring"],
+    request=IpExcludeBody,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="``{monitoring: {...}}`` - the address's exclusion and reset.",
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ip_exclude_view(request, ip_id):
+    """Park every check on the address (exclude) or re-arm them (include).
+    Open alerts close, with who and why; the time off is not counted as
+    availability. Needs ``ipaddress.change`` on the address."""
+    from .exclusion import describe, set_excluded
+
+    ip, tenant, denied = _changeable_ip(request, ip_id)
+    if denied:
+        return denied
+    body = IpExcludeBody(data=request.data or {})
+    body.is_valid(raise_exception=True)
+    set_excluded(
+        ip, body.validated_data["excluded"], request.user,
+        reason=body.validated_data.get("reason") or "",
+    )
+    ip.refresh_from_db()
+    return Response({"monitoring": describe(ip)})
+
+
+@extend_schema(
+    summary="Count an address's availability from a date (or from now)",
+    tags=["monitoring"],
+    request=IpResetBody,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="``{monitoring: {...}, counts_from, agreements}``.",
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ip_reset_availability_view(request, ip_id):
+    """Uptime, SLA and availability for the address count from ``since``
+    (a day, from midnight in the viewer's timezone) or from now; earlier
+    history is kept but not counted. ``clear`` counts everything again. A
+    reason is required. Needs ``ipaddress.change``, and ``slaagreement.change``
+    on every active agreement whose figures count the address."""
+    from datetime import datetime, time
+
+    from .charts import viewer_tz
+    from .counting import affected_agreements, reset
+    from .models import SlaAgreement
+
+    ip, tenant, denied = _changeable_ip(request, ip_id)
+    if denied:
+        return denied
+    body = IpResetBody(data=request.data or {})
+    body.is_valid(raise_exception=True)
+    data = body.validated_data
+    tz = viewer_tz(request, tenant)
+    now = timezone.now()
+    if data.get("clear"):
+        counts_from = None
+    elif data.get("since") is None:
+        counts_from = now
+    else:
+        day = data["since"]
+        if day > now.astimezone(tz).date():
+            raise serializers.ValidationError({"since": ["Can't be in the future."]})
+        if ip.created_at and day < ip.created_at.astimezone(tz).date():
+            raise serializers.ValidationError({"since": ["Before the address existed."]})
+        counts_from = min(datetime.combine(day, time(0), tz), now)
+
+    # A reset rewrites the open (and not yet frozen) periods of every
+    # agreement that counts the address - an SLA change, and needs the grant
+    # for one.
+    agreements = affected_agreements(ip)
+    if agreements and not request.user.is_superuser:
+        allowed = rbac.restrict_queryset(
+            SlaAgreement.objects.filter(tenant=tenant, pk__in=[a.pk for a in agreements]),
+            request.user, tenant, "slaagreement", "change",
+        ).count()
+        if allowed != len(agreements):
+            return Response(
+                {"detail": "Resetting this address changes SLA figures - needs change "
+                           "permission on the agreements that count it."},
+                status=403,
+            )
+    monitoring = reset(
+        ip, counts_from=counts_from, user=request.user, reason=data["reason"],
+        tz=tz, now=now, agreements=agreements,
+    )
+    return Response({
+        "monitoring": monitoring,
+        "counts_from": counts_from,
+        "agreements": len(agreements),
+    })
+
+
 @extend_schema(summary="Confirm a device is not flapping", tags=["monitoring"], request=None)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -1898,6 +2058,9 @@ def checks_list_view(request):
             qs = qs.filter(flapping_since__isnull=False)
         elif flapping == "0":
             qs = qs.filter(flapping_since__isnull=True)
+        excluded = (p.get("excluded") or "").strip()
+        if excluded in ("1", "0"):
+            qs = qs.filter(target_ip__monitoring_excluded=excluded == "1")
         return qs
 
     qs = apply(base, params)
@@ -1982,6 +2145,13 @@ def checks_list_view(request):
     facets["flapping"] = (
         [{"value": "1", "label": "Flapping", "count": flapping_now}] if flapping_now else []
     )
+    # Checks parked because their address is excluded from monitoring.
+    excluded_now = apply(base, _without_key(params, "excluded")).filter(
+        target_ip__monitoring_excluded=True
+    ).count()
+    facets["excluded"] = (
+        [{"value": "1", "label": "Excluded", "count": excluded_now}] if excluded_now else []
+    )
     body = {
         "count": total,
         "page": page,
@@ -2039,6 +2209,9 @@ def check_row(st) -> dict:
         "flapping_since": st.flapping_since,
         "flap_count": st.flap_count,
         "interval_ms": st.interval_ms,
+        # Parked because the address is excluded, not skip-listed: the row
+        # says "Excluded", not "Skipped".
+        "excluded": ip.monitoring_excluded,
         "device": {"id": str(device.id), "name": device.name} if device else None,
         "site": _site_of(ip),
         "prefix": (
@@ -2206,6 +2379,9 @@ def bulk_status_view(request):
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"statuses": {}})
+    # Prefix, VM and device roll-ups leave excluded addresses out: they are
+    # not monitored. The IP branch says "excluded" instead.
+    from .exclusion import monitored
 
     def _ids(name: str):
         if request.method == "POST":
@@ -2226,16 +2402,20 @@ def bulk_status_view(request):
                 request, tenant,
                 CheckState.objects.filter(tenant=tenant, target_ip_id__in=ids),
             )
-            .values("target_ip_id", "status", "last_detail", "flapping_since")
+            .values("target_ip_id", "status", "last_detail", "flapping_since",
+                    "target_ip__monitoring_excluded")
         )
         grouped: dict = {}
         details: dict = {}
         flaps: dict = {}
+        excluded: set = set()
         for row in states:
             key = str(row["target_ip_id"])
             grouped.setdefault(key, []).append(row["status"])
             details.setdefault(key, []).append(row["last_detail"])
             flaps.setdefault(key, []).append(row["flapping_since"])
+            if row["target_ip__monitoring_excluded"]:
+                excluded.add(key)
         for ip_id, statuses in grouped.items():
             out[ip_id] = {
                 "status": worst_status(statuses),
@@ -2243,7 +2423,16 @@ def bulk_status_view(request):
                 "counts": status_counts(statuses),
                 **_external_detail(details.get(ip_id) or []),
                 **_flap_rollup(flaps.get(ip_id) or []),
+                **({"excluded": True} if ip_id in excluded else {}),
             }
+        # An excluded address with no checks still says so.
+        for ip_id in _viewable_ips(
+            request, tenant,
+            IPAddress.objects.filter(id__in=ids, monitoring_excluded=True),
+        ).values_list("id", flat=True):
+            out.setdefault(str(ip_id), {
+                "status": "skipped", "checks": 0, "counts": {}, "excluded": True,
+            })
         return Response({"statuses": out})
 
     prefix_param = _ids("prefixes")
@@ -2267,10 +2456,10 @@ def bulk_status_view(request):
             child_ids = _viewable_child_ip_ids(request, prefix, tenant)
             if not child_ids:
                 continue
-            rows = list(_scope_ip_keyed(
+            rows = list(monitored(_scope_ip_keyed(
                 request, tenant,
                 CheckState.objects.filter(target_ip_id__in=child_ids),
-            ).values("status", "last_detail", "flapping_since"))
+            ), tenant.id).values("status", "last_detail", "flapping_since"))
             statuses = [r["status"] for r in rows]
             if not statuses:
                 continue
@@ -2303,10 +2492,10 @@ def bulk_status_view(request):
         for vm_id, ip_id in ip_rows:
             ips_by_vm.setdefault(str(vm_id), []).append(ip_id)
         for vm_id, ip_ids in ips_by_vm.items():
-            states = list(_scope_ip_keyed(
+            states = list(monitored(_scope_ip_keyed(
                 request, tenant,
                 CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ).values("target_ip_id", "status", "last_detail", "flapping_since"))
+            ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"))
             statuses = [s["status"] for s in states]
             if not statuses:
                 continue
@@ -2340,11 +2529,11 @@ def bulk_status_view(request):
         for dev_id, ip_id in ip_rows:
             ips_by_device.setdefault(str(dev_id), []).append(ip_id)
         for dev_id, ip_ids in ips_by_device.items():
-            states = list(_scope_ip_keyed(
+            states = list(monitored(_scope_ip_keyed(
                 request,
                 tenant,
                 CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ).values("target_ip_id", "status", "last_detail", "flapping_since"))
+            ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"))
             statuses = [s["status"] for s in states]
             if not statuses:
                 continue

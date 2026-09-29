@@ -178,6 +178,7 @@ def run_icmp_sweep(state_ids: list[str], timeout_ms: int, count: int = 2) -> dic
     )
     if not states:
         return {"checked": 0}
+    states = _without_excluded(states)
     settings_map = _load_settings({s.tenant_id for s in states})
     runnable, skipped = _partition_skipped(states, settings_map)
     _mark_skipped(skipped, settings_map)
@@ -205,6 +206,7 @@ def run_generic(state_ids: list[str]) -> dict:
     )
     if not states:
         return {"checked": 0}
+    states = _without_excluded(states)
     settings_map = _load_settings({s.tenant_id for s in states})
     runnable, skipped = _partition_skipped(states, settings_map)
     _mark_skipped(skipped, settings_map)
@@ -229,6 +231,38 @@ async def _run_generic_batch(states: list[CheckState]) -> list[CheckOutcome]:
 
 
 # ─── skip handling ────────────────────────────────────────────────────────
+
+
+def _without_excluded(states):
+    """Drop, and park again, the states whose address was excluded after
+    they were dispatched - a job that sat in a long queue must not dial an
+    address the operator has since switched off. ``target_ip`` is already
+    loaded, so this costs nothing when there are none."""
+    stray = [s.id for s in states if s.target_ip.monitoring_excluded]
+    if not stray:
+        return states
+    from .exclusion import repark
+
+    repark(stray)
+    return [s for s in states if not s.target_ip.monitoring_excluded]
+
+
+def _heal_excluded(state_ids, now) -> None:
+    """After a write: re-park any row whose address was excluded between the
+    writer's read and its write. One query, usually empty."""
+    if not state_ids:
+        return
+    from django.db.models import Q
+
+    stray = list(
+        CheckState.objects.filter(id__in=list(state_ids), target_ip__monitoring_excluded=True)
+        .filter(Q(next_run__isnull=False) | ~Q(status="skipped") | Q(in_flight=True))
+        .values_list("id", flat=True)
+    )
+    if stray:
+        from .exclusion import repark
+
+        repark(stray, now)
 
 
 def _partition_skipped(states, settings_map):
@@ -278,6 +312,9 @@ def _mark_skipped(states, settings_map) -> None:
         ["status", "since", "in_flight", "in_flight_since", "next_run"],
         batch_size=2000,
     )
+    # A skip-listed address excluded meanwhile must not stay scheduled: this
+    # write never passes _persist, which heals everything else.
+    _heal_excluded([s.id for s in states], now)
     if transitions:
         from .alerts import process_transitions
 
@@ -293,8 +330,10 @@ def _finalise(
     settings_map: dict,
     *,
     engine_id=None,
-) -> None:
-    """Record what came back, and who it came from.
+) -> int:
+    """Record what came back, and who it came from. Returns how many were
+    written (a reclaimed check, or one whose address was excluded meanwhile,
+    is not).
 
     ``engine_id`` is the engine that *ran* these - the Outpost that phoned
     them in, the Zabbix driver - or None for the core's own workers. It goes
@@ -308,20 +347,33 @@ def _finalise(
     # row has since been reclaimed - the reaper gave up on a slow job and a
     # new one took it - this job's in-memory copy is stale, and writing it
     # would overwrite the newer run's counters and verdict (#220).
+    #
+    # The same read says whether the address has been excluded since the
+    # claim: a result for it is dropped and the row parked again (a parked
+    # row has no claim left, so this is mostly the rows that raced it).
     claimed_at = {s.id: s.in_flight_since for s in states}
-    current = dict(
-        CheckState.objects.filter(id__in=list(claimed_at))
-        .values_list("id", "in_flight_since")
-    )
-    keep = [
-        (s, oc) for s, oc in zip(states, outcomes, strict=True)
-        if s.id in current and current[s.id] == claimed_at[s.id]
-    ]
-    if len(keep) != len(states):
+    current = {
+        sid: (since, excluded)
+        for sid, since, excluded in CheckState.objects.filter(id__in=list(claimed_at))
+        .values_list("id", "in_flight_since", "target_ip__monitoring_excluded")
+    }
+    keep, stray = [], []
+    for s, oc in zip(states, outcomes, strict=True):
+        if s.id not in current or current[s.id][0] != claimed_at[s.id]:
+            continue
+        if current[s.id][1]:
+            stray.append(s.id)
+            continue
+        keep.append((s, oc))
+    if len(keep) + len(stray) != len(states):
         log.info(
             "finalise: dropped %d result(s) for checks reclaimed since this "
-            "job took them", len(states) - len(keep),
+            "job took them", len(states) - len(keep) - len(stray),
         )
+    if stray:
+        from .exclusion import repark
+
+        repark(stray, now)
     states = [s for s, _ in keep]
     outcomes = [oc for _, oc in keep]
 
@@ -362,8 +414,12 @@ def _finalise(
         interval = effective_interval(state, cfg)
         state.next_run = now + timedelta(seconds=interval) if interval else None
 
-    _persist(results, transitions, states, now)
-    _sync_dns(states, settings_map, outcomes)
+    kept = _persist(results, transitions, states, now, excluded=set())
+    # Pairs filtered together: a state dropped on its own would shift every
+    # outcome after it onto the wrong address's DNS name.
+    pairs = [(s, oc) for s, oc in zip(states, outcomes, strict=True) if s.id in kept]
+    _sync_dns([s for s, _ in pairs], settings_map, [oc for _, oc in pairs])
+    return len(kept)
 
 
 #: What a run may change on a state - the columns ``_persist`` writes back.
@@ -388,14 +444,33 @@ def _persist(
     transitions: list[StateTransition],
     states: list[CheckState],
     now,
-) -> None:
+    *,
+    excluded: set | None = None,
+) -> set:
     """Write what a run produced - results, transitions, the states - and
     fire what hangs off it (certificates, SSH keys, last_seen, alerts).
 
     Shared by the minute-beat workers and the fast lane, which folds probes
     in memory and hands over only the rows worth keeping. The two must not
     diverge on what a status change sets off, so there is one of these.
+
+    It is also the choke point for excluded addresses: whatever arrives for
+    one - a fast-lane flush, an Outpost's samples - is dropped and its row
+    parked again. ``excluded`` is the set of excluded address ids when the
+    caller already read it (``_finalise`` does, in its write guard); None
+    reads it here. Returns the ids of the states written.
     """
+    if excluded is None:
+        excluded = _excluded_among(results, transitions, states)
+    if excluded:
+        dropped = [s.id for s in states if s.target_ip_id in excluded]
+        results = [r for r in results if r.target_ip_id not in excluded]
+        transitions = [t for t in transitions if t.target_ip_id not in excluded]
+        states = [s for s in states if s.target_ip_id not in excluded]
+        if dropped:
+            from .exclusion import repark
+
+            repark(dropped, now)
     if results:
         CheckResult.objects.bulk_create(results, batch_size=2000)
         from .certificates import record_check_results
@@ -415,6 +490,9 @@ def _persist(
 
         IPAddress.objects.filter(id__in=seen_ids).update(last_seen=now)
 
+    # Excluded between the read above and the write: park it again.
+    _heal_excluded([s.id for s in states], now)
+
     if transitions:
         from .alerts import process_transitions
 
@@ -423,6 +501,17 @@ def _persist(
     from .live import publish
 
     publish(states, transitions)
+    return {s.id for s in states}
+
+
+def _excluded_among(results, transitions, states) -> set:
+    from .exclusion import excluded_ids
+
+    return excluded_ids(
+        {r.target_ip_id for r in results}
+        | {t.target_ip_id for t in transitions}
+        | {s.target_ip_id for s in states}
+    )
 
 
 def ingest_results(outcome_by_id: dict, *, engine_id=None, tenant_id=None) -> int:
@@ -449,8 +538,7 @@ def ingest_results(outcome_by_id: dict, *, engine_id=None, tenant_id=None) -> in
         return 0
     outcomes = [outcome_by_id[str(s.id)] for s in states]
     settings_map = _load_settings({s.tenant_id for s in states})
-    _finalise(states, outcomes, settings_map, engine_id=engine_id)
-    return len(states)
+    return _finalise(states, outcomes, settings_map, engine_id=engine_id)
 
 
 # ─── reverse-DNS enrichment ───────────────────────────────────────────────
