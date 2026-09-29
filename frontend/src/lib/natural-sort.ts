@@ -3,9 +3,11 @@ import type { Row } from "@tanstack/react-table"
 /** Natural ("human") order for names with numbers in them (#244): "DIMM 2"
  * before "DIMM 10", "Ethernet1/2" before "Ethernet1/10", where a plain string
  * compare reads 1, 10, 11, 2. Case and accents do not matter. The backend
- * orders lists the same way (the natural_sort collation), so a table sorted
- * here agrees with the order the API sent. */
-const collator = new Intl.Collator(undefined, {
+ * orders lists the same way (the natural_sort collation, root order), so a
+ * table sorted here agrees with the order the API sent. The locale is pinned:
+ * the browser's own would move names per language (Danish sorts "Aalborg"
+ * after "Z"), and "und" falls back to the browser's. */
+const collator = new Intl.Collator("en", {
   numeric: true,
   sensitivity: "base",
 })

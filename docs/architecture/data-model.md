@@ -118,7 +118,15 @@ rendering - is in that order without an explicit `order_by`. List endpoints
 order the same way, including the device name that leads a cross-device
 component list. In the UI, `naturalCompare` (`frontend/src/lib/natural-sort.ts`)
 is the same order for client-side sorts, and every `DataTable` column that sets
-no `sortingFn` of its own sorts its text with it.
+no `sortingFn` of its own sorts its text with it. Its collator is pinned to
+`en` (root order, as `und` is on the server): the browser's own locale would
+reorder names per language - Danish sorts `Aalborg` after `Z`.
+
+!!! note "After upgrading"
+    Rendered configs and the routing config context list interfaces in
+    natural order, including those under FHRP, BGP, OSPF, IS-IS, EIGRP and
+    LDP. The first render after upgrading from an earlier version can differ
+    from a stored bundle or a device's running config by line order alone.
 
 ## Conventional VRF = NULL
 

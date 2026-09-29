@@ -21,6 +21,18 @@ describe("naturalCompare", () => {
     ])
   })
 
+  it("keeps one order whatever the browser's language", () => {
+    // Danish would put "Aalborg" and "aarhus-core1" after "zz-lab" (aa = å);
+    // the backend's root order does not, so neither may a header click.
+    const names = ["zz-lab", "aarhus-core1", "Odense", "Aalborg"]
+    expect([...names].sort(naturalCompare)).toEqual([
+      "Aalborg",
+      "aarhus-core1",
+      "Odense",
+      "zz-lab",
+    ])
+  })
+
   it("ignores case and reads null as empty", () => {
     expect(naturalCompare("sw1", "SW1")).toBe(0)
     expect(["b", null, "A"].sort(naturalCompare)).toEqual([null, "A", "b"])

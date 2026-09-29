@@ -59,8 +59,9 @@ Device fields**, e.g. airflow and cluster) are not offered.
 Click a column header to sort by it; click it again to reverse. Text sorts in
 natural order, the way you count: `DIMM 1, DIMM 2 … DIMM 10, DIMM 11`, and
 `Ethernet1/2` before `Ethernet1/10`, with case ignored. Numbers and dates sort
-by value. Before you click anything, a list shows rows in the order the server
-sends them, which is the same natural order by name.
+by value. The order is the same whatever language your browser uses. Before
+you click anything, a list shows rows in the order the server sends them,
+which is the same natural order by name.
 
 ## Where your settings live
 
