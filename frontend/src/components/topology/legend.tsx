@@ -207,7 +207,7 @@ export function legendRows({
         kind: "line",
         label: "Traced run",
         width: 2.5,
-        color: "var(--primary)",
+        color: "var(--map-accent)",
       })
     if (shows("bundle"))
       out.push({ kind: "line", label: "Bundle", width: 2.5, sem: "bundle" })
@@ -313,7 +313,7 @@ export function CanvasLegend({
         variant="outline"
         size="xs"
         onClick={() => toggle(true)}
-        className="bg-background/95 text-muted-foreground shadow-none"
+        className="bg-background text-muted-foreground shadow-none"
       >
         <List /> Legend
       </Button>
@@ -324,7 +324,7 @@ export function CanvasLegend({
   const tones = items.filter((i) => i.kind === "tone")
   const note = items.find((i) => i.kind === "note")
   return (
-    <div className="w-60 rounded-md border border-border bg-background/95 p-2.5 pt-1.5 text-[11px]">
+    <div className="w-60 rounded-md border border-border bg-background p-2.5 pt-1.5 text-[11px]">
       <div className="mb-1 flex items-center justify-between">
         <SectionLabel className="mb-0">Legend</SectionLabel>
         <Tooltip>
@@ -418,35 +418,6 @@ export function CanvasLegend({
           <p className="pt-1 text-muted-foreground">{note.label}</p>
         ) : null}
       </div>
-    </div>
-  )
-}
-
-/** Inline legend under the Logical (VLAN-rail) diagram. */
-export function LogicalLegend() {
-  return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-      <RowItem
-        swatch={<span className="h-2.5 w-6 shrink-0 rounded-sm bg-[#1d63ed]" />}
-        label="VLAN"
-      />
-      <RowItem
-        swatch={
-          <span className="h-3 w-6 shrink-0 rounded-sm border border-border bg-card" />
-        }
-        label="Device"
-      />
-      <RowItem
-        swatch={
-          <span className="h-3 w-6 shrink-0 rounded-sm border border-dashed border-muted-foreground/60 bg-card" />
-        }
-        label="VM"
-      />
-      <RowItem swatch={<Line width={3} color="#1d63ed" />} label="Untagged" />
-      <RowItem
-        swatch={<Line dash="5 5" width={3} color="#1d63ed" />}
-        label="Tagged"
-      />
     </div>
   )
 }

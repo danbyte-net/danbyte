@@ -202,7 +202,7 @@ describe("an embedded map's legend", () => {
     ])
     expect(rows.find((r) => r.label === "Traced run")).toMatchObject({
       kind: "line",
-      color: "var(--primary)",
+      color: "var(--map-accent)",
       width: 2.5,
     })
   })

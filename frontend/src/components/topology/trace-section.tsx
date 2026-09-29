@@ -12,6 +12,7 @@ import { useUrlEnum } from "@/lib/use-url-state"
 import { ExportMenu } from "./export/export-menu"
 import { graphLegend, legendRows } from "./legend"
 import type { CanvasHandle } from "./topology-canvas"
+import { runOrder, traceMap } from "./trace-run"
 
 const AXES = ["LR", "TB"] as const
 
@@ -21,8 +22,10 @@ const EmbeddedMap = lazy(() =>
 
 // The end-to-end cable trace for an interface or cable, drawn as the
 // Diagram draws the Topology page (embedded-map.tsx): the traced devices as
-// Detailed cards, a patch panel as a dashed card with a nub on each front
-// and rear port the run uses, the run itself thick in the accent colour.
+// Detailed cards in the order the run reaches them (trace-run.ts), a patch
+// panel as a dashed card between the two ends with a nub on each front and
+// rear port the run uses - the front facing one end, the rear the other -
+// and the run itself thick in the accent colour.
 // Lazy so React Flow never hits the SSR bundle. Renders nothing useful when
 // the object isn't cabled.
 export function TraceSection({
@@ -47,7 +50,8 @@ export function TraceSection({
   const local = useState<"LR" | "TB">("LR")
   const linked = useUrlEnum<"LR" | "TB">(urlKey ?? "dir", "LR", AXES)
   const [direction, setDirection] = urlKey ? linked : local
-  const graph = q.data?.device_graph
+  const graph = useMemo(() => q.data && traceMap(q.data), [q.data])
+  const run = useMemo(() => q.data && runOrder(q.data), [q.data])
   // Two devices or more make a map; one is an uncabled port.
   const drawn = (graph?.nodes.length ?? 0) > 1
   const canvas = useRef<CanvasHandle>(null)
@@ -115,6 +119,7 @@ export function TraceSection({
               graph={graph}
               focusNodeId={focusNodeId}
               direction={direction}
+              run={run}
             />
           </Suspense>
         </div>

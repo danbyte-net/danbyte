@@ -40,7 +40,7 @@ describe("edge style table", () => {
     expect(
       flow("cable", { count: 3, stroke: "#123456", via: true, marked: true })
         .style
-    ).toEqual({ strokeWidth: 2.5, stroke: "var(--primary)" })
+    ).toEqual({ strokeWidth: 2.5, stroke: "var(--map-accent)" })
     expect(flow("lagbundle", { stroke: "#abcdef" })).toEqual({
       style: { strokeWidth: 2.5, stroke: "#abcdef" },
       labelStyle: { fontSize: 9, fontWeight: 600 },
@@ -48,7 +48,7 @@ describe("edge style table", () => {
     })
     expect(flow("lagbundle", { marked: true }).style).toEqual({
       strokeWidth: 3,
-      stroke: "var(--primary)",
+      stroke: "var(--map-accent)",
     })
     expect(flow("bundle")).toEqual({
       style: { strokeWidth: 1.75 },

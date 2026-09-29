@@ -1,4 +1,4 @@
-import { forwardRef, useMemo } from "react"
+import { forwardRef, useMemo, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
@@ -15,7 +15,8 @@ import type { CanvasHandle, TopologyCanvasProps } from "./topology-canvas"
 // maps and a tunnel's map. Detailed cards in their role's colour with a
 // nub per cabled interface, Elbow lines with the port names and addresses
 // on their own cable, the device the map is about outlined, and a trace's
-// run drawn thick in the accent colour. No overview in the corner - it
+// run drawn thick in the accent colour, its devices in the order the run
+// reaches them. No overview in the corner - it
 // would cover a small map's cards - and a compact legend waiting on its
 // chip. Loaded lazily with the canvas, so React Flow stays out of the
 // pages' own bundles.
@@ -65,6 +66,9 @@ export interface EmbeddedMapProps {
   /** Cards pinned by centre (a tunnel map's ring); the rest are laid
    * out. Keep the object stable. */
   positions?: Record<string, [number, number]>
+  /** A trace map: each card's place along the run (trace-run.ts). Keep
+   * the object stable. */
+  run?: Record<string, number>
   onGhostEdge?: (ghost: GhostEdgeData) => void
   onSelectNode?: TopologyCanvasProps["onSelectNode"]
   onSelectEdge?: TopologyCanvasProps["onSelectEdge"]
@@ -72,11 +76,12 @@ export interface EmbeddedMapProps {
 
 export const EmbeddedMap = forwardRef<CanvasHandle, EmbeddedMapProps>(
   function EmbeddedMap(
-    { graph, focusNodeId, direction = "LR", positions, ...handlers },
+    { graph, focusNodeId, direction = "LR", positions, run, ...handlers },
     ref
   ) {
     const monitor = useCardMonitor(graph)
     const legend = useMemo(() => graphLegend(graph), [graph])
+    const legendBox = useRef<HTMLDivElement>(null)
     return (
       <div className="relative h-full w-full">
         <TopologyCanvas
@@ -88,14 +93,16 @@ export const EmbeddedMap = forwardRef<CanvasHandle, EmbeddedMapProps>(
           direction={direction}
           focusNodeId={focusNodeId}
           positions={positions}
+          run={run}
           monitor={monitor}
           minimap={false}
           fitOptions={FIT}
+          keepClear={legendBox}
           {...handlers}
         />
         {graph.nodes.length > 1 && (
           // left-16 clears the zoom buttons in the corner.
-          <div className="absolute bottom-4 left-16 z-10">
+          <div ref={legendBox} className="absolute bottom-4 left-16 z-10">
             <CanvasLegend
               viewStyle="diagram"
               grouped={false}

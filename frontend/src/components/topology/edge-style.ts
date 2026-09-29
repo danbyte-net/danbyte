@@ -143,8 +143,10 @@ export function edgeLook(sem: EdgeSem, ctx: EdgeLookContext = {}): EdgeLook {
   const stroke = ctx.stroke ? { stroke: ctx.stroke } : {}
   switch (sem) {
     case "cable":
-      // Traced cable (trace map): thick primary stroke so the run stands out.
-      if (ctx.marked) return { width: 2.5, stroke: "var(--primary)", label: {} }
+      // Traced cable (trace map): thick in the maps' accent, so the run
+      // stands out in either theme.
+      if (ctx.marked)
+        return { width: 2.5, stroke: "var(--map-accent)", label: {} }
       if (ctx.tunnel)
         return { width: 1.5, ...stroke, dash: TUNNEL_DASH, label: {} }
       return {
@@ -155,7 +157,11 @@ export function edgeLook(sem: EdgeSem, ctx: EdgeLookContext = {}): EdgeLook {
       }
     case "lagbundle":
       if (ctx.marked)
-        return { width: 3, stroke: "var(--primary)", label: { weight: 600 } }
+        return {
+          width: 3,
+          stroke: "var(--map-accent)",
+          label: { weight: 600 },
+        }
       return { width: 2.5, ...stroke, label: { weight: 600 } }
     case "bundle":
       return { width: 1.75, ...stroke, label: {} }

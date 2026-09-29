@@ -107,7 +107,7 @@ import {
   HistoryButtons,
   HistoryMenuItems,
 } from "@/components/topology/history-buttons"
-import { barFit, useContentWidth } from "@/components/topology/bar-fit"
+import { useBarFit } from "@/components/topology/bar-fit"
 import type { LevelsProps } from "@/components/topology/level-organiser"
 import {
   PopoverField,
@@ -877,7 +877,11 @@ function TopologyPage() {
   // so adding and removing devices is undoable and saved with the view.
   const [urlDevices, setUrlDevices] = useUrlCsv("devices")
   const urlSetKey = urlDevices?.join(",") ?? null
-  const [barRef, barWidth] = useContentWidth()
+  // What of the second bar gives way to its More menu, measured from the
+  // bar as drawn: Copy link, then Objects, then Undo and Redo.
+  const [barRef, barRoom] = useBarFit()
+  /** The legend in the canvas's corner: a fit keeps the map clear of it. */
+  const legendBox = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<{
     x: number
     y: number
@@ -2392,11 +2396,6 @@ function TopologyPage() {
         show: "@max-[900px]/head:inline-flex",
         find: "@max-[1040px]/head:w-32",
       }
-  // What of the second bar gives way to its More menu at its width: Copy
-  // link, then Objects, then Undo and Redo (an applied view's Edited, Save
-  // and Delete need the room).
-  const barRoom = barFit(barWidth, viewId !== "none")
-
   /** A device card's right-click menu: its items and the keys they show
    * act on this card, not on the canvas selection. */
   const deviceMenu = (
@@ -2852,11 +2851,19 @@ function TopologyPage() {
           )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {!barRoom.objects && (
-              <BarToggle pressed={showObjects} onClick={toggleObjects}>
+              <BarToggle
+                pressed={showObjects}
+                onClick={toggleObjects}
+                data-bar-item="objects"
+              >
                 <PanelRight /> Objects
               </BarToggle>
             )}
-            {!barRoom.history && <HistoryButtons {...steps} />}
+            {!barRoom.history && (
+              <div data-bar-item="history" className="flex items-center gap-2">
+                <HistoryButtons {...steps} />
+              </div>
+            )}
             {isDiagram ? (
               <>
                 <DropdownMenu>
@@ -2980,7 +2987,7 @@ function TopologyPage() {
               </>
             )}
             {!barRoom.copyLink && (
-              <BarButton onClick={copyLink}>
+              <BarButton onClick={copyLink} data-bar-item="copy-link">
                 <LinkIcon /> Copy link
               </BarButton>
             )}
@@ -3010,7 +3017,7 @@ function TopologyPage() {
             {barRoom.copyLink && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <BarIconButton label="More">
+                  <BarIconButton label="More" data-bar-item="more">
                     <MoreHorizontal />
                   </BarIconButton>
                 </DropdownMenuTrigger>
@@ -3189,6 +3196,7 @@ function TopologyPage() {
                 onPaneContext={(x, y, fx, fy) => setMenu({ x, y, fx, fy })}
                 onEdgeContext={(line, x, y) => setMenu({ x, y, line })}
                 onPartialChange={setPartialMap}
+                keepClear={legendBox}
                 onCanvasClick={clearSel}
                 onDragEnd={() => {
                   const p = canvas.current?.positions()
@@ -3256,8 +3264,9 @@ function TopologyPage() {
             )}
           </div>
           {!logical && graph && (
-            // left-16 clears React Flow's zoom controls in the corner.
-            <div className="absolute bottom-4 left-16 z-10">
+            // left-16 clears React Flow's zoom controls in the corner; a
+            // fit keeps the map clear of it (keepClear).
+            <div ref={legendBox} className="absolute bottom-4 left-16 z-10">
               <CanvasLegend
                 viewStyle={viewStyle}
                 grouped={grouped}

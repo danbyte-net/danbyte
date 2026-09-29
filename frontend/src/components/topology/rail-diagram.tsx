@@ -25,7 +25,7 @@ import type {
   RailTarget,
   RailText,
 } from "@/lib/diagram/rails"
-import { CARD, LABEL, mix } from "@/lib/diagram/theme"
+import { CARD, LABEL, PILL_ON_FILL, mix } from "@/lib/diagram/theme"
 import type { Rect } from "@/lib/diagram/types"
 import { cn } from "@/lib/utils"
 
@@ -105,9 +105,8 @@ function Item({ target, className, style, tip, label, children }: ItemProps) {
   }
 }
 
-/** A status pill at `p`, placed in its parent's frame. On a colored card
- * or rail it keeps a white edge, as in the exports, so a pill of a similar
- * color still stands apart. */
+/** A status pill at `p`, placed in its parent's frame, with a white edge
+ * on a colored card or rail (PILL_ON_FILL) as the Diagram's cards. */
 function Pill({
   p,
   frame,
@@ -124,7 +123,7 @@ function Pill({
     >
       <StatusBadge
         status={p.status}
-        className={cn(STATUS_PILL, onFill && "outline-1 outline-white/80")}
+        className={cn(STATUS_PILL, onFill && PILL_ON_FILL)}
       />
     </span>
   )

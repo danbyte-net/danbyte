@@ -340,6 +340,13 @@ describe("exportFileName", () => {
     expect(exportFileName("Århus DC / core", "png", day)).toBe(
       "arhus-dc-core-2026-09-26.png"
     )
+    // Letters with no accent to strip, as the server names a PDF.
+    expect(exportFileName("København HQ", "pdf", day)).toBe(
+      "kobenhavn-hq-2026-09-26.pdf"
+    )
+    expect(exportFileName("Trace · kbh-core1 Ethernet1/1", "pdf", day)).toBe(
+      "trace-kbh-core1-ethernet1-1-2026-09-26.pdf"
+    )
     expect(exportFileName("  ", "drawio", day)).toBe(
       "topology-2026-09-26.drawio"
     )

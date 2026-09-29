@@ -119,7 +119,28 @@ function writePrefs(p: Prefs) {
   }
 }
 
-/** `DC1 fabric` on 26 Sep 2026 → `dc1-fabric-2026-09-26.<ext>`. */
+/** Letters with no accent to strip, as the names people read them by.
+ * The server names a PDF the same way (topology_export.py `_file_slug`). */
+const FOLD: Record<string, string> = {
+  ø: "o",
+  Ø: "o",
+  æ: "ae",
+  Æ: "ae",
+  œ: "oe",
+  Œ: "oe",
+  ß: "ss",
+  đ: "d",
+  Đ: "d",
+  ð: "d",
+  Ð: "d",
+  ł: "l",
+  Ł: "l",
+  þ: "th",
+  Þ: "th",
+}
+
+/** `DC1 fabric` on 26 Sep 2026 → `dc1-fabric-2026-09-26.<ext>`;
+ * `København HQ` → `kobenhavn-hq-…`. */
 export function exportFileName(
   name: string,
   ext: string,
@@ -127,6 +148,7 @@ export function exportFileName(
 ): string {
   const slug =
     name
+      .replace(/[øØæÆœŒßđĐðÐłŁþÞ]/g, (c) => FOLD[c])
       .normalize("NFKD")
       .replace(/[̀-ͯ]/g, "")
       .toLowerCase()

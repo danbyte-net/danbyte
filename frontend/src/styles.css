@@ -34,6 +34,7 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-map-accent: var(--map-accent);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -60,6 +61,10 @@
   --popover-foreground: oklch(0.141 0.005 285.823);
   --primary: oklch(0.5 0.134 242.749);
   --primary-foreground: oklch(0.977 0.013 236.62);
+  /* The maps' accent: a trace's run, a selected line, the card a map is
+     about. The primary in light; lifted in dark (below), where the dark
+     primary all but vanishes on the canvas. */
+  --map-accent: var(--primary);
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
@@ -104,6 +109,8 @@
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.443 0.11 240.79);
   --primary-foreground: oklch(0.977 0.013 236.62);
+  /* sky-400: well past 3:1 on the dark map canvas. */
+  --map-accent: oklch(0.746 0.16 232.661);
   --secondary: oklch(0.274 0.006 286.033);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.274 0.006 286.033);
@@ -663,6 +670,13 @@
 }
 [data-lod="2"] .topo-portname {
   visibility: hidden;
+}
+
+/* A map's lines in dark mode: React Flow's dark default (#3e3e3e) is
+   about 1.6:1 on its canvas; zinc-500 clears the 3:1 a line needs. A line
+   with a color of its own keeps it. */
+[data-lod] .react-flow.dark {
+  --xy-edge-stroke-default: #71717b;
 }
 
 /* Diagram links. End labels - a port name just past its nub, then the

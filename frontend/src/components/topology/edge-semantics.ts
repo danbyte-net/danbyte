@@ -134,10 +134,13 @@ export function classifyEdges(
  * uuid-sorted endpoints put leaves on random sides of their switch. Making
  * the higher-degree device the source ranks cores before distribution
  * before access before servers - consistently one direction. Only routable
- * edges flip; every edge counts toward degree.
+ * edges flip; every edge counts toward degree. With `run` (a trace map's
+ * places along its run, trace-run.ts) an edge points along the run
+ * instead, so the devices rank in the order the run reaches them.
  */
 export function orientHubToLeaf<TEdge extends Edge>(
-  edges: TEdge[]
+  edges: TEdge[],
+  run?: Readonly<Record<string, number>>
 ): { edges: TEdge[]; flipped: Set<string> } {
   const deg = new Map<string, number>()
   for (const ed of edges) {
@@ -148,7 +151,14 @@ export function orientHubToLeaf<TEdge extends Edge>(
   const out = edges.map((ed) => {
     const sem = (ed.data as { sem?: string } | undefined)?.sem
     if (!ROUTABLE.has(sem ?? "")) return ed
-    if ((deg.get(ed.target) ?? 0) <= (deg.get(ed.source) ?? 0)) return ed
+    // A trace map: along the run, its earlier device first. Two devices
+    // at one place (legs of a breakout) fall back to hub → leaf.
+    const [s, t] = [run?.[ed.source], run?.[ed.target]]
+    const flip =
+      s !== undefined && t !== undefined && s !== t
+        ? t < s
+        : (deg.get(ed.target) ?? 0) > (deg.get(ed.source) ?? 0)
+    if (!flip) return ed
     flipped.add(ed.id)
     return {
       ...ed,

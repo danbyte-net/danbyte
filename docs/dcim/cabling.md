@@ -142,8 +142,9 @@ says *Not cabled.* See [the topology page](../features/topology.md#pass-through-
 for how a trace walks through panels and PDUs.
 
 Under the chain, the **trace map** draws the same run as the topology
-Diagram does: each device a card in its role's color, a patch panel a
-dashed card with a nub on each front and rear port the run uses, the port
+Diagram does: each device a card in its role's color, in the order the
+run reaches them, a patch panel a dashed card between the two ends with a
+nub on each front and rear port the run uses (and no other), the port
 names and addresses on their own cable, and the traced cables thick in the
 accent color. It turns **Left to right** or **Top to bottom**, and
 **Export** saves it as PNG, SVG, PDF or draw.io

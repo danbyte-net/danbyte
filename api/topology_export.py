@@ -37,6 +37,7 @@ import mimetypes
 import multiprocessing
 import re
 import secrets
+import unicodedata
 from functools import lru_cache
 from html import escape
 from pathlib import Path
@@ -49,7 +50,6 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.utils._os import safe_join
-from django.utils.text import slugify
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -454,9 +454,27 @@ def _gate(request):
     return tenant, None
 
 
+# Letters with no accent to strip, as the names people read them by.
+_FOLD = str.maketrans({
+    "ø": "o", "Ø": "o", "æ": "ae", "Æ": "ae", "œ": "oe", "Œ": "oe",
+    "ß": "ss", "đ": "d", "Đ": "d", "ð": "d", "Ð": "d", "ł": "l", "Ł": "l",
+    "þ": "th", "Þ": "th",
+})
+
+
+def _file_slug(title: str) -> str:
+    """``title`` as a file name's stem, as the map's other exports are named
+    in the browser (export-menu.tsx ``exportFileName``): letters folded to
+    ASCII, anything else a hyphen, at most 60 characters. ``København HQ``
+    → ``kobenhavn-hq``; ``Ethernet1/1`` → ``ethernet1-1``."""
+    text = unicodedata.normalize("NFKD", title.translate(_FOLD))
+    text = re.sub("[\u0300-\u036f]", "", text).lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:60].rstrip("-")
+    return slug or "topology"
+
+
 def _file_name(title: str, when: dt.datetime) -> str:
-    slug = slugify(title)[:60].strip("-") or "topology"
-    return f"{slug}-{when.astimezone(dt.UTC):%Y-%m-%d}.pdf"
+    return f"{_file_slug(title)}-{when.astimezone(dt.UTC):%Y-%m-%d}.pdf"
 
 
 def _print_key(user_id, tenant_id) -> str:

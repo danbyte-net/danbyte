@@ -50,7 +50,8 @@ export function lagBundleLabel(lag: EdgeLag, n: number): string {
 }
 
 /** The aggregate pair every cable in a set shares, or null when they differ
- * (or any lacks one). Lets the flat view's Nx bundle name the aggregates. */
+ * (or any lacks one). Lets a bundle of a device pair's cables - the
+ * Diagram's Simple "2x", the Hierarchy's - name the aggregates. */
 export function sharedLag(cables: { lag?: EdgeLag }[]): EdgeLag | null {
   const first = cables[0]?.lag
   if (!first?.a || !first.b) return null

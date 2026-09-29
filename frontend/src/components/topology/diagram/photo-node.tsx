@@ -90,7 +90,7 @@ export const PhotoNode = memo(function PhotoNode({
       <div
         className={cn(
           "absolute inset-x-0 top-0",
-          selected && "outline-2 outline-offset-2 outline-primary"
+          selected && "outline-2 outline-offset-2 outline-map-accent"
         )}
         style={{ height: ph.imgH }}
       >

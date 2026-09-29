@@ -20,19 +20,19 @@ dev:@srv-db-01  card @44,644.6 88x28
 
 edges 4
 e:@c13:@leaf-03:@pp-a01  link cable elbow
-  style {"strokeWidth":2.5,"stroke":"var(--primary)"}
+  style {"strokeWidth":2.5,"stroke":"var(--map-accent)"}
   a B52:Ethernet1/48
   b T44:1
   path M 52,34 L 52,113.10546875 Q 52,119.10546875 58,119.10546875 L 119,119.10546875 Q 125,119.10546875 125,125.10546875 L 125,204.2109375
     ports a 52,70.1@-90 b 125,193.4@-90
 e:@c15:@pp-a01:@pp-b01  link cable elbow
-  style {"strokeWidth":2.5,"stroke":"var(--primary)"}
+  style {"strokeWidth":2.5,"stroke":"var(--map-accent)"}
   a B44:R1
   b T44:R1
   path M 125,244.2109375 L 125,414.421875
     ports a 125,257.9@-90 b 125,400.7@-90
 e:@c16:@pp-b01:@srv-db-01  link cable elbow
-  style {"strokeWidth":2.5,"stroke":"var(--primary)"}
+  style {"strokeWidth":2.5,"stroke":"var(--map-accent)"}
   a B44:1
   b T52:eno1
   path M 125,454.421875 L 125,533.52734375 Q 125,539.52734375 119,539.52734375 L 58,539.52734375 Q 52,539.52734375 52,545.52734375 L 52,624.6328125

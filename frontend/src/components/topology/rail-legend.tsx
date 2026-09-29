@@ -130,7 +130,7 @@ export function RailLegend({ rows }: { rows: readonly LegendItem[] }) {
         variant="outline"
         size="xs"
         onClick={() => toggle(true)}
-        className="bg-background/95 text-muted-foreground shadow-none"
+        className="bg-background text-muted-foreground shadow-none"
       >
         <List /> Legend
       </Button>
@@ -140,7 +140,7 @@ export function RailLegend({ rows }: { rows: readonly LegendItem[] }) {
     (r): r is Extract<LegendItem, { kind: "role" }> => r.kind === "role"
   )
   return (
-    <div className="w-60 rounded-md border border-border bg-background/95 p-2.5 pt-1.5 text-[11px]">
+    <div className="w-60 rounded-md border border-border bg-background p-2.5 pt-1.5 text-[11px]">
       <div className="mb-1 flex items-center justify-between">
         <SectionLabel className="mb-0">Legend</SectionLabel>
         <Tooltip>

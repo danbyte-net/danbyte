@@ -40,7 +40,9 @@ import type {
 // shows what the screen shows.
 //
 // The cards are the Diagram's: the role's color (a neutral card without
-// one), the name bold, the status pill in the top-left corner. VMs are
+// one), the name bold, the status pill in the top-left corner - only for a
+// status other than the one a new object gets (Planned, Offline), which
+// every card would otherwise wear; rails likewise. VMs are
 // dashed on screen. Every color comes from data - a rail's VLAN (else its
 // zone, else a palette shade by position), a card's role, a pill's status -
 // never from a name.
@@ -65,6 +67,12 @@ const TARGET_PATH: Record<RailTargetKind, string> = {
 /** A target's page under this Danbyte. */
 export function railPath(t: RailTarget): string {
   return `${TARGET_PATH[t.kind]}${encodeURIComponent(t.id)}`
+}
+
+/** The status a pill shows: none for the one a new object gets
+ * (`is_default`). */
+function pillStatus(s: StatusMini | null | undefined): StatusMini | null {
+  return s && !s.is_default ? s : null
 }
 
 export interface RailSpec {
@@ -416,7 +424,7 @@ export function layoutRails(
     Math.floor(opts.width ?? 0)
   )
 
-  const pillRow = model.boxes.some((b) => !!b.status)
+  const pillRow = model.boxes.some((b) => !!pillStatus(b.status))
   const nLines = Math.max(0, ...model.boxes.map((b) => b.lines?.length ?? 0))
   const boxH = cardTextHeight(nLines, pillRow)
   const bandH = boxH + 2 * RAIL.BAND_PAD
@@ -495,9 +503,10 @@ export function layoutRails(
       const i = idx++
       const fill = hex6(spec.color) ?? RAIL_PALETTE[i % RAIL_PALETTE.length]
       const ink = hex6(readableText(fill)) ?? PRINT.text
-      const pillText = spec.status
+      const status = pillStatus(spec.status)
+      const pillText = status
         ? fit(
-            spec.status.name,
+            status.name,
             PILL.MAX_W - 2 * PILL.PAD_X,
             PILL.SIZE,
             PILL.WEIGHT,
@@ -534,14 +543,14 @@ export function layoutRails(
         label,
         labelX,
         labelW: lw,
-        ...(spec.status && pillText
+        ...(status && pillText
           ? {
               pill: {
                 x: labelX + lw + RAIL.PILL_GAP,
                 y: y + (RAIL.H - PILL.H) / 2,
                 w: pw,
                 h: PILL.H,
-                status: spec.status,
+                status,
                 text: pillText,
               },
             }
@@ -580,9 +589,10 @@ export function layoutRails(
     const cx = bx + RAIL.BOX_W / 2
     const fill = hex6(p.box.role?.color)
     const titleTop = by + CARD.PAD_Y + (pillRow ? PILL.H + PILL.ROW_GAP : 0)
-    const pillText = p.box.status
+    const status = pillStatus(p.box.status)
+    const pillText = status
       ? fit(
-          p.box.status.name,
+          status.name,
           PILL.MAX_W - 2 * PILL.PAD_X,
           PILL.SIZE,
           PILL.WEIGHT,
@@ -605,14 +615,14 @@ export function layoutRails(
         ...fitText(t, nameRoom, CARD.LINE_SIZE, CARD.LINE_WEIGHT),
         top: titleTop + CARD.TITLE_LH + CARD.LINES_GAP + k * CARD.LINE_LH,
       })),
-      ...(p.box.status && pillText
+      ...(status && pillText
         ? {
             pill: {
               x: bx + PILL.X,
               y: by + CARD.PAD_Y,
               w: pillWidth(pillText, measure),
               h: PILL.H,
-              status: p.box.status,
+              status,
               text: pillText,
             },
           }

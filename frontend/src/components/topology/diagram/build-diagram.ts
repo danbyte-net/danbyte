@@ -94,7 +94,8 @@ import type {
 
 // The Diagram tab's pipeline: payload graph → React Flow cards and links.
 //
-//   1. classify and fold the edges, orient them hub → leaf;
+//   1. classify and fold the edges, orient them hub → leaf (a trace map:
+//      along its run);
 //   2. size each card from its text (Simple's compact box);
 //   3. lay out (dagre, or the saved arrangement) - devices with no cable
 //      at all packed in a grid under the rest (pack.ts);
@@ -147,6 +148,10 @@ export interface DiagramOptions {
   labels?: readonly LabelToken[]
   /** Saved arrangement: node id → centre. */
   positions?: Record<string, [number, number]>
+  /** A trace map: each card's place along the traced run (trace-run.ts).
+   * The cards rank in that order rather than hub → leaf, so the run reads
+   * from one end to the other through its patch panels. */
+  run?: Record<string, number>
   /** The layer bands' rows as saved (bands.ts): with a saved arrangement
    * they are re-fitted round the cards as this mode and face size them
    * (`fitRows`), and the lines keep out of their title strips. */
@@ -1751,7 +1756,8 @@ export function buildDiagram(
               ? "lag"
               : "none",
       }
-    ).map((c) => diagramEdge(c, key, opts))
+    ).map((c) => diagramEdge(c, key, opts)),
+    opts.run
   )
   // Twins - two devices of one role with a neighbour in common, like a
   // leaf pair on the same spines - are joined by a peer link (vPC, HA). It

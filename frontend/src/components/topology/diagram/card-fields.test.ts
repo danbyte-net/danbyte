@@ -194,6 +194,14 @@ describe("card pill", () => {
       expect(cardContent(node(DEFAULTS, VALUES), { monitor }).pill).toBeNull()
   })
 
+  it("keeps no room on a patch panel for a monitoring pill", () => {
+    const c = cardContent(node(DEFAULTS, VALUES, { panel: true }), {
+      monitor: "down",
+    })
+    expect(c.pill).toBeNull()
+    expect(c.pillSlot).toEqual([])
+  })
+
   it("needs `monitor` in the list for the monitoring pill", () => {
     const c = cardContent(node(["primary_ip"], VALUES), { monitor: "down" })
     expect(c.pill).toBeNull()

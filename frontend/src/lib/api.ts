@@ -770,6 +770,9 @@ export interface StatusMini {
   slug?: string
   color: string
   text_color: string
+  /** The status a new object of its kind gets (its `default_for`); sent
+   * where a map draws pills only for the exceptions. */
+  is_default?: boolean
 }
 
 export interface IPRoleMini {
@@ -3364,8 +3367,9 @@ export interface LogicalTopology {
 export interface TraceGraph extends TopologyGraph {
   origin: { type: string; id: string }
   complete: boolean
-  /** Device-level view (adaptive stencil cards) of the traced devices, with
-   * the traced cables flagged (edge.data.marked). Rendered as the trace map. */
+  /** Device-level map of the traced devices, with the traced cables
+   * flagged (edge.data.marked). Drawn as the trace map, in the Diagram's
+   * cards (trace-section.tsx). */
   device_graph?: TopologyGraph
 }
 

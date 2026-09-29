@@ -130,6 +130,25 @@ describe("layoutRails", () => {
     expect(mgmt.pill!.x).toBeGreaterThan(mgmt.labelX + mgmt.labelW)
   })
 
+  it("draws no pill for the status a new object gets", () => {
+    const dflt = <T extends { status?: RailModel["boxes"][number]["status"] }>(
+      x: T
+    ): T => (x.status ? { ...x, status: { ...x.status, is_default: true } } : x)
+    const l = lay({
+      ...railModel,
+      sections: railModel.sections.map((s) => ({
+        ...s,
+        rails: s.rails.map(dflt),
+      })),
+      boxes: railModel.boxes.map(dflt),
+    })
+    expect(l.boxes.filter((b) => b.pill)).toEqual([])
+    expect(l.rails.filter((r) => r.pill)).toEqual([])
+    // No card keeps a pill row it does not use.
+    expect(l.pillRow).toBe(false)
+    expect(l.boxH).toBe(cardTextHeight(0, false))
+  })
+
   it("cuts a long name to fit and keeps it whole for a tip", () => {
     const long = lay().boxes.find((b) => b.id === "device:d2")!
     expect(long.name.full).toBe("a-very-long-access-switch-name")

@@ -14,6 +14,7 @@ import {
   traceGraph,
 } from "../__fixtures__/fabric-graph"
 import { meshGraph } from "../__fixtures__/fanout-graph"
+import { PANEL_IDS, panelDev, panelTrace } from "../__fixtures__/panel-trace"
 import {
   boxOf as cardBox,
   drawn,
@@ -23,6 +24,7 @@ import { linkEnds } from "./anchors"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
 import { NUB } from "./card-layout"
+import { runOrder, traceMap } from "../trace-run"
 import { leaves, linkRoute, planOf, routeThrough } from "./link-geometry"
 import type { PortPlace } from "@/lib/diagram/geometry"
 import type {
@@ -174,15 +176,23 @@ function golden(graph: TopologyGraph, opts: DiagramOptions): string {
 async function expectGolden(
   name: string,
   graph: TopologyGraph,
-  o: DiagramOptions
+  o: DiagramOptions,
+  alias: (text: string) => string = (t) => t
 ) {
-  const first = golden(graph, o)
+  const first = alias(golden(graph, o))
   // The same input builds the same diagram twice.
-  expect(golden(graph, o)).toBe(first)
+  expect(alias(golden(graph, o))).toBe(first)
   await expect(first).toMatchFileSnapshot(
     `./__snapshots__/build-diagram/${name}.txt`
   )
 }
+
+/** The panel trace's UUIDs as readable names. */
+const panelAlias = (text: string) =>
+  Object.entries(PANEL_IDS).reduce(
+    (t, [id, name]) => t.replaceAll(id, name),
+    text
+  )
 
 const MODES: DiagramMode[] = ["simple", "detailed"]
 const LINES: LineType[] = ["straight", "elbow", "bendy"]
@@ -240,6 +250,26 @@ describe("buildDiagram golden", () => {
       })
     })
 
+  // A cable trace through one panel as the API sends it: both cables of
+  // the run point into the panel. Ranked along the run, the panel sits
+  // between the server and the switch, its front port facing one and its
+  // rear port the other, and its cable off the run is left out.
+  for (const direction of ["LR", "TB"] as const)
+    it(`trace map through a panel · ${direction}`, async () => {
+      await expectGolden(
+        `trace-panel-${direction.toLowerCase()}`,
+        traceMap(panelTrace)!,
+        {
+          mode: "detailed",
+          line: "elbow",
+          colorMode: "cable",
+          direction,
+          run: runOrder(panelTrace),
+        },
+        panelAlias
+      )
+    })
+
   it("device map", async () => {
     await expectGolden("mini-focus", miniMapGraph, {
       mode: "detailed",
@@ -274,7 +304,7 @@ describe("the trace maps and a device's map", () => {
     expect(run.length).toBeGreaterThan(1)
     for (const e of run) {
       expect(e.style).toMatchObject({
-        stroke: "var(--primary)",
+        stroke: "var(--map-accent)",
         strokeWidth: 2.5,
       })
       expect(e.animated).toBe(true)
@@ -282,7 +312,30 @@ describe("the trace maps and a device's map", () => {
     // The spare cable beside the run keeps its own look.
     const spare = cables.filter((e) => !(e.data as DiagramEdgeData).raw?.marked)
     expect(spare.length).toBeGreaterThan(0)
-    for (const e of spare) expect(e.style?.stroke).not.toBe("var(--primary)")
+    for (const e of spare) expect(e.style?.stroke).not.toBe("var(--map-accent)")
+  })
+
+  it("put a patch panel between the ends of its run, front one way, rear the other", () => {
+    for (const direction of ["LR", "TB"] as const) {
+      const b = buildDiagram(traceMap(panelTrace)!, {
+        ...opts,
+        direction,
+        run: runOrder(panelTrace),
+      })
+      const at = (id: string) => b.nodes.find((n) => n.id === id)!.position
+      const axis = direction === "LR" ? "x" : "y"
+      const [srv, pp, dist] = [panelDev.srv, panelDev.pp, panelDev.dist].map(
+        (id) => at(id)[axis]
+      )
+      expect(srv).toBeLessThan(pp)
+      expect(pp).toBeLessThan(dist)
+      const panel = b.nodes.find((n) => n.id === panelDev.pp)!
+      const nubs = (panel.data as DiagramCardData).diagram.nubs
+      const [back, ahead] = direction === "LR" ? ["L", "R"] : ["T", "B"]
+      expect(nubs.map((u) => `${u.side}:${u.port}`).sort()).toEqual(
+        [`${back}:front1`, `${ahead}:rear1`].sort()
+      )
+    }
   })
 
   it("give a patch panel a nub on each front and rear port of the run", () => {

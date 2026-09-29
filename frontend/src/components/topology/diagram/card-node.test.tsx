@@ -152,7 +152,7 @@ describe("CardNode", () => {
     const { container } = renderCard(cardData(base), true)
     const el = card(container)
     expect(el.className).toMatch(/outline-2/)
-    expect(el.className).toMatch(/outline-primary/)
+    expect(el.className).toMatch(/outline-map-accent/)
     expect(el.className).not.toMatch(/shadow|ring-2/)
     expect(el.style.boxShadow).toBe("")
   })

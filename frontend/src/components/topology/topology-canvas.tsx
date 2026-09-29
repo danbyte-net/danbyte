@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react"
-import type { DragEvent, ReactNode } from "react"
+import type { DragEvent, ReactNode, RefObject } from "react"
 import {
   Background,
   BackgroundVariant,
@@ -57,6 +57,7 @@ import {
 import { OverlayEdge, bgpLabel } from "./overlay-edge"
 import { FLOW_ARIA_LABELS } from "./flow-aria"
 import { drawnEdgeIds } from "./hidden"
+import { clearOfCorner } from "./fit-clear"
 import { ZoomControls } from "./zoom-controls"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
@@ -149,16 +150,11 @@ export interface LineTarget {
   link?: DiagramLinkRef
 }
 
-/** The lines a menu is offered on: wiring, LLDP, BGP and group edges -
- * not a trace map's port membership or pass-through strands. */
-const MENU_SEMS = new Set([
-  "cable",
-  "bundle",
-  "lagbundle",
-  "ghost",
-  "bgp",
-  "groupedge",
-])
+/** The lines a menu (and H) is offered on: wiring, LLDP and BGP - not a
+ * trace map's port membership or pass-through strands, nor a grouped
+ * map's lines, which have no row of their own to show them again in
+ * Objects (hide a site or location instead). */
+const MENU_SEMS = new Set(["cable", "bundle", "lagbundle", "ghost", "bgp"])
 
 /** What a drawn line is, for its menu; null for one that has none. */
 export function lineTarget(e: Edge, graph: TopologyGraph): LineTarget | null {
@@ -755,6 +751,10 @@ export interface TopologyCanvasProps {
   roleBonds?: string[]
   /** Role name → distance step (0–4) for the gap above its tier. */
   roleDistance?: Record<string, number>
+  /** Diagram, a trace map: each card's place along the traced run
+   * (trace-run.ts), so the cards rank in the run's order. Keep the object
+   * stable. */
+  run?: Record<string, number>
   /** Hierarchy: "curved" draws free curves in place of its port-anchored
    * routes. */
   edgeRouting?: "routed" | "straight" | "curved"
@@ -871,6 +871,10 @@ export interface TopologyCanvasProps {
    * embeds keeps its foot clear of its corner chips, and a map of two
    * cards is not blown up to twice their size. */
   fitOptions?: Pick<FitViewOptions, "padding" | "maxZoom">
+  /** An overlay in the canvas's bottom-left corner - the map's legend: a
+   * fit keeps the map above it or beside it, whichever frames the map
+   * larger. */
+  keepClear?: RefObject<HTMLElement | null>
 }
 
 /** Where to aim the camera for a node: diagram nodes are placed by their
@@ -1021,6 +1025,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     roleOrder,
     roleBonds,
     roleDistance,
+    run,
     edgeRouting = "routed",
     bundleLags = true,
     nodeStyle = "diagram",
@@ -1063,6 +1068,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onPartialChange,
     minimap = true,
     fitOptions,
+    keepClear,
   },
   ref
 ) {
@@ -1161,6 +1167,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               roleOrder,
               roleBonds,
               roleDistance,
+              ...(run ? { run } : {}),
               bundleLags,
               positions,
               ...withRows,
@@ -1194,6 +1201,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       direction,
       roleOrder,
       roleDistance,
+      run,
       edgeRouting,
       colorMode,
       nodeStyle,
@@ -1230,6 +1238,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               roleOrder,
               roleBonds,
               roleDistance,
+              ...(run ? { run } : {}),
               bundleLags,
               positions,
               ...(bandRowList.length ? { rows: bandRowList } : {}),
@@ -1257,6 +1266,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       roleOrder,
       roleBonds,
       roleDistance,
+      run,
       bundleLags,
       positions,
       bandRowList,
@@ -1488,7 +1498,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             ...e.style,
             strokeWidth: 2.5,
             opacity: 1,
-            ...(isSel ? { stroke: "var(--primary)" } : {}),
+            ...(isSel ? { stroke: "var(--map-accent)" } : {}),
           },
           ...(e.type === "link" ? { data: { ...e.data, hot: true } } : {}),
         }
@@ -1562,6 +1572,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   partialRef.current = onPartialChange
   const fitRef = useRef(fitOptions)
   fitRef.current = fitOptions
+  const clearRef = useRef(keepClear)
+  clearRef.current = keepClear
   useEffect(() => partialRef.current?.(partial), [partial])
   const fitMap = useCallback(
     (duration: number) => {
@@ -1588,7 +1600,21 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           : []
       if (!part.length) {
         setPartial(false)
-        void flow.fitView({ padding: FIT_PAD, ...fitRef.current, duration })
+        const base = { padding: FIT_PAD, ...fitRef.current }
+        const corner = clearRef.current?.current?.getBoundingClientRect()
+        const wrap = el.getBoundingClientRect()
+        const padding =
+          corner && corner.width > 0
+            ? clearOfCorner(
+                whole,
+                width,
+                height,
+                base.padding,
+                { w: corner.right - wrap.left, h: wrap.bottom - corner.top },
+                base.maxZoom ?? 2
+              )
+            : base.padding
+        void flow.fitView({ ...base, padding, duration })
         return
       }
       const box = flow.getNodesBounds(part)
@@ -1716,17 +1742,26 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     if (nextNodes.length >= PRESIZE_AT) nextNodes = nextNodes.map(presized)
     adopt(built.model)
     modelIdRef.current = built.modelId ?? null
-    const refit = () => requestAnimationFrame(() => fitMap(300))
     // Any relayout re-fits the viewport - without this the camera keeps
     // staring at wherever it was while the graph reshapes elsewhere, which
     // reads as a frozen/blank map on big graphs. A map built off the main
-    // thread arrives after React Flow's own first fit: it fits then.
+    // thread arrives after React Flow's own first fit: it fits then. So
+    // does a map built here with a corner to keep clear (its legend):
+    // React Flow's first fit knows nothing of it. That fit is still
+    // waiting for the cards to be measured, and takes this one's place, so
+    // it jumps rather than animates.
     // Never on an empty map: React Flow holds a fit it cannot do yet and
     // does it when the first card lands - which a map being built by hand
     // must not.
-    const fit =
-      built.nodes.length > 0 &&
-      (relaidOut || (built.modelId !== undefined && first && !wasEmpty))
+    const opening =
+      first &&
+      !wasEmpty &&
+      (built.modelId !== undefined || !!clearRef.current?.current)
+    const fit = built.nodes.length > 0 && (relaidOut || opening)
+    const refit = () =>
+      requestAnimationFrame(() =>
+        fitMap(opening && built.modelId === undefined ? 0 : 300)
+      )
     // Diagram: the kept positions are not the ones the links were anchored
     // for - re-anchor (and re-size the Detailed cards) where they are. Off
     // the main thread the worker does it, and the map stays as it was until

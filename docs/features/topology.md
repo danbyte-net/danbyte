@@ -34,7 +34,10 @@ icon: lucide/share-2
   **and virtual machines** via their VM interfaces, on one hybrid diagram.
   Devices and VMs are the Diagram's cards: their role's color, the name
   bold, the status pill in the top-left corner; VMs are dashed. A rail
-  wears its VLAN's status as a pill after its name. A dashed leg is a
+  wears its VLAN's status as a pill after its name. A pill shows only a
+  status other than the one a new device, VM or VLAN gets (its status's
+  **Default for**), such as *Planned* or *Offline*, so the exceptions
+  stand out rather than every card reading *Active*. A dashed leg is a
   tagged (trunk) attachment. Each card's interface names sit beside its
   legs, one label per rail, each name opening its interface; when they
   don't all fit the label ends in a count (`+2`). The header's
@@ -98,7 +101,9 @@ something.
   monitoring pill (your tenant's name for *down* or *degraded*) while the
   device is down or degraded, else the lifecycle status pill when the card
   lists it. A card keeps room for its pill, so a device going down never
-  resizes it or moves its lines.
+  resizes it or moves its lines. A patch panel has nothing to monitor, so
+  it keeps no room for the monitoring pill. On a colored card the pill
+  keeps a thin white edge, as in the exports.
 - **Simple | Detailed** (beside the tabs; **Detailed** unless a view or
   link says otherwise):
     - **Simple** - compact cards. Every line leaving one side of a card
@@ -514,8 +519,14 @@ monitoring pill when a card can show it. With **Color by** on *Type*
 or *Speed* it keys the cable types on the map, or the speed tiers, as short
 lines in their colors; on *Cable* or *Status* it says so in one line
 (*Color by cable*). Its **Hide legend** button folds it to a small
-**Legend** chip, which opens it again. Clicking a cable draws it emphasized
-in the accent color while its panel is open.
+**Legend** chip, which opens it again. The legend is solid, so nothing on
+the map shows through it, and a fit (opening the map, **Fit view**, a new
+layout) keeps the map clear of it: above it on a wide map, beside it on a
+tall one. Clicking a cable draws it emphasized in the accent color while
+its panel is open. In dark mode the maps' accent - a selected line, a
+trace's run, the card a map is about - is a lighter blue than the app's
+buttons, and the plain lines a lighter grey, so both stand out on the dark
+canvas.
 
 ### Trace maps and a device's map {#trace-maps}
 
@@ -525,9 +536,12 @@ The trace map is drawn as the Diagram draws this page, Detailed with
 **Elbow** lines: each traced device a card in its role's color with its
 [card lines](#card-lines), every cabled interface a nub with its port name
 and addresses on its own cable, and the subnet a cable carries on its
-chip. A patch panel is a dashed card with a nub on each front and rear
-port the run uses: the run comes in on one and leaves on the other. The
-traced cables are drawn thick and animated in the accent color, a
+chip. The cards stand in the order the run reaches them, from the traced
+port (a cable's trace: from one end of its run), so a patch panel is a
+dashed card between the two ends of the run, with a nub on each front and
+rear port the run uses: the run comes in on one side and leaves on the
+other. Its other cables are left out. The traced cables are drawn thick
+and animated in the accent color, a
 breakout as one trunk splitting into legs, and on an interface's trace
 its own device is outlined. **Left to right** or **Top to bottom** turns
 the map, and **Export** saves it as PNG, SVG, PDF or draw.io, or prints
@@ -1058,7 +1072,9 @@ The second bar reads **Devices** · **Views** and their buttons ·
 room runs out, the header's **Simple / Detailed** moves into a **More** (⋯)
 menu at the end of the header, and the second bar's **Copy link**, then
 **Objects**, then **Undo** and **Redo** move into one at the end of the bar,
-which lists exactly what left it. While a scope chip (hand-picked, focus or
+which lists exactly what left it. The second bar goes by what it holds at
+the time: a view with no edits keeps the room its **Edited** badge would
+take, so it gives up less than one being edited. While a scope chip (hand-picked, focus or
 a group drilled into) is showing, **Simple / Detailed** gives way to it
 sooner. A long device or group name in a chip is shortened, with the full
 name on hover. Narrower still, a bar scrolls sideways, its scrollbar
@@ -1220,7 +1236,7 @@ is open it acts on what you right-clicked, not on what is selected.
 |---|---|
 | A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Card lines…*, and *Role card lines* for admins |
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
-| A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide* |
+| A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide*. A grouped map's line has no menu: hide one of its sites or locations instead |
 | A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), *Delete* |
 | Empty canvas | Diagram: *Add devices…*, *Add band*, *Add zone*, *Add text*. Hierarchy: *Add devices…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
 
@@ -1326,10 +1342,14 @@ The menu's choices are remembered per browser:
   legend (role colors, the monitoring pill, line styles). On a PDF the
   legend runs under the drawing, and the title block sits in the sheet's
   bottom-right corner: the view name; the tenant and filters; the date, the
-  Danbyte version and the page.
+  Danbyte version and the page. A draw.io file has neither: it is a
+  drawing to edit, not a sheet.
 
 A file is named after the saved view (else the site, else `topology`) and
-the day: `arhus-dc-2026-09-26.drawio`.
+the day: `arhus-dc-2026-09-26.drawio`. Every format, the PDF too, takes
+the same name; a letter such as ø or æ reads as `o` or `ae`
+(`kobenhavn-hq-…`), and anything else that is not a letter or digit as a
+hyphen. The PDF's day is the server's, in UTC.
 
 **Hierarchy** exports its PNG, SVG, PDF and draw.io in the Diagram's
 Simple look, so the four files match: its card headers as compact
@@ -1340,8 +1360,8 @@ draws rather than what the map says. The PNG is the SVG drawn at twice its
 size, light-themed like the other files, not a picture of the canvas.
 
 **Logical** exports its rail diagram as drawn: the rails in their VLANs'
-colors with their status pills, the cards in their roles' colors with
-theirs, each leg in its rail's color (dashed when tagged) with the
+colors, the cards in their roles' colors, each with its status pill where
+it has one, each leg in its rail's color (dashed when tagged) with the
 interface names beside it, and the section titles. Its legend keys the
 roles, the rails and the legs. **Visible area** keeps what is on screen,
 the rails cut to it. In draw.io the rails are bars and the devices and VMs

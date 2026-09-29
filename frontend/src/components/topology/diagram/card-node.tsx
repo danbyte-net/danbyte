@@ -4,7 +4,7 @@ import type { NodeProps } from "@xyflow/react"
 
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { StatusBadge } from "@/components/status-badge"
-import { CARD as INK, mix } from "@/lib/diagram/theme"
+import { CARD as INK, PILL_ON_FILL, mix } from "@/lib/diagram/theme"
 import { cn } from "@/lib/utils"
 import { cardContent } from "./card-fields"
 import type { CardPill } from "./card-fields"
@@ -39,12 +39,25 @@ const CHECK_PILL = "h-4 max-w-24 px-[7px] text-[9px] leading-[14px]"
 
 /** A card's one pill at card scale: the monitoring badge while the device
  * is down or degraded, else its lifecycle status. The Hierarchy's header
- * wears the same. */
-export function CardPillBadge({ pill }: { pill: CardPill }) {
+ * wears the same. On a colored card (`onFill`) it keeps a white edge, as
+ * the rail diagram's pills and every pill in the exports. */
+export function CardPillBadge({
+  pill,
+  onFill = false,
+}: {
+  pill: CardPill
+  onFill?: boolean
+}) {
   return pill.kind === "check" ? (
-    <CheckStatusBadge status={pill.status} className={CHECK_PILL} />
+    <CheckStatusBadge
+      status={pill.status}
+      className={cn(CHECK_PILL, onFill && PILL_ON_FILL)}
+    />
   ) : (
-    <StatusBadge status={pill.status} className={STATUS_PILL} />
+    <StatusBadge
+      status={pill.status}
+      className={cn(STATUS_PILL, onFill && PILL_ON_FILL)}
+    />
   )
 }
 
@@ -60,7 +73,7 @@ export const CardNode = memo(function CardNode(props: NodeProps) {
       className={cn(
         "relative rounded-lg transition-opacity",
         !fill && "bg-muted text-foreground",
-        selected && "outline-2 outline-offset-2 outline-primary",
+        selected && "outline-2 outline-offset-2 outline-map-accent",
         d.dimmed && "opacity-30"
       )}
       style={{
@@ -102,7 +115,7 @@ export const CardNode = memo(function CardNode(props: NodeProps) {
           className="absolute flex"
           style={{ left: PILL.X, top: pillTop(box.stacked) }}
         >
-          <CardPillBadge pill={pill} />
+          <CardPillBadge pill={pill} onFill={!!fill} />
         </span>
       )}
       <div

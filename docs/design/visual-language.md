@@ -138,7 +138,12 @@ parts, so a control reads the same on each:
 
 | Need | Use |
 |---|---|
-| Toolbar controls (h-7, `text-xs`, size-3 icons) | `components/map-toolbar.tsx`: `BarButton`, `BarIconButton` (its required `label` is the aria-label and the tooltip; `destructive` is ghost with destructive text), `BarToggle` (`aria-pressed`, muted when off), `BarMenuTrigger` (label plus chevron, no tooltip) and `BarTip` (the plain `default` tooltip, below the control) |
+| Toolbar controls (h-7, `text-xs`, size-3 icons) | `components/map-toolbar.tsx`: `BarButton`, `BarIconButton` (its required `label` is the aria-label and the tooltip; `destructive` is ghost with destructive text; `tipSide` moves the tip off the bottom for a control that is not in a top bar), `BarToggle` (`aria-pressed`, muted when off), `BarMenuTrigger` (label plus chevron, no tooltip) and `BarTip` (the plain `default` tooltip, below the control) |
+| Undo and Redo on a bar | `HistoryButtons` (`components/topology/history-buttons.tsx`), each with its key in the tip; `HistoryMenuItems` for the same two in a More menu |
+| A map's Arrange ▾ | `ArrangeMenu` (`components/topology/arrange-menu.tsx`): Reset layout, the bands and the Layout group (direction, *Levels…*) |
+| Zoom buttons in a map's corner | `ZoomControls` (`components/topology/zoom-controls.tsx`): Zoom in, Zoom out and Fit view, the bar's icon buttons stacked, tips to the right |
+| A map embedded in another page (a device's Map tab, a trace, a tunnel) | `EmbeddedMap` (`components/topology/embedded-map.tsx`): the Diagram's Detailed cards and Elbow lines, no overview, a folded legend |
+| A rail map (VLANs, virtual networks) | `RailCanvas` (fills a page, scrolls) or `RailFrame` (a card on a detail page), from `components/topology/rail-diagram.tsx`, with `RailLegend` (`components/topology/rail-legend.tsx`) in the corner |
 | Leaving the map for an object's page | `OpenLink` (`components/open-link.tsx`): a router link drawn as a bar button with a leading ArrowUpRight, e.g. *Open device*. Drilling in on the same map is a plain button, no arrow |
 | Unsaved edits on the way out | `LeaveGuardDialog` (`components/leave-guard-dialog.tsx`), driven by `useBlocker({ withResolver: true })`: *Discard unsaved changes?* with *Keep editing* / *Discard and leave* |
 | A shortcut in a tooltip or menu | `Kbd` (`components/ui/kbd.tsx`), with `modKey()` (`lib/mod-key.ts`) for the modifier: `${modKey()}S` reads *⌘S* on a Mac, *Ctrl+S* elsewhere |
@@ -146,7 +151,8 @@ parts, so a control reads the same on each:
 | How much is hidden, with the sidebar shut | `HiddenChip` (`components/hidden-chip.tsx`): *N hidden · Show all*, in the corner the page names with `position` (the one its MiniMap, legend and attribution leave free) |
 | A right-click menu on a canvas | `PointerMenu` (`components/pointer-menu.tsx`): the shared dropdown opened at the pointer. A key an item shows (++h++, ++delete++) is passed in `keys`, so it acts on what was right-clicked, not on the selection |
 | The detail panel over a canvas | `PanelShell` (`components/map-panel.tsx`): title and Close, `PanelRow` key/value rows, `PanelSection`s under a `SectionLabel`, and the actions at the foot (*Open …* first). `SectionLabel` also heads a legend |
-| A chip on a canvas (a legend folded, *Partial map*) | Bordered `bg-background/95`, no shadow and no blur: shadows are for overlays. A folded legend is an outline `xs` button with the List icon |
+| A chip on a canvas (*Partial map*) | Bordered `bg-background/95`, no shadow and no blur: shadows are for overlays |
+| A legend on a canvas | `CanvasLegend` (`components/topology/legend.tsx`) or `RailLegend`: bordered and opaque `bg-background`, open or folded, so a colored rail or card behind it never shows through; folded, an outline `xs` button with the List icon. `TopologyCanvas` takes its box as `keepClear`, so a fit keeps the map beside or above it; `RailCanvas` keeps room for it under the drawing |
 
 Anything that copies to the clipboard goes through `copyWithToast()`
 (`lib/clipboard.ts`), so a copy that fails always says *Couldn't copy*.

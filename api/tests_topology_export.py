@@ -538,6 +538,16 @@ class EndpointTests(APITestCase):
         self.assertIn(f"-{when:%Y-%m-%d}.pdf", r["Content-Disposition"])
         self.assertNotIn("1999", r["Content-Disposition"])
 
+    def test_the_file_is_named_as_the_other_exports(self):
+        # The browser names PNG, SVG and draw.io files the same way
+        # (export-menu.tsx exportFileName): ø is o, and a slash a hyphen.
+        with self.fake:
+            r = self._post({"title": "København HQ · Ethernet1/1"})
+        self.assertRegex(
+            r["Content-Disposition"],
+            r'^attachment; filename="kobenhavn-hq-ethernet1-1-\d{4}-\d{2}-\d{2}\.pdf"$',
+        )
+
     def test_title_block_names_the_session_tenant(self):
         with self.fake as render:
             self._post(

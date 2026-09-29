@@ -145,7 +145,7 @@ describe("HierarchyNode", () => {
 
   it("outlines the selected card instead of a ring", () => {
     const { container } = renderCard(hierData(base), true)
-    expect(card(container).className).toMatch(/outline-primary/)
+    expect(card(container).className).toMatch(/outline-map-accent/)
     expect(card(container).className).not.toMatch(/ring-/)
   })
 

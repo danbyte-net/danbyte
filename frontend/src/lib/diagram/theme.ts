@@ -40,6 +40,7 @@ export const NEUTRAL_CARD = { fill: PRINT.wash, ink: PRINT.text } as const
  * builders turning an `edgeLook` stroke into a document colour. */
 export const PRINT_VARS: Record<string, string> = {
   "--primary": PRINT.primary,
+  "--map-accent": PRINT.primary,
   "--muted-foreground": PRINT.subtle,
   "--border": PRINT.border,
   "--foreground": "#09090b",
@@ -134,6 +135,11 @@ export const PILL = {
   /** Between the pill row and the name when they are stacked. */
   ROW_GAP: 2,
 } as const
+
+/** On screen, a pill on a colored card or rail keeps a white edge, as the
+ * writers stroke it in paper white, so a pill of a similar color still
+ * stands apart. */
+export const PILL_ON_FILL = "outline-1 outline-white/80"
 
 /** A card's height for `lines` card lines, with the pill on its own row
  * when `stacked`. */

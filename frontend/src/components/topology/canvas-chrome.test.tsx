@@ -133,6 +133,17 @@ describe("lineTarget", () => {
     const strand = { ...bgp, id: "t:1", data: { sem: "through" } } as Edge
     expect(lineTarget(strand, graph)).toBeNull()
   })
+
+  it("gives a grouped map's line no menu: Objects has no row for it", () => {
+    const line = {
+      id: "ge:site:a:site:b",
+      source: "grp:a",
+      target: "grp:b",
+      type: "routed",
+      data: { sem: "groupedge", group: { count: 3 } },
+    } as Edge
+    expect(lineTarget(line, graph)).toBeNull()
+  })
 })
 
 describe("a layout off the canvas", () => {

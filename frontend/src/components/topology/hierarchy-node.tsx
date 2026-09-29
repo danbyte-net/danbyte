@@ -44,7 +44,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
       className={cn(
         "relative rounded-lg border border-border bg-card transition-opacity",
         d.panel && "border-dashed",
-        selected && "outline-2 outline-offset-2 outline-primary",
+        selected && "outline-2 outline-offset-2 outline-map-accent",
         d.dimmed && "opacity-30"
       )}
       style={{ width, height }}
@@ -96,7 +96,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
             className="absolute flex"
             style={{ left: PILL.X, top: pillTop(box.stacked) }}
           >
-            <CardPillBadge pill={pill} />
+            <CardPillBadge pill={pill} onFill={!!fill} />
           </span>
         )}
         <div

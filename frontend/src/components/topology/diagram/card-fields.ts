@@ -204,7 +204,8 @@ function lineText(
  * Pill: at most one, and only for a key in the list. `monitor` shows the
  * monitoring pill while the device is down or degraded, and beats
  * `status`, which shows the lifecycle status pill whenever it is listed.
- * An empty list is the name alone.
+ * A patch panel has nothing to monitor, so it keeps no room for that
+ * pill. An empty list is the name alone.
  */
 export function cardContent(
   data: NodeData,
@@ -224,7 +225,7 @@ export function cardContent(
     opts.checkLabels?.[s] || CHECK_PILL[s] || s
   const pillSlot: string[] = []
   let pill: CardPill | null = null
-  if (fields.includes("monitor")) {
+  if (fields.includes("monitor") && !data.panel) {
     pillSlot.push(wording("down"), wording("degraded"))
     const m = opts.monitor
     if (m === "down" || m === "degraded")
