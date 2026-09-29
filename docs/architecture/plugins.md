@@ -174,6 +174,21 @@ class WidgetViewSet(PluginEnabledMixin, TenantScopedViewSet):
     serializer_class = WidgetSerializer
 ```
 
+Every routed list viewset also gets **table columns for free**: the list
+page's Columns menu offers each field its list serializer returns (see
+`GET /api/list-fields/` in the [API reference](../reference/api.md)). Two
+serializer knobs keep that honest:
+
+- `@detail_only(default)` from `api.serializers` on a `get_*` method that only
+  the detail page needs - on a list it returns `default` without running, and
+  the field is not offered as a column (it would read 0 on every row).
+  Branching on `view.action == "list"` by hand is rejected by a test.
+- `list_columns_exclude = ("field", …)` on the serializer for real fields that
+  are render settings or plumbing rather than something to read in a table.
+
+To add a column, add the field to the list serializer (with the joins that
+keep the list at a fixed number of queries) - the table picks it up.
+
 !!! warning "Tenant isolation is a hard boundary"
     Scope every queryset to the active tenant (the base does this) and never
     trust a client-supplied id to belong to the current tenant. New endpoints

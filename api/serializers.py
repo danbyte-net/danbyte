@@ -2525,6 +2525,13 @@ class TopologyCardField(serializers.JSONField):
 
 class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "device"
+    # Render settings and write-back plumbing: real fields, but not columns
+    # anyone reads a device list for (see api.list_fields).
+    list_columns_exclude = (
+        "vc_renamed_interfaces", "image_ports", "port_labels", "topology_card",
+        "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
+        "mount_offset_mm", "mount_span_u",
+    )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
     site = SiteRegionMiniSerializer(read_only=True)
@@ -3478,7 +3485,7 @@ class RearPortMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "device", "positions"]
 
 
-class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class RearPortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     def update(self, instance, validated_data):
         obj = super().update(instance, validated_data)
         # A port marked connected can't also be held for later - the mark
@@ -3540,16 +3547,19 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
             )
         return attrs
 
+    cf_model = "rearport"
+
     class Meta:
         model = RearPort
         fields = ["id", "device", "device_id", "name", "label", "positions",
                   "is_splitter", "type", "mark_connected", "description",
                   "tags", "tag_ids", "cable", "reservation",
-                  "front_port_count", "created_at", "updated_at"]
+                  "front_port_count", "custom_fields",
+                  "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class FrontPortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     def update(self, instance, validated_data):
         obj = super().update(instance, validated_data)
         # A port marked connected can't also be held for later - the mark
@@ -3606,17 +3616,20 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
             raise serializers.ValidationError(e.message_dict)
         return attrs
 
+    cf_model = "frontport"
+
     class Meta:
         model = FrontPort
         fields = ["id", "device", "device_id", "name", "label", "rear_port",
                   "rear_port_id", "rear_port_position", "positions", "type",
                   "mark_connected",
                   "description", "tags", "tag_ids", "cable", "reservation",
+                  "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class _DevicePortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class _DevicePortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     """Shared shape for console/power components - device mini + cable lookup
     + lenient `type` (free-form values round-trip; the UI offers the standard
     dropdown via /api/dcim/choices/)."""
@@ -3650,28 +3663,37 @@ class _DevicePortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
 
 class ConsolePortSerializer(_DevicePortSerializer):
+    cf_model = "consoleport"
+
     class Meta:
         model = ConsolePort
         fields = ["id", "device", "device_id", "name", "type", "type_display",
                   "speed", "description", "tags", "tag_ids", "cable", "reservation",
+                  "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class AuxPortSerializer(_DevicePortSerializer):
+    cf_model = "auxport"
+
     class Meta:
         model = AuxPort
         fields = ["id", "device", "device_id", "name", "type", "type_display",
                   "description", "tags", "tag_ids", "cable", "reservation",
+                  "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class ConsoleServerPortSerializer(_DevicePortSerializer):
+    cf_model = "consoleserverport"
+
     class Meta:
         model = ConsoleServerPort
         fields = ["id", "device", "device_id", "name", "type", "type_display",
                   "speed", "description", "tags", "tag_ids", "cable", "reservation",
+                  "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -3682,11 +3704,14 @@ class PowerPortSerializer(_DevicePortSerializer):
     def get_outlet_count(self, obj) -> int:
         return obj.outlets.count()
 
+    cf_model = "powerport"
+
     class Meta:
         model = PowerPort
         fields = ["id", "device", "device_id", "name", "type", "type_display",
                   "maximum_draw", "allocated_draw", "description",
                   "outlet_count", "tags", "tag_ids", "cable", "reservation",
+                  "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -3704,11 +3729,14 @@ class PowerOutletSerializer(_DevicePortSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    cf_model = "poweroutlet"
+
     class Meta:
         model = PowerOutlet
         fields = ["id", "device", "device_id", "name", "type", "type_display",
                   "power_port", "power_port_id", "feed_leg", "description",
-                  "tags", "tag_ids", "cable", "reservation", "created_at", "updated_at"]
+                  "tags", "tag_ids", "cable", "reservation", "custom_fields",
+                  "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -4256,7 +4284,7 @@ class ModuleInterfaceTemplateSerializer(serializers.ModelSerializer):
 
 
 class InventoryItemSerializer(
-    StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+    CustomFieldsSerializerMixin, StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
 ):
     device = DeviceMiniSerializer(read_only=True)
     device_id = TenantScopedPrimaryKeyRelatedField(
@@ -4303,6 +4331,8 @@ class InventoryItemSerializer(
                 )
         return attrs
 
+    cf_model = "inventoryitem"
+
     class Meta:
         model = InventoryItem
         fields = ["id", "device", "device_id", "parent", "parent_id", "name",
@@ -4310,11 +4340,12 @@ class InventoryItemSerializer(
                   "serial_number", "asset_tag", "description",
                   "kind", "media", "capacity_bytes", "speed", "slot", "cores",
                   "status", "status_id",
-                  "tags", "tag_ids", "created_at", "updated_at"]
+                  "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class DeviceBaySerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class DeviceBaySerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     device = DeviceMiniSerializer(read_only=True)
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
@@ -4350,15 +4381,18 @@ class DeviceBaySerializer(TaggableSerializerMixin, NumIdModelSerializer):
                 )
         return attrs
 
+    cf_model = "devicebay"
+
     class Meta:
         model = DeviceBay
         fields = ["id", "device", "device_id", "name", "installed_device",
                   "installed_device_id", "description", "tags", "tag_ids",
+                  "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class ModuleBaySerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class ModuleBaySerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     device = DeviceMiniSerializer(read_only=True)
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
@@ -4385,15 +4419,18 @@ class ModuleBaySerializer(TaggableSerializerMixin, NumIdModelSerializer):
             "serial_number": m.serial_number,
         }
 
+    cf_model = "modulebay"
+
     class Meta:
         model = ModuleBay
         fields = ["id", "device", "device_id", "name", "position",
                   "description", "module", "tags", "tag_ids",
+                  "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class ModuleSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class ModuleSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     device = DeviceMiniSerializer(read_only=True)
     module_type = ModuleTypeMiniSerializer(read_only=True)
     module_bay = serializers.SerializerMethodField()
@@ -4463,12 +4500,15 @@ class ModuleSerializer(TaggableSerializerMixin, NumIdModelSerializer):
             )
         return attrs
 
+    cf_model = "module"
+
     class Meta:
         model = Module
         fields = ["id", "device", "device_id", "module_bay", "module_bay_id",
                   "module_type", "module_type_id", "module_type_faceplate",
                   "module_interfaces", "serial_number",
                   "asset_tag", "description", "tags", "tag_ids",
+                  "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 

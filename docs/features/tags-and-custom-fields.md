@@ -71,6 +71,11 @@ Every model that carries the `custom_fields` mixin - the list is
 for example a warranty date on a device type or a service tier on a device
 role.
 
+Each of those models also carries `custom_fields` on its API rows - device
+components included (console, power, front and rear ports, bays, modules and
+inventory items), so a field defined for them can be read and set through
+the API like any other.
+
 !!! note "For plugin developers"
     Two registration hooks in `customization/object_registry.py`:
     `register_customizable_model(slug, label)` adds your model to the
