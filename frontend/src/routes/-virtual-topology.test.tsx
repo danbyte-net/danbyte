@@ -92,6 +92,10 @@ describe("Virtual topology page", () => {
     mount()
     expect(await screen.findByText("No virtual networks yet.")).toBeTruthy()
     expect(screen.getByText("Sync virtual switches & networks")).toBeTruthy()
+    // Nothing to export yet.
+    expect(
+      screen.getByRole("button", { name: /Export/ }).hasAttribute("disabled")
+    ).toBe(true)
   })
 
   it("shows one loader while it fetches", async () => {
@@ -186,6 +190,8 @@ describe("Virtual topology page", () => {
     expect(screen.getByText("Legend")).toBeTruthy()
     expect(screen.getByText("Host NIC")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy()
+    const exp = screen.getByRole("button", { name: /Export/ })
+    expect(exp.hasAttribute("disabled")).toBe(false)
   })
 
   it("labels a network rail with one spaced dot", async () => {

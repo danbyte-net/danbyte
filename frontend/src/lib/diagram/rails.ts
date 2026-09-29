@@ -1,17 +1,43 @@
 import { readableText } from "@/lib/color"
 import type { StatusMini } from "@/lib/api"
 
-import { endTextWidth, pillWidth, PORT_H } from "./geometry"
-import { fit, measureText } from "./measure"
+import {
+  documentBounds,
+  endTextWidth,
+  NOTE,
+  pillWidth,
+  PORT_H,
+} from "./geometry"
+import { baselineAt, fit, measureText } from "./measure"
 import type { Measure, Weight } from "./measure"
-import { CARD, cardTextHeight, hex6, LABEL, mix, PILL, PRINT } from "./theme"
-import type { Rect } from "./types"
+import {
+  CARD,
+  cardTextHeight,
+  hex6,
+  LABEL,
+  mix,
+  NEUTRAL_CARD,
+  PILL,
+  PRINT,
+  printColor,
+} from "./theme"
+import type {
+  DiagramDocument,
+  DiagramLink,
+  DiagramMeta,
+  DiagramNode,
+  DiagramNote,
+  DiagramPill,
+  Rect,
+} from "./types"
 
 // The rail diagram: full-width colored rails (VLANs, virtual networks)
 // grouped into titled sections, and the devices and VMs on them drawn once
 // each, as cards in the band under their topmost rail with a leg in the
 // rail's color to every rail they attach to. The Logical tab, the Virtual
-// topology page and a VM's Topology card all draw from this one layout.
+// topology page and a VM's Topology card all draw from this one layout, and
+// `railsDocument` turns the same layout into the export model, so a file
+// shows what the screen shows.
 //
 // The cards are the Diagram's: the role's color (a neutral card without
 // one), the name bold, the status pill in the top-left corner. VMs are
@@ -26,6 +52,19 @@ export type RailTargetKind = "vlan" | "device" | "vm" | "interface" | "vswitch"
 export interface RailTarget {
   kind: RailTargetKind
   id: string
+}
+
+const TARGET_PATH: Record<RailTargetKind, string> = {
+  vlan: "/vlans/",
+  device: "/devices/",
+  vm: "/virtual-machines/",
+  interface: "/interfaces/",
+  vswitch: "/virtual-switches/",
+}
+
+/** A target's page under this Danbyte. */
+export function railPath(t: RailTarget): string {
+  return `${TARGET_PATH[t.kind]}${encodeURIComponent(t.id)}`
 }
 
 export interface RailSpec {
@@ -676,4 +715,238 @@ export function railRoles(
     if (b.role && !seen.has(b.role.name))
       seen.set(b.role.name, b.role.color || undefined)
   return [...seen].map(([name, color]) => ({ name, color }))
+}
+
+// ── Export ───────────────────────────────────────────────────────────────
+
+export interface RailsDocumentOptions {
+  meta: DiagramMeta
+  /** Makes each item's link absolute. */
+  origin?: string
+  /** "Visible area": only what overlaps it, rails cut to it. */
+  area?: Rect | null
+  /** For the draw.io file, which centres a card's name: a rail's name
+   * goes in its middle there, its pill beside it. */
+  drawio?: boolean
+  measure?: Measure
+}
+
+const overlaps = (a: Rect, b: Rect) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
+const inkOn = (fill: string) => hex6(readableText(fill)) ?? NEUTRAL_CARD.ink
+
+function statusPill(p: LaidPill): DiagramPill {
+  const fill = printColor(p.status.color, PRINT.faint)
+  return { kind: "status", text: p.text, fill, ink: inkOn(fill) }
+}
+
+const pillBox = (p: LaidPill): Rect => ({ x: p.x, y: p.y, w: p.w, h: p.h })
+
+/**
+ * A rail layout as the export model: rails, cards and host NICs as card
+ * nodes, legs as straight lines in their rail's color (dashed when tagged)
+ * with the interface names beside them, section titles as text. The writers
+ * draw it like any Diagram export; draw.io gets the rails as bars and the
+ * cards as cards.
+ */
+export function railsDocument(
+  lay: RailLayout,
+  opts: RailsDocumentOptions
+): DiagramDocument {
+  const measure = opts.measure ?? measureText
+  const area = opts.area ?? null
+  const origin = (opts.origin ?? "").replace(/\/+$/, "")
+  const url = (t?: RailTarget) => (t ? `${origin}${railPath(t)}` : undefined)
+  const shown = (r: Rect) => !area || overlaps(area, r)
+  /** A full-width bar cut to the area; how far its left end moved. */
+  const cut = (r: Rect): [Rect, number] => {
+    if (!area) return [{ x: r.x, y: r.y, w: r.w, h: r.h }, 0]
+    const x = Math.max(r.x, area.x)
+    const right = Math.min(r.x + r.w, area.x + area.w)
+    return [{ x, y: r.y, w: Math.max(0, right - x), h: r.h }, x - r.x]
+  }
+  const nodes: DiagramNode[] = []
+  const notes: DiagramNote[] = []
+  const links: DiagramLink[] = []
+
+  const ext = lay.external
+  if (ext && shown(ext)) {
+    const [r, dx] = cut(ext)
+    const w = measure(ext.label.text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT)
+    nodes.push({
+      id: "ext",
+      kind: "card",
+      ...r,
+      fill: NEUTRAL_CARD.fill,
+      ink: PRINT.muted,
+      title: ext.label.text,
+      lines: [],
+      place: {
+        title: {
+          x: ext.x + dx + RAIL.INSET + w / 2,
+          y: baselineAt(r.y, CARD.TITLE_SIZE, r.h),
+        },
+        lines: [],
+      },
+    })
+  }
+
+  for (const s of lay.strips) {
+    const text = [s.title.text, s.subtitle.text].filter(Boolean).join(" · ")
+    const w = measure(text, NOTE.TEXT.s.size, NOTE.WEIGHT)
+    const at = { x: s.x + w / 2, y: s.y + RAIL.STRIP_H / 2 }
+    if (text && shown({ x: s.x, y: s.y, w, h: RAIL.STRIP_H }))
+      notes.push({ id: `sec:${s.id}`, ...at, text, size: "s" })
+    for (const a of s.adapters) {
+      if (!shown(a)) continue
+      const cx = a.x + a.w / 2
+      const top = a.y + CARD.PAD_Y
+      const link = url(a.target)
+      nodes.push({
+        id: `adp:${a.key}`,
+        kind: "card",
+        x: a.x,
+        y: a.y,
+        w: a.w,
+        h: a.h,
+        fill: NEUTRAL_CARD.fill,
+        ink: NEUTRAL_CARD.ink,
+        title: a.nic.text,
+        lines: [a.host.text],
+        place: {
+          title: {
+            x: cx,
+            y: baselineAt(top, CARD.TITLE_SIZE, CARD.TITLE_LH),
+          },
+          lines: [
+            {
+              x: cx,
+              y: baselineAt(
+                top + CARD.TITLE_LH + CARD.LINES_GAP,
+                CARD.LINE_SIZE,
+                CARD.LINE_LH
+              ),
+            },
+          ],
+        },
+        ...(link ? { link } : {}),
+      })
+    }
+  }
+
+  const kept = new Set<string>()
+  for (const r of lay.rails) {
+    if (!shown(r)) continue
+    kept.add(`rail:${r.id}`)
+    const [box, dx] = cut(r)
+    const link = url(r.target)
+    const mid = (size: number) => baselineAt(r.y, size, r.h)
+    // Where the name and the pill go: from the left as on screen, or - in
+    // draw.io, which centres the name - the pill after the centred name.
+    const titleX = opts.drawio
+      ? box.x + box.w / 2
+      : r.labelX + dx + r.labelW / 2
+    const pillX = opts.drawio
+      ? titleX + r.labelW / 2 + RAIL.PILL_GAP
+      : (r.pill?.x ?? 0) + dx
+    nodes.push({
+      id: `rail:${r.id}`,
+      kind: "card",
+      ...box,
+      fill: r.fill,
+      ink: r.ink,
+      title: r.label.text,
+      lines: r.detail ? [r.detail.text] : [],
+      ...(r.pill ? { pill: statusPill(r.pill) } : {}),
+      place: {
+        title: { x: titleX, y: mid(CARD.TITLE_SIZE) },
+        lines: r.detail
+          ? [
+              {
+                x:
+                  Math.min(r.detail.right, box.x + box.w - RAIL.INSET) -
+                  r.detail.w / 2,
+                y: mid(RAIL.DETAIL_SIZE),
+              },
+            ]
+          : [],
+        ...(r.pill ? { pill: { ...pillBox(r.pill), x: pillX } } : {}),
+      },
+      ...(link ? { link } : {}),
+    })
+  }
+
+  for (const b of lay.boxes) {
+    if (!shown(b)) continue
+    kept.add(`box:${b.id}`)
+    const cx = b.x + b.w / 2
+    const fill = b.fill ?? NEUTRAL_CARD.fill
+    const link = url(b.target)
+    nodes.push({
+      id: `box:${b.id}`,
+      kind: "card",
+      x: b.x,
+      y: b.y,
+      w: b.w,
+      h: b.h,
+      fill,
+      ink: b.fill ? (b.ink ?? inkOn(fill)) : NEUTRAL_CARD.ink,
+      title: b.name.text,
+      lines: b.lines.map((l) => l.text),
+      ...(b.pill ? { pill: statusPill(b.pill) } : {}),
+      place: {
+        title: {
+          x: cx,
+          y: baselineAt(b.titleTop, CARD.TITLE_SIZE, CARD.TITLE_LH),
+        },
+        lines: b.lines.map((l) => ({
+          x: cx,
+          y: baselineAt(l.top, CARD.LINE_SIZE, CARD.LINE_LH),
+        })),
+        ...(b.pill ? { pill: pillBox(b.pill) } : {}),
+      },
+      ...(link ? { link } : {}),
+    })
+  }
+
+  const labelOf = new Map(lay.labels.map((l) => [l.leg, l]))
+  for (const l of lay.legs) {
+    const box = `box:${l.box}`
+    const rail = `rail:${l.rail}`
+    if (!kept.has(box) || !kept.has(rail)) continue
+    const lab = labelOf.get(l.key)
+    const link = url(l.target)
+    // Drawn from the card to the rail: the label is the card end's.
+    const cardEnd = l.up ? l.y2 : l.y1
+    const railEnd = l.up ? l.y1 : l.y2
+    links.push({
+      id: `leg:${l.key}`,
+      kind: "straight",
+      sem: "cable",
+      source: { node: box, side: l.up ? "top" : "bottom", x: l.x, y: cardEnd },
+      target: { node: rail, side: l.up ? "bottom" : "top", x: l.x, y: railEnd },
+      points: [],
+      stroke: printColor(l.color, PRINT.subtle),
+      width: RAIL.LEG_W,
+      ...(l.dashed ? { dash: RAIL.DASH } : {}),
+      labels:
+        lab && lab.text
+          ? {
+              a: {
+                text: lab.text,
+                at: { x: lab.x + lab.w / 2, y: lab.y + lab.h / 2, rotate: 0 },
+              },
+            }
+          : {},
+      ...(link ? { link } : {}),
+    })
+  }
+
+  const body = { bands: [], nodes, links, notes }
+  return {
+    meta: { ...opts.meta, mode: "simple" },
+    bounds: documentBounds(body, measure),
+    ...body,
+  }
 }

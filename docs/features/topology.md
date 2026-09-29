@@ -39,7 +39,8 @@ icon: lucide/share-2
   don't all fit the label ends in a count (`+2`). The header's
   **Filters** take a site or a VLAN group (*Any site*, *Any VLAN group*;
   the site is the same one the other tabs filter on) and its **Display**
-  shows or hides **VMs**; the second bar has **Copy link**.
+  shows or hides **VMs**; the second bar has **Copy link** and
+  [Export](#export).
   A **Legend** in the corner keys the roles, the rails, devices and VMs,
   and tagged and untagged legs. An empty domain says *No VLAN attachments
   yet.* Every rail, card, section title and interface name is a link you
@@ -1310,7 +1311,18 @@ look: a compact role-colored card with the device's IP, centred where its
 card sits on the tab, and one straight line per device pair with a count
 chip (`2x`) when it stands for several cables. Its port chips are how that
 tab draws rather than what the map says. Its PNG is still a picture of the
-canvas as you see it, in the app's theme. The Logical tab has no export.
+canvas as you see it, in the app's theme.
+
+**Logical** exports its rail diagram as drawn: the rails in their VLANs'
+colors with their status pills, the cards in their roles' colors with
+theirs, each leg in its rail's color (dashed when tagged) with the
+interface names beside it, and the section titles. Its legend keys the
+roles, the rails and the legs. **Visible area** keeps what is on screen,
+the rails cut to it. In draw.io the rails are bars and the devices and VMs
+cards; a rail's name sits in its middle there, with its pill beside it. VMs
+are not dashed in a file. The file is named `logical-topology` and the day;
+the [Virtual topology](virtual-switches.md#network-topology) exports the
+same way.
 
 ### How Diagram exports are drawn
 

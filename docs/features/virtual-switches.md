@@ -112,7 +112,9 @@ the rails, VMs and host NICs. A VM's own page shows the same diagram scoped
 to that VM, as its **Topology** card, with the switch at each rail's right
 end. The ⓘ beside the title sums this up.
 
-The second bar has **Copy link**.
+The second bar has **Copy link** and **Export** - PNG, SVG, PDF, Print and
+draw.io, drawn the way the topology page's [Logical
+export](topology.md#export) is.
 
 Switches, networks and the topology are populated when **Sync virtual switches
 & networks** is enabled on a source; you can also create switches by hand.
@@ -120,7 +122,7 @@ Until then the page says *No virtual networks yet.* and names that setting.
 
 Pick a source in the header (**Any source** shows them all) to scope the
 diagram to it. The choice is on the address (`?source=<id>`), so a single
-cluster's picture is a link.
+cluster's picture is a link, and an export names it among its filters.
 
 `GET /api/virt-networks/` feeds the diagram: each network's `vlan` carries
 its `status`, and each of its `vms` its `status_mini` and `role`

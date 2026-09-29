@@ -5,15 +5,18 @@ import { Filter, Link as LinkIcon, SlidersHorizontal } from "lucide-react"
 import { api } from "@/lib/api"
 import type { LogicalTopology, Paginated } from "@/lib/api"
 import { copyWithToast } from "@/lib/clipboard"
-import { railRoles } from "@/lib/diagram/rails"
+import { railRoles, railsDocument, layoutRails } from "@/lib/diagram/rails"
 import type { RailModel, RailSectionSpec } from "@/lib/diagram/rails"
+import { useMe } from "@/lib/use-me"
 import { FormCheckbox } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { BarButton, BarMenuTrigger } from "@/components/map-toolbar"
+import { ExportMenu } from "@/components/topology/export/export-menu"
 import { PopoverField } from "@/components/topology/filters-popover"
 import { RailCanvas } from "@/components/topology/rail-diagram"
+import type { RailCanvasHandle } from "@/components/topology/rail-diagram"
 import { RailLegend, railLegendRows } from "@/components/topology/rail-legend"
 import { Badge } from "@/components/ui/badge"
 import { Combobox } from "@/components/ui/combobox"
@@ -37,7 +40,7 @@ const UNGROUPED = "\u0000ungrouped"
 //
 // Its controls live in the page's own bars, like the other tabs': the header
 // renders <LogicalFilters /> (Site, VLAN group) and <LogicalDisplay /> (VMs),
-// the second bar is <LogicalBar /> (Copy link), and the canvas area
+// the second bar is <LogicalBar /> (Copy link, Export), and the canvas area
 // is <LogicalTopologyView />. Each reads and writes the URL itself, so the
 // page only places them.
 
@@ -53,7 +56,8 @@ function useLogicalParams() {
 
 type Row = { id: string; name: string }
 
-/** The Logical tab's payload. */
+/** The Logical tab's payload, for the view and the bar alike (one cache
+ * entry: the bar's Export reads what the view draws). */
 function useLogicalData() {
   const { site, vlanGroup, showVms } = useLogicalParams()
   const qs = useMemo(() => {
@@ -119,6 +123,10 @@ function logicalModel(data: LogicalTopology): RailModel {
     })),
   }
 }
+
+/** The Logical canvas on screen, for the bar's "Visible area" export. One
+ * Logical tab is mounted at a time. */
+const logicalCanvas: { current: RailCanvasHandle | null } = { current: null }
 
 const options = (rows: readonly Row[] | undefined) =>
   (rows ?? []).map((r) => ({ value: r.id, label: r.name }))
@@ -221,9 +229,35 @@ export function LogicalDisplay() {
   )
 }
 
-/** The Logical tab's second bar: the map is its address, so Copy link is
- * all it needs. The bar stays so the canvas doesn't jump between tabs. */
+/** The Logical tab's second bar: Copy link and Export. The bar stays so
+ * the canvas doesn't jump between tabs. */
 export function LogicalBar() {
+  const { site, vlanGroup, showVms } = useLogicalParams()
+  const q = useLogicalData()
+  const { me } = useMe()
+  const sites = useQuery({
+    queryKey: ["sites-picker"],
+    queryFn: () => api<Paginated<Row>>("/api/sites/?picker=1"),
+    staleTime: 10 * 60_000,
+  })
+  const groups = useQuery({
+    queryKey: ["vlan-groups-picker"],
+    queryFn: () => api<Paginated<Row>>("/api/vlan-groups/?picker=1"),
+    staleTime: 10 * 60_000,
+  })
+  const model = useMemo(() => (q.data ? logicalModel(q.data) : null), [q.data])
+  const named = (rows: readonly Row[] | undefined, id: string) =>
+    id === "all" ? undefined : rows?.find((r) => r.id === id)?.name
+  const siteName = named(sites.data?.results, site)
+  const groupName = named(groups.data?.results, vlanGroup)
+  const filters = [
+    siteName && `Site ${siteName}`,
+    groupName && `VLAN group ${groupName}`,
+    !showVms && "No VMs",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const name = "Logical topology"
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
       <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -234,6 +268,40 @@ export function LogicalBar() {
         >
           <LinkIcon /> Copy link
         </BarButton>
+        <ExportMenu
+          name={name}
+          disabled={!model || model.sections.length === 0}
+          legend={
+            model
+              ? railLegendRows("logical", { roles: railRoles(model) })
+              : undefined
+          }
+          document={(req) => {
+            if (!model) return null
+            const canvas = logicalCanvas.current
+            const area = req.area === "visible" ? canvas?.visible() : null
+            return railsDocument(
+              // The visible area is cut from the drawing as it is on screen;
+              // the whole map is drawn at its own width.
+              layoutRails(model, { width: area ? canvas?.width() : 0 }),
+              {
+                meta: {
+                  title: name,
+                  ...(me.active_tenant
+                    ? { tenant: me.active_tenant.name }
+                    : {}),
+                  generated_at: new Date().toISOString(),
+                  ...(filters ? { filters } : {}),
+                  danbyte_url: window.location.href,
+                },
+                origin: window.location.origin,
+                area,
+                // Only a draw.io file asks for a mode.
+                drawio: req.mode !== undefined,
+              }
+            )
+          }}
+        />
       </div>
     </div>
   )
@@ -262,6 +330,7 @@ export function LogicalTopologyView() {
     )
   return (
     <RailCanvas
+      ref={logicalCanvas}
       model={model}
       label="Logical topology"
       legend={<RailLegend rows={legend} />}

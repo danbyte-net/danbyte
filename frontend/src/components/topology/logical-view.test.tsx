@@ -19,6 +19,7 @@ import {
 } from "./logical-view"
 
 import type { LogicalTopology } from "@/lib/api"
+import { downloadBlob } from "@/lib/table-export"
 
 const { apiMock, copyMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string) => Promise<unknown>>(),
@@ -26,6 +27,11 @@ const { apiMock, copyMock } = vi.hoisted(() => ({
 }))
 vi.mock("@/lib/api", () => ({ api: apiMock }))
 vi.mock("@/lib/clipboard", () => ({ copyWithToast: copyMock }))
+vi.mock("@/lib/table-export", () => ({ downloadBlob: vi.fn() }))
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
+}))
+const download = vi.mocked(downloadBlob)
 
 class ResizeObserverStub {
   observe() {}
@@ -96,10 +102,18 @@ beforeEach(() => {
     if (path.startsWith("/api/vlan-groups/"))
       return { count: 1, results: [{ id: "g1", name: "Campus" }] }
     if (path.startsWith("/api/topology/logical/")) return logical
+    if (path.startsWith("/api/me/"))
+      return {
+        is_authenticated: true,
+        perms: [],
+        permissions: {},
+        active_tenant: { id: "t1", name: "Acme", slug: "acme" },
+      }
     throw new Error(`unexpected ${path}`)
   })
   copyMock.mockReset()
   copyMock.mockResolvedValue(true)
+  download.mockClear()
   localStorage.clear()
 })
 
@@ -185,6 +199,52 @@ describe("Logical tab controls", () => {
     mount()
     fireEvent.click(await screen.findByRole("button", { name: "Copy link" }))
     expect(copyMock).toHaveBeenCalledWith(window.location.href, "Link copied")
+  })
+
+  it("exports nothing while there is no map", async () => {
+    mount()
+    await screen.findByText("No VLAN attachments yet.")
+    const exp = screen.getByRole("button", { name: /Export/ })
+    expect(exp.hasAttribute("disabled")).toBe(true)
+  })
+
+  it("exports the map it draws, with its legend and title block", async () => {
+    logical = ONE_RAIL
+    mount("/topology?tab=logical&site=s1")
+    await screen.findByText("Users · VLAN 10")
+    const exp = screen.getByRole("button", { name: /Export/ })
+    await vi.waitFor(() => expect(exp.hasAttribute("disabled")).toBe(false))
+    fireEvent.pointerDown(
+      exp,
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+    )
+    fireEvent.click(await screen.findByText("SVG"))
+    // The writers load on first use.
+    await vi.waitFor(() => expect(download).toHaveBeenCalledTimes(1), {
+      timeout: 5000,
+    })
+    const [file, mime, body] = download.mock.calls[0]
+    expect(file).toMatch(/^logical-topology-\d{4}-\d{2}-\d{2}\.svg$/)
+    expect(mime).toBe("image/svg+xml")
+    const svg = String(body)
+    for (const text of [
+      "Users · VLAN 10",
+      "sw-01",
+      "web-01",
+      "Reserved",
+      "ge-0/0/1",
+      // The legend: the role, the rail and the legs.
+      "Access",
+      "Untagged",
+      "Tagged",
+      // The title block: the name and the filters in words.
+      "Logical topology",
+      "Site Aarhus",
+    ])
+      expect(svg, text).toContain(text)
+    // Colors from the data: the rail, the card's role, the pills.
+    for (const hex of ["#2563eb", "#0ea5e9", "#22c55e", "#a855f7"])
+      expect(svg, hex).toContain(hex)
   })
 })
 

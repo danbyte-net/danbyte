@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { useMemo } from "react"
+import { useMemo, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link as LinkIcon } from "lucide-react"
 
@@ -13,18 +13,21 @@ import type {
   VirtualSwitch,
 } from "@/lib/api"
 import { copyWithToast } from "@/lib/clipboard"
-import { railRoles } from "@/lib/diagram/rails"
+import { layoutRails, railRoles, railsDocument } from "@/lib/diagram/rails"
 import type {
   RailBoxSpec,
   RailModel,
   RailSectionSpec,
 } from "@/lib/diagram/rails"
 import { usePageTitle } from "@/lib/page-title"
+import { useMe } from "@/lib/use-me"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { BarButton } from "@/components/map-toolbar"
 import { QueryError } from "@/components/query-error"
+import { ExportMenu } from "@/components/topology/export/export-menu"
 import { RailCanvas } from "@/components/topology/rail-diagram"
+import type { RailCanvasHandle } from "@/components/topology/rail-diagram"
 import { RailLegend, railLegendRows } from "@/components/topology/rail-legend"
 import { Combobox } from "@/components/ui/combobox"
 import { InfoTip } from "@/components/ui/info-tip"
@@ -40,7 +43,7 @@ export const Route = createFileRoute("/virtual-topology/")({
 // full-width rail, grouped under its switch with the switch's host NICs, and
 // each VM sits once in the band under its topmost network with a leg to
 // every network it attaches to. A Maps page: a header, a second bar (Copy
-// link) and the diagram filling the rest, its legend in the corner.
+// link, Export) and the diagram filling the rest, its legend in the corner.
 
 const NAME = "Virtual topology"
 
@@ -113,6 +116,8 @@ function VirtualTopologyPage() {
   usePageTitle(NAME)
   // URL-backed, so one source's diagram is a link.
   const [source, setSource] = useUrlText("source")
+  const { me } = useMe()
+  const canvas = useRef<RailCanvasHandle>(null)
 
   const sources = useQuery({
     queryKey: ["virtualization-sources", "topology"],
@@ -154,6 +159,7 @@ function VirtualTopologyPage() {
       ? switches
       : null
   const empty = !model || model.sections.length === 0
+  const sourceName = sources.data?.results.find((s) => s.id === source)?.name
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -187,6 +193,38 @@ function VirtualTopologyPage() {
           >
             <LinkIcon /> Copy link
           </BarButton>
+          <ExportMenu
+            name={NAME}
+            disabled={empty}
+            legend={legend}
+            document={(req) => {
+              if (!model) return null
+              const area =
+                req.area === "visible" ? canvas.current?.visible() : null
+              return railsDocument(
+                // The visible area is cut from the drawing as it is on
+                // screen; the whole map is drawn at its own width.
+                layoutRails(model, {
+                  width: area ? canvas.current?.width() : 0,
+                }),
+                {
+                  meta: {
+                    title: NAME,
+                    ...(me.active_tenant
+                      ? { tenant: me.active_tenant.name }
+                      : {}),
+                    generated_at: new Date().toISOString(),
+                    ...(sourceName ? { filters: `Source ${sourceName}` } : {}),
+                    danbyte_url: window.location.href,
+                  },
+                  origin: window.location.origin,
+                  area,
+                  // Only a draw.io file asks for a mode.
+                  drawio: req.mode !== undefined,
+                }
+              )
+            }}
+          />
         </div>
       </div>
       <div className="relative min-h-0 flex-1">
@@ -208,6 +246,7 @@ function VirtualTopologyPage() {
           </div>
         ) : (
           <RailCanvas
+            ref={canvas}
             model={model}
             label={NAME}
             legend={<RailLegend rows={legend} />}

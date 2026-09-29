@@ -2,16 +2,40 @@
 import { describe, expect, it } from "vitest"
 
 import { railMeasure as measure, railModel } from "./__fixtures__/rails"
-import { layoutRails, RAIL, RAIL_PALETTE, railRoles } from "./rails"
+import { toDrawio } from "./drawio"
+import {
+  layoutRails,
+  RAIL,
+  RAIL_PALETTE,
+  railPath,
+  railRoles,
+  railsDocument,
+} from "./rails"
 import type { RailModel } from "./rails"
-import { cardTextHeight, PILL } from "./theme"
-import type { Rect } from "./types"
+import { toSvg } from "./svg"
+import { cardTextHeight, NEUTRAL_CARD, PILL } from "./theme"
+import type { DiagramDocument, Rect } from "./types"
 
 const lay = (m: RailModel = railModel, width?: number) =>
   layoutRails(m, { measure, width })
 
 const overlap = (a: Rect, b: Rect) =>
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
+const META = {
+  title: "Logical topology",
+  tenant: "Acme",
+  generated_at: "2026-09-28T12:00:00Z",
+  filters: "Site Aarhus",
+}
+
+const doc = (m: RailModel = railModel, drawio = false): DiagramDocument =>
+  railsDocument(lay(m), {
+    meta: META,
+    origin: "https://danbyte.example/",
+    drawio,
+    measure,
+  })
 
 describe("layoutRails", () => {
   it("draws each card once, under its topmost rail, and drops the rest", () => {
@@ -234,5 +258,137 @@ describe("layoutRails", () => {
       { name: "Core", color: "#7c3aed" },
       { name: "Access", color: undefined },
     ])
+  })
+})
+
+describe("railsDocument", () => {
+  it("draws rails, cards and host NICs as cards and legs as lines", () => {
+    const d = doc()
+    const ids = [
+      ...d.nodes.map((n) => n.id),
+      ...d.links.map((l) => l.id),
+      ...d.notes.map((n) => n.id),
+    ]
+    expect(new Set(ids).size).toBe(ids.length)
+    const nodes = new Map(d.nodes.map((n) => [n.id, n]))
+    for (const l of d.links) {
+      expect(nodes.has(l.source.node), l.id).toBe(true)
+      expect(nodes.has(l.target.node), l.id).toBe(true)
+      expect(l.kind).toBe("straight")
+    }
+    expect(d.nodes.filter((n) => n.id.startsWith("rail:"))).toHaveLength(3)
+    expect(d.nodes.filter((n) => n.id.startsWith("box:"))).toHaveLength(3)
+    expect(nodes.get("adp:a1")).toMatchObject({
+      title: "eno1",
+      lines: ["hv-01"],
+      link: "https://danbyte.example/interfaces/if-a1",
+    })
+    expect(nodes.get("ext")?.title).toBe("External network")
+    expect(d.notes.map((n) => n.text)).toEqual(["Campus · VLAN group", "VLANs"])
+    expect(d.meta).toMatchObject({ ...META, mode: "simple" })
+    expect(d.bounds.w).toBeGreaterThan(0)
+  })
+
+  it("colors from the data: rails, cards and pills", () => {
+    const nodes = new Map(doc().nodes.map((n) => [n.id, n]))
+    expect(nodes.get("rail:v10")).toMatchObject({
+      fill: "#2563eb",
+      ink: "#ffffff",
+      title: "MGMT · VLAN 10",
+      pill: { kind: "status", text: "Planned", fill: "#f59e0b" },
+      link: "https://danbyte.example/vlans/v10",
+    })
+    expect(nodes.get("box:device:d1")).toMatchObject({
+      fill: "#7c3aed",
+      pill: { text: "Active", fill: "#22c55e", ink: "#0a0a0a" },
+      link: "https://danbyte.example/devices/d1",
+    })
+    expect(nodes.get("box:vm:v1")).toMatchObject({
+      fill: NEUTRAL_CARD.fill,
+      ink: NEUTRAL_CARD.ink,
+      link: "https://danbyte.example/virtual-machines/v1",
+    })
+    // The rail's name sits where the screen puts it, from the left.
+    const mgmt = lay().rails[0]
+    expect(nodes.get("rail:v10")!.place!.title.x).toBe(
+      mgmt.labelX + mgmt.labelW / 2
+    )
+  })
+
+  it("strokes each leg in its rail's color, dashed when tagged, labelled at its card", () => {
+    const d = doc()
+    const legs = d.links.filter((l) => l.source.node === "box:device:d1")
+    expect(legs.map((l) => [l.target.node, l.stroke, l.dash])).toEqual([
+      ["rail:v10", "#2563eb", undefined],
+      ["rail:v10", "#2563eb", RAIL.DASH],
+      ["rail:v20", "#fde68a", RAIL.DASH],
+      ["rail:v99", RAIL_PALETTE[2], RAIL.DASH],
+    ])
+    expect(legs[0].source.side).toBe("top")
+    expect(legs[2].source.side).toBe("bottom")
+    expect(legs[0].labels.a?.text).toBe("mgmt0, Eth1/1")
+    expect(legs[1].labels.a).toBeUndefined()
+    expect(legs[0].link).toBe("https://danbyte.example/interfaces/i1")
+  })
+
+  it("keeps only the visible area, rails cut to it", () => {
+    const l = lay(railModel, 1200)
+    const r = l.rails[1]
+    const area = { x: 300, y: r.y - 4, w: 400, h: r.h + 8 }
+    const d = railsDocument(l, { meta: META, area, measure })
+    expect(d.nodes.map((n) => n.id)).toEqual(["rail:v20"])
+    expect(d.nodes[0]).toMatchObject({ x: 300, w: 400 })
+    // Its name moves in with the cut.
+    expect(d.nodes[0].place!.title.x).toBeGreaterThan(300)
+    expect(d.links).toEqual([])
+  })
+
+  it("links each target to its page", () => {
+    expect(railPath({ kind: "vswitch", id: "a/b" })).toBe(
+      "/virtual-switches/a%2Fb"
+    )
+  })
+
+  it("writes the same SVG every time (golden)", async () => {
+    const d = doc()
+    d.meta.legend = [
+      { kind: "role", label: "Core", fill: "#7c3aed", ink: "#ffffff" },
+      { kind: "line", label: "VLAN", stroke: "#71717b", width: 8 },
+      {
+        kind: "line",
+        label: "Tagged",
+        stroke: "#71717b",
+        width: 3,
+        dash: "5 5",
+      },
+    ]
+    const opts = { measure, titleBlock: true, legend: true, links: true }
+    const out = toSvg(d, opts)
+    expect(toSvg(structuredClone(d), opts)).toBe(out)
+    await expect(out).toMatchFileSnapshot("./__golden__/rails.svg")
+  })
+
+  it("puts a rail's pill beside its name where draw.io centres it", () => {
+    const rail = (d: DiagramDocument) =>
+      d.nodes.find((n) => n.id === "rail:v10")!
+    const mgmt = lay().rails[0]
+    const shown = rail(doc())
+    const file = rail(doc(railModel, true))
+    expect(file.place!.title.x).toBe(shown.x + shown.w / 2)
+    expect(file.place!.pill!.x).toBe(
+      file.place!.title.x + mgmt.labelW / 2 + RAIL.PILL_GAP
+    )
+    // Everything else is where the screen puts it.
+    expect({ ...file, place: undefined }).toEqual({
+      ...shown,
+      place: undefined,
+    })
+  })
+
+  it("writes the same draw.io file every time (golden)", async () => {
+    const out = toDrawio([doc(railModel, true)], { measure })
+    expect(out).toContain('danbyte_id="rail:v10"')
+    expect(out).toContain("dashPattern=5 5;")
+    await expect(out).toMatchFileSnapshot("./__golden__/rails.drawio")
   })
 })
