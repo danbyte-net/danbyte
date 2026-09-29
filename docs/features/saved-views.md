@@ -62,7 +62,8 @@ list, edited two ways over the same definition:
 - a **builder** - bordered groups of *field · operator · value* rows. Rows in
   a group must all match (**And** adds one); groups combine with **Or**, so
   `a or (b and c)` reads exactly as it looks. Fields come from the list's own
-  columns, and the
+  rows - every value a row carries, two levels deep, including ones named like
+  ids (`vlan_id`, `facility_id`); only raw object ids are left out - and the
   value box carries a picker (the chevron on its right) listing the values
   actually present in the loaded rows - pick one or type freely. The ⓘ next
   to the dialog title is the operator reference;

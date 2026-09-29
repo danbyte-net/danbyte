@@ -342,6 +342,14 @@ const SKIP_KEYS = new Set([
   "updated_at",
 ])
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A raw id (a foreign key's `manufacturer_id`), as opposed to a field that is
+ * only named like one - a VLAN's `vlan_id`, a rack's `facility_id`. */
+function isRawId(key: string, v: unknown): boolean {
+  return key.endsWith("_id") && typeof v === "string" && UUID.test(v)
+}
+
 /** Derive the filterable field paths from the rows themselves (two levels
  * deep, name-bearing objects surfaced under their own key), so the builder
  * needs no per-model registry - like the facet rail, it describes exactly the
@@ -371,14 +379,14 @@ export function discoverFields(rows: unknown[]): FieldInfo[] {
   for (const row of rows.slice(0, 200)) {
     if (!row || typeof row !== "object") continue
     for (const [key, v] of Object.entries(row as Record<string, unknown>)) {
-      if (SKIP_KEYS.has(key) || key.endsWith("_id")) continue
+      if (SKIP_KEYS.has(key) || isRawId(key, v)) continue
       if (v === null || v === undefined) continue
       if (Array.isArray(v)) {
         for (const el of v.slice(0, 5)) note(key, el)
       } else if (typeof v === "object") {
         note(key, v) // the object itself (name/slug)
         for (const [k2, v2] of Object.entries(v as Record<string, unknown>)) {
-          if (SKIP_KEYS.has(k2) || k2.endsWith("_id")) continue
+          if (SKIP_KEYS.has(k2) || isRawId(k2, v2)) continue
           if (v2 !== null && typeof v2 !== "object") note(`${key}.${k2}`, v2)
         }
       } else {
