@@ -37,6 +37,7 @@ import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { QuickAddDialog } from "@/components/forms/quick-add"
+import { naturalCompare } from "@/lib/natural-sort"
 
 type LagProtocol = Interface["lag_protocol"]
 type LacpMode = Interface["lacp_mode"]
@@ -385,7 +386,7 @@ export function InterfaceForm({
           ? -1
           : b.device.id === deviceId
             ? 1
-            : a.device.name.localeCompare(b.device.name)
+            : naturalCompare(a.device.name, b.device.name)
     )
     .map((p) => ({
       value: p.id,

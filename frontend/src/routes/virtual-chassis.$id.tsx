@@ -68,6 +68,7 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/virtual-chassis/$id")({
   component: VirtualChassisDetail,
@@ -96,7 +97,7 @@ function sortMembers(members: VirtualChassisMember[]): VirtualChassisMember[] {
   return [...members].sort((a, b) => {
     const pa = a.vc_position ?? Number.MAX_SAFE_INTEGER
     const pb = b.vc_position ?? Number.MAX_SAFE_INTEGER
-    return pa - pb || a.name.localeCompare(b.name)
+    return pa - pb || naturalCompare(a.name, b.name)
   })
 }
 

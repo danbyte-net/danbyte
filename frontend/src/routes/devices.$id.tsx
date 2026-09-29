@@ -171,6 +171,7 @@ import { Switch } from "@/components/ui/switch"
 import { DeviceConnectMenu } from "@/components/device-connect-menu"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { naturalCompare } from "@/lib/natural-sort"
 
 const DEVICE_TABS = [
   "overview",
@@ -1629,7 +1630,7 @@ function DeviceInterfacesPane({
       [...(vcQuery.data?.members ?? [])].sort((a, b) => {
         const pa = a.vc_position ?? Number.MAX_SAFE_INTEGER
         const pb = b.vc_position ?? Number.MAX_SAFE_INTEGER
-        return pa - pb || a.name.localeCompare(b.name)
+        return pa - pb || naturalCompare(a.name, b.name)
       }),
     [vcQuery.data]
   )

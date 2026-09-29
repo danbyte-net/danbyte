@@ -32,6 +32,7 @@ import {
 import type { CheckFilter } from "@/components/objects-panel"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // The site map's Objects sidebar - the same panel the floor plan and the
 // topology map open: one search box, foldable groups, click to fly-to +
@@ -202,7 +203,7 @@ export function MapObjectsSidebar({
     .sort(
       (a, b) =>
         checkRank(a.check) - checkRank(b.check) ||
-        a.name.localeCompare(b.name, undefined, { numeric: true })
+        naturalCompare(a.name, b.name)
     )
   const shownMarkers = markers.filter((m) =>
     match(m.label || m.device?.name || m.type?.name || "")
@@ -229,7 +230,7 @@ export function MapObjectsSidebar({
           ? 1
           : b.title === "No region"
             ? -1
-            : a.title.localeCompare(b.title)
+            : naturalCompare(a.title, b.title)
       )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sites, regions, filter, status])
@@ -262,11 +263,9 @@ export function MapObjectsSidebar({
         ...g,
         down: g.rows.filter((d) => d.check === "down").length,
         degraded: g.rows.filter((d) => d.check === "degraded").length,
-        rows: g.rows.sort((a, b) =>
-          a.name.localeCompare(b.name, undefined, { numeric: true })
-        ),
+        rows: g.rows.sort((a, b) => naturalCompare(a.name, b.name)),
       }))
-      .sort((a, b) => a.title.localeCompare(b.title))
+      .sort((a, b) => naturalCompare(a.title, b.title))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devices, filter, status])
 
@@ -308,7 +307,7 @@ export function MapObjectsSidebar({
     return rows.sort(
       (a, b) =>
         checkRank(a.check) - checkRank(b.check) ||
-        a.name.localeCompare(b.name, undefined, { numeric: true })
+        naturalCompare(a.name, b.name)
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownSites, deviceGroups, status, hidden])
@@ -318,7 +317,7 @@ export function MapObjectsSidebar({
     for (const c of shownConnections) {
       map.set(c.kind, [...(map.get(c.kind) ?? []), c])
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
+    return [...map.entries()].sort(([a], [b]) => naturalCompare(a, b))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connections, filter])
 

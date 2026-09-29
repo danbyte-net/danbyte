@@ -36,6 +36,7 @@ import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { cn } from "@/lib/utils"
 import { DEVICE_IDS_MIME } from "./diagram/placement"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // The map's device list (Diagram and Hierarchy): every device the user may
 // see, loaded once in its light palette shape and filtered here, grouped
@@ -740,9 +741,7 @@ function PaletteFilterPopover({
         ...(!filters.site && r.site ? { hint: r.site.name } : {}),
       })
     }
-    return [...seen.values()].sort((a, b) =>
-      a.label.localeCompare(b.label, undefined, { numeric: true })
-    )
+    return [...seen.values()].sort((a, b) => naturalCompare(a.label, b.label))
   }, [rows, filters.site])
   const options: Record<FilterKey, ComboboxOption[]> = {
     site,

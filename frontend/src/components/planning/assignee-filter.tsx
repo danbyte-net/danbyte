@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { naturalCompare } from "@/lib/natural-sort"
 
 export type AssigneeFilter = number | "unassigned" | null
 
@@ -61,7 +62,7 @@ export function AssigneeFilterStrip({
   const people = [...byId.entries()].sort((a, b) => {
     if (isMe(a[1].username)) return -1
     if (isMe(b[1].username)) return 1
-    return a[1].username.localeCompare(b[1].username)
+    return naturalCompare(a[1].username, b[1].username)
   })
 
   // Faces, not labelled chips. Six people used to mean six pills of differing

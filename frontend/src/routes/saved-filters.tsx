@@ -31,6 +31,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { ExpressionEditor } from "@/components/filter-expression"
 import type { FilterSnapshot } from "@/components/table-filters"
 import { X } from "lucide-react"
+import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/saved-filters")({
   validateSearch: (s: Record<string, unknown>): { edit?: string } => ({
@@ -220,7 +221,7 @@ function SavedFiltersPage() {
     for (const v of allRows) c[v.object_type] = (c[v.object_type] ?? 0) + 1
     return Object.entries(c)
       .map(([value, count]) => ({ value, label: listLabel(value), count }))
-      .sort((a, b) => a.label.localeCompare(b.label)) as FacetOption[]
+      .sort((a, b) => naturalCompare(a.label, b.label)) as FacetOption[]
   }, [allRows])
 
   const whoFacets = useMemo(() => {

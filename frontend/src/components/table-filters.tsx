@@ -16,6 +16,7 @@ import {
   toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // Auto-derive a filter rail from `ColumnDef.meta.facet`.
 //
@@ -249,7 +250,7 @@ export function useTableFilters<TRow>(
               textColor: fmt?.textColor,
             }
           })
-          .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+          .sort((a, b) => b.count - a.count || naturalCompare(a.label, b.label))
       } else if (def.kind === "tags") {
         const tags: Record<string, FacetOption> = {}
         for (const r of rows) {

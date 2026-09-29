@@ -27,6 +27,7 @@ import {
   AvailabilityFramePicker,
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
+import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/prefixes/")({
   component: PrefixesPage,
@@ -133,7 +134,7 @@ function PrefixesPage() {
       if (av !== bv) return av - bv // Global first
       const an = a.vrf?.name ?? ""
       const bn = b.vrf?.name ?? ""
-      if (an !== bn) return an.localeCompare(bn) // then VRF alpha
+      if (an !== bn) return naturalCompare(an, bn) // then VRF name
       // Don't re-sort by CIDR - annotateNesting already laid out a stable
       // depth-first parent→child order within each VRF.
       return 0

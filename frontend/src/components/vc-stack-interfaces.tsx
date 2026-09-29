@@ -22,6 +22,7 @@ import { portTint } from "@/components/cable-status-control"
 import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { QueryError } from "@/components/query-error"
+import { naturalCompare } from "@/lib/natural-sort"
 
 export interface StackInterfaceRow {
   member: VirtualChassisMember
@@ -59,7 +60,7 @@ export function useStackInterfaces(members: VirtualChassisMember[]): {
         // - the same hierarchy the per-device table renders.
         nestInterfaces(
           [...(queries[i].data?.results ?? [])].sort((a, b) =>
-            a.name.localeCompare(b.name, undefined, { numeric: true })
+            naturalCompare(a.name, b.name)
           )
         ).map((iface) => ({ member: m, iface }))
       )

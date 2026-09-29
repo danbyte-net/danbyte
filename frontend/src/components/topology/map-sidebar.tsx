@@ -67,6 +67,7 @@ import { ZONE_COLORS } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { isRow, isSide } from "./diagram/bands"
 import { bandLook } from "./diagram/band-node"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // The topology page's Objects sidebar - the site map's, with the graph's own
 // objects: device cards grouped by role, site or location, the
@@ -109,7 +110,7 @@ function checkRank(check: string | null | undefined): number {
 }
 
 const byName = <T extends { name: string }>(a: T, b: T) =>
-  a.name.localeCompare(b.name, undefined, { numeric: true })
+  naturalCompare(a.name, b.name)
 
 interface DeviceRow {
   id: string
@@ -247,7 +248,7 @@ export function TopologyObjectsSidebar({
           ? 1
           : b.title.startsWith("No ")
             ? -1
-            : a.title.localeCompare(b.title)
+            : naturalCompare(a.title, b.title)
       )
   })()
 
@@ -301,7 +302,7 @@ export function TopologyObjectsSidebar({
       map.set(fam, [...(map.get(fam) ?? []), e])
     }
     return [...map.entries()].sort(([a], [b]) =>
-      a === DISCOVERED ? 1 : b === DISCOVERED ? -1 : a.localeCompare(b)
+      a === DISCOVERED ? 1 : b === DISCOVERED ? -1 : naturalCompare(a, b)
     )
   })()
 

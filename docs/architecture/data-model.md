@@ -116,7 +116,9 @@ carry a natural `Meta.ordering`, so a related list such as
 `device.interfaces.all()` - serializer nesting, spec sheets, config
 rendering - is in that order without an explicit `order_by`. List endpoints
 order the same way, including the device name that leads a cross-device
-component list.
+component list. In the UI, `naturalCompare` (`frontend/src/lib/natural-sort.ts`)
+is the same order for client-side sorts, and every `DataTable` column that sets
+no `sortingFn` of its own sorts its text with it.
 
 ## Conventional VRF = NULL
 

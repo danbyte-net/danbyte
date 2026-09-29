@@ -141,6 +141,7 @@ import { usePluginUi } from "@/lib/plugins"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { DynamicIcon } from "@/components/dynamic-icon"
 import { apiErrorToast } from "@/lib/api-toast"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // Information architecture mirrors the original Danbyte CLAUDE.md - the
 // order is load-bearing (matches the user's mental model). Stub `/foo`
@@ -1691,7 +1692,7 @@ function FavoritesSection() {
                 </h3>
                 <div className="max-h-72 overflow-auto rounded-lg border border-border">
                   {[...folders]
-                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .sort((a, b) => naturalCompare(a.name, b.name))
                     .map((folder) => (
                       <div
                         key={folder.id}
@@ -1736,7 +1737,7 @@ function FavoritesSection() {
                       </div>
                     ))}
                   {[...bookmarks]
-                    .sort((a, b) => a.label.localeCompare(b.label))
+                    .sort((a, b) => naturalCompare(a.label, b.label))
                     .map((bookmark) => (
                       <div
                         key={bookmark.id}

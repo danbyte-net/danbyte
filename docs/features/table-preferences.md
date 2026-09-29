@@ -21,6 +21,14 @@ Your changes are saved automatically and apply the next time you open that table
     A few columns (like the row-select checkbox and the row-actions menu) always
     stay in place and can't be moved or hidden.
 
+## Sorting
+
+Click a column header to sort by it; click it again to reverse. Text sorts in
+natural order, the way you count: `DIMM 1, DIMM 2 … DIMM 10, DIMM 11`, and
+`Ethernet1/2` before `Ethernet1/10`, with case ignored. Numbers and dates sort
+by value. Before you click anything, a list shows rows in the order the server
+sends them, which is the same natural order by name.
+
 ## Where your settings live
 
 Manage all your saved table layouts in one place under **User → Preferences**,

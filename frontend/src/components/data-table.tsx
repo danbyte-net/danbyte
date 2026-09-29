@@ -32,6 +32,7 @@ import { ColumnsMenu } from "@/components/column-menu"
 import { useTablePreference } from "@/lib/use-table-preference"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { exportTable, type ExportFormat } from "@/lib/table-export"
+import { naturalSortingFn } from "@/lib/natural-sort"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -345,6 +346,9 @@ export function DataTable<T>({
     },
     onSortingChange: setSorting,
     manualSorting: !!serverSorting,
+    // Text sorts in natural order ("DIMM 2" before "DIMM 10") unless a column
+    // sets its own sortingFn; numbers and dates still sort by value.
+    defaultColumn: { sortingFn: naturalSortingFn },
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: onColumnVisibilityChange,
     onColumnOrderChange: setColumnOrder,

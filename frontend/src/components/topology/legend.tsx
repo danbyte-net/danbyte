@@ -13,6 +13,7 @@ import {
 import type { TopologyGraph } from "@/lib/api"
 import { TUNNEL_DASH, typeColor } from "./edge-style"
 import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // Line-key legend for the topology views. Collapsible, remembered per
 // browser, and its rows adapt to the active view + color mode so it only
@@ -155,7 +156,7 @@ export function graphLegend(
   return {
     roles: [...roles]
       .map(([name, color]) => ({ name, color }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .sort((a, b) => naturalCompare(a.name, b.name)),
     monitorPill: !!graph.meta?.card?.uses_monitor,
     present: {
       cable: has((e) => (!e.type || e.type === "cable") && !e.data?.tunnel),

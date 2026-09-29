@@ -5,6 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import type { SlaAnalysis, SlaState } from "@/lib/api"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { SlaFigureBadge } from "./sla-figure"
+import { naturalCompare } from "@/lib/natural-sort"
 
 type Member = SlaAnalysis["by_member"][number]
 type Item = Member["items"][number]
@@ -43,7 +44,7 @@ export function MembersMatrix({
             name: i.name,
             kind: i.kind,
           })
-    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name))
+    return [...seen.values()].sort((a, b) => naturalCompare(a.name, b.name))
   }, [data.by_member])
 
   const columns = useMemo<ColumnDef<Member, unknown>[]>(() => {

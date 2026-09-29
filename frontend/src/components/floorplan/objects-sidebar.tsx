@@ -25,6 +25,7 @@ import {
 } from "@/components/objects-panel"
 import type { CheckFilter } from "@/components/objects-panel"
 import { TruncatedText } from "@/components/ui/truncated-text"
+import { naturalCompare } from "@/lib/natural-sort"
 
 interface Group {
   key: string
@@ -57,11 +58,9 @@ function groupBy(
   return [...map.values()]
     .map((g) => ({
       ...g,
-      tiles: g.tiles.sort((a, b) =>
-        tileName(a).localeCompare(tileName(b), undefined, { numeric: true })
-      ),
+      tiles: g.tiles.sort((a, b) => naturalCompare(tileName(a), tileName(b))),
     }))
-    .sort((a, b) => a.title.localeCompare(b.title))
+    .sort((a, b) => naturalCompare(a.title, b.title))
 }
 
 /**
