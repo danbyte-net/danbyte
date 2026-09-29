@@ -152,6 +152,71 @@ class DeviceSheetTests(_Base):
         self.assertEqual(r.status_code, 200, r.content[:200])
         self.assertIn("aarhus-sw1-spec-full-FOC1234.pdf", r["Content-Disposition"])
 
+    def test_memory_in_gb_and_parts_in_natural_order(self):
+        """#244: a BMC stores DIMMs in binary bytes, so 16 x 64 GiB used to
+        read "1.1 TB" and "16 x 68.72 GB"; and synced parts carry no slot, so
+        their names ordered them as DIMM 1, DIMM 10, DIMM 11, ..., DIMM 2."""
+        from .models import InventoryItem
+
+        order = (16, 3, 12, 1, 10, 2, 11, 4, 9, 5, 15, 6, 14, 7, 13, 8)
+        for n in order:
+            InventoryItem.objects.create(
+                device=self.device, name=f"DIMM {n}", kind="ram",
+                capacity_bytes=64 * 1024**3, speed="4800 MT/s",
+            )
+        for n in (10, 2, 1):
+            InventoryItem.objects.create(
+                device=self.device, name=f"Disk {n}", kind="disk", slot=f"Bay {n}",
+                capacity_bytes=960_000_000_000,
+            )
+        ctx = device_hardware_context(self.device)
+        stats = {s["label"]: s for s in ctx["stats"]}
+        self.assertEqual(stats["Memory"]["value"], "1024 GB")
+        self.assertIn("16 × 64 GB", stats["Memory"]["hint"])
+        self.assertEqual([r["name"] for r in ctx["rams"]], [f"DIMM {n}" for n in range(1, 17)])
+        self.assertEqual(ctx["rams"][0]["capacity"], "64 GB")
+        # Disks keep the decimal, largest-unit formatting.
+        self.assertEqual(stats["Storage"]["value"], "2.88 TB")
+        self.assertEqual([r["slot"] for r in ctx["disks"]], ["Bay 1", "Bay 2", "Bay 10"])
+        # The Modules and inventory list on the datasheet reads the same way.
+        names = [r["name"] for r in device_context(self.device)["inventory"]]
+        self.assertEqual(names[:3], ["DIMM 1", "DIMM 2", "DIMM 3"])
+        self.assertEqual(names[-3:], ["Disk 1", "Disk 2", "Disk 10"])
+
+        html = render_spec_html("device_hardware", self.device)
+        at = [html.index(f"<td>DIMM {n}</td>") for n in range(1, 17)]
+        self.assertEqual(at, sorted(at))
+        self.assertIn("1024 GB", html)
+
+    def test_slots_order_before_names(self):
+        from .models import InventoryItem
+
+        for n in (12, 1, 10, 2, 11, 3):
+            InventoryItem.objects.create(
+                device=self.device, name=f"RAM{13 - n}", kind="ram", slot=f"DIMM A{n}",
+                capacity_bytes=32_000_000_000,
+            )
+        ctx = device_hardware_context(self.device)
+        self.assertEqual(
+            [r["slot"] for r in ctx["rams"]],
+            ["DIMM A1", "DIMM A2", "DIMM A3", "DIMM A10", "DIMM A11", "DIMM A12"],
+        )
+        self.assertEqual(ctx["stats"][1]["value"], "192 GB")
+
+    def test_memory_formatting(self):
+        from .spec_sheets import _memory, format_memory
+
+        self.assertEqual(format_memory(32 * 1024**3), "32 GB")  # BMC, binary
+        self.assertEqual(format_memory(32_000_000_000), "32 GB")  # form, decimal
+        self.assertEqual(format_memory(512 * 1024**2), "0.5 GB")
+        self.assertEqual(format_memory(1_500_000_000), "1.5 GB")
+        self.assertEqual(format_memory(33_300_000_000), "33.3 GB")
+        self.assertEqual(format_memory(None), "")
+        self.assertEqual(format_memory(0), "")
+        self.assertEqual(_memory(1536), "1.5 GB")
+        self.assertEqual(_memory(1024 * 1024), "1024 GB")
+        self.assertEqual(_memory(0), "—")
+
     def test_needs_view_permission(self):
         member = User.objects.create_user("m", password="x")
         self.client.force_login(member)

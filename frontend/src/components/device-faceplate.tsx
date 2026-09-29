@@ -4,6 +4,7 @@ import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
 import { api, formatBytes } from "@/lib/api"
+import { formatMemory } from "@/lib/memory-size"
 import type {
   Device,
   DeviceSnmp,
@@ -1523,7 +1524,9 @@ export function ImagePortsFaceplate({
                     {[
                       item.kind !== "other" ? item.kind : "",
                       item.media,
-                      formatBytes(item.capacity_bytes),
+                      item.kind === "ram"
+                        ? formatMemory(item.capacity_bytes)
+                        : formatBytes(item.capacity_bytes),
                       item.speed,
                     ]
                       .filter(Boolean)

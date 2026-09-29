@@ -12,15 +12,14 @@ import base64
 import mimetypes
 import re
 from datetime import UTC, datetime
+from fractions import Fraction
 
 from django.contrib.contenttypes.models import ContentType
 from django.template.loader import render_to_string
 
+from .natural import natural, natural_key
+
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
-
-
-def _natural(name: str):
-    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name or "")]
 
 
 def _data_uri(field) -> str | None:
@@ -181,7 +180,7 @@ def interface_rows(device) -> tuple[list[dict], list]:
         .select_related("vlan", "parent")
         .prefetch_related("tagged_vlans", "ip_addresses")
     )
-    ifaces.sort(key=lambda i: _natural(i.name))
+    ifaces.sort(key=lambda i: natural_key(i.name))
     vendors = _vendor_map({i.mac_address for i in ifaces if i.mac_address}, device.tenant)
     rows = []
     for i in ifaces:
@@ -289,7 +288,8 @@ def device_context(device, request=None) -> dict:
                 "type": m.module_type.name,
                 "serial": m.serial_number,
             }
-            for m in device.modules.select_related("module_bay", "module_type").all()
+            for m in device.modules.select_related("module_bay", "module_type")
+            .order_by(natural("module_bay__name"))
         ],
         "inventory": [
             {
@@ -298,7 +298,8 @@ def device_context(device, request=None) -> dict:
                 "part": it.part_id,
                 "serial": it.serial_number,
             }
-            for it in device.inventory_items.select_related("manufacturer").all()
+            for it in device.inventory_items.select_related("manufacturer")
+            .order_by(natural("name"))
         ],
         "interfaces": rows,
         "comments": device.comments or "",
@@ -312,18 +313,17 @@ def device_context(device, request=None) -> dict:
 # ─── virtual machine ───────────────────────────────────────────────────────
 
 def _memory(mb) -> str:
-    if not mb:
-        return "—"
-    return f"{mb / 1024:g} GB" if mb % 1024 == 0 else f"{mb} MB"
+    """A VM's memory (MiB) in GB, like the hardware sheet's RAM."""
+    return format_gb(Fraction(mb, 1024)) if mb and mb > 0 else "—"
 
 
 def vm_context(vm, request=None) -> dict:
     from .models import IPAddress
 
-    disks = list(vm.disks.all())
+    disks = list(vm.disks.order_by(natural("key")))
     disk_total = vm.disk_gb or sum((d.size_gb or 0) for d in disks)
     ifaces = list(vm.interfaces.select_related("parent").all())
-    ifaces.sort(key=lambda i: _natural(i.name))
+    ifaces.sort(key=lambda i: natural_key(i.name))
     ips_by_iface: dict = {}
     for ip in IPAddress.objects.filter(assigned_vm_interface__in=ifaces):
         ips_by_iface.setdefault(ip.assigned_vm_interface_id, []).append(ip.ip_address)
@@ -481,6 +481,33 @@ def format_bytes(n) -> str:
     return f"{n} B"
 
 
+_MIB = 1 << 20
+
+
+def memory_gb(n) -> Fraction:
+    """A memory size in GB, exactly. The bytes come two ways: a BMC reports
+    MiB, so 32 GiB is stored as 34 359 738 368; the form writes decimal GB,
+    so 32 GB is 32 000 000 000. A whole number of MiB reads in GiB, anything
+    else in decimal GB - both are 32 GB."""
+    if not n or n <= 0:
+        return Fraction(0)
+    return Fraction(n, 1 << 30) if n % _MIB == 0 else Fraction(n, 10**9)
+
+
+def format_gb(gb: Fraction) -> str:
+    """GB with no unit switch - "1024 GB", not "1.1 TB" - whole when exact,
+    else to one decimal."""
+    if gb <= 0:
+        return ""
+    text = str(gb.numerator) if gb.denominator == 1 else f"{float(gb):.1f}"
+    return f"{text} GB"
+
+
+def format_memory(n) -> str:
+    """Memory bytes → "32 GB" (see ``memory_gb``)."""
+    return format_gb(memory_gb(n))
+
+
 def _most_common(values) -> str:
     vals = [v for v in values if v]
     if not vals:
@@ -515,6 +542,7 @@ def hardware_totals(items) -> dict:
     disks = [i for i in items if i.kind == "disk"]
     cores = sum(cores_of(i) for i in cpus)
     ram_bytes = sum(i.capacity_bytes or 0 for i in rams)
+    ram_gb = sum((memory_gb(i.capacity_bytes) for i in rams), Fraction(0))
     disk_bytes = sum(i.capacity_bytes or 0 for i in disks)
     from .models import INVENTORY_MEDIA_TYPES
 
@@ -528,9 +556,9 @@ def hardware_totals(items) -> dict:
         },
         "ram": {
             "bytes": ram_bytes,
-            "total": format_bytes(ram_bytes),
+            "total": format_gb(ram_gb),
             "sticks": len(rams),
-            "stick": _most_common(format_bytes(i.capacity_bytes) for i in rams),
+            "stick": _most_common(format_memory(i.capacity_bytes) for i in rams),
             "speed": _most_common(i.speed for i in rams),
         },
         "disk": {
@@ -573,15 +601,18 @@ def _hardware_parts(device) -> dict:
     sheet and the all-in-one sheet."""
     from .models import INVENTORY_ITEM_KINDS, INVENTORY_MEDIA_TYPES
 
+    # Slot then name, in natural order: "DIMM 2" before "DIMM 10". A part a
+    # BMC synced has no slot, so its name orders it.
     items = list(
         device.inventory_items.select_related("manufacturer", "status")
-        .order_by("kind", "slot", "name")
+        .order_by("kind", natural("slot"), natural("name"))
     )
     totals = hardware_totals(items)
     media = dict(INVENTORY_MEDIA_TYPES)
     kinds = dict(INVENTORY_ITEM_KINDS)
 
     def _row(it):
+        size = (format_memory if it.kind == "ram" else format_bytes)(it.capacity_bytes)
         return {
             "slot": it.slot,
             "name": it.name,
@@ -591,12 +622,12 @@ def _hardware_parts(device) -> dict:
             "serial": it.serial_number,
             "speed": it.speed,
             "cores": cores_of(it) or "",
-            "capacity": format_bytes(it.capacity_bytes),
+            "capacity": size,
             "media": media.get(it.media, ""),
             "status": it.status.name if it.status_id else "",
             "kind": kinds.get(it.kind, it.kind),
             "details": " · ".join(x for x in (
-                model_of(it), it.speed, format_bytes(it.capacity_bytes)
+                model_of(it), it.speed, size
             ) if x),
         }
 

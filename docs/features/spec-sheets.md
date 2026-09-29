@@ -23,7 +23,7 @@ A4, built to print in black and white as well as colour:
   page. A virtual chassis shows every member's front, in position order.
 - **Three stat boxes** - the numbers wanted at a glance. Device: interfaces,
   power draw (the sum of its power ports' allocated or maximum draw), rack
-  position. VM: vCPU, memory, total disk. Virtual chassis: members,
+  position. VM: vCPU, memory (in GB), total disk. Virtual chassis: members,
   interfaces, ports used.
 - **Details** - serial number, asset tag, type and part number, height,
   platform, primary and OOB IP, tenant, site, location, rack, cluster,
@@ -58,6 +58,16 @@ one table per kind - Processors, Memory, Storage, Other parts - each with the
 cores or capacity, serial and status, followed by the modules. Rack position,
 power draw, port utilisation, interfaces and images are left off. The same
 totals sit above the parts table on the device's Hardware tab.
+
+Memory always reads in GB: 32 sticks of 32 GB total **1024 GB**, not "1.1 TB".
+A BMC sync (Redfish) records a DIMM in binary units and the part form in
+decimal ones; both show the same figure, "32 GB", whole when it is exact and
+to one decimal otherwise. Storage keeps the largest unit (1.92 TB).
+
+Each table lists its parts by slot, then name, in natural order - DIMM 2
+before DIMM 10, Bay 9 before Bay 10. Parts a BMC synced carry no slot, so
+their names order them. The modules and inventory list on the datasheet
+follow the same order.
 
 **All in one**, the third entry, is the datasheet with the hardware block
 inserted: the three datasheet boxes, details, port utilisation, then the

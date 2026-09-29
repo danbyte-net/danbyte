@@ -50,6 +50,7 @@ import {
   partFieldsFor,
 } from "@/components/part-hardware-fields"
 import { apiErrorToast } from "@/lib/api-toast"
+import { formatMemory } from "@/lib/memory-size"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
 const KIND_LABEL = Object.fromEntries(
@@ -59,12 +60,15 @@ const MEDIA_LABEL = Object.fromEntries(
   INVENTORY_MEDIA_OPTIONS.map((m) => [m.value, m.label])
 )
 
-/** "NVMe · 1.92 TB · PCIe 4.0" - the composed hardware summary cell. */
+/** "NVMe · 1.92 TB · PCIe 4.0" - the composed hardware summary cell. RAM
+ * reads in GB, like the spec sheet. */
 function hardwareSummary(it: InventoryItemRow): string {
   const cores = it.kind === "cpu" ? coresOf(it) : 0
   return [
     it.media ? MEDIA_LABEL[it.media] : "",
-    formatBytes(it.capacity_bytes),
+    it.kind === "ram"
+      ? formatMemory(it.capacity_bytes)
+      : formatBytes(it.capacity_bytes),
     it.speed,
     cores ? `${cores} cores` : "",
   ]
@@ -129,10 +133,12 @@ function hardwareTotals(items: InventoryItemRow[]) {
       ),
     })
   if (rams.length) {
-    const each = mostCommon(rams.map((i) => formatBytes(i.capacity_bytes)))
+    const each = mostCommon(rams.map((i) => formatMemory(i.capacity_bytes)))
     tiles.push({
       label: "Memory",
-      value: formatBytes(sum(rams)) || plural(rams.length, "module"),
+      value:
+        formatMemory(rams.map((i) => i.capacity_bytes)) ||
+        plural(rams.length, "module"),
       hint: join(
         each ? `${rams.length} × ${each}` : plural(rams.length, "module"),
         mostCommon(rams.map((i) => i.speed))
