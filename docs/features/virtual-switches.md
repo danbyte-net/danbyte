@@ -105,7 +105,9 @@ color](ipam-objects.md#vlans), falling back to its zone's color and then to a
 palette shade, and a rail wears its VLAN's status as a pill after its name.
 Each switch heads its networks, with its host NICs at the right end. VMs are
 the topology Diagram's cards, dashed: their role's color, the name bold, the
-status pill in the top-left corner. Every switch, network, VM and host NIC
+status pill in the top-left corner. As on the
+[Logical](topology.md) tab, a pill shows only a status other than the
+one a new VM or VLAN gets. Every switch, network, VM and host NIC
 is a link to its page that you can reach with Tab, and a name cut short
 shows whole on hover or focus. A **Legend** in the corner keys the roles,
 the rails, VMs and host NICs. A VM's own page shows the same diagram scoped
@@ -127,7 +129,10 @@ cluster's picture is a link, and an export names it among its filters.
 `GET /api/virt-networks/` feeds the diagram: each network's `vlan` carries
 its `status`, and each of its `vms` its `status_mini` and `role`
 (`{id, name, color}`) beside the status name and the `iface` that rides the
-network.
+network. Each status carries `is_default`: whether it is the one a new VLAN
+or VM gets. `vms` lists only the VMs you may view - a grant on virtual
+networks does not open the VMs on them, and a site-scoped VM grant lists
+that site's VMs.
 
 The same rail diagram drives the [topology page's **Logical**
 view](topology.md), which widens the picture to the whole L2 domain -
