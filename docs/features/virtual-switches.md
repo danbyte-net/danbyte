@@ -99,12 +99,20 @@ Virtual switches list) draws the whole picture in one diagram:
         → networks (VLANs, as colored rails) → the VMs on each
 
 Each VM is drawn **once**, with one connector per network it attaches to, so a
-multi-homed firewall reads as a single box with several cables rather than
+multi-homed firewall reads as a single card with several cables rather than
 appearing on every rail. Rail color follows the [VLAN's own
 color](ipam-objects.md#vlans), falling back to its zone's color and then to a
-palette shade. Every node clicks through to its object, and a VM's own page
-shows the same diagram scoped to that VM, as its **Topology** card. The ⓘ
-beside the source picker sums this up.
+palette shade, and a rail wears its VLAN's status as a pill after its name.
+Each switch heads its networks, with its host NICs at the right end. VMs are
+the topology Diagram's cards, dashed: their role's color, the name bold, the
+status pill in the top-left corner. Every switch, network, VM and host NIC
+is a link to its page that you can reach with Tab, and a name cut short
+shows whole on hover or focus. A **Legend** in the corner keys the roles,
+the rails, VMs and host NICs. A VM's own page shows the same diagram scoped
+to that VM, as its **Topology** card, with the switch at each rail's right
+end. The ⓘ beside the title sums this up.
+
+The second bar has **Copy link**.
 
 Switches, networks and the topology are populated when **Sync virtual switches
 & networks** is enabled on a source; you can also create switches by hand.
@@ -113,6 +121,11 @@ Until then the page says *No virtual networks yet.* and names that setting.
 Pick a source in the header (**Any source** shows them all) to scope the
 diagram to it. The choice is on the address (`?source=<id>`), so a single
 cluster's picture is a link.
+
+`GET /api/virt-networks/` feeds the diagram: each network's `vlan` carries
+its `status`, and each of its `vms` its `status_mini` and `role`
+(`{id, name, color}`) beside the status name and the `iface` that rides the
+network.
 
 The same rail diagram drives the [topology page's **Logical**
 view](topology.md), which widens the picture to the whole L2 domain -

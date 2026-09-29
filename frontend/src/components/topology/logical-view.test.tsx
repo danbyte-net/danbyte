@@ -41,9 +41,23 @@ Element.prototype.scrollIntoView = () => undefined
 afterEach(cleanup)
 
 const EMPTY: LogicalTopology = { rails: [], nodes: [] }
+const ACTIVE = {
+  id: "st1",
+  name: "Active",
+  slug: "active",
+  color: "#22c55e",
+  text_color: "#000000",
+}
 const ONE_RAIL: LogicalTopology = {
   rails: [
-    { id: "v10", vlan_id: 10, name: "Users", color: "#2563eb", group: null },
+    {
+      id: "v10",
+      vlan_id: 10,
+      name: "Users",
+      color: "#2563eb",
+      group: null,
+      status: { ...ACTIVE, id: "st2", name: "Reserved", color: "#a855f7" },
+    },
   ],
   nodes: [
     {
@@ -51,9 +65,21 @@ const ONE_RAIL: LogicalTopology = {
       id: "d1",
       name: "sw-01",
       status: "Active",
-      sub: null,
+      status_mini: ACTIVE,
+      role: { id: "r1", name: "Access", color: "#0ea5e9" },
+      sub: "Access",
       attachments: [
         { rail: "v10", iface: "ge-0/0/1", tagged: false, iface_id: "i1" },
+      ],
+    },
+    {
+      kind: "vm",
+      id: "vm1",
+      name: "web-01",
+      status: null,
+      sub: "c1",
+      attachments: [
+        { rail: "v10", iface: "net0", tagged: true, iface_id: null },
       ],
     },
   ],
@@ -74,6 +100,7 @@ beforeEach(() => {
   })
   copyMock.mockReset()
   copyMock.mockResolvedValue(true)
+  localStorage.clear()
 })
 
 /** The Logical tab's parts as the topology page places them, on a real
@@ -169,12 +196,42 @@ describe("LogicalTopologyView", () => {
     expect(title.nextElementSibling).toBeNull()
   })
 
-  it("labels a rail with one spaced dot", async () => {
+  it("labels a rail with one spaced dot and links it to its VLAN", async () => {
     logical = ONE_RAIL
     mount()
     const rail = await screen.findByText("Users · VLAN 10")
-    expect(rail.tagName.toLowerCase()).toBe("text")
+    expect(rail.closest("a")?.getAttribute("href")).toBe("/vlans/v10")
     expect(screen.getByText("sw-01")).toBeTruthy()
+  })
+
+  it("draws the shared rail diagram: role colors, status pills, VMs dashed", async () => {
+    logical = ONE_RAIL
+    mount()
+    const card = await screen.findByRole("link", { name: "sw-01, Active" })
+    expect(card.getAttribute("href")).toBe("/devices/d1")
+    expect(card.style.backgroundColor).toBe("rgb(14, 165, 233)")
+    expect(screen.getByText("Reserved").getAttribute("data-slot")).toBe("badge")
+    const vm = screen.getByRole("link", { name: "web-01" })
+    expect(vm.getAttribute("href")).toBe("/virtual-machines/vm1")
+    expect(vm.querySelector("span[aria-hidden]")!.className).toContain(
+      "border-dashed"
+    )
+    // The interface opens its page; a VM interface has none.
+    expect(
+      screen.getByRole("link", { name: "ge-0/0/1" }).getAttribute("href")
+    ).toBe("/interfaces/i1")
+    expect(screen.getByText("net0").closest("a")).toBeNull()
+  })
+
+  it("keys the map in a legend panel that folds away", async () => {
+    logical = ONE_RAIL
+    mount()
+    await screen.findByText("Users · VLAN 10")
+    for (const t of ["Legend", "Access", "VLAN", "Device", "VM", "Tagged"])
+      expect(screen.getByText(t), t).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Hide legend" }))
+    expect(screen.getByRole("button", { name: "Legend" })).toBeTruthy()
+    expect(screen.queryByText("Untagged")).toBeNull()
   })
 
   it("shows the shared loader while it fetches", async () => {

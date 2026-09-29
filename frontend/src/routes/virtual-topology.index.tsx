@@ -1,25 +1,31 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Link as LinkIcon } from "lucide-react"
 
 import { useUrlText } from "@/lib/use-url-state"
 
-import {
-  api,
-  type Paginated,
-  type VirtNetwork,
-  type VirtualizationSource,
-  type VirtualSwitch,
+import { api } from "@/lib/api"
+import type {
+  Paginated,
+  VirtNetwork,
+  VirtualizationSource,
+  VirtualSwitch,
 } from "@/lib/api"
-import { ListPageShell } from "@/components/list-page-shell"
+import { copyWithToast } from "@/lib/clipboard"
+import { railRoles } from "@/lib/diagram/rails"
+import type {
+  RailBoxSpec,
+  RailModel,
+  RailSectionSpec,
+} from "@/lib/diagram/rails"
+import { usePageTitle } from "@/lib/page-title"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
+import { BarButton } from "@/components/map-toolbar"
 import { QueryError } from "@/components/query-error"
-import {
-  RailDiagram,
-  type BoxInput,
-  type SectionInput,
-} from "@/components/topology/rail-diagram"
+import { RailCanvas } from "@/components/topology/rail-diagram"
+import { RailLegend, railLegendRows } from "@/components/topology/rail-legend"
 import { Combobox } from "@/components/ui/combobox"
 import { InfoTip } from "@/components/ui/info-tip"
 
@@ -29,15 +35,84 @@ export const Route = createFileRoute("/virtual-topology/")({
     typeof s.source === "string" && s.source ? { source: s.source } : {},
 })
 
-// OpenStack-style rails, drawn by the shared RailDiagram (also behind the
-// topology page's Logical view): each network is a full-width bar, VMs sit
-// once in the band under their topmost network with a coloured leg to every
-// network they attach to.
+// OpenStack-style rails, drawn by the shared rail diagram (also behind the
+// topology page's Logical tab and a VM's Topology card): each network is a
+// full-width rail, grouped under its switch with the switch's host NICs, and
+// each VM sits once in the band under its topmost network with a leg to
+// every network it attaches to. A Maps page: a header, a second bar (Copy
+// link) and the diagram filling the rest, its legend in the corner.
+
+const NAME = "Virtual topology"
+
+/** The networks as a rail model: sections are switches (with their host
+ * NICs), rails their networks by VLAN, cards the VMs, each drawn once. */
+function virtualModel(
+  networks: readonly VirtNetwork[],
+  swById: ReadonlyMap<string, VirtualSwitch>
+): RailModel {
+  const groups = new Map<string, VirtNetwork[]>()
+  for (const n of networks) {
+    const k = n.vswitch ?? "-"
+    const l = groups.get(k)
+    if (l) l.push(n)
+    else groups.set(k, [n])
+  }
+  const sections: RailSectionSpec[] = []
+  const byVm = new Map<string, RailBoxSpec>()
+  for (const [swId, nets] of groups) {
+    const sw = swById.get(swId)
+    const sorted = [...nets].sort(
+      (a, b) => (a.vlan?.vlan_id ?? 9999) - (b.vlan?.vlan_id ?? 9999)
+    )
+    sections.push({
+      id: swId,
+      title: sw?.name ?? "Unassigned networks",
+      subtitle: sw?.kind_display ?? "",
+      ...(sw ? { target: { kind: "vswitch" as const, id: swId } } : {}),
+      adapters: (sw?.uplink_interfaces ?? []).map((u) => ({
+        key: `${swId}:${u.id}`,
+        nic: u.name,
+        host: u.device.name,
+        target: { kind: "interface" as const, id: u.id },
+      })),
+      rails: sorted.map((n) => ({
+        id: n.id,
+        label:
+          (n.name || n.ext_key) + (n.vlan ? ` · VLAN ${n.vlan.vlan_id}` : ""),
+        color: n.vlan?.color,
+        status: n.vlan?.status ?? null,
+        ...(n.vlan ? { target: { kind: "vlan" as const, id: n.vlan.id } } : {}),
+      })),
+    })
+    for (const n of sorted)
+      for (const vm of n.vms) {
+        let b = byVm.get(vm.id)
+        if (!b) {
+          b = {
+            id: vm.id,
+            name: vm.name,
+            vm: true,
+            role: vm.role ?? null,
+            status: vm.status_mini ?? null,
+            target: { kind: "vm", id: vm.id },
+            legs: [],
+          }
+          byVm.set(vm.id, b)
+        }
+        b.legs.push({ rail: n.id, label: vm.iface ?? undefined })
+      }
+  }
+  return {
+    sections,
+    boxes: [...byVm.values()],
+    external: "External network",
+  }
+}
 
 function VirtualTopologyPage() {
+  usePageTitle(NAME)
   // URL-backed, so one source's diagram is a link.
   const [source, setSource] = useUrlText("source")
-  const nav = useNavigate()
 
   const sources = useQuery({
     queryKey: ["virtualization-sources", "topology"],
@@ -56,77 +131,21 @@ function VirtualTopologyPage() {
       ),
   })
 
-  const swById = useMemo(() => {
-    const m = new Map<string, VirtualSwitch>()
-    for (const s of switches.data?.results ?? []) m.set(s.id, s)
-    return m
-  }, [switches.data])
-
-  const groups = useMemo(() => {
-    const by = new Map<string, VirtNetwork[]>()
-    for (const n of networks.data?.results ?? []) {
-      const k = n.vswitch ?? "-"
-      const l = by.get(k)
-      if (l) l.push(n)
-      else by.set(k, [n])
-    }
-    return [...by.entries()]
-  }, [networks.data])
-
-  // Map the virt payload onto the generic rail-diagram inputs: sections are
-  // switches (with their uplink adapters), rails are networks (VLAN-sorted),
-  // boxes are VMs deduped across every network they attach to.
-  const { sections, boxes } = useMemo(() => {
-    const sections: SectionInput[] = []
-    const byVm = new Map<string, BoxInput>()
-    for (const [swId, nets] of groups) {
-      const sw = swById.get(swId)
-      const sorted = [...nets].sort(
-        (a, b) => (a.vlan?.vlan_id ?? 9999) - (b.vlan?.vlan_id ?? 9999)
-      )
-      sections.push({
-        id: swId,
-        title: sw?.name ?? "Unassigned networks",
-        subtitle: sw?.kind_display ?? "",
-        onTitleClick: sw
-          ? () => nav({ to: "/virtual-switches/$id", params: { id: swId } })
-          : undefined,
-        adapters: (sw?.uplink_interfaces ?? []).map((u) => ({
-          key: `${swId}:${u.id}`,
-          nic: u.name,
-          host: u.device.name,
-          onClick: () => nav({ to: "/interfaces/$id", params: { id: u.id } }),
-        })),
-        rails: sorted.map((n) => ({
-          id: n.id,
-          label:
-            (n.name || n.ext_key) + (n.vlan ? ` · VLAN ${n.vlan.vlan_id}` : ""),
-          color: n.vlan?.color || "",
-          onClick: n.vlan
-            ? () => nav({ to: "/vlans/$id", params: { id: n.vlan!.id } })
-            : undefined,
-        })),
-      })
-      for (const n of sorted) {
-        for (const vm of n.vms) {
-          let b = byVm.get(vm.id)
-          if (!b) {
-            b = {
-              id: vm.id,
-              name: vm.name,
-              status: vm.status,
-              onClick: () =>
-                nav({ to: "/virtual-machines/$id", params: { id: vm.id } }),
-              legs: [],
-            }
-            byVm.set(vm.id, b)
-          }
-          b.legs.push({ railId: n.id, label: vm.iface ?? undefined })
-        }
-      }
-    }
-    return { sections, boxes: [...byVm.values()] }
-  }, [groups, swById, nav])
+  const model = useMemo(() => {
+    if (!networks.data || !switches.data) return null
+    const swById = new Map(switches.data.results.map((s) => [s.id, s]))
+    return virtualModel(networks.data.results, swById)
+  }, [networks.data, switches.data])
+  const legend = useMemo(
+    () =>
+      model
+        ? railLegendRows("virtual", {
+            roles: railRoles(model),
+            adapters: model.sections.some((s) => s.adapters?.length),
+          })
+        : [],
+    [model]
+  )
 
   const loading = networks.isLoading || switches.isLoading
   const failed = networks.isError
@@ -134,19 +153,18 @@ function VirtualTopologyPage() {
     : switches.isError
       ? switches
       : null
+  const empty = !model || model.sections.length === 0
 
   return (
-    // The shell draws only the header: this is a Maps page, so the body
-    // keeps the Maps loader and its own error and empty states.
-    <ListPageShell
-      title="Virtual topology"
-      actions={
-        <>
-          <InfoTip side="bottom">
-            Each network is a rail. A VM is drawn once, with a leg to every
-            network it is on. A rail takes its VLAN&rsquo;s color, else its
-            zone&rsquo;s.
-          </InfoTip>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
+        <h1 className="shrink-0 text-base font-semibold">{NAME}</h1>
+        <InfoTip side="bottom">
+          Each network is a rail. A VM is drawn once, with a leg to every
+          network it is on. A rail takes its VLAN&rsquo;s color, else its
+          zone&rsquo;s.
+        </InfoTip>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <Combobox
             value={source || null}
             onChange={(v) => setSource(v ?? "")}
@@ -158,33 +176,44 @@ function VirtualTopologyPage() {
             placeholder="Any source"
             className="h-8 w-52 text-xs"
           />
-        </>
-      }
-    >
-      {failed ? (
-        <QueryError error={failed.error} />
-      ) : loading ? (
-        <Loading />
-      ) : groups.length === 0 ? (
-        <EmptyState title="No virtual networks yet.">
-          Turn on{" "}
-          <span className="font-medium">
-            Sync virtual switches &amp; networks
-          </span>{" "}
-          on a virtualization source.
-        </EmptyState>
-      ) : (
-        // Capped to the viewport so the diagram scrolls inside its own box -
-        // the horizontal bar then sits on screen instead of below a page-high
-        // drawing where nobody finds it.
-        <div className="max-h-[calc(100vh-16rem)] overflow-auto rounded-lg border border-border bg-muted/10 p-2">
-          <RailDiagram
-            sections={sections}
-            boxes={boxes}
-            externalLabel="External network"
-          />
         </div>
-      )}
-    </ListPageShell>
+      </header>
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <BarButton
+            onClick={() =>
+              void copyWithToast(window.location.href, "Link copied")
+            }
+          >
+            <LinkIcon /> Copy link
+          </BarButton>
+        </div>
+      </div>
+      <div className="relative min-h-0 flex-1">
+        {failed ? (
+          <div className="absolute inset-0 flex items-center justify-center p-6">
+            <QueryError error={failed.error} />
+          </div>
+        ) : loading ? (
+          <Loading className="absolute inset-0" />
+        ) : empty ? (
+          <div className="absolute inset-0 flex items-center justify-center p-6">
+            <EmptyState title="No virtual networks yet.">
+              Turn on{" "}
+              <span className="font-medium">
+                Sync virtual switches &amp; networks
+              </span>{" "}
+              on a virtualization source.
+            </EmptyState>
+          </div>
+        ) : (
+          <RailCanvas
+            model={model}
+            label={NAME}
+            legend={<RailLegend rows={legend} />}
+          />
+        )}
+      </div>
+    </div>
   )
 }

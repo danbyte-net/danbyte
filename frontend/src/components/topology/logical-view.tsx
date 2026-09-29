@@ -1,23 +1,20 @@
 import { useMemo } from "react"
-import { useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Filter, Link as LinkIcon, SlidersHorizontal } from "lucide-react"
 
-import { LogicalLegend } from "@/components/topology/legend"
-
-import { api, type LogicalTopology, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { LogicalTopology, Paginated } from "@/lib/api"
 import { copyWithToast } from "@/lib/clipboard"
+import { railRoles } from "@/lib/diagram/rails"
+import type { RailModel, RailSectionSpec } from "@/lib/diagram/rails"
 import { FormCheckbox } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { BarButton, BarMenuTrigger } from "@/components/map-toolbar"
 import { PopoverField } from "@/components/topology/filters-popover"
-import {
-  RailDiagram,
-  type BoxInput,
-  type SectionInput,
-} from "@/components/topology/rail-diagram"
+import { RailCanvas } from "@/components/topology/rail-diagram"
+import { RailLegend, railLegendRows } from "@/components/topology/rail-legend"
 import { Badge } from "@/components/ui/badge"
 import { Combobox } from "@/components/ui/combobox"
 import {
@@ -34,14 +31,15 @@ const UNGROUPED = "\u0000ungrouped"
 
 // The topology page's Logical tab: VLANs as rails (grouped into their VLAN
 // groups), physical devices AND virtual machines attached to the rails their
-// interfaces carry - the hybrid L2 picture. VMs draw dashed; tagged (trunk)
-// attachments draw dashed legs.
+// interfaces carry - the hybrid L2 picture, drawn by the shared rail diagram.
+// Cards take their role's color and wear their status; VMs draw dashed;
+// tagged (trunk) attachments draw dashed legs.
 //
 // Its controls live in the page's own bars, like the other tabs': the header
 // renders <LogicalFilters /> (Site, VLAN group) and <LogicalDisplay /> (VMs),
-// the second bar is <LogicalBar /> (Copy link), and the canvas area is
-// <LogicalTopologyView />. Each reads and writes the URL itself, so the page
-// only places them.
+// the second bar is <LogicalBar /> (Copy link), and the canvas area
+// is <LogicalTopologyView />. Each reads and writes the URL itself, so the
+// page only places them.
 
 /** The Logical tab's URL state. `site` is the SAME `?site=` the Diagram and
  * Hierarchy filter on, so switching tabs keeps the scope you were looking at;
@@ -54,6 +52,73 @@ function useLogicalParams() {
 }
 
 type Row = { id: string; name: string }
+
+/** The Logical tab's payload. */
+function useLogicalData() {
+  const { site, vlanGroup, showVms } = useLogicalParams()
+  const qs = useMemo(() => {
+    const p = new URLSearchParams()
+    if (site !== "all") p.set("site", site)
+    if (vlanGroup !== "all") p.set("vlan_group", vlanGroup)
+    if (!showVms) p.set("include_vms", "0")
+    return p.toString()
+  }, [site, vlanGroup, showVms])
+  return useQuery({
+    queryKey: ["topology-logical", qs],
+    queryFn: () => api<LogicalTopology>(`/api/topology/logical/?${qs}`),
+  })
+}
+
+/** The payload as a rail model: sections are VLAN groups, in order of
+ * first appearance (rails come vlan_id-sorted from the API), ungrouped
+ * VLANs last; cards are devices and VMs, each drawn once. */
+function logicalModel(data: LogicalTopology): RailModel {
+  const bySection = new Map<string, RailSectionSpec>()
+  for (const r of data.rails) {
+    const key = r.group ?? UNGROUPED
+    let sec = bySection.get(key)
+    if (!sec) {
+      sec = {
+        id: key,
+        title: r.group ?? "VLANs",
+        subtitle: r.group ? "VLAN group" : "",
+        rails: [],
+      }
+      bySection.set(key, sec)
+    }
+    sec.rails.push({
+      id: r.id,
+      label: `${r.name} · VLAN ${r.vlan_id}`,
+      color: r.color,
+      status: r.status ?? null,
+      target: { kind: "vlan", id: r.id },
+    })
+  }
+  const sections = [...bySection.values()].sort((a, b) =>
+    a.id === UNGROUPED ? 1 : b.id === UNGROUPED ? -1 : 0
+  )
+  return {
+    sections,
+    boxes: data.nodes.map((n) => ({
+      id: `${n.kind}:${n.id}`,
+      name: n.name,
+      vm: n.kind === "vm",
+      role: n.role ?? null,
+      status: n.status_mini ?? null,
+      target: { kind: n.kind === "vm" ? "vm" : "device", id: n.id },
+      legs: n.attachments.map((a) => ({
+        rail: a.rail,
+        label: a.iface,
+        dashed: a.tagged,
+        // The interface name opens the interface (device interfaces only -
+        // VM interfaces have no page of their own).
+        ...(a.iface_id
+          ? { target: { kind: "interface" as const, id: a.iface_id } }
+          : {}),
+      })),
+    })),
+  }
+}
 
 const options = (rows: readonly Row[] | undefined) =>
   (rows ?? []).map((r) => ({ value: r.id, label: r.name }))
@@ -175,97 +240,31 @@ export function LogicalBar() {
 }
 
 export function LogicalTopologyView() {
-  const nav = useNavigate()
-  const { site, vlanGroup, showVms } = useLogicalParams()
-
-  const qs = useMemo(() => {
-    const p = new URLSearchParams()
-    if (site !== "all") p.set("site", site)
-    if (vlanGroup !== "all") p.set("vlan_group", vlanGroup)
-    if (!showVms) p.set("include_vms", "0")
-    return p.toString()
-  }, [site, vlanGroup, showVms])
-
-  const q = useQuery({
-    queryKey: ["topology-logical", qs],
-    queryFn: () => api<LogicalTopology>(`/api/topology/logical/?${qs}`),
-  })
-
-  const { sections, boxes } = useMemo(() => {
-    const data = q.data
-    if (!data) return { sections: [], boxes: [] }
-    // Sections = VLAN groups, in order of first appearance (rails come
-    // vlan_id-sorted from the API); ungrouped VLANs collect at the end.
-    const bySection = new Map<string, SectionInput>()
-    for (const r of data.rails) {
-      const key = r.group ?? UNGROUPED
-      let sec = bySection.get(key)
-      if (!sec) {
-        sec = {
-          id: key,
-          title: r.group ?? "VLANs",
-          subtitle: r.group ? "VLAN group" : "",
-          rails: [],
-        }
-        bySection.set(key, sec)
-      }
-      sec.rails.push({
-        id: r.id,
-        label: `${r.name} · VLAN ${r.vlan_id}`,
-        color: r.color,
-        onClick: () => nav({ to: "/vlans/$id", params: { id: r.id } }),
-      })
-    }
-    const sections = [...bySection.values()].sort((a, b) =>
-      a.id === UNGROUPED ? 1 : b.id === UNGROUPED ? -1 : 0
-    )
-    const boxes: BoxInput[] = data.nodes.map((n) => ({
-      id: `${n.kind}:${n.id}`,
-      name: n.name,
-      status: n.status,
-      dashed: n.kind === "vm",
-      onClick: () =>
-        nav(
-          n.kind === "vm"
-            ? { to: "/virtual-machines/$id", params: { id: n.id } }
-            : { to: "/devices/$id", params: { id: n.id } }
-        ),
-      legs: n.attachments.map((a) => ({
-        railId: a.rail,
-        label: a.iface,
-        dashed: a.tagged,
-        // The leg's interface name clicks through to the interface page
-        // (device interfaces only - VM interfaces have no page of their own).
-        ...(a.iface_id
-          ? {
-              onClick: () =>
-                nav({ to: "/interfaces/$id", params: { id: a.iface_id! } }),
-            }
-          : {}),
-      })),
-    }))
-    return { sections, boxes }
-  }, [q.data, nav])
+  const q = useLogicalData()
+  const model = useMemo(() => (q.data ? logicalModel(q.data) : null), [q.data])
+  const legend = useMemo(
+    () => (model ? railLegendRows("logical", { roles: railRoles(model) }) : []),
+    [model]
+  )
 
   if (q.isLoading) return <Loading className="absolute inset-0" />
   if (q.isError)
     return (
-      <div className="p-6">
+      <div className="absolute inset-0 flex items-center justify-center p-6">
         <QueryError error={q.error} />
       </div>
     )
-
-  const isEmpty = !q.data || q.data.rails.length === 0
-  return (
-    <div className="flex h-full flex-col gap-3 overflow-auto p-4 lg:p-6">
-      {isEmpty ? (
+  if (!model || model.sections.length === 0)
+    return (
+      <div className="absolute inset-0 flex items-center justify-center p-6">
         <EmptyState title="No VLAN attachments yet." />
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-muted/10 p-2">
-          <RailDiagram sections={sections} boxes={boxes} />
-        </div>
-      )}
-      <LogicalLegend />
-    </div>
+      </div>
+    )
+  return (
+    <RailCanvas
+      model={model}
+      label="Logical topology"
+      legend={<RailLegend rows={legend} />}
+    />
   )
 }

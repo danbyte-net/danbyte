@@ -821,10 +821,9 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
         response=OpenApiTypes.OBJECT,
         description=(
             "`{rails, nodes}` - VLANs as rails (id, vlan_id, name, effective "
-            "color, group) and attached devices/VMs with per-interface "
-            "attachments ({rail, iface, tagged, iface_id}). Hybrid physical + "
-            "virtual, "
-            "RBAC-scoped."
+            "color, group, status) and attached devices/VMs (status_mini, "
+            "role) with per-interface attachments ({rail, iface, tagged, "
+            "iface_id}). Hybrid physical + virtual, RBAC-scoped."
         ),
     ),
 )
@@ -834,7 +833,9 @@ def topology_logical_view(request):
     """The L2 picture: VLANs as rails, everything attached to them - physical
     devices via Interface.vlan/tagged_vlans, VMs via VMInterface -
     on one hybrid diagram. Rail color = the VLAN's own color, else its
-    zone's."""
+    zone's. Rails, devices and VMs carry their status (``StatusMini``) and
+    devices and VMs their role (id, name, color), so the diagram colors
+    them from data."""
     from .models import VLAN, Device, Interface, VirtualMachine, VMInterface
 
     tenant = _get_active_tenant(request)
@@ -856,13 +857,28 @@ def topology_logical_view(request):
     nodes: dict = {}
     rail_ids: set = set()
 
-    def add(kind, obj_id, name, status, sub, vlan_id, iface, tagged,
-            iface_id=None):
-        key = f"{kind}:{obj_id}"
-        n = nodes.setdefault(key, {
-            "kind": kind, "id": str(obj_id), "name": name,
-            "status": status, "sub": sub, "attachments": [],
-        })
+    def role_of(obj):
+        r = obj.role if obj.role_id else None
+        return (
+            {"id": str(r.id), "name": r.name, "color": r.color} if r else None
+        )
+
+    def add(kind, obj, sub, vlan_id, iface, tagged, iface_id=None):
+        key = f"{kind}:{obj.id}"
+        n = nodes.get(key)
+        if n is None:
+            status = obj.status if obj.status_id else None
+            n = nodes[key] = {
+                "kind": kind, "id": str(obj.id), "name": obj.name,
+                # ``status`` stays the display name for older readers;
+                # ``status_mini`` carries its color.
+                "status": status.name if status else None,
+                "status_mini": _status_mini(
+                    status, "device" if kind == "device" else "virtualmachine"
+                ),
+                "role": role_of(obj),
+                "sub": sub, "attachments": [],
+            }
         n["attachments"].append(
             # iface_id → the diagram's leg labels click through to the
             # interface page (device interfaces only; VM interfaces have no
@@ -881,14 +897,11 @@ def topology_logical_view(request):
     )
     for i in ifaces:
         d = i.device
-        status = d.status.name if d.status_id else None
         sub = d.role.name if d.role_id else None
         if i.vlan_id:
-            add("device", d.id, d.name, status, sub, i.vlan_id, i.name, False,
-                iface_id=i.id)
+            add("device", d, sub, i.vlan_id, i.name, False, iface_id=i.id)
         for v in i.tagged_vlans.all():
-            add("device", d.id, d.name, status, sub, v.id, i.name, True,
-                iface_id=i.id)
+            add("device", d, sub, v.id, i.name, True, iface_id=i.id)
 
     if p.get("include_vms", "1") != "0":
         vms = rbac.restrict_queryset(
@@ -902,22 +915,21 @@ def topology_logical_view(request):
         vifs = (
             VMInterface.objects.filter(vm__in=vms)
             .filter(Q(vlan__isnull=False) | Q(tagged_vlans__isnull=False))
-            .select_related("vm__status", "vm__cluster")
+            .select_related("vm__status", "vm__cluster", "vm__role")
             .prefetch_related("tagged_vlans")
             .distinct()
         )
         for i in vifs:
             vm = i.vm
-            status = vm.status.name if vm.status_id else None
             sub = vm.cluster.name if vm.cluster_id else None
             if i.vlan_id:
-                add("vm", vm.id, vm.name, status, sub, i.vlan_id, i.name, False)
+                add("vm", vm, sub, i.vlan_id, i.name, False)
             for v in i.tagged_vlans.all():
-                add("vm", vm.id, vm.name, status, sub, v.id, i.name, True)
+                add("vm", vm, sub, v.id, i.name, True)
 
     vlans = (
         VLAN.objects.filter(id__in=rail_ids)
-        .select_related("zone", "group")
+        .select_related("zone", "group", "status")
         .order_by("vlan_id")
     )
     if p.get("vlan_group"):
@@ -930,6 +942,7 @@ def topology_logical_view(request):
             "name": v.name,
             "color": v.color or (v.zone.color if v.zone_id else ""),
             "group": v.group.name if v.group_id else None,
+            "status": _status_mini(v.status if v.status_id else None, "vlan"),
         }
         for v in vlans
     ]

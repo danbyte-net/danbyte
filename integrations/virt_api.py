@@ -7,11 +7,20 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.models import VRF, Location, Site
-from api.serializers import TenantScopedPrimaryKeyRelatedField
+from api.serializers import (
+    StatusMiniSerializer,
+    TenantScopedPrimaryKeyRelatedField,
+)
 from api.viewsets import TenantScopedViewSet
 
 from .models import VirtChange, VirtNetwork, VirtPlacementRule
 from .toggles import IntegrationToggleMixin
+
+
+def _status(obj):
+    """``obj``'s status as ``StatusMini`` (id, name, slug, color,
+    text_color), or None."""
+    return StatusMiniSerializer(obj.status).data if obj.status_id else None
 
 
 class VirtNetworkSerializer(serializers.ModelSerializer):
@@ -58,11 +67,14 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
             return None
         # Rail colour: the VLAN's own colour first, its zone's second (zones
         # carry firewall semantics but their colour is still meaningful),
-        # frontend palette fallback when neither is set.
-        zone = obj.vlan.zone
-        return {"id": str(obj.vlan_id), "vlan_id": obj.vlan.vlan_id,
-                "name": obj.vlan.name,
-                "color": obj.vlan.color or (zone.color if zone else None)}
+        # frontend palette fallback when neither is set. The status rides
+        # along so the rail can wear it as a pill.
+        vlan = obj.vlan
+        zone = vlan.zone
+        return {"id": str(obj.vlan_id), "vlan_id": vlan.vlan_id,
+                "name": vlan.name,
+                "color": vlan.color or (zone.color if zone else None),
+                "status": _status(vlan)}
 
     def get_vms(self, obj):
         from api.models import VMInterface
@@ -72,9 +84,18 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
         def _add(iface):
             vm = iface.vm
             if vm.id not in seen:
+                role = vm.role if vm.role_id else None
                 seen[vm.id] = {
                     "id": str(vm.id), "name": vm.name,
                     "status": vm.status.name if vm.status_id else None,
+                    # The status with its color, and the role's, so the
+                    # topology colors the VM's card from data.
+                    "status_mini": _status(vm),
+                    "role": (
+                        {"id": str(role.id), "name": role.name,
+                         "color": role.color}
+                        if role else None
+                    ),
                     # Which VM interface rides this network - the topology
                     # labels the connector leg with it.
                     "iface": iface.name,
@@ -84,7 +105,8 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
         # states a VLAN on the NIC, so link-less inference misses every
         # vCenter VM (#46).
         for link in obj.links.select_related(
-            "vm_interface__vm", "vm_interface__vm__status"
+            "vm_interface__vm", "vm_interface__vm__status",
+            "vm_interface__vm__role",
         ):
             _add(link.vm_interface)
         # VLAN inference kept as a union: operator-modelled interfaces with a
@@ -92,7 +114,7 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
         if obj.vlan_id:
             for i in (
                 VMInterface.objects.filter(vlan_id=obj.vlan_id)
-                .select_related("vm", "vm__status")
+                .select_related("vm", "vm__status", "vm__role")
             ):
                 _add(i)
         return list(seen.values())
@@ -110,7 +132,8 @@ class VirtNetworkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     tenant_field = "source__tenant"
     http_method_names = ["get", "patch"]
     queryset = VirtNetwork.objects.select_related(
-        "source", "vlan", "vlan__zone", "vswitch", "vrf", "vswitch__vrf"
+        "source", "vlan", "vlan__zone", "vlan__status", "vswitch", "vrf",
+        "vswitch__vrf",
     ).order_by("name", "ext_key")
     serializer_class = VirtNetworkSerializer
 

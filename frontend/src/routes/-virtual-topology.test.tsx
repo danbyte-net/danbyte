@@ -101,6 +101,93 @@ describe("Virtual topology page", () => {
     expect(screen.getByRole("status").textContent).toBe("Loading…")
   })
 
+  it("groups networks under their switch, VMs once, colored from data", async () => {
+    const active = {
+      id: "st1",
+      name: "Active",
+      slug: "active",
+      color: "#22c55e",
+      text_color: "#000000",
+    }
+    answers["/api/virtual-switches/"] = {
+      count: 1,
+      results: [
+        {
+          id: "sw1",
+          name: "vmbr0",
+          kind: "bridge",
+          kind_display: "Linux bridge",
+          uplink_interfaces: [
+            { id: "if1", name: "eno1", device: { id: "h1", name: "pve-01" } },
+          ],
+        },
+      ],
+    }
+    const vm = {
+      id: "vm1",
+      name: "web-01",
+      status: "Active",
+      status_mini: active,
+      role: { id: "r1", name: "Web", color: "#f97316" },
+    }
+    answers["/api/virt-networks/"] = {
+      count: 2,
+      results: [
+        {
+          id: "n20",
+          name: "dmz",
+          ext_key: "vmbr0:20",
+          vswitch: "sw1",
+          vlan: {
+            id: "v20",
+            vlan_id: 20,
+            name: "dmz",
+            color: "#2563eb",
+            status: { ...active, id: "st2", name: "Planned", color: "#f59e0b" },
+          },
+          vms: [{ ...vm, iface: "net1" }],
+        },
+        {
+          id: "n10",
+          name: "prod",
+          ext_key: "vmbr0:10",
+          vswitch: "sw1",
+          vlan: { id: "v10", vlan_id: 10, name: "prod", color: "" },
+          vms: [{ ...vm, iface: "net0" }],
+        },
+      ],
+    }
+    mount()
+    // The switch heads its section and links to it; its host NIC too.
+    const sw = await screen.findByRole("link", { name: "vmbr0" })
+    expect(sw.getAttribute("href")).toBe("/virtual-switches/sw1")
+    expect(screen.getByText("Linux bridge")).toBeTruthy()
+    expect(
+      screen.getByRole("link", { name: "eno1, pve-01" }).getAttribute("href")
+    ).toBe("/interfaces/if1")
+    // Networks as rails by VLAN, the VLAN's status as its pill.
+    const rails = screen
+      .getAllByRole("link")
+      .filter((a) => a.getAttribute("href")?.startsWith("/vlans/"))
+    expect(rails.map((a) => a.getAttribute("aria-label"))).toEqual([
+      "prod · VLAN 10",
+      "dmz · VLAN 20, Planned",
+    ])
+    // The VM once, in its role's color, wearing its status, dashed.
+    const cards = screen.getAllByRole("link", { name: "web-01, Active" })
+    expect(cards).toHaveLength(1)
+    expect(cards[0].getAttribute("href")).toBe("/virtual-machines/vm1")
+    expect(cards[0].style.backgroundColor).toBe("rgb(249, 115, 22)")
+    expect(cards[0].querySelector("span[aria-hidden]")!.className).toContain(
+      "border-dashed"
+    )
+    expect(screen.getByText("External network")).toBeTruthy()
+    // The legend and the second bar.
+    expect(screen.getByText("Legend")).toBeTruthy()
+    expect(screen.getByText("Host NIC")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy()
+  })
+
   it("labels a network rail with one spaced dot", async () => {
     answers["/api/virt-networks/"] = {
       count: 1,

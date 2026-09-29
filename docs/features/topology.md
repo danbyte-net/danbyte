@@ -31,14 +31,22 @@ icon: lucide/share-2
   colored by the VLAN's own color or its zone's), with everything attached
   to them - physical devices via their interfaces' untagged/tagged VLANs
   **and virtual machines** via their VM interfaces, on one hybrid diagram.
-  Devices draw solid, VMs dashed; a dashed leg is a tagged (trunk)
-  attachment; leg labels are the interface names. The header's
+  Devices and VMs are the Diagram's cards: their role's color, the name
+  bold, the status pill in the top-left corner; VMs are dashed. A rail
+  wears its VLAN's status as a pill after its name. A dashed leg is a
+  tagged (trunk) attachment. Each card's interface names sit beside its
+  legs, one label per rail, each name opening its interface; when they
+  don't all fit the label ends in a count (`+2`). The header's
   **Filters** take a site or a VLAN group (*Any site*, *Any VLAN group*;
   the site is the same one the other tabs filter on) and its **Display**
-  shows or hides **VMs**; the second bar has **Copy link**. An empty
-  domain says *No VLAN attachments yet.* Click any rail or box to open
-  it. (The same rail layout drives the
-  [Virtual topology](virtual-switches.md#network-topology).)
+  shows or hides **VMs**; the second bar has **Copy link**.
+  A **Legend** in the corner keys the roles, the rails, devices and VMs,
+  and tagged and untagged legs. An empty domain says *No VLAN attachments
+  yet.* Every rail, card, section title and interface name is a link you
+  can reach with Tab; a name cut short shows whole on hover or focus. (The
+  same rail diagram draws the
+  [Virtual topology](virtual-switches.md#network-topology) and a VM's
+  Topology card.)
 
 The view choice is remembered per browser and saved with
 [saved views](#saved-views); a map opens on the Diagram, Detailed, until
@@ -532,8 +540,8 @@ same way. Site and location pages have a **Topology** button that opens this
 map scoped to them.
 
 A collapsible **Legend** in the map's corner explains the line styles for
-whichever view is active (the Logical view carries its own under the
-diagram); its open/closed state is remembered per browser. On the Diagram
+whichever view is active (the Logical view keys its own roles, rails and
+legs); its open/closed state is remembered per browser. On the Diagram
 it lists the roles on the map as their badges. With **Color by** on *Type*
 or *Speed* it keys the cable types on the map, or the speed tiers, as short
 lines in their colors; on *Cable* or *Status* it says so in one line
@@ -1607,9 +1615,11 @@ whole end-to-end run - every device it passes through, with patch panels
 shown when the run threads one.
 
 `GET /api/topology/logical/` - the Logical view's payload: `rails` (VLANs -
-id, `vlan_id`, name, effective color, group) and `nodes` (devices and VMs
-with `attachments: [{rail, iface, tagged, iface_id}]`). Parameters: `site`, `role`,
-`vlan_group`, `include_vms=0`.
+id, `vlan_id`, name, effective color, group, `status`) and `nodes` (devices
+and VMs with `status_mini`, `role` (`{id, name, color}`) and
+`attachments: [{rail, iface, tagged, iface_id}]`). A status is the usual
+`{id, name, slug, color, text_color}`; a node's `status` stays its name.
+Parameters: `site`, `role`, `vlan_group`, `include_vms=0`.
 
 `GET /api/topology/summary/` - the topology as **plain facts** sized for an
 LLM context or scripted analysis: `device_count`, `cable_count`, per-site

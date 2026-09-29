@@ -3324,13 +3324,20 @@ export interface LogicalRail {
   /** VLAN's own color, else its zone's; "" = palette shade. */
   color: string
   group: string | null
+  /** The VLAN's status, for its pill on the rail. */
+  status?: StatusMini | null
 }
 
 export interface LogicalNode {
   kind: "device" | "vm"
   id: string
   name: string
+  /** The status's display name (older readers); `status_mini` has its
+   * color. */
   status: string | null
+  status_mini?: StatusMini | null
+  /** The role, whose color fills the card. */
+  role?: { id: string; name: string; color: string } | null
   /** Role name (devices) or cluster name (VMs). */
   sub: string | null
   attachments: {
@@ -4245,13 +4252,24 @@ export interface VirtNetwork {
     name: string
     /** VLAN colour (own colour first, zone colour second, null = neither). */
     color: string | null
+    /** The VLAN's status, for its pill on the rail. */
+    status?: StatusMini | null
   } | null
   vswitch: string | null
   vswitch_name: string | null
   /** Routing context in force. `inherited` means it comes from the switch,
    * not from this network - the editor needs to tell those apart. */
   vrf: { id: string; name: string; inherited: boolean } | null
-  vms: { id: string; name: string; status: string | null; iface?: string }[]
+  vms: {
+    id: string
+    name: string
+    /** The status's display name; `status_mini` has its color. */
+    status: string | null
+    status_mini?: StatusMini | null
+    /** The role, whose color fills the VM's card. */
+    role?: { id: string; name: string; color: string } | null
+    iface?: string
+  }[]
   last_seen_at: string | null
 }
 
