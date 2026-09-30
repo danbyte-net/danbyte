@@ -187,3 +187,31 @@ the detail page offers to **create one** so you can annotate it.
     discovery has seen it twice. Only one unassigned record per address is kept,
     so the assignment record goes away with the interface instead of creating a
     duplicate.
+
+### Removing MACs in bulk
+
+Tick rows on the MAC list - the header box ticks the page, and **Select all
+N** then takes every row the filters show (see
+[Selecting rows](table-preferences.md#selecting-rows)). **Remove** on the
+selection bar opens a confirmation that asks where to remove the selected
+addresses from, with a count for each:
+
+- **Delete MAC objects** (on by default) - the first-class objects with their
+  description, tags and custom fields.
+- **Clear from interfaces** - blanks the MAC on the device and VM interfaces
+  that carry it.
+- **Unpair from IP addresses** - blanks the MAC paired with those IPs.
+
+Each choice needs its own permission: *delete* on MAC addresses, *change* on
+interfaces or VM interfaces, *change* on IP addresses. A site-scoped operator
+removes only what their grants reach; rows they can see but not change are
+left alone, and the dialog says how many. A choice they hold no grant for
+stays off. Every deletion and cleared field lands in the change log.
+
+MACs learned by an integration (DHCP lease sync, virtualization sync) come
+back on its next sync unless they are also gone at the source.
+
+The API behind it is `POST /api/macs/bulk-remove/` with
+`{values, remove_objects, clear_interfaces, unpair_ips, dry_run}`: `values`
+are the MAC addresses (at most 2000 per call), and `dry_run: true` returns
+the same per-source counts without writing anything.

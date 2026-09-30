@@ -1,0 +1,144 @@
+// @vitest-environment jsdom
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+import { MacBulkRemoveDialog, optionPlan, removalSummary } from "./mac-bulk-bar"
+import type { MacBulkRemoveResult } from "./mac-bulk-bar"
+
+// Removing MACs from the list (#251): the dialog's counts come from the
+// server's dry run, an option the user may not use stays off, and Remove
+// sends only the options that are on.
+
+const { apiMock } = vi.hoisted(() => ({
+  apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
+}))
+vi.mock("@/lib/api", () => ({ api: apiMock }))
+
+afterEach(cleanup)
+
+const plan = (
+  permitted: boolean,
+  count: number,
+  skipped = 0,
+  applied = false
+) => ({ permitted, count, skipped, applied })
+
+const preview: MacBulkRemoveResult = {
+  dry_run: true,
+  macs: 2,
+  sources: {
+    objects: plan(true, 12, 1),
+    interfaces: plan(true, 3),
+    vm_interfaces: plan(false, 0, 2),
+    ips: plan(false, 0, 7),
+  },
+}
+
+let posted: Record<string, unknown>[] = []
+beforeEach(() => {
+  posted = []
+  apiMock.mockReset()
+  apiMock.mockImplementation((_path, init) => {
+    const body = JSON.parse(String(init?.body ?? "{}"))
+    posted.push(body)
+    if (body.dry_run) return Promise.resolve(preview)
+    return Promise.resolve({
+      ...preview,
+      dry_run: false,
+      sources: { ...preview.sources, objects: plan(true, 12, 1, true) },
+    })
+  })
+})
+
+function mount(onDone = vi.fn()) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={qc}>
+      <MacBulkRemoveDialog
+        values={["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"]}
+        open
+        onOpenChange={() => undefined}
+        onDone={onDone}
+      />
+    </QueryClientProvider>
+  )
+  return onDone
+}
+
+describe("optionPlan", () => {
+  it("adds device and VM interfaces up for the interface option", () => {
+    expect(optionPlan(preview, "clear_interfaces")).toEqual({
+      permitted: true,
+      count: 3,
+      skipped: 2,
+    })
+    expect(optionPlan(preview, "unpair_ips")).toEqual({
+      permitted: false,
+      count: 0,
+      skipped: 7,
+    })
+  })
+})
+
+describe("removalSummary", () => {
+  it("names only what was applied", () => {
+    const res: MacBulkRemoveResult = {
+      dry_run: false,
+      macs: 1,
+      sources: {
+        objects: plan(true, 1, 0, true),
+        interfaces: plan(true, 2, 0, true),
+        vm_interfaces: plan(true, 1, 0, true),
+        ips: plan(true, 4, 0, false),
+      },
+    }
+    expect(removalSummary(res)).toBe(
+      "Deleted 1 MAC object, cleared 3 interfaces."
+    )
+  })
+})
+
+describe("MacBulkRemoveDialog", () => {
+  it("shows the dry-run counts and keeps an ungranted option off", async () => {
+    mount()
+    expect(await screen.findByText("Delete 12 MAC objects")).toBeTruthy()
+    expect(screen.getByText("Clear from 3 interfaces")).toBeTruthy()
+    expect(screen.getByText("Unpair from 0 IP addresses")).toBeTruthy()
+    expect(screen.getByText("1 outside your permissions")).toBeTruthy()
+    expect(screen.getByText("No permission")).toBeTruthy()
+
+    const boxes = screen.getAllByRole("checkbox")
+    expect(boxes[0].getAttribute("data-state")).toBe("checked")
+    expect(boxes[1].getAttribute("data-state")).toBe("unchecked")
+    expect(boxes[2].hasAttribute("disabled")).toBe(true)
+    expect(posted[0]).toMatchObject({ dry_run: true })
+  })
+
+  it("sends only the options that are on", async () => {
+    const onDone = mount()
+    await screen.findByText("Delete 12 MAC objects")
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }))
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    expect(posted.at(-1)).toEqual({
+      values: ["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"],
+      remove_objects: true,
+      clear_interfaces: false,
+      unpair_ips: false,
+    })
+  })
+
+  it("holds Remove back when every option is off", async () => {
+    mount()
+    await screen.findByText("Delete 12 MAC objects")
+    fireEvent.click(screen.getAllByRole("checkbox")[0])
+    const remove = screen.getByRole("button", { name: "Remove" })
+    expect(remove.hasAttribute("disabled")).toBe(true)
+  })
+})

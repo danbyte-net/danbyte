@@ -5,11 +5,12 @@ import { useMemo, useState } from "react"
 
 import { api, type MacEntry, type Tag } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/data-table"
+import { DataTable, selectionColumn } from "@/components/data-table"
 import { TagList } from "@/components/cells/tag-list"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
+import { MacBulkBar } from "@/components/mac-bulk-bar"
 import { MacObjectDialog } from "@/components/mac-object-dialog"
 import { OuiRangesDialog } from "@/components/oui-ranges-dialog"
 import { useMe } from "@/lib/use-me"
@@ -19,21 +20,35 @@ interface MacList {
   results: MacEntry[]
 }
 
+/** A list row keyed by its MAC, so a tick stays on the address it was put on. */
+type MacRow = MacEntry & { id: string }
+
 export const Route = createFileRoute("/macs/")({ component: MacsPage })
 
 function MacsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("macaddress", "add")
+  // Any one of the removal grants is enough to offer the selection; the
+  // dialog shows which parts this user may act on.
+  const canRemove =
+    canDo("macaddress", "delete") ||
+    canDo("interface", "change") ||
+    canDo("vminterface", "change") ||
+    canDo("ipaddress", "change")
   const [q, setQ] = useState("")
   const [adding, setAdding] = useState(false)
   const [ranges, setRanges] = useState(false)
+  const [selected, setSelected] = useState<MacRow[]>([])
 
   const query = useQuery({
     queryKey: ["macs"],
     queryFn: () => api<MacList>("/api/macs/"),
   })
 
-  const allRows = query.data?.results ?? []
+  const allRows = useMemo<MacRow[]>(
+    () => (query.data?.results ?? []).map((m) => ({ ...m, id: m.mac })),
+    [query.data]
+  )
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     if (!needle) return allRows
@@ -62,7 +77,13 @@ function MacsPage() {
     })
   }, [allRows, q])
 
-  const columns = useMemo<ColumnDef<MacEntry>[]>(() => buildColumns(), [])
+  const columns = useMemo<ColumnDef<MacRow>[]>(
+    () =>
+      canRemove
+        ? [selectionColumn<MacRow>(), ...buildColumns()]
+        : buildColumns(),
+    [canRemove]
+  )
   const {
     rail,
     filteredRows,
@@ -110,10 +131,16 @@ function MacsPage() {
         <DataTable
           data={filteredRows}
           columns={wiredColumns}
+          onSelectedRowsChange={canRemove ? setSelected : undefined}
+          selectedRows={selected}
           flexColumn="description"
           tableId="macs"
         />
       )}
+      <MacBulkBar
+        selected={selected.map((m) => m.mac)}
+        onCleared={() => setSelected([])}
+      />
       <MacObjectDialog open={adding} onOpenChange={setAdding} />
       <OuiRangesDialog open={ranges} onOpenChange={setRanges} />
     </ListPageShell>
@@ -135,7 +162,7 @@ function unionTags(m: MacEntry): Tag[] {
   return [...seen.values()]
 }
 
-function buildColumns(): ColumnDef<MacEntry>[] {
+function buildColumns(): ColumnDef<MacRow>[] {
   return [
     {
       id: "mac",
