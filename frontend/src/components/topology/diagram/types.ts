@@ -165,10 +165,8 @@ export interface CablePlan {
   /** Terminals included: an elbow's corners, a curve's control points, a
    * straight line's ends. */
   pts: Pt[]
-  /** The line this cable is drawn as where it is not its link's: a
-   * breakout trunk whose port faces away from its legs goes round to the
-   * junction as an elbow. (A bendy line stays a curve even where none
-   * gets clear of the cards: it passes behind them.) */
+  /** The line this cable is drawn as where it is not its link's: a bendy
+   * line no curve gets clear of the cards goes round them as an elbow. */
   line?: LineType
   /** A bendy line's shape as planned: the straight run each end's labels
    * need, and the part of its reach each end bends within where it

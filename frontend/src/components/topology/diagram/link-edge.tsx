@@ -18,7 +18,6 @@ import type { PortPlace } from "@/lib/diagram/geometry"
 import { baselineAt, measureText } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
 import { anchorPoint, leadStart, linkEnds } from "./anchors"
-import { STACK } from "./card-layout"
 import { chipCentre } from "./label-placement"
 import {
   linkRoute,
@@ -49,10 +48,9 @@ import type { Anchor, DiagramEdgeData, End, Pt, Rect, Route } from "./types"
 // photo). The middle chip (a bundle's count, the link's subnet) sits on
 // the line; a breakout's trunk carries the cable's label and type.
 //
-// Every line is drawn under the cards (`STACK`): a Bendy line no curve
-// gets clear of passes behind them. A cable on a photo port starts at the
-// port: its lead runs straight to the photo's edge over the image, so it
-// is drawn a second time above the nodes.
+// A cable on a photo port starts at the port: its lead runs straight to
+// the photo's edge over the image, so it is drawn a second time above the
+// nodes (React Flow draws every edge under them).
 
 type LinkEdgeType = Edge<DiagramEdgeData, "link">
 
@@ -266,7 +264,6 @@ export const LinkEdge = memo(function LinkEdge({
           <svg
             aria-hidden
             className="topo-lead pointer-events-none absolute top-0 left-0 overflow-visible"
-            style={{ zIndex: STACK.LEAD }}
             width={1}
             height={1}
           >

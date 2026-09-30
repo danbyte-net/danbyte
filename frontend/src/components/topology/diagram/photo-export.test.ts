@@ -20,7 +20,7 @@ import type { DocumentOptions } from "./to-document"
 // line on a photo port starts at the port - its lead to the photo's edge
 // is the first run. The SVG draws the leads again over the photos; draw.io
 // draws the photos as cards unless asked for them, then as image cells
-// with the lines attached at their ports, each lead again over its photo.
+// with the lines attached at their ports.
 
 const META: DocumentOptions["meta"] = {
   title: "Århus DC",
@@ -242,34 +242,10 @@ describe("photo nodes in draw.io", () => {
       expect(fy).toBeGreaterThan(0)
       expect(fy).toBeLessThan(1)
     }
-    // The photo comes after the lines, over them like any card; each of
-    // its cables' leads, from the port to the photo's edge, is drawn again
-    // over it - a line cell in the photo.
-    expect(xml.indexOf(`danbyte_id="${fwId}"`)).toBeGreaterThan(
+    // The photo comes before the lines, so their leads show over it.
+    expect(xml.indexOf(`danbyte_id="${fwId}"`)).toBeLessThan(
       xml.indexOf('edge="1"')
     )
-    const leads = [...dom.querySelectorAll("mxCell[edge='1']")].filter(
-      (c) => c.getAttribute("parent") === id
-    )
-    expect(leads).toHaveLength(4)
-    const w = Number(geo.getAttribute("width"))
-    const h = Number(geo.getAttribute("height"))
-    for (const c of leads) {
-      const at = (as: string) => {
-        const p = c.querySelector(`mxPoint[as="${as}"]`)!
-        return {
-          x: Number(p.getAttribute("x")),
-          y: Number(p.getAttribute("y")),
-        }
-      }
-      const [from, to] = [at("sourcePoint"), at("targetPoint")]
-      // From the port, inside the image, out to the photo's edge.
-      expect(from.x).toBeGreaterThanOrEqual(0)
-      expect(from.x).toBeLessThanOrEqual(w)
-      expect(from.y).toBeGreaterThan(0)
-      expect(from.y).toBeLessThan(h)
-      expect(Math.hypot(to.x - from.x, to.y - from.y)).toBeGreaterThan(0)
-    }
   })
 
   it("draws a photo that was not inlined as its card", () => {

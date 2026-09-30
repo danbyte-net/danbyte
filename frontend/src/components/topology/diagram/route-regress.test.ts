@@ -22,13 +22,8 @@ import type { LineType } from "./types"
 // level runs did not: dc1-view TB Simple went from 9 crossings to 19 (its
 // ceiling rose to match), and test-view TB Detailed from 32 to 40 - its
 // old ceiling, which it now sits at with no room to spare. On LR the
-// Bendy ceilings fell (test-view Detailed 23 to 21, Simple 31 to 27).
-//
-// A Bendy line no curve gets clear of the cards no longer goes round them
-// as an Elbow: it stays a curve and passes behind them. On test-view LR
-// Simple two lines went round; curved, the map crosses 32 times, not 27
-// (its ceiling rose to match). On TB Simple three went round, and it
-// still crosses 23 times. Every other map is unchanged.
+// Bendy ceilings fell (test-view Detailed 23 to 21, Simple 31 to 27). No
+// Bendy line runs through a card it does not connect any more.
 
 type Key =
   `${"ports" | "edge"}:${"LR" | "TB"}:${"detailed" | "simple"}:${LineType}`
@@ -41,7 +36,7 @@ const CEILING: Record<string, Partial<Record<Key, number>>> = {
     "ports:LR:detailed:bendy": 21,
     "ports:LR:simple:elbow": 25,
     "ports:LR:simple:straight": 28,
-    "ports:LR:simple:bendy": 32,
+    "ports:LR:simple:bendy": 27,
     "ports:TB:detailed:elbow": 21,
     "ports:TB:detailed:straight": 25,
     "ports:TB:detailed:bendy": 40,

@@ -14,7 +14,7 @@ import {
 import type { LabelBlock } from "./geometry"
 import { baselineAt, measureText } from "./measure"
 import type { Measure } from "./measure"
-import { leaving, toSvg } from "./svg"
+import { toSvg } from "./svg"
 import type { SvgOptions } from "./svg"
 import {
   BAND,
@@ -64,27 +64,19 @@ import type {
 // - A breakout cable's junction is a small ellipse its trunk ends on and
 //   its legs leave from; trunk, legs and junction all carry the cable's
 //   id (`danbyte_cable`).
-// - Lines are written before the cards on the page's layer - before the
-//   bands that hold cards, too - so they pass under every card as on the
-//   screen: a Bendy line no curve gets clear of passes behind one.
+// - Lines are written before the cards on the page's layer, so they pass
+//   under cards as on the screen.
 // - Row bands are swimlanes holding the cards whose centre they contain,
 //   their title centred across the top, and zones are containers too. A
 //   row of several layers, stacked, is still one swimlane: its sub-row
 //   badges and the rules between them are child cells. Side bands are
 //   background shapes with a turned label (a card has one parent). LLDP
 //   neighbours and BGP sessions get layers of their own.
-// - A swimlane or zone is written after the lines, so its fill is see-
-//   through (`BAND_ALPHA`): a colour that shows, over what lies under it,
-//   as the band does on the canvas, and the lines read through it as they
-//   do there.
-// - An end label's gap is the colour under it: the page, or a side band
-//   (a swimlane's see-through fill tints it to the band's colour).
+// - An end label's gap is the colour under it: the page, or its band.
 // - Photo nodes are cards by default. With `photos`, a photo inlined as a
 //   `data:` URI is an image cell with its name as a label underneath, a
 //   connection point on each marked port, and its cables attached at their
-//   ports; it is written after the lines like any card, and each cable's
-//   lead, from its port to the photo's edge, is drawn again over it as a
-//   line cell of its own.
+//   ports; it is written before the lines, so a cable's lead shows over it.
 // - Text is Helvetica: Inter is rarely installed, and names cut to fit Inter,
 //   which runs wider, still fit.
 
@@ -111,33 +103,6 @@ export interface DrawioOptions {
 const FONT = "Helvetica"
 const LAYER_LLDP = "layer-lldp"
 const LAYER_BGP = "layer-bgp"
-
-/** How opaque a swimlane's or zone's fill is (`fillOpacity`): it is drawn
- * over the lines, which show through it. */
-export const BAND_ALPHA = 0.2
-
-/** The fill that, `BAND_ALPHA` opaque over `ground`, shows as `want` -
- * the nearest there is, where no fill is dark or light enough. */
-export function seeThroughFill(want: string, ground: string): string {
-  const rgb = (c: string) => {
-    const v = parseInt((hex6(c) ?? "#ffffff").slice(1), 16)
-    return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff]
-  }
-  const [w, g] = [rgb(want), rgb(ground)]
-  return (
-    "#" +
-    w
-      .map((c, i) =>
-        Math.min(
-          255,
-          Math.max(0, Math.round((c - (1 - BAND_ALPHA) * g[i]) / BAND_ALPHA))
-        )
-          .toString(16)
-          .padStart(2, "0")
-      )
-      .join("")
-  )
-}
 
 // ── Markup ───────────────────────────────────────────────────────────────
 
@@ -514,57 +479,9 @@ function page(
     nodeParent.set(n, smallest(conts.filter((d) => contains(d.b, centre))))
   }
 
-  const onLayer = (sem: DiagramLink["sem"]) =>
-    sem === "ghost" ? LAYER_LLDP : sem === "bgp" ? LAYER_BGP : "1"
-
-  /** Each photo drawn as its image: the leads of the cables on its ports,
-   * from the port to where the line leaves the photo - the line itself
-   * is under the photo. */
-  const leads = new Map<DiagramNode, { from: Pt; to: Pt; l: DiagramLink }[]>()
-  if (opts.photos)
-    for (const l of doc.links) {
-      if (onLayer(l.sem) !== "1") continue
-      const {
-        link: d,
-        a,
-        b,
-      } = drawnLink(l, byId, mode, junctionsById, opts.photos)
-      const pts = [a.pt, ...d.points, b.pt]
-      for (const [end, at, next] of [
-        [l.source, a, pts[1]],
-        [l.target, b, pts[pts.length - 2]],
-      ] as const) {
-        if (!end.marker || !at.node || !drawsImage(at.node, opts.photos))
-          continue
-        const to = leaving(at.pt, next, at.node)
-        if (to.x === at.pt.x && to.y === at.pt.y) continue
-        const list = leads.get(at.node) ?? []
-        list.push({ from: at.pt, to, l })
-        leads.set(at.node, list)
-      }
-    }
-
-  /** What lies under `p` before the swimlanes and zones are drawn over
-   * the lines: a side band, or the page. */
-  const sides = doc.bands.filter((b) => !isContainer(b))
-  const under = (p: Pt) => groundAt(sides, p, PRINT.paper)
-
   // ── Bands ──
   function band(b: DiagramBand, parent: DiagramBand | null, pid: string) {
     const p = bandPaint(b)
-    // A holder, drawn over the lines, is see-through: its colour as the
-    // canvas shows it over what lies under it - its own holder, a side
-    // band or the page.
-    const holder = isContainer(b)
-    const fill = holder
-      ? seeThroughFill(
-          p.fill,
-          parent
-            ? bandPaint(parent).fill
-            : under({ x: b.x + b.w / 2, y: b.y + b.h / 2 })
-        )
-      : p.fill
-    const see = holder ? { fillOpacity: BAND_ALPHA * 100 } : {}
     const common = {
       rounded: 1,
       absoluteArcSize: 1,
@@ -584,8 +501,7 @@ function page(
         ? style([], {
             ...common,
             container: 1,
-            fillColor: fill,
-            ...see,
+            fillColor: p.fill,
             align: "left",
             verticalAlign: "top",
             spacing: 0,
@@ -602,9 +518,8 @@ function page(
               swimlaneLine: 0,
               ...common,
               fontSize: BAND.TITLE_SIZE,
-              fillColor: fill,
-              swimlaneFillColor: fill,
-              ...see,
+              fillColor: p.fill,
+              swimlaneFillColor: p.fill,
               ...(b.titleX !== undefined
                 ? {
                     align: "left",
@@ -713,34 +628,6 @@ function page(
         })}>${geometry(rel(m, img))}</mxCell>`
       )
     )
-    // Each cable's lead again, over the image.
-    for (const [k, { from, to, l }] of (leads.get(n) ?? []).entries()) {
-      const dash = dashPattern(l.dash)
-      const inImg = (p: Pt) => ({ x: p.x - img.x, y: p.y - img.y })
-      out.push(
-        `<mxCell${attrs({
-          id: take(`${id}-lead-${k}`),
-          value: "",
-          style: style([], {
-            edgeStyle: "none",
-            html: 1,
-            endArrow: "none",
-            startArrow: "none",
-            strokeColor: hex6(l.stroke) ?? PRINT.subtle,
-            strokeWidth: Math.max(0.25, l.width || 1),
-            dashed: dash ? 1 : undefined,
-            fixDash: dash ? 1 : undefined,
-            dashPattern: dash,
-            movable: 0,
-            editable: 0,
-          }),
-          edge: "1",
-          parent: id,
-        })}><mxGeometry relative="1" as="geometry">` +
-          `${point(inImg(from), "sourcePoint")}${point(inImg(to), "targetPoint")}` +
-          `</mxGeometry></mxCell>`
-      )
-    }
     if (t.pill && n.pill) pillCell(n, t.pill, id, img)
     if (mode !== "detailed") return
     for (const [i, nub] of (n.nubs ?? []).entries()) nubCell(n, i, nub, id, img)
@@ -1065,7 +952,11 @@ function page(
             fontFamily: FONT,
             fontSize: k.size,
             fontColor: PRINT.muted,
-            labelBackgroundColor: under(blockCentre(k)),
+            labelBackgroundColor: groundAt(
+              doc.bands,
+              blockCentre(k),
+              PRINT.paper
+            ),
             rotation: rotation || undefined,
           }),
           vertex: "1",
@@ -1185,15 +1076,21 @@ function page(
   }
 
   // ── The page, back to front ──
-  // Side bands; the lines and their split points; the swimlanes and
-  // zones, see-through, with the cards they hold; the rest of the cards;
-  // the notes. Every card stands over every line on the layer.
+  // Bands, then the cards they hold; photos drawn as images; then the
+  // lines, so they pass under the cards on the layer and a cable's lead
+  // shows over its photo; then the rest of the cards.
   out.push(`<mxCell id="0"/>`, `<mxCell id="1" value="Topology" parent="0"/>`)
   for (const b of doc.bands) if (!isContainer(b)) band(b, null, "1")
+  for (const c of conts) if (!contParent.get(c)) container(c, null, "1")
+  const early = (n: DiagramNode) => drawsImage(n, opts.photos)
+  for (const n of doc.nodes)
+    if (!nodeParent.get(n) && early(n)) node(n, null, "1")
+  const onLayer = (sem: DiagramLink["sem"]) =>
+    sem === "ghost" ? LAYER_LLDP : sem === "bgp" ? LAYER_BGP : "1"
   for (const l of doc.links) if (onLayer(l.sem) === "1") link(l, "1")
   for (const j of doc.junctions ?? []) junction(j)
-  for (const c of conts) if (!contParent.get(c)) container(c, null, "1")
-  for (const n of doc.nodes) if (!nodeParent.get(n)) node(n, null, "1")
+  for (const n of doc.nodes)
+    if (!nodeParent.get(n) && !early(n)) node(n, null, "1")
   for (const n of doc.notes) note(n)
   for (const [layer, name] of [
     [LAYER_LLDP, "LLDP"],

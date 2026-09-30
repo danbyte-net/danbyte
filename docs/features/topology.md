@@ -142,8 +142,7 @@ something.
   With Bendy lines, legs converging on one card end in a straight run long
   enough for their port names, one name to each gap between them; a leg
   bends nearer its split point or its port to keep clear of the cards it
-  passes, and one no curve gets clear of stays a curve and passes behind
-  them.
+  passes, and one no curve gets clear of goes round them as an elbow.
   In Simple the legs to one card fold into one, named by its first port in
   natural order and a count of the rest (`Ethernet1/3 +2`); hovering it
   lists them all, and the cable's panel has every pair. A `2x` count only
@@ -280,19 +279,16 @@ names its peers, the session kind and the VRF.
   sweeps across to the other end: the curve you see while dragging a card
   is the one it keeps when you drop it, unless a card is in its way. Then
   it takes the nearest shape that clears the card (reaching further or
-  less far out of either end). Where no curve gets clear it stays a curve
-  all the same and passes behind the card, rather than going round the
-  cards as an Elbow: of the shapes it tries, the one that runs behind the
-  cards least, and the curve you dragged when none does better. A Bendy
-  line is never an Elbow. Cards are always drawn over the lines - on the
-  map, a hovered or selected line too, and in every export. Between two
-  facing cards it stops short of the middle of the gap, so it never
-  overshoots and waves back, until the cards are offset sideways by more
-  than twice the gap; further apart it sweeps out past the middle in an S.
-  Lines leaving one Simple midpoint each bend within a reach of their own,
-  the one heading most steeply out soonest, so they part right after it
-  and keep room for their names. Where a nub has labels the curve runs
-  straight out of it far enough for them.
+  less far out of either end), and where no curve gets clear it goes round
+  the cards as an Elbow - so a line drawn as a curve while you drag can
+  turn into an Elbow when you drop, and on a crowded map many Bendy lines
+  are Elbows. Between two facing cards it stops short of the middle of the
+  gap, so it never overshoots and waves back, until the cards are offset
+  sideways by more than twice the gap; further apart it sweeps out past
+  the middle in an S. Lines leaving one Simple midpoint each bend within a
+  reach of their own, the one heading most steeply out soonest, so they
+  part right after it and keep room for their names. Where a nub has
+  labels the curve runs straight out of it far enough for them.
 - **Cyclical** - an arc that loops round the cards between its two ends
   instead of crossing them, both ends leaving through the side it bulges to
   (the top of a row, say). In Detailed each end first runs straight out of
@@ -1485,9 +1481,7 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   Bendy lines and Cyclical arcs are draw.io curves through the same points
   the map uses. A
   single cable links back to it in Danbyte. Lines are written before the
-  cards, and before the bands that hold cards, so every cable passes under
-  every card as it does on the screen - a Bendy line no curve gets clear
-  of passes behind one. (The LLDP and BGP layers lie over the page's.)
+  cards, so they pass under a card as they do on the screen.
 - **Breakouts:** the split point is a small ellipse (two, for a cable
   broken out at both ends); the trunk ends on it and each leg leaves from
   it, so dragging it in draw.io moves the split.
@@ -1501,14 +1495,10 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   whole band moves as one. Zones
   hold their cards the same way. A side band is a shape behind the rows
   with its label turned to read upwards, as a card can sit in only one
-  container. A swimlane or zone is drawn with its cards, after the lines,
-  so that its cards stand over them; its fill is see-through (20 %
-  *Fill opacity*, in a stronger shade that shows as the band's own colour
-  over the page) and the lines read through it as on the screen. Recolour
-  one in draw.io and the colour you pick shows paler, at that opacity.
-  Being on top, the band takes a click where a line crosses it: click
-  once to select the band, then Alt+click the same spot to select the
-  line.
+  container. A card in a swimlane is drawn with it, before the lines, so a
+  Straight or Cyclical line that crosses such a card passes over it, while
+  one crossing a card outside every band passes under it (Elbow and Bendy
+  lines go round the cards they do not connect).
 - **Notes** are draw.io's own shapes, to restyle there like anything else:
   a text note is a text cell (on a rounded box when it is outlined); a
   cloud is draw.io's cloud, a building the network library's *Business
@@ -1521,10 +1511,8 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   photo's size, its cables meeting the card's edge where their ports are.
   With **Photos** ticked it is the photo itself, embedded (scaled down to
   600 px wide), with the name as its label underneath: each cable is
-  attached at its port and each marked port is a connection point. The
-  photo stands over the lines like a card, and each cable's lead - from
-  its port to the photo's edge - is drawn again over it, a line inside the
-  photo that moves with it.
+  attached at its port, each marked port is a connection point, and the
+  photo sits behind the lines so their leads show over it.
 
 ## API
 

@@ -4,29 +4,13 @@ import { describe, expect, it } from "vitest"
 import { fabric } from "./__fixtures__/fabric"
 import { fabricSimple } from "./__fixtures__/fabric-simple"
 import { stacked } from "./__fixtures__/stacked"
-import {
-  BAND_ALPHA,
-  drawioPointAt,
-  seeThroughFill,
-  toDrawio,
-  toDrawioSvg,
-} from "./drawio"
+import { drawioPointAt, toDrawio, toDrawioSvg } from "./drawio"
 import { linkLabels, NOTE, noteLayout, polylineLength } from "./geometry"
 import type { LabelBlock } from "./geometry"
-import { BAND, bandPaint, LABEL, mix, PRINT } from "./theme"
+import { BAND, bandPaint, LABEL, PRINT } from "./theme"
 import type { DiagramDocument, DiagramLink, Pt, Rect } from "./types"
 
 const clone = (d: DiagramDocument): DiagramDocument => structuredClone(d)
-
-/** Two colours no more than `by` apart on every channel. */
-function closeColour(a: string, b: string, by = 2): boolean {
-  const rgb = (c: string) => {
-    const v = parseInt(c.slice(1), 16)
-    return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff]
-  }
-  const [x, y] = [rgb(a), rgb(b)]
-  return x.every((c, i) => Math.abs(c - y[i]) <= by)
-}
 
 function parse(xml: string): Document {
   const doc = new DOMParser().parseFromString(xml, "text/xml")
@@ -210,39 +194,9 @@ describe("toDrawio", () => {
       const last = Math.max(...edges.map((e) => order.indexOf(e)))
       const firstCard = Math.min(...cards.map((c) => order.indexOf(c)))
       expect(last).toBeLessThan(firstCard)
-      // The bands that hold cards come after the lines too, so the cards
-      // in them stand over every line - a Bendy line no curve gets clear
-      // of passes behind one.
-      const holders = top.filter(
-        (c) => c.style.container === "1" || "swimlane" in c.style
-      )
-      expect(holders.length).toBeGreaterThan(0)
-      for (const c of holders)
-        expect(order.indexOf(c), c.id).toBeGreaterThan(last)
     }
     // Still the same file every time.
     expect(DETAILED()).toBe(DETAILED())
-  })
-
-  it("lets the lines show through a band that holds cards, in its colour", () => {
-    const page = pages(SIMPLE())[0]
-    for (const id of ["band-spine", "band-leaf", "zone-lab"]) {
-      const c = page.get(id)!
-      const want = bandPaint(fabricSimple.bands.find((b) => b.id === id)!)
-      expect(c.style.fillOpacity, id).toBe(String(BAND_ALPHA * 100))
-      // Over the page, the see-through fill shows as the canvas's band.
-      const shown = mix(c.style.fillColor, PRINT.paper, BAND_ALPHA)
-      expect(closeColour(shown, want.fill), `${id} ${shown}`).toBe(true)
-    }
-    // A side band is drawn before the lines, as it is.
-    const side = page.get("band-wan")!
-    expect(side.style.fillOpacity).toBeUndefined()
-    expect(side.style.fillColor).toBe(
-      bandPaint(fabricSimple.bands.find((b) => b.id === "band-wan")!).fill
-    )
-    // The nearest fill there is where none shows exactly.
-    expect(seeThroughFill("#000000", "#ffffff")).toBe("#000000")
-    expect(seeThroughFill("#ffffff", "#ffffff")).toBe("#ffffff")
   })
 
   it("puts every card where the document has it, nested in its band", () => {
@@ -532,18 +486,10 @@ describe("toDrawio", () => {
     const x = (id: string) => num(geo(page.get(id)!), "x")
     expect(x("cab-5-a")).toBeCloseTo(2 * t - 1, 3)
     expect(x("cab-5-b")).toBeCloseTo(1 - 2 * u, 3)
-    // On the line, over the colour under it: the page, which the Leaf
-    // row's see-through fill, drawn over the line, tints to its own.
+    // On the line, over the colour under it: here the Leaf row's tint.
     const cell = page.get("cab-5-a")!
     const leaf = fabricSimple.bands.find((k) => k.id === "band-leaf")!
-    expect(cell.style.labelBackgroundColor).toBe(PRINT.paper)
-    const row = page.get("band-leaf")!.style.fillColor
-    expect(
-      closeColour(
-        mix(row, cell.style.labelBackgroundColor, BAND_ALPHA),
-        bandPaint(leaf).fill
-      )
-    ).toBe(true)
+    expect(cell.style.labelBackgroundColor).toBe(bandPaint(leaf).fill)
     // draw.io paints that colour over the glyphs only: a non-breaking
     // space each side keeps the gap in the line round the text.
     expect(cell.value).toBe(`&nbsp;${a.lines[0].text}&nbsp;`)

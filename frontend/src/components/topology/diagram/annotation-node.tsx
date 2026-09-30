@@ -8,7 +8,6 @@ import type { TopologyViewNote } from "@/lib/api"
 import { NOTE } from "@/lib/diagram/geometry"
 import { cn } from "@/lib/utils"
 import { ToolButton } from "./band-node"
-import { STACK } from "./card-layout"
 import {
   NOTE_ICON_NAMES,
   NOTE_SIZE_NAMES,
@@ -87,8 +86,6 @@ export function noteToNode(
     type: "note",
     position: { x: n.x, y: n.y },
     origin: [0.5, 0.5],
-    // With the cards, over every line; later in the list, over them too.
-    zIndex: STACK.CARD,
     selectable: true,
     draggable: true,
     ...(opts.selected ? { selected: true } : {}),
