@@ -5,17 +5,30 @@ transaction, each finished migration checks the deferred constraints it
 left behind (``SET CONSTRAINTS ALL IMMEDIATE``) and defers them again for
 the next one - what a commit between the two would have done, so a data
 migration that briefly breaks a deferred foreign key still works, and a
-later ``ALTER TABLE`` never meets "pending trigger events". Outside that
-wrapper this is Django's command unchanged.
+later ``ALTER TABLE`` never meets "pending trigger events".
+
+When an upgrader from before the upgrade stage (0.16.x, 0.17.0-dev1) runs
+this release's ``manage.py migrate``, ``LegacyBridge`` stops the services
+first and migrates all or nothing (see its docstring). Everywhere else this
+is Django's command unchanged.
 """
 from __future__ import annotations
 
+from django.core.management.base import CommandError
 from django.core.management.commands.migrate import Command as DjangoMigrate
 
 from core import upgrade_migrate
 
 
 class Command(DjangoMigrate):
+    def handle(self, *args, **options):
+        if upgrade_migrate.LegacyBridge.applies(options):
+            code = upgrade_migrate.LegacyBridge(stdout=self.stdout).run(options.get("verbosity", 1))
+            if code:
+                raise CommandError("migration failed", returncode=code)
+            return
+        return super().handle(*args, **options)
+
     def migration_progress_callback(self, action, migration=None, fake=False):
         super().migration_progress_callback(action, migration, fake)
         alias = upgrade_migrate.flushing()
