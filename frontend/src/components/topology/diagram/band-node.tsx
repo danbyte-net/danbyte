@@ -15,7 +15,9 @@ import type {
 } from "@xyflow/react"
 import {
   ArrowDown,
+  ArrowLeftRight,
   ArrowUp,
+  ArrowUpDown,
   FoldVertical,
   Layers,
   Pencil,
@@ -23,6 +25,7 @@ import {
   Rows3,
   Trash2,
   UnfoldVertical,
+  Waypoints,
 } from "lucide-react"
 
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -43,6 +46,7 @@ import {
 import { measureText } from "@/lib/diagram/measure"
 import { cn } from "@/lib/utils"
 import { ZONE_COLORS } from "../view-positions"
+import type { BandExits } from "../view-positions"
 import {
   BAND,
   chipWidth,
@@ -92,6 +96,8 @@ export interface BandData {
   layout?: BandLayout
   /** A row with another under it in its stack. */
   canMerge?: boolean
+  /** A row: the sides its cables to other bands leave by; absent: Auto. */
+  exits?: BandExits
   onRename?: (label: string) => void
   onRecolor?: (color: string | null) => void
   onDelete?: () => void
@@ -106,6 +112,8 @@ export interface BandData {
   onMerge?: () => void
   /** A row of several layers: a band per layer. */
   onSplit?: () => void
+  /** A row: its cables to other bands' sides; undefined is Auto. */
+  onExits?: (exits: BandExits | undefined) => void
   /** A row: the x spans of its title strip that lines, cards and labels
    * take, as the Diagram last planned them (canvas px). */
   busy?: readonly (readonly [number, number])[]
@@ -114,6 +122,29 @@ export interface BandData {
   renameAt?: number
   [key: string]: unknown
 }
+
+/** A row's choices for where its cables to other bands leave its cards. */
+export const BAND_EXITS: {
+  value: BandExits | undefined
+  label: string
+  icon: React.ReactNode
+}[] = [
+  {
+    value: undefined,
+    label: "Cables to other bands: Auto",
+    icon: <Waypoints className="size-3" />,
+  },
+  {
+    value: "v",
+    label: "Cables to other bands: Up and down",
+    icon: <ArrowUpDown className="size-3" />,
+  },
+  {
+    value: "h",
+    label: "Cables to other bands: Left and right",
+    icon: <ArrowLeftRight className="size-3" />,
+  },
+]
 
 /** The grip class - the node's `dragHandle`. */
 export const BAND_DRAG_HANDLE = "band-grip"
@@ -278,6 +309,16 @@ export function BandNode({
                   />
                 </>
               )}
+              <span className="mx-0.5 h-4 w-px bg-border" />
+              {BAND_EXITS.map((o) => (
+                <ToolButton
+                  key={o.label}
+                  label={o.label}
+                  active={d.exits === o.value}
+                  onClick={() => d.onExits?.(o.value)}
+                  icon={o.icon}
+                />
+              ))}
               <span className="mx-0.5 h-4 w-px bg-border" />
               <ToolButton
                 label="Move up"

@@ -194,6 +194,44 @@ export interface AnchorOptions {
   /** Photo ports leave by their nearer image edge, never towards their
    * far end (`photoAnchors`). */
   nearExits?: boolean
+  /** The sides a link end may leave its card by (a band's cables to other
+   * bands, a chassis member's outer sides); undefined or empty: any. An
+   * end whose side facing the far end is not among them takes the allowed
+   * side facing it best. A forced side (an arc's) is kept, and the ends
+   * spilled round a crowded side's corners never go onto a side an end
+   * may not use. Photo ports keep their own leads. */
+  allow?: (link: AnchorLink, end: "a" | "b") => ReadonlySet<Side> | undefined
+}
+
+/** Tie order for `allowedSide`: right, then down. */
+const PREFER: readonly Side[] = ["R", "B", "L", "T"]
+
+/**
+ * `side` when `allowed` has it (or allows anything), else the allowed side
+ * whose outward normal best faces the far box's centre - on a tie right,
+ * then bottom.
+ */
+export function allowedSide(
+  side: Side,
+  allowed: ReadonlySet<Side> | undefined,
+  own: Rect,
+  far: Rect
+): Side {
+  if (!allowed?.size || allowed.has(side)) return side
+  const dx = far.x + far.w / 2 - (own.x + own.w / 2)
+  const dy = far.y + far.h / 2 - (own.y + own.h / 2)
+  let best: Side | null = null
+  let score = -Infinity
+  for (const s of PREFER) {
+    if (!allowed.has(s)) continue
+    const [nx, ny] = SIDE_DIR[s]
+    const v = nx * dx + ny * dy
+    if (v > score + 1e-6) {
+      best = s
+      score = v
+    }
+  }
+  return best ?? side
 }
 
 /** How far out from a side a third card makes it a poor exit: a stub and
@@ -290,6 +328,8 @@ interface EndEntry {
    * same at both ends), signed so the cables arrive in the order they left
    * and a bundle never twists. */
   sec: number
+  /** The sides this end may use (`AnchorOptions.allow`). */
+  allow?: ReadonlySet<Side>
 }
 
 /** Where the adjacent side takes the ends spilled off a side's start
@@ -339,23 +379,33 @@ export function anchorLinks(
     demand: new Map(),
   }
   const live = links.filter((l) => boxes.has(l.source) && boxes.has(l.target))
+  /** The sides an end may use; none for a junction end. */
+  const allowOf = (l: AnchorLink, end: "a" | "b") =>
+    opts.allow && !l.junction?.[end] && l.source !== l.target
+      ? opts.allow(l, end)
+      : undefined
 
   for (const l of live) {
     const pinned = opts.sides?.get(l.id)
     let sides: [Side, Side]
     if (pinned) sides = [pinned[0], pinned[1]]
     else {
+      const sb = boxes.get(l.source)!
+      const tb = boxes.get(l.target)!
       const auto: [Side, Side] =
         l.source === l.target
           ? ["R", "R"]
           : chooseClearSides(
-              boxes.get(l.source)!,
-              boxes.get(l.target)!,
+              sb,
+              tb,
               [l.source, l.target],
               opts.blockers,
               l.simple ? 0 : opts.roomy
             )
-      sides = [l.force?.a ?? auto[0], l.force?.b ?? auto[1]]
+      sides = [
+        l.force?.a ?? allowedSide(auto[0], allowOf(l, "a"), sb, tb),
+        l.force?.b ?? allowedSide(auto[1], allowOf(l, "b"), tb, sb),
+      ]
     }
     out.sides.set(l.id, sides)
   }
@@ -482,6 +532,7 @@ export function anchorLinks(
         const partner = end === "a" ? l.target : l.source
         const side = end === "a" ? sa : sb
         const pSide = end === "a" ? sb : sa
+        const may = allowOf(l, end)
         const e: EndEntry = {
           link: l.id,
           cable: i,
@@ -492,6 +543,7 @@ export function anchorLinks(
           ...(c[end] ? { port: c[end] } : {}),
           key: 0,
           sec: 0,
+          ...(may?.size ? { allow: may } : {}),
         }
         if (node === partner) {
           e.sec = 2 * r + (end === "b" ? 1 : 0)
@@ -561,8 +613,16 @@ export function anchorLinks(
       const list = sides.get(s)!
       const excess = list.length - NUB.MAX_PER_SIDE
       if (excess <= 0) continue
-      const lo = list.splice(0, Math.floor(excess / 2))
-      const hi = list.splice(list.length - (excess - lo.length))
+      // Never round a corner onto a side one of the ends may not use: those
+      // stay, closer together.
+      const may = (moved: readonly EndEntry[], to: Side) =>
+        moved.every((e) => !e.allow || e.allow.has(to))
+      let nLo = Math.floor(excess / 2)
+      let nHi = excess - nLo
+      if (!may(list.slice(0, nLo), SPILL[s].lo[0])) nLo = 0
+      if (!may(list.slice(list.length - nHi), SPILL[s].hi[0])) nHi = 0
+      const lo = list.splice(0, nLo)
+      const hi = nHi ? list.splice(list.length - nHi) : []
       // `moved` runs from the corner outward: the spill off the side's end
       // continues in order, the spill off its start runs backwards.
       const spill = (moved: EndEntry[], [to, at]: [Side, "lo" | "hi"]) => {

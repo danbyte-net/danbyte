@@ -18,6 +18,7 @@ import type { EdgeColorMode, EdgeSem } from "../edge-style"
 import { sharedLag } from "../lag-bundles"
 import type { EdgeLag } from "../lag-bundles"
 import { GROUP_H, GROUP_W } from "../group-size"
+import type { BandExits } from "../view-positions"
 import { layoutNodes } from "../layout"
 import type { SizeOf } from "../layout"
 import { graphLevels, resolveLevels } from "../levels-param"
@@ -29,9 +30,9 @@ import {
   SIDE_DIR,
   sideLength,
 } from "./anchors"
-import type { AnchorLink, Anchors } from "./anchors"
+import type { AnchorLink, AnchorOptions, Anchors } from "./anchors"
 import { arcFor, arcSide } from "./arcs"
-import { chipBand, fitRows, rowsSig, titleStrip } from "./bands"
+import { chipBand, EXIT_SIDES, fitRows, rowsSig, titleStrip } from "./bands"
 import type { BandRow, LabelRoom } from "./bands"
 import type { ArcAxis, ArcSide } from "./arcs"
 import { cardContent } from "./card-fields"
@@ -156,6 +157,10 @@ export interface DiagramOptions {
    * they are re-fitted round the cards as this mode and face size them
    * (`fitRows`), and the lines keep out of their title strips. */
   rows?: readonly BandRow[]
+  /** Per row id, the sides its cards' cables to other bands leave by
+   * (`bandExits`): top and bottom, or left and right. Rows left out are
+   * Auto. Apart from `rows` so a switch only re-anchors (relinkDiagram). */
+  exits?: Readonly<Record<string, BandExits>>
   matched?: Set<string> | null
   focusNodeId?: string
   /** The tenant's names for the monitoring states: a card keeps room for
@@ -205,6 +210,8 @@ export interface DiagramModel {
   rows?: BandRow[]
   /** The saved rows those were fitted from (`rowsSig`). */
   rowsFrom?: string
+  /** Per row id, its sides for cables to other bands (`DiagramOptions`). */
+  exits?: Readonly<Record<string, BandExits>>
   /** Photo ports leave by their nearer image edge: the build found the
    * lines cross less that way than leaving towards their far ends. */
   nearExits?: true
@@ -1446,6 +1453,54 @@ function repin(
   return out
 }
 
+/**
+ * The sides each link end may leave its card by (`AnchorOptions.allow`),
+ * for the boxes where they are now: a card in a row set to Up and down
+ * (or Left and right) takes its cables to anything outside that row - a
+ * card in another row or in none - on its top or bottom (left or right)
+ * only. Its cables within the row choose freely. A node is in the row
+ * its centre is in (the smallest holding it). Undefined when no row sets
+ * its sides.
+ */
+export function sideRules(
+  model: Pick<DiagramModel, "rows" | "exits">,
+  rects: ReadonlyMap<string, Rect>
+): AnchorOptions["allow"] {
+  const rows = model.rows ?? []
+  const exits = model.exits
+  if (!rows.length || !exits || !Object.keys(exits).length) return undefined
+  const rowOf = new Map<string, string | null>()
+  const inRow = (id: string): string | null => {
+    const hit = rowOf.get(id)
+    if (hit !== undefined) return hit
+    const r = rects.get(id)
+    let best: BandRow | null = null
+    if (r) {
+      const cx = r.x + r.w / 2
+      const cy = r.y + r.h / 2
+      for (const row of rows)
+        if (
+          cx >= row.x &&
+          cx <= row.x + row.w &&
+          cy >= row.y &&
+          cy <= row.y + row.h &&
+          (!best || row.w * row.h < best.w * best.h)
+        )
+          best = row
+    }
+    const id2 = best?.id ?? null
+    rowOf.set(id, id2)
+    return id2
+  }
+  return (l, end) => {
+    const [me, far] = end === "a" ? [l.source, l.target] : [l.target, l.source]
+    const row = inRow(me)
+    const axis = row ? exits[row] : undefined
+    if (!axis || inRow(far) === row) return undefined
+    return EXIT_SIDES[axis]
+  }
+}
+
 /** Anchor every link at the cards' centres. Detailed grows each card to
  * its nubs; `sides` pins the sides an earlier pass chose. Junctions are
  * placed off their trunk's port. */
@@ -1480,20 +1535,19 @@ function anchorAll(
         return { ...l, force: { a: side, b: side } }
       })
     : model.links
-  const pass = (mode: DiagramMode, pinned?: Anchors["sides"]) =>
-    anchorLinks(
-      withJ(junctions),
-      withJunctionDirs(links, junctions, rects),
-      mode,
-      {
-        ...(pinned ? { sides: repin(pinned, model, arcs) } : {}),
-        blockers: solid,
-        ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
-        ...(photos ? { photos } : {}),
-        ...(caps ? { caps } : {}),
-        ...(model.nearExits ? { nearExits: true } : {}),
-      }
-    )
+  const pass = (mode: DiagramMode, pinned?: Anchors["sides"]) => {
+    const all = withJ(junctions)
+    const allow = sideRules(model, all)
+    return anchorLinks(all, withJunctionDirs(links, junctions, rects), mode, {
+      ...(pinned ? { sides: repin(pinned, model, arcs) } : {}),
+      ...(allow ? { allow } : {}),
+      blockers: solid,
+      ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
+      ...(photos ? { photos } : {}),
+      ...(caps ? { caps } : {}),
+      ...(model.nearExits ? { nearExits: true } : {}),
+    })
+  }
   if (model.mode === "simple") {
     let anchors = pass("simple")
     if (model.fans.length) {
@@ -2022,6 +2076,8 @@ export function buildDiagram(
   if (opts.rows?.length) {
     model.rows = opts.rows.map((r) => ({ ...r }))
     model.rowsFrom = rowsSig(opts.rows)
+    if (opts.exits && Object.keys(opts.exits).length)
+      model.exits = { ...opts.exits }
   }
   // A saved arrangement drawn at another size - arranged with Simple
   // cards, drawn Detailed or as photos: the layer bands are re-fitted
@@ -2137,6 +2193,27 @@ export function buildDiagram(
   return { nodes, edges: planned, model }
 }
 
+/** What a relink may change besides where the nodes are: the rows'
+ * sides for cables to other bands (Auto rows left out). */
+export interface RelinkOptions {
+  exits?: Readonly<Record<string, BandExits>>
+}
+
+/** `model` with a relink's options applied (itself when they change
+ * nothing). */
+function withRelinkOptions(
+  model: DiagramModel,
+  over: RelinkOptions | undefined
+): DiagramModel {
+  if (!over?.exits) return model
+  const same = JSON.stringify(model.exits ?? {}) === JSON.stringify(over.exits)
+  if (same) return model
+  const next: DiagramModel = { ...model }
+  if (Object.keys(over.exits).length) next.exits = { ...over.exits }
+  else delete next.exits
+  return next
+}
+
 export interface Relinked {
   edges: Edge[]
   /** Per band row, what its title strip holds (`DiagramModel.titles`). */
@@ -2155,7 +2232,12 @@ export interface Relinked {
  * runs; `live` nodes are positioned by their centres, as `buildDiagram`
  * made them.
  */
-export function relinkDiagram(model: DiagramModel, live: Node[]): Relinked {
+export function relinkDiagram(
+  model0: DiagramModel,
+  live: Node[],
+  over?: RelinkOptions
+): Relinked {
+  const model = withRelinkOptions(model0, over)
   const centres = new Map<string, Pt>()
   for (const n of live)
     if (model.base.has(n.id) || model.fixed.has(n.id))
@@ -2192,11 +2274,15 @@ export function relinkDiagram(model: DiagramModel, live: Node[]): Relinked {
  * The cards measured again - Inter has loaded since they were sized -
  * and every link re-anchored where the cards are. No layout runs.
  */
-export function remeasureDiagram(model: DiagramModel, live: Node[]): Relinked {
+export function remeasureDiagram(
+  model: DiagramModel,
+  live: Node[],
+  over?: RelinkOptions
+): Relinked {
   const base = new Map(model.base)
   for (const [id, input] of model.cards)
     base.set(id, cardLayout(input, null, model.measure))
-  return relinkDiagram({ ...model, base, shown: new Map() }, live)
+  return relinkDiagram({ ...model, base, shown: new Map() }, live, over)
 }
 
 /**

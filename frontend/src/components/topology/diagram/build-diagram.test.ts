@@ -21,7 +21,7 @@ import {
   throughCards,
 } from "../__fixtures__/route-checks"
 import { linkEnds } from "./anchors"
-import { buildDiagram, relinkDiagram } from "./build-diagram"
+import { buildDiagram, relinkDiagram, sideRules } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
 import { NUB } from "./card-layout"
 import { runOrder, traceMap } from "../trace-run"
@@ -481,6 +481,124 @@ describe("buildDiagram", () => {
       a.y > s.y - NUB.OUT + 0.01 &&
       a.y < s.y + s.h + NUB.OUT - 0.01
     expect(inside).toBe(false)
+  })
+})
+
+describe("a band's cables to other bands", () => {
+  const opts: DiagramOptions = {
+    mode: "detailed",
+    line: "straight",
+    colorMode: "cable",
+    measure: approxMeasure,
+    direction: "TB",
+  }
+  // The fabric top to bottom, each of the spines' and the leaves' rows
+  // drawn round them.
+  const first = buildDiagram(cardGraph, opts)
+  const at = new Map(first.nodes.map((n) => [n.id, boxOf(n)]))
+  const rowAround = (id: string, ids: string[]) => {
+    const rs = ids.map((i) => at.get(devId(i as "spine1"))!)
+    const x = Math.min(...rs.map((r) => r.x)) - 40
+    const y = Math.min(...rs.map((r) => r.y)) - 40
+    const x1 = Math.max(...rs.map((r) => r.x + r.w)) + 40
+    const y1 = Math.max(...rs.map((r) => r.y + r.h)) + 20
+    return { id, x, y, w: x1 - x, h: y1 - y }
+  }
+  const rows = [
+    rowAround("spines", ["spine1", "spine2"]),
+    rowAround("leaves", ["leaf1", "leaf2", "leaf3", "leaf4"]),
+  ]
+  const positions = Object.fromEntries(
+    first.nodes.map((n) => [n.id, [n.position.x, n.position.y]])
+  ) as Record<string, [number, number]>
+  /** The sides the spine-leaf cables use at the spine (a) and leaf end. */
+  const sidesAt = (edges: Edge[]) => {
+    const out = { spine: new Set<string>(), leaf: new Set<string>() }
+    const spines = [devId("spine1"), devId("spine2")]
+    const leaves = ["leaf1", "leaf2", "leaf3", "leaf4"].map((k) =>
+      devId(k as "leaf1")
+    )
+    for (const e of edges) {
+      const d = e.data as DiagramEdgeData
+      if (e.type !== "link" || d.sem === "ghost") continue
+      for (const [end, id] of [
+        ["a", e.source],
+        ["b", e.target],
+      ] as const) {
+        const far = end === "a" ? e.target : e.source
+        const other = spines.includes(id) ? leaves : spines
+        if (!other.includes(far)) continue
+        for (const an of d[end])
+          if (an.k === "side")
+            out[spines.includes(id) ? "spine" : "leaf"].add(an.side)
+      }
+    }
+    return out
+  }
+
+  const only = (got: Set<string>, sides: string[]) =>
+    expect([...got].filter((x) => !sides.includes(x))).toEqual([])
+  const auto = sidesAt(
+    buildDiagram(cardGraph, { ...opts, positions, rows }).edges
+  )
+
+  it("leaves Auto rows to face their far ends", () => {
+    expect(auto.spine.has("B")).toBe(true)
+    expect(auto.leaf.has("T")).toBe(true)
+  })
+
+  it("takes a row's cables to other bands on its left and right", () => {
+    const { edges } = buildDiagram(cardGraph, {
+      ...opts,
+      positions,
+      rows,
+      exits: { leaves: "h", spines: "v" },
+    })
+    const s = sidesAt(edges)
+    only(s.leaf, ["L", "R"])
+    only(s.spine, ["T", "B"])
+    expect(s.leaf.size).toBeGreaterThan(0)
+  })
+
+  it("switches on a relink, without a new layout", () => {
+    const built = buildDiagram(cardGraph, { ...opts, positions, rows })
+    const re = relinkDiagram(built.model, built.nodes, {
+      exits: { leaves: "h" },
+    })
+    only(sidesAt(re.edges).leaf, ["L", "R"])
+    expect(re.model.exits).toEqual({ leaves: "h" })
+    const back = relinkDiagram(re.model, built.nodes, { exits: {} })
+    expect(sidesAt(back.edges).leaf).toEqual(auto.leaf)
+    expect(back.model.exits).toBeUndefined()
+  })
+
+  it("constrains only ends whose far card is in another row or in none", () => {
+    const rects = new Map([
+      ["a", { x: 0, y: 0, w: 100, h: 40 }],
+      ["b", { x: 200, y: 0, w: 100, h: 40 }],
+      ["c", { x: 0, y: 300, w: 100, h: 40 }],
+      ["d", { x: 900, y: 900, w: 100, h: 40 }],
+    ])
+    const allow = sideRules(
+      {
+        rows: [
+          { id: "top", x: -20, y: -20, w: 400, h: 100 },
+          { id: "low", x: -20, y: 280, w: 400, h: 100 },
+        ],
+        exits: { top: "v" },
+      },
+      rects
+    )!
+    const link = (source: string, target: string) => ({
+      id: `${source}-${target}`,
+      source,
+      target,
+    })
+    expect(allow(link("a", "b"), "a")).toBeUndefined()
+    expect([...allow(link("a", "c"), "a")!]).toEqual(["T", "B"])
+    expect(allow(link("a", "c"), "b")).toBeUndefined()
+    expect([...allow(link("a", "d"), "a")!]).toEqual(["T", "B"])
+    expect(sideRules({ rows: [], exits: { top: "v" } }, rects)).toBeUndefined()
   })
 })
 

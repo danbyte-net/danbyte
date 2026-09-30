@@ -206,6 +206,32 @@ describe("BandNode", () => {
     expect(data.onDelete).toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy()
   })
+
+  it("sets where a row's cables to other bands leave its cards", async () => {
+    const data: BandData = {
+      label: "Access",
+      color: null,
+      orient: "h",
+      exits: "h",
+      onExits: vi.fn(),
+    }
+    await onCanvas(data, true)
+    const pick = (name: string) =>
+      screen.getByRole("button", { name: `Cables to other bands: ${name}` })
+    expect(pick("Left and right").getAttribute("aria-pressed")).toBe("true")
+    expect(pick("Auto").getAttribute("aria-pressed")).toBe("false")
+    fireEvent.click(pick("Up and down"))
+    fireEvent.click(pick("Auto"))
+    expect(data.onExits).toHaveBeenNthCalledWith(1, "v")
+    expect(data.onExits).toHaveBeenNthCalledWith(2, undefined)
+  })
+
+  it("offers no cable sides on a side band", async () => {
+    await onCanvas({ label: "WAN", color: null, orient: "v" }, true)
+    expect(
+      screen.queryByRole("button", { name: "Cables to other bands: Auto" })
+    ).toBeNull()
+  })
 })
 
 describe("a band of several layers", () => {

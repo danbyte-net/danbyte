@@ -67,6 +67,7 @@ import type { NoteCallbacks, NoteData } from "./diagram/annotation-node"
 import { patchNote, readNotes, removeNotes } from "./diagram/notes"
 import type { BandData } from "./diagram/band-node"
 import {
+  bandExits,
   bandRows,
   drawnRegions,
   isRow,
@@ -76,7 +77,7 @@ import {
 } from "./diagram/bands"
 import type { BandBy, BandLayout, BandRow, LabelRoom } from "./diagram/bands"
 import { ZONE_H, ZONE_W } from "./view-positions"
-import type { Zone } from "./view-positions"
+import type { BandExits, Zone } from "./view-positions"
 import { lagBundleLabel, sharedLag } from "./lag-bundles"
 import {
   CANVAS_MINIMAP_AT,
@@ -94,7 +95,7 @@ import {
   relinkDiagram,
   remeasureDiagram,
 } from "./diagram/build-diagram"
-import type { DiagramModel } from "./diagram/build-diagram"
+import type { DiagramModel, RelinkOptions } from "./diagram/build-diagram"
 import {
   DiagramWorker,
   canBuildOffThread,
@@ -213,6 +214,8 @@ interface ZoneCallbacks {
   onBandResize: (id: string, rect: Rect) => void
   /** Row edits that move cards: layers, layout, merge, split. */
   onBandEdit: (edit: CanvasBandEdit) => void
+  /** A row's sides for cables to other bands; undefined is Auto. */
+  onExits: (id: string, exits: BandExits | undefined) => void
 }
 
 function zoneToNode(
@@ -228,6 +231,7 @@ function zoneToNode(
       ...(busy ? { busy } : {}),
       ...(z.rule ? { rule: z.rule } : {}),
       ...(z.layout ? { layout: z.layout } : {}),
+      ...(z.exits && z.orient !== "v" ? { exits: z.exits } : {}),
       ...(below ? { canMerge: true } : {}),
       label: z.label,
       color: z.color || null,
@@ -242,6 +246,7 @@ function zoneToNode(
       onLayout: (layout) => cb.onBandEdit({ type: "layout", id: z.id, layout }),
       onMerge: () => cb.onBandEdit({ type: "merge", id: z.id }),
       onSplit: () => cb.onBandEdit({ type: "split", id: z.id }),
+      onExits: (exits) => cb.onExits(z.id, exits),
     }
     return {
       id: `band:${z.id}`,
@@ -1119,6 +1124,22 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const rowsKey = diagram ? JSON.stringify(bandRows(zones)) : "[]"
   const bandRowList = useMemo(() => JSON.parse(rowsKey) as BandRow[], [rowsKey])
   const withRows = bandRowList.length ? { rows: bandRowList } : {}
+  // Each row's sides for cables to other bands: apart from the rows, so a
+  // switch re-anchors the lines (a relink) instead of building the map
+  // again. A build reads the latest; the effect further down relinks.
+  const exitsKey = diagram ? JSON.stringify(bandExits(zones)) : "{}"
+  const exits = useMemo(
+    () => JSON.parse(exitsKey) as Record<string, BandExits>,
+    [exitsKey]
+  )
+  const exitsRef = useRef(exits)
+  exitsRef.current = exits
+  /** What every relink is told besides where the cards are. */
+  const relinkOver = useCallback(
+    (): RelinkOptions => ({ exits: exitsRef.current }),
+    []
+  )
+  const withExits = Object.keys(exits).length ? { exits } : {}
 
   // The Diagram is laid out in a worker (diagram-client.ts) wherever the
   // browser has one, so a big map never holds the page while it is built;
@@ -1171,6 +1192,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               bundleLags,
               positions,
               ...withRows,
+              ...withExits,
               matched: matchedIds,
               focusNodeId,
               checkLabels,
@@ -1242,6 +1264,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               bundleLags,
               positions,
               ...(bandRowList.length ? { rows: bandRowList } : {}),
+              ...withExits,
               checkLabels,
             },
             stamp: {
@@ -1382,6 +1405,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         else emitZonesRef.current()
       },
       onBandEdit: (edit) => onBandEditRef.current?.(edit),
+      onExits: (id, exits) =>
+        onZonesChangeRef.current?.(
+          zonesRef.current.map((z) => {
+            if (z.id !== id) return z
+            const { exits: _was, ...rest } = z
+            return exits ? { ...rest, exits } : rest
+          })
+        ),
     }
   }, [])
   const zoneNodes = useRef<Node[]>([])
@@ -1394,7 +1425,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const zoneSig = (zones ?? [])
     .map(
       (z) =>
-        `${z.id}:${z.kind}:${z.orient}:${z.label}:${z.color}:${z.x}:${z.y}:${z.w}:${z.h}:${z.layout}:${z.rule?.by}:${z.rule?.ids.join(",")}`
+        `${z.id}:${z.kind}:${z.orient}:${z.label}:${z.color}:${z.x}:${z.y}:${z.w}:${z.h}:${z.layout}:${z.exits}:${z.rule?.by}:${z.rule?.ids.join(",")}`
     )
     .join("|")
 
@@ -1771,11 +1802,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const kept = nextNodes
       setBusy((b) => b + 1)
       worker()
-        .relink(id, kept)
+        .relink(id, kept, relinkOver())
         .then(
           (re) => {
             if (modelIdRef.current !== id || !modelRef.current) return
-            adopt(relinkedModel(modelRef.current, re.cards, re.titles))
+            adopt(
+              relinkedModel(modelRef.current, re.cards, re.titles, relinkOver())
+            )
             setNodes([
               ...zoneNodes.current,
               ...withCards(kept, re.cards, re.junctions),
@@ -1791,7 +1824,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     }
     let diagramEdges: Edge[] | null = null
     if (built.model && relink) {
-      const re = relinkDiagram(built.model, nextNodes)
+      const re = relinkDiagram(built.model, nextNodes, relinkOver())
       adopt(re.model)
       diagramEdges = re.edges
       nextNodes = withCards(nextNodes, re.cards, re.junctions)
@@ -1829,7 +1862,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   useEffect(() => {
     const model = modelRef.current
     if (!fontTick || !diagram || !model || modelIdRef.current !== null) return
-    const re = remeasureDiagram(model, flow.getNodes())
+    const re = remeasureDiagram(model, flow.getNodes(), relinkOver())
     adopt(re.model)
     setNodes((cur) => withCards(cur, re.cards, re.junctions))
     setEdges(re.edges)
@@ -2264,6 +2297,58 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     [carry]
   )
 
+  /**
+   * The Diagram's links re-anchored for the nodes where `nodes` has them
+   * (sides re-chosen, Detailed cards re-sized around their centres, elbow
+   * channels re-routed), and the rows' cable sides as they are now. False
+   * when there is no Diagram model to relink.
+   */
+  const relinkAt = useCallback(
+    (nodes: Node[]): boolean => {
+      const model = modelRef.current
+      const modelId = modelIdRef.current
+      if (!diagram || !model) return false
+      const over = relinkOver()
+      if (modelId !== null) {
+        // Built off the main thread: the worker re-anchors, and the lines
+        // follow when it answers (unless a newer build took over).
+        setBusy((b) => b + 1)
+        worker()
+          .relink(modelId, nodes, over)
+          .then(
+            (re) => {
+              if (modelIdRef.current !== modelId || !modelRef.current) return
+              adopt(
+                relinkedModel(modelRef.current, re.cards, re.titles, over)
+              )
+              setNodes((cur) => withCards(cur, re.cards, re.junctions))
+              setEdges(re.edges)
+            },
+            () => lostWorker()
+          )
+          .finally(() => setBusy((b) => b - 1))
+        return true
+      }
+      const re = relinkDiagram(model, nodes, over)
+      adopt(re.model)
+      // Into the real state, not the rendered nodes (those carry the
+      // spotlight's dimming and the monitoring pill).
+      setNodes((cur) => withCards(cur, re.cards, re.junctions))
+      setEdges(re.edges)
+      return true
+    },
+    [diagram, relinkOver, worker, adopt, setNodes, setEdges, lostWorker]
+  )
+
+  // A row's cable sides switched: the lines re-anchor where everything
+  // stands - no layout, nothing moves.
+  const exitsSeen = useRef(exitsKey)
+  useEffect(() => {
+    if (exitsSeen.current === exitsKey) return
+    exitsSeen.current = exitsKey
+    relinkAt(flow.getNodes())
+  }, [exitsKey, relinkAt, flow])
+
   const onNodeDragStop = useCallback(() => {
     // Read where the cards are, those a band just carried included.
     const at = carried.current
@@ -2276,36 +2361,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       })
     }
     emitZones()
-    const model = modelRef.current
-    const modelId = modelIdRef.current
-    if (diagram && model && modelId !== null) {
-      // Built off the main thread: the worker re-anchors, and the lines
-      // follow when it answers (unless a newer build took over).
-      setBusy((b) => b + 1)
-      worker()
-        .relink(modelId, nowNodes())
-        .then(
-          (re) => {
-            if (modelIdRef.current !== modelId || !modelRef.current) return
-            adopt(relinkedModel(modelRef.current, re.cards, re.titles))
-            setNodes((cur) => withCards(cur, re.cards, re.junctions))
-            setEdges(re.edges)
-          },
-          () => lostWorker()
-        )
-        .finally(() => setBusy((b) => b - 1))
-      onDragEnd?.()
-      return
-    }
-    if (diagram && model) {
-      // Re-anchor from where the cards are now: sides re-chosen, Detailed
-      // cards re-sized around their centres, elbow channels re-routed.
-      const re = relinkDiagram(model, nowNodes())
-      adopt(re.model)
-      // Into the real state, not the rendered nodes (those carry the
-      // spotlight's dimming and the monitoring pill).
-      setNodes((cur) => withCards(cur, re.cards, re.junctions))
-      setEdges(re.edges)
+    if (relinkAt(nowNodes())) {
       onDragEnd?.()
       return
     }
@@ -2379,17 +2435,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       return
     }
     onDragEnd?.()
-  }, [
-    flow,
-    setEdges,
-    setNodes,
-    onDragEnd,
-    nodeStyle,
-    emitZones,
-    diagram,
-    worker,
-    lostWorker,
-  ])
+  }, [flow, setEdges, setNodes, onDragEnd, nodeStyle, emitZones, relinkAt])
 
   /** Where the notes were dragged, back to the parent. */
   const emitNotes = useCallback(() => {

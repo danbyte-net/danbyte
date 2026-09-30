@@ -403,6 +403,26 @@ describe("RegionMenuItems", () => {
     expect((await screen.findByRole("tooltip")).textContent).toBe("Amber")
   })
 
+  it("sets a row's cable sides from a sub-menu", async () => {
+    const onChange = vi.fn()
+    await openMenu(
+      <RegionMenuItems
+        {...region("band", null)}
+        exits={{ value: "v", onChange }}
+      />
+    )
+    expect(rows()).toEqual(["Rename", "Cables to other bands", "--", "Delete"])
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Cables to other bands" })
+    )
+    const up = await screen.findByRole("menuitemradio", { name: "Up and down" })
+    expect(up.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: "Left and right" })
+    )
+    expect(onChange).toHaveBeenCalledWith("h")
+  })
+
   it("draws Delete as the destructive item", async () => {
     const p = region("band", null)
     await openMenu(<RegionMenuItems {...p} />)

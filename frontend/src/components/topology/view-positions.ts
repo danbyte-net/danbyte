@@ -89,7 +89,15 @@ export interface Zone {
    * once the band's layers were chosen by hand - Arrange keeps such a
    * band as it is. Absent: a row. */
   layout?: "stack" | "row"
+  /** A row: the sides its cards' cables to other bands leave by - top and
+   * bottom (`v`) or left and right (`h`). Absent: whichever faces the far
+   * end (Auto). */
+  exits?: BandExits
 }
+
+/** Which sides a row's cables to other bands leave by: top and bottom, or
+ * left and right. */
+export type BandExits = "v" | "h"
 
 export type ZonesByStyle = Partial<Record<NodeStyle, Zone[]>>
 

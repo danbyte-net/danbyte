@@ -269,6 +269,7 @@ import {
   ZONE_COLORS,
   ZONE_H,
   ZONE_W,
+  type BandExits,
   type PosByStyle,
   type PosMap,
 } from "@/components/topology/view-positions"
@@ -1053,6 +1054,15 @@ function TopologyPage() {
     setZones((zones ?? []).filter((z) => z.id !== id))
   const recolorZone = (id: string, color: string | null) =>
     setZones((zones ?? []).map((z) => (z.id === id ? { ...z, color } : z)))
+  /** A row's sides for its cables to other bands; undefined is Auto. */
+  const setExits = (id: string, exits: BandExits | undefined) =>
+    setZones(
+      (zones ?? []).map((z) => {
+        if (z.id !== id) return z
+        const { exits: _was, ...rest } = z
+        return exits ? { ...rest, exits } : rest
+      })
+    )
 
   // Notes (diagram/notes.ts): one list per map, on the Diagram only.
   const notes = isDiagram ? doc.doc.notes : undefined
@@ -3466,6 +3476,14 @@ function TopologyPage() {
               <RegionMenuItems
                 kind={region?.kind === "band" ? "band" : "zone"}
                 color={region?.color || null}
+                {...(region?.kind === "band" && region.orient !== "v"
+                  ? {
+                      exits: {
+                        value: region.exits,
+                        onChange: (exits) => setExits(id, exits),
+                      },
+                    }
+                  : {})}
                 onRename={() => canvas.current?.renameRegion(id)}
                 onRecolor={(c) => recolorZone(id, c)}
                 onDelete={() => removeZone(id)}

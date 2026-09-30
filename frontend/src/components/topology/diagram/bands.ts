@@ -2,10 +2,10 @@ import { layerRules } from "@/lib/diagram/geometry"
 import { approxMeasure } from "@/lib/diagram/measure"
 import { BAND as PRINT_BAND } from "@/lib/diagram/theme"
 import { ZONE_COLORS } from "../view-positions"
-import type { Zone } from "../view-positions"
+import type { BandExits, Zone } from "../view-positions"
 import { resolveLevels } from "../levels-param"
 import type { Centre, RowSlot, RowsAt } from "./placement"
-import type { Pt, Rect } from "./types"
+import type { Pt, Rect, Side } from "./types"
 
 // Layer bands on the Diagram: labelled rows stacked top to bottom ("Spine",
 // "Leaf", "Compute"), and side bands beside them spanning several rows
@@ -229,6 +229,8 @@ export function normalizeRegions(raw: unknown): Region[] {
           ],
         }
       if (o.layout === "stack" || o.layout === "row") region.layout = o.layout
+      if (region.orient === "h" && (o.exits === "v" || o.exits === "h"))
+        region.exits = o.exits
     } else if (o.kind === "zone") region.kind = "zone"
     out.push(region)
   }
@@ -508,6 +510,26 @@ export function bandRows(regions: readonly Region[] | undefined): BandRow[] {
     .filter(isRow)
     .map(({ id, x, y, w, h }) => ({ id, x, y, w, h }))
     .sort((a, b) => a.y - b.y || byName(a.id, b.id))
+}
+
+/**
+ * Each row's sides for cables to other bands, by row id: the rows set to
+ * Up and down (`v`) or Left and right (`h`); Auto rows are left out. The
+ * build takes them apart from the rows' geometry, so switching one
+ * re-anchors the lines without laying anything out.
+ */
+export function bandExits(
+  regions: readonly Region[] | undefined
+): Record<string, BandExits> {
+  const out: Record<string, BandExits> = {}
+  for (const r of regions ?? []) if (isRow(r) && r.exits) out[r.id] = r.exits
+  return out
+}
+
+/** The sides a row's `exits` lets its cables to other bands leave by. */
+export const EXIT_SIDES: Record<BandExits, ReadonlySet<Side>> = {
+  v: new Set<Side>(["T", "B"]),
+  h: new Set<Side>(["L", "R"]),
 }
 
 /** A row list's geometry, as one string: what a build fitted them from. */
@@ -1095,6 +1117,7 @@ export function arrangeBands(input: ArrangeInput): {
         orient: "h",
         label: old && renamed(old, input) ? old.label : g.label,
         color: old?.color ?? null,
+        ...(old?.exits ? { exits: old.exits } : {}),
         ...box,
         rule: { by: input.by, ids: [...g.ids].sort() },
       })

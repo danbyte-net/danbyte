@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import {
+  ArrowLeftRight,
+  ArrowUpDown,
   ArrowUpRight,
   Cable,
   Crosshair,
@@ -10,6 +12,7 @@ import {
   Square,
   Trash2,
   Type,
+  Waypoints,
 } from "lucide-react"
 
 import {
@@ -34,6 +37,7 @@ import { LINE_LOOKS } from "./diagram/line-tabs"
 import type { LineType } from "./diagram/types"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
 import { ZONE_COLORS } from "./view-positions"
+import type { BandExits } from "./view-positions"
 
 // The topology map's right-click menus, one set of items per thing clicked,
 // for PointerMenu (components/pointer-menu.tsx) to show at the pointer. An
@@ -318,6 +322,7 @@ export function regionSwatches(kind: "band" | "zone"): Swatch[] {
 export function RegionMenuItems({
   kind,
   color,
+  exits,
   onRename,
   onRecolor,
   onDelete,
@@ -325,6 +330,12 @@ export function RegionMenuItems({
   kind: "band" | "zone"
   /** Its color now (null: a band's neutral grey). */
   color: string | null
+  /** A row: where its cables to other bands leave its cards (undefined
+   * value: Auto). Left out for side bands and zones. */
+  exits?: {
+    value: BandExits | undefined
+    onChange: (exits: BandExits | undefined) => void
+  }
   onRename: () => void
   onRecolor: (color: string | null) => void
   onDelete: () => void
@@ -357,6 +368,32 @@ export function RegionMenuItems({
           </Tooltip>
         ))}
       </div>
+      {exits && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger inset>
+            Cables to other bands
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-36">
+            <DropdownMenuRadioGroup
+              value={exits.value ?? "auto"}
+              onValueChange={(v) => {
+                const next = v === "v" || v === "h" ? v : undefined
+                if (next !== exits.value) exits.onChange(next)
+              }}
+            >
+              <DropdownMenuRadioItem value="auto">
+                <Waypoints /> Auto
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="v">
+                <ArrowUpDown /> Up and down
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="h">
+                <ArrowLeftRight /> Left and right
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={onDelete}>
         <Trash2 /> Delete

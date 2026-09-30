@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  allowedSide,
   anchorLinks,
   anchorPoint,
   chooseSides,
@@ -340,6 +341,75 @@ describe("anchorLinks: Detailed", () => {
     expect(anchorLinks(boxes, links, "detailed")).toEqual(
       anchorLinks(boxes, links, "detailed")
     )
+  })
+})
+
+describe("allowed sides", () => {
+  const TB = new Set<Side>(["T", "B"])
+  const LR = new Set<Side>(["L", "R"])
+
+  it("keeps an allowed side, else takes the allowed one facing the far end", () => {
+    const own = box(0, 0)
+    expect(allowedSide("R", undefined, own, box(300, 0))).toBe("R")
+    expect(allowedSide("R", LR, own, box(300, 0))).toBe("R")
+    expect(allowedSide("R", TB, own, box(300, 40))).toBe("B")
+    expect(allowedSide("R", TB, own, box(300, -40))).toBe("T")
+    // Straight across: a tie, settled downwards.
+    expect(allowedSide("R", TB, own, box(300, 0))).toBe("B")
+    expect(allowedSide("B", LR, own, box(-40, 300))).toBe("L")
+  })
+
+  it("moves an end onto an allowed side, the other end choosing freely", () => {
+    // A distribution card above an access card, off to its left: Auto
+    // meets bottom to top; the access end set to Left and right takes
+    // its left side instead, as in a hand-drawn diagram.
+    const boxes = new Map([
+      ["dist", box(0, 0)],
+      ["acc", box(300, 300)],
+    ])
+    const links: AnchorLink[] = [
+      { id: "e", source: "dist", target: "acc", cables: [{ a: "p1" }] },
+    ]
+    const free = anchorLinks(boxes, links, "simple")
+    expect(free.sides.get("e")).toEqual(["B", "T"])
+    const r = anchorLinks(boxes, links, "detailed", {
+      allow: (_, end) => (end === "b" ? LR : undefined),
+    })
+    expect(r.sides.get("e")).toEqual(["B", "L"])
+    expect(r.nubs.get("acc")![0].side).toBe("L")
+  })
+
+  it("keeps a forced side (an arc's)", () => {
+    const boxes = new Map([
+      ["a", box(0, 0)],
+      ["b", box(300, 0)],
+    ])
+    const r = anchorLinks(
+      boxes,
+      [{ id: "e", source: "a", target: "b", force: { a: "T", b: "T" } }],
+      "simple",
+      { allow: () => LR }
+    )
+    expect(r.sides.get("e")).toEqual(["T", "T"])
+  })
+
+  it("never spills an end round a corner onto a side it may not use", () => {
+    const boxes = new Map<string, Rect>([["hub", box(0, 0, 1200, 60)]])
+    const links: AnchorLink[] = []
+    for (let i = 0; i < 60; i++) {
+      const id = String(i).padStart(2, "0")
+      boxes.set(`s${id}`, box(-900 + i * 50, 600, 40, 40))
+      links.push({
+        id: `e${id}`,
+        source: "hub",
+        target: `s${id}`,
+        cables: [{ a: `p${i}` }],
+      })
+    }
+    const r = anchorLinks(boxes, links, "detailed", {
+      allow: (_, end) => (end === "a" ? TB : undefined),
+    })
+    expect(r.demand.get("hub")).toMatchObject({ L: 0, R: 0, B: 60 })
   })
 })
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   BAND,
   arrangeBands,
+  bandExits,
   bandRows,
   clearBands,
   drawnRegions,
@@ -189,6 +190,21 @@ describe("normalizeRegions", () => {
     expect(a.layout).toBe("stack")
     expect(b.layout).toBe("row")
     expect(c).not.toHaveProperty("layout")
+  })
+
+  it("keeps a row's sides for cables to other bands", () => {
+    const [a, b, c, d] = normalizeRegions([
+      { ...row("a", 0), exits: "v" },
+      { ...row("b", 200), exits: "h" },
+      { ...row("c", 400), exits: "up" },
+      { ...side("d", 0, 600), exits: "h" },
+    ])
+    expect(a.exits).toBe("v")
+    expect(b.exits).toBe("h")
+    expect(c).not.toHaveProperty("exits")
+    expect(d).not.toHaveProperty("exits")
+    expect(bandExits([a, b, c, d])).toEqual({ a: "v", b: "h" })
+    expect(bandExits(undefined)).toEqual({})
   })
 })
 
@@ -410,11 +426,25 @@ describe("arrangeBands", () => {
     const kept = again.regions.find((r) => r.id === spine.id)!
     expect(kept.label).toBe("Spine-lag")
     expect(kept.color).toBe("#8b5cf6")
+    expect(kept).not.toHaveProperty("exits")
     expect(again.regions.some((r) => r.id === "hand")).toBe(false)
     expect(again.regions.some((r) => r.id === "z")).toBe(true)
     // Same cards, same answer: the second run is where the first left.
     expect(again.positions).toEqual(first.positions)
     expect(handDrawn([...edited, extra]).map((r) => r.id)).toEqual(["hand"])
+  })
+
+  it("keeps a row's cable sides when it arranges again", () => {
+    const first = arrangeBands({ cards: fabric(), by: "role" })
+    const spine = first.regions.find((r) => r.label === "Spine")!
+    const again = arrangeBands({
+      cards: fabric(),
+      by: "role",
+      regions: first.regions.map((r) =>
+        r.id === spine.id ? { ...r, exits: "v" as const } : r
+      ),
+    })
+    expect(again.regions.find((r) => r.id === spine.id)!.exits).toBe("v")
   })
 
   it("keeps a side band on the rows it spanned", () => {

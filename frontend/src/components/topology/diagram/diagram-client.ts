@@ -3,7 +3,7 @@ import type { Edge, Node } from "@xyflow/react"
 import type { TopologyGraph } from "@/lib/api"
 import { measureOf } from "@/lib/diagram/measure"
 import type { MeasureKind } from "@/lib/diagram/measure"
-import type { DiagramModel } from "./build-diagram"
+import type { DiagramModel, RelinkOptions } from "./build-diagram"
 import type { HostReply, HostRequest, WireOptions } from "./diagram-host"
 import type { DiagramCardData, Pt } from "./types"
 
@@ -171,16 +171,19 @@ export class DiagramWorker {
     }
   }
 
-  /** Re-anchor model `modelId` for the nodes where they now are. */
+  /** Re-anchor model `modelId` for the nodes where they now are (and
+   * `over`, what else changed). */
   async relink(
     modelId: number,
-    nodes: readonly Node[]
+    nodes: readonly Node[],
+    over?: RelinkOptions
   ): Promise<OffThreadRelink> {
     if (this.failed) throw this.failed
     const reply = await this.ask({
       kind: "relink",
       id: ++this.seq,
       model: modelId,
+      ...(over ? { over } : {}),
       at: nodes
         .filter((n) => n.type !== "zone")
         .map((n): [string, number, number] => [
@@ -216,14 +219,22 @@ export class DiagramWorker {
 }
 
 /** A relinked model as the page keeps it: the cards that changed put in,
- * and what the band titles' strips now hold. */
+ * what the band titles' strips now hold, and what the relink was asked to
+ * change (`over`). */
 export function relinkedModel(
   model: DiagramModel,
   cards: ReadonlyMap<string, DiagramCardData["diagram"]>,
-  titles?: Map<string, [number, number][]>
+  titles?: Map<string, [number, number][]>,
+  over?: RelinkOptions
 ): DiagramModel {
-  if (!cards.size && !titles) return model
+  const exits = over?.exits
+  if (!cards.size && !titles && !exits) return model
   const shown = new Map(model.shown)
   for (const [id, card] of cards) shown.set(id, card)
-  return { ...model, shown, ...(titles ? { titles } : {}) }
+  const next: DiagramModel = { ...model, shown, ...(titles ? { titles } : {}) }
+  if (exits) {
+    if (Object.keys(exits).length) next.exits = { ...exits }
+    else delete next.exits
+  }
+  return next
 }

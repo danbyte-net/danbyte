@@ -930,6 +930,28 @@ strip, and where a cable, a port name or an address crosses there, it moves
 along the strip to the nearest clear spot. The exports put it in the same
 place.
 
+**Cables to other bands.** A row can say which sides of its cards take
+the cables that run to other bands. Select it and pick one of the three
+buttons above it, or right-click it → *Cables to other bands*:
+
+- **Auto** (the default): each cable leaves by the side facing its far end.
+- **Up and down**: the top or bottom, whichever faces the far end - a
+  distribution layer whose cables drop down to the access layer.
+- **Left and right**: the left or right side - access switches that take
+  their uplinks at the side.
+
+A cable goes to another band when its far card's centre is in another row,
+or in none; cables between two cards of one row still choose freely. The
+choice is kept with the view, is one undo step, and moves nothing: the
+lines are re-anchored where the cards stand. It applies to cards and to
+photos that take their cables at their edge (**Cables to: Edge**). Cables
+on a photo's ports keep their leads running up or down from the port: a
+sideways lead would run over the other cabled ports in its row. A Cyclical
+arc still leaves by the side it bulges to. With Elbow lines, a
+distribution row on *Up and down* above an access row on *Left and right*
+draws each uplink out of the bottom of the distribution switch and into
+the side of the access switch, with one bend.
+
 **One arrangement, every size.** Simple cards, Detailed cards and photos
 are different sizes, and the arrangement is shared. Drawn in a mode or face
 bigger than the one it was arranged in, the bands are re-fitted round their
@@ -1300,7 +1322,7 @@ is open it acts on what you right-clicked, not on what is selected.
 | A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Card lines…*, and *Role card lines* for admins |
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
 | A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide*. A grouped map's line has no menu: hide one of its sites or locations instead |
-| A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), *Delete* |
+| A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), on a row *Cables to other bands* ▸ *Auto*, *Up and down*, *Left and right*, *Delete* |
 | Empty canvas | Diagram: *Add devices…*, *Add band*, *Add zone*, *Add text*. Hierarchy: *Add devices…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
 
 ### Keyboard
@@ -1824,7 +1846,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |

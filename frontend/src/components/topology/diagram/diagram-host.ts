@@ -3,7 +3,11 @@ import type { Edge, Node } from "@xyflow/react"
 import type { TopologyGraph } from "@/lib/api"
 import type { Measure, MeasureKind } from "@/lib/diagram/measure"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
-import type { DiagramModel, DiagramOptions } from "./build-diagram"
+import type {
+  DiagramModel,
+  DiagramOptions,
+  RelinkOptions,
+} from "./build-diagram"
 import type { DiagramCardData, Pt } from "./types"
 
 // The Diagram's builder behind a message boundary: what the worker
@@ -39,6 +43,8 @@ export type HostRequest =
       model: number
       /** Each node's centre: id, x, y. */
       at: [string, number, number][]
+      /** What else changed (`RelinkOptions`): the rows' cable sides. */
+      over?: RelinkOptions
     }
 
 export type HostReply =
@@ -110,7 +116,7 @@ export function diagramHost(
         position: { x, y },
         data: {},
       }))
-      const re = relinkDiagram(model, live)
+      const re = relinkDiagram(model, live, req.over)
       models.set(req.model, re.model)
       return {
         kind: "relinked",
