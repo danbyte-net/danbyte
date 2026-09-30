@@ -10,7 +10,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ChevronDown,
   CopyPlus,
-  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -26,11 +25,8 @@ import { api, DEFAULT_DEVICE_FIELD_VISIBILITY } from "@/lib/api"
 import type {
   Device,
   DeviceType,
-  DeviceChecksResponse,
   DeviceFieldVisibility,
-  IPAddress,
   Interface,
-  PrefixIpStatus,
   Rack,
   SnmpDriftItem,
   VirtualChassis,
@@ -45,7 +41,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { TagList } from "@/components/cells/tag-list"
@@ -127,7 +122,6 @@ import {
 import { DeviceConsolePane } from "@/components/device-console-pane"
 import { DevicePowerPane } from "@/components/device-power-pane"
 import { portTint } from "@/components/cable-status-control"
-import { buildIpColumns } from "@/components/columns/ip-columns"
 import {
   buildInterfaceColumns,
   DEVICE_INTERFACE_COLUMNS,
@@ -135,8 +129,7 @@ import {
   nestInterfaces,
   type NestedInterface,
 } from "@/components/columns/interface-columns"
-import { actionsColumn } from "@/components/columns/actions-column"
-import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DeviceMiniTopology } from "@/components/device-mini-topology"
 import { MiniMap } from "@/components/site-map/mini-map"
@@ -162,8 +155,8 @@ import {
   DeviceMonitoring,
   DeviceMonitoringBadge,
 } from "@/components/monitoring/device-monitoring"
-import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { AssignIpDialog } from "@/components/assign-ip-dialog"
+import { AssignedIpsPane } from "@/components/assigned-ips-pane"
 import type { AssignIpTarget } from "@/components/assign-ip-dialog"
 import { useMe, objCan } from "@/lib/use-me"
 import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
@@ -234,8 +227,7 @@ function DeviceDetail() {
     queryKey: ["device", id],
     queryFn: () => api<Device>(`/api/devices/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -475,9 +467,8 @@ function Body({ device: d }: { device: Device }) {
         </div>
       </DetailTab>
       <DetailTab value="ips">
-        <DeviceIpsPane
-          deviceId={d.id}
-          deviceName={d.name}
+        <AssignedIpsPane
+          scope={{ kind: "device", deviceId: d.id, deviceName: d.name }}
           canAddIp={canDo("ipaddress", "add")}
           canAssignIp={canDo("ipaddress", "change")}
           canChangeDevice={canDo("device", "change")}
@@ -1342,253 +1333,6 @@ interface ListResp<T> {
   results: T[]
 }
 
-function DeviceIpsPane({
-  deviceId,
-  deviceName,
-  canAddIp,
-  canAssignIp,
-  canChangeDevice,
-}: {
-  deviceId: string
-  deviceName: string
-  canAddIp: boolean
-  canAssignIp: boolean
-  canChangeDevice: boolean
-}) {
-  const qc = useQueryClient()
-  const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
-  const q = useQuery({
-    queryKey: ["device-ips", deviceId],
-    queryFn: () => api<ListResp<IPAddress>>(`/api/devices/${deviceId}/ips/`),
-  })
-  const rows = q.data?.results ?? []
-
-  // Per-IP monitoring status - shares the device-checks fetch with the header
-  // badge and Overview summary (same query key). Keyed by IP id for the column.
-  const checksQ = useQuery({
-    queryKey: ["device-checks", deviceId],
-    queryFn: () =>
-      api<DeviceChecksResponse>(`/api/monitoring/devices/${deviceId}/checks/`),
-  })
-  const monByIp = useMemo(() => {
-    const m: Record<string, PrefixIpStatus> = {}
-    for (const ip of checksQ.data?.ips ?? []) m[ip.id] = ip
-    return m
-  }, [checksQ.data])
-
-  // PATCH the device's primary/secondary/management slots, then refresh both
-  // the IPs list (designation badges) and the device header.
-  const patchDesignation = useCallback(
-    async (body: Record<string, string | null>, successMsg: string) => {
-      try {
-        await api(`/api/devices/${deviceId}/`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        })
-        await Promise.all([
-          qc.invalidateQueries({ queryKey: ["device-ips", deviceId] }),
-          qc.invalidateQueries({ queryKey: ["device", deviceId] }),
-        ])
-        toast.success(successMsg)
-      } catch (e) {
-        apiErrorToast(e, "Couldn't update designation")
-      }
-    },
-    [deviceId, qc]
-  )
-
-  const columns = useMemo<ColumnDef<IPAddress>[]>(() => {
-    const cols = buildIpColumns<IPAddress>({
-      include: [
-        "ip",
-        "status",
-        "dhcp",
-        "role",
-        "vlan",
-        "zone",
-        "scope",
-        "dns",
-        "switch",
-        "switch_interface",
-        "description",
-        "tags",
-        "updated",
-      ],
-      copyButton: true,
-    })
-    const insertAfter = (id: string, ...extra: ColumnDef<IPAddress>[]) => {
-      const i = cols.findIndex((c) => c.id === id)
-      cols.splice(i + 1, 0, ...extra)
-    }
-    insertAfter("ip", {
-      id: "designation",
-      header: "Designation",
-      cell: ({ row }) => {
-        const ip = row.original
-        if (ip.is_primary_for_device)
-          return <Badge variant="success">★ Primary</Badge>
-        if (ip.is_oob_for_device) return <Badge variant="secondary">Mgmt</Badge>
-        if (ip.is_secondary_for_device)
-          return <Badge variant="secondary">2nd</Badge>
-        return <span className="text-muted-foreground">-</span>
-      },
-    })
-    insertAfter("status", {
-      id: "monitoring",
-      header: "Monitoring",
-      cell: ({ row }) => {
-        const e = monByIp[row.original.id]
-        if (!e || !e.status)
-          return <span className="text-muted-foreground">-</span>
-        return (
-          <span title={`${e.checks} check${e.checks === 1 ? "" : "s"}`}>
-            <MixedStatusBadge counts={e.counts} status={e.status} />
-          </span>
-        )
-      },
-    })
-    if (canChangeDevice) {
-      cols.push(
-        actionsColumn<IPAddress>({
-          extra: (ip) => <DesignationMenu ip={ip} onPatch={patchDesignation} />,
-        })
-      )
-    }
-    return cols
-  }, [canChangeDevice, patchDesignation, monByIp])
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (q.isError) return <QueryError error={q.error} />
-  return (
-    <div className="space-y-3">
-      {(canAddIp || canAssignIp) && (
-        <div className="flex justify-end gap-2">
-          {canAssignIp && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setAssignTarget({ deviceId, deviceName })}
-            >
-              Assign IP
-            </Button>
-          )}
-          {canAddIp && (
-            <Button size="sm" asChild>
-              <Link to="/ips/new" search={{ device: deviceId }}>
-                + Add IP
-              </Link>
-            </Button>
-          )}
-        </div>
-      )}
-      {rows.length === 0 ? (
-        <EmptyState title="No IPs yet.">
-          No IPs assigned to this device.
-        </EmptyState>
-      ) : (
-        <DataTable
-          data={rows}
-          total={q.data?.count}
-          columns={columns}
-          flexColumn="description"
-          tableId="device-ips"
-          // The wide set is available in the Columns menu; only the columns a
-          // device page actually needs at a glance are on by default.
-          initialColumnVisibility={{
-            scope: false,
-            dns: false,
-            switch: false,
-            switch_interface: false,
-            tags: false,
-            updated: false,
-          }}
-        />
-      )}
-      <AssignIpDialog
-        target={assignTarget}
-        onOpenChange={(o) => !o && setAssignTarget(null)}
-      />
-    </div>
-  )
-}
-
-// Per-IP "…" menu for the device IPs pane - sets/clears the device's
-// primary/secondary/management designation slots. Rendered in the
-// RowActions extra slot.
-function DesignationMenu({
-  ip,
-  onPatch,
-}: {
-  ip: IPAddress
-  onPatch: (body: Record<string, string | null>, successMsg: string) => void
-}) {
-  const hasDesignation =
-    ip.is_primary_for_device ||
-    ip.is_secondary_for_device ||
-    ip.is_oob_for_device
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7">
-          <MoreHorizontal className="h-3.5 w-3.5" />
-          <span className="sr-only">Open actions</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          disabled={ip.is_primary_for_device}
-          onSelect={() =>
-            onPatch(
-              { primary_ip_id: ip.id },
-              `${ip.ip_address} set as primary IP`
-            )
-          }
-        >
-          Set as primary
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={ip.is_secondary_for_device}
-          onSelect={() =>
-            onPatch(
-              { secondary_ip_id: ip.id },
-              `${ip.ip_address} set as secondary IP`
-            )
-          }
-        >
-          Set as secondary
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={ip.is_oob_for_device}
-          onSelect={() =>
-            onPatch(
-              { oob_ip_id: ip.id },
-              `${ip.ip_address} set as management IP`
-            )
-          }
-        >
-          Set as management
-        </DropdownMenuItem>
-        {hasDesignation && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => {
-                const body: Record<string, string | null> = {}
-                if (ip.is_primary_for_device) body.primary_ip_id = null
-                if (ip.is_secondary_for_device) body.secondary_ip_id = null
-                if (ip.is_oob_for_device) body.oob_ip_id = null
-                onPatch(body, `Cleared designation for ${ip.ip_address}`)
-              }}
-            >
-              Clear designation
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 function DeviceInterfacesPane({
   deviceId,
   virtualChassis,
@@ -1753,8 +1497,7 @@ function DeviceInterfacesPane({
     canReserve,
     driftByIface,
   ])
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   return (
     <div className="space-y-3">
@@ -1937,7 +1680,7 @@ function DevicePhotoPortsTab({ device: d }: { device: Device }) {
         No device type - photo ports live on the type's images.
       </p>
     )
-  if (!dt.data) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!dt.data) return <Loading />
   return (
     <div className="grid gap-3">
       <p className="text-[11px] text-muted-foreground">
