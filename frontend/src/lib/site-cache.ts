@@ -21,6 +21,16 @@ export const SITE_VIEW_KEYS: string[][] = [
 ]
 
 /**
+ * Object types whose writes change the site views. Applying a planned change
+ * goes through the generic planning endpoint rather than `/api/sites/…`, so
+ * that path checks the change's type against this set.
+ */
+export const SITE_VIEW_TYPES: ReadonlySet<string> = new Set([
+  "api.site",
+  "api.region",
+])
+
+/**
  * Refetch every site view after a site or region write - create, edit, bulk
  * edit, delete, a move on the map. Pass the written ids to also drop their
  * per-object queries (detail pages, edit-form seeds); leave them out for a

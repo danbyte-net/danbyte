@@ -65,6 +65,10 @@ describe("invalidateSiteViews", () => {
  * helper (or drop the whole cache), so a new write can't leave the map drawing
  * the old colour. The patterns match the write shapes in use: bulk endpoints,
  * the create endpoint handed to a form, and a POST/PATCH/DELETE call.
+ *
+ * Applying a planned site or region change posts to the generic planning
+ * endpoint, which these patterns can't see; planned-change-panel.test.tsx
+ * covers that path.
  */
 describe("site writes", () => {
   const SRC = join(import.meta.dirname, "..")
