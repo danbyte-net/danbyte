@@ -14,6 +14,10 @@ What an install accumulates that nothing else removes:
 * **Abandoned work folders** - a backup or restore whose worker was killed
   mid-run leaves its partial archive behind.
 * **Rotated log files** in ``DANBYTE_LOG_DIR`` older than the retention.
+* **Upgrade work folders** beside the app (``.danbyte-upgrade/``): a failed
+  upgrade keeps its log and journal there; all but the newest go after a
+  day, and so do the files an older upgrader's restart unit left. Never
+  while an upgrade is unfinished.
 
 ``run()`` removes what is stale and says what it freed; ``report()`` only
 measures, for Settings -> Backups. Both are safe while Danbyte is running:
@@ -136,6 +140,32 @@ def stale_bundle(now: float) -> Item:
     return item
 
 
+def stale_upgrade_folders(now: float) -> Item:
+    from .upgrade import UPGRADE_ROOTS, _upgrade_running
+
+    item = Item("Old upgrade work folders")
+    if _upgrade_running():
+        return item
+    for root in UPGRADE_ROOTS:
+        if (root / "active").exists():
+            continue
+        try:
+            entries = list(root.iterdir())
+        except OSError:
+            continue
+        runs = sorted((p for p in entries if p.is_dir() and p.name != "recover"),
+                      key=lambda p: p.name, reverse=True)
+        leftovers = runs[1:] + [p for p in entries if p.name.startswith("legacy-resume-")]
+        for p in leftovers:
+            try:
+                old = now - p.stat().st_mtime > STALE_WORK_SECONDS
+            except OSError:
+                continue
+            if old:
+                item.add(p)
+    return item
+
+
 def _installed() -> set[tuple[str, str]]:
     from importlib import metadata
 
@@ -208,6 +238,7 @@ def _collect(now: float) -> list[Item]:
         stale_wheels(),
         stale_bundle(now),
         stale_work_folders(now),
+        stale_upgrade_folders(now),
         stale_logs(int(cfg.log_retention_days), now),
     ]
 

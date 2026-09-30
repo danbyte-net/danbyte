@@ -43,7 +43,9 @@ class HousekeepingTests(TestCase):
             mock.patch.dict(os.environ, {"DANBYTE_LOG_DIR": str(self.logs)}),
             mock.patch("core.upgrade.BUNDLE_UPLOAD", self.base / ".upgrade-bundle.tar.gz"),
             mock.patch("core.upgrade._upgrade_running", return_value=False),
+            mock.patch("core.upgrade.UPGRADE_ROOTS", (root / ".danbyte-upgrade",)),
         ]
+        self.upgrades = root / ".danbyte-upgrade"
         for c in self.ctx:
             c.start()
         cfg = DeploymentSettings.load()
@@ -64,6 +66,29 @@ class HousekeepingTests(TestCase):
         left = sorted(p.name for p in self.backups.glob("code-pre-*.tgz"))
         self.assertEqual(left, ["code-pre-0.16.3-1.tgz", "code-pre-0.16.4-1.tgz"])
         self.assertEqual(out["freed_bytes"], 3000)
+
+    def test_old_upgrade_folders_go_but_the_newest_stays(self):
+        newest = _touch(self.upgrades / "20260930T100000Z-0.17.0-dev2" / "upgrade.log", age_days=3)
+        older = _touch(self.upgrades / "20260920T100000Z-0.17.0-dev2" / "upgrade.log", age_days=10)
+        fresh = _touch(self.upgrades / "20260929T100000Z-0.17.0-dev2" / "upgrade.log", age_days=0)
+        for p in (newest, older, fresh):
+            t = p.stat().st_mtime
+            os.utime(p.parent, (t, t))
+        resume = _touch(self.upgrades / "legacy-resume-20260901T000000Z.sh", age_days=5)
+        housekeeping.run()
+        self.assertTrue(newest.exists())
+        self.assertTrue(fresh.exists())        # younger than a day
+        self.assertFalse(older.parent.exists())
+        self.assertFalse(resume.exists())
+
+    def test_nothing_of_an_unfinished_upgrade_is_touched(self):
+        old = _touch(self.upgrades / "20260901T000000Z-0.17.0-dev2" / "journal", age_days=10)
+        _touch(self.upgrades / "20260902T000000Z-0.17.0-dev2" / "journal", age_days=9)
+        t = old.stat().st_mtime
+        os.utime(old.parent, (t, t))
+        (self.upgrades / "active").write_text("WORK=x\n")
+        housekeeping.run()
+        self.assertTrue(old.exists())
 
     def test_only_old_rotated_logs_go(self):
         live = _touch(self.logs / "danbyte.log", age_days=90)
