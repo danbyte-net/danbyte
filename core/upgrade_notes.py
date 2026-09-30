@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .version import deployment_method, is_newer, system_version
+from .version import deployment_method, is_newer, release_core, system_version
 
 PLATFORMS = ("systemd", "docker")
 
@@ -373,6 +373,12 @@ def _done(note: UpgradeNote) -> bool:
         return False
 
 
+def _reached(note: UpgradeNote, version: str) -> bool:
+    """Has ``version`` got to the note's release? Pre-releases count as the
+    release they lead to, so a 0.17.0 note applies on 0.17.0-dev1 too."""
+    return not is_newer(release_core(note.version), release_core(version))
+
+
 def applicable(version: str | None = None, platform: str | None = None) -> list[UpgradeNote]:
     """Notes that apply to this install: not newer than the running
     version, for this platform, and not already satisfied."""
@@ -380,13 +386,13 @@ def applicable(version: str | None = None, platform: str | None = None) -> list[
     platform = platform or deployment_method()
     return [
         n for n in NOTES
-        if not is_newer(n.version, version) and platform in n.platforms and not _done(n)
+        if _reached(n, version) and platform in n.platforms and not _done(n)
     ]
 
 
 def ids_up_to(version: str) -> list[str]:
     """Every note id a fresh install at ``version`` starts with as done."""
-    return [n.id for n in NOTES if not is_newer(n.version, version)]
+    return [n.id for n in NOTES if _reached(n, version)]
 
 
 def pending(dep, version: str | None = None, platform: str | None = None) -> list[UpgradeNote]:

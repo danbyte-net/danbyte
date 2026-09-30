@@ -1187,7 +1187,7 @@ def system_updates(request):
         return Response({"detail": "users.manage required."}, status=403)
 
     from .github import list_releases
-    from .version import DEFAULT_RELEASE_REPO, is_newer, system_version
+    from .version import DEFAULT_RELEASE_REPO, compare_versions, is_newer, system_version
 
     cur = system_version()
     dep = DeploymentSettings.load()
@@ -1211,7 +1211,8 @@ def system_updates(request):
     if dep.update_channel == "stable":
         releases = [r for r in releases if not r["prerelease"]]
     for r in releases:
-        r["is_current"] = r["tag"].lstrip("vV") == cur["version"].lstrip("vV")
+        # Same release, pre-release suffix included: 0.17.0-dev1 is not 0.17.0.
+        r["is_current"] = compare_versions(r["tag"], cur["version"]) == 0
     update_available = any(is_newer(r["tag"], cur["version"]) for r in releases)
     return Response({
         "current": cur,
