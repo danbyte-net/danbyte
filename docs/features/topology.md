@@ -1506,6 +1506,9 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   *Fill opacity*, in a stronger shade that shows as the band's own colour
   over the page) and the lines read through it as on the screen. Recolour
   one in draw.io and the colour you pick shows paler, at that opacity.
+  Being on top, the band takes a click where a line crosses it: click
+  once to select the band, then Alt+click the same spot to select the
+  line.
 - **Notes** are draw.io's own shapes, to restyle there like anything else:
   a text note is a text cell (on a rounded box when it is outlined); a
   cloud is draw.io's cloud, a building the network library's *Business
