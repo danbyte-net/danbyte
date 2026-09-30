@@ -1,5 +1,10 @@
-import { useMemo, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { X } from "lucide-react"
 import { toast } from "sonner"
 
@@ -11,6 +16,7 @@ import type {
   SlaAgreement,
   SlaObjectType,
   SlaPeriod,
+  SlaStatusResponse,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
@@ -24,6 +30,7 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
+import { VirtualChassisPicker } from "@/components/virtual-chassis-picker"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PERIOD_LABEL } from "./sla-figure"
@@ -37,6 +44,36 @@ interface Picked {
   type: SlaObjectType
   id: string
   label: string
+}
+
+const KINDS: { value: SlaObjectType; label: string }[] = [
+  { value: "api.device", label: "Devices" },
+  { value: "api.virtualchassis", label: "Virtual chassis" },
+  { value: "api.virtualmachine", label: "Virtual machines" },
+  { value: "api.ipaddress", label: "IP addresses" },
+  { value: "api.prefix", label: "Prefixes" },
+  { value: "api.circuit", label: "Circuits" },
+]
+
+/** The check-list queries whose templates are ticked for you. The list ANDs
+ * its filters, so each kind of pick is asked on its own and the answers
+ * joined. A stack is asked through the member whose address stands for it. */
+export function suggestQueries(
+  picks: Picked[],
+  stackDevices: string[]
+): string[] {
+  const ids = (t: SlaObjectType) =>
+    picks.filter((p) => p.type === t).map((p) => p.id)
+  const out: URLSearchParams[] = []
+  const devices = [...ids("api.device"), ...stackDevices]
+  if (devices.length)
+    out.push(new URLSearchParams({ device: devices.join(",") }))
+  if (ids("api.prefix").length)
+    out.push(new URLSearchParams({ prefix: ids("api.prefix").join(",") }))
+  return out.map((q) => {
+    q.set("page_size", "500")
+    return q.toString()
+  })
 }
 
 const STEPS = ["Agreement", "Members", "Checks"] as const
@@ -101,27 +138,41 @@ export function SlaWizard({
       staleTime: 60_000,
     }).data?.results ?? []
 
-  // The checks the picked devices and prefixes already run: ticked for you.
-  const suggestQuery = useMemo(() => {
-    const p = new URLSearchParams({ page_size: "500" })
-    const devices = members.filter((m) => m.type === "api.device")
-    const prefixes = members.filter((m) => m.type === "api.prefix")
-    if (devices.length) p.set("device", devices.map((m) => m.id).join(","))
-    if (prefixes.length) p.set("prefix", prefixes.map((m) => m.id).join(","))
-    return devices.length || prefixes.length ? p.toString() : ""
-  }, [members])
-  const suggested = useQuery({
-    queryKey: ["sla-wizard-suggest", suggestQuery],
+  // The checks the picked members already run: ticked for you. A stack's
+  // are those of the member whose address stands for it.
+  const stackIds = members
+    .filter((m) => m.type === "api.virtualchassis")
+    .map((m) => m.id)
+  const stacks = useQuery({
+    queryKey: ["sla-status", "vc", stackIds, "measured"],
     queryFn: () =>
-      api<CheckListResponse>(`/api/monitoring/checks/?${suggestQuery}`),
-    enabled: step === 2 && !!suggestQuery,
+      api<SlaStatusResponse>("/api/monitoring/sla-status/", {
+        method: "POST",
+        body: JSON.stringify({ kind: "vc", ids: stackIds }),
+      }),
+    enabled: step === 2 && stackIds.length > 0,
   })
-  const suggestedIds = useMemo(
-    () => [
-      ...new Set((suggested.data?.results ?? []).map((r) => r.template.id)),
-    ],
-    [suggested.data]
+  const queries = suggestQueries(
+    members,
+    stackIds.flatMap((id) => {
+      const d = stacks.data?.results[id]?.measured?.device
+      return d ? [d.id] : []
+    })
   )
+  const suggested = useQueries({
+    queries: queries.map((q) => ({
+      queryKey: ["sla-wizard-suggest", q],
+      queryFn: () => api<CheckListResponse>(`/api/monitoring/checks/?${q}`),
+      enabled: step === 2,
+    })),
+  })
+  const suggestedIds = [
+    ...new Set(
+      suggested.flatMap((s) =>
+        (s.data?.results ?? []).map((r) => r.template.id)
+      )
+    ),
+  ]
   const picked = templates ?? suggestedIds
 
   const create = useMutation({
@@ -270,19 +321,21 @@ export function SlaWizard({
                 label="Kind"
                 value={kind}
                 onChange={(v) => setKind(v as SlaObjectType)}
-                options={[
-                  { value: "api.device", label: "Devices" },
-                  { value: "api.virtualmachine", label: "Virtual machines" },
-                  { value: "api.ipaddress", label: "IP addresses" },
-                  { value: "api.prefix", label: "Prefixes" },
-                  { value: "api.circuit", label: "Circuits" },
-                ]}
+                options={KINDS}
               />
               {kind === "api.device" && (
                 <DevicePicker
                   value={null}
                   onChange={() => undefined}
                   onPickMany={add}
+                />
+              )}
+              {kind === "api.virtualchassis" && (
+                <VirtualChassisPicker
+                  value={null}
+                  onChange={() => undefined}
+                  onPickMany={add}
+                  info="A stack counts once, on the master's primary address - else the first member's that has one."
                 />
               )}
               {kind === "api.ipaddress" && (

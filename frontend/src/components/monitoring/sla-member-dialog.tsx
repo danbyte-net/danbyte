@@ -16,6 +16,7 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
+import { VirtualChassisPicker } from "@/components/virtual-chassis-picker"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -26,7 +27,16 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 
-/** Add one device, VM or address to an agreement's group. */
+const KINDS: { value: SlaObjectType; label: string }[] = [
+  { value: "api.device", label: "Device" },
+  { value: "api.virtualchassis", label: "Virtual chassis" },
+  { value: "api.virtualmachine", label: "Virtual machine" },
+  { value: "api.ipaddress", label: "IP address" },
+  { value: "api.prefix", label: "Prefix" },
+  { value: "api.circuit", label: "Circuit" },
+]
+
+/** Add one device, stack, VM or address to an agreement's group. */
 export function SlaMemberDialog({
   agreementId,
   groups,
@@ -115,13 +125,7 @@ export function SlaMemberDialog({
               setObjectId(null)
               setMonitorIp(null)
             }}
-            options={[
-              { value: "api.device", label: "Device" },
-              { value: "api.virtualmachine", label: "Virtual machine" },
-              { value: "api.ipaddress", label: "IP address" },
-              { value: "api.prefix", label: "Prefix" },
-              { value: "api.circuit", label: "Circuit" },
-            ]}
+            options={KINDS}
           />
           {type === "api.circuit" && (
             <>
@@ -149,6 +153,14 @@ export function SlaMemberDialog({
           )}
           {type === "api.device" && (
             <DevicePicker value={objectId} onChange={setObjectId} required />
+          )}
+          {type === "api.virtualchassis" && (
+            <VirtualChassisPicker
+              value={objectId}
+              onChange={setObjectId}
+              required
+              info="Counts once, on the master's primary address - else the first member's that has one."
+            />
           )}
           {type === "api.ipaddress" && (
             <IpPicker value={objectId} onChange={setObjectId} required />

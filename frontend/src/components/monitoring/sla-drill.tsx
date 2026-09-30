@@ -23,6 +23,7 @@ import { Section } from "@/components/ui/section"
 import { StatusStrip, fmtSpan } from "@/components/monitoring/status-strip"
 import { fmtSla } from "@/components/monitoring/sla-figure"
 import { AvailabilityOverTime } from "./sla-analysis-charts"
+import { viaText } from "./sla-members"
 
 export const MEMBER_ROUTE = {
   "api.device": "/devices/$id",
@@ -30,6 +31,7 @@ export const MEMBER_ROUTE = {
   "api.ipaddress": "/ips/$id",
   "api.prefix": "/prefixes/$id",
   "api.circuit": "/circuits/$id",
+  "api.virtualchassis": "/virtual-chassis/$id",
 } as const
 
 export const MEMBER_NOUN = {
@@ -38,6 +40,7 @@ export const MEMBER_NOUN = {
   "api.ipaddress": "IP address",
   "api.prefix": "Prefix",
   "api.circuit": "Circuit",
+  "api.virtualchassis": "Virtual chassis",
 } as const
 
 function IncidentList({ incidents }: { incidents: SlaAnalysis["incidents"] }) {
@@ -194,6 +197,7 @@ export function MemberPanel({
           {m && (
             <p className="text-[13px] text-muted-foreground">
               {MEMBER_NOUN[m.object_type]} · {m.group}
+              {m.via?.length ? ` · ${viaText(m.via)}` : ""}
             </p>
           )}
         </SheetHeader>

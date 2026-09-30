@@ -15,6 +15,7 @@ import {
 } from "@/components/monitoring/sla-figure"
 import { fmtSpan } from "@/components/monitoring/status-strip"
 import { MEMBER_ROUTE } from "@/components/monitoring/sla-drill"
+import { viaText } from "@/components/monitoring/sla-members"
 import { fmtCredit } from "@/components/monitoring/sla-credit-tiers"
 
 /** An agreement, as a row of the SLAs list. */
@@ -174,6 +175,11 @@ export function slaMemberColumns(): ColumnDef<SlaMemberFigure>[] {
             >
               {m.name}
             </Link>
+            {m.via?.length ? (
+              <span className="text-xs text-muted-foreground">
+                {viaText(m.via)}
+              </span>
+            ) : null}
             {m.selected && <Badge variant="outline">By selector</Badge>}
           </span>
         )

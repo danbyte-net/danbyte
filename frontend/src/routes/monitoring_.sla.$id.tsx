@@ -60,6 +60,10 @@ import {
   SlaExclusionDialog,
   SlaMemberDialog,
 } from "@/components/monitoring/sla-member-dialog"
+import {
+  exclusionMembers,
+  memberRowIds,
+} from "@/components/monitoring/sla-members"
 import { fmtSpan } from "@/components/monitoring/status-strip"
 
 export const Route = createFileRoute("/monitoring_/sla/$id")({
@@ -392,9 +396,14 @@ function Members({
         `/api/monitoring/sla-members/?agreement=${a.id}&current=1&page_size=500`
       ),
   })
+  // A folded stack's row stands for several member rows: remove them all.
   const remove = useMutation({
-    mutationFn: (id: string) =>
-      api<void>(`/api/monitoring/sla-members/${id}/`, { method: "DELETE" }),
+    mutationFn: (ids: string[]) =>
+      Promise.all(
+        ids.map((id) =>
+          api<void>(`/api/monitoring/sla-members/${id}/`, { method: "DELETE" })
+        )
+      ),
     onSuccess: () => {
       toast.success("Member removed")
       members.refetch()
@@ -418,7 +427,7 @@ function Members({
               size="icon-sm"
               variant="ghost"
               aria-label={`Remove ${row.original.name}`}
-              onClick={() => remove.mutate(row.original.member_id!)}
+              onClick={() => remove.mutate(memberRowIds(row.original))}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -428,7 +437,7 @@ function Members({
   }, [canEdit, remove])
   // Members added since the last computation show up once it runs; list
   // them so an add is never invisible.
-  const computed = new Set((figures?.members ?? []).map((m) => m.member_id))
+  const computed = new Set((figures?.members ?? []).flatMap(memberRowIds))
   const pending = (members.data?.results ?? []).filter(
     (m) => !m.excluded && !computed.has(m.id)
   )
@@ -595,10 +604,9 @@ function Exclusions({
     onError: (e) => apiErrorToast(e),
   })
   const canEdit = canDo("slaagreement", "change")
-  const names = new Map(
-    (figures?.members ?? [])
-      .filter((m) => m.member_id)
-      .map((m) => [m.member_id!, m.name])
+  // Every row of a folded stack names it; the dialog offers the stack once.
+  const { table: names, options: memberOptions } = exclusionMembers(
+    figures?.members ?? []
   )
   const columns: ColumnDef<SlaExclusion>[] = [
     {
@@ -680,7 +688,7 @@ function Exclusions({
       />
       <SlaExclusionDialog
         agreementId={a.id}
-        members={[...names].map(([id, name]) => ({ id, name }))}
+        members={memberOptions}
         open={adding}
         onOpenChange={setAdding}
         onSaved={() => {

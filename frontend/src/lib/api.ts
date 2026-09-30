@@ -10495,6 +10495,14 @@ export type SlaObjectType =
   | "api.ipaddress"
   | "api.prefix"
   | "api.circuit"
+  | "api.virtualchassis"
+
+/** A switch stack counted once: the devices folded into its row, and every
+ * member row behind it. Absent on a row that stands for one object. */
+export interface SlaStackFold {
+  via?: { id: string; name: string }[]
+  member_ids?: string[]
+}
 
 export interface SlaMember {
   id: string
@@ -10541,7 +10549,7 @@ export interface HolidayCalendar {
 }
 
 /** A member's figure in a period, with its checks. */
-export interface SlaMemberFigure {
+export interface SlaMemberFigure extends SlaStackFold {
   member: true
   member_id: string | null
   key: string
@@ -10633,6 +10641,8 @@ export interface SlaStatusAgreement {
   down_s: number
   worst_item: string | null
   budget_left_s: number
+  /** A device in a stack: the stack whose figure this is. */
+  via_stack?: { id: string; name: string }
 }
 
 export interface SlaStatusEntry {
@@ -10641,6 +10651,11 @@ export interface SlaStatusEntry {
   lowest: SlaStatusAgreement | null
   /** Plain availability over the frame, SLA or not. */
   availability: { availability: number | null; coverage: number | null } | null
+  /** A stack (kind vc): the member and address that stand for it. */
+  measured?: {
+    device: { id: string; name: string }
+    ip: { id: string; address: string } | null
+  } | null
 }
 
 export interface SlaStatusResponse {
@@ -10686,7 +10701,7 @@ export interface SlaBreakdownRow {
   incidents: number
 }
 
-export interface SlaAnalysisMember extends SlaBreakdownRow {
+export interface SlaAnalysisMember extends SlaBreakdownRow, SlaStackFold {
   key: string
   member_id: string | null
   object_type: SlaObjectType

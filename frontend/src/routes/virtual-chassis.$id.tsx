@@ -36,9 +36,11 @@ import {
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { DeviceMonitoringBadge } from "@/components/monitoring/device-monitoring"
+import { StackMonitoring } from "@/components/monitoring/stack-monitoring"
 import { VirtualChassisDeleteDialog } from "@/components/virtual-chassis-delete-dialog"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { useLegendCollector } from "@/components/speed-scale"
@@ -80,8 +82,7 @@ function VirtualChassisDetail() {
     queryKey: ["virtual-chassis", id],
     queryFn: () => api<VirtualChassis>(`/api/virtual-chassis/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -103,7 +104,7 @@ function sortMembers(members: VirtualChassisMember[]): VirtualChassisMember[] {
 
 function Body({ vc }: { vc: VirtualChassis }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "interfaces" | "snmp" | "journal" | "history"
+    "overview" | "interfaces" | "monitoring" | "snmp" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const { canDo } = useMe()
@@ -205,6 +206,7 @@ function Body({ vc }: { vc: VirtualChassis }) {
           label: "Interfaces",
           count: stackIfaces.count,
         },
+        { value: "monitoring", label: "Monitoring" },
         { value: "snmp", label: "SNMP" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -222,6 +224,9 @@ function Body({ vc }: { vc: VirtualChassis }) {
           error={stackIfaces.error}
           actions={ifaceActions}
         />
+      </DetailTab>
+      <DetailTab value="monitoring">
+        <StackMonitoring vcId={vc.id} />
       </DetailTab>
       <DetailTab value="snmp">
         <VcSnmpPane vcId={vc.id} />

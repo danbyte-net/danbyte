@@ -34,13 +34,14 @@ import {
 
 const KIND: Record<
   SlaObjectType,
-  "device" | "vm" | "ip" | "prefix" | "circuit"
+  "device" | "vm" | "ip" | "prefix" | "circuit" | "vc"
 > = {
   "api.device": "device",
   "api.virtualmachine": "vm",
   "api.ipaddress": "ip",
   "api.prefix": "prefix",
   "api.circuit": "circuit",
+  "api.virtualchassis": "vc",
 }
 
 /** Pick an agreement and one of its groups, and add the objects to it. */
@@ -266,7 +267,7 @@ export function ObjectSlaPanel({
         <ul className="divide-y divide-border rounded-md border border-border">
           {rows.map((s) => (
             <li
-              key={s.agreement.id}
+              key={`${s.agreement.id}-${s.via_stack?.id ?? ""}`}
               className="flex flex-wrap items-center gap-3 px-3 py-2 text-[13px]"
             >
               <Link
@@ -282,6 +283,18 @@ export function ObjectSlaPanel({
                 {SLA_STATE_LABEL[s.state]} · budget left{" "}
                 {fmtBudget(s.budget_left_s)}
               </span>
+              {s.via_stack && (
+                <span className="text-muted-foreground">
+                  via{" "}
+                  <Link
+                    to="/virtual-chassis/$id"
+                    params={{ id: s.via_stack.id }}
+                    className="link"
+                  >
+                    {s.via_stack.name}
+                  </Link>
+                </span>
+              )}
             </li>
           ))}
         </ul>

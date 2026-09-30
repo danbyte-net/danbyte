@@ -30,7 +30,9 @@ records each member's position and master-election priority.
 
 Members with monitored IPs or services wear their live check state next to
 the status pill - in the Members table and on each unit's row in the stack
-drawing. Unmonitored members show nothing extra.
+drawing. Unmonitored members show nothing extra. Usually only the master has
+an address; the stack's **Monitoring** tab shows the checks of the member it
+is measured on.
 
 ## Add members
 
@@ -80,13 +82,16 @@ The API reports the count (`vc_renamed_interfaces`) and the UI toasts it -
 
 ## The stack page
 
-Open a stack to see two tabs:
+Open a stack to see its tabs:
 
 - **Overview** - the stack's facts plus a **Members** table sorted by position:
   position, device, priority, role (a *Master* / *Member* badge), serial, and
   status.
 - **Interfaces** - every member's ports combined into one view (the tab badge
   shows the total), each row prefixed with the member's position and name.
+- **Monitoring** - the SLAs the stack is in, with **Add to SLA**, then the
+  member and address the stack is measured on and that member's checks.
+- **SNMP**, **Journal** and **Change log**.
 - The Overview draws the **stack itself** - one chassis bar per member in
   position order (gaps show as dashed empty slots), with the master crowned
   and each member's serial, priority, and status on the bar.
@@ -111,6 +116,16 @@ observation is split per member so drift and sync stay member-accurate. The
 stack page's **SNMP** tab polls and syncs the whole stack; details in
 [SNMP discovery → Polling a stack](../features/snmp-discovery.md#polling-a-stack).
 An interface can be moved between members from its edit form.
+
+## SLAs
+
+A stack is one member of a [service level agreement](../features/sla.md#switch-stacks),
+measured on its master's primary address - or, when the master has none, on
+the first member's by position that has one. Add the chassis itself (the
+**Virtual chassis** kind, or **Add to SLA** on its Monitoring tab), or add its
+devices: devices of one stack that include one without an address count once
+as the stack. The other members are never scored as down for having no
+address. A member device's own SLA panel shows the stack's figure.
 
 ## Deleting a stack
 

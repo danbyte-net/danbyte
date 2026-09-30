@@ -21,13 +21,14 @@ finished periods met the target.
 2. On the SLAs list, click **New agreement**. Three steps follow:
     - **Agreement** - a name, who it is **provided for**, a **target** such
       as 99.9 and a **period** such as Month.
-    - **Members** - devices, virtual machines, IP addresses, prefixes or
-      circuits. Pick several at once. Members can also be added later, from
-      the agreement or from an object's **Monitoring** tab with **Add to
-      SLA**.
+    - **Members** - devices, virtual chassis, virtual machines, IP
+      addresses, prefixes or circuits. Pick several at once. A virtual
+      chassis is a [switch stack counted once](#switch-stacks). Members can
+      also be added later, from the agreement or from an object's
+      **Monitoring** tab with **Add to SLA**.
     - **Checks** - a first check group and the checks that count. The checks
-      your devices and prefixes already run are ticked for you; with none
-      ticked, every check on a member's addresses counts.
+      your devices, stacks and prefixes already run are ticked for you; with
+      none ticked, every check on a member's addresses counts.
 
     **Create** makes the agreement, its group and its members. **All
     settings** opens every setting on one form instead.
@@ -196,8 +197,9 @@ it as a member and mark it excluded.
 
 ## Members
 
-Add devices, virtual machines, IP addresses, prefixes or circuits on the
-**Members** tab. A prefix stands for the monitored addresses in it and in its
+Add devices, virtual chassis, virtual machines, IP addresses, prefixes or
+circuits on the **Members** tab. The chassis picker leaves out stacks with no
+members. A prefix stands for the monitored addresses in it and in its
 child prefixes. An address with no check is not counted, so adding a /16 does
 not bring in thousands of unmeasured rows.
 
@@ -239,8 +241,9 @@ its [virtual chassis](../dcim/virtual-chassis.md):
   stack whose members all have their own addresses, such as a firewall pair,
   stays one member per device.
 - **One row** - named after the chassis, with the devices it stands for:
-  "via sw1-2, sw1-3". A device in the stack is never scored on its own
-  address. To measure one as well, add its address as an IP address member.
+  "via sw1-2, sw1-3". Removing it removes every row it stands for; a stack
+  brought in by a selector stays until the selector stops matching. A device
+  in the stack is never scored on its own address. To measure one as well, add its address as an IP address member.
   The same stack in two groups is two rows, like any member.
 - **Selectors** - a selector that matches a stack's members brings the stack
   in once. Excluding the chassis in the group keeps the whole stack out;
@@ -402,7 +405,8 @@ compare like for like.
 
 The **member panel** shows one member for the window:
 
-- its name, linked to the object's page, and its check group;
+- its name, linked to the object's page, its check group, and for a stack
+  the devices it stands for;
 - its figure, coverage, down time and incidents;
 - its strip;
 - each check with its own availability, informational checks marked, and a
@@ -553,8 +557,10 @@ A provider's **Circuits** tab shows the same two columns, so each carrier's
 circuits can be read against their agreements in one table. Sort by **SLA**
 to put the worst first.
 
-The **Monitoring** tab of a device, virtual machine, IP address or prefix opens with
-the agreements the object is in, and has an **Add to SLA** button. A
+The **Monitoring** tab of a device, virtual chassis, virtual machine, IP
+address or prefix opens with the agreements the object is in, and has an
+**Add to SLA** button. A chassis's tab then names the member and address the
+stack is measured on, with that member's checks. A
 circuit's **Overview** has the same panel; a circuit added from there is
 measured through its cables. It asks
 for the agreement, the check group and an optional redundancy group. The
