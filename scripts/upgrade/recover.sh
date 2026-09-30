@@ -96,4 +96,5 @@ if j_has resumed; then
 fi
 ERROR="the upgrade to $VERSION was interrupted"
 rollback_all
+if j_has restore_failed; then exit 1; fi
 exit 0

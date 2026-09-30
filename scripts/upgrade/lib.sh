@@ -536,7 +536,7 @@ restore_dir() {  # <relative dir>
 # release no longer ships (per .release-files) into another tar.
 overlay_tree() {
   (cd "$SRC" && find . \( -path ./vendor -o -path ./frontend/dist -o -path ./frontend/node_modules \
-      -o -path ./staticfiles -o -path ./.git \) -prune -o \( -type f -o -type l \) -print) \
+      -o -path ./staticfiles -o -path ./.git -o -name __pycache__ \) -prune -o \( -type f -o -type l \) -print) \
     | grep -v '^\./install\.sh$' | LC_ALL=C sort >"$STATE_DIR/new.list" || return 1
   : >"$STATE_DIR/overwrite.list"
   : >"$STATE_DIR/added.list"
@@ -750,6 +750,9 @@ finish_forward() {
   if [ "${NO_BLOCK:-0}" = 1 ]; then _nb=1; else _nb=0; fi
   run 120 "$PY" "$TOOL" maintenance-off || :
   start_recorded "$_nb" || warn "some units did not start"
+  for _u in $(new_units service) $(new_units timer); do
+    sc enable "$_u" >/dev/null 2>&1 || :
+  done
   # shellcheck disable=SC2046
   start_units "$_nb" $(new_units service) $(new_units timer) || :
   OUTCOME=new
