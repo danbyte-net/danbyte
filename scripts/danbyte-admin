@@ -634,20 +634,100 @@ def stage_bundle(ctx: Ctx, bundle: Path) -> Path:
     return scratch
 
 
+DOCKER_UPGRADE = ("a container install is upgraded from the host - rebuild, stop what\n"
+                  "  depends on the backend, then start it all on the new image:\n"
+                  "  docker compose build && docker compose stop scheduler workers fastlane ws"
+                  " && docker compose up -d")
+
+
+def _upgrade_roots(ctx: Ctx) -> list[Path]:
+    """Where the upgrade stage keeps its journal (core/upgrade.py UPGRADE_ROOTS)."""
+    return [ctx.app.parent / ".danbyte-upgrade", ctx.app / ".danbyte-upgrade"]
+
+
+def _follow_upgrade(ctx: Ctx) -> int:
+    """Print each step the running upgrade reaches until it ends: 0 when it
+    is done. Ctrl-C stops following, not the upgrade."""
+    status_file = ctx.app / ".upgrade-status.json"
+    last = ""
+    st: dict = {}
+    try:
+        while True:
+            time.sleep(2)
+            try:
+                st = json.loads(status_file.read_text())
+            except (OSError, ValueError):
+                st = {}
+            step, state = st.get("step") or "", st.get("state") or ""
+            if step and step != last:
+                out(f"  {step}")
+                last = step
+            unit = systemctl(ctx, ["is-active", "danbyte-upgrade.service"], timeout=5,
+                             quiet=True).out.strip()
+            if unit in ("active", "activating"):
+                continue
+            if state in ("done", "failed"):
+                break
+            if any((r / "active").exists() for r in _upgrade_roots(ctx)):
+                warn("the upgrade stopped part-way; its recovery finishes or rolls it back within"
+                     " five minutes (or now: danbyte-admin upgrade recover)")
+                return 1
+    except KeyboardInterrupt:
+        out(f"\n{DIM}still running as danbyte-upgrade.service{OFF}")
+        return 0
+    if st.get("state") == "done":
+        ok(f"now on {st.get('version_to', '?')}")
+        for w in st.get("warnings") or []:
+            warn(w)
+        return 0
+    bad(f"upgrade failed in {st.get('step', '?')}: {st.get('error', '')}")
+    out(f"{DIM}log: {st.get('log') or ctx.app / '.upgrade.log'}{OFF}")
+    return 1
+
+
+def cmd_upgrade_recover(ctx: Ctx, args) -> int:
+    """Finish or roll back an upgrade whose stage died, and retry a database
+    restore that failed - what the recovery unit does, run now."""
+    root = next((r for r in _upgrade_roots(ctx) if (r / "active").exists()), None)
+    if root is None:
+        ok("no unfinished upgrade")
+        return 0
+    script = root / "recover" / "recover.sh"
+    argv = ["/bin/sh", str(script), "--retry"]
+    if ctx.as_service:
+        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+    r = sh(argv, cwd=str(ctx.app), capture=False)
+    if r.code == 0 and not (root / "active").exists():
+        ok("recovered")
+        try:
+            st = json.loads((ctx.app / ".upgrade-status.json").read_text())
+            out(st.get("error") or "")
+        except (OSError, ValueError):
+            pass
+        return 0
+    bad("not recovered - see the upgrade log; the pre-upgrade backup can be restored with "
+        "danbyte-admin backup restore <id> --yes")
+    return 1
+
+
 def cmd_upgrade(ctx: Ctx, args) -> int:
     if ctx.shape == "docker":
-        die("a container install is upgraded by pulling a new image, not from here.\n"
-            "  docker compose pull && docker compose up -d")
+        die(DOCKER_UPGRADE)
+    if args.action == "recover":
+        return cmd_upgrade_recover(ctx, args)
     busy = _upgrade_busy(ctx)
     if busy and not args.force:
         die(f"{busy}. Wait for it, or pass --force once you are sure nothing is running.")
+    if busy:
+        if systemctl(ctx, ["is-active", "danbyte-upgrade.service"], timeout=5).out.strip() == "active":
+            die("danbyte-upgrade.service is running - --force does not stop a live upgrade")
+        warn("--force: removing the held upgrade lock")
+        rm = ["rm", "-f", str(ctx.app / ".upgrade.lock")]
+        if ctx.as_service:
+            rm = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + rm
+        sh(rm)
 
-    script = ctx.app / "scripts" / (
-        "danbyte-upgrade.sh" if args.action == "online" else "danbyte-upgrade-bundle.sh")
-    if not script.exists():
-        die(f"{script} is missing")
-
-    argv: list[str] = ["bash", str(script)]
+    argv = ["start_upgrade"]
     if args.action == "online":
         if not (ctx.app / ".git").exists():
             die("this is a bundle install (no .git) - use: danbyte-admin upgrade bundle <file>")
@@ -659,25 +739,27 @@ def cmd_upgrade(ctx: Ctx, args) -> int:
             if git(ctx, "describe", "--tags", "--exact-match", "--match", "v[0-9]*") == tag \
                     and not args.force:
                 die(f"already on {tag} - pass --tag to deploy it again")
-        argv.append(tag)
+        argv += ["--tag", tag]
     else:
+        if not args.bundle:
+            die("upgrade bundle needs a path to the bundle")
         bundle = Path(args.bundle).expanduser().resolve()
         if not bundle.is_file():
             die(f"no such bundle: {bundle}")
         scratch = stage_bundle(ctx, bundle)
         out(f"{DIM}copied to {scratch} - the upgrader consumes the file it is given{OFF}")
-        argv.append(str(scratch))
-
-    env = {"DANBYTE_DIR": str(ctx.app)}     # else it resolves to $HOME/danbyte
+        argv += ["--bundle", str(scratch)]
     if args.skip_backup:
         warn("skipping the pre-upgrade backup - there is no net if this goes wrong")
-        env["DANBYTE_SKIP_BACKUP"] = "1"    # compared as the exact string "1"
-    if ctx.as_service:
-        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + \
-            [f"{k}={v}" for k, v in env.items()] + argv
-        env = {}
-    out(f"{BOLD}Upgrading{OFF} ({args.action}) - this restarts services when it succeeds.")
-    return sh(argv, cwd=str(ctx.app), env=env, capture=False).code
+        argv.append("--skip-backup")
+    r = manage(ctx, argv)
+    if not r.ok:
+        die((r.err or r.out).strip()[-600:] or "the upgrade did not start")
+    out(f"{BOLD}Upgrading{OFF} ({args.action}) as danbyte-upgrade.service - it carries on if this"
+        " session drops.")
+    if getattr(args, "no_follow", False):
+        return 0
+    return _follow_upgrade(ctx)
 
 
 # ── rebuild ─────────────────────────────────────────────────────────────────
@@ -704,8 +786,7 @@ def cmd_rebuild(ctx: Ctx, args) -> int:
     the frontend build, collectstatic on a gunicorn host, then restart what
     runs. Stops at the first failing step and says which."""
     if ctx.shape == "docker":
-        die("a container install is rebuilt by pulling a new image:\n"
-            "  docker compose pull && docker compose up -d")
+        die(DOCKER_UPGRADE)
     busy = _upgrade_busy(ctx)
     if busy and not getattr(args, "force", False):
         die(f"{busy}. Wait for it, or pass --force once you are sure nothing is running.")
@@ -1689,12 +1770,13 @@ def _menu_tls(ctx: Ctx) -> int:
 
 def _menu_upgrade(ctx: Ctx) -> int:
     if ctx.shape == "docker":
-        out("a container install is upgraded by pulling a new image:")
-        out("  docker compose pull && docker compose up -d")
+        out(DOCKER_UPGRADE)
         return 0
-    action = _pick("Upgrade", ["online", "bundle"])
+    action = _pick("Upgrade", ["online", "bundle", "recover"])
     if not action:
         return 0
+    if action == "recover":
+        return cmd_upgrade_recover(ctx, None)
     tag = bundle = ""
     if action == "online":
         newest = newest_tag(ctx)
@@ -2105,8 +2187,7 @@ class Facts(threading.Thread):
             except (OSError, ValueError):
                 status = None
         r = systemctl(self.ctx, ["is-active", "danbyte-upgrade.service"], timeout=5, quiet=True)
-        return {"maintenance_file": (app / ".maintenance").exists(), "lock": lock,
-                "status": status, "upgrade_unit": r.out.strip() or "inactive"}
+        return {"lock": lock, "status": status, "upgrade_unit": r.out.strip() or "inactive"}
 
     def _health(self) -> dict:
         h, where = health(self.ctx)
@@ -3301,14 +3382,15 @@ class Home(Screen):
                 rows.append(("fast lane", [(f"{lane.get('checks', 0)} checks  "
                                             f"{lane.get('probes_per_s', 0)} probes/s", 0)]))
         fl = con.facts.get("flags") or {}
-        maint = (rd.get("maintenance") if rd else None) or fl.get("maintenance_file")
+        maint = rd.get("maintenance") if rd else None
         rows.append(("maintenance", [("on - site answers 503", A[WARN]) if maint else ("off", 0)]))
         lock = fl.get("lock")
         unit = fl.get("upgrade_unit", "inactive")
         if lock:
             rows.append(("upgrade", [(f"lock held, {lock.get('phase', '?')} {_span(lock.get('age'))}", A[WARN])]))
         elif unit == "active":
-            rows.append(("upgrade", [("running", A[WARN])]))
+            st = fl.get("status") or {}
+            rows.append(("upgrade", [(f"running, {st.get('step', '?')} {st.get('pct', 0)}%", A[WARN])]))
         else:
             rows.append(("upgrade", [("idle, lock free", 0)]))
         lb = con.django.get("last_backup") if con.django else None
@@ -3749,6 +3831,10 @@ class Backups(Screen):
 
 # -- upgrade -------------------------------------------------------------------
 
+#: The upgrade stage's phases (scripts/upgrade/stage.sh), git and bundle alike.
+STAGE_STEPS = ["preflight", "backup", "prepare", "quiesce", "swap", "deps", "check", "snapshot",
+               "migrate", "static", "verify", "start", "resume", "done"]
+#: What an upgrader from before the stage reported.
 ONLINE_STEPS = ["preflight", "backup", "checkout", "deps", "migrate", "frontend", "restart",
                 "healthcheck"]
 BUNDLE_STEPS = ["preflight", "backup", "deploy", "deps", "migrate", "static", "restart",
@@ -3788,7 +3874,10 @@ class Upgrade(Screen):
         if time.monotonic() - self.log_at < 1:
             return
         self.log_at = time.monotonic()
-        path = self.con.ctx.app / ".upgrade.log"
+        # The stage logs into its work folder while it runs and leaves the log
+        # in .upgrade.log when it ends; the status names the one to read.
+        st = (self.con.facts.get("flags") or {}).get("status") or {}
+        path = Path(st.get("log") or self.con.ctx.app / ".upgrade.log")
         try:
             with open(path, "rb") as f:
                 f.seek(0, 2)
@@ -3806,8 +3895,9 @@ class Upgrade(Screen):
         fl = con.facts.get("flags") or {}
         if ctx.shape == "docker":
             y = con.panel(y0, 0, con.cols, "upgrade  docker")
-            con.kv(y, 0, "how", "a container install is upgraded by pulling a new image:")
-            con.kv(y + 1, 0, "", "docker compose pull && docker compose up -d")
+            con.kv(y, 0, "how", "a container install is rebuilt from the host:")
+            con.kv(y + 1, 0, "", "docker compose build && docker compose stop scheduler workers "
+                                 "fastlane ws && docker compose up -d")
             return
         git_install = (ctx.app / ".git").exists()
         title = "version  " + ("git install" if git_install else "bundle install")
@@ -3877,7 +3967,8 @@ class Upgrade(Screen):
         cur = (st or {}).get("step", "")
         bundle_run = (not git_install) or self.kind == "bundle" or cur in {"deploy", "static"} \
             or (st or {}).get("version_to", "").endswith(".tar.gz")
-        steps = BUNDLE_STEPS if bundle_run else ONLINE_STEPS
+        steps = STAGE_STEPS if (st or {}).get("stage_api") or not st \
+            else BUNDLE_STEPS if bundle_run else ONLINE_STEPS
         state = (st or {}).get("state", "")
         x = 2
         for step in steps:
@@ -3898,7 +3989,7 @@ class Upgrade(Screen):
         con.put(y, 4 + width, f"{pct:3d}%")
         y += 2
         self._tail()
-        y = con.panel(y, 0, con.cols, "output  .upgrade.log")
+        y = con.panel(y, 0, con.cols, "output  upgrade log")
         for line in self.log_lines[-(y1 - y):]:
             con.put(y, 2, line)
             y += 1
@@ -3957,9 +4048,9 @@ class Upgrade(Screen):
         return True
 
     def _launch(self, version: str, bundle: Path | None) -> None:
-        """The same transient unit the web UI launches, so a dropped ssh
-        session cannot kill an upgrade between migrate and restart, and the
-        app's own busy check sees it. Output lands in .upgrade.log."""
+        """manage.py start_upgrade - the same lock and the same transient unit
+        the web UI uses, so a dropped ssh session cannot kill the upgrade and
+        nothing races it. The stage's log shows below as it runs."""
         con = self.con
         ctx = con.ctx
         busy = self._busy()
@@ -3967,35 +4058,23 @@ class Upgrade(Screen):
             self.note("warn", f"{busy} - F to force")
             return
         self._force = False
-        app = ctx.app
-        script = app / "scripts" / ("danbyte-upgrade-bundle.sh" if bundle else "danbyte-upgrade.sh")
-        if not script.exists():
-            self.note("bad", f"{script} is missing")
-            return
 
         def go():
-            arg = version
+            argv = ["start_upgrade"]
             if bundle:
                 try:
-                    arg = str(stage_bundle(ctx, bundle))
+                    argv += ["--bundle", str(stage_bundle(ctx, bundle))]
                 except SystemExit:
                     return
-            log = app / ".upgrade.log"
-            with contextlib.suppress(OSError):
-                log.write_text("")
-            argv = ["systemd-run", "--user", "--collect", "--unit", "danbyte-upgrade",
-                    "-p", f"StandardOutput=append:{log}", "-p", "StandardError=inherit",
-                    f"--setenv=DANBYTE_DIR={app}"]
+            else:
+                argv += ["--tag", version]
             if self.skip_backup:
-                argv.append("--setenv=DANBYTE_SKIP_BACKUP=1")
-            argv += ["bash", str(script), arg]
-            if ctx.as_service:
-                argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
-            r = sh(argv, cwd=str(app), timeout=20)
+                argv.append("--skip-backup")
+            r = manage(ctx, argv)
             if r.ok:
                 self.note("ok", f"launched danbyte-upgrade.service for {version}")
             else:
-                self.note("bad", (r.err or r.out).strip()[:200] or "systemd-run failed")
+                self.note("bad", (r.err or r.out).strip()[-200:] or "start_upgrade failed")
             con.facts.kick("flags")
         con.run("launch", go)
 
@@ -4939,13 +5018,15 @@ def build_parser() -> argparse.ArgumentParser:
     rb.add_argument("--skip-frontend", action="store_true", help="do not rebuild the frontend")
     rb.add_argument("--force", action="store_true", help="ignore a held upgrade lock")
 
-    u = sub.add_parser("upgrade", help="online, or from an uploaded bundle")
-    u.add_argument("action", choices=["online", "bundle"])
+    u = sub.add_parser("upgrade", help="online, from an uploaded bundle, or recover one")
+    u.add_argument("action", choices=["online", "bundle", "recover"])
     u.add_argument("bundle", nargs="?", help="path to a .tar.gz bundle")
     u.add_argument("--tag", help="release tag for an online upgrade")
     u.add_argument("--skip-backup", action="store_true",
                    help="skip the pre-upgrade backup (there is then no net)")
     u.add_argument("--force", action="store_true", help="ignore a held upgrade lock")
+    u.add_argument("--no-follow", action="store_true",
+                   help="return once the upgrade runs instead of following it")
 
     b = sub.add_parser("backup", help="run one now, list, restore")
     b.add_argument("action", choices=["run", "list", "restore", "path", "unstick"])
