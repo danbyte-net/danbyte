@@ -65,6 +65,16 @@ by value. The order is the same whatever language your browser uses. Before
 you click anything, a list shows rows in the order the server sends them,
 which is the same natural order by name.
 
+## Selecting rows
+
+On a list with checkboxes, the header checkbox ticks the rows on the current
+page. When the list runs to more pages, **Select all N** appears beside the
+count above the table and ticks every row the filters show; **Clear** undoes
+it. A tick belongs to the object, not to its row position, so sorting,
+filtering or a refresh never moves it onto another row. A row that leaves the
+list - filtered away or deleted - leaves the selection too, so the count only
+ever covers rows you can see.
+
 ## Where your settings live
 
 Manage all your saved table layouts in one place under **User → Preferences**,

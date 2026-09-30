@@ -97,6 +97,10 @@ interface DataTableProps<T> {
    * originals so the parent can wire bulk-action bars without thinking
    * about TanStack's keyed selection state. */
   onSelectedRowsChange?: (rows: T[]) => void
+  /** The parent's copy of the selection - what `onSelectedRowsChange` last
+   * handed it. When the parent empties it (a bulk bar's Clear, a finished
+   * bulk action) the ticks clear to match. */
+  selectedRows?: readonly T[]
   /** Initial column-visibility map. Useful for hiding columns that are
    * only kept around for grouping (e.g. vrfName behind a VRF group
    * header). */
@@ -195,6 +199,7 @@ export function DataTable<T>({
   columnsLabel = "Columns",
   renderGroupHeader,
   onSelectedRowsChange,
+  selectedRows,
   initialColumnVisibility,
   flexColumn,
   stickyHeader,
@@ -492,8 +497,15 @@ export function DataTable<T>({
     setExpanded(true)
   }, [data])
 
+  // A selection follows the object, not its position: when every row has
+  // its own distinct `id`, rows are keyed by it, so a filter, a refetch or a
+  // deleted neighbour never moves a tick onto another row (#176). Rows
+  // without one keep TanStack's index keys.
+  const keyById = useMemo(() => hasDistinctIds(data), [data])
+
   const table = useReactTable({
     data,
+    getRowId: keyById ? rowIdOf : undefined,
     columns,
     state: {
       sorting,
@@ -540,7 +552,40 @@ export function DataTable<T>({
     serverPagination?.totalRows ?? table.getFilteredRowModel().rows.length
   const pageTotal = serverPagination?.pageCount ?? table.getPageCount()
 
+  // A ticked row that leaves the data (deleted, filtered away, refetched)
+  // leaves the selection too, so the count never includes rows you can't see.
+  useEffect(() => {
+    setRowSelection((prev) => {
+      const keys = Object.keys(prev)
+      if (keys.length === 0) return prev
+      const core = table.getCoreRowModel().rowsById
+      const grouped = table.getGroupedRowModel().rowsById
+      const kept = keys.filter((k) => k in core || k in grouped)
+      if (kept.length === keys.length) return prev
+      return Object.fromEntries(kept.map((k) => [k, true]))
+    })
+    // table is stable; prune when the data changes
+  }, [data])
+
+  // The parent emptied its copy of the selection: clear the ticks to match.
+  // Only that edge counts - a caller that passes a fresh [] on every render
+  // must never wipe a tick it has not been told about yet.
+  const parentHadSelection = useRef(false)
+  useEffect(() => {
+    if (!selectedRows) return
+    const had = parentHadSelection.current
+    parentHadSelection.current = selectedRows.length > 0
+    if (had && selectedRows.length === 0)
+      setRowSelection((prev) => (Object.keys(prev).length ? {} : prev))
+  }, [selectedRows])
+
   const selectedCount = Object.keys(rowSelection).length
+  // The header checkbox ticks the page in front of you. When that is only
+  // part of the list, the bar says so and offers the rest.
+  const spansPages = paged && pageTotal > 1 && grouping.length === 0
+  const allRowsSelected = spansPages && table.getIsAllRowsSelected()
+  const pageSelected =
+    spansPages && !allRowsSelected && table.getIsAllPageRowsSelected()
 
   // Bubble the actual row originals up so parents don't have to map keys.
   // Only when the selection actually CHANGED: a parent typically stores this
@@ -589,11 +634,31 @@ export function DataTable<T>({
           than overflowing, so a narrow pane never cuts Download / Columns off. */}
       {(!embedded || selectedCount > 0) && (
         <div className="flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1">
-          <span className="text-xs text-muted-foreground">
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
             {selectedCount > 0 && (
               <span className="font-medium text-foreground">
                 {selectedCount} selected
               </span>
+            )}
+            {pageSelected && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs text-foreground"
+                onClick={() => table.toggleAllRowsSelected(true)}
+              >
+                Select all {rowTotal}
+              </Button>
+            )}
+            {allRowsSelected && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs text-foreground"
+                onClick={() => table.toggleAllRowsSelected(false)}
+              >
+                Clear
+              </Button>
             )}
           </span>
           {!embedded && (
@@ -1188,6 +1253,28 @@ export function SortHeader({
       />
     </Button>
   )
+}
+
+/** True when every row has its own `id` (a string or number) and no two
+ * share one - the rows can be keyed by it instead of by position. */
+export function hasDistinctIds(rows: readonly unknown[]): boolean {
+  if (rows.length === 0) return false
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const id = (r as { id?: unknown } | null)?.id
+    if (typeof id !== "string" && typeof id !== "number") return false
+    const key = String(id)
+    if (seen.has(key)) return false
+    seen.add(key)
+  }
+  return true
+}
+
+// Top-level rows by their own id; sub-rows as TanStack keys them.
+function rowIdOf<T>(row: T, index: number, parent?: { id: string }): string {
+  return parent
+    ? `${parent.id}.${index}`
+    : String((row as { id: string | number }).id)
 }
 
 // Selection cell helpers

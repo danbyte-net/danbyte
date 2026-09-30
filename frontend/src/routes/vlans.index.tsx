@@ -97,6 +97,7 @@ function VlansPage() {
         data={filteredRows}
         columns={wiredColumns}
         onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="description"
         tableId="vlans"
       />
