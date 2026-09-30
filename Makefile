@@ -287,16 +287,21 @@ proxy-install: proxy-cert
 
 # The root path unit that applies a certificate pair the app drops in
 # deploy/nginx/certs/ (Settings → Updates → Site certificate). Needs sudo;
-# install.sh runs it on a fresh install, an upgraded host runs it once.
+# install.sh does the same from the bundle. The unit runs a root-owned copy
+# of the apply script: the one in this tree belongs to the app's user.
+TLS_LIBEXEC := /usr/local/libexec/danbyte
 install-tls-unit:
-	@for u in path service; do \
-		sed -e "s|@@APP@@|$(PROJECT_DIR)|g" deploy/systemd/danbyte-tls.$$u.template \
+	@sudo install -d -o root -g root -m 755 $(TLS_LIBEXEC) /var/lib/danbyte-tls
+	@sudo install -o root -g root -m 755 scripts/danbyte-tls-apply.sh $(TLS_LIBEXEC)/danbyte-tls-apply.sh
+	@owner=$$(stat -c %U $(PROJECT_DIR)); for u in path service; do \
+		sed -e "s|@@APP@@|$(PROJECT_DIR)|g" -e "s|@@USER@@|$$owner|g" deploy/systemd/danbyte-tls.$$u.template \
 		  | sudo tee /etc/systemd/system/danbyte-tls.$$u >/dev/null ; \
 	done
 	@sudo systemctl daemon-reload
 	@sudo systemctl enable --now danbyte-tls.path
 	@# The drop folder has to be the app's: a proxy-install run as root left
 	@# it root-only, and then nothing can be dropped.
+	@[ ! -L $(CERT_DIR) ] || { echo "$(CERT_DIR) is a link - refusing to change it as root"; exit 1; }
 	@sudo mkdir -p $(CERT_DIR)
 	@sudo chown -R $$(stat -c %U:%G $(PROJECT_DIR)) $(CERT_DIR)
 	@sudo chmod 750 $(CERT_DIR)
@@ -305,6 +310,7 @@ install-tls-unit:
 uninstall-tls-unit:
 	@sudo systemctl disable --now danbyte-tls.path 2>/dev/null || true
 	@sudo rm -f /etc/systemd/system/danbyte-tls.path /etc/systemd/system/danbyte-tls.service
+	@sudo rm -f $(TLS_LIBEXEC)/danbyte-tls-apply.sh
 	@sudo systemctl daemon-reload
 
 proxy-reload:
