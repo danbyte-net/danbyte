@@ -847,7 +847,7 @@ class AutoUpgradeTests(APITestCase):
              patch("core.upgrade._upgrade_running", return_value=False):
             r = check_and_upgrade()
         self.assertEqual(r.get("upgrading"), "v9.9.9")
-        up.assert_called_once_with("v9.9.9", "owner")
+        up.assert_called_once_with("v9.9.9", "owner", trigger="auto", attempt=1)
 
     def test_a_failed_tag_is_not_retried_by_the_timer(self):
         from unittest.mock import patch
