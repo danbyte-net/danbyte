@@ -3388,6 +3388,17 @@ def _cable_state(comp, term) -> str:
     return "free"
 
 
+# Every relation an IPAddressSerializer row reads, for the device and
+# interface IP tabs - without them each row lazy-loads about ten objects.
+ASSIGNED_IP_RELATED = (
+    "status", "role", "site",
+    "assigned_device", "assigned_interface__device",
+    "assigned_vm__status", "assigned_vm_interface__vm",
+    "prefix__vlan__zone", "prefix__vrf", "prefix__site",
+    "switch", "switch_interface__device__virtual_chassis",
+)
+
+
 class DeviceViewSet(
     FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet
 ):
@@ -4218,8 +4229,8 @@ class DeviceViewSet(
 
         device = self.get_object()
         qs = annotate_dhcp(
-            IPAddress.objects.filter(assigned_device=device)
-            .select_related("status", "role", "prefix__vlan__zone")
+            IPAddress.objects.filter(assigned_device=device, tenant=device.tenant)
+            .select_related(*ASSIGNED_IP_RELATED)
             .prefetch_related("tags")
         )
         qs = rbac.restrict_queryset(
@@ -4445,7 +4456,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             IPAddress.objects.filter(
                 assigned_interface=iface, tenant=iface.device.tenant
             )
-            .select_related("status", "role", "prefix__vlan__zone")
+            .select_related(*ASSIGNED_IP_RELATED)
             .prefetch_related("tags")
             .order_by("ip_address")
         )
