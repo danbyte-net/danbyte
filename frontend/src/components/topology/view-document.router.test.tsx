@@ -59,6 +59,7 @@ function MapPage() {
       <button onClick={() => saved(true)}>saved</button>
       <button onClick={() => saved(false)}>saved-unguarded</button>
       <button onClick={() => patch({ devices: undefined })}>leave</button>
+      <button onClick={() => patch({ view: "none" })}>no-view</button>
     </div>
   )
 }
@@ -115,6 +116,21 @@ describe("useMapLeaveGuard", () => {
     act(() => click("saved-unguarded"))
     await waitFor(() => expect(text("guard")).toBe("blocked"))
     expect(text("map")).toBe("custom")
+  })
+
+  it("reads view=none beside a device set as the same map", async () => {
+    const router = await mount(`/topology?devices=${A}`)
+    click("edit")
+    act(() => click("no-view"))
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({
+        devices: A,
+        view: "none",
+      })
+    )
+    expect(text("guard")).toBe("idle")
+    expect(text("map")).toBe("custom")
+    expect(text("dirty")).toBe("true")
   })
 
   it("still guards a real leave with unsaved edits", async () => {

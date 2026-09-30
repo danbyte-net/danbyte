@@ -15,6 +15,7 @@ import {
   initHistory,
   isRetiredStyle,
   lineOfRouting,
+  mapKeyOf,
   readDefaultMap,
   storedDefaultMap,
   toViewState,
@@ -156,6 +157,21 @@ describe("storedDefaultMap / readDefaultMap", () => {
     expect(readDefaultMap("", styleOf)).toBeNull()
     expect(readDefaultMap("{not json", styleOf)).toBeNull()
     expect(readDefaultMap("[1,2]", styleOf)).toBeNull()
+  })
+})
+
+describe("mapKeyOf", () => {
+  it("reads view=none as No view, the same map as no view at all", () => {
+    expect(mapKeyOf({})).toBe("default")
+    expect(mapKeyOf({ view: "none" })).toBe("default")
+    expect(mapKeyOf({ view: "none", site: "s1" })).toBe("default")
+    expect(mapKeyOf({ view: "none", devices: "a,b" })).toBe("custom")
+    expect(mapKeyOf({ devices: "" })).toBe("custom")
+  })
+
+  it("keys a saved view by its id", () => {
+    expect(mapKeyOf({ view: "v1" })).toBe("view:v1")
+    expect(mapKeyOf({ view: "v1", devices: "a" })).toBe("view:v1")
   })
 })
 

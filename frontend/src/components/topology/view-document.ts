@@ -601,10 +601,11 @@ export function useViewDocument(
 }
 
 /** Which map a location shows - the key the document and the leave guard
- * follow. A saved view is its own map even while it is built on by hand. */
+ * follow. A saved view is its own map even while it is built on by hand;
+ * `view=none` is No view, the same map as no `view` at all. */
 export function mapKeyOf(search: Record<string, unknown>): string {
   const view = search.view
-  if (typeof view === "string" && view) return `view:${view}`
+  if (typeof view === "string" && view && view !== "none") return `view:${view}`
   return search.devices !== undefined ? "custom" : "default"
 }
 
@@ -669,6 +670,11 @@ export function useMapLeaveGuard(
 /** A save refused because the view changed since it was opened. */
 export function isStaleViewError(err: unknown): boolean {
   return err instanceof ApiError && err.status === 409
+}
+
+/** A view that is gone: deleted, or never this tenant's. */
+export function isMissingViewError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404
 }
 
 const typing = (el: EventTarget | null) => {

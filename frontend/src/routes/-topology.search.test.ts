@@ -65,6 +65,15 @@ describe("topology search params", () => {
     })
   })
 
+  it("keeps a view id, and view=none for No view", () => {
+    expect(validate({ view: "v1" })).toEqual({ view: "v1" })
+    expect(validate({ view: "none", site: "s1" })).toEqual({
+      view: "none",
+      site: "s1",
+    })
+    expect(validate({ view: "" })).toEqual({})
+  })
+
   it("leaves the tab to the default when none is named", () => {
     expect(validate({})).toEqual({})
     expect(validate({ tab: "faceplates" })).toEqual({})

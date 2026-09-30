@@ -1208,7 +1208,9 @@ select, or as a `?view=` link in a fresh tab. Views saved before the per-view
 split keep their arrangement under the style they were saved in; if one opens
 scrambled, **Reset layout** and **Save** once.
 
-A view is addressable: `?view=<id>` opens it. Change anything afterwards -
+A view is addressable: `?view=<id>` opens it, and `?view=none` is *No
+view*. A link to a view that is gone - deleted since, or another tenant's -
+says *View not found* and opens No view in its place. Change anything afterwards -
 a setting, a drag, a zone, a hidden card - and the toolbar says **Edited**:
 what you're looking at is no longer what the view describes. **Save** writes
 it back and the address collapses to the plain `?view=<id>` again. Typing in
@@ -1288,7 +1290,7 @@ back button and a reload all keep it.
 | `anchor` | Diagram: cables meet a photo at its `ports` (default) or its `edge` |
 | `line` | Diagram: `straight` (default), `elbow`, `bendy`, `cyclical` |
 | `labels` | Diagram: the link labels, comma-separated `subnet`, `ip`, `port` (all by default); empty for none |
-| `view` | a saved view's id |
+| `view` | a saved view's id, or `none` for No view |
 | `site` `location` `role` `status` | an id, or `all` |
 | `tag` | a tag slug, or `all` |
 | `panels` | `1` shows patch panels |

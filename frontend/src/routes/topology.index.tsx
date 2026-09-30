@@ -162,6 +162,7 @@ import {
   carryIntoDiagram,
   docFromView,
   emptyDocument,
+  isMissingViewError,
   isRetiredStyle,
   isStaleViewError,
   lineOfRouting,
@@ -287,8 +288,9 @@ const TopologyCanvas = lazy(() =>
 export interface TopologySearch {
   /** The view tab - public names, not the internal node style. */
   tab?: TabStyle
-  /** Applied saved view (`/api/topology-views/`). Any other param present
-   * alongside it is an override of that view - the toolbar says "Edited". */
+  /** Applied saved view (`/api/topology-views/`), or `none` for No view.
+   * Any other param present alongside a view is an override of it - the
+   * toolbar says "Edited". */
   view?: string
   site?: string
   location?: string
@@ -694,10 +696,13 @@ function TopologyPage() {
     enabled: viewId !== "none",
   })
   const appliedView = viewId !== "none" ? viewQ.data : undefined
+  /** The view is gone: No view opens in its place (below). */
+  const viewMissing =
+    viewId !== "none" && viewQ.isError && isMissingViewError(viewQ.error)
   /** A saved view's settings have arrived (or failed to): until then the
    * filters are the defaults, and the map, its LLDP ghosts and its BGP
    * sessions would be fetched for the whole tenant. */
-  const viewSettled = viewId === "none" || viewQ.isFetched
+  const viewSettled = viewId === "none" || (viewQ.isFetched && !viewMissing)
   const vf = (appliedView?.state.filters ?? {}) as ViewFilters
   // Personal defaults from the last unsaved session (this read is unchanged
   // from before the URL work - same hydration behaviour).
@@ -929,7 +934,7 @@ function TopologyPage() {
   // arrives with the view (the load effect below); the default map starts
   // from this browser's copy.
   const doc = useViewDocument(() => {
-    if (urlSearch.view) return { doc: emptyDocument(), key: mapKey }
+    if (viewId !== "none") return { doc: emptyDocument(), key: mapKey }
     if (urlDevices !== null)
       return { doc: emptyDocument({ devices: urlDevices }), key: mapKey }
     return { doc: defaultDocument(legacyStyle), key: mapKey }
@@ -1088,7 +1093,7 @@ function TopologyPage() {
   // its `updated_at`: a newer copy (someone else saved) replaces a clean
   // document, but never unsaved edits - their Save reports the conflict.
   const loadedKey = useRef<string>(
-    urlSearch.view ? `${mapKey}@pending` : mapKey
+    viewId !== "none" ? `${mapKey}@pending` : mapKey
   )
   useEffect(() => {
     const view = mapKey.startsWith("view:")
@@ -1750,6 +1755,19 @@ function TopologyPage() {
 
   /** Back to the personal default map: no view, no overrides. */
   const clearView = () => patch({ view: undefined, ...noOverrides() })
+
+  // A view that is gone - deleted since the link was made, or another
+  // tenant's - is said once, and No view opens in its place instead of the
+  // whole tenant drawn under a blank select. In place: Back skips it.
+  useEffect(() => {
+    if (!viewMissing) return
+    toast.error("View not found")
+    void qc.invalidateQueries({ queryKey: ["topology-views"] })
+    patch(
+      { view: "none", ...noOverrides() },
+      { replace: true, ignoreBlocker: true }
+    )
+  }, [viewMissing])
 
   /** The applied view is no longer what it saved - the URL carries at least
    * one override on top of `?view=` (the Find box aside), or the map itself
