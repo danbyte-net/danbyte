@@ -236,6 +236,7 @@ from .serializers import (
     VRFSerializer,
 )
 from .visible_ips import assigned_ips_prefetch, forget_visible, outside_ip_prefetch
+from .vlan_bulk import check_vlan_moves, resolve_group
 
 
 def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
@@ -2161,10 +2162,16 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
         qs = self.get_queryset().filter(pk__in=ids)
         updates = _bulk_field_updates(
-            fields, ("site_id", "zone_id", "vrf_id", "status_id", "description"))
+            fields, ("site_id", "group_id", "zone_id", "vrf_id", "status_id", "description"))
+        group = None
+        if "group_id" in updates:
+            group = resolve_group(request, tenant, updates["group_id"])
+            updates["group_id"] = group.pk if group else None
 
         with transaction.atomic():
             _rows = list(qs)
+            # The edit form's group range and VID namespace rules (#176).
+            check_vlan_moves(_rows, updates, group, tenant)
             updated_count = qs.update(**updates) if updates else qs.count()
             if updates:
                 log_bulk_update(_rows, updates)

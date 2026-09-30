@@ -71,10 +71,12 @@ header checkbox ticks the page you are on; when the list runs to more pages,
 **Select all N** appears above the table and ticks every VLAN the filters
 show (**Clear** undoes it). The bar offers:
 
-- **Edit** - set the status, site, zone, VRF or description of every ticked
-  VLAN, and add or remove tags. A field left on *keep* is not touched; a
-  description box only applies once its checkbox is ticked, so an empty one
-  clears the description.
+- **Edit** - set the status, site, group, zone, VRF or description of every
+  ticked VLAN, and add or remove tags. A field left on *keep* is not touched;
+  a description box only applies once its checkbox is ticked, so an empty one
+  clears the description. A move to another group or site is checked like
+  editing one VLAN: each VID has to fit the group's range and must not repeat
+  where it lands (see below), and the error names the VIDs to leave out.
 - **Export** - the ticked VLANs as CSV, Excel or JSON.
 - **Delete** - asks first, with the count and the first few VLANs, then
   deletes them all.

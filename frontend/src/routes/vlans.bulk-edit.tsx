@@ -10,6 +10,7 @@ import type {
   StatusOption,
   TagOption,
   VLANBulkUpdateFields,
+  VLANGroupOption,
   VRFOption,
   ZoneOption,
 } from "@/lib/api"
@@ -40,6 +41,8 @@ export const Route = createFileRoute("/vlans/bulk-edit")({
 
 const KEEP = "__keep__"
 const NONE = "__none__"
+// The endpoint also takes a group move (#176).
+type BulkFields = VLANBulkUpdateFields & { group_id?: string | null }
 const DESCRIPTION: BulkFieldSpec[] = [
   { key: "description", label: "Description", kind: "text" },
 ]
@@ -52,6 +55,7 @@ function BulkEditVlansPage() {
 
   const [statusId, setStatusId] = useState<string>(KEEP)
   const [siteId, setSiteId] = useState<string>(KEEP)
+  const [groupId, setGroupId] = useState<string>(KEEP)
   const [zoneId, setZoneId] = useState<string>(KEEP)
   const [vrfId, setVrfId] = useState<string>(KEEP)
   // undefined = keep; a string (even "") is written to every row.
@@ -68,6 +72,12 @@ function BulkEditVlansPage() {
   const sites = useQuery({
     queryKey: ["sites-picker"],
     queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
+    staleTime: 10 * 60_000,
+  })
+  const groups = useQuery({
+    queryKey: ["vlan-groups-picker"],
+    queryFn: () =>
+      api<Paginated<VLANGroupOption>>("/api/vlan-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const zones = useQuery({
@@ -91,10 +101,11 @@ function BulkEditVlansPage() {
 
   const m = useMutation({
     mutationFn: () => {
-      const fields: VLANBulkUpdateFields = {}
+      const fields: BulkFields = {}
       if (statusId !== KEEP)
         fields.status_id = statusId === NONE ? null : statusId
       if (siteId !== KEEP) fields.site_id = siteId === NONE ? null : siteId
+      if (groupId !== KEEP) fields.group_id = groupId === NONE ? null : groupId
       if (zoneId !== KEEP) fields.zone_id = zoneId === NONE ? null : zoneId
       if (vrfId !== KEEP) fields.vrf_id = vrfId === NONE ? null : vrfId
       if (description !== undefined) fields.description = description
@@ -175,6 +186,30 @@ function BulkEditVlansPage() {
               {sites.data?.results.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Group">
+          <Select value={groupId} onValueChange={setGroupId}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={KEEP}>(keep)</SelectItem>
+              <SelectItem value={NONE}>No group</SelectItem>
+              {groups.data?.results.map((g) => (
+                <SelectItem
+                  key={g.id}
+                  value={g.id}
+                  aside={
+                    <span className="num text-xs text-muted-foreground">
+                      {g.min_vid}–{g.max_vid}
+                    </span>
+                  }
+                >
+                  {g.name}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -1,9 +1,10 @@
 """Bulk edit and delete on the VLAN list (#176).
 
 The list ticks rows and sends them to ``bulk-update`` / ``bulk-delete``; the
-edit page sets status, site, zone, VRF, description and tags. These pin the
-endpoint half: fields land, clears land, another tenant's objects are refused
-or untouched, and every row that changed leaves a change-log entry.
+edit page sets status, site, group, zone, VRF, description and tags. These pin
+the endpoint half: fields land, clears land, another tenant's objects are
+refused or untouched, every row that changed leaves a change-log entry, and a
+group or site move keeps the edit form's range and VID rules.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from rest_framework.test import APITestCase
 from audit.models import ChangeAction, ChangeLogEntry
 from core.models import Organization, Tenant
 
-from .models import VLAN, VRF, Site
+from .models import VLAN, VRF, Site, VLANGroup
 
 User = get_user_model()
 
@@ -120,3 +121,78 @@ class BulkDeleteTests(_Base):
     def test_an_empty_selection_is_refused(self):
         r = self.client.post("/api/vlans/bulk-delete/", {"ids": []}, format="json")
         self.assertEqual(r.status_code, 400)
+
+
+class GroupMoveTests(_Base):
+    """A bulk move keeps the edit form's rules: a group only takes VIDs in its
+    range, and a VID may not repeat in its namespace - the group, else the
+    site (#159). The refusal names the VIDs, not a bare 409."""
+
+    def setUp(self):
+        super().setUp()
+        self.warsaw = Site.objects.create(tenant=self.tenant, name="Warsaw")
+        self.core = VLANGroup.objects.create(
+            tenant=self.tenant, name="Core", slug="core", min_vid=100, max_vid=200)
+
+    def test_moves_the_selection_into_a_group_and_out_again(self):
+        a, b = self.vlan(110), self.vlan(120, site=self.warsaw)
+        r = self.update([a, b], group_id=str(self.core.id))
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(set(VLAN.objects.values_list("group_id", flat=True)), {self.core.id})
+        self.assertEqual(self.logged(ChangeAction.UPDATE, [a, b]), {str(a.id), str(b.id)})
+
+        r = self.update([a, b], group_id=None)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(set(VLAN.objects.values_list("group_id", flat=True)), {None})
+
+    def test_refuses_vids_outside_the_range(self):
+        a, b = self.vlan(50), self.vlan(110)
+        r = self.update([a, b], group_id=str(self.core.id))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("VLAN 50 is outside Core's range", r.json()["group_id"])
+        self.assertFalse(VLAN.objects.filter(group__isnull=False).exists())
+
+    def test_refuses_a_vid_the_group_already_has(self):
+        VLAN.objects.create(tenant=self.tenant, vlan_id=110, name="there", group=self.core)
+        mover = self.vlan(110, site=self.warsaw)
+        r = self.update([mover], group_id=str(self.core.id))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["group_id"], "VLAN 110 would repeat in Core.")
+
+    def test_refuses_two_selected_vlans_with_one_vid(self):
+        a, b = self.vlan(110), self.vlan(110, site=self.warsaw)
+        r = self.update([a, b], group_id=str(self.core.id))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("VLAN 110 would repeat in Core", r.json()["group_id"])
+
+    def test_leaving_a_group_must_not_repeat_at_the_site(self):
+        self.vlan(110)
+        grouped = self.vlan(110, group=self.core)
+        r = self.update([grouped], group_id=None)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["group_id"], "VLAN 110 would repeat at Kyiv.")
+
+    def test_a_site_move_names_the_repeat(self):
+        self.vlan(105)
+        mover = self.vlan(105, site=self.warsaw)
+        r = self.update([mover], site_id=str(self.kyiv.id).upper())
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["site_id"], "VLAN 105 would repeat at Kyiv.")
+        mover.refresh_from_db()
+        self.assertEqual(mover.site_id, self.warsaw.id)
+
+    def test_a_grouped_vlan_moves_site_freely(self):
+        """Its namespace is the group, so the site's own VIDs don't matter."""
+        self.vlan(110, site=self.warsaw)
+        grouped = self.vlan(110, group=self.core)
+        r = self.update([grouped], site_id=str(self.warsaw.id))
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_refuses_another_tenants_group(self):
+        theirs = VLANGroup.objects.create(tenant=self.other, name="Theirs", slug="theirs")
+        a = self.vlan(110)
+        r = self.update([a], group_id=str(theirs.id))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("group_id", r.json())
+        a.refresh_from_db()
+        self.assertIsNone(a.group_id)
