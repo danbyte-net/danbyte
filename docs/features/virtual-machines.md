@@ -118,6 +118,10 @@ machine** and **VM interface** pickers next to the device ones. Assigning to
 the VM without naming an interface is allowed when you only care that the
 address belongs to that VM.
 
+A VM interface's `ip_addresses` lists only the addresses the caller may view,
+as on a device interface: IP view permission in the active tenant, with its
+site scope and row constraints.
+
 The first private IPv4 becomes the VM's **primary IP** when it has none, and
 that is what monitoring checks. To choose a different one, tick **Make this
 the VM's primary IP** on the address's own form, or set **Primary IP** on the

@@ -187,6 +187,13 @@ The agent can never report this port - it is skipped by drift comparison.
 `lag_member_count`, `lag_protocol_display`. A member's `lag` relation carries
 the aggregate's `lag_protocol` and `lacp_mode`.
 
+`ip_addresses` lists only the addresses the caller may view: IP view
+permission in the active tenant, with its site scope and row constraints. A
+viewer limited to Site A sees the Site A address on a port, not the Site B
+address bound to the same port, and the port shows as L2 when none are
+visible. The device's Interfaces tab and `GET /api/interfaces/<id>/ips/`
+follow the same rule.
+
 `GET /api/interfaces/<id>/lag/` returns an aggregate's members as full rows
 plus `capacity` (sum of parseable member speeds), `unparsed_speeds`,
 `min_links` / `degraded`, `peers` (the far-end aggregates its members' direct

@@ -3323,10 +3323,15 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     @extend_schema_field(serializers.ListField())
     def get_ip_addresses(self, obj):
-        # Prefetched via `ip_addresses` on the viewset querysets - no N+1.
+        # Only the addresses the caller may view in the device's tenant; the
+        # viewset querysets prefetch them per page - no N+1.
+        from .visible_ips import assigned_ips
+
         return [
             {"id": str(ip.id), "ip_address": ip.ip_address}
-            for ip in obj.ip_addresses.all()
+            for ip in assigned_ips(
+                obj, self.context, "assigned_interface", obj.device.tenant_id
+            )
         ]
 
     @extend_schema_field(serializers.ListField())
@@ -5506,9 +5511,15 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     @extend_schema_field(serializers.ListField())
     def get_ip_addresses(self, obj):
+        # Same rule as InterfaceSerializer: the caller's viewable addresses in
+        # the VM's tenant, prefetched per page by the viewset.
+        from .visible_ips import assigned_ips
+
         return [
             {"id": str(ip.id), "ip_address": ip.ip_address}
-            for ip in obj.ip_addresses.all()
+            for ip in assigned_ips(
+                obj, self.context, "assigned_vm_interface", obj.vm.tenant_id
+            )
         ]
 
     class Meta:
@@ -7329,7 +7340,11 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_outside_ip(self, obj):
-        ip = obj.outside_ip
+        # An IP row: shown only when the caller may view it. The viewset
+        # querysets prefetch the visible ones per page.
+        from .visible_ips import outside_ip
+
+        ip = outside_ip(obj, self.context, obj.tunnel.tenant_id)
         return {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
 
     def validate(self, attrs):

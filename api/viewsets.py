@@ -10,7 +10,7 @@ import re
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models.functions import Coalesce
-from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models import Count, OuterRef, Prefetch, Q, Subquery
 from django.utils.text import slugify
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
@@ -235,6 +235,7 @@ from .serializers import (
     VRFPickerSerializer,
     VRFSerializer,
 )
+from .visible_ips import assigned_ips_prefetch, outside_ip_prefetch
 
 
 def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
@@ -4250,15 +4251,17 @@ class DeviceViewSet(
         device = self.get_object()
         qs = (
             device.interfaces.select_related(
-                "device", "vlan", "parent", "lag", "bridge", "status"
+                "device", "vlan", "vrf", "status",
+                "parent__device", "lag__device", "bridge__device",
             )
             .prefetch_related(
-                "tags", "ip_addresses", "children", "lag_members",
+                "tags", "children", "lag_members", "tagged_vlans", "mac_addresses",
+                assigned_ips_prefetch(request, device.tenant),
                 "tunnel_terminations__tunnel",
-                # The serializer reads both per row - without these the tab
-                # ran one extra query per interface (62 on a Nexus, 500 on a
-                # big chassis).
-                "terminations__cable__status", "reservations",
+                # The serializer reads these per row - without them the tab
+                # ran extra queries per interface (62 on a Nexus, 500 on a
+                # big chassis). Same relations as the interface list.
+                "terminations__cable__status", "reservations", *FAR_END_PREFETCH,
             )
             .order_by(NATURAL_NAME)
         )
@@ -4375,7 +4378,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "parent__device", "lag__device", "bridge__device",
         )
         .prefetch_related(
-            "tags", "terminations__cable__status", "reservations", "ip_addresses", "children",
+            "tags", "terminations__cable__status", "reservations", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
             *FAR_END_PREFETCH,
@@ -4400,7 +4403,10 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         tenant = _get_active_tenant(self.request)
         if tenant is None:
             return self.queryset.none()
-        qs = self.queryset.filter(device__tenant=tenant)
+        # Each row's addresses, cut to the caller's IP view scope.
+        qs = self.queryset.filter(device__tenant=tenant).prefetch_related(
+            assigned_ips_prefetch(self.request, tenant)
+        )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -5923,7 +5929,13 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("vm__status", "vlan", "vrf")
-            .prefetch_related("tags", "ip_addresses", "tagged_vlans")
+            .prefetch_related(
+                "tags", "tagged_vlans",
+                assigned_ips_prefetch(
+                    self.request, _get_active_tenant(self.request),
+                    fk="assigned_vm_interface",
+                ),
+            )
         )
         if self.request:
             vm = self.request.query_params.get("vm")
@@ -7491,11 +7503,26 @@ class TunnelViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
+        # Every end with what it serializes, its outside address cut to the
+        # caller's IP view scope - a flat page, not one query per tunnel.
+        ends = TunnelTermination.objects.select_related(
+            "interface__device", "vm_interface__vm"
+        )
         qs = (
             super()
             .get_queryset()
             .select_related("group", "ipsec_profile")
-            .prefetch_related("tags")
+            .prefetch_related(
+                "tags",
+                Prefetch("terminations", queryset=ends),
+                # A lookup of its own, not one nested in `ends`: Django walks
+                # a nested single-row to_attr prefetch twice, and the second
+                # walk loads every end's address one by one.
+                outside_ip_prefetch(
+                    self.request, _get_active_tenant(self.request),
+                    lookup="terminations__outside_ip",
+                ),
+            )
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7527,9 +7554,7 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
 
     queryset = (
         TunnelTermination.objects
-        .select_related(
-            "tunnel", "interface__device", "vm_interface__vm", "outside_ip"
-        )
+        .select_related("tunnel", "interface__device", "vm_interface__vm")
         .order_by("created_at")
     )
     serializer_class = TunnelTerminationSerializer
@@ -7540,7 +7565,9 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
         tenant = _get_active_tenant(self.request)
         if tenant is None:
             return self.queryset.none()
-        qs = self.queryset.filter(tunnel__tenant=tenant)
+        qs = self.queryset.filter(tunnel__tenant=tenant).prefetch_related(
+            outside_ip_prefetch(self.request, tenant)
+        )
         if self.request:
             tunnel = self.request.query_params.get("tunnel")
             if tunnel:

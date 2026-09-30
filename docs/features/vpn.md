@@ -86,7 +86,9 @@ one), with:
   topologies;
 - an optional **outside IP** - the underlay / public address the tunnel rides
   on. The tunnel's *inside* addresses attach to the terminating interface the
-  normal way.
+  normal way. The API returns `outside_ip` as null to a caller who may not
+  view that address (IP view permission, its site scope and row constraints),
+  on the tunnel and on `/api/tunnel-terminations/`.
 
 1. Open the tunnel's detail page → **Terminations** tab.
 2. **Add termination**, pick the device (or VM) and its interface, set the
