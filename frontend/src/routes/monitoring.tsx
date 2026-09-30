@@ -309,13 +309,16 @@ function MonitoringPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/30">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border bg-background px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="flex items-center gap-2 text-base font-semibold">
+      {/* The view tabs take the room beside the title and wrap onto more
+          rows when they need them - never scrolled out of sight. */}
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2 lg:px-6">
+        <h1 className="flex shrink-0 items-center gap-2 text-base font-semibold">
           <Activity className="h-4 w-4 text-muted-foreground" />
           Monitoring
         </h1>
         <SegmentedTabs
-          className="ml-2"
+          className="ml-2 min-w-[min(100%,18rem)] flex-1"
+          wrap
           value={view}
           onValueChange={(v) => go({ view: v as MonitoringView })}
           items={[

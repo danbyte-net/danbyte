@@ -549,16 +549,6 @@ export interface InterfaceActionsOpts<T extends Interface> {
   }) => void
 }
 
-/**
- * The canonical interface row-actions column - cable status, trace / connect,
- * add + assign IP, edit. Shared so the per-device "This member" table and the
- * "Whole stack" table offer the same actions (the stack table resolves the
- * owning device per row via `deviceIdFor`).
- *
- * Returns `null` when the user can do none of add-IP / assign-IP / edit, so the
- * caller can omit the column entirely.
- */
-
 /** Disconnect (delete) the cable on a cabled row (#137) - fetches the full
  * cable when clicked so the shared delete dialog can name both ends. */
 function CableDisconnectAction({
@@ -599,9 +589,25 @@ function CableDisconnectAction({
   )
 }
 
-export function buildInterfaceActionsColumn<T extends Interface>(
+/**
+ * The canonical interface row-action columns, shared so the per-device "This
+ * member" table and the "Whole stack" table offer the same actions (the stack
+ * table resolves the owning device per row via `deviceIdFor`):
+ *
+ * - `port_actions` - cable status, trace / disconnect or connect / reserve /
+ *   mark connected, add + assign IP. An ordinary column that scrolls with the
+ *   data.
+ * - `actions` - edit, the only control pinned to the right edge.
+ *
+ * All of them used to share the pinned column. At ~420px it covered most of a
+ * narrow table - and all of it on a phone - so no data column could be read.
+ *
+ * Returns `[]` when the user can do none of add-IP / assign-IP / edit, so the
+ * caller spreads nothing.
+ */
+export function buildInterfaceActionColumns<T extends Interface>(
   opts: InterfaceActionsOpts<T>
-): ColumnDef<T> | null {
+): ColumnDef<T>[] {
   const {
     deviceIdFor,
     canAddIp,
@@ -614,9 +620,9 @@ export function buildInterfaceActionsColumn<T extends Interface>(
     onTrace,
     onAssignIp,
   } = opts
-  if (!canAddIp && !canAssignIp && !canEdit) return null
-  return {
-    id: "actions",
+  if (!canAddIp && !canAssignIp && !canEdit) return []
+  const portActions: ColumnDef<T> = {
+    id: "port_actions",
     enableHiding: false,
     cell: ({ row }) => {
       const iface = row.original
@@ -722,25 +728,31 @@ export function buildInterfaceActionsColumn<T extends Interface>(
               Assign IP
             </Button>
           )}
-          {canEdit && (
-            <Button
-              size="sm"
-              variant="ghost"
-              asChild
-              className="h-7"
-              aria-label={`Edit ${iface.name}`}
-            >
-              <Link
-                to="/interfaces/$id/edit"
-                params={{ id: iface.id }}
-                search={{ ret: hereUrl() }}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
-          )}
         </div>
       )
     },
   }
+  if (!canEdit) return [portActions]
+  const edit: ColumnDef<T> = {
+    id: "actions",
+    enableHiding: false,
+    cell: ({ row }) => (
+      <Button
+        size="sm"
+        variant="ghost"
+        asChild
+        className="h-7"
+        aria-label={`Edit ${row.original.name}`}
+      >
+        <Link
+          to="/interfaces/$id/edit"
+          params={{ id: row.original.id }}
+          search={{ ret: hereUrl() }}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Link>
+      </Button>
+    ),
+  }
+  return [portActions, edit]
 }

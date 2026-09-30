@@ -438,7 +438,10 @@ function PrefixIpsTableImpl({
             />
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto p-3">
+        {/* A flex column that bounds the table's height: with stickyHeader
+            the table's own frame scrolls both ways, so the header stays in
+            view and the sideways scrollbar sits at the pane's bottom edge. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
           <DataTable
             data={rows}
             columns={wiredColumns}

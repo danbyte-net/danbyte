@@ -112,6 +112,12 @@ function unshrinkableRowItems(from: Element, to: Element): string[] {
   return bad
 }
 
+/** Has a background utility, and it isn't an alpha (`bg-x/40`) one. */
+const opaqueBg = (el: Element) => {
+  const bg = cls(el).filter((c) => c.startsWith("bg-"))
+  return bg.length > 0 && bg.every((c) => !c.includes("/"))
+}
+
 interface Row {
   id: string
   name: string
@@ -146,10 +152,44 @@ describe("DataTable overflow contract", () => {
     expect(cls(actionsTh)).toEqual(
       expect.arrayContaining(["sticky", "right-0"])
     )
+    // Opaque: the column headers scrolling under it must not show through.
+    expect(opaqueBg(actionsTh)).toBe(true)
     const actionsTd = screen.getByText("Edit").closest("td")!
     expect(cls(actionsTd)).toEqual(
       expect.arrayContaining(["sticky", "right-0"])
     )
+  })
+
+  it("scrolls a sticky-header table inside its own frame", async () => {
+    mount(
+      <div className="flex h-96 min-h-0 flex-col">
+        <DataTable
+          data={[{ id: "1", name: "sw1" }]}
+          columns={COLUMNS}
+          stickyHeader
+        />
+      </div>
+    )
+    await screen.findByText("sw1")
+    const container = document.querySelector("[data-slot=table-container]")!
+    const frame = container.parentElement!
+    // The root fills the bounded pane and the frame may shrink below the
+    // table, so the table container - the thead's scroller - scrolls the
+    // rows under the header and keeps its sideways scrollbar in view.
+    expect(cls(frame.parentElement!)).toEqual(
+      expect.arrayContaining(["min-h-0", "flex-1"])
+    )
+    expect(cls(frame)).toEqual(
+      expect.arrayContaining([
+        "flex",
+        "flex-col",
+        "min-h-0",
+        "[&>[data-slot=table-container]]:min-h-0",
+      ])
+    )
+    const thead = container.querySelector("thead")!
+    expect(cls(thead)).toEqual(expect.arrayContaining(["sticky", "top-0"]))
+    expect(opaqueBg(thead)).toBe(true)
   })
 
   it("lets any pane root in a bare detail tab shrink", async () => {
@@ -226,5 +266,10 @@ describe("DataTable overflow contract", () => {
     // The pane root carries min-w-0 itself too - the range page's Addresses
     // tab mounts it outside a bare tab.
     expect(cls(tab.firstElementChild!)).toContain("min-w-0")
+    // Its sticky header needs a pane that bounds the table's height.
+    const pane = frame.parentElement!.parentElement!.parentElement!
+    expect(cls(pane)).toEqual(
+      expect.arrayContaining(["flex", "flex-col", "min-h-0", "flex-1"])
+    )
   })
 })

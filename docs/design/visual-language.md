@@ -199,9 +199,14 @@ can't drift page to page (source of truth:
 `frontend/src/components/list-page-shell.tsx`, reference implementation
 `routes/manufacturers.index.tsx`):
 
-- The shell owns the h-14 header (title · count chip · search · actions) and the
+- The shell owns the header (title · count chip · search · actions) and the
   scrolling body. Header order is fixed: **search first, then the action
   cluster** - `TableActions` (Import / Export) and then `Add X`.
+- The header is one h-14 row when everything fits. When it doesn't, the search
+  box narrows (18rem down to 10rem), then the controls move under the title and
+  wrap onto more rows. Nothing in a page header is ever scrolled out of sight
+  behind a hidden scrollbar - the same goes for `DetailShell`'s actions and tab
+  strip, which wrap too.
 - `Add X` is the copy for a create button, with **no icon**. Not "New X".
 - Filters live in the rail (`FilterRail` + `FacetGroup`, usually via
   `useTableFilters`), not in a second toolbar row under the header. A filter that
@@ -239,13 +244,29 @@ at runtime passes `autoColumns` (an api path, or `false`) itself.
 
 A table wider than its pane scrolls sideways inside its own frame, with the
 row actions pinned to the right edge, and the Download / Columns bar wraps
-instead of running off. The page itself never scrolls or clips sideways. For
-that, every flex item between the table and the page carries `min-w-0`:
+instead of running off. The pinned column holds only the compact row actions
+(edit, delete - an icon or two). Wider per-row controls go in an ordinary
+column that scrolls with the data: the interface tables keep cable status,
+trace, connect and the IP buttons in `port_actions` and pin only Edit. A
+pinned column as wide as the pane covers every data column on a narrow window.
+Its header cell, and a `stickyHeader` table's header row, are opaque, so the
+columns scrolling under them never show through. The page itself never
+scrolls or clips sideways. For that, every flex item between the table and the
+page carries `min-w-0`:
 `ListPageShell`, `DetailShell` and `DataTable` already do, and a `bare`
 `DetailTab` gives it to each direct child. A pane that nests its own
 rail-and-table row inside another flex row puts `min-w-0` on that row too.
 `components/table-overflow.test.tsx` checks this for the shared shells and
-the prefix IPs pane.
+the prefix IPs pane. The app's main column is `overflow-clip`, not
+`overflow-hidden`, so not even focusing a control past its edge can scroll the
+page sideways.
+
+`stickyHeader` makes the table's own frame the scroller in both directions,
+so it needs a parent that bounds its height - the pane is a
+`flex min-h-0 flex-1 flex-col` column (see `PrefixIpsTable`). Then the header
+row stays in view and the sideways scrollbar sits at the pane's bottom edge
+rather than after the last row. In a pane that grows with its content the
+header does not stick.
 
 ## Column factories
 
@@ -351,6 +372,10 @@ Every object detail page follows one tab convention (source of truth:
 - After Overview come the related-object tabs (with a count where the API
   provides one), then always **Journal** and **Change log** as the last two, in
   that order.
+- On a narrow window the tab strip wraps onto more rows instead of scrolling,
+  so Journal and Change log never sit out of sight past its edge. The header's
+  actions do the same beside the breadcrumb, moving under it when less than
+  18rem is left.
 
 Never render Change log (`ChangeLogPanel`) or Journal (`JournalPanel`) - or a
 wall of attribute fields - inline in the header. Attributes go in the Overview

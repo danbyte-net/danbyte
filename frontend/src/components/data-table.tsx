@@ -109,7 +109,11 @@ interface DataTableProps<T> {
    * elastic-column pattern). The header gets `w-full`, the cell gets
    * `w-full max-w-0 truncate`. */
   flexColumn?: string
-  /** Sticky header inside a scrollable container. */
+  /** Keep the header row in view while the rows scroll. The table's own frame
+   * becomes the scroller - both ways - so give the DataTable a parent that
+   * bounds its height (a `flex min-h-0 flex-1 flex-col` pane): the frame then
+   * shrinks to fit, the rows scroll under the header, and the horizontal
+   * scrollbar sits at the pane's bottom edge instead of after the last row. */
   stickyHeader?: boolean
   /** Opt this table into saved column preferences (order + visibility),
    * persisted per user via /api/prefs/columns/<tableId>/. Must match an id
@@ -615,7 +619,12 @@ export function DataTable<T>({
   return (
     // min-w-0: a table placed straight into a flex row may shrink below its
     // columns' width - the frame below then scrolls instead of the row growing.
-    <div className="flex min-w-0 flex-col gap-2">
+    <div
+      className={cn(
+        "flex min-w-0 flex-col gap-2",
+        stickyHeader && "min-h-0 flex-1"
+      )}
+    >
       {searchable && (
         <Input
           value={globalFilter}
@@ -796,13 +805,25 @@ export function DataTable<T>({
           `bg` doesn't leak past the border-radius on first/last rows. It can
           only scroll when it is narrower than the table: every flex item
           between here and the page needs `min-w-0`, or the chain grows to the
-          table's width and the page clips it with no scrollbar at all. */}
-      <div className="overflow-x-auto rounded-lg border border-border">
+          table's width and the page clips it with no scrollbar at all.
+          With `stickyHeader` the frame may shrink below the table's height,
+          and the table container inside it (the element that scrolls, and so
+          the one a sticky header sticks to) shrinks with it. */}
+      <div
+        className={cn(
+          "overflow-x-auto rounded-lg border border-border",
+          stickyHeader &&
+            "flex min-h-0 flex-col [&>[data-slot=table-container]]:min-h-0"
+        )}
+      >
         <Table data-stripes={stripes ? "on" : "off"}>
+          {/* The header tint is mixed into an opaque colour, never an alpha:
+              rows and columns that scroll under a sticky header (or under the
+              pinned actions cell) must not show through it. */}
           <TableHeader
             className={
               stickyHeader
-                ? "sticky top-0 z-10 bg-muted/40 shadow-[inset_0_-1px_0_var(--border)]"
+                ? "sticky top-0 z-10 bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))] shadow-[inset_0_-1px_0_var(--border)]"
                 : undefined
             }
           >
@@ -828,7 +849,7 @@ export function DataTable<T>({
                       // Delete stay reachable on wide tables (many columns) that
                       // scroll horizontally, instead of vanishing off the edge.
                       (h.column.id === "actions"
-                        ? "sticky right-0 z-20 bg-muted/40 shadow-[inset_1px_0_0_var(--border)]"
+                        ? "sticky right-0 z-20 bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))] shadow-[inset_1px_0_0_var(--border)]"
                         : "")
                     }
                   >

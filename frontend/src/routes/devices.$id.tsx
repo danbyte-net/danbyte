@@ -125,7 +125,7 @@ import { portTint } from "@/components/cable-status-control"
 import {
   buildInterfaceColumns,
   DEVICE_INTERFACE_COLUMNS,
-  buildInterfaceActionsColumn,
+  buildInterfaceActionColumns,
   nestInterfaces,
   type NestedInterface,
 } from "@/components/columns/interface-columns"
@@ -604,8 +604,12 @@ function DeviceComponents({
         {/* min-w-0 on this root: without it the flex child grows to its widest
           table and drags the whole page sideways on laptop widths (#132) -
           wide content must scroll inside its own containers instead. */}
-        <div className="flex h-10 min-w-0 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
+        {/* The bar wraps when the sub-tabs and the actions don't fit one row,
+            so neither the switcher nor Add interface is squeezed or clipped
+            out of reach on a narrow window. */}
+        <div className="flex min-h-10 min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
           <SegmentedTabs
+            wrap
             value={sub}
             onValueChange={setSub}
             items={[
@@ -633,7 +637,7 @@ function DeviceComponents({
           />
           <div
             ref={setBarSlot}
-            className="ml-auto flex shrink-0 items-center gap-2"
+            className="ml-auto flex flex-wrap items-center justify-end gap-2"
           >
             {barAdds.length === 1 ? (
               <Button
@@ -1466,7 +1470,7 @@ function DeviceInterfacesPane({
   const columns = useMemo<ColumnDef<NestedInterface>[]>(() => {
     // Same columns + same row actions as the whole-stack table (shared builders)
     // - the two views must never drift apart.
-    const actions = buildInterfaceActionsColumn<NestedInterface>({
+    const actions = buildInterfaceActionColumns<NestedInterface>({
       deviceIdFor: () => deviceId,
       canAddIp,
       canAssignIp,
@@ -1485,7 +1489,7 @@ function DeviceInterfacesPane({
         driftByIface,
         planned: plannedMap,
       }),
-      ...(actions ? [actions] : []),
+      ...actions,
     ]
   }, [
     deviceId,

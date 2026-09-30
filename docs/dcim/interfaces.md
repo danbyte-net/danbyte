@@ -149,6 +149,11 @@ Two buttons on each interface row - **+ Add IP** and **Assign IP** - let you put
 an address on the port without leaving the page. See
 [Assigning IP addresses](ip-assignment.md).
 
+They sit with the cable controls (status, trace, connect, reserve) in a
+column at the end of the row. Only the edit pencil stays pinned to the table's
+right edge, so on a narrow window you scroll the table sideways to reach the
+rest while the interface names stay readable.
+
 ## The interface detail page
 
 Click an interface name to open its page. It shows the device, type, speed, MTU,

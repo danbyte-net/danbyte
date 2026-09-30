@@ -85,9 +85,12 @@ export function ListPageShell({
         {rail}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
+          {/* The controls wrap under the title when they don't fit beside it,
+              and onto further rows when they don't fit one. A scrolling strip
+              hid them past its edge with no cue that they were there. */}
+          <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2 lg:px-6">
             {backTo ? (
-              <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <nav className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                 <Button variant="ghost" size="sm" asChild className="h-6 px-1">
                   <Link to={backTo}>
                     <ChevronLeft className="h-3 w-3" /> {backLabel}
@@ -102,7 +105,7 @@ export function ListPageShell({
               <h1 className="text-base font-semibold">{title}</h1>
             )}
             {count !== undefined && <Badge variant="secondary">{count}</Badge>}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex grow flex-wrap items-center justify-end gap-2">
               {savedViews && search && (
                 <SavedViews
                   objectType={savedViews.objectType}
@@ -112,13 +115,15 @@ export function ListPageShell({
                 />
               )}
               {search && (
-                <div className="relative">
+                // Narrows (to 10rem) before anything wraps, and widens back to
+                // 18rem when the row has room.
+                <div className="relative max-w-72 min-w-40 flex-[1_1_10rem]">
                   <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder={search.placeholder ?? "Filter…"}
                     value={search.value}
                     onChange={(e) => search.onChange(e.target.value)}
-                    className="h-8 w-72 pl-8 text-xs"
+                    className="h-8 w-full pl-8 text-xs"
                   />
                 </div>
               )}

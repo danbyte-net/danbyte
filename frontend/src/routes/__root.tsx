@@ -213,11 +213,15 @@ function AppLayout() {
       <AppSidebar variant="inset" />
       <PresenceProvider>
         <ChatDockProvider>
-          <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+          {/* overflow-clip, not -hidden: a hidden box is still a scroll
+              container, so focusing (or scrolling to) anything past its edge
+              shifted the whole page sideways with no way back. A clip box
+              can't be scrolled at all. */}
+          <SidebarInset className="min-h-0 min-w-0 overflow-clip">
             <SiteHeader />
             {/* min-w-0 is load-bearing on mobile: without it a wide table/tab
               strip forces this column past the viewport and SidebarInset's
-              overflow-hidden clips it (unreachable). With it, the width is
+              overflow-clip cuts it off (unreachable). With it, the width is
               capped and the page's own overflow-x-auto containers scroll. */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {/* Keyed on the pathname: a crashed view (often a browser

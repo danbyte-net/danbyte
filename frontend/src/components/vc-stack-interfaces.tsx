@@ -11,7 +11,7 @@ import {
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import {
-  buildInterfaceActionsColumn,
+  buildInterfaceActionColumns,
   buildInterfaceColumns,
   DEVICE_INTERFACE_COLUMNS,
   nestInterfaces,
@@ -123,9 +123,9 @@ export function StackInterfacesTable({
   const drift = useInterfaceDriftMap()
   const plannedMap = usePlannedChangeMap()
   const columns = useMemo<ColumnDef<StackRow>[]>(() => {
-    const actionsCol =
+    const actionCols =
       onTrace && onAssignIp
-        ? buildInterfaceActionsColumn<StackRow>({
+        ? buildInterfaceActionColumns<StackRow>({
             canAddIp,
             canAssignIp,
             canEdit,
@@ -138,7 +138,7 @@ export function StackInterfacesTable({
             // Each row belongs to its own member device.
             deviceIdFor: (r) => r._member.id,
           })
-        : null
+        : []
     return [
       {
         id: "member",
@@ -169,7 +169,7 @@ export function StackInterfacesTable({
         include: DEVICE_INTERFACE_COLUMNS,
         drift,
       }) as ColumnDef<StackRow>[]),
-      ...(actionsCol ? [actionsCol] : []),
+      ...actionCols,
     ]
   }, [
     canAddIp,

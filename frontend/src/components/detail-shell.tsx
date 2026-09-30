@@ -119,8 +119,11 @@ export function DetailShell({
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      {/* The actions take the room beside the breadcrumb and wrap onto more
+          rows when they need them, or move under it when less than 18rem is
+          left. A scrolling strip hid them past its edge with no cue. */}
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2 lg:px-6">
+        <nav className="flex max-w-full min-w-0 items-center gap-1.5 text-xs text-muted-foreground [&>*]:shrink-0">
           <Button variant="ghost" size="sm" asChild className="h-6 px-1">
             <Link to={backTo} params={backParams} search={backSearch}>
               <ChevronLeft className="h-3 w-3" /> {backLabel}
@@ -133,11 +136,11 @@ export function DetailShell({
             </>
           )}
           <ChevronRight className="h-3 w-3 opacity-60" />
-          <span className="font-semibold tracking-tight text-foreground">
+          <span className="min-w-0 shrink! truncate font-semibold tracking-tight text-foreground">
             {title}
           </span>
         </nav>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="flex min-w-[min(100%,18rem)] flex-1 flex-wrap items-center justify-end gap-1.5">
           <PlannedForRoute />
           <DetailActions />
           {/* Route-derived like DetailActions: renders only on a detail page
@@ -157,8 +160,15 @@ export function DetailShell({
         onValueChange={onTabChange}
         className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
       >
-        <div className="flex h-10 min-w-0 items-center gap-2 border-b border-border px-4 lg:px-6">
-          <SegmentedTabs value={tab} onValueChange={onTabChange} items={tabs} />
+        {/* The tabs wrap rather than scroll, so a narrow window still shows
+            Journal and Change log instead of hiding them past the edge. */}
+        <div className="flex min-h-10 min-w-0 shrink-0 items-center gap-2 border-b border-border px-4 py-1 lg:px-6">
+          <SegmentedTabs
+            value={tab}
+            onValueChange={onTabChange}
+            items={tabs}
+            wrap
+          />
           <DefaultTabPin current={tab} />
         </div>
         {children}

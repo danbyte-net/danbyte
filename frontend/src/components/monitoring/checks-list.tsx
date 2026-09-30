@@ -232,6 +232,7 @@ export function ChecksList({
       actions={
         <>
           <SegmentedTabs
+            wrap
             value={TABS.some((t) => t.value === status) ? status : "all"}
             onValueChange={(s) =>
               patch({ status: s === "all" ? "all" : s, page: undefined })
