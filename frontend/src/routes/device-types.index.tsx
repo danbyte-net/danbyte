@@ -113,6 +113,28 @@ function DeviceTypesPage() {
       actions={
         <>
           <TableActions ioType="devicetype" />
+          {/* The NetBox library import sits where the Module types and Rack
+              types pages put it; CSV round-trips live in Import / Export. */}
+          {canAdd && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setImporting(true)}
+              >
+                Import from library
+              </Button>
+              {/* A bundle is a whole configured model - templates, faceplate,
+                  photo ports, sensors - not just catalog rows. */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setImportingBundle(true)}
+              >
+                Import bundle
+              </Button>
+            </>
+          )}
           {/* Recovery tool - rewrites image fields on EXISTING types, so it
               rides the `change` grant, not `add`. */}
           {canEdit && (
@@ -125,27 +147,9 @@ function DeviceTypesPage() {
             </Button>
           )}
           {canAdd && (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setImporting(true)}
-              >
-                Import CSV
-              </Button>
-              {/* A bundle is a whole configured model - templates, faceplate,
-                  photo ports, sensors - not just catalog rows. */}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setImportingBundle(true)}
-              >
-                Import bundle
-              </Button>
-              <Button size="sm" asChild>
-                <Link to="/device-types/new">Add device type</Link>
-              </Button>
-            </>
+            <Button size="sm" asChild>
+              <Link to="/device-types/new">Add device type</Link>
+            </Button>
           )}
         </>
       }

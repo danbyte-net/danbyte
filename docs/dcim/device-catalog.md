@@ -61,7 +61,7 @@ You rarely have to type a hardware model in by hand. The community
 [devicetype-library](https://github.com/netbox-community/devicetype-library)
 (public domain) holds thousands of ready-made definitions, and Danbyte's
 component templates use the same taxonomy - so they import 1:1. Click
-**Import** on the Device types page and either:
+**Import from library** on the Device types page and either:
 
 - paste **GitHub links** to `.yaml` files in the library (one per line -
   regular `blob` links work, they're converted automatically),
@@ -82,10 +82,11 @@ console/console-server ports, power ports/outlets, front/rear ports,
 the library's **elevation images** are downloaded automatically when the file
 declares them. **Module-type files** (`module-types/…`) and **rack-type
 files** (`rack-types/…`) import through the same dialog - auto-detected, so a
-mixed paste works. The Module types and Rack types pages have the dialog too,
-as **Import from library**. **Every construct in the library schema now
-maps** - anything unrecognised in a file would still be reported, never
-silently dropped.
+mixed paste works. The Module types and Rack types pages open the same
+dialog from the same **Import from library** button, right after
+**Import / Export** on all three pages (CSV round-trips live in that menu).
+**Every construct in the library schema now maps** - anything unrecognised in
+a file would still be reported, never silently dropped.
 
 Each file needs **add** on what it creates: a device-type file needs add on
 device types, a module-type file on module types, a rack-type file on rack
@@ -657,9 +658,9 @@ interfaces' state). Editing a module type's faceplate refreshes every device
 that has one of its modules installed.
 
 Module-type YAMLs from the devicetype-library import through the same
-**Import** dialog - they're auto-detected (no `u_height`), so you can paste
-`module-types/...` links right next to device types. The Module types page
-opens it too, with **Import from library**; a `/tree/` link to
+**Import from library** dialog - they're auto-detected (no `u_height`), so
+you can paste `module-types/...` links right next to device types. The Module
+types page opens it too, from its own **Import from library**; a `/tree/` link to
 `module-types/<Manufacturer>` imports that manufacturer's module types in the
 background.
 
