@@ -6,6 +6,7 @@ import { dash } from "@/components/cells/dash"
 import { TimeCell } from "@/components/cells/time-ago"
 import { SortHeader } from "@/components/data-table"
 import { SourceBadge, SourceHeader } from "@/components/monitoring/source-badge"
+import { ExcludedPill } from "@/components/monitoring/excluded-pill"
 import { FlappingPill } from "@/components/monitoring/flapping-pill"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { StatusStrip } from "@/components/monitoring/status-strip"
@@ -67,7 +68,11 @@ export function checkColumns(
       header: ({ column }) => <SortHeader column={column} label="Status" />,
       cell: ({ row }) => (
         <span className="inline-flex items-center gap-1.5">
-          <CheckStatusBadge status={row.original.status} />
+          {row.original.excluded ? (
+            <ExcludedPill />
+          ) : (
+            <CheckStatusBadge status={row.original.status} />
+          )}
           {row.original.flapping_since && <FlappingPill />}
         </span>
       ),

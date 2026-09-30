@@ -474,7 +474,8 @@ core, on an Outpost and in Zabbix. Its open alerts close, and the notice
 says *Closed - excluded from monitoring by alice* rather than *Resolved*;
 the status-change channels and digests leave it out. The address shows an
 **Excluded** pill here, on its Overview card, in the prefix's address list
-(an *Excluded* filter bucket too) and on its check rows. It is left out of
+(an *Excluded* filter bucket too), on its check rows and in the Checks
+list's Status column. It is left out of
 every count: the dashboard's status chart and reachable share, the digest,
 the Monitoring stats, the prefix, device and VM roll-ups, and the flapping
 lists (a flapping flag clears at once). *Check now* is refused (`409`), and
