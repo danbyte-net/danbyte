@@ -476,8 +476,11 @@ class NarrowedUpgradeTests(MigrationTests):
     permissions - neither limit narrows them."""
 
     def _migrate(self):
-        MIGRATION.forwards(django_apps, None)
-        NARROW.forwards(django_apps, None)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            MIGRATION.forwards(django_apps, None)
+            NARROW.forwards(django_apps, None)
+        return out.getvalue()
 
     def test_administrator_grants_gain_the_access_types(self):
         holder = _member("site-lead", self.tenant)
@@ -485,7 +488,10 @@ class NarrowedUpgradeTests(MigrationTests):
             "planned only", CRUD, users=[holder], constraints={"status__slug": "planned"},
         )
         site_only = self._grant("site only", CRUD, users=[holder], sites=[self.site])
-        self._migrate()
+        out = self._migrate()
+        # The upgrade lists what it trimmed.
+        for name in ("site admin", "planned only", "site only"):
+            self.assertIn(name, out)
         full = ["*", *ACCESS_TYPES]
         for perm in (
             *self.seeded, self.custom_admin, self.tenant_admin, self.disabled_admin,

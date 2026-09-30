@@ -138,6 +138,12 @@ def forwards(apps, schema_editor):
         perm.object_types = [t for t in types if t not in ACCESS_TYPES]
         perm.save()
         trimmed.append((perm, [t for t in types if t in ACCESS_TYPES]))
+    if trimmed:
+        sys.stdout.write(
+            "\n  These all-object grants no longer reach users, groups and "
+            "permissions (a site or row limit never narrowed those): "
+            + ", ".join(sorted({perm.name for perm, _ in trimmed})) + ".\n"
+        )
 
     if not before or _deployment_admins(apps):
         return

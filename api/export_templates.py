@@ -15,6 +15,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from collections.abc import Callable
+from functools import cache
 
 # key -> fn(obj) -> JSON-able value. Populated by apps at start-up.
 _CONTEXT_PROVIDERS: dict[str, Callable] = {}
@@ -135,6 +136,7 @@ def _closed(model) -> bool:
     return meta.app_label in _CLOSED_APPS or meta.label_lower in _CLOSED_MODELS
 
 
+@cache
 def _tenant_path(model, depth: int = 0) -> str | None:
     """The lookup from ``model`` to the tenant that owns its rows: its own
     ``tenant``, else the first parent that has one (an interface's device, a
