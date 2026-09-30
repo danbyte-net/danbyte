@@ -3852,8 +3852,10 @@ class SlaMember(TimestampedModel):
     """An object in an agreement. Removing one sets ``left_at`` so a closed
     period still counts it; ``excluded`` keeps a selector match out."""
 
+    #: A virtual chassis stands for a switch stack as one member (not a
+    #: choices list: adding a type needs no migration).
     OBJECT_TYPES = ("api.device", "api.virtualmachine", "api.ipaddress", "api.prefix",
-                    "api.circuit")
+                    "api.circuit", "api.virtualchassis")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")

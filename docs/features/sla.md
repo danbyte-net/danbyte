@@ -212,6 +212,53 @@ Removing a member marks it as having left; it is not deleted. Periods it was
 part of still count the time it was in. A member you cannot view cannot be
 added.
 
+### Members with no address {#members-with-no-address}
+
+A member with no monitored address is **not measured**: its availability is
+"No data" and its coverage 0 %. Its service time still counts, so the
+agreement's coverage drops and *SLA coverage low* can fire. It is never
+counted as down, whatever *unknown* and *stale* count as: it has no checks at
+all. With **Average** it still counts as a unit for the error budget, so the
+others' downtime is spread over it too. An agreement whose members are all
+like this has no data.
+
+### Switch stacks {#switch-stacks}
+
+In a switch stack usually only the master has an address, so the other
+members have nothing to be measured on. Danbyte counts such a stack once, as
+its [virtual chassis](../dcim/virtual-chassis.md):
+
+- **The address** - the primary address of the stack's master, or of its
+  lowest member when no master is set: the member SNMP polls. When that
+  device has no primary address, the first member by position that has one
+  stands in. With **Every address** on the group, every address on every
+  member counts.
+- **When it counts once** - in a group, a stack's devices become one member
+  when the chassis itself is a member, or when one of them has no address of
+  its own (no primary address; no address at all for **Every address**). A
+  stack whose members all have their own addresses, such as a firewall pair,
+  stays one member per device.
+- **One row** - named after the chassis, with the devices it stands for:
+  "via sw1-2, sw1-3". A device in the stack is never scored on its own
+  address. To measure one as well, add its address as an IP address member.
+  The same stack in two groups is two rows, like any member.
+- **Selectors** - a selector that matches a stack's members brings the stack
+  in once. Excluding the chassis in the group keeps the whole stack out;
+  excluding one member device keeps out only that device.
+- **Maintenance** - planned maintenance on the chassis, or on the member whose
+  address is measured, excuses the stack. Work on another member does not.
+- **Exclusions** - an exclusion on any of the stack's rows excuses the stack.
+- **Membership as it is now** - chassis membership is read live, like a
+  selector. The open period and a closed one still inside its seven days are
+  recomputed with it; frozen periods keep their figures.
+
+An agreement that already held stack members without addresses changes when
+it is next computed. Availability stays the same, because those members were
+never measured, but coverage rises, and with **Average** the budget spent
+rises too: the same downtime is now spread over fewer units. Without an *At
+risk below* level the state can turn *At risk*, and burn alerts can fire, in
+the open period.
+
 ### Resetting an address {#resetting-an-address}
 
 When an address is reused for a new host, its

@@ -172,7 +172,8 @@ def _selector_devices(group):
 def resolve_members(agreement, start: datetime, end: datetime) -> list[dict]:
     """Every member in the agreement at some point in ``[start, end)``:
     explicit ones (minus those that left before) and selector matches (minus
-    explicit exclusions). Each with the part of the period it was in."""
+    explicit exclusions), with switch stacks folded (:func:`_fold_stacks`).
+    Each with the part of the period it was in."""
     from .models import SlaMember
 
     rows = list(
@@ -205,12 +206,124 @@ def resolve_members(agreement, start: datetime, end: datetime) -> list[dict]:
                 "object_id": d.id, "site_id": d.site_id, "redundancy_group": "",
                 "monitor_ip_id": None, "active": (start, end),
             })
+    return _fold_stacks(agreement, out, excluded)
+
+
+#: A switch stack as one member.
+VC = "api.virtualchassis"
+
+
+def _fold_stacks(agreement, entries: list[dict], excluded: set) -> list[dict]:
+    """A switch stack counts once where it has to.
+
+    Only a stack's master usually has an address, so its other members,
+    measured on their own, were "no data" rows beside a healthy stack. A
+    group's device entries whose devices share a chassis become one chassis
+    entry when the chassis itself is in the group, or when one of those
+    devices has no address of its own for the group's target. A stack whose
+    members all have addresses (a firewall pair, MLAG) keeps its devices as
+    they are, so their figures do not move.
+
+    Chassis membership is read as it is now, like a selector. An excluded
+    chassis keeps its selector-matched members out; an excluded device keeps
+    out only that match. The folded entry takes the chassis row's id, else
+    the lowest of the device rows', lists every folded row in
+    ``member_ids``, spans the earliest start to the latest end, takes the
+    chassis row's redundancy label (else the lowest row's), sits at the
+    stack owner's site, and names the folded devices in ``via``. ``stack``
+    is the stack owner-first (:func:`monitoring.vc_stack.stacks`), for the
+    addresses and maintenance. Agreements with no stack come back as given."""
+    from api.models import Device, IPAddress
+
+    from .vc_stack import stacks
+
+    dev_ids = {e["object_id"] for e in entries if e["object_type"] == "api.device"}
+    own_vcs = {e["object_id"] for e in entries if e["object_type"] == VC}
+    info = {}
+    if dev_ids:
+        info = {
+            pk: (vc, ip) for pk, vc, ip in Device.objects.filter(
+                tenant_id=agreement.tenant_id, pk__in=dev_ids, virtual_chassis_id__isnull=False,
+            ).values_list("pk", "virtual_chassis_id", "primary_ip_id")
+        }
+    if not info and not own_vcs:
+        return entries
+    members = stacks({vc for vc, _ip in info.values()} | own_vcs, agreement.tenant_id)
+    # A device pointing at a chassis outside the tenant stays itself.
+    stack_of = {pk: vc for pk, (vc, _ip) in info.items() if vc in members}
+
+    def vc_of(e):
+        if e["object_type"] == VC:
+            return e["object_id"]
+        return stack_of.get(e["object_id"]) if e["object_type"] == "api.device" else None
+
+    kept = [
+        e for e in entries
+        if not (e["object_type"] == "api.device" and e["member_id"] is None
+                and vc_of(e) is not None and (e["group"].id, VC, vc_of(e)) in excluded)
+    ]
+    need_all = {
+        e["object_id"] for e in kept
+        if e["object_type"] == "api.device" and e["object_id"] in stack_of
+        and e["group"].target == "all"
+    }
+    with_ips = set(
+        IPAddress.objects.filter(tenant_id=agreement.tenant_id, assigned_device_id__in=need_all)
+        .values_list("assigned_device_id", flat=True).distinct()
+    ) if need_all else set()
+    fold = {(e["group"].id, e["object_id"]) for e in kept if e["object_type"] == VC}
+    for e in kept:
+        vc = vc_of(e)
+        if vc is None or e["object_type"] != "api.device":
+            continue
+        own = (e["object_id"] in with_ips if e["group"].target == "all"
+               else bool(info[e["object_id"]][1]))
+        if not own:
+            fold.add((e["group"].id, vc))
+    if not fold:
+        return kept
+
+    out: list = []
+    parts: dict = {}
+    for e in kept:
+        key = (e["group"].id, vc_of(e))
+        if key not in fold:
+            out.append(e)
+            continue
+        if key not in parts:
+            parts[key] = (len(out), [])
+            out.append(None)
+        parts[key][1].append(e)
+    for (_group, vc), (slot, folded) in parts.items():
+        out[slot] = _stack_entry(vc, folded, members.get(vc, []))
     return out
+
+
+def _stack_entry(vc, parts: list[dict], stack: list) -> dict:
+    """One chassis entry from a stack's entries in one group."""
+    own = [p for p in parts if p["object_type"] == VC]
+    rows = sorted((p for p in parts if p["member_id"]), key=lambda p: p["member_id"])
+    lead = own[0] if own else (rows[0] if rows else None)
+    member_id = lead["member_id"] if lead else None
+    ids = ([member_id] + [p["member_id"] for p in rows if p["member_id"] != member_id]
+           if member_id else [])
+    devices = {p["object_id"] for p in parts if p["object_type"] == "api.device"}
+    owner = stack[0] if stack else None
+    return {
+        "member_id": member_id, "member_ids": ids, "group": parts[0]["group"],
+        "object_type": VC, "object_id": vc,
+        "site_id": owner.site_id if owner else (own[0]["site_id"] if own else None),
+        "redundancy_group": lead["redundancy_group"] if lead else "",
+        "monitor_ip_id": None,
+        "active": (min(p["active"][0] for p in parts), max(p["active"][1] for p in parts)),
+        "via": [{"id": str(d.id), "name": d.name} for d in stack if d.id in devices],
+        "stack": stack,
+    }
 
 
 def _objects(members) -> dict:
     """``{(object_type, id): object}`` for names, sites and addresses."""
-    from api.models import Circuit, Device, IPAddress, Prefix, VirtualMachine
+    from api.models import Circuit, Device, IPAddress, Prefix, VirtualChassis, VirtualMachine
 
     by_type = defaultdict(set)
     for m in members:
@@ -219,6 +332,7 @@ def _objects(members) -> dict:
     for label, model in (
         ("api.device", Device), ("api.virtualmachine", VirtualMachine),
         ("api.ipaddress", IPAddress), ("api.prefix", Prefix), ("api.circuit", Circuit),
+        (VC, VirtualChassis),
     ):
         if by_type[label]:
             for o in model.objects.filter(pk__in=by_type[label]):
@@ -260,12 +374,26 @@ def _addresses(members, objects) -> dict:
         [objects[(m["object_type"], m["object_id"])] for m in members
          if m["object_type"] == "api.prefix" and (m["object_type"], m["object_id"]) in objects]
     )
+    stack_ips = _stack_addresses(members)
     out = {}
     for m in members:
         key = (m["object_type"], m["object_id"])
         o = objects.get(key)
         if o is None:
             ips = []
+        elif m["object_type"] == VC:
+            # The stack's primary address: the owner's, else the first member
+            # by position that has one. "Every address": all its members'.
+            stack = m.get("stack") or []
+            if m["group"].target == "all":
+                ips = [ip for d in stack for ip in stack_ips.get(d.id, [])]
+                m["measured_devices"] = [d.id for d in stack if stack_ips.get(d.id)]
+            else:
+                from .vc_stack import measured_member
+
+                d = measured_member(stack)
+                ips = [d.primary_ip_id] if d else []
+                m["measured_devices"] = [d.id] if d else []
         elif m.get("monitor_ip_id"):
             ips = [m["monitor_ip_id"]]
         elif m["object_type"] == "api.circuit":
@@ -280,6 +408,24 @@ def _addresses(members, objects) -> dict:
         else:
             ips = [o.primary_ip_id] if getattr(o, "primary_ip_id", None) else []
         out[address_key(m)] = ips
+    return out
+
+
+def _stack_addresses(members) -> dict:
+    """``{device id: [ip id, ...]}`` for the members of every stack a group
+    reads on every address - one query, in the tenant."""
+    from api.models import IPAddress
+
+    wanted = {d.id for m in members if m["object_type"] == VC and m["group"].target == "all"
+              for d in m.get("stack") or []}
+    if not wanted:
+        return {}
+    tenant_id = members[0]["group"].tenant_id
+    out = defaultdict(list)
+    for ip_id, dev_id in IPAddress.objects.filter(
+        tenant_id=tenant_id, assigned_device_id__in=wanted
+    ).order_by("pk").values_list("pk", "assigned_device_id"):
+        out[dev_id].append(ip_id)
     return out
 
 
@@ -386,24 +532,32 @@ def _name(o, object_type) -> str:
 
 
 def _maintenance(agreement, start, end, members, objects) -> dict:
-    """``{(object_type, id): [(start, end)]}`` of planned maintenance on each
-    member - on the device itself, the device an address sits on, or the
-    circuit (a carrier's announced works)."""
+    """``{address_key(member): [(start, end)]}`` of planned maintenance on
+    each member - on the device itself, the device an address sits on, the
+    circuit (a carrier's announced works), or a stack: the chassis, or the
+    member whose address is measured. Work on another member of the stack
+    does not excuse it. Call after :func:`_addresses`, which says which
+    members of a stack are measured."""
     from .models import EventImpact
 
-    target_of = {}
+    target_of: dict = defaultdict(set)
     for m in members:
         key = (m["object_type"], m["object_id"])
         o = objects.get(key)
         if m["object_type"] in ("api.device", "api.circuit"):
-            target_of[key] = key
+            target_of[address_key(m)].add(key)
         elif m["object_type"] == "api.ipaddress" and o is not None and o.assigned_device_id:
-            target_of[key] = ("api.device", o.assigned_device_id)
+            target_of[address_key(m)].add(("api.device", o.assigned_device_id))
+        elif m["object_type"] == VC:
+            target_of[address_key(m)].add(key)
+            target_of[address_key(m)].update(
+                ("api.device", d) for d in m.get("measured_devices") or [])
     if not target_of:
         return {}
     by_type = defaultdict(set)
-    for otype, oid in target_of.values():
-        by_type[otype].add(oid)
+    for targets in target_of.values():
+        for otype, oid in targets:
+            by_type[otype].add(oid)
     q = Q()
     for otype, ids in by_type.items():
         q |= Q(object_type=otype, object_id__in=ids)
@@ -417,9 +571,12 @@ def _maintenance(agreement, start, end, members, objects) -> dict:
         .values_list("object_type", "object_id", "event__starts_at", "event__ends_at")
     ):
         windows[(otype, oid)].append((s, e or end))
-    return {
-        key: st.normalize(windows[t]) for key, t in target_of.items() if windows.get(t)
-    }
+    out = {}
+    for key, targets in target_of.items():
+        spans = [w for t in targets for w in windows.get(t, [])]
+        if spans:
+            out[key] = st.normalize(spans)
+    return out
 
 
 def _exclusions(agreement, start, end) -> tuple[list, dict]:
@@ -578,14 +735,18 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     everyone_off, member_off = _exclusions(agreement, start, until)
 
     ip_text = dict(
-        IPAddress.objects.filter(pk__in={p[0] for p in pairs}).values_list("pk", "ip_address")
+        IPAddress.objects.filter(tenant_id=agreement.tenant_id, pk__in={p[0] for p in pairs})
+        .values_list("pk", "ip_address")
     )
     member_rows = []
     timelines = {}
     for m, checks in zip(members, plan, strict=True):
         key = (m["object_type"], m["object_id"])
+        # A folded stack is excused by an exclusion on any of its rows.
+        rows = m.get("member_ids") or [m["member_id"] or ""]
         excused = st.normalize(
-            everyone_off + maint.get(key, []) + member_off.get(m["member_id"] or "", [])
+            everyone_off + maint.get(address_key(m), [])
+            + [w for r in rows for w in member_off.get(r, [])]
         )
         window = st.subtract(
             st.normalize(
@@ -631,7 +792,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             (i for i in item_rows if i["counts"] and i["availability"] is not None),
             key=lambda i: i["availability"], default=None,
         )
-        member_rows.append({
+        row = {
             "member_id": m["member_id"],
             "key": m["member_id"] or f"sel:{m['group'].id}:{m['object_id']}",
             "object_type": m["object_type"], "object_id": str(m["object_id"]),
@@ -644,7 +805,13 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             "incidents": t["incidents"], "items": item_rows,
             "worst_item": worst["name"] if worst else None,
             **_figure(t["up_s"], t["down_s"], service_s),
-        })
+        }
+        # Only on a folded stack, so a result without one stays as it was.
+        if m.get("via"):
+            row["via"] = m["via"]
+        if len(m.get("member_ids") or []) > 1:
+            row["member_ids"] = m["member_ids"]
+        member_rows.append(row)
 
     # Units: a redundancy group is one unit, down only while all are down.
     by_unit = defaultdict(list)

@@ -176,7 +176,9 @@ def analyse(agreement, start, end, *, rules=None, filters=None, bucket="day", no
           "object_id": m["object_id"], "name": m["name"], "group": m["group"],
           "group_id": m["group_id"], "site_id": m["site_id"], "availability": m["availability"],
           "coverage": m["coverage"], "down_s": m["down_s"], "incidents": m["incidents"],
-          "worst_item": m["worst_item"], "items": m["items"]} for m in members),
+          "worst_item": m["worst_item"], "items": m["items"],
+          # A folded switch stack: the devices it stands for, and its rows.
+          **{k: m[k] for k in ("via", "member_ids") if k in m}} for m in members),
         key=lambda x: (-x["down_s"], x["name"]),
     )
     agg = {"group": defaultdict(lambda: [0, 0, 0, ""]), "site": defaultdict(lambda: [0, 0, 0, ""])}
