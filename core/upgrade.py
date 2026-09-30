@@ -416,6 +416,10 @@ def system_status() -> dict:
             "version_from": st.get("version_from"),
             "error": st.get("error") or None,
             "active": _upgrade_running(),
+            # How it ended (the upgrade stage writes these; older upgraders did not).
+            "trigger": st.get("trigger"),
+            "outcome": st.get("outcome"),
+            "finished_at": st.get("finished_at"),
         },
         "auto_update": {
             "enabled": dep.auto_update_enabled,

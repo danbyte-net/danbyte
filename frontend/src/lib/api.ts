@@ -6094,7 +6094,31 @@ export interface MonitoringEngineWritePayload {
   ssh_credential?: { private_key?: string; password?: string }
 }
 
-/** GET /api/system/upgrade/status - progress of an in-flight upgrade. */
+/** One phase of the upgrade stage (scripts/upgrade/stage.sh). */
+export interface UpgradeStep {
+  name: string
+  status: "ok" | "failed" | "skipped" | "running"
+  /** Unix seconds. */
+  started: number | null
+  ended: number | null
+  detail: string
+}
+
+/** How an upgrade ended. `code`: the new release runs ("new"), the previous
+ * one runs again after a rollback ("restored"), nothing was changed
+ * ("unchanged"), or the database could not be put back and Danbyte is
+ * stopped ("restore_failed"). */
+export interface UpgradeOutcome {
+  code: "new" | "restored" | "unchanged" | "restore_failed"
+  database: "migrated" | "unchanged" | "restored" | "restore_failed"
+  services: "running" | "stopped" | "unhealthy"
+  /** Id of the pre-upgrade backup, "" when it was skipped. */
+  backup: string
+}
+
+/** GET /api/system/upgrade/status - progress of an in-flight upgrade. The
+ * fields after `error` come from the upgrade stage (0.17 on); a status an
+ * older upgrader wrote has none of them. */
 export interface SystemUpgradeStatus {
   state: "idle" | "running" | "done" | "failed"
   step?: string
@@ -6102,6 +6126,21 @@ export interface SystemUpgradeStatus {
   version_to?: string
   version_from?: string
   error?: string
+  stage_api?: number
+  kind?: "git" | "bundle"
+  trigger?: "button" | "upload" | "auto" | "admin" | "installer" | "manual"
+  attempt?: number
+  /** Unix seconds. */
+  started_at?: number | null
+  finished_at?: number | null
+  steps?: UpgradeStep[]
+  outcome?: UpgradeOutcome | null
+  warnings?: string[]
+  /** A failure before any service stopped: the timer tries again later. */
+  retryable?: boolean
+  /** The last lines the failing step printed. */
+  error_tail?: string
+  log?: string
 }
 
 /** GET /api/system/info - instant, network-free runtime + version facts. */
@@ -9103,6 +9142,10 @@ export interface SystemJobStatus {
     version_from: string | null
     error: string | null
     active: boolean
+    trigger: string | null
+    outcome: UpgradeOutcome | null
+    /** Unix seconds. */
+    finished_at: number | null
   }
   auto_update: {
     enabled: boolean

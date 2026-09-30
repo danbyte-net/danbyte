@@ -11,6 +11,7 @@ import type {
   SystemUpgradeStatus,
   UpgradeNote,
   UpgradeNotes,
+  UpgradeStep,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { useDateFormat } from "@/lib/datetime"
@@ -122,6 +123,12 @@ function UpdatesSettingsPage() {
     // Keep polling through the restart; failed fetches just retry.
     refetchInterval: 2000,
     retry: true,
+  })
+  // How the last upgrade ended - read once, so an unattended one is visible.
+  const lastUpgrade = useQuery({
+    queryKey: ["upgrade-status", "last"],
+    queryFn: () => api<SystemUpgradeStatus>("/api/system/upgrade/status/"),
+    enabled: canManage && !upgrading,
   })
   // Steps the *new* version needs from an operator - shown on success, and
   // the badge/card below carry them until an admin marks them done.
@@ -297,6 +304,7 @@ function UpdatesSettingsPage() {
               {`git -C /opt/danbyte fetch --tags
 git -C /opt/danbyte checkout <version>
 docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml stop scheduler workers fastlane ws
 docker compose -f docker-compose.prod.yml up -d`}
             </pre>
             <p className="mt-2 text-muted-foreground">
@@ -370,6 +378,11 @@ docker compose -f docker-compose.prod.yml up -d`}
               </div>
             </SettingsCard>
           )}
+          {lastUpgrade.data?.stage_api &&
+            (lastUpgrade.data.state === "done" ||
+              lastUpgrade.data.state === "failed") && (
+              <LastUpgradeCard status={lastUpgrade.data} />
+            )}
           {/* Release repo config */}
           <SettingsCard
             title="Release source"
@@ -728,10 +741,14 @@ docker compose -f docker-compose.prod.yml up -d`}
                   ✓ Upgraded to {st.version_to}. Reload to use the new version.
                 </span>
               ) : st?.state === "failed" ? (
-                <span className="text-destructive">
-                  Upgrade failed at “{st.step}”: {st.error}. Rolled back to the
-                  previous version.
-                </span>
+                <div className="space-y-1">
+                  <p className="font-medium text-destructive">
+                    {outcomeTitle(st)}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Failed at “{st.step}”: {st.error}
+                  </p>
+                </div>
               ) : status.isError ? (
                 <span className="text-muted-foreground">
                   Applying… Danbyte is restarting; reconnecting…
@@ -742,6 +759,28 @@ docker compose -f docker-compose.prod.yml up -d`}
                 </span>
               )}
             </div>
+            {st?.steps && st.steps.length > 0 && (
+              <UpgradeSteps steps={st.steps} />
+            )}
+            {st?.state === "failed" && st.error_tail && (
+              <details className="text-[12px]">
+                <summary className="cursor-pointer text-muted-foreground">
+                  Output of the failed step
+                </summary>
+                <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap">
+                  {st.error_tail}
+                </pre>
+              </details>
+            )}
+            {st?.state === "done" && (st.warnings?.length ?? 0) > 0 && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-[13px]">
+                <ul className="list-disc pl-5">
+                  {st.warnings!.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {st?.state === "done" &&
               (notesAfter.data?.pending.length ?? 0) > 0 && (
                 <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-[13px]">
@@ -778,6 +817,119 @@ docker compose -f docker-compose.prod.yml up -d`}
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+const TRIGGER_LABELS: Record<string, string> = {
+  auto: "Automatic update",
+  button: "Updates page",
+  upload: "Uploaded bundle",
+  admin: "danbyte-admin",
+  installer: "install.sh",
+  manual: "Command line",
+}
+
+/** One line on how an upgrade ended, from the stage's outcome. */
+function outcomeTitle(st: SystemUpgradeStatus): string {
+  const o = st.outcome
+  if (st.state === "done") return `Now on ${st.version_to}`
+  if (!o) return `Upgrade to ${st.version_to ?? "?"} failed`
+  switch (o.code) {
+    case "unchanged":
+      return "Upgrade failed - nothing was changed"
+    case "restored":
+      return o.database === "restored"
+        ? "Rolled back - the database was restored"
+        : "Rolled back - the database was not changed"
+    case "restore_failed":
+      return "Rollback failed - Danbyte is stopped"
+    default:
+      return `Upgrade to ${st.version_to ?? "?"} failed`
+  }
+}
+
+const STEP_VARIANT: Record<
+  UpgradeStep["status"],
+  "success" | "destructive" | "secondary" | "outline"
+> = {
+  ok: "success",
+  failed: "destructive",
+  running: "secondary",
+  skipped: "outline",
+}
+
+function UpgradeSteps({ steps }: { steps: UpgradeStep[] }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {steps.map((s) => (
+        <Badge
+          key={s.name}
+          variant={STEP_VARIANT[s.status]}
+          className="font-mono text-[11px]"
+        >
+          {s.name}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
+function LastUpgradeCard({ status }: { status: SystemUpgradeStatus }) {
+  const { formatDateTime } = useDateFormat()
+  const failed = status.state === "failed"
+  const rows: [string, React.ReactNode][] = [
+    [
+      "Versions",
+      <span className="font-mono text-xs">
+        {status.version_from ?? "?"} → {status.version_to ?? "?"}
+      </span>,
+    ],
+    ["Started from", TRIGGER_LABELS[status.trigger ?? ""] ?? "Unknown"],
+    [
+      "Finished",
+      status.finished_at ? formatDateTime(status.finished_at * 1000) : "-",
+    ],
+  ]
+  if (status.outcome?.backup)
+    rows.push([
+      "Backup",
+      <span className="font-mono text-xs">{status.outcome.backup}</span>,
+    ])
+  return (
+    <SettingsCard
+      title="Last upgrade"
+      layout="plain"
+      className={failed ? "border-destructive/40" : undefined}
+      badge={
+        <Badge variant={failed ? "destructive" : "success"}>
+          {failed ? "Failed" : "Done"}
+        </Badge>
+      }
+    >
+      <div className="space-y-2 text-[13px]">
+        <p className="font-medium">{outcomeTitle(status)}</p>
+        {failed && status.error && (
+          <p className="text-muted-foreground">
+            Failed at “{status.step}”: {status.error}
+          </p>
+        )}
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+          {rows.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="text-muted-foreground">{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+        {(status.warnings?.length ?? 0) > 0 && (
+          <ul className="list-disc pl-5 text-amber-800 dark:text-amber-300">
+            {status.warnings!.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </SettingsCard>
   )
 }
 
