@@ -15,6 +15,7 @@ import type {
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { FormCombobox, FormSelect, FormText } from "@/components/forms"
+import { Loading } from "@/components/loading"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -178,7 +179,7 @@ export function AddToSlaDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={!pickedGroup || add.isPending}>
-              {add.isPending ? "Adding..." : "Add"}
+              {add.isPending ? "Adding…" : "Add"}
             </Button>
           </DialogFooter>
         </form>
@@ -257,10 +258,10 @@ export function ObjectSlaPanel({
         )
       }
     >
-      {rows.length === 0 ? (
-        <p className="text-[13px] text-muted-foreground">
-          {q.isLoading ? "Loading..." : "In no agreement."}
-        </p>
+      {q.isLoading ? (
+        <Loading />
+      ) : rows.length === 0 ? (
+        <p className="text-[13px] text-muted-foreground">In no agreement.</p>
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border">
           {rows.map((s) => (

@@ -280,7 +280,7 @@ export function DashboardSettingsDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? "Saving..." : d ? "Save" : "Create"}
+              {save.isPending ? "Saving…" : d ? "Save" : "Create"}
             </Button>
           </DialogFooter>
         </form>

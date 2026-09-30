@@ -428,7 +428,7 @@ export function SlaWizard({
             disabled={create.isPending}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Creating..." : "Create"}
+            {create.isPending ? "Creating…" : "Create"}
           </Button>
         )}
       </div>

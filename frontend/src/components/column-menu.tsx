@@ -271,7 +271,7 @@ export function ColumnsMenu({
                   ))}
                 </div>
               ))}
-              {loading && <Empty>Loading...</Empty>}
+              {loading && <Empty>Loading…</Empty>}
             </div>
             <div className="mt-2 flex items-center gap-2 border-t pt-2">
               <Button

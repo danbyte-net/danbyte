@@ -4,6 +4,7 @@ import { X } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { SlaAgreement, SlaAnalysis, SlaPeriodSummary } from "@/lib/api"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -436,7 +437,7 @@ export function SlaAnalysisView({
       <div className="min-w-0 flex-1 space-y-6">
         {q.isError && <QueryError error={q.error} />}
         {!d || !f ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          !q.isError && <Loading />
         ) : (
           <>
             {d.limited && (

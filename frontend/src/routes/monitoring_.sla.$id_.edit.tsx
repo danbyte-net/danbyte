@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import type { SlaAgreement } from "@/lib/api"
 import { EditPageShell } from "@/components/edit-page-shell"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SlaAgreementForm } from "@/components/monitoring/sla-agreement-form"
 
@@ -33,9 +34,7 @@ function EditSlaAgreementPage() {
       ]}
       title={q.data ? q.data.name : "Edit agreement"}
     >
-      {q.isLoading && (
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      )}
+      {q.isLoading && <Loading />}
       {q.isError && <QueryError error={q.error} />}
       {q.data && (
         <SlaAgreementForm agreement={q.data} onSaved={back} onCancel={back} />

@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import type { WidgetId } from "./catalog"
 import {
@@ -235,8 +236,7 @@ export function NamedBoard({
         <QueryError error={q.error} />
       </div>
     )
-  if (!board)
-    return <p className="p-6 text-sm text-muted-foreground">Loading...</p>
+  if (!board) return <Loading />
 
   const tvSearch = {
     tv: "1",
@@ -390,7 +390,7 @@ export function NamedBoard({
         title={`Delete ${board.name}?`}
         description="Anyone it is shared with loses it too."
         confirmLabel="Delete"
-        pendingLabel="Deleting..."
+        pendingLabel="Deleting…"
         destructive
         pending={del.isPending}
         onConfirm={() => del.mutate()}

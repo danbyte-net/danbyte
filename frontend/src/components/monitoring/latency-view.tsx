@@ -6,6 +6,7 @@ import { api } from "@/lib/api"
 import type { LatencyOffender, LatencyPageResponse } from "@/lib/api"
 import { useUrlPatch } from "@/lib/use-url-state"
 import { DataTable } from "@/components/data-table"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Section } from "@/components/ui/section"
@@ -84,7 +85,7 @@ export function LatencyView() {
         />
       </div>
       {!d ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <Loading />
       ) : d.kinds.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No latency recorded in this window.

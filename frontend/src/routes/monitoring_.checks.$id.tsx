@@ -7,6 +7,7 @@ import type { CheckDetail, TransitionsResponse } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash, mono } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { DataTable } from "@/components/data-table"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -59,8 +60,7 @@ function CheckPage() {
     placeholderData: keepPreviousData,
     refetchInterval: 60_000,
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading...</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">

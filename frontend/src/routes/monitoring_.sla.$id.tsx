@@ -25,6 +25,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { KvCard, dash } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { EmptyState } from "@/components/empty-state"
 import { DataTable } from "@/components/data-table"
@@ -73,8 +74,7 @@ function SlaPage() {
     queryKey: ["sla-agreement", id],
     queryFn: () => api<SlaAgreement>(`/api/monitoring/sla-agreements/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading...</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -180,7 +180,7 @@ function Body({ a }: { a: SlaAgreement }) {
               onClick={() => recompute.mutate()}
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              {recompute.isPending ? "Recomputing..." : "Recompute"}
+              {recompute.isPending ? "Recomputing…" : "Recompute"}
             </Button>
           )}
           {canDo("slaagreement", "change") && (
@@ -363,7 +363,7 @@ function Body({ a }: { a: SlaAgreement }) {
         title={`Delete ${a.name}?`}
         description="Its groups, members and every stored period go with it. Archive it instead to keep the history."
         confirmLabel="Delete"
-        pendingLabel="Deleting..."
+        pendingLabel="Deleting…"
         destructive
         pending={del.isPending}
         onConfirm={() => del.mutate()}
@@ -724,8 +724,7 @@ function Revisions({ agreementId }: { agreementId: string }) {
         }[]
       >(`/api/monitoring/sla-agreements/${agreementId}/revisions/`),
   })
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading...</p>
+  if (q.isLoading) return <Loading />
   const revs = q.data ?? []
   return (
     <div className="space-y-4">

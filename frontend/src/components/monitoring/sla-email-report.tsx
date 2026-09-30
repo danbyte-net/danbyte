@@ -50,7 +50,7 @@ export function SlaEmailReport({
       <PopoverTrigger asChild>
         <Button size="sm" variant="outline" disabled={send.isPending}>
           <Mail className="h-3.5 w-3.5" />
-          {send.isPending ? "Sending..." : "Email report"}
+          {send.isPending ? "Sending…" : "Email report"}
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>

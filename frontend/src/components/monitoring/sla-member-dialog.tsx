@@ -190,7 +190,7 @@ export function SlaMemberDialog({
               type="submit"
               disabled={!objectId || !group || add.isPending}
             >
-              {add.isPending ? "Adding..." : "Add"}
+              {add.isPending ? "Adding…" : "Add"}
             </Button>
           </DialogFooter>
         </form>
@@ -309,7 +309,7 @@ export function SlaExclusionDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? "Saving..." : "Exclude"}
+              {save.isPending ? "Saving…" : "Exclude"}
             </Button>
           </DialogFooter>
         </form>

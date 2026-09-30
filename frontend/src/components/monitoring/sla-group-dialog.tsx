@@ -367,7 +367,7 @@ function GroupForm({
           Cancel
         </Button>
         <Button type="submit" disabled={save.isPending}>
-          {save.isPending ? "Saving..." : "Save"}
+          {save.isPending ? "Saving…" : "Save"}
         </Button>
       </DialogFooter>
     </form>

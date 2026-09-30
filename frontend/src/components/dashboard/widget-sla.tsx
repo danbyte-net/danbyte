@@ -11,6 +11,7 @@ import type {
   SlaAgreement,
 } from "@/lib/api"
 import { TimeCell } from "@/components/cells/time-ago"
+import { Loading } from "@/components/loading"
 import {
   Tooltip,
   TooltipContent,
@@ -50,7 +51,15 @@ function windowQuery(scope: string): string {
   return p.toString()
 }
 
-function Muted({ children }: { children: React.ReactNode }) {
+/** A widget's empty line, or the shared loading state while it fetches. */
+function Muted({
+  children,
+  loading,
+}: {
+  children: React.ReactNode
+  loading?: boolean
+}) {
+  if (loading) return <Loading className="min-h-[80px]" />
   return (
     <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground">
       {children}
@@ -105,7 +114,7 @@ export function SlaHeadlineWidget({
         </Select>
       )}
       {!picked ? (
-        <Muted>{q.isLoading ? "Loading..." : "No agreement."}</Muted>
+        <Muted loading={q.isLoading}>No agreement.</Muted>
       ) : !f ? (
         <Muted>Not computed yet.</Muted>
       ) : (
@@ -165,8 +174,7 @@ export function SlaHeadlineWidget({
 export function SlaTableWidget() {
   const q = useAgreements()
   const rows = q.data?.results ?? []
-  if (!rows.length)
-    return <Muted>{q.isLoading ? "Loading..." : "No agreements."}</Muted>
+  if (!rows.length) return <Muted loading={q.isLoading}>No agreements.</Muted>
   return (
     <ul className="divide-y divide-border text-[13px]">
       {rows.map((a) => {
@@ -244,7 +252,7 @@ export function AvailabilityByGroupWidget({
         </Select>
       )}
       {!rows.length ? (
-        <Muted>{q.isLoading ? "Loading..." : "Nothing measured."}</Muted>
+        <Muted loading={q.isLoading}>Nothing measured.</Muted>
       ) : (
         <ul className="space-y-1 text-[13px]">
           {rows.map((r) => (
@@ -273,9 +281,7 @@ export function TopOffendersWidget({ scope = "" }: { scope?: string }) {
   })
   const rows = q.data?.slowest ?? []
   if (!rows.length)
-    return (
-      <Muted>{q.isLoading ? "Loading..." : "Nothing off its normal."}</Muted>
-    )
+    return <Muted loading={q.isLoading}>Nothing off its normal.</Muted>
   return (
     <ul className="divide-y divide-border text-[13px]">
       {rows.slice(0, 10).map((r) => (
@@ -313,7 +319,7 @@ export function CoverageWidget({ scope = "" }: { scope?: string }) {
   const rows = q.data?.rows ?? []
   const seen = rows.reduce((n, r) => n + r.up_s + r.down_s, 0)
   const all = rows.reduce((n, r) => n + r.up_s + r.down_s + r.unmeasured_s, 0)
-  if (!all) return <Muted>{q.isLoading ? "Loading..." : "No checks."}</Muted>
+  if (!all) return <Muted loading={q.isLoading}>No checks.</Muted>
   return (
     <div className="flex h-full flex-col justify-center gap-2">
       <div className="text-3xl font-semibold tracking-tight">
@@ -354,8 +360,7 @@ export function UpcomingMaintenanceWidget() {
   const rows = [...(q.data?.results ?? [])].sort((a, b) =>
     a.starts_at.localeCompare(b.starts_at)
   )
-  if (!rows.length)
-    return <Muted>{q.isLoading ? "Loading..." : "Nothing planned."}</Muted>
+  if (!rows.length) return <Muted loading={q.isLoading}>Nothing planned.</Muted>
   return (
     <ul className="divide-y divide-border text-[13px]">
       {rows.slice(0, 12).map((e) => (

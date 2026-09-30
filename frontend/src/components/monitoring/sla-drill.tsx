@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import type { SlaAnalysis } from "@/lib/api"
 import { TimeCell } from "@/components/cells/time-ago"
+import { Loading } from "@/components/loading"
 import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
@@ -99,7 +100,7 @@ export function DayDrill({
           </DialogTitle>
         </DialogHeader>
         {!d ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <Loading />
         ) : (
           <div className="space-y-5">
             <AvailabilityOverTime data={d} />
