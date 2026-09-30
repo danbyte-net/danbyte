@@ -538,8 +538,8 @@ user's report leaves out the members they cannot see, and says so.
 
 ## On lists and object pages
 
-The device, virtual machine, IP address, prefix, circuit, site and cluster
-lists have two columns:
+The device, virtual chassis, virtual machine, IP address, prefix, circuit,
+site and cluster lists have two columns:
 
 - **SLA** - the object's figure in its agreement's current period, coloured
   against that agreement's target. An object in several agreements shows the
@@ -556,7 +556,8 @@ lists have two columns:
   "75.1% 68% measured". Unmeasured time counts as neither up nor down.
 
 A device in a [switch stack](#switch-stacks) that counts once shows the
-stack's figure, marked "via" the stack.
+stack's figure, marked "via" the stack. A stack's **Availability** is over
+every member's addresses.
 
 A site's **SLA** is every agreement provided for that site, with the
 agreement's whole figure; its **Availability** is over the site's devices. A

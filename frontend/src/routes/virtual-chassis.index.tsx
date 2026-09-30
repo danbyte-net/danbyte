@@ -13,6 +13,14 @@ import type {
   VirtualChassis,
 } from "@/lib/api"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
+import {
+  availabilityColumn,
+  slaColumn,
+} from "@/components/columns/sla-column"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -63,6 +71,10 @@ function VirtualChassisPage() {
     enabled: memberIds.length > 0,
   })
   const monByDevice = monQuery.data?.statuses
+  // A stack's figure where it counts once, and availability over every
+  // member's addresses.
+  const ids = useMemo(() => rows.map((v) => v.id), [rows])
+  const sla = useSlaStatus("vc", ids)
   const onDelete = useCallback((v: VirtualChassis) => setDeleting(v), [])
   const columns = useMemo<ColumnDef<VirtualChassis>[]>(
     () => [
@@ -166,6 +178,14 @@ function VirtualChassisPage() {
           return <MixedStatusBadge counts={merged} />
         },
       },
+      slaColumn<VirtualChassis>(
+        { entries: sla.entries, frame: sla.frame },
+        (r) => r.id
+      ),
+      availabilityColumn<VirtualChassis>(
+        { entries: sla.entries, frame: sla.frame },
+        (r) => r.id
+      ),
       {
         id: "primary_ip",
         accessorFn: (v) => v.primary_ip?.ip_address ?? "",
@@ -229,7 +249,15 @@ function VirtualChassisPage() {
         ),
       },
     ],
-    [monByDevice, onDelete, canEdit, canDelete, humanIds]
+    [
+      monByDevice,
+      onDelete,
+      canEdit,
+      canDelete,
+      humanIds,
+      sla.entries,
+      sla.frame,
+    ]
   )
   const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
     useTableFilters(columns, rows)
@@ -246,6 +274,7 @@ function VirtualChassisPage() {
       search={{ value: q, onChange: setQ, placeholder: "Filter by name…" }}
       actions={
         <>
+          <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="virtualchassis" />
           {canAdd && (
             <Button size="sm" asChild>
