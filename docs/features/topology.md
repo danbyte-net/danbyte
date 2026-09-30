@@ -1485,7 +1485,9 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   Bendy lines and Cyclical arcs are draw.io curves through the same points
   the map uses. A
   single cable links back to it in Danbyte. Lines are written before the
-  cards, so they pass under a card as they do on the screen.
+  cards, and before the bands that hold cards, so every cable passes under
+  every card as it does on the screen - a Bendy line no curve gets clear
+  of passes behind one. (The LLDP and BGP layers lie over the page's.)
 - **Breakouts:** the split point is a small ellipse (two, for a cable
   broken out at both ends); the trunk ends on it and each leg leaves from
   it, so dragging it in draw.io moves the split.
@@ -1499,10 +1501,11 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   whole band moves as one. Zones
   hold their cards the same way. A side band is a shape behind the rows
   with its label turned to read upwards, as a card can sit in only one
-  container. A card in a swimlane is drawn with it, before the lines, so a
-  Straight or Cyclical line that crosses such a card passes over it, while
-  one crossing a card outside every band passes under it (Elbow and Bendy
-  lines go round the cards they do not connect).
+  container. A swimlane or zone is drawn with its cards, after the lines,
+  so that its cards stand over them; its fill is see-through (20 %
+  *Fill opacity*, in a stronger shade that shows as the band's own colour
+  over the page) and the lines read through it as on the screen. Recolour
+  one in draw.io and the colour you pick shows paler, at that opacity.
 - **Notes** are draw.io's own shapes, to restyle there like anything else:
   a text note is a text cell (on a rounded box when it is outlined); a
   cloud is draw.io's cloud, a building the network library's *Business
@@ -1515,8 +1518,10 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   photo's size, its cables meeting the card's edge where their ports are.
   With **Photos** ticked it is the photo itself, embedded (scaled down to
   600 px wide), with the name as its label underneath: each cable is
-  attached at its port, each marked port is a connection point, and the
-  photo sits behind the lines so their leads show over it.
+  attached at its port and each marked port is a connection point. The
+  photo stands over the lines like a card, and each cable's lead - from
+  its port to the photo's edge - is drawn again over it, a line inside the
+  photo that moves with it.
 
 ## API
 

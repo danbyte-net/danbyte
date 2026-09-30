@@ -290,7 +290,7 @@ function linkSvg(l: DiagramLink): string {
 }
 
 /** Where the run from `p` (inside `r`) towards `q` leaves `r`. */
-function leaving(p: Pt, q: Pt, r: Rect): Pt {
+export function leaving(p: Pt, q: Pt, r: Rect): Pt {
   let t = 1
   const dx = q.x - p.x
   const dy = q.y - p.y
