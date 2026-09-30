@@ -183,6 +183,7 @@ def resolve_members(agreement, start: datetime, end: datetime) -> list[dict]:
         .select_related("group")
     )
     excluded = {(m.group_id, m.object_type, m.object_id) for m in rows if m.excluded}
+    live = {str(m.id) for m in rows if m.left_at is None}
     out = []
     seen = set()
     for m in rows:
@@ -206,14 +207,14 @@ def resolve_members(agreement, start: datetime, end: datetime) -> list[dict]:
                 "object_id": d.id, "site_id": d.site_id, "redundancy_group": "",
                 "monitor_ip_id": None, "active": (start, end),
             })
-    return _fold_stacks(agreement, out, excluded)
+    return _fold_stacks(agreement, out, excluded, live)
 
 
 #: A switch stack as one member.
 VC = "api.virtualchassis"
 
 
-def _fold_stacks(agreement, entries: list[dict], excluded: set) -> list[dict]:
+def _fold_stacks(agreement, entries: list[dict], excluded: set, live: set) -> list[dict]:
     """A switch stack counts once where it has to.
 
     Only a stack's master usually has an address, so its other members,
@@ -226,13 +227,13 @@ def _fold_stacks(agreement, entries: list[dict], excluded: set) -> list[dict]:
 
     Chassis membership is read as it is now, like a selector. An excluded
     chassis keeps its selector-matched members out; an excluded device keeps
-    out only that match. The folded entry takes the chassis row's id, else
-    the lowest of the device rows', lists every folded row in
-    ``member_ids``, spans the earliest start to the latest end, takes the
-    chassis row's redundancy label (else the lowest row's), sits at the
-    stack owner's site, and names the folded devices in ``via``. ``stack``
-    is the stack owner-first (:func:`monitoring.vc_stack.stacks`), for the
-    addresses and maintenance. Agreements with no stack come back as given."""
+    out only that match. The folded entry lists every folded row in
+    ``member_ids`` (:func:`_stack_entry` picks its id and redundancy label),
+    spans the earliest start to the latest end, sits at the stack owner's
+    site, and names the folded devices in ``via``. ``stack`` is the stack
+    owner-first (:func:`monitoring.vc_stack.stacks`), for the addresses and
+    maintenance. ``live`` holds the ids of rows that have not left.
+    Agreements with no stack come back as given."""
     from api.models import Device, IPAddress
 
     from .vc_stack import stacks
@@ -295,25 +296,52 @@ def _fold_stacks(agreement, entries: list[dict], excluded: set) -> list[dict]:
             out.append(None)
         parts[key][1].append(e)
     for (_group, vc), (slot, folded) in parts.items():
-        out[slot] = _stack_entry(vc, folded, members.get(vc, []))
+        out[slot] = _stack_entry(vc, folded, members.get(vc, []), live)
     return out
 
 
-def _stack_entry(vc, parts: list[dict], stack: list) -> dict:
-    """One chassis entry from a stack's entries in one group."""
+def _stack_entry(vc, parts: list[dict], stack: list, live: set) -> dict:
+    """One chassis entry from a stack's entries in one group.
+
+    Its rows rank by what they stand for, never by id: the chassis row, the
+    stack owner's, the measured member's, then the other members' by
+    position. The first non-empty redundancy label in that order is the
+    stack's, so a master in a redundancy group keeps the stack in it. The
+    entry's ``member_id``, which exclusions are written against, is the
+    first row that has not left, else the first row."""
+    from .vc_stack import measured_member
+
     own = [p for p in parts if p["object_type"] == VC]
-    rows = sorted((p for p in parts if p["member_id"]), key=lambda p: p["member_id"])
-    lead = own[0] if own else (rows[0] if rows else None)
+    owner = stack[0] if stack else None
+    measured = measured_member(stack)
+    position = {d.id: i for i, d in enumerate(stack)}
+
+    def role(p):
+        if p["object_type"] == VC:
+            return 0
+        if owner is not None and p["object_id"] == owner.id:
+            return 1
+        if measured is not None and p["object_id"] == measured.id:
+            return 2
+        return 3 + position.get(p["object_id"], len(stack))
+
+    def rank(p):
+        # The latest row of an object first, then the id to settle a tie.
+        return (role(p), p["member_id"] not in live, -p["active"][1].timestamp(),
+                p["member_id"])
+
+    rows = sorted((p for p in parts if p["member_id"]), key=rank)
+    lead = next((p for p in rows if p["member_id"] in live), rows[0] if rows else None)
     member_id = lead["member_id"] if lead else None
     ids = ([member_id] + [p["member_id"] for p in rows if p["member_id"] != member_id]
            if member_id else [])
     devices = {p["object_id"] for p in parts if p["object_type"] == "api.device"}
-    owner = stack[0] if stack else None
     return {
         "member_id": member_id, "member_ids": ids, "group": parts[0]["group"],
         "object_type": VC, "object_id": vc,
         "site_id": owner.site_id if owner else (own[0]["site_id"] if own else None),
-        "redundancy_group": lead["redundancy_group"] if lead else "",
+        "redundancy_group": next(
+            (p["redundancy_group"] for p in rows if p["redundancy_group"]), ""),
         "monitor_ip_id": None,
         "active": (min(p["active"][0] for p in parts), max(p["active"][1] for p in parts)),
         "via": [{"id": str(d.id), "name": d.name} for d in stack if d.id in devices],

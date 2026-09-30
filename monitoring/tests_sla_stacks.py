@@ -2,6 +2,7 @@
 stands for it, never its addressless members as "no data" beside it."""
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from django.db import connection
@@ -171,10 +172,56 @@ class FoldTests(_Stack):
         [row] = self.rows(out)
         self.assertEqual((row["object_type"], row["object_id"]), (VC, str(vc.id)))
         self.assertEqual([v["name"] for v in row["via"]], ["sw1-1", "sw1-2", "sw1-3"])
-        ids = sorted(str(r.id) for r in rows)
-        self.assertEqual(row["member_id"], ids[0])
-        self.assertEqual(sorted(row["member_ids"]), ids)
+        # The master's row stands for the stack, whatever the row ids.
+        self.assertEqual(row["member_id"], str(rows[0].id))
+        self.assertEqual(sorted(row["member_ids"]), sorted(str(r.id) for r in rows))
         self.assertFalse(row["selected"])
+
+    def test_the_stack_row_is_one_that_has_not_left(self):
+        _vc, members, _ip = self.stack()
+        rows = [self.member(d) for d in members]
+        # The master's row left on day 3; the others still fold the stack,
+        # and exclusions go on a row that is still in.
+        rows[0].left_at = SEP + timedelta(days=3)
+        rows[0].save()
+        [row] = self.rows()
+        self.assertEqual(row["member_id"], str(rows[1].id))
+        self.assertEqual(sorted(row["member_ids"]), sorted(str(r.id) for r in rows))
+
+    def test_a_masters_redundancy_group_holds_whatever_the_row_ids(self):
+        # The master and a peer back each other up; a stack member without
+        # an address joins with no label. Row ids are random, so try both
+        # orders: the stack stays in "core", one unit with the peer.
+        _vc, members, ip = self.stack()
+        peer, _ = self.device("peer", 40)
+        self.down_hour(ip)
+        low, high = uuid.UUID(int=1), uuid.UUID(int=2)
+        for master_row, other_row in ((low, high), (high, low)):
+            with self.subTest(master_first=master_row == low):
+                SlaMember.objects.all().delete()
+                self.member(members[0], id=master_row, redundancy_group="core")
+                self.member(peer, redundancy_group="core")
+                self.member(members[1], id=other_row)
+                out = self.compute()
+                self.assertEqual(out["figures"]["units"], 1)
+                self.assertEqual(out["figures"]["down_s"], 0)
+                stack_row = next(r for r in self.rows(out) if r["object_type"] == VC)
+                self.assertEqual(stack_row["redundancy_group"], "core")
+
+    def test_the_first_label_by_role_is_the_stacks(self):
+        vc, members, _ip = self.stack()
+        self.member(members[0])
+        self.member(members[2], redundancy_group="edge")
+        self.member(members[1], redundancy_group="core")
+        # No label on the master's row: the next member by position has one.
+        [row] = self.rows()
+        self.assertEqual(row["redundancy_group"], "core")
+        # A chassis row's label comes first; an empty one gives way.
+        own = self.vc_member(vc)
+        self.assertEqual(self.rows()[0]["redundancy_group"], "core")
+        own.redundancy_group = "stack"
+        own.save()
+        self.assertEqual(self.rows()[0]["redundancy_group"], "stack")
 
     def test_a_chassis_row_and_device_rows_merge(self):
         vc, members, _ip = self.stack()
