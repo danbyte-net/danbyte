@@ -290,8 +290,10 @@ link**.
 Invite and reset links, and emailed sign-in codes, go through a tenant's own
 mail server only for accounts that work in that tenant alone. Those for
 administrators, and for people in more than one tenant, go through the
-deployment's mail settings, so a tenant's admin never sees them in their
-relay.
+deployment's mail settings, so a tenant's admin doesn't see them in their
+relay. If the deployment has no mail server of its own, they use the
+tenant's instead so they still arrive - set up deployment email to keep
+them out of tenant relays.
 
 ## Two-factor sign-in (MFA)
 

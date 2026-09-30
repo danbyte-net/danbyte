@@ -18,6 +18,7 @@ import os
 import secrets as pysecrets
 import time
 
+from django.conf import settings
 from django.contrib.auth import (
     authenticate,
     login as auth_login,
@@ -160,6 +161,26 @@ def _gen_code() -> str:
     return f"{pysecrets.randbelow(1_000_000):06d}"
 
 
+# Django backends that deliver nothing: with one of these and no deployment
+# SMTP host there is no deployment relay to send through.
+_NON_DELIVERING_BACKENDS = frozenset({
+    "django.core.mail.backends.console.EmailBackend",
+    "django.core.mail.backends.dummy.EmailBackend",
+    "django.core.mail.backends.filebased.EmailBackend",
+    "django.core.mail.backends.locmem.EmailBackend",
+})
+
+
+def deployment_relay_configured() -> bool:
+    """Whether the deployment can send mail itself: an SMTP host in the
+    deployment email settings, or a delivering ``EMAIL_BACKEND``."""
+    from core.models import DeploymentSettings
+
+    if DeploymentSettings.load().smtp_host:
+        return True
+    return settings.EMAIL_BACKEND not in _NON_DELIVERING_BACKENDS
+
+
 def mail_tenant_for(user, tenant):
     """The tenant whose own mail relay may carry a sign-in secret for
     ``user`` - an invite or reset link, a sign-in code - else ``None``, the
@@ -168,20 +189,30 @@ def mail_tenant_for(user, tenant):
     A tenant's admin runs that tenant's relay and can read what passes
     through it. So only an account that works in that tenant alone, and is
     no deployment admin, gets its links and codes that way; anyone else's
-    would let a tenant admin take the account over from the relay's log.
+    go through the deployment relay, so a tenant admin cannot take the
+    account over from the relay's log. When the deployment has no relay of
+    its own, ``tenant``'s relay carries them anyway, so an install that only
+    set up tenant mail keeps delivering.
     ``tenant`` may be a Tenant or its id; the same kind comes back.
     """
     if tenant is None or user is None:
         return None
+    if _tenant_local(user, tenant):
+        return tenant
+    return None if deployment_relay_configured() else tenant
+
+
+def _tenant_local(user, tenant) -> bool:
+    """``user`` works in ``tenant`` alone and is no deployment admin."""
     if user.is_superuser:
-        return None
+        return False
     from .permissions import can_grant_superuser, can_manage_deployment, user_tenants
 
     if can_manage_deployment(user) or can_grant_superuser(user):
-        return None
+        return False
     tid = getattr(tenant, "pk", tenant)
     reach = set(user_tenants(user).values_list("pk", flat=True))
-    return tenant if reach == {tid} else None
+    return reach == {tid}
 
 
 def _send_email_code(user, code: str) -> None:
@@ -209,8 +240,8 @@ def _send_email_code(user, code: str) -> None:
         preheader=f"Your {name} verification code",
     )
     # No active tenant at login time - best-effort: the user's last tenant's
-    # SMTP override when that tenant is all the account reaches, else the
-    # deployment relay.
+    # SMTP override when that tenant is all the account reaches or the
+    # deployment has no relay, else the deployment relay (mail_tenant_for).
     profile = getattr(user, "profile", None)
     ek.send_html_email(
         f"{name} sign-in code: {code}",
@@ -409,8 +440,9 @@ def send_invite_email(request, user) -> None:
 
     dep = DeploymentSettings.load()
     name = dep.deployment_name or "Danbyte"
-    # The inviting admin acts inside a tenant - use its SMTP override, but
-    # only for an account that works in that tenant alone (mail_tenant_for).
+    # The inviting admin acts inside a tenant - use its SMTP override for an
+    # account that works in that tenant alone, or when the deployment has no
+    # relay of its own (mail_tenant_for).
     from api.views import _get_active_tenant
 
     url = build_set_password_url(request, user)

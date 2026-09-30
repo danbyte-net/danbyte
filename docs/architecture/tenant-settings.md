@@ -221,3 +221,8 @@ account works in that tenant alone and is no deployment admin
 `grant_superuser` holder or anyone who also works in another tenant gets
 them through the deployment relay - otherwise that tenant's admin could take
 the account over from the relay's log.
+
+That needs a deployment relay: a deployment SMTP host, or an `EMAIL_BACKEND`
+that delivers (not console, locmem, dummy or file). Without one they fall
+back to the tenant relay above, so an install that only set up tenant mail
+keeps delivering them.
