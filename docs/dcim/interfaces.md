@@ -153,7 +153,24 @@ an address on the port without leaving the page. See
 
 Click an interface name to open its page. It shows the device, type, speed, MTU,
 VLAN, MAC, description, any parent/LAG/bridge relationships, the IPs assigned to
-it, and a cable trace. From here you can also add or assign IPs.
+it, and a cable trace.
+
+The **IP addresses** tab is the same IP table as the device's **IPs** tab, with
+only this interface's addresses: Address, Designation, Status, Monitoring,
+DHCP, Role, VLAN, Zone and Description by default, and Scope, DNS name, Switch,
+Switch port, Tags, Updated and the IP's other fields in the **Columns** menu.
+The tab keeps its own column layout, separate from the device tab's.
+
+- **Designation** marks the device's primary (★ Primary), secondary (2nd) and
+  management (Mgmt) address. With permission to change the device, each row's
+  **…** menu sets or clears these.
+- **Monitoring** is the address's check status from the device's checks, so it
+  shows `-` for a viewer who cannot see the device.
+- **+ Add IP** opens the IP form with the device and interface filled in; Save
+  and Cancel come back to this tab. **Assign IP** attaches an existing address.
+
+The tab count, the table and the Overview's **IP addresses** card list only the
+addresses you have permission to view.
 
 ## VM interfaces
 

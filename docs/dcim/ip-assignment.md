@@ -5,8 +5,9 @@ icon: lucide/link
 # Assigning IP addresses
 
 There are two ways to put an IP address on an interface, and you can do both
-without leaving the device or interface page. Each interface row (on the device's
-**Interfaces** tab and on the interface detail page) has two buttons:
+without leaving the device or interface page. Each interface row on the device's
+**Interfaces** tab has two buttons, and the interface detail page has the same
+two on its **IP addresses** tab:
 
 - **+ Add IP** - create a brand-new IP address and attach it here.
 - **Assign IP** - attach an IP that **already exists** in Danbyte.
@@ -59,7 +60,9 @@ here moves it.
 
 Wherever interfaces are listed, the **IP addresses** column shows the addresses
 on each port, so it's obvious which interfaces are in use. The interface detail
-page has a dedicated **IP addresses** section with the same two buttons.
+page's **IP addresses** tab lists that port's addresses in the full IP table -
+the same columns, designation menu and buttons as the device's **IPs** tab. See
+[The interface detail page](interfaces.md#the-interface-detail-page).
 
 !!! tip "The other direction still works"
     You can also start from the IP itself: open or create an IP, and set its
@@ -69,12 +72,14 @@ page has a dedicated **IP addresses** section with the same two buttons.
 
 Separately from the interface an IP is *configured on* (above), you can record
 which **access switch** and **physical port** a host is reached *through* - the
-L2 edge. Two columns, **Switch** and **Switch port**, appear on the IP table,
-and the IP form has a **Switch** device picker with a dependent **Switch port**
-dropdown (pick the switch - or a stack member - then its port). Setting the port
-keeps the switch in sync with the port's device; a virtual chassis is shown
-alongside the port when the device is a stack member. Set it manually, or via the
-API (`switch_id` / `switch_interface_id` on `/api/ips/`).
+L2 edge. Two columns, **Switch** and **Switch port**, appear on the IP table
+(on a device's or an interface's IP tab they start hidden - turn them on in the
+**Columns** menu), and the IP form has a **Switch** device picker with a
+dependent **Switch port** dropdown (pick the switch - or a stack member - then
+its port). Setting the port keeps the switch in sync with the port's device; a
+virtual chassis is shown alongside the port when the device is a stack member.
+Set it manually, or via the API (`switch_id` / `switch_interface_id` on
+`/api/ips/`).
 
 ### Discovering it from SNMP (accept manually)
 

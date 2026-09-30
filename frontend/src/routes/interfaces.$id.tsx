@@ -21,6 +21,7 @@ import {
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { buildInterfaceColumns } from "@/components/columns/interface-columns"
 import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Badge } from "@/components/ui/badge"
@@ -38,9 +39,10 @@ import {
   UndocumentedBadge,
 } from "@/components/port-reservation-dialog"
 import {
-  AssignIpDialog,
-  type AssignIpTarget,
-} from "@/components/assign-ip-dialog"
+  AssignedIpsPane,
+  assignedIpsQuery,
+  type AssignedIpsScope,
+} from "@/components/assigned-ips-pane"
 import { TraceSection } from "@/components/topology/trace-section"
 import {
   TracePathStrip,
@@ -70,8 +72,7 @@ function InterfaceDetail() {
     queryKey: ["interface", id],
     queryFn: () => api<Interface>(`/api/interfaces/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -93,14 +94,20 @@ function Body({ iface: i }: { iface: Interface }) {
     queryFn: () => api<InterfaceLagSummary>(`/api/interfaces/${i.id}/lag/`),
     enabled: isLag,
   })
+  // The IPs the viewer may see - the tab count, the IP addresses tab and the
+  // Overview card all read this one query.
+  const ipScope: AssignedIpsScope = {
+    kind: "interface",
+    deviceId: i.device.id,
+    interfaceId: i.id,
+    interfaceName: i.name,
+  }
+  const ips = useQuery(assignedIpsQuery(ipScope))
   const nav = useNavigate()
   const { canDo } = useMe()
   const [deleting, setDeleting] = useState<Interface | null>(null)
-  const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
   const [reserving, setReserving] = useState(false)
   const goBack = useCallback(() => nav({ to: "/interfaces" }), [nav])
-  const canAddIp = canDo("ipaddress", "add")
-  const canAssignIp = canDo("ipaddress", "change")
 
   return (
     <DetailShell
@@ -255,11 +262,7 @@ function Body({ iface: i }: { iface: Interface }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        {
-          value: "ips",
-          label: "IP addresses",
-          count: i.ip_addresses.length,
-        },
+        { value: "ips", label: "IP addresses", count: ips.data?.count },
         ...(isLag
           ? [{ value: "members", label: "Members", count: lag.data?.count }]
           : []),
@@ -273,6 +276,7 @@ function Body({ iface: i }: { iface: Interface }) {
       <DetailTab value="overview">
         <InterfaceOverview
           iface={i}
+          ips={ips.data?.results ?? []}
           lag={isLag ? lag.data : undefined}
           onMembers={() => setTab("members")}
         />
@@ -283,55 +287,12 @@ function Body({ iface: i }: { iface: Interface }) {
         </DetailTab>
       )}
       <DetailTab value="ips">
-        <div className="mb-3 flex items-center justify-end gap-1.5">
-          {canAddIp && (
-            <Button size="sm" variant="outline" asChild className="h-7">
-              <Link
-                to="/ips/new"
-                search={{ device: i.device.id, interface: i.id }}
-              >
-                + Add IP
-              </Link>
-            </Button>
-          )}
-          {canAssignIp && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7"
-              onClick={() =>
-                setAssignTarget({
-                  deviceId: i.device.id,
-                  interfaceId: i.id,
-                  interfaceName: i.name,
-                })
-              }
-            >
-              Assign IP
-            </Button>
-          )}
-        </div>
-        {i.ip_addresses.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No IP is assigned to this interface yet.
-          </p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <ul className="divide-y divide-border">
-              {i.ip_addresses.map((ip) => (
-                <li key={ip.id}>
-                  <Link
-                    to="/ips/$id"
-                    params={{ id: ip.id }}
-                    className="link block px-3 py-2 font-mono text-[13px] hover:bg-muted/60"
-                  >
-                    {ip.ip_address}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <AssignedIpsPane
+          scope={ipScope}
+          canAddIp={canDo("ipaddress", "add")}
+          canAssignIp={canDo("ipaddress", "change")}
+          canChangeDevice={canDo("device", "change")}
+        />
       </DetailTab>
       <DetailTab value="trace">
         <div className="space-y-6">
@@ -361,10 +322,6 @@ function Body({ iface: i }: { iface: Interface }) {
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={goBack}
       />
-      <AssignIpDialog
-        target={assignTarget}
-        onOpenChange={(o) => !o && setAssignTarget(null)}
-      />
       <PortReservationDialog
         target={
           reserving
@@ -387,10 +344,13 @@ function Body({ iface: i }: { iface: Interface }) {
  * type) stays up top; everything else reads here. */
 function InterfaceOverview({
   iface: i,
+  ips,
   lag,
   onMembers,
 }: {
   iface: Interface
+  /** The addresses the viewer may see, for the summary card. */
+  ips: Interface["ip_addresses"]
   /** The bundle summary - set for aggregates once loaded. */
   lag?: InterfaceLagSummary
   onMembers: () => void
@@ -715,16 +675,16 @@ function InterfaceOverview({
             deviceId={i.device.id}
             evpnMhUplink={i.evpn_mh_uplink}
           />
-          {i.ip_addresses.length > 0 && (
+          {ips.length > 0 && (
             // The addresses at a glance - the IP tab stays where they're
             // assigned and removed.
             <div className="overflow-hidden rounded-lg border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border px-4 py-2">
                 <h2 className="text-sm font-semibold">IP addresses</h2>
-                <Badge variant="secondary">{i.ip_addresses.length}</Badge>
+                <Badge variant="secondary">{ips.length}</Badge>
               </div>
               <ul className="divide-y divide-border">
-                {i.ip_addresses.map((ip) => (
+                {ips.map((ip) => (
                   <li key={ip.id}>
                     <Link
                       to="/ips/$id"
@@ -850,7 +810,7 @@ function LagMembers({
       }),
     [spansDevices]
   )
-  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (loading) return <Loading />
   if (rows.length === 0)
     return (
       <EmptyState title="No members yet">
@@ -895,7 +855,7 @@ function LagRuns({
         </span>
       </div>
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : runs.length === 0 ? (
         <p className="text-[12px] text-muted-foreground">
           No member is cabled yet.
