@@ -333,10 +333,12 @@ class UpgradeLockTests(SimpleTestCase):
             "LOCK_GUARD_FILE": root / ".upgrade.lock.guard",
             "STATUS_FILE": root / ".upgrade-status.json",
             "BUNDLE_UPLOAD": root / ".upgrade-bundle.tar.gz",
+            "UPGRADE_ROOTS": (root / ".danbyte-upgrade",),
         }.items():
             patcher = patch.object(upgrade, name, path)
             patcher.start()
             self.addCleanup(patcher.stop)
+        self.root = root
 
     def test_only_one_concurrent_caller_acquires_the_slot(self):
         from concurrent.futures import ThreadPoolExecutor
@@ -516,86 +518,102 @@ class UpgradeLockTests(SimpleTestCase):
         ):
             self.assertIsNone(self.upgrade._pid_matches(42, "old"))
 
-    def test_launch_handoff_records_systemd_attempt_and_detached_pid(self):
+    def test_launch_handoff_records_the_systemd_attempt(self):
         import json
         from types import SimpleNamespace
         from unittest.mock import patch
 
         owner = self.upgrade._acquire_upgrade_lock()
         seen_during_systemd = {}
+        argv = []
 
-        def accept_systemd(*args, **kwargs):
+        def accept_systemd(cmd, *args, **kwargs):
+            argv.extend(cmd)
             seen_during_systemd.update(
                 json.loads(self.upgrade.LOCK_FILE.read_text())
             )
-            return SimpleNamespace(returncode=0)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with patch("core.upgrade.subprocess.run", side_effect=accept_systemd):
             self.assertEqual(
-                self.upgrade._launch_command(["/bin/true"], owner),
+                self.upgrade._launch_command(
+                    ["/bin/true"], owner, {"DANBYTE_UPGRADE_TRIGGER": "auto"}),
                 "systemd-run",
             )
         self.assertEqual(seen_during_systemd["owner"], owner)
         self.assertEqual(seen_during_systemd["via"], "systemd-run")
+        # The stage traps TERM, gets time to put files back, and a death
+        # hands over to the recovery unit.
+        for prop in ("KillMode=mixed", "TimeoutStopSec=300",
+                     "OnFailure=danbyte-upgrade-recover.service"):
+            self.assertIn(prop, argv)
+        self.assertIn("--setenv=DANBYTE_UPGRADE_TRIGGER=auto", argv)
+        self.assertEqual(argv[-1], "/bin/true")
 
-        self.assertTrue(self.upgrade._release_upgrade_lock(owner))
-        owner = self.upgrade._acquire_upgrade_lock()
-        child = SimpleNamespace(pid=4242)
-        with patch("core.upgrade.subprocess.run", side_effect=OSError), \
-             patch("core.upgrade.subprocess.Popen", return_value=child), \
-             patch("core.upgrade._process_identity", return_value=("S", "start")):
-            self.assertEqual(
-                self.upgrade._launch_command(["/bin/true"], owner),
-                "detached",
-            )
-        detached = json.loads(self.upgrade.LOCK_FILE.read_text())
-        self.assertEqual(detached["owner"], owner)
-        self.assertEqual(detached["via"], "detached")
-        self.assertEqual(detached["child_pid"], 4242)
-        self.assertEqual(detached["child_pid_start"], "start")
-
-    def test_systemd_timeout_with_unknown_state_never_falls_back(self):
-        import subprocess
-        from unittest.mock import patch
-
-        owner = self.upgrade._acquire_upgrade_lock()
-        self.upgrade._write_start_status("v1.0.0", owner)
-        with patch(
-            "core.upgrade.subprocess.run",
-            side_effect=subprocess.TimeoutExpired("systemd-run", 15),
-        ), patch("core.upgrade._systemd_unit_active", return_value=None), patch(
-            "core.upgrade.subprocess.Popen"
-        ) as popen:
-            with self.assertRaises(self.upgrade.UpgradeLaunchUncertain):
-                self.upgrade._launch_command(["/bin/true"], owner)
-        popen.assert_not_called()
-        self.assertTrue(self.upgrade.LOCK_FILE.exists())
-        with patch("core.upgrade._systemd_unit_active", return_value=None):
-            self.assertIsNone(self.upgrade._acquire_upgrade_lock())
-
-    def test_systemd_timeout_falls_back_only_when_unit_is_confirmed_inactive(self):
-        import subprocess
+    def test_a_systemd_without_onfailure_on_transient_units_still_launches(self):
         from types import SimpleNamespace
         from unittest.mock import patch
 
         owner = self.upgrade._acquire_upgrade_lock()
+        calls = []
+
+        def run(cmd, *args, **kwargs):
+            calls.append(cmd)
+            if "OnFailure=danbyte-upgrade-recover.service" in cmd:
+                return SimpleNamespace(returncode=1, stdout="",
+                                       stderr="Unknown assignment: OnFailure=...")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch("core.upgrade.subprocess.run", side_effect=run), \
+                patch("core.upgrade._systemd_unit_active", return_value=False):
+            self.assertEqual(self.upgrade._launch_command(["/bin/true"], owner), "systemd-run")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("KillMode=mixed", calls[1])
+
+    def test_without_systemd_the_launch_fails_visibly_and_starts_nothing(self):
+        import subprocess
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        cases = (
+            {"side_effect": FileNotFoundError("systemd-run")},
+            {"side_effect": subprocess.TimeoutExpired("systemd-run", 15)},
+            {"return_value": SimpleNamespace(returncode=1, stdout="", stderr="no bus")},
+        )
+        for kwargs in cases:
+            with self.subTest(kwargs=kwargs):
+                owner = self.upgrade._acquire_upgrade_lock()
+                self.upgrade._write_start_status("v1.0.0", owner)
+                with patch("core.upgrade.subprocess.run", **kwargs), \
+                        patch("core.upgrade._systemd_unit_active", return_value=False), \
+                        patch("core.upgrade.subprocess.Popen") as popen:
+                    with self.assertRaises(RuntimeError) as ctx:
+                        self.upgrade._launch_command(["/bin/true"], owner)
+                self.assertNotIsInstance(ctx.exception, self.upgrade.UpgradeLaunchUncertain)
+                popen.assert_not_called()
+                # what every caller does with it: a retryable, released slot
+                self.upgrade._record_launch_failure(ctx.exception)
+                self.assertTrue(self.upgrade._release_upgrade_lock(owner))
+                self.assertIsNotNone(self.upgrade._acquire_upgrade_lock())
+                self.upgrade.LOCK_FILE.unlink()
+
+    def test_systemd_timeout_with_unknown_state_keeps_the_slot(self):
+        import subprocess
+        from unittest.mock import patch
+
+        owner = self.upgrade._acquire_upgrade_lock()
         self.upgrade._write_start_status("v1.0.0", owner)
-        child = SimpleNamespace(pid=4242)
         with patch(
             "core.upgrade.subprocess.run",
             side_effect=subprocess.TimeoutExpired("systemd-run", 15),
-        ), patch("core.upgrade._systemd_unit_active", return_value=False), patch(
-            "core.upgrade.subprocess.Popen", return_value=child
-        ) as popen, patch(
-            "core.upgrade._process_identity", return_value=("S", "start")
-        ):
-            self.assertEqual(
-                self.upgrade._launch_command(["/bin/true"], owner),
-                "detached",
-            )
-        popen.assert_called_once()
+        ), patch("core.upgrade._systemd_unit_active", return_value=None):
+            with self.assertRaises(self.upgrade.UpgradeLaunchUncertain):
+                self.upgrade._launch_command(["/bin/true"], owner)
+        self.assertTrue(self.upgrade.LOCK_FILE.exists())
+        with patch("core.upgrade._systemd_unit_active", return_value=None):
+            self.assertIsNone(self.upgrade._acquire_upgrade_lock())
 
-    def test_nonzero_systemd_result_with_unknown_state_never_falls_back(self):
+    def test_nonzero_systemd_result_with_unknown_state_keeps_the_slot(self):
         from types import SimpleNamespace
         from unittest.mock import patch
 
@@ -604,60 +622,32 @@ class UpgradeLockTests(SimpleTestCase):
         result = SimpleNamespace(returncode=1, stdout="", stderr="bus unavailable")
         with patch("core.upgrade.subprocess.run", return_value=result), patch(
             "core.upgrade._systemd_unit_active", return_value=None
-        ), patch("core.upgrade.subprocess.Popen") as popen:
-            with self.assertRaises(self.upgrade.UpgradeLaunchUncertain):
-                self.upgrade._launch_command(["/bin/true"], owner)
-        popen.assert_not_called()
-
-    def test_metadata_failure_after_popen_retains_the_lock(self):
-        import json
-        from types import SimpleNamespace
-        from unittest.mock import patch
-
-        owner = self.upgrade._acquire_upgrade_lock()
-        self.upgrade._write_start_status("v1.0.0", owner)
-        real_set_phase = self.upgrade._set_upgrade_lock_phase
-        writes = 0
-
-        def fail_after_popen(*args, **kwargs):
-            nonlocal writes
-            writes += 1
-            if writes >= 3:
-                raise OSError("disk full")
-            return real_set_phase(*args, **kwargs)
-
-        child = SimpleNamespace(pid=4242)
-        with patch("core.upgrade.subprocess.run", side_effect=FileNotFoundError), patch(
-            "core.upgrade.subprocess.Popen", return_value=child
-        ), patch(
-            "core.upgrade._process_identity", return_value=("S", "start")
-        ), patch(
-            "core.upgrade._set_upgrade_lock_phase", side_effect=fail_after_popen
         ):
             with self.assertRaises(self.upgrade.UpgradeLaunchUncertain):
                 self.upgrade._launch_command(["/bin/true"], owner)
 
-        lock = json.loads(self.upgrade.LOCK_FILE.read_text())
-        self.assertEqual(lock["via"], "detached")
-        self.assertFalse(lock["launch_confirmed"])
-        self.assertIsNone(lock["child_pid"])
+    def test_an_unfinished_upgrade_holds_the_slot(self):
+        marker = self.root / ".danbyte-upgrade" / "active"
+        marker.parent.mkdir()
+        marker.write_text("WORK=/x\nPID=1\nSTART=0\n")
+        self.assertTrue(self.upgrade._upgrade_running())
         self.assertIsNone(self.upgrade._acquire_upgrade_lock())
+        marker.unlink()
+        self.assertFalse(self.upgrade._upgrade_running())
+        self.assertIsNotNone(self.upgrade._acquire_upgrade_lock())
 
-    def test_scripts_publish_failed_only_after_rollback(self):
-        for script in (
-            self.upgrade.UPGRADE_SCRIPT,
-            self.upgrade.BUNDLE_SCRIPT,
-        ):
-            with self.subTest(script=script):
-                source = script.read_text()
-                self.assertIn(
-                    "status running rollback 0\n  rollback",
-                    source,
-                )
-                self.assertLess(
-                    source.index("status running rollback 0"),
-                    source.index('status failed "$1" 0'),
-                )
+    def test_the_stage_is_told_the_trigger_attempt_and_backup_choice(self):
+        env = self.upgrade._stage_env(trigger="button", skip_backup=True, attempt=2)
+        self.assertEqual(env["DANBYTE_UPGRADE_TRIGGER"], "button")
+        self.assertEqual(env["DANBYTE_UPGRADE_ATTEMPT"], "2")
+        self.assertEqual(env["DANBYTE_SKIP_BACKUP"], "1")
+        self.assertNotIn("DANBYTE_UPGRADE_FAULT", env)
+        # an unattended upgrade always takes its backup
+        self.assertNotIn("DANBYTE_SKIP_BACKUP",
+                         self.upgrade._stage_env(trigger="auto", skip_backup=True))
+        fault = self.upgrade._stage_env(trigger="admin", fault="verify")
+        self.assertEqual((fault["DANBYTE_UPGRADE_TEST"], fault["DANBYTE_UPGRADE_FAULT"]),
+                         ("1", "verify"))
 
 
 class SystemUpgradeApiTests(APITestCase):
@@ -786,6 +776,9 @@ class SystemUpgradeApiTests(APITestCase):
         lb.assert_called_once()
         self.assertEqual(lb.call_args.args[0], "/tmp/b.tar.gz")
         self.assertTrue(lb.call_args.args[1])
+        # the launcher checks the bundle is the release it was asked for
+        self.assertEqual(lb.call_args.kwargs["version"], "v0.1.0")
+        self.assertEqual(lb.call_args.kwargs["extra_env"]["DANBYTE_UPGRADE_TRIGGER"], "button")
         git_launch.assert_not_called()  # never use the git path on a bundle install
 
     def test_bundle_download_failure_surfaces_502(self):
@@ -1023,6 +1016,24 @@ class UpgradeCancelTests(APITestCase):
             self.assertTrue(r.json()["had_lock"])
             self.assertFalse(lock.exists())
             self.assertFalse(status.exists())
+
+    def test_cancel_refuses_while_an_upgrade_is_unrecovered(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        self.client.force_login(self.admin)
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / ".danbyte-upgrade"
+            root.mkdir()
+            (root / "active").write_text("WORK=/x\n")
+            status = Path(d) / ".upgrade-status.json"
+            status.write_text('{"state": "running", "step": "migrate"}')
+            with patch.multiple("core.upgrade", UPGRADE_ROOTS=(root,), STATUS_FILE=status):
+                r = self.client.post("/api/system/upgrade/cancel/")
+            self.assertEqual(r.status_code, 409, r.content)
+            self.assertIn("danbyte-admin upgrade recover", r.json()["detail"])
+            self.assertTrue(status.exists())
 
     def test_cancel_requires_manage(self):
         user = get_user_model().objects.create_user("plain", password="pw")

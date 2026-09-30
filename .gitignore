@@ -42,10 +42,15 @@ local_settings.py
 media/
 staticfiles/
 *.log
-# In-app upgrade runtime artifacts (see core/upgrade.py).
+# In-app upgrade runtime artifacts (see core/upgrade.py, scripts/upgrade/).
 .upgrade-status.json
+.upgrade-status.json.*
 .upgrade.lock*
 .upgrade-bundle.tar.gz
+.upgrade.log
+.release-files
+.danbyte-upgrade/
+.maintenance
 
 # ── Environment ──────────────────────────────────────────────────────────
 .env

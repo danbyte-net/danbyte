@@ -22,7 +22,7 @@ SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
-.PHONY: help install-services uninstall-services reload admin-link install-tls-unit uninstall-tls-unit \
+.PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
         docs-up docs-down docs-restart docs-logs docs-build schema \
@@ -103,6 +103,25 @@ install-services:
 	@echo ""
 	@echo "Installed. Try:"
 	@echo "    make mockups-up        # http://localhost:8080"
+
+# What an upgrade links (scripts/upgrade/stage.sh): the same set as
+# install-services, or install-prod-services on a host that runs gunicorn,
+# but nothing is enabled or started - the stage decides what runs, and when.
+# install-services keeps its behaviour: releases before 0.17 call it.
+link-units:
+	@mkdir -p $(SYSTEMD_DIR)
+	@if [ -e $(SYSTEMD_DIR)/danbyte-web.service ]; then set="$(PROD_SERVICES)"; else set="$(SERVICES)"; fi; \
+	for s in $$set; do \
+		ln -sfn $(PROJECT_DIR)/services/$$s.service $(SYSTEMD_DIR)/$$s.service ; \
+	done
+	@for s in $(TIMERS); do \
+		ln -sfn $(PROJECT_DIR)/services/$$s.service $(SYSTEMD_DIR)/$$s.service ; \
+		ln -sfn $(PROJECT_DIR)/services/$$s.timer $(SYSTEMD_DIR)/$$s.timer ; \
+	done
+	@systemctl --user daemon-reload
+
+print-timers:
+	@echo $(TIMERS)
 
 uninstall-services:
 	@for s in $(SERVICES); do \
