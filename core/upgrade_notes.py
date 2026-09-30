@@ -31,17 +31,33 @@ class UpgradeNote:
     platforms: tuple[str, ...] = PLATFORMS
     # Returns True when the step is already done; such a note is never shown.
     check: Callable[[], bool] | None = None
+    # A step on the host as root (nginx, logrotate, the certificate unit):
+    # the snippet starts with the one command that does all of those.
+    host: bool = False
 
     def as_dict(self) -> dict:
+        snippet = self.snippet
+        if self.host:
+            snippet = f"{host_sync_command()}\n# or by hand:\n{snippet}" if snippet \
+                else host_sync_command()
         return {
             "id": self.id,
             "version": self.version,
             "title": self.title,
             "body": self.body,
-            "snippet": self.snippet,
+            "snippet": snippet,
             "docs": self.docs,
             "platforms": list(self.platforms),
         }
+
+
+def host_sync_command() -> str:
+    """What does the root steps of every release at once: logrotate, the
+    certificate unit, and the nginx site - re-rendered only while it is still
+    what Danbyte rendered (a changed one gets danbyte.conf.new beside it)."""
+    from django.conf import settings
+
+    return f"sudo make -C {settings.BASE_DIR} host-sync"
 
 
 _NGINX_BACKUPS = """\
@@ -140,6 +156,29 @@ def _tls_unit_installed() -> bool:
     return UNIT_FILE.exists()
 
 
+TLS_SERVICE_FILE = "/etc/systemd/system/danbyte-tls.service"
+
+
+def _tls_unit_runs_root_owned_script() -> bool:
+    """Done when the certificate unit runs a script outside the app's tree
+    (or there is no unit to fix: the 0.16.0 note installs one)."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    try:
+        text = Path(TLS_SERVICE_FILE).read_text()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    app = str(Path(settings.BASE_DIR).resolve())
+    for line in text.splitlines():
+        if line.strip().startswith("ExecStart="):
+            return app not in line and str(settings.BASE_DIR) not in line
+    return False
+
+
 _NGINX_TEMP_SIZE = """\
 # nginx takes k or m for this size, never g:
 sudo sed -i 's/proxy_max_temp_file_size 10g;/proxy_max_temp_file_size 10240m;/' \\
@@ -164,6 +203,27 @@ def _site_config() -> str | None:
         except OSError:
             continue
     return None
+
+
+def _acme_proxied() -> bool:
+    """Done when the site's nginx hands ACME challenges to Danbyte."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    block = re.search(r"location\s+(?:\^~\s+)?/\.well-known/acme-challenge/\s*\{([^}]*)\}", text)
+    return bool(block and "proxy_pass" in block.group(1))
+
+
+def _backups_location() -> bool:
+    """Done when the site's nginx has its own location for backup uploads."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    return bool(re.search(r"location\s+(?:\^~\s+)?/api/backups/\s*\{", text))
 
 
 def _temp_size_valid() -> bool:
@@ -224,6 +284,24 @@ def _no_kept_access_grant() -> bool:
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
     UpgradeNote(
+        id="0.17.0-tls-unit-root-script",
+        version="0.17.0",
+        title="Let the certificate unit run a script root owns",
+        body=(
+            "The root unit that puts a dropped certificate in front of nginx ran "
+            "its script from the Danbyte directory, which the service account "
+            "owns - so that account could have changed what root runs. It now "
+            "runs a copy in /usr/local/libexec/danbyte/ and answers outside "
+            "the Danbyte directory. Re-run the installer from the bundle, or "
+            "install the unit again."
+        ),
+        snippet="sudo make install-tls-unit   # from the Danbyte directory",
+        docs="getting-started/installation/",
+        platforms=("systemd",),
+        check=_tls_unit_runs_root_owned_script,
+        host=True,
+    ),
+    UpgradeNote(
         id="0.17.0-wildcard-access",
         version="0.17.0",
         title="Name an administrator, then delete the grant that kept access",
@@ -253,6 +331,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/backup-restore/",
         platforms=("systemd",),
         check=_temp_size_valid,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.13-nginx-media-proto",
@@ -267,6 +346,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/upgrading/",
         platforms=("systemd",),
         check=_proxied_blocks_forward_proto,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.12-logrotate",
@@ -283,6 +363,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/upgrading/",
         platforms=("systemd",),
         check=_logrotate_installed,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.12-nginx-backups-buffer",
@@ -299,6 +380,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/backup-restore/",
         platforms=("systemd",),
         check=_backups_buffered,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.12-nginx-media",
@@ -316,6 +398,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/upgrading/",
         platforms=("systemd",),
         check=_media_proxied,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.0-tls-unit",
@@ -332,6 +415,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="monitoring/certificates/#the-sites-own-certificate",
         platforms=("systemd",),
         check=_tls_unit_installed,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.0-nginx-acme",
@@ -346,6 +430,8 @@ NOTES: tuple[UpgradeNote, ...] = (
         snippet=_NGINX_ACME,
         docs="monitoring/certificates/#the-sites-own-certificate",
         platforms=("systemd",),
+        check=_acme_proxied,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.0-nginx-backups",
@@ -360,6 +446,8 @@ NOTES: tuple[UpgradeNote, ...] = (
         snippet=_NGINX_BACKUPS,
         docs="getting-started/backup-restore/#reverse-proxy",
         platforms=("systemd",),
+        check=_backups_location,
+        host=True,
     ),
 )
 

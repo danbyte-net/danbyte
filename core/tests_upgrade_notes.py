@@ -2,6 +2,7 @@
 the endpoints and command that surface and acknowledge them."""
 from __future__ import annotations
 
+import tempfile
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -119,11 +120,51 @@ class RealNotesTests(APITestCase):
             self.assertTrue(set(n.platforms) <= set(un.PLATFORMS), n.id)
             self.assertTrue(n.title and n.body, n.id)
         self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="docker")], [])
-        # The tls-unit note checks the host for the unit file.
-        with patch("core.site_tls.UNIT_FILE", Path("/nonexistent/danbyte-tls.path")):
+        # The tls-unit note checks the host for the unit file; the nginx ones
+        # read the site config (unreadable here, so they stay up).
+        with patch("core.site_tls.UNIT_FILE", Path("/nonexistent/danbyte-tls.path")), \
+                patch("core.upgrade_notes._site_config", return_value=None):
             self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="systemd")],
                              ["0.16.0-tls-unit", "0.16.0-nginx-acme", "0.16.0-nginx-backups"])
-        with patch("core.site_tls.UNIT_FILE", Path("/")):
+        with patch("core.site_tls.UNIT_FILE", Path("/")), \
+                patch("core.upgrade_notes._site_config", return_value=None):
             self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="systemd")],
                              ["0.16.0-nginx-acme", "0.16.0-nginx-backups"])
         self.assertEqual(un.applicable(version="0.15.1", platform="systemd"), [])
+
+    def test_the_nginx_notes_hide_once_the_site_has_the_locations(self):
+        site = (
+            "server { listen 80;\n"
+            "  location /.well-known/acme-challenge/ { proxy_pass http://127.0.0.1:8000; }\n}\n"
+            "server { listen 443 ssl;\n"
+            "  location ^~ /api/backups/ { proxy_pass http://127.0.0.1:8000; }\n}\n"
+        )
+        with patch("core.upgrade_notes._site_config", return_value=site):
+            self.assertTrue(un._acme_proxied())
+            self.assertTrue(un._backups_location())
+        with patch("core.upgrade_notes._site_config", return_value="server { listen 443; }"):
+            self.assertFalse(un._acme_proxied())
+            self.assertFalse(un._backups_location())
+
+    def test_the_certificate_unit_must_not_run_the_apps_own_script(self):
+        from django.conf import settings
+
+        with tempfile.TemporaryDirectory() as d:
+            unit = Path(d) / "danbyte-tls.service"
+            with patch.object(un, "TLS_SERVICE_FILE", str(unit)):
+                self.assertTrue(un._tls_unit_runs_root_owned_script())   # none: 0.16.0 note
+                unit.write_text(f"[Service]\nExecStart=/usr/bin/env bash "
+                                f"{settings.BASE_DIR}/scripts/danbyte-tls-apply.sh\n")
+                self.assertFalse(un._tls_unit_runs_root_owned_script())
+                unit.write_text("[Service]\nExecStart=/usr/local/libexec/danbyte/danbyte-tls-apply.sh\n")
+                self.assertTrue(un._tls_unit_runs_root_owned_script())
+
+    def test_host_steps_lead_with_the_one_command(self):
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.16.12-logrotate")
+        snippet = note.as_dict()["snippet"]
+        self.assertTrue(snippet.startswith(f"sudo make -C {settings.BASE_DIR} host-sync\n"))
+        self.assertIn("deploy/logrotate/danbyte", snippet)
+        wildcard = next(n for n in un.NOTES if n.id == "0.17.0-wildcard-access")
+        self.assertNotIn("host-sync", wildcard.as_dict()["snippet"])
