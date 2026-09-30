@@ -855,7 +855,7 @@ function LagRuns({
         </span>
       </div>
       {loading ? (
-        <Loading />
+        <Loading className="min-h-16" />
       ) : runs.length === 0 ? (
         <p className="text-[12px] text-muted-foreground">
           No member is cabled yet.

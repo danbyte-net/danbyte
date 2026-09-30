@@ -184,7 +184,7 @@ export function AssignedIpsPane({
                 <MixedStatusBadge counts={e.counts} status={e.status} />
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top" variant="panel">
+            <TooltipContent side="top">
               {e.checks} check{e.checks === 1 ? "" : "s"}
             </TooltipContent>
           </Tooltip>
