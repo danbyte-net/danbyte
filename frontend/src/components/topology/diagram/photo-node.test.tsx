@@ -215,6 +215,42 @@ describe("PhotoNode", () => {
     expect(shown.caption.tail?.text.endsWith("· …")).toBe(true)
   })
 
+  it("gives a showing pill back the room its lines took", () => {
+    // Leads down at 120, 300 and 420 px leave no gap for the name, a line
+    // and the pill: the line takes the pill's room while none shows.
+    const face = photoFace(base)!
+    const down = (x: number) => ({
+      k: "point" as const,
+      fx: x / face.w,
+      fy: (0.7 * face.imgH) / face.h,
+      exit: "B" as const,
+      port: "p",
+    })
+    const shown = photoShown(
+      face,
+      [down(120), down(300), down(420)],
+      base.name,
+      ["Down", "Degraded"],
+      approxMeasure,
+      PHOTO.LOD,
+      ["10.100.200.250"]
+    )
+    const data = photoData({
+      ...base,
+      card: { fields: ["monitor"], source: "default", values: {} },
+    })
+    data.diagram = { ...data.diagram, photo: shown }
+    renderNode(data)
+    const row = screen.getByText("leaf-01").parentElement!
+    expect(row.textContent).toBe("leaf-01· 10.100.200.250")
+    expect(row.hasAttribute("data-tip")).toBe(false)
+    cleanup()
+    renderNode({ ...data, monitor: "down" })
+    const pilled = screen.getByText("leaf-01").parentElement!
+    expect(pilled.textContent).toBe("leaf-01Down")
+    expect(pilled.getAttribute("data-tip")).toBe("leaf-01 · 10.100.200.250")
+  })
+
   it("is a plain box far out", () => {
     const { container } = renderNode(photoData(), PHOTO.LOD - 0.05)
     expect(container.querySelector("img")).toBeNull()

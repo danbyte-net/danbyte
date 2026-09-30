@@ -10,9 +10,9 @@ import { aarhusId } from "../__fixtures__/aarhus-graph"
 import { aarhusPhotoGraph } from "../__fixtures__/aarhus-photos"
 import { buildDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
-import { withFaces } from "./photo-anchors"
+import { PHOTO, photoFace, photoShown, withFaces } from "./photo-anchors"
 import type { FacedData } from "./photo-anchors"
-import { toDocument } from "./to-document"
+import { photoDocNode, toDocument } from "./to-document"
 import type { DocumentOptions } from "./to-document"
 
 // Photo nodes in the exports: the document carries each photo with the
@@ -274,6 +274,69 @@ describe("photo captions in the exports", () => {
     expect(shown).toBe(room)
     expect(room).toBeLessThan(6)
     expect(label).toContain("10.196.227.1")
+  })
+})
+
+describe("a pill in an exported caption", () => {
+  // The firewall with leads down at 120, 300 and 420 px: no gap holds its
+  // name, its IP and the monitoring pill, so the IP takes the pill's room.
+  const data = photos.nodes.find((n) => n.id === fwId)!.data as FacedData
+  const face = photoFace(data)!
+  const down = (x: number) => ({
+    k: "point" as const,
+    fx: x / face.w,
+    fy: face.imgH / face.h,
+    exit: "B" as const,
+    port: "p",
+    stub: true as const,
+  })
+  const slot = ["Down", "Degraded"]
+  const shown = photoShown(
+    face,
+    [down(120), down(300), down(420)],
+    data.name,
+    slot,
+    approxMeasure,
+    PHOTO.LOD,
+    ["10.196.227.101"]
+  )
+  const model = { face, name: data.name, lines: ["10.196.227.101"], slot }
+  const at = { x: face.w / 2, y: face.h / 2 }
+  const docNode = (isDown?: boolean) =>
+    photoDocNode(fwId, at, model, shown, null, {
+      measure: approxMeasure,
+      pill: isDown ? { kind: "check", status: "down", text: "Down" } : null,
+    })
+
+  it("draws the line in the pill's room while no pill shows", () => {
+    expect(shown.caption.pilled).toBeDefined()
+    const place = docNode().place!
+    expect(place.tail?.text).toBe("· 10.196.227.101")
+    expect(place.full).toBeUndefined()
+    expect(place.pill).toBeUndefined()
+  })
+
+  it("gives a showing pill its room back, the line in the tooltip", () => {
+    const n = docNode(true)
+    const place = n.place!
+    expect(place.tail).toBeUndefined()
+    expect(place.full).toBe("aarhus-fw1 · 10.196.227.101")
+    const nameW = Math.ceil(approxMeasure("aarhus-fw1", 12, 700))
+    expect(place.pill!.x).toBe(n.x + shown.caption.x + nameW + 6)
+    const doc: DiagramDocument = {
+      meta: META,
+      bounds: { x: n.x, y: n.y, w: n.w, h: n.h },
+      bands: [],
+      nodes: [{ ...n, photo: { ...n.photo!, href: PNG } }],
+      links: [],
+      notes: [],
+    }
+    const xml = toDrawio([doc], { photos: true, measure: approxMeasure })
+    const obj = new DOMParser()
+      .parseFromString(xml, "application/xml")
+      .querySelector(`object[danbyte_id="${fwId}"]`)!
+    expect(obj.getAttribute("label")).toBe("aarhus-fw1")
+    expect(obj.getAttribute("tooltip")).toBe("aarhus-fw1 · 10.196.227.101")
   })
 })
 

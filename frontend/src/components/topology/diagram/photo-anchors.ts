@@ -467,17 +467,45 @@ export interface PhotoShown {
   caption: PhotoCaption
 }
 
+/** A caption's card lines as drawn: `· `-led, whole values joined by
+ * ` · `, ending `· …` when some are left off; from `x`, `w` wide. */
+export interface CaptionTail {
+  text: string
+  x: number
+  w: number
+}
+
 export interface PhotoCaption {
   x: number
   top: number
   text: string
   w: number
-  /** The card lines after the name, as drawn: `· `-led, whole values
-   * joined by ` · `, ending `· …` when some are left off. */
-  tail?: { text: string; x: number; w: number }
+  /** The card lines after the name while no pill shows. */
+  tail?: CaptionTail
   /** The whole caption - the name and every line - when the drawn one is
    * cut: its tooltip. */
   full?: string
+  /** The lines and tooltip with a pill after them, when those differ: no
+   * gap held the name, the pill and a whole line, so the lines took the
+   * pill's room, and a pill that shows wins it back (`captionWith`). */
+  pilled?: { tail?: CaptionTail; full?: string }
+}
+
+/** The caption as drawn with a pill after it, or without one. */
+export function captionWith(
+  caption: PhotoCaption,
+  pill: boolean
+): PhotoCaption {
+  const p = caption.pilled
+  if (!pill || !p) return caption
+  return {
+    x: caption.x,
+    top: caption.top,
+    text: caption.text,
+    w: caption.w,
+    ...(p.tail ? { tail: p.tail } : {}),
+    ...(p.full ? { full: p.full } : {}),
+  }
 }
 
 /** The gaps a caption may take in `w`, left to right, between the
@@ -540,13 +568,15 @@ const tailOf = (values: readonly string[], k: number) =>
 /**
  * The card lines after a photo's name, in `room` px: as many whole values
  * as fit, then `· …` for the rest - an address is never cut in two. Only
- * the first value is cut, when not even it fits whole and there are
+ * a first value that could never fit whole - wider than `widest`, the
+ * room the caption has with no lead in its way - is cut, when there are
  * `PHOTO.TAIL_MIN` px to cut it to. Null for no lines, or nothing worth
  * drawing.
  */
 export function captionTail(
   values: readonly string[],
   room: number,
+  widest: number,
   measure: Measure
 ): { text: string; w: number; cut: boolean } | null {
   if (!values.length) return null
@@ -556,6 +586,7 @@ export function captionTail(
     if (w <= room) return { text, w, cut: k < values.length }
   }
   if (room < PHOTO.TAIL_MIN) return null
+  if (tailWidth(LEAD + values[0], measure) <= widest) return null
   const text = fit(
     LEAD + values[0],
     room,
@@ -580,8 +611,13 @@ export const captionCap = (face: Pick<PhotoFace, "h" | "imgH">) =>
  * show (`slot`) - steps round the leads running down through it: from its
  * ports, or from its bottom edge. It takes the first gap the whole of it
  * fits; else the first that fits the name, the pill and as many whole
- * lines as any gap holds (`· …` for the rest); else where the name and
- * pill fit, the lines cut to what is left of that gap.
+ * lines as any gap holds (`· …` for the rest). With no gap holding the
+ * name, the pill and a whole line, the lines may take the pill's room: the
+ * first gap that fits the name and the pill, and the name and the most
+ * whole lines; else where the name and pill fit, the lines getting what
+ * is left of that gap. A pill that shows then wins its room back, and the
+ * lines it drops go to the tooltip (`pilled`). A status pill (`statusPill`)
+ * always shows, so its room is never lent.
  */
 export function photoShown(
   face: PhotoFace,
@@ -590,7 +626,8 @@ export function photoShown(
   slot: readonly string[],
   measure: Measure,
   lod: number = PHOTO.LOD,
-  lines: readonly string[] = []
+  lines: readonly string[] = [],
+  statusPill = false
 ): PhotoShown {
   const points = ends.filter((a): a is PointAnchor => a.k === "point")
   const at = new Set(
@@ -621,13 +658,23 @@ export function photoShown(
   const nameW = Math.ceil(measure(name, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
   const values = lines.map(tailValue).filter(Boolean)
   const gaps = captionGaps(face.w, blocked)
-  let spot: { x: number; room: number; to: number } | undefined
-  for (let k = values.length; k >= 1 && !spot; k--) {
-    const need =
-      nameW + PHOTO.TAIL_GAP + tailWidth(tailOf(values, k), measure) + extra
-    const g = gaps.find(([a, b]) => b - a >= need)
-    if (g) spot = { x: g[0], room: need, to: g[1] }
+  const tailNeed = (k: number) =>
+    PHOTO.TAIL_GAP + tailWidth(tailOf(values, k), measure)
+  // The first gap `need` px fit, for the most whole lines `need` takes.
+  const place = (need: (k: number) => number) => {
+    for (let k = values.length; k >= 1; k--) {
+      const g = gaps.find(([a, b]) => b - a >= need(k))
+      if (g) return { x: g[0], room: nameW + extra, to: g[1] }
+    }
+    return undefined
   }
+  // The name, the pill's room and whole lines; else the lines in the
+  // pill's room (`borrow`).
+  const kept = place((k) => nameW + tailNeed(k) + extra)
+  const borrow = !kept && extra > 0 && !statusPill
+  const spot =
+    kept ??
+    (borrow ? place((k) => nameW + Math.max(tailNeed(k), extra)) : undefined)
   const { x, room, to } = spot ?? captionRoom(face.w, blocked, nameW + extra)
   const text = fit(
     name,
@@ -638,8 +685,25 @@ export function photoShown(
   )
   const w = Math.ceil(measure(text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
   const tailX = x + w + PHOTO.TAIL_GAP
-  const tail = captionTail(values, to - tailX - extra, measure)
-  const cut = text !== name || !!tail?.cut || (values.length > 0 && !tail)
+  // The lines in `pill` px less: a value is cut only when it could never
+  // fit whole beside the whole name.
+  const tailIn = (pill: number) => {
+    const t = captionTail(
+      values,
+      to - tailX - pill,
+      face.w - nameW - PHOTO.TAIL_GAP - pill,
+      measure
+    )
+    const cut = text !== name || !!t?.cut || (values.length > 0 && !t)
+    return {
+      ...(t ? { tail: { text: t.text, x: tailX, w: t.w } } : {}),
+      ...(cut ? { full: [name, ...values].join(SEP) } : {}),
+    }
+  }
+  const free = tailIn(borrow ? 0 : extra)
+  const pilled = borrow ? tailIn(extra) : free
+  const same =
+    pilled.tail?.text === free.tail?.text && pilled.full === free.full
   return {
     kind: face.kind,
     ...(face.url ? { url: face.url } : {}),
@@ -654,14 +718,14 @@ export function photoShown(
       top: face.imgH + PHOTO.CAPTION_GAP,
       text,
       w,
-      ...(tail ? { tail: { text: tail.text, x: tailX, w: tail.w } } : {}),
-      ...(cut ? { full: [name, ...values].join(SEP) } : {}),
+      ...free,
+      ...(same ? {} : { pilled }),
     },
   }
 }
 
 /** Where the pill goes after the caption - its lines, else its name -
- * node-relative. */
+ * node-relative; `caption` as drawn with the pill (`captionWith`). */
 export function captionPill(caption: PhotoCaption, w: number): Rect {
   const end = caption.tail
     ? caption.tail.x + caption.tail.w

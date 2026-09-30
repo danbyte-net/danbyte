@@ -62,7 +62,7 @@ import {
   routeThrough,
   staleBend,
 } from "./link-geometry"
-import { captionPill, PHOTO } from "./photo-anchors"
+import { captionPill, captionWith, PHOTO } from "./photo-anchors"
 import { nubRun } from "./plan"
 import type { PhotoShown } from "./photo-anchors"
 import type {
@@ -318,6 +318,8 @@ export function photoDocNode(
   }
   let pill: DiagramPill | undefined
   let pillRect: Rect | undefined
+  // A pill that shows takes back the room its lines may have used.
+  const cap = captionWith(shown.caption, !!opts.pill)
   if (opts.pill) {
     const text = fit(
       opts.pill.text,
@@ -327,12 +329,11 @@ export function photoDocNode(
       opts.measure ?? measureText
     )
     pill = { ...pillLook(opts.pill, opts.checks), text }
-    const r = captionPill(shown.caption, pillWidth(text, opts.measure))
+    const r = captionPill(cap, pillWidth(text, opts.measure))
     pillRect = { ...r, x: x + r.x, y: y + r.y }
   }
   if (!photo)
     return { ...common, kind: "card", title: p.name, ...(pill ? { pill } : {}) }
-  const cap = shown.caption
   return {
     ...common,
     kind: "photo",

@@ -423,17 +423,24 @@ greyed out (it would change nothing).
   `·` (`DK-NRVI-OTA-A3-001:1 · 10.196.227.1 · SN FOC1234`), then the pill.
   The lines and the pill follow the card's rules - the device's own list,
   else the view's, the role's, All devices - so **Name only** there gives
-  a caption of just the name. The caption sits at the left under the
-  photo, or steps right to the first gap between the leads running down
-  through it that holds all of it; when none does, it takes the first
-  gap the name and pill fit, and the lines get what is left of it. A line
-  is shown whole or not at all - never an address cut in two - and `· …`
-  at the end says some were left off; with no room worth reading, the
-  lines are left off. Hover a cut caption for all of it. The caption
-  never makes the photo taller, so nothing moves when a line changes.
-  Photo maps made before captions carried card lines show them too (the
-  built-in list is IP, Loopback and Serial); give the view **Name only**
-  lines for captions of just the name.
+  a caption of just the name. Photo maps made before captions carried card
+  lines show them too (the built-in list is IP, Loopback and Serial); give
+  the view **Name only** lines for captions of just the name. A line is
+  shown whole or not at all - never an address cut in two; only a value
+  too long to fit whole beside the name, with no lead in the way, is cut.
+  `· …` at the end says some lines were left off; hover a cut caption for
+  all of it. The caption never makes the photo taller, so nothing moves
+  when a line changes. It sits at the left under the photo, or steps
+  right past the leads running down through it to the first gap that
+  holds:
+    1. the name, the pill and every line;
+    2. else the name, the pill and the most whole lines any gap holds;
+    3. else the name and the most whole lines, the lines using the
+       monitoring pill's room - a pill that shows wins it back, and the
+       lines it pushes out move to the hover (a status pill always shows,
+       so its room is never lent);
+    4. else the name and the pill, the lines getting what is left - the
+       monitoring pill's room too, until it shows.
 - **What stands in** (never artwork made up for the map):
     1. the photo with its port markers;
     2. the photo without a marker for a port - that cable lands on a short

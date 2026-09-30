@@ -8,6 +8,7 @@ import {
   captionPill,
   captionRoom,
   captionTail,
+  captionWith,
   exitTowards,
   faceOf,
   markerOf,
@@ -435,13 +436,71 @@ describe("caption card lines", () => {
     expect(cap.full).toBe("leaf-01 · 10.0.0.1 · SN FOC1234")
   })
 
-  it("leaves the lines off where there is no room to read them", () => {
+  it("lends the lines the pill's room when no gap holds all three", () => {
+    // The 131-289 gap (158 px) holds the name and a line (116 px), or the
+    // name and the pill (94 px), not all three (168 px).
     const cap = shown([down(120), down(300), down(420)], ["Planned"])
+    expect(cap.x).toBe(120 + NUB.ALONG / 2 + PHOTO.CAPTION_PAD)
+    expect(cap.tail?.text).toBe("· 10.0.0.1 · …")
+    expect(cap.full).toBe("leaf-01 · 10.0.0.1 · SN FOC1234")
+    // A pill that shows wins its room back; the line goes to the tooltip.
+    expect(cap.pilled).toEqual({ full: "leaf-01 · 10.0.0.1 · SN FOC1234" })
+    const pilled = captionWith(cap, true)
+    expect(pilled.tail).toBeUndefined()
+    expect(pilled.full).toBe(cap.full)
+    expect(captionPill(pilled, 46).x).toBe(cap.x + 42 + PILL.GAP)
+    expect(captionWith(cap, false)).toBe(cap)
+  })
+
+  it("never lends a status pill's room: it always shows", () => {
+    const cap = photoShown(
+      f,
+      [down(120), down(300), down(420)],
+      "leaf-01",
+      ["Planned"],
+      mono,
+      PHOTO.LOD,
+      lines,
+      true
+    ).caption
+    expect(cap.x).toBe(0)
+    expect(cap.tail).toBeUndefined()
+    expect(cap.full).toBe("leaf-01 · 10.0.0.1 · SN FOC1234")
+    expect(cap.pilled).toBeUndefined()
+  })
+
+  it("keeps the lines when the pill's room was kept for it", () => {
+    const cap = shown([down(120)], ["Planned"])
+    expect(cap.pilled).toBeUndefined()
+    expect(captionWith(cap, true)).toBe(cap)
+  })
+
+  it("leaves the lines off where there is no room to read them", () => {
+    // Every gap holds the name and the pill, none the name and a line.
+    const cap = shown([down(120), down(240), down(360)], ["Planned"])
     expect(cap.x).toBe(0)
     expect(cap.text).toBe("leaf-01")
     expect(cap.tail).toBeUndefined()
     expect(cap.full).toBe("leaf-01 · 10.0.0.1 · SN FOC1234")
+    expect(cap.pilled).toBeUndefined()
     expect(captionPill(cap, 46).x).toBe(42 + PILL.GAP)
+  })
+
+  it("never cuts an address that fits whole with no lead in the way", () => {
+    // No gap holds the name and the address; the first has 54 px left
+    // after the name - enough to cut it to, but it is left off.
+    const cap = photoShown(
+      f,
+      [down(111), down(222), down(333), down(444)],
+      "leaf-01",
+      [],
+      mono,
+      PHOTO.LOD,
+      ["10.100.200.250"]
+    ).caption
+    expect(cap.x).toBe(0)
+    expect(cap.tail).toBeUndefined()
+    expect(cap.full).toBe("leaf-01 · 10.100.200.250")
   })
 
   it("names only the name when that is all it cut", () => {
@@ -453,19 +512,35 @@ describe("caption card lines", () => {
     expect(photoShown(f, [], "leaf-01", [], mono).caption.full).toBeUndefined()
   })
 
-  it("cuts only a first value too long to fit whole", () => {
-    expect(captionTail(["10.100.200.250"], 50, mono)).toEqual({
+  it("cuts only a first value that could never fit whole", () => {
+    // Wider than the caption's widest room: cut to what there is.
+    expect(captionTail(["10.100.200.250"], 50, 70, mono)).toEqual({
       text: "· 10.100.…",
       w: 50,
       cut: true,
     })
-    expect(captionTail(["10.0.0.1", "SN X"], 200, mono)).toEqual({
+    // It would fit whole somewhere: left off, never cut in two.
+    expect(captionTail(["10.100.200.250"], 50, 434, mono)).toBeNull()
+    expect(captionTail(["10.0.0.1", "SN X"], 200, 434, mono)).toEqual({
       text: "· 10.0.0.1 · SN X",
       w: 85,
       cut: false,
     })
-    expect(captionTail([], 200, mono)).toBeNull()
-    expect(captionTail(["10.0.0.1"], PHOTO.TAIL_MIN - 1, mono)).toBeNull()
+    expect(captionTail([], 200, 434, mono)).toBeNull()
+    expect(captionTail(["x".repeat(99)], PHOTO.TAIL_MIN - 1, 70, mono)).toBe(
+      null
+    )
+  })
+
+  it("cuts a value wider than the photo to the room it has", () => {
+    const long = `Notes: ${"x".repeat(120)}`
+    const cap = photoShown(f, [], "leaf-01", [], mono, PHOTO.LOD, [
+      long,
+    ]).caption
+    expect(cap.tail?.text.startsWith("· Notes: xx")).toBe(true)
+    expect(cap.tail?.text.endsWith("…")).toBe(true)
+    expect(cap.tail!.x + cap.tail!.w).toBeLessThanOrEqual(f.w)
+    expect(cap.full).toBe(`leaf-01 · ${long}`)
   })
 
   it("reads a rack line as one value", () => {

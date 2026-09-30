@@ -7,14 +7,15 @@ import { StatusBadge } from "@/components/status-badge"
 import { cn } from "@/lib/utils"
 import { cardContent } from "./card-fields"
 import { CARD, NUB, nubRect, PILL } from "./card-layout"
-import { PHOTO } from "./photo-anchors"
+import { captionWith, PHOTO } from "./photo-anchors"
 import type { DiagramCardData } from "./types"
 
 // A device drawn as its front photo (photo-anchors.ts): the image to
 // scale, a thin outline on each port a cable is plugged into, a grey tab
 // on the image edge for a cabled port without a marker, and the name as a
 // caption under the image - its card lines after it, muted, then the
-// status pill; a cut caption names itself in full on hover. No card fill.
+// status pill, which wins any room the lines took from it; a cut caption
+// names itself in full on hover. No card fill.
 // Taking its cables at its edge, it has no outlines: in Detailed mode each
 // cable leaves a nub on the image's side, as on a card.
 //
@@ -51,7 +52,8 @@ export const PhotoNode = memo(function PhotoNode({
   // zoom re-renders a photo only when it crosses the line.
   const far = useStore((s: ReactFlowState) => s.transform[2] < ph.lod)
   const { pill } = cardContent(d, { monitor: d.monitor })
-  const cap = ph.caption
+  // A pill that shows takes back the room its lines may have used.
+  const cap = captionWith(ph.caption, !!pill)
   const fill = box.fill
   const plain = (
     <div

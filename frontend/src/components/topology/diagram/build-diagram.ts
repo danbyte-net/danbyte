@@ -222,6 +222,9 @@ export interface PhotoModel {
   lines: string[]
   /** Every pill text the card fields can show (`cardContent().pillSlot`). */
   slot: string[]
+  /** Its status pill shows whatever the monitoring says: the lines never
+   * take the pill's room. */
+  statusPill?: true
 }
 
 /** A breakout cable as the anchoring sees it. */
@@ -1359,7 +1362,8 @@ function photosShown(
         p.slot,
         model.measure,
         lod,
-        p.lines
+        p.lines,
+        p.statusPill
       )
     )
   return out
@@ -1720,6 +1724,7 @@ export function buildDiagram(
         name: content.name,
         lines: content.lines.map((l) => l.text),
         slot: content.pillSlot,
+        ...(content.pill ? { statusPill: true as const } : {}),
       }
       photos.set(n.id, p)
       base.set(n.id, photoBox(p, n.data.role?.color))

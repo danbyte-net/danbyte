@@ -248,6 +248,8 @@ describe("photo nodes", () => {
       "10.196.227.1",
       "SN FOC1234",
     ])
+    // Only a monitoring pill: the lines may take its room while none shows.
+    expect(b.model.photos!.get(fw)!.statusPill).toBeUndefined()
     const cap = (b.nodes.find((n) => n.id === fw)!.data as DiagramCardData)
       .diagram.photo!.caption
     expect(cap.text).toBe("aarhus-fw1")
@@ -258,6 +260,38 @@ describe("photo nodes", () => {
     expect(boxOf(b.nodes.find((n) => n.id === fw)!)).toEqual(
       boxOf(plain.nodes.find((n) => n.id === fw)!)
     )
+  })
+
+  it("marks a photo whose status pill always shows", () => {
+    const status = {
+      id: "s",
+      name: "Planned",
+      slug: "planned",
+      color: "#0ea5e9",
+      text_color: "#ffffff",
+    }
+    const g: TopologyGraph = {
+      ...photos,
+      nodes: photos.nodes.map((n) => {
+        const d = n.data as FacedData
+        return d.name === "aarhus-fw1"
+          ? {
+              ...n,
+              data: {
+                ...d,
+                status_mini: status,
+                card: {
+                  fields: ["status", "primary_ip"],
+                  source: "device" as const,
+                  values: {},
+                },
+              },
+            }
+          : n
+      }),
+    }
+    const b = build(g)
+    expect(b.model.photos!.get(aarhusId("aarhus-fw1"))!.statusPill).toBe(true)
   })
 
   it("draws a type without a photo as its faceplate, else its card", () => {
