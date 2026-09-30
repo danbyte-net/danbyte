@@ -246,3 +246,54 @@ class ValidationTests(_Base):
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(r.json()["cadence_label"], "daily at 02:00")
         self.assertIsNotNone(r.json()["next_run_at"])
+
+
+class ShareTargetTests(_Base):
+    """A script is shared only with people and groups of its own tenant."""
+
+    def setUp(self):
+        super().setUp()
+        other = Tenant.objects.create(org=self.tenant.org, name="Other", slug="other")
+        self.outsider = get_user_model().objects.create_user("outsider", "o@e.com", "x")
+        UserProfile.objects.create(user=self.outsider, role="custom").tenants.add(other)
+        self.far_team = Group.objects.create(name="far-team")
+        self.outsider.groups.add(self.far_team)
+        self.team = Group.objects.create(name="team")
+        self.reader.groups.add(self.team)
+        self.script = self._script(visibility="users")
+        self.client.force_login(self.author)
+
+    def _patch(self, body):
+        return self.client.patch(f"/api/scripts/{self.script.id}/", body, format="json")
+
+    def test_shares_within_the_tenant(self):
+        r = self._patch({"shared_users": [self.reader.id]})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._patch({"visibility": "groups", "shared_groups": [self.team.id]})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_refuses_people_and_groups_of_another_tenant(self):
+        r = self._patch({"shared_users": [self.reader.id, self.outsider.id]})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("shared_users", r.json())
+        r = self._patch({"visibility": "groups", "shared_groups": [self.far_team.id]})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("shared_groups", r.json())
+        r = self.client.post("/api/scripts/", {
+            "name": "new", "visibility": "users", "shared_users": [self.outsider.id],
+        }, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertFalse(self.script.shared_users.exists())
+
+    def test_someone_already_on_the_list_stays(self):
+        self.script.shared_users.add(self.outsider)
+        r = self._patch({"description": "d", "shared_users": [self.outsider.id]})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_a_superuser_works_across_tenants(self):
+        self.client.force_login(self.admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.pk)
+        session.save()
+        r = self._patch({"shared_users": [self.outsider.id]})
+        self.assertEqual(r.status_code, 200, r.content)
