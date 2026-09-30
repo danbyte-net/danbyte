@@ -459,6 +459,9 @@ export interface CardText {
   pill?: Rect & { text: string }
   title: PlacedText
   lines: PlacedText[]
+  /** A photo's card lines after its name (`place.tail`): start-anchored,
+   * muted, at card-line size. */
+  tail?: PlacedText
 }
 
 /** A pill's width for `text`, as the canvas card sizes it. */
@@ -470,9 +473,10 @@ export function pillWidth(text: string, measure: Measure = measureText) {
 }
 
 /** Where a node's pill, name and lines go: the builder's `place` when it
- * sent one, else the card rule in theme.ts `CARD` (strings cut to fit). A
- * photo node puts its pill on the image's corner and its name and lines
- * under the image. */
+ * sent one, else the card rule in theme.ts `CARD` (strings cut to fit,
+ * and only the lines the card's height has room for - a photo drawn as
+ * its card is only as tall as the photo). A photo node puts its pill on
+ * the image's corner and its name and lines under the image. */
 export function cardText(
   node: DiagramNode,
   measure: Measure = measureText
@@ -489,6 +493,15 @@ export function cardText(
           ? [{ text, x: place.lines[i].x, y: place.lines[i].y }]
           : []
       ),
+      ...(place.tail
+        ? {
+            tail: {
+              text: place.tail.text,
+              x: place.tail.x,
+              y: place.tail.y,
+            },
+          }
+        : {}),
     }
 
   const photo = node.kind === "photo" ? node.photo : undefined
@@ -543,7 +556,10 @@ export function cardText(
     y: baselineAt(top, CARD.TITLE_SIZE, CARD.TITLE_LH),
   }
   const linesTop = top + CARD.TITLE_LH + CARD.LINES_GAP
-  const lines = node.lines.map((line, i) => ({
+  const room = photo
+    ? node.lines.length
+    : Math.floor((node.y + node.h - CARD.PAD_Y - linesTop + 0.5) / CARD.LINE_LH)
+  const lines = node.lines.slice(0, Math.max(0, room)).map((line, i) => ({
     text: fit(
       line,
       Math.max(0, node.w - 2 * CARD.PAD_X),

@@ -20,7 +20,8 @@ import type { Anchor, PortRef, Rect } from "./types"
 //      screen only, every port a stub lead (its ports have no coordinates);
 //   4. neither - the normal card.
 // The name is a caption under the image, placed clear of the leads that
-// run down through it.
+// run down through it, with the device's card lines after it on the same
+// line (muted, `· `-separated) as far as they fit.
 //
 // A photo can instead take its cables at its edge (the view's
 // `photo_anchor`, or the device's own `anchor`): it is anchored like a
@@ -42,6 +43,10 @@ export const PHOTO = {
   CAPTION_PAD: 6,
   /** The least room the caption steps into between leads. */
   CAPTION_MIN: 40,
+  /** Between the name and the card lines after it (the tail). */
+  TAIL_GAP: 4,
+  /** The least room the tail is drawn in; less, it is left off. */
+  TAIL_MIN: 40,
   /** The shortest image drawn, px. */
   MIN_H: 12,
   /** Below this zoom the image is a plain box - on a map with `MANY`
@@ -456,19 +461,31 @@ export interface PhotoShown {
   marks: PhotoMark[]
   /** Ports without a marker: px along the image edge they sit on. */
   stubs: { port: string; x: number; side: "T" | "B" }[]
-  /** The name under the image, node-relative: the text cut to its room,
-   * its measured width and where it starts; the pill follows it. */
-  caption: { x: number; top: number; text: string; w: number }
+  /** The caption under the image, node-relative: the name cut to its room,
+   * its measured width and where it starts; the card lines after it
+   * (`tail`, from `x`), then the pill. */
+  caption: PhotoCaption
 }
 
-/** Where a caption `need` px wide goes in `w`, clear of `blocked` spans:
- * at the left when it fits there, else the first gap it fits, else the
- * widest gap (it is cut to that) - or the left when no gap is worth it. */
-export function captionRoom(
+export interface PhotoCaption {
+  x: number
+  top: number
+  text: string
+  w: number
+  /** The card lines after the name, as drawn: `· `-led, whole values
+   * joined by ` · `, ending `· …` when some are left off. */
+  tail?: { text: string; x: number; w: number }
+  /** The whole caption - the name and every line - when the drawn one is
+   * cut: its tooltip. */
+  full?: string
+}
+
+/** The gaps a caption may take in `w`, left to right, between the
+ * `blocked` spans. */
+function captionGaps(
   w: number,
-  blocked: readonly [number, number][],
-  need: number
-): { x: number; room: number } {
+  blocked: readonly [number, number][]
+): [number, number][] {
   const spans = [...blocked]
     .map(([a, b]) => [Math.max(0, a), Math.min(w, b)] as [number, number])
     .filter(([a, b]) => b > a)
@@ -480,15 +497,75 @@ export function captionRoom(
     from = Math.max(from, b)
   }
   if (w > from) gaps.push([from, w])
+  return gaps
+}
+
+/** Where a caption `need` px wide goes in `w`, clear of `blocked` spans:
+ * at the left when it fits there, else the first gap it fits, else the
+ * widest gap (it is cut to that) - or the left when no gap is worth it.
+ * `to` is where the gap it took ends. */
+export function captionRoom(
+  w: number,
+  blocked: readonly [number, number][],
+  need: number
+): { x: number; room: number; to: number } {
+  const gaps = captionGaps(w, blocked)
   const fits = gaps.find(([a, b]) => b - a >= need)
-  if (fits) return { x: fits[0], room: need }
+  if (fits) return { x: fits[0], room: need, to: fits[1] }
   const widest = gaps.reduce<[number, number] | null>(
     (best, g) => (!best || g[1] - g[0] > best[1] - best[0] ? g : best),
     null
   )
   if (widest && widest[1] - widest[0] >= PHOTO.CAPTION_MIN)
-    return { x: widest[0], room: widest[1] - widest[0] }
-  return { x: 0, room: Math.min(w, need) }
+    return { x: widest[0], room: widest[1] - widest[0], to: widest[1] }
+  const room = Math.min(w, need)
+  return { x: 0, room, to: room }
+}
+
+/** Between the values in a caption's tail, and before the first. */
+const SEP = " · "
+const LEAD = "· "
+
+/** A card line as a caption value: its own ` · ` (a rack's unit) would
+ * read as two values. */
+const tailValue = (line: string) => line.replace(/\s+·\s+/g, " ").trim()
+
+const tailWidth = (text: string, measure: Measure) =>
+  Math.ceil(measure(text, CARD.LINE_SIZE, CARD.LINE_WEIGHT))
+
+/** The tail of the first `k` of `values`, `· …` for the rest. */
+const tailOf = (values: readonly string[], k: number) =>
+  LEAD + values.slice(0, k).join(SEP) + (k < values.length ? `${SEP}…` : "")
+
+/**
+ * The card lines after a photo's name, in `room` px: as many whole values
+ * as fit, then `· …` for the rest - an address is never cut in two. Only
+ * the first value is cut, when not even it fits whole and there are
+ * `PHOTO.TAIL_MIN` px to cut it to. Null for no lines, or nothing worth
+ * drawing.
+ */
+export function captionTail(
+  values: readonly string[],
+  room: number,
+  measure: Measure
+): { text: string; w: number; cut: boolean } | null {
+  if (!values.length) return null
+  for (let k = values.length; k >= 1; k--) {
+    const text = tailOf(values, k)
+    const w = tailWidth(text, measure)
+    if (w <= room) return { text, w, cut: k < values.length }
+  }
+  if (room < PHOTO.TAIL_MIN) return null
+  const text = fit(
+    LEAD + values[0],
+    room,
+    CARD.LINE_SIZE,
+    CARD.LINE_WEIGHT,
+    measure
+  )
+  // Nothing of the value left but the ellipsis: not worth drawing.
+  if (Array.from(text).length < LEAD.length + 2) return null
+  return { text, w: tailWidth(text, measure), cut: true }
 }
 
 /** The px of a photo node's box under its image: the caption's room. A
@@ -498,9 +575,13 @@ export const captionCap = (face: Pick<PhotoFace, "h" | "imgH">) =>
 
 /**
  * A photo node as drawn for its anchored ends (`ends`: the anchors of
- * every line landing on it). The caption - the name, then room for the
- * widest pill the card fields can show (`slot`) - steps round the leads
- * running down through it: from its ports, or from its bottom edge.
+ * every line landing on it). The caption - the name, its card lines
+ * (`lines`) after it, then room for the widest pill the card fields can
+ * show (`slot`) - steps round the leads running down through it: from its
+ * ports, or from its bottom edge. It takes the first gap the whole of it
+ * fits; else the first that fits the name, the pill and as many whole
+ * lines as any gap holds (`· …` for the rest); else where the name and
+ * pill fit, the lines cut to what is left of that gap.
  */
 export function photoShown(
   face: PhotoFace,
@@ -508,7 +589,8 @@ export function photoShown(
   name: string,
   slot: readonly string[],
   measure: Measure,
-  lod: number = PHOTO.LOD
+  lod: number = PHOTO.LOD,
+  lines: readonly string[] = []
 ): PhotoShown {
   const points = ends.filter((a): a is PointAnchor => a.k === "point")
   const at = new Set(
@@ -537,7 +619,16 @@ export function photoShown(
   const slotW = Math.max(0, ...slot.map((t) => pillWidth(t, measure)))
   const extra = slotW ? PILL.GAP + slotW : 0
   const nameW = Math.ceil(measure(name, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
-  const { x, room } = captionRoom(face.w, blocked, nameW + extra)
+  const values = lines.map(tailValue).filter(Boolean)
+  const gaps = captionGaps(face.w, blocked)
+  let spot: { x: number; room: number; to: number } | undefined
+  for (let k = values.length; k >= 1 && !spot; k--) {
+    const need =
+      nameW + PHOTO.TAIL_GAP + tailWidth(tailOf(values, k), measure) + extra
+    const g = gaps.find(([a, b]) => b - a >= need)
+    if (g) spot = { x: g[0], room: need, to: g[1] }
+  }
+  const { x, room, to } = spot ?? captionRoom(face.w, blocked, nameW + extra)
   const text = fit(
     name,
     Math.max(0, room - extra),
@@ -545,6 +636,10 @@ export function photoShown(
     CARD.TITLE_WEIGHT,
     measure
   )
+  const w = Math.ceil(measure(text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
+  const tailX = x + w + PHOTO.TAIL_GAP
+  const tail = captionTail(values, to - tailX - extra, measure)
+  const cut = text !== name || !!tail?.cut || (values.length > 0 && !tail)
   return {
     kind: face.kind,
     ...(face.url ? { url: face.url } : {}),
@@ -558,15 +653,21 @@ export function photoShown(
       x,
       top: face.imgH + PHOTO.CAPTION_GAP,
       text,
-      w: Math.ceil(measure(text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT)),
+      w,
+      ...(tail ? { tail: { text: tail.text, x: tailX, w: tail.w } } : {}),
+      ...(cut ? { full: [name, ...values].join(SEP) } : {}),
     },
   }
 }
 
-/** Where the pill goes after the caption, node-relative. */
-export function captionPill(caption: PhotoShown["caption"], w: number): Rect {
+/** Where the pill goes after the caption - its lines, else its name -
+ * node-relative. */
+export function captionPill(caption: PhotoCaption, w: number): Rect {
+  const end = caption.tail
+    ? caption.tail.x + caption.tail.w
+    : caption.x + caption.w
   return {
-    x: caption.x + caption.w + PILL.GAP,
+    x: end + PILL.GAP,
     y: caption.top + (PHOTO.CAPTION_LH - PILL.H) / 2,
     w,
     h: PILL.H,

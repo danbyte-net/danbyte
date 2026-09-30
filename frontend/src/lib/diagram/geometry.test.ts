@@ -273,6 +273,36 @@ describe("cardText", () => {
     expect(t.title.y).toBeGreaterThan(n.photo!.y + n.photo!.h)
     expect(t.lines[0].y).toBeLessThanOrEqual(n.y + n.h)
   })
+
+  it("draws a photo's card lines after its name where the builder put them", () => {
+    const n = {
+      ...node("dev:patch-a"),
+      lines: ["10.0.0.1", "SN X"],
+      place: {
+        title: { x: 90, y: 598 },
+        lines: [],
+        tail: { x: 124, y: 597.5, text: "· 10.0.0.1 · SN X" },
+      },
+    }
+    const t = cardText(n)
+    expect(t.lines).toEqual([])
+    expect(t.tail).toEqual({ text: "· 10.0.0.1 · SN X", x: 124, y: 597.5 })
+  })
+
+  it("draws only the lines a card's height has room for", () => {
+    // A photo drawn as its card: as tall as the photo, not its lines.
+    const n = {
+      ...node("dev:patch-a"),
+      kind: "card" as const,
+      photo: undefined,
+      h: 64,
+      lines: ["a", "b", "c", "d"],
+    }
+    expect(cardText(n).lines.map((l) => l.text)).toEqual(["a", "b"])
+    // A card sized for its lines keeps them all.
+    const leaf1 = node("dev:leaf-01")
+    expect(cardText(leaf1).lines).toHaveLength(leaf1.lines.length)
+  })
 })
 
 describe("noteLayout", () => {

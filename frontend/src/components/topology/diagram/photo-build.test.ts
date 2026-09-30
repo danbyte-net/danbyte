@@ -215,6 +215,51 @@ describe("photo nodes", () => {
     ).toEqual([])
   })
 
+  it("captions a photo with its card lines, the card's own resolution", () => {
+    const g: TopologyGraph = {
+      ...photos,
+      nodes: photos.nodes.map((n) => {
+        const d = n.data as FacedData
+        return d.name === "aarhus-fw1"
+          ? {
+              ...n,
+              data: {
+                ...d,
+                card: {
+                  fields: ["monitor", "primary_ip", "serial"],
+                  source: "device" as const,
+                  values: {
+                    primary_ip: {
+                      id: "ip1",
+                      address: "10.196.227.1",
+                      cidr: "10.196.227.1/24",
+                    },
+                    serial: "FOC1234",
+                  },
+                },
+              },
+            }
+          : n
+      }),
+    }
+    const b = build(g)
+    const fw = aarhusId("aarhus-fw1")
+    expect(b.model.photos!.get(fw)!.lines).toEqual([
+      "10.196.227.1",
+      "SN FOC1234",
+    ])
+    const cap = (b.nodes.find((n) => n.id === fw)!.data as DiagramCardData)
+      .diagram.photo!.caption
+    expect(cap.text).toBe("aarhus-fw1")
+    expect(cap.tail?.text).toBe("· 10.196.227.1 · SN FOC1234")
+    expect(cap.tail!.x).toBe(cap.x + cap.w + PHOTO.TAIL_GAP)
+    // The box stays one caption line: nothing moves for the lines.
+    const plain = build(photos)
+    expect(boxOf(b.nodes.find((n) => n.id === fw)!)).toEqual(
+      boxOf(plain.nodes.find((n) => n.id === fw)!)
+    )
+  })
+
   it("draws a type without a photo as its faceplate, else its card", () => {
     const g: TopologyGraph = {
       ...photos,

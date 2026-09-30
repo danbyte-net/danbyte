@@ -159,6 +159,124 @@ describe("photo nodes in the document", () => {
   })
 })
 
+/** The photo graph with the firewall's card lines: its IP and serial. */
+const withLines = (fields = ["monitor", "primary_ip", "serial"]) => ({
+  ...photos,
+  nodes: photos.nodes.map((n) => {
+    const d = n.data as FacedData
+    return d.name === "aarhus-fw1"
+      ? {
+          ...n,
+          data: {
+            ...d,
+            card: {
+              fields,
+              source: "default" as const,
+              values: {
+                primary_ip: {
+                  id: "ip1",
+                  address: "10.196.227.1",
+                  cidr: "10.196.227.1/24",
+                },
+                serial: "FOC1234",
+              },
+            },
+          },
+        }
+      : n
+  }),
+})
+
+describe("photo captions in the exports", () => {
+  it("carries the card lines, drawn after the name on the caption line", () => {
+    const doc = exportOf(withLines())
+    const fw = doc.nodes.find((n) => n.id === fwId)!
+    expect(fw.kind).toBe("photo")
+    expect(fw.lines).toEqual(["10.196.227.1", "SN FOC1234"])
+    const place = fw.place!
+    expect(place.lines).toEqual([])
+    expect(place.tail?.text).toBe("· 10.196.227.1 · SN FOC1234")
+    expect(place.full).toBeUndefined()
+    // Right of the name, on the caption line.
+    const nameW = approxMeasure("aarhus-fw1", 12, 700)
+    expect(place.tail!.x).toBeGreaterThan(place.title.x + nameW / 2)
+    expect(Math.abs(place.tail!.y - place.title.y)).toBeLessThan(2)
+    expect(place.tail!.y).toBeGreaterThan(fw.photo!.y + fw.photo!.h)
+  })
+
+  it("draws them in the SVG, muted, from where the canvas put them", () => {
+    const doc = inlined(exportOf(withLines()))
+    const svg = toSvg(doc, { measure: approxMeasure })
+    const dom = new DOMParser().parseFromString(svg, "image/svg+xml")
+    const t = [...dom.querySelectorAll("text")].find(
+      (e) => e.textContent === "· 10.196.227.1 · SN FOC1234"
+    )!
+    expect(t).toBeDefined()
+    expect(t.getAttribute("text-anchor")).toBeNull()
+    expect(t.getAttribute("font-size")).toBe("10")
+    const tail = doc.nodes.find((n) => n.id === fwId)!.place!.tail!
+    expect(Number(t.getAttribute("x"))).toBeCloseTo(tail.x, 1)
+  })
+
+  it("keeps them on a photo the SVG draws as its card", () => {
+    const doc = exportOf(withLines())
+    for (const n of doc.nodes)
+      if (n.photo) n.photo = { ...n.photo, href: "javascript:alert(1)" }
+    const svg = toSvg(doc, { measure: approxMeasure })
+    expect(svg).toContain("· 10.196.227.1 · SN FOC1234")
+  })
+
+  it("puts them in the draw.io image's label after the bold name", () => {
+    const doc = inlined(exportOf(withLines()))
+    const xml = toDrawio([doc], { photos: true, measure: approxMeasure })
+    const dom = new DOMParser().parseFromString(xml, "application/xml")
+    const obj = dom.querySelector(`object[danbyte_id="${fwId}"]`)!
+    const label = obj.getAttribute("label")!
+    expect(label).toMatch(
+      /^<b>aarhus-fw1<\/b> <span style="[^"]*font-size:10px/
+    )
+    expect(label).toContain("· 10.196.227.1 · SN FOC1234</span>")
+    expect(obj.querySelector("mxCell")!.getAttribute("style")).toContain(
+      "fontStyle=0;"
+    )
+  })
+
+  it("draws a photo drawn as its card with the lines its height holds", () => {
+    const g = withLines([
+      "primary_ip",
+      "serial",
+      "cf_a",
+      "cf_b",
+      "cf_c",
+      "cf_d",
+    ])
+    for (const n of g.nodes) {
+      const d = n.data as FacedData
+      if (d.card)
+        Object.assign(d.card.values, {
+          cf_a: "one",
+          cf_b: "two",
+          cf_c: "three",
+          cf_d: "four",
+        })
+    }
+    const doc = inlined(exportOf(g))
+    const fw = doc.nodes.find((n) => n.id === fwId)!
+    expect(fw.lines).toHaveLength(6)
+    const xml = toDrawio([doc], { measure: approxMeasure })
+    const dom = new DOMParser().parseFromString(xml, "application/xml")
+    const label = dom
+      .querySelector(`object[danbyte_id="${fwId}"]`)!
+      .getAttribute("label")!
+    // The card is the photo's box: the name, then two lines.
+    const shown = label.split("<br>").length - 1
+    const room = Math.floor((fw.h - 2 * 6 - 16 - 1) / 14)
+    expect(shown).toBe(room)
+    expect(room).toBeLessThan(6)
+    expect(label).toContain("10.196.227.1")
+  })
+})
+
 describe("photo nodes in the SVG", () => {
   it("draws each lead again over its photo", () => {
     const doc = inlined(exportOf())

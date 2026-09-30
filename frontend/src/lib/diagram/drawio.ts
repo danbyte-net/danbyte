@@ -559,8 +559,9 @@ function page(
 
   // ── Photos ──
   /** A photo as an image cell (the image box), its name a bold label
-   * under it where the canvas put the caption, a connection point and an
-   * outline on each marked port, the pill a child under it too. */
+   * under it where the canvas put the caption - its card lines after the
+   * name, muted - a connection point and an outline on each marked port,
+   * the pill a child under it too. */
   function photo(n: DiagramNode, parent: DiagramBand | null, pid: string) {
     const id = nodeIds.get(n) ?? ""
     const img = n.photo!
@@ -591,15 +592,22 @@ function page(
       whiteSpace: "nowrap",
       fontFamily: FONT,
       fontSize: CARD.TITLE_SIZE,
-      fontStyle: 1,
+      // With card lines after it, the name is bold in the label itself.
+      fontStyle: t.tail ? 0 : 1,
       fontColor: PRINT.text,
     })
+    const label = t.tail
+      ? `<b>${h(t.title.text)}</b> <span style="font-weight:normal;` +
+        `font-size:${CARD.LINE_SIZE}px;color:${PRINT.muted}">` +
+        `${h(t.tail.text)}</span>`
+      : h(t.title.text)
     out.push(
       `<object${attrs({
-        label: h(t.title.text),
+        label,
         danbyte_id: n.id,
         link: safeLink(n.link),
-        tooltip: t.title.text !== n.title ? n.title : undefined,
+        tooltip:
+          n.place?.full ?? (t.title.text !== n.title ? n.title : undefined),
         id,
       })}><mxCell${attrs({ style: st, vertex: "1", parent: pid })}>` +
         `${geometry(rel(img, parent))}</mxCell></object>`
@@ -742,7 +750,9 @@ function page(
         label,
         danbyte_id: n.id,
         link: safeLink(n.link),
-        tooltip: t.title.text !== n.title ? n.title : undefined,
+        // A photo drawn as its card: its caption, when that was cut.
+        tooltip:
+          n.place?.full ?? (t.title.text !== n.title ? n.title : undefined),
         id,
       })}><mxCell${attrs({ style: st, vertex: "1", parent: pid })}>` +
         `${geometry(rel(n, parent))}</mxCell></object>`

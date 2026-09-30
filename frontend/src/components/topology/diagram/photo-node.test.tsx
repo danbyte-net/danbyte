@@ -165,6 +165,56 @@ describe("PhotoNode", () => {
     expect(container.querySelector(".rounded-full")).toBeNull()
   })
 
+  it("shows the card lines after the name, muted, the pill after them", () => {
+    const data = photoData()
+    const face = photoFace(base)!
+    const shown = photoShown(
+      face,
+      [],
+      base.name,
+      ["Planned"],
+      approxMeasure,
+      PHOTO.LOD,
+      ["10.0.0.1", "SN FOC1234"]
+    )
+    const { container } = renderNode({
+      ...data,
+      diagram: { ...data.diagram, photo: shown },
+    })
+    const tail = screen.getByText("· 10.0.0.1 · SN FOC1234")
+    expect(tail.className).toContain("text-muted-foreground")
+    expect(tail.style.fontSize).toBe("10px")
+    // One caption row: the name, its lines, then the pill.
+    const row = tail.parentElement!
+    expect(row.textContent).toBe("leaf-01· 10.0.0.1 · SN FOC1234Planned")
+    expect(row.hasAttribute("data-tip")).toBe(false)
+    expect(container.querySelector("[data-tip='leaf-01']")).toBeNull()
+  })
+
+  it("names the whole caption on hover when it is cut", () => {
+    const data = photoData()
+    const face = photoFace({
+      ...base,
+      photo: { ...base.photo!, rack_width: "half" },
+    })!
+    const lines = ["10.100.200.250", "10.100.200.251", "SN FOC1234567"]
+    const shown = photoShown(
+      face,
+      [],
+      base.name,
+      ["Planned"],
+      approxMeasure,
+      PHOTO.LOD,
+      lines
+    )
+    renderNode({ ...data, diagram: { ...data.diagram, photo: shown } })
+    const row = screen.getByText("leaf-01").parentElement!
+    expect(row.getAttribute("data-tip")).toBe(
+      "leaf-01 · 10.100.200.250 · 10.100.200.251 · SN FOC1234567"
+    )
+    expect(shown.caption.tail?.text.endsWith("· …")).toBe(true)
+  })
+
   it("is a plain box far out", () => {
     const { container } = renderNode(photoData(), PHOTO.LOD - 0.05)
     expect(container.querySelector("img")).toBeNull()

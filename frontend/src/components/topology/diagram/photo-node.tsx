@@ -13,7 +13,8 @@ import type { DiagramCardData } from "./types"
 // A device drawn as its front photo (photo-anchors.ts): the image to
 // scale, a thin outline on each port a cable is plugged into, a grey tab
 // on the image edge for a cabled port without a marker, and the name as a
-// caption under the image with the status pill after it. No card fill.
+// caption under the image - its card lines after it, muted, then the
+// status pill; a cut caption names itself in full on hover. No card fill.
 // Taking its cables at its edge, it has no outlines: in Detailed mode each
 // cable leaves a nub on the image's side, as on a card.
 //
@@ -172,6 +173,7 @@ export const PhotoNode = memo(function PhotoNode({
       <div
         className="absolute flex items-center whitespace-nowrap"
         style={{ left: cap.x, top: cap.top, height: PHOTO.CAPTION_LH }}
+        data-tip={cap.full}
       >
         <span
           className="font-bold text-foreground"
@@ -179,10 +181,21 @@ export const PhotoNode = memo(function PhotoNode({
             fontSize: CARD.TITLE_SIZE,
             lineHeight: `${PHOTO.CAPTION_LH}px`,
           }}
-          data-tip={cap.text !== d.name ? d.name : undefined}
         >
           {cap.text}
         </span>
+        {cap.tail && (
+          <span
+            className="text-muted-foreground"
+            style={{
+              marginLeft: PHOTO.TAIL_GAP,
+              fontSize: CARD.LINE_SIZE,
+              lineHeight: `${PHOTO.CAPTION_LH}px`,
+            }}
+          >
+            {cap.tail.text}
+          </span>
+        )}
         {pill && (
           <span className="flex" style={{ marginLeft: PILL.GAP }}>
             {pill.kind === "check" ? (

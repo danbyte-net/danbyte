@@ -182,9 +182,9 @@ export interface DiagramModel {
   base: Map<string, CardBox>
   /** Each card's current box and nubs. */
   shown: Map<string, DiagramCardData["diagram"]>
-  /** Nodes drawn as photos: their face, the name for the caption and the
-   * pills it keeps room for. Their box is in `base`; they are not in
-   * `cards` (a photo never grows). */
+  /** Nodes drawn as photos: their face, the name and card lines for the
+   * caption and the pills it keeps room for. Their box is in `base`; they
+   * are not in `cards` (a photo never grows). */
   photos?: Map<string, PhotoModel>
   /** Other nodes' boxes (group cards, trace ports). */
   fixed: Map<string, { w: number; h: number }>
@@ -217,6 +217,9 @@ export interface DiagramModel {
 export interface PhotoModel {
   face: PhotoFace
   name: string
+  /** Its card lines' text, as a card would show them: the caption draws
+   * them after the name. */
+  lines: string[]
   /** Every pill text the card fields can show (`cardContent().pillSlot`). */
   slot: string[]
 }
@@ -1349,7 +1352,15 @@ function photosShown(
   for (const [id, p] of photos)
     out.set(
       id,
-      photoShown(p.face, ends.get(id) ?? [], p.name, p.slot, model.measure, lod)
+      photoShown(
+        p.face,
+        ends.get(id) ?? [],
+        p.name,
+        p.slot,
+        model.measure,
+        lod,
+        p.lines
+      )
     )
   return out
 }
@@ -1707,6 +1718,7 @@ export function buildDiagram(
       const p: PhotoModel = {
         face,
         name: content.name,
+        lines: content.lines.map((l) => l.text),
         slot: content.pillSlot,
       }
       photos.set(n.id, p)

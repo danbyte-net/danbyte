@@ -186,7 +186,9 @@ colors, and the monitoring pill when a card can show it.
 What a card says under the device name - on the Diagram, and in a
 Hierarchy card's header - is a short list of **card lines**,
 top to bottom - by default the monitoring pill, **IP**, **Loopback** and
-**Serial**. Admins choose them under **Settings → Topology → Card lines**:
+**Serial**. A device drawn as its [photo](#photo-nodes) shows the same
+lines after its name in the caption. Admins choose them under
+**Settings → Topology → Card lines**:
 
 - **All devices** - the list every device starts from.
 - **A device role** - pick the role on the left (each is drawn as its
@@ -375,8 +377,8 @@ greyed out (it would change nothing).
   device's own marker layout wins over its type's.
 - **To scale:** every photo is drawn at one scale, a 19-inch device 480 px
   wide (a half-width type half that), at the photo's own proportions. The
-  device's name is a caption under it, the status pill after it, with no
-  card fill.
+  device's name is a caption under it, its card lines and the status pill
+  after it, with no card fill.
 - **Cables on their ports:** a cable starts at its port's marker, runs
   straight up or down (its lead, drawn over the photo) - towards its far
   device when that lies above or below the photo, else to the nearer
@@ -416,8 +418,22 @@ greyed out (it would change nothing).
   far devices keeps the one-trunk look - the trunk goes round as an elbow
   to a junction just short of the far devices, on the side their ports
   face, and the legs there are short.
-- **The caption** sits at the left under the photo, or steps right to the
-  first gap between the leads running down through it.
+- **The caption** is one line under the photo: the name in bold, then the
+  device's [card lines](#card-lines) in small muted text, each after a
+  `·` (`DK-NRVI-OTA-A3-001:1 · 10.196.227.1 · SN FOC1234`), then the pill.
+  The lines and the pill follow the card's rules - the device's own list,
+  else the view's, the role's, All devices - so **Name only** there gives
+  a caption of just the name. The caption sits at the left under the
+  photo, or steps right to the first gap between the leads running down
+  through it that holds all of it; when none does, it takes the first
+  gap the name and pill fit, and the lines get what is left of it. A line
+  is shown whole or not at all - never an address cut in two - and `· …`
+  at the end says some were left off; with no room worth reading, the
+  lines are left off. Hover a cut caption for all of it. The caption
+  never makes the photo taller, so nothing moves when a line changes.
+  Photo maps made before captions carried card lines show them too (the
+  built-in list is IP, Loopback and Serial); give the view **Name only**
+  lines for captions of just the name.
 - **What stands in** (never artwork made up for the map):
     1. the photo with its port markers;
     2. the photo without a marker for a port - that cable lands on a short
@@ -1438,9 +1454,10 @@ pills, cable colors.
   and PDF, scaled down in your browser to twice the size they are drawn at, so
   the file stands alone. Each cable's lead is drawn over its photo into the
   port, and the ports it lands on are outlined; a photo taking its cables
-  at its edge has its nubs on the image's edge instead. A photo that will
+  at its edge has its nubs on the image's edge instead. The caption is
+  drawn as on screen, the card lines after the name. A photo that will
   not load is drawn as the device's card; a faceplate, which has no image,
-  is too.
+  is too - with the card lines its height has room for.
 
 Both show what the canvas shows, from the same plan: role-colored cards
 with the name, card lines and pill; in Detailed, the interface nubs; the
@@ -1508,11 +1525,14 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   (*View ▸ Layers*, Ctrl+Shift+L).
 - Text is Helvetica, as few machines have Inter installed.
 - **Photos:** by default a photo node is drawn as the device's card, at the
-  photo's size, its cables meeting the card's edge where their ports are.
+  photo's size - with the card lines that height has room for - its
+  cables meeting the card's edge where their ports are.
   With **Photos** ticked it is the photo itself, embedded (scaled down to
-  600 px wide), with the name as its label underneath: each cable is
-  attached at its port, each marked port is a connection point, and the
-  photo sits behind the lines so their leads show over it.
+  600 px wide), with the caption as its label underneath - the name in
+  bold, the card lines after it - and the whole caption as its tooltip
+  when it was cut: each cable is attached at its port, each marked port
+  is a connection point, and the photo sits behind the lines so their
+  leads show over it.
 
 ## API
 
@@ -1856,6 +1876,10 @@ top-left corner: `monitor` shows the monitoring pill while the device is
 down or degraded and wins over `status`, which shows the lifecycle status
 pill whenever it is listed. A card keeps room for the pill whenever its
 list can show one, so a device going down never resizes it.
+
+A photo's caption shows the same values on one line after the name,
+joined by ` · ` (a rack line reads `Rack R12 U20` there), with the pill
+after them - see [Photo nodes](#photo-nodes).
 
 ### PDF export API
 

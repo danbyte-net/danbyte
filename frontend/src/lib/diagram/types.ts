@@ -54,6 +54,12 @@ export interface DiagramPlace {
   title: Pt
   lines: Pt[]
   pill?: Rect
+  /** A photo's caption: its card lines after the name, as drawn - cut to
+   * fit, `text-anchor: start` at `x`, on baseline `y`. */
+  tail?: Pt & { text: string }
+  /** A photo's whole caption - the name and every card line - when the
+   * drawn one is cut: its tooltip, where the format has one. */
+  full?: string
 }
 
 export interface DiagramNode extends Rect {
@@ -67,7 +73,9 @@ export interface DiagramNode extends Rect {
   ink: string
   /** The device name. */
   title: string
-  /** Card lines, values only, in order (IP, loopback, serial…). */
+  /** Card lines, values only, in order (IP, loopback, serial…). A photo
+   * carries them whole (its card, when drawn as one, shows those that fit);
+   * its caption draws them from `place.tail`. */
   lines: string[]
   pill?: DiagramPill
   /** Detailed mode only; absent or empty in Simple. */

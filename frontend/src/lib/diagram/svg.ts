@@ -494,6 +494,16 @@ function nodeSvg(
         fill: lineInk,
       })
     )
+  // A photo's card lines, after its name on the caption line.
+  if (t.tail)
+    out.push(
+      text(t.tail.text, {
+        x: t.tail.x,
+        y: t.tail.y,
+        "font-size": CARD.LINE_SIZE,
+        fill: lineInk,
+      })
+    )
   return `<g>${out.join("")}</g>`
 }
 

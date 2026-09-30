@@ -256,10 +256,12 @@ export function cardNode(
 /**
  * A photo node as a document node, centred at `c`: the image with the
  * markers its lines land on, the stub leads as nubs on the image edge, and
- * the caption (and pill) where the canvas put them. A photo taking its
- * cables at its edge has its Detailed nubs (`nubs`) on the image's sides
- * instead, after any stub leads. A faceplate node - it has no image to
- * export - is a card of the same box, its name at the top.
+ * the caption - the name, its card lines after it (`place.tail`) and the
+ * pill - where the canvas put them; `lines` holds the card lines whole. A
+ * photo taking its cables at its edge has its Detailed nubs (`nubs`) on
+ * the image's sides instead, after any stub leads. A faceplate node - it
+ * has no image to export - is a card of the same box, its name at the top
+ * and the card lines its height holds under it.
  */
 export function photoDocNode(
   id: string,
@@ -310,7 +312,7 @@ export function photoDocNode(
     h,
     fill,
     ink,
-    lines: [],
+    lines: [...p.lines],
     ...(nubs.length ? { nubs } : {}),
     ...(opts.link ? { link: opts.link } : {}),
   }
@@ -357,6 +359,16 @@ export function photoDocNode(
       },
       lines: [],
       ...(pillRect ? { pill: pillRect } : {}),
+      ...(cap.tail
+        ? {
+            tail: {
+              text: cap.tail.text,
+              x: x + cap.tail.x,
+              y: y + baselineAt(cap.top, CARD.LINE_SIZE, PHOTO.CAPTION_LH),
+            },
+          }
+        : {}),
+      ...(cap.full ? { full: cap.full } : {}),
     },
   }
 }
