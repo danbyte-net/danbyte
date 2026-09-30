@@ -1867,9 +1867,11 @@ earlier versions load and save unchanged.
 
 | Key | Shape |
 |---|---|
-| `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
+| `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
 | `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other color string saves as `null`. |
-| `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
+| `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
+| `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
+| `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`) |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building, size: s\|m\|l, outline: bool}`; `x, y` is the note's centre, `id` is unique, `text` at most 200 characters, `size` absent = `m` |

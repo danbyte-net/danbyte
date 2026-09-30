@@ -4074,6 +4074,10 @@ class TopologyViewSerializer(NumIdModelSerializer):
             self._node_overrides(v["nodes"])
         if "notes" in v:
             self._notes(v["notes"])
+        # Virtual chassis stacks and a band's cable sides.
+        from .topology_view_extras import validate_view_extras
+
+        validate_view_extras(v)
         return v
 
     @staticmethod
