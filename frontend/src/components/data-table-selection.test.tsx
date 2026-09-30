@@ -104,7 +104,7 @@ function client() {
 
 // A list page in miniature: the parent keeps the selection, as the bulk bars
 // expect, and can empty it the way a bar's Clear does.
-function mountList(initial: Row[]) {
+function mountList(initial: Row[], { searchable = false } = {}) {
   const seen: Row[][] = []
   let setData: (rows: Row[]) => void = () => {}
   let clear: () => void = () => {}
@@ -117,6 +117,7 @@ function mountList(initial: Row[]) {
       <DataTable
         data={data}
         columns={COLUMNS}
+        searchable={searchable}
         onSelectedRowsChange={(r) => {
           seen.push(r)
           setSelected(r)
@@ -170,6 +171,23 @@ describe("DataTable selection follows the row, not its position", () => {
     expect(ticked()).toEqual([])
     expect(list.last()).toEqual([])
     expect(screen.queryByText(/selected/)).toBeNull()
+  })
+
+  it("drops a ticked row the table's own search hides", () => {
+    // A device's ports pane: tick ports, search, bulk delete - a port the
+    // search hid must not go with the rest.
+    const list = mountList(makeRows(3), { searchable: true })
+    tick("vlan 0")
+    tick("vlan 1")
+    const search = screen.getByRole("textbox", { name: "Filter rows" })
+    fireEvent.change(search, { target: { value: "vlan 1" } })
+    expect(list.last()).toEqual(["vlan 1"])
+    expect(screen.getByText("1 selected")).toBeTruthy()
+
+    // Clearing the search brings vlan 0 back, unticked.
+    fireEvent.change(search, { target: { value: "" } })
+    expect(ticked()).toEqual(["vlan 1"])
+    expect(list.last()).toEqual(["vlan 1"])
   })
 
   it("clears the ticks when the parent empties its selection", () => {

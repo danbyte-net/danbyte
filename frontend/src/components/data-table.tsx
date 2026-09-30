@@ -556,20 +556,22 @@ export function DataTable<T>({
     serverPagination?.totalRows ?? table.getFilteredRowModel().rows.length
   const pageTotal = serverPagination?.pageCount ?? table.getPageCount()
 
-  // A ticked row that leaves the data (deleted, filtered away, refetched)
-  // leaves the selection too, so the count never includes rows you can't see.
+  // A ticked row that leaves the list - deleted, refetched away, or hidden by
+  // the list's filters or this table's own search box - leaves the selection
+  // too, so a bulk action never reaches a row nobody can see. Rows on other
+  // pages stay: that is what "Select all N" ticks.
   useEffect(() => {
     setRowSelection((prev) => {
       const keys = Object.keys(prev)
       if (keys.length === 0) return prev
-      const core = table.getCoreRowModel().rowsById
+      const shown = table.getFilteredRowModel().rowsById
       const grouped = table.getGroupedRowModel().rowsById
-      const kept = keys.filter((k) => k in core || k in grouped)
+      const kept = keys.filter((k) => k in shown || k in grouped)
       if (kept.length === keys.length) return prev
       return Object.fromEntries(kept.map((k) => [k, true]))
     })
-    // table is stable; prune when the data changes
-  }, [data])
+    // table is stable; prune when the rows or the filters change
+  }, [data, globalFilter, columnFilters])
 
   // The parent emptied its copy of the selection: clear the ticks to match.
   // Only that edge counts - a caller that passes a fresh [] on every render

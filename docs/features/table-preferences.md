@@ -72,8 +72,10 @@ page. When the list runs to more pages, **Select all N** appears beside the
 count above the table and ticks every row the filters show; **Clear** undoes
 it. A tick belongs to the object, not to its row position, so sorting,
 filtering or a refresh never moves it onto another row. A row that leaves the
-list - filtered away or deleted - leaves the selection too, so the count only
-ever covers rows you can see.
+list - filtered out, hidden by the table's own search box, or deleted -
+leaves the selection too, and stays unticked when it comes back, so a bulk
+action never reaches a row you can't find. Ticked rows on other pages stay
+ticked; that is what **Select all N** is for.
 
 ## Where your settings live
 
