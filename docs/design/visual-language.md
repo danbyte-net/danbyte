@@ -237,6 +237,16 @@ list path its rows come from (`null` when they are not one list's rows) -
 `routes/-table-registry.test.ts` fails on an unregistered id, and an id built
 at runtime passes `autoColumns` (an api path, or `false`) itself.
 
+A table wider than its pane scrolls sideways inside its own frame, with the
+row actions pinned to the right edge, and the Download / Columns bar wraps
+instead of running off. The page itself never scrolls or clips sideways. For
+that, every flex item between the table and the page carries `min-w-0`:
+`ListPageShell`, `DetailShell` and `DataTable` already do, and a `bare`
+`DetailTab` gives it to each direct child. A pane that nests its own
+rail-and-table row inside another flex row puts `min-w-0` on that row too.
+`components/table-overflow.test.tsx` checks this for the shared shells and
+the prefix IPs pane.
+
 ## Column factories
 
 **One entity, one column factory** (`frontend/src/components/columns/`), reused

@@ -168,7 +168,13 @@ export function DetailShell({
 }
 
 /** One tab pane inside DetailShell - the canonical scrollable, padded body.
- * Pass `bare` for full-bleed content that lays out its own rail/table. */
+ * Pass `bare` for full-bleed content that lays out its own rail/table.
+ *
+ * A bare pane is a flex row, and a flex item's default `min-width: auto` is
+ * its content's width: a pane root without `min-w-0` grew to its widest
+ * table, ran past the viewport and was clipped, row actions and all, with no
+ * scrollbar (#132, then the prefix IPs tab). The tab now gives every direct
+ * child `min-w-0`, so wide content scrolls inside the pane's own containers. */
 export function DetailTab({
   value,
   bare = false,
@@ -185,7 +191,7 @@ export function DetailTab({
       value={value}
       className={cn(
         bare
-          ? "m-0 flex min-h-0 min-w-0 flex-1"
+          ? "m-0 flex min-h-0 min-w-0 flex-1 [&>*]:min-w-0"
           : "m-0 min-w-0 flex-1 overflow-auto p-4 lg:p-6",
         className
       )}

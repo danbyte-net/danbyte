@@ -568,7 +568,9 @@ export function DataTable<T>({
   }, [rowSelection, data])
 
   return (
-    <div className="flex flex-col gap-2">
+    // min-w-0: a table placed straight into a flex row may shrink below its
+    // columns' width - the frame below then scrolls instead of the row growing.
+    <div className="flex min-w-0 flex-col gap-2">
       {searchable && (
         <Input
           value={globalFilter}
@@ -583,9 +585,10 @@ export function DataTable<T>({
           ticked, Columns dropdown on the right. The full row of "36
           rows" duplicating the page-header badge is gone. Embedded tables
           drop the Export + Columns controls (they belong on list pages), so
-          the bar only appears there when rows are selected. */}
+          the bar only appears there when rows are selected. It wraps rather
+          than overflowing, so a narrow pane never cuts Download / Columns off. */}
       {(!embedded || selectedCount > 0) && (
-        <div className="flex h-6 items-center justify-between gap-2">
+        <div className="flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <span className="text-xs text-muted-foreground">
             {selectedCount > 0 && (
               <span className="font-medium text-foreground">
@@ -594,7 +597,7 @@ export function DataTable<T>({
             )}
           </span>
           {!embedded && (
-            <div className="flex items-center gap-1">
+            <div className="ml-auto flex items-center gap-1">
               {enableExport && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -725,7 +728,10 @@ export function DataTable<T>({
           `overflow-x-auto` lets a wide table (full, non-truncated cells) scroll
           horizontally instead of clipping; it still clips the row hover
           background to the rounded corners (overflow-y computes to auto), so the
-          `bg` doesn't leak past the border-radius on first/last rows. */}
+          `bg` doesn't leak past the border-radius on first/last rows. It can
+          only scroll when it is narrower than the table: every flex item
+          between here and the page needs `min-w-0`, or the chain grows to the
+          table's width and the page clips it with no scrollbar at all. */}
       <div className="overflow-x-auto rounded-lg border border-border">
         <Table data-stripes={stripes ? "on" : "off"}>
           <TableHeader

@@ -417,20 +417,24 @@ function PrefixIpsTableImpl({
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
+    // min-w-0: this row sits in a flex row (the bare IPs tab); without it the
+    // pane grows to the table's full width and the page clips the right edge
+    // - Updated, the row actions and the Columns menu - instead of the table
+    // scrolling sideways in its own frame.
+    <div className="flex min-h-0 min-w-0 flex-1">
       {rail}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-          <span className="num text-[11px] text-muted-foreground">
+          <span className="num shrink-0 text-[11px] text-muted-foreground">
             {rows.length} row{rows.length === 1 ? "" : "s"}
           </span>
-          <div className="relative ml-auto">
+          <div className="relative ml-auto min-w-0">
             <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Filter IPs…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-64 pl-8 text-xs"
+              className="h-8 w-64 max-w-full pl-8 text-xs"
             />
           </div>
         </div>
