@@ -72,6 +72,17 @@ export const NO_NUBS: SideCount = { T: 0, R: 0, B: 0, L: 0 }
 /** A breakout's junction node: the dot where its trunk splits. */
 export const JUNCTION = { w: 6, h: 6 } as const
 
+/**
+ * Where the Diagram stacks on the canvas (React Flow `zIndex`). Every line
+ * is drawn under the cards, as in every export - a Bendy line no curve
+ * gets clear of passes behind them - a hovered or selected one too: the
+ * canvas raises that over the other lines to 1000 (topology-canvas), its
+ * chip to 1001 (styles.css). Cards, photos, junctions and notes stand at
+ * `CARD`, a selected one 1000 higher (React Flow); a photo port's lead,
+ * drawn again over its photo, at `LEAD`, over even that.
+ */
+export const STACK = { CARD: 1002, LEAD: 2003 } as const
+
 export interface CardLayoutInput {
   name: string
   /** The role colour, `#rrggbb` or bare; none paints a neutral card. */

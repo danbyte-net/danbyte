@@ -324,9 +324,10 @@ describe("a breakout on the Diagram", () => {
     expect(data(pair).labels.mid).toEqual(["2x"])
   })
 
-  it("Bendy: a leg no curve gets clear of the cards goes round as an elbow", () => {
+  it("Bendy: a leg no curve gets clear of the cards passes behind them", () => {
     // core-b squarely between the junction and asw-01: every fan curve
-    // to asw-01 would run through it.
+    // to asw-01 would run through it. They stay curves all the same (they
+    // went round as elbows once), and core-b is drawn over them.
     const positions: Record<string, [number, number]> = {
       [FW]: [0, 0],
       [CORE_B]: [320, 0],
@@ -339,13 +340,19 @@ describe("a breakout on the Diagram", () => {
     )
     expect(legs).toHaveLength(2)
     const plans = legs.flatMap((e) => data(e).plan ?? [])
-    expect(plans.map((p) => p.line)).toEqual(["elbow", "elbow"])
+    expect(plans.map((p) => p.line)).toEqual([undefined, undefined])
     const cards = new Map(
       b.nodes.filter((n) => n.type === "card").map((n) => [n.id, boxOf(n)])
     )
-    expect(throughCards(drawn(b.nodes, b.edges, approxMeasure), cards)).toEqual(
-      []
-    )
+    const behind = throughCards(drawn(b.nodes, b.edges, approxMeasure), cards)
+    expect(behind.length).toBeGreaterThan(0)
+    // Only the legs to asw-01, only behind core-b.
+    const legIds = new Set(legs.map((e) => e.id))
+    for (const hit of behind) {
+      const [cable, card] = hit.split(" x ")
+      expect(legIds.has(cable.split("#")[0]), hit).toBe(true)
+      expect(card).toBe(CORE_B)
+    }
     // The legs to core-b, clear as curves, stay curves.
     const toCore = b.edges.filter(
       (e) => data(e).cableId === FAN_CABLE && e.target === CORE_B

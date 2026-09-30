@@ -23,7 +23,7 @@ import {
 import { linkEnds } from "./anchors"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
-import { NUB } from "./card-layout"
+import { NUB, STACK } from "./card-layout"
 import { runOrder, traceMap } from "../trace-run"
 import { leaves, linkRoute, planOf, routeThrough } from "./link-geometry"
 import type { PortPlace } from "@/lib/diagram/geometry"
@@ -210,7 +210,8 @@ describe("buildDiagram golden", () => {
       })
 
   // An N:M breakout beside a 1:N one: its junctions at the thirds of the
-  // gap, and no route (bendy legs included) through a card.
+  // gap, and no route through a card. Bendy legs are exempt: one no curve
+  // gets clear of a card passes behind it (the golden holds where they go).
   for (const [mode, line] of [
     ["detailed", "elbow"],
     ["detailed", "bendy"],
@@ -223,8 +224,12 @@ describe("buildDiagram golden", () => {
       const cards = new Map(
         b.nodes.filter((n) => n.type === "card").map((n) => [n.id, cardBox(n)])
       )
+      const lines = drawn(b.nodes, b.edges, approxMeasure)
       expect(
-        throughCards(drawn(b.nodes, b.edges, approxMeasure), cards)
+        throughCards(
+          lines.filter((c) => c.line !== "bendy"),
+          cards
+        )
       ).toEqual([])
     })
 
@@ -365,6 +370,24 @@ describe("buildDiagram", () => {
       const { box } = (n.data as DiagramCardData).diagram
       expect([n.width, n.height]).toEqual([box.w, box.h])
     }
+  })
+
+  it("stacks every card and junction over the lines, a raised one too", () => {
+    // The canvas raises a hovered or selected line to 1000 and its chip to
+    // 1001; a Bendy line no curve gets clear of still passes behind the
+    // cards. A selected card is 1000 higher again, under a photo's lead.
+    const { nodes } = build({ line: "bendy" })
+    expect(nodes.some((n) => n.type === "junction")).toBe(false)
+    const fan = buildDiagram(meshGraph, {
+      mode: "detailed",
+      line: "bendy",
+      colorMode: "cable",
+      measure: approxMeasure,
+    }).nodes
+    expect(fan.some((n) => n.type === "junction")).toBe(true)
+    for (const n of [...nodes, ...fan]) expect(n.zIndex, n.id).toBe(STACK.CARD)
+    expect(STACK.CARD).toBeGreaterThan(1001)
+    expect(STACK.LEAD).toBeGreaterThan(STACK.CARD + 1000)
   })
 
   it("fills a card with its role colour and a readable ink", () => {

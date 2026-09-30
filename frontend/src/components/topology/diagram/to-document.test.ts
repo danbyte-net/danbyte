@@ -12,6 +12,7 @@ import type {
   DiagramNode,
 } from "@/lib/diagram/types"
 import { DEV, devId, fabricGraph } from "../__fixtures__/fabric-graph"
+import { boxOf, drawn, throughCards } from "../__fixtures__/route-checks"
 import { applyHidden, NO_TOPO_HIDDEN } from "../hidden"
 import { legendRows } from "../legend"
 import { buildDiagram } from "./build-diagram"
@@ -20,7 +21,7 @@ import { NUB } from "./card-layout"
 import { printLegend, toDocument } from "./to-document"
 import type { DocumentOptions } from "./to-document"
 import { routePolyline } from "@/lib/diagram/geometry"
-import type { DiagramCardData } from "./types"
+import type { DiagramCardData, DiagramEdgeData } from "./types"
 import { pairKey } from "./types"
 
 // The export document is drawn from the Diagram's model and where the cards
@@ -516,6 +517,72 @@ describe("link labels in the exports", () => {
         cell.getElementsByTagName("mxCell")[0].getAttribute("style")
       ).toContain("curved=1")
     }
+  })
+})
+
+/** spine-01 and leaf-01 side by side, fw-01 squarely between them: no
+ * curve from one to the other gets clear of it. */
+const SPINE = devId("spine1")
+const LEAF = devId("leaf1")
+const FW = devId("fw1")
+const blockedGraph: TopologyGraph = {
+  nodes: cardGraph.nodes.filter((n) => [SPINE, LEAF, FW].includes(n.id)),
+  edges: cardGraph.edges.filter(
+    (e) =>
+      [e.source, e.target].includes(SPINE) &&
+      [e.source, e.target].includes(LEAF)
+  ),
+}
+
+describe("a Bendy line no curve gets clear of a card", () => {
+  // The owner's call: it never turns into an Elbow. It stays a curve and
+  // passes behind the card, which every output draws over it.
+  const b = build(
+    {
+      mode: "simple",
+      line: "bendy",
+      direction: "LR",
+      positions: { [SPINE]: [0, 0], [FW]: [350, 20], [LEAF]: [700, 40] },
+    },
+    blockedGraph
+  )
+  const link = b.edges.find((e) => e.type === "link")!
+
+  it("stays a curve, behind the card", () => {
+    expect(b.edges.filter((e) => e.type === "link")).toHaveLength(1)
+    const [p] = (link.data as DiagramEdgeData).plan!
+    expect(p.line).toBeUndefined()
+    expect(p.pts.length).toBeGreaterThan(3)
+    const cards = new Map(
+      b.nodes.filter((n) => n.type === "card").map((n) => [n.id, boxOf(n)])
+    )
+    const behind = throughCards(drawn(b.nodes, b.edges, approxMeasure), cards)
+    expect(behind.length).toBeGreaterThan(0)
+    for (const hit of behind) expect(hit).toBe(`${link.id}#0 x ${FW}`)
+  })
+
+  it("is drawn under the card in the SVG and the draw.io file", () => {
+    const doc = exportOf(b)
+    const line = doc.links.find((l) => l.id === link.id)!
+    expect(line.kind).toBe("bendy")
+    const svg = parse(toSvg(doc, { measure: approxMeasure }), "image/svg+xml")
+    const path = svg.querySelector("#links > path")!
+    const card =
+      svg.querySelectorAll("#nodes > *")[
+        doc.nodes.findIndex((n) => n.id === FW)
+      ]
+    expect(path).toBeTruthy()
+    expect(card).toBeTruthy()
+    expect(
+      path.compareDocumentPosition(card) &
+        globalThis.Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    const xml = parse(toDrawio([doc], { measure: approxMeasure }), "text/xml")
+    const objects = [...xml.getElementsByTagName("object")]
+    const at = (id: string) =>
+      objects.findIndex((o) => o.getAttribute("danbyte_id") === id)
+    expect(at(link.id)).toBeGreaterThanOrEqual(0)
+    expect(at(link.id)).toBeLessThan(at(FW))
   })
 })
 

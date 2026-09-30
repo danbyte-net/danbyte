@@ -142,7 +142,8 @@ something.
   With Bendy lines, legs converging on one card end in a straight run long
   enough for their port names, one name to each gap between them; a leg
   bends nearer its split point or its port to keep clear of the cards it
-  passes, and one no curve gets clear of goes round them as an elbow.
+  passes, and one no curve gets clear of stays a curve and passes behind
+  them.
   In Simple the legs to one card fold into one, named by its first port in
   natural order and a count of the rest (`Ethernet1/3 +2`); hovering it
   lists them all, and the cable's panel has every pair. A `2x` count only
@@ -279,16 +280,19 @@ names its peers, the session kind and the VRF.
   sweeps across to the other end: the curve you see while dragging a card
   is the one it keeps when you drop it, unless a card is in its way. Then
   it takes the nearest shape that clears the card (reaching further or
-  less far out of either end), and where no curve gets clear it goes round
-  the cards as an Elbow - so a line drawn as a curve while you drag can
-  turn into an Elbow when you drop, and on a crowded map many Bendy lines
-  are Elbows. Between two facing cards it stops short of the middle of the
-  gap, so it never overshoots and waves back, until the cards are offset
-  sideways by more than twice the gap; further apart it sweeps out past
-  the middle in an S. Lines leaving one Simple midpoint each bend within a
-  reach of their own, the one heading most steeply out soonest, so they
-  part right after it and keep room for their names. Where a nub has
-  labels the curve runs straight out of it far enough for them.
+  less far out of either end). Where no curve gets clear it stays a curve
+  all the same and passes behind the card, rather than going round the
+  cards as an Elbow: of the shapes it tries, the one that runs behind the
+  cards least, and the curve you dragged when none does better. A Bendy
+  line is never an Elbow. Cards are always drawn over the lines - on the
+  map, a hovered or selected line too, and in every export. Between two
+  facing cards it stops short of the middle of the gap, so it never
+  overshoots and waves back, until the cards are offset sideways by more
+  than twice the gap; further apart it sweeps out past the middle in an S.
+  Lines leaving one Simple midpoint each bend within a reach of their own,
+  the one heading most steeply out soonest, so they part right after it
+  and keep room for their names. Where a nub has labels the curve runs
+  straight out of it far enough for them.
 - **Cyclical** - an arc that loops round the cards between its two ends
   instead of crossing them, both ends leaving through the side it bulges to
   (the top of a row, say). In Detailed each end first runs straight out of

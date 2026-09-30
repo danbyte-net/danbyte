@@ -44,7 +44,7 @@ import type {
 
 // The planned lines on real maps: the owner's Århus DC view (the saved
 // arrangement and the auto layout, with and without Levels) and the parity
-// fabric. Every elbow keeps a lane of its own, no line runs behind a card
+// fabric. Every elbow keeps a lane of its own, no elbow runs behind a card
 // it does not connect, the cables leaving one side of a card do not cross
 // on their way out, and every port name sits on its own cable's first
 // straight run, clear of the other names and cables.
@@ -428,11 +428,30 @@ describe("Bendy lines", () => {
     expect(downOnly(plan([], { ...srv, x: -30 }).pts)).toBe(true)
   })
 
+  /** How far the drawn line runs inside `box`, px (a pixel's steps). */
+  const behind = (pts: Pt[], box: Rect) => {
+    const r = route(pts)
+    let n = 0
+    for (let d = 0; d <= r.length; d++) {
+      const p = r.at(d / r.length)
+      if (
+        p.x > box.x &&
+        p.x < box.x + box.w &&
+        p.y > box.y &&
+        p.y < box.y + box.h
+      )
+        n++
+    }
+    return n
+  }
+
   it("keeps them short of it bending round a card beside the line", () => {
     // Nearly in line, with a card beside or across the line: a curve that
     // clears it reaches no further than the free curve may, so it still
-    // never overshoots and waves back.
+    // never overshoots and waves back - nor does one that no curve gets
+    // clear, which passes behind the card instead.
     let bent = 0
+    let hidden = 0
     for (const aside of [20, 40, 60])
       for (const down of [200, 250, 300])
         for (const by of [-74, -40, 6, 30]) {
@@ -443,15 +462,37 @@ describe("Bendy lines", () => {
             w: 60,
             h: 40,
           }
+          const at = `${aside} ${down} ${by}`
           const got = plan([["card", card]], to)
-          // A card across the line: no curve gets past, it goes round.
-          if (got.line === "elbow") continue
-          expect(through(got.pts, card), `${aside} ${down} ${by}`).toBe(false)
-          expect(downOnly(got.pts), `${aside} ${down} ${by}`).toBe(true)
+          expect(got.line, at).toBeUndefined()
+          expect(downOnly(got.pts), at).toBe(true)
           const free = plan([], to).pts
-          if (JSON.stringify(got.pts) !== JSON.stringify(free)) bent++
+          if (through(got.pts, card)) {
+            // A card across the line: behind it, less far than the free
+            // curve would run.
+            hidden++
+            expect(behind(got.pts, card), at).toBeLessThan(behind(free, card))
+          } else if (JSON.stringify(got.pts) !== JSON.stringify(free)) bent++
         }
-    // Of these 36, 19 bend round the card (10 go round as elbows).
+    // Of these 36, 20 bend round the card and the 9 with it across the
+    // line pass behind it (10 went round as elbows).
     expect(bent).toBeGreaterThanOrEqual(15)
+    expect(hidden).toBe(9)
+  })
+
+  // The owner's call: a Bendy line never turns into an Elbow. Where no
+  // curve gets clear of a card it stays a curve and passes behind it -
+  // the canvas and every export draw the cards over the lines.
+  it("passes behind a card no curve gets past, still a curve", () => {
+    const to = { ...srv, x: 20, y: a.y + 250 }
+    const card: Rect = { x: a.x - 20, y: a.y + 105, w: 60, h: 40 }
+    const got = plan([["card", card]], to)
+    const free = plan([], to).pts
+    expect(got.line).toBeUndefined()
+    expect(route(got.pts).kind).toBe("bendy")
+    expect(got.pts.length).toBeGreaterThan(3)
+    expect(through(got.pts, card)).toBe(true)
+    expect(behind(got.pts, card)).toBeLessThan(behind(free, card))
+    expect(downOnly(got.pts)).toBe(true)
   })
 })

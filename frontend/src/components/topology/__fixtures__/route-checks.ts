@@ -9,9 +9,10 @@ import type { TurnedBox } from "../diagram/spatial"
 import type { Anchor, DiagramEdgeData, Pt, Rect } from "../diagram/types"
 
 // Checks the Diagram's planned lines against the rules the owner set: no
-// two cables on one run, no line behind a card it does not connect, and
-// end labels (port names, addresses) ON their own cable, clear of
-// everything else.
+// two cables on one run, no line behind a card it does not connect (but a
+// Bendy line no curve gets clear of, which passes behind it), and end
+// labels (port names, addresses) ON their own cable, clear of everything
+// else.
 
 export interface Drawn {
   edge: string

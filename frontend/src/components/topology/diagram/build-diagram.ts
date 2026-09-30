@@ -42,6 +42,7 @@ import {
   NO_NUBS,
   normalizeHex,
   NUB,
+  STACK,
 } from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
 import {
@@ -723,6 +724,7 @@ function fanParts(
       origin: CENTRE,
       width: JUNCTION.w,
       height: JUNCTION.h,
+      zIndex: STACK.CARD,
       draggable: false,
       selectable: false,
       focusable: false,
@@ -813,6 +815,7 @@ function meshParts(
     origin: CENTRE,
     width: JUNCTION.w,
     height: JUNCTION.h,
+    zIndex: STACK.CARD,
     draggable: false,
     selectable: false,
     focusable: false,
@@ -1698,6 +1701,8 @@ export function buildDiagram(
       id: n.id,
       type,
       position: { x: 0, y: 0 },
+      // Over every line (`STACK`).
+      zIndex: STACK.CARD,
       data: { ...n.data },
     }
     const face = type === "card" ? photoFace(n.data) : null
