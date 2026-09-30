@@ -13,7 +13,7 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from auth_api.models import ApiToken, ObjectPermission, UserProfile
+from auth_api.models import ApiToken
 from core.models import Organization, Tenant
 from scripting.models import Script, ScriptOutput, ScriptRun
 from scripting.schedules import due_scripts, fire, is_due, next_run, prune
@@ -29,13 +29,6 @@ class _Base(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
         self.user = get_user_model().objects.create_user("owner", "o@e.com", "x")
-        # A schedule runs as its owner, who must still hold `run` when it fires.
-        UserProfile.objects.create(user=self.user).tenants.add(self.tenant)
-        self.run_grant = ObjectPermission.objects.create(
-            name="owner runs scripts", object_types=["script"],
-            actions=["view", "add", "change", "run"],
-        )
-        self.run_grant.users.add(self.user)
         # Nothing in these tests should reach a worker.
         p = mock.patch("scripting.schedules.enqueue")
         p.start()
@@ -90,44 +83,6 @@ class DueTests(_Base):
         script = self._script()
         Script.objects.filter(pk=script.pk).update(owner=None)
         self.assertIsNone(fire(Script.objects.get(pk=script.pk)))
-
-
-class OwnerRecheckTests(_Base):
-    """The owner's right to run is checked when the schedule fires, not only
-    when it was set."""
-
-    def _skipped(self, script):
-        now = timezone.now()
-        self.assertIsNone(fire(Script.objects.get(pk=script.pk), now))
-        self.assertFalse(script.runs.exists())
-        # Skipped once per occurrence, not retried every tick.
-        self.assertEqual(Script.objects.get(pk=script.pk).last_run_at, now)
-
-    def test_an_owner_who_lost_run_does_not_fire(self):
-        script = self._script()
-        self.run_grant.actions = ["view", "add", "change"]
-        self.run_grant.save()
-        self._skipped(script)
-
-    def test_a_deactivated_owner_does_not_fire(self):
-        script = self._script()
-        self.user.is_active = False
-        self.user.save(update_fields=["is_active"])
-        self._skipped(script)
-
-    def test_an_owner_removed_from_the_tenant_does_not_fire(self):
-        script = self._script()
-        self.user.profile.tenants.clear()
-        self._skipped(script)
-
-    def test_a_trusted_script_needs_the_owner_to_hold_trust(self):
-        script = self._script(trusted=True)
-        self._skipped(script)
-        self.run_grant.actions = [*self.run_grant.actions, "trust"]
-        self.run_grant.save()
-        run = fire(Script.objects.get(pk=script.pk))
-        self.assertIsNotNone(run)
-        self.assertTrue(run.trusted)
 
 
 class RetentionTests(_Base):
@@ -191,59 +146,3 @@ class TickTests(_Base):
         out = StringIO()
         call_command("run_scripts", stdout=out)
         self.assertIn("nothing due", out.getvalue())
-
-
-class UpgradeKeepsSchedulesTests(_Base):
-    """0.17 made a schedule need run. An existing schedule whose owner could
-    not run it - an Administrator or Operator, say - keeps firing through a
-    grant limited to that script, and only that script."""
-
-    def _migrate(self):
-        import contextlib
-        import importlib
-        import io
-
-        from django.apps import apps
-
-        mig = importlib.import_module("scripting.migrations.0002_keep_scheduled_scripts")
-        with contextlib.redirect_stdout(io.StringIO()):
-            mig.forwards(apps, None)
-
-    def test_an_owner_without_run_keeps_their_schedules_and_nothing_more(self):
-        from auth_api import rbac
-        from scripting.schedules import owner_may_run
-
-        self.run_grant.actions = ["view", "add", "change", "delete"]
-        self.run_grant.save()
-        scheduled = self._script(name="nightly")
-        trusted = self._script(name="trusted", trusted=True)
-        unscheduled = self._script(name="adhoc", schedule_enabled=False)
-        self.assertFalse(owner_may_run(scheduled))
-
-        self._migrate()
-        for s in (scheduled, trusted):
-            self.assertTrue(owner_may_run(Script.objects.get(pk=s.pk)), s.name)
-        # Limited to the scheduled scripts: nothing else runs, and trust
-        # covers the trusted one only.
-        for action, script, ok in (
-            ("run", unscheduled, False),
-            ("trust", scheduled, False),
-            ("trust", trusted, True),
-        ):
-            with self.subTest(action=action, script=script.name):
-                self.assertEqual(
-                    rbac.can_act_on(self.user, self.tenant, "script", action, script), ok
-                )
-
-        before = ObjectPermission.objects.count()
-        self._migrate()
-        self.assertEqual(ObjectPermission.objects.count(), before)
-
-    def test_owners_who_may_run_or_should_not_are_left_alone(self):
-        self._script(name="fine")
-        gone = get_user_model().objects.create_user("gone", "", "x", is_active=False)
-        UserProfile.objects.create(user=gone).tenants.add(self.tenant)
-        self._script(name="orphaned", owner=gone)
-        before = ObjectPermission.objects.count()
-        self._migrate()
-        self.assertEqual(ObjectPermission.objects.count(), before)

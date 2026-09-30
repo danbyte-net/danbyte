@@ -45,44 +45,12 @@ def due_scripts(now=None) -> list[Script]:
     return [s for s in qs if is_due(s, now)]
 
 
-def schedule_block_reason(script: Script) -> str:
-    """Why the owner may not run this script unattended, or ``""`` when they
-    may. Checked when the schedule fires, not only when it was set: an owner
-    who has since been deactivated, removed from the tenant or lost run on
-    this script (or trust, for a trusted script) no longer runs anything."""
-    from auth_api import rbac
-    from auth_api.permissions import user_can_access_tenant
-
-    owner = script.owner
-    if owner is None:
-        return "It has no owner to run as."
-    if not owner.is_active:
-        return "Its owner's account is deactivated."
-    if owner.is_superuser:
-        return ""
-    if not user_can_access_tenant(owner, script.tenant):
-        return "Its owner no longer works in this tenant."
-    if not rbac.can_act_on(owner, script.tenant, "script", "run", script):
-        return "Its owner does not have the run permission on this script."
-    if script.trusted and not rbac.can_act_on(owner, script.tenant, "script", "trust", script):
-        return "It is trusted, and its owner does not have the trust permission on it."
-    return ""
-
-
-def owner_may_run(script: Script) -> bool:
-    return not schedule_block_reason(script)
-
-
 def fire(script: Script, now=None) -> ScriptRun | None:
     """Queue one scheduled run. A script with no owner cannot run itself -
-    there would be nobody to run as - and neither can one whose owner may no
-    longer run it. The script's Schedule tab shows why."""
+    there would be nobody to run as."""
     now = now or timezone.now()
-    reason = schedule_block_reason(script)
-    if reason:
-        logger.warning("script %s is scheduled but skipped: %s", script.pk, reason)
-        # Once per occurrence, not every tick.
-        Script.objects.filter(pk=script.pk).update(last_run_at=now)
+    if script.owner_id is None:
+        logger.warning("script %s is scheduled but has no owner; skipping", script.pk)
         return None
     run = create_run(script, user=script.owner, params=script.schedule_params or {},
                      scheduled=True)
