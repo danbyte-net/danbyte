@@ -37,3 +37,22 @@ const NOT_EDITS: ReadonlySet<string> = new Set(["q"])
 export function overridesView(search: Record<string, unknown>): boolean {
   return OVERRIDE_KEYS.some((k) => !NOT_EDITS.has(k) && search[k] !== undefined)
 }
+
+/** An address with nothing on it: a bare `/topology`. */
+export const isBare = (search: Record<string, unknown>): boolean =>
+  Object.values(search).every((v) => v === undefined)
+
+/**
+ * What an address without a view becomes once the tenant has a default
+ * view: a bare `/topology` opens the default, and any other address - a
+ * site's, a device's, a hand-picked set - is No view (`view=none`), so
+ * clearing its last filter later can't land on the default. Null leaves
+ * the address as it is: it names a view (or `none`), or there is no default.
+ */
+export function settleDefault(
+  search: Record<string, unknown>,
+  defaultId: string | null
+): { view: string } | null {
+  if (!defaultId || search.view !== undefined) return null
+  return { view: isBare(search) ? defaultId : "none" }
+}

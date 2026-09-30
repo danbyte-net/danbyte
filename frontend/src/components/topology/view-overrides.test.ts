@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { OVERRIDE_KEYS, overridesView } from "./view-overrides"
+import { OVERRIDE_KEYS, overridesView, settleDefault } from "./view-overrides"
 
 describe("overridesView", () => {
   it("is false for a bare view", () => {
@@ -22,5 +22,32 @@ describe("overridesView", () => {
     // Applying a view wipes every key in the list; the search is one.
     expect(OVERRIDE_KEYS).toContain("q")
     expect(OVERRIDE_KEYS).toContain("cables")
+  })
+})
+
+describe("settleDefault", () => {
+  it("opens the default on a bare address", () => {
+    expect(settleDefault({}, "d1")).toEqual({ view: "d1" })
+    expect(settleDefault({ site: undefined }, "d1")).toEqual({ view: "d1" })
+  })
+
+  it("keeps any other address on No view", () => {
+    expect(settleDefault({ site: "s1" }, "d1")).toEqual({ view: "none" })
+    expect(settleDefault({ device: "x", depth: 2 }, "d1")).toEqual({
+      view: "none",
+    })
+    expect(settleDefault({ devices: "" }, "d1")).toEqual({ view: "none" })
+    expect(settleDefault({ q: "core" }, "d1")).toEqual({ view: "none" })
+  })
+
+  it("leaves an address that names a view, or none", () => {
+    expect(settleDefault({ view: "v1" }, "d1")).toBeNull()
+    expect(settleDefault({ view: "none" }, "d1")).toBeNull()
+    expect(settleDefault({ view: "none", site: "s1" }, "d1")).toBeNull()
+  })
+
+  it("changes nothing without a default", () => {
+    expect(settleDefault({}, null)).toBeNull()
+    expect(settleDefault({ site: "s1" }, null)).toBeNull()
   })
 })

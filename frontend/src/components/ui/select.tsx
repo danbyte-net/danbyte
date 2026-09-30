@@ -122,8 +122,13 @@ function SelectLabel({
 function SelectItem({
   className,
   children,
+  aside,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+}: React.ComponentProps<typeof SelectPrimitive.Item> & {
+  /** Shown at the item's end, outside its text - so not in the trigger or
+   * in type-ahead: a "Default" pill, say. */
+  aside?: React.ReactNode
+}) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -138,6 +143,13 @@ function SelectItem({
           <CheckIcon className="pointer-events-none" />
         </SelectPrimitive.ItemIndicator>
       </span>
+      {/* Before the text in the DOM, so the text stays the last span the
+          row's classes lay out; drawn at the end. */}
+      {aside != null && (
+        <span className="order-last ml-auto flex shrink-0 items-center">
+          {aside}
+        </span>
+      )}
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   )

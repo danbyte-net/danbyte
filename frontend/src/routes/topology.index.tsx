@@ -19,6 +19,7 @@ import {
   Search,
   SlidersHorizontal,
   Square,
+  Star,
   Trash2,
   Type,
   X,
@@ -155,6 +156,10 @@ import {
 } from "@/components/topology/hidden"
 import { StaleViewDialog } from "@/components/topology/stale-view-dialog"
 import {
+  useDefaultView,
+  useSetDefaultView,
+} from "@/components/topology/default-view"
+import {
   OVERRIDE_KEYS,
   overridesView,
 } from "@/components/topology/view-overrides"
@@ -281,9 +286,10 @@ const TopologyCanvas = lazy(() =>
  * The map's whole configuration lives in the URL, so a topology is a link:
  * `?tab=hierarchy&site=<id>&color=speed` opens exactly that picture, survives
  * a reload, moves with back/forward, and is what a bookmark captures. A value
- * on its default is written as no param at all, so a plain map stays
- * `/topology`. Anything unrecognised reads back as the default rather than
- * breaking the page - see `docs/features/topology.md` for the full table.
+ * on its default is written as no param at all, so a link stays short; a
+ * bare `/topology` opens the tenant's default view (No view without one).
+ * Anything unrecognised reads back as the default rather than breaking the
+ * page - see `docs/features/topology.md` for the full table.
  */
 export interface TopologySearch {
   /** The view tab - public names, not the internal node style. */
@@ -429,7 +435,7 @@ function ChipClose({ label, onClick }: { label: string; onClick: () => void }) {
   )
 }
 
-// Dragged node positions for the DEFAULT (no saved view) topology, kept in the
+// Dragged node positions for No view (no saved view), kept in the
 // browser so a manual arrangement survives a reload. The per-style split and
 // the saved-view readers live in `view-positions.ts`.
 const POS_KEY = "danbyte-topology-positions"
@@ -458,7 +464,7 @@ function clearStoredPositions() {
 }
 
 // Hidden cards and zones ride with the arrangement: they are part of how the
-// default map is shaped, and a reload that forgot them would put back cards
+// No view map is shaped, and a reload that forgot them would put back cards
 // the user had just taken out.
 // Derived from the reader rather than imported: this import block already
 // carries the repo's inline-type-specifier debt and does not need two more.
@@ -498,7 +504,7 @@ function writeStoredZones(z: ZonesByStyle) {
 }
 
 // Display settings (Levels order/bonds/distances, direction, colour mode,
-// edge routing) for the DEFAULT topology - like the dragged positions above,
+// edge routing) for No view - like the dragged positions above,
 // they must survive a reload. Saved views persist theirs via Save.
 const DISPLAY_KEY = "danbyte-topology-display"
 const SIDEBAR_KEY = "topology:sidebar"
@@ -632,9 +638,9 @@ function mapKeyOf(q: TopologyQuery): string {
 const fetchView = (id: string) =>
   api<TopologyViewSaved>(`/api/topology-views/${id}/`)
 
-// The default map's whole document, in a saved view's `state` shape, so
-// what a view saves beyond the arrangement - the Diagram's display, link and
-// card overrides, notes - survives a reload here too. The positions, zones
+// No view's whole document, in a saved view's `state` shape, so what a
+// view saves beyond the arrangement - the Diagram's display, link and card
+// overrides, notes - survives a reload here too. The positions, zones
 // and hidden keys are still written, and read when this one is missing, for
 // one release.
 const MAP_KEY = "danbyte-topology-map"
@@ -659,7 +665,7 @@ function writeStoredMap(doc: ViewDocument) {
   }
 }
 
-/** The default map as this browser last left it. A legacy single-map
+/** No view's map as this browser last left it. A legacy single-map
  * arrangement is read as the style on screen. */
 function defaultDocument(style: ViewStyle): ViewDocument {
   return (
@@ -689,6 +695,11 @@ function TopologyPage() {
     queryFn: () =>
       api<Paginated<TopologyViewSummary>>("/api/topology-views/?picker=1"),
   })
+  // The tenant's default view: a bare /topology is replaced by it.
+  const dv = useDefaultView(urlSearch, canDo("topologyview", "view"))
+  /** A bare address about to become the default view's: nothing is
+   * fetched or loaded for it. */
+  const resolving = dv.resolving
   const viewId = urlSearch.view ?? "none"
   const viewQ = useQuery({
     queryKey: ["topology-view", viewId],
@@ -699,22 +710,24 @@ function TopologyPage() {
   /** The view is gone: No view opens in its place (below). */
   const viewMissing =
     viewId !== "none" && viewQ.isError && isMissingViewError(viewQ.error)
-  /** A saved view's settings have arrived (or failed to): until then the
-   * filters are the defaults, and the map, its LLDP ghosts and its BGP
-   * sessions would be fetched for the whole tenant. */
-  const viewSettled = viewId === "none" || (viewQ.isFetched && !viewMissing)
+  /** A saved view's settings have arrived (or failed to), and a bare
+   * address has its view: until then the filters are the defaults, and the
+   * map, its LLDP ghosts and its BGP sessions would be fetched for the
+   * whole tenant. */
+  const viewSettled =
+    !resolving && (viewId === "none" || (viewQ.isFetched && !viewMissing))
   const vf = (appliedView?.state.filters ?? {}) as ViewFilters
-  // Personal defaults from the last unsaved session (this read is unchanged
-  // from before the URL work - same hydration behaviour).
+  // This browser's No view settings from its last session there (this read
+  // is unchanged from before the URL work - same hydration behaviour).
   const stored = useRef(readStoredDisplay()).current
   /** The style this browser's older, single arrangement was made on. */
   const legacyStyle = sanitizeViewStyle(stored.viewStyle)
-  // The default map's Diagram display, as this browser last saved it with
+  // No view's Diagram display, as this browser last saved it with
   // the map (read once - the stored map can be large).
   const [storedDiagram] = useState(() => readStoredMap()?.filters.diagram)
 
   // Value resolution for every control below:
-  //   URL param → applied saved view → stored personal default → hard default.
+  //   URL param → applied saved view → this browser's No view → hard default.
   // The hooks take the fallback as a plain value, so the chain is just this
   // object. "all" / "none" are spelled out rather than left absent, because a
   // link that turns a saved view's filter OFF has to say so - an absent param
@@ -919,9 +932,9 @@ function TopologyPage() {
       depth: f && f.depth !== 1 ? String(f.depth) : undefined,
     })
   // Which map is on screen. A saved view carries its own arrangement, zones
-  // and hidden set; the default map keeps its own in this browser; a custom
-  // map is a scratch map until it is saved, so what you draw on it must not
-  // follow you back to the default map when you exit.
+  // and hidden set; No view keeps its own in this browser; a custom map is
+  // a scratch map until it is saved, so what you draw on it must not follow
+  // you back to No view when you exit.
   const mapKey =
     viewId !== "none"
       ? `view:${viewId}`
@@ -931,10 +944,13 @@ function TopologyPage() {
 
   // Everything about this map that is not in the URL - the arrangements,
   // zones, hidden set, overrides - as one undoable document. A saved view's
-  // arrives with the view (the load effect below); the default map starts
-  // from this browser's copy.
+  // arrives with the view (the load effect below); No view starts from this
+  // browser's copy.
   const doc = useViewDocument(() => {
     if (viewId !== "none") return { doc: emptyDocument(), key: mapKey }
+    // On the way to the default view: a blank document under a key of its
+    // own, so No view's copy in this browser is neither shown nor written.
+    if (resolving) return { doc: emptyDocument(), key: "resolving" }
     if (urlDevices !== null)
       return { doc: emptyDocument({ devices: urlDevices }), key: mapKey }
     return { doc: defaultDocument(legacyStyle), key: mapKey }
@@ -1087,15 +1103,22 @@ function TopologyPage() {
 
   // The ONE place a map's document is (re)loaded. An effect, because a map
   // arrives several ways - picked in the select, opened as a link in a fresh
-  // tab, refetched, left for the default map - and the first fix that only
-  // covered the click left cold links opening with the personal default's
-  // coordinates pinned under the view's graph. A saved view's key carries
+  // tab, refetched, left for No view - and the first fix that only covered
+  // the click left cold links opening with No view's coordinates pinned
+  // under the view's graph. A saved view's key carries
   // its `updated_at`: a newer copy (someone else saved) replaces a clean
   // document, but never unsaved edits - their Save reports the conflict.
   const loadedKey = useRef<string>(
-    viewId !== "none" ? `${mapKey}@pending` : mapKey
+    viewId !== "none" || resolving ? `${mapKey}@pending` : mapKey
   )
   useEffect(() => {
+    // On the way to the default view nothing loads. The map left behind is
+    // loaded afresh if the address comes back to it - the sidebar's
+    // Topology on the default view itself, after Discard.
+    if (resolving) {
+      loadedKey.current = "resolving"
+      return
+    }
     const view = mapKey.startsWith("view:")
     const key = !view
       ? mapKey
@@ -1126,7 +1149,7 @@ function TopologyPage() {
     setLayoutTick((t) => t + 1)
     // Keyed on the map and the view copy only: the style and the document
     // are read as they are at that moment, not reasons to reload.
-  }, [mapKey, appliedView])
+  }, [mapKey, appliedView, resolving])
 
   // An unsaved map's set is its URL. When the URL changes under the map
   // (Back, an edited link) the document follows, so undo and Save see the
@@ -1151,10 +1174,10 @@ function TopologyPage() {
     patch({ devices: undefined }, { replace: true })
   }, [viewDocReady, urlSetKey])
 
-  // The default map persists to this browser as it changes; a saved view's
+  // No view persists to this browser as it changes; a saved view's
   // document is written by Save. Keyed on the document's own map, so the
-  // frame between leaving a view and loading the default map can never
-  // write the view's arrangement into the default map's storage.
+  // frame between leaving a view and loading No view can never write the
+  // view's arrangement into No view's storage.
   const ownDefault = doc.docKey === "default"
   const { positions: docPositions, zones: docZones } = doc.doc
   useEffect(() => {
@@ -1264,7 +1287,7 @@ function TopologyPage() {
   const exitBuilder = () => {
     if (viewId !== "none" && !vf.devices && viewDocReady)
       edit({ type: "replace", doc: { ...doc.doc, devices: null } })
-    patch({ devices: undefined, ...(vf.devices ? { view: undefined } : {}) })
+    patch({ devices: undefined, ...(vf.devices ? { view: dv.noView } : {}) })
     clearSel()
   }
 
@@ -1300,10 +1323,10 @@ function TopologyPage() {
     dropAllPositions()
   }
 
-  // Persist the DEFAULT view's display settings across reloads. Only while no
-  // saved view is selected - a saved view's settings belong to that view.
+  // Persist No view's display settings across reloads. Only while no saved
+  // view is selected - a saved view's settings belong to that view.
   useEffect(() => {
-    if (viewId !== "none") return
+    if (viewId !== "none" || resolving) return
     writeStoredDisplay({
       colorMode,
       // A photo map's own Tree is not the card map's choice.
@@ -1317,6 +1340,7 @@ function TopologyPage() {
     })
   }, [
     viewId,
+    resolving,
     colorMode,
     direction,
     dirImplied,
@@ -1481,7 +1505,7 @@ function TopologyPage() {
   // arrangement and zones come across (carryIntoDiagram); once the canvas
   // has drawn them at the Diagram's card sizes, the cards that now overlap
   // move apart (`onSpread`). Both are one undo step, and the map is edited:
-  // a view waits for Save, the default map keeps it as it goes.
+  // a view waits for Save, No view keeps it as it goes.
   const carryStyle =
     mapKey === "custom"
       ? undefined
@@ -1557,14 +1581,15 @@ function TopologyPage() {
   /** Everything the query returned plus the LLDP ghosts and BGP sessions
    * between those cards - what the sidebar lists, hidden or not. */
   const fullGraph = useMemo<TopologyGraph | undefined>(() => {
-    if (!q.data) return undefined
+    // On the way to the default view, not the last map kept for this key.
+    if (!q.data || resolving) return undefined
     const present = new Set(q.data.nodes.map((n) => n.id))
     const between = (e: TopoEdge) =>
       present.has(e.source) && present.has(e.target)
     const ghostEdges = (ghosts.data?.edges ?? []).filter(between)
     const bgpEdges = (bgp.data?.edges ?? []).filter(between)
     return { ...q.data, edges: [...q.data.edges, ...ghostEdges, ...bgpEdges] }
-  }, [q.data, ghosts.data, bgp.data])
+  }, [q.data, ghosts.data, bgp.data, resolving])
   // Each device's own Card | Photo and Ports | Edge, over the view's.
   const nodeFaces = doc.doc.nodes
   /** A Diagram card's face for its menu. The items are named for what is
@@ -1741,6 +1766,13 @@ function TopologyPage() {
   const canChangeViews = canDo("topologyview", "change")
   const canAddViews = canDo("topologyview", "add")
   const canDeleteViews = canDo("topologyview", "delete")
+  // The default view: tenant admins, or the set_default grant (whose row
+  // limits the server applies).
+  const canSetDefault = canManage || canDo("topologyview", "set_default")
+  const isDefault = viewId !== "none" && viewId === dv.defaultId
+  const setDefault = useSetDefaultView(
+    (id) => views.data?.results.find((v) => v.id === id)?.name
+  )
   const noOverrides = () =>
     Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined]))
 
@@ -1753,12 +1785,15 @@ function TopologyPage() {
   const applyView = (v: TopologyViewSummary) =>
     patch({ view: v.id, ...noOverrides() })
 
-  /** Back to the personal default map: no view, no overrides. */
-  const clearView = () => patch({ view: undefined, ...noOverrides() })
+  /** Back to No view, with no overrides - `view=none` once the tenant has a
+   * default view, since the bare address opens that. */
+  const clearView = () => patch({ view: dv.noView, ...noOverrides() })
 
   // A view that is gone - deleted since the link was made, or another
   // tenant's - is said once, and No view opens in its place instead of the
   // whole tenant drawn under a blank select. In place: Back skips it.
+  // Always `none`: a default still cached as that view can't send the page
+  // straight back to it.
   useEffect(() => {
     if (!viewMissing) return
     toast.error("View not found")
@@ -1778,7 +1813,8 @@ function TopologyPage() {
   /** A view's own document is on screen (not the blank one shown while it
    * loads) - saving before that would write an empty map over it. */
   const docReady =
-    viewId === "none" || (doc.docKey === mapKey && doc.base !== null)
+    !resolving &&
+    (viewId === "none" || (doc.docKey === mapKey && doc.base !== null))
 
   /** What Save writes: the document, under the settings the URL holds. */
   const currentState = () =>
@@ -1895,7 +1931,7 @@ function TopologyPage() {
       setConfirmDelete(false)
       qc.invalidateQueries({ queryKey: ["topology-views"] })
       // Nothing is left to keep the edits in, so there is nothing for the
-      // leave guard to ask; the default map loads on the way out.
+      // leave guard to ask; No view loads on the way out.
       doc.load(emptyDocument(), mapKey)
       clearView()
       toast.success(a.name ? `Deleted “${a.name}”` : "View deleted")
@@ -2798,11 +2834,10 @@ function TopologyPage() {
             <PanelLeft /> Devices
           </BarToggle>
           <Select
-            value={viewId}
+            value={resolving ? "" : viewId}
             onValueChange={(v) => {
-              // Back to the default map: dropping the view (and its overrides)
-              // is enough - the settings fall back to the stored personal
-              // defaults on their own.
+              // Back to No view: dropping the view (and its overrides) is
+              // enough - the settings fall back to this browser's own.
               if (v === "none") {
                 clearView()
                 return
@@ -2824,12 +2859,29 @@ function TopologyPage() {
             <SelectContent>
               <SelectItem value="none">No view</SelectItem>
               {(views.data?.results ?? []).map((v) => (
-                <SelectItem key={v.id} value={v.id}>
+                <SelectItem
+                  key={v.id}
+                  value={v.id}
+                  aside={
+                    v.id === dv.defaultId ? (
+                      <Badge variant="secondary">Default</Badge>
+                    ) : undefined
+                  }
+                >
                   {v.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          {viewId !== "none" && canSetDefault && (
+            <BarIconButton
+              label={isDefault ? "Clear default" : "Set as default"}
+              disabled={setDefault.isPending || !appliedView}
+              onClick={() => setDefault.mutate(isDefault ? null : viewId)}
+            >
+              <Star className={cn(isDefault && "fill-current")} />
+            </BarIconButton>
+          )}
           {canAddViews && (
             <BarIconButton
               label="New view"
@@ -3516,7 +3568,14 @@ function TopologyPage() {
         title={
           appliedView?.name ? `Delete “${appliedView.name}”?` : "Delete view?"
         }
-        description="Its layout, bands, zones and text go with it. This can't be undone."
+        description={
+          <>
+            Its layout, bands, zones and text go with it. This can't be undone.
+            {isDefault && (
+              <span className="mt-2 block">It's the default view.</span>
+            )}
+          </>
+        }
         pending={deleteView.isPending}
         onConfirm={() =>
           deleteView.mutate({ id: viewId, name: appliedView?.name })

@@ -5,8 +5,8 @@ import type { HiddenSet } from "@/components/hidden-objects"
 /** What the map's eye toggles have switched off: site names, location
  * names, role names, link families, single node ids and single lines
  * (`edges`: the payload's edge ids - a cable, an LLDP neighbour, a BGP
- * session). Saved with a view (`state.hidden`); the default map keeps its
- * own per browser. A view saved before the groups existed holds a flat
+ * session). Saved with a view (`state.hidden`); No view keeps its own
+ * per browser. A view saved before the groups existed holds a flat
  * list of node ids - that list is `devices`. */
 export const TOPO_HIDDEN_KEYS = [
   "sites",

@@ -103,8 +103,8 @@ export function docFromView(
   return docFromState(v.state, styleOf)
 }
 
-/** A saved view's `state` as a document - also how this browser keeps the
- * default map, so it holds everything a view does. */
+/** A saved view's `state` as a document - also how this browser keeps
+ * No view's map, so it holds everything a view does. */
 export function docFromState(
   state: unknown,
   styleOf: (raw: unknown) => string
@@ -231,13 +231,13 @@ export function carryIntoDiagram(
   return next
 }
 
-/** The default map as this browser stores it: a saved view's `state`,
- * without a device set (the default map has none). */
+/** No view's map as this browser stores it: a saved view's `state`,
+ * without a device set (No view has none). */
 export function storedDefaultMap(doc: ViewDocument): string {
   return JSON.stringify(toViewState({ ...doc, devices: null, extra: {} }))
 }
 
-/** A stored default map as a document; null when there is none or it
+/** A stored No view map as a document; null when there is none or it
  * cannot be read, so the caller falls back to the older keys. */
 export function readDefaultMap(
   raw: string | null,
@@ -618,9 +618,9 @@ const samePath = (a: string, b: string) =>
  * unsaved edits: a sidebar link, browser back/forward, picking another view,
  * leaving a custom map. Same as the floor-plan editor, except that here the
  * map is in the query string - so a navigation that stays on the page but
- * lands on another map (another view, the default map) is a leave too,
- * while a filter or display change on the same map is not. The default map
- * is never guarded: it is kept in this browser as it changes.
+ * lands on another map (another view, No view) is a leave too, while a
+ * filter or display change on the same map is not. No view is never
+ * guarded: it is kept in this browser as it changes.
  *
  * Returns the blocker the page's dialog answers. A move the page makes
  * itself once nothing can be lost - onto the view a save just wrote - goes

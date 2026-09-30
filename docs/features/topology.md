@@ -79,8 +79,8 @@ every cabled interface and its name on its own cable, as Wiring did;
   result, ++ctrl+z++ puts the automatic layout back, and nothing is saved
   until you do. The Wiring and Flat arrangements stay in the view for one
   more release.
-- **Your default map** - the map this browser keeps does the same the
-  first time, and keeps the result as it goes.
+- **No view** - the map this browser keeps does the same the first time,
+  and keeps the result as it goes.
 
 The trace maps, a device's Map tab and a tunnel's Map tab draw the
 Diagram's cards too (see [Trace maps and a device's map](#trace-maps)).
@@ -240,8 +240,8 @@ lines** section, open to anyone who can see the map:
 
 It is part of the map's document: every change is one undo step
 (++ctrl+z++ / ++cmd+z++), marks the view **Edited**, redraws the cards at
-once, and is kept by **Save** like the rest of the view. On the default map
-it stays in this browser.
+once, and is kept by **Save** like the rest of the view. On No view it
+stays in this browser.
 
 **For one device** - its own list wins over everything else, on every map:
 
@@ -311,7 +311,7 @@ or column it goes round whichever way - over their tops or past their sides
 turns it over to the other side of the cards. The choice covers every cable
 between the two devices, in Simple and Detailed alike, and is part of the
 view like its arrangement: each change is one undo step, marks the view
-**Edited**, and is kept by **Save** (on the default map, in this browser).
+**Edited**, and is kept by **Save** (on No view, in this browser).
 
 ### Link labels
 
@@ -777,7 +777,7 @@ eye lit, so "where did my core switch go" answers itself; **Show all** at the
 top of the sidebar - or the **"n hidden · Show all"** chip in the map's
 top-left corner when the sidebar is closed - puts everything back.
 
-The hidden set saves with the view, and the default map remembers it per
+The hidden set saves with the view, and No view remembers it per
 browser. Views saved before the eyes existed hold their removed cards under
 the same model.
 
@@ -971,15 +971,15 @@ band, "PNI" next to a line, a cloud captioned "Internet · DC02".
   ++backspace++).
 
 Notes are in muted ink and never colored. Every change is one undo step,
-and they save with the view (the default map keeps its own in this
+and they save with the view (No view keeps its own in this
 browser). The SVG, PNG and draw.io exports draw them where they stand.
 
 The arrangement, zones and hidden objects belong to the map you made them
-on. A saved view carries its own, the default map keeps its own in this
-browser, and an unsaved **hand-picked map is a scratch map** - what you
-arrange and draw there stays there until you save it as a view, and going
-**Back to filtered map** neither carries it back to the default map nor
-disturbs the default map's own arrangement.
+on. A saved view carries its own, No view keeps its own in this browser,
+and an unsaved **hand-picked map is a scratch map** - what you arrange and
+draw there stays there until you save it as a view, and going **Back to
+filtered map** neither carries it back to No view nor disturbs No view's
+own arrangement.
 
 ## Filters, focus, search
 
@@ -1161,7 +1161,7 @@ bundling, and the Diagram's Simple/Detailed mode, line type and its own
 [card lines](#card-lines)),
 **every node position** per view style, the **zones**
 and the **hidden objects**. Load it from the **Views** select (*No view* is
-the default map) - the map, its
+this browser's own map; the tenant can pick a [default view](#default-view)) - the map, its
 LLDP links and its BGP sessions are fetched once the view's settings are in,
 never for the whole tenant first; **Save** (or
 ++ctrl+s++, ++cmd+s++ on a Mac) updates it in place after you rearrange;
@@ -1222,17 +1222,43 @@ too. Settings that live in the URL (filters, tab, Color by…) are not on
 the undo list - the browser's Back button takes those back.
 
 **Unsaved changes.** Leaving a saved view or a hand-picked map with unsaved
-edits - another view from the select, the default map, a sidebar link, the
+edits - another view from the select, No view, a sidebar link, the
 browser's Back button, closing the tab - asks first, in the same dialog as
 the [floor plans](floor-plans.md): *Discard unsaved changes?* with **Keep
-editing** or **Discard and leave**. The default map never asks; it is kept
-in this browser as you go.
+editing** or **Discard and leave**. No view never asks; it is kept in this
+browser as you go.
 
 **Changed by someone else.** Save only writes over the version you opened. If
 somebody saved the view in the meantime, Save is refused and offers
 **Save as…** (keep your version as a new view, named "<view> (copy)") or
 **Reload** (take theirs and drop your changes); nothing is overwritten
 silently.
+
+### Default view
+
+The star after the **Views** select picks the view **Topology** opens with
+for everyone in the tenant: **Set as default** on a view, **Clear default**
+on the one that is. The select marks it with a **Default** pill; setting it
+reports *Default: "name"*, clearing it *Default cleared*.
+
+- **Topology** from the sidebar - a bare `/topology` - opens the default
+  view as last saved, with its own tab and Diagram mode. The address becomes
+  `?view=<id>` in place, so Back leaves the page.
+- Links keep what they show. A link naming a view opens that view, and a
+  link from a site, location, cable or device page - any address with other
+  parameters - opens No view with them. Such an address gains `view=none`
+  in place, so clearing its last filter doesn't jump to the default.
+- **No view** stays one pick away in the select, and `?view=none` bookmarks
+  it. It is this browser's own map, as before.
+- Deleting the default view clears it; the delete dialog says *It's the
+  default view.* Someone who can't see the default view (row limits, or no
+  view permission on topology views) gets No view.
+- Setting it takes tenant admin rights, or the **set default** capability
+  on topology views (see [Permissions](permissions.md)), whose row limits say
+  which views. It is not an edit of the view: no **Edited**, no new save,
+  and the change log records it on the tenant's settings.
+
+There is one default per tenant and no per-user one.
 
 ### Right-click menus
 
@@ -1304,8 +1330,10 @@ back button and a reload all keep it.
 | `q` | the **Find on map** box (never an edit of a saved view) |
 | `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
 
-A setting on its default is left out, so a plain map stays `/topology`. A value
-the page doesn't recognise reads as that default rather than breaking the page.
+A setting on its default is left out, so a link stays short. A bare
+`/topology` opens the tenant's [default view](#default-view), or No view
+when there is none. A value the page doesn't recognise reads as the
+setting's default rather than breaking the page.
 Grouping by site while scoped to one site *is* that site's device view, so
 `?group=site&site=<id>` is the drill-in - the same link the breadcrumb gives
 you.

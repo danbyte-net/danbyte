@@ -421,6 +421,7 @@ export type RBACAction =
   | "run"
   | "trust"
   | "view_credits"
+  | "set_default"
 
 export interface RBACUser {
   id: number
