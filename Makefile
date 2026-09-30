@@ -22,7 +22,7 @@ SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
-.PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit \
+.PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
         docs-up docs-down docs-restart docs-logs docs-build schema \
@@ -312,6 +312,16 @@ uninstall-tls-unit:
 	@sudo rm -f /etc/systemd/system/danbyte-tls.path /etc/systemd/system/danbyte-tls.service
 	@sudo rm -f $(TLS_LIBEXEC)/danbyte-tls-apply.sh
 	@sudo systemctl daemon-reload
+
+# What install.sh does as root after an upgrade - logrotate, the nginx site
+# (re-rendered only while it is still what Danbyte rendered, with its live
+# certificate and name, and put back if nginx -t refuses it) and the
+# certificate unit - for a host upgraded from the app. It runs this tree's
+# scripts/host-sync.sh as root; this tree belongs to the app's user, so
+# prefer re-running install.sh from a verified bundle.
+host-sync:
+	@sudo bash $(PROJECT_DIR)/scripts/host-sync.sh --app $(PROJECT_DIR) --user $$(stat -c %U $(PROJECT_DIR)) \
+		--log-dir $(LOG_DIR) $(if $(ADOPT),--adopt)
 
 proxy-reload:
 	@$(RENDER_NGINX)

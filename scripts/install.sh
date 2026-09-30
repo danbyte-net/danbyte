@@ -15,6 +15,15 @@
 # Offline scope: no PyPI/npm/python.org access needed (all bundled). OS packages
 # (postgresql, redis-server, nginx) still come from your distro - on an airgapped
 # box, point apt at your local mirror first, or pre-install them.
+#
+# Re-run on a box that already runs Danbyte, it UPGRADES: the root steps as
+# above, then the bundle's own upgrade stage (scripts/upgrade/stage.sh) as the
+# service user's transient unit danbyte-upgrade.service - the same stage the
+# in-app upgrade runs: services stopped first, a snapshot, one-transaction
+# migrations, a verify before anything serves, and everything put back if a
+# step fails. A dropped SSH session does not stop it. Then nginx, logrotate
+# and the certificate unit from this bundle (scripts/host-sync.sh). Root only
+# ever runs files from this bundle, never from the app directory.
 set -euo pipefail
 
 # ── Config (env or flags) ────────────────────────────────────────────────────
@@ -27,6 +36,8 @@ LOG_DIR="${DANBYTE_LOG_DIR:-/var/log/danbyte}"
 HOST="${DANBYTE_HOST:-}"
 UNATTENDED=0
 DO_NGINX=1
+FORCE=0
+SKIP_BACKUP=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) HOST="$2"; shift 2 ;;
@@ -34,6 +45,8 @@ while [ $# -gt 0 ]; do
     --service-home) SERVICE_HOME="$2"; shift 2 ;;
     --no-nginx) DO_NGINX=0; shift ;;
     --unattended|-y) UNATTENDED=1; shift ;;
+    --force) FORCE=1; shift ;;
+    --skip-backup) SKIP_BACKUP=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -65,6 +78,18 @@ die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo ./install.sh)"
 [ -d "$BUNDLE/vendor/wheels" ] && [ -x "$BUNDLE/vendor/python/bin/python3" ] \
   || die "this doesn't look like an offline bundle (missing vendor/)."
+[ "$(stat -c %u "$BUNDLE/install.sh")" -eq 0 ] \
+  || warn "the bundle's files are not owned by root; whoever owns them could change what root runs next - extract it as root (tar is run by root) or chown -R root: it"
+EXISTING=0
+if [ -f "$APP/manage.py" ] && [ -f "$APP/.env" ]; then
+  EXISTING=1
+  [ ! -d "$APP/.git" ] || [ "$FORCE" -eq 1 ] \
+    || die "$APP is a git checkout - upgrade it from Settings -> Updates or with danbyte-admin upgrade, not with a bundle (--force to overlay it anyway)."
+  if [ -z "$HOST" ] && [ -f /etc/nginx/sites-available/danbyte.conf ]; then
+    # Keep the name the site already answers to.
+    HOST="$(sed -n 's/^[[:space:]]*server_name[[:space:]]\+\([^;]*\);.*/\1/p' /etc/nginx/sites-available/danbyte.conf | head -n 1)"
+  fi
+fi
 [ -n "$HOST" ] || HOST="$(hostname -I 2>/dev/null | awk '{print $1}')"
 [ -n "$HOST" ] || die "could not determine a host; pass --host <name-or-ip>"
 ADMIN_LOGIN="$(logname 2>/dev/null || echo "${SUDO_USER:-}")"
@@ -184,6 +209,114 @@ echo "net.ipv4.ping_group_range = $SVC_GID $SVC_GID" \
   > /etc/sysctl.d/99-danbyte-icmp.conf
 sysctl -q -w "net.ipv4.ping_group_range=$SVC_GID $SVC_GID" || true
 
+# ── Existing install: the bundle's upgrade stage does steps 4-9 ─────────────
+upgrade_existing() {
+  local root work ver from now lock unit_state mark rc state step last
+  step "Upgrading the existing install in $APP"
+  root="$(dirname "$APP")/.danbyte-upgrade"
+  [ "$(stat -c %d "$(dirname "$APP")")" = "$(stat -c %d "$APP")" ] || root="$APP/.danbyte-upgrade"
+  mark="$root/active"
+  [ ! -f "$mark" ] || die "an earlier upgrade is unfinished - run: danbyte-admin upgrade recover"
+  unit_state="$(as_user systemctl --user is-active danbyte-upgrade.service 2>/dev/null || true)"
+  if [ "$unit_state" = active ] || [ "$unit_state" = activating ]; then
+    [ "$FORCE" -eq 1 ] || die "danbyte-upgrade.service is running - wait for it, or pass --force"
+  fi
+  lock="$APP/.upgrade.lock"
+  if [ -e "$lock" ]; then
+    # The app's rule: a lock whose unit is gone and that is older than five
+    # minutes is stale.
+    if [ $(( $(date +%s) - $(stat -c %Y "$lock") )) -lt 300 ] && [ "$FORCE" -eq 0 ]; then
+      die "an upgrade holds $lock - wait for it, or pass --force"
+    fi
+    as_user rm -f "$lock"
+  fi
+  ver="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$BUNDLE/danbyte/__init__.py")"
+  from="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$APP/danbyte/__init__.py")"
+  [ -f "$BUNDLE/scripts/upgrade/stage.sh" ] || die "this bundle has no upgrade stage"
+  if [ "$(printf '%s\n%s\n' "${ver%%-*}" "${from%%-*}" | sort -V | head -n 1)" = "${ver%%-*}" ] \
+      && [ "${ver%%-*}" != "${from%%-*}" ] && [ "$FORCE" -eq 0 ]; then
+    die "this bundle is $ver and $APP runs $from - downgrades are not supported"
+  fi
+  # The previous release's nginx template, to tell whether the live site
+  # was edited by hand (host-sync.sh) once the stage has replaced it.
+  OLD_TEMPLATE="$(mktemp)"
+  cp "$APP/deploy/nginx/danbyte.prod.conf.template" "$OLD_TEMPLATE" 2>/dev/null || : >"$OLD_TEMPLATE"
+  now="$(date +%s)"
+  work="$root/$(date -u +%Y%m%dT%H%M%SZ)-$ver"
+  as_user mkdir -p "$work/src"
+  # Copied by the service user through a pipe: the admin's home is often
+  # closed to it, and nothing it will run is left owned by root.
+  tar -C "$BUNDLE" -cf - . | as_user tar -C "$work/src" -xf -
+  # The same lock the app takes, so the Updates page and the auto-upgrade
+  # timer see this upgrade as busy - written by the service user.
+  as_user flock "$APP/.upgrade.lock.guard" sh -c \
+    'umask 077; printf "%s" "$1" >"$2.tmp" && mv -f "$2.tmp" "$2"' _ \
+    "{\"owner\":\"installer-$now\",\"phase\":\"launched\",\"via\":\"systemd-run\",\"launch_confirmed\":true,\"acquired_at\":$now,\"launched_at\":$now}" \
+    "$lock"
+  as_user sh -c 'printf "%s\n" "$1" >"$2"' _ \
+    "{\"state\":\"running\",\"step\":\"launching\",\"pct\":0,\"version_to\":\"$ver\",\"version_from\":\"$from\",\"stage_api\":1,\"trigger\":\"installer\",\"started_at\":$now}" \
+    "$APP/.upgrade-status.json"
+  set -- systemd-run --user --collect --unit danbyte-upgrade \
+    -p KillMode=mixed -p TimeoutStopSec=300 \
+    --setenv=DANBYTE_DIR="$APP" --setenv=DANBYTE_UPGRADE_WORK="$work" \
+    --setenv=DANBYTE_UPGRADE_SRC="$work/src" --setenv=DANBYTE_UPGRADE_VERSION="$ver" \
+    --setenv=DANBYTE_UPGRADE_FROM="$from" --setenv=DANBYTE_UPGRADE_TRIGGER=installer \
+    --setenv=DANBYTE_UPGRADE_STARTED_AT="$now"
+  [ "$SKIP_BACKUP" -eq 1 ] && set -- "$@" --setenv=DANBYTE_SKIP_BACKUP=1
+  if ! as_user "$@" -p OnFailure=danbyte-upgrade-recover.service \
+      /bin/sh "$work/src/scripts/upgrade/stage.sh" --kind bundle >/dev/null 2>&1; then
+    unit_state="$(as_user systemctl --user is-active danbyte-upgrade.service 2>/dev/null || true)"
+    if [ "$unit_state" != active ] && [ "$unit_state" != activating ]; then
+      # An older systemd without OnFailure= on transient units: the stage's
+      # recovery timer covers it.
+      as_user "$@" /bin/sh "$work/src/scripts/upgrade/stage.sh" --kind bundle >/dev/null \
+        || { as_user rm -f "$lock"; die "could not start danbyte-upgrade.service"; }
+    fi
+  fi
+  echo "  running as danbyte-upgrade.service - it carries on if this session drops."
+  echo "  follow it: sudo -u $SERVICE_USER XDG_RUNTIME_DIR=/run/user/$SVC_UID journalctl --user -fu danbyte-upgrade"
+  last=""
+  while :; do
+    sleep 2
+    state="$(sed -n 's/.*"state": *"\([a-z]*\)".*/\1/p' "$APP/.upgrade-status.json" 2>/dev/null)"
+    step="$(sed -n 's/.*"step": *"\([a-z_]*\)".*/\1/p' "$APP/.upgrade-status.json" 2>/dev/null)"
+    if [ -n "$step" ] && [ "$step" != "$last" ]; then echo "  - $step"; last="$step"; fi
+    unit_state="$(as_user systemctl --user is-active danbyte-upgrade.service 2>/dev/null || true)"
+    if [ "$state" != running ] && [ "$unit_state" != active ] && [ "$unit_state" != activating ]; then
+      break
+    fi
+    if [ "$state" = running ] && [ "$unit_state" != active ] && [ "$unit_state" != activating ] \
+        && [ -z "$(as_user systemctl --user show -p MainPID --value danbyte-upgrade.service 2>/dev/null | grep -v '^0$')" ] \
+        && [ ! -f "$mark" ]; then
+      break
+    fi
+    if [ "$state" = running ] && [ "$unit_state" != active ] && [ "$unit_state" != activating ] && [ -f "$mark" ]; then
+      warn "the upgrade stopped part-way; its recovery finishes or rolls it back within five minutes."
+      break
+    fi
+  done
+  as_user rm -f "$lock"
+  rc=1
+  [ "$state" = "done" ] && rc=0
+  if [ "$rc" -ne 0 ]; then
+    printf '\n\033[1;31m✗ The upgrade to %s failed.\033[0m\n' "$ver" >&2
+    sed -n 's/.*"error": *"\([^"]*\)".*/  \1/p' "$APP/.upgrade-status.json" >&2
+    echo "  log: $APP/.upgrade.log" >&2
+    rm -f "$OLD_TEMPLATE"
+    exit 1
+  fi
+  echo "  upgraded $from -> $ver"
+}
+
+if [ "$EXISTING" -eq 1 ]; then
+  # Settings releases from before 0.17 did not backfill themselves.
+  grep -qE '^DANBYTE_HTTPS=' "$APP/.env" \
+    || printf '\nDANBYTE_HTTPS=%s\n' "$HTTPS_VAL" >>"$APP/.env"
+  upgrade_existing
+  ADMIN_PASSWORD=""
+fi
+
+if [ "$EXISTING" -eq 0 ]; then
 # ── 4. Deploy the app to $APP ────────────────────────────────────────────────
 step "Deploying app → $APP"
 install -d "$APP"
@@ -292,31 +425,26 @@ DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danb
 # would keep serving the OLD code - restart is what makes the update take).
 as_user systemctl --user enable $DANBYTE_UNITS >/dev/null 2>&1 || true
 as_user systemctl --user restart $DANBYTE_UNITS
-
-# Rotation for the log files. The app writes them from many processes and
-# rotates nothing itself when this exists; without it, it falls back to a
-# size-capped handler and gunicorn keeps its logs in the journal (#231).
-if [ -d /etc/logrotate.d ]; then
-  sed -e "s#@@LOG_DIR@@#$LOG_DIR#g" -e "s#@@USER@@#$SERVICE_USER#g" \
-    "$APP/deploy/logrotate/danbyte" > /etc/logrotate.d/danbyte
-  chmod 644 /etc/logrotate.d/danbyte
+# What this bundle installed, so the first upgrade can remove the files the
+# next release no longer ships.
+as_user sh -c 'cd "$1" && find . \( -path ./vendor -o -path ./frontend/dist -o -path ./frontend/node_modules -o -path ./staticfiles -o -path ./.git -o -path ./.venv -o -path ./media -o -path ./plugins_local -o -name __pycache__ \) -prune -o \( -type f -o -type l \) -print | grep -v "^\./install\.sh$\|^\./\.env$\|^\./\.release-files" | LC_ALL=C sort >.release-files.tmp && mv -f .release-files.tmp .release-files' _ "$APP" || true
 fi
 
-# ── 10. nginx + TLS ──────────────────────────────────────────────────────────
-if [ "$DO_NGINX" -eq 1 ]; then
-  step "nginx + TLS (self-signed) for $HOST"
-  ( cd "$APP" && make proxy-install \
-      NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
-      PROXY_HOST="$HOST" >/dev/null )
-  # proxy-install ran as root and left the staging folder root-only under
-  # root's umask; the app has to write its certificate drops there.
-  chown -R "$SERVICE_USER:$SERVICE_USER" "$APP/deploy/nginx/certs"
-  chmod 750 "$APP/deploy/nginx/certs"
-  chmod 600 "$APP/deploy/nginx/certs/danbyte.key" 2>/dev/null || true
-  # The root half of Settings → Updates → Site certificate: the app drops a
-  # pair in a folder it owns, this unit puts it in front of nginx.
-  ( cd "$APP" && make install-tls-unit >/dev/null )
+# ── 10. logrotate, nginx + TLS, the certificate unit (from this bundle) ──────
+# Rotation for the log files: the app rotates nothing itself when this
+# exists (#231). The nginx site and the root unit that applies a certificate
+# the app drops (Settings → Updates → Site certificate). Rendered from this
+# bundle as root; nothing from the app directory runs as root.
+step "Host: logrotate$( [ "$DO_NGINX" -eq 1 ] && echo ", nginx + TLS for $HOST, certificate unit")"
+set -- --app "$APP" --user "$SERVICE_USER" --host "$HOST" --log-dir "$LOG_DIR"
+[ "$DO_NGINX" -eq 1 ] || set -- "$@" --no-nginx
+if [ "$EXISTING" -eq 1 ]; then
+  set -- "$@" --old-template "$OLD_TEMPLATE"
+else
+  set -- "$@" --fresh
 fi
+bash "$BUNDLE/scripts/host-sync.sh" "$@"
+[ "$EXISTING" -eq 1 ] && rm -f "$OLD_TEMPLATE"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 if [ "$DO_NGINX" -eq 1 ]; then

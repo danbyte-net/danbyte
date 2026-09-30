@@ -113,7 +113,9 @@ EOF
 
 # ── 8. Tarball ───────────────────────────────────────────────────────────────
 log "Packing ${NAME}.tar.gz"
-tar -czf "$OUT/${NAME}.tar.gz" -C "$(dirname "$STAGE")" "$NAME"
+# Owned by root in the archive: extracted by root, nobody else on the host
+# can change the installer or anything it runs as root.
+tar -czf "$OUT/${NAME}.tar.gz" --owner=0 --group=0 --numeric-owner -C "$(dirname "$STAGE")" "$NAME"
 ( cd "$OUT" && sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256" )
 rm -rf "$(dirname "$STAGE")" "$(dirname "$BUILD_VENV")"
 
