@@ -1793,15 +1793,14 @@ function TopologyPage() {
   // tenant's - is said once, and No view opens in its place instead of the
   // whole tenant drawn under a blank select. In place: Back skips it.
   // Always `none`: a default still cached as that view can't send the page
-  // straight back to it.
+  // straight back to it. Not past the leave guard: a view deleted elsewhere
+  // while it was being edited is found on a refetch, and its unsaved edits
+  // are asked about first, so Keep editing can still Save as… a new view.
   useEffect(() => {
     if (!viewMissing) return
     toast.error("View not found")
     void qc.invalidateQueries({ queryKey: ["topology-views"] })
-    patch(
-      { view: "none", ...noOverrides() },
-      { replace: true, ignoreBlocker: true }
-    )
+    patch({ view: "none", ...noOverrides() }, { replace: true })
   }, [viewMissing])
 
   /** The applied view is no longer what it saved - the URL carries at least

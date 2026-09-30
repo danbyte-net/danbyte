@@ -1226,7 +1226,9 @@ edits - another view from the select, No view, a sidebar link, the
 browser's Back button, closing the tab - asks first, in the same dialog as
 the [floor plans](floor-plans.md): *Discard unsaved changes?* with **Keep
 editing** or **Discard and leave**. No view never asks; it is kept in this
-browser as you go.
+browser as you go. A view deleted by someone else while you edit it asks
+too, once the page finds it gone: **Keep editing** leaves the map on screen
+for **Save as…**.
 
 **Changed by someone else.** Save only writes over the version you opened. If
 somebody saved the view in the meantime, Save is refused and offers
@@ -1768,8 +1770,8 @@ or another tenant's, is a 404.
 
 **Default view.** `GET /api/topology-views/default/` returns `{"id": ...}`,
 the view a bare `/topology` opens for the tenant, or `null` for No view. It
-needs view on topology views, and a default the caller can't see (row limits)
-reads as `null`. `PUT` with `{"id": "<view id>"}` sets it and `{"id": null}`
+needs view on topology views, as does `PUT`, and a default the caller can't
+see (row limits) reads as `null`. `PUT` with `{"id": "<view id>"}` sets it and `{"id": null}`
 clears it. It is allowed for superusers and tenant admins, and for anyone with
 the `set_default` capability on topology views, whose row limits decide which
 views they may choose (a 400 `{"id": ...}` otherwise, as for another tenant's

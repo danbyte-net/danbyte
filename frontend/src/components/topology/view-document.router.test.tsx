@@ -60,6 +60,14 @@ function MapPage() {
       <button onClick={() => saved(false)}>saved-unguarded</button>
       <button onClick={() => patch({ devices: undefined })}>leave</button>
       <button onClick={() => patch({ view: "none" })}>no-view</button>
+      {/* What the page does when the view it shows turns out to be gone. */}
+      <button
+        onClick={() =>
+          patch({ view: "none", devices: undefined }, { replace: true })
+        }
+      >
+        gone
+      </button>
     </div>
   )
 }
@@ -131,6 +139,23 @@ describe("useMapLeaveGuard", () => {
     expect(text("guard")).toBe("idle")
     expect(text("map")).toBe("custom")
     expect(text("dirty")).toBe("true")
+  })
+
+  it("asks before a gone view's unsaved edits are left", async () => {
+    await mount("/topology?view=v1")
+    click("edit")
+    act(() => click("gone"))
+    await waitFor(() => expect(text("guard")).toBe("blocked"))
+    expect(text("map")).toBe("view:v1")
+  })
+
+  it("lets a gone view with nothing unsaved go to No view", async () => {
+    const router = await mount("/topology?view=v1")
+    act(() => click("gone"))
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ view: "none" })
+    )
+    expect(text("guard")).toBe("idle")
   })
 
   it("still guards a real leave with unsaved edits", async () => {

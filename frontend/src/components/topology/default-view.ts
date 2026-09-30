@@ -42,9 +42,11 @@ export function useDefaultView(
     enabled,
     // A failed read must not hold the map up: it is No view at once.
     retry: false,
-    // Asked when the page opens, not when the window regains focus: a
-    // default set elsewhere must not pull an open map from under you.
+    // Asked when the page opens, not when the window regains focus or the
+    // network comes back: a default set elsewhere must not pull an open
+    // map from under you.
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const pending = enabled && q.isPending
   const defaultId = q.data?.id ?? null
