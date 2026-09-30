@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 
 import type { SlaMemberFigure } from "@/lib/api"
-import { exclusionMembers, memberRowIds, viaText } from "./sla-members"
+import {
+  exclusionMembers,
+  memberRowIds,
+  selectorFieldsSet,
+  selectorSummary,
+  viaText,
+} from "./sla-members"
 
 const row = (over: Partial<SlaMemberFigure>): SlaMemberFigure =>
   ({
@@ -13,6 +19,16 @@ const row = (over: Partial<SlaMemberFigure>): SlaMemberFigure =>
     name: "x",
     ...over,
   }) as SlaMemberFigure
+
+const group = {
+  use_selector: true,
+  match_sites: [] as string[],
+  match_roles: [] as string[],
+  match_device_types: [] as string[],
+  match_platforms: [] as string[],
+  match_tags: [] as string[],
+  match_name: "",
+}
 
 describe("viaText", () => {
   it("names three devices, then counts the rest", () => {
@@ -50,5 +66,26 @@ describe("exclusionMembers", () => {
       { id: "m1", name: "sw1" },
       { id: "m4", name: "leaf1" },
     ])
+  })
+})
+
+describe("selectorSummary", () => {
+  it("counts what is set", () => {
+    expect(
+      selectorSummary({
+        ...group,
+        match_roles: ["r1", "r2"],
+        match_device_types: ["t1"],
+      })
+    ).toBe("2 roles · 1 type")
+    expect(selectorSummary(group)).toBe("Matches nothing")
+    expect(selectorSummary({ ...group, use_selector: false })).toBe("Off")
+    expect(selectorSummary({ ...group, match_name: "leaf-*" })).toBe("leaf-*")
+  })
+
+  it("lists the fields that narrow a new role or type", () => {
+    const g = { ...group, match_roles: ["r"], match_sites: ["s"] }
+    expect(selectorFieldsSet(g, "roles")).toEqual(["Sites"])
+    expect(selectorFieldsSet(g, "types")).toEqual(["Sites", "Roles"])
   })
 })

@@ -63,6 +63,7 @@ import {
 import {
   exclusionMembers,
   memberRowIds,
+  selectorSummary,
 } from "@/components/monitoring/sla-members"
 import { fmtSpan } from "@/components/monitoring/status-strip"
 
@@ -558,7 +559,7 @@ function Groups({
               },
               {
                 label: "Selector",
-                value: g.use_selector ? "Matching devices join" : "Off",
+                value: selectorSummary(g),
               },
             ]}
           />

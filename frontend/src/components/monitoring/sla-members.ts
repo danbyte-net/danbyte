@@ -1,4 +1,4 @@
-import type { SlaMemberFigure, SlaStackFold } from "@/lib/api"
+import type { SlaCheckGroup, SlaMemberFigure, SlaStackFold } from "@/lib/api"
 
 // Pure helpers for an agreement's member rows. A switch stack can stand for
 // several member rows at once (its chassis and the devices folded into it),
@@ -37,4 +37,59 @@ export function exclusionMembers(members: SlaMemberFigure[]): {
     if (m.member_id) options.push({ id: m.member_id, name: m.name })
   }
   return { table, options }
+}
+
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/** What a group's selector matches, for its card: "2 roles · 1 type". */
+export function selectorSummary(
+  g: Pick<
+    SlaCheckGroup,
+    | "use_selector"
+    | "match_sites"
+    | "match_roles"
+    | "match_device_types"
+    | "match_platforms"
+    | "match_tags"
+    | "match_name"
+  >
+): string {
+  if (!g.use_selector) return "Off"
+  const parts = [
+    g.match_sites.length && count(g.match_sites.length, "site", "sites"),
+    g.match_roles.length && count(g.match_roles.length, "role", "roles"),
+    g.match_device_types.length &&
+      count(g.match_device_types.length, "type", "types"),
+    g.match_platforms.length &&
+      count(g.match_platforms.length, "platform", "platforms"),
+    g.match_tags.length && count(g.match_tags.length, "tag", "tags"),
+    g.match_name && g.match_name,
+  ].filter(Boolean)
+  return parts.length ? parts.join(" · ") : "Matches nothing"
+}
+
+/** The group's selector fields that are set, by label - they narrow any
+ * role or type added to it. */
+export function selectorFieldsSet(
+  g: Pick<
+    SlaCheckGroup,
+    | "match_sites"
+    | "match_roles"
+    | "match_device_types"
+    | "match_platforms"
+    | "match_tags"
+    | "match_name"
+  >,
+  except: "roles" | "types"
+): string[] {
+  return [
+    g.match_sites.length ? "Sites" : "",
+    except !== "roles" && g.match_roles.length ? "Roles" : "",
+    except !== "types" && g.match_device_types.length ? "Device types" : "",
+    g.match_platforms.length ? "Platforms" : "",
+    g.match_tags.length ? "Tags" : "",
+    g.match_name ? "Name" : "",
+  ].filter(Boolean)
 }

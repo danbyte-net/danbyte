@@ -1,9 +1,14 @@
 import { useState } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, SlaCheckGroup, SlaObjectType } from "@/lib/api"
+import type {
+  DeviceRoleOption,
+  Paginated,
+  SlaCheckGroup,
+  SlaObjectType,
+} from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
   Field,
@@ -14,6 +19,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
+import { DeviceTypePicker } from "@/components/device-type-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
 import { VirtualChassisPicker } from "@/components/virtual-chassis-picker"
@@ -26,17 +32,39 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { selectorFieldsSet } from "./sla-members"
 
-const KINDS: { value: SlaObjectType; label: string }[] = [
+/** A member kind: an object, or a role or type the group's selector joins. */
+type MemberKind = SlaObjectType | "role" | "type"
+
+const KINDS: { value: MemberKind; label: string }[] = [
   { value: "api.device", label: "Device" },
   { value: "api.virtualchassis", label: "Virtual chassis" },
+  { value: "role", label: "Device role" },
+  { value: "type", label: "Device type" },
   { value: "api.virtualmachine", label: "Virtual machine" },
   { value: "api.ipaddress", label: "IP address" },
   { value: "api.prefix", label: "Prefix" },
   { value: "api.circuit", label: "Circuit" },
 ]
 
-/** Add one device, stack, VM or address to an agreement's group. */
+/** The group PATCH that adds a role or type to its selector, or null when
+ * it is already there. Other selector fields are left as they are. */
+export function selectorPatch(
+  g: SlaCheckGroup,
+  kind: "role" | "type",
+  id: string
+): Partial<SlaCheckGroup> | null {
+  const field = kind === "role" ? "match_roles" : "match_device_types"
+  if (g.use_selector && g[field].includes(id)) return null
+  return {
+    use_selector: true,
+    [field]: g[field].includes(id) ? g[field] : [...g[field], id],
+  }
+}
+
+/** Add one object to an agreement's group, or a role or type to its
+ * selector. */
 export function SlaMemberDialog({
   agreementId,
   groups,
@@ -50,9 +78,16 @@ export function SlaMemberDialog({
   onOpenChange: (open: boolean) => void
   onAdded: () => void
 }) {
-  const [type, setType] = useState<SlaObjectType>("api.device")
+  const qc = useQueryClient()
+  const [type, setType] = useState<MemberKind>("api.device")
   const [objectId, setObjectId] = useState<string | null>(null)
   const [group, setGroup] = useState<string | null>(groups[0]?.id ?? null)
+  const bySelector = type === "role" || type === "type"
+  const picked = groups.find((g) => g.id === group)
+  const narrowedBy =
+    picked && bySelector
+      ? selectorFieldsSet(picked, type === "role" ? "roles" : "types")
+      : []
   const [redundancy, setRedundancy] = useState("")
   const [monitorIp, setMonitorIp] = useState<string | null>(null)
   const circuits = useQuery({
@@ -73,9 +108,27 @@ export function SlaMemberDialog({
     enabled: open && type === "api.virtualmachine",
     staleTime: 5 * 60_000,
   })
+  const roles = useQuery({
+    queryKey: ["device-roles-picker"],
+    queryFn: () =>
+      api<Paginated<DeviceRoleOption>>("/api/device-roles/?picker=1"),
+    enabled: open && type === "role",
+    staleTime: 10 * 60_000,
+  })
   const add = useMutation({
-    mutationFn: () =>
-      api<{ created: number; skipped: number }>(
+    mutationFn: async (): Promise<string> => {
+      if (type === "role" || type === "type") {
+        const patch =
+          picked && objectId && selectorPatch(picked, type, objectId)
+        if (!patch) return "Already in the group's selector"
+        await api(`/api/monitoring/sla-check-groups/${group}/`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        })
+        await qc.invalidateQueries({ queryKey: ["sla-groups", agreementId] })
+        return "Selector updated"
+      }
+      const r = await api<{ created: number; skipped: number }>(
         "/api/monitoring/sla-members/bulk-add/",
         {
           method: "POST",
@@ -87,11 +140,11 @@ export function SlaMemberDialog({
             objects: [{ object_type: type, object_id: objectId }],
           }),
         }
-      ),
-    onSuccess: (r) => {
-      toast.success(
-        r.created ? "Member added" : "Already a member of that group"
       )
+      return r.created ? "Member added" : "Already a member of that group"
+    },
+    onSuccess: (message) => {
+      toast.success(message)
       setObjectId(null)
       onAdded()
       onOpenChange(false)
@@ -121,7 +174,7 @@ export function SlaMemberDialog({
             label="Kind"
             value={type}
             onChange={(v) => {
-              setType(v as SlaObjectType)
+              setType(v as MemberKind)
               setObjectId(null)
               setMonitorIp(null)
             }}
@@ -162,6 +215,42 @@ export function SlaMemberDialog({
               info="Counts once, on the master's primary address - else the first member's that has one."
             />
           )}
+          {type === "role" && (
+            <FormCombobox
+              label="Device role"
+              required
+              value={objectId}
+              onChange={setObjectId}
+              options={(roles.data?.results ?? []).map((r) => ({
+                value: r.id,
+                label: r.name,
+                color: r.color,
+              }))}
+              placeholder="Pick a role"
+              searchPlaceholder="Search roles…"
+              emptyText="No roles."
+            />
+          )}
+          {type === "type" && (
+            <DeviceTypePicker
+              value={objectId}
+              onChange={setObjectId}
+              required
+            />
+          )}
+          {bySelector && (
+            <div className="space-y-1 text-[13px] text-muted-foreground">
+              <p>
+                Joins the group&apos;s selector. Matching devices count from the
+                start of the period.
+              </p>
+              {narrowedBy.length > 0 && (
+                <p>
+                  Also narrowed by the selector&apos;s {narrowedBy.join(", ")}.
+                </p>
+              )}
+            </div>
+          )}
           {type === "api.ipaddress" && (
             <IpPicker value={objectId} onChange={setObjectId} required />
           )}
@@ -183,13 +272,15 @@ export function SlaMemberDialog({
               emptyText="No virtual machines."
             />
           )}
-          <FormText
-            label="Redundancy group"
-            value={redundancy}
-            onChange={setRedundancy}
-            placeholder="leaf-pair-1"
-            info="Members with the same label count as down only while all of them are down."
-          />
+          {!bySelector && (
+            <FormText
+              label="Redundancy group"
+              value={redundancy}
+              onChange={setRedundancy}
+              placeholder="leaf-pair-1"
+              info="Members with the same label count as down only while all of them are down."
+            />
+          )}
           <DialogFooter>
             <Button
               type="button"

@@ -21,14 +21,17 @@ finished periods met the target.
 2. On the SLAs list, click **New agreement**. Three steps follow:
     - **Agreement** - a name, who it is **provided for**, a **target** such
       as 99.9 and a **period** such as Month.
-    - **Members** - devices, virtual chassis, virtual machines, IP
-      addresses, prefixes or circuits. Pick several at once. A virtual
-      chassis is a [switch stack counted once](#switch-stacks). Members can
-      also be added later, from the agreement or from an object's
-      **Monitoring** tab with **Add to SLA**.
+    - **Members** - devices, virtual chassis, device roles, device types,
+      virtual machines, IP addresses, prefixes or circuits. Pick several at
+      once. A virtual chassis is a [switch stack counted once](#switch-stacks).
+      Roles and types go on the group's selector, so devices join and leave
+      as they gain or lose them: several roles mean any of them, and a role
+      together with a type means a device needs both. Members can also be
+      added later, from the agreement or from an object's **Monitoring** tab
+      with **Add to SLA**.
     - **Checks** - a first check group and the checks that count. The checks
-      your devices, stacks and prefixes already run are ticked for you; with
-      none ticked, every check on a member's addresses counts.
+      your devices, stacks, roles, types and prefixes already run are ticked
+      for you; with none ticked, every check on a member's addresses counts.
 
     **Create** makes the agreement, its group and its members. **All
     settings** opens every setting on one form instead.
@@ -192,8 +195,16 @@ for an object:
 **Devices join by selector** adds, without adding them one by one, every
 device that matches all of the selector fields you fill in: sites, roles,
 device types, platforms, tags, and a name pattern such as `leaf-*`. A selector
-with nothing filled in matches nothing. To keep one matching device out, add
-it as a member and mark it excluded.
+with nothing filled in matches nothing. The group's **Selector** line counts
+what is set, such as "2 roles · 1 type". To keep one matching device out,
+add it through the API as a member with `excluded: true`.
+
+The **Device role** and **Device type** kinds under **Add member** add to this
+selector and switch it on; the fields already set stay, and the dialog names
+the ones that narrow the match. A selector match counts from the start of the
+period, not from when it was added, so it also changes last period's figure
+while that period is inside its seven days. To count a device only from
+today, add the device itself.
 
 ## Members
 

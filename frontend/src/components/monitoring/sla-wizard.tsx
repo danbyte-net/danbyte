@@ -12,6 +12,7 @@ import { api } from "@/lib/api"
 import type {
   CheckListResponse,
   CheckTemplate,
+  DeviceRoleOption,
   Paginated,
   SlaAgreement,
   SlaObjectType,
@@ -27,7 +28,9 @@ import {
   FormSelect,
   FormText,
 } from "@/components/forms"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { DevicePicker } from "@/components/device-picker"
+import { DeviceTypePicker } from "@/components/device-type-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
 import { VirtualChassisPicker } from "@/components/virtual-chassis-picker"
@@ -40,29 +43,71 @@ import { MEMBER_NOUN } from "./sla-drill"
 // checks measure it. Everything else keeps its default and is on the full
 // form afterwards.
 
-interface Picked {
-  type: SlaObjectType
+/** A wizard kind: an object, or a role or type the group's selector joins
+ * - so devices come and go with it. */
+export type WizardKind = SlaObjectType | "role" | "type"
+
+export interface Picked {
+  type: WizardKind
   id: string
   label: string
+  /** A role's colour, for its pill. */
+  color?: string
 }
 
-const KINDS: { value: SlaObjectType; label: string }[] = [
+const NOUN: Record<WizardKind, string> = {
+  ...MEMBER_NOUN,
+  role: "Device role",
+  type: "Device type",
+}
+
+const KINDS: { value: WizardKind; label: string }[] = [
   { value: "api.device", label: "Devices" },
   { value: "api.virtualchassis", label: "Virtual chassis" },
+  { value: "role", label: "Device roles" },
+  { value: "type", label: "Device types" },
   { value: "api.virtualmachine", label: "Virtual machines" },
   { value: "api.ipaddress", label: "IP addresses" },
   { value: "api.prefix", label: "Prefixes" },
   { value: "api.circuit", label: "Circuits" },
 ]
 
+const isObject = (p: Picked): p is Picked & { type: SlaObjectType } =>
+  p.type !== "role" && p.type !== "type"
+
+/** What Create sends: objects to bulk-add, roles and types to the new
+ * group's selector (roles OR'd, types OR'd, a role and a type both). */
+export function wizardPayload(picks: Picked[]): {
+  objects: { object_type: SlaObjectType; object_id: string }[]
+  selector: {
+    use_selector: boolean
+    match_roles: string[]
+    match_device_types: string[]
+  }
+} {
+  const roles = picks.filter((p) => p.type === "role").map((p) => p.id)
+  const types = picks.filter((p) => p.type === "type").map((p) => p.id)
+  return {
+    objects: picks
+      .filter(isObject)
+      .map((p) => ({ object_type: p.type, object_id: p.id })),
+    selector: {
+      use_selector: roles.length + types.length > 0,
+      match_roles: roles,
+      match_device_types: types,
+    },
+  }
+}
+
 /** The check-list queries whose templates are ticked for you. The list ANDs
  * its filters, so each kind of pick is asked on its own and the answers
- * joined. A stack is asked through the member whose address stands for it. */
+ * joined; roles and types go together, as the selector joins them. A stack
+ * is asked through the member whose address stands for it. */
 export function suggestQueries(
   picks: Picked[],
   stackDevices: string[]
 ): string[] {
-  const ids = (t: SlaObjectType) =>
+  const ids = (t: WizardKind) =>
     picks.filter((p) => p.type === t).map((p) => p.id)
   const out: URLSearchParams[] = []
   const devices = [...ids("api.device"), ...stackDevices]
@@ -70,6 +115,14 @@ export function suggestQueries(
     out.push(new URLSearchParams({ device: devices.join(",") }))
   if (ids("api.prefix").length)
     out.push(new URLSearchParams({ prefix: ids("api.prefix").join(",") }))
+  const roles = ids("role")
+  const types = ids("type")
+  if (roles.length || types.length) {
+    const q = new URLSearchParams()
+    if (roles.length) q.set("role", roles.join(","))
+    if (types.length) q.set("device_type", types.join(","))
+    out.push(q)
+  }
   return out.map((q) => {
     q.set("page_size", "500")
     return q.toString()
@@ -96,18 +149,18 @@ export function SlaWizard({
   const [target, setTarget] = useState("99.9")
   const [period, setPeriod] = useState<SlaPeriod>("month")
   // Step 2
-  const [kind, setKind] = useState<SlaObjectType>("api.device")
+  const [kind, setKind] = useState<WizardKind>("api.device")
   const [members, setMembers] = useState<Picked[]>([])
   // Step 3
   const [groupName, setGroupName] = useState("Default")
   const [templates, setTemplates] = useState<string[] | null>(null)
 
-  const add = (items: { id: string; label: string }[]) =>
+  const add = (items: { id: string; label: string; color?: string }[]) =>
     setMembers((xs) => [
       ...xs,
       ...items
         .filter((i) => !xs.some((x) => x.type === kind && x.id === i.id))
-        .map((i) => ({ type: kind, id: i.id, label: i.label })),
+        .map((i) => ({ type: kind, id: i.id, label: i.label, color: i.color })),
     ])
 
   const vms = useQuery({
@@ -127,6 +180,13 @@ export function SlaWizard({
       ),
     enabled: kind === "api.circuit",
     staleTime: 5 * 60_000,
+  })
+  const roles = useQuery({
+    queryKey: ["device-roles-picker"],
+    queryFn: () =>
+      api<Paginated<DeviceRoleOption>>("/api/device-roles/?picker=1"),
+    enabled: kind === "role",
+    staleTime: 10 * 60_000,
   })
   const allTemplates =
     useQuery({
@@ -177,6 +237,7 @@ export function SlaWizard({
 
   const create = useMutation({
     mutationFn: async () => {
+      const { objects, selector } = wizardPayload(members)
       const a = await api<SlaAgreement>("/api/monitoring/sla-agreements/", {
         method: "POST",
         body: JSON.stringify({
@@ -201,20 +262,14 @@ export function SlaWizard({
               weight: 1,
               required: false,
             })),
+            ...(selector.use_selector ? selector : {}),
           }),
         }
       )
-      if (members.length)
+      if (objects.length)
         await api("/api/monitoring/sla-members/bulk-add/", {
           method: "POST",
-          body: JSON.stringify({
-            agreement: a.id,
-            group: group.id,
-            objects: members.map((m) => ({
-              object_type: m.type,
-              object_id: m.id,
-            })),
-          }),
+          body: JSON.stringify({ agreement: a.id, group: group.id, objects }),
         })
       return a
     },
@@ -320,7 +375,7 @@ export function SlaWizard({
               <FormSelect
                 label="Kind"
                 value={kind}
-                onChange={(v) => setKind(v as SlaObjectType)}
+                onChange={(v) => setKind(v as WizardKind)}
                 options={KINDS}
               />
               {kind === "api.device" && (
@@ -336,6 +391,33 @@ export function SlaWizard({
                   onChange={() => undefined}
                   onPickMany={add}
                   info="A stack counts once, on the master's primary address - else the first member's that has one."
+                />
+              )}
+              {kind === "role" && (
+                <FormCombobox
+                  label="Device role"
+                  value={null}
+                  onChange={(id) => {
+                    const r = roles.data?.results.find((x) => x.id === id)
+                    if (r) add([{ id: r.id, label: r.name, color: r.color }])
+                  }}
+                  options={(roles.data?.results ?? []).map((r) => ({
+                    value: r.id,
+                    label: r.name,
+                    color: r.color,
+                  }))}
+                  placeholder="Add a role"
+                  searchPlaceholder="Search roles…"
+                  emptyText="No roles."
+                  info="Every device with the role joins, and leaves when it loses it."
+                />
+              )}
+              {kind === "type" && (
+                <DeviceTypePicker
+                  value={null}
+                  onChange={() => undefined}
+                  onPickMany={add}
+                  info="Every device of the type joins, and leaves when it changes type."
                 />
               )}
               {kind === "api.ipaddress" && (
@@ -397,9 +479,13 @@ export function SlaWizard({
                     className="gap-1"
                   >
                     <span className="text-muted-foreground">
-                      {MEMBER_NOUN[m.type]}
+                      {NOUN[m.type]}
                     </span>
-                    {m.label}
+                    {m.color ? (
+                      <ColorBadge name={m.label} color={m.color} />
+                    ) : (
+                      m.label
+                    )}
                     <button
                       type="button"
                       aria-label={`Remove ${m.label}`}
@@ -421,6 +507,13 @@ export function SlaWizard({
                 None yet. Members can also be added later.
               </p>
             )}
+            {members.some((m) => m.type === "role") &&
+              members.some((m) => m.type === "type") && (
+                <p className="text-[13px] text-muted-foreground">
+                  A device joins when it has one of these roles and one of these
+                  types.
+                </p>
+              )}
           </div>
         </FormSection>
       )}
