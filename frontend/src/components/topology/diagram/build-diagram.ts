@@ -37,6 +37,19 @@ import type { BandRow, LabelRoom } from "./bands"
 import type { ArcAxis, ArcSide } from "./arcs"
 import { cardContent } from "./card-fields"
 import {
+  CHASSIS,
+  CHASSIS_DRAG_HANDLE,
+  CHASSIS_NODE_CLASS,
+  chassisFrame,
+  chassisGeometry,
+  chassisSpecs,
+  chassisStrip,
+  innerSides,
+  memberFrames,
+  vcOf,
+} from "./chassis"
+import type { ChassisOptions, ChassisOrient } from "./chassis"
+import {
   CARD,
   cardLayout,
   JUNCTION,
@@ -161,6 +174,9 @@ export interface DiagramOptions {
    * (`bandExits`): top and bottom, or left and right. Rows left out are
    * Auto. Apart from `rows` so a switch only re-anchors (relinkDiagram). */
   exits?: Readonly<Record<string, BandExits>>
+  /** Virtual chassis drawn as stacks (chassis.ts). Not on a grouped map
+   * or a trace. */
+  chassis?: ChassisOptions
   matched?: Set<string> | null
   focusNodeId?: string
   /** The tenant's names for the monitoring states: a card keeps room for
@@ -212,12 +228,29 @@ export interface DiagramModel {
   rowsFrom?: string
   /** Per row id, its sides for cables to other bands (`DiagramOptions`). */
   exits?: Readonly<Record<string, BandExits>>
+  /** The virtual chassis drawn as stacks, by frame node id (`vc:<id>`). */
+  chassis?: Map<string, ChassisModel>
   /** Photo ports leave by their nearer image edge: the build found the
    * lines cross less that way than leaving towards their far ends. */
   nearExits?: true
   /** Per row, the x spans of its title strip that lines, cards and labels
    * take, as last planned: where its title chip may not go. */
   titles?: Map<string, [number, number][]>
+}
+
+/** A virtual chassis drawn as a stack, as the anchoring sees it: its
+ * members placed round its frame's centre (chassis.ts). */
+export interface ChassisModel {
+  vc: { id: string; name: string }
+  orient: ChassisOrient
+  /** Member node ids, in stack order. */
+  members: string[]
+  /** The room between member i and i + 1: a lead channel next to a
+   * photo taking its cables on its ports. */
+  gaps: number[]
+  /** Cables between two of its members: not drawn - the frame stands for
+   * them. */
+  inner: number
 }
 
 /** A photo node as the anchoring sees it. */
@@ -1397,6 +1430,10 @@ function capsOf(model: DiagramModel): Map<string, number> | undefined {
 interface Anchored {
   anchors: Anchors
   boxes: Map<string, CardBox>
+  /** Every node's centre: stack members placed round their frames. */
+  centres: Map<string, Pt>
+  /** Each stack's frame. */
+  frames?: Map<string, Rect>
   /** Every node's box, junctions included. */
   rects: Map<string, Rect>
   junctions: Map<string, Junction>
@@ -1412,10 +1449,14 @@ function arcsOf(
   solid: Obstacles
 ): Map<string, { axis: ArcAxis; s: ArcSide }> {
   const out = new Map<string, { axis: ArcAxis; s: ArcSide }>()
+  // A stack member's cables never arc: an arc leaves through the side it
+  // bulges to, which may face another member. They are bendy instead.
+  const member = frameOf(model)
   for (const e of model.edges) {
     const d = e.data
     if (e.type !== "link" || !d?.arcAsk || d.line !== "cyclical") continue
     if (d.fan || d.simple || e.source === e.target) continue
+    if (member.has(e.source) || member.has(e.target)) continue
     const a = rects.get(e.source)
     const b = rects.get(e.target)
     if (!a || !b) continue
@@ -1453,27 +1494,56 @@ function repin(
   return out
 }
 
+/** Every side. */
+const ALL_SIDES: readonly Side[] = ["T", "R", "B", "L"]
+
+/** Each stack member's frame id (`DiagramModel.chassis`), kept per map. */
+const frameOfs = new WeakMap<Map<string, ChassisModel>, Map<string, string>>()
+const NO_FRAMES = new Map<string, string>()
+
+function frameOf(model: Pick<DiagramModel, "chassis">): Map<string, string> {
+  const ch = model.chassis
+  if (!ch?.size) return NO_FRAMES
+  let out = frameOfs.get(ch)
+  if (!out) frameOfs.set(ch, (out = memberFrames(ch)))
+  return out
+}
+
 /**
  * The sides each link end may leave its card by (`AnchorOptions.allow`),
- * for the boxes where they are now: a card in a row set to Up and down
- * (or Left and right) takes its cables to anything outside that row - a
- * card in another row or in none - on its top or bottom (left or right)
- * only. Its cables within the row choose freely. A node is in the row
- * its centre is in (the smallest holding it). Undefined when no row sets
- * its sides.
+ * for the boxes where they are now.
+ *
+ * - A card in a row set to Up and down (or Left and right) takes its
+ *   cables to anything outside that row - a card in another row or in
+ *   none - on its top or bottom (left or right) only. Its cables within
+ *   the row choose freely. A node is in the row its centre is in (the
+ *   smallest holding it); a stack member is where its frame is.
+ * - A stack member never takes a cable on a side facing another member.
+ *   Where the row leaves it no side, the stack wins.
+ *
+ * Undefined when nothing constrains any end.
  */
 export function sideRules(
-  model: Pick<DiagramModel, "rows" | "exits">,
-  rects: ReadonlyMap<string, Rect>
+  model: Pick<DiagramModel, "rows" | "exits" | "chassis">,
+  rects: ReadonlyMap<string, Rect>,
+  frames?: ReadonlyMap<string, Rect>
 ): AnchorOptions["allow"] {
   const rows = model.rows ?? []
   const exits = model.exits
-  if (!rows.length || !exits || !Object.keys(exits).length) return undefined
+  const banded = rows.length > 0 && !!exits && Object.keys(exits).length > 0
+  const inner = new Map<string, Set<Side>>()
+  for (const ch of model.chassis?.values() ?? [])
+    ch.members.forEach((m, i) =>
+      inner.set(m, innerSides(ch.orient, i, ch.members.length))
+    )
+  if (!banded && !inner.size) return undefined
+  const frame = frameOf(model)
   const rowOf = new Map<string, string | null>()
-  const inRow = (id: string): string | null => {
+  const inRow = (id0: string): string | null => {
+    const id = frame.get(id0) ?? id0
     const hit = rowOf.get(id)
     if (hit !== undefined) return hit
-    const r = rects.get(id)
+    const r = frames?.get(id) ?? rects.get(id)
     let best: BandRow | null = null
     if (r) {
       const cx = r.x + r.w / 2
@@ -1488,17 +1558,97 @@ export function sideRules(
         )
           best = row
     }
-    const id2 = best?.id ?? null
-    rowOf.set(id, id2)
-    return id2
+    const out = best?.id ?? null
+    rowOf.set(id, out)
+    return out
   }
-  return (l, end) => {
-    const [me, far] = end === "a" ? [l.source, l.target] : [l.target, l.source]
+  const band = (me: string, far: string): ReadonlySet<Side> | undefined => {
+    if (!banded) return undefined
     const row = inRow(me)
     const axis = row ? exits[row] : undefined
     if (!axis || inRow(far) === row) return undefined
     return EXIT_SIDES[axis]
   }
+  return (l, end) => {
+    const [me, far] = end === "a" ? [l.source, l.target] : [l.target, l.source]
+    const sides = band(me, far)
+    const not = inner.get(me)
+    if (!not?.size) return sides
+    const ok = new Set(
+      (sides ? [...sides] : ALL_SIDES).filter((x) => !not.has(x))
+    )
+    return ok.size ? ok : new Set(ALL_SIDES.filter((x) => !not.has(x)))
+  }
+}
+
+/**
+ * The stacked chassis' members made as wide (top to bottom) or as tall
+ * (left to right) as each other: the cards among them laid out again at
+ * the widest (tallest) card's size, their nubs as they were. Photos keep
+ * their fixed size. Mutates `boxes`.
+ */
+function unifyChassis(
+  chassis: ReadonlyMap<string, ChassisModel> | undefined,
+  cards: ReadonlyMap<string, CardLayoutInput>,
+  boxes: Map<string, CardBox>,
+  measure: Measure
+): void {
+  for (const ch of chassis?.values() ?? []) {
+    const own = ch.members.filter((m) => cards.has(m) && boxes.has(m))
+    if (own.length < 2) continue
+    const key = ch.orient === "v" ? "w" : "h"
+    const most = Math.max(...own.map((m) => boxes.get(m)![key]))
+    for (const m of own) {
+      const b = boxes.get(m)!
+      if (b[key] >= most) continue
+      boxes.set(m, cardLayout(cards.get(m)!, b.nubs, measure, { [key]: most }))
+    }
+  }
+}
+
+/** A stack's frame size for its members' sizes. */
+function chassisSize(
+  ch: ChassisModel,
+  sizeOf: (id: string) => Size | undefined
+): Size | null {
+  const sizes = ch.members.map(sizeOf)
+  if (sizes.some((b) => !b)) return null
+  const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps)
+  return { w: g.w, h: g.h }
+}
+
+/**
+ * Each stack's members placed round its frame's centre in `centres` (or,
+ * with none, round where its members stand now), at their sizes now. Sets
+ * the members' and frames' centres in `centres`; returns each frame's box.
+ */
+function placeChassis(
+  model: Pick<DiagramModel, "chassis">,
+  centres: Map<string, Pt>,
+  sizeOf: (id: string) => Size | undefined
+): Map<string, Rect> {
+  const frames = new Map<string, Rect>()
+  for (const [id, ch] of model.chassis ?? []) {
+    const sizes = ch.members.map(sizeOf)
+    if (sizes.some((b) => !b)) continue
+    let c = centres.get(id)
+    if (!c) {
+      const rects = ch.members.flatMap((m, i) => {
+        const at = centres.get(m)
+        return at ? [rectAt(at, sizes[i]!)] : []
+      })
+      if (!rects.length) continue
+      const f = chassisFrame(ch.orient, rects)
+      c = { x: f.x + f.w / 2, y: f.y + f.h / 2 }
+    }
+    const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps)
+    ch.members.forEach((m, i) =>
+      centres.set(m, { x: c.x + g.offsets[i].x, y: c.y + g.offsets[i].y })
+    )
+    centres.set(id, c)
+    frames.set(id, { x: c.x - g.w / 2, y: c.y - g.h / 2, w: g.w, h: g.h })
+  }
+  return frames
 }
 
 /** Anchor every link at the cards' centres. Detailed grows each card to
@@ -1506,10 +1656,15 @@ export function sideRules(
  * placed off their trunk's port. */
 function anchorAll(
   model: DiagramModel,
-  centres: ReadonlyMap<string, Pt>,
+  at: ReadonlyMap<string, Pt>,
   sides?: Anchors["sides"]
 ): Anchored {
   const boxOf = (id: string) => model.base.get(id) ?? model.fixed.get(id)
+  // A stack's members stand round its frame's centre.
+  const centres = new Map(at)
+  let frames = model.chassis?.size
+    ? placeChassis(model, centres, boxOf)
+    : undefined
   const rects = new Map<string, Rect>()
   for (const [id, c] of centres) {
     const s = boxOf(id)
@@ -1537,7 +1692,7 @@ function anchorAll(
     : model.links
   const pass = (mode: DiagramMode, pinned?: Anchors["sides"]) => {
     const all = withJ(junctions)
-    const allow = sideRules(model, all)
+    const allow = sideRules(model, all, frames)
     return anchorLinks(all, withJunctionDirs(links, junctions, rects), mode, {
       ...(pinned ? { sides: repin(pinned, model, arcs) } : {}),
       ...(allow ? { allow } : {}),
@@ -1560,16 +1715,40 @@ function anchorAll(
       )
       anchors = pass("simple")
     }
-    return { anchors, boxes, rects: withJ(junctions), junctions, arcs }
+    return {
+      anchors,
+      boxes,
+      centres,
+      ...(frames ? { frames } : {}),
+      rects: withJ(junctions),
+      junctions,
+      arcs,
+    }
   }
   const first = pass("detailed", sides)
+  const grown = new Set<string>()
   for (const [id, input] of model.cards) {
     const demand = first.demand.get(id)
     if (!demand) continue
-    const box = cardLayout(input, demand, model.measure)
-    boxes.set(id, box)
+    boxes.set(id, cardLayout(input, demand, model.measure))
+    grown.add(id)
+  }
+  // A stack's grown members as wide (tall) as each other, packed again
+  // round the frame's centre.
+  if (model.chassis?.size) {
+    unifyChassis(model.chassis, model.cards, boxes, model.measure)
+    frames = placeChassis(
+      model,
+      centres,
+      (id) => boxes.get(id) ?? model.fixed.get(id)
+    )
+    for (const ch of model.chassis.values())
+      for (const m of ch.members) grown.add(m)
+  }
+  for (const id of grown) {
     const c = centres.get(id)
-    if (c) rects.set(id, rectAt(c, box))
+    const box = boxes.get(id)
+    if (c && box) rects.set(id, rectAt(c, box))
   }
   solid = obstacles(rects)
   let anchors = first
@@ -1591,7 +1770,15 @@ function anchorAll(
       trunkEnds(model, anchors, rects),
       legSides(model, anchors)
     )
-  return { anchors, boxes, rects: withJ(junctions), junctions, arcs }
+  return {
+    anchors,
+    boxes,
+    centres,
+    ...(frames ? { frames } : {}),
+    rects: withJ(junctions),
+    junctions,
+    arcs,
+  }
 }
 
 /** The edges with their anchors filled in, and each arc's side. */
@@ -1644,6 +1831,18 @@ function plannedEdges(
   const strips = (model.rows ?? []).map(
     (r): TitleStrip => ({ id: r.id, r: titleStrip(r), chip: chipBand(r) })
   )
+  // A stack's name strip: crossed, never run along.
+  for (const [id, f] of a.frames ?? []) {
+    const orient = model.chassis?.get(id)?.orient ?? "v"
+    const r = chassisStrip(orient, f)
+    strips.push({
+      id,
+      r,
+      chip: r,
+      fixed: true,
+      ...(orient === "v" ? { axis: "v" as const } : {}),
+    })
+  }
   const input = (edges: Edge<DiagramEdgeData>[]) => ({
     edges,
     rects: a.rects,
@@ -1742,6 +1941,42 @@ function sizer(
  * layout; smaller growth keeps the first one. */
 const REGROW = 4
 
+/** What a stack's frame node carries (chassis-node.tsx). */
+export interface ChassisNodeData {
+  vc: { id: string; name: string }
+  orient: ChassisOrient
+  /** Member node ids, in stack order. */
+  members: string[]
+  /** Cables between its members, not drawn. */
+  inner: number
+  [key: string]: unknown
+}
+
+/** A stack's frame node: behind its members, dragged by its name strip,
+ * click-through elsewhere. Positioned by its centre, as the cards are. */
+function chassisNode(id: string, ch: ChassisModel, f: Rect): Node {
+  const data: ChassisNodeData = {
+    vc: ch.vc,
+    orient: ch.orient,
+    members: ch.members,
+    inner: ch.inner,
+  }
+  return {
+    id,
+    type: "chassis",
+    position: { x: f.x + f.w / 2, y: f.y + f.h / 2 },
+    origin: CENTRE,
+    width: f.w,
+    height: f.h,
+    draggable: true,
+    selectable: true,
+    dragHandle: `.${CHASSIS_DRAG_HANDLE}`,
+    className: CHASSIS_NODE_CLASS,
+    style: { pointerEvents: "none" },
+    data,
+  }
+}
+
 /** Graph payload → Diagram cards and links, laid out. */
 export function buildDiagram(
   graph: TopologyGraph,
@@ -1799,6 +2034,33 @@ export function buildDiagram(
     return node
   })
   const key = (id: string) => keyOf.get(id) ?? deviceKey(id)
+
+  // Virtual chassis drawn as stacks (chassis.ts): each a frame whose
+  // members stand round its centre - not on a grouped map or a trace.
+  const chassis = new Map<string, ChassisModel>()
+  /** The member a frame takes its role and level from: the master. */
+  const leadOf = new Map<string, string>()
+  if (!grouped && !opts.run && opts.chassis)
+    for (const spec of chassisSpecs(graph.nodes, opts.chassis)) {
+      const members = spec.members.filter((m) => base.has(m))
+      if (!members.length) continue
+      if (members.length < 2 && !opts.chassis.placed?.includes(spec.vc.id))
+        continue
+      chassis.set(spec.id, {
+        vc: spec.vc,
+        orient: spec.orient,
+        members,
+        gaps: [],
+        inner: 0,
+      })
+      const data = new Map(graph.nodes.map((n) => [n.id, n.data]))
+      leadOf.set(
+        spec.id,
+        members.find((m) => vcOf(data.get(m))?.master) ?? members[0]
+      )
+    }
+  const inStack = memberFrames(chassis)
+  unifyChassis(chassis, cards, base, measure)
 
   // Breakout cables come out of the payload whole, as trunk and legs.
   const device = (id: string) => cards.has(id) || photos.has(id)
@@ -1863,7 +2125,7 @@ export function buildDiagram(
   }
   const onPhoto = (e: { source: string; target: string }) =>
     onPorts(e.source) || onPorts(e.target)
-  const edges = [
+  const allEdges = [
     ...oriented.map((e0) => {
       const flip = flipped.has(e0.id)
       const e = withLinkLabels(
@@ -1880,13 +2142,37 @@ export function buildDiagram(
     ...parts.flatMap((p) => p.edges),
     ...meshed.flatMap((p) => p.edges),
   ]
-  const links = [
+  const allLinks = [
     ...oriented
       .map((e) => anchorLink(e, flipped.has(e.id)))
       .filter((l): l is AnchorLink => !!l),
     ...parts.flatMap((p) => p.links),
     ...meshed.flatMap((p) => p.links),
   ]
+  // Cables between two members of one stack are the stack itself: not
+  // drawn, counted on its frame.
+  const inside = new Set<string>()
+  if (chassis.size)
+    for (const l of allLinks) {
+      const f = inStack.get(l.source)
+      if (!f || f !== inStack.get(l.target)) continue
+      inside.add(l.id)
+      chassis.get(f)!.inner += Math.max(1, l.cables?.length ?? 0)
+    }
+  const edges = inside.size
+    ? allEdges.filter(
+        (e) =>
+          !inside.has(e.id) &&
+          !(
+            e.type === "link" &&
+            inStack.has(e.source) &&
+            inStack.get(e.source) === inStack.get(e.target)
+          )
+      )
+    : allEdges
+  const links = inside.size
+    ? allLinks.filter((l) => !inside.has(l.id))
+    : allLinks
 
   let levels: Map<string, number> | undefined
   let mainOffsets: number[] | undefined
@@ -1901,11 +2187,26 @@ export function buildDiagram(
   // The cards follow the wiring: a BGP session is an overlay on it, and
   // ranking by sessions put a spine a tier below its twin. A breakout
   // counts as a link from its trunk's card to each far card.
+  // A stack is laid out as one node: its frame, cabled wherever its
+  // members are.
   const wiring = [
     ...edges.filter((e) => e.type !== "overlay" && !e.data?.fan),
     ...parts.flatMap((p) => p.layout),
     ...meshed.flatMap((p) => p.layout),
-  ]
+  ].flatMap((e) => {
+    if (!inStack.size) return [e]
+    const source = inStack.get(e.source) ?? e.source
+    const target = inStack.get(e.target) ?? e.target
+    if (source === target) return []
+    return source === e.source && target === e.target
+      ? [e]
+      : [{ ...e, source, target }]
+  })
+  if (levels)
+    for (const [id, lead] of leadOf) {
+      const lv = levels.get(lead)
+      if (lv !== undefined) levels.set(id, lv)
+    }
   // Ranks far enough apart for the labels on the line at both ends of a
   // cable - a port name, then its addresses - and a few lanes between.
   // A map with no labels to show keeps its compact spacing.
@@ -1949,6 +2250,32 @@ export function buildDiagram(
       ? Math.max(2 * LANE, run ? portStub(run) + 2 * LANE : 0)
       : LANE
     : 0
+  // Between two members of a stack, a photo taking its cables on its
+  // ports keeps a channel for the leads leaving towards the other.
+  const leadChannel = Math.max(2 * LANE, run ? portStub(run) + 2 * LANE : 0)
+  const portPhoto = (id: string) => {
+    const p = photos.get(id)
+    return !!p && !p.face.edge
+  }
+  for (const ch of chassis.values())
+    ch.gaps = ch.members
+      .slice(1)
+      .map((m, i) =>
+        ch.orient === "v" && (portPhoto(m) || portPhoto(ch.members[i]))
+          ? leadChannel
+          : CHASSIS.GAP
+      )
+  // The boxes the layout places: a stack's members as its frame.
+  const collapsed = (boxes: ReadonlyMap<string, Size>): Map<string, Size> => {
+    if (!chassis.size) return new Map(boxes)
+    const out = new Map(boxes)
+    for (const [id, ch] of chassis) {
+      for (const m of ch.members) out.delete(m)
+      const size = chassisSize(ch, (m) => boxes.get(m))
+      if (size) out.set(id, size)
+    }
+    return out
+  }
   const reserve = (boxes: Map<string, { w: number; h: number }>) => {
     if (!photoPad) return boxes
     const out = new Map(boxes)
@@ -1956,11 +2283,50 @@ export function buildDiagram(
       const b = boxes.get(id)
       if (b) out.set(id, { w: b.w, h: b.h + 2 * photoPad })
     }
+    for (const [id, ch] of chassis) {
+      const b = boxes.get(id)
+      if (b && ch.members.some((m) => photos.has(m)))
+        out.set(id, { w: b.w, h: b.h + 2 * photoPad })
+    }
     return out
   }
-  const all = reserve(
-    new Map<string, { w: number; h: number }>([...fixed, ...base])
-  )
+  const sizes0 = collapsed(new Map<string, Size>([...fixed, ...base]))
+  const all = reserve(sizes0)
+  // The nodes the layout places: a stack as one, with its master's role.
+  const layNodes: Node[] = chassis.size
+    ? [
+        ...rfNodes.filter((n) => !inStack.has(n.id)),
+        ...[...chassis].map(([id, ch]): Node => {
+          const lead = rfNodes.find((n) => n.id === leadOf.get(id))
+          return {
+            id,
+            type: "card",
+            position: { x: 0, y: 0 },
+            data: { ...lead?.data, name: ch.vc.name },
+          }
+        }),
+      ]
+    : rfNodes
+  // A stack stands where it was saved; one saved before it stacked,
+  // where its members stood on average. Its members' own places are kept
+  // for when it is drawn apart.
+  const saved = (() => {
+    if (!opts.positions || !chassis.size) return opts.positions
+    const out = { ...opts.positions }
+    for (const [id, ch] of chassis) {
+      const at = ch.members.flatMap((m) => {
+        const p = opts.positions![m] as [number, number] | undefined
+        return p ? [p] : []
+      })
+      if (!(id in out) && at.length)
+        out[id] = [
+          at.reduce((s, [x]) => s + x, 0) / at.length,
+          at.reduce((s, [, y]) => s + y, 0) / at.length,
+        ]
+      for (const m of ch.members) delete out[m]
+    }
+    return out
+  })()
   // Devices with no wiring at all are packed apart, under the wired map -
   // not with Levels on (a role's tier holds its devices) or on a grouped
   // map.
@@ -1968,12 +2334,12 @@ export function buildDiagram(
   const loose =
     grouped || levels
       ? []
-      : rfNodes.filter((n) => n.type === "card" && !wired.has(n.id))
+      : layNodes.filter((n) => n.type === "card" && !wired.has(n.id))
   const layout = (boxes: Map<string, { w: number; h: number }>): Laid => {
     // Saved positions are centres; the layout pins top-left corners.
-    const pins = opts.positions
+    const pins = saved
       ? Object.fromEntries(
-          Object.entries(opts.positions).flatMap(([id, [x, y]]) => {
+          Object.entries(saved).flatMap(([id, [x, y]]) => {
             const b = boxes.get(id)
             return b
               ? [[id, [x - b.w / 2, y - b.h / 2] as [number, number]]]
@@ -1982,10 +2348,10 @@ export function buildDiagram(
         )
       : undefined
     // Every card placed by hand: nothing to lay out, only to route.
-    if (pins && rfNodes.every((n) => n.id in pins)) {
+    if (pins && layNodes.every((n) => n.id in pins)) {
       const centres = new Map<string, Pt>()
-      for (const n of rfNodes) {
-        const [x, y] = opts.positions![n.id]
+      for (const n of layNodes) {
+        const [x, y] = saved![n.id]
         centres.set(n.id, { x, y })
       }
       return { centres }
@@ -1993,8 +2359,8 @@ export function buildDiagram(
     // A device placed by hand stays where it was put.
     const packed = new Set(loose.filter((n) => !pins?.[n.id]).map((n) => n.id))
     const rest = packed.size
-      ? rfNodes.filter((n) => !packed.has(n.id))
-      : rfNodes
+      ? layNodes.filter((n) => !packed.has(n.id))
+      : layNodes
     const centres = new Map<string, Pt>()
     if (rest.length) {
       const res = layoutNodes(
@@ -2038,7 +2404,7 @@ export function buildDiagram(
         y1 = Math.max(y1, c.y + b.h / 2)
       }
       const above = x1 > x0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null
-      const items = rfNodes.flatMap((n) => {
+      const items = layNodes.flatMap((n) => {
         const b = packed.has(n.id) ? boxes.get(n.id) : undefined
         if (!b) return []
         const d = n.data as { name?: string; role?: { name?: string } | null }
@@ -2071,6 +2437,7 @@ export function buildDiagram(
     ...(meshed.length ? { meshes: meshed.map((p) => p.model) } : {}),
     roomy: run && mode === "detailed" ? 2 * portStub(run) : 0,
     measure,
+    ...(chassis.size ? { chassis } : {}),
   }
 
   if (opts.rows?.length) {
@@ -2104,8 +2471,12 @@ export function buildDiagram(
         for (const [id, [x, y]] of moved) centres.set(id, { x, y })
       }
     }
-    if (photos.size) {
-      const moved = settleGrown(rectsOf(centres), photos.keys())
+    // A stack counts as grown: what its frame now covers moves too.
+    if (photos.size || chassis.size) {
+      const moved = settleGrown(rectsOf(centres), [
+        ...[...photos.keys()].filter((id) => !inStack.has(id)),
+        ...chassis.keys(),
+      ])
       if (moved) {
         centres = new Map(centres)
         for (const [id, [x, y]] of Object.entries(moved))
@@ -2115,7 +2486,7 @@ export function buildDiagram(
     return centres === l.centres ? l : { centres }
   }
 
-  let laid = settle(layout(all), new Map<string, Size>([...fixed, ...base]))
+  let laid = settle(layout(all), sizes0)
   let anchored = anchorAll(model, laid.centres)
   if (mode === "detailed") {
     // The cards grew to fit their nubs: lay out again with the real
@@ -2126,13 +2497,10 @@ export function buildDiagram(
       return !!was && (b.w - was.w > REGROW || b.h - was.h > REGROW)
     })
     if (grew) {
-      const sized = reserve(
-        new Map<string, { w: number; h: number }>([...fixed, ...anchored.boxes])
-      )
-      laid = settle(
-        layout(sized),
+      const grownSizes = collapsed(
         new Map<string, Size>([...fixed, ...anchored.boxes])
       )
+      laid = settle(layout(reserve(grownSizes)), grownSizes)
       anchored = anchorAll(model, laid.centres, anchored.anchors.sides)
     }
   }
@@ -2156,8 +2524,13 @@ export function buildDiagram(
   if (titles) model.titles = titles
   const { anchors, boxes, junctions } = anchored
   const drawn = photosShown(model, anchors)
-  const nodes: Node[] = rfNodes.map((n) => {
-    const c = laid.centres.get(n.id) ?? { x: 0, y: 0 }
+  // Stacks first: their frames paint behind the cards.
+  const nodes: Node[] = [...(anchored.frames ?? [])].map(([id, f]) =>
+    chassisNode(id, chassis.get(id)!, f)
+  )
+  for (const n of rfNodes) {
+    const c = anchored.centres.get(n.id) ??
+      laid.centres.get(n.id) ?? { x: 0, y: 0 }
     const box = boxes.get(n.id) ?? fixed.get(n.id)!
     const common = {
       ...n,
@@ -2168,7 +2541,10 @@ export function buildDiagram(
       selected: opts.focusNodeId === n.id,
     }
     const dimmed = opts.matched ? !opts.matched.has(n.id) : false
-    if (n.type !== "card") return { ...common, data: { ...n.data, dimmed } }
+    if (n.type !== "card") {
+      nodes.push({ ...common, data: { ...n.data, dimmed } })
+      continue
+    }
     const shown = nextShown(
       undefined,
       boxes.get(n.id)!,
@@ -2177,11 +2553,17 @@ export function buildDiagram(
       drawn.get(n.id)
     )
     model.shown.set(n.id, shown)
-    return {
+    const frame = inStack.get(n.id)
+    nodes.push({
       ...common,
-      data: { ...n.data, dimmed, diagram: shown } as DiagramCardData,
-    }
-  })
+      data: {
+        ...n.data,
+        dimmed,
+        diagram: shown,
+        ...(frame ? { chassis: frame } : {}),
+      },
+    })
+  }
   for (const n of [
     ...parts.map((p) => p.node),
     ...meshed.flatMap((p) => p.nodes),
@@ -2222,6 +2604,11 @@ export interface Relinked {
   cards: Map<string, DiagramCardData["diagram"]>
   /** Where each breakout's junction now sits (its centre). */
   junctions: Map<string, Pt>
+  /** Stack members (and frames) that moved: packed again round their
+   * frames' centres. */
+  moves?: Map<string, Pt>
+  /** Each stack's frame now. */
+  frames?: Map<string, Rect>
   model: DiagramModel
 }
 
@@ -2240,17 +2627,36 @@ export function relinkDiagram(
   const model = withRelinkOptions(model0, over)
   const centres = new Map<string, Pt>()
   for (const n of live)
-    if (model.base.has(n.id) || model.fixed.has(n.id))
+    if (
+      model.base.has(n.id) ||
+      model.fixed.has(n.id) ||
+      model.chassis?.has(n.id)
+    )
       centres.set(n.id, { x: n.position.x, y: n.position.y })
   const anchored = anchorAll(model, centres)
   const { edges, titles } = plannedEdges(model, anchored)
   const { anchors, boxes } = anchored
 
+  // A stack's members packed again round its frame, at their sizes now.
+  const moves = new Map<string, Pt>()
+  for (const [id, ch] of model.chassis ?? [])
+    for (const m of [id, ...ch.members]) {
+      const was = centres.get(m)
+      const now = anchored.centres.get(m)
+      if (
+        now &&
+        (!was ||
+          Math.abs(was.x - now.x) > 0.01 ||
+          Math.abs(was.y - now.y) > 0.01)
+      )
+        moves.set(m, now)
+    }
+
   const cards = new Map<string, DiagramCardData["diagram"]>()
   const shown = new Map(model.shown)
   const drawn = photosShown(model, anchors)
   for (const [id, box] of boxes) {
-    if (!centres.has(id)) continue
+    if (!anchored.centres.has(id)) continue
     const prev = model.shown.get(id)
     const next = nextShown(
       prev,
@@ -2267,7 +2673,15 @@ export function relinkDiagram(
   const junctions = new Map<string, Pt>()
   for (const [id, j] of anchored.junctions) junctions.set(id, j.c)
   const next: DiagramModel = { ...model, shown, ...(titles ? { titles } : {}) }
-  return { edges, cards, junctions, model: next, ...(titles ? { titles } : {}) }
+  return {
+    edges,
+    cards,
+    junctions,
+    ...(moves.size ? { moves } : {}),
+    ...(anchored.frames?.size ? { frames: anchored.frames } : {}),
+    model: next,
+    ...(titles ? { titles } : {}),
+  }
 }
 
 /**
@@ -2282,6 +2696,7 @@ export function remeasureDiagram(
   const base = new Map(model.base)
   for (const [id, input] of model.cards)
     base.set(id, cardLayout(input, null, model.measure))
+  unifyChassis(model.chassis, model.cards, base, model.measure)
   return relinkDiagram({ ...model, base, shown: new Map() }, live, over)
 }
 

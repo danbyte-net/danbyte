@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { useHideKeys } from "@/components/hidden-objects"
 import { PointerMenu } from "@/components/pointer-menu"
 import {
+  ChassisMenuItems,
   DeviceMenuItems,
   EdgeMenuItems,
   GroupMenuItems,
@@ -79,8 +80,13 @@ async function inRouter(page: () => React.ReactNode) {
     path: "/cables/$id",
     component: () => <p>cable page</p>,
   })
+  const vcPage = createRoute({
+    getParentRoute: () => root,
+    path: "/virtual-chassis/$id",
+    component: () => <p>chassis page</p>,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([map, devicePage, settings, cablePage]),
+    routeTree: root.addChildren([map, devicePage, settings, cablePage, vcPage]),
     history: createMemoryHistory({ initialEntries: ["/topology"] }),
   })
   render(<RouterProvider router={router as never} />)
@@ -346,6 +352,79 @@ describe("EdgeMenuItems", () => {
     expect(Object.keys(keys)).toEqual(["h"])
     keys.h?.()
     expect(onHide).toHaveBeenCalledOnce()
+  })
+})
+
+describe("ChassisMenuItems", () => {
+  const stack = (over: object = {}) => ({
+    id: "vc1",
+    orient: "v" as const,
+    onOrient: vi.fn(),
+    onUnstack: vi.fn(),
+    onHide: vi.fn(),
+    ...over,
+  })
+
+  it("opens, turns, unstacks and hides a stack", async () => {
+    const p = stack()
+    await openMenu(<ChassisMenuItems {...p} />)
+    expect(rows()).toEqual(["Open virtual chassis", "--", "--", "Hide stack"])
+    const radios = screen.getAllByRole("menuitemradio")
+    expect(radios.map((r) => r.textContent.trim())).toEqual([
+      "Top-down",
+      "Left-right",
+      "Unstacked",
+    ])
+    expect(radios[0].getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(radios[1])
+    expect(p.onOrient).toHaveBeenCalledWith("h")
+  })
+
+  it("draws its members apart, or stacks them again", async () => {
+    const p = stack({ orient: null, onHide: undefined })
+    await openMenu(<ChassisMenuItems {...p} />)
+    expect(rows()).toEqual(["Open virtual chassis", "--"])
+    const off = screen.getByRole("menuitemradio", { name: "Unstacked" })
+    expect(off.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Top-down" }))
+    expect(p.onOrient).toHaveBeenCalledWith("v")
+  })
+
+  it("unstacks, and takes a placed chassis off the map", async () => {
+    const p = stack({ onRemove: vi.fn() })
+    await openMenu(<ChassisMenuItems {...p} />)
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Unstacked" }))
+    expect(p.onUnstack).toHaveBeenCalledOnce()
+  })
+
+  it("opens the chassis page as a router link", async () => {
+    const { router } = await openMenu(<ChassisMenuItems {...stack()} />)
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Open virtual chassis" })
+    )
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/virtual-chassis/vc1")
+    )
+  })
+
+  it("sits in a member card's menu as a sub-menu", async () => {
+    const p = device({
+      diagram: {
+        chassis: {
+          id: "vc1",
+          orient: "v",
+          onOrient: vi.fn(),
+          onUnstack: vi.fn(),
+        },
+      },
+    })
+    await openMenu(<DeviceMenuItems {...p} />)
+    expect(rows()).toContain("Virtual chassis")
+    fireEvent.click(screen.getByRole("menuitem", { name: "Virtual chassis" }))
+    fireEvent.click(
+      await screen.findByRole("menuitemradio", { name: "Left-right" })
+    )
+    expect(p.diagram!.chassis!.onOrient).toHaveBeenCalledWith("h")
   })
 })
 

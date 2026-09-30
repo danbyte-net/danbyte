@@ -167,7 +167,9 @@ export interface DiagramJunction extends Pt {
  * bands (`orient` h / v); a zone is the older annotation box. */
 export interface DiagramBand extends Rect {
   id: string
-  kind: "row" | "column" | "zone"
+  /** A row or side band, a zone, or a virtual chassis' frame round its
+   * stacked members. */
+  kind: "row" | "column" | "zone" | "chassis"
   orient: "h" | "v"
   label: string
   /** One of the zone swatches; absent or null = neutral. */
@@ -178,6 +180,11 @@ export interface DiagramBand extends Rect {
   /** A row holding several layers, stacked: its sub-rows, top to bottom,
    * each labelled with its layer's badge at the row's left. */
   layers?: DiagramBandLayer[]
+  /** A chassis: the strip carrying its name - down its left side
+   * (`orient: "v"`, members top to bottom) or across its top. */
+  strip?: Rect
+  /** A chassis: its page in Danbyte. */
+  link?: string
 }
 
 /** A sub-row of a stacked row band: where one layer's cards stand. */

@@ -180,11 +180,15 @@ function placed(
  * per side (from `anchorLinks`); without it the card is Simple's compact
  * box. Detailed grows the box so every nub fits at full pitch, up to
  * `NUB.MAX_PER_SIDE` a side - the anchors wrap the rest round the corner.
+ * `least` makes the box at least that wide or tall (a virtual chassis'
+ * members are as wide, or as tall, as each other): the text stays centred
+ * across it, at the top.
  */
 export function cardLayout(
   input: CardLayoutInput,
   demand?: Partial<SideCount> | null,
-  measure: Measure = measureText
+  measure: Measure = measureText,
+  least?: { w?: number; h?: number }
 ): CardBox {
   const fill = normalizeHex(input.color)
   const slotTexts = [...(input.pillSlot ?? [])]
@@ -219,11 +223,13 @@ export function cardLayout(
     titleTop + CARD.TITLE_LH + (input.lines.length ? CARD.LINES_GAP : 0)
   const w = Math.max(
     clamp(content, CARD.MIN_W, CARD.MAX_W),
-    nubSpan(Math.max(nubs.T, nubs.B))
+    nubSpan(Math.max(nubs.T, nubs.B)),
+    least?.w ?? 0
   )
   const h = Math.max(
     linesTop + input.lines.length * CARD.LINE_LH + CARD.PAD_Y,
-    nubSpan(Math.max(nubs.L, nubs.R))
+    nubSpan(Math.max(nubs.L, nubs.R)),
+    least?.h ?? 0
   )
 
   const title = placed(

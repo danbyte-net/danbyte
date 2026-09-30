@@ -159,6 +159,32 @@ function bandSvg(b: DiagramBand, measure: Measure): string {
         fill: p.ink,
       })
     )
+  } else if (b.kind === "chassis") {
+    // A virtual chassis: its name on the strip down its left side (read
+    // bottom to top) or across its top.
+    const s = b.strip ?? { x: b.x, y: b.y, w: b.w, h: 0 }
+    const cs = BAND.CHASSIS_SIZE
+    const v = b.orient === "v"
+    const label = fit(
+      b.label,
+      Math.max(0, (v ? s.h : s.w) - 12),
+      cs,
+      weight,
+      measure
+    )
+    const cx = s.x + s.w / 2
+    const cy = s.y + s.h / 2
+    out.push(
+      text(label, {
+        x: cx,
+        y: v ? baselineAt(cy - cs, cs, 2 * cs) : baselineAt(s.y, cs, s.h),
+        "text-anchor": "middle",
+        ...(v ? { transform: `rotate(-90 ${fmt(cx)} ${fmt(cy)})` } : {}),
+        "font-size": cs,
+        "font-weight": weight,
+        fill: p.ink,
+      })
+    )
   } else if (b.orient !== "h") {
     // A side band: a big label up its middle, reading bottom to top.
     const ss = BAND.SIDE_SIZE
@@ -870,7 +896,8 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
       : body
 
   out.push(`<g id="bands">`)
-  for (const band of doc.bands) out.push(bandSvg(band, measure))
+  for (const band of doc.bands)
+    out.push(linked(band.link, bandSvg(band, measure)))
   out.push(`</g><g id="links">`)
   for (const l of doc.links) out.push(linked(l.link, linkSvg(l)))
   // Breakout split points sit on their lines.

@@ -392,8 +392,10 @@ const zeroish = (p: Pt) => Math.abs(p.x) < 1 && Math.abs(p.y) < 1
 
 // ── Pages ────────────────────────────────────────────────────────────────
 
-/** Row bands and zones hold cards; side bands are drawn behind. */
-const isContainer = (b: DiagramBand) => b.kind === "zone" || b.orient === "h"
+/** Row bands, zones and virtual chassis hold cards; side bands are drawn
+ * behind. */
+const isContainer = (b: DiagramBand) =>
+  b.kind === "zone" || b.kind === "chassis" || b.orient === "h"
 
 const area = (r: Rect) => r.w * r.h
 const holds = (o: Rect, r: Rect) =>
@@ -497,63 +499,88 @@ function page(
       fontStyle: 1,
     }
     const st =
-      b.kind === "zone"
-        ? style([], {
+      b.kind === "chassis"
+        ? // A virtual chassis: a swimlane holding its members, its name on
+          // the strip down its left side or across its top.
+          style(["swimlane"], {
+            startSize: BAND.CHASSIS_STRIP,
+            ...(b.orient === "v" ? { horizontal: 0 } : {}),
+            swimlaneLine: 0,
             ...common,
-            container: 1,
+            fontSize: BAND.CHASSIS_SIZE,
             fillColor: p.fill,
-            align: "left",
-            verticalAlign: "top",
-            spacing: 0,
-            spacingLeft: 8,
-            spacingTop: 4,
-            labelBackgroundColor: p.header,
+            swimlaneFillColor: p.fill,
           })
-        : b.orient === "h"
-          ? // A row: a swimlane with its title across the top - centred, or
-            // where the canvas moved it clear of the lines - one fill for
-            // title and body, as on the canvas.
-            style(["swimlane"], {
-              startSize: Math.min(b.h, BAND.ROW_TITLE),
-              swimlaneLine: 0,
+        : b.kind === "zone"
+          ? style([], {
               ...common,
-              fontSize: BAND.TITLE_SIZE,
+              container: 1,
               fillColor: p.fill,
-              swimlaneFillColor: p.fill,
-              ...(b.titleX !== undefined
-                ? {
-                    align: "left",
-                    spacing: 0,
-                    spacingLeft: Math.max(
-                      0,
-                      Math.round(
-                        b.titleX -
-                          b.x -
-                          measure(b.label, BAND.TITLE_SIZE, BAND.LABEL_WEIGHT) /
-                            2
-                      )
-                    ),
-                  }
-                : {}),
+              align: "left",
+              verticalAlign: "top",
+              spacing: 0,
+              spacingLeft: 8,
+              spacingTop: 4,
+              labelBackgroundColor: p.header,
             })
-          : // A side band: a plain shape behind the rows (a card has one
-            // parent), its big label turned to read bottom to top.
-            style([], {
-              ...common,
-              horizontal: 0,
-              container: 0,
-              dropTarget: 0,
-              fontSize: BAND.SIDE_SIZE,
-              fillColor: p.fill,
-            })
-    out.push(
+          : b.orient === "h"
+            ? // A row: a swimlane with its title across the top - centred, or
+              // where the canvas moved it clear of the lines - one fill for
+              // title and body, as on the canvas.
+              style(["swimlane"], {
+                startSize: Math.min(b.h, BAND.ROW_TITLE),
+                swimlaneLine: 0,
+                ...common,
+                fontSize: BAND.TITLE_SIZE,
+                fillColor: p.fill,
+                swimlaneFillColor: p.fill,
+                ...(b.titleX !== undefined
+                  ? {
+                      align: "left",
+                      spacing: 0,
+                      spacingLeft: Math.max(
+                        0,
+                        Math.round(
+                          b.titleX -
+                            b.x -
+                            measure(
+                              b.label,
+                              BAND.TITLE_SIZE,
+                              BAND.LABEL_WEIGHT
+                            ) /
+                              2
+                        )
+                      ),
+                    }
+                  : {}),
+              })
+            : // A side band: a plain shape behind the rows (a card has one
+              // parent), its big label turned to read bottom to top.
+              style([], {
+                ...common,
+                horizontal: 0,
+                container: 0,
+                dropTarget: 0,
+                fontSize: BAND.SIDE_SIZE,
+                fillColor: p.fill,
+              })
+    const cell = (id?: string) =>
       `<mxCell${attrs({
-        id: bandIds.get(b),
-        value: h(b.label),
+        id,
+        value: b.link ? undefined : h(b.label),
         style: st,
         vertex: "1",
         parent: pid,
       })}>${geometry(rel(b, parent))}</mxCell>`
+    // A chassis links to its page, as a card does.
+    out.push(
+      b.link
+        ? `<object${attrs({
+            label: h(b.label),
+            link: safeLink(b.link),
+            id: bandIds.get(b),
+          })}>${cell()}</object>`
+        : cell(bandIds.get(b))
     )
   }
 

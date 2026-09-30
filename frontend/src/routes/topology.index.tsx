@@ -118,6 +118,7 @@ import { CanvasLegend, legendRows } from "@/components/topology/legend"
 import { PartialMapChip } from "@/components/topology/partial-map-chip"
 import { ExportMenu } from "@/components/topology/export/export-menu"
 import {
+  ChassisMenuItems,
   DeviceMenuItems,
   EdgeMenuItems,
   GroupMenuItems,
@@ -129,6 +130,7 @@ import {
 } from "@/components/topology/context-menu"
 import type {
   CardFace,
+  ChassisMenu,
   DeviceMenuProps,
   EdgeMenuProps,
 } from "@/components/topology/context-menu"
@@ -206,6 +208,20 @@ import {
 import type { Centre } from "@/components/topology/diagram/placement"
 import { HIER_NEW_CARD } from "@/components/topology/layout"
 import { useBands } from "@/components/topology/diagram/use-bands"
+import {
+  CHASSIS_MODES,
+  chassisNodeId,
+  chassisOrient,
+  isChassisNode,
+  vcOf,
+} from "@/components/topology/diagram/chassis"
+import type {
+  ChassisLook,
+  ChassisMode,
+  ChassisOptions,
+} from "@/components/topology/diagram/chassis"
+import type { ChassisActions } from "@/components/topology/diagram/chassis-node"
+import type { ChassisNodeData } from "@/components/topology/diagram/build-diagram"
 import { isRow, isSide, titleStrip } from "@/components/topology/diagram/bands"
 import type { BandBy } from "@/components/topology/diagram/bands"
 import { NOTES_MAX, newNote } from "@/components/topology/diagram/notes"
@@ -269,7 +285,6 @@ import {
   ZONE_COLORS,
   ZONE_H,
   ZONE_W,
-  type BandExits,
   type PosByStyle,
   type PosMap,
 } from "@/components/topology/view-positions"
@@ -316,6 +331,11 @@ export interface TopologySearch {
   face?: FaceParam
   /** Diagram tab: cables meet a photo's ports or its edge. */
   anchor?: AnchorParam
+  /** Diagram tab: virtual chassis apart (`off`) or stacked top to bottom
+   * (`v`) or left to right (`h`). */
+  stack?: ChassisMode
+  /** An unsaved hand-picked map's placed virtual chassis. */
+  chassis?: string
   /** Diagram tab: the line type. */
   line?: LineParam
   /** Diagram tab: the labels on the links, comma-separated `subnet`, `ip`,
@@ -388,6 +408,9 @@ export const Route = createFileRoute("/topology/")({
     if (face) out.face = face
     const anchor = oneOf(s.anchor, ANCHORS)
     if (anchor) out.anchor = anchor
+    const stack = oneOf(s.stack, CHASSIS_MODES)
+    if (stack) out.stack = stack
+    if (typeof s.chassis === "string" && s.chassis) out.chassis = s.chassis
     const line = oneOf(s.line, LINE_TYPES)
     if (line) out.line = line
     // …with the lines that tab drew, unless the link names one.
@@ -596,6 +619,16 @@ const tabOfStyle = (v: ViewStyle): TabStyle =>
 /** What a saved view stores in `state.filters` - the map's settings under the
  * page's own names. Unchanged by the URL work: a view saved before it still
  * applies, and still supplies the fallback for anything the URL omits. */
+/** The Diagram display a view saves, with how its virtual chassis draw. */
+type DiagramDisplay = TopologyDiagramDisplay & { chassis?: ChassisMode }
+
+/** A saved Diagram display's stacking, when it has one. */
+const stackOf = (display: unknown) =>
+  oneOf(
+    (display as { chassis?: unknown } | null | undefined)?.chassis,
+    CHASSIS_MODES
+  )
+
 type ViewFilters = Partial<
   Filters & {
     location: string
@@ -724,8 +757,15 @@ function TopologyPage() {
   /** The style this browser's older, single arrangement was made on. */
   const legacyStyle = sanitizeViewStyle(stored.viewStyle)
   // No view's Diagram display, as this browser last saved it with
-  // the map (read once - the stored map can be large).
-  const [storedDiagram] = useState(() => readStoredMap()?.filters.diagram)
+  // the map, and whether it has an arrangement (read once - the stored
+  // map can be large).
+  const [{ storedDiagram, storedArranged }] = useState(() => {
+    const m = readStoredMap()
+    return {
+      storedDiagram: m?.filters.diagram,
+      storedArranged: !!Object.keys(m?.positions.diagram ?? {}).length,
+    }
+  })
 
   // Value resolution for every control below:
   //   URL param → applied saved view → this browser's No view → hard default.
@@ -795,6 +835,20 @@ function TopologyPage() {
     labels:
       labelsOf(vf.diagram?.labels) ??
       labelsOf(storedDiagram?.labels) ?? [...DEFAULT_LABELS],
+    // Virtual chassis stack on a map not arranged by hand yet; a map
+    // arranged before stacks keeps its arrangement until they are turned
+    // on. Resolved once and saved with the display from then on.
+    stack:
+      stackOf(vf.diagram) ??
+      stackOf(storedDiagram) ??
+      ((
+        viewId !== "none"
+          ? !!Object.keys(appliedView?.state.positions_by_style?.diagram ?? {})
+              .length
+          : storedArranged
+      )
+        ? "off"
+        : "v"),
   } as const
 
   const [tab, setTab] = useUrlEnum<TabStyle>("tab", dflt.tab, TAB_STYLES)
@@ -834,6 +888,11 @@ function TopologyPage() {
     "line",
     dflt.line,
     LINE_TYPES
+  )
+  const [stackMode, setStackMode] = useUrlEnum<ChassisMode>(
+    "stack",
+    dflt.stack,
+    CHASSIS_MODES
   )
   // Which labels the links carry. One stable array per value, so the
   // canvas rebuilds only when it changes.
@@ -914,6 +973,8 @@ function TopologyPage() {
     zoneId?: string
     /** A line: a cable, a bundle, an LLDP neighbour, a BGP session. */
     line?: LineTarget
+    /** A virtual chassis' stack (its frame). */
+    stack?: ChassisNodeData
   } | null>(null)
   // The camera shows a part of a map too large to open whole.
   const [partialMap, setPartialMap] = useState(false)
@@ -974,7 +1035,7 @@ function TopologyPage() {
   /** The Diagram display a view saves: the URL's switches over what else
    * the view keeps (card face, labels, its own card lines). */
   const savedDiagram = doc.doc.filters.diagram
-  const diagramDisplay = useMemo<TopologyDiagramDisplay>(
+  const diagramDisplay = useMemo<DiagramDisplay>(
     () => ({
       face: diagramFace,
       labels: diagramLabels,
@@ -984,6 +1045,7 @@ function TopologyPage() {
       mode: diagramMode,
       line: diagramLine,
       ...(diagramAnchor === "edge" ? { photo_anchor: diagramAnchor } : {}),
+      chassis: stackMode,
     }),
     [
       savedDiagram,
@@ -992,6 +1054,7 @@ function TopologyPage() {
       diagramLine,
       diagramLabels,
       diagramAnchor,
+      stackMode,
     ]
   )
   /** A view gains the Diagram display once the Diagram tab is used on it. */
@@ -1002,6 +1065,26 @@ function TopologyPage() {
     send(action, { coalesce: "gesture" })
   /** The view's own card lines (Display popover); null inherits. An undo
    * step like any other edit, and the cards refetch with the new list. */
+  // Virtual chassis drawn as stacks: the view's stacking, each chassis'
+  // own look (a document edit, one undo step), and on a hand-picked map
+  // the chassis placed on it.
+  const looksKey = JSON.stringify(doc.doc.chassisLooks)
+  const chassisOpts = useMemo<ChassisOptions | undefined>(
+    () =>
+      isDiagram
+        ? {
+            mode: stackMode,
+            looks: JSON.parse(looksKey) as Record<string, ChassisLook>,
+          }
+        : undefined,
+    [isDiagram, stackMode, looksKey]
+  )
+  const setChassisLook = (vc: string, value: ChassisLook | null) =>
+    edit({ type: "setChassisLook", id: vc, value })
+  const chassisActions: ChassisActions = {
+    onOrient: (vc, orient) => setChassisLook(vc, { orient }),
+    onUnstack: (vc) => setChassisLook(vc, { off: true }),
+  }
   const setViewCardLines = (fields: string[] | null) => {
     const next: TopologyDiagramDisplay = { ...diagramDisplay }
     delete next.fields
@@ -1055,7 +1138,7 @@ function TopologyPage() {
   const recolorZone = (id: string, color: string | null) =>
     setZones((zones ?? []).map((z) => (z.id === id ? { ...z, color } : z)))
   /** A row's sides for its cables to other bands; undefined is Auto. */
-  const setExits = (id: string, exits: BandExits | undefined) =>
+  const setExits = (id: string, exits: Zone["exits"]) =>
     setZones(
       (zones ?? []).map((z) => {
         if (z.id !== id) return z
@@ -1505,7 +1588,11 @@ function TopologyPage() {
       type: "setPositions",
       style: viewStyle,
       positions: p ?? null,
-      seen: q.data?.nodes.map((n) => n.id),
+      // A virtual chassis' stack is seen with its members.
+      seen: q.data?.nodes.flatMap((n) => {
+        const vc = vcOf(n.data)
+        return vc ? [n.id, chassisNodeId(vc.id)] : [n.id]
+      }),
     })
   }
 
@@ -2095,7 +2182,7 @@ function TopologyPage() {
     const saved = doc.doc.positions[placeStyle] ?? {}
     const out: PosMap = {}
     for (const [id, b] of Object.entries(canvas.current?.boxes() ?? {}))
-      if (id.startsWith("dev:") && !(id in saved))
+      if ((id.startsWith("dev:") || isChassisNode(id)) && !(id in saved))
         out[id] = isDiagram ? [b.x + b.w / 2, b.y + b.h / 2] : [b.x, b.y]
     return out
   }
@@ -2192,12 +2279,20 @@ function TopologyPage() {
       const boxes = canvas.current?.boxes() ?? {}
       const newNodes = new Set(ids.map(devNode))
       const near: Record<string, Pt[]> = {}
+      // A stack member is where its stack is.
+      const vcs = new Map(
+        (graph?.nodes ?? []).flatMap((n) => {
+          const vc = vcOf(n.data)
+          return vc ? [[n.id, chassisNodeId(vc.id)] as const] : []
+        })
+      )
       for (const g of graphs)
         for (const e of g.edges)
-          for (const [a, b] of [
+          for (const [a, b0] of [
             [e.source, e.target],
             [e.target, e.source],
           ]) {
+            const b = b0 in boxes ? b0 : (vcs.get(b0) ?? b0)
             if (!newNodes.has(a) || !(b in boxes)) continue
             const box = boxes[b]
             ;(near[a] ??= []).push({
@@ -2292,7 +2387,8 @@ function TopologyPage() {
     if (start === "map" && isDiagram) {
       const at: PosMap = {}
       for (const [id, b] of Object.entries(canvas.current?.boxes() ?? {}))
-        if (id.startsWith("dev:")) at[id] = [b.x + b.w / 2, b.y + b.h / 2]
+        if (id.startsWith("dev:") || isChassisNode(id))
+          at[id] = [b.x + b.w / 2, b.y + b.h / 2]
       arranged.diagram = at
     }
     return toViewState(emptyDocument({ devices: ids, positions: arranged }), {
@@ -2459,6 +2555,30 @@ function TopologyPage() {
         show: "@max-[900px]/head:inline-flex",
         find: "@max-[1040px]/head:w-32",
       }
+  /** A virtual chassis' items: on its stack, and on its members' cards.
+   * `stacked` is how it is drawn now (null: apart); `members` its cards on
+   * the map. */
+  const chassisMenu = (
+    vc: string,
+    stacked: "v" | "h" | null,
+    members: readonly string[]
+  ): ChassisMenu => ({
+    id: vc,
+    orient: stacked,
+    onOrient: (orient) => setChassisLook(vc, { orient }),
+    onUnstack: () => setChassisLook(vc, { off: true }),
+    ...(stacked && members.length
+      ? {
+          onHide: () =>
+            setHiddenNodes(
+              members.reduce(
+                (h, id) => withHidden(h, "devices", id, true),
+                hidden
+              )
+            ),
+        }
+      : {}),
+  })
   /** A device card's right-click menu: its items and the keys they show
    * act on this card, not on the canvas selection. */
   const deviceMenu = (
@@ -2490,9 +2610,23 @@ function TopologyPage() {
                 ? () => setCardLinesFor({ id, name: n.name, role: n.role })
                 : undefined,
               roleSlug: (canManage && n.role?.slug) || undefined,
+              ...memberMenu(n),
             }
           : undefined,
     }
+  }
+  /** A card's Virtual chassis sub-menu, when it is a member of one. */
+  const memberMenu = (n: TopoNode["data"]): { chassis?: ChassisMenu } => {
+    const vc = vcOf(n)
+    if (!vc || grouped) return {}
+    const stack = (n as { chassis?: string }).chassis
+    const orient = stack ? (chassisOrient(vc.id, chassisOpts) ?? "v") : null
+    const members = stack
+      ? (graph?.nodes ?? [])
+          .filter((m) => vcOf(m.data)?.id === vc.id)
+          .map((m) => m.id)
+      : []
+    return { chassis: chassisMenu(vc.id, orient, members) }
   }
   /** A site or location card's right-click menu. */
   const groupMenu = (g: TopoGroupData) => ({
@@ -2721,6 +2855,19 @@ function TopologyPage() {
                         items={[
                           { value: "ports", label: "Ports" },
                           { value: "edge", label: "Edge" },
+                        ]}
+                      />
+                    </PopoverField>
+                  )}
+                  {isDiagram && !grouped && (
+                    <PopoverField label="Virtual chassis">
+                      <SegmentedTabs<ChassisMode>
+                        value={stackMode}
+                        onValueChange={setStackMode}
+                        items={[
+                          { value: "off", label: "Off" },
+                          { value: "v", label: "Top-down" },
+                          { value: "h", label: "Left-right" },
                         ]}
                       />
                     </PopoverField>
@@ -3167,6 +3314,8 @@ function TopologyPage() {
                 nodeStyle={viewStyle}
                 diagramMode={diagramMode}
                 diagramLine={diagramLine}
+                chassis={chassisOpts}
+                chassisActions={chassisActions}
                 linkOverrides={doc.doc.links}
                 diagramLabels={isDiagram ? diagramLabels : undefined}
                 monitor={checks}
@@ -3253,6 +3402,12 @@ function TopologyPage() {
                 onNodeContext={(node, x, y) => {
                   if (node.type === "zone" || node.type === "band")
                     setMenu({ x, y, zoneId: node.id.slice(5) })
+                  else if (node.type === "chassis")
+                    setMenu({
+                      x,
+                      y,
+                      stack: node.data as unknown as ChassisNodeData,
+                    })
                   else if (node.type === "sitegroup")
                     setMenu({
                       x,
@@ -3446,13 +3601,15 @@ function TopologyPage() {
         label={
           menu?.node
             ? "Device"
-            : menu?.group
-              ? "Group"
-              : menu?.zoneId
-                ? "Area"
-                : menu?.line
-                  ? "Line"
-                  : "Map"
+            : menu?.stack
+              ? "Virtual chassis"
+              : menu?.group
+                ? "Group"
+                : menu?.zoneId
+                  ? "Area"
+                  : menu?.line
+                    ? "Line"
+                    : "Map"
         }
         keys={(m) =>
           m.node
@@ -3469,6 +3626,12 @@ function TopologyPage() {
             return <DeviceMenuItems {...deviceMenu(m.node, m.nodeId)} />
           if (m.group) return <GroupMenuItems {...groupMenu(m.group)} />
           if (m.line) return <EdgeMenuItems {...lineMenu(m.line)} />
+          if (m.stack)
+            return (
+              <ChassisMenuItems
+                {...chassisMenu(m.stack.vc.id, m.stack.orient, m.stack.members)}
+              />
+            )
           if (m.zoneId) {
             const id = m.zoneId
             const region = zones?.find((z) => z.id === id)

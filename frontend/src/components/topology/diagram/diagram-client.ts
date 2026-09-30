@@ -5,7 +5,7 @@ import { measureOf } from "@/lib/diagram/measure"
 import type { MeasureKind } from "@/lib/diagram/measure"
 import type { DiagramModel, RelinkOptions } from "./build-diagram"
 import type { HostReply, HostRequest, WireOptions } from "./diagram-host"
-import type { DiagramCardData, Pt } from "./types"
+import type { DiagramCardData, Pt, Rect } from "./types"
 
 // The page's side of the Diagram worker (diagram.worker.ts): builds and
 // drags go to the worker and come back as promises, so a big map never
@@ -30,6 +30,10 @@ export interface OffThreadRelink {
   edges: Edge[]
   cards: Map<string, DiagramCardData["diagram"]>
   junctions: Map<string, Pt>
+  /** Stack members (and frames) packed again round their frames. */
+  moves?: Map<string, Pt>
+  /** Each stack's frame now. */
+  frames?: Map<string, Rect>
   /** What each band row's title strip holds now. */
   titles?: Map<string, [number, number][]>
   ms: number
@@ -201,6 +205,8 @@ export class DiagramWorker {
       edges: reply.edges,
       cards: new Map(reply.cards),
       junctions: new Map(reply.junctions),
+      ...(reply.moves ? { moves: new Map(reply.moves) } : {}),
+      ...(reply.frames ? { frames: new Map(reply.frames) } : {}),
       ...(reply.titles ? { titles: new Map(reply.titles) } : {}),
       ms: reply.ms,
     }

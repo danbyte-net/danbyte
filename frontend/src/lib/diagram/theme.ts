@@ -189,6 +189,10 @@ export const BAND = {
   TITLE_SIZE: 13,
   /** A side band's label. */
   SIDE_SIZE: 20,
+  /** A virtual chassis' name, on its strip - the canvas's
+   * `CHASSIS.STRIP` thick. */
+  CHASSIS_SIZE: 11,
+  CHASSIS_STRIP: 20,
   LABEL_WEIGHT: 600 as Weight,
   RADIUS: 8,
   /** A stacked row's sub-row badge - the canvas's ColorBadge (`BAND.SUB_*`

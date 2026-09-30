@@ -90,11 +90,16 @@ export interface PlanInput {
   strips?: readonly TitleStrip[]
 }
 
-/** A layer band's title strip, as the planner keeps it clear. */
+/** A layer band's title strip, as the planner keeps it clear - or a
+ * virtual chassis' name strip (`fixed`: its name stays put, so labels keep
+ * off it), down the frame's left side (`axis: "v"`) or across its top:
+ * crossed, never run along. */
 export interface TitleStrip {
   id: string
   r: Rect
   chip: Rect
+  axis?: "v"
+  fixed?: true
 }
 
 export interface EdgePlan {
@@ -692,12 +697,19 @@ export function planEdges(
   const cards = [...input.rects].filter(([id]) => input.solid(id))
   const obs = obstacles(cards)
   // Elbows keep their runs out of the bands' title strips too.
-  const strips = (input.strips ?? []).map((s): [string, Rect] => [
-    `\u0000strip:${s.id}`,
-    s.r,
-  ])
+  const strips = (input.strips ?? []).map(
+    (s): [string, Rect] | [string, Rect, "v"] =>
+      s.axis
+        ? [`\u0000strip:${s.id}`, s.r, s.axis]
+        : [`\u0000strip:${s.id}`, s.r]
+  )
   const lanesObs = strips.length ? obstacles(cards, strips) : obs
-  input.routes?.begin(strips.length ? [...cards, ...strips] : cards, lanesObs)
+  input.routes?.begin(
+    strips.length
+      ? [...cards, ...strips.map(([id, r]): [string, Rect] => [id, r])]
+      : cards,
+    lanesObs
+  )
   const turns = new Map<
     string,
     { turn: -1 | 0 | 1; depth: number; extent: number }
@@ -883,7 +895,10 @@ export function planEdges(
       it.key,
       polyline(it.line, drawnPts.get(it.key)!, routeOf.get(it.key)!),
     ]),
-    [...input.rects].filter(([id]) => input.solid(id)).map(([, r]) => r)
+    [
+      ...[...input.rects].filter(([id]) => input.solid(id)).map(([, r]) => r),
+      ...(input.strips ?? []).filter((s) => s.fixed).map((s) => s.r),
+    ]
   )
   const asks: InlineAsk[] = []
   for (const it of all) {
@@ -1060,6 +1075,7 @@ export function planEdges(
     })
   }
   const busy = new Map<string, [number, number][]>()
-  for (const s of input.strips ?? []) busy.set(s.id, scene.occupied(s.chip))
+  for (const s of input.strips ?? [])
+    if (!s.fixed) busy.set(s.id, scene.occupied(s.chip))
   return { plans, turns, ...(busy.size ? { busy } : {}) }
 }

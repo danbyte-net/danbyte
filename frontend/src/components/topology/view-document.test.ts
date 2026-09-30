@@ -274,6 +274,80 @@ describe("docReducer: device set", () => {
   })
 })
 
+describe("docReducer: virtual chassis", () => {
+  const VC = "7c1d5e92-3b6f-4a0d-8e47-1b9c2d5f6e05"
+
+  it("reads and writes placed chassis and each chassis' look", () => {
+    const d = docFromView(
+      view({
+        filters: { devices: ["a"], chassis: [VC, 7] },
+        chassis: { [VC]: { orient: "h" }, x: { orient: "up" }, y: "no" },
+      }),
+      styleOf
+    )
+    expect(d.placedChassis).toEqual([VC])
+    expect(d.filters).toEqual({})
+    expect(d.chassisLooks).toEqual({ [VC]: { orient: "h" } })
+    expect(d.extra).toEqual({})
+    const state = toViewState(d)
+    expect(state.filters).toEqual({ devices: ["a"], chassis: [VC] })
+    expect((state as Record<string, unknown>).chassis).toEqual({
+      [VC]: { orient: "h" },
+    })
+    // A map that follows its filters places none.
+    expect(toViewState(d, { devices: null }).filters).toEqual({})
+    expect(
+      (toViewState(emptyDocument()) as Record<string, unknown>).chassis
+    ).toBeUndefined()
+  })
+
+  it("places a chassis in one step, its members leaving the device set", () => {
+    const d = run(emptyDocument({ devices: ["a", "m1"] }), {
+      type: "addChassis",
+      ids: [VC],
+      drop: ["m1"],
+      style: "diagram",
+      place: { [`vc:${VC}`]: [5, 6] },
+    })
+    expect(d.devices).toEqual(["a"])
+    expect(d.placedChassis).toEqual([VC])
+    expect(d.positions.diagram).toEqual({ [`vc:${VC}`]: [5, 6] })
+    // On a map that followed its filters it starts a hand-picked one.
+    const fresh = run(emptyDocument(), { type: "addChassis", ids: [VC] })
+    expect(fresh.devices).toEqual([])
+    expect(run(d, { type: "addChassis", ids: [VC] })).toBe(d)
+  })
+
+  it("takes a placed chassis off with its frame's place and its look", () => {
+    const d = emptyDocument({
+      devices: [],
+      placedChassis: [VC],
+      chassisLooks: { [VC]: { orient: "h" } },
+      positions: { diagram: { [`vc:${VC}`]: [1, 1], "dev:a": [2, 2] } },
+    })
+    const next = run(d, { type: "removeChassis", ids: [VC] })
+    expect(next.placedChassis).toBeNull()
+    expect(next.chassisLooks).toEqual({})
+    expect(next.positions).toEqual({ diagram: { "dev:a": [2, 2] } })
+    expect(run(next, { type: "removeChassis", ids: [VC] })).toBe(next)
+  })
+
+  it("sets and clears a chassis' look", () => {
+    const d = run(emptyDocument(), {
+      type: "setChassisLook",
+      id: VC,
+      value: { off: true },
+    })
+    expect(d.chassisLooks).toEqual({ [VC]: { off: true } })
+    expect(
+      run(d, { type: "setChassisLook", id: VC, value: null }).chassisLooks
+    ).toEqual({})
+    expect(
+      run(d, { type: "setChassisLook", id: VC, value: { off: true } })
+    ).toBe(d)
+  })
+})
+
 describe("docReducer: the other edits", () => {
   it("sets and clears regions per style", () => {
     const d = run(emptyDocument(), {

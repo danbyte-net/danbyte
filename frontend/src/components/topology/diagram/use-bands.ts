@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import type { RefObject } from "react"
 
 import type { TopoNode } from "@/lib/api"
+import { chassisNodeId, vcOf } from "./chassis"
 import type { CanvasBandEdit, CanvasHandle } from "../topology-canvas"
 import type { PosMap, Zone } from "../view-positions"
 import {
@@ -139,6 +140,14 @@ export function useBands(opts: {
     const id = () => `b${Date.now().toString(36)}`
     const hand = handDrawn(regions)
     const info = new Map((nodes ?? []).map((n) => [n.id, n.data]))
+    // A virtual chassis' stack is one card to a band (the canvas's boxes
+    // hold its frame, not its members): its master's role and type.
+    for (const n of nodes ?? []) {
+      const vc = vcOf(n.data)
+      if (!vc) continue
+      const frame = chassisNodeId(vc.id)
+      if (!info.has(frame) || vc.master) info.set(frame, n.data)
+    }
     /** Every card on the map with its role and type: who is in which row
      * and on which of its sub-rows. */
     const allCards = (): ArrangeCard[] =>
@@ -165,24 +174,7 @@ export function useBands(opts: {
       ruleBy: byRule.length === 1 ? byRule[0] : null,
       keepDrawn,
       arrange: (by) => {
-        const box = boxes()
-        const cards: ArrangeCard[] = []
-        for (const n of nodes ?? []) {
-          const b = box[n.id] as Rect | undefined
-          if (!b || !n.data.device_id) continue
-          const d = n.data
-          cards.push({
-            id: n.id,
-            box: b,
-            role: d.role
-              ? { id: d.role.id, name: d.role.name, color: d.role.color }
-              : null,
-            type:
-              d.device_type_id || d.device_type
-                ? { id: d.device_type_id, name: d.device_type }
-                : null,
-          })
-        }
+        const cards = allCards().filter((c) => !!info.get(c.id)?.device_id)
         if (!cards.length) return
         const res = arrangeBands({
           cards,

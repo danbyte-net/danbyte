@@ -62,6 +62,10 @@ import { ZoomControls } from "./zoom-controls"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { BAND_DRAG_HANDLE, BAND_NODE_CLASS } from "./diagram/band-node"
+import { collapseChassis } from "./diagram/chassis"
+import type { ChassisOptions, ChassisOrient } from "./diagram/chassis"
+import { ChassisActionsContext } from "./diagram/chassis-node"
+import type { ChassisActions } from "./diagram/chassis-node"
 import { noteToNode, notesAt, selectedNotes } from "./diagram/annotation-node"
 import type { NoteCallbacks, NoteData } from "./diagram/annotation-node"
 import { patchNote, readNotes, removeNotes } from "./diagram/notes"
@@ -858,6 +862,11 @@ export interface TopologyCanvasProps {
   brokenLayout?: ReactNode
   /** Devices just added and not fetched yet, muted where they will land. */
   pending?: readonly PendingCard[]
+  /** Diagram: virtual chassis drawn as stacks (diagram/chassis.ts). Keep
+   * the object stable. */
+  chassis?: ChassisOptions
+  /** Diagram: what a stack's toolbar does. */
+  chassisActions?: ChassisActions
   /** Diagram: an arrangement carried over from another view, drawn at
    * other card sizes. The build pinned at exactly these positions (by
    * identity) has its overlapping cards moved apart, once, and where they
@@ -916,15 +925,24 @@ const NO_TITLES: ReadonlyMap<string, [number, number][]> = new Map()
 /** Room kept round a fitted map, as a fraction of the screen. */
 const FIT_PAD = 0.15
 
-/** Nodes carrying the Diagram cards' new boxes and nubs, and the
- * breakout junctions where they now sit (relinkDiagram). */
+/** Nodes carrying the Diagram cards' new boxes and nubs, the breakout
+ * junctions where they now sit, and the stacks' members and frames packed
+ * again (relinkDiagram). */
 function withCards(
   nodes: Node[],
   cards: Map<string, DiagramCardData["diagram"]>,
-  junctions?: Map<string, { x: number; y: number }>
+  junctions?: Map<string, { x: number; y: number }>,
+  moves?: ReadonlyMap<string, { x: number; y: number }>,
+  frames?: ReadonlyMap<string, Rect>
 ): Node[] {
-  if (!cards.size && !junctions?.size) return nodes
-  return nodes.map((n) => {
+  if (!cards.size && !junctions?.size && !moves?.size && !frames?.size)
+    return nodes
+  return nodes.map((n0) => {
+    const to = moves?.get(n0.id)
+    const f = frames?.get(n0.id)
+    let n = to ? { ...n0, position: { x: to.x, y: to.y } } : n0
+    if (f && (f.w !== n.width || f.h !== n.height))
+      n = { ...n, width: f.w, height: f.h }
     const next = cards.get(n.id)
     if (next) {
       const card = {
@@ -1068,6 +1086,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     emptyState,
     brokenLayout,
     pending,
+    chassis,
+    chassisActions,
     spreadFrom,
     onSpread,
     onPartialChange,
@@ -1193,6 +1213,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               positions,
               ...withRows,
               ...withExits,
+              ...(chassis ? { chassis } : {}),
               matched: matchedIds,
               focusNodeId,
               checkLabels,
@@ -1238,6 +1259,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       diagramLabels,
       checkLabels,
       bandRowList,
+      chassis,
     ]
   )
 
@@ -1265,6 +1287,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               positions,
               ...(bandRowList.length ? { rows: bandRowList } : {}),
               ...withExits,
+              ...(chassis ? { chassis } : {}),
               checkLabels,
             },
             stamp: {
@@ -1294,6 +1317,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       positions,
       bandRowList,
       checkLabels,
+      chassis,
       layoutTick,
       nodeStyle,
       fitKey,
@@ -1574,9 +1598,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         !!searchSet &&
         !searchSet.has(n.id) &&
         !isOverlayNode(n) &&
-        n.type !== "junction"
+        n.type !== "junction" &&
+        n.type !== "chassis"
       return !unmatched &&
-        (!spotSet || spotSet.has(n.id) || n.type === "sitegroup")
+        (!spotSet ||
+          spotSet.has(n.id) ||
+          n.type === "sitegroup" ||
+          n.type === "chassis")
         ? out
         : { ...out, data: { ...out.data, dimmed: true } }
     })
@@ -1811,7 +1839,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             )
             setNodes([
               ...zoneNodes.current,
-              ...withCards(kept, re.cards, re.junctions),
+              ...withCards(kept, re.cards, re.junctions, re.moves, re.frames),
               ...noteNodes.current,
             ])
             setEdges(re.edges)
@@ -1827,7 +1855,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const re = relinkDiagram(built.model, nextNodes, relinkOver())
       adopt(re.model)
       diagramEdges = re.edges
-      nextNodes = withCards(nextNodes, re.cards, re.junctions)
+      nextNodes = withCards(
+        nextNodes,
+        re.cards,
+        re.junctions,
+        re.moves,
+        re.frames
+      )
     }
     // Zones and notes are not part of the built graph, so a rebuild would
     // drop them.
@@ -1864,7 +1898,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     if (!fontTick || !diagram || !model || modelIdRef.current !== null) return
     const re = remeasureDiagram(model, flow.getNodes(), relinkOver())
     adopt(re.model)
-    setNodes((cur) => withCards(cur, re.cards, re.junctions))
+    setNodes((cur) =>
+      withCards(cur, re.cards, re.junctions, re.moves, re.frames)
+    )
     setEdges(re.edges)
   }, [fontTick, diagram, flow, setNodes, setEdges])
 
@@ -2067,8 +2103,20 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       },
       boxes: () => {
         const out: Record<string, Rect> = {}
+        const frames = new Map<
+          string,
+          { orient: ChassisOrient; members: string[] }
+        >()
         for (const n of flow.getNodes()) {
           if (isOverlayNode(n) || n.type === "junction" || n.hidden) continue
+          // A stack is one box, its frame: members go where it goes.
+          if (n.type === "chassis") {
+            frames.set(
+              n.id,
+              n.data as { orient: ChassisOrient; members: string[] }
+            )
+            continue
+          }
           // A Hierarchy card's size is computed, so one off screen (never
           // mounted, never measured) still counts.
           const fixed = n.type === "hier" ? sizeOf(n) : null
@@ -2085,7 +2133,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             h,
           }
         }
-        return out
+        return frames.size ? collapseChassis(out, frames) : out
       },
       regions: () => nodesToZones(flow.getNodes(), zonesRef.current),
       labelRoom: () =>
@@ -2219,9 +2267,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   emitZonesRef.current = emitZones
 
-  // ── band drags ─────────────────────────────────────────────────────
+  // ── band and stack drags ───────────────────────────────────────────
   // A layer band carries the cards whose centre is inside it (bands.ts
-  // membersOf): they follow the band live, and land where it lands.
+  // membersOf): they follow the band live, and land where it lands. A
+  // virtual chassis' stack moves whole: its frame and every member,
+  // whichever of them is dragged.
   const bandDrag = useRef<{
     id: string
     x: number
@@ -2237,13 +2287,46 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const onNodeDragStart = useCallback(
     (_: unknown, node: Node) => {
       bandDrag.current = null
+      const all = flow.getNodes()
+      const stack =
+        node.type === "chassis"
+          ? node.id
+          : (node.data as { chassis?: string }).chassis
+      if (stack) {
+        const frame = all.find((n) => n.id === stack)
+        const ids = new Set([
+          stack,
+          ...((frame?.data as { members?: string[] } | undefined)?.members ??
+            []),
+        ])
+        const members = new Map<string, { x: number; y: number }>()
+        // Selected nodes already move with the drag.
+        for (const n of all)
+          if (ids.has(n.id) && n.id !== node.id && !n.selected)
+            members.set(n.id, { ...n.position })
+        bandDrag.current = {
+          id: node.id,
+          x: node.position.x,
+          y: node.position.y,
+          members,
+        }
+        return
+      }
       if (node.type !== "band" || (node.data as BandData).orient === "v") return
       const id = node.id.slice(5)
-      const all = flow.getNodes()
       const boxes: Record<string, Rect> = {}
+      const frames = new Map<
+        string,
+        { orient: ChassisOrient; members: string[] }
+      >()
       for (const n of all) {
         // Selected cards already move with the drag.
         if (isOverlayNode(n) || n.type === "junction" || n.hidden) continue
+        if (n.type === "chassis") {
+          const d = n.data as { orient: ChassisOrient; members: string[] }
+          frames.set(n.id, d)
+          continue
+        }
         if (n.selected) continue
         const w = n.width ?? n.measured?.width
         const h = n.height ?? n.measured?.height
@@ -2256,14 +2339,18 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           h,
         }
       }
-      // The rows as drawn: the build may have re-fitted them.
+      // The rows as drawn: the build may have re-fitted them. A stack is
+      // in the row its frame is in, and goes with it whole.
       const regions = nodesToZones(all, zonesRef.current).filter(isRow)
       const byId = new Map(all.map((n) => [n.id, n]))
       const members = new Map<string, { x: number; y: number }>()
-      for (const m of membersOf(regions, boxes).get(id) ?? []) {
-        const n = byId.get(m)
-        if (n) members.set(m, { ...n.position })
-      }
+      for (const m of membersOf(regions, collapseChassis(boxes, frames)).get(
+        id
+      ) ?? [])
+        for (const k of [m, ...(frames.get(m)?.members ?? [])]) {
+          const n = byId.get(k)
+          if (n && !n.selected) members.set(k, { ...n.position })
+        }
       bandDrag.current = {
         id: node.id,
         x: node.position.x,
@@ -2318,10 +2405,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           .then(
             (re) => {
               if (modelIdRef.current !== modelId || !modelRef.current) return
-              adopt(
-                relinkedModel(modelRef.current, re.cards, re.titles, over)
+              adopt(relinkedModel(modelRef.current, re.cards, re.titles, over))
+              setNodes((cur) =>
+                withCards(cur, re.cards, re.junctions, re.moves, re.frames)
               )
-              setNodes((cur) => withCards(cur, re.cards, re.junctions))
               setEdges(re.edges)
             },
             () => lostWorker()
@@ -2333,7 +2420,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       adopt(re.model)
       // Into the real state, not the rendered nodes (those carry the
       // spotlight's dimming and the monitoring pill).
-      setNodes((cur) => withCards(cur, re.cards, re.junctions))
+      setNodes((cur) =>
+        withCards(cur, re.cards, re.junctions, re.moves, re.frames)
+      )
       setEdges(re.edges)
       return true
     },
@@ -2492,101 +2581,103 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      <ReactFlow
-        nodes={shownNodes}
-        edges={shownEdges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        fitView={fitOnOpen}
-        fitViewOptions={
-          fitOptions ? { padding: FIT_PAD, ...fitOptions } : undefined
-        }
-        colorMode={theme}
-        proOptions={{ hideAttribution: true }}
-        nodesConnectable={false}
-        onNodeClick={onNodeClick}
-        onNodeDoubleClick={onNodeDoubleClick}
-        zoomOnDoubleClick={!onOpenDevice}
-        onNodeContextMenu={(ev, node) => {
-          ev.preventDefault()
-          if (node.type !== "junction")
-            onNodeContext?.(node, ev.clientX, ev.clientY)
-        }}
-        onPaneContextMenu={(ev) => {
-          ev.preventDefault()
-          const p = flow.screenToFlowPosition({
-            x: ev.clientX,
-            y: ev.clientY,
-          })
-          onPaneContext?.(ev.clientX, ev.clientY, p.x, p.y)
-        }}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDrag={onNodeDrag}
-        onNodeDragStop={onDragStop}
-        onEdgeClick={onEdgeClick}
-        onEdgeContextMenu={(ev, e) => {
-          if (!onEdgeContext) return
-          const line = lineTarget(e, graph)
-          if (!line) return
-          ev.preventDefault()
-          onEdgeContext(line, ev.clientX, ev.clientY)
-        }}
-        onEdgeMouseEnter={(ev, e) => {
-          setHotEdge(e.id)
-          tipApi.current?.show(
-            hoverLabel(e) ?? (typeof e.label === "string" ? e.label : null),
-            ev
-          )
-        }}
-        onEdgeMouseMove={(ev) => tipApi.current?.move(ev)}
-        onEdgeMouseLeave={() => {
-          setHotEdge(null)
-          tipApi.current?.hide()
-        }}
-        onPaneClick={() => {
-          setSpotId(null)
-          onCanvasClick?.()
-        }}
-        onMove={onMove}
-        onMoveStart={(ev) => {
-          // The user takes the camera: the word on the part shown goes.
-          if (ev) setPartial(false)
-        }}
-        onlyRenderVisibleElements
-        // Cards and zones leave the map through explicit actions (the
-        // context menu, the zone toolbar) - never a stray Backspace.
-        deleteKeyCode={null}
-        minZoom={MIN_ZOOM}
-        ariaLabelConfig={FLOW_ARIA_LABELS}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-        <ZoomControls onFit={() => fitMap(0)} />
-        {minimap && bigMap && (
-          <MiniMapCanvas nodeColor={miniColor} theme={theme} />
-        )}
-        {minimap && (
-          <MiniMap
-            pannable
-            zoomable
-            nodeColor={miniColor}
-            // A big map's cards are painted underneath, on one canvas.
-            nodeComponent={bigMap ? NoMiniMapNode : undefined}
-            className={cn(
-              "rounded-md border !border-border",
-              bigMap ? "!bg-transparent" : "!bg-card"
-            )}
-          />
-        )}
-        {!!pending?.length && (
-          <ViewportPortal>
-            {pending.map((p) => (
-              <PendingCardView key={p.id} card={p} />
-            ))}
-          </ViewportPortal>
-        )}
-      </ReactFlow>
+      <ChassisActionsContext.Provider value={chassisActions ?? null}>
+        <ReactFlow
+          nodes={shownNodes}
+          edges={shownEdges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          fitView={fitOnOpen}
+          fitViewOptions={
+            fitOptions ? { padding: FIT_PAD, ...fitOptions } : undefined
+          }
+          colorMode={theme}
+          proOptions={{ hideAttribution: true }}
+          nodesConnectable={false}
+          onNodeClick={onNodeClick}
+          onNodeDoubleClick={onNodeDoubleClick}
+          zoomOnDoubleClick={!onOpenDevice}
+          onNodeContextMenu={(ev, node) => {
+            ev.preventDefault()
+            if (node.type !== "junction")
+              onNodeContext?.(node, ev.clientX, ev.clientY)
+          }}
+          onPaneContextMenu={(ev) => {
+            ev.preventDefault()
+            const p = flow.screenToFlowPosition({
+              x: ev.clientX,
+              y: ev.clientY,
+            })
+            onPaneContext?.(ev.clientX, ev.clientY, p.x, p.y)
+          }}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
+          onNodeDragStop={onDragStop}
+          onEdgeClick={onEdgeClick}
+          onEdgeContextMenu={(ev, e) => {
+            if (!onEdgeContext) return
+            const line = lineTarget(e, graph)
+            if (!line) return
+            ev.preventDefault()
+            onEdgeContext(line, ev.clientX, ev.clientY)
+          }}
+          onEdgeMouseEnter={(ev, e) => {
+            setHotEdge(e.id)
+            tipApi.current?.show(
+              hoverLabel(e) ?? (typeof e.label === "string" ? e.label : null),
+              ev
+            )
+          }}
+          onEdgeMouseMove={(ev) => tipApi.current?.move(ev)}
+          onEdgeMouseLeave={() => {
+            setHotEdge(null)
+            tipApi.current?.hide()
+          }}
+          onPaneClick={() => {
+            setSpotId(null)
+            onCanvasClick?.()
+          }}
+          onMove={onMove}
+          onMoveStart={(ev) => {
+            // The user takes the camera: the word on the part shown goes.
+            if (ev) setPartial(false)
+          }}
+          onlyRenderVisibleElements
+          // Cards and zones leave the map through explicit actions (the
+          // context menu, the zone toolbar) - never a stray Backspace.
+          deleteKeyCode={null}
+          minZoom={MIN_ZOOM}
+          ariaLabelConfig={FLOW_ARIA_LABELS}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+          <ZoomControls onFit={() => fitMap(0)} />
+          {minimap && bigMap && (
+            <MiniMapCanvas nodeColor={miniColor} theme={theme} />
+          )}
+          {minimap && (
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor={miniColor}
+              // A big map's cards are painted underneath, on one canvas.
+              nodeComponent={bigMap ? NoMiniMapNode : undefined}
+              className={cn(
+                "rounded-md border !border-border",
+                bigMap ? "!bg-transparent" : "!bg-card"
+              )}
+            />
+          )}
+          {!!pending?.length && (
+            <ViewportPortal>
+              {pending.map((p) => (
+                <PendingCardView key={p.id} card={p} />
+              ))}
+            </ViewportPortal>
+          )}
+        </ReactFlow>
+      </ChassisActionsContext.Provider>
       {empty && !pending?.length && emptyState && !(offThread && !offBuilt) && (
         // Drops land on the canvas underneath; only the card's own
         // controls take the pointer.

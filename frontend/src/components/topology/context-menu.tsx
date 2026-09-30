@@ -4,6 +4,10 @@ import {
   ArrowUpDown,
   ArrowUpRight,
   Cable,
+  Columns2,
+  Layers,
+  Rows2,
+  Ungroup,
   Crosshair,
   EyeOff,
   PanelLeft,
@@ -77,7 +81,23 @@ export interface DeviceMenuProps {
     onCardLines?: () => void
     /** The role whose card lines the settings page edits (admins). */
     roleSlug?: string
+    /** A member of a virtual chassis: its stack's items. */
+    chassis?: ChassisMenu
   }
+}
+
+/** A virtual chassis' items, on its stack and on its members' cards. */
+export interface ChassisMenu {
+  id: string
+  /** Drawn as a stack now, top to bottom or left to right; null: its
+   * members are apart. */
+  orient: "v" | "h" | null
+  onOrient: (orient: "v" | "h") => void
+  onUnstack: () => void
+  /** Hide every member of the stack. */
+  onHide?: () => void
+  /** Placed on a hand-picked map: take it off. */
+  onRemove?: () => void
 }
 
 /** Right-click on a device card. */
@@ -91,7 +111,8 @@ export function DeviceMenuItems({
   onHide,
   diagram: d,
 }: DeviceMenuProps) {
-  const extras = !!id && !!d && !!(d.face || d.onCardLines || d.roleSlug)
+  const extras =
+    !!id && !!d && !!(d.face || d.onCardLines || d.roleSlug || d.chassis)
   return (
     <>
       {id && (
@@ -144,7 +165,69 @@ export function DeviceMenuItems({
               </Link>
             </DropdownMenuItem>
           )}
+          {d.chassis && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Layers /> Virtual chassis
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-40">
+                <ChassisMenuItems {...d.chassis} />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
         </>
+      )}
+    </>
+  )
+}
+
+/** Right-click on a virtual chassis' stack (and its members' Virtual
+ * chassis sub-menu): open it, stack it top to bottom or left to right, or
+ * draw its members apart; hide it or, where it was placed, take it off. */
+export function ChassisMenuItems({
+  id,
+  orient,
+  onOrient,
+  onUnstack,
+  onHide,
+  onRemove,
+}: ChassisMenu) {
+  return (
+    <>
+      <DropdownMenuItem asChild>
+        <Link to="/virtual-chassis/$id" params={{ id }}>
+          <ArrowUpRight /> Open virtual chassis
+        </Link>
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuRadioGroup
+        value={orient ?? "off"}
+        onValueChange={(v) => {
+          if (v === orient) return
+          if (v === "v" || v === "h") onOrient(v)
+          else onUnstack()
+        }}
+      >
+        <DropdownMenuRadioItem value="v">
+          <Rows2 /> Top-down
+        </DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="h">
+          <Columns2 /> Left-right
+        </DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="off">
+          <Ungroup /> Unstacked
+        </DropdownMenuRadioItem>
+      </DropdownMenuRadioGroup>
+      {(onHide || onRemove) && <DropdownMenuSeparator />}
+      {onHide && (
+        <DropdownMenuItem onSelect={onHide}>
+          <EyeOff /> Hide stack
+        </DropdownMenuItem>
+      )}
+      {onRemove && (
+        <DropdownMenuItem variant="destructive" onSelect={onRemove}>
+          <Trash2 /> Remove from map
+        </DropdownMenuItem>
       )}
     </>
   )

@@ -10,6 +10,7 @@ import { ZoneNode } from "./zone-node"
 import { AnnotationNode } from "./diagram/annotation-node"
 import { BandNode } from "./diagram/band-node"
 import { CardNode } from "./diagram/card-node"
+import { ChassisNode } from "./diagram/chassis-node"
 import { JUNCTION } from "./diagram/card-layout"
 import { JunctionNode } from "./diagram/junction-node"
 import type { DiagramCardData } from "./diagram/types"
@@ -72,6 +73,9 @@ export const NODE_KINDS = {
   zone: { component: ZoneNode },
   // A Diagram layer band (diagram/bands.ts): a region, never laid out.
   band: { component: BandNode },
+  // A virtual chassis' frame round its stacked members (diagram/chassis.ts):
+  // the build sizes it.
+  chassis: { component: ChassisNode },
   // A Diagram note (diagram/notes.ts): over the map, never laid out.
   note: { component: AnnotationNode },
 } satisfies Record<string, NodeKind>

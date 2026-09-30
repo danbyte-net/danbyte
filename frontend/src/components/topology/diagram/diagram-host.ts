@@ -8,7 +8,7 @@ import type {
   DiagramOptions,
   RelinkOptions,
 } from "./build-diagram"
-import type { DiagramCardData, Pt } from "./types"
+import type { DiagramCardData, Pt, Rect } from "./types"
 
 // The Diagram's builder behind a message boundary: what the worker
 // (diagram.worker.ts) runs, kept free of worker globals so it can be
@@ -65,6 +65,9 @@ export type HostReply =
       edges: Edge[]
       cards: [string, DiagramCardData["diagram"]][]
       junctions: [string, Pt][]
+      /** Stack members (and frames) packed again, and each frame now. */
+      moves?: [string, Pt][]
+      frames?: [string, Rect][]
       /** What each band row's title strip holds now. */
       titles?: [string, [number, number][]][]
       ms: number
@@ -125,6 +128,8 @@ export function diagramHost(
         edges: re.edges,
         cards: [...re.cards],
         junctions: [...re.junctions],
+        ...(re.moves ? { moves: [...re.moves] } : {}),
+        ...(re.frames ? { frames: [...re.frames] } : {}),
         ...(re.titles ? { titles: [...re.titles] } : {}),
         ms: performance.now() - t0,
       }

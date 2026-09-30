@@ -44,6 +44,7 @@ import { distinctCables, relinkDiagram } from "./build-diagram"
 import type { DiagramModel, PhotoModel } from "./build-diagram"
 import { cardContent } from "./card-fields"
 import type { CardPill } from "./card-fields"
+import { chassisFrame, chassisStrip } from "./chassis"
 import {
   CARD,
   cardLayout,
@@ -526,6 +527,43 @@ export function regionBands(
     })
 }
 
+/** Each stack as a document band: its frame round the members drawn
+ * (`rects`), its name's strip and its page. */
+export function chassisBands(
+  model: Pick<DiagramModel, "chassis">,
+  rects: ReadonlyMap<string, Rect>,
+  origin?: string
+): DiagramBand[] {
+  const out: DiagramBand[] = []
+  for (const [id, ch] of model.chassis ?? []) {
+    const own = ch.members.flatMap((m) => {
+      const r = rects.get(m)
+      return r ? [r] : []
+    })
+    if (!own.length) continue
+    const f = chassisFrame(ch.orient, own)
+    out.push({
+      id,
+      kind: "chassis",
+      orient: ch.orient,
+      label: ch.vc.name,
+      ...f,
+      strip: chassisStrip(ch.orient, f),
+      link: danbyteUrl(origin, `/virtual-chassis/${ch.vc.id}`),
+    })
+  }
+  return out
+}
+
+/** The stacks among the bands, back to front: over the bands and zones,
+ * under the cards - as the canvas stacks them. */
+function withChassis(
+  bands: DiagramBand[],
+  stacks: DiagramBand[]
+): DiagramBand[] {
+  return stacks.length ? [...bands, ...stacks] : bands
+}
+
 /** Saved-view notes as document notes. A note is in an area when its
  * centre is. */
 export function viewNotes(
@@ -766,6 +804,12 @@ export function toDocument(
   const shownNodes = live.nodes.filter(
     (n) => !n.hidden && (model.base.has(n.id) || model.fixed.has(n.id))
   )
+  // Stacks' frames: where a relink for another mode packs their members.
+  const frameNodes = live.nodes.filter(
+    (n) => !n.hidden && !!model.chassis?.has(n.id)
+  )
+  /** Stack members a relink for another mode packed again. */
+  let moved: ReadonlyMap<string, Pt> | undefined
   const fanIds = new Set([
     ...model.fans.map((f) => f.id),
     ...(model.meshes ?? []).flatMap((m) => [m.id, m.idB]),
@@ -788,8 +832,13 @@ export function toDocument(
         : mode === "simple"
           ? simpleModel(model)
           : { ...model, mode, shown: new Map() },
-      shownNodes.map((n) => ({ id: n.id, position: n.position, data: {} }))
+      [...shownNodes, ...frameNodes].map((n) => ({
+        id: n.id,
+        position: n.position,
+        data: {},
+      }))
     )
+    moved = re.moves
     shown = re.model.shown
     titles = re.model.titles
     edges = re.edges.filter((e) => !e.hidden)
@@ -801,7 +850,7 @@ export function toDocument(
   const nubIndex = new Map<string, number>()
   const nodes: DiagramNode[] = []
   for (const n of shownNodes) {
-    const c = { x: n.position.x, y: n.position.y }
+    const c = moved?.get(n.id) ?? { x: n.position.x, y: n.position.y }
     const data = (n.data ?? {}) as CardData & {
       diagram?: { box: CardBox; nubs: Nub[]; photo?: PhotoShown }
     }
@@ -1112,7 +1161,10 @@ export function toDocument(
     })
   }
 
-  const bands = regionBands(regions, area, titles, measure, layerCards)
+  const bands = withChassis(
+    regionBands(regions, area, titles, measure, layerCards),
+    chassisBands(model, rects, opts.origin)
+  )
   const notes = viewNotes(opts.notes, area)
   const body = {
     bands,

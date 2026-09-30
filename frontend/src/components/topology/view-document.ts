@@ -15,6 +15,7 @@ import type {
 } from "@/lib/api"
 import { NO_TOPO_HIDDEN, readTopoHidden, savedTopoHidden } from "./hidden"
 import type { TopoHidden } from "./hidden"
+import type { ChassisLook } from "./diagram/chassis"
 import { viewPositions } from "./view-positions"
 import type { PosMap, Zone } from "./view-positions"
 
@@ -50,6 +51,11 @@ export interface ViewDocument {
   hidden: TopoHidden
   /** The hand-picked device set; null = the filters decide. */
   devices: string[] | null
+  /** Virtual chassis placed on a hand-picked map (`filters.chassis`):
+   * their members are on it as they are when it loads. */
+  placedChassis: string[] | null
+  /** Per virtual chassis id, how the Diagram draws it (`state.chassis`). */
+  chassisLooks: Record<string, ChassisLook>
   /** Top-level state keys this version does not model, written back as
    * they came so an older page never drops a newer view's data. */
   extra: Record<string, unknown>
@@ -74,6 +80,7 @@ const MODELLED = new Set([
   "links",
   "nodes",
   "notes",
+  "chassis",
 ])
 
 export function emptyDocument(over: Partial<ViewDocument> = {}): ViewDocument {
@@ -86,6 +93,8 @@ export function emptyDocument(over: Partial<ViewDocument> = {}): ViewDocument {
     notes: [],
     hidden: NO_TOPO_HIDDEN,
     devices: null,
+    placedChassis: null,
+    chassisLooks: {},
     extra: {},
     ...over,
   }
@@ -111,7 +120,11 @@ export function docFromState(
 ): ViewDocument {
   const s: TopologyViewState = isObj(state) ? state : {}
   const noFilters: TopologyViewFilters = {}
-  const { devices, ...filters } = isObj(s.filters) ? s.filters : noFilters
+  const {
+    devices,
+    chassis: placed,
+    ...filters
+  } = isObj(s.filters) ? s.filters : noFilters
   const zones: DocZones = {}
   if (isObj(s.zones_by_style))
     for (const style of DOC_STYLES) {
@@ -131,8 +144,26 @@ export function docFromState(
     devices: Array.isArray(devices)
       ? devices.filter((x): x is string => typeof x === "string")
       : null,
+    placedChassis: Array.isArray(placed)
+      ? placed.filter((x): x is string => typeof x === "string")
+      : null,
+    chassisLooks: readLooks((s as { chassis?: unknown }).chassis),
     extra,
   }
+}
+
+/** A view's `state.chassis`, tolerating anything that is not one. */
+function readLooks(raw: unknown): Record<string, ChassisLook> {
+  if (!isObj(raw)) return {}
+  const out: Record<string, ChassisLook> = {}
+  for (const [id, v] of Object.entries(raw)) {
+    if (!isObj(v)) continue
+    const look: ChassisLook = {}
+    if (v.orient === "v" || v.orient === "h") look.orient = v.orient
+    if (v.off === true) look.off = true
+    if (look.orient || look.off) out[id] = look
+  }
+  return out
 }
 
 /**
@@ -151,14 +182,19 @@ export function toViewState(
     filters?: Record<string, unknown>
     /** The device set on screen, when the page owns it. */
     devices?: string[] | null
+    /** The placed virtual chassis on screen, when the page owns them. */
+    chassis?: string[] | null
     /** The style on screen, for the legacy single-map `positions`. */
     style?: string
   } = {}
 ): TopologyViewState {
   const devices = opts.devices !== undefined ? opts.devices : doc.devices
+  const placed = opts.chassis !== undefined ? opts.chassis : doc.placedChassis
   const filters: TopologyViewFilters = { ...doc.filters, ...opts.filters }
   delete filters.devices
+  delete filters.chassis
   if (devices) filters.devices = devices
+  if (devices && placed?.length) filters.chassis = placed
   const state: TopologyViewState = {
     ...doc.extra,
     filters,
@@ -171,6 +207,8 @@ export function toViewState(
   if (Object.keys(doc.links).length) state.links = doc.links
   if (Object.keys(doc.nodes).length) state.nodes = doc.nodes
   if (doc.notes.length) state.notes = doc.notes
+  if (Object.keys(doc.chassisLooks).length)
+    (state as Record<string, unknown>).chassis = doc.chassisLooks
   return state
 }
 
@@ -234,7 +272,9 @@ export function carryIntoDiagram(
 /** No view's map as this browser stores it: a saved view's `state`,
  * without a device set (No view has none). */
 export function storedDefaultMap(doc: ViewDocument): string {
-  return JSON.stringify(toViewState({ ...doc, devices: null, extra: {} }))
+  return JSON.stringify(
+    toViewState({ ...doc, devices: null, placedChassis: null, extra: {} })
+  )
 }
 
 /** A stored No view map as a document; null when there is none or it
@@ -251,7 +291,12 @@ export function readDefaultMap(
     return null
   }
   if (!isObj(state)) return null
-  return { ...docFromState(state, styleOf), devices: null, extra: {} }
+  return {
+    ...docFromState(state, styleOf),
+    devices: null,
+    placedChassis: null,
+    extra: {},
+  }
 }
 
 export type DocAction =
@@ -276,6 +321,21 @@ export type DocAction =
     }
   /** Devices leave the set, and everything that belonged to them goes. */
   | { type: "removeDevices"; ids: readonly string[] }
+  /** Virtual chassis placed on the hand-picked map: their members come
+   * with them as they are, so members already on the map as devices leave
+   * the device set (`drop`). `place` pins their frames in `style`. */
+  | {
+      type: "addChassis"
+      ids: readonly string[]
+      drop?: readonly string[]
+      style?: DocStyle
+      place?: PosMap
+    }
+  /** Placed chassis taken off the map, with their frames' places and
+   * their looks. */
+  | { type: "removeChassis"; ids: readonly string[] }
+  /** One chassis' look on this view; null: the view's. */
+  | { type: "setChassisLook"; id: string; value: ChassisLook | null }
   | { type: "setRegions"; style: DocStyle; regions: Zone[] }
   | { type: "setLink"; key: string; value: TopologyLinkOverride | null }
   | { type: "setNode"; id: string; value: NodeOverride | null }
@@ -371,6 +431,58 @@ export function docReducer(doc: ViewDocument, a: DocAction): ViewDocument {
         hidden,
       }
       return same(doc, next) ? doc : next
+    }
+    case "addChassis": {
+      const have = new Set(doc.placedChassis ?? [])
+      const fresh = a.ids.filter((id) => !have.has(id))
+      const drop = new Set(a.drop ?? [])
+      const devices = doc.devices?.filter((id) => !drop.has(id)) ?? null
+      let positions = doc.positions
+      if (a.style && a.place && Object.keys(a.place).length) {
+        const cur = positions[a.style] ?? {}
+        const merged = { ...cur, ...a.place }
+        if (!same(cur, merged))
+          positions = withStyle(positions, a.style, merged)
+      }
+      const next: ViewDocument = {
+        ...doc,
+        devices: devices ?? (fresh.length ? [] : null),
+        placedChassis: fresh.length
+          ? [...(doc.placedChassis ?? []), ...fresh]
+          : doc.placedChassis,
+        positions,
+      }
+      return same(doc, next) ? doc : next
+    }
+    case "removeChassis": {
+      const gone = new Set(a.ids)
+      const frames = new Set(a.ids.map((id) => `vc:${id}`))
+      const positions: DocPositions = {}
+      for (const [style, map] of Object.entries(doc.positions) as [
+        DocStyle,
+        PosMap,
+      ][]) {
+        const kept = Object.entries(map).filter(([id]) => !frames.has(id))
+        if (kept.length) positions[style] = Object.fromEntries(kept)
+      }
+      const chassisLooks = Object.fromEntries(
+        Object.entries(doc.chassisLooks).filter(([id]) => !gone.has(id))
+      )
+      const placed = doc.placedChassis?.filter((id) => !gone.has(id)) ?? null
+      const next: ViewDocument = {
+        ...doc,
+        placedChassis: placed?.length ? placed : null,
+        positions,
+        chassisLooks,
+      }
+      return same(doc, next) ? doc : next
+    }
+    case "setChassisLook": {
+      if (same(doc.chassisLooks[a.id] ?? null, a.value)) return doc
+      const chassisLooks = { ...doc.chassisLooks }
+      if (a.value) chassisLooks[a.id] = a.value
+      else delete chassisLooks[a.id]
+      return { ...doc, chassisLooks }
     }
     case "setRegions": {
       const next = a.regions.length ? a.regions : null

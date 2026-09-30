@@ -469,6 +469,55 @@ greyed out (it would change nothing).
   blip) is asked for once more, then drawn as the device's card - and a
   note says how many were, so the file can be made again.
 
+### Virtual chassis stacks
+
+A switch stack is drawn as one thing. The members of a
+[virtual chassis](../dcim/virtual-chassis.md) stand together in a grey
+frame, packed a few pixels apart, with a slim strip carrying the chassis'
+name along the frame's side - down its left side when the members stand
+top to bottom, across its top when they stand left to right. Click the
+name to open the chassis; drag the strip (or any member) to move the stack,
+members and all. Hover the strip for its member count and the cables
+between members.
+
+- **Which chassis stack:** every chassis with two or more members on the
+  map, and every chassis [placed on a hand-picked map](#building-a-diagram)
+  even with one. Not on a map grouped by site or location, or a trace map.
+  Members stand by their member number, those without one last by name.
+- **Display ▸ Virtual chassis:** *Off*, *Top-down* or *Left-right* - how
+  the chassis on the map stack unless one has its own setting. Saved with
+  the view and in the link (`stack=`). A map not arranged by hand yet
+  stacks them top to bottom; a view arranged before stacks existed keeps its
+  arrangement until this is turned on.
+- **Each chassis on its own:** select a stack for *Top-down*, *Left-right*,
+  *Unstack* and *Open virtual chassis* in the toolbar above it, or
+  right-click it (or right-click a member ▸ *Virtual chassis*) for the same
+  and *Hide stack*, which hides every member. *Unstack* draws that chassis'
+  members apart on this view; picking *Top-down* or *Left-right* on a member
+  stacks it again. Each is one undo step, saved with the view.
+- **Members follow the chassis:** the map shows the chassis as it is when
+  it loads. A member added to the chassis joins the stack, one removed
+  leaves it, and a hidden member drops out of it. A chassis placed on a
+  hand-picked map brings its members with it.
+- **Sizes:** cards in a top-to-bottom stack are as wide as the widest, in
+  a left-to-right stack as tall as the tallest. Photos keep their own size,
+  lined up on their left edges (or tops), each with its caption.
+- **Cables:** a member's cables leave by its outer sides, never by a side
+  facing another member: a top-to-bottom stack takes them on its members'
+  left and right sides (and the top of the first, the bottom of the last),
+  a left-to-right stack on their tops and bottoms. A Cyclical cable to a
+  member is drawn Bendy. Photos taking their cables on their ports keep
+  their leads running up or down, so a top-to-bottom stack of such photos
+  leaves a lead channel between members. The cables between two members of
+  one stack - stacking cables, a peer link - are not drawn: the frame stands
+  for them.
+- **Where it stands:** the arrangement keeps the frame's place; its members
+  are packed round it whatever size they are drawn at, so a chassis gaining
+  a member grows where it stands and what it now covers moves out of its
+  way. A map arranged before it stacked puts the stack where its members
+  stood on average. Layer bands sort and carry a stack as one card, by its
+  master's role.
+
 ## Big graphs
 
 These keep a large map legible:
@@ -950,7 +999,10 @@ sideways lead would run over the other cabled ports in its row. A Cyclical
 arc still leaves by the side it bulges to. With Elbow lines, a
 distribution row on *Up and down* above an access row on *Left and right*
 draws each uplink out of the bottom of the distribution switch and into
-the side of the access switch, with one bend.
+the side of the access switch - the way such a diagram is drawn by hand.
+A [virtual chassis stack](#virtual-chassis-stacks) in a row is in the row
+its frame is in; where the row leaves a member no side, the stack's own
+rule wins.
 
 **One arrangement, every size.** Simple cards, Detailed cards and photos
 are different sizes, and the arrangement is shared. Drawn in a mode or face
@@ -1319,7 +1371,8 @@ is open it acts on what you right-clicked, not on what is selected.
 
 | Right-click | Items, in order |
 |---|---|
-| A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Card lines…*, and *Role card lines* for admins |
+| A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Card lines…*, *Role card lines* for admins, and on a member of a virtual chassis *Virtual chassis* ▸ its stack's items |
+| A virtual chassis' stack | *Open virtual chassis*; *Top-down*, *Left-right*, *Unstacked*; *Hide stack*; on a hand-picked map where it was placed, *Remove from map* |
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
 | A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide*. A grouped map's line has no menu: hide one of its sites or locations instead |
 | A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), on a row *Cables to other bands* ▸ *Auto*, *Up and down*, *Left and right*, *Delete* |
@@ -1361,6 +1414,7 @@ back button and a reload all keep it.
 | `mode` | Diagram: `detailed` (default), `simple` |
 | `face` | Diagram: devices as `card` (default) or `photo` - see [Photo nodes](#photo-nodes) |
 | `anchor` | Diagram: cables meet a photo at its `ports` (default) or its `edge` |
+| `stack` | Diagram: virtual chassis `off`, stacked top to bottom (`v`) or left to right (`h`) - see [Virtual chassis stacks](#virtual-chassis-stacks) |
 | `line` | Diagram: `straight` (default), `elbow`, `bendy`, `cyclical` |
 | `labels` | Diagram: the link labels, comma-separated `subnet`, `ip`, `port` (all by default); empty for none |
 | `view` | a saved view's id, or `none` for No view |
@@ -1498,8 +1552,11 @@ own line (curves follow draw.io's curved rule, so the draw.io file
 matches); a breakout's split points; the subnet and count chips where the
 map shows them (a chip the map only shows on hover is left out); bands,
 titled as on the canvas - a band of several layers with its sub-row badges
-and the rules between them - and zones; and the [notes](#notes), over
-everything. The monitoring pill is
+and the rules between them - and zones; each
+[virtual chassis stack](#virtual-chassis-stacks) as its frame with the
+name on its strip, linked to the chassis (in a file of the other mode its
+members are packed again at that mode's sizes); and the [notes](#notes),
+over everything. The monitoring pill is
 the one on screen when the file is made. Selection, hover, search dimming
 and hidden devices or link families never reach a file.
 
@@ -1541,7 +1598,10 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   whole band moves as one. Zones
   hold their cards the same way. A side band is a shape behind the rows
   with its label turned to read upwards, as a card can sit in only one
-  container. A card in a swimlane is drawn with it, before the lines, so a
+  container. A virtual chassis' stack is a swimlane of its own holding its
+  members - its name down the side of a top-to-bottom stack
+  (`horizontal=0`), across the top of a left-to-right one - linked to the
+  chassis, inside the band its frame is in. A card in a swimlane is drawn with it, before the lines, so a
   Straight or Cyclical line that crosses such a card passes over it, while
   one crossing a card outside every band passes under it (Elbow and Bendy
   lines go round the cards they do not connect).

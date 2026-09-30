@@ -266,6 +266,9 @@ export type DiagramCardData = TopoNode["data"] & {
   /** The device's monitoring state, merged in outside the build so a
    * refresh never re-lays the map out. */
   monitor?: CheckStatus | null
+  /** A member of a virtual chassis drawn as a stack: its frame node's id
+   * (`vc:<chassis id>`). */
+  chassis?: string
   diagram: {
     box: CardBox
     /** Detailed mode: one per cabled interface, in order along each side. */

@@ -8,6 +8,7 @@ import {
   LANE,
   MIN_STUB,
   obstacles,
+  pathClear,
   RouteCache,
   SHARED_STUB,
   sharedPins,
@@ -245,5 +246,54 @@ describe("RouteCache", () => {
     expect(cache.route(c1, o2)).toEqual(elbowBase(c1, o2))
     expect(cache.route(c2, o2)).toEqual(elbowBase(c2, o2))
     expect(cache.route(c1, o2).pts).not.toEqual(elbowBase(c1, o).pts)
+  })
+})
+
+describe("strips", () => {
+  const strip: Rect = { x: 0, y: 0, w: 20, h: 200 }
+
+  it("lets a run cross a strip but never run along it", () => {
+    const across = obstacles([], [["s", { x: 0, y: 0, w: 200, h: 20 }]])
+    expect(
+      pathClear(
+        across,
+        [
+          { x: 50, y: -40 },
+          { x: 50, y: 60 },
+        ],
+        []
+      )
+    ).toBe(true)
+    expect(
+      pathClear(
+        across,
+        [
+          { x: -40, y: 10 },
+          { x: 240, y: 10 },
+        ],
+        []
+      )
+    ).toBe(false)
+    const down = obstacles([], [["s", strip, "v"]])
+    expect(
+      pathClear(
+        down,
+        [
+          { x: -40, y: 100 },
+          { x: 60, y: 100 },
+        ],
+        []
+      )
+    ).toBe(true)
+    expect(
+      pathClear(
+        down,
+        [
+          { x: 10, y: -40 },
+          { x: 10, y: 240 },
+        ],
+        []
+      )
+    ).toBe(false)
   })
 })
