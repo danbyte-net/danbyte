@@ -1108,6 +1108,19 @@ class TenantSettings(TimestampedModel):
     topology_card_fields = models.JSONField(null=True, blank=True, default=None)
     topology_card_role_overrides = models.JSONField(default=dict, blank=True)
 
+    # The saved view a bare /topology opens for everyone in the tenant; null =
+    # No view. Not an override group: there is no deployment-wide view to
+    # inherit. A pointer here rather than a flag on the view, so setting it
+    # never bumps the view's updated_at (its stale-save check); deleting the
+    # view clears it. Written through /api/topology-views/default/.
+    default_topology_view = models.ForeignKey(
+        "api.TopologyView",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
     # ─── site separation (its OWN override group, mirrors DeploymentSettings)
     # Same reasoning as the popover group: a tenant flipping separation must
     # not be forced to fork the whole sharing group to do it.

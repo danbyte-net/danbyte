@@ -121,6 +121,7 @@ from .serializers import (
     ModuleInterfaceTemplateSerializer,
     ModuleSerializer,
     ModuleTypeMiniSerializer,
+    TopologyDefaultViewSerializer,
     TopologyViewSerializer,
     TopologyViewSummarySerializer,
     ModuleTypeSerializer,
@@ -5334,6 +5335,9 @@ class TopologyViewViewSet(TenantScopedViewSet):
     queryset = TopologyView.objects.all().order_by(NATURAL_NAME)
     serializer_class = TopologyViewSerializer
     pagination_class = StandardPagination
+    # Reading the tenant's default takes view on topology views, like the
+    # views themselves; who may set it is decided in the action.
+    rbac_action_map = {"default": "view"}
 
     def _picker(self) -> bool:
         """``?picker=1`` on the list: names only, never the (large) state."""
@@ -5353,6 +5357,59 @@ class TopologyViewViewSet(TenantScopedViewSet):
 
     def perform_create(self, serializer):
         serializer.save(tenant=self._tenant_or_403())
+
+    @extend_schema(
+        methods=["GET"],
+        summary="The saved view a bare /topology opens in this tenant",
+        request=None,
+        responses=TopologyDefaultViewSerializer,
+    )
+    @extend_schema(
+        methods=["PUT"],
+        summary="Set or clear the tenant's default topology view",
+        request=TopologyDefaultViewSerializer,
+        responses=TopologyDefaultViewSerializer,
+    )
+    @action(detail=False, methods=["get", "put"])
+    def default(self, request):
+        """The view a bare ``/topology`` opens for everyone in the tenant;
+        ``{"id": null}`` is No view, and so is a default the caller can't
+        see. Tenant admins set it, and anyone granted ``set_default`` - on
+        the views that grant's row limits allow."""
+        from auth_api import rbac
+        from auth_api.permissions import can_manage_admin
+        from core.models import TenantSettings
+
+        tenant = self._tenant_or_403()
+        views = self.get_queryset()
+        if request.method == "GET":
+            want = (
+                TenantSettings.objects.filter(tenant=tenant)
+                .values_list("default_topology_view", flat=True).first()
+            )
+            seen = views.filter(pk=want).exists() if want else False
+            return Response({"id": str(want) if seen else None})
+
+        user = request.user
+        admin = can_manage_admin(user, tenant)
+        if not admin and not rbac.has_action(user, tenant, "topologyview", "set_default"):
+            raise PermissionDenied("Setting the default view needs set_default on topology views.")
+        body = TopologyDefaultViewSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        want = body.validated_data["id"]
+        view = None
+        if want is not None:
+            if not admin:
+                views = rbac.restrict_queryset(
+                    views, user, tenant, "topologyview", "set_default")
+            view = views.defer("state").filter(pk=want).first()
+            if view is None:
+                raise ValidationError({"id": "No such view."})
+        row = TenantSettings.for_tenant(tenant)
+        if row.default_topology_view_id != (view.pk if view else None):
+            row.default_topology_view = view
+            row.save(update_fields=["default_topology_view", "updated_at"])
+        return Response({"id": str(view.pk) if view else None})
 
 
 class ModuleTypeViewSet(TenantScopedViewSet):

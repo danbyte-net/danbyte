@@ -782,6 +782,207 @@ class ViewPickerTests(_Base):
         self.assertEqual(full[0]["state"], {"positions": {"dev:x": [1, 2]}})
 
 
+class DefaultViewTests(_Base):
+    """``/api/topology-views/default/``: the saved view a bare /topology
+    opens for the tenant. Tenant admins set it, and anyone granted
+    ``set_default`` on topology views - within that grant's row limits."""
+
+    URL = "/api/topology-views/default/"
+
+    def setUp(self):
+        super().setUp()
+        from .models import TopologyView
+
+        self.core = TopologyView.objects.create(
+            tenant=self.tenant, name="core", state={"filters": {}})
+        self.edge = TopologyView.objects.create(
+            tenant=self.tenant, name="edge", state={"filters": {}})
+
+    def _put(self, view):
+        vid = str(view.pk) if view is not None else None
+        return self.client.put(self.URL, {"id": vid}, format="json")
+
+    def _default(self):
+        return self.client.get(self.URL).json()["id"]
+
+    def _login(self, user, tenant=None):
+        self.client.force_login(user)
+        session = self.client.session
+        session["current_tenant_id"] = str((tenant or self.tenant).id)
+        session.save()
+
+    def _member(self, *grants):
+        """A tenant member holding ``grants``: ``(types, actions, constraints)``."""
+        from auth_api.models import ObjectPermission, UserProfile
+
+        n = User.objects.count()
+        user = User.objects.create_user(f"member{n}", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        for i, (types, actions, constraints) in enumerate(grants):
+            perm = ObjectPermission.objects.create(
+                name=f"g{n}-{i}", object_types=list(types), actions=list(actions),
+                constraints=constraints,
+            )
+            perm.users.add(user)
+            perm.tenants.add(self.tenant)
+        self._login(user)
+        return user
+
+    def _stored(self):
+        from core.models import TenantSettings
+
+        return (
+            TenantSettings.objects.filter(tenant=self.tenant)
+            .values_list("default_topology_view", flat=True).first()
+        )
+
+    def test_nothing_set_reads_null_and_writes_no_row(self):
+        from core.models import TenantSettings
+
+        resp = self.client.get(self.URL)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json(), {"id": None})
+        self.assertFalse(TenantSettings.objects.filter(tenant=self.tenant).exists())
+
+    def test_an_admin_sets_and_clears_it(self):
+        resp = self._put(self.core)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json(), {"id": str(self.core.pk)})
+        self.assertEqual(self._default(), str(self.core.pk))
+        resp = self._put(None)
+        self.assertEqual(resp.json(), {"id": None})
+        self.assertIsNone(self._default())
+
+    def test_a_tenant_admin_sets_it_without_the_verb(self):
+        self._member(
+            (["user"], ["view", "change"], None),
+            (["topologyview"], ["view"], None),
+        )
+        resp = self._put(self.edge)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(self._stored(), self.edge.pk)
+
+    def test_editing_views_is_not_enough(self):
+        self._member((["topologyview"], ["view", "add", "change", "delete"], None))
+        resp = self._put(self.core)
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertIsNone(self._stored())
+        # Reading it is fine.
+        self.assertEqual(self.client.get(self.URL).status_code, 200)
+
+    def test_the_built_in_operator_may_not(self):
+        from django.contrib.auth.models import Group
+
+        from auth_api.builtin_groups import ensure_builtin_groups
+        from auth_api.models import UserProfile
+
+        ensure_builtin_groups()
+        user = User.objects.create_user("op", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        user.groups.add(Group.objects.get(name="Operator"))
+        self._login(user)
+        self.assertEqual(self._put(self.core).status_code, 403)
+        self.assertIsNone(self._stored())
+
+    def test_the_set_default_grant_may(self):
+        self._member((["topologyview"], ["view", "set_default"], None))
+        resp = self._put(self.core)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(self._stored(), self.core.pk)
+        self.assertEqual(self._put(None).status_code, 200)
+        self.assertIsNone(self._stored())
+
+    def test_set_default_keeps_to_its_row_limits(self):
+        self._member(
+            (["topologyview"], ["view"], None),
+            (["topologyview"], ["set_default"], {"name": "core"}),
+        )
+        self.assertEqual(self._put(self.core).status_code, 200)
+        resp = self._put(self.edge)
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("id", resp.json())
+        self.assertEqual(self._stored(), self.core.pk)
+
+    def test_another_tenants_view_and_junk_ids_are_400(self):
+        from .models import TopologyView
+
+        other = Tenant.objects.create(org=self.org, name="B", slug="b")
+        theirs = TopologyView.objects.create(tenant=other, name="theirs")
+        for body in ({"id": str(theirs.pk)}, {"id": "nope"}, {"id": 7}, {}, []):
+            with self.subTest(body=body):
+                resp = self.client.put(self.URL, body, format="json")
+                self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIsNone(self._stored())
+
+    def test_it_is_per_tenant(self):
+        other = Tenant.objects.create(org=self.org, name="B", slug="b")
+        self._put(self.core)
+        self._login(User.objects.get(username="admin"), other)
+        self.assertIsNone(self._default())
+        self.assertEqual(self._put(self.core).status_code, 400)
+        self._login(User.objects.get(username="admin"))
+        self.assertEqual(self._default(), str(self.core.pk))
+
+    def test_deleting_the_view_clears_it(self):
+        self._put(self.core)
+        resp = self.client.delete(f"/api/topology-views/{self.core.pk}/")
+        self.assertEqual(resp.status_code, 204, resp.content)
+        self.assertIsNone(self._default())
+        self.assertIsNone(self._stored())
+
+    def test_a_default_the_caller_cannot_see_reads_null(self):
+        self._put(self.core)
+        self._member((["topologyview"], ["view"], {"name": "edge"}))
+        self.assertIsNone(self._default())
+        self._member((["device"], ["view"], None))
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+
+    def test_setting_it_leaves_the_view_as_saved(self):
+        url = f"/api/topology-views/{self.core.pk}/"
+        before = self.client.get(url).json()
+        self._put(self.core)
+        self.assertEqual(self.client.get(url).json()["updated_at"], before["updated_at"])
+        # So a save from the copy opened before is no stale save.
+        resp = self.client.patch(
+            url,
+            {"state": {"filters": {"a": 1}}, "base_updated_at": before["updated_at"]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_the_change_is_logged(self):
+        from audit.models import ChangeAction, ChangeLogEntry
+        from core.models import TenantSettings
+
+        TenantSettings.for_tenant(self.tenant)
+        self._put(self.core)
+        self._put(self.edge)
+        entries = ChangeLogEntry.objects.filter(
+            object_type="core.tenantsettings", action=ChangeAction.UPDATE,
+        ).order_by("timestamp")
+        self.assertEqual(
+            [e.changes for e in entries],
+            [
+                {"default_topology_view": {"old": None, "new": str(self.core.pk)}},
+                {"default_topology_view": {
+                    "old": str(self.core.pk), "new": str(self.edge.pk)}},
+            ],
+        )
+        self.assertEqual(entries[0].user.username, "admin")
+        # Putting the same view again changes nothing and logs nothing.
+        self._put(self.edge)
+        self.assertEqual(entries.count(), 2)
+
+    def test_the_verb_is_offered_on_topology_views_only(self):
+        from auth_api.object_types import ACTIONS, CAPABILITY_VERBS
+
+        self.assertIn("set_default", ACTIONS)
+        self.assertEqual(
+            [slug for slug, verbs in CAPABILITY_VERBS.items() if "set_default" in verbs],
+            ["topologyview"],
+        )
+
+
 class PassThroughAndCrashTests(_Base):
     """Feature A: trace no longer crashes on console/power/aux terminations,
     and PDU outlet→inlet is a walkable pass-through (inlet→outlet is not)."""

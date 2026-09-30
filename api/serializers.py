@@ -4280,6 +4280,13 @@ class TopologyViewSummarySerializer(NumIdModelSerializer):
         read_only_fields = fields
 
 
+class TopologyDefaultViewSerializer(serializers.Serializer):
+    """The saved view a bare ``/topology`` opens for the tenant; null = No
+    view. The body of ``/api/topology-views/default/`` both ways."""
+
+    id = serializers.UUIDField(allow_null=True)
+
+
 class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "moduletype"
 

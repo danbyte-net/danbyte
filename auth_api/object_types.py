@@ -24,7 +24,7 @@ from django.apps import apps
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
-           "view_credits"]
+           "view_credits", "set_default"]
 
 # Types an "all object types" ("*") grant does NOT reach. Adding or changing
 # these IS administration - accounts, group membership and the grants
@@ -66,6 +66,9 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     "notificationchannel": ["subscribe"],
     # An agreement's service credits are money; seeing them is its own grant.
     "slaagreement": ["view_credits"],
+    # Choose the view a bare /topology opens for the whole tenant. Tenant
+    # admins may without it; its row limits say which views may be chosen.
+    "topologyview": ["set_default"],
     # Set or clear is_superuser on accounts. Superuser is global, so ONLY a
     # tenant-unscoped grant carrying this verb counts (checked with
     # tenant=None); a tenant-scoped one is ignored by construction.

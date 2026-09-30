@@ -1732,10 +1732,24 @@ and the query count doesn't grow with the number of devices.
 
 ### Saved views API
 
-`/api/topology-views/` is a plain CRUD endpoint, gated by the `topologyview`
+`/api/topology-views/` is a CRUD endpoint, gated by the `topologyview`
 view, add, change and delete permissions. `GET /api/topology-views/?picker=1`
 lists `{id, numid, name, updated_at}` only, without `state`, for the views
-select; one view's state can run to megabytes.
+select; one view's state can run to megabytes. `GET` of a view that is gone,
+or another tenant's, is a 404.
+
+**Default view.** `GET /api/topology-views/default/` returns `{"id": ...}`,
+the view a bare `/topology` opens for the tenant, or `null` for No view. It
+needs view on topology views, and a default the caller can't see (row limits)
+reads as `null`. `PUT` with `{"id": "<view id>"}` sets it and `{"id": null}`
+clears it. It is allowed for superusers and tenant admins, and for anyone with
+the `set_default` capability on topology views, whose row limits decide which
+views they may choose (a 400 `{"id": ...}` otherwise, as for another tenant's
+view or an id that is not a UUID). The default is kept on the tenant's
+settings (`TenantSettings.default_topology_view`) rather than on the view, so
+setting it never changes the view's `updated_at` or its stale-save check;
+deleting the view clears it. The change log records it as a tenant-settings
+update.
 
 **Stale saves.** A `PATCH` or `PUT` may carry `base_updated_at`: the
 `updated_at` of the copy the edits started from. If the view has been saved
