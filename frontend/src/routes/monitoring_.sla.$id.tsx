@@ -63,6 +63,7 @@ import {
 import {
   exclusionMembers,
   memberRowIds,
+  removableRowIds,
   selectorSummary,
 } from "@/components/monitoring/sla-members"
 import { fmtSpan } from "@/components/monitoring/status-strip"
@@ -397,21 +398,31 @@ function Members({
         `/api/monitoring/sla-members/?agreement=${a.id}&current=1&page_size=500`
       ),
   })
-  // A folded stack's row stands for several member rows: remove them all.
+  // A folded stack's row stands for several member rows: remove the ones
+  // still in. Every request runs; the first failure is reported after.
   const remove = useMutation({
-    mutationFn: (ids: string[]) =>
-      Promise.all(
+    mutationFn: async (ids: string[]) => {
+      const done = await Promise.allSettled(
         ids.map((id) =>
           api<void>(`/api/monitoring/sla-members/${id}/`, { method: "DELETE" })
         )
-      ),
-    onSuccess: () => {
-      toast.success("Member removed")
+      )
+      const failed = done.find(
+        (r): r is PromiseRejectedResult => r.status === "rejected"
+      )
+      if (failed) throw failed.reason
+    },
+    onSuccess: () => toast.success("Member removed"),
+    onError: (e) => apiErrorToast(e),
+    onSettled: () => {
       members.refetch()
       onChanged()
     },
-    onError: (e) => apiErrorToast(e),
   })
+  const current = useMemo(
+    () => new Set((members.data?.results ?? []).map((m) => m.id)),
+    [members.data]
+  )
   const canEdit = canDo("slaagreement", "change")
   const columns = useMemo<ColumnDef<SlaMemberFigure>[]>(() => {
     const cols = slaMemberColumns()
@@ -422,20 +433,22 @@ function Members({
         id: "actions",
         enableSorting: false,
         header: "",
-        cell: ({ row }) =>
-          row.original.member_id ? (
+        cell: ({ row }) => {
+          const ids = removableRowIds(row.original, current)
+          return ids.length ? (
             <Button
               size="icon-sm"
               variant="ghost"
               aria-label={`Remove ${row.original.name}`}
-              onClick={() => remove.mutate(memberRowIds(row.original))}
+              onClick={() => remove.mutate(ids)}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
-          ) : null,
+          ) : null
+        },
       },
     ]
-  }, [canEdit, remove])
+  }, [canEdit, remove, current])
   // Members added since the last computation show up once it runs; list
   // them so an add is never invisible.
   const computed = new Set((figures?.members ?? []).flatMap(memberRowIds))

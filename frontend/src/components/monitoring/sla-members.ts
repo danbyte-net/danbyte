@@ -23,6 +23,17 @@ export function memberRowIds(
   return m.member_ids ?? (m.member_id ? [m.member_id] : [])
 }
 
+/** The rows Remove acts on. A folded stack gives up only its rows that are
+ * still in (`current`): removing a row that already left deletes it, and its
+ * history and exclusions with it. A single row goes as it always has. */
+export function removableRowIds(
+  m: Pick<SlaMemberFigure, "member_id" | "member_ids">,
+  current: ReadonlySet<string>
+): string[] {
+  const ids = memberRowIds(m)
+  return ids.length > 1 ? ids.filter((id) => current.has(id)) : ids
+}
+
 /** Names for the Exclusions tab: `table` names every member row, a folded
  * stack's too; `options` offers each figure row once, by the row an
  * exclusion is written against (it then excuses the whole stack). */
@@ -92,4 +103,26 @@ export function selectorFieldsSet(
     g.match_tags.length ? "Tags" : "",
     g.match_name ? "Name" : "",
   ].filter(Boolean)
+}
+
+/** Whether adding a first role (or type) to a selector that already matches
+ * on other fields drops the devices it matches now that lack it: the fields
+ * are AND'd, values within one field OR'd. */
+export function selectorShrinks(
+  g: Pick<
+    SlaCheckGroup,
+    | "use_selector"
+    | "match_sites"
+    | "match_roles"
+    | "match_device_types"
+    | "match_platforms"
+    | "match_tags"
+    | "match_name"
+  >,
+  kind: "roles" | "types"
+): boolean {
+  const own = kind === "roles" ? g.match_roles : g.match_device_types
+  return (
+    g.use_selector && own.length === 0 && selectorFieldsSet(g, kind).length > 0
+  )
 }

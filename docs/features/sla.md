@@ -201,10 +201,15 @@ add it through the API as a member with `excluded: true`.
 
 The **Device role** and **Device type** kinds under **Add member** add to this
 selector and switch it on; the fields already set stay, and the dialog names
-the ones that narrow the match. A selector match counts from the start of the
-period, not from when it was added, so it also changes last period's figure
-while that period is inside its seven days. To count a device only from
-today, add the device itself.
+the ones that narrow the match. Adding can also shrink the group: the fields
+must all match, so the first role, or the first type, on a selector that
+already matches on other fields drops every device it matches now that lacks
+the new pick. The dialog warns when it will. Another role beside roles
+already set, or another type beside types, only adds. A selector match counts
+from the start of the period, not from when it was added, so a change also
+moves last period's figure while that period is inside its seven days, for
+devices that join and devices that leave. To count a device only from today,
+add the device itself.
 
 ## Members
 
@@ -252,7 +257,8 @@ its [virtual chassis](../dcim/virtual-chassis.md):
   stack whose members all have their own addresses, such as a firewall pair,
   stays one member per device.
 - **One row** - named after the chassis, with the devices it stands for:
-  "via sw1-2, sw1-3". Removing it removes every row it stands for; a stack
+  "via sw1-2, sw1-3". Removing it removes the rows it stands for that are
+  still in; rows that already left stay, with their history. A stack
   brought in by a selector stays until the selector stops matching. A device
   in the stack is never scored on its own address. To measure one as well, add its address as an IP address member.
   The same stack in two groups is two rows, like any member.
@@ -261,17 +267,25 @@ its [virtual chassis](../dcim/virtual-chassis.md):
   excluding one member device keeps out only that device.
 - **Maintenance** - planned maintenance on the chassis, or on the member whose
   address is measured, excuses the stack. Work on another member does not.
+- **Redundancy group** - the first one set on the chassis row, the master's
+  row, the measured member's row, then the other members' rows by position.
+  A master in a redundancy group keeps the stack in it.
 - **Exclusions** - an exclusion on any of the stack's rows excuses the stack.
+  A new one goes on a row that is still in, the chassis row or the master's
+  first.
 - **Membership as it is now** - chassis membership is read live, like a
   selector. The open period and a closed one still inside its seven days are
   recomputed with it; frozen periods keep their figures.
 
 An agreement that already held stack members without addresses changes when
-it is next computed. Availability stays the same, because those members were
-never measured, but coverage rises, and with **Average** the budget spent
-rises too: the same downtime is now spread over fewer units. Without an *At
-risk below* level the state can turn *At risk*, and burn alerts can fire, in
-the open period.
+it is next computed. Where the member that is measured was already in it,
+and no other row of the stack carries a different redundancy group,
+availability stays the same: the others were never measured. A stack whose
+measured member was not in the agreement is now measured, where before it had
+no data. Coverage rises, and with **Average** the budget spent rises too: the
+same downtime is now spread over fewer units. Without an *At risk below*
+level the state can turn *At risk*, and burn alerts can fire, in the open
+period.
 
 ### Resetting an address {#resetting-an-address}
 

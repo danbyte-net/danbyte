@@ -32,7 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { selectorFieldsSet } from "./sla-members"
+import { selectorFieldsSet, selectorShrinks } from "./sla-members"
 
 /** A member kind: an object, or a role or type the group's selector joins. */
 type MemberKind = SlaObjectType | "role" | "type"
@@ -84,10 +84,10 @@ export function SlaMemberDialog({
   const [group, setGroup] = useState<string | null>(groups[0]?.id ?? null)
   const bySelector = type === "role" || type === "type"
   const picked = groups.find((g) => g.id === group)
+  const field = type === "role" ? "roles" : "types"
   const narrowedBy =
-    picked && bySelector
-      ? selectorFieldsSet(picked, type === "role" ? "roles" : "types")
-      : []
+    picked && bySelector ? selectorFieldsSet(picked, field) : []
+  const shrinks = !!picked && bySelector && selectorShrinks(picked, field)
   const [redundancy, setRedundancy] = useState("")
   const [monitorIp, setMonitorIp] = useState<string | null>(null)
   const circuits = useQuery({
@@ -247,6 +247,13 @@ export function SlaMemberDialog({
               {narrowedBy.length > 0 && (
                 <p>
                   Also narrowed by the selector&apos;s {narrowedBy.join(", ")}.
+                </p>
+              )}
+              {shrinks && (
+                <p className="text-amber-600 dark:text-amber-400">
+                  Devices the selector matches now leave the group, for the
+                  whole period, unless they{" "}
+                  {type === "role" ? "have this role" : "are this type"}.
                 </p>
               )}
             </div>

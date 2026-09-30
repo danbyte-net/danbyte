@@ -4,7 +4,9 @@ import type { SlaMemberFigure } from "@/lib/api"
 import {
   exclusionMembers,
   memberRowIds,
+  removableRowIds,
   selectorFieldsSet,
+  selectorShrinks,
   selectorSummary,
   viaText,
 } from "./sla-members"
@@ -49,6 +51,18 @@ describe("memberRowIds", () => {
   })
 })
 
+describe("removableRowIds", () => {
+  it("keeps a folded stack's rows that already left", () => {
+    const current = new Set(["m1", "m2"])
+    const stack = { member_id: "m1", member_ids: ["m1", "m2", "m3"] }
+    expect(removableRowIds(stack, current)).toEqual(["m1", "m2"])
+    expect(removableRowIds(stack, new Set())).toEqual([])
+    // A single row is removed as before, left or not.
+    expect(removableRowIds({ member_id: "m9" }, current)).toEqual(["m9"])
+    expect(removableRowIds({ member_id: null }, current)).toEqual([])
+  })
+})
+
 describe("exclusionMembers", () => {
   it("names every folded row but offers the stack once", () => {
     const { table, options } = exclusionMembers([
@@ -87,5 +101,15 @@ describe("selectorSummary", () => {
     const g = { ...group, match_roles: ["r"], match_sites: ["s"] }
     expect(selectorFieldsSet(g, "roles")).toEqual(["Sites"])
     expect(selectorFieldsSet(g, "types")).toEqual(["Sites", "Roles"])
+  })
+
+  it("knows when a first role or type drops devices it matches now", () => {
+    const g = { ...group, match_roles: ["r"] }
+    // A first type narrows the role match; another role only adds.
+    expect(selectorShrinks(g, "types")).toBe(true)
+    expect(selectorShrinks(g, "roles")).toBe(false)
+    // Off, or matching nothing yet: nothing to drop.
+    expect(selectorShrinks({ ...g, use_selector: false }, "types")).toBe(false)
+    expect(selectorShrinks(group, "types")).toBe(false)
   })
 })
