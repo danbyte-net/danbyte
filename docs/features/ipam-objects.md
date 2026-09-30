@@ -83,9 +83,12 @@ show (**Clear** undoes it). The bar offers:
 
 Each VLAN that changes gets its own [change-log](change-log.md) entry, and
 bulk edit and delete need the same *change* / *delete* permission as editing
-one VLAN. A tick belongs to the VLAN, not to its row position: filtering or a
-refresh never moves it onto another VLAN, and a VLAN that drops out of the
-list (filtered away or deleted) drops out of the selection.
+one VLAN. Under [enhanced site separation](../access/site-separation.md), bulk
+edit takes the same VRFs, zones and statuses as the edit form: global ones, or
+those local to your own sites. A tick belongs to the VLAN, not to its row
+position: filtering or a refresh never moves it onto another VLAN, and a VLAN
+that drops out of the list (filtered away or deleted) drops out of the
+selection.
 
 ### Prefixes on a VLAN
 

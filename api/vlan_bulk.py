@@ -21,19 +21,26 @@ from rest_framework.exceptions import ValidationError
 from api.models import VLAN, Site, VLANGroup
 
 
-def resolve_group(request, tenant, pk) -> VLANGroup | None:
-    """The target group of a bulk move, looked up the way the edit form's
-    ``group_id`` is: in the active tenant, behind the site fence. ``None``
-    (or an empty value) takes the VLANs out of their group."""
+def resolve_fenced(request, tenant, model, pk, field: str):
+    """The row a bulk update's ``field`` names, looked up the way the edit
+    form's field is: in the active tenant, behind the site fence - so under
+    enhanced site separation a site-scoped user can't set another site's local
+    VRF, zone or status. ``None`` for an empty value (a clear)."""
     if not pk:
         return None
     from api.serializers import _site_fence
 
-    qs = _site_fence(VLANGroup.objects.filter(tenant=tenant), request, tenant)
+    qs = _site_fence(model.objects.filter(tenant=tenant), request, tenant)
     try:
         return qs.get(pk=pk)
-    except (VLANGroup.DoesNotExist, DjangoValidationError, ValueError):
-        raise ValidationError({"group_id": "Not found in this tenant."}) from None
+    except (model.DoesNotExist, DjangoValidationError, ValueError, TypeError):
+        raise ValidationError({field: "Not found in this tenant."}) from None
+
+
+def resolve_group(request, tenant, pk) -> VLANGroup | None:
+    """The target group of a bulk move. ``None`` (or an empty value) takes
+    the VLANs out of their group."""
+    return resolve_fenced(request, tenant, VLANGroup, pk, "group_id")
 
 
 def _vids(vids) -> str:

@@ -12,9 +12,11 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from audit.models import ChangeAction, ChangeLogEntry
-from core.models import Organization, Tenant
+from auth_api.models import ObjectPermission, UserProfile
+from core.models import DeploymentSettings, Organization, Tenant
 
-from .models import VLAN, VRF, Site, VLANGroup
+from .models import VLAN, VRF, Site, Status, VLANGroup, Zone
+from .test_utils import status_for
 
 User = get_user_model()
 
@@ -196,3 +198,56 @@ class GroupMoveTests(_Base):
         self.assertIn("group_id", r.json())
         a.refresh_from_db()
         self.assertIsNone(a.group_id)
+
+
+class SiteFenceTests(_Base):
+    """Under enhanced site separation a site-scoped user may pick only global
+    or own-site local VRFs, zones and statuses - as on the edit form."""
+
+    def setUp(self):
+        super().setUp()
+        self.warsaw = Site.objects.create(tenant=self.tenant, name="Warsaw")
+        dep = DeploymentSettings.load()
+        dep.enhanced_site_separation = True
+        dep.save()
+        user = User.objects.create_user("kyiv-ops", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        grant = ObjectPermission.objects.create(
+            name="kyiv", object_types=["vlan", "vrf", "zone", "status"],
+            actions=["view", "change"],
+        )
+        grant.users.add(user)
+        grant.sites.set([self.kyiv])
+        self.client.force_login(user)
+        self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
+
+    def test_refuses_another_sites_local_catalogs(self):
+        a = self.vlan(10, status=status_for(self.tenant))
+        foreign = {
+            "vrf_id": VRF.objects.create(
+                tenant=self.tenant, name="WAW", owning_site=self.warsaw),
+            "zone_id": Zone.objects.create(
+                tenant=self.tenant, name="waw-dmz", slug="waw-dmz", owning_site=self.warsaw),
+            "status_id": Status.objects.create(
+                tenant=self.tenant, name="WAW only", slug="waw-only",
+                available_to=["vlan"], owning_site=self.warsaw),
+        }
+        for key, obj in foreign.items():
+            with self.subTest(key):
+                r = self.update([a], **{key: str(obj.id)})
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertIn(key, r.json())
+        a.refresh_from_db()
+        self.assertIsNone(a.vrf_id)
+        self.assertIsNone(a.zone_id)
+        self.assertEqual(a.status.slug, "active")
+
+    def test_takes_global_and_own_site_catalogs(self):
+        a = self.vlan(10)
+        shared = VRF.objects.create(tenant=self.tenant, name="SHARED")
+        local = Zone.objects.create(
+            tenant=self.tenant, name="kyiv-dmz", slug="kyiv-dmz", owning_site=self.kyiv)
+        r = self.update([a], vrf_id=str(shared.id), zone_id=str(local.id))
+        self.assertEqual(r.status_code, 200, r.content)
+        a.refresh_from_db()
+        self.assertEqual((a.vrf_id, a.zone_id), (shared.id, local.id))

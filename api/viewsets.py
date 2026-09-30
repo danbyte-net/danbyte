@@ -236,7 +236,7 @@ from .serializers import (
     VRFSerializer,
 )
 from .visible_ips import assigned_ips_prefetch, forget_visible, outside_ip_prefetch
-from .vlan_bulk import check_vlan_moves, resolve_group
+from .vlan_bulk import check_vlan_moves, resolve_fenced, resolve_group
 
 
 def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
@@ -2150,15 +2150,9 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         val = fields.get("site_id")
         if val and not Site.objects.filter(pk=val, tenant=tenant).exists():
             raise ValidationError({"site_id": "Not found in this tenant."})
-        zval = fields.get("zone_id")
-        if zval and not Zone.objects.filter(pk=zval, tenant=tenant).exists():
-            raise ValidationError({"zone_id": "Not found in this tenant."})
-        vval = fields.get("vrf_id")
-        if vval and not VRF.objects.filter(pk=vval, tenant=tenant).exists():
-            raise ValidationError({"vrf_id": "Not found in this tenant."})
-        sval = fields.get("status_id")
-        if sval and not Status.objects.filter(pk=sval, tenant=tenant).exists():
-            raise ValidationError({"status_id": "Not found in this tenant."})
+        # Local catalogs sit behind the site fence too, as on the edit form.
+        for key, model in (("zone_id", Zone), ("vrf_id", VRF), ("status_id", Status)):
+            resolve_fenced(request, tenant, model, fields.get(key), key)
 
         qs = self.get_queryset().filter(pk__in=ids)
         updates = _bulk_field_updates(
