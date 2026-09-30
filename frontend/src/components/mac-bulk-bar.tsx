@@ -4,6 +4,7 @@ import { Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import type { MacEntry } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -81,9 +82,21 @@ export function removalSummary(res: MacBulkRemoveResult): string {
   return text.charAt(0).toUpperCase() + text.slice(1) + "."
 }
 
+/** Where one MAC sits, for the confirm list: its device and VM interfaces,
+ * then its IPs - the first few, and how many more. */
+export function attachments(m: MacEntry, max = 3): string {
+  const all = [
+    ...m.interfaces.map((i) => `${i.device.name}:${i.name}`),
+    ...m.vm_interfaces.map((i) => `${i.vm.name}:${i.name}`),
+    ...m.ips.map((ip) => ip.ip_address),
+  ]
+  const shown = all.slice(0, max).join(", ")
+  return all.length > max ? `${shown} +${all.length - max}` : shown
+}
+
 export interface MacBulkBarProps {
-  /** The selected MAC values, as the list shows them. */
-  selected: string[]
+  /** The selected list rows. */
+  selected: MacEntry[]
   onCleared: () => void
 }
 
@@ -121,7 +134,7 @@ export function MacBulkBar({ selected, onCleared }: MacBulkBarProps) {
       </div>
 
       <MacBulkRemoveDialog
-        values={selected}
+        macs={selected}
         open={removeOpen}
         onOpenChange={setRemoveOpen}
         onDone={onCleared}
@@ -131,17 +144,18 @@ export function MacBulkBar({ selected, onCleared }: MacBulkBarProps) {
 }
 
 export function MacBulkRemoveDialog({
-  values,
+  macs,
   open,
   onOpenChange,
   onDone,
 }: {
-  values: string[]
+  macs: MacEntry[]
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone: () => void
 }) {
   const qc = useQueryClient()
+  const values = macs.map((m) => m.mac)
   const [checked, setChecked] = useState(DEFAULTS)
 
   const post = (body: object) =>
@@ -201,8 +215,8 @@ export function MacBulkRemoveDialog({
     onError: (err) => apiErrorToast(err),
   })
 
-  const sample = values.slice(0, 5)
-  const extra = values.length - sample.length
+  const sample = macs.slice(0, 5)
+  const extra = macs.length - sample.length
 
   const option = (o: MacBulkOption, label: string) => {
     const p = plans[o]
@@ -239,12 +253,17 @@ export function MacBulkRemoveDialog({
       confirmDisabled={!preview.data || chosen.length === 0}
       onConfirm={() => remove.mutate()}
     >
-      <ul className="rounded-md bg-muted/40 px-3 py-2 font-mono text-xs text-foreground">
-        {sample.map((v) => (
-          <li key={v}>{v}</li>
+      <ul className="flex flex-col gap-0.5 rounded-md bg-muted/40 px-3 py-2 text-xs">
+        {sample.map((m) => (
+          <li key={m.mac} className="flex min-w-0 items-baseline gap-2">
+            <span className="shrink-0 font-mono text-foreground">{m.mac}</span>
+            <span className="truncate text-muted-foreground">
+              {attachments(m) || "-"}
+            </span>
+          </li>
         ))}
         {extra > 0 && (
-          <li className="font-sans text-muted-foreground">…and {extra} more</li>
+          <li className="text-muted-foreground">…and {extra} more</li>
         )}
       </ul>
       {preview.isLoading ? (

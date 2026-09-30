@@ -9,12 +9,18 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { MacBulkRemoveDialog, optionPlan, removalSummary } from "./mac-bulk-bar"
+import type { MacEntry } from "@/lib/api"
+import {
+  attachments,
+  MacBulkRemoveDialog,
+  optionPlan,
+  removalSummary,
+} from "./mac-bulk-bar"
 import type { MacBulkRemoveResult } from "./mac-bulk-bar"
 
 // Removing MACs from the list (#251): the dialog's counts come from the
-// server's dry run, an option the user may not use stays off, and Remove
-// sends only the options that are on.
+// server's dry run, an option the user may not use stays off, Remove sends
+// only the options that are on, and each MAC shows what it is attached to.
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -41,6 +47,23 @@ const preview: MacBulkRemoveResult = {
   },
 }
 
+const mac = (m: string, over: Partial<MacEntry> = {}): MacEntry => ({
+  mac: m,
+  vendor: null,
+  interfaces: [],
+  vm_interfaces: [],
+  ips: [],
+  objects: [],
+  ...over,
+})
+const dev = (name: string) => ({ id: name, name })
+const ON_SWITCH = mac("aa:bb:cc:00:00:01", {
+  interfaces: [{ id: "i1", name: "eth0", device: dev("sw1") }],
+  vm_interfaces: [{ id: "v1", name: "nic0", vm: dev("vm1") }],
+  ips: [{ id: "p1", ip_address: "10.0.0.5", device: null }],
+})
+const LOOSE = mac("aa:bb:cc:00:00:02")
+
 let posted: Record<string, unknown>[] = []
 beforeEach(() => {
   posted = []
@@ -62,7 +85,7 @@ function mount(onDone = vi.fn()) {
   render(
     <QueryClientProvider client={qc}>
       <MacBulkRemoveDialog
-        values={["aa:bb:cc:00:00:01", "aa:bb:cc:00:00:02"]}
+        macs={[ON_SWITCH, LOOSE]}
         open
         onOpenChange={() => undefined}
         onDone={onDone}
@@ -84,6 +107,14 @@ describe("optionPlan", () => {
       count: 0,
       skipped: 7,
     })
+  })
+})
+
+describe("attachments", () => {
+  it("lists interfaces, then IPs, and counts the rest", () => {
+    expect(attachments(ON_SWITCH)).toBe("sw1:eth0, vm1:nic0, 10.0.0.5")
+    expect(attachments(ON_SWITCH, 2)).toBe("sw1:eth0, vm1:nic0 +1")
+    expect(attachments(LOOSE)).toBe("")
   })
 })
 
@@ -119,6 +150,15 @@ describe("MacBulkRemoveDialog", () => {
     expect(boxes[1].getAttribute("data-state")).toBe("unchecked")
     expect(boxes[2].hasAttribute("disabled")).toBe(true)
     expect(posted[0]).toMatchObject({ dry_run: true })
+  })
+
+  it("shows what each MAC is attached to", async () => {
+    mount()
+    await screen.findByText("Delete 12 MAC objects")
+    const row = screen.getByText("aa:bb:cc:00:00:01").closest("li")!
+    expect(row.textContent).toContain("sw1:eth0, vm1:nic0, 10.0.0.5")
+    const loose = screen.getByText("aa:bb:cc:00:00:02").closest("li")!
+    expect(loose.textContent).toContain("-")
   })
 
   it("sends only the options that are on", async () => {

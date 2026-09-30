@@ -193,8 +193,9 @@ the detail page offers to **create one** so you can annotate it.
 Tick rows on the MAC list - the header box ticks the page, and **Select all
 N** then takes every row the filters show (see
 [Selecting rows](table-preferences.md#selecting-rows)). **Remove** on the
-selection bar opens a confirmation that asks where to remove the selected
-addresses from, with a count for each:
+selection bar opens a confirmation that lists the first few selected
+addresses with the interfaces and IPs each one is attached to, then asks
+where to remove them from, with a count for each:
 
 - **Delete MAC objects** (on by default) - the first-class objects with their
   description, tags and custom fields.
@@ -215,3 +216,13 @@ The API behind it is `POST /api/macs/bulk-remove/` with
 `{values, remove_objects, clear_interfaces, unpair_ips, dry_run}`: `values`
 are the MAC addresses (at most 2000 per call), and `dry_run: true` returns
 the same per-source counts without writing anything.
+
+To delete MAC objects by id instead, `POST /api/mac-addresses/bulk-delete/`
+takes `{ids}` (at most 2000) and answers `{deleted}`, like the other bulk
+deletes. It needs *delete* on MAC addresses; ids in another tenant or outside
+the caller's site scope are left alone.
+
+Clearing and unpairing cost the same few queries whatever the batch size.
+Deleting objects writes one change-log entry per object and tells webhooks
+and the search index about each one, so a delete of 2000 objects runs
+several thousand short queries in one transaction.

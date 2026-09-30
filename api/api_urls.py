@@ -165,7 +165,7 @@ from .io_views import (
     io_types_view,
 )
 from .list_fields import list_fields_view
-from .mac_bulk import mac_bulk_remove_view
+from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import mac_detail_view, mac_list_view
 from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
 from .presence_views import (
@@ -561,6 +561,12 @@ urlpatterns = [
     path("oui/import/<uuid:run_id>/", oui_import_run, name="oui-import-run"),
     path("macs/", mac_list_view, name="macs"),
     path("macs/bulk-remove/", mac_bulk_remove_view, name="macs-bulk-remove"),
+    # Ahead of the router so it wins over the mac-addresses detail route.
+    path(
+        "mac-addresses/bulk-delete/",
+        mac_object_bulk_delete_view,
+        name="mac-address-bulk-delete",
+    ),
     path("macs/<str:mac>/", mac_detail_view, name="mac-detail"),
     path("dcim/choices/", dcim_choices_view, name="dcim-choices"),
     path("editable-fields/", editable_fields_view, name="editable-fields"),

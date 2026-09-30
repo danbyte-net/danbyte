@@ -122,7 +122,9 @@ function MacsPage() {
       }
       query={query}
     >
-      {filteredRows.length === 0 ? (
+      {/* The table stays mounted while a search or filter matches nothing,
+          so rows filtered away leave the selection as on the other lists. */}
+      {allRows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No MAC addresses yet - set a MAC on an interface, or pair one with an
           IP, and it shows up here.
@@ -138,7 +140,7 @@ function MacsPage() {
         />
       )}
       <MacBulkBar
-        selected={selected.map((m) => m.mac)}
+        selected={allRows.length ? selected : []}
         onCleared={() => setSelected([])}
       />
       <MacObjectDialog open={adding} onOpenChange={setAdding} />
