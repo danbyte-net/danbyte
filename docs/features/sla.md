@@ -99,8 +99,43 @@ By default an agreement covers all hours. With service hours set, for example
 Monday to Friday 08:00-17:00, time outside those hours is not measured at all.
 
 Holidays come from a **holiday calendar**. Calendars are shared across the
-tenant and managed under **Holidays** on the SLAs list. A bank holiday is
-entered once, and every agreement using that calendar skips it.
+tenant and managed under **Holidays** on the SLAs list, which shows each
+calendar's days this year and the agreements that use it. Every agreement
+that uses a calendar skips its days.
+
+A calendar opens on a year. Click a day to make it a holiday, and click it
+again to take it off. Arrow keys move between days, Page Up and Page Down
+move a month, and Enter or Space toggles. The list beside the year names
+each day; on a narrow screen it sits above the year.
+
+**Every year** repeats a fixed-date holiday such as 25 December, so it is
+entered once. It counts in earlier years too. A yearly 29 February falls in
+leap years only. Holidays that move, such as Easter Monday, are entered per
+year or imported; there is no copy to next year, because a moving holiday
+lands on another date. An every-year day has an inner ring in the year view.
+Clicking it, in any year, takes it off every year, and **Undo** puts it back.
+
+**Import** adds days in bulk:
+
+- **Paste dates** takes `YYYY-MM-DD` dates, and dates in your own date
+  format, one per line or separated by commas. A dash between two dates,
+  as in `2026-12-24 – 2026-12-26`, adds each day from one to the other. Text
+  beside a date becomes its name; with several dates on a line that starts
+  with text, the text before each date names it.
+- **Open .ics file** reads the all-day events of a calendar file. The event
+  title becomes the name, a multi-day event adds each of its days, and an
+  event that repeats yearly on its date becomes an every-year holiday. A
+  yearly repeat with an end adds each year it covers. Timed events and other
+  repeat rules are skipped, and the result says how many.
+
+Days already in the calendar are kept, and **Undo** takes an import back
+until you edit the calendar again. Dates typed in the paste box but not yet
+added count as unsaved changes. A calendar holds up to 1,000 days, from 1970
+to 2099: a pasted date outside those years is refused by line, and an .ics
+import skips such days and says how many.
+
+A change to a calendar applies to periods that are not yet frozen. Frozen
+periods keep their stored figures.
 
 ### Counting rules
 
@@ -188,13 +223,20 @@ before it is outside the member's service time rather than unmeasured, and
 coverage stays whole. A member with only some addresses reset counts those
 addresses from their reset and the others as usual.
 
-A reset recomputes the agreements that count the address straight away
-(queued, rather than on the next 15-minute tick): the open period and the
-closed ones still inside their seven days. **Frozen periods never change.**
-Because it rewrites figures, a reset of an address an active agreement counts
-needs `slaagreement.change` on that agreement as well as `ipaddress.change`
-on the address, and needs a reason; the agreement's journal records the
-address, who, when and why, as the address's own does.
+A reset never reaches back into a period that had ended before it: a period
+counts only the resets made from a moment before its end, so last month's
+figure - and a report already sent for it - stays as it closed. A reset
+backdated into a closed period does change it, while it is not yet frozen.
+
+A reset recomputes the agreements it touches straight away (queued, rather
+than on the next 15-minute tick): the open period, and the closed ones still
+inside their seven days that ended after the reset. **Frozen periods never
+change.** Because it rewrites figures, a reset that touches an active
+agreement needs `slaagreement.change` on that agreement as well as
+`ipaddress.change` on the address, and needs a reason; the agreement's
+journal records the address, who, when and why. The address's own journal
+says how many agreements it touched, not which - its readers may not be
+allowed to see them.
 
 **Redundancy group** is a label shared by members that back each other up,
 such as a leaf pair. A redundancy group counts as one unit, and it is down only
@@ -496,7 +538,7 @@ contract.
 | `/api/monitoring/sla-check-groups/` | Groups; `items` are written inline |
 | `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once. A circuit takes `monitor_ip` |
 | `/api/monitoring/sla-exclusions/` | Excluded time |
-| `/api/monitoring/holiday-calendars/` | Shared holiday calendars |
+| `/api/monitoring/holiday-calendars/` | Shared holiday calendars. `dates` is a list of `{date, name, yearly}`, dated 1970-2099; a plain `YYYY-MM-DD` string is also accepted |
 | `GET …/sla-agreements/<id>/report/?period=&file=pdf\|csv` | A period's report (`file`, not `format`, which the API keeps for itself) |
 | `GET …/sla-agreements/<id>/analysis/?period=\|since=&until=&bucket=day\|hour&group=&site=&member=&kind=&redundancy=` | The analysis view's data, computed live, with `forecast` while the window runs |
 | `POST …/sla-agreements/<id>/send-report/` | Email it now: `{period, recipients?}` |
