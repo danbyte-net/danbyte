@@ -15,6 +15,7 @@ urlpatterns = [
     path(".well-known/acme-challenge/<str:token>", acme_challenge, name="acme-challenge"),
     path("django-rq/", include("django_rq.urls")),
     # /api/* - REST endpoints for the v2 React frontend
+    path("api/", include("api.topology_urls")),
     path("api/", include("api.api_urls")),
     # Root → React app. The old HTML urlconfs (api.urls, auth_api.urls)
     # are NOT included because their templates were archived to

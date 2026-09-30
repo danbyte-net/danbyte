@@ -1576,9 +1576,9 @@ carry the cable id/type/label/length, every port pair, and the `via` panel
 list when collapsed.
 
 `POST /api/topology/` takes the same query as a JSON body and returns the same
-graph: `devices` (a list), `device`, `depth`, `site`, `location`, `role`,
-`status`, `tag`, `collapse_panels` (a boolean), `group_by`, `include` (a list)
-and `card_fields` (a list). The map posts whenever it has a device set - a few
+graph: `devices` (a list), `chassis` (a list), `device`, `depth`, `site`,
+`location`, `role`, `status`, `tag`, `collapse_panels` (a boolean),
+`group_by`, `include` (a list) and `card_fields` (a list). The map posts whenever it has a device set - a few
 hundred ids overflow the server's 8 KB request line - and scripts can keep
 using GET. It is a read: the same `device.view` scope applies. A read-only API
 token can't POST, so use GET with one. A body that isn't a JSON object is a
@@ -1615,6 +1615,28 @@ terminated on, whatever the orientation - so the pairs of a breakout cable
 with several ports at both ends split into its A side and its B side. A
 collapsed run's far end, beyond the panels, sits on another cable: it takes
 the end the run leaves the edge's cable by, the opposite of the near end.
+
+**Virtual chassis.** A device node that is a member of a virtual chassis the
+caller may view (`virtualchassis.view`) carries `vc: {id, name, position,
+master}` - `position` its member number or `null`, `master` whether it is
+the chassis' master; other nodes have no `vc`. It costs one query, whatever
+the map's size. With `devices`, `chassis=<id,id,…>`
+(at most 1,000) adds the members of those virtual chassis to the device
+set - read each time the map loads, so a member added to the chassis since
+the map was saved is on it and one removed is not. Only chassis the caller
+may view count (others, another tenant's and unknown ids are ignored), and
+the members still follow the caller's `device.view` scope. Without `devices`
+the parameter changes nothing. A malformed id is a 400.
+
+`GET /api/topology/chassis/` lists the virtual chassis the Diagram's device
+list offers: `{results: [{id, name, master_id, members: [{id, name,
+vc_position}]}]}`, in natural name order, `?q=` narrowing by name. It needs
+view on devices and on virtual chassis (403 otherwise). The chassis follow
+the caller's `virtualchassis.view` scope and the members their `device.view`
+scope - by member number, members without one last by name. A chassis with
+no member the caller can see is left out, and `master_id` is `null` when the
+master is not one they can see. The query count does not grow with the
+number of chassis.
 
 `GET /api/monitoring/topology/ghosts/?device=<id>` - the device page's LLDP
 mini-graph - returns its nodes in a reduced shape: name, site, `status` and

@@ -20,6 +20,11 @@ Filters: ``site`` ``location`` ``role`` ``status`` ``tag`` narrow the device
 set. ``device=<id>&depth=N`` focuses the graph on one device's neighbourhood
 (BFS over the edge list, default depth 1, neighbours pulled in even when
 outside the filter scope).
+
+A device in a virtual chassis the caller may view carries ``vc`` (its
+chassis, member number and whether it is the master), and a hand-picked map
+(``devices=``) takes ``chassis=``: those chassis' members as they are now.
+``GET /api/topology/chassis/`` lists the chassis the Diagram can place.
 """
 from __future__ import annotations
 
@@ -41,14 +46,16 @@ from rest_framework.exceptions import ParseError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Cable, CableTermination, Device
-from .natural import natural_key
+from .models import Cable, CableTermination, Device, VirtualChassis
+from .natural import natural, natural_key
 from .views import _get_active_tenant
 from auth_api import rbac
 
 MAX_DEPTH = 6
 # Largest explicit device set (``devices=``) one request may name.
 MAX_DEVICE_SET = 10_000
+# Most virtual chassis (``chassis=``) one hand-picked map may place.
+MAX_CHASSIS_SET = 1_000
 
 
 # ─── Request parsing ────────────────────────────────────────────────────────
@@ -1150,6 +1157,65 @@ def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
     return {"nodes": nodes, "edges": edges}
 
 
+# ─── Virtual chassis ────────────────────────────────────────────────────────
+#
+# A chassis is its own RBAC type: its name and membership reach the map only
+# for a caller who may view it, and only for the members they may view as
+# devices (the graph is already bounded to those).
+
+def _chassis_scope(user, tenant):
+    """The chassis the caller may view in ``tenant``: a queryset, or None
+    when they may view none."""
+    vc_q = rbac.row_filter(user, tenant, "virtualchassis", "view")
+    if vc_q is None:
+        return None
+    qs = VirtualChassis.objects.filter(tenant=tenant)
+    return qs if vc_q is True else qs.filter(vc_q)
+
+
+def _with_chassis(graph, user, tenant):
+    """Put ``vc: {id, name, position, master}`` on every device node whose
+    chassis the caller may view - one query, whatever the map's size."""
+    chassis = _chassis_scope(user, tenant)
+    ids = [
+        n["data"]["device_id"] for n in graph.get("nodes", ())
+        if n.get("type") == "device" and n["data"].get("device_id")
+    ]
+    if chassis is None or not ids:
+        return graph
+    rows = (
+        Device.objects.filter(
+            tenant=tenant, id__in=ids, virtual_chassis__in=chassis
+        )
+        .values_list("id", "vc_position", "virtual_chassis_id",
+                     "virtual_chassis__name", "virtual_chassis__master_id")
+    )
+    of = {
+        str(dev): {
+            "id": str(vc), "name": name, "position": pos,
+            "master": master == dev,
+        }
+        for dev, pos, vc, name, master in rows
+    }
+    for n in graph["nodes"]:
+        vc = of.get(n["data"].get("device_id")) if n.get("type") == "device" else None
+        if vc:
+            n["data"]["vc"] = vc
+    return graph
+
+
+def _placed_chassis_q(user, tenant, chassis_ids):
+    """The devices of the placed chassis (``chassis=``) the caller may view,
+    as a filter: members as they are now, so a member added since the map
+    was saved is on it and one removed is not. None when none count."""
+    if not chassis_ids:
+        return None
+    chassis = _chassis_scope(user, tenant)
+    if chassis is None:
+        return None
+    return Q(virtual_chassis__in=chassis.filter(id__in=chassis_ids))
+
+
 def _filter_q(params):
     """The device filter from ``site location role status tag``; a malformed
     id is a 400 (``ParseError``)."""
@@ -1177,10 +1243,11 @@ _GRAPH_200 = OpenApiResponse(
 )
 _GRAPH_400 = OpenApiResponse(
     description=(
-        "A malformed id in `device`, `devices`, `site`, `location`, "
-        "`role` or `status` (`{detail: \"<param>: not a valid id\"}`), "
-        f"more than {MAX_DEVICE_SET:,} `devices`, or (POST) a body that is "
-        "not a JSON object."
+        "A malformed id in `device`, `devices`, `chassis`, `site`, "
+        "`location`, `role` or `status` "
+        "(`{detail: \"<param>: not a valid id\"}`), more than "
+        f"{MAX_DEVICE_SET:,} `devices` or {MAX_CHASSIS_SET:,} `chassis`, or "
+        "(POST) a body that is not a JSON object."
     ),
 )
 
@@ -1263,6 +1330,17 @@ _GRAPH_400 = OpenApiResponse(
             ),
         ),
         OpenApiParameter(
+            name="chassis",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "With `devices`: comma-separated virtual chassis ids whose "
+                "members join the set, as they are now (the chassis the "
+                "caller may view; unknown ids are ignored). At most "
+                f"{MAX_CHASSIS_SET:,} ids."
+            ),
+        ),
+        OpenApiParameter(
             name="include",
             type=OpenApiTypes.STR,
             location=OpenApiParameter.QUERY,
@@ -1294,6 +1372,10 @@ _GRAPH_400 = OpenApiResponse(
             "devices": serializers.ListField(
                 child=serializers.UUIDField(), required=False,
                 max_length=MAX_DEVICE_SET,
+            ),
+            "chassis": serializers.ListField(
+                child=serializers.UUIDField(), required=False,
+                max_length=MAX_CHASSIS_SET,
             ),
             "device": serializers.UUIDField(required=False),
             "depth": serializers.IntegerField(
@@ -1342,6 +1424,7 @@ def topology_view(request):
     # a mode that ignores it.
     focus = _uuid_param(p, "device")
     device_ids = _uuid_list_param(p, "devices")
+    chassis_ids = _uuid_list_param(p, "chassis", limit=MAX_CHASSIS_SET)
     filter_q = _filter_q(p)
     try:
         depth = max(1, min(MAX_DEPTH, int(p.get("depth", 1))))
@@ -1365,8 +1448,13 @@ def topology_view(request):
     # parameter's PRESENCE selects the mode: an empty value is an empty map
     # (a builder you just opened), never a fall-through to the full graph.
     custom_set = "devices" in p and p.get("devices") is not None
+    set_q = None
     if custom_set:
         focus = None
+        set_q = Q(id__in=device_ids)
+        placed = _placed_chassis_q(request.user, tenant, chassis_ids)
+        if placed is not None:
+            set_q |= placed
 
     # The enrichers read the objects the assembly already loaded instead of
     # querying them again; nobody else pays for the bookkeeping.
@@ -1374,7 +1462,7 @@ def topology_view(request):
     graph = _build_graph(
         tenant,
         device_filter_q=(
-            Q(id__in=device_ids) if custom_set
+            set_q if custom_set
             else (filter_q if not focus else None)
         ),
         focus_id=focus,
@@ -1383,6 +1471,7 @@ def topology_view(request):
         scope_q=scope_q,
         collect=collect,
     )
+    _with_chassis(graph, request.user, tenant)
     if include:
         from .topology_enrich import enrich
 
@@ -1392,6 +1481,102 @@ def topology_view(request):
             card_fields=card_fields,
         )
     return Response(graph)
+
+
+@extend_schema(
+    summary="Virtual chassis the Diagram can place",
+    tags=["topology"],
+    parameters=[
+        OpenApiParameter(
+            name="q",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Only chassis whose name contains this.",
+        ),
+    ],
+    responses={
+        200: inline_serializer(
+            name="TopologyChassisList",
+            fields={
+                "results": serializers.ListField(
+                    child=inline_serializer(
+                        name="TopologyChassis",
+                        fields={
+                            "id": serializers.UUIDField(),
+                            "name": serializers.CharField(),
+                            "master_id": serializers.UUIDField(allow_null=True),
+                            "members": serializers.ListField(
+                                child=inline_serializer(
+                                    name="TopologyChassisMember",
+                                    fields={
+                                        "id": serializers.UUIDField(),
+                                        "name": serializers.CharField(),
+                                        "vc_position": serializers.IntegerField(
+                                            allow_null=True
+                                        ),
+                                    },
+                                )
+                            ),
+                        },
+                    )
+                )
+            },
+        ),
+        403: OpenApiResponse(
+            description="No view on devices or on virtual chassis."
+        ),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def topology_chassis_view(request):
+    """The chassis a Diagram palette offers: those the caller may view, each
+    with the members they may view as devices (by member number, then
+    name). A chassis with no such member is left out; its master's id only
+    when that member is one of them."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"results": []})
+    dev_q = rbac.row_filter(request.user, tenant, "device", "view")
+    chassis = _chassis_scope(request.user, tenant)
+    if dev_q is None or chassis is None:
+        return Response(
+            {"detail": "device.view and virtualchassis.view required."},
+            status=403,
+        )
+    q = str(request.query_params.get("q") or "").strip()[:128]
+    if q:
+        chassis = chassis.filter(name__icontains=q)
+    members = Device.objects.filter(tenant=tenant)
+    if dev_q is not True:
+        members = members.filter(dev_q)
+    members = members.only("id", "name", "vc_position", "virtual_chassis")
+    chassis = (
+        chassis.only("id", "name", "master_id")
+        .prefetch_related(Prefetch("members", queryset=members, to_attr="seen"))
+        .order_by(natural("name"), "id")
+    )
+    results = []
+    for vc in chassis:
+        seen = sorted(
+            vc.seen,
+            key=lambda d: (
+                d.vc_position is None, d.vc_position or 0, natural_key(d.name)
+            ),
+        )
+        if not seen:
+            continue
+        ids = {d.id for d in seen}
+        results.append({
+            "id": str(vc.id),
+            "name": vc.name,
+            "master_id": str(vc.master_id) if vc.master_id in ids else None,
+            "members": [
+                {"id": str(d.id), "name": d.name, "vc_position": d.vc_position}
+                for d in seen
+            ],
+        })
+    return Response({"results": results})
 
 
 def device_paths(device, viewable_ids=None):
