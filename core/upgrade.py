@@ -761,7 +761,9 @@ _CONTAINER_UPGRADE_MSG = (
     "process inside a container can't rebuild its image or recreate itself. "
     "Upgrade from the host instead: `git -C /opt/danbyte fetch --tags && "
     "git -C /opt/danbyte checkout <version>`, then `docker compose -f "
-    "docker-compose.prod.yml build && docker compose -f docker-compose.prod.yml "
+    "docker-compose.prod.yml build`, `docker compose -f docker-compose.prod.yml "
+    "stop scheduler workers fastlane ws` (so the old release is not running "
+    "while the backend migrates) and `docker compose -f docker-compose.prod.yml "
     "up -d`. See the docs: Deploying with Docker."
 )
 

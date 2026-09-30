@@ -16,9 +16,11 @@ current `/opt` layout.
     if you want to, and skip it otherwise.
 
 !!! tip "From a terminal"
-    `scripts/danbyte-admin upgrade online` wraps the steps below, refuses to
-    start while another upgrade holds the lock, and keeps a copy of a bundle
-    the upgrader would otherwise consume. See [danbyte-admin](../reference/danbyte-admin.md).
+    `danbyte-admin upgrade online` (or `upgrade bundle <file>`) starts the
+    same upgrade the Updates page does - through `manage.py start_upgrade`,
+    under the same lock, as the unit `danbyte-upgrade.service` - and follows
+    it step by step. A dropped SSH session does not stop it. See
+    [danbyte-admin](../reference/danbyte-admin.md).
 
 ## Upgrade to a new version
 
@@ -62,40 +64,48 @@ current `/opt` layout.
 
 === "In-app (recommended, systemd installs)"
 
-    **Settings → Updates → Upgrade.** One click checks out the new release,
-    installs dependencies, migrates the database, rebuilds the frontend,
-    restarts the services and health-checks - with the "Danbyte is updating"
-    page shown to visitors in the meantime.
+    **Settings → Updates → Upgrade** (or **Upgrade from a bundle**, or the
+    automatic-update timer, or `danbyte-admin upgrade`). The release you are
+    running fetches the new one and hands over to **the new release's own
+    upgrade** (`scripts/upgrade/stage.sh`), so a fix to the upgrade reaches
+    the upgrade *to* that release. It runs as the transient unit
+    `danbyte-upgrade.service`, as the service user, and survives every
+    restart it causes. See [What an upgrade does](#what-an-upgrade-does).
 
-    - A **Before upgrade** backup (database, media, config) is taken before
-      migrating and listed under **Settings → Backups**; the newest three are
-      kept and older ones pruned as each new one lands (protect one to keep
-      it). A missing `pg_dump` stops the upgrade; `DANBYTE_SKIP_BACKUP=1`
-      skips the backup on purpose.
-    - **On failure before the migration** the code is put back where it
-      started and the services restarted. **After the migration has run the
-      new code stays**: the old code would run against a schema it does not
-      know. To go back, restore that backup - see
-      [Backup and restore](backup-restore.md). The Updates page quotes the
-      failing step's own error output (the migration traceback, the missing
-      wheel, the truncated bundle), not a fixed sentence per step.
-    - The final health check asks `/api/health/` on the app port with a host
-      name from `ALLOWED_HOSTS` in `.env`, and then through nginx on 443 with
-      the same name, so it reaches *this* install even when another site is
-      nginx's default server.
+    - A **Before upgrade** backup (database, media, config) is taken first,
+      with the code that is running, and listed under **Settings → Backups**;
+      the newest three are kept. A missing `pg_dump` stops the upgrade;
+      `DANBYTE_SKIP_BACKUP=1` skips the backup on purpose (never for an
+      automatic update).
+    - **Every service stops before anything changes**, and the maintenance
+      page shows until the new release has passed its checks. Nothing but
+      the upgrade writes to the database meanwhile.
+    - **A failure puts everything back** - code, virtualenv, frontend,
+      static files, `.env`, unit links and, when the migration ran, the
+      database from a snapshot taken just before it - and starts what ran
+      before. The Updates page says which step failed, quotes its output,
+      and says how it ended: *nothing was changed*, *rolled back*, or (if
+      even the database restore failed) *Danbyte is stopped - run
+      `danbyte-admin upgrade recover`*.
+    - **After an upgrade** the **Last upgrade** card on the Updates page shows
+      how the last one went, whoever started it; an automatic upgrade, and
+      any that failed, is also mailed to the digest recipients and listed
+      on the Jobs page as the *upgrade* task.
     - Turn on **automatic updates** on the same page to track new releases
-      hands-off. A release the timer failed on is not tried again by the timer
-      (each try would take another full backup and fail the same way); retry
-      it from the Updates page, or wait for the next release. (Automatic
-      updates are also skipped on container deployments, for the same reason
-      as the in-app upgrade - they would only half-apply.)
+      hands-off. The timer picks the newest release (finals only on the
+      *Stable* channel; pre-releases too on *Any*). A failure **before any
+      service stopped** (a download, a full disk, a busy lock) is tried again
+      after 1, 4 and 12 hours; a release that was **rolled back** is not
+      tried again until someone retries it from the Updates page or a newer
+      release appears. With migrations to apply, an automatic update also
+      stops before migrating, and puts everything back, when the database
+      could not be rolled back (the role does not own it, or `pg_restore` is
+      missing) - a person can still upgrade from the Updates page, with a
+      warning. Automatic updates are skipped on container deployments.
     - **Airgapped install?** Tick **Settings → Updates → Airgapped install
       (disable update check)**. Danbyte then never contacts the release repo -
       no version check, no auto-update - and you upgrade only by uploading a
       bundle (below). Turning it on forces automatic updates off.
-
-    Under the hood this runs `scripts/danbyte-upgrade.sh <version>`, detached, so
-    it survives the service restart.
 
 === "Manual (git install)"
 
@@ -145,24 +155,34 @@ current `/opt` layout.
 
 === "Offline bundle"
 
-    Download the release bundle, unpack, and re-run the installer - it's
-    **idempotent**: it keeps your existing `.env`, re-runs migrate + collectstatic
-    + frontend, and restarts the services on the freshly-deployed code.
+    Download the release bundle, unpack, and re-run the installer. On a box
+    that already runs Danbyte it **upgrades** it: the root steps (packages,
+    Node, the service user), then **the same upgrade stage** the in-app
+    upgrade runs, as the service user's `danbyte-upgrade.service` - backup,
+    services stopped, snapshot, migration, verify, start, or everything put
+    back - and finally nginx, logrotate and the certificate unit from the
+    bundle. It keeps your `.env`, the database and the site's certificate.
 
     ```bash
     tar xzf danbyte-<version>-linux-x86_64.tar.gz
     cd danbyte-<version>-linux-x86_64
-    sudo ./install.sh                     # reuses the existing install + .env
+    sudo ./install.sh                     # upgrades the existing install
     ```
 
-    A re-run also **backfills `DANBYTE_LOG_DIR`** into an older `.env`, so file
-    logging (below) switches on without hand-editing.
+    It prints each step as the upgrade reaches it and exits non-zero if it
+    failed (and was rolled back). If your SSH session drops, the upgrade
+    carries on; follow it with
+    `sudo -u danbyte XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) journalctl --user -fu danbyte-upgrade`.
+    It refuses to run over a git checkout, while another upgrade runs, or
+    for an older version than the one installed (`--force` overrides the
+    first two).
 
     You can also upgrade in-app **without unpacking**: **Settings → Updates →
-    Upgrade from a bundle** takes the same `.tar.gz`, verifies it, backs up the
-    DB, migrates, and restarts - the offline equivalent of the one-click flow.
-    Pair this with the **Airgapped install** toggle so Danbyte never tries to
-    reach the release repo.
+    Upgrade from a bundle** takes the same `.tar.gz` and runs the same stage.
+    Only the installer re-renders nginx and the certificate unit, though -
+    see [After an upgrade](#after-an-upgrade). Pair this with the
+    **Airgapped install** toggle so Danbyte never tries to reach the release
+    repo.
 
 ### Airgapped upgrade with the installer (step by step)
 
@@ -192,7 +212,15 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     ```
 
     Add `--no-nginx` if you terminate TLS / manage nginx yourself and don't want
-    the installer to touch it.
+    the installer to touch it. Without `--host` it keeps the name the nginx
+    site already answers to.
+
+    The nginx site is re-rendered from the new release only while it is still
+    exactly what Danbyte rendered, with the certificate paths and name it has
+    now; the old file is kept as `danbyte.conf.bak-<time>` and comes back if
+    `nginx -t` refuses the new one. A site you edited by hand is left alone
+    and the new render is written beside it as
+    `/etc/nginx/sites-available/danbyte.conf.new` for you to merge.
 
 4. **Verify** once it finishes:
 
@@ -207,10 +235,9 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
 
 !!! note "What it keeps, what it needs"
 
-    - **Keeps** your existing `.env` (prints `keeping existing …/.env`) and your
-      **database** - it runs `migrate`, never `flush`. Credentials stay
-      decryptable (it backfills `MONITORING_SECRET_KEY` from your `SECRET_KEY`
-      when missing).
+    - **Keeps** your existing `.env` and your **database** - it migrates,
+      never flushes. Credentials stay decryptable (the upgrade backfills
+      `MONITORING_SECRET_KEY` from your `SECRET_KEY` when missing).
     - **OS packages** (postgresql, redis-server, nginx) are only installed
       if a binary is *missing*. On a box that already runs Danbyte they're all
       present, so the installer **skips apt entirely** - no network needed. On a
@@ -224,8 +251,9 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     A production install should run the **gunicorn** unit (`danbyte-web`), not
     the dev **`danbyte-backend`** (runserver) unit - runserver's autoreload
     restarts the app when files change, which can interrupt an in-place upgrade.
-    Re-running `install.sh` enables the correct prod units. To disable a
-    stray runserver unit by hand:
+    Every upgrade disables a `danbyte-backend` or `danbyte-frontend` dev
+    server it finds running beside `danbyte-web`, and says so in its
+    warnings. To disable a stray runserver unit by hand:
 
     ```bash
     sudo -u danbyte env XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) \
@@ -239,12 +267,20 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     unreachable). It is exempt from the HTTPS redirect, so a plain-HTTP
     probe on the app port gets an answer. Point a load balancer or uptime
     probe at it; the release pipeline's install-smoke uses it to prove the
-    bundle actually serves requests, and the upgrade scripts use it to decide
-    the upgrade worked.
+    bundle actually serves requests, and the upgrade requires `"status":
+    "ok"` and the new version from it before anyone else is let in.
 
 !!! warning "\"An upgrade is already running\" (stuck lock)"
 
-    If a previous upgrade was interrupted (a killed process, a reboot mid-run),
+    **An upgrade that was killed part-way** (a reboot, an out-of-memory kill,
+    `systemctl stop`) is finished or rolled back by itself: the stage leaves
+    a journal and a recovery unit, which runs at the next boot *before* any
+    Danbyte service starts, when the upgrade unit fails, and every five
+    minutes. Until it has, every new upgrade, service restart and the
+    *Clear a stuck upgrade* button are refused. To run it now - and to retry
+    a database restore that failed - use `danbyte-admin upgrade recover`.
+
+    If an older upgrader was interrupted (a killed process, a reboot mid-run),
     its single-slot lock can be left behind and every new upgrade is refused
     with **"An upgrade is already running."**
 
@@ -261,10 +297,72 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     ```bash
     APP="$(getent passwd danbyte | cut -d: -f6)/danbyte"
     # confirm nothing is actually upgrading first:
-    ps -eo pid,cmd | grep -E "danbyte-upgrade|upgrade-bundle" | grep -v grep
+    ps -eo pid,cmd | grep -E "danbyte-upgrade|upgrade-bundle|upgrade/stage" | grep -v grep
     sudo -u danbyte rm -f "$APP/.upgrade.lock" "$APP/.upgrade.lock.guard" \
                           "$APP/.upgrade-status.json" "$APP/.upgrade-bundle.tar.gz"
     ```
+
+## What an upgrade does
+
+Every path - the Updates page, an uploaded bundle, automatic updates,
+`danbyte-admin upgrade`, and a re-run of `install.sh` - runs the target
+release's `scripts/upgrade/stage.sh`, as the service user's
+`danbyte-upgrade.service`:
+
+| Step | What happens | The site |
+|---|---|---|
+| preflight | refuses inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk; installs the recovery unit | up |
+| backup | the pre-upgrade backup, with the running code (skipped when the launcher made it) | up |
+| prepare | git: `npm ci` and the frontend build in a scratch copy; dependencies resolved (bundle: checked offline); a copy of the virtualenv | up |
+| quiesce | timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |
+| swap | the new code, frontend, static files and (bundle) vendor/ in place; the old ones kept aside; files the release no longer ships moved aside; new unit files linked | maintenance page |
+| deps, check | dependencies installed, `manage.py check`, the migration plan | maintenance page |
+| snapshot | `pg_dump` of the database - only when migrations are pending | maintenance page |
+| migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was | maintenance page |
+| static | `bootstrap` (new seeds; never a superuser), `collectstatic`, checks left claimed by stopped workers released | maintenance page |
+| verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |
+| start | web, websockets, frontend, docs, workers - while the site still answers 503; `/api/health/` must say `ok` with the new version, the admin page must render, and nothing may keep restarting | 503 |
+| resume | the site opens; the timers that ran before start again (a timer you turned off stays off); a release's new timers are turned on | up |
+| done | the search index rebuilt in the background, housekeeping, the after-upgrade steps listed | up |
+
+**If a step before *resume* fails**, everything goes back as it was -
+including the database from the snapshot when the migration ran - and what
+ran before starts again. Nothing but monitoring results is written between
+*quiesce* and *resume*, so that restore loses no one's work. From *resume*
+on users are writing again, so a later problem keeps the new release and is
+reported as a warning. If even the database restore fails, Danbyte stays
+stopped (the maintenance page shows), the digest recipients get a mail, and
+`danbyte-admin upgrade recover` retries it; the pre-upgrade backup is the
+last resort.
+
+Downtime is the time from *quiesce* to *resume*: a dump of the database when
+migrations are pending, the migrations, and the checks - the frontend build
+and the dependency download happen before it.
+
+## Upgrading from 0.16 or 0.17.0-dev1
+
+The first upgrade off 0.16.x or 0.17.0-dev1 is started by that release's own
+upgrader, which knows nothing of the stage. 0.17 steps in where it can: when
+that upgrader runs 0.17's `manage.py migrate`, the migrate stops the timers,
+workers and web first, migrates in one transaction, collects static files,
+and leaves the restart of everything it stopped to a unit that waits for the
+old upgrader to exit - so a failed migration no longer leaves a half-migrated
+database. What it cannot fix: the new code and dependencies are already in
+place a minute before that, the old upgrader's rollback does not remove
+files 0.17 added, and a failure after the migration is not rolled back.
+
+The safest way off 0.16 is therefore **re-running the 0.17 installer** from
+the bundle (`sudo ./install.sh`, above): it runs the full 0.17 upgrade. On a
+git install, run 0.17's own launcher as the upgrade unit:
+
+```bash
+sudo -u danbyte XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) systemd-run --user \
+  --unit danbyte-upgrade sh -c \
+  'git -C ~/danbyte fetch --tags && git -C ~/danbyte show vX.Y.Z:scripts/danbyte-upgrade.sh | sh -s -- vX.Y.Z'
+```
+
+0.17.0-dev1's automatic updates do not see a newer pre-release; upgrade a
+dev1 install by hand once.
 
 ## After an upgrade
 
@@ -277,8 +375,25 @@ upgrade path (in-app, bundle, automatic, Docker) deployment admins see:
   and a docs link, and a **Done** button per step (or **Mark all done**),
 - the same list in the in-app upgrade dialog's success message.
 
-The steps stay until marked done; they are not re-checked automatically.
-A fresh install starts with nothing pending. From the shell:
+A step that can tell it is done (the nginx site has the location, the unit
+file exists) disappears by itself once it is; the others stay until marked
+done. A fresh install starts with nothing pending.
+
+The steps on the host - nginx, logrotate, the site-certificate unit - are
+what an upgrade from the app cannot do, because it never has root.
+Re-running `install.sh` from the bundle does them. On a host upgraded from
+the app, one command does them all, from the app directory as a user with
+sudo:
+
+```bash
+sudo make -C ~danbyte/danbyte host-sync
+```
+
+It renders from the app directory as root (which the service user owns),
+so prefer the installer from a bundle you verified. A site edited by hand
+is not replaced: the new render lands next to it as `danbyte.conf.new`;
+`make host-sync ADOPT=1` replaces it anyway, keeping a backup. From the
+shell:
 
 ```bash
 manage.py upgrade_notes              # print the pending steps (the upgrade scripts do this at the end)
@@ -287,8 +402,9 @@ manage.py upgrade_notes --ack all    # or --ack <id>
 
 ## Search index
 
-Global search runs on an index table. The upgrade scripts and the container
-entrypoint rebuild it after migrating; if you migrate by hand, run
+Global search runs on an index table. An upgrade starts a rebuild in the
+background once the site is back (`danbyte-search-reindex.service`), and the
+container entrypoint rebuilds it after migrating; if you migrate by hand, run
 `manage.py rebuild_search_index` once afterwards (it also runs nightly).
 
 ## Database extensions

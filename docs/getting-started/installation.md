@@ -85,6 +85,8 @@ The other tabs cover building from source and a local dev checkout.
         | `--host=<name>` | Same, `=` form. | - |
         | `--service-home <path>` | Install location (app lands in `<path>/danbyte`). On a re-run it **auto-detects** the existing install, so you rarely set this. | `/opt/danbyte` |
         | `--no-nginx` | Don't install/configure nginx or TLS - for running your own reverse proxy. Also sets `DANBYTE_HTTPS=False` so Secure cookies/HSTS don't break login without a TLS terminator. | nginx **on** |
+        | `--force` | On a re-run: upgrade over a git checkout, or past an upgrade lock nothing holds any more. | off |
+        | `--skip-backup` | On a re-run: no pre-upgrade backup. | off |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
         **Environment variables** (set before the command; alternative to flags)
@@ -104,8 +106,14 @@ The other tabs cover building from source and a local dev checkout.
         3. Deploys the app to `<service-home>/danbyte` and builds the venv from the bundle's vendored CPython 3.13 + wheelhouse (no internet needed).
         4. **Generates secrets** with Python's CSPRNG and writes a `chmod 600`, service-user-owned `.env` - `DJANGO_SECRET_KEY` + `MONITORING_SECRET_KEY` (~400-bit), a 24-char DB password, and a 20-char admin password.
         5. Creates the PostgreSQL role + database, runs migrations, and bootstraps the `admin` superuser.
-        6. Installs the systemd units (web, workers, websocket, docs, timers), writes logs to `/var/log/danbyte`, and - unless `--no-nginx` - puts nginx + TLS in front.
+        6. Installs the systemd units (web, workers, websocket, docs, timers), writes logs to `/var/log/danbyte`, and - unless `--no-nginx` - puts nginx + TLS in front, with the root unit that applies a certificate the app drops (Settings → Updates → Site certificate). That unit runs a root-owned copy of its script from `/usr/local/libexec/danbyte/`, never the one in the app directory, and answers in `/var/lib/danbyte-tls/`.
         7. Prints the generated **admin password** at the end.
+
+        Run again on a box that already has Danbyte, the installer **upgrades**
+        it with the release's own upgrade stage instead of steps 3-6 - see
+        [Upgrading → Offline bundle](upgrading.md). Everything it runs as root
+        comes from the unpacked bundle, never from the app directory the
+        service account owns; unpack the bundle as root.
 
         !!! note "PostgreSQL and Redis are native, not containers"
 
@@ -242,6 +250,7 @@ The other tabs cover building from source and a local dev checkout.
     make proxy-install NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
       PROXY_HOST=danbyte.example.com
     make install-tls-unit      # the root unit that applies a certificate dropped from the app
+                               # (installs a root-owned copy of its script in /usr/local/libexec/danbyte)
     ```
 
     Open `https://danbyte.example.com/` and sign in as `admin`. The
