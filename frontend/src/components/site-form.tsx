@@ -51,6 +51,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { invalidateSiteViews } from "@/lib/site-cache"
 import { useMe } from "@/lib/use-me"
 
 export interface SiteFormProps {
@@ -208,9 +209,7 @@ export function SiteForm({
       })
     },
     onSuccess: (saved) => {
-      qc.invalidateQueries({ queryKey: ["sites"] })
-      qc.invalidateQueries({ queryKey: ["sites-picker"] })
-      qc.invalidateQueries({ queryKey: ["site", saved.id] })
+      invalidateSiteViews(qc, [saved.id])
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
       onSaved(saved)
     },

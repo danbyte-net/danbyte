@@ -27,6 +27,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useSaveObject } from "@/lib/save-object"
+import { invalidateSiteViews } from "@/lib/site-cache"
 
 export interface RegionFormProps {
   region?: Region
@@ -158,6 +159,8 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["regions"] })
       qc.invalidateQueries({ queryKey: ["regions-picker"] })
+      // Boundary, colour and name are drawn on the map and site lists.
+      invalidateSiteViews(qc)
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
       onSaved(saved)
     },

@@ -24,6 +24,7 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import { FieldEditor, useFieldEditorOptions } from "@/components/forms"
 import type { BulkFieldSpec } from "@/components/forms/field-spec"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidateSiteViews } from "@/lib/site-cache"
 
 const MARKER_FIELDS: BulkFieldSpec[] = [
   { key: "color", label: "Marker colour", kind: "color" },
@@ -80,8 +81,7 @@ function BulkEditSitesPage() {
       toast.success(
         `Updated ${res.updated} site${res.updated === 1 ? "" : "s"}.`
       )
-      qc.invalidateQueries({ queryKey: ["sites"] })
-      qc.invalidateQueries({ queryKey: ["sites-picker"] })
+      invalidateSiteViews(qc, ids)
       back()
     },
     onError: (err) => apiErrorToast(err),

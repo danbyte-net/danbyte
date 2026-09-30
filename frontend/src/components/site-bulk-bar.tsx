@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidateSiteViews } from "@/lib/site-cache"
 
 export interface SiteBulkBarProps {
   selected: Site[]
@@ -97,8 +98,7 @@ function BulkDeleteConfirm({
       toast.success(
         `Deleted ${res.deleted} site${res.deleted === 1 ? "" : "s"}.`
       )
-      qc.invalidateQueries({ queryKey: ["sites"] })
-      qc.invalidateQueries({ queryKey: ["sites-picker"] })
+      invalidateSiteViews(qc)
       onOpenChange(false)
       onDone()
     },
