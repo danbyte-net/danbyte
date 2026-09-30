@@ -64,6 +64,27 @@ topology rails. Colour precedence: the VLAN's own colour, then its
 zone's colour (zones stay firewall semantics - inside/outside/prod - never a
 colour requirement), then a neutral badge / blue palette shade.
 
+### Changing many VLANs at once
+
+Tick VLANs in the list and a bar floats up at the bottom of the page. The
+header checkbox ticks the page you are on; when the list runs to more pages,
+**Select all N** appears above the table and ticks every VLAN the filters
+show (**Clear** undoes it). The bar offers:
+
+- **Edit** - set the status, site, zone, VRF or description of every ticked
+  VLAN, and add or remove tags. A field left on *keep* is not touched; a
+  description box only applies once its checkbox is ticked, so an empty one
+  clears the description.
+- **Export** - the ticked VLANs as CSV, Excel or JSON.
+- **Delete** - asks first, with the count and the first few VLANs, then
+  deletes them all.
+
+Each VLAN that changes gets its own [change-log](change-log.md) entry, and
+bulk edit and delete need the same *change* / *delete* permission as editing
+one VLAN. A tick belongs to the VLAN, not to its row position: filtering or a
+refresh never moves it onto another VLAN, and a VLAN that drops out of the
+list (filtered away or deleted) drops out of the selection.
+
 ### Prefixes on a VLAN
 
 The VLAN page's **Prefixes** tab lists the prefixes bridged onto it, and is

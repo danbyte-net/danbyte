@@ -3928,6 +3928,7 @@ export interface ContactAssignmentWritePayload {
 export interface VLANBulkUpdateFields {
   site_id?: string | null
   zone_id?: string | null
+  vrf_id?: string | null
   status_id?: string | null
   description?: string
   add_tag_ids?: number[]

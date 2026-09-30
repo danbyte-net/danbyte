@@ -10,6 +10,7 @@ import type {
   StatusOption,
   TagOption,
   VLANBulkUpdateFields,
+  VRFOption,
   ZoneOption,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -21,7 +22,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { VrfCell } from "@/components/cells/vrf-cell"
+import { FieldEditor, useFieldEditorOptions } from "@/components/forms"
+import type { BulkFieldSpec } from "@/components/forms"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { StatusBadge } from "@/components/status-badge"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -35,6 +40,9 @@ export const Route = createFileRoute("/vlans/bulk-edit")({
 
 const KEEP = "__keep__"
 const NONE = "__none__"
+const DESCRIPTION: BulkFieldSpec[] = [
+  { key: "description", label: "Description", kind: "text" },
+]
 
 function BulkEditVlansPage() {
   const { ids: idsCsv } = Route.useSearch()
@@ -45,6 +53,9 @@ function BulkEditVlansPage() {
   const [statusId, setStatusId] = useState<string>(KEEP)
   const [siteId, setSiteId] = useState<string>(KEEP)
   const [zoneId, setZoneId] = useState<string>(KEEP)
+  const [vrfId, setVrfId] = useState<string>(KEEP)
+  // undefined = keep; a string (even "") is written to every row.
+  const [description, setDescription] = useState<string | undefined>()
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
 
@@ -64,11 +75,17 @@ function BulkEditVlansPage() {
     queryFn: () => api<Paginated<ZoneOption>>("/api/zones/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    staleTime: 10 * 60_000,
+  })
   const tags = useQuery({
     queryKey: ["tags-picker"],
     queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
+  const editorOptions = useFieldEditorOptions(DESCRIPTION)
 
   const back = () => nav({ to: "/vlans" })
 
@@ -79,6 +96,8 @@ function BulkEditVlansPage() {
         fields.status_id = statusId === NONE ? null : statusId
       if (siteId !== KEEP) fields.site_id = siteId === NONE ? null : siteId
       if (zoneId !== KEEP) fields.zone_id = zoneId === NONE ? null : zoneId
+      if (vrfId !== KEEP) fields.vrf_id = vrfId === NONE ? null : vrfId
+      if (description !== undefined) fields.description = description
       if (addTags.length) fields.add_tag_ids = addTags
       if (removeTags.length) fields.remove_tag_ids = removeTags
       if (Object.keys(fields).length === 0) {
@@ -171,12 +190,36 @@ function BulkEditVlansPage() {
               <SelectItem value={NONE}>No zone</SelectItem>
               {zones.data?.results.map((z) => (
                 <SelectItem key={z.id} value={z.id}>
-                  {z.name}
+                  <ColorBadge name={z.name} color={z.color || undefined} />
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
+        <Field label="VRF">
+          <Select value={vrfId} onValueChange={setVrfId}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={KEEP}>(keep)</SelectItem>
+              <SelectItem value={NONE}>No VRF</SelectItem>
+              {vrfs.data?.results.map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  <VrfCell vrf={v} linked={false} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <FieldEditor
+          spec={DESCRIPTION[0]}
+          mode="keep"
+          value={description}
+          onChange={(v) => setDescription(String(v ?? ""))}
+          onClear={() => setDescription(undefined)}
+          options={editorOptions}
+        />
         <Field label="Add tags">
           <TagMultiSelect
             options={tags.data?.results ?? []}
