@@ -52,7 +52,10 @@ MEMBER_TYPES = {
     "api.ipaddress": "ipaddress",
     "api.prefix": "prefix",
     "api.circuit": "circuit",
+    # A switch stack as one member, measured on its owner's address.
+    "api.virtualchassis": "virtualchassis",
 }
+VC = sla.VC
 
 
 def _tenant_of(serializer):
@@ -406,6 +409,49 @@ def _hhmm(v: str) -> int:
     return h * 60 + m
 
 
+def _visible_stacks(request, tenant, vc_ids) -> set | None:
+    """The chassis ids (strings) whose stack a viewer may see, or None when
+    they see every stack. A chassis has no site, so a site-scoped grant on
+    it reaches every stack: the viewer must also see the device that owns
+    the stack (whose site the stack is at). A stack with no members has no
+    owner and is hidden from a restricted viewer. Memoised on the request -
+    a history of sixty periods asks about the same stacks sixty times."""
+    from api.models import Device, VirtualChassis
+
+    from .vc_stack import stacks
+
+    q_vc = rbac.row_filter(request.user, tenant, "virtualchassis", "view")
+    q_dev = rbac.row_filter(request.user, tenant, "device", "view")
+    if q_vc is True and q_dev is True:
+        return None
+    ids = set()
+    for raw in vc_ids:
+        try:
+            ids.add(str(uuid.UUID(str(raw))))
+        except ValueError:
+            continue
+    if q_vc is None or q_dev is None or not ids:
+        return set()
+    memo = getattr(request, "_sla_stacks_seen", None)
+    if memo is None:
+        memo = {}
+        request._sla_stacks_seen = memo
+    todo = ids - memo.keys()
+    if todo:
+        chassis = VirtualChassis.objects.filter(tenant=tenant, pk__in=todo)
+        if q_vc is not True:
+            chassis = chassis.filter(q_vc)
+        owners = {vc: m[0].id for vc, m in stacks(
+            set(chassis.values_list("pk", flat=True)), tenant.id).items() if m}
+        devices = Device.objects.filter(tenant=tenant, pk__in=set(owners.values()))
+        if q_dev is not True:
+            devices = devices.filter(q_dev)
+        seen = set(devices.values_list("pk", flat=True))
+        memo.update(dict.fromkeys(todo, False))
+        memo.update({str(vc): dev in seen for vc, dev in owners.items()})
+    return {i for i in ids if memo[i]}
+
+
 def _visible_keys(request, tenant, units) -> set | None:
     """The member keys a viewer may see, or None when they see everything."""
     members = [u for u in units if u.get("member")]
@@ -420,8 +466,17 @@ def _visible_keys(request, tenant, units) -> set | None:
                  "api.virtualmachine": api_models.VirtualMachine,
                  "api.ipaddress": api_models.IPAddress,
                  "api.prefix": api_models.Prefix,
-                 "api.circuit": api_models.Circuit}
+                 "api.circuit": api_models.Circuit,
+                 VC: api_models.VirtualChassis}
     for otype, ids in by_type.items():
+        if otype == VC:
+            stacks_seen = _visible_stacks(request, tenant, ids)
+            if stacks_seen is None:
+                visible.update((otype, i) for i in ids)
+            else:
+                everything = False
+                visible.update((otype, i) for i in stacks_seen)
+            continue
         q = rbac.row_filter(request.user, tenant, MEMBER_TYPES.get(otype, ""), "view")
         if q is True:
             visible.update((otype, i) for i in ids)
@@ -937,6 +992,8 @@ def _check_member(request, tenant, object_type, object_id):
 
     if object_type not in MEMBER_TYPES:
         raise ValidationError({"object_type": f"One of: {', '.join(MEMBER_TYPES)}."})
+    if object_type == VC:
+        return _check_stack(request, tenant, object_id)
     from django.apps import apps
 
     model = apps.get_model(object_type)
@@ -945,6 +1002,26 @@ def _check_member(request, tenant, object_type, object_id):
     if not _can_view_object(request, object_type, str(object_id)):
         raise PermissionDenied("You can't add an object you can't view.")
     return _object_site_id(object_type, str(object_id))
+
+
+def _check_stack(request, tenant, object_id):
+    """A chassis in this tenant, with members, and the caller able to view
+    both it and the device that owns the stack; its site is the owner's."""
+    from api.models import VirtualChassis
+    from audit.api import _can_view_object
+
+    from .vc_stack import stacks
+
+    if not VirtualChassis.objects.filter(tenant=tenant, pk=object_id).exists():
+        raise ValidationError({"object_id": "No such object in this tenant."})
+    members = next(iter(stacks([object_id], tenant.id).values()), [])
+    if not members:
+        raise ValidationError({"object_id": "A chassis without members can't be added."})
+    owner = members[0]
+    if not (_can_view_object(request, VC, str(object_id))
+            and _can_view_object(request, "api.device", str(owner.id))):
+        raise PermissionDenied("You can't add a stack you can't view.")
+    return owner.site_id
 
 
 class SlaMemberViewSet(TenantScopedViewSet):
@@ -1119,6 +1196,8 @@ STATUS_KINDS = {
     # A site or cluster: over its devices (a cluster's hosts).
     "site": ("api.site", "site", "target_ip__assigned_device__site_id"),
     "cluster": ("api.cluster", "cluster", "target_ip__assigned_device__cluster_id"),
+    # A stack: its figure as a member; availability over every member.
+    "vc": (VC, "virtualchassis", "target_ip__assigned_device__virtual_chassis_id"),
 }
 MAX_STATUS_IDS = 5000
 
@@ -1172,6 +1251,58 @@ def _cluster_hosts(tenant, keep) -> dict:
         tenant=tenant, cluster_id__in=keep).values_list("pk", "cluster_id")}
 
 
+def _stack_devices(request, tenant, keep) -> dict:
+    """``{chassis id: [device id, ...]}`` for the devices in ``keep`` that
+    are in a stack the viewer may see."""
+    from api.models import Device
+
+    by_vc: dict = {}
+    for pk, vc in Device.objects.filter(
+        tenant=tenant, pk__in=keep, virtual_chassis_id__isnull=False
+    ).values_list("pk", "virtual_chassis_id"):
+        by_vc.setdefault(str(vc), []).append(str(pk))
+    if not by_vc:
+        return {}
+    seen = _visible_stacks(request, tenant, by_vc)
+    return {vc: devs for vc, devs in by_vc.items() if seen is None or vc in seen}
+
+
+def _stack_measured(request, tenant, keep) -> dict:
+    """``{chassis id: {device, ip} | None}`` - the member and primary address
+    that stand for each stack in an SLA, each only when the viewer may see
+    it. None when no member has a primary address."""
+    from api.models import Device, IPAddress
+
+    from .vc_stack import measured_member, stacks
+
+    picks = {str(vc): measured_member(m) for vc, m in stacks(keep, tenant.id).items()}
+    found = [d for d in picks.values() if d is not None]
+    seen_dev, ip_text = set(), {}
+    q_dev = rbac.row_filter(request.user, tenant, "device", "view")
+    if found and q_dev is not None:
+        devices = Device.objects.filter(tenant=tenant, pk__in={d.id for d in found})
+        if q_dev is not True:
+            devices = devices.filter(q_dev)
+        seen_dev = set(devices.values_list("pk", flat=True))
+    q_ip = rbac.row_filter(request.user, tenant, "ipaddress", "view")
+    if found and q_ip is not None:
+        ips = IPAddress.objects.filter(tenant=tenant, pk__in={d.primary_ip_id for d in found})
+        if q_ip is not True:
+            ips = ips.filter(q_ip)
+        ip_text = dict(ips.values_list("pk", "ip_address"))
+    out = {}
+    for vc, d in picks.items():
+        if d is None or d.id not in seen_dev:
+            out[vc] = None
+            continue
+        ip = ip_text.get(d.primary_ip_id)
+        out[vc] = {
+            "device": {"id": str(d.id), "name": d.name},
+            "ip": {"id": str(d.primary_ip_id), "address": str(ip)} if ip else None,
+        }
+    return out
+
+
 def _circuit_sums(win, tenant, keep, sums) -> dict:
     """Rollup sums per circuit, over the addresses its ends are cabled to."""
     ip_map = sla._circuit_addresses(list(keep))
@@ -1209,13 +1340,17 @@ def _circuit_sums(win, tenant, keep, sums) -> dict:
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def sla_status_view(request):
-    """``{kind: device|vm|ip|prefix|circuit|site|cluster, ids: [...], frame?}`` → per id:
+    """``{kind: device|vm|ip|prefix|circuit|site|cluster|vc, ids: [...], frame?}`` → per id:
 
     * ``sla`` - each agreement the object is in, with its figure in the
       agreement's current period (read from the stored result, never
       recomputed here), and ``lowest``, the strictest of them;
     * ``availability`` - plain availability over ``frame`` from the rollups,
-      every check on the object's addresses, SLA or not.
+      every check on the object's addresses, SLA or not;
+    * ``measured`` (``vc`` only) - the member and primary address that stand
+      for the stack in an agreement.
+
+    A device in a stack also gets the stack's figure, with ``via_stack``.
 
     Objects the caller cannot view are left out; agreements are only listed
     to a caller with view on SLA agreements."""
@@ -1255,9 +1390,17 @@ def sla_status_view(request):
     if q is not True:
         visible = visible.filter(q)
     keep = {str(pk) for pk in visible.values_list("pk", flat=True)}
+    if kind == "vc" and keep:
+        # A chassis has no site: its owner device decides who sees it.
+        stacks_seen = _visible_stacks(request, tenant, keep)
+        if stacks_seen is not None:
+            keep &= stacks_seen
     out = {i: {"sla": [], "lowest": None, "availability": None} for i in keep}
     if not keep:
         return Response({"frame": frame, "results": {}})
+    if kind == "vc":
+        for vc, measured in _stack_measured(request, tenant, keep).items():
+            out[vc]["measured"] = measured
 
     win = frame_window(frame, sla.agreement_tz_for_tenant(tenant))
     if field is None:
@@ -1283,9 +1426,20 @@ def sla_status_view(request):
         else:
             owner = _cluster_hosts(tenant, keep) if kind == "cluster" else None
             member_type = "api.device" if kind == "cluster" else otype
+            # A stack member's device shows the figure of the stack it is in.
+            in_stack = _stack_devices(request, tenant, keep) if kind == "device" and results else {}
             for res in results:
                 for u in res.units:
-                    if not u.get("member") or u["object_type"] != member_type:
+                    if not u.get("member"):
+                        continue
+                    if u["object_type"] == VC and in_stack:
+                        for oid in in_stack.get(u["object_id"], []):
+                            out[oid]["sla"].append({
+                                **_sla_entry(res, u),
+                                "via_stack": {"id": u["object_id"], "name": u["name"]},
+                            })
+                        continue
+                    if u["object_type"] != member_type:
                         continue
                     oid = owner.get(u["object_id"]) if owner is not None else u["object_id"]
                     if oid in keep:

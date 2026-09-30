@@ -57,7 +57,7 @@ minutes. That is the **error budget**.
 |---|---|
 | **Agreement** | Who it is provided for, the target (for example 99.9 %), the period, the service hours, holidays, and the counting rules |
 | **Check group** | Which checks count for one class of equipment, and which address they are read from |
-| **Member** | A device, virtual machine, IP address, prefix or circuit in a group |
+| **Member** | A device, virtual chassis, virtual machine, IP address, prefix or circuit in a group |
 | **Unit** | What the figure is built from: one member, or a redundancy group of members counted as one |
 | **Exclusion** | Time that does not count, with the reason recorded |
 
@@ -540,6 +540,9 @@ lists have two columns:
   frame had no check results, the share that did follows the figure, as in
   "75.1% 68% measured". Unmeasured time counts as neither up nor down.
 
+A device in a [switch stack](#switch-stacks) that counts once shows the
+stack's figure, marked "via" the stack.
+
 A site's **SLA** is every agreement provided for that site, with the
 agreement's whole figure; its **Availability** is over the site's devices. A
 cluster's are over its hosts: the agreements its hosts are in, and their
@@ -568,6 +571,11 @@ a partial figure. It covers only the units whose members they can all see,
 and a note says how many members are left out. Hidden members, their
 incidents, and the per-day figures are not shown.
 
+A virtual chassis has no site of its own, so a stack is shown only to a
+viewer who can view the chassis and the device that owns the stack (its
+master, or lowest member); the stack is at that device's site. Adding one
+needs the same, and a chassis with no members cannot be added.
+
 Service credits need **view credits** on SLA agreements as well, and a
 partial figure never carries one: part of a service can't price the whole
 contract.
@@ -583,11 +591,11 @@ contract.
 | `POST …/sla-agreements/<id>/recompute/` | Recompute now |
 | `burn_alerts` on an agreement | Up to four rules: `{name, long_min, short_min, burn, on}`; `current.burn` has each rule's last result |
 | `/api/monitoring/sla-check-groups/` | Groups; `items` are written inline |
-| `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once. A circuit takes `monitor_ip` |
+| `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once. A circuit takes `monitor_ip`; a stack is `object_type: api.virtualchassis`. A folded stack's row in the figures has `via` and `member_ids` |
 | `/api/monitoring/sla-exclusions/` | Excluded time |
 | `/api/monitoring/holiday-calendars/` | Shared holiday calendars. `dates` is a list of `{date, name, yearly}`, dated 1970-2099; a plain `YYYY-MM-DD` string is also accepted |
 | `GET …/sla-agreements/<id>/report/?period=&file=pdf\|csv` | A period's report (`file`, not `format`, which the API keeps for itself) |
 | `GET …/sla-agreements/<id>/analysis/?period=\|since=&until=&bucket=day\|hour&group=&site=&member=&kind=&redundancy=` | The analysis view's data, computed live, with `forecast` while the window runs |
 | `POST …/sla-agreements/<id>/send-report/` | Email it now: `{period, recipients?}` |
 | `GET …/sla-agreements/overview-report/?period=&file=` | Every agreement for one period |
-| `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip\|prefix\|circuit\|site\|cluster, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |
+| `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip\|prefix\|circuit\|site\|cluster\|vc, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame. `vc` also returns `measured`: the member and address that stand for the stack. A stack member's device lists the stack's figure with `via_stack` |
