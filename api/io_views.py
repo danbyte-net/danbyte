@@ -3,6 +3,7 @@
 * ``GET  /api/io/types/``            - types the user may export/import.
 * ``GET  /api/io/<slug>/fields/``    - columns + field metadata for a type.
 * ``GET  /api/io/<slug>/export/``    - stream the (RBAC-scoped) rows as CSV/JSON/XLSX.
+* ``POST /api/io/<slug>/export/``    - the same, with the ids in the body.
 * ``POST /api/io/<slug>/import/``    - upsert rows (dry-run preview + commit).
 
 RBAC is enforced per row: creating needs ``add``, updating needs ``change``, and
@@ -16,6 +17,7 @@ import csv
 import io as _io
 import json
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.http import HttpResponse, StreamingHttpResponse
 from drf_spectacular.types import OpenApiTypes
@@ -50,6 +52,9 @@ MAX_IMPORT_SCANNED_ROWS = MAX_IMPORT_ROWS * 4
 class TooManyRows(ValueError):
     """The import has more rows than the cap; raised while reading."""
 MAX_XLSX_EXPORT_ROWS = 50000
+#: Ids one export may name. A long selection is POSTed: in a GET's query
+#: string ~200 UUIDs already pass the proxy's and gunicorn's 8 KB line limit.
+MAX_EXPORT_IDS = MAX_XLSX_EXPORT_ROWS
 
 
 def _resolve(request, slug):
@@ -162,8 +167,35 @@ def _scoped_qs(request, tenant, handler, model, action):
         response=OpenApiTypes.BINARY,
         description="An attachment file download (CSV, JSON, or XLSX).",
     ),
+    methods=["GET"],
 )
-@api_view(["GET"])
+@extend_schema(
+    summary="Export the rows with the given ids (a long selection)",
+    description=(
+        "The GET export with its parameters in a JSON body, for an id list too "
+        f"long for a URL. At most {MAX_EXPORT_IDS} ids."
+    ),
+    tags=["import-export"],
+    request=inline_serializer(
+        name="IoExportRequest",
+        fields={
+            "fmt": serializers.ChoiceField(
+                choices=["csv", "json", "xlsx"], required=False,
+                help_text="Export format (default 'csv').",
+            ),
+            "ids": serializers.ListField(
+                child=serializers.CharField(),
+                help_text="Primary keys to restrict the export to.",
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.BINARY,
+        description="An attachment file download (CSV, JSON, or XLSX).",
+    ),
+    methods=["POST"],
+)
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def io_export_view(request, slug):
     res = _resolve(request, slug)
@@ -173,23 +205,36 @@ def io_export_view(request, slug):
     if not _can(request, tenant, slug, "view"):
         return Response({"detail": f"You can't view {slug}."}, status=403)
 
+    # A POST carries the same parameters as the GET, in its body - a bulk
+    # bar's selection runs to more ids than a URL can hold.
+    if request.method == "POST":
+        data = request.data if isinstance(request.data, dict) else {}
+        params = {k: v for k, v in data.items() if k != "ids" and isinstance(v, str)}
+        raw_ids = data.get("ids")
+    else:
+        params = request.query_params.dict()
+        raw_ids = request.query_params.get("ids")
+    try:
+        ids = _export_ids(raw_ids, model)
+    except ValueError as e:
+        return Response({"ids": str(e)}, status=400)
+
     # NB: not ``format`` - that's DRF's reserved content-negotiation param.
-    fmt = request.query_params.get("fmt", "csv").lower()
+    fmt = (params.get("fmt") or "csv").lower()
     qs = _scoped_qs(request, tenant, handler, model, "view")
-    ids = request.query_params.get("ids")
-    if ids:
-        qs = qs.filter(pk__in=[i for i in ids.split(",") if i.strip()])
+    if ids is not None:
+        qs = qs.filter(pk__in=ids)
     # Optional field filters (e.g. ipaddress export scoped to ?prefix=<id>).
     # Only narrows the already RBAC-scoped queryset - a concrete model field →
     # exact match; unknown params ignored. Can't widen access, only restrict.
     field_names = {f.name for f in model._meta.concrete_fields}
     reserved = {"fmt", "ids", "format"}
-    for key, val in request.query_params.items():
+    for key, val in params.items():
         if key in reserved or key not in field_names or not val:
             continue
         try:
             qs = qs.filter(**{key: val})
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, DjangoValidationError):
             continue
     qs = qs.order_by("created_at")
     cols = handler.column_names()
@@ -225,6 +270,28 @@ def io_export_view(request, slug):
     resp = StreamingHttpResponse(gen(), content_type="text/csv; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{fname}"'
     return resp
+
+
+def _export_ids(raw, model):
+    """The ids an export is restricted to - a comma-separated string (GET) or
+    a list (POST) - or ``None`` when none were given. Raises ``ValueError``
+    with a message for a malformed id or too long a list."""
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        items = raw.split(",")
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        raise ValueError("Give a list of ids.")
+    ids = [str(i).strip() for i in items if str(i).strip()]
+    if len(ids) > MAX_EXPORT_IDS:
+        raise ValueError(f"At most {MAX_EXPORT_IDS} ids per export.")
+    pk = model._meta.pk
+    try:
+        return [pk.to_python(i) for i in ids]
+    except DjangoValidationError:
+        raise ValueError("One of the ids is not valid.") from None
 
 
 def _export_xlsx(qs, handler, cols, slug):

@@ -71,25 +71,27 @@ export async function apiStatus<T>(
   if (res.status === 401 && pathname !== "/api/me/") {
     onUnauthorized?.()
   }
-  if (!res.ok) {
-    // Read the body ONCE as text, then try to parse JSON from it. Calling
-    // both .json() and .text() on the same Response throws - the body
-    // stream is single-use.
-    const raw = await res.text()
-    let body: unknown = raw
-    try {
-      body = JSON.parse(raw)
-    } catch {
-      /* keep the raw string */
-    }
-    const detail =
-      body && typeof body === "object" && body !== null && "detail" in body
-        ? String(body.detail)
-        : raw.slice(0, 200)
-    throw new ApiError(res.status, body, `${path} → ${res.status} ${detail}`)
-  }
+  if (!res.ok) throw await apiErrorOf(res, path)
   if (res.status === 204) return { data: undefined as T, status: res.status }
   return { data: (await res.json()) as T, status: res.status }
+}
+
+// The ApiError a failed response carries. Reads the body ONCE as text, then
+// tries to parse JSON from it. Calling both .json() and .text() on the same
+// Response throws - the body stream is single-use.
+async function apiErrorOf(res: Response, path: string): Promise<ApiError> {
+  const raw = await res.text()
+  let body: unknown = raw
+  try {
+    body = JSON.parse(raw)
+  } catch {
+    /* keep the raw string */
+  }
+  const detail =
+    body && typeof body === "object" && body !== null && "detail" in body
+      ? String(body.detail)
+      : raw.slice(0, 200)
+  return new ApiError(res.status, body, `${path} → ${res.status} ${detail}`)
 }
 
 /** A file's own bytes as text, for previewing what an endpoint serves as a
@@ -8788,7 +8790,8 @@ export interface IOFields {
 export type IOFormat = "csv" | "xlsx" | "json"
 
 /** Server round-trip export URL (downloadable anchor). `filter` narrows by
- * model field, e.g. `{ prefix: prefixId }` to export only a prefix's IPs. */
+ * model field, e.g. `{ prefix: prefixId }` to export only a prefix's IPs.
+ * A selection of rows goes through `ioExportFile` instead. */
 export function ioExportUrl(
   slug: string,
   opts: { fmt: IOFormat; ids?: string[]; filter?: Record<string, string> } = {
@@ -8801,6 +8804,31 @@ export function ioExportUrl(
     if (v) p.set(k, v)
   }
   return `/api/io/${slug}/export/?${p.toString()}`
+}
+
+/** Round-trip export of chosen rows, as a file to save. POSTed: a bulk bar's
+ * selection can run to more ids than a URL holds (a few hundred UUIDs pass
+ * the proxy's 8 KB request-line limit). */
+export async function ioExportFile(
+  slug: string,
+  opts: { fmt: IOFormat; ids: string[] }
+): Promise<{ blob: Blob; filename: string }> {
+  const path = `/api/io/${slug}/export/`
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrf() },
+    body: JSON.stringify({ fmt: opts.fmt, ids: opts.ids }),
+  })
+  if (res.status === 401) onUnauthorized?.()
+  if (!res.ok) throw await apiErrorOf(res, path)
+  const named = /filename="([^"]+)"/.exec(
+    res.headers.get("Content-Disposition") ?? ""
+  )
+  return {
+    blob: await res.blob(),
+    filename: named?.[1] ?? `${slug}.${opts.fmt}`,
+  }
 }
 
 export const ioFields = (slug: string) =>

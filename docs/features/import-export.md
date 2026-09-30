@@ -26,7 +26,11 @@ pair:
   rows would be created vs updated, and any errors) before you **Apply**.
 
 **Export only the rows you select:** tick rows in any table and the **bulk bar**
-at the bottom gains an **Export** button that exports just the selection.
+at the bottom gains an **Export** button that exports just the selection. The
+selection travels in the request body, not the link, so a large one - **Select
+all N** on a long list - exports like a few rows, up to 50,000 at a time.
+Scripts do the same with `POST /api/io/<type>/export/` and a JSON body of
+`{"fmt": "csv", "ids": [...]}`; a `GET` takes `?ids=` for a short list.
 
 On a **prefix** page the Import / Export acts on the **IP addresses inside that
 prefix** (the workflow that replaced the old "IPs" dropdown).
