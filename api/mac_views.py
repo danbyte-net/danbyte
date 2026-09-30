@@ -9,6 +9,13 @@ their description / tags) recorded for it.
 
 Full CRUD on the MAC *objects* themselves lives at ``/api/mac-addresses/``
 (see :class:`~api.viewsets.MACAddressViewSet`); this module only aggregates.
+
+Each source is a row type of its own, cut to the caller's view scope for it
+(``interface``, ``vminterface``, ``ipaddress``, ``macaddress``) in the active
+tenant: a viewer limited to Site A never learns a Site B address or port
+through a shared MAC. An IP's device and interface show only when the caller
+may view that row as well; SNMP sightings only on devices and VMs they may
+view.
 """
 from __future__ import annotations
 
@@ -22,7 +29,7 @@ from rest_framework.response import Response
 
 from auth_api import rbac
 
-from .models import Interface, IPAddress, MACAddress, VMInterface
+from .models import Device, Interface, IPAddress, MACAddress, VirtualMachine, VMInterface
 from .natural import natural
 from .oui import hexkey, vendor_for, vendors_for
 from .serializers import TagSerializer
@@ -38,20 +45,43 @@ def _hexkey(mac: str) -> str:
     return re.sub(r"[^0-9a-f]", "", (mac or "").lower())
 
 
-def _snmp_sightings(tenant, mac: str) -> list[dict]:
+def _visible(qs, user, tenant, slug):
+    """``qs`` cut to the rows the caller may view (tenant filter is the
+    caller's)."""
+    return rbac.restrict_queryset(qs, user, tenant, slug, "view")
+
+
+def _visible_ids(model, tenant_path, ids, user, tenant, slug) -> set:
+    """The ids among ``ids`` of rows in ``tenant`` the caller may view - one
+    query for a whole page, none when ``ids`` is empty."""
+    if not ids:
+        return set()
+    qs = model.objects.filter(pk__in=ids, **{tenant_path: tenant})
+    return set(_visible(qs, user, tenant, slug).values_list("pk", flat=True))
+
+
+def _snmp_sightings(tenant, mac: str, user) -> list[dict]:
     """Where polling has *observed* this MAC - the ARP/FDB rows on each
     device's SNMP state. A MAC clicked on a monitoring card often exists only
     here (a neighbour's address learned on a port), so the detail page must
     be able to say "seen on sw1 port eth2" instead of pretending the address
-    doesn't exist."""
+    doesn't exist. Only devices and VMs the caller may view are listed."""
+    from django.db.models import Q
+
     from monitoring.models import (
         DeviceSnmp,  # local: api must not import monitoring at module level
     )
 
     key = _hexkey(mac)
     seen: list[dict] = []
-    states = DeviceSnmp.objects.filter(tenant=tenant).select_related(
-        "device", "vm"
+    devices = _visible(Device.objects.filter(tenant=tenant), user, tenant, "device")
+    vms = _visible(
+        VirtualMachine.objects.filter(tenant=tenant), user, tenant, "virtualmachine"
+    )
+    states = (
+        DeviceSnmp.objects.filter(tenant=tenant)
+        .filter(Q(device__in=devices) | Q(vm__in=vms))
+        .select_related("device", "vm")
     )
     for state in states:
         # A state row belongs to a device OR a VM (#13) - reading
@@ -132,7 +162,8 @@ def mac_list_view(request):
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"count": 0, "results": []})
-    if not rbac.has_action(request.user, tenant, "macaddress", "view"):
+    user = request.user
+    if not rbac.has_action(user, tenant, "macaddress", "view"):
         return Response({"detail": "macaddress.view required."}, status=403)
 
     entries: dict[str, dict] = {}
@@ -149,27 +180,37 @@ def mac_list_view(request):
             }
         return entries[key]
 
-    ifaces = (
+    ifaces = _visible(
         Interface.objects.filter(device__tenant=tenant)
         .exclude(mac_address="")
-        .select_related("device")
+        .select_related("device"),
+        user, tenant, "interface",
     )
     for i in ifaces:
         bucket(i.mac_address)["interfaces"].append(_iface_ref(i))
 
     # VM interfaces carry the same kind of address as a device port (#142).
-    vm_ifaces = (
+    vm_ifaces = _visible(
         VMInterface.objects.filter(vm__tenant=tenant)
         .exclude(mac_address="")
-        .select_related("vm")
+        .select_related("vm"),
+        user, tenant, "vminterface",
     )
     for vi in vm_ifaces:
         bucket(vi.mac_address)["vm_interfaces"].append(_vm_iface_ref(vi))
 
-    ips = (
-        IPAddress.objects.filter(tenant=tenant)
-        .exclude(mac_address="")
-        .select_related("assigned_device")
+    ips = list(
+        _visible(
+            IPAddress.objects.filter(tenant=tenant)
+            .exclude(mac_address="")
+            .select_related("assigned_device"),
+            user, tenant, "ipaddress",
+        )
+    )
+    # An IP's device is its own row: named only when the caller may view it.
+    devices = _visible_ids(
+        Device, "tenant", {ip.assigned_device_id for ip in ips} - {None},
+        user, tenant, "device",
     )
     for ip in ips:
         bucket(ip.mac_address)["ips"].append(
@@ -178,7 +219,7 @@ def mac_list_view(request):
                 "ip_address": ip.ip_address,
                 "device": (
                     {"id": str(ip.assigned_device_id), "name": ip.assigned_device.name}
-                    if ip.assigned_device_id
+                    if ip.assigned_device_id in devices
                     else None
                 ),
             }
@@ -187,10 +228,11 @@ def mac_list_view(request):
     # First-class MAC objects - surface even when no interface/IP string carries
     # the address yet, so a standalone object is still listed and its
     # description / tags show on the row.
-    objects = (
+    objects = _visible(
         MACAddress.objects.filter(tenant=tenant)
         .select_related("assigned_interface__device")
-        .prefetch_related("tags")
+        .prefetch_related("tags"),
+        user, tenant, "macaddress",
     )
     for m in objects:
         bucket(m.mac_address)["objects"].append(_mac_object(m))
@@ -225,34 +267,39 @@ def mac_detail_view(request, mac):
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"detail": "Not found."}, status=404)
-    if not rbac.has_action(request.user, tenant, "macaddress", "view"):
+    user = request.user
+    if not rbac.has_action(user, tenant, "macaddress", "view"):
         return Response({"detail": "macaddress.view required."}, status=403)
 
     key = _norm(mac)
-    ifaces = (
+    ifaces = _visible(
         Interface.objects.filter(device__tenant=tenant, mac_address__iexact=key)
         .select_related("device")
-        .order_by(natural("device__name"), natural("name"))
+        .order_by(natural("device__name"), natural("name")),
+        user, tenant, "interface",
     )
-    vm_ifaces = (
+    vm_ifaces = _visible(
         VMInterface.objects.filter(vm__tenant=tenant, mac_address__iexact=key)
         .select_related("vm")
-        .order_by(natural("vm__name"), natural("name"))
+        .order_by(natural("vm__name"), natural("name")),
+        user, tenant, "vminterface",
     )
-    ips = (
+    ips = _visible(
         IPAddress.objects.filter(tenant=tenant, mac_address__iexact=key)
         .select_related("assigned_device", "assigned_interface", "status")
-        .order_by("ip_address")
+        .order_by("ip_address"),
+        user, tenant, "ipaddress",
     )
-    objects = (
+    objects = _visible(
         MACAddress.objects.filter(tenant=tenant, mac_address__iexact=key)
         .select_related("assigned_interface__device")
         .prefetch_related("tags")
         .order_by(
             natural("assigned_interface__device__name"), natural("assigned_interface__name")
-        )
+        ),
+        user, tenant, "macaddress",
     )
-    seen = _snmp_sightings(tenant, key)
+    seen = _snmp_sightings(tenant, key, user)
     if (
         not ifaces.exists()
         and not vm_ifaces.exists()
@@ -276,6 +323,17 @@ def mac_detail_view(request, mac):
     override = next((m.vendor_override for m in objects if m.vendor_override), "")
     vendor = (
         {"name": override, "source": "override"} if override else vendor_for(key, tenant)
+    )
+    # An IP's device and interface are rows of their own: named only when the
+    # caller may view them.
+    ips = list(ips)
+    devices = _visible_ids(
+        Device, "tenant", {ip.assigned_device_id for ip in ips} - {None},
+        user, tenant, "device",
+    )
+    ports = _visible_ids(
+        Interface, "device__tenant", {ip.assigned_interface_id for ip in ips} - {None},
+        user, tenant, "interface",
     )
     return Response(
         {
@@ -304,12 +362,12 @@ def mac_detail_view(request, mac):
                     ),
                     "device": (
                         {"id": str(ip.assigned_device_id), "name": ip.assigned_device.name}
-                        if ip.assigned_device_id
+                        if ip.assigned_device_id in devices
                         else None
                     ),
                     "interface": (
                         {"id": str(ip.assigned_interface_id), "name": ip.assigned_interface.name}
-                        if ip.assigned_interface_id
+                        if ip.assigned_interface_id in ports
                         else None
                     ),
                 }

@@ -235,7 +235,7 @@ from .serializers import (
     VRFPickerSerializer,
     VRFSerializer,
 )
-from .visible_ips import assigned_ips_prefetch, outside_ip_prefetch
+from .visible_ips import assigned_ips_prefetch, forget_visible, outside_ip_prefetch
 
 
 def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
@@ -4452,6 +4452,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
     def perform_update(self, serializer):
         self._check(serializer)
         serializer.save()
+        forget_visible(serializer.instance)
 
     @action(detail=True, methods=["get"], url_path="ips")
     def ips(self, request, pk=None):
@@ -5923,6 +5924,10 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
     def perform_create(self, serializer):
         # VM is supplied in the payload; tenant is implied by it. Just save.
         serializer.save()
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        forget_visible(serializer.instance)
 
     def get_queryset(self):
         qs = (
@@ -7598,6 +7603,8 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
     def perform_update(self, serializer):
         self._check(serializer)
         serializer.save()
+        # The prefetched outside IP predates the save.
+        forget_visible(serializer.instance)
 
 
 class L2VPNViewSet(TenantScopedViewSet):

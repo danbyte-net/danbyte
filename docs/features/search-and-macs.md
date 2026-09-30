@@ -99,6 +99,14 @@ MAC clicked on a device's monitoring cards therefore always resolves, even
 when nothing in Danbyte carries it yet: the page says where it was seen
 instead of returning "not found".
 
+Both pages need MAC address view permission, and each source is then cut to
+what you may view on its own: interfaces, VM interfaces, IP addresses and MAC
+objects each follow their view permission, with its site scope and row
+constraints. An IP's device and interface are named only when you may view
+them too, and SNMP sightings list only devices and VMs you may view. A viewer
+limited to one site never learns another site's addresses or ports through a
+shared MAC; a MAC that only such rows carry is not listed at all.
+
 ### Vendors
 
 Every MAC shows its **vendor**, resolved from the address prefix:

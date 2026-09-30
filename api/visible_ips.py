@@ -60,6 +60,17 @@ def outside_ip_prefetch(request, tenant, lookup="outside_ip"):
     )
 
 
+def forget_visible(obj) -> None:
+    """Drop the visible rows prefetched onto ``obj`` before a write.
+
+    DRF clears ``_prefetched_objects_cache`` after an update but not a
+    ``to_attr`` list, so the response would repeat the pre-save addresses.
+    With them gone the serializer's restricted fallback reads the saved row.
+    """
+    obj.__dict__.pop(VISIBLE_IPS, None)
+    obj.__dict__.pop(VISIBLE_OUTSIDE_IP, None)
+
+
 def _active_tenant(context, tenant_id):
     """The request and its active tenant when that tenant owns the row, else
     ``(None, None)`` - a row from another tenant lists nothing."""
