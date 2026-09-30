@@ -716,7 +716,7 @@ function page(
     // Each cable's lead again, over the image.
     for (const [k, { from, to, l }] of (leads.get(n) ?? []).entries()) {
       const dash = dashPattern(l.dash)
-      const at = (p: Pt) => ({ x: p.x - img.x, y: p.y - img.y })
+      const inImg = (p: Pt) => ({ x: p.x - img.x, y: p.y - img.y })
       out.push(
         `<mxCell${attrs({
           id: take(`${id}-lead-${k}`),
@@ -737,7 +737,7 @@ function page(
           edge: "1",
           parent: id,
         })}><mxGeometry relative="1" as="geometry">` +
-          `${point(at(from), "sourcePoint")}${point(at(to), "targetPoint")}` +
+          `${point(inImg(from), "sourcePoint")}${point(inImg(to), "targetPoint")}` +
           `</mxGeometry></mxCell>`
       )
     }
