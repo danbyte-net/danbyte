@@ -3507,6 +3507,7 @@ class DeviceViewSet(
     clone_fields = (
         "device_type", "role", "platform", "status", "site", "location",
         "cluster", "airflow", "description", "comments", "topology_card",
+        "topology_photo_size",
     )
 
     @action(detail=True, methods=["get"], url_path="spec-sheet")

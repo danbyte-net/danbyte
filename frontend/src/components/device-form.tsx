@@ -36,6 +36,10 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import {
+  photoSizeOf,
+  TopologyPhotoSizeSelect,
+} from "@/components/topology-photo-size-select"
 import { useSaveObject } from "@/lib/save-object"
 import { DeviceTypePicker } from "@/components/device-type-picker"
 import { RackPicker } from "@/components/rack-picker"
@@ -196,6 +200,9 @@ export function DeviceForm({
   const [topologyCard, setTopologyCard] = useState<string[] | null>(
     seed?.topology_card ?? null
   )
+  const [photoSize, setPhotoSize] = useState(
+    photoSizeOf(seed?.topology_photo_size)
+  )
 
   useEffect(() => {
     if (!device) return
@@ -231,6 +238,7 @@ export function DeviceForm({
     setVcPosition(device.vc_position != null ? String(device.vc_position) : "")
     setVcPriority(device.vc_priority != null ? String(device.vc_priority) : "")
     setTopologyCard(device.topology_card ?? null)
+    setPhotoSize(photoSizeOf(device.topology_photo_size))
     reset()
   }, [device, reset])
 
@@ -464,6 +472,7 @@ export function DeviceForm({
         vc_priority:
           vcId && vcPriority.trim() !== "" ? Number(vcPriority) : null,
         topology_card: topologyCard,
+        topology_photo_size: photoSize ?? "",
       }
       return saveObject<Device>({
         objectType: "api.device",
@@ -659,6 +668,12 @@ export function DeviceForm({
                 }
               />
             </Field>
+            <TopologyPhotoSizeSelect
+              label="Photo size"
+              value={photoSize}
+              onChange={setPhotoSize}
+              error={fieldErrors.topology_photo_size}
+            />
           </FormSection>
         </FormColumn>
 

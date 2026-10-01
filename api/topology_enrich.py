@@ -437,7 +437,7 @@ def _shared_subnets(a_end, b_end) -> list:
     return [s for _v, _r, s in sorted(found.values(), key=lambda t: t[:2])]
 
 
-#: How long a front photo's measured aspect is kept. The key carries the
+#: How long a front photo's measured size is kept. The key carries the
 #: type's ``updated_at``, which an upload, resize or clear bumps, so this only
 #: ages out a file replaced behind the application's back.
 PHOTO_ASPECT_TTL = 24 * 3600
@@ -450,11 +450,15 @@ _PHOTO_UNREADABLE = "unreadable"
 
 def enrich_photo(ctx: EnrichContext) -> None:
     """``include=photo``: each device node's front photo with the markers of
-    its cabled ports - ``node.data.photo = {front, type_faceplate, u_height,
-    rack_width, vc_position}``.
+    its cabled ports - ``node.data.photo = {front, size, type_faceplate,
+    u_height, rack_width, vc_position}``. ``size`` is ``rack`` (as wide as a
+    19-inch device) or ``own`` (the photo's own size): the device's
+    ``topology_photo_size``, else its type's, else its role's, else rack.
 
-    ``front`` is ``{url, aspect, scale, markers}``, or None when the type has
-    no front photo or its file is gone. ``markers`` are
+    ``front`` is ``{url, aspect, width, scale, markers}``, or None when the
+    type has no front photo or its file is gone. ``width`` is the file's own
+    pixel width; with the layout's saved ``scale`` (Use this size everywhere)
+    it gives the photo's size on every surface. ``markers`` are
     ``[{port, port_id, kind, x, y, w, h}]``: the markers of the effective
     layout (the device's override, else its type's) that resolve to one of
     the node's cabled ports, named by the port's current name. A marker
@@ -484,14 +488,14 @@ def enrich_photo(ctx: EnrichContext) -> None:
             nodes.append((node["data"], d))
 
     types = {d.device_type_id: d.device_type for _data, d in nodes if d.device_type_id}
-    aspects = _photo_aspects(types.values())
+    sizes = _photo_sizes(types.values())
     faceplates = _type_faceplates(types.values())
 
     fronts = {}  # device id → (url, layout)
     wanted: dict[str, set] = {}  # termination kind → device ids to index
     for _data, d in nodes:
         dt = types.get(d.device_type_id)
-        if dt is None or dt.pk not in aspects:
+        if dt is None or dt.pk not in sizes:
             continue
         url = _photo_url(dt.front_image)
         if not url:
@@ -508,9 +512,11 @@ def enrich_photo(ctx: EnrichContext) -> None:
         front = None
         if d.id in fronts:
             url, layout = fronts[d.id]
+            size = sizes[dt.pk]
             front = {
                 "url": url,
-                "aspect": aspects[dt.pk],
+                "aspect": size[0] if size else None,
+                "width": size[1] if size else None,
                 "scale": _photo_scale(layout),
                 "markers": _photo_markers(
                     layout.get("front"), d, cabled.get(str(d.id)) or {},
@@ -519,11 +525,22 @@ def enrich_photo(ctx: EnrichContext) -> None:
             }
         data["photo"] = {
             "front": front,
+            "size": _photo_size_mode(d, dt),
             "type_faceplate": dt is not None and dt.pk in faceplates,
             "u_height": dt.u_height if dt is not None else 1,
             "rack_width": dt.rack_width if dt is not None else "full",
             "vc_position": d.vc_position,
         }
+
+
+def _photo_size_mode(device, dt) -> str:
+    """``rack`` or ``own``: the device's photo size on the Diagram - its own
+    setting, else its type's, else its role's; rack width when none is set."""
+    for level in (device, dt, getattr(device, "role", None)):
+        mode = getattr(level, "topology_photo_size", "") if level is not None else ""
+        if mode:
+            return mode
+    return "rack"
 
 
 def _photo_url(f):
@@ -673,16 +690,16 @@ def _type_faceplates(types) -> set:
     return found
 
 
-def _photo_aspects(types) -> dict:
-    """``{type id: height / width, or None when unreadable}`` for the types
-    whose front photo file is there.
+def _photo_sizes(types) -> dict:
+    """``{type id: (height / width, width px), or None when unreadable}`` for
+    the types whose front photo file is there.
 
     Measured from the file's header and kept in the cache; a cache that is
     down only means measuring again."""
     from django.core.cache import cache
 
     keys = {
-        _photo_aspect_key(dt): dt
+        _photo_size_key(dt): dt
         for dt in types
         if dt.front_image and dt.front_image.name
     }
@@ -711,16 +728,21 @@ def _photo_aspects(types) -> dict:
         value = found.get(key)
         if value == _PHOTO_MISSING:
             continue
-        out[dt.pk] = value if _is_number(value) else None
+        out[dt.pk] = (
+            (value[0], value[1])
+            if isinstance(value, (list, tuple)) and len(value) == 2
+            and all(_is_number(v) for v in value)
+            else None
+        )
     return out
 
 
-def _photo_aspect_key(dt) -> str:
+def _photo_size_key(dt) -> str:
     import hashlib
 
     stamp = dt.updated_at.isoformat() if dt.updated_at else ""
     digest = hashlib.sha256(f"{dt.front_image.name}|{stamp}".encode()).hexdigest()
-    return f"topo:photo-aspect:{dt.pk}:{digest[:32]}"
+    return f"topo:photo-size:{dt.pk}:{digest[:32]}"
 
 
 #: EXIF orientations a viewer turns a quarter: width and height swap.
@@ -728,7 +750,8 @@ _EXIF_QUARTER_TURNS = frozenset({5, 6, 7, 8})
 
 
 def _photo_measure(field):
-    """Height / width of an image file, read from its header only;
+    """``[height / width, width]`` of an image file as shown, read from its
+    header only;
     ``_PHOTO_MISSING`` when the file can't be opened and
     ``_PHOTO_UNREADABLE`` when it isn't an image Pillow knows."""
     from PIL import Image
@@ -750,4 +773,4 @@ def _photo_measure(field):
         return _PHOTO_UNREADABLE
     if not w or not h:
         return _PHOTO_UNREADABLE
-    return round(h / w, 6)
+    return [round(h / w, 6), w]

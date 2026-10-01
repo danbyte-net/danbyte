@@ -1253,6 +1253,8 @@ export interface DeviceType extends LifecycleInfo {
   u_height: number
   /** Horizontal rack footprint - "half" mounts two side-by-side per U. */
   rack_width: "full" | "half"
+  /** Photo size on the topology Diagram; "" inherits. */
+  topology_photo_size?: "" | TopologyPhotoSize
   description: string
   /** Absolute URL of the front rack-face image, or null. */
   front_image: string | null
@@ -1297,6 +1299,7 @@ export interface DeviceTypeWritePayload {
   platform_id?: string | null
   u_height?: number
   rack_width?: "full" | "half"
+  topology_photo_size?: "" | TopologyPhotoSize
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -1396,6 +1399,8 @@ export interface Device {
   /** Topology card lines for this device; null inherits the view, role
    * or global list, `[]` = name only. */
   topology_card?: string[] | null
+  /** Photo size on the topology Diagram; "" inherits. */
+  topology_photo_size?: "" | TopologyPhotoSize
   device_type: {
     id: string
     name: string
@@ -1534,6 +1539,7 @@ export interface DeviceWritePayload {
   vc_priority?: number | null
   config_template_id?: string | null
   topology_card?: string[] | null
+  topology_photo_size?: "" | TopologyPhotoSize
 }
 
 // Admin-controlled visibility for the promoted built-in Device fields.
@@ -1595,6 +1601,8 @@ export interface DeviceRole {
   icon: string
   is_patch_panel: boolean
   has_fov: boolean
+  /** Photo size on the topology Diagram; "" inherits. */
+  topology_photo_size?: "" | TopologyPhotoSize
   config_template: { id: string; name: string } | null
   description: string
   custom_fields: Record<string, unknown>
@@ -1608,6 +1616,7 @@ export interface DeviceRole {
 export interface DeviceRoleWritePayload {
   is_patch_panel?: boolean
   has_fov?: boolean
+  topology_photo_size?: "" | TopologyPhotoSize
   name: string
   slug?: string
   color?: string
@@ -2947,6 +2956,9 @@ export interface TopoPhotoMarker {
   h: number
 }
 
+/** A device's, type's or role's photo size on the Diagram; "" inherits. */
+export type TopologyPhotoSize = "rack" | "own"
+
 export interface TopoPhoto {
   /** Null when the type has no front photo. */
   front: {
@@ -2954,10 +2966,17 @@ export interface TopoPhoto {
     url: string
     /** Height / width; null when unreadable (use `naturalWidth`). */
     aspect: number | null
-    /** Display-size override from the type's layout (`ImagePorts.view`). */
+    /** The file's own pixel width; null when unreadable. */
+    width?: number | null
+    /** Display-size override from the type's layout (`ImagePorts.view`):
+     * a fraction of `width`, the size on every surface. */
     scale: number | null
     markers: TopoPhotoMarker[]
   } | null
+  /** How wide the Diagram draws it: as a 19-inch device (`rack`), or at
+   * the photo's own size (`own`) - the device's setting, else its type's,
+   * else its role's. */
+  size?: TopologyPhotoSize
   /** The type can render a `TypeFaceplate` (on screen only). */
   type_faceplate: boolean
   u_height: number

@@ -379,6 +379,13 @@ greyed out (it would change nothing).
   wide (a half-width type half that), at the photo's own proportions. The
   device's name is a caption under it, its card lines and the status pill
   after it, with no card fill.
+- **Own size:** a device that is not rack gear - a DIN-rail switch, a
+  desktop firewall - can be drawn at its photo's own size instead: the size
+  saved in the photo editor (*Use this size everywhere*), else the upload
+  size. **Topology photo size** - *Rack width* or *Own size* - is set on the
+  device (Photo size, under Topology card), its device type or its role; the
+  device's own setting wins, then its type's, then its role's, and with none
+  set a photo is drawn at rack width.
 - **Cables on their ports:** a cable starts at its port's marker, runs
   straight up or down (its lead, drawn over the photo) - towards its far
   device when that lies above or below the photo, else to the nearer
@@ -1832,12 +1839,14 @@ whatever the size of the map, and none without `ipaddress.view`.
   "front": {
     "url": "/media/device-type-images/c9300-48p.png",
     "aspect": 0.0833,
+    "width": 1440,
     "scale": null,
     "markers": [
       {"port": "Gi2/0/1", "port_id": "…", "kind": "interface",
        "x": 0.12, "y": 0.4, "w": 0.02, "h": 0.2}
     ]
   },
+  "size": "rack",
   "type_faceplate": true,
   "u_height": 1,
   "rack_width": "full",
@@ -1848,8 +1857,12 @@ whatever the size of the map, and none without `ipaddress.view`.
 - `front` is `null` when the device type has no front photo or its file is
   missing. `url` is the same-origin media path the device type API returns.
   `aspect` is height / width as the photo is shown, or `null` when the file
-  isn't an image the server can read. `scale` is the front display size saved
-  with the photo ports (`view.front.scale`), else `null`.
+  isn't an image the server can read; `width` is the photo's own pixel width
+  as shown, `null` with it. `scale` is the front display size saved with the
+  photo ports (`view.front.scale`), else `null`.
+- `size` is `rack` or `own`: the device's `topology_photo_size`, else its
+  type's, else its role's, else `rack`. An `own` photo is drawn `width ×
+  scale` wide (`width` without a saved scale).
 - `markers` are the [photo ports](../dcim/device-catalog.md#photo-ports) of
   the effective layout (the device's own, else its type's) that land on one
   of the node's cabled ports, in layout order. `port` and `port_id` are the

@@ -89,6 +89,31 @@ describe("photoFace", () => {
     ])
   })
 
+  it("draws a photo at its own size when its device says so", () => {
+    // A DIN-rail switch photographed 205 px wide, set to 44% in the editor.
+    const din = (size: "rack" | "own" | undefined, scale: number | null) =>
+      photoFace(
+        photoData({
+          size,
+          front: {
+            ...photoData().photo!.front!,
+            aspect: 2.4,
+            width: 205,
+            scale,
+          },
+        })
+      )!
+    expect(din("own", 0.44).w).toBe(90)
+    expect(din("own", 0.44).imgH).toBe(216)
+    // No saved size: the upload size.
+    expect(din("own", null).w).toBe(205)
+    // Rack width - or nothing said - keeps the 19-inch width.
+    expect(din("rack", 0.44).w).toBe(PHOTO.W)
+    expect(din(undefined, 0.44).w).toBe(PHOTO.W)
+    // An own size stays inside the map's bounds.
+    expect(din("own", 100).w).toBe(PHOTO.MAX_W)
+  })
+
   it("halves a half-width type", () => {
     const f = photoFace(photoData({ rack_width: "half" }))!
     expect(f.w).toBe(PHOTO.W / 2)

@@ -49,6 +49,9 @@ export const PHOTO = {
   TAIL_MIN: 40,
   /** The shortest image drawn, px. */
   MIN_H: 12,
+  /** A size saved with the layout is kept between these widths, px. */
+  MIN_W: 24,
+  MAX_W: 1920,
   /** Below this zoom the image is a plain box - on a map with `MANY`
    * photos or more; a smaller one keeps its images down to `LOD_FEW`,
    * where a photo is still a hundred pixels wide. */
@@ -191,15 +194,29 @@ function unitsTall(u: number | null | undefined): number {
   return (Math.max(1, u || 1) * PHOTO.W * PHOTO.U_MM) / PHOTO.RACK_MM
 }
 
+/** A photo's own width: the size its layout saved for every surface (Use
+ * this size everywhere), else its upload size; null when unknown. */
+export function ownPhotoWidth(
+  front: { width?: number | null; scale: number | null } | null | undefined
+): number | null {
+  const width = front?.width
+  if (!width || width <= 0) return null
+  const scale = front.scale && front.scale > 0 ? front.scale : 1
+  return Math.round(Math.min(PHOTO.MAX_W, Math.max(PHOTO.MIN_W, width * scale)))
+}
+
 /**
  * The photo node a device is drawn as, or null for its card: not marked,
  * or nothing to draw (no photo, no faceplate). The image is `PHOTO.W`
- * wide (half that for a half-width type) at the photo's own aspect.
+ * wide (half that for a half-width type) at the photo's own aspect - or,
+ * when the device's photo size is `own`, at the photo's own width.
  */
 export function photoFace(data: FacedData): PhotoFace | null {
   if (data.face !== "photo" || !data.photo) return null
   const p = data.photo
-  const w = p.rack_width === "half" ? PHOTO.W / 2 : PHOTO.W
+  const w =
+    (p.size === "own" ? ownPhotoWidth(p.front) : null) ??
+    (p.rack_width === "half" ? PHOTO.W / 2 : PHOTO.W)
   const node = (imgH: number) => {
     const h = Math.max(PHOTO.MIN_H, Math.round(imgH))
     return { w, imgH: h, h: h + PHOTO.CAPTION_GAP + PHOTO.CAPTION_LH }

@@ -399,6 +399,14 @@ class LifecycleMixin(models.Model):
         return ""
 
 
+#: How the topology Diagram sizes a device's photo: as wide as a 19-inch
+#: device (half that for a half-width type), or at the photo's own size - the
+#: size its layout saved for every surface (Use this size everywhere), else its
+#: upload size. Blank inherits: the device, then its type, then its role;
+#: nothing set is rack width.
+TOPOLOGY_PHOTO_SIZE_CHOICES = [("rack", "Rack width"), ("own", "Own size")]
+
+
 class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
                  LifecycleMixin):
     """User-defined device type / template (e.g. ``Dell R650``, ``Cisco C9300``).
@@ -437,6 +445,12 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
         help_text=("Horizontal footprint in the rack. Half-width gear (e.g. a "
                    "half-U ToR switch like the Mellanox SN2010) mounts two "
                    "side-by-side in the same U."),
+    )
+    topology_photo_size = models.CharField(
+        max_length=4, choices=TOPOLOGY_PHOTO_SIZE_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How wide the topology Diagram draws photos of this type. "
+                  "Blank inherits.",
     )
     front_image = models.ImageField(
         upload_to="device-type-images/", blank=True, null=True,
@@ -1843,6 +1857,12 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         null=True, blank=True, default=None,
         help_text="Topology card lines for this device. Null inherits; an "
                   "empty list shows the name only.",
+    )
+    topology_photo_size = models.CharField(
+        max_length=4, choices=TOPOLOGY_PHOTO_SIZE_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How wide the topology Diagram draws this device's photo. "
+                  "Blank inherits.",
     )
     # ── Geolocation ──────────────────────────────────────────────────────
     latitude = models.DecimalField(
@@ -5031,6 +5051,12 @@ class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
         default=False,
         help_text="Devices with this role are passive patch panels - hidden "
         "in topology by default and kept out of the level tiers.",
+    )
+    topology_photo_size = models.CharField(
+        max_length=4, choices=TOPOLOGY_PHOTO_SIZE_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How wide the topology Diagram draws the photos of this role's devices. "
+                  "Blank inherits.",
     )
     config_template = models.ForeignKey(
         "ExportTemplate", on_delete=models.SET_NULL, null=True, blank=True,

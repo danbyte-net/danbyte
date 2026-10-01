@@ -2388,6 +2388,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "part_number", "platform", "platform_id",
                   "u_height", "rack_width", "description",
                   "front_image", "rear_image", "faceplate", "image_ports",
+                  "topology_photo_size",
                   "is_full_depth", "airflow", "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
                   "custom_fields",
@@ -2594,6 +2595,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     # anyone reads a device list for (see api.list_fields).
     list_columns_exclude = (
         "vc_renamed_interfaces", "image_ports", "port_labels", "topology_card",
+        "topology_photo_size",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
     )
@@ -3031,7 +3033,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
                   "description", "comments", "airflow", "effective_airflow",
-                  "port_labels", "topology_card",
+                  "port_labels", "topology_card", "topology_photo_size",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
                   "primary_ip", "primary_ip_id",
@@ -5925,7 +5927,7 @@ class DeviceRoleSerializer(TaggableSerializerMixin, CustomFieldsSerializerMixin,
     class Meta:
         model = DeviceRole
         fields = ["id", "name", "slug", "color", "icon", "is_patch_panel",
-                  "has_fov",
+                  "has_fov", "topology_photo_size",
                   "description", "custom_fields", "tags", "tag_ids",
                   "config_template", "config_template_id",
                   "device_count", "vm_count", "created_at", "updated_at"]

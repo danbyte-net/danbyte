@@ -505,7 +505,10 @@ live SNMP state, IPs - in the order set under **Settings → Components**.
 never wider than the pane). Tick **Use this size everywhere** in the editor
 and its **Fit** / **−** / **+** zoom is saved with the layout for that side:
 Fit keeps the photo inside the pane, a percentage draws it at that fraction of
-its natural pixels - and the device page's photo panel follows.
+its natural pixels - and the device page's photo panel follows. The topology
+Diagram draws photos at rack width unless the device, its type or its role
+sets **Topology photo size** to *Own size*; then it uses this saved size, else
+the upload size (see [Photo nodes](../features/topology.md#photo-nodes)).
 
 Types without photo ports keep using the schematic faceplate builder above.
 

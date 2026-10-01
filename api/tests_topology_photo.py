@@ -152,6 +152,7 @@ class PhotoPayloadTests(_Base):
         self.assertTrue(front["url"].startswith("/media/device-type-images/"))
         self.assertTrue(front["url"].endswith(".png"))
         self.assertAlmostEqual(front["aspect"], 40 / 480, places=5)
+        self.assertEqual(front["width"], 480)
         self.assertIsNone(front["scale"])
         # Only the cabled port's marker ships; eth9 is uncabled.
         self.assertEqual(front["markers"], [{
@@ -163,7 +164,7 @@ class PhotoPayloadTests(_Base):
         self.assertIsNone(photos["sw-a"]["vc_position"])
         # The peer has no type: no photo, no faceplate, one full-width unit.
         self.assertEqual(photos["peer"], {
-            "front": None, "type_faceplate": False, "u_height": 1,
+            "front": None, "size": "rack", "type_faceplate": False, "u_height": 1,
             "rack_width": "full", "vc_position": None,
         })
 
@@ -302,6 +303,39 @@ class PhotoPayloadTests(_Base):
             [(m["port"], m["x"]) for m in front["markers"]], [("eth0", 0.5)]
         )
 
+    def test_photo_size_takes_the_device_then_its_type_then_its_role(self):
+        own_role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Industrial", slug="industrial",
+            topology_photo_size="own",
+        )
+        plain = self._type("PLAIN")
+        racked = self._type("RACKED", topology_photo_size="rack")
+        self._device("none", plain)
+        self._device("role", plain, role=own_role)
+        self._device("type", racked, role=own_role)
+        self._device("device", racked, role=own_role, topology_photo_size="own")
+        photos = self._photos(self._graph())
+        self.assertEqual(
+            {k: photos[k]["size"] for k in ("none", "role", "type", "device")},
+            {"none": "rack", "role": "own", "type": "rack", "device": "own"},
+        )
+
+    def test_photo_size_is_rack_own_or_blank_through_the_api(self):
+        d = self._device("sw", self._type("SW"))
+        url = f"/api/devices/{d.id}/"
+        r = self.client.patch(url, {"topology_photo_size": "huge"}, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self.client.patch(url, {"topology_photo_size": "own"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["topology_photo_size"], "own")
+        r = self.client.patch(url, {"topology_photo_size": ""}, format="json")
+        self.assertEqual(r.json()["topology_photo_size"], "")
+        r = self.client.post("/api/device-roles/", {
+            "name": "Rail", "slug": "rail", "topology_photo_size": "own",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["topology_photo_size"], "own")
+
     def test_panel_front_ports_on_raw_hops(self):
         panel_role = DeviceRole.objects.create(
             tenant=self.tenant, name="Panel", slug="panel", is_patch_panel=True
@@ -341,6 +375,7 @@ class PhotoPayloadTests(_Base):
         self._to_peer(eth0)
         front = self._photos(self._graph())["sw"]["front"]
         self.assertIsNone(front["aspect"])
+        self.assertIsNone(front["width"])
         self.assertEqual(self._ports({"front": front}), [("eth0", str(eth0.id))])
 
     def test_exif_quarter_turn_swaps_the_aspect(self):
@@ -352,6 +387,8 @@ class PhotoPayloadTests(_Base):
         self._device("cam", dt)
         front = self._photos(self._graph())["cam"]["front"]
         self.assertAlmostEqual(front["aspect"], 4.0)
+        # Shown turned, so its width on screen is the file's height.
+        self.assertEqual(front["width"], 100)
 
     def test_type_faceplate(self):
         tpl = self._type("TPL", image=None)

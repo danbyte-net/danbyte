@@ -22,6 +22,10 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import {
+  photoSizeOf,
+  TopologyPhotoSizeSelect,
+} from "@/components/topology-photo-size-select"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface DeviceRoleFormProps {
@@ -61,6 +65,9 @@ export function DeviceRoleForm({
     role?.is_patch_panel ?? false
   )
   const [hasFov, setHasFov] = useState(role?.has_fov ?? false)
+  const [photoSize, setPhotoSize] = useState(
+    photoSizeOf(role?.topology_photo_size)
+  )
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
     role?.custom_fields ?? {}
   )
@@ -77,6 +84,7 @@ export function DeviceRoleForm({
     setIcon(role.icon ?? "")
     setIsPatchPanel(role.is_patch_panel)
     setHasFov(role.has_fov)
+    setPhotoSize(photoSizeOf(role.topology_photo_size))
     setConfigTemplateId(role.config_template?.id ?? null)
     setDescription(role.description)
     setCustomFields(role.custom_fields)
@@ -107,6 +115,7 @@ export function DeviceRoleForm({
         icon: icon || "",
         is_patch_panel: isPatchPanel,
         has_fov: hasFov,
+        topology_photo_size: photoSize ?? "",
         config_template_id: configTemplateId,
         description: description.trim(),
         custom_fields: customFields,
@@ -196,6 +205,11 @@ export function DeviceRoleForm({
           hint="Floor-plan tiles typed by this role get a direction / angle / reach cone (e.g. a CCTV role)."
           checked={hasFov}
           onChange={setHasFov}
+        />
+        <TopologyPhotoSizeSelect
+          value={photoSize}
+          onChange={setPhotoSize}
+          error={fieldErrors.topology_photo_size}
         />
       </FormSection>
 
