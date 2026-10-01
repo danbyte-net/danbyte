@@ -2040,25 +2040,30 @@ export function buildDiagram(
   const chassis = new Map<string, ChassisModel>()
   /** The member a frame takes its role and level from: the master. */
   const leadOf = new Map<string, string>()
-  if (!grouped && !opts.run && opts.chassis)
-    for (const spec of chassisSpecs(graph.nodes, opts.chassis)) {
-      const members = spec.members.filter((m) => base.has(m))
-      if (!members.length) continue
-      if (members.length < 2 && !opts.chassis.placed?.includes(spec.vc.id))
-        continue
-      chassis.set(spec.id, {
-        vc: spec.vc,
-        orient: spec.orient,
-        members,
-        gaps: [],
-        inner: 0,
-      })
-      const data = new Map(graph.nodes.map((n) => [n.id, n.data]))
-      leadOf.set(
-        spec.id,
-        members.find((m) => vcOf(data.get(m))?.master) ?? members[0]
-      )
-    }
+  const specs =
+    !grouped && !opts.run && opts.chassis
+      ? chassisSpecs(graph.nodes, opts.chassis)
+      : []
+  const dataOf = specs.length
+    ? new Map(graph.nodes.map((n) => [n.id, n.data]))
+    : undefined
+  const placedVcs = new Set(opts.chassis?.placed ?? [])
+  for (const spec of specs) {
+    const members = spec.members.filter((m) => base.has(m))
+    if (!members.length) continue
+    if (members.length < 2 && !placedVcs.has(spec.vc.id)) continue
+    chassis.set(spec.id, {
+      vc: spec.vc,
+      orient: spec.orient,
+      members,
+      gaps: [],
+      inner: 0,
+    })
+    leadOf.set(
+      spec.id,
+      members.find((m) => vcOf(dataOf?.get(m))?.master) ?? members[0]
+    )
+  }
   const inStack = memberFrames(chassis)
   unifyChassis(chassis, cards, base, measure)
 
@@ -2293,11 +2298,14 @@ export function buildDiagram(
   const sizes0 = collapsed(new Map<string, Size>([...fixed, ...base]))
   const all = reserve(sizes0)
   // The nodes the layout places: a stack as one, with its master's role.
+  const rfById = new Map<string, Node>(
+    chassis.size ? rfNodes.map((n) => [n.id, n]) : []
+  )
   const layNodes: Node[] = chassis.size
     ? [
         ...rfNodes.filter((n) => !inStack.has(n.id)),
         ...[...chassis].map(([id, ch]): Node => {
-          const lead = rfNodes.find((n) => n.id === leadOf.get(id))
+          const lead = rfById.get(leadOf.get(id)!)
           return {
             id,
             type: "card",
