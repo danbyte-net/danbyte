@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
 import { WirelessLANDeleteDialog } from "@/components/wireless-lan-delete-dialog"
 
@@ -23,6 +24,8 @@ function WirelessLANsPage() {
   const canAdd = canDo("wirelesslan", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<WirelessLAN | null>(null)
+  const [selectedRows, setSelectedRows] = useState<WirelessLAN[]>([])
+  const canDelete = canDo("wirelesslan", "delete")
 
   const query = useQuery({
     queryKey: ["wireless-lans", q],
@@ -38,6 +41,7 @@ function WirelessLANsPage() {
     () =>
       buildWirelessLANColumns({
         humanIds,
+        selection: canDelete,
         omit: ["description"],
         actions: {
           editTo: "/wireless-lans/$id/edit",
@@ -45,7 +49,7 @@ function WirelessLANsPage() {
           onDelete,
         },
       }),
-    [onDelete, humanIds]
+    [onDelete, humanIds, canDelete]
   )
 
   const {
@@ -82,12 +86,21 @@ function WirelessLANsPage() {
       <DataTable
         data={filteredRows}
         columns={wiredColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="ssid"
         tableId="wireless-lans"
       />
       <WirelessLANDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <SafeBulkDeleteBar
+        selected={selectedRows}
+        endpoint="/api/wireless-lans/"
+        noun={["wireless LAN", "wireless LANs"]}
+        invalidate={[["wireless-lans"]]}
+        onCleared={() => setSelectedRows([])}
       />
     </ListPageShell>
   )

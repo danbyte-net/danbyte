@@ -33,6 +33,7 @@ from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
 from auth_api.drf import RBACViewSetMixin, restrict_for_view
 from core.models import Organization, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
+from .bulk_delete import SafeBulkDeleteMixin
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
 from .cf_search import cf_text_q
@@ -7034,7 +7035,8 @@ class ContactAssignmentViewSet(TenantScopedViewSet):
 
 
 # ─── Circuits ────────────────────────────────────────────────────────────────
-class ProviderViewSet(TenantScopedViewSet):
+class ProviderViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = Provider.objects.all().order_by(NATURAL_NAME)
     serializer_class = ProviderSerializer
     pagination_class = StandardPagination
@@ -7073,8 +7075,13 @@ class ProviderViewSet(TenantScopedViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+    def bulk_blocker(self, obj):
+        n = obj.circuits.count()
+        return f"In use: {n} circuit{'s' if n != 1 else ''}." if n else None
 
-class CircuitTypeViewSet(TenantScopedViewSet):
+
+class CircuitTypeViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = CircuitType.objects.all().order_by(NATURAL_NAME)
     serializer_class = CircuitTypeSerializer
     pagination_class = StandardPagination
@@ -7106,8 +7113,13 @@ class CircuitTypeViewSet(TenantScopedViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+    def bulk_blocker(self, obj):
+        n = obj.circuits.count()
+        return f"In use: {n} circuit{'s' if n != 1 else ''}." if n else None
 
-class CircuitViewSet(TenantScopedViewSet):
+
+class CircuitViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = Circuit.objects.all().order_by(natural("cid"))
     serializer_class = CircuitSerializer
     pagination_class = StandardPagination
@@ -7148,7 +7160,8 @@ class CircuitViewSet(TenantScopedViewSet):
         return qs
 
 
-class ProviderNetworkViewSet(TenantScopedViewSet):
+class ProviderNetworkViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = (
         ProviderNetwork.objects.select_related("provider")
         .prefetch_related("tags").order_by(NATURAL_NAME)
@@ -7298,7 +7311,8 @@ class PowerFeedViewSet(TenantScopedViewSet):
 
 
 # ─── Wireless ────────────────────────────────────────────────────────────────
-class WirelessLANGroupViewSet(TenantScopedViewSet):
+class WirelessLANGroupViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = WirelessLANGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = WirelessLANGroupSerializer
     pagination_class = StandardPagination
@@ -7330,6 +7344,10 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+    def bulk_blocker(self, obj):
+        n = obj.wireless_lans.count()
+        return f"In use: {n} wireless LAN{'s' if n != 1 else ''}." if n else None
+
 
 class SecretPSKViewSetMixin:
     """Moves a :class:`api.models.SecretBackedPSK` key in and out of the secret
@@ -7338,7 +7356,7 @@ class SecretPSKViewSetMixin:
     what the change log calls the object."""
 
     psk_object_label = ""
-    rbac_action_map = {"reveal_psk": "reveal"}
+    rbac_action_map = {"reveal_psk": "reveal", "bulk_delete": "delete"}
 
     def _pop_psk(self, serializer):
         """Take the PSK out of the validated data before the row is saved -
@@ -7421,7 +7439,7 @@ class SecretPSKViewSetMixin:
         )
 
 
-class WirelessLANViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
+class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScopedViewSet):
     """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
     store - the mixin moves it in and out, never through a read."""
 
@@ -7715,7 +7733,8 @@ class L2VPNTerminationViewSet(TenantScopedViewSet):
         serializer.save()
 
 
-class VirtualChassisViewSet(TenantScopedViewSet):
+class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = (
         VirtualChassis.objects
         .select_related("master", "master__primary_ip", "master__oob_ip")

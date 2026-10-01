@@ -133,6 +133,10 @@ Deleting a virtual chassis **releases its members** - their positions and
 priorities are cleared and they carry on as standalone devices. The devices
 themselves are never deleted with the stack.
 
+To delete several stacks, tick them in **Virtual chassis** and press **Delete**
+in the bar. Each stack releases its members the same way
+(`POST /api/virtual-chassis/bulk-delete/`).
+
 ## Tags & custom fields
 
 Need to track something extra - a stack firmware train, a maintenance window?

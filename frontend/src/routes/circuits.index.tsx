@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { MiniMap } from "@/components/site-map/mini-map"
 import { useState as useStripState } from "react"
 import { useMe } from "@/lib/use-me"
@@ -28,6 +29,7 @@ function CircuitsPage() {
   const canDelete = canDo("circuit", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Circuit | null>(null)
+  const [selectedRows, setSelectedRows] = useState<Circuit[]>([])
 
   const query = useQuery({
     queryKey: ["circuits", q],
@@ -49,6 +51,7 @@ function CircuitsPage() {
     () =>
       buildCircuitColumns({
         humanIds,
+        selection: canDelete,
         sla: { entries: sla.entries, frame: sla.frame },
         omit: ["description"],
         actions: {
@@ -101,12 +104,21 @@ function CircuitsPage() {
       <DataTable
         data={filteredRows}
         columns={wiredColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="endpoints"
         tableId="circuits"
       />
       <CircuitDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <SafeBulkDeleteBar
+        selected={selectedRows}
+        endpoint="/api/circuits/"
+        noun={["circuit", "circuits"]}
+        invalidate={[["circuits"]]}
+        onCleared={() => setSelectedRows([])}
       />
     </ListPageShell>
   )

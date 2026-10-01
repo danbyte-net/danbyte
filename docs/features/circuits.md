@@ -116,6 +116,19 @@ lives on the side it belongs to.
     If a provider or circuit type still has circuits attached, Danbyte blocks
     the delete. Reassign or remove those circuits first.
 
+## Deleting several at once
+
+Tick rows in the Circuits, Providers, Provider networks or Circuit types list
+to delete several at once. Before anything is removed Danbyte shows what will
+happen: which rows go, what goes with them (a circuit's terminations), and which
+rows it keeps because something still uses them. Only the free rows are deleted.
+The bulk delete is `POST /api/<list>/bulk-delete/` with `{"ids": [...]}` (add
+`"dry_run": true` for the preview) and needs the *delete* permission on the
+type.
+
+A provider or circuit type with circuits is kept, as a single delete refuses
+it.
+
 ## Provider, provider-network & circuit-type pages
 
 Click a **provider**, **provider network**, or **circuit type** name in its

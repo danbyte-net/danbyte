@@ -8,9 +8,10 @@ import { api, type WirelessLANGroup, type Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { numidColumn } from "@/components/cells/numid"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { RowActions } from "@/components/row-actions"
 import { WlanGroupDeleteDialog } from "@/components/wlan-group-delete-dialog"
 
@@ -24,6 +25,8 @@ function WlanGroupsPage() {
   const canAdd = canDo("wirelesslangroup", "add")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<WirelessLANGroup | null>(null)
+  const [selectedRows, setSelectedRows] = useState<WirelessLANGroup[]>([])
+  const canDelete = canDo("wirelesslangroup", "delete")
 
   const query = useQuery({
     queryKey: ["wireless-lan-groups"],
@@ -45,6 +48,7 @@ function WlanGroupsPage() {
   const onDelete = useCallback((g: WirelessLANGroup) => setDeleting(g), [])
   const columns = useMemo<ColumnDef<WirelessLANGroup>[]>(
     () => [
+      ...(canDelete ? [selectionColumn<WirelessLANGroup>()] : []),
       ...(humanIds
         ? [numidColumn<WirelessLANGroup>({ get: (r) => r.numid })]
         : []),
@@ -102,7 +106,7 @@ function WlanGroupsPage() {
         ),
       },
     ],
-    [onDelete, humanIds]
+    [onDelete, humanIds, canDelete]
   )
   const {
     rail,
@@ -138,12 +142,21 @@ function WlanGroupsPage() {
       <DataTable
         data={filteredRows}
         columns={wiredColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="description"
         tableId="wireless-lan-groups"
       />
       <WlanGroupDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <SafeBulkDeleteBar
+        selected={selectedRows}
+        endpoint="/api/wireless-lan-groups/"
+        noun={["wireless LAN group", "wireless LAN groups"]}
+        invalidate={[["wireless-lan-groups"]]}
+        onCleared={() => setSelectedRows([])}
       />
     </ListPageShell>
   )

@@ -6,12 +6,13 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type Provider, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { ProviderDeleteDialog } from "@/components/provider-delete-dialog"
@@ -27,6 +28,7 @@ function ProvidersPage() {
   const canDelete = canDo("provider", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Provider | null>(null)
+  const [selectedRows, setSelectedRows] = useState<Provider[]>([])
 
   const query = useQuery({
     queryKey: ["providers", q],
@@ -40,6 +42,7 @@ function ProvidersPage() {
   const onDelete = useCallback((p: Provider) => setDeleting(p), [])
   const columns = useMemo<ColumnDef<Provider>[]>(
     () => [
+      ...(canDelete ? [selectionColumn<Provider>()] : []),
       ...(humanIds ? [numidColumn<Provider>({ get: (r) => r.numid })] : []),
       {
         id: "name",
@@ -149,12 +152,21 @@ function ProvidersPage() {
       <DataTable
         data={filteredRows}
         columns={facetColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="noc_email"
         tableId="providers"
       />
       <ProviderDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <SafeBulkDeleteBar
+        selected={selectedRows}
+        endpoint="/api/providers/"
+        noun={["provider", "providers"]}
+        invalidate={[["providers"]]}
+        onCleared={() => setSelectedRows([])}
       />
     </ListPageShell>
   )

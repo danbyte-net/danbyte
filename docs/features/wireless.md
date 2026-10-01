@@ -113,6 +113,19 @@ are components on the AP (seeded from its device type), an external sector or
 dish is its own small device cabled to the AP's RF aux port, and gain/bands
 are structured fields, not free text.
 
+## Deleting several at once
+
+Tick rows in the Wireless LANs or Wireless LAN groups list to delete several
+at once. Before anything is removed Danbyte shows which rows go and which it
+keeps because something still uses them. Only the free rows are deleted. The
+bulk delete is `POST /api/wireless-lans/bulk-delete/` (or
+`/api/wireless-lan-groups/bulk-delete/`) with `{"ids": [...]}` (add
+`"dry_run": true` for the preview) and needs the *delete* permission on the
+type.
+
+A group that still holds SSIDs is kept. A deleted SSID's pre-shared key is
+removed from the secret store, as with a single delete.
+
 ## Wireless LAN group pages
 
 Click a **wireless LAN group** name in its list to open its detail page - the

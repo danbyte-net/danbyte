@@ -23,9 +23,10 @@ import {
 } from "@/components/columns/sla-column"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -44,6 +45,7 @@ function VirtualChassisPage() {
   const canDelete = canDo("virtualchassis", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<VirtualChassis | null>(null)
+  const [selectedRows, setSelectedRows] = useState<VirtualChassis[]>([])
 
   const query = useQuery({
     queryKey: ["virtual-chassis", q],
@@ -78,6 +80,7 @@ function VirtualChassisPage() {
   const onDelete = useCallback((v: VirtualChassis) => setDeleting(v), [])
   const columns = useMemo<ColumnDef<VirtualChassis>[]>(
     () => [
+      ...(canDelete ? [selectionColumn<VirtualChassis>()] : []),
       ...(humanIds
         ? [numidColumn<VirtualChassis>({ get: (r) => r.numid })]
         : []),
@@ -288,12 +291,21 @@ function VirtualChassisPage() {
       <DataTable
         data={filteredRows}
         columns={facetColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="description"
         tableId="virtual-chassis"
       />
       <VirtualChassisDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <SafeBulkDeleteBar
+        selected={selectedRows}
+        endpoint="/api/virtual-chassis/"
+        noun={["virtual chassis", "virtual chassis"]}
+        invalidate={[["virtual-chassis"]]}
+        onCleared={() => setSelectedRows([])}
       />
     </ListPageShell>
   )
