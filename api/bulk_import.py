@@ -62,6 +62,14 @@ def _resolve_fk(field, value, tenant, user=None):
     qs = related._default_manager.all()
     if any(c.name == "tenant" for c in related._meta.concrete_fields):
         qs = qs.filter(tenant=tenant)
+    else:
+        # Rows tenant-scoped through a parent (an interface through its
+        # device) resolve inside the tenant too, as their API fields do.
+        from .serializers import _PARENT_TENANT_PATH
+
+        path = _PARENT_TENANT_PATH.get(related.__name__)
+        if path is not None:
+            qs = qs.filter(**{path: tenant})
     # Site scope: a Site-A importer must not be able to link a row to a Site-B
     # object by naming it. When a user is supplied, resolve the FK only among
     # rows they may view (constraints AND ObjectPermission.sites), same as the

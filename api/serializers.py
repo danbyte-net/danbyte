@@ -241,6 +241,8 @@ _PARENT_TENANT_PATH = {
     "ConsoleServerPort": "device__tenant",
     "PowerPort": "device__tenant",
     "PowerOutlet": "device__tenant",
+    "AuxPort": "device__tenant",
+    "DinRail": "cabinet__tenant",
 }
 
 
