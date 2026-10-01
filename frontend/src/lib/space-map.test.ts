@@ -6,7 +6,10 @@ import {
   cellNote,
   formatUsed,
   isDescendable,
+  outerLevels,
+  parseOutView,
   parseZoomPath,
+  supernetOf,
   zoomParam,
 } from "@/lib/space-map"
 
@@ -241,5 +244,42 @@ describe("formatUsed", () => {
     expect(formatUsed(0.001)).toBe("<1%")
     expect(formatUsed(0.999)).toBe(">99%")
     expect(formatUsed(1)).toBe("100%")
+  })
+})
+
+describe("zooming out of a prefix", () => {
+  it("takes the block one bit up, or any size up to its master", () => {
+    expect(supernetOf("10.196.238.128/28", 27)).toBe("10.196.238.128/27")
+    expect(supernetOf("10.196.238.128/28", 26)).toBe("10.196.238.128/26")
+    expect(supernetOf("10.196.238.128/28", 24)).toBe("10.196.238.0/24")
+    expect(supernetOf("2001:db8:0:ff00::/56", 48)).toBe("2001:db8::/48")
+    expect(supernetOf("10.0.0.0/24", 24)).toBeNull()
+    expect(outerLevels("10.196.238.128/28", "10.196.192.0/18")).toEqual([
+      "10.196.192.0/18",
+      "10.196.224.0/19",
+      "10.196.224.0/20",
+      "10.196.232.0/21",
+      "10.196.236.0/22",
+      "10.196.238.0/23",
+      "10.196.238.0/24",
+      "10.196.238.128/25",
+      "10.196.238.128/26",
+      "10.196.238.128/27",
+      "10.196.238.128/28",
+    ])
+    expect(outerLevels("10.0.0.0/24", "192.168.0.0/16")).toEqual([])
+  })
+
+  it("keeps an ?out= view only when it holds the prefix inside its master", () => {
+    const at = (raw: unknown) =>
+      parseOutView(raw, "10.196.238.128/28", "10.196.192.0/18")
+    expect(at("10.196.238.0/24")).toBe("10.196.238.0/24")
+    expect(at("10.196.192.0/18")).toBe("10.196.192.0/18")
+    expect(at("10.196.238.128/28")).toBeNull()
+    expect(at("10.196.0.0/16")).toBeNull()
+    expect(at("10.196.239.0/24")).toBeNull()
+    expect(
+      parseOutView("10.196.238.0/24", "10.196.238.128/28", null)
+    ).toBeNull()
   })
 })

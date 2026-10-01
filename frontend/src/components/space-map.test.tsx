@@ -20,7 +20,7 @@ const { apiMock, navMock, zoomMock, prefs } = vi.hoisted(() => {
     apiMock: vi.fn<(path: string) => Promise<unknown>>(),
     navMock: vi.fn(),
     zoomMock: vi.fn<(zoom: string[]) => void>(),
-    prefs: { values },
+    prefs: { values, setPref: vi.fn<(key: string, value: unknown) => void>() },
   }
 })
 vi.mock("@/lib/api", () => ({ api: apiMock }))
@@ -444,7 +444,7 @@ describe("SpaceMap", () => {
     expect(screen.getByText(/holds an IP range/)).toBeTruthy()
   })
 
-  it("draws a span that holds free gaps fainter than a solid one", async () => {
+  it("hatches a span that holds free gaps and fills a solid one", async () => {
     apiMock.mockImplementation(() =>
       Promise.resolve(
         map(
@@ -470,10 +470,78 @@ describe("SpaceMap", () => {
     )
     renderMap("11.0.0.0/8")
     const block = await screen.findByRole("button", { name: /^11\.0\.0\.0\/9/ })
-    const [faint, solid] = block.querySelectorAll<HTMLElement>(
+    const [gappy, solid] = block.querySelectorAll<HTMLElement>(
       "[data-slot=used-span]"
     )
-    expect(Number(faint.style.opacity)).toBeLessThan(0.5)
-    expect(solid.style.opacity).toBe("")
+    expect(gappy.style.backgroundImage).toContain("repeating-linear-gradient")
+    expect(solid.style.backgroundImage).toBe("")
+    expect(solid.classList.contains("bg-background")).toBe(true)
+    // Both run the cell's full height; its outline is drawn over them.
+    expect(gappy.classList.contains("inset-y-0")).toBe(true)
+  })
+
+  it("lines every row up under the blocks it splits in the aligned layout", async () => {
+    prefs.values = { space_map_layout: "aligned" }
+    renderMap()
+    const block = await screen.findByRole("button", {
+      name: /^10\.196\.238\.128\/26/,
+    })
+    const row = block.parentElement!
+    expect(row.style.gridTemplateColumns).toBe("repeat(4, minmax(0, 1fr))")
+    fireEvent.click(screen.getByRole("button", { name: "Grid" }))
+    expect(prefs.setPref).toHaveBeenCalledWith("space_map_layout", "grid")
+  })
+
+  it("zooms out of a prefix one bit at a time and outlines it", async () => {
+    const out = vi.fn()
+    const back = vi.fn()
+    const pick = vi.fn()
+    renderMap("10.196.192.0/18", {
+      lead: [],
+      onZoomOut: out,
+      levels: [
+        { cidr: "10.196.192.0/18", current: true, onSelect: pick },
+        {
+          cidr: "10.196.238.128/28",
+          current: false,
+          label: "this prefix",
+          onSelect: back,
+        },
+      ],
+      focus: { cidr: "10.196.238.128/28", onSelect: back },
+    })
+    // Its block on this map holds it: a dashed outline to follow down.
+    const holder = await screen.findByRole("button", {
+      name: /^10\.196\.238\.128\/26/,
+    })
+    expect(holder.className).toContain("outline-dashed")
+    fireEvent.click(screen.getByRole("button", { name: "Zoom out" }))
+    expect(out).toHaveBeenCalledOnce()
+    openMenu(screen.getByRole("button", { name: "Zoom to a size" }))
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /this prefix/ })
+    )
+    expect(back).toHaveBeenCalledOnce()
+  })
+
+  it("goes back to the prefix from its own outlined block", async () => {
+    const back = vi.fn()
+    renderMap("10.196.192.0/18", {
+      initialZoom: ["10.196.238.128/26"],
+      focus: { cidr: "10.196.238.128/28", onSelect: back },
+    })
+    const own = await screen.findByRole("button", {
+      name: /^10\.196\.238\.128\/28/,
+    })
+    expect(own.className).toContain("outline-primary")
+    expect(own.className).not.toContain("outline-dashed")
+    openMenu(own)
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: /Back to 10\.196\.238\.128\/28/,
+      })
+    )
+    expect(back).toHaveBeenCalledOnce()
+    expect(navMock).not.toHaveBeenCalled()
   })
 })

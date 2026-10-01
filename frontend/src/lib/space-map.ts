@@ -1,5 +1,5 @@
 import type { SpaceMapCell } from "@/lib/api"
-import { contains, parseCidr } from "@/lib/prefix-tree"
+import { bigIntToIp, contains, parseCidr } from "@/lib/prefix-tree"
 
 // Behaviour of the prefix space map (components/space-map.tsx), kept free of
 // React so the click/zoom rules are testable on their own.
@@ -53,6 +53,51 @@ export function parseZoomPath(raw: unknown, root: string): string[] {
     outer = c
   }
   return path
+}
+
+/** Does block `outer` hold `inner`, or is it the same block? */
+export function holdsBlock(outer: string, inner: string): boolean {
+  if (outer === inner) return true
+  const o = parsed(outer)
+  const i = parsed(inner)
+  return !!o && !!i && contains(o, i)
+}
+
+/** The block of `len` bits that holds `cidr` (its supernet), or null when
+ * `len` isn't shorter than the block's own length. */
+export function supernetOf(cidr: string, len: number): string | null {
+  const c = parsed(cidr)
+  if (!c || !Number.isInteger(len) || len < 0 || len >= c.prefixlen) return null
+  const host = BigInt((c.family === 4 ? 32 : 128) - len)
+  return `${bigIntToIp((c.start >> host) << host, c.family)}/${len}`
+}
+
+/**
+ * The blocks a prefix's map can zoom out through, one bit at a time:
+ * from `outer` (its outermost master) down to the prefix itself, outermost
+ * first. Empty when `outer` doesn't hold it.
+ */
+export function outerLevels(cidr: string, outer: string): string[] {
+  const c = parsed(cidr)
+  const o = parsed(outer)
+  if (!c || !o || !contains(o, c)) return []
+  const levels: string[] = []
+  for (let len = o.prefixlen; len < c.prefixlen; len++) {
+    const block = supernetOf(cidr, len)
+    if (block) levels.push(block)
+  }
+  return [...levels, cidr]
+}
+
+/** The `?out=` view of a prefix's map: a block that holds the prefix, inside
+ * its outermost master - or null for a value that isn't one. */
+export function parseOutView(
+  raw: unknown,
+  cidr: string,
+  outer: string | null
+): string | null {
+  if (typeof raw !== "string" || !raw || !outer) return null
+  return outerLevels(cidr, outer).slice(0, -1).includes(raw) ? raw : null
 }
 
 /** The `?zoom=` value for a path (undefined drops the param). */

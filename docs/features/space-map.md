@@ -15,10 +15,11 @@ aligned subnet at that size:
 
 - **Green** - free. No child prefix touches that block.
 - **Green with rose bars, rose outline** - partly used. No child prefix covers
-  the whole block, but smaller child prefixes sit inside it. Each rose bar marks
-  where one sits and how much of the block it takes, so a `/26` holding one
-  `/28` shows a bar across its first quarter. The block can't be allocated
-  whole, but it still has free space one level down.
+  the whole block, but smaller child prefixes sit inside it. Each rose bar runs
+  the chip's full height and marks where one sits and how much of the block it
+  takes, so a `/26` holding one `/28` shows a bar across its first quarter; the
+  outline is drawn over the bars, so it stays whole. The block can't be
+  allocated whole, but it still has free space one level down.
 - **Rose** - used. The block is an existing child prefix, or sits inside one.
 - **Green with a small number** - free, but already holding stray IPs. See
   [Stray IPs](#stray-ips) below.
@@ -27,7 +28,7 @@ aligned subnet at that size:
 
 A rose bar is the same fill as a used block, so a bar reads exactly as used as
 a rose chip. The map never paints free space as taken: children at most a pixel
-apart are drawn as one stretch, fainter when there are gaps in it, and when a
+apart are drawn as one stretch, hatched when there are gaps in it, and when a
 block holds many small children scattered across it (more than 16 separate
 runs), each sixteenth of the block that holds any gets one thin bar, as wide as
 what it holds and placed where it sits. A `/9` with a few dozen `/24`s spread
@@ -95,9 +96,35 @@ prefix the map started from.
 Zooming is also how you get past the eight-bit limit below. A `/18` draws its
 `/19`-`/26` rows; zoom into a `/26` and the map carries on to `/31`.
 
+### Zooming out of a prefix
+
+A prefix inside a larger one (its masters, shown under its name) can also zoom
+**out** on its own Map tab, to see what sits around it. The breadcrumb then
+starts at the outermost master (`10.196.192.0/18 › 10.196.238.0/24 ›
+10.196.238.128/28`):
+
+- **Zoom out** steps one bit at a time - the `/28` to its `/27`, then the
+  `/26` - drawing its neighbours around it.
+- The **▾** beside it lists every size from the outermost master down to the
+  prefix, to jump several bits at once; *this prefix* goes back.
+- A master on the breadcrumb zooms straight out to it.
+
+The prefix is outlined wherever the map draws it, and each block holding it
+gets a dashed outline to follow down; picking the prefix's own chip (**Back
+to …**) returns to it. The view is part of the page address (`?out=…`), like
+the zoom path.
+
 Everything on the map works from the keyboard: Tab to a chip, Enter to click it
 (or open its menu), arrow keys inside the menu. After a zoom, focus stays in the
 map.
+
+## Grid or aligned
+
+**Grid** draws up to eight chips a line, each labelled. **Aligned** draws each
+row on one line, so every chip sits under the block it splits - a `/22` under
+its own `/20` - like slices of the row above; a chip too narrow for its whole
+address shows only its colour, and its tooltip names it. The choice is kept per
+user (`space_map_layout`).
 
 ## Stray IPs
 

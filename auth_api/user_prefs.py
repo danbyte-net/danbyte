@@ -47,6 +47,9 @@ DEFAULTS: dict[str, Any] = {
     # shallower (e.g. v4 stop at /29) so the map stays scannable.
     "space_map_v4_max": 31,
     "space_map_v6_max": 128,
+    # grid = up to 8 cells a line, every cell labelled; aligned = one line
+    # per row, each cell under the block it splits.
+    "space_map_layout": "grid",
 
     # ─── Navigation ──────────────────────────────────────────────────────
     "landing_page":   "/",         # Page to open on first load after login.

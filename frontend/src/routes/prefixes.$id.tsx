@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react"
 import { SiteCell } from "@/components/cells/site-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { useUrlText } from "@/lib/use-url-state"
+import { useUrlPatch, useUrlText } from "@/lib/use-url-state"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { ChevronRight, CopyPlus, Layers, Pencil, Plus } from "lucide-react"
@@ -34,7 +34,14 @@ import { TagList } from "@/components/cells/tag-list"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { SpaceMap } from "@/components/space-map"
-import { parseZoomPath, zoomParam } from "@/lib/space-map"
+import {
+  holdsBlock,
+  outerLevels,
+  parseOutView,
+  parseZoomPath,
+  supernetOf,
+  zoomParam,
+} from "@/lib/space-map"
 import { PrefixIpsTable } from "@/components/prefix-ips-table"
 import { PrefixMonitoring } from "@/components/monitoring/prefix-monitoring"
 import {
@@ -408,13 +415,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="map">
-        <MapPane
-          prefixId={p.id}
-          vrfId={p.vrf?.id ?? null}
-          rootCidr={p.cidr}
-          canAddPrefix={canAddPrefix}
-          canAddIp={canAddIp}
-        />
+        <MapPane prefix={p} canAddPrefix={canAddPrefix} canAddIp={canAddIp} />
       </DetailTab>
 
       <DetailTab value="monitoring">
@@ -762,14 +763,15 @@ function NextAvailableTable({
   )
 }
 
-/** The prefix's ancestor chain, inline in the hero's subtitle line. */
-function MastersChain({ prefix }: { prefix: Prefix }) {
+/** The prefixes holding `prefix` in its VRF, outermost first - the ones the
+ * caller may view. */
+function usePrefixAncestors(prefix: Prefix): Prefix[] {
   const query = useQuery({
     queryKey: ["prefixes", "all"],
     queryFn: () => api<Paginated<Prefix>>("/api/prefixes/?page_size=2000"),
     staleTime: 30_000,
   })
-  const masters = useMemo(() => {
+  return useMemo(() => {
     const all = query.data?.results ?? []
     const me = parseCidr(prefix.cidr)
     if (!me) return []
@@ -785,6 +787,11 @@ function MastersChain({ prefix }: { prefix: Prefix }) {
     ancestors.sort((a, b) => a.c.prefixlen - b.c.prefixlen)
     return ancestors.map((x) => x.p)
   }, [query.data, prefix])
+}
+
+/** The prefix's ancestor chain, inline in the hero's subtitle line. */
+function MastersChain({ prefix }: { prefix: Prefix }) {
+  const masters = usePrefixAncestors(prefix)
 
   if (masters.length === 0) return null
   return (
@@ -819,29 +826,64 @@ function MastersChain({ prefix }: { prefix: Prefix }) {
 // The map's zoom path lives in the URL (`?zoom=a,b`), one history entry per
 // zoom, so Back from a zoom, from a prefix opened off the map, or from the
 // create form lands on the same view, and a zoomed view can be linked.
+//
+// A prefix inside a master also zooms OUT (`?out=<block>`): one bit at a
+// time, or to any size up to its outermost master, its neighbours drawn
+// around it and the prefix itself outlined. Such a view is fetched from the
+// most specific master holding the block, as that master's map.
 function MapPane({
-  prefixId,
-  vrfId,
-  rootCidr,
+  prefix,
   canAddPrefix,
   canAddIp,
 }: {
-  prefixId: string
-  vrfId: string | null
-  rootCidr: string
+  prefix: Prefix
   canAddPrefix: boolean
   canAddIp: boolean
 }) {
-  const [rawZoom, setRawZoom] = useUrlText("zoom")
-  const zoom = parseZoomPath(rawZoom, rootCidr)
+  const ancestors = usePrefixAncestors(prefix)
+  const [rawZoom] = useUrlText("zoom")
+  const [rawOut] = useUrlText("out")
+  const patch = useUrlPatch()
   const returnTo = useCurrentHref()
+  const top = ancestors.at(0) ?? null
+  const out = parseOutView(rawOut, prefix.cidr, top?.cidr ?? null)
+  const root = out ?? prefix.cidr
+  const rootLen = Number(root.split("/")[1])
+  const zoom = parseZoomPath(rawZoom, root)
+  // The view's map comes from the most specific master holding it.
+  const anchor = out
+    ? (ancestors.filter((a) => holdsBlock(a.cidr, out)).at(-1) ?? top)
+    : null
+  const view = (next: string | null) =>
+    patch({ out: next ?? undefined, zoom: undefined })
+  const levels = top ? outerLevels(prefix.cidr, top.cidr) : []
+  const up =
+    top && rootLen > Number(top.cidr.split("/")[1])
+      ? supernetOf(root, rootLen - 1)
+      : null
   return (
     <SpaceMap
-      prefixId={prefixId}
-      vrfId={vrfId}
-      rootCidr={rootCidr}
+      prefixId={anchor?.id ?? prefix.id}
+      vrfId={prefix.vrf?.id ?? null}
+      rootCidr={root}
+      rootWithin={
+        anchor && out !== anchor.cidr ? (out ?? undefined) : undefined
+      }
       zoom={zoom}
-      onZoomChange={(next) => setRawZoom(zoomParam(next) ?? "")}
+      onZoomChange={(next) => patch({ zoom: zoomParam(next) })}
+      lead={ancestors
+        .filter((a) => a.cidr !== root && holdsBlock(a.cidr, root))
+        .map((a) => ({ cidr: a.cidr, onSelect: () => view(a.cidr) }))}
+      onZoomOut={up ? () => view(up) : undefined}
+      levels={levels.map((cidr) => ({
+        cidr,
+        current: cidr === root,
+        label: cidr === prefix.cidr ? "this prefix" : undefined,
+        onSelect: () => view(cidr === prefix.cidr ? null : cidr),
+      }))}
+      focus={
+        out ? { cidr: prefix.cidr, onSelect: () => view(null) } : undefined
+      }
       canAddPrefix={canAddPrefix}
       canAddIp={canAddIp}
       returnTo={returnTo}
