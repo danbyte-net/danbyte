@@ -163,7 +163,7 @@ describe("normalizeRegions", () => {
         y: 0,
         w: 100,
         h: 100,
-        color: null,
+        color: "#123456",
         kind: "band",
         orient: "v",
       },

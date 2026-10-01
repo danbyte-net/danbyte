@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/tooltip"
 import type { MenuKeys } from "@/components/pointer-menu"
 import { cn } from "@/lib/utils"
+import { COLOR_PRESETS } from "@/components/ui/color-picker"
 import { bandLook } from "./diagram/band-node"
 import { STRIP_SIDE_ITEMS } from "./diagram/chassis-node"
 import { LINE_LOOKS } from "./diagram/line-tabs"
@@ -478,6 +479,32 @@ export function RegionMenuItems({
           </Tooltip>
         ))}
       </div>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger inset>More colors</DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="p-2">
+          <div
+            role="group"
+            aria-label="More colors"
+            className="grid grid-flow-col gap-1"
+            style={{ gridTemplateRows: "repeat(5, minmax(0, 1fr))" }}
+          >
+            {COLOR_PRESETS.map((hex) => (
+              <DropdownMenuItem
+                key={hex}
+                role="menuitemradio"
+                aria-label={hex}
+                aria-checked={hex === color}
+                onSelect={() => onRecolor(hex)}
+                className={cn(
+                  "size-5 shrink-0 rounded-sm border p-0 focus:ring-2 focus:ring-ring/60",
+                  hex === color ? "border-foreground" : "border-transparent"
+                )}
+                style={{ background: hex }}
+              />
+            ))}
+          </div>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
       {exits && (
         <DropdownMenuSub>
           <DropdownMenuSubTrigger inset>

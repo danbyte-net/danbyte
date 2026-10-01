@@ -250,12 +250,7 @@ export interface BandPaint {
  * unknown). */
 export function bandPaint(band: Pick<DiagramBand, "kind" | "fill">): BandPaint {
   const own = hex6(band.fill)
-  const swatch =
-    own && (ZONE_COLORS as readonly string[]).includes(own)
-      ? own
-      : band.kind === "zone"
-        ? ZONE_COLORS[0]
-        : null
+  const swatch = own ?? (band.kind === "zone" ? ZONE_COLORS[0] : null)
   if (!swatch)
     return {
       fill: mix(PRINT.wash, PRINT.border, 0.7),

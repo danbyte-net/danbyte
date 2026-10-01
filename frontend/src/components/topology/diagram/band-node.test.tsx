@@ -156,12 +156,13 @@ describe("BandNode", () => {
     expect(screen.getByDisplayValue("Spine-lag")).toBeTruthy()
   })
 
-  it("tints only with a zone swatch", () => {
+  it("tints with a swatch or preset colour, else neutral", () => {
     expect(bandLook(null).className).toContain("var(--muted)")
-    expect(bandLook("#123456")).toEqual(bandLook(null))
+    expect(bandLook("red")).toEqual(bandLook(null))
     expect(String(bandLook(ZONE_COLORS[2]).style.background)).toContain(
       ZONE_COLORS[2]
     )
+    expect(String(bandLook("#be185d").style.background)).toContain("#be185d")
   })
 
   it("offers rename, swatches, up, down and delete when selected", async () => {
@@ -202,6 +203,10 @@ describe("BandNode", () => {
     const slate = screen.getByRole("button", { name: "Slate" })
     expect(slate.getAttribute("data-tip")).toBe("Slate")
     expect(slate.style.background).toContain("40%")
+    // Danbyte's presets behind the palette button.
+    fireEvent.click(screen.getByRole("button", { name: "More colors" }))
+    fireEvent.click(await screen.findByRole("button", { name: "#be185d" }))
+    expect(data.onRecolor).toHaveBeenLastCalledWith("#be185d")
     fireEvent.click(screen.getByRole("button", { name: "Delete" }))
     expect(data.onDelete).toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy()

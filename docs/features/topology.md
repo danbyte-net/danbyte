@@ -988,10 +988,12 @@ rows' edges. Side bands can stand side by side.
   any edge). A taller band pushes the rows under it down, cards and all; a
   wider one widens the rows stacked with it. A band never gets smaller than
   the cards in it.
-- **Tint** it with one of the zone swatches (each named on hover: Slate,
-  Sky, Emerald, Amber, Pink, Violet), or back to neutral grey, from the
-  toolbar above it or its right-click menu. Rows start neutral, side bands
-  on a pastel swatch. Color means nothing on its own: it is there to set one
+- **Tint** it with one of the quick swatches (each named on hover: Slate,
+  Sky, Emerald, Amber, Pink, Violet), any of Danbyte's preset colors under
+  the palette button (**More colors** in the right-click menu) - the same
+  grid tags and roles pick from - or back to neutral grey, from the toolbar
+  above it or its right-click menu. Rows start neutral, side bands on a
+  pastel swatch. Color means nothing on its own: it is there to set one
   part of a picture apart.
 - **Delete** it from the toolbar or by right-clicking it (**Delete**); its cards stay
   where they are. **Arrange ▸ Clear bands** removes every band (after a
@@ -1057,7 +1059,8 @@ the same way on every tab:
   selected zone, or by right-clicking it → *Rename*.
 - **Resize** it by selecting it and dragging a corner.
 - **Color** it with a swatch (each named on hover: Slate, Sky, Emerald,
-  Amber, Pink, Violet) or **Delete** it, from the small toolbar above a
+  Amber, Pink, Violet) or a preset from the palette button (**More colors**
+  in the right-click menu), or **Delete** it, from the small toolbar above a
   selected zone or by right-clicking it.
 
 A zone is an **annotation, not a container** - it owns nothing inside it, so
@@ -1958,7 +1961,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
 | `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |

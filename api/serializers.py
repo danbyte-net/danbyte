@@ -3951,11 +3951,9 @@ class TopologyViewSerializer(NumIdModelSerializer):
     # Only these (added in 0.17) are checked in depth; the older keys keep
     # the lenient checks views have always been saved under.
 
-    #: The zone swatches - mirrors ZONE_COLORS in
-    #: frontend/src/components/topology/view-positions.ts.
-    ZONE_COLORS = (
-        "#64748b", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6",
-    )
+    #: A zone or band colour: a #rrggbb hex (the UI offers six quick swatches
+    #: and Danbyte's colour presets).
+    REGION_COLOR_RE = re.compile(r"^#[0-9a-f]{6}$")
     REGION_KINDS = ("zone", "band")
     #: A band is a row (``h``) or a side band (``v``).
     BAND_ORIENTS = ("h", "v")
@@ -4111,18 +4109,16 @@ class TopologyViewSerializer(NumIdModelSerializer):
             self._choice(
                 region.get("layout"), self.BAND_LAYOUTS, f"{where}.layout"
             )
-            # A swatch, or neutral. An off-palette hex - which older zones
-            # could carry, and which the map already draws as the first
-            # swatch - saves as neutral rather than refusing the whole view.
+            # A #rrggbb colour, or neutral. Anything else a string can hold
+            # saves as neutral rather than refusing the whole view.
             color = region.get("color")
             if color not in (None, ""):
                 if not isinstance(color, str):
                     raise serializers.ValidationError(
-                        f"{where}.color must be one of "
-                        f"{', '.join(self.ZONE_COLORS)} or null"
+                        f"{where}.color must be a #rrggbb colour or null"
                     )
                 color = color.lower()
-                region["color"] = color if color in self.ZONE_COLORS else None
+                region["color"] = color if self.REGION_COLOR_RE.match(color) else None
             rule = region.get("rule")
             if rule is None:
                 continue

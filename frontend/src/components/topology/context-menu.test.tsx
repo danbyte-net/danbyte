@@ -442,7 +442,7 @@ describe("RegionMenuItems", () => {
 
   it("renames, colors and deletes, in that order", async () => {
     await openMenu(<RegionMenuItems {...region("zone", "#0ea5e9")} />)
-    expect(rows()).toEqual(["Rename", "--", "Delete"])
+    expect(rows()).toEqual(["Rename", "More colors", "--", "Delete"])
     const swatches = screen
       .getAllByRole("menuitemradio")
       .map((s) => s.getAttribute("aria-label"))
@@ -476,6 +476,16 @@ describe("RegionMenuItems", () => {
     expect(p.onRecolor).toHaveBeenCalledWith("#8b5cf6")
   })
 
+  it("offers Danbyte's colour presets under More colors", async () => {
+    const p = region("band", "#be185d")
+    await openMenu(<RegionMenuItems {...p} />)
+    fireEvent.click(screen.getByRole("menuitem", { name: "More colors" }))
+    const pick = await screen.findByRole("menuitemradio", { name: "#be185d" })
+    expect(pick.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "#0d9488" }))
+    expect(p.onRecolor).toHaveBeenCalledWith("#0d9488")
+  })
+
   it("names a swatch on hover", async () => {
     await openMenu(<RegionMenuItems {...region("zone", null)} />)
     fireEvent.focus(screen.getByRole("menuitemradio", { name: "Amber" }))
@@ -490,7 +500,13 @@ describe("RegionMenuItems", () => {
         exits={{ value: "v", onChange }}
       />
     )
-    expect(rows()).toEqual(["Rename", "Cables to other bands", "--", "Delete"])
+    expect(rows()).toEqual([
+      "Rename",
+      "More colors",
+      "Cables to other bands",
+      "--",
+      "Delete",
+    ])
     fireEvent.click(
       screen.getByRole("menuitem", { name: "Cables to other bands" })
     )

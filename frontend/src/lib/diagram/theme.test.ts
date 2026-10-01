@@ -74,15 +74,18 @@ describe("print theme", () => {
     expect(mix("#0ea5e9", "#ffffff", 0)).toBe("#ffffff")
   })
 
-  it("paints bands neutral unless they carry a swatch; zones always do", () => {
+  it("paints bands neutral unless they carry a colour; zones always do", () => {
     // The canvas's light grey: --muted 70% toward --border.
     const grey = mix(PRINT.wash, PRINT.border, 0.7)
     expect(bandPaint({ kind: "row", fill: null }).fill).toBe(grey)
-    expect(bandPaint({ kind: "row", fill: "#123456" }).fill).toBe(grey)
+    expect(bandPaint({ kind: "row", fill: "red" }).fill).toBe(grey)
     expect(bandPaint({ kind: "column", fill: "#0ea5e9" }).fill).toBe(
       mix("#0ea5e9", "#ffffff", 0.12)
     )
-    expect(bandPaint({ kind: "zone", fill: "#123456" }).edge).toBe(
+    expect(bandPaint({ kind: "row", fill: "#BE185D" }).fill).toBe(
+      mix("#be185d", "#ffffff", 0.12)
+    )
+    expect(bandPaint({ kind: "zone", fill: "red" }).edge).toBe(
       mix(ZONE_COLORS[0], "#ffffff", 0.75)
     )
   })

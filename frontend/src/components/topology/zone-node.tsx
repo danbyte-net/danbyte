@@ -3,9 +3,9 @@ import { NodeResizer, NodeToolbar, Position } from "@xyflow/react"
 import type { NodeProps } from "@xyflow/react"
 import { Pencil, Trash2 } from "lucide-react"
 
-import { ToolButton } from "./diagram/band-node"
+import { MoreColors, ToolButton } from "./diagram/band-node"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
-import { ZONE_COLORS } from "./view-positions"
+import { isZoneColor, ZONE_COLORS } from "./view-positions"
 
 /**
  * A labelled backdrop box, drawn behind the map so a reader can see at a
@@ -42,9 +42,7 @@ export const ZONE_DRAG_HANDLE = "zone-grip"
 
 export function ZoneNode({ data, selected }: NodeProps) {
   const d = data as ZoneData
-  const color = ZONE_COLORS.includes(d.color as (typeof ZONE_COLORS)[number])
-    ? d.color
-    : ZONE_COLORS[0]
+  const color = isZoneColor(d.color) ? d.color.toLowerCase() : ZONE_COLORS[0]
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(d.label)
   const input = useRef<HTMLInputElement>(null)
@@ -89,6 +87,7 @@ export function ZoneNode({ data, selected }: NodeProps) {
               style={{ background: c }}
             />
           ))}
+          <MoreColors value={color} onPick={(c) => d.onRecolor?.(c)} />
           <span className="mx-0.5 h-4 w-px bg-border" />
           <ToolButton
             label="Delete"

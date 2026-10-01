@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 // listed hue by hue. It is drawn one column per hue and one row per shade, so
 // the grid is five swatches tall whatever the palette holds: a tall grid ran
 // off the top of short screens (#184). Neutrals are the last column.
-const PALETTE: string[] = [
+export const COLOR_PRESETS: readonly string[] = [
   // red       orange     amber      yellow     lime
   "#f87171",
   "#ef4444",
@@ -139,6 +139,45 @@ function normalizeHex(v: string): string {
   return s
 }
 
+/** The presets as a grid - columns are hues, rows are shades (light to
+ * dark) - with `value` ticked. */
+export function ColorPresetGrid({
+  value,
+  onPick,
+}: {
+  value: string
+  onPick: (hex: string) => void
+}) {
+  return (
+    <div
+      className="grid grid-flow-col gap-1"
+      style={{ gridTemplateRows: "repeat(5, minmax(0, 1fr))" }}
+    >
+      {COLOR_PRESETS.map((hex) => {
+        const selected = value.toLowerCase() === hex.toLowerCase()
+        return (
+          <button
+            key={hex}
+            type="button"
+            onClick={() => onPick(hex)}
+            className={cn(
+              "relative h-5 w-5 rounded-[4px] ring-offset-popover transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+              selected && "ring-2 ring-foreground/60 ring-offset-2"
+            )}
+            style={{ backgroundColor: hex }}
+            aria-label={hex}
+            aria-pressed={selected}
+          >
+            {selected && (
+              <Check className="absolute inset-0 m-auto h-3 w-3 text-white mix-blend-difference" />
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function ColorPicker({
   value,
   onChange,
@@ -179,37 +218,14 @@ export function ColorPicker({
           collisionPadding={8}
           className="max-h-(--radix-popover-content-available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-auto p-3"
         >
-          {/* Preset grid - columns are hues, rows are shades (light→dark). */}
-          <div
-            className="grid grid-flow-col gap-1"
-            style={{ gridTemplateRows: "repeat(5, minmax(0, 1fr))" }}
-          >
-            {PALETTE.map((hex) => {
-              const selected = value.toLowerCase() === hex.toLowerCase()
-              return (
-                <button
-                  key={hex}
-                  type="button"
-                  onClick={() => {
-                    onChange(hex)
-                    setText(hex)
-                    setOpen(false)
-                  }}
-                  className={cn(
-                    "relative h-5 w-5 rounded-[4px] ring-offset-popover transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-                    selected && "ring-2 ring-foreground/60 ring-offset-2"
-                  )}
-                  style={{ backgroundColor: hex }}
-                  aria-label={hex}
-                  title={hex}
-                >
-                  {selected && (
-                    <Check className="absolute inset-0 m-auto h-3 w-3 text-white mix-blend-difference" />
-                  )}
-                </button>
-              )
-            })}
-          </div>
+          <ColorPresetGrid
+            value={value}
+            onPick={(hex) => {
+              onChange(hex)
+              setText(hex)
+              setOpen(false)
+            }}
+          />
 
           <div className="my-2 h-px w-full bg-border" />
 

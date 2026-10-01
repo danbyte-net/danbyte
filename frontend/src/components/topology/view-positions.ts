@@ -74,8 +74,9 @@ export interface Zone {
   y: number
   w: number
   h: number
-  /** One of ZONE_COLORS; anything else falls back to the first. A band may
-   * be neutral: null or "". */
+  /** A #rrggbb colour - one of ZONE_COLORS or of Danbyte's presets
+   * (ui/color-picker.tsx); anything else falls back to the first swatch. A
+   * band may be neutral: null or "". */
   color: string | null
   /** Absent = "zone" (every view saved before bands). */
   kind?: "zone" | "band"
@@ -101,8 +102,8 @@ export type BandExits = "v" | "h"
 
 export type ZonesByStyle = Partial<Record<NodeStyle, Zone[]>>
 
-/** The zone palette - a tint each, meaning nothing on its own. Kept small
- * on purpose: a colour picker here invites a rainbow nobody can read. */
+/** The zone and band quick swatches - a tint each, meaning nothing on its
+ * own. Danbyte's full preset grid sits behind them (More colors). */
 export const ZONE_COLORS = [
   "#64748b",
   "#0ea5e9",
@@ -111,6 +112,10 @@ export const ZONE_COLORS = [
   "#ec4899",
   "#8b5cf6",
 ] as const
+
+/** A region colour worth drawing: a #rrggbb hex. */
+export const isZoneColor = (c: unknown): c is string =>
+  typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c)
 
 export const ZONE_W = 420
 export const ZONE_H = 260

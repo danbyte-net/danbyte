@@ -20,6 +20,7 @@ import {
   ArrowUpDown,
   FoldVertical,
   Layers,
+  Palette,
   Pencil,
   RectangleHorizontal,
   Rows3,
@@ -45,7 +46,8 @@ import {
 } from "@/components/ui/popover"
 import { measureText } from "@/lib/diagram/measure"
 import { cn } from "@/lib/utils"
-import { ZONE_COLORS } from "../view-positions"
+import { ColorPresetGrid } from "@/components/ui/color-picker"
+import { isZoneColor, ZONE_COLORS } from "../view-positions"
 import type { BandExits } from "../view-positions"
 import {
   BAND,
@@ -87,7 +89,8 @@ import type { Rect } from "./types"
  */
 export interface BandData {
   label: string
-  /** One of ZONE_COLORS, or null for the neutral grey. */
+  /** A #rrggbb colour (a quick swatch or a preset), or null for the
+   * neutral grey. */
   color: string | null
   orient: "h" | "v"
   /** A row's layers: the roles or device types it holds. */
@@ -159,8 +162,7 @@ export function bandLook(color: string | null): {
   style: CSSProperties
   edge: string
 } {
-  const c =
-    color && (ZONE_COLORS as readonly string[]).includes(color) ? color : null
+  const c = isZoneColor(color) ? color : null
   return c
     ? {
         style: { background: `color-mix(in srgb, ${c} 12%, var(--card))` },
@@ -285,6 +287,7 @@ export function BandNode({
               style={{ background: bandLook(c).edge }}
             />
           ))}
+          <MoreColors value={d.color} onPick={(c) => d.onRecolor?.(c)} />
           {!side && (
             <>
               <span className="mx-0.5 h-4 w-px bg-border" />
@@ -611,6 +614,51 @@ function optionsOf(s: ReactFlowState, band: string) {
  * once: a layer another row holds moves here, cards and all (that row is
  * named beside it).
  */
+/** Danbyte's colour presets behind a palette button, after a band's or
+ * zone's quick swatches; tinted with the colour picked from it. */
+export function MoreColors({
+  value,
+  onPick,
+}: {
+  value: string | null
+  onPick: (hex: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const other =
+    isZoneColor(value) &&
+    !(ZONE_COLORS as readonly string[]).includes(value.toLowerCase())
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <ToolButton
+          label="More colors"
+          active={open || other}
+          icon={
+            <Palette
+              className="size-3"
+              style={other ? { color: value } : undefined}
+            />
+          }
+        />
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        collisionPadding={8}
+        className="max-h-(--radix-popover-content-available-height) w-auto max-w-[calc(100vw-1rem)] overflow-auto p-3"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <ColorPresetGrid
+          value={value ?? ""}
+          onPick={(hex) => {
+            onPick(hex)
+            setOpen(false)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function LayersPicker({
   rule,
   band,

@@ -548,14 +548,17 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(len(zones[1]["rule"]["ids"]), 100)
         self.assertNotIn("layout", zones[2])
 
-    def test_off_palette_diagram_colour_saves_as_neutral(self):
+    def test_diagram_colour_is_a_hex_or_neutral(self):
         zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
         resp = self._save({"zones_by_style": {"diagram": [
-            {**zone, "color": "#123456"}, {**zone, "id": "y", "color": "#10B981"},
+            {**zone, "color": "#BE185D"}, {**zone, "id": "y", "color": "#10b981"},
+            {**zone, "id": "x", "color": "red"}, {**zone, "id": "w", "color": "#12345"},
         ]}})
         self.assertEqual(resp.status_code, 201, resp.content)
         zones = resp.json()["state"]["zones_by_style"]["diagram"]
-        self.assertEqual([z["color"] for z in zones], [None, "#10b981"])
+        self.assertEqual(
+            [z["color"] for z in zones], ["#be185d", "#10b981", None, None]
+        )
 
     def test_view_card_lines_may_be_empty_or_absent(self):
         for fields in ([], None):
@@ -663,27 +666,6 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(got["state"], state)
         # A view with a non-object filters value still saves.
         self.assertEqual(self._save({"filters": []}, name="odd").status_code, 201)
-
-    def test_zone_colors_mirror_the_frontend(self):
-        import re
-        from pathlib import Path
-
-        from django.conf import settings
-
-        from api.serializers import TopologyViewSerializer
-
-        src = Path(settings.BASE_DIR) / (
-            "frontend/src/components/topology/view-positions.ts"
-        )
-        if not src.exists():
-            self.skipTest("frontend source not present")
-        block = re.search(
-            r"ZONE_COLORS = \[(.*?)\]", src.read_text(), re.S
-        ).group(1)
-        self.assertEqual(
-            tuple(re.findall(r'"(#[0-9a-f]{6})"', block)),
-            TopologyViewSerializer.ZONE_COLORS,
-        )
 
 
 class StaleSaveTests(_Base):

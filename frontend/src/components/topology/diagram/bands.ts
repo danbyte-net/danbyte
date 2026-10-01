@@ -1,7 +1,7 @@
 import { layerRules } from "@/lib/diagram/geometry"
 import { approxMeasure } from "@/lib/diagram/measure"
 import { BAND as PRINT_BAND } from "@/lib/diagram/theme"
-import { ZONE_COLORS } from "../view-positions"
+import { isZoneColor, ZONE_COLORS } from "../view-positions"
 import type { BandExits, Zone } from "../view-positions"
 import { resolveLevels } from "../levels-param"
 import type { Centre, RowSlot, RowsAt } from "./placement"
@@ -174,16 +174,13 @@ const byName = (a: string, b: string) =>
 const num = (v: unknown): number | null =>
   typeof v === "number" && Number.isFinite(v) ? v : null
 
-const swatch = (c: unknown): string | null => {
-  if (typeof c !== "string") return null
-  const lc = c.toLowerCase()
-  return (ZONE_COLORS as readonly string[]).includes(lc) ? lc : null
-}
+const swatch = (c: unknown): string | null =>
+  isZoneColor(c) ? c.toLowerCase() : null
 
 /**
  * A saved region list as the map can use it: malformed entries dropped,
- * geometry rounded and at least a band's minimum, a band's colour one of
- * the swatches or neutral (null), ids unique. Zones keep their colour as
+ * geometry rounded and at least a band's minimum, a band's colour a
+ * #rrggbb hex or neutral (null), ids unique. Zones keep their colour as
  * saved (the zone renderer falls back to the first swatch itself).
  */
 export function normalizeRegions(raw: unknown): Region[] {
