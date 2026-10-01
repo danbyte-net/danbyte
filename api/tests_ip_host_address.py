@@ -212,6 +212,19 @@ class PrefixIpsEndpointTests(_Fixture, APITestCase):
         _store_raw(masked, "192.0.2.250/24")
         self.assertCountEqual(self._addresses(), ["192.0.2.2", "192.0.2.250"])
 
+    def test_a_masked_duplicate_sorts_beside_its_address(self):
+        """0185 leaves a row masked when its host is taken. inet orders on
+        the network bits, then the mask, so ORDER BY ip_address would put
+        192.0.2.40/24 before every host in the /24."""
+        for a in ("192.0.2.100", "192.0.2.40", "192.0.2.10", "192.0.2.2"):
+            self.ip(a)
+        masked = self.ip("192.0.2.41")
+        _store_raw(masked, "192.0.2.40/24")
+        self.assertEqual(
+            self._addresses(),
+            ["192.0.2.2", "192.0.2.10", "192.0.2.40", "192.0.2.40", "192.0.2.100"],
+        )
+
     def test_a_masked_row_is_not_offered_as_free_in_its_range(self):
         """The range's free list skipped an address it could not parse, so a
         masked row's address showed as available."""
