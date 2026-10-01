@@ -13,6 +13,8 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/node node_modules/vite/bin/vite.js dev --port 3000 --host
 Restart=always
 RestartSec=2
+# Node exits with 143 on SIGTERM: a stop is not a failure.
+SuccessExitStatus=143
 
 # Logs: journalctl --user -fu danbyte-frontend
 [Install]
