@@ -8271,6 +8271,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         from openpyxl import Workbook
 
         from .label_templates import render_label_text
+        from .spreadsheet import xlsx_text_row
 
         tmpl = self.get_object()
         ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
@@ -8302,6 +8303,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         for name, text, lines in rows:
             padded = lines + [""] * (max_lines - len(lines))
             ws.append([name, text, *padded])
+            xlsx_text_row(ws)
         buf = io.BytesIO()
         wb.save(buf)
         resp = HttpResponse(
