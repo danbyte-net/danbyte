@@ -21,6 +21,7 @@ from .dcim_choices import (
     POWER_PORT_TYPE_CHOICES,
     RF_CONNECTOR_CHOICES,
 )
+from .fields import HostAddressField, split_host_mask
 from .natural import natural
 from .speed import normalize_speed
 from core.models import (
@@ -2523,7 +2524,9 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         blank=True,
         related_name="ip_addresses",
     )
-    ip_address = models.GenericIPAddressField()
+    # A bare host address, never ``address/length``: the length lives in
+    # mask_length (or the prefix). HostAddressField drops a mask on every write.
+    ip_address = HostAddressField()
     prefix = models.ForeignKey(
         Prefix, on_delete=models.CASCADE, related_name="ip_addresses"
     )
@@ -2721,6 +2724,20 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return f"{self.ip_address}/{n}" if n is not None else None
 
     def save(self, *args, **kwargs):
+        # An address written as ``10.0.0.1/31`` (a shell, a trusted script, a
+        # sync) stores the bare host - the field drops the mask anyway - and
+        # the length moves to mask_length, as the API does with address/length.
+        # Only a length that differs from the prefix's is kept: empty means
+        # the prefix's. An explicit mask_length wins.
+        fields = kwargs.get("update_fields")
+        if fields is None or "ip_address" in fields:
+            host, length = split_host_mask(self.ip_address)
+            if length is not None:
+                self.ip_address = host
+                net = self.prefix.network if self.prefix_id else None
+                if self.mask_length is None and (net is None or length != net.prefixlen):
+                    self.mask_length = length
+                    _include_update_field(kwargs, "mask_length")
         # Always keep vrf in sync with the parent prefix - including on a
         # scoped save(update_fields=…), which would otherwise drop it.
         if self.prefix_id and self.vrf_id != self.prefix.vrf_id:

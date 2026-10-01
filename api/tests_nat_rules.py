@@ -79,8 +79,8 @@ class NATRuleApiTests(_Base):
         self.assertEqual(body["kind_display"], "Destination NAT (port forward)")
         self.assertEqual(body["external_ip"]["ip_address"], "203.0.113.10")
         self.assertEqual(body["external_ports"], "443")
-        # A /32 is stored bare; a masked address keeps its length.
-        self.assertEqual(body["internal_ip"]["ip_address"], "10.10.20.15/24")
+        # An address is stored bare, mask or not: the /24 is the prefix's.
+        self.assertEqual(body["internal_ip"]["ip_address"], "10.10.20.15")
         self.assertEqual(body["internal_ports"], "8443")
         self.assertEqual(body["device"]["name"], "fw1")
 
