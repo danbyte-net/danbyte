@@ -107,6 +107,8 @@ Only the owner can edit a named dashboard. Anyone who can see one can
 **Duplicate** it into a private copy of their own, or pick **Open as my
 dashboard**, so that the Dashboard link opens it instead of their own layout.
 **Stop opening this one**, or **My dashboard** in the switcher, goes back.
+When that dashboard is deleted, the Dashboard link opens their own layout
+again.
 
 Every widget loads its data with the **viewer's** permissions, never the
 owner's. A shared dashboard shows each viewer only what they could already

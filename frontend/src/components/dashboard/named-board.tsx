@@ -225,6 +225,9 @@ export function NamedBoard({
     onSuccess: () => {
       toast.success("Dashboard deleted")
       qc.invalidateQueries({ queryKey: ["dashboards"] })
+      // It may be the home pick: "/" must not open it from the cache.
+      qc.invalidateQueries({ queryKey: ["dashboard-home"] })
+      qc.removeQueries({ queryKey: ["named-dashboard", id] })
       nav({ to: "/dashboards" })
     },
     onError: (e) => apiErrorToast(e),
