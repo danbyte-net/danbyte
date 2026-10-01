@@ -159,6 +159,28 @@ class LatencyTests(_Base):
         self.result(H11, 500)
         self.assertEqual(self.hour().spikes, 0)
 
+    def test_a_day_carries_its_hours_spikes(self):
+        """The daily row holds the sum of its hours' spikes, so a week's
+        figure counts a past day's spikes too (#271)."""
+        from .figures import sums, window
+
+        # A week of 10 ms hours is this check's normal.
+        CheckRollupHourly.objects.bulk_create([
+            CheckRollupHourly(
+                tenant=self.tenant, target_ip=self.ip, template=self.ping, kind="icmp",
+                bucket=H11 - timedelta(hours=h), lat_p50=10.0, closed=True,
+            )
+            for h in range(1, 7 * 24)
+        ])
+        for i in range(3):
+            self.result(H11 + timedelta(minutes=i), 500)
+        self.assertEqual(self.hour().spikes, 3)
+        later = NOW + 2 * rollups.DAY
+        rollups.roll(self.tenant.id, rollups.DAY, DAY, DAY + rollups.DAY, now=later)
+        self.assertEqual(CheckRollupDaily.objects.get(bucket=DAY).spikes, 3)
+        got = sums(window(days=7, now=later), lambda qs: qs.filter(tenant=self.tenant))
+        self.assertEqual(got[()]["spikes"], 3)
+
 
 class CountingRuleTests(TestCase):
     ROW = {"up_s": 80, "down_s": 10, "degraded_s": 10, "stale_s": 50, "unknown_s": 50}
@@ -226,6 +248,52 @@ class RefreshAndPruneTests(_Base):
         self.tr(H11 - timedelta(days=2), "up")
         rollups.roll(other.id, rollups.HOUR, H11, H11 + rollups.HOUR, now=NOW)
         self.assertFalse(CheckRollupHourly.objects.exists())
+
+
+class DailySpikesMigrationTests(_Base):
+    """0105 fills each daily row's spikes from its own hours, per check,
+    where they are still kept, and leaves the other days alone (#271)."""
+
+    def test_fills_from_the_hours_and_is_idempotent(self):
+        import importlib
+
+        from django.db import connection
+
+        mod = importlib.import_module("monitoring.migrations.0105_rollup_daily_spikes")
+        tcp = CheckTemplate.objects.create(
+            tenant=self.tenant, name="TCP", slug="tcp", kind=CheckKind.TCP
+        )
+        yesterday, old = DAY - rollups.DAY, DAY - 40 * rollups.DAY
+
+        def row(model, bucket, spikes=0, template=None):
+            template = template or self.ping
+            model.objects.create(tenant=self.tenant, target_ip=self.ip, template=template,
+                                 kind=template.kind, bucket=bucket, spikes=spikes)
+
+        row(CheckRollupDaily, old, 7)  # its hours are long gone
+        row(CheckRollupDaily, yesterday)
+        row(CheckRollupDaily, DAY)
+        row(CheckRollupDaily, yesterday, template=tcp)
+        # Yesterday's hours, its last one included; midnight is today's.
+        row(CheckRollupHourly, yesterday + timedelta(hours=3), 2)
+        row(CheckRollupHourly, yesterday + timedelta(hours=23), 1)
+        row(CheckRollupHourly, yesterday + timedelta(hours=4))
+        row(CheckRollupHourly, DAY, 5)
+        row(CheckRollupHourly, yesterday + timedelta(hours=5), 4, template=tcp)
+
+        def fill():
+            with connection.cursor() as cursor:
+                cursor.execute(mod.FILL_DAILY_SPIKES)
+            return {(r.template_id, r.bucket): r.spikes for r in CheckRollupDaily.objects.all()}
+
+        want = {
+            (self.ping.id, old): 7,
+            (self.ping.id, yesterday): 3,
+            (self.ping.id, DAY): 5,
+            (tcp.id, yesterday): 4,
+        }
+        self.assertEqual(fill(), want)
+        self.assertEqual(fill(), want)
 
 
 class SilencedFlagTests(_Base):

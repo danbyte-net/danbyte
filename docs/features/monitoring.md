@@ -673,7 +673,8 @@ days. The factor defaults to 3 and the floor depends on the kind:
 
 Both the factor (`spike_factor`) and the per-kind floors (`spike_floor_ms`)
 are monitoring settings. A new check has no baseline, so it records no spikes
-for its first hour.
+for its first hour. A daily record's spikes are the sum of its hourly
+records', each hour against its own baseline.
 
 Availability is read from the recorded seconds with one set of counting
 rules:
@@ -707,7 +708,8 @@ days, the hours before its first UTC midnight are not counted.
 A new install starts recording from its first run. To build records from the
 history already on disk, run `manage.py rollup_checks --backfill 90`. Daily
 records go back as far as status changes do. Latency goes back only as far as
-raw results, which is thirty days by default.
+raw results, which is thirty days by default, and spikes as far as the hourly
+records.
 
 Facet counts are computed with every filter applied *except* the facet's own,
 so ticking a second value in one facet never zeroes its neighbours. All of it

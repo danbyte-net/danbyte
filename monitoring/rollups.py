@@ -210,8 +210,13 @@ def roll(tenant_id, size: timedelta, start: datetime, end: datetime,
                 )
             )
         }
-        spikes = _count_spikes(tenant_id, bucket, until, base, kind_of, factor, floors) \
-            if base else {}
+        if size == HOUR:
+            spikes = _count_spikes(tenant_id, bucket, until, base, kind_of, factor, floors) \
+                if base else {}
+        else:
+            # A day's spikes are its hours', each against that hour's own
+            # baseline; the hours are rolled before the day (#271).
+            spikes = _day_spikes(tenant_id, bucket, stop)
         rows = []
         for key in pairs:
             ip_id, tmpl_id = key
@@ -255,6 +260,19 @@ def roll(tenant_id, size: timedelta, start: datetime, end: datetime,
         written += len(rows)
         bucket = stop
     return written
+
+
+def _day_spikes(tenant_id, day: datetime, stop: datetime) -> dict:
+    """``{(ip_id, template_id): spikes}`` summed over the day's hourly rows."""
+    rows = (
+        CheckRollupHourly.objects.filter(
+            tenant_id=tenant_id, bucket__gte=day, bucket__lt=stop, spikes__gt=0,
+        )
+        .values("target_ip_id", "template_id")
+        .annotate(n=Sum("spikes"))
+        .order_by()
+    )
+    return {(str(r["target_ip_id"]), str(r["template_id"])): r["n"] for r in rows}
 
 
 def _count_spikes(tenant_id, since, until, base, kind_of, factor, floors) -> dict:
@@ -351,7 +369,7 @@ def backfill(days: int, now: datetime | None = None) -> dict:
     tenants = set(CheckState.objects.values_list("tenant_id", flat=True).distinct())
     out = {"tenants": len(tenants), "hourly": 0, "daily": 0}
     for t in tenants:
-        # Hourly first: the daily spike counts are not computed, but the
+        # Hourly first: a day's spikes are the sum of its hours', and the
         # hourly ones read the baseline from earlier hours.
         out["hourly"] += roll(t, HOUR, now - timedelta(days=hourly_days), now, now=now)
         out["daily"] += roll(t, DAY, now - timedelta(days=days), _floor(now, DAY), now=now)
