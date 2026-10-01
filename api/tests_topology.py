@@ -1726,6 +1726,20 @@ class PostQueryTests(_Base):
                 self.assertEqual(r.status_code, 400, r.content)
                 self.assertEqual(r.json(), {"detail": detail})
 
+    def test_an_infinite_depth_is_not_a_500(self):
+        """A JSON 1e999 parses as infinity, which int() cannot take (#275):
+        it falls back like any unreadable depth."""
+        a = str(self.a.id)
+        want = self.client.get(f"/api/topology/?device={a}&depth=x").json()
+        for raw in ("1e999", "-1e999"):
+            with self.subTest(depth=raw):
+                r = self.client.post(
+                    "/api/topology/", f'{{"device": "{a}", "depth": {raw}}}',
+                    content_type="application/json",
+                )
+                self.assertEqual(r.status_code, 200, r.content)
+                self.assertEqual(r.json(), want)
+
 
 class IncludeTests(_Base):
     """``include=`` opts into enrichment: ``meta`` appears only when asked,

@@ -1428,7 +1428,8 @@ def topology_view(request):
     filter_q = _filter_q(p)
     try:
         depth = max(1, min(MAX_DEPTH, int(p.get("depth", 1))))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: a JSON body's 1e999 parses as infinity.
         depth = 1
 
     # Aggregated mode: one node per site/location. Focus is device-level and
