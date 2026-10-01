@@ -73,26 +73,33 @@ log "recover: finishing the upgrade to $VERSION from the journal"
 # unit (the app units are ordered after it): queue the starts instead.
 NO_BLOCK=1
 if j_has restore_failed; then
-  # A second try at the restore, then the units the failure disabled.
-  if db_restore; then
-    OUT_DB=restored
-    if [ -f "$STATE_DIR/disabled" ]; then
-      while IFS= read -r _u; do sc enable "$_u" >/dev/null 2>&1 || :; done <"$STATE_DIR/disabled"
-      rm -f "$STATE_DIR/disabled"
+  # A second try at the restore, then the units the failure disabled. A
+  # journal with nothing migrated has nothing to restore: an older stage
+  # still ended such an upgrade in restore_failed (#278).
+  if db_touched; then
+    if ! db_restore; then
+      log "recover: the restore failed again: $DB_DETAIL"
+      exit 1
     fi
-    run 120 "$PY" "$TOOL" maintenance-off || :
-    start_recorded 1 || warn "some units did not start"
-    OUTCOME=restored
-    OUT_SVC=running
+    OUT_DB=restored
     ERROR="the upgrade to $VERSION failed; recovery restored the database from the snapshot and started the previous release."
-    remove_recover
-    finish failed
-    cleanup_work
-    tidy_root
-    exit 0
+  else
+    OUT_DB=unchanged
+    ERROR="the upgrade to $VERSION failed; the database was not changed and recovery started the previous release."
   fi
-  log "recover: the restore failed again: $DB_DETAIL"
-  exit 1
+  if [ -f "$STATE_DIR/disabled" ]; then
+    while IFS= read -r _u; do sc enable "$_u" >/dev/null 2>&1 || :; done <"$STATE_DIR/disabled"
+    rm -f "$STATE_DIR/disabled"
+  fi
+  run 120 "$PY" "$TOOL" maintenance-off || :
+  start_recorded 1 || warn "some units did not start"
+  OUTCOME=restored
+  OUT_SVC=running
+  remove_recover
+  finish failed
+  cleanup_work
+  tidy_root
+  exit 0
 fi
 
 if j_has resumed; then

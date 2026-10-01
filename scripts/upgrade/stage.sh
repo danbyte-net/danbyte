@@ -359,7 +359,9 @@ fi
 run 7200 "$PY" manage.py upgrade_migrate
 _rc=$?
 case "$_rc" in
-  0) j_set migrated 1 ;;
+  # Nothing pending: the database is as it was, and there is no snapshot to
+  # restore - a later failure rolls back the code only (#278).
+  0) if [ "$PENDING" -gt 0 ]; then j_set migrated 1; else j_set migrate_unchanged 1; fi ;;
   3) j_set migrate_unchanged 1
      fail "database migration failed and was rolled back in full: $(tail_out)" ;;
   *) fail "database migration failed (exit $_rc) and may be partly applied: $(tail_out)" ;;

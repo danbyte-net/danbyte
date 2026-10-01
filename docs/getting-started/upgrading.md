@@ -81,10 +81,12 @@ current `/opt` layout.
       page shows until the new release has passed its checks. Nothing but
       the upgrade writes to the database meanwhile.
     - **A failure puts everything back** - code, virtualenv, frontend,
-      static files, `.env`, unit links and, when the migration ran, the
-      database from a snapshot taken just before it - and starts what ran
-      before. The Updates page says which step failed, quotes its output,
-      and says how it ended: *nothing was changed*, *rolled back*, or (if
+      static files, `.env`, unit links and, when migrations were applied,
+      the database from a snapshot taken just before them - and starts what
+      ran before. A release with nothing to migrate leaves the database as
+      it was, so only the rest goes back. The Updates page says which step
+      failed, quotes its output, and says how it ended: *nothing was
+      changed*, *rolled back*, or (if
       even the database restore failed) *Danbyte is stopped - run
       `danbyte-admin upgrade recover`*.
     - **After an upgrade** the **Last upgrade** card on the Updates page shows
@@ -364,9 +366,10 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 | resume | the site opens; the timers that ran before start again (a timer you turned off stays off); a release's new timers are turned on | up |
 | done | the search index rebuilt in the background, housekeeping, the after-upgrade steps listed; the work folder, the recovery units and their lock removed, so nothing is left beside the app | up |
 
-**If a step before *resume* fails**, everything goes back as it was -
-including the database from the snapshot when the migration ran - and what
-ran before starts again. Nothing but monitoring results is written between
+**If a step before *resume* fails**, everything goes back as it was and
+what ran before starts again. The database is restored from the snapshot
+when migrations were applied; with none pending it never changed and is left
+alone. Nothing but monitoring results is written between
 *quiesce* and *resume*, so that restore loses no one's work. From *resume*
 on users are writing again, so a later problem keeps the new release and is
 reported as a warning. If even the database restore fails, Danbyte stays

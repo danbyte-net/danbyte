@@ -190,9 +190,13 @@ case "$1" in
           kill -9 "$(sed -n 's/^PID=//p' "$HOME/.danbyte-upgrade/active")"
           exit 1
         fi
-        if [ -n "${FAKE_MIGRATE_SLEEP:-}" ]; then echo "schema=partial" >"$FAKE_ROOT/db.state"; sleep "$FAKE_MIGRATE_SLEEP"; fi
+        if [ -n "${FAKE_MIGRATE_SLEEP:-}" ]; then
+          [ "${FAKE_PENDING:-1}" = 0 ] || echo "schema=partial" >"$FAKE_ROOT/db.state"
+          sleep "$FAKE_MIGRATE_SLEEP"
+        fi
         rc=${FAKE_MIGRATE_RC:-0}
-        [ "$rc" = 3 ] || echo "schema=v2" >"$FAKE_ROOT/db.state"
+        # Nothing pending changes nothing.
+        [ "$rc" = 3 ] || [ "${FAKE_PENDING:-1}" = 0 ] || echo "schema=v2" >"$FAKE_ROOT/db.state"
         echo "mode: atomic"
         exit "$rc" ;;
       upgrade_verify) exit "${FAKE_VERIFY_RC:-0}" ;;
@@ -691,6 +695,53 @@ class BundleStageTests(StageTestCase):
                 self.assertOrder(h, r"^py dbtool snapshot ", r"^py manage.py upgrade_migrate$",
                                  r"^py dbtool restore .*snapshot\.dump")
 
+    def test_a_failure_with_nothing_to_migrate_rolls_back_the_code_only(self):
+        # #278: no snapshot is taken without pending migrations, so a later
+        # failure must not try to restore one (and leave Danbyte stopped).
+        cases = {
+            "verify": {"FAKE_PENDING": "0", "FAKE_VERIFY_RC": "1"},
+            "static": {"FAKE_PENDING": "0", "DANBYTE_UPGRADE_TEST": "1",
+                       "DANBYTE_UPGRADE_FAULT": "static"},
+            "crash loop": {"FAKE_PENDING": "0", "FAKE_CRASHLOOP": "danbyte-workers.service"},
+        }
+        for name, env in cases.items():
+            with self.subTest(name):
+                h = self.host()
+                r = h.upgrade(env=env)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertRolledBack(h, restored_db=False)
+                self.assertFalse(h.called(r"^py dbtool snapshot "))
+                self.assertIn("the database was not changed", h.status()["error"])
+
+    def test_recover_does_not_restore_a_database_nothing_migrated(self):
+        # A journal an older stage left in restore_failed with nothing
+        # pending and no snapshot: recover --retry rolls the code back.
+        h = self.host()
+        r = h.upgrade(env={"FAKE_VERIFY_RC": "1", "FAKE_RESTORE_FAIL": "1"})
+        self.assertEqual(h.status()["outcome"]["code"], "restore_failed")
+        (journal,) = (h.home / ".danbyte-upgrade").glob("*/journal")
+        lines = [
+            ln for ln in journal.read_text().splitlines()
+            if not ln.startswith(("snapshot=", "pending="))
+        ]
+        journal.write_text("\n".join([*lines, "pending=0"]) + "\n")
+        (journal.parent / "snapshot.dump").unlink(missing_ok=True)
+        (h.root / "db.state").write_text("schema=v1\n")
+        restores = [c for c in h.calls_list() if c.startswith("py dbtool restore ")]
+        r = h.recover("--retry")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(
+            [c for c in h.calls_list() if c.startswith("py dbtool restore ")], restores
+        )
+        self.assertEqual(h.db(), "schema=v1")
+        st = h.status()
+        self.assertEqual(st["outcome"]["code"], "restored", st)
+        self.assertEqual(st["outcome"]["database"], "unchanged", st)
+        self.assertIn("the database was not changed", st["error"])
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service"), ("enabled", "active"), unit)
+        self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
+
     def test_a_failed_restore_leaves_danbyte_stopped_and_says_so(self):
         h = self.host()
         r = h.upgrade(env={"FAKE_VERIFY_RC": "1", "FAKE_RESTORE_FAIL": "1"})
@@ -841,6 +892,26 @@ class BundleStageTests(StageTestCase):
         r = h.recover()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertRolledBack(h, restored_db=True)
+
+    def test_a_stop_during_a_migrate_with_nothing_pending_rolls_back_at_once(self):
+        # #278: no snapshot and nothing to restore, so nothing is left to
+        # recovery - the stage rolls the code back itself.
+        h = self.host()
+        proc = h.upgrade(env={"FAKE_PENDING": "0", "FAKE_MIGRATE_SLEEP": "30"}, background=True)
+        journal = None
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            works = list((h.home / ".danbyte-upgrade").glob("*/journal"))
+            if works and "migrating=1" in works[0].read_text():
+                journal = works[0]
+                break
+            time.sleep(0.2)
+        self.assertIsNotNone(journal, "the stage never reached the migration")
+        time.sleep(0.5)
+        os.kill(proc.pid, signal.SIGTERM)
+        out, _ = proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 143, out)
+        self.assertRolledBack(h, restored_db=False)
 
 
 class GitStageTests(StageTestCase):

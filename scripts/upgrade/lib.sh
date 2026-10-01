@@ -169,8 +169,12 @@ j_get() { sed -n "s/^$1=//p" "$WORK/journal" 2>/dev/null | tail -n 1; }
 j_has() { grep -q "^$1=" "$WORK/journal" 2>/dev/null; }
 j_list() { sed -n "s/^$1=//p" "$WORK/journal" 2>/dev/null; }
 
-# The database may differ from the snapshot: a migrate ran (or was running).
-db_touched() { j_has migrating && ! j_has migrate_unchanged; }
+# The database may differ from the snapshot: a migrate ran (or was running)
+# with migrations to apply. With none pending there is nothing to restore,
+# also on a journal an older stage wrote without migrate_unchanged (#278).
+db_touched() {
+  j_has migrating && ! j_has migrate_unchanged && [ "$(j_get pending)" != 0 ]
+}
 
 # ── status JSON (read by core.upgrade and every UI that polls it) ────────────
 
