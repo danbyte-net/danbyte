@@ -781,6 +781,43 @@ class BundleStageTests(StageTestCase):
         self.assertIn("no unfinished upgrade", again.stdout)
         self.assertEqual(h.snapshot(), h.before)
 
+    def test_a_recovery_timer_that_fired_during_the_upgrade_leaves_nothing_behind(self):
+        # The timer runs every five minutes while an upgrade runs; each run
+        # finds the stage alive and leaves its lock file.
+        h = self.host()
+        proc = h.upgrade(env={"FAKE_MIGRATE_SLEEP": "3"}, background=True)
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            works = list((h.home / ".danbyte-upgrade").glob("*/journal"))
+            if works and "migrating=1" in works[0].read_text():
+                break
+            time.sleep(0.2)
+        r = h.recover()
+        self.assertIn("still running", r.stdout)
+        self.assertTrue((h.home / ".danbyte-upgrade" / ".recover.lock").exists())
+        out, _ = proc.communicate(timeout=120)
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(h.status()["state"], "done")
+        self.assertFalse((h.home / ".danbyte-upgrade").exists())
+
+    def test_a_recovery_with_nothing_to_do_tidies_its_lock_away(self):
+        h = self.host()
+        self.assertEqual(h.upgrade().returncode, 0)
+        kept = h.root / "recover-copy"
+        shutil.copytree(REPO / "scripts" / "upgrade", kept)
+        root = h.home / ".danbyte-upgrade"
+        root.mkdir()
+        (root / ".recover.lock").write_text("")
+        env = {**h.env, "DANBYTE_UPGRADE_ROOT": str(root)}
+        r = subprocess.run(["/bin/sh", str(kept / "recover.sh")], env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("no unfinished upgrade", r.stdout)
+        self.assertFalse(root.exists())
+        # ...and one that finds no folder at all says so, without an error
+        r = subprocess.run(["/bin/sh", str(kept / "recover.sh")], env=env, capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stderr), (0, ""))
+        self.assertIn("no unfinished upgrade", r.stdout)
+
     def test_a_stop_during_the_migration_leaves_the_restore_to_recovery(self):
         h = self.host()
         proc = h.upgrade(env={"FAKE_MIGRATE_SLEEP": "30"}, background=True)

@@ -576,6 +576,14 @@ remove_recover() {
   rm -rf "$UPG_ROOT/recover"
 }
 
+# Nothing left to recover: the recovery's lock goes - each timer run during
+# an upgrade leaves it - and so does the upgrade folder once it is empty.
+tidy_root() {
+  [ ! -f "$UPG_ROOT/active" ] || return 0
+  rm -f "$UPG_ROOT/.recover.lock"
+  rmdir "$UPG_ROOT" 2>/dev/null || :
+}
+
 # The stage process named in the marker is this very run, still alive.
 stage_alive() {  # <pid> <starttime>: that very process, and not a zombie
   [ -n "$1" ] && [ -r "/proc/$1/stat" ] || return 1
@@ -771,6 +779,7 @@ rollback_all() {
     remove_recover
     finish failed
     cleanup_work
+    tidy_root
     return
   fi
   status running rollback 0
@@ -809,6 +818,7 @@ rollback_all() {
   remove_recover
   finish failed
   cleanup_work
+  tidy_root
 }
 
 restore_failed() {  # <detail>
@@ -846,4 +856,5 @@ finish_forward() {
   remove_recover
   finish "done"
   cleanup_work
+  tidy_root
 }

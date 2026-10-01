@@ -26,11 +26,14 @@ RETRY=0
 UPG_ROOT="${DANBYTE_UPGRADE_ROOT:-$(dirname "$HERE")}"
 MARK="$UPG_ROOT/active"
 
+# A finished upgrade removed its folder: nothing to lock, nothing to do.
+[ -d "$UPG_ROOT" ] || { echo "no unfinished upgrade"; exit 0; }
 exec 9>>"$UPG_ROOT/.recover.lock"
 flock -n 9 || { echo "another recovery is running"; exit 0; }
 
 if [ ! -f "$MARK" ]; then
   echo "no unfinished upgrade"
+  tidy_root
   exit 0
 fi
 WORK=$(sed -n 's/^WORK=//p' "$MARK")
@@ -43,6 +46,7 @@ fi
 if [ -z "$WORK" ] || [ ! -f "$WORK/context" ]; then
   echo "the marker names no usable upgrade directory; removing it"
   rm -f "$MARK"
+  tidy_root
   exit 0
 fi
 # shellcheck disable=SC1091
@@ -60,6 +64,7 @@ if j_has restore_failed; then
 elif j_has finished; then
   log "recover: the upgrade had finished ($(j_get finished)); tidying up"
   remove_recover
+  tidy_root
   exit 0
 fi
 
@@ -83,6 +88,7 @@ if j_has restore_failed; then
     remove_recover
     finish failed
     cleanup_work
+    tidy_root
     exit 0
   fi
   log "recover: the restore failed again: $DB_DETAIL"

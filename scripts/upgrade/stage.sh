@@ -496,5 +496,5 @@ log "now on $VERSION"
 remove_recover
 finish "done"
 rm -rf "$WORK"
-rmdir "$UPG_ROOT" 2>/dev/null || :   # only when nothing else is in it
+tidy_root
 exit 0
