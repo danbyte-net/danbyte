@@ -126,6 +126,7 @@ import type {
   DiagramMode,
   LineType,
   Rect,
+  Side,
 } from "./diagram/types"
 import { fromFlow } from "./export/from-flow"
 
@@ -2112,7 +2113,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         const out: Record<string, Rect> = {}
         const frames = new Map<
           string,
-          { orient: ChassisOrient; members: string[] }
+          { orient: ChassisOrient; side?: Side; members: string[] }
         >()
         for (const n of flow.getNodes()) {
           if (isOverlayNode(n) || n.type === "junction" || n.hidden) continue
@@ -2120,7 +2121,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           if (n.type === "chassis") {
             frames.set(
               n.id,
-              n.data as { orient: ChassisOrient; members: string[] }
+              n.data as { orient: ChassisOrient; side?: Side; members: string[] }
             )
             continue
           }
@@ -2345,13 +2346,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const boxes: Record<string, Rect> = {}
       const frames = new Map<
         string,
-        { orient: ChassisOrient; members: string[] }
+        { orient: ChassisOrient; side?: Side; members: string[] }
       >()
       for (const n of all) {
         // Selected cards already move with the drag.
         if (isOverlayNode(n) || n.type === "junction" || n.hidden) continue
         if (n.type === "chassis") {
-          const d = n.data as { orient: ChassisOrient; members: string[] }
+          const d = n.data as { orient: ChassisOrient; side?: Side; members: string[] }
           frames.set(n.id, d)
           continue
         }

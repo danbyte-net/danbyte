@@ -474,8 +474,9 @@ greyed out (it would change nothing).
 A switch stack is drawn as one thing. The members of a
 [virtual chassis](../dcim/virtual-chassis.md) stand together in a grey
 frame, packed a few pixels apart, with a slim strip carrying the chassis'
-name along the frame's side - down its left side when the members stand
-top to bottom, across its top when they stand left to right. Click the
+name along the frame's side - by default down its left side when the
+members stand top to bottom, across its top when they stand left to right,
+or on whichever side you pick for it. Click the
 name to open the chassis; drag the strip (or any member) to move the stack,
 members and all. Hover the strip for its member count and the cables
 between members.
@@ -492,11 +493,15 @@ between members.
   on. A saved view goes by its own arrangement, so it opens the same in
   every browser.
 - **Each chassis on its own:** select a stack for *Top-down*, *Left-right*,
+  the name's side (*Name on top*, *at bottom*, *on left*, *on right*),
   *Unstack* and *Open virtual chassis* in the toolbar above it, or
   right-click it (or right-click a member ▸ *Virtual chassis*) for the same
-  and *Hide stack*, which hides every member. *Unstack* draws that chassis'
-  members apart on this view; picking *Top-down* or *Left-right* on a member
-  stacks it again. Each is one undo step, saved with the view.
+  (the side under **Name**) and *Hide stack*, which hides every member.
+  *Unstack* draws that chassis' members apart on this view; picking
+  *Top-down* or *Left-right* on a member stacks it again. Move the name to
+  the side no cables leave by and they never cross it. Each is one undo
+  step, saved with the view, and the exports draw the name where the map
+  does.
 - **Members follow the chassis:** the map shows the chassis as it is when
   it loads. A member added to the chassis joins the stack, one removed
   leaves it, and a hidden member drops out of it. A chassis placed on a
@@ -1956,7 +1961,7 @@ earlier versions load and save unchanged.
 | `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
-| `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`) |
+| `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge}`, at most 10,000 |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building, size: s\|m\|l, outline: bool}`; `x, y` is the note's centre, `id` is unique, `text` at most 200 characters, `size` absent = `m` |

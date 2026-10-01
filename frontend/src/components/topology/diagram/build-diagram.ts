@@ -46,6 +46,7 @@ import {
   chassisStrip,
   innerSides,
   memberFrames,
+  stripUpright,
   vcOf,
 } from "./chassis"
 import type { ChassisOptions, ChassisOrient } from "./chassis"
@@ -243,6 +244,8 @@ export interface DiagramModel {
 export interface ChassisModel {
   vc: { id: string; name: string }
   orient: ChassisOrient
+  /** The side its name strip runs along. */
+  side: Side
   /** Member node ids, in stack order. */
   members: string[]
   /** The room between member i and i + 1: a lead channel next to a
@@ -1613,7 +1616,7 @@ function chassisSize(
 ): Size | null {
   const sizes = ch.members.map(sizeOf)
   if (sizes.some((b) => !b)) return null
-  const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps)
+  const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps, ch.side)
   return { w: g.w, h: g.h }
 }
 
@@ -1638,10 +1641,10 @@ function placeChassis(
         return at ? [rectAt(at, sizes[i]!)] : []
       })
       if (!rects.length) continue
-      const f = chassisFrame(ch.orient, rects)
+      const f = chassisFrame(ch.side, rects)
       c = { x: f.x + f.w / 2, y: f.y + f.h / 2 }
     }
-    const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps)
+    const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps, ch.side)
     ch.members.forEach((m, i) =>
       centres.set(m, { x: c.x + g.offsets[i].x, y: c.y + g.offsets[i].y })
     )
@@ -1833,14 +1836,14 @@ function plannedEdges(
   )
   // A stack's name strip: crossed, never run along.
   for (const [id, f] of a.frames ?? []) {
-    const orient = model.chassis?.get(id)?.orient ?? "v"
-    const r = chassisStrip(orient, f)
+    const side = model.chassis?.get(id)?.side ?? "L"
+    const r = chassisStrip(side, f)
     strips.push({
       id,
       r,
       chip: r,
       fixed: true,
-      ...(orient === "v" ? { axis: "v" as const } : {}),
+      ...(stripUpright(side) ? { axis: "v" as const } : {}),
     })
   }
   const input = (edges: Edge<DiagramEdgeData>[]) => ({
@@ -1945,6 +1948,8 @@ const REGROW = 4
 export interface ChassisNodeData {
   vc: { id: string; name: string }
   orient: ChassisOrient
+  /** The side its name strip runs along. */
+  side: Side
   /** Member node ids, in stack order. */
   members: string[]
   /** Cables between its members, not drawn. */
@@ -1958,6 +1963,7 @@ function chassisNode(id: string, ch: ChassisModel, f: Rect): Node {
   const data: ChassisNodeData = {
     vc: ch.vc,
     orient: ch.orient,
+    side: ch.side,
     members: ch.members,
     inner: ch.inner,
   }
@@ -2055,6 +2061,7 @@ export function buildDiagram(
     chassis.set(spec.id, {
       vc: spec.vc,
       orient: spec.orient,
+      side: spec.side,
       members,
       gaps: [],
       inner: 0,

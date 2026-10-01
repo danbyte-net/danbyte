@@ -180,9 +180,11 @@ export interface DiagramBand extends Rect {
   /** A row holding several layers, stacked: its sub-rows, top to bottom,
    * each labelled with its layer's badge at the row's left. */
   layers?: DiagramBandLayer[]
-  /** A chassis: the strip carrying its name - down its left side
-   * (`orient: "v"`, members top to bottom) or across its top. */
+  /** A chassis: the strip carrying its name, along `side`. */
   strip?: Rect
+  /** A chassis: the side its strip runs along (absent: down the left of a
+   * top-to-bottom stack, across the top of a left-to-right one). */
+  side?: "T" | "R" | "B" | "L"
   /** A chassis: its page in Danbyte. */
   link?: string
 }

@@ -160,11 +160,11 @@ function bandSvg(b: DiagramBand, measure: Measure): string {
       })
     )
   } else if (b.kind === "chassis") {
-    // A virtual chassis: its name on the strip down its left side (read
-    // bottom to top) or across its top.
+    // A virtual chassis: its name on its strip - read bottom to top on a
+    // strip down a side, level on one across the top or bottom.
     const s = b.strip ?? { x: b.x, y: b.y, w: b.w, h: 0 }
     const cs = BAND.CHASSIS_SIZE
-    const v = b.orient === "v"
+    const v = b.side ? b.side === "L" || b.side === "R" : b.orient === "v"
     const label = fit(
       b.label,
       Math.max(0, (v ? s.h : s.w) - 12),

@@ -324,6 +324,20 @@ function elbowCorners(pts: Pt[]): Pt[] | null {
   return out.slice(1, -1)
 }
 
+/** A chassis swimlane's style for its title on `side`. */
+function swimlaneSide(side: "T" | "R" | "B" | "L") {
+  switch (side) {
+    case "L":
+      return { horizontal: 0 }
+    case "R":
+      return { horizontal: 0, flipH: 1 }
+    case "B":
+      return { flipV: 1 }
+    default:
+      return {}
+  }
+}
+
 // ── Label positions ──────────────────────────────────────────────────────
 
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y)
@@ -501,10 +515,11 @@ function page(
     const st =
       b.kind === "chassis"
         ? // A virtual chassis: a swimlane holding its members, its name on
-          // the strip down its left side or across its top.
+          // its strip - a swimlane's title is on its left (horizontal=0) or
+          // top, and flipped to the right or bottom.
           style(["swimlane"], {
             startSize: BAND.CHASSIS_STRIP,
-            ...(b.orient === "v" ? { horizontal: 0 } : {}),
+            ...swimlaneSide(b.side ?? (b.orient === "v" ? "L" : "T")),
             swimlaneLine: 0,
             ...common,
             fontSize: BAND.CHASSIS_SIZE,

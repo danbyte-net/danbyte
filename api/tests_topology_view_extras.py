@@ -29,7 +29,7 @@ class ValidatorTests(SimpleTestCase):
 
     def test_well_formed_keys_pass(self):
         state = {
-            "chassis": {VC: {"orient": "h"}, VC2: {"off": True}},
+            "chassis": {VC: {"orient": "h", "side": "B"}, VC2: {"off": True}},
             "filters": {"chassis": [VC, VC2, VC], "diagram": {"chassis": "v"}},
             "zones_by_style": {
                 "diagram": [{"id": "r", "exits": "v"}, {"id": "s", "exits": "h"}]
@@ -49,6 +49,7 @@ class ValidatorTests(SimpleTestCase):
         self.bad({"chassis": {VC: "v"}}, f"chassis.{VC} must be an object")
         self.bad({"chassis": {VC: {"orient": "x"}}}, "orient must be one of v, h")
         self.bad({"chassis": {VC: {"off": 1}}}, "off must be true or false")
+        self.bad({"chassis": {VC: {"side": "top"}}}, "side must be one of T, B, L, R")
         self.bad({"chassis": {VC: {"color": "red"}}}, "unknown key(s) color")
 
     def test_the_caps(self):
@@ -92,7 +93,7 @@ class ThroughTheApiTests(APITestCase):
 
     def test_the_keys_round_trip(self):
         state = {
-            "chassis": {VC: {"orient": "h"}},
+            "chassis": {VC: {"orient": "h", "side": "R"}},
             "filters": {"devices": [], "chassis": [VC, VC],
                         "diagram": {"chassis": "v"}},
             "zones_by_style": {"diagram": [
@@ -105,7 +106,7 @@ class ThroughTheApiTests(APITestCase):
         r = self._save(state)
         self.assertEqual(r.status_code, 201, r.content)
         got = self.client.get(f"/api/topology-views/{r.json()['id']}/").json()
-        self.assertEqual(got["state"]["chassis"], {VC: {"orient": "h"}})
+        self.assertEqual(got["state"]["chassis"], {VC: {"orient": "h", "side": "R"}})
         self.assertEqual(got["state"]["filters"]["chassis"], [VC])
         self.assertEqual(got["state"]["zones_by_style"]["diagram"][0]["exits"], "h")
 

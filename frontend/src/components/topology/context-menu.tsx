@@ -37,8 +37,9 @@ import {
 import type { MenuKeys } from "@/components/pointer-menu"
 import { cn } from "@/lib/utils"
 import { bandLook } from "./diagram/band-node"
+import { STRIP_SIDE_ITEMS } from "./diagram/chassis-node"
 import { LINE_LOOKS } from "./diagram/line-tabs"
-import type { LineType } from "./diagram/types"
+import type { LineType, Side } from "./diagram/types"
 import { SWATCH_NAMES } from "./diagram/swatch-names"
 import { ZONE_COLORS } from "./view-positions"
 import type { BandExits } from "./view-positions"
@@ -94,6 +95,9 @@ export interface ChassisMenu {
   orient: "v" | "h" | null
   onOrient: (orient: "v" | "h") => void
   onUnstack: () => void
+  /** Stacked: the side its name strip runs along, and moving it. */
+  side?: Side
+  onSide?: (side: Side) => void
   /** Hide every member of the stack. */
   onHide?: () => void
   /** Placed on a hand-picked map: take it off. */
@@ -183,12 +187,15 @@ export function DeviceMenuItems({
 
 /** Right-click on a virtual chassis' stack (and its members' Virtual
  * chassis sub-menu): open it, stack it top to bottom or left to right, or
- * draw its members apart; hide it or, where it was placed, take it off. */
+ * draw its members apart, move its name to another side; hide it or, where
+ * it was placed, take it off. */
 export function ChassisMenuItems({
   id,
   orient,
   onOrient,
   onUnstack,
+  side,
+  onSide,
   onHide,
   onRemove,
 }: ChassisMenu) {
@@ -218,6 +225,26 @@ export function ChassisMenuItems({
           <Ungroup /> Unstacked
         </DropdownMenuRadioItem>
       </DropdownMenuRadioGroup>
+      {orient && side && onSide && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger inset>Name</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-36">
+            <DropdownMenuRadioGroup
+              value={side}
+              onValueChange={(v) => {
+                const pick = STRIP_SIDE_ITEMS.find((i) => i.side === v)
+                if (pick && v !== side) onSide(pick.side)
+              }}
+            >
+              {STRIP_SIDE_ITEMS.map(({ side: s, label, icon: Icon }) => (
+                <DropdownMenuRadioItem key={s} value={s}>
+                  <Icon /> {label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
       {(onHide || onRemove) && <DropdownMenuSeparator />}
       {onHide && (
         <DropdownMenuItem onSelect={onHide}>

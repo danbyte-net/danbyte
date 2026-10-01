@@ -541,14 +541,15 @@ export function chassisBands(
       return r ? [r] : []
     })
     if (!own.length) continue
-    const f = chassisFrame(ch.orient, own)
+    const f = chassisFrame(ch.side, own)
     out.push({
       id,
       kind: "chassis",
       orient: ch.orient,
       label: ch.vc.name,
       ...f,
-      strip: chassisStrip(ch.orient, f),
+      strip: chassisStrip(ch.side, f),
+      side: ch.side,
       link: danbyteUrl(origin, `/virtual-chassis/${ch.vc.id}`),
     })
   }

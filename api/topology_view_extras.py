@@ -3,8 +3,10 @@ add to a topology view's ``state``, checked the way
 ``TopologyViewSerializer.validate_state`` checks the other Diagram keys:
 
 * ``chassis`` - per virtual chassis id, how the Diagram draws it:
-  ``{orient: "v" | "h", off: true}``, each optional (``v`` stacks the
-  members top to bottom, ``h`` left to right; ``off`` draws them apart);
+  ``{orient: "v" | "h", off: true, side: "T" | "B" | "L" | "R"}``, each
+  optional (``v`` stacks the members top to bottom, ``h`` left to right;
+  ``off`` draws them apart; ``side`` is the side its name strip runs
+  along);
 * ``filters.chassis`` - the virtual chassis placed on a hand-picked map,
   by id: their members are on it as they are now;
 * ``filters.diagram.chassis`` - the view's stacking: ``off``, ``v`` or ``h``;
@@ -31,11 +33,13 @@ ORIENTS = ("v", "h")
 STACKING = ("off", "v", "h")
 #: A row's cables to other bands: top and bottom, or left and right.
 EXITS = ("v", "h")
+#: The side a stack's name strip runs along.
+STRIP_SIDES = ("T", "B", "L", "R")
 #: Chassis one view may give its own settings.
 MAX_CHASSIS_SETTINGS = 10_000
 #: Chassis one hand-picked map may place (the map's ``chassis`` query).
 MAX_PLACED_CHASSIS = 1_000
-_SETTING_KEYS = frozenset({"orient", "off"})
+_SETTING_KEYS = frozenset({"orient", "off", "side"})
 
 
 def _choice(value, allowed, label):
@@ -65,6 +69,7 @@ def _chassis_settings(settings):
                 f"{where}: unknown key(s) {', '.join(unknown)}"
             )
         _choice(entry.get("orient"), ORIENTS, f"{where}.orient")
+        _choice(entry.get("side"), STRIP_SIDES, f"{where}.side")
         if "off" in entry and not isinstance(entry["off"], bool):
             raise serializers.ValidationError(f"{where}.off must be true or false")
 

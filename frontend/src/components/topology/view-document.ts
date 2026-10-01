@@ -15,7 +15,9 @@ import type {
 } from "@/lib/api"
 import { NO_TOPO_HIDDEN, readTopoHidden, savedTopoHidden } from "./hidden"
 import type { TopoHidden } from "./hidden"
+import { STRIP_SIDES } from "./diagram/chassis"
 import type { ChassisLook } from "./diagram/chassis"
+import type { Side } from "./diagram/types"
 import { viewPositions } from "./view-positions"
 import type { PosMap, Zone } from "./view-positions"
 
@@ -161,7 +163,8 @@ function readLooks(raw: unknown): Record<string, ChassisLook> {
     const look: ChassisLook = {}
     if (v.orient === "v" || v.orient === "h") look.orient = v.orient
     if (v.off === true) look.off = true
-    if (look.orient || look.off) out[id] = look
+    if (STRIP_SIDES.includes(v.side as Side)) look.side = v.side as Side
+    if (look.orient || look.off || look.side) out[id] = look
   }
   return out
 }

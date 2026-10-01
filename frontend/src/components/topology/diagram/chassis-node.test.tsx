@@ -13,7 +13,7 @@ import type { Node } from "@xyflow/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { ChassisNodeData } from "./build-diagram"
-import { CHASSIS_DRAG_HANDLE } from "./chassis"
+import { CHASSIS_DRAG_HANDLE, stripSide } from "./chassis"
 import { ChassisActionsContext, ChassisNode, chassisTip } from "./chassis-node"
 import type { ChassisActions } from "./chassis-node"
 
@@ -44,6 +44,7 @@ const data = (over: Partial<ChassisNodeData> = {}): ChassisNodeData => ({
   members: ["dev:a", "dev:b"],
   inner: 2,
   ...over,
+  side: over.side ?? stripSide(over.orient ?? "v"),
 })
 
 async function onCanvas(
@@ -114,6 +115,7 @@ describe("ChassisNode", () => {
   it("turns, unstacks and removes from its toolbar when selected", async () => {
     const actions: ChassisActions = {
       onOrient: vi.fn(),
+      onSide: vi.fn(),
       onUnstack: vi.fn(),
       onRemove: vi.fn(),
       placed: () => true,
@@ -135,9 +137,39 @@ describe("ChassisNode", () => {
     ).toBeTruthy()
   })
 
+  it("moves its name to the side picked in its toolbar", async () => {
+    const actions: ChassisActions = {
+      onOrient: vi.fn(),
+      onSide: vi.fn(),
+      onUnstack: vi.fn(),
+    }
+    await onCanvas(data({ side: "R" }), true, actions)
+    const strip = screen
+      .getByRole("link", { name: "stack-01" })
+      .closest(`.${CHASSIS_DRAG_HANDLE}`) as HTMLElement
+    expect(strip.className).toContain("right-0")
+    expect(
+      screen
+        .getByRole("button", { name: "Name on right" })
+        .getAttribute("aria-pressed")
+    ).toBe("true")
+    fireEvent.click(screen.getByRole("button", { name: "Name at bottom" }))
+    expect(actions.onSide).toHaveBeenCalledWith("vc1", "B")
+  })
+
+  it("lays a name at the bottom level, not up the side", async () => {
+    await onCanvas(data({ side: "B" }))
+    const strip = screen
+      .getByRole("link", { name: "stack-01" })
+      .closest(`.${CHASSIS_DRAG_HANDLE}`) as HTMLElement
+    expect(strip.className).toContain("bottom-0")
+    expect(strip.innerHTML).not.toContain("vertical-rl")
+  })
+
   it("offers Remove only for a chassis placed on the map", async () => {
     await onCanvas(data(), true, {
       onOrient: vi.fn(),
+      onSide: vi.fn(),
       onUnstack: vi.fn(),
     })
     expect(screen.queryByRole("button", { name: "Remove from map" })).toBeNull()

@@ -2,31 +2,44 @@ import { createContext, useContext } from "react"
 import { Link } from "@tanstack/react-router"
 import { NodeToolbar, Position } from "@xyflow/react"
 import type { NodeProps } from "@xyflow/react"
-import { ArrowUpRight, Columns2, Rows2, Trash2, Ungroup } from "lucide-react"
+import {
+  ArrowUpRight,
+  Columns2,
+  PanelBottom,
+  PanelLeft,
+  PanelRight,
+  PanelTop,
+  Rows2,
+  Trash2,
+  Ungroup,
+} from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { bandLook, ToolButton } from "./band-node"
 import type { ChassisNodeData } from "./build-diagram"
-import { CHASSIS, CHASSIS_DRAG_HANDLE } from "./chassis"
+import { CHASSIS, CHASSIS_DRAG_HANDLE, stripUpright } from "./chassis"
 import type { ChassisOrient } from "./chassis"
+import type { Side } from "./types"
 
 /**
  * A virtual chassis drawn as a stack (chassis.ts): a band-grey frame
- * behind its members, with a slim strip carrying the chassis' name down
- * its left side (top to bottom) or across its top (left to right). The
- * strip is the grip - dragging it moves the stack, members and all - and
+ * behind its members, with a slim strip carrying the chassis' name along
+ * one side - down the left of a top-to-bottom stack and across the top of
+ * a left-to-right one unless the view picked another. The strip is the grip - dragging it moves the stack, members and all - and
  * the name opens the chassis. Like a band it lies under the cables,
  * blended with them, and lets every click but the strip's through.
  *
- * Selected, its toolbar turns it top to bottom or left to right, draws its
- * members apart, opens the chassis and, on a hand-picked map where it was
- * placed, takes it off the map.
+ * Selected, its toolbar turns it top to bottom or left to right, moves its
+ * name to another side, draws its members apart, opens the chassis and, on
+ * a hand-picked map where it was placed, takes it off the map.
  */
 
 /** What a stack's toolbar and menu do, by chassis id. The page provides
  * them; without, the frame has no toolbar. */
 export interface ChassisActions {
   onOrient: (vc: string, orient: ChassisOrient) => void
+  /** Run its name strip along another side. */
+  onSide: (vc: string, side: Side) => void
   /** Draw its members apart on this view. */
   onUnstack: (vc: string) => void
   /** Placed on this hand-picked map: take it off. */
@@ -36,6 +49,26 @@ export interface ChassisActions {
 }
 
 export const ChassisActionsContext = createContext<ChassisActions | null>(null)
+
+/** The name strip's sides, as the toolbar and menu offer them. */
+export const STRIP_SIDE_ITEMS: readonly {
+  side: Side
+  label: string
+  icon: typeof PanelTop
+}[] = [
+  { side: "T", label: "Name on top", icon: PanelTop },
+  { side: "B", label: "Name at bottom", icon: PanelBottom },
+  { side: "L", label: "Name on left", icon: PanelLeft },
+  { side: "R", label: "Name on right", icon: PanelRight },
+]
+
+/** Where a strip sits in its frame. */
+const STRIP_AT: Record<Side, string> = {
+  T: "inset-x-0 top-0",
+  B: "inset-x-0 bottom-0",
+  L: "inset-y-0 left-0",
+  R: "inset-y-0 right-0",
+}
 
 /** The line on a stack's strip, in a tooltip: its size and the cables the
  * frame stands for. */
@@ -52,6 +85,8 @@ export function ChassisNode({ data, selected }: NodeProps) {
   const act = useContext(ChassisActionsContext)
   const look = bandLook(null)
   const v = d.orient === "v"
+  const side = d.side
+  const upright = stripUpright(side)
   const placed = !!act?.onRemove && !!act.placed?.(d.vc.id)
   return (
     <>
@@ -74,6 +109,16 @@ export function ChassisNode({ data, selected }: NodeProps) {
               onClick={() => act.onOrient(d.vc.id, "h")}
               icon={<Columns2 className="size-3" />}
             />
+            <span className="mx-0.5 h-4 w-px bg-border" />
+            {STRIP_SIDE_ITEMS.map(({ side: s, label, icon: Icon }) => (
+              <ToolButton
+                key={s}
+                label={label}
+                active={side === s}
+                onClick={() => act.onSide(d.vc.id, s)}
+                icon={<Icon className="size-3" />}
+              />
+            ))}
             <span className="mx-0.5 h-4 w-px bg-border" />
             <ToolButton
               label="Unstack"
@@ -117,16 +162,16 @@ export function ChassisNode({ data, selected }: NodeProps) {
           className={cn(
             CHASSIS_DRAG_HANDLE,
             "pointer-events-auto absolute flex cursor-grab items-center justify-center overflow-hidden active:cursor-grabbing",
-            v ? "inset-y-0 left-0" : "inset-x-0 top-0"
+            STRIP_AT[side]
           )}
-          style={v ? { width: CHASSIS.STRIP } : { height: CHASSIS.STRIP }}
+          style={upright ? { width: CHASSIS.STRIP } : { height: CHASSIS.STRIP }}
           data-tip={chassisTip(d)}
           data-tip-plain=""
         >
           <div
             className={cn(
               "flex max-h-full max-w-full items-center justify-center",
-              v && "rotate-180 [writing-mode:vertical-rl]"
+              upright && "rotate-180 [writing-mode:vertical-rl]"
             )}
           >
             <Link

@@ -18,6 +18,7 @@ import {
   chassisSpecs,
   collapseChassis,
   innerSides,
+  stripSide,
 } from "./chassis"
 import { withFaces } from "./photo-anchors"
 import { toDocument } from "./to-document"
@@ -55,6 +56,7 @@ describe("chassisSpecs", () => {
       id: `vc:${VC}`,
       vc: { id: VC, name: "stack-01" },
       orient: "v",
+      side: "L",
       members: ["dev:a", "dev:b", "dev:c"],
     })
   })
@@ -69,6 +71,12 @@ describe("chassisSpecs", () => {
       looks: { [VC]: { orient: "h" } },
     })
     expect(h.orient).toBe("h")
+    expect(h.side).toBe("T")
+    const [r] = chassisSpecs(nodes, {
+      mode: "v",
+      looks: { [VC]: { side: "R" } },
+    })
+    expect(r).toMatchObject({ orient: "v", side: "R" })
     expect(chassisSpecs(nodes, undefined)).toEqual([])
   })
 
@@ -117,7 +125,7 @@ describe("chassis geometry", () => {
       { x: 0, y: 44, w: 100, h: 40 },
     ]
     const { PAD, STRIP } = CHASSIS
-    expect(chassisFrame("v", rects)).toEqual({
+    expect(chassisFrame("L", rects)).toEqual({
       x: -STRIP - PAD,
       y: -PAD,
       w: 100 + STRIP + 2 * PAD,
@@ -140,7 +148,47 @@ describe("chassis geometry", () => {
       new Map([["vc:1", { orient: "v" as const, members: ["a", "b"] }]])
     )
     expect(Object.keys(out).sort()).toEqual(["c", "vc:1"])
-    expect(out["vc:1"]).toEqual(chassisFrame("v", [boxes.a, boxes.b]))
+    expect(out["vc:1"]).toEqual(chassisFrame("L", [boxes.a, boxes.b]))
+    const right = collapseChassis(
+      boxes,
+      new Map([
+        [
+          "vc:1",
+          { orient: "v" as const, side: "R" as const, members: ["a", "b"] },
+        ],
+      ])
+    )
+    expect(right["vc:1"]).toEqual(chassisFrame("R", [boxes.a, boxes.b]))
+  })
+
+  it("runs the strip along whichever side it is given", () => {
+    const { PAD, STRIP } = CHASSIS
+    const left = (g: ReturnType<typeof chassisGeometry>, i: number) =>
+      g.w / 2 + g.offsets[i].x - sizes[i].w / 2
+    const top = (g: ReturnType<typeof chassisGeometry>, i: number) =>
+      g.h / 2 + g.offsets[i].y - sizes[i].h / 2
+    const r = chassisGeometry("v", sizes, [], "R")
+    expect(r.w).toBe(STRIP + 2 * PAD + 140)
+    expect(r.strip).toEqual({ x: r.w - STRIP, y: 0, w: STRIP, h: r.h })
+    expect(left(r, 0)).toBe(PAD)
+    const t = chassisGeometry("v", sizes, [], "T")
+    expect(t.w).toBe(2 * PAD + 140)
+    expect(t.h).toBe(STRIP + 2 * PAD + 40 + CHASSIS.GAP + 60)
+    expect(t.strip).toEqual({ x: 0, y: 0, w: t.w, h: STRIP })
+    expect(top(t, 0)).toBe(STRIP + PAD)
+    const b = chassisGeometry("h", sizes, [], "B")
+    expect(b.h).toBe(STRIP + 2 * PAD + 60)
+    expect(b.strip).toEqual({ x: 0, y: b.h - STRIP, w: b.w, h: STRIP })
+    expect(top(b, 0)).toBe(PAD)
+    const rects: Rect[] = [{ x: 0, y: 0, w: 100, h: 40 }]
+    expect(chassisFrame("B", rects)).toEqual({
+      x: -PAD,
+      y: -PAD,
+      w: 100 + 2 * PAD,
+      h: 40 + STRIP + 2 * PAD,
+    })
+    expect(stripSide("v")).toBe("L")
+    expect(stripSide("h")).toBe("T")
   })
 })
 
@@ -199,7 +247,7 @@ describe("a stack on the Diagram", () => {
       expect(a.h).toBe(b.h)
     }
     const f = box(frame)
-    const want = chassisFrame(orient, [a, b])
+    const want = chassisFrame(stripSide(orient), [a, b])
     for (const k of ["x", "y", "w", "h"] as const)
       expect(f[k]).toBeCloseTo(want[k], 5)
     for (const m of members)
@@ -322,8 +370,20 @@ describe("a stack on the Diagram", () => {
   })
 
   describe("in the exports", () => {
-    const doc = (orient: "v" | "h", mode?: "simple" | "detailed") => {
-      const built = buildDiagram(graph, opts({ chassis: { mode: orient } }))
+    const doc = (
+      orient: "v" | "h",
+      mode?: "simple" | "detailed",
+      side?: "T" | "R" | "B" | "L"
+    ) => {
+      const built = buildDiagram(
+        graph,
+        opts({
+          chassis: {
+            mode: orient,
+            ...(side ? { looks: { [VC]: { side } } } : {}),
+          },
+        })
+      )
       return toDocument(
         built.model,
         { nodes: built.nodes, edges: built.edges },
@@ -347,7 +407,7 @@ describe("a stack on the Diagram", () => {
         link: `https://danbyte.example/virtual-chassis/${VC}`,
       })
       const cards = members.map((m) => d.nodes.find((n) => n.id === m)!)
-      expect(chassisFrame("v", cards)).toEqual({
+      expect(chassisFrame("L", cards)).toEqual({
         x: band.x,
         y: band.y,
         w: band.w,
@@ -398,6 +458,38 @@ describe("a stack on the Diagram", () => {
       }
       const across = toDrawio([doc("h")], { measure: approxMeasure })
       expect(across).toMatch(/swimlane;[^"]*startSize=20/)
+    })
+
+    it("carries a strip moved to the right or bottom into every file", () => {
+      const right = doc("v", undefined, "R")
+      const band = right.bands.find((b) => b.kind === "chassis")!
+      expect(band.side).toBe("R")
+      expect(band.strip).toEqual({
+        x: band.x + band.w - CHASSIS.STRIP,
+        y: band.y,
+        w: CHASSIS.STRIP,
+        h: band.h,
+      })
+      const cards = members.map((m) => right.nodes.find((n) => n.id === m)!)
+      expect(chassisFrame("R", cards)).toEqual({
+        x: band.x,
+        y: band.y,
+        w: band.w,
+        h: band.h,
+      })
+      expect(toSvg(right, { measure: approxMeasure })).toMatch(
+        /<text[^>]*rotate\(-90[^>]*>leaf-vc<\/text>/
+      )
+      expect(toDrawio([right], { measure: approxMeasure })).toMatch(
+        /swimlane;[^"]*horizontal=0;[^"]*flipH=1|swimlane;[^"]*flipH=1;[^"]*horizontal=0/
+      )
+      const bottom = doc("v", undefined, "B")
+      expect(toSvg(bottom, { measure: approxMeasure })).toMatch(
+        /<text(?![^>]*rotate)[^>]*>leaf-vc<\/text>/
+      )
+      expect(toDrawio([bottom], { measure: approxMeasure })).toMatch(
+        /swimlane;[^"]*flipV=1/
+      )
     })
   })
 })

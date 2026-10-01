@@ -4,9 +4,9 @@ import type { Pt, Rect, Side } from "./types"
 
 // A virtual chassis on the Diagram (a switch stack): its members drawn
 // together in one frame, top to bottom ("v") or left to right ("h"), with
-// a slim strip along the frame's side carrying the chassis' name - down
-// the left of a top-to-bottom stack, across the top of a left-to-right
-// one. The frame is a node of its own (`vc:<chassis id>`), laid out and
+// a slim strip along one of the frame's sides carrying the chassis' name -
+// by default down the left of a top-to-bottom stack and across the top of
+// a left-to-right one, or on whichever side the view picked. The frame is a node of its own (`vc:<chassis id>`), laid out and
 // saved like a card; its members are placed round its centre, so the
 // stack always stays packed whatever size its cards are drawn at. Pure
 // geometry and grouping, shared by the build, the canvas and the exports.
@@ -23,6 +23,27 @@ export interface ChassisLook {
   orient?: ChassisOrient
   /** Drawn apart, whatever the view's stacking. */
   off?: boolean
+  /** The side its name strip runs along. Absent: `stripSide(orient)`. */
+  side?: Side
+}
+
+export const STRIP_SIDES: readonly Side[] = ["T", "B", "L", "R"]
+
+/** Where a stack's name strip goes unless the view picked a side: down the
+ * left of a top-to-bottom stack, across the top of a left-to-right one. */
+export const stripSide = (orient: ChassisOrient): Side =>
+  orient === "v" ? "L" : "T"
+
+/** A strip down the left or right side, its name read bottom to top. */
+export const stripUpright = (side: Side) => side === "L" || side === "R"
+
+/** The side a chassis' name strip runs along on a view. */
+export function chassisSide(
+  vc: string,
+  opts: ChassisOptions | undefined,
+  orient: ChassisOrient
+): Side {
+  return opts?.looks?.[vc]?.side ?? stripSide(orient)
 }
 
 /** What the build is told about stacking. Plain data (it crosses to the
@@ -90,6 +111,8 @@ export interface ChassisSpec {
   id: string
   vc: { id: string; name: string }
   orient: ChassisOrient
+  /** The side its name strip runs along. */
+  side: Side
   /** Member node ids, top to bottom (left to right). */
   members: string[]
 }
@@ -156,6 +179,7 @@ export function chassisSpecs(
       id: chassisNodeId(id),
       vc: { id, name: g.vc.name },
       orient,
+      side: chassisSide(id, opts, orient),
       members: g.members.map((m) => m.id),
     })
   }
@@ -174,74 +198,82 @@ export interface ChassisGeometry extends Size {
   strip: Rect
 }
 
+/** The room round a stack's members: the pad, and the strip on its side. */
+function margins(side: Side) {
+  const { PAD, STRIP } = CHASSIS
+  return {
+    left: PAD + (side === "L" ? STRIP : 0),
+    top: PAD + (side === "T" ? STRIP : 0),
+    right: PAD + (side === "R" ? STRIP : 0),
+    bottom: PAD + (side === "B" ? STRIP : 0),
+  }
+}
+
 /**
  * A frame round members of `sizes`, in stack order: top to bottom with
- * their left edges lined up (`v`, the strip down the left), or left to
- * right with their tops lined up (`h`, the strip across the top). `gaps`
- * is the room between member i and i + 1 (`CHASSIS.GAP` by default).
+ * their left edges lined up (`v`), or left to right with their tops lined
+ * up (`h`), the name strip along `side`. `gaps` is the room between member
+ * i and i + 1 (`CHASSIS.GAP` by default).
  */
 export function chassisGeometry(
   orient: ChassisOrient,
   sizes: readonly Size[],
-  gaps: readonly number[] = []
+  gaps: readonly number[] = [],
+  side: Side = stripSide(orient)
 ): ChassisGeometry {
-  const { PAD, STRIP } = CHASSIS
   const gap = (i: number) => gaps[i] ?? CHASSIS.GAP
   const along = sizes.reduce(
     (s, b, i) => s + (orient === "v" ? b.h : b.w) + (i ? gap(i - 1) : 0),
     0
   )
   const across = Math.max(0, ...sizes.map((b) => (orient === "v" ? b.w : b.h)))
-  const w = orient === "v" ? STRIP + 2 * PAD + across : 2 * PAD + along
-  const h = orient === "v" ? 2 * PAD + along : STRIP + 2 * PAD + across
+  const m = margins(side)
+  const w = m.left + m.right + (orient === "v" ? across : along)
+  const h = m.top + m.bottom + (orient === "v" ? along : across)
   const offsets: Pt[] = []
-  let at = PAD
+  let at = 0
   sizes.forEach((b, i) => {
     if (i) at += gap(i - 1)
     const c =
       orient === "v"
-        ? { x: STRIP + PAD + b.w / 2, y: at + b.h / 2 }
-        : { x: at + b.w / 2, y: STRIP + PAD + b.h / 2 }
+        ? { x: m.left + b.w / 2, y: m.top + at + b.h / 2 }
+        : { x: m.left + at + b.w / 2, y: m.top + b.h / 2 }
     offsets.push({ x: c.x - w / 2, y: c.y - h / 2 })
     at += orient === "v" ? b.h : b.w
   })
-  return {
-    w,
-    h,
-    offsets,
-    strip:
-      orient === "v"
-        ? { x: 0, y: 0, w: STRIP, h }
-        : { x: 0, y: 0, w, h: STRIP },
-  }
+  return { w, h, offsets, strip: chassisStrip(side, { x: 0, y: 0, w, h }) }
 }
 
-/** The frame round members standing at `rects` (in stack order). */
-export function chassisFrame(
-  orient: ChassisOrient,
-  rects: readonly Rect[]
-): Rect {
-  const { PAD, STRIP } = CHASSIS
+/** The frame round members standing at `rects` (in stack order), its
+ * name strip along `side`. */
+export function chassisFrame(side: Side, rects: readonly Rect[]): Rect {
   if (!rects.length) return { x: 0, y: 0, w: 0, h: 0 }
   const x0 = Math.min(...rects.map((r) => r.x))
   const y0 = Math.min(...rects.map((r) => r.y))
   const x1 = Math.max(...rects.map((r) => r.x + r.w))
   const y1 = Math.max(...rects.map((r) => r.y + r.h))
-  const left = orient === "v" ? STRIP + PAD : PAD
-  const top = orient === "h" ? STRIP + PAD : PAD
+  const m = margins(side)
   return {
-    x: x0 - left,
-    y: y0 - top,
-    w: x1 - x0 + left + PAD,
-    h: y1 - y0 + top + PAD,
+    x: x0 - m.left,
+    y: y0 - m.top,
+    w: x1 - x0 + m.left + m.right,
+    h: y1 - y0 + m.top + m.bottom,
   }
 }
 
-/** A frame's name strip. */
-export function chassisStrip(orient: ChassisOrient, frame: Rect): Rect {
-  return orient === "v"
-    ? { x: frame.x, y: frame.y, w: CHASSIS.STRIP, h: frame.h }
-    : { x: frame.x, y: frame.y, w: frame.w, h: CHASSIS.STRIP }
+/** A frame's name strip, along `side`. */
+export function chassisStrip(side: Side, frame: Rect): Rect {
+  const { STRIP } = CHASSIS
+  switch (side) {
+    case "L":
+      return { x: frame.x, y: frame.y, w: STRIP, h: frame.h }
+    case "R":
+      return { x: frame.x + frame.w - STRIP, y: frame.y, w: STRIP, h: frame.h }
+    case "B":
+      return { x: frame.x, y: frame.y + frame.h - STRIP, w: frame.w, h: STRIP }
+    default:
+      return { x: frame.x, y: frame.y, w: frame.w, h: STRIP }
+  }
 }
 
 /** The sides of member `i` of `n` that face another member: no cable
@@ -266,7 +298,7 @@ export function collapseChassis(
   boxes: Readonly<Record<string, Rect>>,
   frames: ReadonlyMap<
     string,
-    { orient: ChassisOrient; members: readonly string[] }
+    { orient: ChassisOrient; side?: Side; members: readonly string[] }
   >
 ): Record<string, Rect> {
   if (!frames.size) return { ...boxes }
@@ -277,7 +309,8 @@ export function collapseChassis(
       return r ? [r] : []
     })
     for (const m of f.members) delete out[m]
-    if (rects.length) out[id] = chassisFrame(f.orient, rects)
+    if (rects.length)
+      out[id] = chassisFrame(f.side ?? stripSide(f.orient), rects)
   }
   return out
 }

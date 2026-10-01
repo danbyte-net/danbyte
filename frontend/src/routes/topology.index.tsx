@@ -218,6 +218,7 @@ import {
   chassisGeometry,
   chassisNodeId,
   chassisOrient,
+  chassisSide,
   isChassisNode,
   vcOf,
 } from "@/components/topology/diagram/chassis"
@@ -263,6 +264,7 @@ import type {
   DiagramCardData,
   DiagramLinkRef,
   Pt,
+  Side,
 } from "@/components/topology/diagram/types"
 import type {
   GroupEdgeInfo,
@@ -1130,9 +1132,18 @@ function TopologyPage() {
   )
   const setChassisLook = (vc: string, value: ChassisLook | null) =>
     edit({ type: "setChassisLook", id: vc, value })
+  /** A chassis' look turned, or drawn apart: its name's side stays. */
+  const lookWith = (vc: string, look: ChassisLook): ChassisLook => {
+    const looks: Partial<Record<string, ChassisLook>> = doc.doc.chassisLooks
+    const side = looks[vc]?.side
+    return side ? { ...look, side } : look
+  }
+  const setChassisSide = (vc: string, side: Side) =>
+    setChassisLook(vc, { ...doc.doc.chassisLooks[vc], side })
   const chassisActions: ChassisActions = {
-    onOrient: (vc, orient) => setChassisLook(vc, { orient }),
-    onUnstack: (vc) => setChassisLook(vc, { off: true }),
+    onOrient: (vc, orient) => setChassisLook(vc, lookWith(vc, { orient })),
+    onSide: setChassisSide,
+    onUnstack: (vc) => setChassisLook(vc, lookWith(vc, { off: true })),
     onRemove: (vc) => removeChassis([vc]),
     placed: (vc) => placedChassisSet.has(vc),
   }
@@ -2827,8 +2838,14 @@ function TopologyPage() {
   ): ChassisMenu => ({
     id: vc,
     orient: stacked,
-    onOrient: (orient) => setChassisLook(vc, { orient }),
-    onUnstack: () => setChassisLook(vc, { off: true }),
+    onOrient: (orient) => setChassisLook(vc, lookWith(vc, { orient })),
+    onUnstack: () => setChassisLook(vc, lookWith(vc, { off: true })),
+    ...(stacked
+      ? {
+          side: chassisSide(vc, chassisOpts, stacked),
+          onSide: (side: Side) => setChassisSide(vc, side),
+        }
+      : {}),
     ...(stacked && members.length
       ? {
           onHide: () =>
