@@ -26,6 +26,7 @@ from customization.models import (
 from .models import (
     Antenna, AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
+    CABINET_SIZE_FIELDS, Cabinet, CabinetRole, CabinetType,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
     VirtualMachineGroup,
@@ -929,6 +930,7 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     device_count = serializers.SerializerMethodField()
     vm_count = serializers.SerializerMethodField()
     rack_count = serializers.SerializerMethodField()
+    cabinet_count = serializers.SerializerMethodField()
     contact_count = serializers.SerializerMethodField()
     circuit_count = serializers.SerializerMethodField()
     location_count = serializers.SerializerMethodField()
@@ -956,6 +958,10 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     @detail_only(0)
     def get_rack_count(self, obj) -> int:
         return obj.racks.count()
+
+    @detail_only(0)
+    def get_cabinet_count(self, obj) -> int:
+        return obj.cabinets.count()
 
     @detail_only(0)
     def get_contact_count(self, obj) -> int:
@@ -1012,7 +1018,7 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
             "vrfs", "vrf_ids",
             "tags", "tag_ids",
             "prefix_count", "vlan_count",
-            "device_count", "vm_count", "rack_count", "contact_count",
+            "device_count", "vm_count", "rack_count", "cabinet_count", "contact_count",
             "circuit_count", "location_count", "document_count",
             "custom_fields",
             "created_at", "updated_at",
@@ -5890,6 +5896,190 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                             "document_count", "created_at", "updated_at"]
 
 
+# ─── Cabinets (#277) ─────────────────────────────────────────────────────────
+class CabinetRoleMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = CabinetRole
+        fields = ["id", "name", "slug", "color"]
+
+
+class CabinetRoleSerializer(NumIdModelSerializer):
+    slug = serializers.SlugField(required=False, allow_blank=True)
+    cabinet_count = serializers.SerializerMethodField()
+
+    def get_cabinet_count(self, obj) -> int:
+        v = getattr(obj, "cabinet_count_annotated", None)
+        return v if v is not None else obj.cabinets.count()
+
+    class Meta:
+        model = CabinetRole
+        fields = ["id", "name", "slug", "color", "description", "cabinet_count",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "cabinet_count", "created_at", "updated_at"]
+
+
+def _check_cabinet_sizes(attrs, instance) -> None:
+    """The mounting plate fits in the box, where both sizes are given."""
+    errors = {}
+    for inner, outer, word in (("inner_width_mm", "outer_width_mm", "Narrower"),
+                               ("inner_height_mm", "outer_height_mm", "Shorter")):
+        i = attrs.get(inner, getattr(instance, inner, None))
+        o = attrs.get(outer, getattr(instance, outer, None))
+        if i is not None and o is not None and o < i:
+            errors[outer] = f"{word} than the mounting plate ({i} mm)."
+    if errors:
+        raise serializers.ValidationError(errors)
+
+
+class CabinetTypeMiniSerializer(NumIdModelSerializer):
+    """Picker/embed shape, with the sizes a new cabinet copies."""
+
+    manufacturer = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_manufacturer(self, obj):
+        m = obj.manufacturer
+        return {"id": str(m.id), "name": m.name} if m else None
+
+    class Meta:
+        model = CabinetType
+        fields = ["id", "name", "manufacturer", *CABINET_SIZE_FIELDS]
+
+
+class CabinetTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+    manufacturer = ManufacturerMiniSerializer(read_only=True)
+    manufacturer_id = TenantScopedPrimaryKeyRelatedField(
+        source="manufacturer", queryset=Manufacturer.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    cabinet_count = serializers.SerializerMethodField()
+
+    def get_cabinet_count(self, obj) -> int:
+        v = getattr(obj, "cabinet_count_annotated", None)
+        return v if v is not None else obj.cabinets.count()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        _check_cabinet_sizes(attrs, self.instance)
+        return attrs
+
+    class Meta:
+        model = CabinetType
+        fields = ["id", "name", "manufacturer", "manufacturer_id",
+                  *CABINET_SIZE_FIELDS, "description", "cabinet_count",
+                  "tags", "tag_ids", "created_at", "updated_at"]
+        read_only_fields = ["id", "cabinet_count", "created_at", "updated_at"]
+
+
+class CabinetMiniSerializer(NumIdModelSerializer):
+    site = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        return {"id": str(obj.site_id), "name": obj.site.name}
+
+    class Meta:
+        model = Cabinet
+        fields = ["id", "name", "site", *CABINET_SIZE_FIELDS]
+
+
+class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
+                        TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "cabinet"
+    site = SiteRegionMiniSerializer(read_only=True)
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True
+    )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    role = CabinetRoleMiniSerializer(read_only=True)
+    role_id = TenantScopedPrimaryKeyRelatedField(
+        source="role", queryset=CabinetRole.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    cabinet_type = CabinetTypeMiniSerializer(read_only=True)
+    cabinet_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="cabinet_type", queryset=CabinetType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    document_count = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        return {"id": str(loc.id), "name": loc.name} if loc else None
+
+    def get_document_count(self, obj) -> int:
+        n = getattr(obj, "document_n", None)
+        if n is not None:
+            return n
+        return Document.objects.filter(object_type="api.cabinet", object_id=obj.id).count()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        location = attrs.get("location", getattr(self.instance, "location", None))
+        site = attrs.get("site", getattr(self.instance, "site", None))
+        if location is not None and site is not None and location.site_id != site.id:
+            raise serializers.ValidationError(
+                {"location_id": "Pick a location within the cabinet's site."}
+            )
+        name = attrs.get("name", getattr(self.instance, "name", None))
+        if site is not None and name:
+            clash = Cabinet.objects.filter(site=site, name=name)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"name": "A cabinet with this name already exists at this site."}
+                )
+        if self.instance is None:
+            # A new cabinet of a type starts with the type's sizes; sizes sent
+            # with it win, a cleared one (null) included.
+            cabinet_type = attrs.get("cabinet_type")
+            if cabinet_type is not None:
+                for f in CABINET_SIZE_FIELDS:
+                    if f not in attrs:
+                        attrs[f] = getattr(cabinet_type, f)
+            missing = {
+                f: "This field is required."
+                for f in ("inner_width_mm", "inner_height_mm") if attrs.get(f) is None
+            }
+            if missing:
+                raise serializers.ValidationError(missing)
+        _check_cabinet_sizes(attrs, self.instance)
+        return attrs
+
+    class Meta:
+        model = Cabinet
+        fields = ["id", "name", "facility_id", "site", "site_id",
+                  "location", "location_id", "role", "role_id",
+                  "cabinet_type", "cabinet_type_id", "status", "status_id",
+                  *CABINET_SIZE_FIELDS, "description", "document_count",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "document_count", "created_at", "updated_at"]
+        # Filled from the cabinet type on create (see validate).
+        extra_kwargs = {
+            "inner_width_mm": {"required": False},
+            "inner_height_mm": {"required": False},
+        }
+        # The name per site is checked in validate(), with a message that
+        # names the clash; the constraint still guards the table.
+        validators = []
+
+
 # ─── Device roles + platforms ────────────────────────────────────────────────
 class DeviceRoleMiniSerializer(NumIdModelSerializer):
     class Meta:
@@ -7482,6 +7672,7 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     child_count = serializers.SerializerMethodField()
     device_count = serializers.SerializerMethodField()
     rack_count = serializers.SerializerMethodField()
+    cabinet_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
 
     site_id = TenantScopedPrimaryKeyRelatedField(
@@ -7502,6 +7693,10 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     def get_rack_count(self, obj) -> int:
         v = getattr(obj, "rack_count_annotated", None)
         return v if v is not None else obj.racks.count()
+
+    def get_cabinet_count(self, obj) -> int:
+        v = getattr(obj, "cabinet_count_annotated", None)
+        return v if v is not None else obj.cabinets.count()
 
     def get_document_count(self, obj) -> int:
         return Document.objects.filter(
@@ -7528,7 +7723,7 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
         fields = ["id", "name", "slug", "site", "site_id", "parent", "parent_id",
                   "status", "status_id", "color", "icon", "description",
                   "child_count",
-                  "device_count", "rack_count", "document_count",
+                  "device_count", "rack_count", "cabinet_count", "document_count",
                   "created_at", "updated_at"]
         read_only_fields = ["id",  "child_count", "document_count",
                             "created_at", "updated_at"]

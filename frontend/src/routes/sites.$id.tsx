@@ -23,6 +23,7 @@ import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { Button } from "@/components/ui/button"
@@ -34,7 +35,10 @@ import { MiniMap } from "@/components/site-map/mini-map"
 import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
-import { EmbeddedCircuitTable } from "@/components/embedded-tables"
+import {
+  EmbeddedCabinetTable,
+  EmbeddedCircuitTable,
+} from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ContactsPanel } from "@/components/contacts-panel"
@@ -57,8 +61,7 @@ function SiteDetail() {
     queryKey: ["site", id],
     queryFn: () => api<Site>(`/api/sites/${id}/`),
   })
-  if (site.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (site.isLoading) return <Loading />
   if (site.isError)
     return (
       <div className="p-6">
@@ -74,6 +77,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
     | "overview"
     | "locations"
     | "devices"
+    | "cabinets"
     | "vms"
     | "prefixes"
     | "vlans"
@@ -158,6 +162,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         { value: "overview", label: "Overview" },
         { value: "locations", label: "Locations", count: s.location_count },
         { value: "devices", label: "Devices", count: s.device_count },
+        { value: "cabinets", label: "Cabinets", count: s.cabinet_count },
         { value: "vms", label: "Virtual machines", count: s.vm_count },
         { value: "prefixes", label: "Prefixes", count: s.prefix_count },
         { value: "vlans", label: "VLANs", count: s.vlan_count },
@@ -193,6 +198,13 @@ function SiteDetailBody({ site: s }: { site: Site }) {
             emptyText="No devices at this site yet."
           />
         </div>
+      </DetailTab>
+      <DetailTab value="cabinets">
+        <EmbeddedCabinetTable
+          filter={{ site: s.id }}
+          omit={["site"]}
+          emptyText="No cabinets at this site yet."
+        />
       </DetailTab>
       <DetailTab value="prefixes">
         <SitePrefixesTable siteId={s.id} siteName={s.name} />
@@ -268,8 +280,7 @@ function SiteAccessPanel({
     p.sites.some((s) => s.id === siteId)
   )
 
-  if (!viewerOnly && q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading access…</p>
+  if (!viewerOnly && q.isLoading) return <Loading />
   if (!viewerOnly && q.isError) return <QueryError error={q.error} />
 
   return (
@@ -413,8 +424,7 @@ function SiteLocationsTable({ siteId }: { siteId: string }) {
     []
   )
 
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading locations…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   const rows = q.data?.results ?? []
   if (rows.length === 0)
@@ -454,8 +464,7 @@ function SitePrefixesTable({
     []
   )
 
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading prefixes…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   const rows = q.data?.results ?? []
   return (
@@ -547,8 +556,7 @@ function SiteVmsTable({ siteId }: { siteId: string }) {
     []
   )
 
-  if (placed.isLoading || hosted.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading VMs…</p>
+  if (placed.isLoading || hosted.isLoading) return <Loading />
   if (placed.isError) return <QueryError error={placed.error} />
   const placedRows = placed.data?.results ?? []
   const placedIds = new Set(placedRows.map((v) => v.id))
@@ -619,8 +627,7 @@ function SiteVlansTable({ siteId }: { siteId: string }) {
     []
   )
 
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading VLANs…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   const rows = q.data?.results ?? []
   if (rows.length === 0)

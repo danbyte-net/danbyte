@@ -46,6 +46,12 @@ const LISTS: Record<
   string,
   { label: string; to: string; search?: Record<string, string>; api: string }
 > = {
+  cabinet: { label: "Cabinets", to: "/cabinets", api: "/api/cabinets/" },
+  cabinetrole: {
+    label: "Cabinet roles",
+    to: "/cabinet-roles",
+    api: "/api/cabinet-roles/",
+  },
   cable: { label: "Cables", to: "/cables", api: "/api/cables/" },
   certificate: {
     label: "Certificates",

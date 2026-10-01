@@ -189,6 +189,9 @@ from .viewsets import (
     ASNViewSet,
     AuxPortTemplateViewSet,
     AuxPortViewSet,
+    CabinetRoleViewSet,
+    CabinetTypeViewSet,
+    CabinetViewSet,
     CableRouteViewSet,
     CableViewSet,
     CircuitTerminationViewSet,
@@ -363,6 +366,9 @@ router.register(r"rack-roles",    RackRoleViewSet,    basename="rack-role")
 router.register(r"rack-types",    RackTypeViewSet,    basename="rack-type")
 router.register(r"rack-type-accessories", RackTypeAccessoryViewSet,
                 basename="rack-type-accessory")
+router.register(r"cabinets",      CabinetViewSet,     basename="cabinet")
+router.register(r"cabinet-roles", CabinetRoleViewSet, basename="cabinet-role")
+router.register(r"cabinet-types", CabinetTypeViewSet, basename="cabinet-type")
 router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
 router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")

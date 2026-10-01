@@ -198,6 +198,9 @@ import { Route as CertificatesIndexRouteImport } from './routes/certificates.ind
 import { Route as CertificateRequestsIndexRouteImport } from './routes/certificate-requests.index'
 import { Route as CertificateIssuersIndexRouteImport } from './routes/certificate-issuers.index'
 import { Route as CablesIndexRouteImport } from './routes/cables.index'
+import { Route as CabinetsIndexRouteImport } from './routes/cabinets.index'
+import { Route as CabinetTypesIndexRouteImport } from './routes/cabinet-types.index'
+import { Route as CabinetRolesIndexRouteImport } from './routes/cabinet-roles.index'
 import { Route as BgpSessionsIndexRouteImport } from './routes/bgp-sessions.index'
 import { Route as BgpPeerGroupsIndexRouteImport } from './routes/bgp-peer-groups.index'
 import { Route as BgpInstancesIndexRouteImport } from './routes/bgp-instances.index'
@@ -398,6 +401,12 @@ import { Route as CertificatesIdRouteImport } from './routes/certificates.$id'
 import { Route as CertificateRequestsIdRouteImport } from './routes/certificate-requests.$id'
 import { Route as CablesNewRouteImport } from './routes/cables.new'
 import { Route as CablesIdRouteImport } from './routes/cables.$id'
+import { Route as CabinetsNewRouteImport } from './routes/cabinets.new'
+import { Route as CabinetsIdRouteImport } from './routes/cabinets.$id'
+import { Route as CabinetTypesNewRouteImport } from './routes/cabinet-types.new'
+import { Route as CabinetTypesIdRouteImport } from './routes/cabinet-types.$id'
+import { Route as CabinetRolesNewRouteImport } from './routes/cabinet-roles.new'
+import { Route as CabinetRolesIdRouteImport } from './routes/cabinet-roles.$id'
 import { Route as BgpSessionsNewRouteImport } from './routes/bgp-sessions.new'
 import { Route as BgpSessionsIdRouteImport } from './routes/bgp-sessions.$id'
 import { Route as BgpPeerGroupsNewRouteImport } from './routes/bgp-peer-groups.new'
@@ -493,6 +502,9 @@ import { Route as CircuitsIdEditRouteImport } from './routes/circuits.$id_.edit'
 import { Route as CircuitTypesIdEditRouteImport } from './routes/circuit-types.$id_.edit'
 import { Route as ChannelsIdEditRouteImport } from './routes/channels.$id_.edit'
 import { Route as CablesIdEditRouteImport } from './routes/cables.$id_.edit'
+import { Route as CabinetsIdEditRouteImport } from './routes/cabinets.$id_.edit'
+import { Route as CabinetTypesIdEditRouteImport } from './routes/cabinet-types.$id_.edit'
+import { Route as CabinetRolesIdEditRouteImport } from './routes/cabinet-roles.$id_.edit'
 import { Route as BgpSessionsIdEditRouteImport } from './routes/bgp-sessions.$id_.edit'
 import { Route as BgpPeerGroupsIdEditRouteImport } from './routes/bgp-peer-groups.$id_.edit'
 import { Route as BfdProfilesIdEditRouteImport } from './routes/bfd-profiles.$id_.edit'
@@ -1451,6 +1463,21 @@ const CablesIndexRoute = CablesIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => CablesRoute,
+} as any)
+const CabinetsIndexRoute = CabinetsIndexRouteImport.update({
+  id: '/cabinets/',
+  path: '/cabinets/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetTypesIndexRoute = CabinetTypesIndexRouteImport.update({
+  id: '/cabinet-types/',
+  path: '/cabinet-types/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetRolesIndexRoute = CabinetRolesIndexRouteImport.update({
+  id: '/cabinet-roles/',
+  path: '/cabinet-roles/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const BgpSessionsIndexRoute = BgpSessionsIndexRouteImport.update({
   id: '/',
@@ -2453,6 +2480,36 @@ const CablesIdRoute = CablesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => CablesRoute,
 } as any)
+const CabinetsNewRoute = CabinetsNewRouteImport.update({
+  id: '/cabinets/new',
+  path: '/cabinets/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetsIdRoute = CabinetsIdRouteImport.update({
+  id: '/cabinets/$id',
+  path: '/cabinets/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetTypesNewRoute = CabinetTypesNewRouteImport.update({
+  id: '/cabinet-types/new',
+  path: '/cabinet-types/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetTypesIdRoute = CabinetTypesIdRouteImport.update({
+  id: '/cabinet-types/$id',
+  path: '/cabinet-types/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetRolesNewRoute = CabinetRolesNewRouteImport.update({
+  id: '/cabinet-roles/new',
+  path: '/cabinet-roles/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetRolesIdRoute = CabinetRolesIdRouteImport.update({
+  id: '/cabinet-roles/$id',
+  path: '/cabinet-roles/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BgpSessionsNewRoute = BgpSessionsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -2928,6 +2985,21 @@ const CablesIdEditRoute = CablesIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => CablesRoute,
 } as any)
+const CabinetsIdEditRoute = CabinetsIdEditRouteImport.update({
+  id: '/cabinets/$id_/edit',
+  path: '/cabinets/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetTypesIdEditRoute = CabinetTypesIdEditRouteImport.update({
+  id: '/cabinet-types/$id_/edit',
+  path: '/cabinet-types/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetRolesIdEditRoute = CabinetRolesIdEditRouteImport.update({
+  id: '/cabinet-roles/$id_/edit',
+  path: '/cabinet-roles/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BgpSessionsIdEditRoute = BgpSessionsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -3092,6 +3164,12 @@ export interface FileRoutesByFullPath {
   '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
   '/bgp-sessions/$id': typeof BgpSessionsIdRoute
   '/bgp-sessions/new': typeof BgpSessionsNewRoute
+  '/cabinet-roles/$id': typeof CabinetRolesIdRoute
+  '/cabinet-roles/new': typeof CabinetRolesNewRoute
+  '/cabinet-types/$id': typeof CabinetTypesIdRoute
+  '/cabinet-types/new': typeof CabinetTypesNewRoute
+  '/cabinets/$id': typeof CabinetsIdRoute
+  '/cabinets/new': typeof CabinetsNewRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
@@ -3292,6 +3370,9 @@ export interface FileRoutesByFullPath {
   '/bgp-instances/': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups/': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions/': typeof BgpSessionsIndexRoute
+  '/cabinet-roles/': typeof CabinetRolesIndexRoute
+  '/cabinet-types/': typeof CabinetTypesIndexRoute
+  '/cabinets/': typeof CabinetsIndexRoute
   '/cables/': typeof CablesIndexRoute
   '/certificate-issuers/': typeof CertificateIssuersIndexRoute
   '/certificate-requests/': typeof CertificateRequestsIndexRoute
@@ -3400,6 +3481,9 @@ export interface FileRoutesByFullPath {
   '/bfd-profiles/$id/edit': typeof BfdProfilesIdEditRoute
   '/bgp-peer-groups/$id/edit': typeof BgpPeerGroupsIdEditRoute
   '/bgp-sessions/$id/edit': typeof BgpSessionsIdEditRoute
+  '/cabinet-roles/$id/edit': typeof CabinetRolesIdEditRoute
+  '/cabinet-types/$id/edit': typeof CabinetTypesIdEditRoute
+  '/cabinets/$id/edit': typeof CabinetsIdEditRoute
   '/cables/$id/edit': typeof CablesIdEditRoute
   '/channels/$id/edit': typeof ChannelsIdEditRoute
   '/circuit-types/$id/edit': typeof CircuitTypesIdEditRoute
@@ -3520,6 +3604,12 @@ export interface FileRoutesByTo {
   '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
   '/bgp-sessions/$id': typeof BgpSessionsIdRoute
   '/bgp-sessions/new': typeof BgpSessionsNewRoute
+  '/cabinet-roles/$id': typeof CabinetRolesIdRoute
+  '/cabinet-roles/new': typeof CabinetRolesNewRoute
+  '/cabinet-types/$id': typeof CabinetTypesIdRoute
+  '/cabinet-types/new': typeof CabinetTypesNewRoute
+  '/cabinets/$id': typeof CabinetsIdRoute
+  '/cabinets/new': typeof CabinetsNewRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
@@ -3720,6 +3810,9 @@ export interface FileRoutesByTo {
   '/bgp-instances': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions': typeof BgpSessionsIndexRoute
+  '/cabinet-roles': typeof CabinetRolesIndexRoute
+  '/cabinet-types': typeof CabinetTypesIndexRoute
+  '/cabinets': typeof CabinetsIndexRoute
   '/cables': typeof CablesIndexRoute
   '/certificate-issuers': typeof CertificateIssuersIndexRoute
   '/certificate-requests': typeof CertificateRequestsIndexRoute
@@ -3828,6 +3921,9 @@ export interface FileRoutesByTo {
   '/bfd-profiles/$id/edit': typeof BfdProfilesIdEditRoute
   '/bgp-peer-groups/$id/edit': typeof BgpPeerGroupsIdEditRoute
   '/bgp-sessions/$id/edit': typeof BgpSessionsIdEditRoute
+  '/cabinet-roles/$id/edit': typeof CabinetRolesIdEditRoute
+  '/cabinet-types/$id/edit': typeof CabinetTypesIdEditRoute
+  '/cabinets/$id/edit': typeof CabinetsIdEditRoute
   '/cables/$id/edit': typeof CablesIdEditRoute
   '/channels/$id/edit': typeof ChannelsIdEditRoute
   '/circuit-types/$id/edit': typeof CircuitTypesIdEditRoute
@@ -4018,6 +4114,12 @@ export interface FileRoutesById {
   '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
   '/bgp-sessions/$id': typeof BgpSessionsIdRoute
   '/bgp-sessions/new': typeof BgpSessionsNewRoute
+  '/cabinet-roles/$id': typeof CabinetRolesIdRoute
+  '/cabinet-roles/new': typeof CabinetRolesNewRoute
+  '/cabinet-types/$id': typeof CabinetTypesIdRoute
+  '/cabinet-types/new': typeof CabinetTypesNewRoute
+  '/cabinets/$id': typeof CabinetsIdRoute
+  '/cabinets/new': typeof CabinetsNewRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
@@ -4218,6 +4320,9 @@ export interface FileRoutesById {
   '/bgp-instances/': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups/': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions/': typeof BgpSessionsIndexRoute
+  '/cabinet-roles/': typeof CabinetRolesIndexRoute
+  '/cabinet-types/': typeof CabinetTypesIndexRoute
+  '/cabinets/': typeof CabinetsIndexRoute
   '/cables/': typeof CablesIndexRoute
   '/certificate-issuers/': typeof CertificateIssuersIndexRoute
   '/certificate-requests/': typeof CertificateRequestsIndexRoute
@@ -4326,6 +4431,9 @@ export interface FileRoutesById {
   '/bfd-profiles/$id_/edit': typeof BfdProfilesIdEditRoute
   '/bgp-peer-groups/$id_/edit': typeof BgpPeerGroupsIdEditRoute
   '/bgp-sessions/$id_/edit': typeof BgpSessionsIdEditRoute
+  '/cabinet-roles/$id_/edit': typeof CabinetRolesIdEditRoute
+  '/cabinet-types/$id_/edit': typeof CabinetTypesIdEditRoute
+  '/cabinets/$id_/edit': typeof CabinetsIdEditRoute
   '/cables/$id_/edit': typeof CablesIdEditRoute
   '/channels/$id_/edit': typeof ChannelsIdEditRoute
   '/circuit-types/$id_/edit': typeof CircuitTypesIdEditRoute
@@ -4517,6 +4625,12 @@ export interface FileRouteTypes {
     | '/bgp-peer-groups/new'
     | '/bgp-sessions/$id'
     | '/bgp-sessions/new'
+    | '/cabinet-roles/$id'
+    | '/cabinet-roles/new'
+    | '/cabinet-types/$id'
+    | '/cabinet-types/new'
+    | '/cabinets/$id'
+    | '/cabinets/new'
     | '/cables/$id'
     | '/cables/new'
     | '/certificate-requests/$id'
@@ -4717,6 +4831,9 @@ export interface FileRouteTypes {
     | '/bgp-instances/'
     | '/bgp-peer-groups/'
     | '/bgp-sessions/'
+    | '/cabinet-roles/'
+    | '/cabinet-types/'
+    | '/cabinets/'
     | '/cables/'
     | '/certificate-issuers/'
     | '/certificate-requests/'
@@ -4825,6 +4942,9 @@ export interface FileRouteTypes {
     | '/bfd-profiles/$id/edit'
     | '/bgp-peer-groups/$id/edit'
     | '/bgp-sessions/$id/edit'
+    | '/cabinet-roles/$id/edit'
+    | '/cabinet-types/$id/edit'
+    | '/cabinets/$id/edit'
     | '/cables/$id/edit'
     | '/channels/$id/edit'
     | '/circuit-types/$id/edit'
@@ -4945,6 +5065,12 @@ export interface FileRouteTypes {
     | '/bgp-peer-groups/new'
     | '/bgp-sessions/$id'
     | '/bgp-sessions/new'
+    | '/cabinet-roles/$id'
+    | '/cabinet-roles/new'
+    | '/cabinet-types/$id'
+    | '/cabinet-types/new'
+    | '/cabinets/$id'
+    | '/cabinets/new'
     | '/cables/$id'
     | '/cables/new'
     | '/certificate-requests/$id'
@@ -5145,6 +5271,9 @@ export interface FileRouteTypes {
     | '/bgp-instances'
     | '/bgp-peer-groups'
     | '/bgp-sessions'
+    | '/cabinet-roles'
+    | '/cabinet-types'
+    | '/cabinets'
     | '/cables'
     | '/certificate-issuers'
     | '/certificate-requests'
@@ -5253,6 +5382,9 @@ export interface FileRouteTypes {
     | '/bfd-profiles/$id/edit'
     | '/bgp-peer-groups/$id/edit'
     | '/bgp-sessions/$id/edit'
+    | '/cabinet-roles/$id/edit'
+    | '/cabinet-types/$id/edit'
+    | '/cabinets/$id/edit'
     | '/cables/$id/edit'
     | '/channels/$id/edit'
     | '/circuit-types/$id/edit'
@@ -5442,6 +5574,12 @@ export interface FileRouteTypes {
     | '/bgp-peer-groups/new'
     | '/bgp-sessions/$id'
     | '/bgp-sessions/new'
+    | '/cabinet-roles/$id'
+    | '/cabinet-roles/new'
+    | '/cabinet-types/$id'
+    | '/cabinet-types/new'
+    | '/cabinets/$id'
+    | '/cabinets/new'
     | '/cables/$id'
     | '/cables/new'
     | '/certificate-requests/$id'
@@ -5642,6 +5780,9 @@ export interface FileRouteTypes {
     | '/bgp-instances/'
     | '/bgp-peer-groups/'
     | '/bgp-sessions/'
+    | '/cabinet-roles/'
+    | '/cabinet-types/'
+    | '/cabinets/'
     | '/cables/'
     | '/certificate-issuers/'
     | '/certificate-requests/'
@@ -5750,6 +5891,9 @@ export interface FileRouteTypes {
     | '/bfd-profiles/$id_/edit'
     | '/bgp-peer-groups/$id_/edit'
     | '/bgp-sessions/$id_/edit'
+    | '/cabinet-roles/$id_/edit'
+    | '/cabinet-types/$id_/edit'
+    | '/cabinets/$id_/edit'
     | '/cables/$id_/edit'
     | '/channels/$id_/edit'
     | '/circuit-types/$id_/edit'
@@ -5925,6 +6069,12 @@ export interface RootRouteChildren {
   ZonesRoute: typeof ZonesRouteWithChildren
   AlertRulesNewRoute: typeof AlertRulesNewRoute
   AuditLogIdRoute: typeof AuditLogIdRoute
+  CabinetRolesIdRoute: typeof CabinetRolesIdRoute
+  CabinetRolesNewRoute: typeof CabinetRolesNewRoute
+  CabinetTypesIdRoute: typeof CabinetTypesIdRoute
+  CabinetTypesNewRoute: typeof CabinetTypesNewRoute
+  CabinetsIdRoute: typeof CabinetsIdRoute
+  CabinetsNewRoute: typeof CabinetsNewRoute
   CertificateRequestsIdRoute: typeof CertificateRequestsIdRoute
   CertificatesIdRoute: typeof CertificatesIdRoute
   ChangeLogIdRoute: typeof ChangeLogIdRoute
@@ -5971,6 +6121,9 @@ export interface RootRouteChildren {
   VirtualizationSourcesIdRoute: typeof VirtualizationSourcesIdRoute
   WindowsServersIdRoute: typeof WindowsServersIdRoute
   BgpInstancesIndexRoute: typeof BgpInstancesIndexRoute
+  CabinetRolesIndexRoute: typeof CabinetRolesIndexRoute
+  CabinetTypesIndexRoute: typeof CabinetTypesIndexRoute
+  CabinetsIndexRoute: typeof CabinetsIndexRoute
   CertificateIssuersIndexRoute: typeof CertificateIssuersIndexRoute
   CertificateRequestsIndexRoute: typeof CertificateRequestsIndexRoute
   CertificatesIndexRoute: typeof CertificatesIndexRoute
@@ -6010,6 +6163,9 @@ export interface RootRouteChildren {
   WindowsServersIndexRoute: typeof WindowsServersIndexRoute
   ZabbixIndexRoute: typeof ZabbixIndexRoute
   AlertRulesIdEditRoute: typeof AlertRulesIdEditRoute
+  CabinetRolesIdEditRoute: typeof CabinetRolesIdEditRoute
+  CabinetTypesIdEditRoute: typeof CabinetTypesIdEditRoute
+  CabinetsIdEditRoute: typeof CabinetsIdEditRoute
   ChannelsIdEditRoute: typeof ChannelsIdEditRoute
   ClusterGroupsIdEditRoute: typeof ClusterGroupsIdEditRoute
   ClusterTypesIdEditRoute: typeof ClusterTypesIdEditRoute
@@ -7359,6 +7515,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/cables/'
       preLoaderRoute: typeof CablesIndexRouteImport
       parentRoute: typeof CablesRoute
+    }
+    '/cabinets/': {
+      id: '/cabinets/'
+      path: '/cabinets'
+      fullPath: '/cabinets/'
+      preLoaderRoute: typeof CabinetsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinet-types/': {
+      id: '/cabinet-types/'
+      path: '/cabinet-types'
+      fullPath: '/cabinet-types/'
+      preLoaderRoute: typeof CabinetTypesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinet-roles/': {
+      id: '/cabinet-roles/'
+      path: '/cabinet-roles'
+      fullPath: '/cabinet-roles/'
+      preLoaderRoute: typeof CabinetRolesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/bgp-sessions/': {
       id: '/bgp-sessions/'
@@ -8760,6 +8937,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CablesIdRouteImport
       parentRoute: typeof CablesRoute
     }
+    '/cabinets/new': {
+      id: '/cabinets/new'
+      path: '/cabinets/new'
+      fullPath: '/cabinets/new'
+      preLoaderRoute: typeof CabinetsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinets/$id': {
+      id: '/cabinets/$id'
+      path: '/cabinets/$id'
+      fullPath: '/cabinets/$id'
+      preLoaderRoute: typeof CabinetsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinet-types/new': {
+      id: '/cabinet-types/new'
+      path: '/cabinet-types/new'
+      fullPath: '/cabinet-types/new'
+      preLoaderRoute: typeof CabinetTypesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinet-types/$id': {
+      id: '/cabinet-types/$id'
+      path: '/cabinet-types/$id'
+      fullPath: '/cabinet-types/$id'
+      preLoaderRoute: typeof CabinetTypesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinet-roles/new': {
+      id: '/cabinet-roles/new'
+      path: '/cabinet-roles/new'
+      fullPath: '/cabinet-roles/new'
+      preLoaderRoute: typeof CabinetRolesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinet-roles/$id': {
+      id: '/cabinet-roles/$id'
+      path: '/cabinet-roles/$id'
+      fullPath: '/cabinet-roles/$id'
+      preLoaderRoute: typeof CabinetRolesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bgp-sessions/new': {
       id: '/bgp-sessions/new'
       path: '/new'
@@ -9424,6 +9643,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/cables/$id/edit'
       preLoaderRoute: typeof CablesIdEditRouteImport
       parentRoute: typeof CablesRoute
+    }
+    '/cabinets/$id_/edit': {
+      id: '/cabinets/$id_/edit'
+      path: '/cabinets/$id/edit'
+      fullPath: '/cabinets/$id/edit'
+      preLoaderRoute: typeof CabinetsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinet-types/$id_/edit': {
+      id: '/cabinet-types/$id_/edit'
+      path: '/cabinet-types/$id/edit'
+      fullPath: '/cabinet-types/$id/edit'
+      preLoaderRoute: typeof CabinetTypesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cabinet-roles/$id_/edit': {
+      id: '/cabinet-roles/$id_/edit'
+      path: '/cabinet-roles/$id/edit'
+      fullPath: '/cabinet-roles/$id/edit'
+      preLoaderRoute: typeof CabinetRolesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/bgp-sessions/$id_/edit': {
       id: '/bgp-sessions/$id_/edit'
@@ -10846,6 +11086,12 @@ const rootRouteChildren: RootRouteChildren = {
   ZonesRoute: ZonesRouteWithChildren,
   AlertRulesNewRoute: AlertRulesNewRoute,
   AuditLogIdRoute: AuditLogIdRoute,
+  CabinetRolesIdRoute: CabinetRolesIdRoute,
+  CabinetRolesNewRoute: CabinetRolesNewRoute,
+  CabinetTypesIdRoute: CabinetTypesIdRoute,
+  CabinetTypesNewRoute: CabinetTypesNewRoute,
+  CabinetsIdRoute: CabinetsIdRoute,
+  CabinetsNewRoute: CabinetsNewRoute,
   CertificateRequestsIdRoute: CertificateRequestsIdRoute,
   CertificatesIdRoute: CertificatesIdRoute,
   ChangeLogIdRoute: ChangeLogIdRoute,
@@ -10892,6 +11138,9 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualizationSourcesIdRoute: VirtualizationSourcesIdRoute,
   WindowsServersIdRoute: WindowsServersIdRoute,
   BgpInstancesIndexRoute: BgpInstancesIndexRoute,
+  CabinetRolesIndexRoute: CabinetRolesIndexRoute,
+  CabinetTypesIndexRoute: CabinetTypesIndexRoute,
+  CabinetsIndexRoute: CabinetsIndexRoute,
   CertificateIssuersIndexRoute: CertificateIssuersIndexRoute,
   CertificateRequestsIndexRoute: CertificateRequestsIndexRoute,
   CertificatesIndexRoute: CertificatesIndexRoute,
@@ -10931,6 +11180,9 @@ const rootRouteChildren: RootRouteChildren = {
   WindowsServersIndexRoute: WindowsServersIndexRoute,
   ZabbixIndexRoute: ZabbixIndexRoute,
   AlertRulesIdEditRoute: AlertRulesIdEditRoute,
+  CabinetRolesIdEditRoute: CabinetRolesIdEditRoute,
+  CabinetTypesIdEditRoute: CabinetTypesIdEditRoute,
+  CabinetsIdEditRoute: CabinetsIdEditRoute,
   ChannelsIdEditRoute: ChannelsIdEditRoute,
   ClusterGroupsIdEditRoute: ClusterGroupsIdEditRoute,
   ClusterTypesIdEditRoute: ClusterTypesIdEditRoute,

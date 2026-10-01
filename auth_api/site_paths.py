@@ -19,6 +19,7 @@ SITE_PATHS: dict[str, str] = {
 
     "ipaddress": "site",      # added in B (auto-assigned from the prefix)
     "rack": "site",
+    "cabinet": "site",
     "cluster": "site",
     "virtualmachine": "site",
     # A group belongs to exactly one cluster, so it inherits that cluster's site.

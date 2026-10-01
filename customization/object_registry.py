@@ -119,6 +119,8 @@ for _e in [
                    "/api/module-types/", route="/module-types/$id"),
     ReferenceModel("rack", "Racks", "api.Rack", "/api/racks/",
                    route="/racks/$id"),
+    ReferenceModel("cabinet", "Cabinets", "api.Cabinet", "/api/cabinets/",
+                   route="/cabinets/$id"),
     ReferenceModel("site", "Sites", "api.Site", "/api/sites/",
                    route="/sites/$id"),
     ReferenceModel("location", "Locations", "api.Location",

@@ -72,6 +72,7 @@ from .models import (
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
+    Cabinet, CabinetRole, CabinetType,
     DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VirtualSwitch, VMInterface, VLAN, VLANGroup, VRF, Zone,
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
@@ -172,6 +173,12 @@ from .serializers import (
     VirtualMachineMiniSerializer,
     VMInterfaceSerializer,
     MACAddressSerializer,
+    CabinetMiniSerializer,
+    CabinetRoleMiniSerializer,
+    CabinetRoleSerializer,
+    CabinetSerializer,
+    CabinetTypeMiniSerializer,
+    CabinetTypeSerializer,
     RackSerializer,
     RackRoleSerializer,
     RackRoleMiniSerializer,
@@ -6096,6 +6103,141 @@ class RackTypeAccessoryViewSet(TenantScopedViewSet):
         serializer.save()
 
 
+class CabinetRoleViewSet(_SlugCatalogViewSet):
+    queryset = CabinetRole.objects.all().order_by(NATURAL_NAME)
+    serializer_class = CabinetRoleSerializer
+    model = CabinetRole
+    count_rel = "cabinets"
+
+    def get_queryset(self):
+        qs = TenantScopedViewSet.get_queryset(self)
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
+        return qs.annotate(cabinet_count_annotated=Count("cabinets")).order_by(NATURAL_NAME)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CabinetRoleMiniSerializer
+        return CabinetRoleSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        n = obj.cabinets.count()
+        if n:
+            return Response(
+                {"detail": f"{n} cabinet{'s use' if n != 1 else ' uses'} this role."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
+
+
+class CabinetTypeViewSet(TenantScopedViewSet):
+    """Enclosure models - the plate and box sizes a new cabinet copies."""
+
+    queryset = CabinetType.objects.select_related("manufacturer").prefetch_related(
+        "tags"
+    ).order_by(NATURAL_NAME)
+    serializer_class = CabinetTypeSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        from .topology_views import _uuid_param
+
+        qs = TenantScopedViewSet.get_queryset(self)
+        if self.request:
+            params = self.request.query_params
+            s = params.get("search", "").strip()
+            if s:
+                qs = qs.filter(
+                    Q(name__icontains=s) | Q(manufacturer__name__icontains=s)
+                    | Q(description__icontains=s)
+                )
+            manufacturer = _uuid_param(params, "manufacturer")
+            if manufacturer:
+                qs = qs.filter(manufacturer_id=manufacturer)
+        return qs.annotate(
+            cabinet_count_annotated=Count("cabinets", distinct=True)
+        ).order_by(NATURAL_NAME)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CabinetTypeMiniSerializer
+        return CabinetTypeSerializer
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        _check_unique_name(CabinetType, serializer, tenant, "cabinet type")
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        _check_unique_name(CabinetType, serializer, self._tenant_or_403(), "cabinet type")
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        n = obj.cabinets.count()
+        if n:
+            return Response(
+                {"detail": f"{n} cabinet{'s use' if n != 1 else ' uses'} this type."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
+
+
+class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
+    """DIN-rail enclosures at a site (#277)."""
+
+    queryset = Cabinet.objects.all().order_by(natural("site__name"), NATURAL_NAME)
+    serializer_class = CabinetSerializer
+    pagination_class = StandardPagination
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CabinetMiniSerializer
+        return CabinetSerializer
+
+    def get_queryset(self):
+        from .models import Document
+        from .topology_views import _uuid_param
+
+        documents = (
+            Document.objects.filter(object_type="api.cabinet", object_id=OuterRef("pk"))
+            .order_by()
+            .values("object_id")
+            .annotate(n=Count("pk"))
+            .values("n")
+        )
+        qs = (
+            super().get_queryset()
+            .select_related(
+                "site", "site__region", "location", "role", "status",
+                "cabinet_type__manufacturer",
+            )
+            .prefetch_related("tags")
+            .annotate(document_n=Coalesce(Subquery(documents), 0))
+        )
+        if self.request:
+            params = self.request.query_params
+            s = params.get("search", "").strip()
+            if s:
+                qs = qs.filter(
+                    Q(name__icontains=s) | Q(facility_id__icontains=s)
+                    | Q(description__icontains=s) | cf_text_q(qs.model, s)
+                )
+            for param, field in (("site", "site_id"), ("location", "location_id"),
+                                 ("role", "role_id"), ("status", "status_id"),
+                                 ("cabinet_type", "cabinet_type_id")):
+                value = _uuid_param(params, param)
+                if value:
+                    qs = qs.filter(**{field: value})
+        return qs
+
+
 class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     queryset = Rack.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = RackSerializer
@@ -8023,9 +8165,15 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         qs = super().get_queryset().select_related("site", "parent")
         # Detail tabs show Devices/Racks counts; annotate (distinct) so the
         # serializer serves them without an N+1 per row.
+        # Cabinets by subquery: a third joined count would multiply the rows.
+        cabinets = (
+            Cabinet.objects.filter(location=OuterRef("pk")).order_by()
+            .values("location").annotate(n=Count("pk")).values("n")
+        )
         qs = qs.annotate(
             device_count_annotated=Count("devices", distinct=True),
             rack_count_annotated=Count("racks", distinct=True),
+            cabinet_count_annotated=Coalesce(Subquery(cabinets), 0),
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()

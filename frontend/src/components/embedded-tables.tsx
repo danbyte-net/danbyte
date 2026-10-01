@@ -4,6 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
 import type {
+  Cabinet,
   Cable,
   Circuit,
   Cluster,
@@ -21,6 +22,8 @@ import type {
   WirelessLAN,
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
+import { buildCabinetColumns } from "@/components/columns/cabinet-columns"
+import type { CabinetColumnId } from "@/components/columns/cabinet-columns"
 import { buildCableColumns } from "@/components/columns/cable-columns"
 import { buildCircuitColumns } from "@/components/columns/circuit-columns"
 import type { CircuitColumnId } from "@/components/columns/circuit-columns"
@@ -48,6 +51,7 @@ import { buildTunnelColumns } from "@/components/columns/tunnel-columns"
 import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
 import type { WirelessLANColumnId } from "@/components/columns/wireless-lan-columns"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { useSlaStatus } from "@/components/monitoring/sla-status"
 
@@ -80,8 +84,7 @@ function Frame<T>({
   tableId: string
 }) {
   if (q.isError) return <QueryError error={q.error} />
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   const rows = q.data?.results ?? []
   if (rows.length === 0)
     return <p className="text-sm text-muted-foreground">{emptyText}</p>
@@ -148,6 +151,48 @@ export function EmbeddedRackTable({
       columns={columns}
       flexColumn="name"
       tableId="embedded-racks"
+    />
+  )
+}
+
+/** Cabinets scoped by site / location / role / type. Reuses the one cabinet
+ * column factory - the same row the /cabinets list draws. `omit` drops the
+ * column that repeats the page's own object (Site on a site's page). */
+export function EmbeddedCabinetTable({
+  filter,
+  omit = [],
+  emptyText = "No cabinets.",
+}: {
+  filter: Record<string, string>
+  omit?: CabinetColumnId[]
+  emptyText?: string
+}) {
+  const q = useEmbed<Cabinet>("embedded-cabinets", "/api/cabinets/", filter)
+  const omitKey = omit.join(",")
+  const columns = useMemo<ColumnDef<Cabinet>[]>(
+    () =>
+      buildCabinetColumns({
+        include: [
+          "name",
+          "site",
+          "location",
+          "role",
+          "type",
+          "status",
+          "size",
+          "plate",
+        ],
+        omit: omitKey ? (omitKey.split(",") as CabinetColumnId[]) : [],
+      }),
+    [omitKey]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="name"
+      tableId="embedded-cabinets"
     />
   )
 }

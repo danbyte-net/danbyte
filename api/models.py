@@ -5024,6 +5024,155 @@ class RackTypeAccessory(TimestampedModel):
             return None
 
 
+# ─── Cabinets (DIN-rail enclosures, #277) ────────────────────────────────────
+class CabinetRole(NumIdMixin, TimestampedModel):
+    """What a cabinet is for (distribution, control, metering, …). Coloured."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cabinet_roles"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128)
+    color = models.CharField(max_length=7, blank=True, default="")
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_cabinetrole_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+# A cabinet's sizes in whole millimetres, as enclosure datasheets give them:
+# the mounting plate the rails sit on (inner) and the box around it (outer).
+CABINET_SIZE_FIELDS = (
+    "inner_width_mm", "inner_height_mm",
+    "outer_width_mm", "outer_height_mm", "outer_depth_mm",
+)
+_CABINET_MM = [MinValueValidator(50), MaxValueValidator(5000)]
+_CABINET_DEPTH_MM = [MinValueValidator(20), MaxValueValidator(3000)]
+
+
+class CabinetType(NumIdMixin, TimestampedModel, TaggableMixin):
+    """An enclosure model - manufacturer/model plus its plate and box sizes.
+    A cabinet created from it copies the sizes; the cabinet stays the source
+    of truth."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cabinet_types"
+    )
+    manufacturer = models.ForeignKey(
+        Manufacturer, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinet_types",
+    )
+    name = models.CharField(max_length=128)
+    inner_width_mm = models.PositiveSmallIntegerField(
+        "plate width (mm)", validators=_CABINET_MM,
+        help_text="Mounting plate width in millimetres.",
+    )
+    inner_height_mm = models.PositiveSmallIntegerField(
+        "plate height (mm)", validators=_CABINET_MM,
+        help_text="Mounting plate height in millimetres.",
+    )
+    outer_width_mm = models.PositiveSmallIntegerField(
+        "outer width (mm)", null=True, blank=True, validators=_CABINET_MM,
+        help_text="Enclosure outer width in millimetres.",
+    )
+    outer_height_mm = models.PositiveSmallIntegerField(
+        "outer height (mm)", null=True, blank=True, validators=_CABINET_MM,
+        help_text="Enclosure outer height in millimetres.",
+    )
+    outer_depth_mm = models.PositiveSmallIntegerField(
+        "outer depth (mm)", null=True, blank=True, validators=_CABINET_DEPTH_MM,
+        help_text="Enclosure outer depth in millimetres.",
+    )
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_cabinettype_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Cabinet(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """An enclosure at a site whose gear mounts on DIN rails, placed in
+    millimetres rather than rack units."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cabinets"
+    )
+    name = models.CharField(max_length=128)
+    facility_id = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="The cabinet's ID in the facility (e.g. a panel label).",
+    )
+    site = models.ForeignKey(
+        Site, on_delete=models.PROTECT, related_name="cabinets"
+    )
+    location = models.ForeignKey(
+        "Location", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinets",
+    )
+    role = models.ForeignKey(
+        CabinetRole, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinets",
+    )
+    cabinet_type = models.ForeignKey(
+        CabinetType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinets",
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="cabinets",
+    )
+    inner_width_mm = models.PositiveSmallIntegerField(
+        "plate width (mm)", validators=_CABINET_MM,
+        help_text="Mounting plate width in millimetres.",
+    )
+    inner_height_mm = models.PositiveSmallIntegerField(
+        "plate height (mm)", validators=_CABINET_MM,
+        help_text="Mounting plate height in millimetres.",
+    )
+    outer_width_mm = models.PositiveSmallIntegerField(
+        "outer width (mm)", null=True, blank=True, validators=_CABINET_MM,
+        help_text="Enclosure outer width in millimetres.",
+    )
+    outer_height_mm = models.PositiveSmallIntegerField(
+        "outer height (mm)", null=True, blank=True, validators=_CABINET_MM,
+        help_text="Enclosure outer height in millimetres.",
+    )
+    outer_depth_mm = models.PositiveSmallIntegerField(
+        "outer depth (mm)", null=True, blank=True, validators=_CABINET_DEPTH_MM,
+        help_text="Enclosure outer depth in millimetres.",
+    )
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = [natural("site__name"), natural("name")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["site", "name"], name="uniq_cabinet_site_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 # ─── Device roles + platforms (shared by Device + VirtualMachine) ────────────
 class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """Functional role of a device or VM (core switch, hypervisor, …). Coloured."""
@@ -5773,6 +5922,7 @@ CONTACTABLE_TYPES = {
     "api.virtualmachine": "Virtual machine",
     "api.cluster": "Cluster",
     "api.rack": "Rack",
+    "api.cabinet": "Cabinet",
     "api.prefix": "Prefix",
     "api.circuit": "Circuit",
     "core.tenant": "Tenant",

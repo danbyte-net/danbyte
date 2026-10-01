@@ -56,6 +56,7 @@ nav = [
     { "Device catalog"    = "dcim/device-catalog.md" },
     { "Hardware lifecycle (EoL)" = "features/lifecycle.md" },
     { "Racks"             = "dcim/racks.md" },
+    { "Cabinets"          = "dcim/cabinets.md" },
     { "Interfaces"        = "dcim/interfaces.md" },
     { "Virtual & aggregate interfaces" = "dcim/virtual-interfaces.md" },
     { "Assigning IP addresses" = "dcim/ip-assignment.md" },

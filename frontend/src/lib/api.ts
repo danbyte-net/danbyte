@@ -952,6 +952,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "prefix", label: "Prefixes" },
   { value: "iprange", label: "IP ranges" },
   { value: "rack", label: "Racks" },
+  { value: "cabinet", label: "Cabinets" },
   { value: "cluster", label: "Clusters" },
   { value: "virtualmachine", label: "Virtual machines" },
   { value: "cable", label: "Cables" },
@@ -1919,6 +1920,120 @@ export interface RackOption {
   u_height: number
   starting_unit: number
   desc_units: boolean
+}
+
+// ─── DCIM: cabinets (DIN-rail enclosures, #277) ─────────────────────────────
+
+export interface CabinetRole {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  color: string
+  description: string
+  cabinet_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CabinetRoleWritePayload {
+  name: string
+  slug?: string
+  color?: string
+  description?: string
+}
+
+/** Picker shape (?picker=1) - the role's colour renders as its ColorBadge. */
+export interface CabinetRoleOption {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  color: string
+}
+
+/** A cabinet's sizes in whole millimetres: the mounting plate the rails sit
+ * on (inner, required) and the box around it (outer, optional). */
+export interface CabinetSizes {
+  inner_width_mm: number
+  inner_height_mm: number
+  outer_width_mm: number | null
+  outer_height_mm: number | null
+  outer_depth_mm: number | null
+}
+
+/** Picker shape (?picker=1) - carries the sizes so the cabinet form can
+ * pre-fill client-side; the cabinet stays the source of truth. */
+export interface CabinetTypeOption extends CabinetSizes {
+  id: string
+  numid: number | null
+  name: string
+  manufacturer: { id: string; name: string } | null
+}
+
+export interface CabinetType extends CabinetTypeOption {
+  description: string
+  cabinet_count: number
+  tags: Tag[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CabinetTypeWritePayload {
+  name: string
+  manufacturer_id?: string | null
+  inner_width_mm?: number
+  inner_height_mm?: number
+  outer_width_mm?: number | null
+  outer_height_mm?: number | null
+  outer_depth_mm?: number | null
+  description?: string
+  tag_ids?: number[]
+}
+
+export interface Cabinet extends CabinetSizes {
+  id: string
+  numid: number | null
+  name: string
+  facility_id: string
+  site: SiteRegionMini
+  location: { id: string; name: string } | null
+  role: CabinetRoleOption | null
+  cabinet_type: CabinetTypeOption | null
+  status: StatusMini | null
+  description: string
+  document_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface CabinetWritePayload {
+  name: string
+  facility_id?: string
+  site_id: string
+  location_id?: string | null
+  role_id?: string | null
+  cabinet_type_id?: string | null
+  status_id?: string | null
+  /** Left out on a create with a type, the server copies the type's plate. */
+  inner_width_mm?: number
+  inner_height_mm?: number
+  outer_width_mm?: number | null
+  outer_height_mm?: number | null
+  outer_depth_mm?: number | null
+  description?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
+}
+
+/** Picker shape (?picker=1) - CabinetMiniSerializer. */
+export interface CabinetOption extends CabinetSizes {
+  id: string
+  numid: number | null
+  name: string
+  site: { id: string; name: string }
 }
 
 // ─── DCIM: interfaces / cables ──────────────────────────────────────────────
@@ -4074,6 +4189,7 @@ export interface Site {
   /** VMs whose own site is this one (a cluster's site isn't inherited). */
   vm_count: number
   rack_count: number
+  cabinet_count: number
   /** Locations in the site, every level of the tree. */
   location_count: number
   contact_count: number
@@ -4164,6 +4280,7 @@ export interface Location {
   child_count: number
   device_count: number
   rack_count: number
+  cabinet_count: number
   document_count: number
   created_at: string
   updated_at: string
