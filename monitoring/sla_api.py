@@ -10,6 +10,7 @@ over the members they can see, never the whole agreement.
 from __future__ import annotations
 
 import datetime as dt
+import math
 import uuid
 from datetime import timedelta
 from decimal import Decimal
@@ -278,8 +279,10 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(str(e)) from None
 
     def validate_alert_burn_rate(self, value):
-        if value is not None and value <= 0:
-            raise serializers.ValidationError("Above 0; 1.0 is on pace to spend the budget exactly.")
+        # NaN and infinity pass "above 0" and break the save (#274).
+        if value is not None and (not math.isfinite(value) or value <= 0):
+            raise serializers.ValidationError(
+                "A number above 0; 1.0 is on pace to spend the budget exactly.")
         return value
 
     def validate_alert_coverage_pct(self, value):

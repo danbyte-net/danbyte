@@ -108,6 +108,11 @@ class BurnRuleValidationTests(_Alerting):
             [{"name": "x", "long_min": 60, "short_min": 5, "burn": 2}] * 2,
             [{"name": "", "long_min": 60, "short_min": 5, "burn": 2}],
             "nope",
+            # Not finite: NaN and infinity pass "above 0" (#274).
+            [{"name": "x", "long_min": 60, "short_min": 5, "burn": "nan"}],
+            [{"name": "x", "long_min": 60, "short_min": 5, "burn": "inf"}],
+            [{"name": "x", "long_min": float("inf"), "short_min": 5, "burn": 2}],
+            [{"name": "x", "long_min": 60, "short_min": float("-inf"), "burn": 2}],
         ):
             with self.assertRaises(ValueError):
                 sla_burn.validate_rules(bad)
@@ -134,6 +139,30 @@ class BurnApiTests(_Alerting, APITestCase):
         ]}, format="json")
         self.assertEqual(bad.status_code, 400)
         self.assertIn("burn_alerts", bad.json())
+
+    def test_numbers_that_are_not_finite_are_a_400(self):
+        """NaN or infinity reached the jsonb column or int() as a 500 (#274)."""
+        url = f"{A}{self.agreement.id}/"
+        for burn in ("nan", "inf", "Infinity"):
+            r = self.client.patch(url, {"burn_alerts": [
+                {"name": "fast", "long_min": 60, "short_min": 5, "burn": burn},
+            ]}, format="json")
+            self.assertEqual(r.status_code, 400, burn)
+            self.assertEqual(r.json(), {"burn_alerts": ["fast: burn must be a number above 0."]})
+        # A JSON number this large parses as infinity.
+        for body in ('{"burn_alerts": [{"name": "fast", "long_min": 1e999, '
+                     '"short_min": 5, "burn": 2}]}',
+                     '{"burn_alerts": [{"name": "fast", "long_min": 60, '
+                     '"short_min": 5, "burn": 1e999}]}',
+                     '{"alert_burn_rate": 1e999}'):
+            r = self.client.patch(url, body, content_type="application/json")
+            self.assertEqual(r.status_code, 400, body)
+        # The period-long pace: NaN would be saved, then fail every render.
+        before = SlaAgreement.objects.get(pk=self.agreement.pk).alert_burn_rate
+        for rate in ("nan", "inf"):
+            r = self.client.patch(url, {"alert_burn_rate": rate}, format="json")
+            self.assertEqual(r.status_code, 400, rate)
+        self.assertEqual(SlaAgreement.objects.get(pk=self.agreement.pk).alert_burn_rate, before)
 
     def test_current_carries_the_burn(self):
         from . import sla

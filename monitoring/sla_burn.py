@@ -20,6 +20,7 @@ flaps back within ``REFIRE_AFTER`` of its last message fires silently.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timedelta
 
 from django.utils import timezone
@@ -48,13 +49,15 @@ def validate_rules(value) -> list[dict]:
         try:
             long_min, short_min = int(raw.get("long_min")), int(raw.get("short_min"))
             burn = float(raw.get("burn"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: int() of an infinite window (JSON 1e999).
             raise ValueError(f"{name}: windows are whole minutes and burn a number.") from None
         if not MIN_WINDOW <= short_min < long_min <= MAX_WINDOW:
             raise ValueError(f"{name}: the short window must be shorter than the long one, "
                              "and both between 1 minute and 7 days.")
-        if burn <= 0:
-            raise ValueError(f"{name}: burn must be above 0.")
+        # NaN and infinity pass "above 0", and jsonb refuses them on save.
+        if not math.isfinite(burn) or burn <= 0:
+            raise ValueError(f"{name}: burn must be a number above 0.")
         out.append({"name": name, "long_min": long_min, "short_min": short_min,
                      "burn": burn, "on": bool(raw.get("on", True))})
     return out
