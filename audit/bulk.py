@@ -1,8 +1,10 @@
 """Explicit change-log writes for bulk operations.
 
-Bulk endpoints use ``queryset.update()`` / ``queryset.delete()`` for one
-round-trip, which **bypass** model signals - so they'd otherwise be invisible.
-Call these helpers around the bulk op to record one entry per affected object.
+Bulk endpoints use ``queryset.update()`` for one round-trip, which
+**bypasses** model signals - so it would otherwise be invisible. A
+``queryset.delete()`` does send ``post_delete`` for every row, so an audited
+model logs its own deletes; :func:`log_bulk_delete` writes only the rows that
+are not in the log yet. Call these helpers around the bulk op.
 
 Usage:
     qs = self.get_queryset().filter(pk__in=ids)
@@ -59,10 +61,28 @@ def log_bulk_update(rows, updates: dict) -> None:
 
 
 def log_bulk_delete(rows) -> None:
-    """One DELETE entry per removed row."""
+    """One DELETE entry per removed row - unless the audit signals already
+    wrote it: a queryset ``delete()`` sends ``post_delete`` for every row of
+    an audited model, so those are in the log once already."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    rows = list(rows)
+    if not rows:
+        return
     user = current_user()
     rid = current_request_id()
-    entries = [_entry(r, ChangeAction.DELETE, {}, user, rid) for r in rows]
+    logged = ChangeLogEntry.objects.filter(
+        action=ChangeAction.DELETE, object_id__in=[str(r.pk) for r in rows]
+    )
+    logged = (logged.filter(request_id=rid) if rid
+              else logged.filter(timestamp__gte=timezone.now() - timedelta(minutes=1)))
+    done = set(logged.values_list("object_type", "object_id"))
+    entries = [
+        _entry(r, ChangeAction.DELETE, {}, user, rid)
+        for r in rows if (r._meta.label_lower, str(r.pk)) not in done
+    ]
     if entries:
         ChangeLogEntry.objects.bulk_create(entries)
 

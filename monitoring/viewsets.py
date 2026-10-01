@@ -2371,5 +2371,6 @@ class WatchedEndpointViewSet(TenantScopedViewSet):
             raise ValidationError({"ids": "Provide a non-empty list of ids."})
         # get_queryset already scopes to the tenant + RBAC, so this can only
         # ever delete the caller's own endpoints.
-        deleted, _ = self.get_queryset().filter(id__in=ids).delete()
-        return Response({"deleted": deleted})
+        qs = self.get_queryset().filter(id__in=ids)
+        _, by_model = qs.delete()
+        return Response({"deleted": by_model.get(qs.model._meta.label, 0)})

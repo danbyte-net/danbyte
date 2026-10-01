@@ -824,7 +824,10 @@ class ComponentBulkMixin(FieldWriteAllowList):
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
@@ -1626,7 +1629,10 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             # One pass over the whole selection: an address only lands on a
             # prefix that outlives this call (#215).
             out = reparent_ips_out_of_batch(_rows)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response(
             {
@@ -1807,7 +1813,10 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
@@ -1912,7 +1921,10 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
@@ -1950,7 +1962,10 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
@@ -2037,7 +2052,10 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
@@ -2132,7 +2150,10 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 

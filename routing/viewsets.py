@@ -105,7 +105,8 @@ class _BulkDeleteMixin:
         with transaction.atomic():
             qs = self.get_queryset().filter(pk__in=ids)
             rows = list(qs)
-            deleted, _ = qs.delete()
+            _, by_model = qs.delete()
+            deleted = by_model.get(qs.model._meta.label, 0)
             log_bulk_delete(rows)
         return Response({"deleted": deleted})
 
