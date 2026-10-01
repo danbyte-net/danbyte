@@ -218,12 +218,13 @@ The upgrader's build steps on the code already here - after a `git pull`,
 a hand edit, or a bundle unpacked by hand: install the Python dependencies
 (`uv` where the upgrader finds it, else the venv's `pip`), `migrate`, `npm
 ci` when `package-lock.json` is newer than `node_modules` then `npm run
-build`, `collectstatic` on a host with `danbyte-web` (gunicorn), and a
-restart of every unit that is running. It stops at the first failing step
-and prints that step's output, and refuses to start while an upgrade lock
-is held (`--force` overrides). An offline bundle install installs from its
-`vendor/wheels` and keeps the frontend it shipped built; a container
-install is told to pull an image instead.
+build`, `collectstatic` on a host with `danbyte-web` (gunicorn), with the
+collected files made readable for nginx, and a restart of every unit that
+is running. It stops at the first failing step and prints that step's
+output, and refuses to start while an upgrade lock is held (`--force`
+overrides). An offline bundle install installs from its `vendor/wheels`
+and keeps the frontend it shipped built; a container install is told to
+pull an image instead.
 
 ### backup
 
@@ -353,7 +354,10 @@ danbyte-admin maintenance prune
 danbyte-admin maintenance collectstatic
 ```
 
-The same jobs the scheduled timers run, on demand.
+The same jobs the scheduled timers run, on demand. `collectstatic` also
+makes the static files readable for nginx, which reads them from disk as
+another user: collecting skips files that did not change, so copies an
+earlier release wrote readable only by the service user would stay closed.
 
 ### diagnostics
 

@@ -282,8 +282,9 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     only by the service user, and nginx, which serves `/static/` from disk as
     another user, answered 403 for them: the Django admin and the browsable
     API showed without CSS (Docker too: its nginx reads the shared volume as
-    another user). The next upgrade fixes it; by hand, as the service user:
-    `chmod -R u=rwX,go=rX ~/danbyte/staticfiles`.
+    another user). The next upgrade fixes it, as do `danbyte-admin rebuild`
+    and `danbyte-admin maintenance collectstatic`; by hand, as the service
+    user: `chmod -R u=rwX,go=rX ~/danbyte/staticfiles`.
 
 !!! warning "\"An upgrade is already running\" (stuck lock)"
 

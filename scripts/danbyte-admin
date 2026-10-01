@@ -784,11 +784,35 @@ def active_units(ctx: Ctx) -> list[str]:
     return [u for u in ctx.units if states.get(u, {}).get("ActiveState") == "active"]
 
 
+#: ``chmod -R u=rwX,go=rX`` on STATIC_ROOT, through the app so it reaches it
+#: in every shape. nginx reads static files from disk as another user, and
+#: collectstatic skips files that did not change: the copies 0.16.12 to
+#: 0.17.0-dev1 collected readable only by the service user stay that way.
+OPEN_STATIC = (
+    "import json\n"
+    "from django.conf import settings\n"
+    "from core.upgrade_migrate import open_static\n"
+    "print(json.dumps(open_static(settings.STATIC_ROOT)))"
+)
+
+
+def open_static(ctx: Ctx) -> str:
+    """Make the collected static files readable for the web server, as the
+    upgrade does after collectstatic. Returns what went wrong, or ""."""
+    failed, err = shell_json(ctx, OPEN_STATIC)
+    if failed == 0:
+        return ""
+    if isinstance(failed, int):
+        return f"{failed} could not be changed"
+    return err[-300:] or "no answer"
+
+
 def cmd_rebuild(ctx: Ctx, args) -> int:
     """The upgrader's build steps on the code already here - after a git
     pull, a hand edit, or a bundle unpacked by hand: dependencies, migrate,
-    the frontend build, collectstatic on a gunicorn host, then restart what
-    runs. Stops at the first failing step and says which."""
+    the frontend build, collectstatic (readable for nginx) on a gunicorn
+    host, then restart what runs. Stops at the first failing step and says
+    which."""
     if ctx.shape == "docker":
         die(DOCKER_UPGRADE)
     busy = _upgrade_busy(ctx)
@@ -847,6 +871,11 @@ def cmd_rebuild(ctx: Ctx, args) -> int:
              "npm run build")
     if "danbyte-web" in ctx.units:
         step("static", manage(ctx, ["collectstatic", "--noinput"]), "manage.py collectstatic")
+        why = open_static(ctx)
+        if why:
+            warn(f"{'static':<10} some files could not be made readable for the web server: {why}")
+        else:
+            ok(f"{'static':<10} readable for the web server")
     units = active_units(ctx)
     for unit in units:
         r = systemctl(ctx, ["restart", unit], timeout=120)
@@ -1579,6 +1608,12 @@ def cmd_maintenance(ctx: Ctx, args) -> int:
     if not r.ok:
         die((r.err or r.out).strip()[:400])
     ok((r.out or "done").strip()[:400])
+    if args.action == "collectstatic":
+        why = open_static(ctx)
+        if why:
+            warn(f"some files could not be made readable for the web server: {why}")
+        else:
+            ok("readable for the web server")
     return 0
 
 
