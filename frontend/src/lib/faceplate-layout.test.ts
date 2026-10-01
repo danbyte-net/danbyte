@@ -4,6 +4,7 @@ import {
   MARKER_TERMINATION_KIND,
   autoArrange,
   composeModuleFaceplates,
+  facePortsOnSide,
   markerTerminationKind,
   type FaceplateDoc,
   type InstalledModuleFaceplate,
@@ -255,5 +256,22 @@ describe("autoArrange", () => {
     )
     expect(doc.front).toHaveLength(0)
     expect(doc.rear).toHaveLength(1)
+  })
+})
+
+describe("facePortsOnSide", () => {
+  // A patch panel names its front and rear markers alike.
+  const ports = {
+    front: [{ marker: "Port 1", id: "front-1", kind: "front_port" }],
+    rear: [{ marker: "Port 1", id: "rear-1", kind: "rear_port" }],
+  }
+
+  it("keeps each side's port to its own marker of the same name", () => {
+    expect(facePortsOnSide(ports, "front").get("Port 1")?.id).toBe("front-1")
+    expect(facePortsOnSide(ports, "rear").get("Port 1")?.id).toBe("rear-1")
+  })
+
+  it("is empty before the ports load", () => {
+    expect(facePortsOnSide(undefined, "front").size).toBe(0)
   })
 })

@@ -61,6 +61,7 @@ import { useMe } from "@/lib/use-me"
 import {
   autoLayout,
   composeModuleFaceplates,
+  facePortsOnSide,
   markerTerminationKind,
   resolveLayout,
   type FaceplateDoc,
@@ -1227,10 +1228,6 @@ export function ImagePortsFaceplate({
     () => new Map(interfaces.map((i) => [normalizePortName(i.name), i])),
     [interfaces]
   )
-  // For the connect dialog's title - callers pass this device's own
-  // interfaces, so any row names the device.
-  const deviceName = interfaces.at(0)?.device.name ?? ""
-
   const image = side === "front" ? dt.data?.front_image : dt.data?.rear_image
   // Memoized: the legend derives from these, and a fresh `[]` every render
   // would make it recompute (and re-report) forever.
@@ -1242,6 +1239,9 @@ export function ImagePortsFaceplate({
     enabled: !!deviceId,
     staleTime: 30_000,
   })
+  // For the connect dialog's title. A patch panel has no interfaces to name
+  // it, so the device's own record comes first.
+  const deviceName = devDoc.data?.name ?? interfaces.at(0)?.device.name ?? ""
   const photoDoc = useMemo(() => {
     const override = devDoc.data?.image_ports
     return override != null ? override : dt.data?.image_ports
@@ -1272,12 +1272,10 @@ export function ImagePortsFaceplate({
     enabled: wantsFacePorts,
     staleTime: 30_000,
   })
-  const portByMarker = useMemo(() => {
-    const map = new Map<string, FacePort>()
-    const d = facePorts.data
-    if (d) for (const p of [...d.front, ...d.rear]) map.set(p.marker, p)
-    return map
-  }, [facePorts.data])
+  const portByMarker = useMemo(
+    () => facePortsOnSide(facePorts.data, side),
+    [facePorts.data, side]
+  )
   const inventory = useQuery({
     queryKey: ["device-inventory", deviceId],
     queryFn: () =>
@@ -1661,7 +1659,10 @@ export function ImagePortsFaceplate({
           // tinted, free ones outlined - with drift ringed like everywhere else.
           if (kind !== "interface") {
             const fp = portByMarker.get(m.name)
-            if (!fp?.id)
+            const termKind = markerTerminationKind(kind)
+            // A port of another kind than the marker draws is not this
+            // marker's port, whatever its name.
+            if (!fp?.id || (termKind && fp.kind && fp.kind !== termKind))
               return (
                 <span
                   key={`${m.name}-${idx}`}
@@ -1674,7 +1675,6 @@ export function ImagePortsFaceplate({
             // A FREE port is the connect affordance - click opens the cable
             // maker in place with this end already on side A. Cabled markers
             // keep the plain hovercard; unknown marker kinds stay inert.
-            const termKind = markerTerminationKind(kind)
             const connectable = !fp.connected && !!termKind && canConnect
             const portStyle = fp.connected
               ? { ...style, ...portOverlayStyle(hex) }

@@ -3,7 +3,7 @@ import { useThree } from "@react-three/fiber"
 import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 
-import { type FacePort, type ImagePortMarker } from "@/lib/api"
+import { type ImagePortMarker } from "@/lib/api"
 import {
   bayHex,
   EMPTY_LEGEND,
@@ -20,6 +20,7 @@ import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
 import type { PortLabelSource } from "@/lib/api"
 import { fetchFacePortsBatched } from "@/lib/face-ports-batch"
+import { facePortsOnSide } from "@/lib/faceplate-layout"
 
 import { FaceLabel } from "./text-sprite"
 import { useMaxAnisotropy } from "./texture-quality"
@@ -285,12 +286,10 @@ export function DeviceMesh({
     enabled: wantPorts,
     staleTime: 30_000,
   })
-  const resolved = useMemo(() => {
-    const m = new Map<string, FacePort>()
-    const d = facePorts.data
-    if (d) for (const p of [...d.front, ...d.rear]) m.set(p.marker, p)
-    return m
-  }, [facePorts.data])
+  const resolved = useMemo(
+    () => facePortsOnSide(facePorts.data, side),
+    [facePorts.data, side]
+  )
   // Live SNMP facts, same source (and cache) as the 2D faceplate - near
   // devices with markers only, so the room doesn't poll every cabinet.
   const observed = useObservedPorts(wantPorts ? dev.id : undefined)
