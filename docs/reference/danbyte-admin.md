@@ -134,7 +134,8 @@ it as `sudo -iu danbyte danbyte` to avoid that.
 
 ### status
 
-Units, timers, database, Redis, version, migration drift and disk in one
+Units, timers, database, Redis, version, migration drift, migrations not
+yet applied (or migration files that cannot be loaded) and disk in one
 screen.
 
 Long-running services are listed individually; the scheduled jobs are

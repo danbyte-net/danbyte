@@ -1215,3 +1215,96 @@ class DbBehindCodeTests(SimpleTestCase):
 
         self.assertEqual(pending_migrations(), [])
         self.assertIn("pending_migrations", system_info())
+
+    def fresh_probe(self):
+        from core import version
+
+        version._pending_cache = None
+        version._unreadable_logged = False
+        self.addCleanup(setattr, version, "_pending_cache", None)
+        return version
+
+    def test_migration_files_that_do_not_load_are_not_nothing_pending(self):
+        # A failed upgrade's rollback left a migration of the newer release
+        # behind; it needs a callable this code lacks, so migrate fails.
+        from unittest.mock import patch
+
+        from django.db.migrations.loader import MigrationLoader
+        from django.test import Client
+
+        version = self.fresh_probe()
+
+        def broken(loader):
+            raise AttributeError("module 'monitoring.models' has no attribute 'default_burn_alerts'")
+
+        with patch.object(MigrationLoader, "build_graph", broken), \
+                self.assertLogs("core.version", "ERROR"):
+            pending = version.pending_migrations()
+            r = Client().get("/api/health/")
+        self.assertEqual(len(pending), 1)
+        self.assertIn("cannot be loaded", pending[0])
+        self.assertIn("default_burn_alerts", pending[0])
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["db_behind_code"])
+        self.assertEqual(r.json()["status"], "degraded")
+        # repaired: the next probe reads clean (the marker is never cached)
+        self.assertEqual(version.pending_migrations(), [])
+
+    def test_a_database_that_does_not_answer_is_not_a_broken_tree(self):
+        from unittest.mock import patch
+
+        from django.db import OperationalError
+        from django.db.migrations.loader import MigrationLoader
+
+        version = self.fresh_probe()
+        real = MigrationLoader.build_graph
+
+        def db_down(loader):
+            if loader.connection is not None:
+                raise OperationalError("connection refused")
+            return real(loader)
+
+        with patch.object(MigrationLoader, "build_graph", db_down):
+            self.assertEqual(version.pending_migrations(), [])
+
+
+class StaticFileModesTests(SimpleTestCase):
+    """nginx serves /static/ from disk as another user: collectstatic must
+    write world-readable files even though uploads stay private (#227)."""
+
+    def test_collectstatic_writes_files_the_web_server_can_read(self):
+        import os
+        import shutil
+        import stat
+        import tempfile
+
+        from django.core.files.storage import default_storage
+        from django.core.management import call_command
+
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        old = os.umask(0o077)
+        try:
+            with override_settings(STATIC_ROOT=root):
+                call_command("collectstatic", interactive=False, verbosity=0)
+        finally:
+            os.umask(old)
+        css = os.path.join(root, "admin", "css", "base.css")
+        self.assertEqual(stat.S_IMODE(os.stat(css).st_mode), 0o644)
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.dirname(css)).st_mode), 0o755)
+        # uploads keep their private modes
+        self.assertEqual(default_storage.file_permissions_mode, 0o640)
+        self.assertEqual(default_storage.directory_permissions_mode, 0o750)
+
+    def test_every_script_that_collects_opens_what_was_there(self):
+        # collectstatic skips unchanged files, so copies an earlier release
+        # wrote 0640 stay closed unless the caller opens them afterwards.
+        from pathlib import Path
+
+        from django.conf import settings
+
+        for rel in ("scripts/install.sh", "scripts/build-release.sh",
+                    "scripts/upgrade/stage.sh", "deploy/docker/entrypoint.sh"):
+            text = (Path(settings.BASE_DIR) / rel).read_text()
+            collect = text.index("manage.py collectstatic")
+            self.assertGreater(text.find("chmod -R u=rwX,go=rX", collect), collect, rel)

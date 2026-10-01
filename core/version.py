@@ -156,6 +156,30 @@ def migration_drift() -> list[str]:
 
 _pending_cache: tuple[float, list[str]] | None = None
 _pending_logged = False
+_unreadable_logged = False
+
+
+def _unreadable_migrations() -> list[str]:
+    """``[]`` when this code's migration files load without the database
+    (it was the database that failed), else one entry saying they do not.
+    Not cached, so a repaired tree reads clean on the next probe."""
+    global _unreadable_logged
+    try:
+        from django.db.migrations.loader import MigrationLoader
+
+        MigrationLoader(None, ignore_no_migrations=True)
+    except Exception as exc:  # noqa: BLE001 - a probe must never take the app down
+        text = " ".join(f"{type(exc).__name__}: {exc}".split())[:200]
+        if not _unreadable_logged:
+            _unreadable_logged = True
+            import logging
+
+            logging.getLogger("core.version").error(
+                "The migration files of the running code cannot be loaded (%s); "
+                "migrate fails the same way until they can.", text,
+            )
+        return [f"(migration files cannot be loaded: {text})"]
+    return []
 
 
 def pending_migrations() -> list[str]:
@@ -163,7 +187,8 @@ def pending_migrations() -> list[str]:
     the mirror of :func:`migration_drift`: new code started against an old
     schema (a restart without the migrate step, a hand-pulled checkout, a
     container image without ``MIGRATE_ON_START``). Reads then fail on a
-    column that does not exist. Cached a minute like the drift check."""
+    column that does not exist. Cached a minute like the drift check.
+    Migration files that do not load are one entry saying so, never ``[]``."""
     global _pending_cache, _pending_logged
     import time
 
@@ -181,7 +206,10 @@ def pending_migrations() -> list[str]:
             if (app, name) not in applied
         )
     except Exception:  # noqa: BLE001 - a probe must never take the app down
-        return []
+        # A database that does not answer is the health probe's own finding.
+        # Migration files that do not load (a stray one from another release)
+        # must not read as "nothing pending": migrate would fail the same way.
+        return _unreadable_migrations()
     _pending_cache = (time.monotonic(), pending)
     if pending and not _pending_logged:
         _pending_logged = True

@@ -398,9 +398,13 @@ def cmd_status(ctx: Ctx, _args) -> int:
         (ok if pg else bad)(f"postgres {pg or 'unreachable'}")
         (ok if rd else bad)(f"redis    {rd or 'unreachable'}")
         drift = info.get("migration_drift") or []
+        pending = info.get("pending_migrations") or []
         if drift:
             warn(f"migration drift: {len(drift)} unapplied - {', '.join(map(str, drift[:5]))}")
-        else:
+        if pending:
+            # also "(migration files cannot be loaded: ...)" - migrate fails too
+            warn(f"migrations not applied: {len(pending)} - {', '.join(map(str, pending[:5]))}")
+        if not drift and not pending:
             ok("migrations up to date")
     else:
         warn(f"could not read system info ({err[:160]})")

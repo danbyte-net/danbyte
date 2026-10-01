@@ -108,3 +108,20 @@ class AdminUpgradeTests(SimpleTestCase):
             with self.assertRaises(SystemExit):
                 ADMIN.cmd_upgrade(ctx, self.args())
         self.assertIn("docker compose stop scheduler workers fastlane ws", die.call_args.args[0])
+
+
+class AdminStatusTests(SimpleTestCase):
+    def test_migrations_that_do_not_load_are_not_up_to_date(self):
+        # A stray migration a rolled-back release left behind: the system
+        # info says so, and status must not tick "migrations up to date".
+        ctx = ADMIN.Ctx(app=Path(settings.BASE_DIR), shape="systemd")
+        info = {"version": "0.16.13", "migration_drift": [],
+                "pending_migrations": ["(migration files cannot be loaded: AttributeError: x)"]}
+        lines = []
+        emit = mock.patch.object(ADMIN, "_emit", side_effect=lambda kind, msg: lines.append((kind, msg)))
+        with emit, mock.patch.object(ADMIN, "shell_json", return_value=(info, "")), \
+                mock.patch.object(ADMIN, "health", return_value=({"status": "degraded"}, "x")), \
+                mock.patch.object(ADMIN, "_print_units"):
+            ADMIN.cmd_status(ctx, None)
+        self.assertNotIn(("ok", "migrations up to date"), lines)
+        self.assertTrue(any(k == "warn" and "cannot be loaded" in m for k, m in lines), lines)
