@@ -147,6 +147,17 @@ class ExploreTests(_Base):
     def test_unknown_dimension_is_400(self):
         self.assertEqual(self.client.get("/api/monitoring/explore/?group_by=x").status_code, 400)
 
+    def test_a_filter_id_that_is_not_an_id_is_400(self):
+        # Ids went into UUID lookups unread, so each of these was a 500.
+        for path in ("/api/monitoring/explore/?group_by=site&", "/api/monitoring/latency/?",
+                     "/api/monitoring/checks/?", "/api/monitoring/transitions/?"):
+            for key in ("template", "ip", "site", "region", "device", "device_type",
+                        "role", "platform", "prefix", "vrf", "vlan", "sla"):
+                with self.subTest(path=path, key=key):
+                    r = self.client.get(f"{path}{key}={self.ip_a.id},nope")
+                    self.assertEqual(r.status_code, 400, r.content)
+                    self.assertEqual(r.json(), {key: "«nope» is not an id."})
+
     def test_no_ip_view_means_no_rows(self):
         user = User.objects.create_user("m", password="x")
         UserProfile.objects.create(user=user).tenants.add(self.tenant)
