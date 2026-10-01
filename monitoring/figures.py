@@ -12,7 +12,7 @@ percentiles - close to, but not the same as, the percentile of every probe.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 from django.db.models import F, Max, Q, Sum
 from django.utils import timezone
@@ -60,7 +60,10 @@ FRAMES = ("24h", "7d", "30d", "90d", "mtd", "qtd", "ytd")
 
 def frame_window(frame: str, tz: str = "UTC", now=None) -> Window:
     """A named frame: the last 24 hours / N days, or month, quarter or year
-    to date in ``tz`` (counted in whole days, as the daily rollups are)."""
+    to date in ``tz``. A to-date frame starts at local midnight on the
+    period's first day: the edges from the hourly rows, the whole UTC days
+    between from the daily rows. (A local day count fed to :func:`window`,
+    which counts from the UTC day, was a day off outside UTC - #270.)"""
     from zoneinfo import ZoneInfo
 
     now = now or timezone.now()
@@ -68,14 +71,15 @@ def frame_window(frame: str, tz: str = "UTC", now=None) -> Window:
         return window(hours=24, now=now)
     if frame in ("7d", "30d", "90d"):
         return window(days=int(frame[:-1]), now=now)
-    today = now.astimezone(ZoneInfo(tz or "UTC")).date()
+    zone = ZoneInfo(tz or "UTC")
+    today = now.astimezone(zone).date()
     if frame == "mtd":
         start = today.replace(day=1)
     elif frame == "qtd":
         start = today.replace(month=3 * ((today.month - 1) // 3) + 1, day=1)
     else:
         start = today.replace(month=1, day=1)
-    return window(days=(today - start).days + 1, now=now)
+    return span_window(datetime.combine(start, time(0), zone).astimezone(UTC), now)
 
 
 def span_window(since: datetime, until: datetime) -> Window:

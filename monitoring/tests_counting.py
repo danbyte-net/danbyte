@@ -391,6 +391,44 @@ class RollupFigureTests(_Base):
             _monitoring_charts(req, self.user, self.tenant)["availability_7d"], 100.0)
 
 
+class ToDateFrameTests(_Base):
+    """Month to date counts from local midnight on the 1st, each hour once,
+    whatever the UTC date is (#270)."""
+
+    def setUp(self):
+        super().setUp()
+        # 1 Sep and 30 Sep - 2 Oct (UTC), up throughout: the daily row and
+        # its hours, as the timer writes them.
+        for day in (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 9, 30, tzinfo=UTC),
+                    datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 10, 2, tzinfo=UTC)):
+            self.row(CheckRollupDaily, day, 86400)
+            for h in range(24):
+                self.row(CheckRollupHourly, day + timedelta(hours=h), 3600)
+
+    def row(self, model, bucket, up):
+        model.objects.create(tenant=self.tenant, target_ip=self.ip, template=self.ping,
+                             kind="icmp", bucket=bucket, up_s=up)
+
+    def hours_up(self, tz, *utc):
+        from .figures import frame_window
+
+        now = datetime(*utc, tzinfo=UTC)
+        got = sums(frame_window("mtd", tz, now=now),
+                   lambda qs: qs.filter(tenant=self.tenant, target_ip=self.ip), ())
+        return got[()]["up_s"] / 3600
+
+    def test_new_york(self):
+        # 1 Oct 21:00 local: October's 21 hours, not the last one.
+        self.assertEqual(self.hours_up("America/New_York", 2026, 10, 2, 1), 21)
+        # 30 Sep 21:00 local: 1 Sep from 04:00 UTC (20 h), 30 Sep whole from
+        # its daily row (24 h) and 1 Oct's first UTC hour (1 h).
+        self.assertEqual(self.hours_up("America/New_York", 2026, 10, 1, 1), 45)
+
+    def test_amsterdam(self):
+        # 1 Oct 01:00 local: one hour of October, none of 30 September.
+        self.assertEqual(self.hours_up("Europe/Amsterdam", 2026, 9, 30, 23), 1)
+
+
 class ResetApiTests(APITestCase, _Base):
     def setUp(self):
         _Base.setUp(self)

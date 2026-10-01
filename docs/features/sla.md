@@ -570,9 +570,11 @@ site and cluster lists have two columns:
   object's addresses, whether it is in an agreement or not. The frame is
   picked on the list's toolbar and remembered in your browser. It defaults to
   the tenant's **Availability window**, set in the monitoring settings (24
-  hours, 7/30/90 days, or month, quarter or year to date). When part of the
-  frame had no check results, the share that did follows the figure, as in
-  "75.1% 68% measured". Unmeasured time counts as neither up nor down.
+  hours, 7/30/90 days, or month, quarter or year to date). Month, quarter and
+  year to date start at midnight on the period's first day in the tenant's
+  timezone. When part of the frame had no check results, the share that did
+  follows the figure, as in "75.1% 68% measured". Unmeasured time counts as
+  neither up nor down.
 
 A device in a [switch stack](#switch-stacks) that counts once shows the
 stack's figure, marked "via" the stack. A stack's **Availability** is over

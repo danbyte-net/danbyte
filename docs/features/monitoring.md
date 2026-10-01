@@ -698,6 +698,12 @@ counts that day's daily record whole). Hourly records are kept 30 days, so
 for a reset older than that its own day is not counted. The uptime, strips
 and SLA figures, which read status changes, are exact.
 
+A month, quarter or year to date frame starts at local midnight on the
+period's first day. Its partial UTC days at either end come from the hourly
+records and the whole UTC days between from the daily records, so no hour
+is counted twice. Once a period's first hourly records are past their 30
+days, the hours before its first UTC midnight are not counted.
+
 A new install starts recording from its first run. To build records from the
 history already on disk, run `manage.py rollup_checks --backfill 90`. Daily
 records go back as far as status changes do. Latency goes back only as far as

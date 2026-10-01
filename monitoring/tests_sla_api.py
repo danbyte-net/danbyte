@@ -409,3 +409,37 @@ class FrameTests(APITestCase):
         self.assertEqual(frame_window("qtd", "UTC", now).since.month, 7)
         self.assertEqual(frame_window("ytd", "UTC", now).since.month, 1)
         self.assertFalse(frame_window("24h", "UTC", now).daily)
+
+    def test_to_date_frames_start_at_local_midnight(self):
+        """Wherever the UTC date differs from the local one (#270): the
+        edges come from hourly rows, the whole UTC days from daily rows."""
+        from datetime import UTC, datetime
+
+        from .figures import frame_window
+        from .models import CheckRollupDaily as D
+        from .models import CheckRollupHourly as H
+
+        def at(*a):
+            return datetime(*a, tzinfo=UTC)
+
+        ny, ams = "America/New_York", "Europe/Amsterdam"
+        # 1 Oct 21:00 in New York: the 21 hours of October so far.
+        win = frame_window("mtd", ny, at(2026, 10, 2, 1))
+        self.assertEqual(win.since, at(2026, 10, 1, 4))
+        self.assertEqual(win.parts, ((H, at(2026, 10, 1, 4), at(2026, 10, 2, 1)),))
+        # 30 Sep 21:00 in New York: September from its first local hour.
+        win = frame_window("mtd", ny, at(2026, 10, 1, 1))
+        self.assertEqual(win.since, at(2026, 9, 1, 4))
+        self.assertEqual(win.parts, (
+            (H, at(2026, 9, 1, 4), at(2026, 9, 2)),
+            (D, at(2026, 9, 2), at(2026, 10, 1)),
+            (H, at(2026, 10, 1), at(2026, 10, 1, 1)),
+        ))
+        # 1 Oct 01:00 in Amsterdam: October's first hour, none of September.
+        win = frame_window("mtd", ams, at(2026, 9, 30, 23))
+        self.assertEqual(win.since, at(2026, 9, 30, 22))
+        self.assertEqual(win.parts, ((H, at(2026, 9, 30, 22), at(2026, 9, 30, 23)),))
+        # Quarter and year to date start the same way.
+        self.assertEqual(frame_window("qtd", ny, at(2026, 10, 2, 1)).since, at(2026, 10, 1, 4))
+        self.assertEqual(frame_window("ytd", ny, at(2026, 10, 2, 1)).since, at(2026, 1, 1, 5))
+        self.assertEqual(frame_window("ytd", ams, at(2026, 9, 30, 23)).since, at(2025, 12, 31, 23))
