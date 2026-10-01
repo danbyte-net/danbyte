@@ -3856,9 +3856,9 @@ class DeviceViewSet(
             return Response({"detail": error}, status=drf_status.HTTP_400_BAD_REQUEST)
         try:
             if bundle is not None:
-                files = attach_push_state(device, render_bundle(bundle, device))
+                files = attach_push_state(device, render_bundle(bundle, device, request.user))
             else:
-                row = render_file(tmpl, device)
+                row = render_file(tmpl, device, request.user)
                 files = attach_push_state(device, {row["path"]: row})
         except (TemplateError, ValueError) as exc:
             return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
@@ -3913,9 +3913,9 @@ class DeviceViewSet(
                 continue
             try:
                 if bundle is not None:
-                    files = render_bundle(bundle, device)
+                    files = render_bundle(bundle, device, request.user)
                 else:
-                    row = render_file(tmpl, device)
+                    row = render_file(tmpl, device, request.user)
                     files = {row["path"]: row}
             except (TemplateError, ValueError) as exc:
                 skipped[str(device.id)] = str(exc)
@@ -4085,7 +4085,7 @@ class DeviceViewSet(
             from jinja2 import TemplateError
             from .export_templates import render_device_config
             try:
-                intended = render_device_config(tmpl, device, tmpl.tenant)
+                intended = render_device_config(tmpl, device, tmpl.tenant, request.user)
             except (TemplateError, ValueError):
                 intended = ""
         status_val, diff = compute_drift(intended, actual)
