@@ -299,6 +299,64 @@ class DashboardMonitoringRbacTests(_TenantClientMixin, APITestCase):
         self.assertIn("check_by_status", d)
         self.assertIn("recent_activity", d)
 
+    def test_device_only_member_gets_empty_monitoring(self):
+        """No ipaddress view (device view only) meant "the whole tenant" for
+        the monitoring widgets, so recent activity listed addresses the
+        member cannot open (#268)."""
+        from django.utils import timezone
+
+        from auth_api.models import ObjectPermission
+        from monitoring.models import (
+            Alert,
+            CheckKind,
+            CheckState,
+            CheckTemplate,
+            StateTransition,
+        )
+
+        prefix = Prefix.objects.create(
+            tenant=self.t, cidr="10.0.0.0/24", status=status_for(self.t)
+        )
+        ip = IPAddress.objects.create(tenant=self.t, ip_address="10.0.0.1", prefix=prefix)
+        tpl = CheckTemplate.objects.create(
+            tenant=self.t, name="Ping", slug="ping", kind=CheckKind.ICMP
+        )
+        now = timezone.now()
+        StateTransition.objects.create(
+            tenant=self.t, target_ip=ip, template=tpl, kind="icmp",
+            from_status="up", to_status="down", at=now,
+        )
+        CheckState.objects.create(
+            tenant=self.t, target_ip=ip, template=tpl, kind="icmp", status="down"
+        )
+        Alert.objects.create(
+            tenant=self.t, target_ip=ip, template=tpl, kind="icmp", dedup_key="a",
+            severity="critical", status="firing", check_status="down",
+            opened_at=now, last_status_at=now,
+        )
+        member = self._user("devonly", self.t)
+        perm = ObjectPermission.objects.create(
+            name="device-view", object_types=["device"], actions=["view"]
+        )
+        perm.users.add(member)
+        perm.tenants.add(self.t)
+
+        self._client(member, self.t)
+        self.assertIn(self.client.get(f"/api/ips/{ip.id}/").status_code, (403, 404))
+        d = self.client.get("/api/dashboard/").json()
+        self.assertEqual(d["counts"]["ips"], 0)
+        self.assertEqual(d["recent_activity"], [])
+        self.assertEqual(d["check_by_status"], [])
+        self.assertEqual(d["alerts_by_severity"], [])
+        self.assertIsNone(d["reachable_pct"])
+
+        # An all-rows reader still gets the tenant's feed.
+        self._client(self.reader, self.t)
+        d = self.client.get("/api/dashboard/").json()
+        self.assertEqual([a["ip"] for a in d["recent_activity"]], ["10.0.0.1"])
+        self.assertEqual([c["key"] for c in d["check_by_status"]], ["down"])
+        self.assertEqual([a["key"] for a in d["alerts_by_severity"]], ["critical"])
+
 
 class VlanBulkZoneTests(_TenantClientMixin, APITestCase):
     """VLAN bulk-update accepts zone_id - tenant-checked like site_id."""

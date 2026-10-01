@@ -38,7 +38,8 @@ The page is a mosaic of tiles:
   them while editing the dashboard - tick several in the picker, or in its
   advanced search, and add them in one go - up to twelve per widget, and add
   the widget more than once to watch different sets). Add them from *Add
-  widget*; all follow the same site scoping as the monitoring pages.
+  widget*; all follow the same site scoping as the monitoring pages, and
+  without view on IP addresses they, and **Recent activity**, stay empty.
 
 Colours come from your own statuses and roles where you've set them, so the
 charts speak your network's language. A donut fills the tile: in a wide tile

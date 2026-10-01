@@ -299,9 +299,10 @@ def dashboard_view(request):
         devices, ips, prefixes = _apply_scope(scope, devices, ips, prefixes, tenant)
     hours = FRAMES.get(request.query_params.get("frame") or "", 168)
     # The addresses monitoring widgets read: the caller's viewable ones, and
-    # within a scope only the scope's. None = every address in the tenant.
+    # within a scope only the scope's. None = every address in the tenant,
+    # only for an all-rows grant; without ipaddress view ``ips`` is empty.
     ip_q = rbac.row_filter(u, tenant, "ipaddress", "view")
-    ip_filter = ips if (scope or (ip_q is not None and ip_q is not True)) else None
+    ip_filter = None if (ip_q is True and not scope) else ips
 
     counts = {
         "prefixes": prefixes.count(),
