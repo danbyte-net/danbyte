@@ -5,7 +5,7 @@ import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { Cabinet } from "@/lib/api"
-import { cabinetTypeLabel, outerSize, plateSize } from "@/lib/cabinets"
+import { cabinetTypeLabel } from "@/lib/cabinets"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -20,12 +20,9 @@ import { ObjectImages } from "@/components/object-images"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { CabinetDeleteDialog } from "@/components/cabinet-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { CabinetPlateSection } from "@/components/cabinet-plate-section"
+import { CabinetSyncTypeButton } from "@/components/cabinet-sync-type-button"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 
@@ -61,7 +58,6 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
   const [deleting, setDeleting] = useState<Cabinet | null>(null)
   const openDelete = useCallback(() => setDeleting(c), [c])
   const goBack = useCallback(() => nav({ to: "/cabinets" }), [nav])
-  const size = outerSize(c)
 
   return (
     <DetailShell
@@ -71,6 +67,7 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
       presence={{ type: "cabinet", id: c.id }}
       actions={
         <>
+          <CabinetSyncTypeButton cabinet={c} />
           {canDo("cabinet", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/cabinets/$id/edit" params={{ id: c.id }}>
@@ -102,32 +99,6 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
             }
             tags={c.tags.length > 0 && <TagList tags={c.tags} />}
             description={c.description}
-            stats={
-              <>
-                <DetailStat
-                  label="Site"
-                  value={
-                    <Link
-                      to="/sites/$id"
-                      params={{ id: c.site.id }}
-                      className="link text-xs"
-                    >
-                      {c.site.name}
-                    </Link>
-                  }
-                />
-                <DetailStat
-                  label="Plate"
-                  value={<span className="num">{plateSize(c)}</span>}
-                />
-                {size && (
-                  <DetailStat
-                    label="Size"
-                    value={<span className="num">{size}</span>}
-                  />
-                )}
-              </>
-            }
           />
 
           <CustomFieldValues model="cabinet" values={c.custom_fields} />
@@ -164,10 +135,11 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
   )
 }
 
-/** The cabinet's attributes and sizes, grouped into labelled tables. Only
- * name, status and site stay up top. */
+/** The cabinet's attributes and sizes, grouped into labelled tables, beside
+ * its mounting plate and rails. Only name, status, facility ID and tags stay
+ * up top. */
 function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
-  const { humanIds } = useMe()
+  const { canDo, humanIds } = useMe()
   const cabinetRows: KvRow[] = [
     ...(humanIds && c.numid != null
       ? [
@@ -239,8 +211,18 @@ function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
-        <KvCard title="Cabinet" rows={cabinetRows} />
-        <KvCard title="Sizes" rows={sizeRows} />
+        <div className="grid content-start gap-6">
+          <KvCard title="Cabinet" rows={cabinetRows} />
+          <KvCard title="Sizes" rows={sizeRows} />
+        </div>
+        <CabinetPlateSection
+          sizes={c}
+          rails={c.rails}
+          endpoint={`/api/cabinets/${c.id}/`}
+          railKey="rails"
+          editTitle={`Rails · ${c.name}`}
+          canEdit={canDo("cabinet", "change")}
+        />
       </div>
       <ObjectImages apiBase={`/api/cabinets/${c.id}`} objectType="cabinet" />
     </div>

@@ -5,7 +5,6 @@ import { useState } from "react"
 
 import { api } from "@/lib/api"
 import type { CabinetType } from "@/lib/api"
-import { outerSize, plateSize } from "@/lib/cabinets"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -14,13 +13,9 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedCabinetTable } from "@/components/embedded-tables"
+import { CabinetPlateSection } from "@/components/cabinet-plate-section"
 import { CabinetTypeDeleteDialog } from "@/components/cabinet-type-delete-dialog"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -55,7 +50,6 @@ function Body({ cabinetType: ct }: { cabinetType: CabinetType }) {
   const { canDo, humanIds } = useMe()
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<CabinetType | null>(null)
-  const size = outerSize(ct)
 
   const rows: KvRow[] = [
     ...(humanIds && ct.numid != null
@@ -119,20 +113,6 @@ function Body({ cabinetType: ct }: { cabinetType: CabinetType }) {
           title={ct.name}
           tags={ct.tags.length > 0 && <TagList tags={ct.tags} />}
           description={ct.description}
-          stats={
-            <>
-              <DetailStat
-                label="Plate"
-                value={<span className="num">{plateSize(ct)}</span>}
-              />
-              {size && (
-                <DetailStat
-                  label="Size"
-                  value={<span className="num">{size}</span>}
-                />
-              )}
-            </>
-          }
         />
       }
       tabs={[
@@ -147,6 +127,15 @@ function Body({ cabinetType: ct }: { cabinetType: CabinetType }) {
       <DetailTab value="overview">
         <div className="grid gap-6 lg:grid-cols-2">
           <KvCard title="Cabinet type" rows={rows} />
+          {/* The rails every new cabinet of the type starts with. */}
+          <CabinetPlateSection
+            sizes={ct}
+            rails={ct.rail_templates}
+            endpoint={`/api/cabinet-types/${ct.id}/`}
+            railKey="rail_templates"
+            editTitle={`Rail templates · ${ct.name}`}
+            canEdit={canDo("cabinettype", "change")}
+          />
         </div>
       </DetailTab>
       <DetailTab value="cabinets">

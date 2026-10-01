@@ -59,18 +59,29 @@ side by side. Rails that only touch are fine, so rails can sit end to end on
 one line or band against band. A plate cannot shrink past its rails; move
 them in the same save.
 
-A cabinet type carries **rail templates** of the same shape. A new cabinet of
-the type starts with its rails, unless rails are given with it. A change to a
-cabinet's rails, or to a type's templates, is one entry on its change log,
-listing the rails before and after.
+On a cabinet's Overview, **Plate** draws the mounting plate to scale with its
+rails, inside the box when its outer size is known; hover a rail for its
+numbers. **Edit rails** lists one row per rail - label, profile, left end,
+centreline, length - beside the drawing, where a rail can also be dragged in
+whole millimetres or nudged with the arrow keys (Shift for 10 mm). **Add rail**
+puts a new rail across the plate 125 mm below the lowest one (75 mm from the
+top for the first), or in the first free spot from the top when that runs off
+the plate. The rules above are checked as you type; **Save changes** writes
+the whole set. The cabinet list has a **Rails** column.
+
+A cabinet type carries **rail templates** of the same shape, edited the same
+way on its page. A new cabinet of the type starts with its rails, unless rails
+are given with it. A change to a cabinet's rails, or to a type's templates, is
+one entry on its change log, listing the rails before and after.
 
 ### Sync from type
 
-**Sync from type** compares a cabinet with its type: the sizes that differ,
-the template rails it lacks (*add*), rails with a template's label that sit
-elsewhere or have another profile (*update*), and its own rails no template
-names (*extra*). Applying copies the sizes and adds or moves rails; it never
-removes one. A sync whose result would not fit the plate is refused as a
+**Sync from type**, in a cabinet's header, compares it with its type: the
+sizes that differ, the template rails it lacks (*add*), rails with a
+template's label that sit elsewhere or have another profile (*update*), and
+its own rails no template names (*extra*). Applying copies the sizes and adds
+or moves rails; it never removes one. When both sizes and rails differ, either
+can be left out. A sync whose result would not fit the plate is refused as a
 whole.
 
 ## Permissions

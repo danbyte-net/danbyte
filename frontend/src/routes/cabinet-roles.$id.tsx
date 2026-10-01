@@ -16,12 +16,7 @@ import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { CabinetRoleDeleteDialog } from "@/components/cabinet-role-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedCabinetTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -87,12 +82,6 @@ function Body({ role: r }: { role: CabinetRole }) {
         <DetailHero
           title={<ColorBadge name={r.name} color={r.color || undefined} />}
           description={r.description}
-          stats={
-            <DetailStat
-              label="Cabinets"
-              value={<span className="num">{r.cabinet_count}</span>}
-            />
-          }
         />
       }
       tabs={[
@@ -130,8 +119,8 @@ function Body({ role: r }: { role: CabinetRole }) {
   )
 }
 
-/** The role's attributes. Only the coloured name badge, description and
- * cabinet count stay up top. */
+/** The role's attributes. Only the coloured name badge and description
+ * stay up top. */
 function CabinetRoleOverview({ role: r }: { role: CabinetRole }) {
   const { humanIds } = useMe()
 

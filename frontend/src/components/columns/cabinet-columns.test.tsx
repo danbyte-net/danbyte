@@ -66,6 +66,7 @@ function cabinet(patch: Partial<Cabinet> = {}): Cabinet {
     outer_width_mm: 600,
     outer_height_mm: 700,
     outer_depth_mm: 210,
+    rails: [],
     description: "",
     document_count: 0,
     tags: [],
@@ -136,6 +137,21 @@ describe("cabinet columns", () => {
     expect(cell("size", cabinet({ outer_height_mm: null })).textContent).toBe(
       "-"
     )
+  })
+
+  it("counts the plate's rails, a dash for none", () => {
+    const r = {
+      id: "d1",
+      label: "R1",
+      profile: "ts35" as const,
+      x_mm: 0,
+      y_mm: 75,
+      length_mm: 500,
+    }
+    expect(
+      cell("rails", cabinet({ rails: [r, { ...r, id: "d2" }] })).textContent
+    ).toBe("2")
+    expect(cell("rails", cabinet()).textContent).toBe("-")
   })
 
   it("exports the sizes as the text the cells show", () => {

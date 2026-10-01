@@ -37,6 +37,7 @@ export type CabinetColumnId =
   | "facility"
   | "size"
   | "plate"
+  | "rails"
   | "tags"
   | "description"
   | "updated"
@@ -52,6 +53,7 @@ const CANONICAL_ORDER: CabinetColumnId[] = [
   "facility",
   "size",
   "plate",
+  "rails",
   "tags",
   "description",
   "updated",
@@ -240,6 +242,18 @@ export function buildCabinetColumns<T extends Cabinet = Cabinet>(
         field: ["inner_width_mm", "inner_height_mm"],
         export: { value: (r: T) => plateSize(r) },
       },
+    }),
+    // How many DIN rails the plate carries.
+    rails: () => ({
+      id: "rails",
+      header: ({ column }) => <SortHeader column={column} label="Rails" />,
+      accessorFn: (r) => r.rails.length,
+      cell: ({ row }) =>
+        row.original.rails.length > 0 ? (
+          <span className="num text-xs">{row.original.rails.length}</span>
+        ) : (
+          dash
+        ),
     }),
     tags: () =>
       tagsColumn<T>({

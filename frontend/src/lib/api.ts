@@ -1971,7 +1971,46 @@ export interface CabinetTypeOption extends CabinetSizes {
   manufacturer: { id: string; name: string } | null
 }
 
+/** A DIN rail profile. It sets the band the rail takes on the plate: 35, 15
+ * or 32 mm (`lib/din-geometry.ts`). */
+export type DinProfile = "ts35" | "ts15" | "g32"
+
+/** A DIN rail on a cabinet's mounting plate (`rails`), or one a cabinet type
+ * gives each new cabinet (`rail_templates`). Placed by its left end and its
+ * centreline, from the plate's top-left corner; millimetres, one decimal. */
+export interface DinRail {
+  id: string
+  label: string
+  profile: DinProfile
+  x_mm: number
+  y_mm: number
+  length_mm: number
+}
+
+/** A rail in a write, which sends the whole set: an item with the id of one
+ * of the parent's rails updates it, one without is a new rail, and rails
+ * left out are removed. */
+export type DinRailWrite = Omit<DinRail, "id"> & { id?: string }
+
+/** The field a parent keeps its rails in. */
+export type DinRailKey = "rails" | "rail_templates"
+
+/** Replace a cabinet's rails (`rails`), or a cabinet type's templates
+ * (`rail_templates`), as one set. Errors come back per rail, in the order
+ * sent: `{rails: [{}, {y_mm: ["Overlaps rail C."]}]}`. */
+export function saveDinRails<T>(
+  endpoint: string,
+  key: DinRailKey,
+  rails: DinRailWrite[]
+): Promise<T> {
+  return api<T>(endpoint, {
+    method: "PATCH",
+    body: JSON.stringify({ [key]: rails }),
+  })
+}
+
 export interface CabinetType extends CabinetTypeOption {
+  rail_templates: DinRail[]
   description: string
   cabinet_count: number
   tags: Tag[]
@@ -1987,6 +2026,7 @@ export interface CabinetTypeWritePayload {
   outer_width_mm?: number | null
   outer_height_mm?: number | null
   outer_depth_mm?: number | null
+  rail_templates?: DinRailWrite[]
   description?: string
   tag_ids?: number[]
 }
@@ -2001,12 +2041,60 @@ export interface Cabinet extends CabinetSizes {
   role: CabinetRoleOption | null
   cabinet_type: CabinetTypeOption | null
   status: StatusMini | null
+  /** Sorted by centreline, then left end, then label. */
+  rails: DinRail[]
   description: string
   document_count: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+/** A rail field the sync compares, with the cabinet's and the type's value. */
+export type CabinetSyncRailField = "profile" | "x_mm" | "y_mm" | "length_mm"
+
+/** How a cabinet differs from its type. Rails are matched by label: `add` are
+ * template rails the cabinet lacks, `update` rails with a template's label
+ * that sit elsewhere or have another profile, and `extra` the cabinet's own
+ * rails, which a sync leaves alone. Empty when the cabinet matches. */
+export interface CabinetSyncDiff {
+  sizes?: Partial<
+    Record<keyof CabinetSizes, { cabinet: number | null; type: number | null }>
+  >
+  rails?: {
+    add: string[]
+    update: {
+      label: string
+      changes: Partial<
+        Record<
+          CabinetSyncRailField,
+          { cabinet: number | string; type: number | string }
+        >
+      >
+    }[]
+    extra: string[]
+  }
+}
+
+export interface CabinetSyncResponse {
+  applied: boolean
+  /** After an apply: what still differs (extras, and any part left out). */
+  diff: CabinetSyncDiff
+}
+
+/** Compare a cabinet with its type, or with `apply` copy the type's sizes and
+ * add or move the rails its templates name. `sizes` and `rails` (both on by
+ * default) narrow what applies. A result that would not fit the plate is
+ * refused as a whole with a 400 `detail`. */
+export function syncCabinetFromType(
+  id: string,
+  body: { apply?: boolean; sizes?: boolean; rails?: boolean } = {}
+): Promise<CabinetSyncResponse> {
+  return api<CabinetSyncResponse>(`/api/cabinets/${id}/sync-from-type/`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
 }
 
 export interface CabinetWritePayload {
@@ -2023,6 +2111,8 @@ export interface CabinetWritePayload {
   outer_width_mm?: number | null
   outer_height_mm?: number | null
   outer_depth_mm?: number | null
+  /** Left out on a create with a type, the cabinet takes the type's rails. */
+  rails?: DinRailWrite[]
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>

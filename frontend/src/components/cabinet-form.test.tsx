@@ -268,6 +268,7 @@ describe("CabinetForm sizes", () => {
       outer_width_mm: null,
       outer_height_mm: null,
       outer_depth_mm: null,
+      rails: [],
       description: "",
       document_count: 0,
       tags: [],

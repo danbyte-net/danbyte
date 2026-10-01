@@ -52,6 +52,7 @@ const cabinetType = (cabinet_count: number): CabinetType => ({
   outer_width_mm: 600,
   outer_height_mm: 700,
   outer_depth_mm: 210,
+  rail_templates: [],
   description: "",
   cabinet_count,
   tags: [],
