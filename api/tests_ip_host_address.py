@@ -113,6 +113,30 @@ class WriteDropsTheMaskTests(_Fixture, TestCase):
         ip.refresh_from_db()
         self.assertEqual(ip.mask_length, 30)
 
+    def test_an_update_takes_the_new_length(self):
+        """The mask_length a row was loaded with is not an explicit one: the
+        address's length replaces it, as a PATCH with address/length does."""
+        ip = self.ip("192.0.2.1/31")
+        ip.ip_address = "192.0.2.1/30"
+        ip.save()
+        ip.refresh_from_db()
+        self.assertEqual((ip.ip_address, ip.mask_length), ("192.0.2.1", 30))
+
+    def test_an_update_to_the_prefix_length_clears_it(self):
+        ip = self.ip("192.0.2.1/31")
+        ip.ip_address = "192.0.2.1/24"
+        ip.save(update_fields=["ip_address"])
+        ip.refresh_from_db()
+        self.assertIsNone(ip.mask_length)
+        self.assertEqual(ip.cidr, "192.0.2.1/24")
+
+    def test_an_update_without_a_length_keeps_mask_length(self):
+        ip = self.ip("192.0.2.1/31")
+        ip.ip_address = "192.0.2.0"
+        ip.save()
+        ip.refresh_from_db()
+        self.assertEqual((ip.ip_address, ip.mask_length), ("192.0.2.0", 31))
+
     def test_bulk_create_and_update_skip_save_but_not_the_field(self):
         (ip,) = IPAddress.objects.bulk_create(
             [

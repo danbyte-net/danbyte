@@ -2726,17 +2726,19 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     def save(self, *args, **kwargs):
         # An address written as ``10.0.0.1/31`` (a shell, a trusted script, a
         # sync) stores the bare host - the field drops the mask anyway - and
-        # the length moves to mask_length, as the API does with address/length.
-        # Only a length that differs from the prefix's is kept: empty means
-        # the prefix's. An explicit mask_length wins.
+        # its length becomes mask_length when it differs from the prefix's;
+        # one equal to the prefix's leaves it empty. A mask_length given on
+        # create wins. On an update the address's length replaces the stored
+        # one: a loaded value can't be told from one set for this save.
         fields = kwargs.get("update_fields")
         if fields is None or "ip_address" in fields:
             host, length = split_host_mask(self.ip_address)
             if length is not None:
                 self.ip_address = host
-                net = self.prefix.network if self.prefix_id else None
-                if self.mask_length is None and (net is None or length != net.prefixlen):
-                    self.mask_length = length
+                if not (self._state.adding and self.mask_length is not None):
+                    net = self.prefix.network if self.prefix_id else None
+                    same = net is not None and length == net.prefixlen
+                    self.mask_length = None if same else length
                     _include_update_field(kwargs, "mask_length")
         # Always keep vrf in sync with the parent prefix - including on a
         # scoped save(update_fields=…), which would otherwise drop it.

@@ -52,8 +52,10 @@ is stored and read back as `10.0.0.5/24`. Danbyte stores the host only. The
 field drops a mask on every ORM write, including `bulk_create()`, `update()` and
 writes from a shell or script, which skip the API's validation. `save()` moves a
 length that differs from the prefix's to `mask_length`; one equal to the
-prefix's is dropped. A value still stored with a mask reads back as the bare
-host.
+prefix's leaves it empty. A `mask_length` passed to `create()` wins. On an
+update, the address's length replaces the stored one, so `10.0.0.1/30` on an
+address stored with `/31` saves `/30`. A value still stored with a mask reads
+back as the bare host.
 
 Migration `api 0185` stores rows that carry a mask as bare hosts. It leaves a
 row alone when the bare address is already taken in the same tenant and VRF
