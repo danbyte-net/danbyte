@@ -55,11 +55,15 @@ describe("HolidayYear", () => {
   })
 
   it("toggles on click and keeps the same button, so focus stays", () => {
-    render(<Harness initial={[]} />)
-    const before = day(/^Thursday 24 December 2026/)
+    const { container } = render(<Harness initial={[]} />)
+    // By its date: a name query walks all 365 days' names, which overran the
+    // time limit on a busy machine.
+    const cell = () =>
+      container.querySelector<HTMLElement>('button[data-day="2026-12-24"]')!
+    const before = cell()
     before.focus()
     fireEvent.click(before)
-    const after = day(/^Thursday 24 December 2026/)
+    const after = cell()
     expect(after).toBe(before)
     expect(after.getAttribute("aria-pressed")).toBe("true")
     expect(document.activeElement).toBe(after)
