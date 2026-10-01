@@ -1492,7 +1492,9 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     # The mask the address carries on its interface. Stored only when it
     # differs from the containing prefix (a /31 link inside an aggregate);
     # ``cidr`` is always the effective ``address/length``. An address may be
-    # written as ``10.0.0.1/31`` - the length lands in ``mask_length``.
+    # written as ``10.0.0.1/31`` - the length lands in ``mask_length``, or
+    # leaves it empty when it is the prefix's, as IPAddress.save() does. A
+    # mask_length sent alongside wins and is stored as given.
     mask_length = serializers.IntegerField(
         required=False, allow_null=True, min_value=0, max_value=128
     )
@@ -1500,13 +1502,21 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
 
     def to_internal_value(self, data):
         raw = data.get("ip_address") if hasattr(data, "get") else None
+        from_address = False
         if isinstance(raw, str) and "/" in raw:
             addr, _, length = raw.strip().partition("/")
             data = data.copy()
             data["ip_address"] = addr
             if length and data.get("mask_length") in (None, ""):
                 data["mask_length"] = length
-        return super().to_internal_value(data)
+                from_address = True
+        attrs = super().to_internal_value(data)
+        if from_address:
+            prefix = attrs.get("prefix", getattr(self.instance, "prefix", None))
+            net = prefix.network if prefix is not None else None
+            if net is not None and attrs.get("mask_length") == net.prefixlen:
+                attrs["mask_length"] = None
+        return attrs
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_dhcp(self, obj) -> str | None:

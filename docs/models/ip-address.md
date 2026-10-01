@@ -14,7 +14,7 @@ A single IP address. Lives inside exactly one `Prefix`, inherits its VRF.
 | `tenant` | FK → `Tenant` | required | Denormalised from `prefix.tenant` |
 | `prefix` | FK → `Prefix` | required | The containing prefix |
 | `vrf` | FK → `VRF` | NULL | Mirrors `prefix.vrf`; denormalised for the unique constraint |
-| `ip_address` | inet | required | Bare address, never `address/length`. The API accepts `10.0.0.1/31`; the length lands in `mask_length`. See [Stored form](#stored-form) |
+| `ip_address` | inet | required | Bare address, never `address/length`. The API accepts `10.0.0.1/31`: a length other than the prefix's lands in `mask_length`, the prefix's own leaves it empty, and a `mask_length` sent alongside wins. See [Stored form](#stored-form) |
 | `mask_length` | smallint | NULL | Length the address carries on its interface when it differs from the prefix's (a `/31` link inside an aggregate). `cidr` in the API and the render context is `address/length` with this, else the prefix's |
 | `status` | choice | `assigned` | `available` · `assigned` · `reserved` · `dhcp_pool` · `floating` |
 | `role` | choice | `""` | `""` · `gateway` · `loopback` · `vip` · `hsrp` · `vrrp` · `anycast` · `secondary` |
