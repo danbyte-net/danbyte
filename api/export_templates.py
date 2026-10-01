@@ -492,41 +492,58 @@ def device_render_interfaces(device) -> list:
     return rows
 
 
-def render_device_config(template, device, tenant) -> str:
+def _render_ips(obj, tenant, user) -> list:
+    """The object's addresses for a render: those ``user`` may view, when the
+    render runs for someone; every one in the tenant for a system render."""
+    ips = obj.ip_addresses.filter(tenant=tenant)
+    if user is None:
+        return list(ips)
+    from auth_api import rbac
+
+    return list(rbac.restrict_queryset(ips, user, tenant, "ipaddress", "view"))
+
+
+def render_device_config(template, device, tenant, user=None) -> str:
     """Render an export template for a single device - the per-device
     intended-config generator. Context: ``device``, its merged ``config_context``,
     ``interfaces`` (each with ``link_peer``, the cable's far end),
     ``ip_addresses`` (and ``objects``/``count`` for parity), plus every
-    registered provider's key (``routing``)."""
+    registered provider's key (``routing``).
+
+    ``user`` is who the render is for: relations a template walks hold only
+    the rows they may view, as in an export. Leave it out only for a render
+    nobody started."""
     from .config_context import render_config_context
 
-    tmpl = _env(tenant or device.tenant).from_string(template.template_code or "")
+    tenant = tenant or device.tenant
+    tmpl = _env(tenant, user).from_string(template.template_code or "")
     return tmpl.render(
         device=device,
         config_context=render_config_context(device)["rendered"],
         interfaces=device_render_interfaces(device),
-        ip_addresses=list(device.ip_addresses.all()),
+        ip_addresses=_render_ips(device, tenant, user),
         objects=[device],
         count=1,
         **provider_context(device),
     )
 
 
-def render_vm_config(template, vm, tenant) -> str:
+def render_vm_config(template, vm, tenant, user=None) -> str:
     """Render an export template for a single virtual machine - the per-VM
     generator behind the Terraform-for-VMs flow (the template author writes
     tfvars/HCL). Context mirrors the device renderer: ``vm`` (also exposed as
     ``device`` for template parity), merged ``config_context``, ``interfaces``,
-    ``ip_addresses``."""
+    ``ip_addresses``. ``user`` limits what the template sees, as for devices."""
     from .config_context import render_config_context
 
-    tmpl = _env(tenant or vm.tenant).from_string(template.template_code or "")
+    tenant = tenant or vm.tenant
+    tmpl = _env(tenant, user).from_string(template.template_code or "")
     return tmpl.render(
         vm=vm,
         device=vm,  # parity: templates can use the same `device.*` accessor
         config_context=render_config_context(vm)["rendered"],
         interfaces=list(vm.interfaces.all()),
-        ip_addresses=list(vm.ip_addresses.all()),
+        ip_addresses=_render_ips(vm, tenant, user),
         objects=[vm],
         count=1,
         **provider_context(vm),

@@ -75,10 +75,11 @@ def resolve_bundle(tenant, device, param: str):
     return found
 
 
-def render_file(template: ExportTemplate, device) -> dict:
+def render_file(template: ExportTemplate, device, user=None) -> dict:
     """One template on one device: ``{path, template, template_id, output,
-    sha256}``. Template errors propagate, as they do for a single render."""
-    output = render_device_config(template, device, template.tenant)
+    sha256}``. Template errors propagate, as they do for a single render.
+    ``user`` is who it renders for (see :func:`render_device_config`)."""
+    output = render_device_config(template, device, template.tenant, user)
     return {
         "path": template.bundle_path,
         "template": template.name,
@@ -88,13 +89,13 @@ def render_file(template: ExportTemplate, device) -> dict:
     }
 
 
-def render_bundle(bundle: ConfigBundle, device) -> dict:
+def render_bundle(bundle: ConfigBundle, device, user=None) -> dict:
     """Every file in the bundle, keyed by path, in path order."""
     files = {}
     for tmpl in sorted(bundle.templates.all(), key=lambda t: (t.bundle_path, t.name)):
         if tmpl.object_type != "device":
             continue
-        row = render_file(tmpl, device)
+        row = render_file(tmpl, device, user)
         files[row["path"]] = row
     return files
 
