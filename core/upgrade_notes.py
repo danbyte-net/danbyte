@@ -324,7 +324,10 @@ def _no_kept_access_grant() -> bool:
     from auth_api.object_types import ACCESS_TYPES
 
     User = get_user_model()
-    for perm in ObjectPermission.objects.filter(name=KEPT_ACCESS_GRANT, enabled=True):
+    # 0026 splits it by verbs: "<name>: view, change" counts too.
+    for perm in ObjectPermission.objects.filter(
+        name__startswith=KEPT_ACCESS_GRANT, enabled=True
+    ):
         if not any(t in (perm.object_types or []) for t in ACCESS_TYPES):
             continue
         if perm.users.filter(is_active=True).exists() or User.objects.filter(
@@ -378,9 +381,10 @@ NOTES: tuple[UpgradeNote, ...] = (
             "All object types no longer covers users, groups and permissions, "
             "so only the Administrator group and grants that name those types "
             "manage access. This install had no other account that could "
-            "manage users, so the upgrade gave the accounts that did a grant "
-            f"of their own, \"{KEPT_ACCESS_GRANT}\". Put your administrators "
-            "in the Administrator group, then delete that grant. Locked out? "
+            "manage users, so the upgrade gave the accounts that did grants "
+            f"of their own, named \"{KEPT_ACCESS_GRANT}\" (one per set of "
+            "verbs). Put your administrators in the Administrator group, then "
+            "delete those grants. Locked out? "
             "Create an administrator on the server."
         ),
         snippet="scripts/danbyte-admin users create",

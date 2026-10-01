@@ -101,10 +101,12 @@ editor's "read all", and a "full control" grant limited to sites or rows -
 neither limit ever narrowed users, groups and permissions, so its holders
 would have managed every account. If that would have left nobody able to
 manage users, the accounts that could get a grant of their own, **Kept user
-management (0.17 upgrade)**, with the three types and the verbs they had -
-people a custom grant reached first, the Operator group's members only when
-nobody else could - and an upgrade note asks you to put your administrators
-in the Administrator group, then delete that grant. The shared grants stay
+management (0.17 upgrade)**, with the three types and only the verbs each of
+them had - accounts with different verbs get one grant per set, named with
+its verbs (`Kept user management (0.17 upgrade): view, change`). People a
+custom grant reached come first, the Operator group's members only when
+nobody else could, and an upgrade note asks you to put your administrators
+in the Administrator group, then delete those grants. The shared grants stay
 trimmed, so nobody who joins those groups later inherits user management.
 
 ## Managing access

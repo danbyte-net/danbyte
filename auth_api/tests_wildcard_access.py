@@ -33,6 +33,7 @@ from core.models import Organization, Tenant
 
 MIGRATION = importlib.import_module("auth_api.migrations.0024_wildcard_excludes_access")
 NARROW = importlib.import_module("auth_api.migrations.0025_narrow_kept_access")
+SPLIT = importlib.import_module("auth_api.migrations.0026_split_kept_access")
 CRUD = ["view", "add", "change", "delete"]
 BUILTIN = ("Administrator", "Operator", "Read-only")
 
@@ -67,6 +68,11 @@ class GrantCoversTests(SimpleTestCase):
 
         self.assertEqual(NARROW.ACCESS_TYPES, list(ACCESS_TYPES))
         self.assertEqual(NARROW.KEPT_NAME, KEPT_ACCESS_GRANT)
+        self.assertEqual(SPLIT.ACCESS_TYPES, list(ACCESS_TYPES))
+        self.assertEqual(SPLIT.KEPT_NAME, KEPT_ACCESS_GRANT)
+        self.assertEqual(
+            SPLIT.OTHER_BUILTIN_GRANT_NAMES, NARROW.OTHER_BUILTIN_GRANT_NAMES
+        )
 
 
 class BuiltinGroupEngineTests(TestCase):
@@ -553,6 +559,7 @@ class LockoutGuardTests(TestCase):
         with contextlib.redirect_stdout(out):
             MIGRATION.forwards(django_apps, None)
             NARROW.forwards(django_apps, None)
+            SPLIT.forwards(django_apps, None)
         return out.getvalue()
 
     def _kept(self):
@@ -619,6 +626,57 @@ class LockoutGuardTests(TestCase):
         self.assertEqual(grant.object_types, ["*"])
         self.assertFalse(can_manage_deployment(lead))
         self.assertFalse(ObjectPermission.objects.filter(name=self.kept_name).exists())
+        self.assertTrue(self.check())
+
+    def test_each_kept_account_keeps_only_the_verbs_it_had(self):
+        # #272: one kept grant used to carry everyone's verbs combined.
+        alice = _member("alice", self.tenant)
+        bob = _member("bob", self.tenant)
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        # Her grant names the access types itself; 0024 adds them only to
+        # grants with all four verbs.
+        viewer = ObjectPermission.objects.create(
+            name="alice all", object_types=["*", *ACCESS_TYPES],
+            actions=["view", "change"],
+        )
+        viewer.users.add(alice)
+        full = ObjectPermission.objects.create(
+            name="bob site", object_types=["*"], actions=CRUD,
+        )
+        full.users.add(bob)
+        full.sites.add(site)
+        self.operator_grant.enabled = False
+        self.operator_grant.save()
+        out = self._upgrade()
+        kept = self._kept()
+        self.assertEqual(kept.actions, CRUD)
+        self.assertEqual(list(kept.users.all()), [bob])
+        own = ObjectPermission.objects.get(name=f"{self.kept_name}: view, change")
+        self.assertEqual(own.actions, ["view", "change"])
+        self.assertEqual(own.object_types, list(ACCESS_TYPES))
+        self.assertEqual(list(own.users.all()), [alice])
+        self.assertIn("alice", out)
+        for user in (alice, bob):
+            self.assertTrue(can_manage_deployment(user))
+        self.assertTrue(rbac.has_action(bob, self.tenant, "user", "delete"))
+        self.assertFalse(rbac.has_action(alice, self.tenant, "user", "delete"))
+        # Splitting again changes nothing.
+        with contextlib.redirect_stdout(io.StringIO()):
+            SPLIT.forwards(django_apps, None)
+        self.assertEqual(
+            sorted(
+                ObjectPermission.objects.filter(
+                    name__startswith=self.kept_name
+                ).values_list("name", flat=True)
+            ),
+            [self.kept_name, f"{self.kept_name}: view, change"],
+        )
+        self.assertEqual(list(self._kept().users.all()), [bob])
+        # The upgrade note stays up until both are gone.
+        self.assertFalse(self.check())
+        kept.delete()
+        self.assertFalse(self.check())
+        own.delete()
         self.assertTrue(self.check())
 
     def test_running_the_upgrade_twice_keeps_one_grant(self):
