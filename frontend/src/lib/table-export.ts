@@ -84,8 +84,13 @@ export interface ExportOptions {
   generatedAt: string
 }
 
+// A cell that starts like a formula runs in the spreadsheet of whoever opens
+// the file; a leading apostrophe makes it text (the import takes it off).
+const FORMULA_START = /^[=+\-@\t\r]/
+
 function csvEscape(s: string): string {
-  return `"${s.replace(/"/g, '""')}"`
+  const text = FORMULA_START.test(s) ? `'${s}` : s
+  return `"${text.replace(/"/g, '""')}"`
 }
 
 export function toCsv(columns: ExportColumn[], rows: string[][]): string {

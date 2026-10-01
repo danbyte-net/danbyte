@@ -178,4 +178,7 @@ def parse_rows(content: str, fmt: str) -> list[dict]:
     except csv.Error:
         delimiter = ","
     reader = csv.DictReader(io.StringIO(content.lstrip("\ufeff")), delimiter=delimiter)
-    return list(reader)
+    from .spreadsheet import csv_unescape
+
+    # Our own exports mark text that looks like a formula; take that off again.
+    return [{k: csv_unescape(v) for k, v in row.items()} for row in reader]

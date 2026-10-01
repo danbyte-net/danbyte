@@ -57,10 +57,23 @@ def _parts(result, view=None):
 # ─── CSV ────────────────────────────────────────────────────────────────────
 
 
+class _SafeWriter:
+    """A csv writer whose text never reads as a formula: these files are
+    mailed to customers, and member names are whatever someone typed."""
+
+    def __init__(self, out):
+        self._w = csv.writer(out)
+
+    def writerow(self, row):
+        from api.spreadsheet import csv_row
+
+        return self._w.writerow(csv_row(row))
+
+
 def report_csv(agreement, result, view=None) -> str:
     f, members, incidents, _days, limited = _parts(result, view)
     out = io.StringIO()
-    w = csv.writer(out)
+    w = _SafeWriter(out)
     w.writerow(["agreement", agreement.name, "for", agreement.for_label])
     w.writerow(["period", result.period_key, result.state])
     w.writerow(["availability_pct", f.get("availability"), "target_pct", f.get("target")])
@@ -278,7 +291,7 @@ def _credit_text(c) -> str:
 def overview_csv(rows) -> str:
     data = overview_rows(rows)
     out = io.StringIO()
-    w = csv.writer(out)
+    w = _SafeWriter(out)
     w.writerow(["agreement", "for", "period", "period_state", "availability_pct",
                 "target_pct", "state", "coverage_pct", "budget_left_s", "incidents", "members",
                 "credit_pct", "credit_amount", "currency"])

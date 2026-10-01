@@ -21,7 +21,10 @@ pair:
 
 - **Export** → **CSV**, **Excel (.xlsx)**, or **JSON**. The file carries each
   row's `id` plus stable, human-readable keys for its links, tags, and custom
-  fields - so it can be re-imported.
+  fields - so it can be re-imported. Text is always text: a value that starts
+  with `=`, `+`, `-` or `@` is never run as a spreadsheet formula. Excel files
+  store it as text; CSV files put an apostrophe in front, which the import
+  takes off again. The SLA report CSV does the same.
 - **Import…** → upload an edited file. Danbyte first shows a **preview** (how many
   rows would be created vs updated, and any errors) before you **Apply**.
 

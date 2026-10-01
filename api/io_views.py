@@ -262,10 +262,12 @@ def io_export_view(request, slug):
 
     writer = csv.DictWriter(_Echo(), fieldnames=cols, extrasaction="ignore")
 
+    from .spreadsheet import csv_cell
+
     def gen():
         yield writer.writerow(dict(zip(cols, cols)))  # header
         for obj in qs.iterator(chunk_size=500):
-            yield writer.writerow(handler.to_row(obj))
+            yield writer.writerow({k: csv_cell(v) for k, v in handler.to_row(obj).items()})
 
     resp = StreamingHttpResponse(gen(), content_type="text/csv; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{fname}"'
@@ -298,6 +300,8 @@ def _export_xlsx(qs, handler, cols, slug):
     from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
 
+    from .spreadsheet import xlsx_text_row
+
     wb = Workbook()
     ws = wb.active
     ws.title = slug[:31]
@@ -310,6 +314,7 @@ def _export_xlsx(qs, handler, cols, slug):
             break
         row = handler.to_row(obj)
         ws.append([row.get(c, "") for c in cols])
+        xlsx_text_row(ws)
         n += 1
     for i in range(1, len(cols) + 1):
         ws.column_dimensions[get_column_letter(i)].width = 20
