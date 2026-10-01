@@ -279,6 +279,9 @@ TARGET_SUFFIX = ".target"
 #: status (``manage.py upgrade_report --merge-legacy``), so it is reported.
 REPORT_SUFFIX = ".report.json"
 _TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
+#: What an old git upgrader records as ``version_from``: the commit it came
+#: from. The bundle one records a release (``__version__``).
+_SHA = re.compile(r"[0-9a-f]{7,40}")
 
 
 def _read_json(path) -> dict:
@@ -337,7 +340,7 @@ def version_at(base, rev: str) -> str | None:
     records the commit it came from)."""
     import subprocess
 
-    if not re.fullmatch(r"[0-9a-f]{7,40}", rev or ""):
+    if not _SHA.fullmatch(rev or ""):
         return None
     try:
         r = subprocess.run(["git", "-C", str(base), "show", f"{rev}:danbyte/__init__.py"],
@@ -348,10 +351,20 @@ def version_at(base, rev: str) -> str | None:
     return m.group(1) if r.returncode == 0 and m else None
 
 
-def rollback_archive(dirs, now: float | None = None):
+def legacy_kind(status: dict) -> str:
+    """Which old upgrader is migrating, by the ``version_from`` its status
+    records: "git" (danbyte-upgrade.sh, a commit; its rollback is a
+    checkout) or "bundle" (danbyte-upgrade-bundle.sh, a release; its
+    rollback extracts its archive over the tree). Not by ``.git``: 0.16
+    offers the bundle upload on a git checkout too."""
+    return "git" if _SHA.fullmatch(str(status.get("version_from") or "")) else "bundle"
+
+
+def rollback_archive(dirs, now: float | None = None, since: float | None = None):
     """The newest ``code-pre-*.tgz`` in ``dirs`` - the rollback archive an
-    old bundle upgrader writes before its overlay - or None when there is
-    none from the last :data:`BRIDGE_ARCHIVE_AGE` seconds."""
+    old bundle upgrader writes before its overlay - or None when it is not
+    this run's: older than ``since`` (when the upgrade lock was taken) or
+    than :data:`BRIDGE_ARCHIVE_AGE` seconds."""
     import time
     from pathlib import Path
 
@@ -365,6 +378,8 @@ def rollback_archive(dirs, now: float | None = None):
     if not found:
         return None
     mtime, newest = max(found)
+    if since is not None and mtime < since:
+        return None
     return newest if 0 <= now - mtime < BRIDGE_ARCHIVE_AGE else None
 
 
@@ -665,8 +680,7 @@ class LegacyBridge:
             tag = to if _TAG.fullmatch(to) and to != "uploaded" else f"v{danbyte.__version__}"
         frm = str(status.get("version_from") or "")
         report = {"trigger": trigger, "version_from": version_at(base, frm) or frm,
-                  "version_to": tag, "kind": "git" if (base / ".git").exists() else "bundle",
-                  "backup": backup or ""}
+                  "version_to": tag, "kind": legacy_kind(status), "backup": backup or ""}
         started = lock.get("status_started_at") or lock.get("acquired_at")
         if isinstance(started, (int, float)):
             report["started_at"] = float(started)
@@ -684,19 +698,25 @@ class LegacyBridge:
         resume unit. Its rollback extracts its archive over the tree, which
         removes nothing: this release's migrations would stay behind, break
         the restored release's migration graph and be applied by the next
-        upgrade (with this release's error, if one of them is what failed)."""
+        upgrade (with this release's error, if one of them is what failed).
+        On a git checkout, which can run that upgrader too, they would also
+        stay as untracked files in the way of a later checkout."""
         from pathlib import Path
 
         from django.conf import settings
 
         base = Path(settings.BASE_DIR)
-        if (base / ".git").exists():
-            self.say("a git checkout: the old upgrader's rollback is a checkout, which "
-                     "removes the files this release added")
+        if legacy_kind(_read_json(base / ".upgrade-status.json")) == "git":
+            self.say("the git upgrader: its rollback is a checkout, which removes the files "
+                     "this release added")
             return
+        # The bundle upgrader writes its archive after the lock is taken: one
+        # from before is an earlier run's.
+        when = _when(_read_json(base / ".upgrade.lock").get("acquired_at"))
         archive = rollback_archive((os.environ.get("DANBYTE_BACKUP_DIR", ""),
                                     getattr(settings, "DANBYTE_BACKUP_DIR", ""),
-                                    base.parent / "danbyte-backups"))
+                                    base.parent / "danbyte-backups"),
+                                   since=when.timestamp() if when else None)
         if archive is None:
             self.say("no rollback archive from this upgrade; if it is rolled back, the files "
                      "this release added stay")

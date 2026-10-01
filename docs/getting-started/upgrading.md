@@ -375,10 +375,12 @@ longer leaves a half-migrated database. That unit (its log:
   0.17's migrations stayed behind: the old release's `migrate` could not
   even load its migration files, and the next upgrade applied them - and
   failed with the failed release's error. The migrate lists those files
-  before it migrates (everything not in the old upgrader's rollback
-  archive, `danbyte-backups/code-pre-*.tgz`, that is older than that
-  archive); a git install's rollback is a checkout, which removes them
-  itself. Then it starts everything, the timers included;
+  before it migrates: everything not in the rollback archive the old
+  bundle upgrader wrote for this upgrade (`danbyte-backups/code-pre-*.tgz`)
+  that is older than that archive. That includes a bundle uploaded to a
+  git install, which 0.16 allows; the git upgrader's own rollback is a
+  checkout, which removes them itself. Then it starts everything, the
+  timers included;
 - after a partly applied migration, starts nothing and says so in the
   upgrade's status, which the upgrade dialog shows, as well as in
   its log, which has the command that starts them.

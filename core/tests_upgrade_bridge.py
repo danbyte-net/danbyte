@@ -295,12 +295,45 @@ class HandOverTests(SimpleTestCase):
         self.assertFalse(added.exists())
         self.assertIn("no rollback archive from this upgrade", said)
 
-    def test_a_git_checkout_is_rolled_back_by_git(self):
-        self.overlay()
-        (self.app / ".git").mkdir()
+    def started(self, status: dict, acquired_at: float) -> None:
+        (self.app / ".upgrade-status.json").write_text(json.dumps(status))
+        (self.app / ".upgrade.lock").write_text(json.dumps({**OLD_LOCK, "acquired_at": acquired_at}))
+
+    def test_an_archive_from_before_the_lock_is_another_runs(self):
+        when = self.overlay()
+        self.started(OLD_STATUS, when + 10)
         added, said = self.hand_over()
         self.assertFalse(added.exists())
-        self.assertIn("a git checkout", said)
+        self.assertIn("no rollback archive from this upgrade", said)
+
+    def test_the_git_upgrader_is_rolled_back_by_git(self):
+        # it records the commit it came from; an archive an earlier upload
+        # left is not its own
+        when = self.overlay()
+        (self.app / ".git").mkdir()
+        self.started({**OLD_STATUS, "version_to": "v0.17.0-rc1", "version_from": "35d3ebe6"},
+                     when - 120)
+        with mock.patch.object(upgrade_migrate, "version_at", return_value="0.16.13"):
+            added, said = self.hand_over()
+        self.assertFalse(added.exists())
+        self.assertIn("the git upgrader: its rollback is a checkout", said)
+
+    def test_a_bundle_uploaded_to_a_git_checkout_is_listed_too(self):
+        # 0.16 offers the upload on a git checkout, and that upgrader's
+        # rollback extracts its archive there too
+        when = self.overlay()
+        (self.app / ".git" / "refs").mkdir(parents=True)
+        (self.app / ".git" / "ORIG_HEAD").write_text("35d3ebe6\n")
+        os.utime(self.app / ".git" / "ORIG_HEAD", (when - 3600, when - 3600))
+        self.started(OLD_STATUS, when - 120)
+        added, said = self.hand_over()
+        self.assertEqual(added.read_text().splitlines(), [
+            "core/linked.py", "core/management/commands/migrate.py",
+            "core/migrations/0055_new.py", "frontend/dist/assets/index.js",
+            "staticfiles/new.abc123.css"])
+        report = Path(str(added).replace(upgrade_migrate.ADDED_SUFFIX,
+                                         upgrade_migrate.REPORT_SUFFIX))
+        self.assertEqual(json.loads(report.read_text())["kind"], "bundle")
 
     def test_a_restart_that_could_not_be_arranged_leaves_nothing(self):
         b = LegacyBridge(stdout=io.StringIO())

@@ -218,11 +218,12 @@ case "$1" in
         done
         # what the overlay added, listed by the bridge's own code
         "$REAL_PY" -c 'import sys; sys.path.insert(0, sys.argv[1])
-from core.upgrade_migrate import files_added, rollback_archive
-a = rollback_archive([sys.argv[2]])
-if a:
-    open(sys.argv[3], "w").write("".join(p + "\n" for p in files_added(".", a)[0]))
-' "$FAKE_REPO" "$HOME/danbyte-backups" "$r/legacy-resume-T.units.added"
+from pathlib import Path
+from django.conf import settings
+settings.configure(BASE_DIR=Path.cwd())
+from core.upgrade_migrate import LegacyBridge
+LegacyBridge().record_added(sys.argv[2])
+' "$FAKE_REPO" "$r/legacy-resume-T.units"
         # the release it was for and who started it (no tick: a person)
         tag="v$(sed -n 's/^__version__ *= *"\(.*\)"/\1/p' danbyte/__init__.py)"
         echo "$tag" >"$r/legacy-resume-T.units.target"
@@ -869,10 +870,15 @@ class LegacyUpgraderTests(StageTestCase):
         if self.old is None:
             self.skipTest(f"{OLD_RELEASE} is not in this checkout")
 
-    def run_legacy(self, bridge_rc: str, *, upload: bool = False):
+    def run_legacy(self, bridge_rc: str, *, upload: bool = False, git: bool = False):
         h = Host(self, "bundle")
         h.install(version="0.16.13")
         (h.app / "scripts" / "danbyte-upgrade-bundle.sh").write_text(self.old)
+        if git:   # a checkout of 0.16.13 that takes an uploaded bundle
+            _run(["git", "init", "-q", "-b", "main", str(h.app)], env=h.env)
+            (h.app / ".git" / "info" / "exclude").write_text("__pycache__/\n")   # as the repo does
+            _run(["git", "-C", str(h.app), "add", "-A"], env=h.env)
+            _run(["git", "-C", str(h.app), "commit", "-qm", "0.16.13"], env=h.env)
         self.before = self.tree(h)
         bundle = h.bundle()
         if upload:   # where the Updates page puts an uploaded bundle
@@ -935,6 +941,20 @@ class LegacyUpgraderTests(StageTestCase):
         # nothing left: the restart's files, its folder, the uploaded bundle
         self.assertFalse((h.home / ".danbyte-upgrade").exists())
         self.assertFalse((h.app / ".upgrade-bundle.tar.gz").exists())
+
+    def test_a_git_checkout_that_took_an_uploaded_bundle_is_left_as_it_was(self):
+        # 0.16 offers the upload on a git checkout too; the files its rollback
+        # leaves would stay as untracked ones, in the way of a later checkout
+        h, r, resume = self.run_legacy("3", upload=True, git=True)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(self.version_on_disk(h), "0.16.13")
+        self.assertEqual(resume.returncode, 0, resume.stdout + resume.stderr)
+        self.assertRegex(resume.stdout, r"removed [1-9][0-9]* file\(s\) the failed release had added")
+        self.assertEqual(self.tree(h), self.before)
+        git = subprocess.run(["git", "-C", str(h.app), "status", "--porcelain"], env=h.env,
+                             capture_output=True, text=True, check=True)
+        self.assertEqual(git.stdout, "")
+        self.assertEqual(h.state("danbyte-dispatch.timer")[1], "active")
 
     def test_a_partly_applied_migration_starts_nothing_more(self):
         h, r, resume = self.run_legacy("4")
