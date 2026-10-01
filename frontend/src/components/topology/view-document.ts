@@ -269,6 +269,17 @@ export function carryIntoDiagram(
   return next
 }
 
+/** Does the Diagram open on an arrangement made by hand: its own, or the
+ * one a map last shown on Wiring or Flat (`lastStyle`) carries into it? */
+export function diagramArranged(
+  positions: DocPositions,
+  lastStyle: unknown
+): boolean {
+  const has = (style: DocStyle) =>
+    Object.keys(positions[style] ?? {}).length > 0
+  return has("diagram") || (isRetiredStyle(lastStyle) && has(lastStyle))
+}
+
 /** No view's map as this browser stores it: a saved view's `state`,
  * without a device set (No view has none). */
 export function storedDefaultMap(doc: ViewDocument): string {
@@ -319,8 +330,14 @@ export type DocAction =
       style?: DocStyle
       place?: PosMap
     }
-  /** Devices leave the set, and everything that belonged to them goes. */
-  | { type: "removeDevices"; ids: readonly string[] }
+  /** Devices leave the set, and everything that belonged to them goes.
+   * `held` ones leave the set only: a chassis placed on the map keeps them
+   * on it, with their places and overrides. */
+  | {
+      type: "removeDevices"
+      ids: readonly string[]
+      held?: readonly string[]
+    }
   /** Virtual chassis placed on the hand-picked map: their members come
    * with them as they are, so members already on the map as devices leave
    * the device set (`drop`). `place` pins their frames in `style`. */
@@ -401,6 +418,7 @@ export function docReducer(doc: ViewDocument, a: DocAction): ViewDocument {
     }
     case "removeDevices": {
       const gone = new Set(a.ids)
+      const unlisted = new Set([...a.ids, ...(a.held ?? [])])
       const nodeIds = new Set(a.ids.map(devNode))
       const positions: DocPositions = {}
       for (const [style, map] of Object.entries(doc.positions) as [
@@ -424,7 +442,7 @@ export function docReducer(doc: ViewDocument, a: DocAction): ViewDocument {
       }
       const next: ViewDocument = {
         ...doc,
-        devices: doc.devices?.filter((id) => !gone.has(id)) ?? null,
+        devices: doc.devices?.filter((id) => !unlisted.has(id)) ?? null,
         positions,
         links,
         nodes,

@@ -487,8 +487,10 @@ between members.
 - **Display ▸ Virtual chassis:** *Off*, *Top-down* or *Left-right* - how
   the chassis on the map stack unless one has its own setting. Saved with
   the view and in the link (`stack=`). A map not arranged by hand yet
-  stacks them top to bottom; a view arranged before stacks existed keeps its
-  arrangement until this is turned on.
+  stacks them top to bottom; a view arranged before stacks existed (on the
+  Diagram, or on Wiring or Flat) keeps its arrangement until this is turned
+  on. A saved view goes by its own arrangement, so it opens the same in
+  every browser.
 - **Each chassis on its own:** select a stack for *Top-down*, *Left-right*,
   *Unstack* and *Open virtual chassis* in the toolbar above it, or
   right-click it (or right-click a member ▸ *Virtual chassis*) for the same
@@ -804,7 +806,8 @@ select it and use **Add ▸ Connected devices**, to bring in everything cabled
 to it. On the Diagram each newcomer goes to the free spot nearest the cards
 it is cabled to, below them where there is room; if any lands off screen,
 the camera widens to show them. On the Hierarchy the newcomers are ranked
-by their cabling like the rest of the tab. When everything cabled to it is already on the map,
+by their cabling like the rest of the tab. Members of a placed virtual
+chassis are left to their chassis. When everything cabled to it is already on the map,
 it says *No new connected devices*.
 
 **Removing devices.** Right-click a card → *Remove from map*, or select
@@ -813,8 +816,8 @@ Hierarchy tab alike. That takes the device out of the view's set, with its
 position and overrides; ++ctrl+z++ puts it back. A placed chassis leaves
 the same way - its stack's toolbar or right-click → *Remove from map*, or
 ++delete++ with the stack selected - with its members, frame and look. A
-member of a placed chassis stays as long as the chassis does: removing it
-alone says which chassis it is part of.
+member of a placed chassis stays as long as the chassis does, with its
+position and overrides: removing it alone says which chassis it is part of.
 *Hide*, next to it, is different - it hides a card and keeps it in the set
 (see [Hiding things](#hiding-things-the-eyes)).
 

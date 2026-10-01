@@ -8,6 +8,7 @@ import {
   HISTORY_LIMIT,
   RETIRED_STYLES,
   carryIntoDiagram,
+  diagramArranged,
   docFromView,
   docReducer,
   emptyDocument,
@@ -271,6 +272,32 @@ describe("docReducer: device set", () => {
     expect(next.nodes).toEqual({ b: { face: "card" } })
     expect(next.hidden.devices).toEqual(["dev:c"])
     expect(run(next, { type: "removeDevices", ids: ["zz"] })).toBe(next)
+  })
+
+  it("a member a placed chassis holds leaves the set only", () => {
+    const d = emptyDocument({
+      devices: ["a", "m"],
+      positions: { diagram: { "dev:a": [0, 0], "dev:m": [5, 5] } },
+      links: { "a|m": { line: "elbow" } },
+      nodes: { a: { face: "photo" }, m: { face: "photo" } },
+      hidden: { ...NO_TOPO_HIDDEN, devices: ["dev:m"] },
+    })
+    const next = run(d, { type: "removeDevices", ids: ["a"], held: ["m"] })
+    expect(next.devices).toEqual([])
+    // Still on the map with its chassis: its own things stay.
+    expect(next.positions).toEqual({ diagram: { "dev:m": [5, 5] } })
+    expect(next.nodes).toEqual({ m: { face: "photo" } })
+    expect(next.hidden.devices).toEqual(["dev:m"])
+    // The link went with `a`, its other end.
+    expect(next.links).toEqual({})
+    const kept = run(d, { type: "removeDevices", ids: [], held: ["m"] })
+    expect(kept.devices).toEqual(["a"])
+    expect(kept.nodes).toEqual(d.nodes)
+    expect(kept.links).toEqual(d.links)
+    expect(kept.positions).toEqual(d.positions)
+    expect(run(kept, { type: "removeDevices", ids: [], held: ["m"] })).toBe(
+      kept
+    )
   })
 })
 
@@ -749,6 +776,18 @@ describe("carryIntoDiagram", () => {
         sizeOf
       )
     ).toBeNull()
+  })
+
+  it("counts the arrangement the Diagram opens on", () => {
+    expect(diagramArranged({}, "diagram")).toBe(false)
+    expect(diagramArranged({ diagram: {} }, "diagram")).toBe(false)
+    expect(diagramArranged({ diagram: { "dev:a": [0, 0] } }, "flat")).toBe(true)
+    // A map last shown on Wiring or Flat opens on that tab's arrangement.
+    const wired = wiring().positions
+    expect(diagramArranged(wired, "stencil")).toBe(true)
+    expect(diagramArranged(wired, "flat")).toBe(false)
+    expect(diagramArranged(wired, "hierarchy")).toBe(false)
+    expect(diagramArranged(wired, undefined)).toBe(false)
   })
 
   it("carries from the tab it is asked for only", () => {

@@ -168,6 +168,7 @@ import {
 } from "@/components/topology/view-overrides"
 import {
   carryIntoDiagram,
+  diagramArranged,
   docFromView,
   emptyDocument,
   isMissingViewError,
@@ -286,6 +287,7 @@ import {
 } from "@/components/topology/levels-param"
 import {
   migratePositions,
+  viewPositions,
   viewZones,
   ZONE_COLORS,
   ZONE_H,
@@ -768,15 +770,19 @@ function TopologyPage() {
   /** The style this browser's older, single arrangement was made on. */
   const legacyStyle = sanitizeViewStyle(stored.viewStyle)
   // No view's Diagram display, as this browser last saved it with
-  // the map, and whether it has an arrangement (read once - the stored
-  // map can be large).
+  // the map, and whether the Diagram opens it arranged - the older keys'
+  // arrangement too (read once - the stored map can be large).
   const [{ storedDiagram, storedArranged }] = useState(() => {
-    const m = readStoredMap()
+    const m = defaultDocument(legacyStyle)
     return {
-      storedDiagram: m?.filters.diagram,
-      storedArranged: !!Object.keys(m?.positions.diagram ?? {}).length,
+      storedDiagram: m.filters.diagram,
+      storedArranged: diagramArranged(m.positions, stored.viewStyle),
     }
   })
+  /** The applied view opens on the Diagram arranged by hand. */
+  const viewArranged =
+    !!appliedView &&
+    diagramArranged(viewPositions(appliedView, sanitizeViewStyle), vf.viewStyle)
 
   // Value resolution for every control below:
   //   URL param → applied saved view → this browser's No view → hard default.
@@ -848,18 +854,16 @@ function TopologyPage() {
       labelsOf(storedDiagram?.labels) ?? [...DEFAULT_LABELS],
     // Virtual chassis stack on a map not arranged by hand yet; a map
     // arranged before stacks keeps its arrangement until they are turned
-    // on. Resolved once and saved with the display from then on.
+    // on. Resolved once and saved with the display from then on. A saved
+    // view goes by its own arrangement, never by this browser's No view,
+    // so it opens the same in every browser.
     stack:
       stackOf(vf.diagram) ??
-      stackOf(storedDiagram) ??
-      ((
-        viewId !== "none"
-          ? !!Object.keys(appliedView?.state.positions_by_style?.diagram ?? {})
-              .length
-          : storedArranged
-      )
-        ? "off"
-        : "v"),
+      (viewId !== "none"
+        ? viewArranged
+          ? "off"
+          : "v"
+        : (stackOf(storedDiagram) ?? (storedArranged ? "off" : "v"))),
   } as const
 
   const [tab, setTab] = useUrlEnum<TabStyle>("tab", dflt.tab, TAB_STYLES)
@@ -2238,25 +2242,40 @@ function TopologyPage() {
     return true
   }
   /** Devices leave the hand-picked set, with their positions and
-   * overrides - one undo step. */
+   * overrides - one undo step. A member of a chassis placed on the map
+   * stays on it as long as the chassis does, and keeps them. */
   const removeFromSet = (ids: string[]) => {
     if (custom === null || !ids.length) return
-    // A member on the map only through its placed chassis leaves with it.
-    const inSet = new Set(custom)
-    const via = ids
-      .filter((id) => !inSet.has(id))
-      .map((id) => vcOf(graph?.nodes.find((n) => n.data.device_id === id)?.data))
-      .find((vc) => vc && placedChassisSet.has(vc.id))
-    if (via)
-      toast(`Part of ${via.name}`, {
+    const placedVc = new Map(
+      (graph?.nodes ?? []).flatMap((n) => {
+        const vc = vcOf(n.data)
+        return n.data.device_id && vc && placedChassisSet.has(vc.id)
+          ? [[n.data.device_id, vc] as const]
+          : []
+      })
+    )
+    const held = ids.filter((id) => placedVc.has(id))
+    const leaving = ids.filter((id) => !placedVc.has(id))
+    if (held.length)
+      toast(`Part of ${placedVc.get(held[0])!.name}`, {
         description: "Remove the chassis from the map, or hide the device.",
       })
+    // A held member still in the set leaves it: the chassis holds it now.
+    const inSet = new Set(custom)
+    const unlisted = held.filter((id) => inSet.has(id))
+    if (!leaving.length && !unlisted.length) return
+    const action = {
+      type: "removeDevices" as const,
+      ids: leaving,
+      held: unlisted,
+    }
     if (viewId !== "none") {
-      if (viewDocReady) edit({ type: "removeDevices", ids })
+      if (viewDocReady) edit(action)
       return
     }
-    edit({ type: "removeDevices", ids })
-    setUrlDevices(custom.filter((id) => !ids.includes(id)))
+    edit(action)
+    const gone = new Set([...leaving, ...unlisted])
+    setUrlDevices(custom.filter((id) => !gone.has(id)))
   }
   /** "Start hand-picked map": the map shrinks to this one device. */
   const startSetAt = (id: string) => {
@@ -2458,12 +2477,18 @@ function TopologyPage() {
           })
         )
       )
-      const have = new Set(custom ?? [])
+      // On the map already: the set, and the members of the chassis placed
+      // on it. A placed chassis brings its members as they are, so none of
+      // them joins the set on its own.
+      const have = custom === null ? new Set<string>() : placedIds
       const fresh = new Map<string, TopoNode>()
       for (const g of graphs)
         for (const n of g.nodes) {
           const id = n.data.device_id
-          if (id && !have.has(id) && !fresh.has(id)) fresh.set(id, n)
+          if (!id || have.has(id) || fresh.has(id)) continue
+          const vc = vcOf(n.data)
+          if (vc && placedChassisSet.has(vc.id)) continue
+          fresh.set(id, n)
         }
       if (!fresh.size) {
         toast("No new connected devices")
