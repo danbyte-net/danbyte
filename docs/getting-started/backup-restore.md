@@ -154,9 +154,10 @@ Then, in the worker, in order:
 2. Make a **Before restore** backup of the current state and protect it.
 3. Raise the **maintenance flag**. Every request answers `503` with
    `Retry-After`, which nginx turns into the "Danbyte is updating" page;
-   only the health probe and the restore-status endpoint stay open. The
-   running restore's status is answered from Redis, so the dialog keeps
-   showing progress even while the database has no tables.
+   only the health probe (with `"maintenance": true`) and the
+   restore-status endpoint stay open, and the 503s are not logged as
+   errors. The running restore's status is answered from Redis, so the
+   dialog keeps showing progress even while the database has no tables.
 4. Terminate the other database sessions, drop and recreate the `public`
    schema, `pg_restore` the dump and run `migrate` forward.
 5. **Reconcile**: the restored database predates the restore, so the rows

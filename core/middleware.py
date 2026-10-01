@@ -106,5 +106,8 @@ class MaintenanceMiddleware:
                     status=503,
                 )
                 resp["Retry-After"] = "30"
+                # A planned state, not a server error: django.request would
+                # log every one of these at ERROR while an upgrade runs.
+                resp._has_been_logged = True
                 return resp
         return self.get_response(request)

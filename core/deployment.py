@@ -1075,6 +1075,7 @@ def component_popover_effective(request):
         fields={
             "status": serializers.CharField(),
             "database": serializers.BooleanField(),
+            "maintenance": serializers.BooleanField(),
             "version": serializers.CharField(),
         },
     ),
@@ -1096,6 +1097,8 @@ def health(request):
         db_ok = True
     except Exception:  # noqa: BLE001 - any DB error → not ready
         db_ok = False
+    from backups.maintenance import active
+
     from .version import migration_drift, pending_migrations
 
     code_behind_db = bool(db_ok and migration_drift())
@@ -1110,6 +1113,9 @@ def health(request):
          # The mirror: migrations this code ships that were never run - new
          # code on an old schema, which fails on the first missing column.
          "db_behind_code": db_behind_code,
+         # A restore or an upgrade holds the site: everything but this probe
+         # and the status endpoints answers 503 (core.middleware).
+         "maintenance": active() is not None,
          "version": system_version()["version"]},
         status=200 if db_ok else 503,
     )
