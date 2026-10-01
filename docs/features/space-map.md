@@ -172,6 +172,16 @@ Each view draws at most eight bits below the block on screen (256 chips per
 row), stopping at `/31` for IPv4 and `/128` for IPv6; zooming carries on from
 there, down to `/31` or `/128`.
 
+Past those eight bits, **Show /25 (512)** under the last row adds the next
+row, one per click, down to your depth preference (a `/16` goes all the way to
+its 32,768 `/31`s; a row stops being offered past 65,536 subnets). Such a row
+is drawn as one strip: used stretches in rose, partly used ones hatched, stray
+IPs a lighter green and IP ranges an amber edge, where they sit. Point at it -
+or Tab to it and use the arrow keys (Shift for bigger steps) - and its heading
+names the subnet there and its state; a click or Enter zooms in so that
+subnet becomes a chip of its own. The API is `?deeper=N` on the space map,
+which also answers `more` with the row it would add next.
+
 If that's more than you want to scan, set a shallower cap under
 **Preferences → Space map (IPv4 / IPv6)** - e.g. stop IPv4 at `/24`. The
 preference only ever makes a view *shallower*, never deeper than the eight-bit
@@ -183,9 +193,10 @@ zooms keep their nibble steps the same way.
 
 ## Limits
 
-- **Up to eight bits deep per view.** A very large block (say a `/8`) won't try
+- **Eight bits of chips per view.** A very large block (say a `/8`) won't try
   to draw millions of `/24`s - it shows the next handful of sizes (IPv6 steps a
-  nibble at a time, capped at 256 cells per row). Zoom in for the rest.
+  nibble at a time, capped at 256 cells per row). Deeper rows come as strips,
+  one click each, up to 65,536 subnets a row; zoom in for the rest.
 - **Down to the host boundary.** IPv4 stops at `/31`; IPv6 at `/128`. A single
   IPv4 host (`/32`) isn't shown - that's what the
   [IPs tab](../dcim/ip-assignment.md) is for.

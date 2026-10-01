@@ -19,9 +19,18 @@ import type {
   SpaceMap as SpaceMapData,
   SpaceMapCell,
   SpaceMapCellState,
+  SpaceMapRow,
+  SpaceMapRun,
   SpaceMapSpan,
 } from "@/lib/api"
-import { cellActions, cellNote, holdsBlock } from "@/lib/space-map"
+import {
+  blockAt,
+  cellActions,
+  cellNote,
+  holdsBlock,
+  runAt,
+  supernetOf,
+} from "@/lib/space-map"
 import type { SpaceMapAction } from "@/lib/space-map"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { cn } from "@/lib/utils"
@@ -144,8 +153,19 @@ export function SpaceMap({
     return () => ro.disconnect()
   }, [])
 
+  // Rows past the +8 window asked for with "Show /25", for this view only.
+  const viewKey = `${prefixId}|${within ?? ""}`
+  const [deep, setDeep] = useState({ at: "", n: 0 })
+  const deeper = deep.at === viewKey ? deep.n : 0
   const space = useQuery({
-    queryKey: ["prefix-space-map", prefixId, within ?? "", v4Max, v6Max],
+    queryKey: [
+      "prefix-space-map",
+      prefixId,
+      within ?? "",
+      v4Max,
+      v6Max,
+      deeper,
+    ],
     queryFn: () => {
       const p = new URLSearchParams({
         v4_max: String(v4Max),
@@ -153,10 +173,14 @@ export function SpaceMap({
         details: "0",
       })
       if (within) p.set("within", within)
+      if (deeper) p.set("deeper", String(deeper))
       return api<SpaceMapData>(
         `/api/prefixes/${prefixId}/space-map/?${p.toString()}`
       )
     },
+    // Keep the rows on screen while the next one loads.
+    placeholderData: (prev) =>
+      prev && prev.root === (within ?? rootCidr) ? prev : undefined,
   })
   const data = space.data
   // The most specific prefix holding the view: free blocks belong to it.
@@ -199,69 +223,77 @@ export function SpaceMap({
   else if (data)
     body = (
       <>
-        {data.rows.map((row) => (
-          <section key={row.prefixlen}>
-            <h3 className="mb-2 text-xs font-medium">
-              <span className="num">
-                {row.free_count}/{row.count}
-              </span>{" "}
-              free <span className="font-mono">/{row.prefixlen}</span> subnets
-              {row.partial_count > 0 && (
-                <span className="ml-2 font-normal text-muted-foreground">
-                  · <span className="num">{row.partial_count}</span> partly used
-                </span>
-              )}
-              {row.dirty_count > 0 && (
-                <span className="ml-2 font-normal text-muted-foreground">
-                  · <span className="num">{row.dirty_count}</span> contain
-                  {row.dirty_count === 1 ? "s" : ""} stray IP
-                  {row.dirty_count === 1 ? "" : "s"}
-                </span>
-              )}
-              {row.ranged_count > 0 && (
-                <span className="ml-2 font-normal text-muted-foreground">
-                  · <span className="num">{row.ranged_count}</span>{" "}
-                  {row.ranged_count === 1
-                    ? "holds an IP range"
-                    : "hold IP ranges"}
-                </span>
-              )}
-            </h3>
-            <div
-              className={cn("grid", layout === "aligned" ? "gap-px" : "gap-1")}
-              style={{
-                gridTemplateColumns: `repeat(${rowColumns(layout, row.count)}, minmax(0, 1fr))`,
-              }}
+        {data.rows.map((row) =>
+          row.runs ? (
+            <RunRow
+              key={row.prefixlen}
+              row={row}
+              runs={row.runs}
+              root={data.root ?? current ?? rootCidr}
+              onZoom={(cidr) => zoomTo([...zoom, cidr])}
+            />
+          ) : (
+            <section key={row.prefixlen}>
+              <RowHeading row={row} />
+              <div
+                className={cn(
+                  "grid",
+                  layout === "aligned" ? "gap-px" : "gap-1"
+                )}
+                style={{
+                  gridTemplateColumns: `repeat(${rowColumns(layout, row.count)}, minmax(0, 1fr))`,
+                }}
+              >
+                {row.cells.map((cell) => (
+                  <Cell
+                    key={cell.cidr}
+                    cell={cell}
+                    fit={cellFit(
+                      layout,
+                      row.count,
+                      width,
+                      labelChars(row.cells)
+                    )}
+                    actions={cellActions(cell, {
+                      allowPrefix: canAddPrefix,
+                      allowIp: canAddIp,
+                    })}
+                    onZoom={() => zoomTo([...zoom, cell.cidr])}
+                    focused={
+                      !focus
+                        ? false
+                        : focus.cidr === cell.cidr
+                          ? "self"
+                          : holdsBlock(cell.cidr, focus.cidr)
+                            ? "holder"
+                            : false
+                    }
+                    onFocusSelect={
+                      focus?.cidr === cell.cidr ? focus.onSelect : undefined
+                    }
+                    onCreatePrefix={() => gotoCreatePrefix(cell.cidr)}
+                    onCreateIp={() => gotoCreateIp(cell.cidr)}
+                  />
+                ))}
+              </div>
+            </section>
+          )
+        )}
+        {data.more && (
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={space.isFetching}
+              onClick={() => setDeep({ at: viewKey, n: deeper + 1 })}
             >
-              {row.cells.map((cell) => (
-                <Cell
-                  key={cell.cidr}
-                  cell={cell}
-                  fit={cellFit(layout, row.count, width, labelChars(row.cells))}
-                  actions={cellActions(cell, {
-                    allowPrefix: canAddPrefix,
-                    allowIp: canAddIp,
-                  })}
-                  onZoom={() => zoomTo([...zoom, cell.cidr])}
-                  focused={
-                    !focus
-                      ? false
-                      : focus.cidr === cell.cidr
-                        ? "self"
-                        : holdsBlock(cell.cidr, focus.cidr)
-                          ? "holder"
-                          : false
-                  }
-                  onFocusSelect={
-                    focus?.cidr === cell.cidr ? focus.onSelect : undefined
-                  }
-                  onCreatePrefix={() => gotoCreatePrefix(cell.cidr)}
-                  onCreateIp={() => gotoCreateIp(cell.cidr)}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
+              {space.isFetching && space.isPlaceholderData
+                ? "Loading…"
+                : `Show /${data.more.prefixlen} (${data.more.count.toLocaleString()})`}
+            </Button>
+          </div>
+        )}
       </>
     )
 
@@ -296,6 +328,165 @@ export function SpaceMap({
       </div>
       {body}
     </div>
+  )
+}
+
+/** A row's counts: free of all, partly used, stray IPs, IP ranges - and,
+ * on a deep row, the subnet under the pointer. */
+function RowHeading({
+  row,
+  extra,
+}: {
+  row: SpaceMapRow
+  extra?: ReactElement | null
+}) {
+  return (
+    <h3 className="mb-2 text-xs font-medium">
+      <span className="num">
+        {row.free_count.toLocaleString()}/{row.count.toLocaleString()}
+      </span>{" "}
+      free <span className="font-mono">/{row.prefixlen}</span> subnets
+      {row.partial_count > 0 && (
+        <span className="ml-2 font-normal text-muted-foreground">
+          · <span className="num">{row.partial_count}</span> partly used
+        </span>
+      )}
+      {row.dirty_count > 0 && (
+        <span className="ml-2 font-normal text-muted-foreground">
+          · <span className="num">{row.dirty_count}</span> contain
+          {row.dirty_count === 1 ? "s" : ""} stray IP
+          {row.dirty_count === 1 ? "" : "s"}
+        </span>
+      )}
+      {row.ranged_count > 0 && (
+        <span className="ml-2 font-normal text-muted-foreground">
+          · <span className="num">{row.ranged_count}</span>{" "}
+          {row.ranged_count === 1 ? "holds an IP range" : "hold IP ranges"}
+        </span>
+      )}
+      {extra}
+    </h3>
+  )
+}
+
+const RUN_NOTE: Record<SpaceMapCellState, string> = {
+  free: "free",
+  partial: "partly used",
+  full: "used",
+}
+
+/**
+ * A row past the +8 window - up to 65,536 subnets - as one strip: the
+ * stretches that are used, partly used, hold stray IPs or IP ranges drawn
+ * where they sit, the rest the free green. Point at it (or move with the
+ * arrow keys) for the subnet there; a click or Enter zooms in so that
+ * subnet becomes a cell of its own.
+ */
+function RunRow({
+  row,
+  runs,
+  root,
+  onZoom,
+}: {
+  row: SpaceMapRow
+  runs: SpaceMapRun[]
+  root: string
+  onZoom: (cidr: string) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [at, setAt] = useState<number | null>(null)
+  const pct = (n: number) => `${(n / row.count) * 100}%`
+  const indexAt = (x: number) => {
+    const box = ref.current?.getBoundingClientRect()
+    if (!box || box.width <= 0) return 0
+    const i = Math.floor(((x - box.left) / box.width) * row.count)
+    return Math.min(row.count - 1, Math.max(0, i))
+  }
+  const rootLen = Number(root.split("/")[1])
+  const zoomTo = (i: number) => {
+    const cell = blockAt(root, row.prefixlen, i)
+    const target = supernetOf(cell, Math.max(rootLen + 1, row.prefixlen - 8))
+    if (target) onZoom(target)
+  }
+  const run = at === null ? null : runAt(runs, at)
+  const step = Math.max(1, Math.round(row.count / 64))
+  return (
+    <section>
+      <RowHeading
+        row={row}
+        extra={
+          at === null ? null : (
+            <span className="ml-2 font-normal text-muted-foreground">
+              ·{" "}
+              <span className="font-mono text-foreground">
+                {blockAt(root, row.prefixlen, at)}
+              </span>{" "}
+              {run ? RUN_NOTE[run[2]] : ""}
+              {run?.[5] && run[2] === "full" ? ` in ${run[5]}` : ""}
+              {run?.[3] ? ", stray IPs" : ""}
+              {run?.[4] ? ", IP range" : ""}
+            </span>
+          )
+        }
+      />
+      <div
+        ref={ref}
+        tabIndex={0}
+        role="group"
+        aria-label={`/${row.prefixlen} subnets: point or use the arrow keys, Enter zooms in`}
+        className={cn(
+          "relative h-7 cursor-pointer overflow-hidden rounded-md ring-1 ring-emerald-300 outline-none ring-inset focus-visible:ring-2 focus-visible:ring-ring dark:ring-emerald-900",
+          FREE_FILL
+        )}
+        onMouseMove={(e) => setAt(indexAt(e.clientX))}
+        onMouseLeave={() => setAt(null)}
+        onBlur={() => setAt(null)}
+        onClick={(e) => zoomTo(indexAt(e.clientX))}
+        onKeyDown={(e) => {
+          const i = at ?? 0
+          const by = e.shiftKey ? step : 1
+          if (e.key === "ArrowRight") setAt(Math.min(row.count - 1, i + by))
+          else if (e.key === "ArrowLeft") setAt(Math.max(0, i - by))
+          else if (e.key === "Home") setAt(0)
+          else if (e.key === "End") setAt(row.count - 1)
+          else if (e.key === "Enter" || e.key === " ") zoomTo(i)
+          else return
+          e.preventDefault()
+        }}
+      >
+        {runs.map((r) =>
+          r[2] === "free" && !r[3] && !r[4] ? null : (
+            <span
+              key={r[0]}
+              aria-hidden
+              data-slot="run"
+              className={cn(
+                "pointer-events-none absolute inset-y-0",
+                r[2] === "full" && USED_FILL,
+                r[2] === "free" &&
+                  r[3] &&
+                  "bg-emerald-300/50 dark:bg-emerald-700/40"
+              )}
+              style={{
+                left: pct(r[0]),
+                width: pct(r[1] - r[0] + 1),
+                minWidth: 1,
+                ...(r[2] === "partial" ? HATCH_STYLE : {}),
+              }}
+            >
+              {r[4] && <span className={cn(RANGE_STRIP, "inset-x-0")} />}
+            </span>
+          )
+        )}
+        {at !== null && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 ring-2 ring-primary ring-inset"
+            style={{ left: pct(at), width: pct(1), minWidth: 3 }}
+          />
+        )}
+      </div>
+    </section>
   )
 }
 

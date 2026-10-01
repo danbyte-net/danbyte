@@ -524,6 +524,51 @@ describe("SpaceMap", () => {
     expect(back).toHaveBeenCalledOnce()
   })
 
+  it("loads the row past the window on request, as a strip", async () => {
+    const deep = {
+      ...overview,
+      more: null,
+      rows: [
+        ...overview.rows,
+        {
+          prefixlen: 27,
+          count: 512,
+          free_count: 511,
+          partial_count: 0,
+          dirty_count: 0,
+          ranged_count: 0,
+          cells: [],
+          runs: [
+            [0, 9, "free", false, false, null],
+            [10, 10, "full", false, false, "10.196.193.64/27"],
+            [11, 511, "free", false, false, null],
+          ],
+        },
+      ],
+    }
+    apiMock.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.includes("deeper=1")
+          ? deep
+          : { ...overview, more: { prefixlen: 27, count: 512 } }
+      )
+    )
+    renderMap()
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show /27 (512)" })
+    )
+    const strip = await screen.findByRole("group", { name: /^\/27 subnets/ })
+    expect(apiMock.mock.calls.some(([u]) => u.includes("deeper=1"))).toBe(true)
+    // Only the used stretch is drawn; the rest is the strip's free green.
+    expect(strip.querySelectorAll("[data-slot=run]")).toHaveLength(1)
+    expect(screen.queryByRole("button", { name: /^Show \// })).toBeNull()
+    // Keyboard: the last /27, then Enter zooms in to the /19 holding it.
+    fireEvent.keyDown(strip, { key: "End" })
+    expect(screen.getByText("10.196.255.224/27")).toBeTruthy()
+    fireEvent.keyDown(strip, { key: "Enter" })
+    expect(zoomMock).toHaveBeenLastCalledWith(["10.196.224.0/19"])
+  })
+
   it("goes back to the prefix from its own outlined block", async () => {
     const back = vi.fn()
     renderMap("10.196.192.0/18", {

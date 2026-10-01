@@ -389,6 +389,7 @@ from .views import (
     _build_space_map,
     _get_active_tenant,
     _next_available_ips,
+    _space_map_next_row,
     _subnet_details,
     reparent_ips_out_of_batch,
 )
@@ -1336,6 +1337,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
         max_v4 = _int_param("v4_max")
         max_v6 = _int_param("v6_max")
+        # Rows past the +8 window, as runs ("Show the next row").
+        deeper = min(max(_int_param("deeper") or 0, 0), 32)
         want_rows = request.query_params.get("rows") != "0"
         want_details = request.query_params.get("details") != "0"
 
@@ -1430,7 +1433,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
         rows = _build_space_map(
             map_net, child_nets=child_nets, tenant=prefix.tenant,
-            vrf=prefix.vrf, max_v4=max_v4, max_v6=max_v6,
+            vrf=prefix.vrf, max_v4=max_v4, max_v6=max_v6, deeper=deeper,
         )
         # Stamp prefix_id onto every "used" cell so the React map can link
         # the right cell to the right detail page.
@@ -1446,6 +1449,13 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             ),
             **_details(),
             "rows": rows,
+            # The row a deeper=+1 request would add, or None.
+            "more": (
+                _space_map_next_row(
+                    map_net, rows[-1]["prefixlen"], max_v4=max_v4, max_v6=max_v6
+                )
+                if rows else None
+            ),
         })
 
     # ── Nested IPs ──────────────────────────────────────────────────────

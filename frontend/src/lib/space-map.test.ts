@@ -5,10 +5,12 @@ import {
   cellActions,
   cellNote,
   formatUsed,
+  blockAt,
   isDescendable,
   outerLevels,
   parseOutView,
   parseZoomPath,
+  runAt,
   supernetOf,
   zoomParam,
 } from "@/lib/space-map"
@@ -281,5 +283,22 @@ describe("zooming out of a prefix", () => {
     expect(
       parseOutView("10.196.238.0/24", "10.196.238.128/28", null)
     ).toBeNull()
+  })
+})
+
+describe("deep rows", () => {
+  it("names the block at an index and finds its run", () => {
+    expect(blockAt("10.0.0.0/16", 31, 0)).toBe("10.0.0.0/31")
+    expect(blockAt("10.0.0.0/16", 31, 515)).toBe("10.0.4.6/31")
+    expect(blockAt("10.0.0.0/16", 25, 511)).toBe("10.0.255.128/25")
+    expect(blockAt("2001:db8::/48", 60, 1)).toBe("2001:db8:0:10::/60")
+    const runs: [number, number, string][] = [
+      [0, 9, "free"],
+      [10, 10, "full"],
+      [11, 511, "free"],
+    ]
+    expect(runAt(runs, 10)?.[2]).toBe("full")
+    expect(runAt(runs, 300)?.[0]).toBe(11)
+    expect(runAt(runs, 600)).toBeNull()
   })
 })

@@ -396,3 +396,86 @@ class ZoomContextTests(SpaceMapCase):
         data = self._get(self.p18, within="10.196.238.128/26")
         row = next(r for r in data["rows"] if r["prefixlen"] == 27)
         self.assertEqual(sum(c["ip_count"] for c in row["cells"]), 1)
+
+
+def _at(root, addr, prefixlen):
+    """The index of the ``prefixlen`` cell holding ``addr`` in ``root``."""
+    r = net(root)
+    shift = r.max_prefixlen - prefixlen
+    return (int(ipaddress.ip_address(addr)) - int(r.network_address)) >> shift
+
+
+def _run(row, index):
+    return next(r for r in row["runs"] if r[0] <= index <= r[1])
+
+
+class DeeperRowTests(SpaceMapCase):
+    """Rows past the +8 window come one at a time ("Show the next row"), as
+    runs of cells: a /16 can go down to its 32,768 /31s."""
+
+    def _covers(self, row):
+        runs = row["runs"]
+        self.assertEqual(runs[0][0], 0)
+        self.assertEqual(runs[-1][1], row["count"] - 1)
+        for a, b in zip(runs, runs[1:], strict=False):
+            self.assertEqual(b[0], a[1] + 1)
+            self.assertNotEqual(a[2:], b[2:])
+
+    def test_deeper_rows_run_down_to_a_point_to_point_child(self):
+        rows = self._map("10.0.0.0/16", ["10.0.1.6/31", "10.0.4.0/24"], deeper=7)
+        deep = rows[8:]
+        self.assertEqual([r["prefixlen"] for r in deep], [25, 26, 27, 28, 29, 30, 31])
+        for row in deep:
+            self.assertEqual(row["cells"], [])
+            self._covers(row)
+        r31 = deep[-1]
+        self.assertEqual(r31["count"], 32768)
+        self.assertEqual(
+            _run(r31, _at("10.0.0.0/16", "10.0.1.6", 31))[2:],
+            ["full", False, False, "10.0.1.6/31"],
+        )
+        self.assertEqual(r31["free_count"], 32768 - 1 - 128)
+        # At /25 the /31 only makes its cell partly used; the /24 fills two.
+        r25 = deep[0]
+        self.assertEqual(_run(r25, _at("10.0.0.0/16", "10.0.1.6", 25))[2], "partial")
+        self.assertEqual(
+            _run(r25, _at("10.0.0.0/16", "10.0.4.0", 25))[2:], ["full", False, False, "10.0.4.0/24"]
+        )
+        self.assertEqual((r25["partial_count"], r25["free_count"]), (1, 512 - 1 - 2))
+
+    def test_stray_ips_and_ranges_flag_their_cells(self):
+        p16 = self._mk("10.0.0.0/16")
+        self._mk("10.0.4.0/24")
+        IPAddress.objects.create(tenant=self.tenant, prefix=p16, ip_address="10.0.200.5")
+        IPAddress.objects.create(tenant=self.tenant, prefix=p16, ip_address="10.0.4.9")
+        IPRange.objects.create(
+            tenant=self.tenant, start_address="10.0.100.10", end_address="10.0.100.20"
+        )
+        data = self._get(p16, deeper=1)
+        r25 = data["rows"][-1]
+        self.assertEqual(r25["prefixlen"], 25)
+        self.assertEqual(_run(r25, _at("10.0.0.0/16", "10.0.200.5", 25))[2:4], ["free", True])
+        # An IP inside the child is the child's, not a stray.
+        self.assertEqual(_run(r25, _at("10.0.0.0/16", "10.0.4.9", 25))[3], False)
+        self.assertEqual(_run(r25, _at("10.0.0.0/16", "10.0.100.10", 25))[2:5], ["free", False, True])
+        self.assertEqual((r25["dirty_count"], r25["ranged_count"]), (1, 1))
+        self.assertEqual(data["more"], {"prefixlen": 26, "count": 1024})
+
+    def test_more_names_the_next_row_until_the_map_ends(self):
+        p16 = self._mk("10.0.0.0/16")
+        self.assertEqual(self._get(p16)["more"], {"prefixlen": 25, "count": 512})
+        self.assertIsNone(self._get(p16, deeper=7)["more"])
+        self.assertIsNone(self._get(p16, v4_max=24)["more"])
+        # The depth preference also ends the deeper rows.
+        data = self._get(p16, v4_max=27, deeper=9)
+        self.assertEqual(data["rows"][-1]["prefixlen"], 27)
+        self.assertIsNone(data["more"])
+        # IPv6 steps a nibble and stops at the 65,536-cell row.
+        p48 = Prefix.objects.create(
+            tenant=self.tenant, cidr="2001:db8::/48", status=status_for(self.tenant)
+        )
+        data = self._get(p48)
+        self.assertEqual(data["more"], {"prefixlen": 60, "count": 4096})
+        data = self._get(p48, deeper=5)
+        self.assertEqual([r["prefixlen"] for r in data["rows"]][-2:], [60, 64])
+        self.assertIsNone(data["more"])

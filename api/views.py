@@ -286,7 +286,132 @@ def _union(intervals):
     return [(a, b) for a, b in out]
 
 
-def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
+#: The most subnets a row past the +8 window may have (``deeper``): a /16
+#: goes down to /31 (32,768), a /64 to /80.
+SPACE_MAP_DEEP_CELLS = 1 << 16
+
+
+def _space_map_step(net, prefixlen: int) -> int:
+    """The next row's prefix length after ``prefixlen``: a bit for IPv4, a
+    nibble for IPv6 until it is within a nibble of /128."""
+    if net.version == 4 or net.max_prefixlen - prefixlen < 4:
+        return prefixlen + 1
+    return prefixlen + 4
+
+
+def _space_map_next_row(net, last: int, *, max_v4=None, max_v6=None):
+    """``{prefixlen, count}`` of the row a ``deeper`` request would add after
+    the row at ``last``, or None when the depth preference, the family's
+    deepest row or ``SPACE_MAP_DEEP_CELLS`` ends the map there."""
+    deepest = 31 if net.version == 4 else 128
+    cap = max_v4 if net.version == 4 else max_v6
+    nxt = _space_map_step(net, last)
+    if nxt > deepest or (cap is not None and nxt > cap):
+        return None
+    count = 1 << (nxt - net.prefixlen)
+    return {"prefixlen": nxt, "count": count} if count <= SPACE_MAP_DEEP_CELLS else None
+
+
+def _space_map_run_row(net, prefixlen, *, tops, kids, ip_ints, ranges):
+    """A row past the +8 window as runs of cells, not cells: thousands of
+    them would be megabytes. Each run is ``[first, last, state, dirty,
+    ranged, prefix]`` - cell indexes, the state every cell in it shares,
+    whether its free cells hold stray IPs, whether an IP range reaches it,
+    and the outermost child prefix a used run sits in. Worked out from the
+    children, IPs and ranges in one sweep, so it costs the same at /31 as at
+    /24."""
+    from bisect import bisect_right
+    from itertools import pairwise
+
+    first = int(net.network_address)
+    shift = net.max_prefixlen - prefixlen
+    count = 1 << (prefixlen - net.prefixlen)
+
+    def idx(addr):
+        return (addr - first) >> shift
+
+    # The outermost child at each top block (kids are sorted biggest first).
+    top_kid = {}
+    for kid in kids:
+        top_kid.setdefault(int(kid.network_address), kid)
+    # Used stretches: a child at least a cell wide fills its cells; a smaller
+    # one makes its cell partly used. Outermost children are disjoint.
+    segments = []  # [first, last, state, prefix], covering 0..count-1
+    at = 0
+    for a, b in tops:
+        kid = top_kid[a]
+        i, j = idx(a), idx(b)
+        state = "full" if kid.prefixlen <= prefixlen else "partial"
+        if state == "partial" and segments and segments[-1][1] == i:
+            continue  # another small child in the same cell
+        if i > at:
+            segments.append([at, i - 1, "free", None])
+        segments.append([i, j, state, str(kid)])
+        at = j + 1
+    if at < count:
+        segments.append([at, count - 1, "free", None])
+
+    # Stray IPs (outside every child) by cell, and the cells ranges reach.
+    top_firsts = [a for a, _ in tops]
+    dirty = set()
+    for x in ip_ints:
+        t = bisect_right(top_firsts, x) - 1
+        if t < 0 or tops[t][1] < x:
+            dirty.add(idx(x))
+    reach = []
+    for lo, hi in sorted((idx(a), idx(b)) for a, b in ranges):
+        if reach and lo <= reach[-1][1] + 1:
+            reach[-1][1] = max(reach[-1][1], hi)
+        else:
+            reach.append([lo, hi])
+
+    # Every place a run can change, then one pass over them.
+    marks = {0, count}
+    for seg in segments:
+        marks.update((seg[0], seg[1] + 1))
+    for d in dirty:
+        marks.update((d, d + 1))
+    for lo, hi in reach:
+        marks.update((lo, hi + 1))
+    marks = sorted(m for m in marks if 0 <= m <= count)
+
+    runs = []
+    si = ri = 0
+    for lo, nxt in pairwise(marks):
+        while segments[si][1] < lo:
+            si += 1
+        while ri < len(reach) and reach[ri][1] < lo:
+            ri += 1
+        _, _, state, prefix = segments[si]
+        is_ranged = state != "full" and ri < len(reach) and reach[ri][0] <= lo
+        is_dirty = state == "free" and lo in dirty
+        run = [lo, nxt - 1, state, is_dirty, is_ranged, prefix]
+        if runs and runs[-1][1] == lo - 1 and runs[-1][2:] == run[2:]:
+            runs[-1][1] = nxt - 1
+        else:
+            runs.append(run)
+
+    def cells(state=None, flag=None):
+        return sum(
+            r[1] - r[0] + 1 for r in runs
+            if (state is None or r[2] == state) and (flag is None or r[flag])
+        )
+
+    return {
+        "prefixlen": prefixlen,
+        "count": count,
+        "free_count": cells("free"),
+        "partial_count": cells("partial"),
+        "dirty_count": cells("free", 3),
+        "ranged_count": cells(flag=4),
+        "cells": [],
+        "runs": runs,
+    }
+
+
+def _build_space_map(
+    net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None, deeper=0
+):
     """Build the space-map row list for ``net``.
 
     Every aligned subnet (a cell) gets a ``state``:
@@ -317,6 +442,10 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
     ``max_v4`` / ``max_v6`` are the user's per-family "deepest prefix length to
     show" preference. They can only make the map *shallower* - clamped after the
     +8 / 256-cell safety cap, never beyond it.
+
+    ``deeper`` adds that many rows past the +8 window (still within the
+    preference), each as runs of cells (``_space_map_run_row``) rather than
+    cells.
     """
     rows = []
     if net is None:
@@ -497,6 +626,16 @@ def _build_space_map(net, *, child_nets, tenant, vrf, max_v4=None, max_v6=None):
             "ranged_count": ranged_count,
             "cells": cells,
         })
+    last = steps[-1] if steps else net.prefixlen
+    for _ in range(max(0, int(deeper or 0))):
+        nxt = _space_map_next_row(net, last, max_v4=max_v4, max_v6=max_v6)
+        if nxt is None:
+            break
+        rows.append(_space_map_run_row(
+            net, nxt["prefixlen"], tops=tops, kids=kids, ip_ints=ip_ints,
+            ranges=ranges,
+        ))
+        last = nxt["prefixlen"]
     return rows
 
 

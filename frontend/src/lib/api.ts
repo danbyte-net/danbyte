@@ -601,8 +601,23 @@ export interface SpaceMapRow {
   dirty_count: number
   /** Cells an IP range reaches. */
   ranged_count: number
+  /** Empty for a row past the +8 window - see `runs`. */
   cells: SpaceMapCell[]
+  /** A row past the +8 window (`?deeper=`): runs of cells sharing a state,
+   * as cell indexes, instead of thousands of cells. */
+  runs?: SpaceMapRun[]
 }
+
+/** Cells `first`-`last` of a deep row; `prefix` is the outermost child
+ * prefix a used run sits in. */
+export type SpaceMapRun = [
+  first: number,
+  last: number,
+  state: SpaceMapCellState,
+  dirty: boolean,
+  ranged: boolean,
+  prefix: string | null,
+]
 
 export interface SubnetDetailRow {
   label: string
@@ -621,6 +636,8 @@ export interface SpaceMap {
   subnet_details: SubnetDetailRow[] | null
   next_available: string[]
   rows: SpaceMapRow[]
+  /** The row `?deeper=` one more would add, or null when the map ends. */
+  more?: { prefixlen: number; count: number } | null
 }
 
 // ─── Picker shapes ─────────────────────────────────────────────────────

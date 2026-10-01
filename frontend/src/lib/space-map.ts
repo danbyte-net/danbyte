@@ -100,6 +100,36 @@ export function parseOutView(
   return outerLevels(cidr, outer).slice(0, -1).includes(raw) ? raw : null
 }
 
+/** The `index`-th block of `prefixlen` bits inside `root`, as a CIDR. */
+export function blockAt(
+  root: string,
+  prefixlen: number,
+  index: number
+): string {
+  const r = parsed(root)
+  if (!r || prefixlen < r.prefixlen) return root
+  const host = BigInt((r.family === 4 ? 32 : 128) - prefixlen)
+  const start = r.start + (BigInt(index) << host)
+  return `${bigIntToIp(start, r.family)}/${prefixlen}`
+}
+
+/** The run of a deep row holding cell `index` (runs are sorted). */
+export function runAt<T extends readonly [number, number, ...unknown[]]>(
+  runs: readonly T[],
+  index: number
+): T | null {
+  let lo = 0
+  let hi = runs.length - 1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    const run = runs[mid]
+    if (index < run[0]) hi = mid - 1
+    else if (index > run[1]) lo = mid + 1
+    else return run
+  }
+  return null
+}
+
 /** The `?zoom=` value for a path (undefined drops the param). */
 export function zoomParam(path: string[]): string | undefined {
   return path.length ? path.join(ZOOM_SEP) : undefined
