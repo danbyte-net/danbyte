@@ -401,7 +401,8 @@ sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='danbyte'" |
 step "Migrate + bootstrap"
 as_user bash -lc "cd '$APP' && .venv/bin/python manage.py migrate --noinput \
   && .venv/bin/python manage.py bootstrap \
-  && .venv/bin/python manage.py collectstatic --noinput >/dev/null"
+  && .venv/bin/python manage.py collectstatic --noinput >/dev/null \
+  && chmod -R u=rwX,go=rX staticfiles"   # nginx reads them from disk
 
 # ── 9. systemd units ─────────────────────────────────────────────────────────
 step "Installing + (re)starting services"

@@ -13,6 +13,9 @@ if [ "${MIGRATE_ON_START:-0}" = "1" ]; then
   python manage.py bootstrap
   echo "[entrypoint] collectstatic…"
   python manage.py collectstatic --noinput
+  # nginx reads the shared volume as another user; files an earlier release
+  # collected with the private upload modes stay closed to it otherwise.
+  chmod -R u=rwX,go=rX staticfiles 2>/dev/null || true
 fi
 
 exec "$@"

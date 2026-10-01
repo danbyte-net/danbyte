@@ -571,6 +571,15 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 FILE_UPLOAD_PERMISSIONS = 0o640
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o750
+# Static files are public and nginx reads them from disk as another user, so
+# collectstatic must not inherit the private media modes above.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        "OPTIONS": {"file_permissions_mode": 0o644, "directory_permissions_mode": 0o755},
+    },
+}
 # Where the default backup target writes - the same sibling directory the
 # upgrade scripts used for their pre-upgrade dumps (#27).
 DANBYTE_BACKUP_DIR = Path(os.getenv("DANBYTE_BACKUP_DIR", str(BASE_DIR.parent / "danbyte-backups")))
