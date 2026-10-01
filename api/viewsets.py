@@ -3434,22 +3434,24 @@ class DeviceViewSet(
         # to a handful of queries.
         Device.objects.select_related(
             "device_type", "device_type__platform", "device_type__manufacturer",
-            "site", "site__region", "primary_ip", "secondary_ip", "oob_ip",
+            "site", "site__region", "primary_ip",
             "role", "rack", "status", "platform", "location", "cluster",
-            # The config template resolves device -> role -> platform. Join
-            # all three but leave the template bodies behind: a page is up to
-            # 10,000 rows and the row only shows the template's name.
-            "config_template", "role__config_template",
-            "platform__config_template",
         )
-        .defer(
+        # The secondary and OOB addresses and the config template (resolved
+        # device -> role -> platform) are prefetched, not joined: with them
+        # the query had 17 LEFT JOINs and Postgres took ~120 ms to plan what
+        # runs in 8 ms (#254). The templates come without their bodies - a
+        # page is up to 10,000 rows and the row only shows the name.
+        .prefetch_related(
+            "tags", "secondary_ip", "oob_ip",
             *(
-                f"{path}config_template__{f}"
+                Prefetch(
+                    f"{path}config_template",
+                    queryset=ExportTemplate.objects.defer("template_code", "description"),
+                )
                 for path in ("", "role__", "platform__")
-                for f in ("template_code", "description")
-            )
+            ),
         )
-        .prefetch_related("tags")
         # ip_count + interface_count are shown/served on the list, as
         # correlated subqueries. The joined COUNT(DISTINCT) they replaced
         # multiplied every device's addresses by its interfaces before
