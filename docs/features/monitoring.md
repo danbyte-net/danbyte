@@ -646,7 +646,8 @@ writes one hourly record per check, and once a day has ended, one daily record.
 Each record holds:
 
 - the seconds spent up, down, degraded, stale and unknown;
-- the incidents that began in the bucket;
+- the incidents that began in the bucket: going down counts; going stale (the
+  probe lost contact) counts only where stale is counted as down;
 - the probe count;
 - that check's own latency: min, average, p50, p95, p99 and max;
 - **spikes**, the probes slower than the check's usual latency;

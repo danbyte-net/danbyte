@@ -27,7 +27,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from api.models import DeviceRole, DeviceType, Platform, Site
-from api.viewsets import TenantScopedViewSet
+from api.viewsets import TenantScopedViewSet, _get_active_tenant
 from auth_api import rbac
 
 from . import sla
@@ -373,6 +373,19 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
                         f).get_default()
                     if f in attrs and attrs[f] != now:
                         raise PermissionDenied("Changing service credits needs view_credits.")
+        if request is not None and "report_recipients" in attrs:
+            # The automatic report goes out whole - every member, the credit -
+            # so only someone who may see all of that may say where it goes.
+            current = list(getattr(self.instance, "report_recipients", None) or [])
+            if list(attrs["report_recipients"] or []) != current:
+                tenant = _tenant_of(self)
+                if not (rbac.has_action(request.user, tenant, "slaagreement", "view_credits")
+                        and _sees_every_member(request.user, tenant)):
+                    raise PermissionDenied(
+                        "Report recipients get the whole report, service credit "
+                        "included: changing them needs view_credits and access to "
+                        "every member."
+                    )
         tenant = _tenant_of(self)
         if tenant is not None:
             _same_tenant(tenant, customer=attrs.get("customer"),
@@ -498,6 +511,13 @@ CREDIT_FIELDS = ("credit_tiers", "period_fee", "currency")
 def _may_see_credits(request, agreement) -> bool:
     return request is None or rbac.has_action(
         request.user, agreement.tenant, "slaagreement", "view_credits")
+
+
+def _sees_every_member(user, tenant) -> bool:
+    """True when nothing a member can be is hidden from ``user``: an
+    unconstrained, site-unscoped view grant on every member type."""
+    return all(rbac.row_filter(user, tenant, slug, "view") is True
+               for slug in MEMBER_TYPES.values())
 
 
 def _credit_gate(request, agreement, figures: dict, whole: bool = True) -> dict:
@@ -690,6 +710,13 @@ class SlaAgreementViewSet(TenantScopedViewSet):
                 raise ValidationError({"period": "Unknown period."})
             key, start, end = bounds
             rules = sla.rules_for(a, res)
+            # A stored period keeps the bounds it was worked out with: after a
+            # timezone change, today's zone would cover other hours.
+            stored = (res.figures or {}) if res is not None else {}
+            if (res is not None and res.state in ("closed", "frozen")
+                    and stored.get("since") and stored.get("period_end")):
+                start = _dt.datetime.fromisoformat(stored["since"])
+                end = _dt.datetime.fromisoformat(stored["period_end"])
         filters = {k: [v for v in (p.get(k) or "").split(",") if v]
                    for k in ("group", "site", "member", "kind", "redundancy")}
         filters = {k: v for k, v in filters.items() if v}
@@ -725,7 +752,7 @@ class SlaAgreementViewSet(TenantScopedViewSet):
                 lo.isoformat() for lo, _hi in _bounds(now, end, sla.agreement_tz(a), "day")[1:]
             ]
         body["period_key"] = key
-        body["options"] = options(a, now)
+        body["options"] = options(a, now, visible=hidden)
         body["limited"] = hidden is not None
         return Response(body)
 
@@ -1040,7 +1067,17 @@ class SlaMemberViewSet(TenantScopedViewSet):
             qs = qs.filter(object_type=p["object_type"], object_id=p["object_id"])
         if p.get("current") == "1":
             qs = qs.filter(left_at__isnull=True)
-        return qs.order_by("group__position", "object_type", "created_at")
+        qs = qs.order_by("group__position", "object_type", "created_at")
+        # Members the caller may not see stay out, as they do from the figures.
+        tenant = _get_active_tenant(self.request)
+        if tenant is not None and not _sees_every_member(self.request.user, tenant):
+            rows = list(qs.values_list("pk", "object_type", "object_id"))
+            fake = [{"member": True, "key": str(pk), "object_type": t, "object_id": str(o)}
+                    for pk, t, o in rows]
+            keys = _visible_keys(self.request, tenant, fake)
+            if keys is not None:
+                qs = qs.filter(pk__in=keys)
+        return qs
 
     def get_serializer_context(self):
         return {**super().get_serializer_context(), "objects": getattr(self, "_objects", {})}

@@ -65,16 +65,20 @@ def _split(tl, bounds):
         while j < len(bounds) and bounds[j][0] < e:
             lo, hi = max(s, bounds[j][0]), min(e, bounds[j][1])
             if hi > lo:
-                acc[j][0 if c == st.UP else 1 if c == st.DOWN else 2] += (hi - lo).total_seconds()
+                acc[j][0 if c == st.UP else 1 if c == st.DOWN else 2] += st.secs(lo, hi)
             j += 1
     return acc
 
 
-def options(agreement, now) -> dict:
-    """The filter rail's choices - from the agreement's current members."""
+def options(agreement, now, visible=None) -> dict:
+    """The filter rail's choices - from the agreement's current members.
+    ``visible`` (a set of (object_type, id), None for everything) leaves out
+    the members - and so the sites - a scoped viewer may not see."""
     from api.models import Site
 
     members = sla.resolve_members(agreement, now - timedelta(days=1), now)
+    if visible is not None:
+        members = [m for m in members if (m["object_type"], str(m["object_id"])) in visible]
     objects = sla._objects(members)
     groups, sites, redundancy, rows = {}, defaultdict(int), defaultdict(int), []
     kinds = set()
@@ -144,7 +148,7 @@ def analyse(agreement, start, end, *, rules=None, filters=None, bucket="day", no
     starts = [datetime.fromisoformat(i["start"]) for i in data["incidents"]]
     spent = defaultdict(float)
     budget = figures.get("budget_s") or 0
-    span = (detail["end"] - detail["start"]).total_seconds() or 1
+    span = st.secs(detail["start"], detail["end"]) or 1
     n_units = max(1, len(per_unit))
     for i, (lo, hi) in enumerate(bounds):
         cols = [per_unit[k][i] for k in per_unit]
@@ -166,7 +170,7 @@ def analyse(agreement, start, end, *, rules=None, filters=None, bucket="day", no
         })
         burn.append({
             "t": hi.isoformat(), "spent_s": round(used),
-            "pace_s": round(budget * (hi - detail["start"]).total_seconds() / span),
+            "pace_s": round(budget * st.secs(detail["start"], hi) / span),
             "budget_s": round(budget),
         })
 
@@ -226,7 +230,7 @@ def analyse(agreement, start, end, *, rules=None, filters=None, bucket="day", no
                 local = cur.astimezone(zone)
                 nxt = min(e, (local.replace(minute=0, second=0, microsecond=0)
                               + timedelta(hours=1)).astimezone(cur.tzinfo))
-                heat[(local.weekday(), local.hour)] += (nxt - cur).total_seconds()
+                heat[(local.weekday(), local.hour)] += st.secs(cur, nxt)
                 cur = nxt
     heatmap = [{"dow": d, "hour": h, "down_s": round(v)} for (d, h), v in sorted(heat.items())]
 

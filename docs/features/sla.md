@@ -163,7 +163,9 @@ When it is included again its checks stay *skipped* until their first answer,
 so the gap is not charged either.
 
 **Ignore outages under** sets a number of seconds. Outages shorter than that
-count as up.
+count as up. It judges the whole outage: one that crosses the end of a period
+or of the service hours is measured end to end, and the part inside each
+period counts there.
 
 **Exclude planned maintenance** removes the time of every maintenance event
 that touches a member's device or circuit (a carrier's announced works),
@@ -236,8 +238,7 @@ A member with no monitored address is **not measured**: its availability is
 "No data" and its coverage 0 %. Its service time still counts, so the
 agreement's coverage drops and *SLA coverage low* can fire. It is never
 counted as down, whatever *unknown* and *stale* count as: it has no checks at
-all. With **Average** it still counts as a unit for the error budget, so the
-others' downtime is spread over it too. An agreement whose members are all
+all, and it leaves the error budget alone. An agreement whose members are all
 like this has no data.
 
 ### Switch stacks {#switch-stacks}
@@ -351,7 +352,9 @@ These figures appear everywhere an agreement's figure is shown:
     - *No data*.
 - **Error budget** - the downtime the target allows over the whole period,
   what has been spent, and what is left. With *Average* the spend is the mean
-  unit downtime; with *Worst member* it is the worst unit's downtime.
+  downtime of the measured units; with *Worst member* it is the worst unit's
+  downtime. Hours are real hours: a month with a daylight-saving change is an
+  hour longer or shorter.
 - **Burn rate** - budget spent ÷ share of the period elapsed. Above 1.0, the
   period ends over budget if nothing changes.
 - **Forecast** - where the period ends if the rest of it goes like the last
@@ -540,7 +543,9 @@ A report for a period that is still open or not yet frozen says so. A report
 computed under an older revision of the rules names the revision.
 
 **Report recipients** get the report by email, as PDF, CSV or both, when the
-period freezes, seven days after it ends. **Email report** sends it now,
+period freezes, seven days after it ends. That report is the whole agreement,
+service credit included, so changing the recipients needs *view credits* and
+a view of every member that is not limited to sites or by constraints. **Email report** sends it now,
 either to those recipients or once to addresses you type in; a one-off
 address is not saved on the agreement.
 

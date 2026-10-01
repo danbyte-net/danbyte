@@ -216,20 +216,23 @@ def roll(tenant_id, size: timedelta, start: datetime, end: datetime,
         for key in pairs:
             ip_id, tmpl_id = key
             secs = dict.fromkeys(set(_SECONDS_FIELD.values()), 0.0)
-            incidents = 0
+            incidents = blind = 0
             prev = None
             for seg in segs.get(key, []):
                 length = (seg["end"] - max(seg["start"], bucket)).total_seconds()
                 if length > 0:
                     secs[_SECONDS_FIELD.get(seg["status"], "unknown_s")] += length
-                if seg["status"] in _DOWN_CLASS and prev is not None \
-                        and prev not in _DOWN_CLASS:
-                    incidents += 1
+                if prev is not None:
+                    if seg["status"] == "down" and prev != "down":
+                        incidents += 1
+                    if seg["status"] in _DOWN_CLASS and prev not in _DOWN_CLASS:
+                        blind += 1
                 prev = seg["status"]
             s = lat.get(key) or {}
             rows.append(model(
                 tenant_id=tenant_id, target_ip_id=ip_id, template_id=tmpl_id,
                 kind=kind_of[key], bucket=bucket, incidents=incidents,
+                blind_incidents=blind,
                 samples=int(s.get("samples") or 0),
                 lat_min=s.get("lat_min"), lat_avg=s.get("lat_avg"),
                 lat_p50=s.get("lat_p50"), lat_p95=s.get("lat_p95"),
@@ -244,7 +247,8 @@ def roll(tenant_id, size: timedelta, start: datetime, end: datetime,
             unique_fields=["target_ip", "template", "bucket"],
             update_fields=[
                 "kind", "up_s", "down_s", "degraded_s", "stale_s", "unknown_s",
-                "incidents", "samples", "lat_min", "lat_avg", "lat_p50", "lat_p95",
+                "incidents", "blind_incidents", "samples", "lat_min", "lat_avg",
+                "lat_p50", "lat_p95",
                 "lat_p99", "lat_max", "spikes", "closed", "lat_hist_n", *_HIST_FIELDS,
             ],
         )

@@ -752,8 +752,16 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
         pairs.update((c[0], c[1]) for c in checks)
         plan.append(checks)
 
+    # The minimum outage judges a whole outage, so read past the period's
+    # (and the service hours') edges by that much: an outage that crosses
+    # them is not cut into pieces that each look too short to count. Never
+    # past now - the last status would be stretched into the future.
+    margin = timedelta(seconds=grace)
     segments = (
-        segments_for_pairs(agreement.tenant_id, pairs, start, until, resets_before=end)
+        segments_for_pairs(
+            agreement.tenant_id, pairs, start - margin, min(until + margin, now),
+            resets_before=end,
+        )
         if pairs else {}
     )
     maint = (
@@ -768,6 +776,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     )
     member_rows = []
     timelines = {}
+    windows = {}  # each member's own service window, for redundancy units
     for m, checks in zip(members, plan, strict=True):
         key = (m["object_type"], m["object_id"])
         # A folded stack is excused by an exclusion on any of its rows.
@@ -786,7 +795,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
         item_rows, counted = [], []
         for ip, tmpl_id, tname, kind, counts, weight, required in checks:
             segs = segments.get((str(ip), str(tmpl_id)), [])
-            tl = st.apply_grace(st.restrict(st.classify(segs, time_rules), window), grace)
+            tl = st.restrict(st.apply_grace(st.classify(segs, time_rules), grace), window)
             t = st.tally(tl)
             item_rows.append({
                 "template_id": str(tmpl_id), "name": tname, "kind": kind, "ip_id": str(ip),
@@ -816,6 +825,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             tl = st.combine([c[0] for c in counted], "all")
             t = st.tally(tl)
         timelines[m["member_id"] or f"sel:{m['group'].id}:{m['object_id']}"] = tl
+        windows[m["member_id"] or f"sel:{m['group'].id}:{m['object_id']}"] = window
         worst = min(
             (i for i in item_rows if i["counts"] and i["availability"] is not None),
             key=lambda i: i["availability"], default=None,
@@ -856,7 +866,10 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             tl = st.combine([timelines[r["key"]] for r in rows], "any")
             t = st.tally(tl)
             up, down, incidents = t["up_s"], t["down_s"], t["incidents"]
-            service_s = max(r["service_s"] for r in rows)
+            # The time the group was in the agreement: members that served
+            # one after the other (a device replaced mid-month) add up, so
+            # coverage never passes 100%.
+            service_s = st.total(st.normalize(w for r in rows for w in windows[r["key"]]))
         unit_tls[ukey] = tl
         units.append({
             "key": ukey, "label": ukey[3:] if ukey.startswith("rg:") else rows[0]["name"],
@@ -912,10 +925,12 @@ def headline(units, rules, full_service, start, until, end, series=None) -> dict
         up = sum(u["up_s"] for u in measured)
         down = sum(u["down_s"] for u in measured)
         availability = round(100 * up / (up + down), 4) if up + down else None
-        used = down / len(units) if units else 0
+        # Per measured unit, like the availability beside it: a member with
+        # no data yet must not make the budget look less used.
+        used = down / len(measured) if measured else 0
     covered = sum(u["up_s"] + u["down_s"] for u in units)
     budget = (1 - target / 100) * full_service
-    elapsed = (until - start).total_seconds() / max(1.0, (end - start).total_seconds())
+    elapsed = st.secs(start, until) / max(1.0, st.secs(start, end))
     spent = used / budget if budget else (1.0 if used else 0.0)
     if availability is None:
         state = "no_data"
@@ -1018,7 +1033,7 @@ def _incidents(unit_tls, units, member_rows, timelines) -> list[dict]:
                         break
             out.append({
                 "unit": ukey, "label": label[ukey], "start": a.isoformat(),
-                "end": b.isoformat(), "seconds": round((b - a).total_seconds()),
+                "end": b.isoformat(), "seconds": round(st.secs(a, b)),
                 "members": sorted(causes),
             })
     out.sort(key=lambda x: x["start"], reverse=True)
@@ -1038,7 +1053,7 @@ def _days(unit_tls, service, tz, aggregation) -> list[dict]:
                 local = cur.astimezone(zone)
                 nxt = datetime.combine(local.date() + timedelta(days=1), time(0), zone)
                 hi = min(e, nxt)
-                n = (hi - cur).total_seconds()
+                n = st.secs(cur, hi)
                 if c == st.UP:
                     per_day[local.date()][ukey][0] += n
                 elif c == st.DOWN:

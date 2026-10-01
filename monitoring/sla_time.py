@@ -17,11 +17,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 UP, DOWN, UNMEASURED = "up", "down", "unmeasured"
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def secs(start: datetime, end: datetime) -> float:
+    """Real seconds from ``start`` to ``end``. Two datetimes that share a
+    zone subtract on the wall clock, so a month with a daylight-saving change
+    would come out an hour long or short; on UTC they never do."""
+    return (end.astimezone(UTC) - start.astimezone(UTC)).total_seconds()
 
 
 # ─── windows ────────────────────────────────────────────────────────────────
@@ -60,7 +67,7 @@ def subtract(a, b) -> list[tuple]:
 
 
 def total(ivs) -> float:
-    return sum((e - s).total_seconds() for s, e in ivs)
+    return sum(secs(s, e) for s, e in ivs)
 
 
 # ─── holidays ───────────────────────────────────────────────────────────────
@@ -230,7 +237,7 @@ def apply_grace(tl, seconds: float) -> list[tuple]:
         while j + 1 < len(tl) and tl[j + 1][2] == DOWN and tl[j + 1][0] == tl[j][1]:
             j += 1
         run_end = tl[j][1]
-        cls = UP if (run_end - s).total_seconds() < seconds else DOWN
+        cls = UP if secs(s, run_end) < seconds else DOWN
         out.extend((a, b, cls) for a, b, _ in tl[i:j + 1])
         i = j + 1
     return _merge_runs(out)
@@ -272,7 +279,7 @@ def tally(tl) -> dict:
     incidents = 0
     prev_end, prev_cls = None, None
     for s, e, c in tl:
-        n = (e - s).total_seconds()
+        n = secs(s, e)
         if c == UP:
             up += n
         elif c == DOWN:

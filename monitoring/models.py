@@ -1842,8 +1842,12 @@ class _CheckRollup(models.Model):
     stale_s = models.FloatField(default=0)
     #: Unknown and skipped: time nobody measured.
     unknown_s = models.FloatField(default=0)
-    #: Entries into down or stale from anything else.
+    #: Entries into down from anything else. Stale - the probe went blind -
+    #: is not an outage under the default counting rules.
     incidents = models.PositiveIntegerField(default=0)
+    #: Entries into down or stale from anything else: the incidents when the
+    #: counting rules take stale as down.
+    blind_incidents = models.PositiveIntegerField(default=0, db_default=0)
     samples = models.PositiveIntegerField(default=0)
     lat_min = models.FloatField(null=True)
     lat_avg = models.FloatField(null=True)

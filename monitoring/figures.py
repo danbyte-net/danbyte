@@ -83,12 +83,15 @@ def span_window(since: datetime, until: datetime) -> Window:
     UTC days inside it, hourly rows for the edges."""
     first_day = _floor(since, DAY) + (DAY if _floor(since, DAY) < since else timedelta(0))
     last_day = _floor(until, DAY)
+    # The hour ``until`` falls in, when it falls inside one; an exact hour
+    # (a period's end) is exclusive, so the next period's first row stays out.
+    stop = _floor(until, HOUR) + (HOUR if _floor(until, HOUR) < until else timedelta(0))
     if first_day < last_day:
         parts = ((CheckRollupHourly, _floor(since, HOUR), first_day),
                  (CheckRollupDaily, first_day, last_day),
-                 (CheckRollupHourly, last_day, until + HOUR))
+                 (CheckRollupHourly, last_day, stop))
     else:
-        parts = ((CheckRollupHourly, _floor(since, HOUR), until + HOUR),)
+        parts = ((CheckRollupHourly, _floor(since, HOUR), stop),)
     return Window(since, until, parts)
 
 
@@ -110,6 +113,7 @@ def _aggregates() -> dict:
     return {_P + k: v for k, v in {
         **{k: Sum(k) for k in _SECONDS},
         "incidents": Sum("incidents"),
+        "blind_incidents": Sum("blind_incidents"),
         "samples": Sum("samples"),
         "spikes": Sum("spikes"),
         "lat_n": Sum("samples", filter=has_lat),
@@ -162,7 +166,9 @@ def figures(row: dict, rules: CountingRules = CountingRules()) -> dict:
     """What a summed row says: availability, coverage, incidents, time to
     recover, latency."""
     c = classify(row, rules)
-    incidents = int(row.get("incidents") or 0)
+    # Incidents follow the same rules as the seconds: going blind is one
+    # only where stale counts as down.
+    incidents = int(row.get("blind_incidents" if rules.stale == "down" else "incidents") or 0)
     n = row.get("lat_n") or 0
 
     def pct(key):

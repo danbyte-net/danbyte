@@ -166,12 +166,17 @@ def report_html(agreement, result, view=None) -> str:
         note_html = (f"<div class='credit'>Service credit: {_credit_text(f['credit'])}</div>"
                      + note_html)
 
+    # The rules the figures above were worked out under, not today's: a
+    # frozen period keeps the revision it ran with.
+    from .sla import rules_for
+
+    r = rules_for(agreement, result)
     rules = (
-        f"Service hours: {'around the clock' if not agreement.service_hours else 'set per weekday'}"
-        f" · degraded counts as {agreement.count_degraded_as}"
-        f" · stale counts as {'not measured' if agreement.count_stale_as == 'unmeasured' else 'down'}"
-        f" · outages under {agreement.min_outage_seconds}s ignored"
-        f" · planned maintenance {'excluded' if agreement.exclude_maintenance else 'counted'}"
+        f"Service hours: {'around the clock' if not r.get('service_hours') else 'set per weekday'}"
+        f" · degraded counts as {r.get('count_degraded_as') or 'up'}"
+        f" · stale counts as {'down' if r.get('count_stale_as') == 'down' else 'not measured'}"
+        f" · outages under {int(r.get('min_outage_seconds') or 0)}s ignored"
+        f" · planned maintenance {'excluded' if r.get('exclude_maintenance', True) else 'counted'}"
     )
 
     day_rows = "".join(
