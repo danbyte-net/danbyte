@@ -22,6 +22,9 @@ export const CARD_GAP = 32
 
 /** The drag payload a device list hands the canvas: device ids, JSON. */
 export const DEVICE_IDS_MIME = "application/x-danbyte-device-ids"
+/** Virtual chassis dragged from the device list's other kind (their ids,
+ * as JSON): placed as stacks. */
+export const CHASSIS_IDS_MIME = "application/x-danbyte-chassis-ids"
 /** More than this in one drop is refused (the graph endpoint's cap). */
 const MAX_DROP = 10_000
 

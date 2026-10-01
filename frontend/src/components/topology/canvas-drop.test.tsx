@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { TopologyGraph } from "@/lib/api"
 import { fanoutGraph } from "./__fixtures__/fanout-graph"
-import { DEVICE_IDS_MIME } from "./diagram/placement"
+import { CHASSIS_IDS_MIME, DEVICE_IDS_MIME } from "./diagram/placement"
 import { TopologyCanvas } from "./topology-canvas"
 
 // The canvas as a drop target: a map built by hand takes device ids
@@ -34,8 +34,7 @@ function drag(ids: unknown, types = [DEVICE_IDS_MIME]) {
     dataTransfer: {
       types,
       dropEffect: "none",
-      getData: (k: string) =>
-        k === DEVICE_IDS_MIME ? JSON.stringify(ids) : "",
+      getData: (k: string) => (types.includes(k) ? JSON.stringify(ids) : ""),
     },
     clientX: 120,
     clientY: 80,
@@ -101,6 +100,48 @@ describe("canvas drop target", () => {
     // Dropped on the empty state card itself: still the canvas's drop.
     fireEvent.drop(screen.getByText("No devices yet."), drag(["c"]))
     expect(onDrop).toHaveBeenCalledTimes(2)
+  })
+
+  it("hands dropped virtual chassis over to their own handler", async () => {
+    const onDevices = vi.fn()
+    const onChassis = vi.fn()
+    const { container, rerender } = render(
+      <div style={{ width: 800, height: 600 }}>
+        <TopologyCanvas
+          graph={EMPTY}
+          nodeStyle="diagram"
+          onDropDevices={onDevices}
+          onDropChassis={onChassis}
+        />
+      </div>
+    )
+    await settle()
+    const target = container.querySelector<HTMLElement>(".react-flow")!
+    const over = drag(["vc-1"], [CHASSIS_IDS_MIME])
+    expect(fireEvent.dragOver(target, over)).toBe(false)
+    expect(over.dataTransfer.dropEffect).toBe("copy")
+    fireEvent.drop(target, drag(["vc-1"], [CHASSIS_IDS_MIME]))
+    expect(onChassis).toHaveBeenCalledTimes(1)
+    expect(onChassis.mock.calls[0][0]).toEqual(["vc-1"])
+    expect(onDevices).not.toHaveBeenCalled()
+    // A map that places no chassis lets the drag pass.
+    rerender(
+      <div style={{ width: 800, height: 600 }}>
+        <TopologyCanvas
+          graph={EMPTY}
+          nodeStyle="diagram"
+          onDropDevices={onDevices}
+        />
+      </div>
+    )
+    await settle()
+    const plain = container.querySelector<HTMLElement>(".react-flow")!
+    expect(fireEvent.dragOver(plain, drag(["vc-1"], [CHASSIS_IDS_MIME]))).toBe(
+      true
+    )
+    fireEvent.drop(plain, drag(["vc-1"], [CHASSIS_IDS_MIME]))
+    expect(onChassis).toHaveBeenCalledTimes(1)
+    expect(onDevices).not.toHaveBeenCalled()
   })
 
   it("ignores other drags, and drops on a map that takes none", async () => {

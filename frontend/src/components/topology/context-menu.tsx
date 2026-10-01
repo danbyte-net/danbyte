@@ -491,6 +491,7 @@ export function PaneMenuItems({
   builder,
   notesFull,
   onAddDevices,
+  onAddChassis,
   onAddBand,
   onAddZone,
   onAddText,
@@ -502,6 +503,8 @@ export function PaneMenuItems({
   notesFull: boolean
   /** The device list. */
   onAddDevices: () => void
+  /** The device list on its virtual chassis. */
+  onAddChassis?: () => void
   onAddBand: () => void
   onAddZone: () => void
   onAddText: () => void
@@ -513,6 +516,11 @@ export function PaneMenuItems({
       <DropdownMenuItem onSelect={onAddDevices}>
         <PanelLeft /> Add devices…
       </DropdownMenuItem>
+      {diagram && onAddChassis && (
+        <DropdownMenuItem onSelect={onAddChassis}>
+          <Layers /> Add virtual chassis…
+        </DropdownMenuItem>
+      )}
       {diagram && (
         <DropdownMenuItem onSelect={onAddBand}>
           <RectangleHorizontal /> Add band

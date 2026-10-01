@@ -36,6 +36,8 @@ import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { cn } from "@/lib/utils"
 import { DEVICE_IDS_MIME } from "./diagram/placement"
+import { ChassisPalette } from "./chassis-palette"
+import type { ChassisPaletteProps } from "./chassis-palette"
 import { naturalCompare } from "@/lib/natural-sort"
 
 // The map's device list (Diagram and Hierarchy): every device the user may
@@ -80,6 +82,9 @@ const SHARED_KEYS: FilterKey[] = [
 ]
 
 export type PaletteShow = "all" | "unplaced"
+
+/** What the list offers on the Diagram: devices, or virtual chassis. */
+export type PaletteKind = "devices" | "chassis"
 
 const norm = (s: string | null | undefined) => (s ?? "").toLowerCase()
 
@@ -184,6 +189,11 @@ export interface DevicePaletteProps {
   /** Offered on a map that follows its filters. */
   onNewView?: () => void
   onClose: () => void
+  /** On the Diagram: virtual chassis to place, the list's other kind. */
+  chassis?: Omit<ChassisPaletteProps, "editable"> & {
+    kind: PaletteKind
+    onKind: (kind: PaletteKind) => void
+  }
 }
 
 export function DevicePalette({
@@ -194,7 +204,9 @@ export function DevicePalette({
   onFocus,
   onNewView,
   onClose,
+  chassis,
 }: DevicePaletteProps) {
+  const kind = chassis?.kind ?? "devices"
   const q = useQuery(paletteQuery)
   const [search, setSearch] = useState("")
   const needle = useDeferredValue(search)
@@ -388,43 +400,9 @@ export function DevicePalette({
 
   const activeFilters = Object.values(filters).filter(Boolean).length
 
-  return (
-    <aside
-      className="flex w-64 shrink-0 flex-col border-r border-border bg-background"
-      aria-label="Devices"
-    >
-      <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-          Devices
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-1.5"
-          onClick={onClose}
-          aria-label="Close devices"
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      {!editable && (
-        <div className="mx-2 mb-1 flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
-          <span className="text-[11px] whitespace-nowrap text-muted-foreground">
-            Filtered map
-          </span>
-          <InfoTip>Only a hand-picked map takes new devices.</InfoTip>
-          {onNewView && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto h-6 px-2 text-[11px]"
-              onClick={onNewView}
-            >
-              New view…
-            </Button>
-          )}
-        </div>
-      )}
+  // The devices' own search, filters, list and Add bar.
+  const deviceList = (
+    <>
       <div className="flex items-center gap-1.5 px-2 pb-1.5">
         <div className="relative min-w-0 flex-1">
           <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -539,6 +517,67 @@ export function DevicePalette({
             Add
           </Button>
         </div>
+      )}
+    </>
+  )
+
+  return (
+    <aside
+      className="flex w-64 shrink-0 flex-col border-r border-border bg-background"
+      aria-label="Devices"
+    >
+      <div className="flex items-center justify-between px-3 pt-3 pb-1">
+        <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+          {kind === "chassis" ? "Virtual chassis" : "Devices"}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-1.5"
+          onClick={onClose}
+          aria-label="Close devices"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {!editable && (
+        <div className="mx-2 mb-1 flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
+          <span className="text-[11px] whitespace-nowrap text-muted-foreground">
+            Filtered map
+          </span>
+          <InfoTip>Only a hand-picked map takes new devices.</InfoTip>
+          {onNewView && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto h-6 px-2 text-[11px]"
+              onClick={onNewView}
+            >
+              New view…
+            </Button>
+          )}
+        </div>
+      )}
+      {chassis && (
+        <div className="px-2 pb-1.5">
+          <SegmentedTabs<PaletteKind>
+            value={kind}
+            onValueChange={chassis.onKind}
+            items={[
+              { value: "devices", label: "Devices" },
+              { value: "chassis", label: "Virtual chassis" },
+            ]}
+          />
+        </div>
+      )}
+      {chassis && kind === "chassis" ? (
+        <ChassisPalette
+          placed={chassis.placed}
+          editable={editable}
+          onAdd={chassis.onAdd}
+        />
+      ) : (
+        deviceList
       )}
     </aside>
   )

@@ -766,6 +766,14 @@ device already on the map is dimmed and ticked - click it to find its card.
 The list loads once (about 100 KB compressed for 2,500 devices) and is
 reused for five minutes; filtering and search happen in the browser.
 
+On the Diagram, **Devices** and **Virtual chassis** at the top of the list
+switch it between devices and the
+[virtual chassis](../dcim/virtual-chassis.md) you may see (**Add ▸ Virtual
+chassis…** and right-click on the canvas → *Add virtual chassis…* open it
+there). Each chassis shows its members you may see and their count; type
+to search chassis and member names. A chassis already placed on the map is
+dimmed and ticked. The kind needs view on virtual chassis.
+
 **Placing devices.** Drag a device from the list onto the canvas and its card
 lands where you let go. To place several, click one, ++ctrl++-click
 (++cmd++-click on a Mac) more or ++shift++-click a range, then drag any of
@@ -777,6 +785,15 @@ the devices on the map draw themselves - there is nothing to connect. A card
 shows muted until the map has fetched it; the camera stays where it is. On
 the Hierarchy the card is pinned where it lands, its port chips facing its
 peers once it is fetched.
+
+**Placing virtual chassis.** Drag a chassis onto the Diagram, double-click
+it or press ++enter++ on it, and it lands as a
+[stack](#virtual-chassis-stacks) - its frame clear of the cards there, in
+the band row it was dropped in. The map keeps the chassis, not its members:
+they come with it as they are whenever the map loads, so a member added to
+the chassis later joins the stack and one removed leaves it. A member
+already on the map as a device moves into the stack. One undo step, saved
+with the view (an unsaved map keeps up to 200 in its link, `chassis=`).
 
 Patch panels cannot be placed while **Patch panels** (Display) is off: their
 cables are walked through, so the panel would never appear. The device
@@ -793,7 +810,11 @@ it says *No new connected devices*.
 **Removing devices.** Right-click a card → *Remove from map*, or select
 cards and press ++delete++ (or ++backspace++), on the Diagram and the
 Hierarchy tab alike. That takes the device out of the view's set, with its
-position and overrides; ++ctrl+z++ puts it back.
+position and overrides; ++ctrl+z++ puts it back. A placed chassis leaves
+the same way - its stack's toolbar or right-click → *Remove from map*, or
+++delete++ with the stack selected - with its members, frame and look. A
+member of a placed chassis stays as long as the chassis does: removing it
+alone says which chassis it is part of.
 *Hide*, next to it, is different - it hides a card and keeps it in the set
 (see [Hiding things](#hiding-things-the-eyes)).
 
@@ -1376,7 +1397,7 @@ is open it acts on what you right-clicked, not on what is selected.
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
 | A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide*. A grouped map's line has no menu: hide one of its sites or locations instead |
 | A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), on a row *Cables to other bands* ▸ *Auto*, *Up and down*, *Left and right*, *Delete* |
-| Empty canvas | Diagram: *Add devices…*, *Add band*, *Add zone*, *Add text*. Hierarchy: *Add devices…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
+| Empty canvas | Diagram: *Add devices…*, *Add virtual chassis…* (with view on virtual chassis), *Add band*, *Add zone*, *Add text*. Hierarchy: *Add devices…*, *Add zone*. On a hand-picked map, *Back to filtered map* |
 
 ### Keyboard
 
@@ -1385,11 +1406,11 @@ is open it acts on what you right-clicked, not on what is selected.
 | ++ctrl+s++ / ++cmd+s++ | Save (Save as… on a map that is not a saved view); the **Save** button's tooltip shows the key |
 | ++ctrl+z++ / ++cmd+z++ | Undo the last edit to the map (the second bar's **Undo** button) |
 | ++ctrl+shift+z++ / ++cmd+shift+z++ (or ++ctrl+y++) | Redo (the **Redo** button) |
-| ++delete++ / ++backspace++ | Remove the selected notes, and the selected cards from a hand-picked map |
+| ++delete++ / ++backspace++ | Remove the selected notes, and the selected cards and placed virtual chassis from a hand-picked map |
 | ++h++ | Hide the selected card or line (or the selected site or location on a grouped map) |
 | ++shift+h++ | Show everything hidden |
 | ++enter++ (Find on map) | Zoom to the first card that matches |
-| ++enter++ (device list) | Place the selected devices in the middle of the screen |
+| ++enter++ (device list) | Place the selected devices (or the virtual chassis) in the middle of the screen |
 | ++ctrl++ / ++cmd++ / ++shift++ + click (device list) | Select several devices to drag at once |
 
 Undo and redo leave a text field's own undo alone while you type in it.
@@ -1428,6 +1449,7 @@ back button and a reload all keep it.
 | `levels` | the level order - see below |
 | `device` `depth` | focus on one device, 1-6 hops |
 | `devices` | a comma-separated device set - an unsaved hand-picked map, up to 200 |
+| `chassis` | with `devices`: the virtual chassis placed on that map, comma-separated, up to 200 |
 | `q` | the **Find on map** box (never an edit of a saved view) |
 | `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
 

@@ -62,7 +62,7 @@ import { ZoomControls } from "./zoom-controls"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { BAND_DRAG_HANDLE, BAND_NODE_CLASS } from "./diagram/band-node"
-import { collapseChassis } from "./diagram/chassis"
+import { collapseChassis, isChassisNode } from "./diagram/chassis"
 import type { ChassisOptions, ChassisOrient } from "./diagram/chassis"
 import { ChassisActionsContext } from "./diagram/chassis-node"
 import type { ChassisActions } from "./diagram/chassis-node"
@@ -107,6 +107,7 @@ import {
 } from "./diagram/diagram-client"
 import { LinkEdge } from "./diagram/link-edge"
 import {
+  CHASSIS_IDS_MIME,
   DEVICE_IDS_MIME,
   NEW_CARD,
   parseDragIds,
@@ -359,6 +360,8 @@ export interface CanvasHandle {
   labelRoom: () => LabelRoom | null
   /** The devices behind the selected cards. */
   selectedDevices: () => string[]
+  /** The virtual chassis behind the selected stacks (their frames). */
+  selectedChassis: () => string[]
   /** Bring these boxes (canvas coordinates) into view with what is on
    * screen, when any lies outside it. */
   reveal: (boxes: readonly Rect[]) => void
@@ -855,6 +858,9 @@ export interface TopologyCanvasProps {
    * there is somewhere to drop them. `at` is the pointer in canvas
    * coordinates. */
   onDropDevices?: (ids: string[], at: { x: number; y: number }) => void
+  /** …and virtual chassis dragged in (`CHASSIS_IDS_MIME`), placed as
+   * stacks. */
+  onDropChassis?: (ids: string[], at: { x: number; y: number }) => void
   /** Over an empty map that takes drops. */
   emptyState?: ReactNode
   /** Under "Couldn't lay out this map." when a layout runs off the canvas
@@ -1083,6 +1089,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     diagramLabels,
     monitor,
     onDropDevices,
+    onDropChassis,
     emptyState,
     brokenLayout,
     pending,
@@ -2146,6 +2153,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           .filter((n) => n.selected)
           .map((n) => (n.data as { device_id?: string }).device_id)
           .filter((id): id is string => !!id),
+      selectedChassis: () =>
+        flow
+          .getNodes()
+          .filter((n) => n.selected && isChassisNode(n.id))
+          .map((n) => n.id.slice("vc:".length)),
       renameRegion: (id) => {
         // A fresh stamp each time: the node opens its editor when it
         // changes (zone-node.tsx, band-node.tsx).
@@ -2167,15 +2179,31 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const onDragOver = useCallback(
     (e: DragEvent) => {
       if (!takesDrops) return
-      if (!Array.from(e.dataTransfer.types).includes(DEVICE_IDS_MIME)) return
+      const types = Array.from(e.dataTransfer.types)
+      if (
+        !types.includes(DEVICE_IDS_MIME) &&
+        !(onDropChassis && types.includes(CHASSIS_IDS_MIME))
+      )
+        return
       e.preventDefault()
       e.dataTransfer.dropEffect = "copy"
     },
-    [takesDrops]
+    [takesDrops, onDropChassis]
   )
   const onDrop = useCallback(
     (e: DragEvent) => {
       if (!onDropDevices) return
+      const vcs = onDropChassis
+        ? parseDragIds(e.dataTransfer.getData(CHASSIS_IDS_MIME))
+        : []
+      if (vcs.length) {
+        e.preventDefault()
+        onDropChassis?.(
+          vcs,
+          flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+        )
+        return
+      }
       const ids = parseDragIds(e.dataTransfer.getData(DEVICE_IDS_MIME))
       if (!ids.length) return
       e.preventDefault()
@@ -2184,14 +2212,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
       )
     },
-    [onDropDevices, flow]
+    [onDropDevices, onDropChassis, flow]
   )
 
   const onNodeClick = useCallback(
     (_: unknown, node: Node) => {
-      // A band, zone or note is selected for its own toolbar - not a
-      // device.
-      if (isOverlayNode(node)) return
+      // A band, zone, note or virtual chassis' stack is selected for its
+      // own toolbar - not a device.
+      if (isOverlayNode(node) || node.type === "chassis") return
       // A breakout's junction is part of its cable.
       if (node.type === "junction") {
         const { raw, trunk } = node.data as {

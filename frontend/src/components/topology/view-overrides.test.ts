@@ -16,6 +16,9 @@ describe("overridesView", () => {
     expect(overridesView({ view: "v1", q: "core", color: "speed" })).toBe(true)
     // No control sets it, but a stale one would be saved: still an edit.
     expect(overridesView({ view: "v1", cables: "curved" })).toBe(true)
+    // The Diagram's stacking, and a hand-picked map's placed chassis.
+    expect(overridesView({ view: "v1", stack: "h" })).toBe(true)
+    expect(overridesView({ view: "v1", chassis: "c1" })).toBe(true)
   })
 
   it("still clears the search when a view is applied", () => {

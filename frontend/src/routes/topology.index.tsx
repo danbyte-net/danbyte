@@ -8,6 +8,7 @@ import {
   Crosshair,
   FilePlus,
   Globe,
+  Layers,
   Link as LinkIcon,
   MoreHorizontal,
   PanelLeft,
@@ -197,6 +198,9 @@ import {
   DevicePalette,
   PALETTE_QUERY_KEY,
 } from "@/components/topology/device-palette"
+import type { PaletteKind } from "@/components/topology/device-palette"
+import { CHASSIS_PALETTE_KEY } from "@/components/topology/chassis-palette"
+import type { TopologyChassisRow } from "@/components/topology/chassis-palette"
 import { NewViewDialog } from "@/components/topology/new-view-dialog"
 import type { NewViewStart } from "@/components/topology/new-view-dialog"
 import {
@@ -210,6 +214,7 @@ import { HIER_NEW_CARD } from "@/components/topology/layout"
 import { useBands } from "@/components/topology/diagram/use-bands"
 import {
   CHASSIS_MODES,
+  chassisGeometry,
   chassisNodeId,
   chassisOrient,
   isChassisNode,
@@ -642,6 +647,8 @@ type ViewFilters = Partial<
     groupBy: GroupBy
     lag: "on" | "off"
     devices: string[]
+    /** The virtual chassis placed on a hand-picked map. */
+    chassis: string[]
     diagram: Partial<TopologyDiagramDisplay>
   }
 >
@@ -661,9 +668,13 @@ function writeStoredDisplay(d: StoredDisplay) {
   }
 }
 
+/** The map's query, with the virtual chassis placed on a hand-picked map
+ * (`chassis`, sent beside `devices`). */
+type MapQuery = TopologyQuery & { chassis?: string[] }
+
 /** A topology query as the map it asks for: what the cards and links
  * carry (`include`, the card lines) left out. */
-function mapKeyOf(q: TopologyQuery): string {
+function mapKeyOf(q: MapQuery): string {
   const { include: _include, card_fields: _fields, ...map } = q
   return JSON.stringify(map)
 }
@@ -955,6 +966,10 @@ function TopologyPage() {
   // so adding and removing devices is undoable and saved with the view.
   const [urlDevices, setUrlDevices] = useUrlCsv("devices")
   const urlSetKey = urlDevices?.join(",") ?? null
+  // …and the virtual chassis placed on it (`chassis=`), whose members come
+  // with them as they are whenever the map loads.
+  const [urlChassis] = useUrlCsv("chassis")
+  const urlChassisKey = urlChassis?.join(",") ?? ""
   // What of the second bar gives way to its More menu, measured from the
   // bar as drawn: Copy link, then Objects, then Undo and Redo.
   const [barRef, barRoom] = useBarFit()
@@ -987,7 +1002,12 @@ function TopologyPage() {
   /** Focus: this device's neighbourhood from the whole estate, one hop out
    * - from its menu and from its panel alike. */
   const focusDevice = (id: string) =>
-    patch({ devices: undefined, device: id, depth: undefined })
+    patch({
+      devices: undefined,
+      chassis: undefined,
+      device: id,
+      depth: undefined,
+    })
   const setFocus = (f: { id: string; depth: number } | null) =>
     patch({
       device: f ? f.id : undefined,
@@ -1014,7 +1034,13 @@ function TopologyPage() {
     // own, so No view's copy in this browser is neither shown nor written.
     if (resolving) return { doc: emptyDocument(), key: "resolving" }
     if (urlDevices !== null)
-      return { doc: emptyDocument({ devices: urlDevices }), key: mapKey }
+      return {
+        doc: emptyDocument({
+          devices: urlDevices,
+          placedChassis: urlChassis?.length ? urlChassis : null,
+        }),
+        key: mapKey,
+      }
     return { doc: defaultDocument(legacyStyle), key: mapKey }
   })
   const { dispatch: send, dirtyRef } = doc
@@ -1031,6 +1057,24 @@ function TopologyPage() {
       : (urlDevices ?? (viewDocReady ? doc.doc.devices : (vf.devices ?? null)))
   const builder = custom !== null
   const customKey = custom?.join(",") ?? null
+  /** The virtual chassis placed on the hand-picked map on screen, from
+   * the same place as its devices; null on a map that follows its
+   * filters. */
+  const vfChassis = Array.isArray(vf.chassis)
+    ? vf.chassis.filter((x): x is string => typeof x === "string")
+    : null
+  const placedChassis: string[] | null = !builder
+    ? null
+    : viewId === "none"
+      ? urlChassis
+      : viewDocReady
+        ? doc.doc.placedChassis
+        : vfChassis
+  const placedKey = placedChassis?.join(",") ?? ""
+  const placedChassisSet = useMemo(
+    () => new Set(placedKey ? placedKey.split(",") : []),
+    [placedKey]
+  )
 
   /** The Diagram display a view saves: the URL's switches over what else
    * the view keeps (card face, labels, its own card lines). */
@@ -1075,15 +1119,18 @@ function TopologyPage() {
         ? {
             mode: stackMode,
             looks: JSON.parse(looksKey) as Record<string, ChassisLook>,
+            ...(placedKey ? { placed: placedKey.split(",") } : {}),
           }
         : undefined,
-    [isDiagram, stackMode, looksKey]
+    [isDiagram, stackMode, looksKey, placedKey]
   )
   const setChassisLook = (vc: string, value: ChassisLook | null) =>
     edit({ type: "setChassisLook", id: vc, value })
   const chassisActions: ChassisActions = {
     onOrient: (vc, orient) => setChassisLook(vc, { orient }),
     onUnstack: (vc) => setChassisLook(vc, { off: true }),
+    onRemove: (vc) => removeChassis([vc]),
+    placed: (vc) => placedChassisSet.has(vc),
   }
   const setViewCardLines = (fields: string[] | null) => {
     const next: TopologyDiagramDisplay = { ...diagramDisplay }
@@ -1256,6 +1303,22 @@ function TopologyPage() {
     if ((doc.doc.devices?.join(",") ?? null) === urlSetKey) return
     send({ type: "replace", doc: { ...doc.doc, devices: urlDevices } })
   }, [urlSetKey])
+  // …and so do its placed chassis.
+  const lastUrlChassis = useRef(urlChassisKey)
+  useEffect(() => {
+    if (lastUrlChassis.current === urlChassisKey) return
+    lastUrlChassis.current = urlChassisKey
+    if (viewId !== "none" || urlDevices === null) return
+    if (doc.docKey !== "custom") return
+    if ((doc.doc.placedChassis?.join(",") ?? "") === urlChassisKey) return
+    send({
+      type: "replace",
+      doc: {
+        ...doc.doc,
+        placedChassis: urlChassis?.length ? urlChassis : null,
+      },
+    })
+  }, [urlChassisKey])
   // A saved view keeps its set in its document; a link from before that
   // may still carry `devices=` beside `view=`. Read it once, as an edit.
   useEffect(() => {
@@ -1379,8 +1442,15 @@ function TopologyPage() {
    * hand keeps the positions of the cards it still shows. */
   const exitBuilder = () => {
     if (viewId !== "none" && !vf.devices && viewDocReady)
-      edit({ type: "replace", doc: { ...doc.doc, devices: null } })
-    patch({ devices: undefined, ...(vf.devices ? { view: dv.noView } : {}) })
+      edit({
+        type: "replace",
+        doc: { ...doc.doc, devices: null, placedChassis: null },
+      })
+    patch({
+      devices: undefined,
+      chassis: undefined,
+      ...(vf.devices ? { view: dv.noView } : {}),
+    })
     clearSel()
   }
 
@@ -1508,7 +1578,7 @@ function TopologyPage() {
     diagramLabels.includes("subnet") || diagramLabels.includes("ip")
   // Front photos (`include=photo`) only when some device shows its photo.
   const photos = wantsPhotos(diagramFace, doc.doc.nodes)
-  const graphQuery = useMemo<TopologyQuery>(() => {
+  const graphQuery = useMemo<MapQuery>(() => {
     const collapse_panels = filters.collapse
     const cards: Partial<TopologyQuery> = !grouped
       ? {
@@ -1522,8 +1592,15 @@ function TopologyPage() {
             : {}),
         }
       : {}
-    // Builder mode: exactly this set, nothing else.
-    if (custom !== null) return { devices: custom, collapse_panels, ...cards }
+    // Builder mode: exactly this set and the placed chassis' members,
+    // nothing else.
+    if (custom !== null)
+      return {
+        devices: custom,
+        ...(placedKey ? { chassis: placedKey.split(",") } : {}),
+        collapse_panels,
+        ...cards,
+      }
     if (focus && !grouped)
       return { device: focus.id, depth: focus.depth, collapse_panels, ...cards }
     const g: TopologyQuery = { collapse_panels, ...cards }
@@ -1543,6 +1620,7 @@ function TopologyPage() {
     groupBy,
     drill,
     custom,
+    placedKey,
     isDiagram,
     cardFieldsKey,
     linkIps,
@@ -1571,7 +1649,7 @@ function TopologyPage() {
     // the new one arrives, instead of blanking it.
     placeholderData: (prev, prevQuery) =>
       prevQuery &&
-      (mapKeyOf(prevQuery.queryKey[1] as TopologyQuery) === graphKey ||
+      (mapKeyOf(prevQuery.queryKey[1] as MapQuery) === graphKey ||
         (setKey !== null && prevQuery.queryKey[2] === setKey))
         ? prev
         : undefined,
@@ -1929,6 +2007,7 @@ function TopologyPage() {
         ...(withDiagram ? { diagram: diagramDisplay } : {}),
       },
       devices: custom,
+      chassis: placedChassis,
       style: viewStyle,
     })
 
@@ -2075,17 +2154,21 @@ function TopologyPage() {
     ReadonlyMap<string, { name: string; color?: string | null }>
   >(() => new Map())
   /** Every device on the map, or in its set. */
-  const placedIds = useMemo(
-    () =>
-      new Set(
-        customKey !== null
-          ? customKey.split(",").filter(Boolean)
-          : (q.data?.nodes ?? [])
-              .map((n) => n.data.device_id)
-              .filter((x): x is string => !!x)
-      ),
-    [customKey, q.data]
-  )
+  const placedIds = useMemo(() => {
+    const onMap = (q.data?.nodes ?? []).flatMap((n) => {
+      const id = n.data.device_id
+      return id ? [{ id, vc: vcOf(n.data)?.id }] : []
+    })
+    if (customKey === null) return new Set(onMap.map((n) => n.id))
+    // A hand-picked map's set, and the members of the chassis placed on it.
+    const out = new Set(customKey.split(",").filter(Boolean))
+    for (const n of onMap)
+      if (n.vc && placedChassisSet.has(n.vc)) out.add(n.id)
+    return out
+  }, [customKey, q.data, placedChassisSet])
+  /** Which kind the device list shows on the Diagram. */
+  const [paletteKind, setPaletteKind] = useState<PaletteKind>("devices")
+  const canSeeChassis = canDo("virtualchassis", "view")
   const pendingCards = useMemo(() => {
     if (!pending.size) return []
     const present = new Set((q.data?.nodes ?? []).map((n) => n.id))
@@ -2158,6 +2241,16 @@ function TopologyPage() {
    * overrides - one undo step. */
   const removeFromSet = (ids: string[]) => {
     if (custom === null || !ids.length) return
+    // A member on the map only through its placed chassis leaves with it.
+    const inSet = new Set(custom)
+    const via = ids
+      .filter((id) => !inSet.has(id))
+      .map((id) => vcOf(graph?.nodes.find((n) => n.data.device_id === id)?.data))
+      .find((vc) => vc && placedChassisSet.has(vc.id))
+    if (via)
+      toast(`Part of ${via.name}`, {
+        description: "Remove the chassis from the map, or hide the device.",
+      })
     if (viewId !== "none") {
       if (viewDocReady) edit({ type: "removeDevices", ids })
       return
@@ -2244,6 +2337,112 @@ function TopologyPage() {
       rows.map((r) => r.id),
       at
     )
+  }
+  /** The chassis list's rows, as its query last loaded them. */
+  const chassisRow = (id: string): TopologyChassisRow | undefined =>
+    qc
+      .getQueryData<{ results: TopologyChassisRow[] }>(CHASSIS_PALETTE_KEY)
+      ?.results.find((r) => r.id === id)
+  /**
+   * Virtual chassis placed on the hand-picked map, their frames at `place`
+   * - one undo step. Their members come with them whenever the map loads,
+   * so members already in the set leave it: the chassis holds them now. A
+   * view keeps them in its document; an unsaved map in the URL as well.
+   */
+  const addChassis = (ids: string[], place: PosMap): boolean => {
+    const fresh = [...new Set(ids)].filter((id) => !placedChassisSet.has(id))
+    if (!fresh.length || custom === null) return false
+    const members = new Set(
+      fresh.flatMap((id) => chassisRow(id)?.members.map((m) => m.id) ?? [])
+    )
+    const drop = custom.filter((id) => members.has(id))
+    const action = {
+      type: "addChassis" as const,
+      ids: fresh,
+      drop,
+      style: "diagram" as const,
+      place,
+    }
+    if (viewId !== "none") {
+      if (!viewDocReady) return false
+      edit(action)
+      return true
+    }
+    const next = [...(placedChassis ?? []), ...fresh]
+    if (next.length > URL_SET_MAX) {
+      toast.error(`An unsaved map holds up to ${URL_SET_MAX} chassis`, {
+        description: "Save it as a view to add more.",
+        ...(canAddViews
+          ? { action: { label: "Save as…", onClick: () => openSaveAs() } }
+          : {}),
+      })
+      return false
+    }
+    edit(action)
+    const devices = custom.filter((id) => !members.has(id)).join(",")
+    lastUrlSet.current = devices
+    lastUrlChassis.current = next.join(",")
+    patch({ devices, chassis: next.join(",") })
+    return true
+  }
+  /** Placed chassis taken off the map, with their frames' places and
+   * looks - one undo step. */
+  const removeChassis = (ids: string[]) => {
+    const gone = ids.filter((id) => placedChassisSet.has(id))
+    if (!gone.length) return
+    if (viewId !== "none") {
+      if (viewDocReady) edit({ type: "removeChassis", ids: gone })
+      return
+    }
+    edit({ type: "removeChassis", ids: gone })
+    const rest = (placedChassis ?? []).filter((id) => !gone.includes(id))
+    lastUrlChassis.current = rest.join(",")
+    patch({ chassis: rest.length ? rest.join(",") : undefined })
+  }
+  /** Virtual chassis dropped on the Diagram (or added from the list) at
+   * `at`: each frame lands clear of the cards there, in the band row it
+   * hit. A chassis already stacked on the map keeps its place. */
+  const dropChassis = (ids: string[], at: Pt) => {
+    if (!canBuild || !isDiagram) return
+    const fresh = [...new Set(ids)].filter((id) => !placedChassisSet.has(id))
+    if (!fresh.length) return
+    const boxes = canvas.current?.boxes() ?? {}
+    const toPlace = fresh.filter((id) => !(chassisNodeId(id) in boxes))
+    // The frame round its members at a new card's size, as it stacks.
+    const size = { w: 0, h: 0 }
+    for (const id of toPlace) {
+      const n = Math.max(1, chassisRow(id)?.members.length ?? 1)
+      const orient =
+        chassisOrient(id, { ...chassisOpts, mode: stackMode, placed: [id] }) ??
+        "v"
+      const g = chassisGeometry(
+        orient,
+        Array.from({ length: n }, () => NEW_CARD)
+      )
+      size.w = Math.max(size.w, g.w)
+      size.h = Math.max(size.h, g.h)
+    }
+    const centres = dropPlacement(toPlace.map(chassisNodeId), at, occupied(), {
+      size,
+      rowsAt: bands.rowsAt,
+    })
+    const place: PosMap = {}
+    for (const [id, c] of Object.entries(centres)) place[id] = c
+    bands.keepDrawn()
+    addChassis(fresh, { ...freezeLayout(), ...place })
+  }
+  const addChassisFromList = (rows: TopologyChassisRow[]) => {
+    const at = addAt ?? canvas.current?.center() ?? { x: 0, y: 0 }
+    setAddAt(null)
+    dropChassis(
+      rows.map((r) => r.id),
+      at
+    )
+  }
+  /** The device list, opened on one of its kinds. */
+  const openPalette = (kind: PaletteKind) => {
+    setPaletteKind(kind)
+    setPalette(true)
   }
   /** Everything cabled to these devices joins the set - on the Diagram
    * placed next to what it is cabled to. */
@@ -2342,13 +2541,30 @@ function TopologyPage() {
         : gone.length
           ? (canvas.current?.selectedDevices() ?? [])
           : selectedDevices()
-    if (!gone.length && !ids.length) return false
+    // A selected stack placed on the map leaves it with its members.
+    const frames =
+      builder && isDiagram
+        ? (canvas.current?.selectedChassis() ?? []).filter((id) =>
+            placedChassisSet.has(id)
+          )
+        : []
+    if (!gone.length && !ids.length && !frames.length) return false
     if (gone.length) {
       const drop = new Set(gone)
       setNotes(doc.doc.notes.filter((n) => !drop.has(n.id)))
     }
-    if (ids.length) {
-      removeFromSet(ids)
+    if (frames.length) {
+      removeChassis(frames)
+      clearSel()
+    }
+    // …and its members selected with it go with it.
+    const leaving = new Set(frames)
+    const rest = ids.filter((id) => {
+      const vc = vcOf(graph?.nodes.find((n) => n.data.device_id === id)?.data)
+      return !vc || !leaving.has(vc.id)
+    })
+    if (rest.length) {
+      removeFromSet(rest)
       clearSel()
     }
     return true
@@ -2377,9 +2593,15 @@ function TopologyPage() {
   /** A new view's saved state: blank, or this map's devices as they stand
    * (on the Diagram, where they stand). */
   const newViewState = (start: NewViewStart): TopologyViewState => {
+    // The chassis placed here go along as chassis, their members with them.
+    const chassis = start === "map" && placedKey ? placedKey.split(",") : null
     const ids =
       start === "map"
         ? (graph?.nodes ?? [])
+            .filter((n) => {
+              const vc = vcOf(n.data)
+              return !vc || !placedChassisSet.has(vc.id)
+            })
             .map((n) => n.data.device_id)
             .filter((x): x is string => !!x)
         : []
@@ -2391,7 +2613,13 @@ function TopologyPage() {
           at[id] = [b.x + b.w / 2, b.y + b.h / 2]
       arranged.diagram = at
     }
-    return toViewState(emptyDocument({ devices: ids, positions: arranged }), {
+    const draft = emptyDocument({
+      devices: ids,
+      positions: arranged,
+      placedChassis: chassis,
+      ...(start === "map" ? { chassisLooks: doc.doc.chassisLooks } : {}),
+    })
+    return toViewState(draft, {
       filters: {
         collapse: filters.collapse,
         colorMode,
@@ -2432,13 +2660,22 @@ function TopologyPage() {
     const before = doc.doc.positions[style]
     const to = back ? doc.undo() : doc.redo()
     if (to && before && !to.positions[style]) setLayoutTick((t) => t + 1)
-    // An unsaved map's set is in its URL too: it steps with the document.
+    // An unsaved map's set is in its URL too: it steps with the document,
+    // its placed chassis with it (one navigation).
     const toSet = to?.devices?.join(",")
-    if (viewId === "none" && urlDevices !== null && toSet !== undefined)
+    if (viewId === "none" && urlDevices !== null && toSet !== undefined) {
+      const toChassis = to?.placedChassis?.join(",") ?? ""
+      const step: Record<string, string | undefined> = {}
       if (toSet !== urlSetKey) {
         lastUrlSet.current = toSet
-        patch({ devices: toSet }, { replace: true })
+        step.devices = toSet
       }
+      if (toChassis !== urlChassisKey) {
+        lastUrlChassis.current = toChassis
+        step.chassis = toChassis || undefined
+      }
+      if (Object.keys(step).length) patch(step, { replace: true })
+    }
   }
   useDocumentKeys({
     enabled: !logical,
@@ -2577,6 +2814,9 @@ function TopologyPage() {
               )
             ),
         }
+      : {}),
+    ...(canBuild && placedChassisSet.has(vc)
+      ? { onRemove: () => removeChassis([vc]) }
       : {}),
   })
   /** A device card's right-click menu: its items and the keys they show
@@ -3103,9 +3343,16 @@ function TopologyPage() {
                     className="w-48"
                     onCloseAutoFocus={keepNoteFocus}
                   >
-                    <DropdownMenuItem onSelect={() => setPalette(true)}>
+                    <DropdownMenuItem onSelect={() => openPalette("devices")}>
                       <PanelLeft /> Devices…
                     </DropdownMenuItem>
+                    {canSeeChassis && (
+                      <DropdownMenuItem
+                        onSelect={() => openPalette("chassis")}
+                      >
+                        <Layers /> Virtual chassis…
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       disabled={!canBuild || !selNode?.device_id}
                       onSelect={() => void addConnected(selectedDevices())}
@@ -3282,6 +3529,16 @@ function TopologyPage() {
             editable={canBuild}
             panelsHidden={filters.collapse}
             onAdd={addFromList}
+            chassis={
+              isDiagram && canSeeChassis
+                ? {
+                    kind: paletteKind,
+                    onKind: setPaletteKind,
+                    placed: placedChassisSet,
+                    onAdd: addChassisFromList,
+                  }
+                : undefined
+            }
             onFocus={(id) => {
               canvas.current?.focusNode(devNode(id))
               canvas.current?.selectNode(devNode(id))
@@ -3328,6 +3585,11 @@ function TopologyPage() {
                     : fitKey
                 }
                 onDropDevices={canBuild ? dropDevices : undefined}
+                onDropChassis={
+                  canBuild && isDiagram && canSeeChassis
+                    ? dropChassis
+                    : undefined
+                }
                 pending={canBuild ? pendingCards : undefined}
                 spreadFrom={spreadFrom}
                 onSpread={onSpread}
@@ -3663,8 +3925,17 @@ function TopologyPage() {
                 // The list opens, and what it adds next lands here.
                 if (canBuild && fx !== undefined && fy !== undefined)
                   setAddAt({ x: fx, y: fy })
-                setPalette(true)
+                openPalette("devices")
               }}
+              onAddChassis={
+                isDiagram && canSeeChassis
+                  ? () => {
+                      if (canBuild && fx !== undefined && fy !== undefined)
+                        setAddAt({ x: fx, y: fy })
+                      openPalette("chassis")
+                    }
+                  : undefined
+              }
               onAddBand={bands.addRow}
               onAddZone={() => addZone(fx ?? 0, fy ?? 0)}
               onAddText={() => addNote(null, { x: fx ?? 0, y: fy ?? 0 })}

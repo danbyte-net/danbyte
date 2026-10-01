@@ -533,8 +533,24 @@ describe("PaneMenuItems", () => {
     expect(rows()).toEqual(["Add devices…", "Add band", "Add zone", "Add text"])
   })
 
+  it("adds virtual chassis on the Diagram when the list offers them", async () => {
+    const p = pane({ onAddChassis: vi.fn() })
+    await openMenu(<PaneMenuItems {...p} />)
+    expect(rows()).toEqual([
+      "Add devices…",
+      "Add virtual chassis…",
+      "Add band",
+      "Add zone",
+      "Add text",
+    ])
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Add virtual chassis…" })
+    )
+    expect(p.onAddChassis).toHaveBeenCalledOnce()
+  })
+
   it("adds devices from the list or a zone on Hierarchy", async () => {
-    const p = pane({ tab: "hierarchy" })
+    const p = pane({ tab: "hierarchy", onAddChassis: vi.fn() })
     await openMenu(<PaneMenuItems {...p} />)
     expect(rows()).toEqual(["Add devices…", "Add zone"])
     fireEvent.click(screen.getByRole("menuitem", { name: "Add devices…" }))
