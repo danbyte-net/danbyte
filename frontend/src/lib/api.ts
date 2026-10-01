@@ -5467,6 +5467,15 @@ export interface SiteBulkUpdateFields {
   remove_tag_ids?: number[]
 }
 
+/** `POST /api/virtual-chassis/bulk-update/` - name and master stay
+ * single-edit (#252). */
+export interface VirtualChassisBulkUpdateFields {
+  domain?: string
+  description?: string
+  add_tag_ids?: number[]
+  remove_tag_ids?: number[]
+}
+
 // ─── Custom field definitions ──────────────────────────────────────────────
 
 export type CustomFieldType =

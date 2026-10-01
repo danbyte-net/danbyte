@@ -11,11 +11,12 @@
   :meth:`bulk_blocker` (the same rule its single delete refuses with), or a
   database ``PROTECT`` reference;
 * ``dry_run`` answers the same without deleting, plus what else would go with
-  the rows (``impact``), for the confirmation dialog.
+  the rows (``impact``) and what they let go of but keep (``released``, the
+  viewset's :meth:`bulk_released`), for the confirmation dialog.
 
 The answer is ``{deleted, deleted_ids, skipped: [{id, name, reason}], impact:
-[{label, count}]}``; ``deleted`` counts the rows asked about, never what was
-removed along with them.
+[{label, count}], released: [{label, count}]}``; ``deleted`` counts the rows
+asked about, never what was removed along with them.
 """
 from __future__ import annotations
 
@@ -46,6 +47,11 @@ class SafeBulkDeleteMixin:
         own ``destroy`` refusal here."""
         return None
 
+    def bulk_released(self, obj) -> dict[str, int]:
+        """What deleting ``obj`` lets go of without deleting it, as
+        ``{label: count}`` - a stack's member devices."""
+        return {}
+
     def _bulk_collect(self, obj):
         """``(reason, cascade)``: the PROTECT refusal, else what a delete
         would also remove, as ``{model: count}`` without ``obj`` itself."""
@@ -75,7 +81,7 @@ class SafeBulkDeleteMixin:
         dry_run = bool(request.data.get("dry_run"))
         rows = list(self.get_queryset().filter(pk__in=ids))
         deleted, skipped = [], []
-        impact = Counter()
+        impact, released = Counter(), Counter()
         with transaction.atomic():
             for obj in rows:
                 # Read before deleting: delete() leaves the instance's pk None.
@@ -87,8 +93,10 @@ class SafeBulkDeleteMixin:
                 if reason is not None:
                     skipped.append({"id": pk, "name": name, "reason": reason})
                     continue
+                freed = self.bulk_released(obj)
                 if dry_run:
                     impact.update(cascade)
+                    released.update(freed)
                     deleted.append(pk)
                     continue
                 try:
@@ -98,6 +106,7 @@ class SafeBulkDeleteMixin:
                     skipped.append({"id": pk, "name": name, "reason": _protected_reason(exc)})
                     continue
                 impact.update(cascade)
+                released.update(freed)
                 deleted.append(pk)
         return Response(
             {
@@ -105,6 +114,9 @@ class SafeBulkDeleteMixin:
                 "deleted_ids": deleted,
                 "skipped": skipped,
                 "impact": [{"label": k, "count": v} for k, v in sorted(impact.items())],
+                "released": [
+                    {"label": k, "count": v} for k, v in sorted(released.items()) if v
+                ],
                 "dry_run": dry_run,
             },
             status=drf_status.HTTP_200_OK,

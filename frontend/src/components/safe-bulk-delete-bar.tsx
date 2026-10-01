@@ -25,6 +25,8 @@ export interface SafeBulkDeleteResult {
   deleted_ids: string[]
   skipped: { id: string; name: string; reason: string }[]
   impact: { label: string; count: number }[]
+  /** What the rows let go of but keep, such as a stack's member devices. */
+  released?: { label: string; count: number }[]
   dry_run: boolean
 }
 
@@ -37,6 +39,10 @@ export interface SafeBulkDeleteBarProps<T extends { id: string }> {
   /** Query key prefixes to refresh after a delete. */
   invalidate: string[][]
   onCleared: () => void
+  /** More of the bar's actions, before Delete - an Edit link. */
+  actions?: React.ReactNode
+  /** Offer Delete (default true). */
+  canDelete?: boolean
 }
 
 const plural = (n: number, [one, many]: [string, string]) =>
@@ -54,6 +60,8 @@ export function SafeBulkDeleteBar<T extends { id: string }>({
   noun,
   invalidate,
   onCleared,
+  actions,
+  canDelete = true,
 }: SafeBulkDeleteBarProps<T>) {
   const [open, setOpen] = useState(false)
   if (selected.length === 0) return null
@@ -65,14 +73,17 @@ export function SafeBulkDeleteBar<T extends { id: string }>({
             {selected.length} selected
           </span>
           <span className="h-4 w-px bg-border" />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-destructive hover:text-destructive"
-            onClick={() => setOpen(true)}
-          >
-            <Trash2 className="mr-1 h-3 w-3" /> Delete
-          </Button>
+          {actions}
+          {canDelete && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-destructive hover:text-destructive"
+              onClick={() => setOpen(true)}
+            >
+              <Trash2 className="mr-1 h-3 w-3" /> Delete
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -178,6 +189,18 @@ function SafeBulkDeleteDialog({
                 <p className="mb-1 text-muted-foreground">Removed with them</p>
                 <ul className="rounded-md bg-muted/40 px-3 py-2 text-foreground">
                   {p.impact.map((i) => (
+                    <li key={i.label}>
+                      {i.count} {i.label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {!!p.released?.length && (
+              <div>
+                <p className="mb-1 text-muted-foreground">Released, kept</p>
+                <ul className="rounded-md bg-muted/40 px-3 py-2 text-foreground">
+                  {p.released.map((i) => (
                     <li key={i.label}>
                       {i.count} {i.label}
                     </li>

@@ -7780,10 +7780,47 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         vc = self.get_object()
         return Response(utilization_payload(Device.objects.filter(virtual_chassis=vc)))
 
+    def bulk_released(self, obj):
+        n = obj.members.count()
+        return {"member devices": n} if n else {}
+
+    @action(detail=False, methods=["post"], url_path="bulk-update")
+    def bulk_update(self, request):
+        """Domain, description and tags of several stacks at once (#252);
+        name and master stay single-edit."""
+        ids = request.data.get("ids") or []
+        fields = request.data.get("fields") or {}
+        if not isinstance(ids, list) or not ids:
+            raise ValidationError({"ids": "Provide a non-empty list of virtual chassis IDs."})
+        if not isinstance(fields, dict) or not fields:
+            raise ValidationError({"fields": "Provide at least one field to update."})
+        updates = _bulk_field_updates(fields, ("domain", "description"))
+        for key, value in updates.items():
+            limit = VirtualChassis._meta.get_field(key).max_length
+            if not isinstance(value, str) or len(value) > limit:
+                raise ValidationError({key: f"Text of at most {limit} characters."})
+
+        qs = self.get_queryset().filter(pk__in=ids)
+        with transaction.atomic():
+            rows = list(qs)
+            updated = qs.update(**updates) if updates else qs.count()
+            if updates:
+                log_bulk_update(rows, updates)
+            apply_and_log_bulk_tags(
+                qs,
+                fields.get("add_tag_ids") or [],
+                fields.get("remove_tag_ids") or [],
+                tenant=_get_active_tenant(self.request),
+            )
+        return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
+
     def perform_destroy(self, instance):
-        # Deleting a stack releases its members (SET_NULL on the FK) - also
-        # clear their stale position/priority so they read as standalone.
-        instance.members.update(vc_position=None, vc_priority=None)
+        # Deleting a stack releases its members: they carry on standalone,
+        # position and priority cleared, and each release is in that
+        # device's change log (a queryset update sends no signals).
+        released = {"virtual_chassis_id": None, "vc_position": None, "vc_priority": None}
+        log_bulk_update(list(instance.members.all()), released)
+        instance.members.update(**released)
         super().perform_destroy(instance)
 
 

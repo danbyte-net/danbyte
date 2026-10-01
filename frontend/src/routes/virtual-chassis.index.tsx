@@ -3,6 +3,7 @@ import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
+import { Pencil } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
@@ -80,7 +81,7 @@ function VirtualChassisPage() {
   const onDelete = useCallback((v: VirtualChassis) => setDeleting(v), [])
   const columns = useMemo<ColumnDef<VirtualChassis>[]>(
     () => [
-      ...(canDelete ? [selectionColumn<VirtualChassis>()] : []),
+      ...(canEdit || canDelete ? [selectionColumn<VirtualChassis>()] : []),
       ...(humanIds
         ? [numidColumn<VirtualChassis>({ get: (r) => r.numid })]
         : []),
@@ -306,6 +307,19 @@ function VirtualChassisPage() {
         noun={["virtual chassis", "virtual chassis"]}
         invalidate={[["virtual-chassis"]]}
         onCleared={() => setSelectedRows([])}
+        canDelete={canDelete}
+        actions={
+          canEdit && (
+            <Button size="sm" variant="ghost" className="h-7 px-2" asChild>
+              <Link
+                to="/virtual-chassis/bulk-edit"
+                search={{ ids: selectedRows.map((r) => r.id).join(",") }}
+              >
+                <Pencil className="mr-1 h-3 w-3" /> Edit
+              </Link>
+            </Button>
+          )
+        }
       />
     </ListPageShell>
   )

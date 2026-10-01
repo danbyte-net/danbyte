@@ -86,7 +86,8 @@ Open a stack to see its tabs:
 
 - **Overview** - the stack's facts plus a **Members** table sorted by position:
   position, device, priority, role (a *Master* / *Member* badge), serial, and
-  status.
+  status. Tick members and press **Remove N from stack** to release several
+  at once; each is a device edit, checked and logged as one.
 - **Interfaces** - every member's ports combined into one view (the tab badge
   shows the total), each row prefixed with the member's position and name.
 - **Monitoring** - the SLAs the stack is in, with **Add to SLA**, then the
@@ -130,12 +131,24 @@ address. A member device's own SLA panel shows the stack's figure.
 ## Deleting a stack
 
 Deleting a virtual chassis **releases its members** - their positions and
-priorities are cleared and they carry on as standalone devices. The devices
-themselves are never deleted with the stack.
+priorities are cleared and they carry on as standalone devices, each release
+recorded in that device's change log. The devices themselves are never
+deleted with the stack.
 
 To delete several stacks, tick them in **Virtual chassis** and press **Delete**
-in the bar. Each stack releases its members the same way
+in the bar. The confirmation says how many member devices are released, and
+each stack releases its members the same way
 (`POST /api/virtual-chassis/bulk-delete/`).
+
+## Editing several stacks
+
+Tick stacks in **Virtual chassis** and press **Edit** in the bar to set the
+**domain** and **description** and to add or remove **tags** on all of them.
+Only the fields you change are applied. Name and master are per stack and stay
+on each stack's own edit form. The bulk edit is
+`POST /api/virtual-chassis/bulk-update/` with `{"ids": [...], "fields":
+{"domain", "description", "add_tag_ids", "remove_tag_ids"}}` and needs the
+*change* permission.
 
 ## Tags & custom fields
 

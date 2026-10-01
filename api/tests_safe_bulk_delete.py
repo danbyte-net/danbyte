@@ -22,7 +22,7 @@ from api.models import (
 from api.tests_wireless_psk import _enable_local_store
 from audit.models import ChangeLogEntry
 from auth_api.models import ObjectPermission, UserProfile
-from core.models import Organization, Tenant
+from core.models import Organization, Tag, Tenant
 
 
 class _Base(APITestCase):
@@ -136,13 +136,53 @@ class WirelessTests(_Base):
 
 
 class VirtualChassisTests(_Base):
-    def test_members_are_released(self):
+    def setUp(self):
+        super().setUp()
         dt = DeviceType.objects.create(tenant=self.tenant, name="sw")
-        vc = VirtualChassis.objects.create(tenant=self.tenant, name="stack1")
-        a = Device.objects.create(tenant=self.tenant, name="sw1", device_type=dt,
-                                  site=self.site, virtual_chassis=vc, vc_position=1)
-        r = self.bulk("/api/virtual-chassis/", [vc.id])
+        self.vc = VirtualChassis.objects.create(tenant=self.tenant, name="stack1")
+        self.other = VirtualChassis.objects.create(tenant=self.tenant, name="stack2")
+        self.a = Device.objects.create(
+            tenant=self.tenant, name="sw1", device_type=dt, site=self.site,
+            virtual_chassis=self.vc, vc_position=1, vc_priority=10,
+        )
+        Device.objects.create(
+            tenant=self.tenant, name="sw2", device_type=dt, site=self.site,
+            virtual_chassis=self.vc, vc_position=2,
+        )
+
+    def test_members_are_released_and_logged(self):
+        dry = self.bulk("/api/virtual-chassis/", [self.vc.id, self.other.id], dry_run=True)
+        self.assertEqual(dry.json()["released"], [{"label": "member devices", "count": 2}])
+        r = self.bulk("/api/virtual-chassis/", [self.vc.id])
         self.assertEqual(r.json()["deleted"], 1)
-        a.refresh_from_db()
-        self.assertIsNone(a.virtual_chassis_id)
-        self.assertIsNone(a.vc_position)
+        self.a.refresh_from_db()
+        self.assertIsNone(self.a.virtual_chassis_id)
+        self.assertIsNone(self.a.vc_position)
+        self.assertIsNone(self.a.vc_priority)
+        entry = ChangeLogEntry.objects.get(object_id=str(self.a.pk), action="update")
+        self.assertIn("virtual_chassis_id", entry.changes)
+
+    def test_bulk_update_sets_domain_description_and_tags(self):
+        tag = Tag.objects.create(name="lab", slug="lab", tenant=self.tenant)
+        r = self.client.post("/api/virtual-chassis/bulk-update/", {
+            "ids": [str(self.vc.id), str(self.other.id)],
+            "fields": {"domain": "dom-7", "description": "moved",
+                       "add_tag_ids": [tag.id]},
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["updated"], 2)
+        for vc in (self.vc, self.other):
+            vc.refresh_from_db()
+            self.assertEqual((vc.domain, vc.description), ("dom-7", "moved"))
+            self.assertEqual(list(vc.tags.values_list("slug", flat=True)), ["lab"])
+        self.assertTrue(ChangeLogEntry.objects.filter(
+            object_id=str(self.vc.pk), action="update").exists())
+
+    def test_bulk_update_refuses_what_it_does_not_write(self):
+        url = "/api/virtual-chassis/bulk-update/"
+        ids = [str(self.vc.id)]
+        for fields in ({"name": "x"}, {"domain": "d" * 65}, {"description": 7}):
+            r = self.client.post(url, {"ids": ids, "fields": fields}, format="json")
+            self.assertEqual(r.status_code, 400, (fields, r.content))
+        self.vc.refresh_from_db()
+        self.assertEqual(self.vc.name, "stack1")

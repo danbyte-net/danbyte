@@ -15,6 +15,7 @@ import {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -415,7 +416,18 @@ function MembersTable({
   const [editing, setEditing] = useState<VirtualChassisMember | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [removing, setRemoving] = useState<VirtualChassisMember | null>(null)
+  // Members to take out of the stack: one from its row, or those ticked.
+  const [removing, setRemoving] = useState<VirtualChassisMember[] | null>(null)
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+  const ticked = members.filter((m) => picked.has(m.id))
+  const allTicked = members.length > 0 && ticked.length === members.length
+  const toggle = (id: string, on: boolean) =>
+    setPicked((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
   // Next free slot: one past the highest taken position (1 for an empty stack).
   const nextPosition =
     members.reduce((max, m) => Math.max(max, m.vc_position ?? 0), 0) + 1
@@ -426,21 +438,38 @@ function MembersTable({
     qc.invalidateQueries({ queryKey: ["devices"] })
   }
 
-  // Leaving the stack is a device write - membership lives on the Device.
+  // Leaving the stack is a device write - membership lives on the Device -
+  // so several leave as several writes, each checked and logged as one.
   const remove = useMutation({
-    mutationFn: () =>
-      api<Device>(`/api/devices/${removing!.id}/`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          virtual_chassis_id: null,
-          vc_position: null,
-          vc_priority: null,
-        }),
-      }),
-    onSuccess: (saved) => {
-      toast.success(`${saved.name} removed from stack`)
+    mutationFn: async (list: VirtualChassisMember[]) => {
+      const results = await Promise.allSettled(
+        list.map((m) =>
+          api<Device>(`/api/devices/${m.id}/`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              virtual_chassis_id: null,
+              vc_position: null,
+              vc_priority: null,
+            }),
+          })
+        )
+      )
+      const saved = results.flatMap((r) =>
+        r.status === "fulfilled" ? [r.value] : []
+      )
+      const failed = results.find((r) => r.status === "rejected")
+      return { saved, failed: failed?.reason as unknown }
+    },
+    onSuccess: ({ saved, failed }) => {
+      if (saved.length === 1)
+        toast.success(`${saved[0].name} removed from stack`)
+      else if (saved.length)
+        toast.success(`${saved.length} devices removed from stack`)
+      if (failed) apiErrorToast(failed)
       invalidate()
-      qc.invalidateQueries({ queryKey: ["device", saved.id] })
+      for (const d of saved)
+        qc.invalidateQueries({ queryKey: ["device", d.id] })
+      setPicked(new Set())
       setRemoving(null)
     },
     onError: (err) => apiErrorToast(err),
@@ -466,14 +495,27 @@ function MembersTable({
           Members
         </h2>
         {canEditDevice && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7"
-            onClick={() => setAdding(true)}
-          >
-            <Plus className="h-3.5 w-3.5" /> Add member
-          </Button>
+          <div className="flex items-center gap-2">
+            {ticked.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-destructive hover:text-destructive"
+                onClick={() => setRemoving(ticked)}
+              >
+                <Unlink className="h-3.5 w-3.5" /> Remove {ticked.length} from
+                stack
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={() => setAdding(true)}
+            >
+              <Plus className="h-3.5 w-3.5" /> Add member
+            </Button>
+          </div>
         )}
       </div>
       {members.length === 0 ? (
@@ -488,6 +530,21 @@ function MembersTable({
           <Table>
             <TableHeader>
               <TableRow>
+                {canEditDevice && (
+                  <TableHead className="w-8">
+                    <Checkbox
+                      checked={
+                        allTicked || (ticked.length > 0 && "indeterminate")
+                      }
+                      onCheckedChange={(v) =>
+                        setPicked(
+                          new Set(v ? members.map((m) => m.id) : undefined)
+                        )
+                      }
+                      aria-label="Select all"
+                    />
+                  </TableHead>
+                )}
                 <TableHead>Position</TableHead>
                 <TableHead className="w-full">Device</TableHead>
                 <TableHead>Priority</TableHead>
@@ -500,6 +557,15 @@ function MembersTable({
             <TableBody>
               {members.map((m) => (
                 <TableRow key={m.id}>
+                  {canEditDevice && (
+                    <TableCell className="py-2">
+                      <Checkbox
+                        checked={picked.has(m.id)}
+                        onCheckedChange={(v) => toggle(m.id, !!v)}
+                        aria-label={`Select ${m.name}`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="py-2">
                     {m.vc_position != null ? (
                       <span className="num font-mono text-[13px]">
@@ -579,7 +645,7 @@ function MembersTable({
                             className="h-7 w-7 text-destructive hover:text-destructive"
                             aria-label="Remove from stack"
                             title="Remove from stack"
-                            onClick={() => setRemoving(m)}
+                            onClick={() => setRemoving([m])}
                           >
                             <Unlink className="h-3.5 w-3.5" />
                           </Button>
@@ -618,11 +684,13 @@ function MembersTable({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Remove {removing?.name} from this stack?
+              {removing?.length === 1
+                ? `Remove ${removing[0].name} from this stack?`
+                : `Remove ${removing?.length ?? 0} devices from this stack?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              The device stays; only its stack membership, position and priority
-              are cleared.
+              The devices stay; only their stack membership, position and
+              priority are cleared.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -634,7 +702,7 @@ function MembersTable({
               disabled={remove.isPending}
               onClick={(e) => {
                 e.preventDefault()
-                remove.mutate()
+                if (removing) remove.mutate(removing)
               }}
             >
               {remove.isPending ? "Removing…" : "Remove"}

@@ -226,6 +226,7 @@ import { Route as VirtualSwitchesIdRouteImport } from './routes/virtual-switches
 import { Route as VirtualMachinesNewRouteImport } from './routes/virtual-machines.new'
 import { Route as VirtualMachinesIdRouteImport } from './routes/virtual-machines.$id'
 import { Route as VirtualChassisNewRouteImport } from './routes/virtual-chassis.new'
+import { Route as VirtualChassisBulkEditRouteImport } from './routes/virtual-chassis.bulk-edit'
 import { Route as VirtualChassisIdRouteImport } from './routes/virtual-chassis.$id'
 import { Route as UsersNewRouteImport } from './routes/users.new'
 import { Route as TunnelsNewRouteImport } from './routes/tunnels.new'
@@ -1589,6 +1590,11 @@ const VirtualMachinesIdRoute = VirtualMachinesIdRouteImport.update({
 const VirtualChassisNewRoute = VirtualChassisNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => VirtualChassisRoute,
+} as any)
+const VirtualChassisBulkEditRoute = VirtualChassisBulkEditRouteImport.update({
+  id: '/bulk-edit',
+  path: '/bulk-edit',
   getParentRoute: () => VirtualChassisRoute,
 } as any)
 const VirtualChassisIdRoute = VirtualChassisIdRouteImport.update({
@@ -3257,6 +3263,7 @@ export interface FileRoutesByFullPath {
   '/tunnels/new': typeof TunnelsNewRoute
   '/users/new': typeof UsersNewRoute
   '/virtual-chassis/$id': typeof VirtualChassisIdRoute
+  '/virtual-chassis/bulk-edit': typeof VirtualChassisBulkEditRoute
   '/virtual-chassis/new': typeof VirtualChassisNewRoute
   '/virtual-machines/$id': typeof VirtualMachinesIdRoute
   '/virtual-machines/new': typeof VirtualMachinesNewRoute
@@ -3684,6 +3691,7 @@ export interface FileRoutesByTo {
   '/tunnels/new': typeof TunnelsNewRoute
   '/users/new': typeof UsersNewRoute
   '/virtual-chassis/$id': typeof VirtualChassisIdRoute
+  '/virtual-chassis/bulk-edit': typeof VirtualChassisBulkEditRoute
   '/virtual-chassis/new': typeof VirtualChassisNewRoute
   '/virtual-machines/$id': typeof VirtualMachinesIdRoute
   '/virtual-machines/new': typeof VirtualMachinesNewRoute
@@ -4181,6 +4189,7 @@ export interface FileRoutesById {
   '/tunnels/new': typeof TunnelsNewRoute
   '/users/new': typeof UsersNewRoute
   '/virtual-chassis/$id': typeof VirtualChassisIdRoute
+  '/virtual-chassis/bulk-edit': typeof VirtualChassisBulkEditRoute
   '/virtual-chassis/new': typeof VirtualChassisNewRoute
   '/virtual-machines/$id': typeof VirtualMachinesIdRoute
   '/virtual-machines/new': typeof VirtualMachinesNewRoute
@@ -4679,6 +4688,7 @@ export interface FileRouteTypes {
     | '/tunnels/new'
     | '/users/new'
     | '/virtual-chassis/$id'
+    | '/virtual-chassis/bulk-edit'
     | '/virtual-chassis/new'
     | '/virtual-machines/$id'
     | '/virtual-machines/new'
@@ -5106,6 +5116,7 @@ export interface FileRouteTypes {
     | '/tunnels/new'
     | '/users/new'
     | '/virtual-chassis/$id'
+    | '/virtual-chassis/bulk-edit'
     | '/virtual-chassis/new'
     | '/virtual-machines/$id'
     | '/virtual-machines/new'
@@ -5602,6 +5613,7 @@ export interface FileRouteTypes {
     | '/tunnels/new'
     | '/users/new'
     | '/virtual-chassis/$id'
+    | '/virtual-chassis/bulk-edit'
     | '/virtual-chassis/new'
     | '/virtual-machines/$id'
     | '/virtual-machines/new'
@@ -7542,6 +7554,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/virtual-chassis/new'
       preLoaderRoute: typeof VirtualChassisNewRouteImport
+      parentRoute: typeof VirtualChassisRoute
+    }
+    '/virtual-chassis/bulk-edit': {
+      id: '/virtual-chassis/bulk-edit'
+      path: '/bulk-edit'
+      fullPath: '/virtual-chassis/bulk-edit'
+      preLoaderRoute: typeof VirtualChassisBulkEditRouteImport
       parentRoute: typeof VirtualChassisRoute
     }
     '/virtual-chassis/$id': {
@@ -10598,6 +10617,7 @@ const UsersRouteWithChildren = UsersRoute._addFileChildren(UsersRouteChildren)
 
 interface VirtualChassisRouteChildren {
   VirtualChassisIdRoute: typeof VirtualChassisIdRoute
+  VirtualChassisBulkEditRoute: typeof VirtualChassisBulkEditRoute
   VirtualChassisNewRoute: typeof VirtualChassisNewRoute
   VirtualChassisIndexRoute: typeof VirtualChassisIndexRoute
   VirtualChassisIdEditRoute: typeof VirtualChassisIdEditRoute
@@ -10605,6 +10625,7 @@ interface VirtualChassisRouteChildren {
 
 const VirtualChassisRouteChildren: VirtualChassisRouteChildren = {
   VirtualChassisIdRoute: VirtualChassisIdRoute,
+  VirtualChassisBulkEditRoute: VirtualChassisBulkEditRoute,
   VirtualChassisNewRoute: VirtualChassisNewRoute,
   VirtualChassisIndexRoute: VirtualChassisIndexRoute,
   VirtualChassisIdEditRoute: VirtualChassisIdEditRoute,
