@@ -32,6 +32,7 @@
 #   DANBYTE_UPGRADE_TRIGGER   button|upload|auto|admin|installer|manual
 #   DANBYTE_UPGRADE_ATTEMPT   which try this is (auto-upgrade retries)
 #   DANBYTE_UPGRADE_BACKUP    backup id the launcher made, or "skipped"
+#   DANBYTE_UPGRADE_BACKUP_T0, _T1   when that backup started and ended (epoch s)
 #   DANBYTE_SKIP_BACKUP=1     no pre-upgrade backup (ignored for auto)
 #   DANBYTE_UPGRADE_STATUS    status JSON (default $DANBYTE_DIR/.upgrade-status.json)
 #   DANBYTE_UPGRADE_TEST=1 + DANBYTE_UPGRADE_FAULT=<phase>   tests only
@@ -200,6 +201,10 @@ if [ "$BACKUP_ID" = skipped ] || { [ -z "$BACKUP_ID" ] && [ "${DANBYTE_SKIP_BACK
   warn "no pre-upgrade backup was taken (skipped on request)"
   step_end skipped "skipped on request"
 elif [ -n "$BACKUP_ID" ]; then
+  # Taken before this stage ran: the step shows when, and how long it took.
+  _b0=$(printf '%s' "${DANBYTE_UPGRADE_BACKUP_T0:-}" | tr -cd 0-9)
+  _b1=$(printf '%s' "${DANBYTE_UPGRADE_BACKUP_T1:-}" | tr -cd 0-9)
+  if [ -n "$_b0" ] && [ -n "$_b1" ]; then STEP_T0=$_b0; STEP_T1=$_b1; fi
   step_end ok "$BACKUP_ID"
 else
   run 3600 "$PY" manage.py backup_now --kind pre_upgrade \
@@ -367,6 +372,20 @@ step_begin static 80
 run 900 env DJANGO_SUPERUSER_USERNAME= DJANGO_SUPERUSER_PASSWORD= "$PY" manage.py bootstrap \
   || fail "bootstrap failed: $(tail_out)"
 run 900 "$PY" manage.py collectstatic --noinput || fail "collectstatic failed: $(tail_out)"
+# nginx serves static files from disk as another user. collectstatic skips
+# files that did not change, so copies an earlier release wrote with the
+# private media modes (0640) stay closed to it unless opened here.
+if [ -d "$APP/staticfiles" ]; then
+  chmod -R u=rwX,go=rX "$APP/staticfiles" 2>/dev/null \
+    || warn "some static files could not be made readable for the web server"
+  # nginx answers for static files while the app is down; when it runs on
+  # this host, ask it for one. A 403 alone is not worth a rollback.
+  if [ -f "$APP/staticfiles/admin/css/base.css" ]; then
+    _h=$(app_hosts | awk '{print $1}')
+    _c=$(http_code "https://$_h/static/admin/css/base.css" --resolve "$_h:443:127.0.0.1")
+    [ "$_c" != 403 ] || warn "nginx answers HTTP 403 for /static/: it cannot read $APP/staticfiles (every folder above it needs o+x)"
+  fi
+fi
 # Private uploads are served only through Django since 0.16.12 (#227).
 for _d in documents image-attachments floor-plans oui-imports outpost-releases script-outputs; do
   [ -d "$APP/media/$_d" ] && chmod -R o-rwx "$APP/media/$_d" 2>/dev/null
@@ -474,4 +493,5 @@ log "now on $VERSION"
 remove_recover
 finish "done"
 rm -rf "$WORK"
+rmdir "$UPG_ROOT" 2>/dev/null || :   # only when nothing else is in it
 exit 0

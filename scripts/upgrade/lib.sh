@@ -166,11 +166,12 @@ step_begin() {  # <name> <pct>
   status running "$1" "$2"
 }
 
-step_end() {  # <ok|failed|skipped> [detail]
+step_end() {  # <ok|failed|skipped> [detail]; STEP_T1 set: when it ended
   [ "$STEP_OPEN" = 1 ] || return 0
   STEP_OPEN=0
-  printf '%s\t%s\t%s\t%s\t%s\n' "$STEP" "$1" "$STEP_T0" "$(now)" \
+  printf '%s\t%s\t%s\t%s\t%s\n' "$STEP" "$1" "$STEP_T0" "${STEP_T1:-$(now)}" \
     "$(printf '%s' "${2:-}" | tr '\t\n\r' '   ' | cut -c1-400)" >>"$WORK/steps"
+  STEP_T1=""
 }
 
 # ── running commands ─────────────────────────────────────────────────────────

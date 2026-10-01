@@ -102,12 +102,17 @@ fi
 _named="$UPG_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-$(clean "$TARGET")"
 mv "$WORK" "$_named" 2>/dev/null && WORK="$_named"
 
-status running backup 10
+# Below the stage's preflight (5): the bar never goes back at the hand-over.
+status running backup 4
 BACKUP="skipped"
+B0=""
+B1=""
 if [ "${DANBYTE_SKIP_BACKUP:-0}" != 1 ] || [ "$TRIGGER" = auto ]; then
   OUTF="$WORK/backup.out"
+  B0=$(date +%s)
   timeout 3600 "$PY" manage.py backup_now --kind pre_upgrade >"$OUTF" 2>&1 \
     || fail backup "pre-upgrade backup failed: $(tail -c 300 "$OUTF" | tr -c '[:print:]' ' ')" true
+  B1=$(date +%s)
   BACKUP=$(grep -Eo '^[0-9a-f-]{36}' "$OUTF" | tail -n 1)
   [ -n "$BACKUP" ] || BACKUP=unknown
 fi
@@ -116,4 +121,5 @@ exec env DANBYTE_DIR="$CODE_DIR" DANBYTE_UPGRADE_WORK="$WORK" DANBYTE_UPGRADE_SR
   DANBYTE_UPGRADE_VERSION="$(clean "$TARGET")" DANBYTE_UPGRADE_FROM="$FROM" \
   DANBYTE_UPGRADE_TARBALL="$TARBALL" DANBYTE_UPGRADE_TRIGGER="$TRIGGER" \
   DANBYTE_UPGRADE_BACKUP="$BACKUP" DANBYTE_UPGRADE_STATUS="$STATUS_FILE" \
+  DANBYTE_UPGRADE_BACKUP_T0="$B0" DANBYTE_UPGRADE_BACKUP_T1="$B1" \
   /bin/sh "$WORK/src/scripts/upgrade/stage.sh" --kind bundle

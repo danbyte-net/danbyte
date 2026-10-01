@@ -99,12 +99,17 @@ fi
 
 # The backup, with the code that is running (the target's stage has never
 # run here; this one has). DANBYTE_SKIP_BACKUP=1 only when a person asks.
-status running backup 10
+# Below the stage's preflight (5): the bar never goes back at the hand-over.
+status running backup 4
 BACKUP="skipped"
+B0=""
+B1=""
 if [ "${DANBYTE_SKIP_BACKUP:-0}" != 1 ] || [ "$TRIGGER" = auto ]; then
   OUTF="$WORK/backup.out"
+  B0=$(date +%s)
   timeout 3600 "$PY" manage.py backup_now --kind pre_upgrade >"$OUTF" 2>&1 \
     || fail backup "pre-upgrade backup failed: $(tail -c 300 "$OUTF" | tr -c '[:print:]' ' ')" true
+  B1=$(date +%s)
   BACKUP=$(grep -Eo '^[0-9a-f-]{36}' "$OUTF" | tail -n 1)
   [ -n "$BACKUP" ] || BACKUP=unknown
 fi
@@ -112,5 +117,6 @@ fi
 exec env DANBYTE_DIR="$CODE_DIR" DANBYTE_UPGRADE_WORK="$WORK" DANBYTE_UPGRADE_SRC="$WORK/src" \
   DANBYTE_UPGRADE_VERSION="$TARGET" DANBYTE_UPGRADE_FROM="$FROM" DANBYTE_UPGRADE_SHA="$SHA" \
   DANBYTE_UPGRADE_TRIGGER="$TRIGGER" DANBYTE_UPGRADE_BACKUP="$BACKUP" \
+  DANBYTE_UPGRADE_BACKUP_T0="$B0" DANBYTE_UPGRADE_BACKUP_T1="$B1" \
   DANBYTE_UPGRADE_STATUS="$STATUS_FILE" \
   /bin/sh "$WORK/src/scripts/upgrade/stage.sh" --kind git
