@@ -2,7 +2,7 @@
 # Danbyte one-shot installer - turns a fully-offline release bundle into a
 # running production install. Run as root from inside the unpacked bundle:
 #
-#   tar xzf danbyte-<version>-linux-x86_64.tar.gz
+#   sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz
 #   cd danbyte-<version>-linux-x86_64
 #   sudo ./install.sh --host danbyte.example.com
 #
@@ -79,7 +79,7 @@ die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 [ -d "$BUNDLE/vendor/wheels" ] && [ -x "$BUNDLE/vendor/python/bin/python3" ] \
   || die "this doesn't look like an offline bundle (missing vendor/)."
 [ "$(stat -c %u "$BUNDLE/install.sh")" -eq 0 ] \
-  || warn "the bundle's files are not owned by root; whoever owns them could change what root runs next - extract it as root (tar is run by root) or chown -R root: it"
+  || warn "the bundle's files are not owned by root; whoever owns them could change what root runs next - extract it with sudo tar xzf, or sudo chown -R root: it"
 EXISTING=0
 if [ -f "$APP/manage.py" ] && [ -f "$APP/.env" ]; then
   EXISTING=1

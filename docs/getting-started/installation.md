@@ -54,7 +54,7 @@ The other tabs cover building from source and a local dev checkout.
         curl -fsSLO $base/danbyte-<version>-linux-x86_64.tar.gz
         curl -fsSLO $base/danbyte-<version>-linux-x86_64.tar.gz.sha256
         sha256sum -c danbyte-<version>-linux-x86_64.tar.gz.sha256
-        tar xzf danbyte-<version>-linux-x86_64.tar.gz
+        sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz    # as root, so root owns what it runs
         cd danbyte-<version>-linux-x86_64
         sudo ./install.sh --host danbyte.example.com
         ```

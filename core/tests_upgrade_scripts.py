@@ -923,6 +923,22 @@ class UnitFileTests(SimpleTestCase):
             self.assertRegex(service, r"(?m)^SuccessExitStatus=143$", name)
 
 
+class BundleOwnershipTests(SimpleTestCase):
+    def test_the_guides_unpack_the_bundle_as_root(self):
+        # install.sh warns when the bundle's files are not root's: whoever
+        # owns them could change what root runs. Bundles are packed with root
+        # as the owner, so tar run by root extracts root's files.
+        self.assertRegex((REPO / "scripts" / "build-release.sh").read_text(),
+                         r"tar -czf .*--owner=0 --group=0")
+        for rel in ("docs/getting-started/upgrading.md", "docs/getting-started/installation.md",
+                    "scripts/install.sh"):
+            found = [line.strip().lstrip("#").strip() for line in (REPO / rel).read_text().splitlines()
+                     if re.search(r"\btar -?x\w*f? danbyte-", line)]
+            self.assertTrue(found, rel)
+            for line in found:
+                self.assertTrue(line.startswith("sudo tar "), f"{rel}: {line}")
+
+
 class VersionOrderTests(SimpleTestCase):
     """lib.sh's ver_cmp, the order install.sh and the stage refuse a
     downgrade by: the app's own (core.version.compare_versions), in plain awk,

@@ -167,10 +167,14 @@ current `/opt` layout.
     bundle. It keeps your `.env`, the database and the site's certificate.
 
     ```bash
-    tar xzf danbyte-<version>-linux-x86_64.tar.gz
+    sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz
     cd danbyte-<version>-linux-x86_64
     sudo ./install.sh                     # upgrades the existing install
     ```
+
+    Unpack it as root, as above: the bundle's files then belong to root,
+    and `install.sh` warns when they belong to anyone else, who could
+    change what root runs next.
 
     It prints each step as the upgrade reaches it and exits non-zero if it
     failed (and was rolled back). If your SSH session drops, the upgrade
@@ -211,7 +215,7 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
 
     ```bash
     cd /tmp
-    tar xzf danbyte-<version>-linux-x86_64.tar.gz
+    sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz
     cd danbyte-<version>-linux-x86_64
     sudo ./install.sh --host danbyte.example.com      # your real hostname/IP
     ```
