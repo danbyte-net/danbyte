@@ -112,7 +112,9 @@ checkbox on the interface / front-port / rear-port forms) when a cable is
 physically in it but nobody has documented the cable yet - it counts as
 connected, the row shows an *Undocumented* badge with a green tint, the
 legend shows how many are *undocumented*, and the flag clears itself the
-moment a real cable is attached to the port. Faceplates and photo panels draw
+moment a real cable is attached to the port. The cable dialog lists such a
+port as *marked connected* and lets you pick it, so documenting the cable
+needs no unmarking first. Faceplates and photo panels draw
 such a port dimmed by default; **Settings → Admin → Faceplates → Light up
 ports marked connected** makes them draw it lit, like a cabled one. The same
 card's **Show interface prefixes on rendered faceplates** prints the derived
