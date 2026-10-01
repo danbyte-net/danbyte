@@ -146,6 +146,18 @@ class RealNotesTests(APITestCase):
             self.assertFalse(un._acme_proxied())
             self.assertFalse(un._backups_location())
 
+    def test_the_backup_notes_agree_on_buffering(self):
+        # A host that never had the block sees both notes when Danbyte can't
+        # read its nginx site; they must not tell it opposite things (#242).
+        notes = {n.id: n for n in un.NOTES}
+        add = notes["0.16.0-nginx-backups"].snippet
+        self.assertIn("proxy_request_buffering on;", add)
+        self.assertNotIn("proxy_request_buffering off;", add)
+        self.assertIn("proxy_max_temp_file_size 10240m;", add)
+        self.assertIn("before 0.16.12", notes["0.16.12-nginx-backups-buffer"].body)
+        with patch("core.upgrade_notes._site_config", return_value=add):
+            self.assertTrue(un._backups_location())
+
     def test_the_certificate_unit_must_not_run_the_apps_own_script(self):
         from django.conf import settings
 

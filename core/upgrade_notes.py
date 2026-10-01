@@ -60,6 +60,8 @@ def host_sync_command() -> str:
     return f"sudo make -C {settings.BASE_DIR} host-sync"
 
 
+# The block as the installer renders it today - with buffering on (0.16.12),
+# so a host that adds it now needs no second step (#242).
 _NGINX_BACKUPS = """\
 location ^~ /api/backups/ {
     proxy_pass http://127.0.0.1:8000;
@@ -67,7 +69,8 @@ location ^~ /api/backups/ {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_request_buffering off;
+    proxy_request_buffering on;
+    proxy_max_temp_file_size 10240m;
     proxy_read_timeout 600s;
     client_max_body_size 8g;
 }
@@ -436,11 +439,12 @@ NOTES: tuple[UpgradeNote, ...] = (
         version="0.16.12",
         title="Let nginx buffer backup uploads and downloads",
         body=(
-            "A backup upload streamed to Danbyte at the browser's speed, and "
-            "the web worker was stopped after a minute, so any archive that "
-            "took longer to upload failed with a 500. nginx now takes the "
-            "whole file first. It needs free space for one archive in its "
-            "temporary directory."
+            "Only for a /api/backups/ block added before 0.16.12, which has "
+            "proxy_request_buffering off: an upload streamed to Danbyte at the "
+            "browser's speed, and the web worker was stopped after a minute, so "
+            "any archive that took longer to upload failed with a 500. With "
+            "buffering on, nginx takes the whole file first. It needs free "
+            "space for one archive in its temporary directory."
         ),
         snippet=_NGINX_BACKUPS_BUFFER,
         docs="getting-started/backup-restore/",
