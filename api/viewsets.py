@@ -2835,6 +2835,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     clone_fields = (
         "manufacturer", "u_height", "rack_width", "is_full_depth", "airflow",
         "weight", "weight_unit", "subdevice_role", "exclude_from_utilization",
+        "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
         "description",
         "release_date", "end_of_sale", "end_of_security_updates",
         "end_of_support", "lifecycle_url",
@@ -3453,6 +3454,7 @@ class DeviceViewSet(
             "device_type", "device_type__platform", "device_type__manufacturer",
             "site", "site__region", "primary_ip",
             "role", "rack", "status", "platform", "location", "cluster",
+            "cabinet", "din_rail",
         )
         # The secondary and OOB addresses and the config template (resolved
         # device -> role -> platform) are prefetched, not joined: with them
@@ -4162,6 +4164,12 @@ class DeviceViewSet(
                                ("location", "location_id"),
                                ("manufacturer", "device_type__manufacturer_id")):
                 v = self.request.query_params.get(key)
+                if v:
+                    qs = qs.filter(**{field: v})
+            from .topology_views import _uuid_param
+
+            for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id")):
+                v = _uuid_param(self.request.query_params, key)
                 if v:
                     qs = qs.filter(**{field: v})
             # The physical hosts behind a virtualization source. There is no
@@ -6219,7 +6227,8 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 "cabinet_type__manufacturer",
             )
             .prefetch_related("tags", "rails")
-            .annotate(document_n=Coalesce(Subquery(documents), 0))
+            .annotate(document_n=Coalesce(Subquery(documents), 0),
+                      device_n=Count("devices", distinct=True))
         )
         if self.request:
             params = self.request.query_params
@@ -6236,6 +6245,17 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 if value:
                     qs = qs.filter(**{field: value})
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        cabinet = self.get_object()
+        n = Device.objects.filter(din_rail__cabinet=cabinet).count()
+        if n:
+            return Response(
+                {"detail": f"{n} device{'s are' if n != 1 else ' is'} on its rails"
+                           " - take them off first."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"], url_path="sync-from-type")
     def sync_from_type(self, request, pk=None):

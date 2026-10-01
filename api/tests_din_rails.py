@@ -118,7 +118,7 @@ class DinRailTests(CabinetTestCase):
         )
         self.assertEqual(entries.count(), 1)
         self.assertEqual(entries.get().changes["rails"], {
-            "old": None, "new": ["R1: TS 35 at 20.0, 100.0 mm, 460.0 mm long"],
+            "old": None, "new": ["R1: TS 35 at 20, 100 mm, 460 mm long"],
         })
         self.assertEqual(entries.get().object_site_id, self.site.id)
 
@@ -176,7 +176,7 @@ class CabinetTypeRailTests(CabinetTestCase):
         entry = ChangeLogEntry.objects.get(object_type="api.cabinettype",
                                            changes__has_key="rails")
         self.assertEqual(entry.changes["rails"]["new"],
-                         ["R1: TS 35 at 20.0, 100.0 mm, 480.0 mm long"])
+                         ["R1: TS 35 at 20, 100 mm, 480 mm long"])
 
     def test_sync_from_type(self):
         t = self._type_with_rails()
@@ -193,18 +193,24 @@ class CabinetTypeRailTests(CabinetTestCase):
             "rails": {"add": ["R2"],
                       "update": [{"label": "R1",
                                   "changes": {"y_mm": {"cabinet": 120.0, "type": 100.0}}}],
-                      "extra": ["X"]},
+                      "blocked": [], "extra": ["X"]},
         }})
         r = self.client.post(url, {"apply": True}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json(), {"applied": True, "diff": {
-            "rails": {"add": [], "update": [], "extra": ["X"]},
+            "rails": {"add": [], "update": [], "blocked": [], "extra": ["X"]},
         }})
         cabinet = Cabinet.objects.get(pk=cab["id"])
         self.assertEqual(cabinet.outer_depth_mm, 210)
         self.assertEqual(sorted(cabinet.rails.values_list("label", flat=True)), ["R1", "R2", "X"])
-        self.assertTrue(ChangeLogEntry.objects.filter(
-            object_id=cab["id"], changes__has_key="rails").exists())
+        logged = ChangeLogEntry.objects.get(object_id=cab["id"], changes__has_key="rails")
+        self.assertEqual(logged.changes["rails"], {
+            "old": ["R1: TS 35 at 20, 120 mm, 480 mm long",
+                    "X: TS 35 at 20, 500 mm, 100 mm long"],
+            "new": ["R1: TS 35 at 20, 100 mm, 480 mm long",
+                    "R2: TS 35 at 20, 300 mm, 480 mm long",
+                    "X: TS 35 at 20, 500 mm, 100 mm long"],
+        })
 
     def test_a_sync_that_does_not_fit_changes_nothing(self):
         t = self._type_with_rails()

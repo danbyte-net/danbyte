@@ -57,8 +57,10 @@ class IndexSpec:
 SPECS: dict[str, IndexSpec] = {
     "device": IndexSpec("api.Device", "/devices/{id}", weight=10, subtitle="device_type.model",
                         body=("device_type.model", "device_type.manufacturer.name",
-                              "primary_ip.ip_address", "platform.name", "rack.name"),
-                        facets=("role", "status", "platform", "device_type", "cluster", "rack")),
+                              "primary_ip.ip_address", "platform.name", "rack.name",
+                              "cabinet.name"),
+                        facets=("role", "status", "platform", "device_type", "cluster", "rack",
+                                "cabinet")),
     "prefix": IndexSpec("api.Prefix", "/prefixes/{id}", weight=10, title="cidr",
                         subtitle="description", body=("vrf.name",), facets=("status", "role", "vrf")),
     "ipaddress": IndexSpec("api.IPAddress", "/ips/{id}", weight=9, title="ip_address",
@@ -225,7 +227,8 @@ _BODY_CANDIDATES = ("description", "comments", "slug", "model", "part_number", "
                     "phone", "title")
 # Generic facet relations (key = attribute name; device_type is exposed as "type").
 _FACET_RELATIONS = ("site", "role", "status", "platform", "device_type", "vrf", "cluster",
-                    "provider", "manufacturer", "group", "type", "rir", "region", "rack", "vlan")
+                    "provider", "manufacturer", "group", "type", "rir", "region", "rack", "vlan",
+                    "cabinet")
 _FACET_KEYS = {"device_type": "type"}
 
 
@@ -350,7 +353,8 @@ def _facets(obj, spec: IndexSpec) -> dict:
 # object's display name; status carries its colour so it renders as a pill.
 _CONTEXT_RELATIONS = (
     ("status", "status"), ("site", "site"), ("location", "location"),
-    ("region", "region"), ("rack", "rack"), ("role", "role"), ("device", "device"),
+    ("region", "region"), ("rack", "rack"), ("cabinet", "cabinet"), ("role", "role"),
+    ("device", "device"),
     ("vm", "vm"), ("device_type", "type"), ("platform", "platform"),
     ("cluster", "cluster"), ("vrf", "vrf"), ("vlan", "vlan"), ("provider", "provider"),
     ("manufacturer", "manufacturer"), ("group", "group"), ("rir", "rir"),
@@ -393,6 +397,13 @@ def _context(obj, spec: IndexSpec) -> dict:
         if key == "rack":
             pos = getattr(obj, "position", None)
             out["rack"] = f"{rel.name} · U{pos}" if pos else rel.name
+            continue
+        if key == "cabinet":
+            from .din import mm
+
+            rail = getattr(obj, "din_rail", None)
+            out["cabinet"] = (f"{rel.name} · {rail.label} @ {mm(obj.din_offset_mm)} mm"
+                              if rail is not None else rel.name)
             continue
         out[key] = _display(rel)
     # Things worth reading off the row that aren't relations.

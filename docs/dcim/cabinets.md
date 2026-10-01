@@ -84,6 +84,34 @@ or moves rails; it never removes one. When both sizes and rails differ, either
 can be left out. A sync whose result would not fit the plate is refused as a
 whole.
 
+## Mounting devices
+
+A device goes in a cabinet when its type mounts on DIN rails: the
+[device type](device-catalog.md#device-types) lists the rail profiles it fits
+and its body size. The device sits on one of the cabinet's rails at an
+**offset** - from the rail's left end to the device's left edge, in tenths of
+a millimetre - and takes its type's width from there. Devices on one rail may
+touch but not overlap, and stay on the rail. With no offset, a device takes
+the first gap from the left that it fits in.
+
+A device in a cabinet is at the cabinet's site: one without a site takes it,
+and the cabinet's location when it has none; one at another site is refused.
+A device sits in a rack or a cabinet, never both. Taking a device out of its
+cabinet takes it off its rail; a device can also be in a cabinet off any rail.
+
+Rails, cabinets and types keep their devices:
+
+- a rail that carries devices cannot be removed, shortened past them, or given
+  a profile they do not mount on - moving a rail moves its devices with it;
+- a cabinet with devices on its rails cannot be deleted, nor move to another
+  site while devices are in it;
+- a type's width or profiles cannot change in a way devices of it on rails
+  would not survive.
+
+Sync from type skips a rail update that its devices would not survive and
+lists it as *blocked*, with the reason. Search shows where a device sits -
+*K1 · R2 @ 120 mm* - and finds it by its cabinet's name.
+
 ## Permissions
 
 Cabinets, cabinet types and cabinet roles are object types of their own in
@@ -113,5 +141,12 @@ that rail, an item without one is a new rail, and rails left out are
 removed. Errors come back per rail, in the order sent.
 
 `POST /api/cabinets/{id}/sync-from-type/` answers the difference
-(`{"applied": false, "diff": …}`); with `{"apply": true}` it applies it, and
-`sizes` and `rails` (both true by default) narrow what applies.
+(`{"applied": false, "diff": …}`, its `rails` split into `add`, `update`,
+`blocked` and `extra`); with `{"apply": true}` it applies it, and `sizes` and
+`rails` (both true by default) narrow what applies.
+
+A device reads `cabinet`, `din_rail` and `din_offset_mm`, and writes
+`cabinet_id`, `din_rail_id` and `din_offset_mm`; `/api/devices/?cabinet=` and
+`?din_rail=` filter by them. A device type has `width_mm`, `height_mm`,
+`depth_mm`, `din_profiles` (a list of `ts35`, `ts15`, `g32`) and
+`din_rail_mm`. A cabinet counts its devices in `device_count`.

@@ -26,7 +26,8 @@ from customization.models import (
 from .models import (
     Antenna, AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
-    CABINET_SIZE_FIELDS, Cabinet, CabinetRole, CabinetType, DinRail, DinRailTemplate,
+    CABINET_SIZE_FIELDS, DIN_PROFILE_CHOICES, Cabinet, CabinetRole, CabinetType, DinRail,
+    DinRailTemplate,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
     VirtualMachineGroup,
@@ -2143,8 +2144,11 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
         model = DeviceType
         fields = ["id", "name", "manufacturer", "manufacturer_id",
                   "u_height", "rack_width", "is_full_depth",
+                  "width_mm", "height_mm", "din_profiles", "din_rail_mm",
                   "front_image", "rear_image",
                   "release_date", "end_of_support", "lifecycle_state"]
+        extra_kwargs = {f: {"coerce_to_string": False}
+                        for f in ("width_mm", "height_mm", "din_rail_mm")}
 
 
 class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
@@ -2388,6 +2392,49 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         return value
 
     lifecycle_state = serializers.ReadOnlyField()
+    width_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                        max_value=5000, coerce_to_string=False,
+                                        required=False, allow_null=True)
+    height_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                         max_value=5000, coerce_to_string=False,
+                                         required=False, allow_null=True)
+    depth_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                        max_value=5000, coerce_to_string=False,
+                                        required=False, allow_null=True)
+    din_rail_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=0,
+                                           max_value=5000, coerce_to_string=False,
+                                           required=False, allow_null=True)
+    din_profiles = serializers.ListField(
+        child=serializers.ChoiceField(choices=DIN_PROFILE_CHOICES), required=False,
+    )
+
+    def validate(self, attrs):
+        """DIN-rail gear (#277): a type that mounts on rails has a width and a
+        height, its rail sits on its body, and devices of it already on rails
+        must survive a new width or profile list."""
+        from . import din
+
+        attrs = super().validate(attrs)
+
+        def get(f):
+            return attrs.get(f, getattr(self.instance, f, None))
+
+        if "din_profiles" in attrs:
+            attrs["din_profiles"] = [p for p, _ in DIN_PROFILE_CHOICES
+                                     if p in attrs["din_profiles"]]
+        profiles = get("din_profiles") or []
+        if profiles:
+            missing = {f: "A DIN-rail type needs its body size."
+                       for f in ("width_mm", "height_mm") if get(f) is None}
+            if missing:
+                raise serializers.ValidationError(missing)
+        rail_at, height = get("din_rail_mm"), get("height_mm")
+        if rail_at is not None and height is not None and rail_at > height:
+            raise serializers.ValidationError(
+                {"din_rail_mm": f"Below the body ({din.mm(height)} mm tall)."})
+        if self.instance is not None and ("width_mm" in attrs or "din_profiles" in attrs):
+            din.check_type_change(self.instance, get("width_mm"), profiles)
+        return attrs
 
     class Meta:
         model = DeviceType
@@ -2399,6 +2446,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "topology_photo_size",
                   "is_full_depth", "airflow", "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
+                  "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
                   "tags", "tag_ids", "device_count", "component_count", "component_counts",
@@ -2656,6 +2704,20 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         source="rack", queryset=Rack.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    cabinet = serializers.SerializerMethodField()
+    cabinet_id = TenantScopedPrimaryKeyRelatedField(
+        source="cabinet", queryset=Cabinet.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    din_rail = serializers.SerializerMethodField()
+    din_rail_id = TenantScopedPrimaryKeyRelatedField(
+        source="din_rail", queryset=DinRail.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    din_offset_mm = serializers.DecimalField(
+        max_digits=6, decimal_places=1, min_value=0, max_value=5000,
+        coerce_to_string=False, required=False, allow_null=True,
+    )
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
@@ -2723,6 +2785,16 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "id": str(r.id), "name": r.name, "u_height": r.u_height,
             "starting_unit": r.starting_unit, "desc_units": r.desc_units,
         }
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_cabinet(self, obj):
+        c = obj.cabinet
+        return {"id": str(c.id), "name": c.name} if c else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_din_rail(self, obj):
+        r = obj.din_rail
+        return {"id": str(r.id), "label": r.label, "profile": r.profile} if r else None
 
     def get_u_height(self, obj) -> int:
         return (obj.device_type.u_height if obj.device_type else 1) or 1
@@ -2847,6 +2919,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     {field: "Pick an IP assigned to this device."}
                 )
 
+        self._validate_cabinet(attrs)
+
         rack = attrs.get("rack", getattr(self.instance, "rack", None))
         position = attrs.get("position", getattr(self.instance, "position", None))
         face = attrs.get("face", getattr(self.instance, "face", ""))
@@ -2933,6 +3007,55 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     {"position": f"Overlaps {d.name} at U{d.position}."}
                 )
         return attrs
+
+    def _validate_cabinet(self, attrs) -> None:
+        """A device in a DIN-rail cabinet (#277): never in a rack as well, at
+        the cabinet's site, and on one of its rails at an offset where its
+        type's width fits. A rail names its cabinet; leaving or changing the
+        cabinet takes the device off its rail; a rail without an offset takes
+        the first gap the device fits in."""
+        from . import din
+
+        inst = self.instance
+
+        def get(f):
+            return attrs.get(f, getattr(inst, f, None))
+
+        if attrs.get("din_rail") is not None and "cabinet" not in attrs:
+            attrs["cabinet"] = attrs["din_rail"].cabinet
+        if "cabinet" in attrs and "din_rail" not in attrs and inst is not None \
+                and inst.din_rail_id and attrs["cabinet"] != inst.cabinet:
+            attrs["din_rail"] = None
+        if "din_rail" in attrs and "din_offset_mm" not in attrs and (
+                attrs["din_rail"] is None or inst is None
+                or attrs["din_rail"].pk != inst.din_rail_id):
+            attrs["din_offset_mm"] = None
+        cabinet, rail, offset = get("cabinet"), get("din_rail"), get("din_offset_mm")
+        if cabinet is None and rail is None and offset is None:
+            return
+        if cabinet is not None and get("rack") is not None:
+            raise serializers.ValidationError(
+                {"cabinet_id": "A device sits in a rack or a cabinet, not both."})
+        if rail is not None and (cabinet is None or rail.cabinet_id != cabinet.pk):
+            raise serializers.ValidationError(
+                {"din_rail_id": "Pick a rail in the device's cabinet."})
+        if offset is not None and rail is None:
+            raise serializers.ValidationError({"din_offset_mm": "An offset needs a rail."})
+        if cabinet is not None:
+            site = get("site")
+            if site is None:
+                attrs["site"] = cabinet.site
+            elif site.pk != cabinet.site_id:
+                field = "site_id" if "site" in attrs else "cabinet_id"
+                raise serializers.ValidationError(
+                    {field: f"{cabinet.name} is at {cabinet.site.name}; the device must be too."})
+            if "cabinet" in attrs and get("location") is None \
+                    and cabinet.location_id is not None:
+                attrs["location"] = cabinet.location
+        moved = any(f in attrs for f in ("cabinet", "din_rail", "din_offset_mm", "device_type"))
+        if rail is not None and moved:
+            attrs["din_offset_mm"] = din.place(
+                rail, get("device_type"), offset, exclude=getattr(inst, "pk", None))
 
     def get_interface_count(self, obj) -> int:
         # Served from a list annotation when present (avoids a COUNT per row);
@@ -3034,6 +3157,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "rack", "rack_id", "position", "face", "rack_side",
                   "mount", "mount_offset_mm", "mount_span_u",
                   "u_height", "rack_width",
+                  "cabinet", "cabinet_id", "din_rail", "din_rail_id", "din_offset_mm",
                   "location", "location_id", "cluster", "cluster_id",
                   "virtual_chassis", "virtual_chassis_id",
                   "vc_position", "vc_priority", "vc_renamed_interfaces",
@@ -6115,6 +6239,7 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
         write_only=True, required=False, many=True,
     )
     document_count = serializers.SerializerMethodField()
+    device_count = serializers.SerializerMethodField()
     rails = DinRailSerializer(many=True, required=False)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -6127,6 +6252,10 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
         if n is not None:
             return n
         return Document.objects.filter(object_type="api.cabinet", object_id=obj.id).count()
+
+    def get_device_count(self, obj) -> int:
+        n = getattr(obj, "device_n", None)
+        return n if n is not None else obj.devices.count()
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -6174,6 +6303,20 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
             attrs.get("inner_width_mm", getattr(self.instance, "inner_width_mm", None)),
             attrs.get("inner_height_mm", getattr(self.instance, "inner_height_mm", None)),
         )
+        if self.instance is not None:
+            from . import din
+
+            if "rails" in attrs:
+                din.check_rail_devices(attrs["rails"], list(self.instance.rails.all()))
+            # Its devices are at its site (#277): they move out before it moves.
+            site = attrs.get("site")
+            if site is not None and site.pk != self.instance.site_id:
+                n = self.instance.devices.count()
+                if n:
+                    raise serializers.ValidationError({"site_id": (
+                        f"{n} device{'s are' if n != 1 else ' is'} in it, at its site"
+                        " - move them out first."
+                    )})
         return attrs
 
     def create(self, validated_data):
@@ -6204,8 +6347,10 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
                   "location", "location_id", "role", "role_id",
                   "cabinet_type", "cabinet_type_id", "status", "status_id",
                   *CABINET_SIZE_FIELDS, "rails", "description", "document_count",
+                  "device_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "document_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "document_count", "device_count", "created_at",
+                            "updated_at"]
         # Filled from the cabinet type on create (see validate).
         extra_kwargs = {
             "inner_width_mm": {"required": False},

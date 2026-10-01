@@ -48,6 +48,12 @@ Fields:
   this and frees the opposite face in [rack elevations](racks.md#rack-elevations)
 - **Airflow**, **weight** - hardware facts (airflow also exists per device as
   an override)
+- **Size (mm)** - the body's width, height and depth, in tenths of a
+  millimetre. Drawings scale the hardware by it.
+- **DIN rail** - the rail profiles the type mounts on (*TS 35*, *TS 15*,
+  *G 32*) and the rail's position: its centreline below the body's top edge,
+  the middle when left empty. A type with a profile needs its width and
+  height. See [mounting devices](cabinets.md#mounting-devices).
 - **Description**, **tags**, **custom fields**
 
 Device types accept [custom fields](../features/tags-and-custom-fields.md)

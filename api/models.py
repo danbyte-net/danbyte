@@ -503,6 +503,31 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
     weight_unit = models.CharField(
         max_length=8, choices=WEIGHT_UNIT_CHOICES, blank=True, default="",
     )
+    # The body's true size in tenths of a millimetre: what DIN-rail gear is
+    # placed by in a cabinet (#277), and what drawings scale it by.
+    width_mm = models.DecimalField(
+        "width (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    height_mm = models.DecimalField(
+        "height (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    depth_mm = models.DecimalField(
+        "depth (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    din_profiles = models.JSONField(
+        "DIN rail profiles", default=list, db_default=models.Value([], models.JSONField()),
+        blank=True,
+        help_text="The rail profiles the type mounts on (ts35, ts15, g32); "
+        "empty = not DIN-rail mounted.",
+    )
+    din_rail_mm = models.DecimalField(
+        "rail position (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(5000)],
+        help_text="The rail's centreline below the body's top edge; empty = the middle.",
+    )
     description = models.TextField(blank=True)
     owning_site = models.ForeignKey(
         "Site", on_delete=models.SET_NULL, null=True, blank=True,
@@ -1770,6 +1795,20 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text=("Vertical extent of the side-mounted strip, in U. Blank "
                    "draws ~three quarters of the rack."),
     )
+    # A DIN-rail cabinet instead of a rack (#277): the device is in the
+    # cabinet, and on one of its rails at an offset from the rail's left end.
+    cabinet = models.ForeignKey(
+        "Cabinet", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="devices",
+    )
+    din_rail = models.ForeignKey(
+        "DinRail", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="devices",
+    )
+    din_offset_mm = models.DecimalField(
+        "offset on the rail (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(5000)],
+    )
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="devices",
@@ -1898,6 +1937,18 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                 condition=models.Q(virtual_chassis__isnull=False,
                                    vc_position__isnull=False),
                 name="uniq_device_vc_position",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(rack__isnull=True) | models.Q(cabinet__isnull=True),
+                name="device_rack_or_cabinet",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(din_rail__isnull=True, din_offset_mm__isnull=True)
+                    | models.Q(din_rail__isnull=False, din_offset_mm__isnull=False,
+                               cabinet__isnull=False)
+                ),
+                name="device_din_rail_offset",
             ),
         ]
 

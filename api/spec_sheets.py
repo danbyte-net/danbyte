@@ -17,6 +17,7 @@ from fractions import Fraction
 from django.contrib.contenttypes.models import ContentType
 from django.template.loader import render_to_string
 
+from .din import mm
 from .natural import natural, natural_key
 
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -237,6 +238,10 @@ def device_context(device, request=None) -> dict:
         )),
         ("Part number", dt.part_number if dt else ""),
         ("Height", f"{dt.u_height}U" if dt and dt.u_height else ""),
+        ("Size", (
+            "×".join(f"{mm(v)}" for v in (dt.width_mm, dt.height_mm, dt.depth_mm) if v)
+            + " mm" if dt and dt.width_mm and dt.height_mm else ""
+        )),
         ("Platform", device.platform.name if device.platform_id else ""),
         ("Primary IP", _ip(device.primary_ip)),
         ("OOB IP", _ip(device.oob_ip)),
@@ -247,6 +252,12 @@ def device_context(device, request=None) -> dict:
             x for x in (rack.name if rack else "",
                         f"U{device.position}" if rack and device.position else "",
                         device.face if rack and device.position else "")
+            if x
+        )),
+        ("Cabinet", " · ".join(
+            x for x in (device.cabinet.name if device.cabinet_id else "",
+                        device.din_rail.label if device.din_rail_id else "",
+                        f"{mm(device.din_offset_mm)} mm" if device.din_rail_id else "")
             if x
         )),
         ("Cluster", device.cluster.name if device.cluster_id else ""),

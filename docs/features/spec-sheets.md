@@ -26,9 +26,9 @@ A4, built to print in black and white as well as colour:
   position. VM: vCPU, memory (in GB), total disk. Virtual chassis: members,
   interfaces, ports used.
 - **Details** - serial number, asset tag, type and part number, height,
-  platform, primary and OOB IP, tenant, site, location, rack, cluster,
-  virtual chassis, description, tags, and every custom field that has a value
-  and is not hidden in its definition.
+  size, platform, primary and OOB IP, tenant, site, location, rack, cabinet
+  (with rail and offset), cluster, virtual chassis, description, tags, and
+  every custom field that has a value and is not hidden in its definition.
 - **Port utilization** (device and virtual chassis) - the same bar as the
   page: connected, reserved and free ports out of the total.
 - **Modules and inventory** (device), **Storage** (VM), or the **member
