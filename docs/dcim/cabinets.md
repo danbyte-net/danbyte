@@ -46,6 +46,33 @@ A **cabinet role** says what a cabinet is for (*distribution*, *control*,
 pickers. Define them on the **Cabinet roles** page; none ship by default. A
 role in use cannot be deleted.
 
+## Rails
+
+The mounting plate carries **DIN rails**. Each rail has a **label**, unique in
+its cabinet, and a **profile** - *TS 35*, *TS 15* or *G 32* - which sets the
+height of the band it takes on the plate (35, 15 or 32 mm). It is placed by
+its **left end** and its **centreline**, measured from the plate's top-left
+corner, and has a **length**, all in tenths of a millimetre.
+
+A rail has to lie on the plate, and two rails may not overlap where they run
+side by side. Rails that only touch are fine, so rails can sit end to end on
+one line or band against band. A plate cannot shrink past its rails; move
+them in the same save.
+
+A cabinet type carries **rail templates** of the same shape. A new cabinet of
+the type starts with its rails, unless rails are given with it. A change to a
+cabinet's rails, or to a type's templates, is one entry on its change log,
+listing the rails before and after.
+
+### Sync from type
+
+**Sync from type** compares a cabinet with its type: the sizes that differ,
+the template rails it lacks (*add*), rails with a template's label that sit
+elsewhere or have another profile (*update*), and its own rails no template
+names (*extra*). Applying copies the sizes and adds or moves rails; it never
+removes one. A sync whose result would not fit the plate is refused as a
+whole.
+
 ## Permissions
 
 Cabinets, cabinet types and cabinet roles are object types of their own in
@@ -67,3 +94,13 @@ the type gives them) and `outer_width_mm`, `outer_height_mm` and
 `role_id`, `cabinet_type_id` and `status_id`, and read back as small objects.
 `?picker=1` returns a short form of each list for pickers. Deleting a type or
 role that cabinets use answers `409` with how many use it.
+
+A cabinet's `rails`, and a type's `rail_templates`, are read and written with
+it as a list of `{id, label, profile, x_mm, y_mm, length_mm}`. A write
+replaces the whole set: an item with the `id` of one of its rails updates
+that rail, an item without one is a new rail, and rails left out are
+removed. Errors come back per rail, in the order sent.
+
+`POST /api/cabinets/{id}/sync-from-type/` answers the difference
+(`{"applied": false, "diff": …}`); with `{"apply": true}` it applies it, and
+`sizes` and `rails` (both true by default) narrow what applies.

@@ -26,7 +26,7 @@ from customization.models import (
 from .models import (
     Antenna, AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
-    CABINET_SIZE_FIELDS, Cabinet, CabinetRole, CabinetType,
+    CABINET_SIZE_FIELDS, Cabinet, CabinetRole, CabinetType, DinRail, DinRailTemplate,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
     VirtualMachineGroup,
@@ -5931,6 +5931,74 @@ def _check_cabinet_sizes(attrs, instance) -> None:
         raise serializers.ValidationError(errors)
 
 
+class DinRailSerializer(serializers.ModelSerializer):
+    """One rail as its parent's ``rails`` list carries it. On a write, ``id``
+    names a rail of the parent to keep; an item without one is a new rail."""
+
+    id = serializers.UUIDField(required=False)
+    label = serializers.CharField(max_length=32)
+    x_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=0,
+                                    max_value=5000, coerce_to_string=False)
+    y_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=0,
+                                    max_value=5000, coerce_to_string=False)
+    length_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=10,
+                                         max_value=5000, coerce_to_string=False)
+
+    class Meta:
+        model = DinRail
+        fields = ["id", "label", "profile", "x_mm", "y_mm", "length_mm"]
+        # Labels are unique per parent; the whole set is checked by its parent.
+        validators = []
+
+
+class DinRailTemplateSerializer(DinRailSerializer):
+    class Meta(DinRailSerializer.Meta):
+        model = DinRailTemplate
+
+
+# A plate size that no longer fits the stored rails is the field to fix.
+_PLATE_AXES = {"x": "inner_width_mm", "y": "inner_height_mm"}
+
+
+def _check_rail_set(attrs, key, instance, stored, width, height) -> None:
+    """Check the rails a cabinet or type will have after this write.
+
+    ``key`` holds the sent set, if any: its ids must name the parent's rails
+    (``stored``), and on create they name nothing and are dropped. Without
+    a sent set, the stored rails must still fit a changed plate."""
+    from . import din
+
+    if width is None or height is None:
+        return
+    items = attrs.get(key)
+    if items is None:
+        if instance is not None and any(f in attrs for f in _PLATE_AXES.values()):
+            din.check_fit([din.as_dict(r) for r in stored], width, height,
+                          field_for_axis=_PLATE_AXES)
+        return
+    if instance is None:
+        for item in items:
+            item.pop("id", None)
+    else:
+        ids = {r.id for r in stored}
+        errors, seen = [{} for _ in items], set()
+        for i, item in enumerate(items):
+            rid = item.get("id")
+            if rid is None:
+                continue
+            if rid not in ids:
+                errors[i]["id"] = ["Not one of these rails."]
+            elif rid in seen:
+                errors[i]["id"] = ["This rail is listed twice."]
+            seen.add(rid)
+        if any(errors):
+            raise serializers.ValidationError({key: errors})
+    try:
+        din.check_fit(items, width, height)
+    except serializers.ValidationError as exc:
+        raise serializers.ValidationError({key: exc.detail["rails"]}) from None
+
+
 class CabinetTypeMiniSerializer(NumIdModelSerializer):
     """Picker/embed shape, with the sizes a new cabinet copies."""
 
@@ -5958,6 +6026,7 @@ class CabinetTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
     cabinet_count = serializers.SerializerMethodField()
+    rail_templates = DinRailTemplateSerializer(many=True, required=False)
 
     def get_cabinet_count(self, obj) -> int:
         v = getattr(obj, "cabinet_count_annotated", None)
@@ -5966,12 +6035,40 @@ class CabinetTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         _check_cabinet_sizes(attrs, self.instance)
+        _check_rail_set(
+            attrs, "rail_templates", self.instance,
+            self.instance.rail_templates.all() if self.instance else (),
+            attrs.get("inner_width_mm", getattr(self.instance, "inner_width_mm", None)),
+            attrs.get("inner_height_mm", getattr(self.instance, "inner_height_mm", None)),
+        )
         return attrs
+
+    def create(self, validated_data):
+        from . import din
+
+        rails = validated_data.pop("rail_templates", None)
+        cabinet_type = super().create(validated_data)
+        if rails:
+            din.save_rails(cabinet_type.rail_templates, rails)
+        return cabinet_type
+
+    def update(self, instance, validated_data):
+        from audit.bulk import log_rail_change
+
+        from . import din
+
+        rails = validated_data.pop("rail_templates", None)
+        instance = super().update(instance, validated_data)
+        if rails is not None:
+            old = din.summaries(instance.rail_templates.all())
+            din.save_rails(instance.rail_templates, rails)
+            log_rail_change(instance, old, din.summaries(instance.rail_templates.all()))
+        return instance
 
     class Meta:
         model = CabinetType
         fields = ["id", "name", "manufacturer", "manufacturer_id",
-                  *CABINET_SIZE_FIELDS, "description", "cabinet_count",
+                  *CABINET_SIZE_FIELDS, "rail_templates", "description", "cabinet_count",
                   "tags", "tag_ids", "created_at", "updated_at"]
         read_only_fields = ["id", "cabinet_count", "created_at", "updated_at"]
 
@@ -6016,6 +6113,7 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
         write_only=True, required=False, many=True,
     )
     document_count = serializers.SerializerMethodField()
+    rails = DinRailSerializer(many=True, required=False)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
@@ -6059,15 +6157,51 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
             }
             if missing:
                 raise serializers.ValidationError(missing)
+            # ...and its rails, unless rails are sent with it.
+            if cabinet_type is not None and "rails" not in attrs:
+                from . import din
+
+                templates = [din.as_dict(t) for t in cabinet_type.rail_templates.all()]
+                din.check_fit(templates, attrs["inner_width_mm"], attrs["inner_height_mm"],
+                              field_for_axis=_PLATE_AXES)
+                attrs["rails"] = templates
         _check_cabinet_sizes(attrs, self.instance)
+        _check_rail_set(
+            attrs, "rails", self.instance,
+            self.instance.rails.all() if self.instance else (),
+            attrs.get("inner_width_mm", getattr(self.instance, "inner_width_mm", None)),
+            attrs.get("inner_height_mm", getattr(self.instance, "inner_height_mm", None)),
+        )
         return attrs
+
+    def create(self, validated_data):
+        from . import din
+
+        rails = validated_data.pop("rails", None)
+        cabinet = super().create(validated_data)
+        if rails:
+            din.save_rails(cabinet.rails, rails)
+        return cabinet
+
+    def update(self, instance, validated_data):
+        from audit.bulk import log_rail_change
+
+        from . import din
+
+        rails = validated_data.pop("rails", None)
+        instance = super().update(instance, validated_data)
+        if rails is not None:
+            old = din.summaries(instance.rails.all())
+            din.save_rails(instance.rails, rails)
+            log_rail_change(instance, old, din.summaries(instance.rails.all()))
+        return instance
 
     class Meta:
         model = Cabinet
         fields = ["id", "name", "facility_id", "site", "site_id",
                   "location", "location_id", "role", "role_id",
                   "cabinet_type", "cabinet_type_id", "status", "status_id",
-                  *CABINET_SIZE_FIELDS, "description", "document_count",
+                  *CABINET_SIZE_FIELDS, "rails", "description", "document_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "document_count", "created_at", "updated_at"]
         # Filled from the cabinet type on create (see validate).

@@ -5173,6 +5173,73 @@ class Cabinet(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.name
 
 
+DIN_PROFILE_CHOICES = [("ts35", "TS 35"), ("ts15", "TS 15"), ("g32", "G 32")]
+_RAIL_MM = [MinValueValidator(0), MaxValueValidator(5000)]
+
+
+class _DinRailFields(models.Model):
+    """A rail on a mounting plate: its left end and centreline, from the
+    plate's top-left corner, and its length - in tenths of a millimetre.
+    Written as a set through the parent and checked there (``api.din``)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    label = models.CharField(max_length=32)
+    profile = models.CharField(max_length=8, choices=DIN_PROFILE_CHOICES, default="ts35")
+    x_mm = models.DecimalField(
+        "left end (mm)", max_digits=6, decimal_places=1, validators=_RAIL_MM,
+    )
+    y_mm = models.DecimalField(
+        "centreline (mm)", max_digits=6, decimal_places=1, validators=_RAIL_MM,
+    )
+    length_mm = models.DecimalField(
+        "length (mm)", max_digits=6, decimal_places=1,
+        validators=[MinValueValidator(10), MaxValueValidator(5000)],
+    )
+
+    class Meta:
+        abstract = True
+
+    def __str__(self) -> str:
+        return self.label
+
+
+class DinRail(TimestampedModel, _DinRailFields):
+    cabinet = models.ForeignKey(Cabinet, on_delete=models.CASCADE, related_name="rails")
+
+    class Meta:
+        ordering = ["y_mm", "x_mm", "label"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cabinet", "label"], name="uniq_dinrail_cabinet_label"
+            )
+        ]
+
+    @property
+    def tenant_id(self):
+        """The cabinet's, for anything that stamps a row's tenant."""
+        return self.cabinet.tenant_id
+
+
+class DinRailTemplate(TimestampedModel, _DinRailFields):
+    """A rail every cabinet of the type starts with."""
+
+    cabinet_type = models.ForeignKey(
+        CabinetType, on_delete=models.CASCADE, related_name="rail_templates"
+    )
+
+    class Meta:
+        ordering = ["y_mm", "x_mm", "label"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cabinet_type", "label"], name="uniq_dinrailtemplate_type_label"
+            )
+        ]
+
+    @property
+    def tenant_id(self):
+        return self.cabinet_type.tenant_id
+
+
 # ─── Device roles + platforms (shared by Device + VirtualMachine) ────────────
 class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """Functional role of a device or VM (core switch, hypervisor, …). Coloured."""

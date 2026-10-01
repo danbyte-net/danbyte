@@ -6138,7 +6138,7 @@ class CabinetTypeViewSet(TenantScopedViewSet):
     """Enclosure models - the plate and box sizes a new cabinet copies."""
 
     queryset = CabinetType.objects.select_related("manufacturer").prefetch_related(
-        "tags"
+        "tags", "rail_templates"
     ).order_by(NATURAL_NAME)
     serializer_class = CabinetTypeSerializer
     pagination_class = StandardPagination
@@ -6218,7 +6218,7 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 "site", "site__region", "location", "role", "status",
                 "cabinet_type__manufacturer",
             )
-            .prefetch_related("tags")
+            .prefetch_related("tags", "rails")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
         )
         if self.request:
@@ -6236,6 +6236,36 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 if value:
                     qs = qs.filter(**{field: value})
         return qs
+
+    @action(detail=True, methods=["post"], url_path="sync-from-type")
+    def sync_from_type(self, request, pk=None):
+        """Re-align this cabinet with its type - the twin of the rack action.
+
+        ``apply`` false (default) answers the difference only; true copies the
+        type's sizes and adds or moves the rails its templates name (``sizes``
+        and ``rails``, both true by default, narrow it). Never removes a rail:
+        an extra one is somebody's real rail. Refused as a whole when the
+        result would not fit the plate."""
+        from auth_api import rbac
+
+        from . import din
+
+        cabinet = self.get_object()
+        if not rbac.can_act_on(request.user, _get_active_tenant(request), "cabinet",
+                               "change", cabinet):
+            raise PermissionDenied("cabinet.change required.")
+        if cabinet.cabinet_type_id is None:
+            return Response({"detail": "This cabinet has no type to sync from."},
+                            status=drf_status.HTTP_400_BAD_REQUEST)
+        if not request.data.get("apply"):
+            return Response({"applied": False, "diff": din.diff_cabinet_from_type(cabinet)})
+        with transaction.atomic():
+            din.sync_cabinet_from_type(
+                cabinet,
+                sizes=bool(request.data.get("sizes", True)),
+                rails=bool(request.data.get("rails", True)),
+            )
+        return Response({"applied": True, "diff": din.diff_cabinet_from_type(cabinet)})
 
 
 class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):

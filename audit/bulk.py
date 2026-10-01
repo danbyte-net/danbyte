@@ -141,6 +141,16 @@ def log_tag_change(instance, added=(), removed=()) -> None:
     _entry(instance, ChangeAction.UPDATE, changes, user, current_request_id()).save()
 
 
+def log_rail_change(instance, old, new) -> None:
+    """Record a change to a cabinet's or cabinet type's DIN rails. They are
+    written as a set through their parent, so the change lands on its entry;
+    ``old`` / ``new`` are one line per rail (``api.din.summaries``)."""
+    if old == new:
+        return
+    changes = {"rails": {"old": list(old) or None, "new": list(new) or None}}
+    _entry(instance, ChangeAction.UPDATE, changes, current_user(), current_request_id()).save()
+
+
 def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> None:
     """Resolve tag ids → Tag rows, apply add/remove across ``qs``, and record
     one changelog entry per object whose tag set actually changed.
