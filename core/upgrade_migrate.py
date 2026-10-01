@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 from dataclasses import dataclass, field
 
 from django.core.management import call_command
@@ -254,6 +255,188 @@ BRIDGE_WEB_UNITS = ("danbyte-web", "danbyte-ws", "danbyte-backend", "danbyte-fro
                     "danbyte-frontend", "danbyte-docs")
 BRIDGE_DEV_UNITS = ("danbyte-backend", "danbyte-frontend")
 BRIDGE_STATUS_AGE = 600
+#: Beside the resume unit's list of units: the migration failed and the
+#: database is as it was, so the previous release may start again on it.
+UNCHANGED_SUFFIX = ".db-unchanged"
+#: Beside the resume unit's list of units: the files the old upgrader's
+#: overlay added (in the tree, not in its rollback archive), which the
+#: resume removes when that upgrader rolled the code back.
+ADDED_SUFFIX = ".added"
+#: How old an old bundle upgrader's rollback archive may be to belong to
+#: this run: it writes it just before the overlay, minutes before migrating.
+BRIDGE_ARCHIVE_AGE = 3600
+#: Never listed as added: the trees that archive leaves out, the upgrade's
+#: own folder and bytecode caches.
+_NOT_ARCHIVED = {".venv", "vendor", "frontend/node_modules", "media", ".git", ".danbyte-upgrade"}
+#: Beside the resume unit's list of units: the release tag this upgrade was
+#: asked for. 0.16's bundle upgrader writes every bundle as "uploaded", and
+#: 0.16's auto-upgrade stops retrying a failed release only when the failed
+#: status names its tag: the resume writes it in.
+TARGET_SUFFIX = ".target"
+#: Beside the resume unit's list of units: who started this upgrade, when,
+#: and from and to what - the fields the stage writes in its status and an
+#: old upgrader never does. The resume merges them into a finished upgrade's
+#: status (``manage.py upgrade_report --merge-legacy``), so it is reported.
+REPORT_SUFFIX = ".report.json"
+_TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}")
+
+
+def _read_json(path) -> dict:
+    import json
+
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _when(value):
+    import datetime
+
+    try:
+        return datetime.datetime.fromtimestamp(float(value), tz=datetime.UTC)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def asked_for(acquired_at) -> str | None:
+    """The release tag an old auto-upgrade tick started this upgrade for: the
+    one its ``auto-upgrade`` run names, that run being open when the upgrade
+    lock was taken. None when no tick started it (a button, an upload)."""
+    from core.models import ScheduledRun
+
+    when = _when(acquired_at)
+    if when is None:
+        return None
+    # Only columns 0.16 has: this runs before the migration.
+    detail = (ScheduledRun.objects
+              .filter(name="auto-upgrade", detail__has_key="upgrading",
+                      started_at__lte=when, finished_at__gte=when)
+              .order_by("-started_at").values_list("detail", flat=True).first())
+    tag = detail.get("upgrading") if isinstance(detail, dict) else None
+    return tag if isinstance(tag, str) and _TAG.fullmatch(tag) else None
+
+
+def pre_upgrade_backup(since) -> str:
+    """The id of the pre-upgrade backup the old upgrader took after ``since``
+    (the lock's time), or ""."""
+    from backups.models import Backup
+
+    when = _when(since)
+    if when is None:
+        return ""
+    found = (Backup.objects.filter(kind="pre_upgrade", created_at__gte=when)
+             .order_by("-created_at").values_list("id", flat=True).first())
+    return str(found or "")
+
+
+def version_at(base, rev: str) -> str | None:
+    """``__version__`` of a git revision of ``base`` (an old git upgrader
+    records the commit it came from)."""
+    import subprocess
+
+    if not re.fullmatch(r"[0-9a-f]{7,40}", rev or ""):
+        return None
+    try:
+        r = subprocess.run(["git", "-C", str(base), "show", f"{rev}:danbyte/__init__.py"],
+                           capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"""^__version__\s*=\s*["']([^"']+)["']""", r.stdout, re.M)
+    return m.group(1) if r.returncode == 0 and m else None
+
+
+def rollback_archive(dirs, now: float | None = None):
+    """The newest ``code-pre-*.tgz`` in ``dirs`` - the rollback archive an
+    old bundle upgrader writes before its overlay - or None when there is
+    none from the last :data:`BRIDGE_ARCHIVE_AGE` seconds."""
+    import time
+    from pathlib import Path
+
+    now = time.time() if now is None else now
+    found = []
+    for d in dict.fromkeys(str(d) for d in dirs if d):
+        try:
+            found += [(p.stat().st_mtime, p) for p in Path(d).glob("code-pre-*.tgz")]
+        except OSError:
+            continue
+    if not found:
+        return None
+    mtime, newest = max(found)
+    return newest if 0 <= now - mtime < BRIDGE_ARCHIVE_AGE else None
+
+
+def files_added(base, archive) -> tuple[list[str], int]:
+    """Files under ``base`` that ``archive`` (an old bundle upgrader's
+    ``tar -C base -czf``, written just before its overlay) does not hold:
+    what the overlay put there. Only files older than the archive count -
+    the overlay keeps the release's own timestamps, while a file a running
+    process wrote since is newer and is left alone. Returns the paths,
+    relative to ``base``, and how many newer ones were left out."""
+    import stat
+    import tarfile
+
+    with tarfile.open(archive, "r:gz") as tar:
+        old = {os.path.normpath(m.name) for m in tar}
+    cutoff = os.stat(archive).st_mtime
+    added: list[str] = []
+    newer = 0
+    for dirpath, dirnames, filenames in os.walk(base):
+        rel_dir = os.path.relpath(dirpath, base)
+        dirnames[:] = [d for d in dirnames if d != "__pycache__"
+                       and os.path.normpath(os.path.join(rel_dir, d)) not in _NOT_ARCHIVED]
+        for name in filenames:
+            rel = os.path.normpath(os.path.join(rel_dir, name))
+            if rel in old or rel.startswith(".upgrade") or rel == ".maintenance" \
+                    or "\n" in rel or "\r" in rel:
+                continue
+            try:
+                st = os.lstat(os.path.join(dirpath, name))
+            except OSError:
+                continue
+            if not (stat.S_ISREG(st.st_mode) or stat.S_ISLNK(st.st_mode)):
+                continue
+            if st.st_mtime >= cutoff:
+                newer += 1
+                continue
+            added.append(rel)
+    return sorted(added), newer
+
+
+def open_static(root) -> int:
+    """``chmod -R u=rwX,go=rX`` on the collected static files, which nginx
+    reads from disk as another user. collectstatic skips files that did not
+    change, so copies an earlier release wrote with the private media modes
+    stay closed without this. Links are left alone. Returns how many entries
+    could not be changed."""
+    import stat
+
+    failed = 0
+
+    def fix(path: str, is_dir: bool) -> None:
+        nonlocal failed
+        try:
+            st = os.lstat(path)
+            if stat.S_ISLNK(st.st_mode):
+                return
+            mode = stat.S_IMODE(st.st_mode)
+            want = 0o755 if is_dir or mode & 0o111 else 0o644
+            if mode != want:
+                os.chmod(path, want)
+        except OSError:
+            failed += 1
+
+    if not root or not os.path.isdir(root):
+        return 0
+    fix(str(root), True)
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in dirnames:
+            fix(os.path.join(dirpath, name), True)
+        for name in filenames:
+            fix(os.path.join(dirpath, name), False)
+    return failed
 
 
 class LegacyBridge:
@@ -265,10 +448,13 @@ class LegacyBridge:
     serves - new code must not run on the old schema, nor old code on the new
     one - and hands the restart of all of it to a transient unit
     (``scripts/upgrade/legacy-resume.sh``, copied out of the tree) that starts
-    them once that upgrader has exited, whether it succeeded or rolled back.
-    Then it migrates all or nothing, so the old upgrader's rollback never
-    lands on a half-migrated database, and collects static files, which the
-    old git upgrader never did.
+    them once that upgrader has exited, whether it succeeded or rolled back,
+    with the list of files this release added for it to remove after a
+    rollback, and what that upgrader's status lacks: the release tag it was
+    asked for and who started it (for the report). Then it migrates all or
+    nothing, so the old upgrader's rollback never lands on a half-migrated
+    database (and says so to that unit), and collects static files, which
+    the old git upgrader never did, readable for the web server.
 
     It steps in only for exactly that call: ``manage.py migrate`` with no
     app, plan or check, from the app directory, while the status file says
@@ -279,6 +465,8 @@ class LegacyBridge:
         import sys
 
         self.stdout = stdout or sys.stdout
+        #: The resume unit's list of units, once it is arranged.
+        self.units_file = None
 
     # detection
     @staticmethod
@@ -440,10 +628,100 @@ class LegacyBridge:
         if result.returncode != 0:
             self.say("could not arrange the restart "
                      f"({(result.stderr or result.stdout).strip()[:200]}); services keep running")
+            for p in (script, units):
+                p.unlink(missing_ok=True)
             return False
+        self.units_file = units
         self.say(f"danbyte-upgrade-resume-{stamp} starts {len(wanted)} unit(s) when the "
                  "upgrader is done")
+        self.record_added(units)
+        self.record_target(units)
         return True
+
+    def record_target(self, units) -> None:
+        """For the resume unit: the tag this upgrade was asked for, and the
+        status fields the stage would have written (who started it, when,
+        from what), which the old upgrader's status lacks."""
+        import json
+        from pathlib import Path
+
+        from django.conf import settings
+
+        import danbyte
+
+        base = Path(settings.BASE_DIR)
+        lock = _read_json(base / ".upgrade.lock")
+        status = _read_json(base / ".upgrade-status.json")
+        tag = backup = None
+        try:
+            tag = asked_for(lock.get("acquired_at"))
+            backup = pre_upgrade_backup(lock.get("acquired_at"))
+        except Exception as exc:  # noqa: BLE001 - best effort; the database is the old one
+            self.say(f"could not read who started this upgrade ({exc})")
+        trigger = "auto" if tag else "button"
+        if tag is None:
+            # A git upgrader names the tag; a bundle one only says "uploaded".
+            to = str(status.get("version_to") or "")
+            tag = to if _TAG.fullmatch(to) and to != "uploaded" else f"v{danbyte.__version__}"
+        frm = str(status.get("version_from") or "")
+        report = {"trigger": trigger, "version_from": version_at(base, frm) or frm,
+                  "version_to": tag, "kind": "git" if (base / ".git").exists() else "bundle",
+                  "backup": backup or ""}
+        started = lock.get("status_started_at") or lock.get("acquired_at")
+        if isinstance(started, (int, float)):
+            report["started_at"] = float(started)
+        try:
+            Path(f"{units}{TARGET_SUFFIX}").write_text(f"{tag}\n")
+            Path(f"{units}{REPORT_SUFFIX}").write_text(json.dumps(report))
+        except OSError as exc:
+            self.say(f"could not record the upgrade for the restart ({exc})")
+            return
+        self.say(f"an upgrade to {tag}, started by "
+                 f"{'the auto-upgrade timer' if trigger == 'auto' else 'a person'}")
+
+    def record_added(self, units) -> None:
+        """List the files the old bundle upgrader's overlay added, for the
+        resume unit. Its rollback extracts its archive over the tree, which
+        removes nothing: this release's migrations would stay behind, break
+        the restored release's migration graph and be applied by the next
+        upgrade (with this release's error, if one of them is what failed)."""
+        from pathlib import Path
+
+        from django.conf import settings
+
+        base = Path(settings.BASE_DIR)
+        if (base / ".git").exists():
+            self.say("a git checkout: the old upgrader's rollback is a checkout, which "
+                     "removes the files this release added")
+            return
+        archive = rollback_archive((os.environ.get("DANBYTE_BACKUP_DIR", ""),
+                                    getattr(settings, "DANBYTE_BACKUP_DIR", ""),
+                                    base.parent / "danbyte-backups"))
+        if archive is None:
+            self.say("no rollback archive from this upgrade; if it is rolled back, the files "
+                     "this release added stay")
+            return
+        try:
+            added, newer = files_added(base, archive)
+            Path(f"{units}{ADDED_SUFFIX}").write_text("".join(f"{p}\n" for p in added))
+        except Exception as exc:  # noqa: BLE001 - best effort; the resume then removes nothing
+            self.say(f"could not list the files this release added ({exc})")
+            return
+        kept = f" ({newer} newer than it left alone)" if newer else ""
+        self.say(f"{len(added)} file(s) are not in {archive.name}{kept}; a rollback of the "
+                 "code removes them")
+
+    def mark_unchanged(self) -> None:
+        """Tell the resume unit the database is as it was: an old bundle
+        upgrader's rollback leaves this release's migration files on disk,
+        and its ``migrate --check`` would then refuse to start anything."""
+        if self.units_file is None:
+            return
+        try:
+            with open(f"{self.units_file}{UNCHANGED_SUFFIX}", "w") as fh:
+                fh.write("the migration failed and was rolled back in full\n")
+        except OSError as exc:
+            self.say(f"could not tell the restart the database is unchanged ({exc})")
 
     def run(self, verbosity: int = 1) -> int:
         from django.core.management import call_command
@@ -459,6 +737,8 @@ class LegacyBridge:
         if result.code != EXIT_OK:
             import sys
 
+            if result.code == EXIT_UNCHANGED:
+                self.mark_unchanged()
             state = ("the database is unchanged" if result.code == EXIT_UNCHANGED
                      else "part of it may be applied")
             print(f"migration failed ({state}): {result.error}", file=sys.stderr)
@@ -468,4 +748,8 @@ class LegacyBridge:
             call_command("collectstatic", interactive=False, verbosity=0)
         except Exception as exc:  # noqa: BLE001 - the old flow never had it
             self.say(f"collectstatic failed: {exc}")
+        from django.conf import settings
+
+        if open_static(settings.STATIC_ROOT):
+            self.say("some static files could not be made readable for the web server")
         return EXIT_OK

@@ -6120,7 +6120,8 @@ export interface UpgradeOutcome {
 
 /** GET /api/system/upgrade/status - progress of an in-flight upgrade. The
  * fields after `error` come from the upgrade stage (0.17 on); a status an
- * older upgrader wrote has none of them. */
+ * older upgrader wrote has none of them, unless it finished the upgrade to
+ * 0.17 and the migrate bridge filled them in (`legacy`). */
 export interface SystemUpgradeStatus {
   state: "idle" | "running" | "done" | "failed"
   step?: string
@@ -6129,6 +6130,8 @@ export interface SystemUpgradeStatus {
   version_from?: string
   error?: string
   stage_api?: number
+  /** Run by an upgrader from before 0.17; the bridge added the fields below. */
+  legacy?: boolean
   kind?: "git" | "bundle"
   trigger?: "button" | "upload" | "auto" | "admin" | "installer" | "manual"
   attempt?: number

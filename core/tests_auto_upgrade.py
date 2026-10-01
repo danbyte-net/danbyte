@@ -161,3 +161,119 @@ class ReportTests(TickTestCase):
         del self.status["stage_api"]
         self.tick([])
         self.assertFalse(ScheduledRun.objects.filter(name="upgrade").exists())
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class LegacyReportTests(TestCase):
+    """The first upgrade off 0.16 is run by 0.16's upgrader, whose status says
+    neither who started it nor how it ended. The bridge records that and its
+    restart merges it in (``upgrade_report --merge-legacy``); the next tick
+    then reports it like one the stage ran."""
+
+    #: What 0.16.13's bundle upgrader leaves, and the bridge's record.
+    OLD_DONE = ('{"state":"done","step":"done","pct":100,"version_to":"uploaded",'
+                '"version_from":"0.16.13","error":""}\n')
+    RECORD = {"trigger": "auto", "version_from": "0.16.13", "version_to": "v0.17.0",
+              "kind": "bundle", "backup": "b1", "started_at": 1790833226.7}
+
+    def setUp(self):
+        import json
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        self.status_file = tmp / ".upgrade-status.json"
+        self.status_file.write_text(self.OLD_DONE)
+        self.record = tmp / "legacy-resume-T.units.report.json"
+        self.record.write_text(json.dumps(self.RECORD))
+        for name, value in (("STATUS_FILE", self.status_file),
+                            ("LOCK_GUARD_FILE", tmp / ".upgrade.lock.guard")):
+            p = patch(f"core.upgrade.{name}", value)
+            p.start()
+            self.addCleanup(p.stop)
+        s = DeploymentSettings.load()
+        s.digest_recipients = "ops@example.test"
+        s.auto_update_enabled = False
+        s.save()
+
+    def status(self) -> dict:
+        import json
+
+        return json.loads(self.status_file.read_text())
+
+    def merge(self) -> str:
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("upgrade_report", "--merge-legacy", str(self.record), stdout=out)
+        return out.getvalue()
+
+    def test_a_finished_legacy_upgrade_is_reported_once(self):
+        import os
+
+        os.utime(self.status_file, (1790833370, 1790833370))
+        self.assertIn("0.16.13 -> v0.17.0 (auto)", self.merge())
+        st = self.status()
+        self.assertEqual(st, {"state": "done", "step": "done", "pct": 100, "error": "",
+                              "version_to": "v0.17.0", "version_from": "0.16.13",
+                              "legacy": True, "trigger": "auto", "kind": "bundle",
+                              "started_at": 1790833226.7, "finished_at": 1790833370.0,
+                              "outcome": {"code": "new", "database": "migrated",
+                                          "services": "running", "backup": "b1"}})
+        with patch("core.github.list_releases", return_value=[]):
+            self.assertEqual(check_and_upgrade()["skipped"], "disabled")
+            check_and_upgrade()
+        run = ScheduledRun.objects.get(name="upgrade")
+        self.assertEqual(run.status, ScheduledRun.OK)
+        self.assertEqual(run.detail["version_to"], "v0.17.0")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Automatic upgrade to v0.17.0 finished", mail.outbox[0].subject)
+        self.assertIn("Danbyte now runs v0.17.0.", mail.outbox[0].body)
+        self.assertTrue(self.status()["reported"])
+
+    def test_a_watched_one_shows_but_is_not_mailed(self):
+        import json
+
+        self.record.write_text(json.dumps({**self.RECORD, "trigger": "button"}))
+        self.merge()
+        self.assertEqual(self.status()["trigger"], "button")
+        with patch("core.github.list_releases", return_value=[]):
+            check_and_upgrade()
+        self.assertFalse(ScheduledRun.objects.filter(name="upgrade").exists())
+        self.assertEqual(mail.outbox, [])
+
+    def test_only_a_finished_old_status_takes_it(self):
+        import json
+
+        cases = {
+            "failed (the older release is back and reports nothing)":
+                self.OLD_DONE.replace('"done","step":"done"', '"failed","step":"migrate"'),
+            "the stage's own": json.dumps({"state": "done", "stage_api": 1, "trigger": "button"}),
+            "merged before": json.dumps({"state": "done", "legacy": True, "trigger": "button"}),
+            "unreadable": "{",
+        }
+        for name, text in cases.items():
+            with self.subTest(name):
+                self.status_file.write_text(text)
+                self.assertIn("nothing to merge", self.merge())
+                self.assertEqual(self.status_file.read_text(), text)
+        with self.subTest("no record"):
+            self.status_file.write_text(self.OLD_DONE)
+            self.record.unlink()
+            self.assertIn("nothing to merge", self.merge())
+            self.assertEqual(self.status_file.read_text(), self.OLD_DONE)
+
+    def test_a_record_with_odd_values_keeps_the_old_ones(self):
+        import json
+
+        self.record.write_text(json.dumps({"trigger": "shell", "version_to": " ",
+                                           "started_at": "soon", "kind": "rpm", "backup": 3}))
+        self.merge()
+        st = self.status()
+        self.assertEqual((st["version_to"], st["outcome"]["backup"]), ("uploaded", ""))
+        for key in ("trigger", "started_at", "kind"):
+            self.assertNotIn(key, st)

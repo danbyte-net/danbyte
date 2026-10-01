@@ -151,7 +151,10 @@ current `/opt` layout.
     **Settings → Updates** shows *"the database is behind the running code"*
     with the migrations still to run, `/api/health/` reports
     `db_behind_code`, and the log names them. Run `manage.py migrate` as the
-    service user and restart the app processes.
+    service user and restart the app processes. Migration files that cannot
+    be loaded at all - a stray one from another release, which `migrate`
+    fails on too - are reported the same way, with the error in place of
+    the list (and by `danbyte status`).
 
 === "Offline bundle"
 
@@ -263,12 +266,24 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
 !!! tip "Health endpoint"
 
     `GET /api/health/` is unauthenticated and returns `{"status": "ok",
-    "database": true, "version": "X.Y.Z"}` (HTTP 503 if the database is
-    unreachable). It is exempt from the HTTPS redirect, so a plain-HTTP
-    probe on the app port gets an answer. Point a load balancer or uptime
-    probe at it; the release pipeline's install-smoke uses it to prove the
-    bundle actually serves requests, and the upgrade requires `"status":
-    "ok"` and the new version from it before anyone else is let in.
+    "database": true, "maintenance": false, "version": "X.Y.Z"}` (HTTP 503
+    if the database is unreachable). It is exempt from the HTTPS redirect,
+    so a plain-HTTP probe on the app port gets an answer. Point a load
+    balancer or uptime probe at it; the release pipeline's install-smoke
+    uses it to prove the bundle actually serves requests, and the upgrade
+    requires `"status": "ok"` and the new version from it before anyone else
+    is let in. It keeps answering while an upgrade or a restore holds the
+    site, with `"maintenance": true`; every other request gets 503 until
+    the flag is cleared.
+
+!!! note "Admin and API pages without styling (403 on `/static/`)"
+
+    From 0.16.12 to 0.17.0-dev1, `collectstatic` wrote static files readable
+    only by the service user, and nginx, which serves `/static/` from disk as
+    another user, answered 403 for them: the Django admin and the browsable
+    API showed without CSS (Docker too: its nginx reads the shared volume as
+    another user). The next upgrade fixes it; by hand, as the service user:
+    `chmod -R u=rwX,go=rX ~/danbyte/staticfiles`.
 
 !!! warning "\"An upgrade is already running\" (stuck lock)"
 
@@ -312,14 +327,14 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 | Step | What happens | The site |
 |---|---|---|
 | preflight | refuses inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk; installs the recovery unit | up |
-| backup | the pre-upgrade backup, with the running code (skipped when the launcher made it) | up |
+| backup | the pre-upgrade backup, with the running code; when the launcher took it before handing over, the step shows that run and its duration | up |
 | prepare | git: `npm ci` and the frontend build in a scratch copy; dependencies resolved (bundle: checked offline); a copy of the virtualenv | up |
 | quiesce | timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |
 | swap | the new code, frontend, static files and (bundle) vendor/ in place; the old ones kept aside; files the release no longer ships moved aside; new unit files linked | maintenance page |
 | deps, check | dependencies installed, `manage.py check`, the migration plan | maintenance page |
 | snapshot | `pg_dump` of the database - only when migrations are pending | maintenance page |
 | migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was | maintenance page |
-| static | `bootstrap` (new seeds; never a superuser), `collectstatic`, checks left claimed by stopped workers released | maintenance page |
+| static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
 | verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |
 | start | web, websockets, frontend, docs, workers - while the site still answers 503; `/api/health/` must say `ok` with the new version, the admin page must render, and nothing may keep restarting | 503 |
 | resume | the site opens; the timers that ran before start again (a timer you turned off stays off); a release's new timers are turned on | up |
@@ -344,12 +359,61 @@ and the dependency download happen before it.
 The first upgrade off 0.16.x or 0.17.0-dev1 is started by that release's own
 upgrader, which knows nothing of the stage. 0.17 steps in where it can: when
 that upgrader runs 0.17's `manage.py migrate`, the migrate stops the timers,
-workers and web first, migrates in one transaction, collects static files,
-and leaves the restart of everything it stopped to a unit that waits for the
-old upgrader to exit - so a failed migration no longer leaves a half-migrated
-database. What it cannot fix: the new code and dependencies are already in
-place a minute before that, the old upgrader's rollback does not remove
-files 0.17 added, and a failure after the migration is not rolled back.
+workers and web first, migrates in one transaction, collects static files
+(readable for nginx), and leaves the restart of everything it stopped to a
+unit that waits for the old upgrader to exit - so a failed migration no
+longer leaves a half-migrated database. That unit (its log:
+`journalctl --user -u 'danbyte-upgrade-resume-*'`):
+
+- after a finished upgrade, starts everything the migrate stopped, the
+  timers included, once the database has every migration the code on
+  disk ships;
+- after a migration that was rolled back in full, once the old upgrader
+  has put its own code back, first removes the files 0.17 added. That
+  rollback extracts the old code over the tree and removes nothing, so
+  0.17's migrations stayed behind: the old release's `migrate` could not
+  even load its migration files, and the next upgrade applied them - and
+  failed with the failed release's error. The migrate lists those files
+  before it migrates (everything not in the old upgrader's rollback
+  archive, `danbyte-backups/code-pre-*.tgz`, that is older than that
+  archive); a git install's rollback is a checkout, which removes them
+  itself. Then it starts everything, the timers included;
+- after a partly applied migration, starts nothing and says so in the
+  upgrade's status, which the upgrade dialog shows, as well as in
+  its log, which has the command that starts them.
+
+It clears the *failed* mark of the units first, and removes the uploaded
+bundle (`.upgrade-bundle.tar.gz`, hundreds of MB, which the old upgrader
+keeps after a failure) and its own files. What it cannot fix: the new code
+and dependencies are already in place a minute before the migrate, a
+failure after the migration is not rolled back, and for a second during
+the old upgrader's rollback its status reads *backup* again (the rollback
+archive holds the status file of that moment).
+
+It also fills in what 0.16's upgrader never records:
+
+- The status names the release the upgrade was for instead of *uploaded*,
+  so 0.16's automatic updates answer *failed before* for a release that
+  failed, until a newer one appears, instead of downloading and trying it
+  again - another backup and another outage - at every tick.
+- After a finished upgrade, who started it and when: the **Last upgrade**
+  card shows it and, for an automatic one, the next auto-upgrade tick
+  mails the digest recipients and lists it on the Jobs page as the
+  *upgrade* task, as for an upgrade the stage ran. A failed one put 0.16
+  back, which reports nothing: it shows only in 0.16's upgrade dialog and
+  status on the Updates page, and in the unit's log.
+
+Two more things follow from that order:
+
+- A timer that fires between the old upgrader's checkout and its migrate
+  runs 0.17 code on the 0.16 schema and logs a `column ... does not exist`
+  error. Those runs fail before they write anything; the migrate stops the
+  timers, and their units' *failed* mark is cleared when they start again.
+- A git install upgraded from the Updates page is down for the migration
+  **and** the whole frontend build: 0.16's upgrader runs `npm ci` and the
+  build after the migrate, when everything is already stopped - about two
+  and a half minutes on a small VM. The launcher below builds before it
+  stops anything.
 
 The safest way off 0.16 is therefore **re-running the 0.17 installer** from
 the bundle (`sudo ./install.sh`, above): it runs the full 0.17 upgrade. On a

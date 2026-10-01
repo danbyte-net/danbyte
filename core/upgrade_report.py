@@ -7,8 +7,11 @@ one that failed, whoever started it. The record is a ``ScheduledRun`` named
 ``upgrade`` (the Jobs page lists it); its ``detail.report_key`` is what makes
 the report happen once. The digest recipients get a mail.
 
-Only status files written by the upgrade stage (``stage_api``) count; an old
-upgrader's status has no outcome to report.
+Only status files written by the upgrade stage (``stage_api``) count, and
+those of a finished upgrade an older upgrader ran (0.16 to 0.17), into which
+the bridge's restart merged what the stage would have written (``legacy``,
+:func:`merge_legacy`). A failed one of those restored the older release,
+which reports nothing.
 """
 from __future__ import annotations
 
@@ -91,8 +94,8 @@ def report_finished(status: dict | None = None) -> dict | None:
     from .upgrade import _read_status, _upgrade_lock_guard, _write_status_fields
 
     status = _read_status() if status is None else status
-    if status.get("state") not in ("done", "failed") or not status.get("stage_api") \
-            or status.get("reported"):
+    if status.get("state") not in ("done", "failed") \
+            or not (status.get("stage_api") or status.get("legacy")) or status.get("reported"):
         return None
     if status.get("trigger") != "auto" and status.get("state") != "failed":
         return None
@@ -125,3 +128,58 @@ def report_finished(status: dict | None = None) -> dict | None:
     except OSError:
         pass  # the ScheduledRun row already keeps it from being sent twice
     return {"subject": subject, "failed": failed}
+
+
+#: What core.upgrade_migrate.LegacyBridge recorded of an upgrade an older
+#: upgrader ran, and the values each may take.
+LEGACY_TRIGGERS = ("auto", "button", "upload")
+LEGACY_KINDS = ("git", "bundle")
+
+
+def merge_legacy(path) -> dict | None:
+    """Merge what the bridge recorded (``<units>.report.json``) into the
+    status of a finished upgrade an upgrader from before 0.17 ran: who
+    started it, when, from and to which release, and its outcome. The status
+    then reads like one the stage wrote - the Updates page shows its card and
+    :func:`report_finished` reports it. Returns the merged status, or None
+    when there was nothing to merge into."""
+    import json
+    import os
+    import time
+    from pathlib import Path
+
+    from .upgrade import STATUS_FILE, _read_status, _upgrade_lock_guard
+
+    try:
+        info = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(info, dict):
+        return None
+    with _upgrade_lock_guard():
+        status = _read_status()
+        if status.get("state") != "done" or status.get("stage_api") or status.get("legacy"):
+            return None
+        try:
+            finished = STATUS_FILE.stat().st_mtime   # when the old upgrader wrote "done"
+        except OSError:
+            finished = time.time()
+        fields: dict = {"legacy": True, "finished_at": finished}
+        if info.get("trigger") in LEGACY_TRIGGERS:
+            fields["trigger"] = info["trigger"]
+        if info.get("kind") in LEGACY_KINDS:
+            fields["kind"] = info["kind"]
+        if isinstance(info.get("started_at"), (int, float)):
+            fields["started_at"] = float(info["started_at"])
+        for key in ("version_from", "version_to"):
+            value = info.get(key)
+            if isinstance(value, str) and value.strip():
+                fields[key] = value.strip()[:64]
+        backup = info.get("backup")
+        fields["outcome"] = {"code": "new", "database": "migrated", "services": "running",
+                             "backup": backup if isinstance(backup, str) else ""}
+        status.update(fields)
+        tmp = STATUS_FILE.with_name(f"{STATUS_FILE.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(status))
+        os.replace(tmp, STATUS_FILE)
+    return status

@@ -32,7 +32,7 @@ from django.conf import settings
 from django.test import SimpleTestCase
 
 REPO = Path(settings.BASE_DIR)
-STAGE_FILES = ("lib.sh", "stage.sh", "recover.sh", "dbtool.py", "STAGE_API")
+STAGE_FILES = ("lib.sh", "stage.sh", "recover.sh", "dbtool.py", "STAGE_API", "legacy-resume.sh")
 PROD_UNITS = ("danbyte-web", "danbyte-ws", "danbyte-frontend-prod", "danbyte-docs",
               "danbyte-workers", "danbyte-fastlane")
 
@@ -64,6 +64,8 @@ case "$cmd" in
     [ "$1" = -q ] && shift
     s=$(cat "$D/$1.active" 2>/dev/null || echo inactive); echo "$s"; [ "$s" = active ] ;;
   stop) for u; do echo inactive >"$D/$u.active"; done ;;
+  restart) for u; do u="${u%.service}.service"; loaded "$u" && echo active >"$D/$u.active"; done ;;
+  reset-failed) for u; do [ "$(cat "$D/$u.active" 2>/dev/null)" = failed ] && echo inactive >"$D/$u.active"; done ;;
   start)
     for u; do
       [ "$u" = --no-block ] && continue
@@ -89,7 +91,7 @@ CURL = r"""#!/bin/sh
 echo "curl $*" >>"$FAKE_CALLS"
 out=/dev/null; fmt=""; url=""
 while [ $# -gt 0 ]; do
-  case "$1" in -o) out="$2"; shift 2 ;; -w) fmt="$2"; shift 2 ;; -H|-m) shift 2 ;; -*) shift ;; *) url="$1"; shift ;; esac
+  case "$1" in -o) out="$2"; shift 2 ;; -w) fmt="$2"; shift 2 ;; -H|-m|--resolve) shift 2 ;; -*) shift ;; *) url="$1"; shift ;; esac
 done
 D="$FAKE_SD"
 up() { [ "$(cat "$D/$1.active" 2>/dev/null)" = active ]; }
@@ -104,6 +106,19 @@ case "$url" in
   *:8000/admin/login/*) { up danbyte-web.service || up danbyte-backend.service; } && code=200 ;;
   *:3000/*) up danbyte-frontend-prod.service && code=200 ;;
   *:8002/*) up danbyte-ws.service && code=404 ;;
+  https://*/static/*)
+    # nginx, as another user: every folder needs o+x and the file o+r
+    d="$FAKE_APP/staticfiles"; rest="${url#*/static/}"
+    if [ -n "${FAKE_STATIC_CODE:-}" ]; then code="$FAKE_STATIC_CODE"
+    elif [ ! -f "$d/$rest" ]; then code=404
+    else
+      code=200
+      while :; do
+        [ -n "$(find "$d" -maxdepth 0 -perm -o=x)" ] || code=403
+        case "$rest" in */*) d="$d/${rest%%/*}"; rest="${rest#*/}" ;; *) break ;; esac
+      done
+      [ -n "$(find "$d/$rest" -maxdepth 0 -perm -o=r)" ] || code=403
+    fi ;;
 esac
 [ "$out" != /dev/null ] && printf '%s' "$body" >"$out"
 [ -n "$fmt" ] && printf '%s' "$code"
@@ -163,7 +178,10 @@ case "$1" in
     shift
     if [ "$1" = bootstrap ]; then log "manage.py bootstrap su=[${DJANGO_SUPERUSER_USERNAME-unset}]"; else log "manage.py $*"; fi
     case "$1" in
-      backup_now) echo "11111111-2222-3333-4444-555555555555 /backups/pre.tar" ;;
+      backup_now)
+        cp .upgrade-status.json "$FAKE_ROOT/status-at-backup.json" 2>/dev/null
+        [ -z "${FAKE_BACKUP_SLEEP:-}" ] || sleep "$FAKE_BACKUP_SLEEP"
+        echo "11111111-2222-3333-4444-555555555555 /backups/pre.tar" ;;
       check) exit "${FAKE_CHECK_RC:-0}" ;;
       upgrade_migrate)
         if [ "${2:-}" = --plan ]; then echo "pending: ${FAKE_PENDING:-1}"; echo "mode: atomic"; exit 0; fi
@@ -178,6 +196,44 @@ case "$1" in
         echo "mode: atomic"
         exit "$rc" ;;
       upgrade_verify) exit "${FAKE_VERIFY_RC:-0}" ;;
+      migrate)
+        # --check: app/new.py stands for the release's migration files
+        case " $* " in *" --check "*)
+          [ -f app/new.py ] && [ "$(cat "$FAKE_ROOT/db.state")" != schema=v2 ] && exit 1
+          exit 0 ;;
+        esac
+        [ -n "${FAKE_BRIDGE_RC:-}" ] || exit 0
+        # core.upgrade_migrate.LegacyBridge: hand the restart over, stop, migrate
+        r="$HOME/.danbyte-upgrade"
+        mkdir -p "$r" && cp scripts/upgrade/legacy-resume.sh "$r/legacy-resume-T.sh"
+        : >"$r/legacy-resume-T.units"
+        for f in "$HOME/.config/systemd/user"/danbyte-*; do
+          u=${f##*/}
+          case "$u" in *.timer|danbyte-web.service|danbyte-ws.service|danbyte-frontend-prod.service|\
+            danbyte-docs.service|danbyte-workers.service|danbyte-fastlane.service) ;; *) continue ;; esac
+          if [ "$(cat "$FAKE_SD/$u.enabled" 2>/dev/null)" = enabled ] || [ "$(cat "$FAKE_SD/$u.active" 2>/dev/null)" = active ]; then
+            echo "$u" >>"$r/legacy-resume-T.units"
+          fi
+          echo inactive >"$FAKE_SD/$u.active"
+        done
+        # what the overlay added, listed by the bridge's own code
+        "$REAL_PY" -c 'import sys; sys.path.insert(0, sys.argv[1])
+from core.upgrade_migrate import files_added, rollback_archive
+a = rollback_archive([sys.argv[2]])
+if a:
+    open(sys.argv[3], "w").write("".join(p + "\n" for p in files_added(".", a)[0]))
+' "$FAKE_REPO" "$HOME/danbyte-backups" "$r/legacy-resume-T.units.added"
+        # the release it was for and who started it (no tick: a person)
+        tag="v$(sed -n 's/^__version__ *= *"\(.*\)"/\1/p' danbyte/__init__.py)"
+        echo "$tag" >"$r/legacy-resume-T.units.target"
+        printf '{"trigger":"button","version_from":"0.16.13","version_to":"%s","kind":"bundle"}' \
+          "$tag" >"$r/legacy-resume-T.units.report.json"
+        case "$FAKE_BRIDGE_RC" in
+          0) echo schema=v2 >"$FAKE_ROOT/db.state" ;;
+          3) : >"$r/legacy-resume-T.units.db-unchanged" ;;
+          *) echo schema=partial >"$FAKE_ROOT/db.state" ;;
+        esac
+        exit "$FAKE_BRIDGE_RC" ;;
       upgrade_maintenance) echo "$2" >"$FAKE_ROOT/flag" ;;
     esac
     exit 0 ;;
@@ -221,7 +277,7 @@ class Host:
             "HOME": str(self.home), "LANG": "C.UTF-8",
             "DANBYTE_DIR": str(self.app), "REAL_PY": sys.executable,
             "FAKE_SD": str(self.sd), "FAKE_CALLS": str(self.calls), "FAKE_ROOT": str(self.root),
-            "FAKE_APP": str(self.app), "DANBYTE_UPGRADE_SETTLE": "0",
+            "FAKE_APP": str(self.app), "FAKE_REPO": str(REPO), "DANBYTE_UPGRADE_SETTLE": "0",
             "DANBYTE_UPGRADE_HEALTH_WAIT": "4", "DANBYTE_UPGRADE_FRONTEND_WAIT": "4",
             "DANBYTE_UPGRADE_ONESHOT_WAIT": "2", "DANBYTE_UPGRADE_TRIGGER": "button",
             "DANBYTE_UPGRADE_CGROUP": str(self.root / "cgroup"),
@@ -276,7 +332,7 @@ class Host:
             .danbyte-upgrade/
             """))
 
-    def install(self, *, extra_units: dict | None = None) -> None:
+    def install(self, *, extra_units: dict | None = None, version: str = "0.17.0-dev1") -> None:
         """The running release (dev1): tree, .env, venv, built frontend,
         linked and running units."""
         if self.kind == "git":
@@ -297,7 +353,7 @@ class Host:
             _run(["git", "-C", str(work), "push", "-q", str(origin), "main", "--tags"], env=self.env)
         else:
             self.app.mkdir(parents=True)
-            self.write_tree(self.app, "0.17.0-dev1")
+            self.write_tree(self.app, version)
             files = sorted("./" + str(p.relative_to(self.app)) for p in self.app.rglob("*")
                            if p.is_file())
             (self.app / ".release-files").write_text("\n".join(files) + "\n")
@@ -353,6 +409,12 @@ class Host:
         for d in ("frontend/dist", "frontend/node_modules", "staticfiles"):
             (top / d).mkdir(parents=True, exist_ok=True)
             (top / d / ".marker").write_text("new\n")
+        # Collected with the private media modes, as bundles 0.16.12 to 0.17.0-dev1 were.
+        (top / "staticfiles" / "admin" / "css").mkdir(parents=True)
+        (top / "staticfiles" / "admin" / "css" / "base.css").write_text("body {}\n")
+        for p in (top / "staticfiles").rglob("*"):
+            p.chmod(0o750 if p.is_dir() else 0o640)
+        (top / "staticfiles").chmod(0o750)
         path = self.root / (name or f"danbyte-{version}-linux-x86_64.tar.gz")
         with tarfile.open(path, "w:gz") as tar:
             tar.add(top, arcname=top.name)
@@ -463,11 +525,13 @@ class BundleStageTests(StageTestCase):
             r"^systemctl --user stop .*danbyte-workers\.service",
             r"^systemctl --user stop .*danbyte-web\.service",
             r"^make -s -C .* link-units",
+            r"^systemctl --user daemon-reload",
             r"^py -m pip install -q --no-index",
             r"^py manage.py check",
             r"^py dbtool snapshot ",
             r"^py manage.py upgrade_migrate$",
             r"^py manage.py collectstatic",
+            r"^curl .*https://danbyte\.example\.test/static/admin/css/base\.css",
             r"^py manage.py upgrade_verify",
             r"^py manage.py upgrade_maintenance on",
             r"^systemctl --user start .*danbyte-web\.service",
@@ -488,6 +552,12 @@ class BundleStageTests(StageTestCase):
         self.assertIn("./app/new.py", (h.app / ".release-files").read_text())
         self.assertEqual((h.app / ".venv" / "installed").read_text(), "v2\n")
         self.assertEqual(h.db(), "schema=v2")
+        # nginx reads the static files as another user.
+        static = h.app / "staticfiles"
+        self.assertEqual(static.stat().st_mode & 0o777, 0o755)
+        self.assertEqual((static / "admin" / "css").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((static / "admin" / "css" / "base.css").stat().st_mode & 0o777, 0o644)
+        self.assertFalse(any("static" in w for w in st["warnings"]), st["warnings"])
         # Units: what ran runs; the admin's choice stands; the release's new
         # timer is on; the upgrade's own and the infra units are never touched.
         for unit in PROD_UNITS:
@@ -498,8 +568,8 @@ class BundleStageTests(StageTestCase):
         self.assertFalse(h.called(r"stop .*danbyte-upgrade\.service"))
         # New seeds, never a superuser.
         self.assertTrue(h.called(r"^py manage.py bootstrap su=\[\]$"))
-        # Nothing left behind.
-        self.assertEqual(list((h.home / ".danbyte-upgrade").iterdir()), [])
+        # Nothing left behind, not even the empty scratch folder.
+        self.assertFalse((h.home / ".danbyte-upgrade").exists())
         self.assertFalse((h.units / "danbyte-upgrade-recover.service").exists())
         self.assertFalse(Path(h.root / "danbyte-0.17.0-dev2-linux-x86_64.tar.gz").exists())
         self.assertTrue((h.app / ".upgrade.log").exists())
@@ -510,6 +580,14 @@ class BundleStageTests(StageTestCase):
         r = h.upgrade(str(h.bundle(name=".upgrade-bundle.tar.gz")))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(h.status()["version_to"], "0.17.0-dev2")
+
+    def test_static_files_nginx_cannot_read_are_a_warning_not_a_rollback(self):
+        h = self.host()
+        r = h.upgrade(env={"FAKE_STATIC_CODE": "403"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        st = h.status()
+        self.assertEqual(st["outcome"]["code"], "new", st)
+        self.assertTrue(any("HTTP 403 for /static/" in w for w in st["warnings"]), st["warnings"])
 
     def test_a_bundle_that_does_not_match_its_release_is_refused(self):
         h = self.host()
@@ -738,3 +816,149 @@ class GitStageTests(StageTestCase):
         r = h.upgrade()
         self.assertEqual(r.returncode, 1)
         self.assertIn("working branch 'feature'", h.status()["error"])
+
+
+class LauncherBackupTests(StageTestCase):
+    def test_the_launchers_backup_is_the_stages_backup_step(self):
+        # The bar does not go back when the stage takes over, and the step
+        # list shows when the backup ran and how long it took.
+        for kind in ("bundle", "git"):
+            with self.subTest(kind):
+                h = Host(self, kind)
+                h.install()
+                r = h.upgrade(env={"FAKE_BACKUP_SLEEP": "1"})
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                during = json.loads((h.root / "status-at-backup.json").read_text())
+                self.assertEqual((during["step"], during["pct"]), ("backup", 4))
+                steps = {s["name"]: s for s in h.status()["steps"]}
+                self.assertEqual(steps["backup"]["detail"], "11111111-2222-3333-4444-555555555555")
+                self.assertGreaterEqual(steps["backup"]["ended"] - steps["backup"]["started"], 1)
+                self.assertLessEqual(steps["backup"]["ended"], steps["preflight"]["started"])
+                self.assertFalse((h.home / ".danbyte-upgrade").exists())
+
+
+class UnitFileTests(SimpleTestCase):
+    def test_a_stopped_frontend_is_not_a_failed_one(self):
+        # Node exits with 143 on SIGTERM; every upgrade and restart stops it.
+        # The stage's link-units and the older upgraders' install-services
+        # both daemon-reload, so an install picks this up on its next upgrade.
+        for name in ("danbyte-frontend-prod.service", "danbyte-frontend.service"):
+            text = (REPO / "services" / name).read_text()
+            service = text.split("[Service]", 1)[1].split("\n[", 1)[0]
+            self.assertRegex(service, r"(?m)^SuccessExitStatus=143$", name)
+
+
+OLD_RELEASE = "v0.16.13"
+
+
+def _old_upgrader() -> str | None:
+    r = subprocess.run(["git", "-C", str(REPO), "show", f"{OLD_RELEASE}:scripts/danbyte-upgrade-bundle.sh"],
+                       capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 and r.stdout.startswith("#!") else None
+
+
+class LegacyUpgraderTests(StageTestCase):
+    """The first upgrade off 0.16: 0.16.13's own bundle upgrader runs this
+    release's ``manage.py migrate``. The Python shim answers it the way the
+    bridge does (hand the restart over, stop, migrate, and on a full
+    rollback say so); legacy-resume.sh then runs for real on what that
+    upgrader left behind."""
+
+    def setUp(self):
+        self.old = _old_upgrader()
+        if self.old is None:
+            self.skipTest(f"{OLD_RELEASE} is not in this checkout")
+
+    def run_legacy(self, bridge_rc: str, *, upload: bool = False):
+        h = Host(self, "bundle")
+        h.install(version="0.16.13")
+        (h.app / "scripts" / "danbyte-upgrade-bundle.sh").write_text(self.old)
+        self.before = self.tree(h)
+        bundle = h.bundle()
+        if upload:   # where the Updates page puts an uploaded bundle
+            bundle = shutil.move(bundle, h.app / ".upgrade-bundle.tar.gz")
+        r = h.upgrade(str(bundle), env={"FAKE_BRIDGE_RC": bridge_rc})
+        root = h.home / ".danbyte-upgrade"
+        units = root / "legacy-resume-T.units"
+        self.assertTrue(units.exists(), r.stdout + r.stderr)
+        # a timer that fired between the old upgrader's overlay and the
+        # bridge ran the new code on the old schema
+        (h.sd / "danbyte-drift-dispatch.service.active").write_text("failed\n")
+        # the upgrader has exited: its pid is gone
+        resume = subprocess.run(["/bin/sh", str(root / "legacy-resume-T.sh"), str(h.app), str(units),
+                                 "999999999", ""], env=h.env, capture_output=True, text=True,
+                                timeout=120)
+        return h, r, resume
+
+    @staticmethod
+    def tree(h: Host) -> set[str]:
+        """The files an archive of the code holds (what the old upgrader's
+        rollback archive leaves out, its own files and caches aside)."""
+        skip = {".venv", "vendor", "media", ".git", "__pycache__"}
+        out = set()
+        for p in h.app.rglob("*"):
+            rel = p.relative_to(h.app)
+            if p.is_dir() or skip & set(rel.parts) or rel.parts[:2] == ("frontend", "node_modules") \
+                    or rel.name.startswith(".upgrade"):
+                continue
+            out.add(str(rel))
+        return out
+
+    def version_on_disk(self, h: Host) -> str:
+        return re.search(r'"(.*)"', (h.app / "danbyte" / "__init__.py").read_text()).group(1)
+
+    def test_a_failed_upgrade_that_changed_no_data_starts_everything_again(self):
+        h, r, resume = self.run_legacy("3", upload=True)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(h.status()["state"], "failed")
+        # 0.16.13's rollback put its code back and left the new files there
+        self.assertEqual(self.version_on_disk(h), "0.16.13")
+        self.assertEqual(h.db(), "schema=v1")
+        self.assertEqual(resume.returncode, 0, resume.stdout + resume.stderr)
+        self.assertIn("0.16.13 is back", resume.stdout)
+        # the code is exactly the release that ran before, migrations and all
+        self.assertRegex(resume.stdout, r"removed [1-9][0-9]* file\(s\) the failed release had added")
+        self.assertNotIn("still fails", resume.stdout)
+        self.assertFalse((h.app / "app" / "new.py").exists())
+        self.assertEqual(self.tree(h), self.before)
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service")[1], "active", unit)
+        for t in h.timers:
+            if t != "danbyte-digest":
+                self.assertEqual(h.state(f"{t}.timer")[1], "active", t)
+        self.assertEqual(h.state("danbyte-digest.timer"), ("disabled", "inactive"))
+        self.assertEqual(h.state("danbyte-drift-dispatch.service")[1], "inactive")
+        # 0.16's auto-upgrade sees the failed release by its tag, not "uploaded";
+        # the restored release reports nothing
+        self.assertEqual(h.status()["version_to"], "v0.17.0-dev2")
+        self.assertFalse(h.called(r"upgrade_report"))
+        # nothing left: the restart's files, its folder, the uploaded bundle
+        self.assertFalse((h.home / ".danbyte-upgrade").exists())
+        self.assertFalse((h.app / ".upgrade-bundle.tar.gz").exists())
+
+    def test_a_partly_applied_migration_starts_nothing_more(self):
+        h, r, resume = self.run_legacy("4")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(resume.returncode, 1, resume.stdout)
+        self.assertIn("not starting anything", resume.stdout)
+        self.assertEqual(h.state("danbyte-dispatch.timer")[1], "inactive")
+        # the files stay for whoever finishes it, and the status says so
+        self.assertTrue((h.app / "app" / "new.py").exists())
+        st = h.status()
+        self.assertIn("nothing the upgrade stopped was started again", st["error"])
+        self.assertFalse((h.home / ".danbyte-upgrade").exists())
+
+    def test_a_finished_upgrade_leaves_no_upgrade_folder(self):
+        h, r, resume = self.run_legacy("0")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(h.status()["state"], "done")
+        self.assertEqual(self.version_on_disk(h), "0.17.0-dev2")
+        # its install-services reloads the units: the new unit files apply
+        self.assertOrder(h, r"^make -C .* install-services", r"^systemctl --user daemon-reload")
+        self.assertEqual(resume.returncode, 0, resume.stdout + resume.stderr)
+        self.assertEqual(h.state("danbyte-dispatch.timer")[1], "active")
+        # recorded for its report before anything the migrate stopped starts
+        self.assertTrue(h.called(r"^py manage.py upgrade_report --merge-legacy "
+                                 r".*/legacy-resume-T\.units\.report\.json$"))
+        self.assertLess(resume.stdout.index("recorded the upgrade"), resume.stdout.index("starting:"))
+        self.assertFalse((h.home / ".danbyte-upgrade").exists())

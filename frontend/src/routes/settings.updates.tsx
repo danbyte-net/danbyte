@@ -378,7 +378,7 @@ docker compose -f docker-compose.prod.yml up -d`}
               </div>
             </SettingsCard>
           )}
-          {lastUpgrade.data?.stage_api &&
+          {(lastUpgrade.data?.stage_api || lastUpgrade.data?.legacy) &&
             (lastUpgrade.data.state === "done" ||
               lastUpgrade.data.state === "failed") && (
               <LastUpgradeCard status={lastUpgrade.data} />
