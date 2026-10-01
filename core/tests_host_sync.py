@@ -1,19 +1,25 @@
-"""scripts/host-sync.sh - the root steps of an install or upgrade - run for
+"""scripts/host-sync.sh - the root steps of an install or upgrade - and
+scripts/install-host.sh, which runs them after install.sh's upgrade, run for
 real with the host's files under a scratch root (DANBYTE_HOST_ROOT) and
 shims for nginx, systemctl, runuser, install and id.
 
-What it must get right: a fresh site and certificate; a re-render only while
-the live site is still what Danbyte rendered, keeping its certificate paths
-and name; the previous site back when ``nginx -t`` refuses the new one; a
-hand-edited site left alone with the new render beside it; and the
-certificate unit running a root-owned copy of its script.
+What host-sync must get right: a fresh site and certificate; a re-render only
+while the live site is still what Danbyte rendered, keeping its certificate
+paths and name; the previous site back when ``nginx -t`` refuses the new one;
+a hand-edited site left alone with the new render beside it; the certificate
+unit running a root-owned copy of its script; and a stamp of what it applied.
+What install-host must: the root steps only once the upgrade ended done, the
+installer's lock released, and a summary of how it went.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from django.conf import settings
@@ -31,7 +37,18 @@ case "$1" in
 esac
 exit 0
 """,
-    "systemctl": '#!/bin/sh\necho "systemctl $*" >>"$FAKE_CALLS"\n',
+    # is-active answers from the file $FAKE_UNIT_STATE names (the upgrade unit)
+    "systemctl": """#!/bin/sh
+echo "systemctl $*" >>"$FAKE_CALLS"
+for a; do
+  [ "$a" = is-active ] || continue
+  s=$(cat "${FAKE_UNIT_STATE:-/nonexistent}" 2>/dev/null || echo inactive)
+  echo "$s"
+  [ "$s" = active ]
+  exit
+done
+exit 0
+""",
     "runuser": '#!/bin/sh\nwhile [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n',
     "id": '#!/bin/sh\n[ "$1" = -u ] && [ $# -eq 1 ] && { echo 0; exit 0; }\n[ "$1" = -u ] && { echo 1000; exit 0; }\nexec /usr/bin/id "$@"\n',
     "install": """#!/bin/sh
@@ -47,7 +64,7 @@ exec /usr/bin/install "$@"
 }
 
 
-class HostSyncTests(SimpleTestCase):
+class HostSandbox(SimpleTestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
@@ -85,6 +102,11 @@ class HostSyncTests(SimpleTestCase):
                 .replace("@@MAINTENANCE_ROOT@@", f"{self.app}/deploy")
                 .replace("@@H2_LISTEN@@", " http2").replace("@@H2_DIRECTIVE@@", ""))
 
+    def stamp(self) -> dict:
+        return json.loads((self.root / "etc/danbyte/host-sync.json").read_text())
+
+
+class HostSyncTests(HostSandbox):
     def test_a_fresh_host_gets_a_site_a_certificate_and_the_unit(self):
         r = self.sync("--fresh", "--host", "danbyte.example.test")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -179,3 +201,218 @@ class HostSyncTests(SimpleTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.site(), before)
         self.assertIn("nginx refused the new site", r.stderr)
+        # not applied: the after-upgrade step stays up
+        self.assertEqual((self.stamp()["nginx"], self.stamp()["ok"]), ("refused", False))
+
+    def test_the_stamp_says_what_was_applied_and_from_which_files(self):
+        from core.upgrade_notes import HOST_SYNC_SOURCES, host_sources_digest
+
+        r = self.sync("--fresh", "--host", "db.example.test")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        stamp = self.stamp()
+        version = re.search(r'^__version__ = "([^"]+)"', (REPO / "danbyte/__init__.py").read_text(), re.M)
+        self.assertEqual(stamp["version"], version.group(1))
+        # the app hashes the same files, in the same order
+        self.assertEqual(stamp["sources"], host_sources_digest(REPO))
+        listed = subprocess.run(["bash", str(REPO / "scripts/host-sync.sh"), "--print-sources"],
+                                capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual(tuple(listed), HOST_SYNC_SOURCES)
+        self.assertEqual((stamp["nginx"], stamp["ok"], stamp["certificate"]), ("fresh", True, "self-signed"))
+        self.assertEqual((self.root / "etc/danbyte/host-sync.json").stat().st_mode & 0o777, 0o644)
+        self.sync()
+        self.assertEqual(self.stamp()["nginx"], "current")
+
+    def test_an_install_without_nginx_stays_without_it(self):
+        # make host-sync passes no --no-nginx; an install made with it must
+        # not get a site, a certificate and the default site removed.
+        r = self.sync("--fresh", "--no-nginx")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.stamp()["nginx"], "off")
+        r = self.sync()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("left out, as at install", r.stdout)
+        self.assertFalse((self.root / SITE).exists())
+        self.assertTrue((self.root / "etc/nginx/sites-enabled/default").exists())
+        self.assertTrue((self.root / "etc/logrotate.d/danbyte").exists())
+        # --fresh still adds the site
+        r = self.sync("--fresh", "--host", "db.example.test")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue((self.root / SITE).exists())
+
+
+class InstallHostTests(HostSandbox):
+    """scripts/install-host.sh: what install.sh hands the end of an upgrade to,
+    as a root unit, so a dropped SSH session skips none of it."""
+
+    def setUp(self):
+        super().setUp()
+        self.unit = self.tmp / "upgrade-unit-state"
+        self.unit.write_text("inactive\n")
+        self.runs = self.tmp / "installer"
+        self.scratch = self.runs / "run"
+        self.scratch.mkdir(parents=True)
+        self.log = self.runs / "run.log"
+
+    def finish(self, *args: str, env: dict | None = None, background: bool = False,
+               script: Path | None = None):
+        argv = ["/bin/sh", str(script or REPO / "scripts" / "install-host.sh"), "--app", str(self.app),
+                "--user", "danbyte", "--version", "0.17.0-dev2", "--host", "db.example.test",
+                "--log-dir", "/var/log/danbyte", *args]
+        full = {**self.env, "FAKE_UNIT_STATE": str(self.unit), "DANBYTE_INSTALL_HOST_POLL": "0.1",
+                "DANBYTE_INSTALL_HOST_GRACE": "5", **(env or {})}
+        if background:
+            return subprocess.Popen(argv, env=full, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True)
+        return subprocess.run(argv, env=full, capture_output=True, text=True, timeout=120)
+
+    def upgrade_args(self, owner: str = "installer-1") -> tuple[str, ...]:
+        return ("--from", "0.17.0-dev1", "--wait-stage", "--lock-owner", owner, "--log", str(self.log),
+                "--cleanup", str(self.scratch))
+
+    def status(self, state: str, **extra) -> None:
+        """The stage's status file, laid out as lib.sh writes it."""
+        data = {"state": state, "step": "done" if state == "done" else "migrate", "pct": 100,
+                "version_to": "0.17.0-dev2", "version_from": "0.17.0-dev1", "error": "",
+                "stage_api": 1, "kind": "bundle", "trigger": "installer", **extra}
+        data.setdefault("warnings", [])
+        data["log"] = data.pop("log", str(self.app / ".upgrade.log"))
+        (self.app / ".upgrade-status.json").write_text(json.dumps(data, separators=(",", ":")) + "\n")
+
+    def lock(self, owner: str) -> None:
+        (self.app / ".upgrade.lock").write_text(json.dumps({"owner": owner, "phase": "launched"},
+                                                           separators=(",", ":")))
+
+    def test_after_the_upgrade_it_does_the_root_steps_and_says_how_it_went(self):
+        self.sync("--fresh", "--host", "db.example.test")        # the install as it was
+        (self.root / "etc/logrotate.d/danbyte").unlink()
+        self.unit.write_text("active\n")
+        self.status("running")
+        self.lock("installer-1")
+        proc = self.finish(*self.upgrade_args(), background=True)
+        time.sleep(1)
+        self.assertIsNone(proc.poll())                           # the stage still runs
+        self.assertFalse((self.root / "etc/logrotate.d/danbyte").exists())
+        self.status("done", warnings=["danbyte-backend is a development server and was running "
+                                      "beside danbyte-web; it is now disabled"])
+        self.unit.write_text("inactive\n")
+        out, _ = proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 0, out)
+        text = self.log.read_text()
+        self.assertIn("Danbyte upgraded 0.17.0-dev1 -> 0.17.0-dev2.", text)
+        self.assertIn("URL:  https://db.example.test/", text)
+        self.assertIn("logrotate: /etc/logrotate.d/danbyte", text)
+        self.assertIn("nginx: ", text)
+        self.assertIn("danbyte-backend is a development server", text)
+        self.assertIn("The certificate is self-signed.", text)
+        # an upgrade is not a fresh install
+        for fresh in ("Danbyte is installed", "Password", "DJANGO_SUPERUSER_PASSWORD"):
+            self.assertNotIn(fresh, text)
+        self.assertIn("Danbyte upgraded", out)                   # the journal says it too
+        self.assertEqual((self.runs / "run.log.rc").read_text().strip(), "0")
+        self.assertTrue((self.root / "etc/logrotate.d/danbyte").exists())
+        self.assertEqual(self.stamp()["nginx"], "current")
+        self.assertFalse((self.app / ".upgrade.lock").exists())
+        self.assertFalse(self.scratch.exists())
+
+    def test_a_failed_upgrade_leaves_the_host_as_it_was(self):
+        self.status("failed", error="manage.py check failed: boom - rolled back: the previous "
+                                    "release runs again; the database was not changed.")
+        self.lock("installer-1")
+        r = self.finish(*self.upgrade_args())
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("The upgrade to 0.17.0-dev2 failed.", r.stdout)
+        self.assertIn("manage.py check failed: boom", r.stdout)
+        self.assertIn("left as they were", r.stdout)
+        self.assertIn(f"log: {self.app / '.upgrade.log'}", r.stdout)
+        self.assertFalse((self.root / "etc/logrotate.d/danbyte").exists())
+        self.assertFalse((self.root / SITE).exists())
+        self.assertNotIn("daemon-reload", self.calls.read_text())
+        self.assertEqual((self.runs / "run.log.rc").read_text().strip(), "1")
+        self.assertFalse((self.app / ".upgrade.lock").exists())   # its own lock goes all the same
+
+    def test_it_waits_for_a_recovery_and_keeps_a_lock_that_is_not_its_own(self):
+        self.sync("--fresh", "--host", "db.example.test")
+        marker = self.tmp / ".danbyte-upgrade" / "active"           # beside the app
+        marker.parent.mkdir()
+        marker.write_text("WORK=/x\n")
+        self.unit.write_text("failed\n")
+        self.status("running")
+        self.lock("someone-else")
+        proc = self.finish(*self.upgrade_args(), background=True, env={"DANBYTE_INSTALL_HOST_GRACE": "3"})
+        time.sleep(1.5)
+        self.assertIsNone(proc.poll())        # long past the grace: the recovery may still finish it
+        self.status("done")                    # it did, forward
+        marker.unlink()
+        out, _ = proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("waiting for its recovery", out)
+        self.assertIn("Danbyte upgraded 0.17.0-dev1 -> 0.17.0-dev2.", out)
+        self.assertTrue((self.app / ".upgrade.lock").exists())
+
+    def test_a_stage_that_ended_without_saying_how_is_reported(self):
+        self.status("running")
+        r = self.finish(*self.upgrade_args(), env={"DANBYTE_INSTALL_HOST_GRACE": "3"})
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("ended before it said how", r.stdout)
+        self.assertIn("journalctl --user -u danbyte-upgrade", r.stdout)
+        self.assertFalse((self.root / "etc/logrotate.d/danbyte").exists())
+
+    def test_an_upgrade_that_never_ends_keeps_its_lock_and_says_what_to_run(self):
+        self.unit.write_text("active\n")
+        self.status("running")
+        self.lock("installer-1")
+        r = self.finish(*self.upgrade_args(), env={"DANBYTE_INSTALL_HOST_WAIT": "1"})
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("still runs after a day of waiting", r.stdout)
+        self.assertIn("sudo ./install.sh --host-only", r.stdout)
+        self.assertTrue((self.app / ".upgrade.lock").exists())
+        self.assertFalse((self.root / "etc/logrotate.d/danbyte").exists())
+
+    def test_on_their_own_with_a_certificate_a_ca_issued(self):
+        # install.sh --host-only: no stage to wait for. The site serves a
+        # certificate a CA issued, so no self-signed hint; the steps the
+        # release still lists are counted.
+        self.sync("--fresh", "--host", "db.example.test")
+        ca = self.tmp / "ca"
+        ca.mkdir()
+        for argv in (
+            ["req", "-x509", "-nodes", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+             "-days", "2", "-keyout", "ca.key", "-out", "ca.crt", "-subj", "/CN=Test CA"],
+            ["req", "-nodes", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+             "-keyout", "site.key", "-out", "site.csr", "-subj", "/CN=db.example.test"],
+            ["x509", "-req", "-in", "site.csr", "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial",
+             "-days", "2", "-out", "site.crt"],
+        ):
+            subprocess.run(["openssl", *argv], cwd=ca, check=True, capture_output=True)
+        shutil.copy(ca / "site.crt", self.root / "etc/ssl/danbyte/danbyte.crt")
+        (self.app / ".venv/bin").mkdir(parents=True)
+        (self.app / ".venv/bin/python").write_text(
+            '#!/bin/sh\n[ "$2" = upgrade_notes ] && printf "2 step(s) to do after this upgrade:\\n"\n')
+        (self.app / ".venv/bin/python").chmod(0o755)
+        r = self.finish()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("The root steps of Danbyte 0.17.0-dev2 are done.", r.stdout)
+        self.assertEqual(self.stamp()["certificate"], "issued")
+        self.assertNotIn("self-signed", r.stdout)
+        self.assertIn("After-upgrade steps left: 2", r.stdout)
+
+    def test_install_sh_hands_the_root_steps_of_an_upgrade_to_a_unit(self):
+        text = (REPO / "scripts/install.sh").read_text()
+        body = text[text.index("upgrade_existing() {"):text.index('\nif [ "$EXISTING" -eq 1 ]; then')]
+        self.assertIn("systemd-run --unit danbyte-install-host", body)
+        self.assertIn('/bin/sh "$hs/scripts/install-host.sh" "${hargs[@]}"', body)
+        self.assertNotIn("host-sync.sh\" \"$@\"", body)
+        self.assertIn('exit "$rc"', body)
+        # The root-only copy holds all the unit runs: run it from just that.
+        extra = re.search(r'cp --parents \$\(bash scripts/host-sync.sh --print-sources\) \\\n\s*(.*?) "\$hs/"',
+                          body).group(1).split()
+        self.assertEqual(extra, ["scripts/install-host.sh", "danbyte/__init__.py"])
+        copy = self.tmp / "hs"
+        copy.mkdir()
+        files = subprocess.run(["bash", str(REPO / "scripts/host-sync.sh"), "--print-sources"],
+                               capture_output=True, text=True, check=True).stdout.split()
+        subprocess.run(["cp", "--parents", *files, *extra, str(copy)], cwd=REPO, check=True)
+        self.sync("--fresh", "--host", "db.example.test")
+        r = self.finish(script=copy / "scripts" / "install-host.sh")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("nginx: ", r.stdout)

@@ -87,6 +87,7 @@ The other tabs cover building from source and a local dev checkout.
         | `--no-nginx` | Don't install/configure nginx or TLS - for running your own reverse proxy. Also sets `DANBYTE_HTTPS=False` so Secure cookies/HSTS don't break login without a TLS terminator. | nginx **on** |
         | `--force` | On a re-run: upgrade over a git checkout, or past an upgrade lock nothing holds any more. Never a downgrade. | off |
         | `--skip-backup` | On a re-run: no pre-upgrade backup. | off |
+        | `--host-only` | On a host that runs Danbyte: only the root steps an upgrade ends with (logrotate, nginx + TLS, the certificate unit), from the bundle of the release that runs, with no upgrade stage. | off |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
         **Environment variables** (set before the command; alternative to flags)

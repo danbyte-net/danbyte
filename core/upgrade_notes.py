@@ -179,6 +179,56 @@ def _tls_unit_runs_root_owned_script() -> bool:
     return False
 
 
+#: What scripts/host-sync.sh last applied - install.sh runs it after its
+#: upgrade, an administrator with ``make host-sync``.
+HOST_SYNC_STAMP = "/etc/danbyte/host-sync.json"
+#: The files it renders the host from, in the order it hashes them (its
+#: ``--print-sources``).
+HOST_SYNC_SOURCES = (
+    "scripts/host-sync.sh",
+    "scripts/danbyte-tls-apply.sh",
+    "deploy/logrotate/danbyte",
+    "deploy/systemd/danbyte-tls.path.template",
+    "deploy/systemd/danbyte-tls.service.template",
+    "deploy/nginx/danbyte.prod.conf.template",
+)
+
+
+def host_sources_digest(base=None) -> str | None:
+    """sha256 of those files in ``base`` (default: this tree), the way
+    host-sync stamps them; None when one is missing."""
+    import hashlib
+    from pathlib import Path
+
+    from django.conf import settings
+
+    root = Path(base or settings.BASE_DIR)
+    digest = hashlib.sha256()
+    for rel in HOST_SYNC_SOURCES:
+        try:
+            digest.update((root / rel).read_bytes())
+        except OSError:
+            return None
+    return digest.hexdigest()
+
+
+def _host_files_applied() -> bool:
+    """Done when host-sync last ran with this tree's host files and nginx
+    took the site (one it left alone because it was edited by hand counts).
+    A stamp it cannot read says nothing, so the note stays up."""
+    import json
+    from pathlib import Path
+
+    want = host_sources_digest()
+    if want is None:
+        return True  # this tree carries no host files to apply
+    try:
+        stamp = json.loads(Path(HOST_SYNC_STAMP).read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(stamp, dict) and stamp.get("sources") == want and stamp.get("ok") is not False
+
+
 _NGINX_TEMP_SIZE = """\
 # nginx takes k or m for this size, never g:
 sudo sed -i 's/proxy_max_temp_file_size 10g;/proxy_max_temp_file_size 10240m;/' \\
@@ -283,6 +333,22 @@ def _no_kept_access_grant() -> bool:
 
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.17.0-host-files",
+        version="0.17.0",
+        title="Apply this release's nginx, logrotate and certificate-unit files",
+        body=(
+            "They come with the release and need root. install.sh applies them "
+            "after its upgrade; an upgrade from the app cannot, and this host "
+            "has not had this release's files yet. The nginx site is replaced "
+            "only while it is still what Danbyte rendered. From the unpacked "
+            "bundle of this release, sudo ./install.sh --host-only does the same."
+        ),
+        docs="getting-started/upgrading/#after-an-upgrade",
+        platforms=("systemd",),
+        check=_host_files_applied,
+        host=True,
+    ),
     UpgradeNote(
         id="0.17.0-tls-unit-root-script",
         version="0.17.0",

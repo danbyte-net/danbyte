@@ -159,6 +159,29 @@ class RealNotesTests(APITestCase):
                 unit.write_text("[Service]\nExecStart=/usr/local/libexec/danbyte/danbyte-tls-apply.sh\n")
                 self.assertTrue(un._tls_unit_runs_root_owned_script())
 
+    def test_the_host_files_step_compares_the_stamp_with_this_tree(self):
+        import json
+
+        want = un.host_sources_digest()
+        self.assertIsNotNone(want)
+        with tempfile.TemporaryDirectory() as d:
+            stamp = Path(d) / "host-sync.json"
+            with patch.object(un, "HOST_SYNC_STAMP", str(stamp)):
+                self.assertFalse(un._host_files_applied())         # host-sync never ran here
+                stamp.write_text(json.dumps({"sources": want, "ok": True}))
+                self.assertTrue(un._host_files_applied())
+                stamp.write_text(json.dumps({"sources": "0" * 64, "ok": True}))
+                self.assertFalse(un._host_files_applied())         # an earlier release's files
+                stamp.write_text(json.dumps({"sources": want, "ok": False}))
+                self.assertFalse(un._host_files_applied())         # nginx refused the new site
+                stamp.write_text("{")
+                self.assertFalse(un._host_files_applied())
+            self.assertIsNone(un.host_sources_digest(Path(d)))     # a tree without them
+        note = next(n for n in un.NOTES if n.id == "0.17.0-host-files")
+        self.assertEqual(note.platforms, ("systemd",))
+        self.assertTrue(note.as_dict()["snippet"].startswith("sudo make -C "))
+        self.assertIn("install.sh --host-only", note.body)
+
     def test_host_steps_lead_with_the_one_command(self):
         from django.conf import settings
 

@@ -163,8 +163,9 @@ current `/opt` layout.
     Node, the service user), then **the same upgrade stage** the in-app
     upgrade runs, as the service user's `danbyte-upgrade.service` - backup,
     services stopped, snapshot, migration, verify, start, or everything put
-    back - and finally nginx, logrotate and the certificate unit from the
-    bundle. It keeps your `.env`, the database and the site's certificate.
+    back - and, once that is done, nginx, logrotate and the certificate unit
+    from the bundle, as the root unit `danbyte-install-host.service`. It
+    keeps your `.env`, the database and the site's certificate.
 
     ```bash
     sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz
@@ -176,10 +177,26 @@ current `/opt` layout.
     and `install.sh` warns when they belong to anyone else, who could
     change what root runs next.
 
-    It prints each step as the upgrade reaches it and exits non-zero if it
-    failed (and was rolled back). If your SSH session drops, the upgrade
-    carries on; follow it with
-    `sudo -u danbyte XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) journalctl --user -fu danbyte-upgrade`.
+    It prints each step as the upgrade reaches it, then what it did: the
+    release it upgraded from and to, the root steps, the URL, the upgrade's
+    warnings, a hint when the site serves a self-signed certificate, and
+    how many after-upgrade steps are left. It exits 0 when it upgraded, 1
+    when the upgrade failed (and was rolled back) or never ended, and 2
+    when it upgraded but the root steps failed.
+
+    If your SSH session drops, the upgrade and the root steps after it carry
+    on, as units; follow them with
+    `sudo -u danbyte XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) journalctl --user -fu danbyte-upgrade`
+    and `sudo journalctl -fu danbyte-install-host`. What the installer would
+    have printed at the end is kept in `/var/lib/danbyte/installer/<time>.log`.
+    The root steps run from a copy of the bundle's files only root can read,
+    so the unpacked bundle may go once the installer has started them.
+
+    To run only the root steps again - after they failed, or after an
+    upgrade from the app - use the bundle of the release that runs:
+    `sudo ./install.sh --host-only`. It runs no upgrade stage, so nothing
+    stops.
+
     It refuses to run over a git checkout or while another upgrade runs
     (`--force` overrides those two), and for an older release than the one
     installed, which nothing overrides: a pre-release is older than the next
@@ -454,8 +471,12 @@ done. A fresh install starts with nothing pending.
 
 The steps on the host - nginx, logrotate, the site-certificate unit - are
 what an upgrade from the app cannot do, because it never has root.
-Re-running `install.sh` from the bundle does them. On a host upgraded from
-the app, one command does them all, from the app directory as a user with
+Re-running `install.sh` from the bundle does them, as does
+`sudo ./install.sh --host-only` from the bundle of the release that runs.
+Each run records what it applied in `/etc/danbyte/host-sync.json`; until
+that names this release's files, the steps list *Apply this release's
+nginx, logrotate and certificate-unit files*. On a host upgraded from the
+app, one command does them all, from the app directory as a user with
 sudo:
 
 ```bash
@@ -465,8 +486,9 @@ sudo make -C ~danbyte/danbyte host-sync
 It renders from the app directory as root (which the service user owns),
 so prefer the installer from a bundle you verified. A site edited by hand
 is not replaced: the new render lands next to it as `danbyte.conf.new`;
-`make host-sync ADOPT=1` replaces it anyway, keeping a backup. From the
-shell:
+`make host-sync ADOPT=1` replaces it anyway, keeping a backup. An install
+made with `--no-nginx` gets no nginx site from it while it has none. From
+the shell:
 
 ```bash
 manage.py upgrade_notes              # print the pending steps (the upgrade scripts do this at the end)
