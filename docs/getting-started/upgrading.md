@@ -221,10 +221,10 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     site already answers to.
 
     The nginx site is re-rendered from the new release only while it is still
-    exactly what Danbyte rendered, with the certificate paths and name it has
-    now; the old file is kept as `danbyte.conf.bak-<time>` and comes back if
-    `nginx -t` refuses the new one. A site you edited by hand is left alone
-    and the new render is written beside it as
+    exactly what Danbyte rendered, with the certificate paths, name, mode and
+    owner it has now; the old file is kept as `danbyte.conf.bak-<time>` and
+    comes back if `nginx -t` refuses the new one. A site you edited by hand
+    is left alone and the new render is written beside it as
     `/etc/nginx/sites-available/danbyte.conf.new` for you to merge.
 
 4. **Verify** once it finishes:

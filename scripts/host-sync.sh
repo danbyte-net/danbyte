@@ -14,10 +14,11 @@
 #   * the nginx site: a fresh install gets a self-signed certificate and a new
 #     site. An existing site is re-rendered only while it is still exactly
 #     what Danbyte rendered (a stored hash, or --old-template rendered the
-#     same way) - with the certificate paths and server_name it has now - and
-#     the previous file comes back if `nginx -t` refuses the new one. A site
-#     edited by hand is left alone; the new render is written beside it as
-#     danbyte.conf.new (--adopt replaces it anyway, keeping a backup).
+#     same way) - with the certificate paths, server_name, mode and owner it
+#     has now - and the previous file comes back if `nginx -t` refuses the
+#     new one. A site edited by hand is left alone; the new render is written
+#     beside it as danbyte.conf.new (--adopt replaces it anyway, keeping a
+#     backup).
 set -euo pipefail
 
 TREE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -100,6 +101,14 @@ site_value() {  # <directive>: its first value in the live site file
   sed -n "s/^[[:space:]]*$1[[:space:]]\\+\\([^;]*\\);.*/\\1/p" "$SITE" | head -n 1
 }
 store_hash() { install -d -m 755 "$HASH_DIR"; sha256sum "$SITE" | cut -d' ' -f1 >"$HASH_FILE"; }
+# A render that may take the live site's place gets its mode and owner: a
+# site from proxy-install is 0600, and root's umask would make it 0644.
+keep_mode() {  # <render> - when there is a live site
+  [ -e "$SITE" ] || return 0
+  if ! { chmod --reference="$SITE" "$1" && chown --reference="$SITE" "$1"; }; then
+    note "$1 could not take the mode and owner of $SITE"
+  fi
+}
 
 TEMPLATE="$TREE/deploy/nginx/danbyte.prod.conf.template"
 if [ "$FRESH" -eq 1 ] || [ ! -f "$SITE" ]; then
@@ -121,6 +130,7 @@ if [ "$FRESH" -eq 1 ] || [ ! -f "$SITE" ]; then
     say "self-signed certificate for $HOST"
   fi
   render "$TEMPLATE" "$HOST" "$CERT_DEFAULT" "$KEY_DEFAULT" >"$SITE.tmp"
+  keep_mode "$SITE.tmp"
   mv -f "$SITE.tmp" "$SITE"
   mkdir -p "$R/etc/nginx/sites-enabled"
   ln -sfn "$SITE" "$R/etc/nginx/sites-enabled/danbyte.conf"
@@ -146,6 +156,7 @@ else
     render "$OLD_TEMPLATE" "$live_host" "$live_crt" "$live_key" | cmp -s - "$SITE" && pristine=1
   fi
   render "$TEMPLATE" "${HOST:-$live_host}" "${live_crt:-$CERT_DEFAULT}" "${live_key:-$KEY_DEFAULT}" >"$SITE.new"
+  keep_mode "$SITE.new"
   if cmp -s "$SITE.new" "$SITE"; then
     rm -f "$SITE.new"
     store_hash

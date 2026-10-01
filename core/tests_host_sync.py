@@ -149,6 +149,22 @@ class HostSyncTests(SimpleTestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("my own tile server", self.site())
 
+    def test_a_re_render_keeps_the_sites_mode(self):
+        # 0.16's proxy-install wrote the site 0600; neither the re-render nor
+        # the new render beside a hand-edited site may open it to everyone.
+        self.sync("--fresh", "--host", "db.example.test")
+        (self.root / SITE).chmod(0o600)
+        r = self.sync(env={"FAKE_NGINX_VERSION": "1.26.0"})    # renders differently: http2 on
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("re-rendered", r.stdout)
+        self.assertIn("http2 on;", self.site())
+        self.assertEqual((self.root / SITE).stat().st_mode & 0o777, 0o600)
+        (self.root / SITE).write_text(self.site() + "\n# my own tile server in the CSP\n")
+        r = self.sync()
+        self.assertIn("left alone", r.stderr)
+        self.assertEqual((self.root / (SITE + ".new")).stat().st_mode & 0o777, 0o600)
+        self.assertEqual((self.root / SITE).stat().st_mode & 0o777, 0o600)
+
     def test_the_previous_site_comes_back_when_nginx_refuses_the_new_one(self):
         self.sync("--fresh", "--host", "db.example.test")
         before = self.site()
