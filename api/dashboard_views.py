@@ -7,6 +7,7 @@ only per-instance work is utilisation for the top-8 prefixes.
 from __future__ import annotations
 
 import ipaddress
+import uuid
 
 from django.db.models import Count, Q
 from drf_spectacular.types import OpenApiTypes
@@ -190,9 +191,17 @@ FRAMES = {"24h": 24, "7d": 168, "30d": 720, "90d": 2160}
 
 
 def _scope_params(params) -> dict:
+    """The scope from the query string. Every dimension but tag names ids:
+    one that is not an id is a 400, not a database error."""
     out = {}
     for key in SCOPE_KEYS:
         vals = [v.strip() for v in (params.get(key) or "").split(",") if v.strip()]
+        if key != "tag":
+            for v in vals:
+                try:
+                    uuid.UUID(v)
+                except ValueError:
+                    raise serializers.ValidationError({key: f"«{v}» is not an id."}) from None
         if vals:
             out[key] = vals
     return out

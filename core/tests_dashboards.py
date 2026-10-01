@@ -86,6 +86,15 @@ class DashboardTests(APITestCase):
         r = self.client.put(f"{URL}home/", {"id": d["id"]}, format="json")
         self.assertEqual(r.status_code, 403)
 
+    def test_home_pick_needs_an_id(self):
+        """Something that is not an id is a 400, not a database error (#273)."""
+        for bad in ("abc", "", ["x"], {"x": 1}):
+            r = self.client.put(f"{URL}home/", {"id": bad}, format="json")
+            self.assertEqual(r.status_code, 400, bad)
+            self.assertEqual(r.json(), {"id": "Not a dashboard id."})
+        r = self.client.put(f"{URL}home/", {"id": None}, format="json")
+        self.assertEqual((r.status_code, r.json()), (200, {"id": None}))
+
     def test_validation(self):
         for bad in (
             {"layout": {"v": 1}},

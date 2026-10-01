@@ -13,7 +13,7 @@ from django.contrib.auth.models import Group
 from django.db.models import Q
 from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -184,8 +184,13 @@ class DashboardViewSet(viewsets.ModelViewSet):
         tenant = self._tenant()
         if request.method == "PUT":
             want = request.data.get("id")
-            if want is not None and not self.get_queryset().filter(pk=want).exists():
-                raise PermissionDenied("No such dashboard for you.")
+            if want is not None:
+                try:
+                    want = uuid.UUID(str(want))
+                except ValueError:
+                    raise ValidationError({"id": "Not a dashboard id."}) from None
+                if not self.get_queryset().filter(pk=want).exists():
+                    raise PermissionDenied("No such dashboard for you.")
             UserPreference.objects.update_or_create(
                 user=request.user, tenant=tenant, table_id=HOME_PREF,
                 defaults={"data": {"id": str(want) if want else None}},

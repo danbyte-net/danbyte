@@ -149,6 +149,16 @@ class DashboardScopeParamTests(APITestCase):
         self.assertEqual(body["frame_hours"], 720)
         self.assertEqual(self.client.get("/api/dashboard/").json()["counts"]["devices"], 3)
 
+    def test_a_scope_id_that_is_not_one_is_a_400(self):
+        """Not a 500 from the UUID filter (#273); tags are slugs."""
+        for key in ("site", "region", "role", "device_type", "sla"):
+            r = self.client.get(f"/api/dashboard/?{key}=nope")
+            self.assertEqual(r.status_code, 400, key)
+            self.assertEqual(r.json(), {key: "«nope» is not an id."})
+        r = self.client.get(f"/api/dashboard/?site={self.a.id},nope")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client.get("/api/dashboard/?tag=nope").status_code, 200)
+
     def test_v2_default_layout_is_returned_whole(self):
         from core.models import TenantSettings
 
