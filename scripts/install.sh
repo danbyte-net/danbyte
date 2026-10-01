@@ -233,8 +233,10 @@ upgrade_existing() {
   ver="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$BUNDLE/danbyte/__init__.py")"
   from="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$APP/danbyte/__init__.py")"
   [ -f "$BUNDLE/scripts/upgrade/stage.sh" ] || die "this bundle has no upgrade stage"
-  if [ "$(printf '%s\n%s\n' "${ver%%-*}" "${from%%-*}" | sort -V | head -n 1)" = "${ver%%-*}" ] \
-      && [ "${ver%%-*}" != "${from%%-*}" ] && [ "$FORCE" -eq 0 ]; then
+  # The stage's own order (a pre-release is older than its final), from this
+  # bundle. --force does not cover it: older code on a newer schema.
+  if /bin/sh -c '. "$1" && downgrade_refused "$2" "$3" >/dev/null' _ \
+      "$BUNDLE/scripts/upgrade/lib.sh" "$ver" "$from"; then
     die "this bundle is $ver and $APP runs $from - downgrades are not supported"
   fi
   # The previous release's nginx template, to tell whether the live site

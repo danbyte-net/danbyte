@@ -135,6 +135,9 @@ for _tool in curl tar make timeout flock find sort comm; do
 done
 [ "$KIND" = git ] && { command -v git >/dev/null 2>&1 || fail "git is not installed"; }
 [ -n "$VERSION" ] || fail "the release does not say which version it is (danbyte/__init__.py)"
+# Older code on a newer schema, whoever started the stage: install.sh runs
+# it without a launcher in front.
+if _why=$(downgrade_refused "$VERSION" "$FROM"); then fail "$_why"; fi
 [ -f "$SRC/manage.py" ] || fail "no release tree at $SRC"
 [ -f "$APP/.env" ] || fail "no .env in $APP"
 [ -x "$PY" ] || fail "no virtualenv at $APP/.venv"

@@ -51,6 +51,88 @@ clean_ver() {
   printf '%s' "$1" | sed -e 's/^[vV]//' -e 's/-dirty$//' -e 's/-[0-9][0-9]*-g[0-9a-f]*$//'
 }
 
+# ver_cmp <a> <b>: -1, 0 or 1, in the order core.version.compare_versions
+# gives (PEP 440): a pre-release is older than its final, so 0.17.0-dev90 <
+# 0.17.0-dev91 < 0.17.0-beta.1 < 0.17.0-rc1 < 0.17.0. When either side does
+# not parse (an epoch or a local part counts, as no tag has one), both compare
+# on their numeric part, as the app does. Plain awk, so root runs it from a
+# bundle without any Python.
+ver_cmp() {
+  awk -v a="$1" -v b="$2" '
+    function clean(v) {   # as clean_ver
+      sub(/^[vV]/, "", v); sub(/-dirty$/, "", v); sub(/-[0-9]+-g[0-9a-f]*$/, "", v)
+      return v
+    }
+    function parse(v, K,    m, l, n) {
+      v = tolower(v); sub(/^v+/, "", v)
+      if (!match(v, /^[0-9]+(\.[0-9]+)*/)) return 0
+      K["rel"] = substr(v, 1, RLENGTH); v = substr(v, RLENGTH + 1)
+      K["pl"] = ""; K["pn"] = 0; K["post"] = -1; K["dev"] = -1
+      if (match(v, /^[-_.]?(alpha|a|beta|b|preview|pre|c|rc)[-_.]?[0-9]*/)) {
+        m = substr(v, 1, RLENGTH); v = substr(v, RLENGTH + 1)
+        l = m; gsub(/[^a-z]/, "", l)
+        n = m; sub(/^[-_.]?[a-z]+[-_.]?/, "", n)
+        K["pl"] = (l == "a" || l == "alpha") ? "a" : ((l == "b" || l == "beta") ? "b" : "rc")
+        K["pn"] = n + 0
+      }
+      if (match(v, /^-[0-9]+/)) {
+        K["post"] = substr(v, 2, RLENGTH - 1) + 0; v = substr(v, RLENGTH + 1)
+      } else if (match(v, /^[-_.]?(post|rev|r)[-_.]?[0-9]*/)) {
+        n = substr(v, 1, RLENGTH); v = substr(v, RLENGTH + 1)
+        sub(/^[-_.]?[a-z]+[-_.]?/, "", n); K["post"] = n + 0
+      }
+      if (match(v, /^[-_.]?dev[-_.]?[0-9]*/)) {
+        n = substr(v, 1, RLENGTH); v = substr(v, RLENGTH + 1)
+        sub(/^[-_.]?dev[-_.]?/, "", n); K["dev"] = n + 0
+      }
+      return v == ""
+    }
+    function sgn(p, q) { return p < q ? -1 : (p > q ? 1 : 0) }
+    function release(x, y,    xa, ya, nx, ny, i, c) {
+      nx = split(x, xa, "."); ny = split(y, ya, ".")
+      for (i = 1; i <= nx || i <= ny; i++) {
+        c = sgn(i <= nx ? xa[i] + 0 : 0, i <= ny ? ya[i] + 0 : 0)
+        if (c) return c
+      }
+      return 0
+    }
+    # Before every pre-release (a bare .devN), a, b, rc, then the final.
+    function phase(K) {
+      if (K["pl"] == "") return (K["post"] < 0 && K["dev"] >= 0) ? 0 : 4
+      return K["pl"] == "a" ? 1 : (K["pl"] == "b" ? 2 : 3)
+    }
+    function nodev(n) { return n < 0 ? 1e18 : n }
+    function numeric(v,    p, n, i, out) {
+      sub(/^[vV]+/, "", v); sub(/-.*$/, "", v)
+      n = split(v, p, "."); out = ""
+      for (i = 1; i <= n && p[i] ~ /^[0-9]+$/; i++) out = out (i > 1 ? "." : "") (p[i] + 0)
+      return out
+    }
+    function tuple(x, y,    xa, ya, nx, ny, i) {
+      nx = x == "" ? 0 : split(x, xa, "."); ny = y == "" ? 0 : split(y, ya, ".")
+      for (i = 1; i <= nx && i <= ny; i++) if (xa[i] + 0 != ya[i] + 0) return sgn(xa[i] + 0, ya[i] + 0)
+      return sgn(nx, ny)
+    }
+    BEGIN {
+      a = clean(a); b = clean(b)
+      if (!parse(a, A) || !parse(b, B)) { print tuple(numeric(a), numeric(b)); exit }
+      c = release(A["rel"], B["rel"])
+      if (!c) c = sgn(phase(A), phase(B))
+      if (!c && A["pl"] != "") c = sgn(A["pn"], B["pn"])
+      if (!c) c = sgn(A["post"], B["post"])
+      if (!c) c = sgn(nodev(A["dev"]), nodev(B["dev"]))
+      print c
+    }'
+}
+
+# downgrade_refused <to> <from>: true, with the reason on stdout, when <to> is
+# older than <from> - older code on a newer schema. Every way in asks.
+downgrade_refused() {
+  [ -n "$1" ] && [ -n "$2" ] || return 1
+  [ "$(ver_cmp "$1" "$2")" = -1 ] || return 1
+  printf 'this release is %s and the install runs %s - downgrades are not supported\n' "$1" "$2"
+}
+
 # ── context: what recover.sh needs to act on a journal ───────────────────────
 
 CTX_KEYS="APP WORK SRC KIND VERSION FROM TRIGGER ATTEMPT STARTED_AT STATUS_FILE UPG_ROOT TARGET_SHA BACKUP_ID TARBALL"

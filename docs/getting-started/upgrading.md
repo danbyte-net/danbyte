@@ -176,9 +176,11 @@ current `/opt` layout.
     failed (and was rolled back). If your SSH session drops, the upgrade
     carries on; follow it with
     `sudo -u danbyte XDG_RUNTIME_DIR=/run/user/$(id -u danbyte) journalctl --user -fu danbyte-upgrade`.
-    It refuses to run over a git checkout, while another upgrade runs, or
-    for an older version than the one installed (`--force` overrides the
-    first two).
+    It refuses to run over a git checkout or while another upgrade runs
+    (`--force` overrides those two), and for an older release than the one
+    installed, which nothing overrides: a pre-release is older than the next
+    one and than its final, so a 0.17.0-dev bundle cannot go over 0.17.0.
+    The upgrade stage refuses a downgrade itself too, however it is started.
 
     You can also upgrade in-app **without unpacking**: **Settings → Updates →
     Upgrade from a bundle** takes the same `.tar.gz` and runs the same stage.
@@ -327,7 +329,7 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 
 | Step | What happens | The site |
 |---|---|---|
-| preflight | refuses inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk; installs the recovery unit | up |
+| preflight | refuses an older release than the one running, inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk; installs the recovery unit | up |
 | backup | the pre-upgrade backup, with the running code; when the launcher took it before handing over, the step shows that run and its duration | up |
 | prepare | git: `npm ci` and the frontend build in a scratch copy; dependencies resolved (bundle: checked offline); a copy of the virtualenv | up |
 | quiesce | timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |

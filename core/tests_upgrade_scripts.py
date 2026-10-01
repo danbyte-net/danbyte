@@ -434,6 +434,22 @@ class Host:
         return subprocess.run(argv, env=full_env, cwd=str(self.app), capture_output=True,
                               text=True, timeout=180)
 
+    def stage(self, version: str, *, env: dict | None = None):
+        """What install.sh does: the bundle's tree beside the app and its
+        stage.sh run straight, with no launcher in front of it."""
+        self.bundle(version)
+        work = self.home / ".danbyte-upgrade" / f"20990101T000000Z-{version}"
+        work.mkdir(parents=True)
+        shutil.copytree(self.root / "bundle-src" / f"danbyte-{version}-linux-x86_64", work / "src",
+                        symlinks=True)
+        from_ = re.search(r'"(.*)"', (self.app / "danbyte" / "__init__.py").read_text()).group(1)
+        return subprocess.run(
+            ["/bin/sh", str(work / "src" / "scripts" / "upgrade" / "stage.sh"), "--kind", "bundle"],
+            env={**self.env, "DANBYTE_UPGRADE_WORK": str(work), "DANBYTE_UPGRADE_SRC": str(work / "src"),
+                 "DANBYTE_UPGRADE_VERSION": version, "DANBYTE_UPGRADE_FROM": from_,
+                 "DANBYTE_UPGRADE_TRIGGER": "installer", **(env or {})},
+            cwd=str(self.app), capture_output=True, text=True, timeout=180)
+
     def recover(self, *args: str, env: dict | None = None):
         script = self.home / ".danbyte-upgrade" / "recover" / "recover.sh"
         return subprocess.run(["/bin/sh", str(script), *args], env={**self.env, **(env or {})},
@@ -605,6 +621,27 @@ class BundleStageTests(StageTestCase):
         self.assertIn("downgrades are not supported", st["error"])
         self.assertIn("nothing was changed", st["error"])
         self.assertFalse(h.called(r"^systemctl --user stop"))
+
+    def test_the_stage_refuses_a_downgrade_however_it_was_started(self):
+        # install.sh runs the stage without a launcher; a pre-release is
+        # older than the next one and than its final.
+        for running, bundle in (("0.17.0-dev91", "0.17.0-dev90"), ("0.17.0", "0.17.0-dev91")):
+            with self.subTest(running=running, bundle=bundle):
+                h = self.host(version=running)
+                r = h.stage(bundle)
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                st = h.status()
+                self.assertEqual(st["outcome"]["code"], "unchanged", st)
+                self.assertIn(f"this release is {bundle} and the install runs {running} - "
+                              "downgrades are not supported", st["error"])
+                self.assertFalse(h.called(r"^systemctl --user stop"))
+                self.assertFalse(h.called(r"^py manage.py backup_now"))
+                self.assertEqual(h.snapshot(), h.before)
+        # the next pre-release goes ahead
+        h = self.host(version="0.17.0-dev90")
+        r = h.stage("0.17.0-dev91")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((h.status()["state"], h.status()["version_to"]), ("done", "0.17.0-dev91"))
 
     def test_refuses_to_run_inside_an_app_unit(self):
         h = self.host()
@@ -847,6 +884,70 @@ class UnitFileTests(SimpleTestCase):
             text = (REPO / "services" / name).read_text()
             service = text.split("[Service]", 1)[1].split("\n[", 1)[0]
             self.assertRegex(service, r"(?m)^SuccessExitStatus=143$", name)
+
+
+class VersionOrderTests(SimpleTestCase):
+    """lib.sh's ver_cmp, the order install.sh and the stage refuse a
+    downgrade by: the app's own (core.version.compare_versions), in plain awk,
+    with every awk a host may have - mawk on Debian and Ubuntu, gawk, busybox."""
+
+    LIB = REPO / "scripts" / "upgrade" / "lib.sh"
+    VERSIONS = ("0.17.0-dev90", "0.17.0-dev91", "0.17.0-beta.1", "0.17.0-rc1", "0.17.0", "v0.17.0",
+                "0.17", "0.17.0.post1", "0.17.1-dev1", "0.16.13", "0.16.0-beta.1", "0.16.0-dev4",
+                "0.9.17", "0.10.0", "0.17.0-dev2-5-gabc1234", "0.17.0-dirty", "1.0rc1.dev3", "1.0-1",
+                "uploaded", "")
+
+    def sh(self, script: str, *args: str, path: str | None = None, stdin: str = ""):
+        env = {**os.environ, "PATH": f"{path}:{os.environ['PATH']}" if path else os.environ["PATH"]}
+        return subprocess.run(["/bin/sh", "-c", f'. "$0"; {script}', str(self.LIB), *args], input=stdin,
+                              env=env, capture_output=True, text=True, timeout=120)
+
+    def awks(self) -> dict[str, str | None]:
+        found: dict[str, str | None] = {"default": None}
+        for name, argv in (("mawk", ("mawk",)), ("gawk", ("gawk",)), ("busybox", ("busybox", "awk"))):
+            exe = shutil.which(argv[0])
+            if exe and subprocess.run([exe, *argv[1:], "BEGIN {}"], capture_output=True).returncode == 0:
+                d = Path(tempfile.mkdtemp())
+                self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+                (d / "awk").write_text(f'#!/bin/sh\nexec {" ".join([exe, *argv[1:]])} "$@"\n')
+                (d / "awk").chmod(0o755)
+                found[name] = str(d)
+        return found
+
+    def test_releases_order_as_the_app_orders_them(self):
+        from core.version import compare_versions
+
+        pairs = [(a, b) for a in self.VERSIONS for b in self.VERSIONS]
+        stdin = "".join(f"{a}|{b}\n" for a, b in pairs)
+        for name, path in self.awks().items():
+            with self.subTest(awk=name):
+                r = self.sh('while IFS="|" read -r a b; do ver_cmp "$a" "$b"; done', path=path, stdin=stdin)
+                got = r.stdout.split()
+                self.assertEqual(len(got), len(pairs), r.stderr)
+                wrong = [(a, b, g, compare_versions(a, b)) for (a, b), g in zip(pairs, got, strict=True)
+                         if int(g) != compare_versions(a, b)]
+                self.assertEqual(wrong, [])
+
+    def test_a_pre_release_is_older_than_the_next_and_than_its_final(self):
+        chain = ("0.16.13", "0.17.0-dev90", "0.17.0-dev91", "0.17.0-rc1", "0.17.0", "0.17.1-dev1")
+        for older, newer in zip(chain, chain[1:], strict=False):
+            self.assertEqual(self.sh('ver_cmp "$1" "$2"', older, newer).stdout.strip(), "-1")
+            self.assertEqual(self.sh('ver_cmp "$1" "$2"', newer, older).stdout.strip(), "1")
+            r = self.sh('downgrade_refused "$1" "$2"', older, newer)
+            self.assertEqual(r.returncode, 0)
+            self.assertIn(f"this release is {older} and the install runs {newer}", r.stdout)
+            self.assertEqual(self.sh('downgrade_refused "$1" "$2"', newer, older).returncode, 1)
+        for to, from_ in (("0.17.0", "0.17.0"), ("v0.17.0", "0.17.0"), ("0.17.0", "")):
+            r = self.sh('downgrade_refused "$1" "$2"', to, from_)
+            self.assertEqual((r.returncode, r.stdout), (1, ""), (to, from_))
+
+    def test_install_sh_asks_the_bundles_stage_and_force_does_not_cover_it(self):
+        text = (REPO / "scripts" / "install.sh").read_text()
+        start = text.index("if /bin/sh -c '. \"$1\" && downgrade_refused")
+        guard = text[start:text.index("\n  fi\n", start)]
+        self.assertIn('"$BUNDLE/scripts/upgrade/lib.sh" "$ver" "$from"', guard)
+        self.assertIn("downgrades are not supported", guard)
+        self.assertNotIn("FORCE", guard)
 
 
 OLD_RELEASE = "v0.16.13"

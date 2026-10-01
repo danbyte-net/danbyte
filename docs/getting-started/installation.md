@@ -85,7 +85,7 @@ The other tabs cover building from source and a local dev checkout.
         | `--host=<name>` | Same, `=` form. | - |
         | `--service-home <path>` | Install location (app lands in `<path>/danbyte`). On a re-run it **auto-detects** the existing install, so you rarely set this. | `/opt/danbyte` |
         | `--no-nginx` | Don't install/configure nginx or TLS - for running your own reverse proxy. Also sets `DANBYTE_HTTPS=False` so Secure cookies/HSTS don't break login without a TLS terminator. | nginx **on** |
-        | `--force` | On a re-run: upgrade over a git checkout, or past an upgrade lock nothing holds any more. | off |
+        | `--force` | On a re-run: upgrade over a git checkout, or past an upgrade lock nothing holds any more. Never a downgrade. | off |
         | `--skip-backup` | On a re-run: no pre-upgrade backup. | off |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
