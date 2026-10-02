@@ -369,3 +369,122 @@ def check_type_change(device_type, width, profiles) -> None:
                 raise ValidationError({"width_mm": [
                     f"{d.name} would overlap {other.name} on {where}."
                 ]})
+
+
+# ── arranging a cabinet: many moves checked as one ──────────────────────────
+
+MAX_PLACEMENTS = 500
+
+
+def arrange(cabinet, placements) -> list:
+    """Move devices already in ``cabinet`` onto its rails at once.
+
+    ``placements`` is ``[{device_id, din_rail_id, din_offset_mm}]``; a null
+    rail takes the device off its rail and leaves it in the cabinet. The
+    arrangement is checked as a whole - every rail's devices, moved or not,
+    fit and do not overlap - so devices can swap places in one save. All or
+    nothing; the caller holds the transaction. Returns the moved devices."""
+    import uuid
+
+    from .models import Device
+
+    def ident(value):
+        try:
+            return uuid.UUID(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    if not isinstance(placements, list) or not placements:
+        raise ValidationError({"placements": ["A list of devices to place."]})
+    if len(placements) > MAX_PLACEMENTS:
+        raise ValidationError({"placements": [f"At most {MAX_PLACEMENTS} at a time."]})
+    errors = [{} for _ in placements]
+    rails = {r.id: r for r in cabinet.rails.select_for_update()}
+    wanted, seen = [], set()
+    for i, p in enumerate(placements):
+        p = p if isinstance(p, dict) else {}
+        device_id, rail_id = ident(p.get("device_id")), p.get("din_rail_id")
+        if device_id is None:
+            errors[i]["device_id"] = ["Not an id."]
+        elif device_id in seen:
+            errors[i]["device_id"] = ["This device is listed twice."]
+        seen.add(device_id)
+        rail = None
+        if rail_id is not None:
+            rail = rails.get(ident(rail_id))
+            if rail is None:
+                errors[i]["din_rail_id"] = ["Not one of this cabinet's rails."]
+        offset = p.get("din_offset_mm")
+        if rail is not None or rail_id is not None:
+            try:
+                offset = Decimal(str(offset)).quantize(Decimal("0.1"))
+            except Exception:  # noqa: BLE001 - anything that is not a number
+                offset = None
+            if offset is None or not offset.is_finite() or offset < 0:
+                errors[i]["din_offset_mm"] = ["A distance in mm from the rail's left end."]
+        wanted.append((device_id, rail, offset))
+    if any(errors):
+        raise ValidationError({"placements": errors})
+
+    devices = {
+        d.pk: d for d in Device.objects.select_related("device_type")
+        .filter(cabinet=cabinet, pk__in=[w[0] for w in wanted])
+    }
+    for i, (device_id, _rail, _offset) in enumerate(wanted):
+        if device_id not in devices:
+            errors[i]["device_id"] = ["Not a device in this cabinet."]
+    if any(errors):
+        raise ValidationError({"placements": errors})
+
+    # The final arrangement: every device on the cabinet's rails, as moved.
+    index = {device_id: i for i, (device_id, _r, _o) in enumerate(wanted)}
+    final = {
+        d.pk: (d, d.din_rail_id, d.din_offset_mm)
+        for d in Device.objects.select_related("device_type")
+        .filter(din_rail__cabinet=cabinet).exclude(pk__in=devices)
+    }
+    for device_id, rail, offset in wanted:
+        final[device_id] = (devices[device_id], rail.pk if rail else None, offset)
+    for rail in rails.values():
+        on = sorted(
+            ((d, offset) for d, rail_id, offset in final.values() if rail_id == rail.pk),
+            key=lambda x: (x[1], str(x[0].pk)),
+        )
+        prev = None
+        for d, offset in on:
+            i = index.get(d.pk)
+            dt = d.device_type
+            if dt is None or not dt.din_profiles or dt.width_mm is None:
+                if i is not None:
+                    errors[i]["din_rail_id"] = ["Give the device a type that mounts on DIN rails."]
+                continue
+            if rail.profile not in dt.din_profiles:
+                if i is not None:
+                    errors[i]["din_rail_id"] = [f"{dt.name} does not mount on a "
+                                                f"{PROFILE_LABELS[rail.profile]} rail."]
+                continue
+            end = offset + dt.width_mm
+            if end > rail.length_mm and i is not None:
+                errors[i]["din_offset_mm"] = [f"Runs past the rail's end ({mm(rail.length_mm)} mm)."]
+            if prev is not None and offset < prev[2]:
+                # The later of the two takes the error, else the moved one.
+                blame = i if i is not None else index.get(prev[0].pk)
+                other = prev[0] if blame == i else d
+                start, stop = (prev[1], prev[2]) if blame == i else (offset, end)
+                if blame is not None:
+                    errors[blame].setdefault("din_offset_mm", []).append(
+                        f"Overlaps {other.name} at {mm(start)}-{mm(stop)} mm.")
+            if prev is None or end > prev[2]:
+                prev = (d, offset, end)
+    if any(errors):
+        raise ValidationError({"placements": errors})
+
+    moved = []
+    for device_id, rail, offset in wanted:
+        d = devices[device_id]
+        if d.din_rail_id == (rail.pk if rail else None) and d.din_offset_mm == offset:
+            continue
+        d.din_rail, d.din_offset_mm = rail, (offset if rail else None)
+        d.save(update_fields=["din_rail", "din_offset_mm", "updated_at"])
+        moved.append(d)
+    return moved

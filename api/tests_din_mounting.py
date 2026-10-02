@@ -298,3 +298,90 @@ class DinRoundTripTests(DinMountingTestCase):
         d1, d2 = Device.objects.get(name="plc-1"), Device.objects.get(name="plc-2")
         self.assertEqual((d1.din_rail_id, d1.din_offset_mm), (self.r1.id, 120))
         self.assertEqual(d2.cabinet.name, "K2")
+
+
+class ArrangeTests(DinMountingTestCase):
+    """Many moves in one save, checked as a whole (the cabinet page's
+    Arrange mode)."""
+
+    def setUp(self):
+        super().setUp()
+        self.a = Device.objects.get(pk=self.mount("a", self.r1, 0).json()["id"])
+        self.b = Device.objects.get(pk=self.mount("b", self.r1, 90).json()["id"])
+        self.relay = Device.objects.get(
+            pk=self.mount("relay", self.r2, 0, dtype=self.relay).json()["id"])
+        self.url = f"/api/cabinets/{self.cab.id}/arrange/"
+
+    def place(self, device, rail_, offset):
+        return {"device_id": str(device.id),
+                "din_rail_id": str(rail_.id) if rail_ else None, "din_offset_mm": offset}
+
+    def arrange(self, *placements):
+        return self.client.post(self.url, {"placements": list(placements)}, format="json")
+
+    def where(self, device):
+        device.refresh_from_db()
+        return (device.din_rail_id, device.din_offset_mm)
+
+    def test_two_devices_swap_places_in_one_save(self):
+        r = self.arrange(self.place(self.a, self.r1, 90), self.place(self.b, self.r1, 0))
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self.where(self.a), (self.r1.id, 90))
+        self.assertEqual(self.where(self.b), (self.r1.id, 0))
+        self.assertEqual(len(r.json()["devices"]), 2)
+
+    def test_moves_across_rails_and_off_a_rail(self):
+        r = self.arrange(self.place(self.relay, self.r1, 200), self.place(self.b, None, None))
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self.where(self.relay), (self.r1.id, 200))
+        self.assertEqual(self.where(self.b), (None, None))
+        self.b.refresh_from_db()
+        self.assertEqual(self.b.cabinet_id, self.cab.id)
+
+    def test_a_bad_arrangement_changes_nothing(self):
+        # a leaves R1 in the same save, so the relay meets b, not a.
+        r = self.arrange(self.place(self.relay, self.r1, 80), self.place(self.a, self.r2, 0))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json(), {"placements": [
+            {"din_offset_mm": ["Overlaps b at 90-180 mm."]},
+            {"din_rail_id": ["PLC does not mount on a TS 15 rail."]},
+        ]})
+        r = self.arrange(self.place(self.b, self.r1, 350))
+        self.assertEqual(r.json(), {"placements": [
+            {"din_offset_mm": ["Runs past the rail's end (400 mm)."]},
+        ]})
+        self.assertEqual(self.where(self.a), (self.r1.id, 0))
+        self.assertEqual(self.where(self.relay), (self.r2.id, 0))
+
+    def test_only_this_cabinets_devices_and_rails(self):
+        other = self._cabinet(name="K2", rails=[rail("R1", 0, 100, 400)]).json()
+        far = DinRail.objects.get(cabinet_id=other["id"])
+        stranger = Device.objects.get(pk=self.mount("x", far, 0).json()["id"])
+        r = self.arrange(self.place(stranger, self.r1, 300), self.place(self.a, far, 0),
+                         self.place(self.a, self.r1, 0), {"device_id": "nope"})
+        errors = r.json()["placements"]
+        self.assertEqual(errors[1], {"din_rail_id": ["Not one of this cabinet's rails."]})
+        self.assertEqual(errors[2], {"device_id": ["This device is listed twice."]})
+        self.assertEqual(errors[3], {"device_id": ["Not an id."]})
+        r = self.arrange(self.place(stranger, self.r1, 300))
+        self.assertEqual(r.json(), {"placements": [{"device_id": ["Not a device in this cabinet."]}]})
+        self.assertEqual(self.arrange().status_code, 400)
+
+    def test_arranging_needs_change_on_the_devices(self):
+        viewer = self._limited_user("viewer", ["cabinet", "device"], ["view"])
+        self._login(viewer)
+        r = self.arrange(self.place(self.a, self.r1, 200))
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(self.where(self.a), (self.r1.id, 0))
+        mover = self._limited_user("mover", ["cabinet", "device"], ["view", "change"])
+        self._login(mover)
+        r = self.arrange(self.place(self.a, self.r1, 200))
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_each_moved_device_is_logged(self):
+        from audit.models import ChangeLogEntry
+
+        self.arrange(self.place(self.a, self.r1, 200))
+        entry = ChangeLogEntry.objects.filter(object_type="api.device", object_id=str(self.a.id),
+                                              action="update").latest("timestamp")
+        self.assertIn("din_offset_mm", entry.changes)

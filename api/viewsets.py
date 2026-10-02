@@ -6215,6 +6215,9 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     queryset = Cabinet.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = CabinetSerializer
     pagination_class = StandardPagination
+    # Arranging moves devices, not the cabinet: seeing the cabinet is enough
+    # here, and the action demands change on every device it moves.
+    rbac_action_map = {"arrange": "view"}
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -6269,6 +6272,40 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="arrange")
+    def arrange(self, request, pk=None):
+        """Move devices already in this cabinet onto its rails in one save:
+        ``{"placements": [{device_id, din_rail_id, din_offset_mm}]}``, checked
+        as a whole so devices can swap places (``api.din.arrange``). Needs
+        change on every device it moves."""
+        import uuid
+
+        from auth_api import rbac
+
+        from . import din
+
+        cabinet = self.get_object()
+        placements = (request.data or {}).get("placements")
+        ids = set()
+        for p in placements if isinstance(placements, list) else ():
+            try:
+                ids.add(uuid.UUID(str(p.get("device_id"))))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        if ids and not request.user.is_superuser:
+            mine = Device.objects.filter(cabinet=cabinet, pk__in=ids)
+            allowed = rbac.restrict_queryset(
+                mine, request.user, _get_active_tenant(request), "device", "change")
+            if allowed.count() != mine.count():
+                raise PermissionDenied("You may not move one of these devices.")
+        with transaction.atomic():
+            moved = din.arrange(cabinet, placements)
+        return Response({"devices": [
+            {"id": str(d.id), "din_rail_id": str(d.din_rail_id) if d.din_rail_id else None,
+             "din_offset_mm": d.din_offset_mm}
+            for d in moved
+        ]})
 
     @action(detail=True, methods=["post"], url_path="sync-from-type")
     def sync_from_type(self, request, pk=None):

@@ -165,3 +165,10 @@ A device reads `cabinet`, `din_rail` and `din_offset_mm`, and writes
 mounts on that profile. A device type has `width_mm`, `height_mm`,
 `depth_mm`, `din_profiles` (a list of `ts35`, `ts15`, `g32`) and
 `din_rail_mm`. A cabinet counts its devices in `device_count`.
+
+`POST /api/cabinets/{id}/arrange/` moves devices already in the cabinet in one
+save: `{"placements": [{"device_id", "din_rail_id", "din_offset_mm"}]}`, a
+null rail taking a device off its rail. The arrangement is checked as a whole
+- every rail's devices fit and none overlap, moved or not - so devices can
+swap places; errors come back per placement, in order, and nothing changes
+unless all of it fits. It needs change on every device it moves.
