@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from api.bulk_delete import bulk_ids
 from api.cf_search import cf_text_q
 from api.natural import natural
 from api.views import _get_active_tenant
@@ -99,9 +100,7 @@ class _BulkDeleteMixin:
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of ids."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             qs = self.get_queryset().filter(pk__in=ids)
             rows = list(qs)

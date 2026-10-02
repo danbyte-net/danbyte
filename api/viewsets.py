@@ -33,7 +33,7 @@ from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
 from auth_api.drf import RBACViewSetMixin, restrict_for_view
 from core.models import Organization, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
-from .bulk_delete import SafeBulkDeleteMixin
+from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
 from .cf_search import cf_text_q
@@ -733,12 +733,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
     }
 
     def _bulk_ids(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of ids."})
-        if len(ids) > 1000:
-            raise ValidationError({"ids": "At most 1000 ids per call."})
-        return ids
+        return bulk_ids(request, MAX_IDS)
 
     def normalize_bulk_updates(self, updates: dict) -> dict:
         """Hook for model-level invariants that ``Model.save()`` would enforce
@@ -1636,11 +1631,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         tenant are silently skipped. Addresses on the prefixes move up to
         the longest prefix that still contains them, exactly as a single
         delete does (#207); only addresses nothing else covers fall."""
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of prefix IDs."})
-        if len(ids) > 1000:
-            raise ValidationError({"ids": "At most 1000 ids per call."})
+        ids = bulk_ids(request, MAX_IDS)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
@@ -1671,10 +1662,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         accidentally wipe per-row tagging. ``status`` is a ``Status`` FK
         (post-0047): the field is ``status_id`` and carries a catalog row id.
         """
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of prefix IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -1825,9 +1814,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of IP IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
@@ -1841,10 +1828,8 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         """POST {ids, fields:{status_id, role_id, add_tag_ids, remove_tag_ids}}."""
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of IP IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -1933,9 +1918,7 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of VRF IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
@@ -1974,9 +1957,7 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of RT IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
@@ -2064,9 +2045,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of site IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
@@ -2079,10 +2058,8 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of site IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -2162,9 +2139,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of VLAN IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
@@ -2177,10 +2152,8 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of VLAN IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -2584,9 +2557,7 @@ class TenantViewSet(viewsets.ModelViewSet):
         """POST {ids:[...]} → force-delete each tenant and everything it owns."""
         from core.tenant_delete import force_delete_tenant
 
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of tenant IDs."})
+        ids = bulk_ids(request)
         rows = list(self.get_queryset().filter(pk__in=ids))
         log_bulk_delete(rows)  # log intent before the rows (and their data) vanish
         deleted = 0
@@ -2603,10 +2574,8 @@ class TenantViewSet(viewsets.ModelViewSet):
         Only ``group`` and active status are bulk-editable - name/slug are the
         tenant's identity (unique per org) and never make sense to set en masse.
         """
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of tenant IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -3308,13 +3277,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         SET_NULL, so they keep running and lose their type reference; the UI
         warns about that before it calls this.
         """
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError(
-                {"ids": "Provide a non-empty list of device type IDs."}
-            )
-        if len(ids) > 1000:
-            raise ValidationError({"ids": "At most 1000 ids per call."})
+        ids = bulk_ids(request, MAX_IDS)
         from audit.bulk import log_device_type_deletes
         from audit.context import suspended
 
@@ -8041,10 +8004,8 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     def bulk_update(self, request):
         """Domain, description and tags of several stacks at once (#252);
         name and master stay single-edit."""
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of virtual chassis IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
         updates = _bulk_field_updates(fields, ("domain", "description"))
@@ -8162,9 +8123,7 @@ class RegionViewSet(TenantScopedViewSet):
         edit forms). {ids: [...], fields: {parent_id: <id|null>}} - the one
         field bulk makes sense for here. Cycle-guarded: the new parent may
         not be one of the selected rows nor sit beneath any of them."""
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list."})
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
         unknown = set(fields) - {"parent_id", "color"}
         if unknown or not fields:
@@ -8237,10 +8196,8 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     def bulk_update(self, request):
         """Colour and icon for many locations at once (#183):
         ``{ids: [...], fields: {color?, icon?}}``."""
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of location IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
         unknown = sorted(set(fields) - {"color", "icon"})

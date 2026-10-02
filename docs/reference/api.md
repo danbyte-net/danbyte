@@ -114,6 +114,17 @@ hard-code a list that can go stale:
   the list** - 403 without view permission on it, 404 for a path that is not
   a list or a list that is not enabled.
 
+## Bulk calls
+
+Every `bulk-delete/` and `bulk-update/` takes a JSON object whose `ids` is a
+non-empty list of object ids (some lists take at most 1000 per call). An id
+that is not one, or a body that is not an object, answers `400` with
+`{"ids": "«nope» is not an id."}` and touches nothing. Ids outside the active
+tenant or the caller's permissions are left out, as in a list.
+
+A value a field cannot take answers `400` too - `{"non_field_errors":
+[...]}` when no serializer named the field - never a server error.
+
 ## Generating the schema offline
 
 To export the schema to a file (for client generation, diffing, or CI):

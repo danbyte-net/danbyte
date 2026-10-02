@@ -20,6 +20,7 @@ asked about, never what was removed along with them.
 """
 from __future__ import annotations
 
+import uuid
 from collections import Counter
 
 from django.db import DEFAULT_DB_ALIAS, transaction
@@ -30,6 +31,26 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 MAX_IDS = 1000
+
+
+def bulk_ids(request, limit: int | None = None) -> list[str]:
+    """The ``ids`` of a bulk call's JSON object: a non-empty list of ids, at
+    most ``limit``. Anything else is a 400 that says what is wrong - never a
+    500 from the database filter (#280)."""
+    if not isinstance(request.data, dict):
+        raise ValidationError({"ids": 'Send a JSON object: {"ids": [...]}.'})
+    ids = request.data.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        raise ValidationError({"ids": "Provide a non-empty list of ids."})
+    if limit is not None and len(ids) > limit:
+        raise ValidationError({"ids": f"At most {limit} ids per call."})
+    out = []
+    for v in ids:
+        try:
+            out.append(str(uuid.UUID(v)))
+        except (TypeError, ValueError, AttributeError):
+            raise ValidationError({"ids": f"«{v}» is not an id."}) from None
+    return out
 
 
 def _protected_reason(exc: ProtectedError) -> str:
@@ -73,11 +94,7 @@ class SafeBulkDeleteMixin:
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of ids."})
-        if len(ids) > MAX_IDS:
-            raise ValidationError({"ids": f"At most {MAX_IDS} ids per call."})
+        ids = bulk_ids(request, MAX_IDS)
         dry_run = bool(request.data.get("dry_run"))
         rows = list(self.get_queryset().filter(pk__in=ids))
         deleted, skipped = [], []

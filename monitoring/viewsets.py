@@ -18,6 +18,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from api.bulk_delete import bulk_ids
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 from auth_api import rbac
@@ -2366,9 +2367,7 @@ class WatchedEndpointViewSet(TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of ids."})
+        ids = bulk_ids(request)
         # get_queryset already scopes to the tenant + RBAC, so this can only
         # ever delete the caller's own endpoints.
         qs = self.get_queryset().filter(id__in=ids)
