@@ -735,8 +735,11 @@ def _pull_elevation_image(
         except Exception:  # noqa: BLE001 - network is best-effort here
             return "fetch_failed"
         if resp.status_code == 200 and resp.content:
+            from .face_ports import drop_calibration
             from .images import downscale_image
 
+            # A new photo's guides no longer stand where the old one's did.
+            dt.image_ports = drop_calibration(dt.image_ports, face)
             field = dt.front_image if face == "front" else dt.rear_image
             field.save(
                 f"{slug}.{face}.{ext}",

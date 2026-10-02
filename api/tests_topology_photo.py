@@ -266,6 +266,25 @@ class PhotoPayloadTests(_Base):
         self.assertEqual(front["markers"], [])
         self.assertIsNone(front["scale"])
 
+    def test_a_calibrated_photo_carries_its_true_width(self):
+        # #277: the guides and the distance between them give the photo's
+        # width in mm; the device's own calibration wins over its type's.
+        dt = self._type("XC206", image_ports={
+            "front": [], "rear": [],
+            "view": {"front": {"cal": {"left": 0.1, "right": 0.9, "span_mm": 48}}},
+        })
+        d = self._device("sw", dt)
+        self._to_peer(Interface.objects.create(device=d, name="eth0"))
+        self.assertEqual(self._photos(self._graph())["sw"]["front"]["mm"], 60.0)
+        d.image_ports = {"front": [], "view": {"front": {"cal": {"span_mm": 120}}}}
+        d.save(update_fields=["image_ports"])
+        self.assertEqual(self._photos(self._graph())["sw"]["front"]["mm"], 120.0)
+        dt.image_ports = {"front": []}
+        dt.save(update_fields=["image_ports"])
+        d.image_ports = None
+        d.save(update_fields=["image_ports"])
+        self.assertIsNone(self._photos(self._graph())["sw"]["front"]["mm"])
+
     def test_names_match_ignoring_case_and_spaces(self):
         dt = self._type("SRV", front=[
             _marker("power-port", "Psu 1", 0.8),

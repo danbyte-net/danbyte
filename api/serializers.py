@@ -2122,6 +2122,7 @@ LIFECYCLE_FIELDS = [
 class DeviceTypeMiniSerializer(NumIdModelSerializer):
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
+    front_cal = serializers.SerializerMethodField()
     lifecycle_state = serializers.ReadOnlyField()
     # Manufacturer NAME (not the nested object) - enough to drive the device
     # list's Manufacturer facet, which deep-links from the dashboard by name.
@@ -2136,6 +2137,12 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
     def get_rear_image(self, obj) -> str | None:
         return _img_url(self, obj.rear_image)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_front_cal(self, obj):
+        from .face_ports import calibration
+
+        return calibration(obj.image_ports, "front")
+
     @extend_schema_field(OpenApiTypes.STR)
     def get_manufacturer(self, obj) -> str | None:
         return obj.manufacturer.name if obj.manufacturer_id else None
@@ -2145,7 +2152,7 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "manufacturer", "manufacturer_id",
                   "u_height", "rack_width", "is_full_depth",
                   "width_mm", "height_mm", "din_profiles", "din_rail_mm",
-                  "front_image", "rear_image",
+                  "front_image", "rear_image", "front_cal",
                   "release_date", "end_of_support", "lifecycle_state"]
         extra_kwargs = {f: {"coerce_to_string": False}
                         for f in ("width_mm", "height_mm", "din_rail_mm")}
@@ -2342,54 +2349,9 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     # faceplate; names are NOT cross-checked against templates (renamed later →
     # the renderer just drops the marker).
     def validate_image_ports(self, value):
-        if value is None:
-            return None
-        if not isinstance(value, dict):
-            raise serializers.ValidationError(
-                'image_ports must be {"front": [...], "rear": [...]}.')
-        total = 0
-        for side in ("front", "rear"):
-            markers = value.get(side, [])
-            if not isinstance(markers, list):
-                raise serializers.ValidationError(
-                    f"{side} must be a list of markers.")
-            total += len(markers)
-            for m in markers:
-                if not isinstance(m, dict):
-                    raise serializers.ValidationError(
-                        "Each marker must be an object.")
-                kind = m.get("kind", "interface")
-                if kind not in self._PHOTO_MARKER_KINDS:
-                    raise serializers.ValidationError(
-                        f"Unknown marker kind {kind!r}.")
-                name = m.get("name")
-                if not isinstance(name, str) or not name or len(name) > 64:
-                    raise serializers.ValidationError(
-                        "Markers need a name (≤64 chars).")
-                for k in ("x", "y", "w", "h"):
-                    v = m.get(k)
-                    if not isinstance(v, (int, float)) or not (0 <= v <= 1):
-                        raise serializers.ValidationError(
-                            f"Marker {k} must be a number in 0..1.")
-        if total > 512:
-            raise serializers.ValidationError("Too many markers (max 512).")
-        # Display scale per side, saved from the editor's zoom: a fraction of
-        # the natural width, or null for "fit". Every photo surface honours it.
-        view = value.get("view")
-        if view is not None:
-            if not isinstance(view, dict):
-                raise serializers.ValidationError("view must be an object.")
-            for side, v in view.items():
-                if side not in ("front", "rear") or not isinstance(v, dict):
-                    raise serializers.ValidationError(
-                        'view keys are "front" / "rear" objects.')
-                scale = v.get("scale")
-                if scale is not None and (
-                    not isinstance(scale, (int, float)) or not (0.1 <= scale <= 8)
-                ):
-                    raise serializers.ValidationError(
-                        "view scale must be a number in 0.1..8, or null for fit.")
-        return value
+        from .face_ports import validate_image_ports_doc
+
+        return validate_image_ports_doc(value)
 
     lifecycle_state = serializers.ReadOnlyField()
     width_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
@@ -3007,6 +2969,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     {"position": f"Overlaps {d.name} at U{d.position}."}
                 )
         return attrs
+
+    def validate_image_ports(self, value):
+        from .face_ports import validate_image_ports_doc
+
+        return validate_image_ports_doc(value)
 
     def _validate_cabinet(self, attrs) -> None:
         """A device in a DIN-rail cabinet (#277): never in a rack as well, at

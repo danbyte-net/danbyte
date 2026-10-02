@@ -518,6 +518,7 @@ def enrich_photo(ctx: EnrichContext) -> None:
                 "aspect": size[0] if size else None,
                 "width": size[1] if size else None,
                 "scale": _photo_scale(layout),
+                "mm": _photo_mm(d),
                 "markers": _photo_markers(
                     layout.get("front"), d, cabled.get(str(d.id)) or {},
                     components,
@@ -531,6 +532,14 @@ def enrich_photo(ctx: EnrichContext) -> None:
             "rack_width": dt.rack_width if dt is not None else "full",
             "vc_position": d.vc_position,
         }
+
+
+def _photo_mm(device):
+    """The front photo's true width in mm when it is calibrated (#277)."""
+    from .face_ports import effective_calibration
+
+    cal = effective_calibration(device, "front")
+    return cal["photo_mm"] if cal else None
 
 
 def _photo_size_mode(device, dt) -> str:

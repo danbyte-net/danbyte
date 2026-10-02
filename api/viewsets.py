@@ -3349,6 +3349,13 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             dt.front_image = None
         if request.data.get("clear_rear"):
             dt.rear_image = None
+        # A new or cleared photo's guides no longer stand where the old one's
+        # did (#277); a resize below keeps them, being the same picture.
+        from .face_ports import drop_calibration
+
+        for face in ("front", "rear"):
+            if f"{face}_image" in request.FILES or request.data.get(f"clear_{face}"):
+                dt.image_ports = drop_calibration(dt.image_ports, face)
         # In-place shrink of a stored face: `resize_front=1200` re-encodes the
         # existing file to at most that many pixels on the longest edge,
         # aspect preserved - the visible knob behind the automatic upload cap.

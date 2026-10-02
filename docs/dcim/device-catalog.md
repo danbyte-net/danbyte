@@ -516,6 +516,18 @@ Diagram draws photos at rack width unless the device, its type or its role
 sets **Topology photo size** to *Own size*; then it uses this saved size, else
 the upload size (see [Photo nodes](../features/topology.md#photo-nodes)).
 
+**Calibration.** A photo can also say how big it really is: two guides at
+known points across it - its edges, or any two features a known distance
+apart - with the real distance between them, and where the DIN rail runs
+across it. That gives the photo's true width in millimetres, which
+[cabinet](cabinets.md) drawings and the Diagram's *Own size* draw it at. A
+device can carry a calibration of its own; without one it uses its type's.
+Replacing or clearing a photo drops that side's calibration; resizing it keeps
+it. In the API it is `image_ports.view.<side>.cal = {left, right, span_mm,
+rail}`: the guides as fractions of the photo's width, the distance between
+them in mm, and the rail's centreline as a fraction of the photo's height (or
+null). A device's own `image_ports` is checked the same way as its type's.
+
 Types without photo ports keep using the schematic faceplate builder above.
 
 The palette also offers the type's **[inventory-item](#inventory-items)

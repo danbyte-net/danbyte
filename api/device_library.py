@@ -146,6 +146,18 @@ def _check_envelope(payload: Any) -> None:
         )
     if not str(payload.get("name") or "").strip():
         raise BundleError("A bundle needs a device-type name.")
+    if payload.get("image_ports") is not None:
+        # The same check the type form makes: markers, view and calibration.
+        from rest_framework.exceptions import ValidationError
+
+        from .face_ports import validate_image_ports_doc
+
+        try:
+            validate_image_ports_doc(payload["image_ports"])
+        except ValidationError as exc:
+            raise BundleError(
+                "The bundle's photo ports: " + " ".join(str(d) for d in exc.detail)
+            ) from None
 
 
 def import_bundle(
