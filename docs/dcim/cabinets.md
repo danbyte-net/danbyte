@@ -168,7 +168,12 @@ lists it as *blocked*, with the reason. Search shows where a device sits -
 
 ## Floor plans
 
-A [floor plan](../features/floor-plans.md) tile can link to a cabinet. Its
+A [floor plan](../features/floor-plans.md) tile can link to a cabinet:
+in the plan editor's inspector, **Linked object → Cabinet** lists the
+cabinets of the plan's site, and **Fit to cabinet** sizes the tile to the
+cabinet's outer width × depth. Clicking the tile opens a panel with the
+plate drawn and its devices rail by rail; the cabinet page's **Show on floor
+plan** opens the plan on its tile. Its
 live state (`GET /api/floor-plans/{id}/state/`) carries the cabinet's
 `device_count`, `rail_count` and the worst monitoring `check` of its devices;
 cable runs to its devices end on its tile; the 3D scene lists it as a box of

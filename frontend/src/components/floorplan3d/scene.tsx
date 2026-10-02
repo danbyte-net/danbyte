@@ -51,6 +51,8 @@ import {
   CableTrace3D,
   useCablePaths,
 } from "./cable-trace-3d"
+import { CabinetHoverHud, CabinetHud, createHoverStore } from "./cabinet-hud"
+import { CabinetMesh } from "./cabinet-mesh"
 import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh } from "./rack-mesh"
@@ -61,6 +63,7 @@ import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
 import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
 import {
+  cabinetBoxM,
   cellToWorld,
   rackFootprintM,
   rackViewpoint,
@@ -159,6 +162,9 @@ export default function FloorScene3D({
   // Per-area raised-floor lifts (click an area's edge skirt) - the global
   // "Lift raised floor" toggle and x-ray still lift everything.
   const [liftedIds, setLiftedIds] = useState<Set<string>>(new Set())
+  // The cabinet under the pointer, for its card - kept out of this
+  // component's state so a hover never re-renders the room.
+  const [hoverStore] = useState(createHoverStore)
   // invalidate() bridge for HUD-triggered camera moves: DOM buttons live
   // outside the <Canvas>, and with frameloop="demand" a bare flyToRef
   // mutation would sit unnoticed until something else rendered a frame.
@@ -358,9 +364,14 @@ export default function FloorScene3D({
     const d = scene.data
     if (!selection || !d) return null
     const t = d.tiles.find((x) => x.id === selection.tileId)
-    if (!t?.rack) return null
+    const height = t?.rack
+      ? rackFootprintM(t.rack).height
+      : t?.cabinet
+        ? cabinetBoxM(t.cabinet).height
+        : null
+    if (!t || height == null) return null
     const [ax, az] = cellToWorld(d.plan, t.x + t.w / 2, t.y + t.h / 2)
-    return [ax, rackFootprintM(t.rack).height / 2, az]
+    return [ax, height / 2, az]
   }, [selection, scene.data])
 
   if (!supported)
@@ -383,6 +394,10 @@ export default function FloorScene3D({
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
   const rackTiles = data.tiles.filter(
     (t) => t.kind === "rack" && t.rack && !hiddenTileIds?.has(t.id)
+  )
+  // DIN-rail cabinets: closed boxes at their outer size.
+  const cabinetTiles = data.tiles.filter(
+    (t) => t.cabinet && !hiddenTileIds?.has(t.id)
   )
   const diag = Math.max(w, d)
   // Corners, tees and crossings across every tray - rails trim back to these
@@ -409,6 +424,10 @@ export default function FloorScene3D({
   const selDevice =
     (selection?.kind === "device" || selection?.kind === "port") && selTile
       ? (selTile.rack!.devices.find((x) => x.id === selection.deviceId) ?? null)
+      : null
+  const selCabinet =
+    selection?.kind === "cabinet"
+      ? (cabinetTiles.find((t) => t.id === selection.tileId) ?? null)
       : null
 
   // ── Isolation ──────────────────────────────────────────────────────────
@@ -440,20 +459,23 @@ export default function FloorScene3D({
       ids,
     })
   }
-  // Zones the selected rack stands in, most specific (smallest) first -
-  // powers the HUD's "Isolate zone".
-  const zonesForSelected = selTile
-    ? data.tiles
-        .filter(
-          (z) =>
-            z.is_zone &&
-            selTile.x < z.x + z.w &&
-            z.x < selTile.x + selTile.w &&
-            selTile.y < z.y + z.h &&
-            z.y < selTile.y + selTile.h
-        )
-        .sort((a, b) => a.w * a.h - b.w * b.h)
-    : []
+  // Zones a tile stands in, most specific (smallest) first - powers the
+  // HUD's "Isolate zone".
+  const zonesAround = (tile: SceneTile | null) =>
+    tile
+      ? data.tiles
+          .filter(
+            (z) =>
+              z.is_zone &&
+              tile.x < z.x + z.w &&
+              z.x < tile.x + tile.w &&
+              tile.y < z.y + z.h &&
+              z.y < tile.y + tile.h
+          )
+          .sort((a, b) => a.w * a.h - b.w * b.h)
+      : []
+  const zonesForSelected = zonesAround(selTile)
+  const zonesForCabinet = zonesAround(selCabinet)
   const isolateRow = (anchor: SceneTile) => {
     // A row is whichever axis the hall actually runs: the alignment
     // (same-y vs same-x) that catches more racks wins.
@@ -465,13 +487,16 @@ export default function FloorScene3D({
         .map((t) => t.id)
     )
     setIsolation({
-      label: `${anchor.label || anchor.rack?.name || "rack"} row`,
+      label: `${anchor.label || anchor.rack?.name || anchor.cabinet?.name || "rack"} row`,
       ids,
     })
   }
   const shownRacks = isolation
     ? rackTiles.filter((t) => isolation.ids.has(t.id))
     : rackTiles
+  const shownCabinets = isolation
+    ? cabinetTiles.filter((t) => isolation.ids.has(t.id))
+    : cabinetTiles
 
   // HUD front↔rear flip - same viewpoint math as the double-click fly-to.
   const flipView = () => {
@@ -596,6 +621,24 @@ export default function FloorScene3D({
             }}
           />
         ))}
+        {shownCabinets.map((t) => (
+          <CabinetMesh
+            key={t.id}
+            plan={plan}
+            tile={t}
+            check={liveState?.tiles[t.id]?.check ?? null}
+            selected={selection?.tileId === t.id}
+            ghosted={focusOn && !!selection && selection.tileId !== t.id}
+            xray={shellMode === "xray"}
+            attention={attention}
+            onSelect={handleSelect}
+            onHover={hoverStore.set}
+            onFlyTo={(target, position) => {
+              flyToRef.current = { target, position }
+              setViewSide("front")
+            }}
+          />
+        ))}
         {data.trays.map((tr) => (
           <TrayMesh
             key={tr.id}
@@ -658,6 +701,7 @@ export default function FloorScene3D({
             (t) =>
               !t.is_zone &&
               !t.rack &&
+              !t.cabinet &&
               !hiddenTileIds?.has(t.id) &&
               (!isolation || isolation.ids.has(t.id))
           )
@@ -710,6 +754,27 @@ export default function FloorScene3D({
           }
         />
       )}
+      {selCabinet && (
+        <CabinetHud
+          tile={selCabinet}
+          liveState={liveState}
+          actions={{
+            focused: focusOn,
+            onToggleFocus: () => setFocusOn((v) => !v),
+            onIsolateRow: () => isolateRow(selCabinet),
+            onIsolateZone:
+              zonesForCabinet.length > 0
+                ? () => isolateZone(zonesForCabinet[0])
+                : undefined,
+          }}
+        />
+      )}
+      <CabinetHoverHud
+        store={hoverStore}
+        tiles={shownCabinets}
+        liveState={liveState}
+        hidden={!!selection || !!cableSel || !!traySel}
+      />
       {selTile && selDevice && selection?.kind === "device" && (
         <DeviceHud
           tile={selTile}

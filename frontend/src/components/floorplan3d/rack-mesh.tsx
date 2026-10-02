@@ -30,8 +30,9 @@ import {
 } from "./world"
 import type { ScenePayload, SceneTile, Tier } from "./world"
 
-/** Monitoring worst-status → beacon color (same semantics as the 2D rings). */
-const CHECK_COLOR: Record<string, string> = {
+/** Monitoring worst-status → beacon color (same semantics as the 2D rings).
+ * A DIN-rail cabinet's outline takes the same colours. */
+export const CHECK_COLOR: Record<string, string> = {
   down: "#ef4444",
   degraded: "#f59e0b",
   stale: "#f59e0b",
@@ -54,7 +55,7 @@ const STEEL_METALNESS = 0.35
 export type ShellMode = "solid" | "cutaway" | "xray"
 
 export interface Sel {
-  kind: "rack" | "device" | "port"
+  kind: "rack" | "cabinet" | "device" | "port"
   tileId: string
   deviceId?: string
   /** Set when kind === "port": the clicked photo-port marker. */

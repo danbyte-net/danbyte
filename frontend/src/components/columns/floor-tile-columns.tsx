@@ -22,6 +22,7 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 /** The SPA detail route for each link kind a tile can point at. */
 const LINK_ROUTES: Record<FloorPlanLinkKind, string> = {
   rack: "/racks/$id",
+  cabinet: "/cabinets/$id",
   device: "/devices/$id",
   powerpanel: "/power-panels/$id",
   powerfeed: "/power-feeds/$id",

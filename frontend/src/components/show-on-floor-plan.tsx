@@ -12,42 +12,51 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+/** The tiles that link to one object (`/api/floor-plan-tiles/?<kind>=<id>`). */
+function usePlacements(kind: "device" | "rack" | "cabinet", id?: string) {
+  return useQuery({
+    queryKey: ["floor-tile-placement", kind, id],
+    queryFn: () =>
+      api<Paginated<FloorPlanTile>>(`/api/floor-plan-tiles/?${kind}=${id}`),
+    enabled: !!id,
+  })
+}
+
 /**
- * "Show on floor plan" - opens the plan where this rack/device is placed,
- * zoomed onto its tile. For a device, falls back to its rack's placement
- * ("via rack") when the device itself isn't tiled. Placed on several plans
- * (a device tile and its rack, or a second what-if plan) - a menu lists them.
- * Renders nothing when nothing is placed.
+ * "Show on floor plan" - opens the plan where this rack, cabinet or device is
+ * placed, zoomed onto its tile. For a device, falls back to its rack's or
+ * cabinet's placement ("via rack", "via cabinet") when the device itself
+ * isn't tiled. Placed on several plans (a device tile and its rack, or a
+ * second what-if plan) - a menu lists them. Renders nothing when nothing is
+ * placed.
  */
 export function ShowOnFloorPlan({
   deviceId,
   rackId,
+  cabinetId,
 }: {
   deviceId?: string
   rackId?: string
+  cabinetId?: string
 }) {
-  const deviceQ = useQuery({
-    queryKey: ["floor-tile-placement", "device", deviceId],
-    queryFn: () =>
-      api<Paginated<FloorPlanTile>>(
-        `/api/floor-plan-tiles/?device=${deviceId}`
-      ),
-    enabled: !!deviceId,
-  })
-  const rackQ = useQuery({
-    queryKey: ["floor-tile-placement", "rack", rackId],
-    queryFn: () =>
-      api<Paginated<FloorPlanTile>>(`/api/floor-plan-tiles/?rack=${rackId}`),
-    enabled: !!rackId,
-  })
+  const deviceQ = usePlacements("device", deviceId)
+  const rackQ = usePlacements("rack", rackId)
+  const cabinetQ = usePlacements("cabinet", cabinetId)
+  // A rack's or a cabinet's tile is where a DEVICE sits only by way of it;
+  // on the rack's or the cabinet's own page it is simply where it stands.
+  const via = (what: "rack" | "cabinet") => (deviceId ? what : null)
   const placements = [
-    ...(deviceQ.data?.results ?? []).map((t) => ({ tile: t, viaRack: false })),
-    ...(rackQ.data?.results ?? []).map((t) => ({ tile: t, viaRack: true })),
+    ...(deviceQ.data?.results ?? []).map((t) => ({ tile: t, via: null })),
+    ...(rackQ.data?.results ?? []).map((t) => ({ tile: t, via: via("rack") })),
+    ...(cabinetQ.data?.results ?? []).map((t) => ({
+      tile: t,
+      via: via("cabinet"),
+    })),
   ].filter((p) => p.tile.floor_plan)
   if (placements.length === 0) return null
   const first = placements[0]
   const label = (p: (typeof placements)[number]) =>
-    `${p.tile.floor_plan!.name}${p.viaRack ? " (via rack)" : ""}`
+    `${p.tile.floor_plan!.name}${p.via ? ` (via ${p.via})` : ""}`
   if (placements.length === 1)
     return (
       <Button variant="outline" size="sm" asChild>
@@ -57,7 +66,9 @@ export function ShowOnFloorPlan({
           search={{ tile: first.tile.id }}
         >
           <LayoutGrid className="h-3.5 w-3.5" />
-          {first.viaRack ? "On floor plan (via rack)" : "Show on floor plan"}
+          {first.via
+            ? `On floor plan (via ${first.via})`
+            : "Show on floor plan"}
         </Link>
       </Button>
     )

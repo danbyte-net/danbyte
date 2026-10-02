@@ -9743,6 +9743,7 @@ export type FovAnchor = "" | "tl" | "tr" | "bl" | "br"
 
 export type FloorPlanLinkKind =
   | "rack"
+  | "cabinet"
   | "device"
   | "powerpanel"
   | "powerfeed"
@@ -10067,6 +10068,15 @@ export interface FloorTileRackState {
   check: FloorTileCheck | null
 }
 
+/** A DIN-rail cabinet's tile: its devices and rails, and the worst check of
+ * its devices. */
+export interface FloorTileCabinetState {
+  kind: "cabinet"
+  device_count: number
+  rail_count: number
+  check: FloorTileCheck | null
+}
+
 export interface FloorTileDeviceState {
   kind: "device"
   status: string | null
@@ -10075,7 +10085,10 @@ export interface FloorTileDeviceState {
 
 export interface FloorPlanLiveState {
   as_of: string
-  tiles: Record<string, FloorTileRackState | FloorTileDeviceState>
+  tiles: Record<
+    string,
+    FloorTileRackState | FloorTileCabinetState | FloorTileDeviceState
+  >
 }
 
 /* ── External sync: Windows DHCP/DNS + virtualization ───────────────────── */

@@ -27,6 +27,7 @@ import {
 import { CabinetPlateSection } from "@/components/cabinet-plate-section"
 import { CabinetRailActions } from "@/components/cabinet-rail-actions"
 import { CabinetSyncTypeButton } from "@/components/cabinet-sync-type-button"
+import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -72,6 +73,7 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
       presence={{ type: "cabinet", id: c.id }}
       actions={
         <>
+          <ShowOnFloorPlan cabinetId={c.id} />
           <CabinetSyncTypeButton cabinet={c} />
           {canDo("cabinet", "change") && (
             <Button variant="outline" size="sm" asChild>

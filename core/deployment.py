@@ -530,6 +530,7 @@ FLOORPLAN_POPOVER_FIELDS = [
     "power",
     "weight",
     "device_count",
+    "rail_count",
     "check",
     # ── the linked rack/device (lazily fetched when one of these is on) ──
     "linked_status",

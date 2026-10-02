@@ -163,6 +163,16 @@ uploaded blueprint textures it.
   devices wear their device-type **front/rear images**. Monitoring state
   lights a beacon on top of each cabinet - the same worst-status rollup the
   2D overlays use.
+- **DIN-rail cabinets** (a tile linked to a [cabinet](../dcim/cabinets.md))
+  stand on the floor as closed light-grey boxes of the cabinet's outer size,
+  with a door handle and the name over the front - nothing is recorded about
+  how high one hangs, and the gear stays inside. The outline carries the
+  monitoring rollup in the beacon colours; focus, isolation, the hide eyes
+  and X-ray (outline only, still clickable) apply as to racks. Hover for the
+  device and rail counts, click for **Focus**, **Isolate row/zone** and
+  **Open cabinet**, double-click to fly to the front. Cable runs end on the
+  box's lid, each in its own lane; a cable between two devices in one
+  cabinet stays inside it and is not drawn.
 - **Side-mounted 0U strips** (vertical PDUs with a
   [rail mount](../dcim/racks.md#zero-u-side-mounting-vertical-pdus)) hang on
   their cabinet's flank as slim vertical strips in both detail tiers -
@@ -290,7 +300,7 @@ ever cut off.
 | Resize | Drag the corner handle of the selected tile |
 | Rotate | The rotate button - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest. A thin bar just inside the tile marks the edge its front faces |
 | Label / color / status | The inspector panel (label overrides the linked object's name; status renders planned/reserved dashed, decommissioning faded) |
-| Link to an object | Inspector → Link: rack and device use the advanced pickers, power panel/feed and nested plans a searchable dropdown |
+| Link to an object | Inspector → Link: rack, cabinet and device use the advanced pickers (cabinets of the plan's site only), power panel/feed and nested plans a searchable dropdown. When a cabinet's outer width × depth does not match the tile, **Fit to cabinet** resizes the tile to it, turned with the tile's facing |
 | Delete | Select + `Delete`, or the inspector button |
 | Nudge | Arrow keys move the selected tile one cell |
 | Pan / zoom | Drag empty grid / mouse wheel |
@@ -332,8 +342,9 @@ The canvas refreshes `GET /api/floor-plans/<id>/state/` every 30 seconds:
 - **Monitoring rollup** - a rack tile's border turns red the moment any
   device inside it goes down (worst status across the rack's devices' IPs);
   device tiles do the same for their own IPs.
-- **Cabinet tiles** report the cabinet's device and rail counts and roll up
-  its devices' monitoring the same way. A cable to a device in a placed
+- **Cabinet tiles** report the cabinet's device and rail counts - the
+  device count sits in the tile's corner - and roll up its devices'
+  monitoring the same way. A cable to a device in a placed
   cabinet ends on the cabinet's tile, as one to a racked device ends on its
   rack's, and in the 3D room the cabinet stands as a closed box of its outer
   size.
@@ -346,11 +357,17 @@ and the device list - each device has an **End-to-end** button that shows its
 cable paths through patch panels to the far end, the same trace view as the
 device page. Device tiles open the end-to-end view directly.
 
+A cabinet tile opens the same panel for the cabinet: its status, monitoring,
+devices, rails and size, the plate drawn with its devices' photos, and the
+devices rail by rail, each with a link and a trace. Editors open it with a
+double-click, viewers with a click, and either from *Contents & trace* or
+right-click → Open.
+
 ## Viewer
 
 Click a tile to see what it is and jump to the linked object (**Open rack**,
 **Open device**…, the same link every map panel uses).
-Rack and device tiles open the deep view; a tile linked to **another floor
+Rack, cabinet and device tiles open the deep view; a tile linked to **another floor
 plan** navigates into it on click - use this to nest a cage or suite plan
 inside a hall plan.
 
@@ -588,7 +605,7 @@ cable runs, just the trays, or both.
 - **Fit to view** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
-  monitoring state. **Click to pin** it - a pinned popover stays put so you can
+  monitoring state - for a cabinet, its devices and rails. **Click to pin** it - a pinned popover stays put so you can
   read it, follow its link, or hit *Contents & trace*; **Esc** or a click
   outside dismisses it. Which rows appear is configurable - see
   [Popover fields](#popover-fields).
@@ -617,12 +634,12 @@ cable runs, just the trays, or both.
   the old rack row" is part of how a plan is shaped for its readers; hiding
   never changes the plan's contents. Keyboard: ++h++ hides the selected
   tile(s); ++shift+h++ shows all.
-- **Show on floor plan** - the Rack and Device detail pages carry a button
+- **Show on floor plan** - the Rack, Cabinet and Device detail pages carry a button
   that opens the plan zoomed onto the tile; placed on several plans (its own
   tile and its rack's, or a cloned what-if plan), the button becomes a menu
   listing them. The Rack and Device detail pages carry a button
-  that jumps to where they're placed (a device falls back to *its rack's*
-  plan, marked "via rack").
+  that jumps to where they're placed (a device falls back to *its rack's* or
+  *its cabinet's* plan, marked "via rack" or "via cabinet").
 
 ## Cloning a plan
 
@@ -652,7 +669,9 @@ create/move/delete lands in the [change log](change-log.md).
 **Settings → Floor plans → Tile popover** picks which rows the tile popover
 shows, and in what order. A field with nothing to say for a given tile is skipped
 automatically - no rack utilization on a wall tile - so turning one on is safe
-everywhere.
+everywhere. A cabinet has no units to fill, so on its tile **Utilization**
+reads as its devices and rails; **Rails** shows the rail count on its own, and
+the cabinet's custom fields can be picked like a rack's.
 
 ### Showing the device's panel {#faceplate-field}
 

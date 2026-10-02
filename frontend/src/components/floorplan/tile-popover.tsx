@@ -15,6 +15,7 @@ import {
   type Rack,
   type ImagePorts,
 } from "@/lib/api"
+import { cabinetState } from "@/components/floorplan/cabinet-tile"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
@@ -33,9 +34,10 @@ import { useDateFormat } from "@/lib/datetime"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
 
-/** The linked object, once fetched. Rack and Device share enough shape
- * (role/status/description/tags/custom_fields) that the linked_* fields work for
- * both; the ones only one of them has simply render null on the other. */
+/** The linked object, once fetched. Rack, Cabinet and Device share enough
+ * shape (role/status/description/tags/custom_fields) that the linked_* fields
+ * work for all three; the ones only some of them have simply render null on
+ * the others. */
 export type LinkedDetail = Partial<Rack> & Partial<Device>
 
 /** Which link kinds carry enough detail to be worth fetching. */
@@ -49,11 +51,16 @@ function Stamp({ iso }: { iso: string }) {
 
 const DETAIL_ENDPOINT: Record<string, string> = {
   rack: "/api/racks",
+  cabinet: "/api/cabinets",
   device: "/api/devices",
 }
 
 /** Which custom-field model a link kind maps to, for formatting cf_* values. */
-const CF_MODEL: Record<string, string> = { rack: "rack", device: "device" }
+const CF_MODEL: Record<string, string> = {
+  rack: "rack",
+  cabinet: "cabinet",
+  device: "device",
+}
 
 /** Tile status → semantic badge tone. A tile's status is a plain string union
  * (not a Status object), so it can't use StatusBadge. */
@@ -226,12 +233,14 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
   orientation: {
     label: "Facing",
     render: ({ tile }) => {
-      // Racks always show which way the front points; other tiles only when
-      // rotated. Same compass the 3D room + facing edge use.
+      // Racks and cabinets always show which way the front points; other
+      // tiles only when rotated. Same compass the 3D room + facing edge use.
       const word = { 0: "up", 90: "right", 180: "down", 270: "left" }[
         tile.orientation
       ]
-      if (tile.linked?.kind !== "rack" && !tile.orientation) return null
+      const fronted =
+        tile.linked?.kind === "rack" || tile.linked?.kind === "cabinet"
+      if (!fronted && !tile.orientation) return null
       return (
         <span>
           {word}
@@ -295,8 +304,15 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
   device_count: {
     label: "Devices",
     render: ({ live }) => {
-      const r = rack(live)
+      const r = rack(live) ?? cabinetState(live)
       return r ? <span className="num">{r.device_count}</span> : null
+    },
+  },
+  rail_count: {
+    label: "Rails",
+    render: ({ live }) => {
+      const c = cabinetState(live)
+      return c ? <span className="num">{c.rail_count}</span> : null
     },
   },
   check: {
@@ -482,6 +498,19 @@ export const DEFAULT_POPOVER_FIELDS = [
   "size",
 ]
 
+/** What a cabinet's tile shows where a rack's shows `utilization`: a
+ * cabinet has no units to fill, so how full it is reads as the devices and
+ * rails it carries. A key the list names elsewhere keeps its own place. */
+const CABINET_FILL = ["device_count", "rail_count"]
+
+/** The configured keys as they apply to one tile. */
+export function fieldsForTile(fields: string[], tile: FloorPlanTile): string[] {
+  if (tile.linked?.kind !== "cabinet") return fields
+  return fields.flatMap((k) =>
+    k === "utilization" ? CABINET_FILL.filter((c) => !fields.includes(c)) : [k]
+  )
+}
+
 export interface HoverTarget {
   tile: FloorPlanTile
   x: number
@@ -546,10 +575,11 @@ export function TilePopover({
   renderActions?: (tile: FloorPlanTile) => React.ReactNode
 }) {
   const open = !!target
+  const shown = target ? fieldsForTile(fields, target.tile) : fields
 
   // Resolve once so we know whether anything needs the linked object BEFORE
   // fetching it - a popover of tile-intrinsic fields must stay fetch-free.
-  const resolved = fields
+  const resolved = shown
     .filter((k) => k !== "linked")
     .map((key) => ({ key, field: resolvePopoverField(key) }))
     .filter((r): r is { key: string; field: PopoverField } => !!r.field)
@@ -569,7 +599,7 @@ export function TilePopover({
     wide?: boolean
   }[] = []
   if (ctx) {
-    for (const key of fields) {
+    for (const key of shown) {
       if (key === "linked") {
         const node = renderLinked?.(ctx.tile)
         if (node) rows.push({ key, label: "Linked", node })

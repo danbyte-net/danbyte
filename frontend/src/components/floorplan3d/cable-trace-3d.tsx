@@ -12,6 +12,7 @@ import { findPortMarker, normalizePortName } from "@/lib/faceplate-geometry"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 
 import {
+  cabinetBoxM,
   cableLane,
   cableRadiusM,
   cellToWorld,
@@ -217,12 +218,46 @@ function portEndRun(
 }
 
 /**
+ * A cable to a device in a DIN-rail cabinet ends on the cabinet: the room
+ * draws the enclosure closed, so the run drops onto the middle of its top,
+ * as through a gland plate, and each cable keeps its lane across the top so
+ * several leads into one box stay apart.
+ */
+function cabinetEndRun(
+  scene: ScenePayload,
+  tile: SceneTile,
+  across: number
+): EndRun | null {
+  if (!tile.cabinet) return null
+  const { width, height } = cabinetBoxM(tile.cabinet)
+  const room = Math.max(0, width / 2 - 0.03)
+  const x = Math.max(-room, Math.min(room, across))
+  return {
+    entry: [worldOf(scene, tile, x, height, 0)],
+    railAt: (y) => worldOf(scene, tile, x, y, 0),
+    rear: false,
+    anchored: true,
+    local: { tile, x, y: height, z: 0, stubZ: 0, chanX: x },
+  }
+}
+
+/** Whether a cable path's end lands on a cabinet tile. */
+function cabinetTileOf(
+  scene: ScenePayload,
+  tileId: string | undefined
+): SceneTile | null {
+  const t = tileId ? scene.tiles.find((x) => x.id === tileId) : undefined
+  return t?.cabinet ? t : null
+}
+
+/**
  * A cable's 3D run: port quad → stub off the face → vertical riser in front
  * of the port → the assigned trays (the same 2D route the flat canvas draws)
  * → down the far riser → the far port. Same-rack cables skip the room trip
  * entirely: stub → stub. Ends fall back to a drop at the endpoint tile when
- * the port can't be anchored (no marker / device not placed). Underfloor
- * rides derive their depth from the raised-floor area beneath the run.
+ * the port can't be anchored (no marker / device not placed), and land on
+ * the top of a cabinet's box when the device sits in one. Underfloor rides
+ * derive their depth from the raised-floor area beneath the run.
  */
 export function cableRunPoints(
   scene: ScenePayload,
@@ -237,6 +272,10 @@ export function cableRunPoints(
   const a = cp.a_tiles[0] ? tileCentre(cp.a_tiles[0]) : null
   const b = cp.b_tiles[0] ? tileCentre(cp.b_tiles[0]) : null
   if (!a || !b) return null
+  // A lead between two devices in one cabinet stays inside its closed box.
+  if (cp.a_tiles[0] === cp.b_tiles[0] && cabinetTileOf(scene, cp.a_tiles[0]))
+    return null
+  const endLane = cableLane(cp.id)
 
   const endRun = (
     points: { device: string; port: string }[],
@@ -246,6 +285,11 @@ export function cableRunPoints(
       const r = portEndRun(scene, sites, p)
       if (r) return r
     }
+    const cabinet = cabinetTileOf(scene, tileId)
+    const onCabinet = cabinet
+      ? cabinetEndRun(scene, cabinet, endLane.across)
+      : null
+    if (onCabinet) return onCabinet
     // Fallback: a plain drop at the endpoint tile's centre.
     const t = scene.tiles.find((x) => x.id === tileId)
     const y = t?.rack ? rackFootprintM(t.rack).height * 0.7 : 0.8
@@ -372,20 +416,24 @@ export function cableRunPoints(
 }
 
 /** Whether each end of ``cp`` anchored on a port marker (A, B). An end that
- * did not is drawn at its panel's centre; the cable card says so. */
+ * did not is drawn at its panel's centre; the cable card says so. An end on
+ * a cabinet's tile lands on the cabinet, where it belongs. */
 export function cableEndsAnchored(
   scene: ScenePayload,
   cp: FloorPlanCablePath
 ): [boolean, boolean] {
   const sites = deviceSites(scene)
-  const one = (points: { device: string; port: string }[]) => {
+  const one = (
+    points: { device: string; port: string }[],
+    tileId: string | undefined
+  ) => {
     for (const p of points) {
       const r = portEndRun(scene, sites, p)
       if (r) return r.anchored
     }
-    return false
+    return cabinetTileOf(scene, tileId) !== null
   }
-  return [one(cp.a_points), one(cp.b_points)]
+  return [one(cp.a_points, cp.a_tiles[0]), one(cp.b_points, cp.b_tiles[0])]
 }
 
 /** Shared cable-paths fetch - same endpoint + query key as the 2D canvas. */

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { Server } from "lucide-react"
 
 import type {
   FloorPlan,
@@ -168,8 +169,8 @@ export interface FloorCanvasProps {
   ) => void
   /** The element html-to-image snapshots for PNG export. */
   exportRef?: React.RefObject<HTMLDivElement | null>
-  /** Live per-tile metrics from /state/ - paints rack utilization bars and
-   * monitoring rings. */
+  /** Live per-tile metrics from /state/ - paints rack utilization bars,
+   * cabinet device counts and monitoring rings. */
   liveState?: FloorPlanLiveState | null
   /** Auto-size labels to fit their tile instead of a fixed 11px + ellipsis. */
   labelFit?: boolean
@@ -1752,6 +1753,13 @@ function tileTooltip(
       )}%)`
     )
   }
+  if (live?.kind === "cabinet") {
+    const n = (count: number, one: string) =>
+      `${count} ${one}${count === 1 ? "" : "s"}`
+    parts.push(
+      `${n(live.device_count, "device")}, ${n(live.rail_count, "rail")}`
+    )
+  }
   if (live?.check) parts.push(`check: ${live.check}`)
   return parts.join(" · ")
 }
@@ -1817,6 +1825,7 @@ function TileShape({
     rackLive && rackLive.u_height > 0
       ? rackLive.used_units / rackLive.u_height
       : null
+  const cabinetLive = live?.kind === "cabinet" ? live : null
 
   if (zone) {
     // Zones: soft area tint under everything, label pinned top-left, no
@@ -1964,6 +1973,15 @@ function TileShape({
           )}
         </g>
       )}
+      {cabinetLive && (
+        <CabinetCount
+          w={w}
+          h={h}
+          count={cabinetLive.device_count}
+          // The resize handle takes the corner on a selected tile.
+          inset={selected && editable ? 9 : 0}
+        />
+      )}
       {selected && editable && (
         <rect
           x={w - 7}
@@ -1977,6 +1995,47 @@ function TileShape({
           onPointerDown={onResizeDown}
         />
       )}
+    </g>
+  )
+}
+
+/** A cabinet tile's device count, small in its bottom-right corner: the
+ * devices icon and the number, as a rack tile reads its use there. */
+function CabinetCount({
+  w,
+  h,
+  count,
+  inset = 0,
+}: {
+  w: number
+  h: number
+  count: number
+  /** Extra room at the right, px - kept clear of the resize handle. */
+  inset?: number
+}) {
+  const text = String(count)
+  const right = w - GUTTER - 4 - inset
+  const base = h - GUTTER - 4
+  // ~0.6em per digit at 8px, and a pixel between the glyph and the number.
+  const iconX = right - text.length * 4.8 - 1 - 8
+  return (
+    <g
+      data-part="device-count"
+      pointerEvents="none"
+      opacity={0.75}
+      aria-hidden="true"
+    >
+      <Server x={iconX} y={base - 7} width={8} height={8} strokeWidth={2.25} />
+      <text
+        x={right}
+        y={base}
+        textAnchor="end"
+        fontSize={8}
+        fill="currentColor"
+        className="num"
+      >
+        {text}
+      </text>
     </g>
   )
 }

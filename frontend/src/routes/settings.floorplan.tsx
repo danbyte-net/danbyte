@@ -48,10 +48,17 @@ const FIELD_META: Partial<Record<string, FieldMeta>> = {
   plan: { label: "Plan", hint: "Which floor plan it's on" },
   created: { label: "Created", hint: "When the tile was placed" },
   updated: { label: "Updated", hint: "When the tile last changed" },
-  utilization: { label: "Utilization", hint: "Racks: used U + a bar" },
+  utilization: {
+    label: "Utilization",
+    hint: "Racks: used U + a bar · cabinets: devices, rails",
+  },
   power: { label: "Power", hint: "Racks: allocated vs maximum watts" },
   weight: { label: "Weight", hint: "Racks: total vs maximum load" },
-  device_count: { label: "Device count", hint: "Racks: devices mounted" },
+  device_count: {
+    label: "Device count",
+    hint: "Racks and cabinets: devices in it",
+  },
+  rail_count: { label: "Rails", hint: "Cabinets: DIN rails on the plate" },
   check: { label: "Monitoring", hint: "Live up / degraded / down" },
   linked_status: {
     label: "Object status",
@@ -95,7 +102,14 @@ const GROUPS: { title: string; keys: string[] }[] = [
   },
   {
     title: "Live state",
-    keys: ["utilization", "power", "weight", "device_count", "check"],
+    keys: [
+      "utilization",
+      "power",
+      "weight",
+      "device_count",
+      "rail_count",
+      "check",
+    ],
   },
   {
     title: "The linked rack / device",
@@ -116,7 +130,7 @@ const GROUPS: { title: string; keys: string[] }[] = [
 
 const GLOBAL = "__global__"
 
-const CF_MODELS = ["device", "rack"] as const
+const CF_MODELS = ["device", "rack", "cabinet"] as const
 
 export const Route = createFileRoute("/settings/floorplan")({
   component: FloorplanSettingsPage,

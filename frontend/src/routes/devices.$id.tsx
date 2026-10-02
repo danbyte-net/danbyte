@@ -266,7 +266,11 @@ function Body({ device: d }: { device: Device }) {
       actions={
         <>
           {" "}
-          <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
+          <ShowOnFloorPlan
+            deviceId={d.id}
+            rackId={d.rack?.id}
+            cabinetId={d.cabinet?.id}
+          />
           <ShowOnSiteMap
             deviceId={d.id}
             hasCoords={d.latitude != null && d.longitude != null}
@@ -1056,7 +1060,11 @@ function DeviceOverview({
         <h2 className="text-sm font-semibold">Location</h2>
         <div className="flex items-center gap-1.5">
           <ShowOnSiteMap deviceId={d.id} hasCoords />
-          <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
+          <ShowOnFloorPlan
+            deviceId={d.id}
+            rackId={d.rack?.id}
+            cabinetId={d.cabinet?.id}
+          />
         </div>
       </div>
       <div className="h-64 overflow-hidden rounded-b-lg">

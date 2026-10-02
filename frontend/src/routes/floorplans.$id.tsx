@@ -144,6 +144,9 @@ import {
   useTilePopover,
 } from "@/components/floorplan/tile-popover"
 import { ObjectsSidebar } from "@/components/floorplan/objects-sidebar"
+import { CabinetLinkField } from "@/components/floorplan/cabinet-link-field"
+import { CabinetPanel } from "@/components/floorplan/cabinet-panel"
+import { resizedRect } from "@/components/floorplan/cabinet-tile"
 import {
   type FloorHidden,
   NO_FLOOR_HIDDEN,
@@ -249,6 +252,7 @@ const STATUS_OPTIONS = [
 
 const LINK_KIND_OPTIONS = [
   { value: "rack", label: "Rack" },
+  { value: "cabinet", label: "Cabinet" },
   { value: "device", label: "Device" },
   { value: "powerpanel", label: "Power panel" },
   { value: "powerfeed", label: "Power feed" },
@@ -375,6 +379,8 @@ function FloorPlanPage() {
   const [backgroundOpen, setBackgroundOpen] = useState(false)
   // Deep view: the rack/device contents + end-to-end trace side sheet.
   const [deepTile, setDeepTile] = useState<FloorPlanTile | null>(null)
+  // A cabinet tile's panel over the canvas: its plate and devices.
+  const [cabinetTileId, setCabinetTileId] = useState<string | null>(null)
   // View prefs - seeded from plan.state, persisted back for editors.
   const [labelFitLocal, setLabelFitLocal] = useState<boolean | null>(null)
   const [showFovLocal, setShowFovLocal] = useState<boolean | null>(null)
@@ -505,6 +511,7 @@ function FloorPlanPage() {
     setSelectedId(null)
     setArmed(null)
     setDeepTile(null)
+    setCabinetTileId(null)
     setLabelFitLocal(null)
     setShowFovLocal(null)
     setMode("layout")
@@ -1042,6 +1049,21 @@ function FloorPlanPage() {
     [setTileFacing]
   )
 
+  // Size a tile to what it links to (a cabinet's footprint) - on its own
+  // corner, inside the grid, and never onto a neighbour.
+  const fitTile = useCallback(
+    (tile: EditTile, size: { width: number; height: number }) => {
+      if (!plan) return
+      const rect = resizedRect(tile, size, plan)
+      if (!tileIsZone(tile) && findCollision(tiles, rect, tile.id)) {
+        toast.error("No room to fit it - a neighbour is in the way.")
+        return
+      }
+      changeTile(tile.id, rect)
+    },
+    [changeTile, plan, tiles]
+  )
+
   const addDrawPoint = useCallback((pt: [number, number]) => {
     setDrawPoints((prev) => {
       const arr = prev ?? []
@@ -1114,6 +1136,7 @@ function FloorPlanPage() {
         setSelectedTrayId(null)
         setSelectedWallId(null)
         setDrawPoints(null)
+        setCabinetTileId(null)
         return
       }
       if (e.key === "Escape" && doorArmed) {
@@ -1318,6 +1341,13 @@ function FloorPlanPage() {
       setDeepTile(tile)
       return
     }
+    // A cabinet tile opens its panel over the canvas - in place of the
+    // popover a click pinned on the way.
+    if (tile.linked?.kind === "cabinet") {
+      popover.close()
+      setCabinetTileId(tile.id)
+      return
+    }
     setSelectedId(tile.id)
   }
 
@@ -1326,6 +1356,7 @@ function FloorPlanPage() {
   const traceCablesOnMap = useCallback(
     (cableIds: string[]) => {
       setDeepTile(null)
+      setCabinetTileId(null)
       setShowLinksLocal(true)
       setHighlightCableIds(cableIds)
       const pts = cableIds
@@ -1339,6 +1370,13 @@ function FloorPlanPage() {
     },
     [cablePaths, trays, shownTiles]
   )
+
+  // The panel follows its tile - its label as edited, and gone with the
+  // tile, its cabinet link or its eye.
+  const cabinetPanelTile =
+    shownTiles.find(
+      (t) => t.id === cabinetTileId && t.linked?.kind === "cabinet"
+    ) ?? null
 
   if (planQuery.isLoading) return <Loading />
   if (planQuery.isError) return <QueryError error={planQuery.error} />
@@ -2260,6 +2298,7 @@ function FloorPlanPage() {
                 }
                 renderActions={(tile) =>
                   tile.linked?.kind === "rack" ||
+                  tile.linked?.kind === "cabinet" ||
                   tile.linked?.kind === "device" ? (
                     <Button
                       variant="outline"
@@ -2267,21 +2306,42 @@ function FloorPlanPage() {
                       className="mt-3 w-full"
                       onClick={() => {
                         popover.close()
-                        setDeepTile(tile)
+                        openTile(tile)
                       }}
                     >
-                      {tile.linked.kind === "rack" ? (
-                        <PanelRight className="h-3.5 w-3.5" />
-                      ) : (
+                      {tile.linked.kind === "device" ? (
                         <Waypoints className="h-3.5 w-3.5" />
+                      ) : (
+                        <PanelRight className="h-3.5 w-3.5" />
                       )}
-                      {tile.linked.kind === "rack"
-                        ? "Contents & trace"
-                        : "Trace"}
+                      {tile.linked.kind === "device"
+                        ? "Trace"
+                        : "Contents & trace"}
                     </Button>
                   ) : null
                 }
               />
+              {cabinetPanelTile && (
+                <CabinetPanel
+                  key={cabinetPanelTile.id}
+                  tile={cabinetPanelTile}
+                  live={liveState.data?.tiles[cabinetPanelTile.id]}
+                  onClose={() => setCabinetTileId(null)}
+                  // A device's paths open in the deep view, as a racked
+                  // device's do; the panel waits underneath.
+                  onTraceDevice={(d) =>
+                    setDeepTile({
+                      ...cabinetPanelTile,
+                      linked: {
+                        kind: "device",
+                        id: d.id,
+                        name: d.name,
+                        route: `/devices/${d.id}`,
+                      },
+                    })
+                  }
+                />
+              )}
             </>
           )}
         </div>
@@ -2291,16 +2351,20 @@ function FloorPlanPage() {
             key={selected.id}
             tile={selected}
             planId={plan.id}
+            siteId={plan.site.id}
+            cellMm={plan.cell_mm}
             tileTypes={tileTypes.data?.results ?? []}
             roles={roles.data?.results ?? []}
             onChange={(patch) => changeTile(selected.id, patch)}
             onRotate={() => rotateTile(selected)}
             onSetFacing={(o) => setTileFacing(selected, o)}
+            onFit={(size) => fitTile(selected, size)}
             onDelete={() => deleteTile(selected.id)}
             onOpenContents={
               selected.linked?.kind === "rack" ||
+              selected.linked?.kind === "cabinet" ||
               selected.linked?.kind === "device"
-                ? () => setDeepTile(selected)
+                ? () => openTile(selected)
                 : undefined
             }
           />
@@ -2440,6 +2504,12 @@ function LinkedObjectLink({
           Open rack
         </OpenLink>
       )
+    case "cabinet":
+      return (
+        <OpenLink to="/cabinets/$id" params={params} className={className}>
+          Open cabinet
+        </OpenLink>
+      )
     case "device":
       return (
         <OpenLink to="/devices/$id" params={params} className={className}>
@@ -2522,21 +2592,29 @@ function FovSlider({
 function TileInspector({
   tile,
   planId,
+  siteId,
+  cellMm,
   tileTypes,
   roles,
   onChange,
   onRotate,
   onSetFacing,
+  onFit,
   onDelete,
   onOpenContents,
 }: {
   tile: FloorPlanTile
   planId: string
+  /** The plan's site and cell size - a cabinet link reads both. */
+  siteId: string
+  cellMm: number
   tileTypes: FloorTileTypeOption[]
   roles: DeviceRole[]
   onChange: (patch: Partial<FloorPlanTile>) => void
   onRotate: () => void
   onSetFacing: (o: 0 | 90 | 180 | 270) => void
+  /** Size the tile to what it links to, in cells. */
+  onFit: (size: { width: number; height: number }) => void
   onDelete: () => void
   onOpenContents?: () => void
 }) {
@@ -2555,6 +2633,11 @@ function TileInspector({
         route: "",
       },
     })
+  }
+  // A just-picked object's name, once known: the tile's label falls back to
+  // it before the plan is saved, as it does after.
+  const setLinkedName = (name: string) => {
+    if (tile.linked) onChange({ linked: { ...tile.linked, name } })
   }
 
   return (
@@ -2774,13 +2857,24 @@ function TileInspector({
           noneLabel="Not linked"
           placeholder="Not linked"
         />
-        <LinkTargetPicker
-          kind={tile.link_kind || null}
-          value={tile.linked?.id ?? null}
-          planId={planId}
-          roleId={tile.role_type?.id ?? null}
-          onPick={(id) => setLink(tile.link_kind || null, id)}
-        />
+        {tile.link_kind === "cabinet" ? (
+          <CabinetLinkField
+            tile={tile}
+            siteId={siteId}
+            cellMm={cellMm}
+            onPick={(id) => setLink("cabinet", id)}
+            onName={setLinkedName}
+            onFit={onFit}
+          />
+        ) : (
+          <LinkTargetPicker
+            kind={tile.link_kind || null}
+            value={tile.linked?.id ?? null}
+            planId={planId}
+            roleId={tile.role_type?.id ?? null}
+            onPick={(id) => setLink(tile.link_kind || null, id)}
+          />
+        )}
       </div>
 
       <div className="mt-auto grid gap-2 border-t border-border pt-3">
@@ -2791,12 +2885,12 @@ function TileInspector({
             className="w-full"
             onClick={onOpenContents}
           >
-            {tile.linked?.kind === "rack" ? (
-              <PanelRight className="h-3.5 w-3.5" />
-            ) : (
+            {tile.linked?.kind === "device" ? (
               <Waypoints className="h-3.5 w-3.5" />
+            ) : (
+              <PanelRight className="h-3.5 w-3.5" />
             )}
-            {tile.linked?.kind === "rack" ? "Contents & trace" : "Trace"}
+            {tile.linked?.kind === "device" ? "Trace" : "Contents & trace"}
           </Button>
         )}
         <Button

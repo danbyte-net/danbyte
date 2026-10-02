@@ -74,6 +74,18 @@ export interface SceneRack {
   devices: SceneDevice[]
 }
 
+/** A DIN-rail cabinet on a tile: the room draws its enclosure, closed, at
+ * its outer size. The server fills an unrecorded size - the plate plus
+ * 50 mm, 200 mm deep. */
+export interface SceneCabinet {
+  id: string
+  name: string
+  outer_width_mm: number
+  outer_height_mm: number
+  outer_depth_mm: number
+  device_count: number
+}
+
 export interface SceneTile {
   id: string
   x: number
@@ -83,10 +95,12 @@ export interface SceneTile {
   orientation: number
   status: string
   label: string
-  kind: "rack" | "device" | "other"
+  kind: "rack" | "cabinet" | "device" | "other"
   color: string
   is_zone: boolean
   rack: SceneRack | null
+  /** The linked cabinet. Optional so older cached payloads stay valid. */
+  cabinet?: SceneCabinet | null
   /** The linked device's name - labels device tiles like the 2D canvas does
    * (tile label wins, then this). */
   device_name?: string
@@ -261,6 +275,50 @@ export function rackFootprintM(rack: SceneRack): {
   // 42U cabinet is taller than 42U of rail, for exactly this reason.
   const height = mm(rack.u_height * PANEL_MM.uPitch) + RACK_BASE_M + RACK_CAP_M
   return { width, depth, height }
+}
+
+/** A cabinet's enclosure in metres: as wide as its outer width across the
+ * tile's front, as deep as its outer depth front to back, standing its outer
+ * height. Sizes the server left out fall back the way it fills them - the
+ * box never collapses to nothing. */
+export function cabinetBoxM(cabinet: SceneCabinet): {
+  width: number
+  depth: number
+  height: number
+} {
+  const size = (v: number | null | undefined, fallback: number) =>
+    mm(v != null && v > 0 ? v : fallback)
+  return {
+    width: size(cabinet.outer_width_mm, 600),
+    depth: size(cabinet.outer_depth_mm, 200),
+    height: size(cabinet.outer_height_mm, 800),
+  }
+}
+
+/** The twelve edges of a box standing on the floor (y 0…h), centred on x
+ * and z, as 24 points - pairs for a segments line, which is how a cabinet's
+ * outline is drawn. */
+export function boxEdgesM(
+  width: number,
+  height: number,
+  depth: number
+): [number, number, number][] {
+  const x = width / 2
+  const z = depth / 2
+  const corners: [number, number][] = [
+    [-x, -z],
+    [x, -z],
+    [x, z],
+    [-x, z],
+  ]
+  const out: [number, number, number][] = []
+  corners.forEach(([cx, cz], i) => {
+    const [nx, nz] = corners[(i + 1) % 4]
+    out.push([cx, 0, cz], [nx, 0, nz]) // floor ring
+    out.push([cx, height, cz], [nx, height, nz]) // top ring
+    out.push([cx, 0, cz], [cx, height, cz]) // upright
+  })
+  return out
 }
 
 /** 0U gear racked at a position is non-rack-format (a desktop appliance on a
@@ -1188,12 +1246,13 @@ export function trayJunctions(
   return out
 }
 
-/** The tallest cabinet top in the room (m) - what a tray-less run must clear. */
+/** The tallest cabinet top in the room (m) - a rack's or a DIN-rail
+ * cabinet's - what a tray-less run must clear. */
 export function tallestRackTopM(scene: ScenePayload): number {
   let top = 0
   for (const t of scene.tiles) {
-    if (!t.rack) continue
-    top = Math.max(top, rackFootprintM(t.rack).height)
+    if (t.rack) top = Math.max(top, rackFootprintM(t.rack).height)
+    else if (t.cabinet) top = Math.max(top, cabinetBoxM(t.cabinet).height)
   }
   return top
 }
