@@ -5,7 +5,15 @@ import { PrintLabelButton } from "@/components/print-label-button"
 import { RackSyncTypeButton } from "@/components/rack-sync-type-button"
 import { useQuery } from "@tanstack/react-query"
 import { Camera, Minus, Pencil, Plus, Trash2 } from "lucide-react"
-import { useCallback, useMemo, useRef, useState } from "react"
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 
 import { api, type Device, type Paginated, type Rack } from "@/lib/api"
@@ -31,6 +39,8 @@ import { FormCheckbox } from "@/components/forms"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { downloadPng } from "@/lib/png-export"
+import { BarButton, BarIconButton } from "@/components/map-toolbar"
+import { Loading } from "@/components/loading"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/racks/$id")({
@@ -310,16 +320,19 @@ function RackOverview({ rack: r }: { rack: Rack }) {
   ]
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <KvCard title="Rack" rows={rackRows} />
-        <CustomFieldValues
-          model="rack"
-          values={r.custom_fields}
-          layout="cards"
-        />
-        <KvCard title="Capacity" rows={capacityRows} />
+      {/* The rack gets the wider column, as the cabinet's plate does. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
+        <div className="grid content-start gap-6">
+          <KvCard title="Rack" rows={rackRows} />
+          <CustomFieldValues
+            model="rack"
+            values={r.custom_fields}
+            layout="cards"
+          />
+          <KvCard title="Capacity" rows={capacityRows} />
+        </div>
+        <RackFaces rack={r} />
       </div>
-      <RackFaces rack={r} />
       <ObjectImages apiBase={`/api/racks/${r.id}`} objectType="rack" />
     </div>
   )
@@ -330,25 +343,69 @@ function RackOverview({ rack: r }: { rack: Rack }) {
  * not mounted on. */
 // Zoom presets (px per mm). Names/Images default to a compact fit-on-screen
 // scale; Render defaults larger so ports stay legible. Users can zoom in/out.
-const ZOOM_STEPS = [0.45, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0]
+const ZOOM_STEPS = [0.35, 0.45, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0]
 const DEFAULT_ZOOM: Record<RackDisplayMode, number> = {
   names: 0.6,
   images: 0.6,
   render: 1.35,
 }
 
+// The rack in 3D - three.js and all, in its own chunk.
+const RackScene = lazy(() => import("@/components/floorplan3d/rack-scene"))
+
+const VIZ = ["2d", "3d"] as const
+type Viz = (typeof VIZ)[number]
+
 function RackFaces({ rack }: { rack: Rack }) {
+  // The rack in 2D or in 3D, in the URL as the cabinet keeps its plate's.
+  const [viz, setViz] = useUrlTab<Viz>("2d", "viz", VIZ)
+  const vizSwitch = (
+    <SegmentedTabs<Viz>
+      value={viz}
+      onValueChange={setViz}
+      items={[
+        { value: "2d", label: "2D" },
+        { value: "3d", label: "3D" },
+      ]}
+    />
+  )
   const [mode, setMode] = useState<RackDisplayMode>("names")
   const [labels, setLabels] = useState(true)
   const [zoom, setZoom] = useState(DEFAULT_ZOOM.names)
   const facesRef = useRef<HTMLDivElement>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+  // Until someone zooms by hand, the zoom steps down until front and rear
+  // fit side by side in the frame, and starts over when the frame resizes.
+  const [manual, setManual] = useState(false)
+  const [frameWidth, setFrameWidth] = useState(0)
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    if (!frame) return
+    const ro = new ResizeObserver(() => setFrameWidth(frame.clientWidth))
+    ro.observe(frame)
+    return () => ro.disconnect()
+  }, [viz])
+  useLayoutEffect(() => {
+    if (!manual) setZoom(DEFAULT_ZOOM[mode])
+  }, [frameWidth, manual, mode])
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    const faces = facesRef.current
+    if (manual || !frame || !faces) return
+    if (faces.scrollWidth > frame.clientWidth) {
+      const smaller = [...ZOOM_STEPS].reverse().find((z) => z < zoom)
+      if (smaller) setZoom(smaller)
+    }
+  }, [zoom, manual, frameWidth])
 
   // Reset to the mode's sensible default zoom when switching modes.
   const changeMode = (m: RackDisplayMode) => {
     setMode(m)
+    setManual(false)
     setZoom(DEFAULT_ZOOM[m])
   }
   const stepZoom = (dir: -1 | 1) => {
+    setManual(true)
     const i = ZOOM_STEPS.findIndex((z) => z >= zoom)
     const cur = i < 0 ? ZOOM_STEPS.length - 1 : i
     const next = Math.min(ZOOM_STEPS.length - 1, Math.max(0, cur + dir))
@@ -363,79 +420,93 @@ function RackFaces({ rack }: { rack: Rack }) {
   }
 
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-3">
-        <SegmentedTabs<RackDisplayMode>
-          value={mode}
-          onValueChange={changeMode}
-          items={[
-            { value: "names", label: "Names" },
-            { value: "images", label: "Images" },
-            { value: "render", label: "Render" },
-          ]}
-        />
-        {mode !== "names" && (
-          <FormCheckbox
-            label="Text"
-            checked={labels}
-            onChange={setLabels}
-            className="items-center gap-1 text-[11px] text-muted-foreground"
-          />
+    <section className="min-w-0">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-[11px] font-semibold tracking-wide text-foreground uppercase">
+          Elevation
+        </h2>
+      </div>
+      <div className="rounded-lg border border-border bg-card p-4">
+        {viz === "3d" ? (
+          <Suspense
+            fallback={
+              <>
+                <div className="mb-3 flex items-center">{vizSwitch}</div>
+                <Loading className="h-[40rem] max-h-[80vh]" />
+              </>
+            }
+          >
+            <RackScene rackId={rack.id} lead={vizSwitch} />
+          </Suspense>
+        ) : (
+          <>
+            <div className="@container mb-3 flex items-center gap-3">
+              {vizSwitch}
+              <SegmentedTabs<RackDisplayMode>
+                value={mode}
+                onValueChange={changeMode}
+                items={[
+                  { value: "names", label: "Names" },
+                  { value: "images", label: "Images" },
+                  { value: "render", label: "Render" },
+                ]}
+              />
+              {mode !== "names" && (
+                <FormCheckbox
+                  label="Text"
+                  checked={labels}
+                  onChange={setLabels}
+                  className="items-center gap-1 text-[11px] text-muted-foreground"
+                />
+              )}
+              <div className="flex items-center gap-1">
+                <BarIconButton
+                  label="Zoom out"
+                  disabled={zoom <= ZOOM_STEPS[0]}
+                  onClick={() => stepZoom(-1)}
+                >
+                  <Minus />
+                </BarIconButton>
+                <BarIconButton
+                  label="Zoom in"
+                  disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+                  onClick={() => stepZoom(1)}
+                >
+                  <Plus />
+                </BarIconButton>
+              </div>
+              <BarButton className="ml-auto" onClick={exportPng}>
+                <Camera />
+                <span className="sr-only @[34rem]:not-sr-only">PNG</span>
+              </BarButton>
+            </div>
+            <div ref={frameRef} className="overflow-auto">
+              <div
+                ref={facesRef}
+                className="mx-auto flex w-max items-start gap-8"
+              >
+                {(["front", "rear"] as const).map((f) => (
+                  <div key={f}>
+                    <h3 className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                      {f}
+                    </h3>
+                    <RackElevation
+                      rack={rack}
+                      face={f}
+                      mode={mode}
+                      labels={labels}
+                      showHeader={false}
+                      scale={zoom}
+                      draggable
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
         )}
-        {/* Zoom - shrink to fit the whole rack on screen, or zoom in for detail. */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => stepZoom(-1)}
-            disabled={zoom <= ZOOM_STEPS[0]}
-            aria-label="Zoom out"
-          >
-            <Minus className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => stepZoom(1)}
-            disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
-            aria-label="Zoom in"
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto h-7 text-xs"
-          onClick={exportPng}
-        >
-          <Camera className="h-3 w-3" /> PNG
-        </Button>
       </div>
-      <div
-        ref={facesRef}
-        className="flex flex-col gap-8 lg:flex-row lg:items-start"
-      >
-        {(["front", "rear"] as const).map((f) => (
-          <div key={f}>
-            <h3 className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-              {f}
-            </h3>
-            <RackElevation
-              rack={rack}
-              face={f}
-              mode={mode}
-              labels={labels}
-              showHeader={false}
-              scale={zoom}
-              draggable
-            />
-          </div>
-        ))}
-      </div>
-    </div>
+    </section>
   )
 }
 

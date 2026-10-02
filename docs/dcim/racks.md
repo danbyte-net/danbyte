@@ -156,8 +156,12 @@ parked at a U position, which previously (and wrongly) charged a full unit.
 
 ## Rack elevations
 
-The rack's **Overview** draws paired elevations - **front and
-rear side by side** - and the Devices tab keeps a single toggleable one. Three
+The rack's **Overview** puts the rack's facts on the left - the **Rack** and
+**Capacity** cards, with custom fields between them - and the rack itself on
+the right, under **Elevation**: paired elevations, **front and rear side by
+side**. Until you zoom by hand the zoom steps down until both faces fit the
+column, so a whole rack reads without scrolling; **−** and **+** take over
+from there. The Devices tab keeps a single toggleable elevation. Three
 **display modes**:
 
 | Mode | Shows |
@@ -186,6 +190,19 @@ block on an empty band and the device re-mounts with that band as its top U
 (occupied space, rack edges and half-width columns are respected; a plain
 click still opens the device). The **PNG** button snapshots the front + rear
 pair for a change ticket or wiki page.
+
+### The rack in 3D
+
+**2D | 3D**, first on the Elevation toolbar, swaps the drawing for the rack in
+3D (`?viz=3d` keeps it in the URL) - the same cabinet, devices and photo
+faceplates as the floor plan's [3D room](../features/floor-plans.md#the-3d-room-view),
+this rack alone. Drag to turn it and scroll to zoom; **Front** and **Rear**
+look straight at either face, and a double-click on a device frames it.
+Ports on the photos are coloured as the room colours them - cabled by
+speed, free faint, disabled grey, live SNMP where it is polled - and a port
+held for a cable shows amber. Click a device or a port for its card;
+**PNG** saves the view. The view draws at the quality picked in a floor
+plan's 3D View menu on this device. Cables are not drawn in this view yet.
 
 Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,
