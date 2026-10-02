@@ -6791,6 +6791,12 @@ class Tunnel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
+    # The tunnel's own figure for the site map (#246): nothing derives it in
+    # 0.17, and a hub tunnel's spokes all show it.
+    capacity_kbps = models.PositiveBigIntegerField(
+        "capacity (kbps)", null=True, blank=True,
+        help_text="How fast the tunnel's path is; empty = unknown.",
+    )
 
     class Meta:
         ordering = ["name"]

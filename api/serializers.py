@@ -7855,7 +7855,7 @@ class TunnelSerializer(StatusSerializerMixin,
         fields = ["id", "name", "status", "status_id",  "encapsulation",
                   "encapsulation_display", "tunnel_id", "group", "group_id",
                   "ipsec_profile", "ipsec_profile_id", "terminations",
-                  "description", "comments",
+                  "capacity_kbps", "description", "comments",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id",  "encapsulation_display",
                             "created_at", "updated_at"]
