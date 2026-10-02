@@ -1,9 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { TriangleAlert } from "lucide-react"
-import { Canvas, useThree } from "@react-three/fiber"
-import { EffectComposer, N8AO } from "@react-three/postprocessing"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as THREE from "three"
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js"
 
 import { detectRenderQuality } from "@/lib/render-quality"
 import type { RenderQuality, RenderQualitySetting } from "@/lib/render-quality"
@@ -20,14 +16,12 @@ import type {
   Paginated,
   TerminationInput,
 } from "@/lib/api"
-import { renderTemplateName } from "@/lib/faceplate-geometry"
-import { bayHex, legendIsEmpty } from "@/lib/faceplate-colors"
+import { legendIsEmpty } from "@/lib/faceplate-colors"
 import { useLegendCollector } from "@/components/speed-scale"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { Button } from "@/components/ui/button"
-import { ColorBadge } from "@/components/cells/color-badge"
 import { RowCheckBadge } from "@/components/foldable-group"
 import { Loading } from "@/components/loading"
 import { BarButton, BarTip } from "@/components/map-toolbar"
@@ -51,13 +45,22 @@ import {
   CableTrace3D,
   useCablePaths,
 } from "./cable-trace-3d"
-import { CabinetHoverHud, CabinetHud, createHoverStore } from "./cabinet-hud"
+import {
+  CabinetDeviceHoverHud,
+  CabinetDeviceHud,
+  CabinetHoverHud,
+  CabinetHud,
+  createHoverStore,
+  deviceHoverKey,
+} from "./cabinet-hud"
 import { CabinetMesh } from "./cabinet-mesh"
-import { CameraRig, type FlyToRequest } from "./camera-rig"
+import { DeviceHud, PortHud } from "./hud-cards"
+import type { FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh } from "./rack-mesh"
 import type { Sel, ShellMode } from "./rack-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
+import { NoWebGL, Stage, roomLights } from "./stage"
 import { TileGhostMesh } from "./tile-ghost-mesh"
 import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
 import { WallMesh } from "./wall-mesh"
@@ -70,7 +73,6 @@ import {
   trayElevationM,
   trayJunctions,
   webglSupported,
-  type SceneDevice,
   type SceneTile,
   type SceneTray,
 } from "./world"
@@ -165,6 +167,25 @@ export default function FloorScene3D({
   // The cabinet under the pointer, for its card - kept out of this
   // component's state so a hover never re-renders the room.
   const [hoverStore] = useState(createHoverStore)
+  // The same for a device inside an open cabinet, keyed tile/device.
+  const [deviceHover] = useState(createHoverStore)
+  const hoverCabinetDevice = useCallback(
+    (tileId: string, deviceId: string, on: boolean) =>
+      deviceHover.set(deviceHoverKey(tileId, deviceId), on),
+    [deviceHover]
+  )
+  // Cabinet doors standing open, by tile. Opening one is what fetches its
+  // insides, so a room never loads the contents of a shut cabinet.
+  const [openDoors, setOpenDoors] = useState<ReadonlySet<string>>(
+    () => new Set()
+  )
+  const toggleDoor = (tileId: string) =>
+    setOpenDoors((prev) => {
+      const next = new Set(prev)
+      if (next.has(tileId)) next.delete(tileId)
+      else next.add(tileId)
+      return next
+    })
   // invalidate() bridge for HUD-triggered camera moves: DOM buttons live
   // outside the <Canvas>, and with frameloop="demand" a bare flyToRef
   // mutation would sit unnoticed until something else rendered a frame.
@@ -374,13 +395,7 @@ export default function FloorScene3D({
     return [ax, height / 2, az]
   }, [selection, scene.data])
 
-  if (!supported)
-    return (
-      <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
-        This browser can't do WebGL - the 3D view needs it. The 2D view has
-        everything else.
-      </div>
-    )
+  if (!supported) return <NoWebGL />
   if (scene.isError)
     return (
       <div className="p-4">
@@ -429,6 +444,16 @@ export default function FloorScene3D({
     selection?.kind === "cabinet"
       ? (cabinetTiles.find((t) => t.id === selection.tileId) ?? null)
       : null
+  // The cabinet behind a tile, for the cards of the devices inside it.
+  const cabinetOf = (tileId: string) => {
+    const t = cabinetTiles.find((x) => x.id === tileId)
+    return t?.cabinet
+      ? { id: t.cabinet.id, name: t.label || t.cabinet.name }
+      : null
+  }
+  // A device clicked inside an open cabinet: that cabinet.
+  const selCabinetDevice =
+    selection?.kind === "device" ? cabinetOf(selection.tileId) : null
 
   // ── Isolation ──────────────────────────────────────────────────────────
   // Pure client state: a set of tile ids that stay mounted, everything else
@@ -519,23 +544,21 @@ export default function FloorScene3D({
 
   return (
     <div className="relative h-full min-h-0 w-full">
-      <Canvas
-        frameloop="demand"
-        // `shadows` costs nothing until a light casts - the quality tier
-        // gates that per light, so Low never pays the shadow pass.
-        shadows
-        // Render at the display's real pixel ratio (capped at 2): 1.75 left a
-        // HiDPI canvas rendering below native and reading softer than the 2D
-        // faceplate beside it. Low quality caps at 1.5 instead.
-        dpr={rq === "low" || rq === "flat" ? [1, 1.5] : [1, 2]}
+      <Stage
+        quality={rq}
         camera={{
           position: [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
-          fov: 45,
-          // Initial only - CameraRig re-fits `near` per frame to the orbit
-          // distance (1 cm nose-on, 0.5 m across the hall).
-          near: 0.05,
           far: diag * 10 + 50,
         }}
+        lights={roomLights(w, d, diag)}
+        controls={{
+          target: [w / 2, 0.8, d / 2],
+          maxDistance: diag * 8 + 20,
+          roomDiag: diag,
+          requestRef: flyToRef,
+        }}
+        stamp={`${showWalls}|${showCables}|${showCeiling}|${showAirflow}|${showNames}|${namesScope}|${namesAtEdge}|${showUNumbers}|${floorPeek}|${shellMode}|${rq}`}
+        invalidateRef={invalidateRef}
         onPointerMissed={() => {
           setSelection(null)
           setConnecting(null)
@@ -544,52 +567,6 @@ export default function FloorScene3D({
           setFocusOn(false)
         }}
       >
-        <InvalidatorBridge apiRef={invalidateRef} />
-        <InvalidateOnToggle
-          stamp={`${showWalls}|${showCables}|${showCeiling}|${showAirflow}|${showNames}|${namesScope}|${namesAtEdge}|${showUNumbers}|${floorPeek}|${shellMode}|${rq}`}
-        />
-        {/* Light rig: soft ambient + one shadow-casting key light + a dim
-            fill, over a procedural studio environment (PMREM'd
-            RoomEnvironment - zero assets, so airgap/CSP-safe). Intensities
-            re-balanced for the environment's contribution; tone mapping is
-            r3f's default ACESFilmic (that's why photo faceplates opt out
-            with toneMapped={false}). */}
-        {/* Flat: ONE full-strength ambient and nothing else - no key light,
-            no shadow pass, no environment probe. Standard materials still
-            shade, they just have a single uniform light to answer to, which
-            is the cheapest honest way to take the light rig out of the
-            picture. */}
-        <ambientLight intensity={rq === "flat" ? 1.15 : 0.4} />
-        {rq !== "flat" && (
-          <>
-            <KeyLight
-              w={w}
-              d={d}
-              diag={diag}
-              castShadow={rq !== "low"}
-              shadowRes={rq === "high" ? 2048 : 1024}
-            />
-            <directionalLight position={[w, 8, d]} intensity={0.25} />
-            <StudioEnvironment />
-          </>
-        )}
-        {/* Ambient occlusion (High only): the interior depth that makes an
-            open cabinet look deep rather than printed. Screen-space, so the
-            depthWrite=false ghosts never smudge it. */}
-        {rq === "high" && (
-          <EffectComposer multisampling={4}>
-            {/* Contact shading, not a black wash. intensity 3 (triple the
-                default) buried every large dark surface: the zinc walls went
-                solid black on High and read as having disappeared. */}
-            <N8AO
-              aoRadius={0.4}
-              intensity={1.1}
-              distanceFalloff={0.6}
-              quality="performance"
-              halfRes
-            />
-          </EffectComposer>
-        )}
         <Room scene={data} xray={shellMode === "xray"} ceiling={showCeiling} />
         {shownRacks.map((t) => (
           <RackMesh
@@ -627,12 +604,24 @@ export default function FloorScene3D({
             plan={plan}
             tile={t}
             check={liveState?.tiles[t.id]?.check ?? null}
-            selected={selection?.tileId === t.id}
+            selected={
+              selection?.tileId === t.id && selection.kind === "cabinet"
+            }
             ghosted={focusOn && !!selection && selection.tileId !== t.id}
             xray={shellMode === "xray"}
             attention={attention}
+            doorOpen={openDoors.has(t.id)}
+            selectedDeviceId={
+              selection?.tileId === t.id && selection.kind === "device"
+                ? (selection.deviceId ?? null)
+                : null
+            }
             onSelect={handleSelect}
             onHover={hoverStore.set}
+            onSelectDevice={(tileId, deviceId) =>
+              handleSelect({ kind: "device", tileId, deviceId })
+            }
+            onHoverDevice={hoverCabinetDevice}
             onFlyTo={(target, position) => {
               flyToRef.current = { target, position }
               setViewSide("front")
@@ -731,13 +720,7 @@ export default function FloorScene3D({
             scale={cableScale}
           />
         )}
-        <CameraRig
-          target={[w / 2, 0.8, d / 2]}
-          maxDistance={diag * 8 + 20}
-          roomDiag={diag}
-          requestRef={flyToRef}
-        />
-      </Canvas>
+      </Stage>
       {selTile && selection?.kind === "rack" && (
         <RackHud
           tile={selTile}
@@ -761,6 +744,8 @@ export default function FloorScene3D({
           actions={{
             focused: focusOn,
             onToggleFocus: () => setFocusOn((v) => !v),
+            doorOpen: openDoors.has(selCabinet.id),
+            onToggleDoor: () => toggleDoor(selCabinet.id),
             onIsolateRow: () => isolateRow(selCabinet),
             onIsolateZone:
               zonesForCabinet.length > 0
@@ -775,6 +760,19 @@ export default function FloorScene3D({
         liveState={liveState}
         hidden={!!selection || !!cableSel || !!traySel}
       />
+      <CabinetDeviceHoverHud
+        store={deviceHover}
+        cabinetOf={cabinetOf}
+        hidden={!!selection || !!cableSel || !!traySel}
+      />
+      {selCabinetDevice && selection?.deviceId && (
+        <CabinetDeviceHud
+          cabinet={selCabinetDevice}
+          deviceId={selection.deviceId}
+          pinned
+          focus={{ on: focusOn, onToggle: () => setFocusOn((v) => !v) }}
+        />
+      )}
       {selTile && selDevice && selection?.kind === "device" && (
         <DeviceHud
           tile={selTile}
@@ -984,107 +982,6 @@ export default function FloorScene3D({
   )
 }
 
-/**
- * The shadow-casting key light, aimed at the room's centre with an
- * orthographic frustum fitted to the room - one shadow pass, paid only on
- * frames the demand loop already renders. Keyed by its shadow config so a
- * quality change rebuilds the map cleanly instead of resizing it in place.
- */
-function KeyLight({
-  w,
-  d,
-  diag,
-  castShadow,
-  shadowRes,
-}: {
-  w: number
-  d: number
-  diag: number
-  castShadow: boolean
-  shadowRes: number
-}) {
-  const target = useMemo(() => new THREE.Object3D(), [])
-  const frustum = diag * 0.75 + 5
-  return (
-    <>
-      <primitive object={target} position={[w / 2, 0, d / 2]} />
-      <directionalLight
-        key={`${castShadow}-${shadowRes}`}
-        position={[w * 0.25, Math.max(10, diag * 0.6), d * 0.15]}
-        intensity={0.95}
-        target={target}
-        castShadow={castShadow}
-        shadow-mapSize-width={shadowRes}
-        shadow-mapSize-height={shadowRes}
-        // Bias pair against acne on the big flat slab without peter-panning
-        // the rack feet off the floor.
-        shadow-bias={-0.0003}
-        shadow-normalBias={0.03}
-        shadow-camera-near={1}
-        shadow-camera-far={diag * 2 + 40}
-        shadow-camera-left={-frustum}
-        shadow-camera-right={frustum}
-        shadow-camera-top={frustum}
-        shadow-camera-bottom={-frustum}
-      />
-    </>
-  )
-}
-
-/**
- * Procedural studio IBL: three's RoomEnvironment baked through PMREM once
- * per mount. Zero external assets (no HDRI fetch - CSP/airgap-safe), and it
- * is what gives painted steel and rails something to reflect; without an
- * environment, metalness only darkens.
- */
-function StudioEnvironment() {
-  const gl = useThree((s) => s.gl)
-  const scene = useThree((s) => s.scene)
-  const invalidate = useThree((s) => s.invalidate)
-  useEffect(() => {
-    const pmrem = new THREE.PMREMGenerator(gl)
-    const rt = pmrem.fromScene(new RoomEnvironment(), 0.04)
-    pmrem.dispose()
-    scene.environment = rt.texture
-    scene.environmentIntensity = 0.35
-    invalidate()
-    return () => {
-      scene.environment = null
-      rt.dispose()
-    }
-  }, [gl, scene, invalidate])
-  return null
-}
-
-/** invalidate() escape hatch for DOM overlays: with `frameloop="demand"`, a
- * HUD button that mutates a ref (fly-to) must kick a frame itself. */
-/** fiber 9.6.1 never invalidates on child REMOVAL (removeChild nulls the
- * parent before invalidateInstance's parent guard runs), so toggling a layer
- * OFF would leave its last frame on screen until the next orbit. One kicked
- * frame per view-pref change closes that whole class. */
-function InvalidateOnToggle({ stamp }: { stamp: string }) {
-  const invalidate = useThree((s) => s.invalidate)
-  useEffect(() => {
-    invalidate()
-  }, [stamp, invalidate])
-  return null
-}
-
-function InvalidatorBridge({
-  apiRef,
-}: {
-  apiRef: React.MutableRefObject<(() => void) | null>
-}) {
-  const invalidate = useThree((s) => s.invalidate)
-  useEffect(() => {
-    apiRef.current = invalidate
-    return () => {
-      apiRef.current = null
-    }
-  }, [apiRef, invalidate])
-  return null
-}
-
 /** Overlay card for the selected rack - name, live rollup, the operator's
  * focus/isolate/flip controls, jump-off. */
 function RackHud({
@@ -1161,415 +1058,6 @@ function RackHud({
         className="mt-1.5 w-full"
       >
         Open rack
-      </OpenLink>
-    </div>
-  )
-}
-
-/** Overlay card for a selected device - identity, status, where it sits. */
-function DeviceHud({
-  tile,
-  dev,
-  focused,
-  onToggleFocus,
-}: {
-  tile: SceneTile
-  dev: SceneDevice
-  focused: boolean
-  onToggleFocus: () => void
-}) {
-  const rack = tile.rack!
-  const row = (label: string, value: React.ReactNode) => (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 text-right break-words">{value}</span>
-    </div>
-  )
-  return (
-    <div className="absolute top-3 left-3 w-64 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
-      <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 flex-1 font-mono text-[13px] font-semibold break-words">
-          {dev.name}
-        </span>
-        {dev.status && (
-          <ColorBadge
-            name={dev.status.name}
-            color={dev.status.color || undefined}
-            className="h-4 shrink-0 px-1.5 text-[10px]"
-          />
-        )}
-      </div>
-      <div className="mt-1.5 grid gap-1 text-[12px]">
-        {dev.device_type && row("Type", dev.device_type)}
-        {dev.role_name &&
-          row(
-            "Role",
-            <ColorBadge
-              name={dev.role_name}
-              color={dev.role_color || undefined}
-              className="h-4 px-1.5 text-[10px]"
-            />
-          )}
-        {row(
-          "Position",
-          dev.position != null
-            ? `${rack.name} · U${dev.position}` +
-                (dev.u_height > 1 ? `–${dev.position + dev.u_height - 1}` : "")
-            : `${rack.name} · ${
-                dev.mount === "side_left" ? "left" : "right"
-              } side rail`
-        )}
-        {row(
-          "Size",
-          `${dev.u_height}U` +
-            (dev.rack_width === "half" ? ` · half (${dev.rack_side})` : "") +
-            (dev.face === "rear" ? " · rear" : "")
-        )}
-        {dev.primary_ip &&
-          row(
-            "Primary IP",
-            <span className="font-mono">{dev.primary_ip}</span>
-          )}
-        {dev.serial_number &&
-          row("Serial", <span className="font-mono">{dev.serial_number}</span>)}
-      </div>
-      <BarTip tip="Focus" shortcut="F">
-        <BarButton
-          variant={focused ? "default" : "outline"}
-          className="mt-2 w-full"
-          onClick={onToggleFocus}
-        >
-          Focus
-        </BarButton>
-      </BarTip>
-      <OpenLink
-        to="/devices/$id"
-        params={{ id: dev.id }}
-        className="mt-1.5 w-full"
-      >
-        Open device
-      </OpenLink>
-    </div>
-  )
-}
-
-/**
- * Overlay card for a clicked photo port. Resolves the marker to the real
- * component (same face-ports fetch the quads use), and:
- *  - free port → the connect flow (pick in 3D / cable maker)
- *  - cabled port → the cable (label/type/color) + the FAR END device:port,
- *    with jump-offs to the cable and an in-room trace of its run.
- */
-function PortHud({
-  planId,
-  tile,
-  dev,
-  selection,
-  onConnect,
-  onInstall,
-  onEditPart,
-}: {
-  planId: string
-  tile: SceneTile
-  dev: SceneDevice
-  selection: Sel
-  onConnect: (path: "maker" | "3d") => void
-  /** An empty module bay was clicked - open the install dialog for it. */
-  onInstall: (bay: { id: string; name: string }) => void
-  /** A hardware marker (disk bay, PSU…) was clicked - open its part editor. */
-  onEditPart: (part: { id: string; name: string }) => void
-}) {
-  const { canDo } = useMe()
-  // Installing a module / editing a part writes to the device - the same gate
-  // the Modules pane and the 2D faceplate use.
-  const canEditParts = canDo("device", "change")
-  const [choosing, setChoosing] = useState(false)
-  const rack = tile.rack!
-  // The saved marker name is a template ("Ethernet{position}/1"); render it the
-  // same way the 2D faceplate does so the card shows the real port label.
-  const portLabel = renderTemplateName(selection.portName ?? "", null)
-
-  // Resolve this marker → real port (shared cache with the port quads).
-  const facePorts = useQuery({
-    queryKey: ["device-face-ports", dev.id],
-    queryFn: () => api<FacePorts>(`/api/devices/${dev.id}/face-ports/`),
-    staleTime: 30_000,
-  })
-  const fp = (
-    selection.portSide
-      ? (facePorts.data?.[selection.portSide] ?? [])
-      : [...(facePorts.data?.front ?? []), ...(facePorts.data?.rear ?? [])]
-  ).find((p) => p.marker === selection.portName)
-
-  // Cabled → load the cable for its identity + far-end terminations.
-  const cable = useQuery({
-    queryKey: ["cable", fp?.cable_id],
-    queryFn: () => api<Cable>(`/api/cables/${fp!.cable_id}/`),
-    enabled: !!fp?.cable_id,
-    staleTime: 30_000,
-  })
-  const farEnds = (() => {
-    const c = cable.data
-    if (!c || !fp?.id) return []
-    const mine = (list: Cable["a_terminations"]) =>
-      list.some((t) => t.id === fp.id)
-    // The far side is whichever end does NOT carry this port.
-    return mine(c.a_terminations) ? c.b_terminations : c.a_terminations
-  })()
-
-  const row = (label: string, value: React.ReactNode) => (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="shrink-0">{label}</span>
-      <span className="min-w-0 flex-1 text-right break-words text-foreground">
-        {value}
-      </span>
-    </div>
-  )
-
-  // Module bays resolve with `kind: null` too, so the MARKER's kind is what
-  // separates them from hardware: a bay reads occupied/empty, not health.
-  const bay = !!fp?.id && selection.portKind === "module-bay"
-  // Hardware markers (inventory items) resolve with a status, never a
-  // termination kind - the card shows part health, not cabling.
-  const hardware = !!fp?.id && !bay && fp.kind === null
-  // State chip, tinted like every other badge (bg = color at ~15%, text =
-  // color). Hardware wears its status colour; bays their occupancy; ports
-  // their cabling state.
-  const chip = fp
-    ? bay
-      ? {
-          label: fp.module ? "installed" : "empty",
-          color: bayHex(!!fp.module),
-        }
-      : hardware
-        ? {
-            label: fp.status?.name || "part",
-            color: fp.status?.color || "#64748b",
-          }
-        : fp.connected
-          ? { label: "cabled", color: "#10b981" }
-          : fp.id
-            ? { label: "free", color: "#71717a" }
-            : { label: "no port", color: "#71717a" }
-    : null
-  return (
-    <div className="absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
-      <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 font-mono text-[13px] font-semibold break-words">
-          {fp?.name || portLabel}
-        </span>
-        {chip && (
-          <span
-            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
-            style={{
-              backgroundColor: `${chip.color}26`,
-              color: chip.color,
-            }}
-          >
-            {chip.label}
-          </span>
-        )}
-      </div>
-      <div className="mt-1.5 grid gap-1 text-[12px] text-muted-foreground">
-        {row("Device", <span className="font-mono">{dev.name}</span>)}
-        {selection.portKind &&
-          row(
-            "Kind",
-            <span className="capitalize">
-              {selection.portKind.replace(/-/g, " ")}
-            </span>
-          )}
-        {/* Side-mounted strips have no U - the rack alone locates them. */}
-        {row(
-          "Position",
-          dev.position != null ? `${rack.name} · U${dev.position}` : rack.name
-        )}
-        {fp?.speed && row("Speed", <span className="num">{fp.speed}</span>)}
-        {bay &&
-          row(
-            "Module",
-            fp.module ? (
-              <span className="font-mono">{fp.module.module_type.name}</span>
-            ) : (
-              "Empty"
-            )
-          )}
-        {bay &&
-          fp.module?.serial_number &&
-          row(
-            "Serial",
-            <span className="font-mono">{fp.module.serial_number}</span>
-          )}
-      </div>
-
-      {/* ── Drift: what SNMP saw, beside what the record says ──────────── */}
-      {fp?.drift && (
-        <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-300">
-          <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 break-words">
-            {fp.drift}
-            <span className="mt-0.5 block text-muted-foreground">
-              Review it on the device's Monitoring tab - nothing changes until
-              you accept it.
-            </span>
-          </span>
-        </div>
-      )}
-
-      {/* ── Cabled: the run + its far end ─────────────────────────────── */}
-      {fp?.connected && (
-        <div className="mt-2 grid gap-1 rounded-md border border-border bg-muted/30 p-2 text-[12px] text-muted-foreground">
-          {cable.isLoading && <Loading className="min-h-12" />}
-          {cable.data && (
-            <>
-              <div className="flex items-center gap-1.5">
-                {cable.data.color && (
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: cable.data.color }}
-                  />
-                )}
-                <span className="min-w-0 flex-1 font-mono break-words text-foreground">
-                  {cable.data.label || `Cable #${cable.data.numid ?? ""}`}
-                </span>
-                {cable.data.type_display && (
-                  <span className="shrink-0 text-[10px]">
-                    {cable.data.type_display}
-                  </span>
-                )}
-              </div>
-              {farEnds.length > 0 ? (
-                farEnds.map((t) => (
-                  <div key={t.id} className="flex items-baseline gap-1.5">
-                    <span className="shrink-0">→</span>
-                    <Link
-                      to="/devices/$id"
-                      params={{ id: t.device.id }}
-                      className="link min-w-0 flex-1 font-mono break-words text-foreground"
-                    >
-                      {t.device.name}
-                      <span className="text-muted-foreground">:</span>
-                      {t.name}
-                    </Link>
-                  </div>
-                ))
-              ) : (
-                <span>Far end unterminated.</span>
-              )}
-              {cable.data.length && (
-                <span className="num text-[11px]">
-                  {cable.data.length} {cable.data.length_unit}
-                </span>
-              )}
-            </>
-          )}
-          {cable.data && (
-            <div className="mt-1 flex gap-1.5">
-              <OpenLink
-                to="/cables/$id"
-                params={{ id: cable.data.id }}
-                className="flex-1"
-              >
-                Open cable
-              </OpenLink>
-              <BarButton asChild className="flex-1">
-                {/* Same route, ?trace= - the room draws the run as a
-                    marching line (and 2D uses the identical param). */}
-                <Link
-                  to="/floorplans/$id"
-                  params={{ id: planId }}
-                  search={{ viz: "3d" as const, trace: cable.data.id }}
-                >
-                  Trace run
-                </Link>
-              </BarButton>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Free PORT: the connect flow (hardware parts can't cable) ───── */}
-      {fp && !fp.connected && fp.id && fp.kind && (
-        <>
-          {choosing ? (
-            <div className="mt-2 grid gap-1.5">
-              <p className="text-[11px] text-muted-foreground">
-                Connect this port…
-              </p>
-              <Button
-                size="sm"
-                className="h-7 w-full"
-                onClick={() => {
-                  setChoosing(false)
-                  onConnect("3d")
-                }}
-              >
-                Pick the other end in 3D
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 w-full"
-                onClick={() => {
-                  setChoosing(false)
-                  onConnect("maker")
-                }}
-              >
-                Use the cable maker
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-full"
-                onClick={() => setChoosing(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button
-              size="sm"
-              className="mt-2 h-7 w-full"
-              onClick={() => setChoosing(true)}
-            >
-              Connect cable
-            </Button>
-          )}
-        </>
-      )}
-      {/* ── Empty BAY: seat a module right here (2D-faceplate parity) ──── */}
-      {fp && bay && !fp.module && canEditParts && (
-        <Button
-          size="sm"
-          className="mt-2 h-7 w-full"
-          onClick={() => fp.id && onInstall({ id: fp.id, name: fp.name })}
-        >
-          Install module
-        </Button>
-      )}
-      {/* ── Hardware part: the same editor the 2D faceplate opens ──────── */}
-      {fp && hardware && canEditParts && (
-        <Button
-          size="sm"
-          className="mt-2 h-7 w-full"
-          onClick={() => fp.id && onEditPart({ id: fp.id, name: fp.name })}
-        >
-          Edit part
-        </Button>
-      )}
-      {fp && !fp.id && (
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          No matching component on this device - add the interface (or fix the
-          marker name) to cable it.
-        </p>
-      )}
-
-      <OpenLink
-        to="/devices/$id"
-        params={{ id: dev.id }}
-        className="mt-1.5 w-full"
-      >
-        Open device
       </OpenLink>
     </div>
   )

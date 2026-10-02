@@ -166,13 +166,21 @@ uploaded blueprint textures it.
 - **DIN-rail cabinets** (a tile linked to a [cabinet](../dcim/cabinets.md))
   stand on the floor as closed light-grey boxes of the cabinet's outer size,
   with a door handle and the name over the front - nothing is recorded about
-  how high one hangs, and the gear stays inside. The outline carries the
+  how high one hangs. The outline carries the
   monitoring rollup in the beacon colours; focus, isolation, the hide eyes
   and X-ray (outline only, still clickable) apply as to racks. Hover for the
-  device and rail counts, click for **Focus**, **Isolate row/zone** and
-  **Open cabinet**, double-click to fly to the front. Cable runs end on the
-  box's lid, each in its own lane; a cable between two devices in one
-  cabinet stays inside it and is not drawn.
+  device and rail counts, click for **Focus**, **Open door**, **Isolate
+  row/zone** and **Open cabinet**, double-click to fly to the front.
+  **Open door** swings the door out on its left-hand hinge (it snaps open
+  when the system asks for reduced motion) and shows the inside as the
+  cabinet page's [3D view](../dcim/cabinets.md#the-plate-in-3d) does: the
+  mounting plate, its rails, and each device on its rail at its type's true
+  size, wearing its front photo. Hover a device for its card; click it for
+  the card with **Open device**. **Close door** on the cabinet's card shuts
+  it again. A cabinet's contents are fetched the first time its door opens,
+  never for a shut one. Cable runs end on the box's lid, each in its own
+  lane; a cable between two devices in one cabinet stays inside it and is
+  not drawn.
 - **Side-mounted 0U strips** (vertical PDUs with a
   [rail mount](../dcim/racks.md#zero-u-side-mounting-vertical-pdus)) hang on
   their cabinet's flank as slim vertical strips in both detail tiers -

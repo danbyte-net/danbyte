@@ -3,7 +3,7 @@ import { useThree } from "@react-three/fiber"
 import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 
-import { type ImagePortMarker } from "@/lib/api"
+import { type FacePort, type ImagePortMarker } from "@/lib/api"
 import {
   bayHex,
   EMPTY_LEGEND,
@@ -33,10 +33,10 @@ import {
 } from "./world"
 
 export const DEVICE_FALLBACK = "#52525b"
-const DEVICE_SELECTED = "#0ea5e9"
+export const DEVICE_SELECTED = "#0ea5e9"
 /** Standing edge line - the box's silhouette, dark enough to read against
  * both a pale faceplate photo and a dark role colour. */
-const DEVICE_EDGE = "#18181b"
+export const DEVICE_EDGE = "#18181b"
 
 // Photo-port quad tint: the SAME status colours the 2D faceplate uses (speed
 // tint via portState / PORT_STATE_HEX, live SNMP via liveHex), so a port lights
@@ -48,6 +48,18 @@ const PORT_SELECTED = "#fbbf24" // amber-400 · picked for cabling
 // marker keeps showing the source of truth and the drift reads as a separate
 // signal - same contract as the 2D faceplate's amber ring.
 const PORT_DRIFT = "#f59e0b" // amber-500
+/** A port held for a future cable - a planned reservation, no cable yet:
+ * amber, as the 2D faceplate outlines it. Drawn where the view asks for it
+ * (`markReserved`). */
+export const PORT_RESERVED = "#f59e0b" // amber-500
+
+/** Held but not cabled: what the reserved colour marks. A planned cable
+ * already on the port draws as cabled, as it does in 2D. */
+export function isReserved(
+  fp: Pick<FacePort, "connected" | "cable_state"> | null | undefined
+): boolean {
+  return !!fp && !fp.connected && fp.cable_state === "reserved"
+}
 /** How far the drift halo sticks out past the marker (metres) - ~2mm each side,
  * visible at rack distance without swallowing a small disk bay. */
 const DRIFT_HALO_M = 0.004
@@ -66,7 +78,7 @@ const edgeCache = new Map<string, THREE.BufferGeometry>()
 const sizeKey = (w: number, h: number, d: number) =>
   `${Math.round(w * 1000)}:${Math.round(h * 1000)}:${Math.round(d * 1000)}`
 
-function sharedBox(w: number, h: number, d: number): THREE.BoxGeometry {
+export function sharedBox(w: number, h: number, d: number): THREE.BoxGeometry {
   const key = sizeKey(w, h, d)
   let g = boxCache.get(key)
   if (!g) {
@@ -76,7 +88,11 @@ function sharedBox(w: number, h: number, d: number): THREE.BoxGeometry {
   return g
 }
 
-function sharedEdges(w: number, h: number, d: number): THREE.BufferGeometry {
+export function sharedEdges(
+  w: number,
+  h: number,
+  d: number
+): THREE.BufferGeometry {
   const key = sizeKey(w, h, d)
   let g = edgeCache.get(key)
   if (!g) {
@@ -105,7 +121,7 @@ function sharedPlane(w: number, h: number): THREE.PlaneGeometry {
  * program and uniforms for every box instead of once for the whole batch. */
 const faceMaterialCache = new Map<THREE.Texture, THREE.MeshBasicMaterial>()
 
-function sharedFaceMaterial(t: THREE.Texture): THREE.MeshBasicMaterial {
+export function sharedFaceMaterial(t: THREE.Texture): THREE.MeshBasicMaterial {
   let m = faceMaterialCache.get(t)
   if (!m) {
     m = new THREE.MeshBasicMaterial({ map: t, toneMapped: false })
@@ -153,7 +169,7 @@ function getTexture(
 
 /** Subscribe to a cached texture; re-renders (and re-draws the demand-frameloop
  * canvas) when it lands. */
-function useFaceTexture(url: string | null): THREE.Texture | null {
+export function useFaceTexture(url: string | null): THREE.Texture | null {
   const invalidate = useThree((s) => s.invalidate)
   const anisotropy = useMaxAnisotropy()
   const [, bump] = useState(0)
@@ -191,6 +207,7 @@ export function DeviceMesh({
   onLegend,
   portLabelSource = "",
   portLabelColor = "#ffffff",
+  markReserved = false,
 }: {
   rack: SceneRack
   dev: SceneDevice
@@ -230,6 +247,8 @@ export function DeviceMesh({
    * and handed down - a device must not subscribe to /api/me on its own. */
   portLabelSource?: PortLabelSource
   portLabelColor?: string
+  /** Draw ports held for a cable amber (`PORT_RESERVED`). */
+  markReserved?: boolean
 }) {
   const [hovered, setHovered] = useState(false)
   const [hoveredPort, setHoveredPort] = useState<number | null>(null)
@@ -452,6 +471,10 @@ export function DeviceMesh({
             // Hardware markers (disk bays…): the PART's status colour
             // (failed = red), same as the 2D photo faceplate.
             const hardware = defined && !bay && fp!.kind === null
+            // Held for a cable, where the view marks holds: amber, over the
+            // live state - a reserved port is down by definition.
+            const reserved =
+              markReserved && defined && !bay && !hardware && isReserved(fp)
             const color = isSel
               ? PORT_SELECTED
               : !defined
@@ -460,9 +483,11 @@ export function DeviceMesh({
                   ? bayHex(bayFull)
                   : hardware
                     ? fp!.status?.color || "#64748b"
-                    : obs
-                      ? liveHex(obs)
-                      : (capability ?? portHex(tint!))
+                    : reserved
+                      ? PORT_RESERVED
+                      : obs
+                        ? liveHex(obs)
+                        : (capability ?? portHex(tint!))
             // Undefined markers sit dim in the back; idle ports and empty bays
             // faint (the photo stays the star - mirrors the 2D ~35% outline);
             // lit ports, hardware and filled bays solid.
@@ -475,7 +500,7 @@ export function DeviceMesh({
                     ? bayFull
                       ? 0.66
                       : 0.32
-                    : !hardware && capability
+                    : !hardware && capability && !reserved
                       ? 0.32
                       : 0.66
             return (

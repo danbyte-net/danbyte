@@ -53,7 +53,9 @@ const ASSUMED_COLUMN_PX = 480
  *
  * A cabinet's plate takes the rack elevation's controls: Names, Images or
  * Render, its labels on or off, a zoom, and a PNG of the drawing - kept in
- * this browser, so the page reopens as it was left. */
+ * this browser, so the page reopens as it was left. `lead` goes first on
+ * that toolbar (the cabinet page's 2D | 3D switch); `scene`, when given,
+ * takes the drawing's place - the 3D view, which brings its own toolbar. */
 export function CabinetPlateSection({
   sizes,
   rails,
@@ -64,6 +66,8 @@ export function CabinetPlateSection({
   devices,
   cabinet,
   actions,
+  lead,
+  scene,
 }: {
   sizes: CabinetSizes
   rails: DinRail[]
@@ -79,6 +83,10 @@ export function CabinetPlateSection({
   cabinet?: Cabinet
   /** More of the heading's controls, before Edit rails. */
   actions?: ReactNode
+  /** First on the drawing's toolbar. */
+  lead?: ReactNode
+  /** Drawn instead of the plate, toolbar and all. */
+  scene?: ReactNode
 }) {
   const [editing, setEditing] = useState(false)
   const { canDo } = useMe()
@@ -177,7 +185,7 @@ export function CabinetPlateSection({
           ) : (
             <>
               {actions}
-              {canArrange && (
+              {canArrange && !scene && (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -204,88 +212,106 @@ export function CabinetPlateSection({
         </div>
       </div>
       <div className="rounded-lg border border-border bg-card p-4">
+        {/* The column stays mounted whichever view is shown: its width is
+            what the 2D plate fits to. */}
         <div ref={column}>
-          {controlled && (
-            <div
-              data-part="plate-toolbar"
-              className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2"
-            >
-              <SegmentedTabs<PlateMode>
-                value={mode}
-                onValueChange={changeMode}
-                items={
-                  arranging ? MODES.filter((m) => m.value !== "render") : MODES
-                }
-              />
-              <FormCheckbox
-                label="Labels"
-                checked={view.labels}
-                onChange={(labels) => setView({ ...view, labels })}
-                className="items-center gap-1 text-[11px] text-muted-foreground"
-              />
-              <div className="flex items-center gap-1">
-                <BarIconButton
-                  label="Zoom out"
-                  disabled={!zoomOut}
-                  onClick={() => setZoom(zoomOut)}
+          {scene ?? (
+            <>
+              {(controlled || (lead && !arranging)) && (
+                <div
+                  data-part="plate-toolbar"
+                  className="@container mb-3 flex flex-wrap items-center gap-x-3 gap-y-2"
                 >
-                  <Minus />
-                </BarIconButton>
-                <BarIconButton
-                  label="Zoom in"
-                  disabled={!zoomIn}
-                  onClick={() => setZoom(zoomIn)}
-                >
-                  <Plus />
-                </BarIconButton>
-              </div>
-              {!arranging && (
-                <BarButton className="ml-auto" onClick={exportPng}>
-                  <Camera /> PNG
-                </BarButton>
+                  {!arranging && lead}
+                  {controlled && (
+                    <>
+                      <SegmentedTabs<PlateMode>
+                        value={mode}
+                        onValueChange={changeMode}
+                        items={
+                          arranging
+                            ? MODES.filter((m) => m.value !== "render")
+                            : MODES
+                        }
+                      />
+                      <FormCheckbox
+                        label="Labels"
+                        checked={view.labels}
+                        onChange={(labels) => setView({ ...view, labels })}
+                        className="items-center gap-1 text-[11px] text-muted-foreground"
+                      />
+                      <div className="flex items-center gap-1">
+                        <BarIconButton
+                          label="Zoom out"
+                          disabled={!zoomOut}
+                          onClick={() => setZoom(zoomOut)}
+                        >
+                          <Minus />
+                        </BarIconButton>
+                        <BarIconButton
+                          label="Zoom in"
+                          disabled={!zoomIn}
+                          onClick={() => setZoom(zoomIn)}
+                        >
+                          <Plus />
+                        </BarIconButton>
+                      </div>
+                      {/* The word goes when the row is narrow, so it never
+                          wraps; screen readers keep it. */}
+                      {!arranging && (
+                        <BarButton className="ml-auto" onClick={exportPng}>
+                          <Camera />
+                          <span className="sr-only @[34rem]:not-sr-only">
+                            PNG
+                          </span>
+                        </BarButton>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-          {arranging ? (
-            <ArrangePlate
-              cabinet={cabinet}
-              arrangement={arrangement}
-              pxPerMm={pxPerMm}
-              look={look}
-              names={view.labels}
-              railTags={railTags}
-            />
-          ) : pxPerMm == null ? (
-            elevation
-          ) : (
-            // Scrolls when the zoom draws it wider than the column; centred
-            // while it is narrower, as the fitted plate always was.
-            <div className="overflow-auto">
-              <div
-                ref={drawing}
-                data-part="drawing"
-                className="relative mx-auto w-max"
-              >
-                {elevation}
-                {rendering && (
-                  <CabinetFaceplates
-                    rails={rails}
-                    devices={devices}
-                    frame={{ x: frame.x, y: frame.y, pxPerMm }}
-                    labels={view.labels}
-                    onLegend={onLegend}
-                    onLive={onLive}
-                  />
-                )}
-              </div>
-            </div>
-          )}
-          {rendering && !arranging && !legendIsEmpty(legend) && (
-            <FaceplateLegend
-              className="mt-3"
-              content={legend}
-              observed={live.size > 0}
-            />
+              {arranging ? (
+                <ArrangePlate
+                  cabinet={cabinet}
+                  arrangement={arrangement}
+                  pxPerMm={pxPerMm}
+                  look={look}
+                  names={view.labels}
+                  railTags={railTags}
+                />
+              ) : pxPerMm == null ? (
+                elevation
+              ) : (
+                // Scrolls when the zoom draws it wider than the column; centred
+                // while it is narrower, as the fitted plate always was.
+                <div className="overflow-auto">
+                  <div
+                    ref={drawing}
+                    data-part="drawing"
+                    className="relative mx-auto w-max"
+                  >
+                    {elevation}
+                    {rendering && (
+                      <CabinetFaceplates
+                        rails={rails}
+                        devices={devices}
+                        frame={{ x: frame.x, y: frame.y, pxPerMm }}
+                        labels={view.labels}
+                        onLegend={onLegend}
+                        onLive={onLive}
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+              {rendering && !arranging && !legendIsEmpty(legend) && (
+                <FaceplateLegend
+                  className="mt-3"
+                  content={legend}
+                  observed={live.size > 0}
+                />
+              )}
+            </>
           )}
         </div>
       </div>

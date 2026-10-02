@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { Suspense, lazy, useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { Cabinet } from "@/lib/api"
@@ -27,6 +27,7 @@ import {
 import { CabinetPlateSection } from "@/components/cabinet-plate-section"
 import { CabinetRailActions } from "@/components/cabinet-rail-actions"
 import { CabinetSyncTypeButton } from "@/components/cabinet-sync-type-button"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -35,6 +36,12 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 export const Route = createFileRoute("/cabinets/$id")({
   component: CabinetDetail,
 })
+
+// The 3D view of the plate - three.js and all, in its own chunk.
+const CabinetScene = lazy(() => import("@/components/cabinet-scene"))
+
+const VIZ = ["2d", "3d"] as const
+type Viz = (typeof VIZ)[number]
 
 const mmOrDash = (v: number | null) => (v != null ? `${v} mm` : dash)
 
@@ -146,6 +153,18 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
 function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
   const { canDo, humanIds } = useMe()
   const devices = useCabinetDevices(c.id).data?.results
+  // The plate in 2D or in 3D, in the URL as the floor plans keep theirs.
+  const [viz, setViz] = useUrlTab<Viz>("2d", "viz", VIZ)
+  const vizSwitch = (
+    <SegmentedTabs<Viz>
+      value={viz}
+      onValueChange={setViz}
+      items={[
+        { value: "2d", label: "2D" },
+        { value: "3d", label: "3D" },
+      ]}
+    />
+  )
   const cabinetRows: KvRow[] = [
     ...(humanIds && c.numid != null
       ? [
@@ -216,7 +235,8 @@ function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
   ]
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* The plate gets the wider column: its toolbar needs the room. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
         <div className="grid content-start gap-6">
           <KvCard title="Cabinet" rows={cabinetRows} />
           <CustomFieldValues
@@ -236,6 +256,21 @@ function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
           devices={devices}
           cabinet={c}
           actions={<CabinetRailActions cabinet={c} devices={devices ?? []} />}
+          lead={vizSwitch}
+          scene={
+            viz === "3d" ? (
+              <Suspense
+                fallback={
+                  <>
+                    <div className="mb-3 flex items-center">{vizSwitch}</div>
+                    <Loading className="aspect-[4/3] h-auto max-h-[28rem]" />
+                  </>
+                }
+              >
+                <CabinetScene cabinet={c} lead={vizSwitch} />
+              </Suspense>
+            ) : undefined
+          }
         />
       </div>
       <ObjectImages apiBase={`/api/cabinets/${c.id}`} objectType="cabinet" />

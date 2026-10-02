@@ -117,6 +117,27 @@ type fits the rail's profile. Each rail in those menus shows its widest free
 stretch. The **Devices** tab lists the cabinet's devices with their rail and
 offset.
 
+### The plate in 3D
+
+**2D | 3D**, first on the plate's toolbar, swaps the drawing for the cabinet
+in 3D (`?viz=3d` keeps it in the URL): the enclosure at its outer size with
+its door standing open, the galvanised mounting plate inside, each rail as a
+bar of its profile, and each device on its rail as a box of its type's
+width, height and depth, its front photo on its face - at true size where
+the photo is [calibrated](device-catalog.md#photo-ports), stretched over the
+face where it is not, the role's colour where there is none. A type with no
+depth recorded is drawn 90 mm deep.
+
+Drag to turn it and scroll to zoom. **Close door** and **Open door** swing
+the door on its left-hand hinge (it snaps when the system asks for reduced
+motion); **Front** and **Rear** look straight at either side, as a
+double-click on the cabinet does; **PNG** downloads `<cabinet>-3d.png`.
+Hover a device for its card - type, role, rail and offset, size - and click
+it to keep the card with **Open device**. The view draws at the quality
+picked in a floor plan's 3D View menu on this device. The same cabinet,
+door and all, opens in a floor plan's
+[3D room](../features/floor-plans.md#the-3d-room-view).
+
 ### Placing a device
 
 In the device form, **Mounting** switches between **Rack** and **Cabinet**.
@@ -178,8 +199,8 @@ live state (`GET /api/floor-plans/{id}/state/`) carries the cabinet's
 `device_count`, `rail_count` and the worst monitoring `check` of its devices;
 cable runs to its devices end on its tile; the 3D scene lists it as a box of
 its outer size - the plate plus 50 mm, 200 mm deep, where the outer size is
-not recorded. `/api/floor-plan-tiles/?cabinet={id}` finds the tiles that link
-to it.
+not recorded - whose card opens its door onto the plate and its devices.
+`/api/floor-plan-tiles/?cabinet={id}` finds the tiles that link to it.
 
 ## Permissions
 

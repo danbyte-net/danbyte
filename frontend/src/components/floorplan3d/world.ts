@@ -723,6 +723,10 @@ export function rackViewpoint(
   }
 }
 
+/** The least a device fly-to stands off the faceplate, m - what a 1U gets
+ * on a 1 m rack. */
+export const FACE_STANDOFF_M = 0.1
+
 /**
  * Where to stand to read ONE device's face - the double-click framing, and
  * the device-scale twin of {@link rackViewpoint}.
@@ -736,15 +740,25 @@ export function rackViewpoint(
 export function deviceViewpoint(
   plan: ScenePayload["plan"],
   tile: SceneTile,
-  box: Pick<ReturnType<typeof deviceBoxM>, "y" | "h" | "dx" | "boxH"> & {
+  box: Pick<
+    ReturnType<typeof deviceBoxM>,
+    "y" | "h" | "dx" | "dz" | "dd" | "boxH"
+  > & {
     mountedRear: boolean
   }
 ): { target: [number, number, number]; position: [number, number, number] } {
   const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
   const rotY = (-tile.orientation * Math.PI) / 180
   const sign = box.mountedRear ? 1 : -1
-  // Close enough to read port labels, far enough that a 10U chassis fits.
-  const dist = Math.min(2.4, Math.max(0.55, box.boxH * 9))
+  // Close enough to read port labels, far enough that a 10U chassis fits -
+  // measured from the rack's centre line, as tuned on 1 m racks, where a 1U
+  // face stands 0.45 m out. A deeper rack moves the face out past that
+  // reach, so never stand closer than FACE_STANDOFF_M to it.
+  const face = Math.abs(box.dz + (box.mountedRear ? box.dd / 2 : -box.dd / 2))
+  const dist = Math.max(
+    Math.min(2.4, Math.max(0.55, box.boxH * 9)),
+    face + FACE_STANDOFF_M
+  )
   const eyeY = box.y + box.h / 2
   // The device's own X offset (half-width gear) rotated into world space.
   const ox = box.dx * Math.cos(rotY)

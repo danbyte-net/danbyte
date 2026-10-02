@@ -100,6 +100,8 @@ export function RackMesh({
   onLegend,
   portLabelSource = "",
   portLabelColor = "#ffffff",
+  engaged: engagedProp = false,
+  markReserved = false,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
@@ -130,6 +132,11 @@ export function RackMesh({
   /** Deployment port-label choice and colour, forwarded to each device. */
   portLabelSource?: PortLabelSource
   portLabelColor?: string
+  /** The rack is what the view is about (one rack on its page): resolve
+   * its ports and poll their live state without waiting to be selected. */
+  engaged?: boolean
+  /** Draw ports held for a cable amber, as the 2D faceplate does. */
+  markReserved?: boolean
 }) {
   const rack = tile.rack!
   const { width, depth, height } = rackFootprintM(rack)
@@ -251,7 +258,8 @@ export function RackMesh({
   // of drawing. Only the cabinet the operator has actually engaged with -
   // selected, or holding the focused device - resolves it. That caps the
   // traffic at one rack's worth (~24 devices) no matter how big the room is.
-  const engaged = selection?.tileId === tile.id || focusDeviceId != null
+  const engaged =
+    engagedProp || selection?.tileId === tile.id || focusDeviceId != null
   const liveData = tier === "detail" && !dimmed && engaged
 
   return (
@@ -327,6 +335,7 @@ export function RackMesh({
                 onLegend={onLegend}
                 portLabelSource={portLabelSource}
                 portLabelColor={portLabelColor}
+                markReserved={markReserved}
                 onZoomTo={(target) => {
                   // Same fly-to channel the rack's own double-click uses,
                   // one level down: frame THIS device's face.
