@@ -4,22 +4,37 @@ import type { DinProfile } from "@/lib/api"
 import {
   PROFILE_HEIGHT_MM,
   PROFILE_LABELS,
+  adjacentRail,
   band,
+  centreIn,
   clampToPlate,
+  clashSpans,
   deviceBody,
   firstFit,
+  fitRange,
+  fittingGaps,
+  flushIn,
   fmtGaps,
   freeGaps,
+  gapAt,
+  gapStep,
+  mountsOn,
+  nearestRail,
   newRail,
   nextRailLabel,
   parseRailDraft,
+  placeOnRail,
+  railAtPoint,
+  railClash,
   railErrors,
+  railNeighbours,
   railSpans,
   roundMm,
+  snapFlush,
   span,
   widestGap,
 } from "./din-geometry"
-import type { RailDevice, RailGeometry } from "./din-geometry"
+import type { RailDevice, RailGeometry, RailSpan } from "./din-geometry"
 
 // The twin of api/din.py: the editor shows what the server would refuse, in
 // the server's words, before anything is sent. The messages are pinned here
@@ -441,5 +456,255 @@ describe("deviceBody", () => {
     expect(deviceBody(r1, null, type)).toBeNull()
     expect(deviceBody(r1, 0, { ...type, height_mm: null })).toBeNull()
     expect(deviceBody(r1, 0, null)).toBeNull()
+  })
+})
+
+// ── placing a device by pointer ─────────────────────────────────────────────
+// The device form's plate: a click on a rail, a drag let go, the arrow keys.
+// A 400 mm rail with a 90 mm device at 100-190 and another at 250-340 - free
+// 0-100, 190-250 (60 mm) and 340-400 (60 mm).
+
+const TAKEN: RailSpan[] = [
+  [100, 190],
+  [250, 340],
+]
+
+describe("snapFlush", () => {
+  it("puts a left edge flush against the rail's end or a device's right edge", () => {
+    expect(snapFlush(2, 40, 400, TAKEN)).toBe(0)
+    expect(snapFlush(192.5, 40, 400, TAKEN)).toBe(190)
+  })
+
+  it("puts a right edge flush against a device's left edge or the rail's end", () => {
+    // 40 wide at 207: its right edge at 247, 3 short of the device at 250.
+    expect(snapFlush(207, 40, 400, TAKEN)).toBe(210)
+    expect(snapFlush(358, 40, 400, TAKEN)).toBe(360)
+  })
+
+  it("takes the nearest edge, and only within reach", () => {
+    // 58 wide in the 60 mm gap 190-250: flush left at 190, flush right at
+    // 192 - whichever is nearer.
+    expect(snapFlush(191.5, 58, 400, TAKEN)).toBe(192)
+    expect(snapFlush(190.8, 58, 400, TAKEN)).toBe(190)
+    expect(snapFlush(195, 40, 400, TAKEN)).toBe(195)
+    expect(snapFlush(195, 40, 400, TAKEN, 5)).toBe(190)
+  })
+})
+
+describe("placeOnRail", () => {
+  it("puts the left edge where the rail is clicked, to the millimetre", () => {
+    expect(placeOnRail(20.4, 40, 400, TAKEN)).toEqual({ offset: 20 })
+    expect(placeOnRail(345.6, 40, 400, TAKEN)).toEqual({ offset: 346 })
+  })
+
+  it("moves it left as far as the gap needs to hold it", () => {
+    // 40 wide clicked at 80: 80-120 runs into the device at 100.
+    expect(placeOnRail(80, 40, 400, TAKEN)).toEqual({ offset: 60 })
+    expect(placeOnRail(399, 40, 400, TAKEN)).toEqual({ offset: 360 })
+  })
+
+  it("snaps it flush against an edge within reach", () => {
+    expect(placeOnRail(192, 40, 400, TAKEN)).toEqual({ offset: 190 })
+    expect(placeOnRail(195, 40, 400, TAKEN, { tolerance: 6 })).toEqual({
+      offset: 190,
+    })
+  })
+
+  it("refuses a click on a device, naming the span it hit", () => {
+    expect(placeOnRail(120, 40, 400, TAKEN)).toEqual({ taken: [100, 190] })
+  })
+
+  it("refuses a gap narrower than the device, naming the gap", () => {
+    // 190-250 is 60 mm; the device is 90.
+    expect(placeOnRail(200, 90, 400, TAKEN)).toEqual({ narrow: [190, 250] })
+    // Exactly as wide fits, flush at both ends.
+    expect(placeOnRail(200, 60, 400, TAKEN)).toEqual({ offset: 190 })
+  })
+
+  it("lets a drop go into the gap under the device's middle", () => {
+    // Dropped at 215-275, over the device at 250: its middle, 245, is in
+    // the gap 190-250, where it slides back to 190.
+    expect(placeOnRail(215, 60, 400, TAKEN, { anchor: 245 })).toEqual({
+      offset: 190,
+    })
+    // Its middle over the device: refused.
+    expect(placeOnRail(240, 60, 400, TAKEN, { anchor: 270 })).toEqual({
+      taken: [250, 340],
+    })
+  })
+})
+
+describe("railClash", () => {
+  const near = [
+    { name: "plc-1", span: [100, 190] as RailSpan },
+    { name: "relay-2", span: [250, 340] as RailSpan },
+  ]
+
+  it("passes a device that fits, touching its neighbours", () => {
+    expect(railClash(190, 60, 400, near)).toBeNull()
+    expect(railClash(340, 60, 400, near)).toBeNull()
+  })
+
+  it("answers an overlap in the server's words, naming the first it hits", () => {
+    expect(railClash(180, 90, 400, near)).toBe("Overlaps plc-1 at 100-190 mm.")
+  })
+
+  it("answers a device past the rail's end before any overlap, as the server does", () => {
+    expect(railClash(380, 40, 400, near)).toBe(
+      "Runs past the rail's end (400 mm)."
+    )
+    expect(railClash(-1, 40, 400, near)).toBe("Runs past the rail's start.")
+  })
+})
+
+describe("clashSpans", () => {
+  it("is the stretches over devices and off the rail", () => {
+    expect(clashSpans(180, 90, 400, TAKEN)).toEqual([
+      [180, 190],
+      [250, 270],
+    ])
+    expect(clashSpans(380, 40, 400, TAKEN)).toEqual([[400, 420]])
+    expect(clashSpans(-10, 40, 400, TAKEN)).toEqual([[-10, 0]])
+    expect(clashSpans(190, 60, 400, TAKEN)).toEqual([])
+  })
+})
+
+describe("picking a rail", () => {
+  const rails = [
+    {
+      label: "R1",
+      profile: "ts35" as const,
+      x_mm: 0,
+      y_mm: 75,
+      length_mm: 400,
+    },
+    {
+      label: "R2",
+      profile: "ts15" as const,
+      x_mm: 50,
+      y_mm: 200,
+      length_mm: 300,
+    },
+    {
+      label: "R3",
+      profile: "ts35" as const,
+      x_mm: 0,
+      y_mm: 400,
+      length_mm: 200,
+    },
+  ]
+
+  it("takes the rail whose band is under the point", () => {
+    expect(railAtPoint(rails, 10, 60)?.label).toBe("R1")
+    expect(railAtPoint(rails, 100, 206)?.label).toBe("R2")
+    // Beside R2's left end, between the bands.
+    expect(railAtPoint(rails, 40, 200)).toBeNull()
+    expect(railAtPoint(rails, 10, 120)).toBeNull()
+  })
+
+  it("reaches as far as the body a device would hang there", () => {
+    // A 147 mm body hung by its middle reaches 73.5 above and below.
+    const reach = { above: 73.5, below: 73.5 }
+    expect(railAtPoint(rails, 10, 140, reach)?.label).toBe("R1")
+    // Where two reach, the nearer centreline.
+    expect(railAtPoint(rails, 100, 140, reach)?.label).toBe("R2")
+  })
+
+  it("drags onto the rail running nearest", () => {
+    expect(nearestRail(rails, 100, 120)?.label).toBe("R1")
+    expect(nearestRail(rails, 100, 150)?.label).toBe("R2")
+    // Past R3's right end, R2 runs nearer.
+    expect(nearestRail(rails, 380, 330)?.label).toBe("R2")
+  })
+
+  it("steps up and down the rails with the arrow keys", () => {
+    expect(adjacentRail(rails, rails[0], 1, 100)?.label).toBe("R2")
+    expect(adjacentRail(rails, rails[1], 1, 100)?.label).toBe("R3")
+    expect(adjacentRail(rails, rails[1], -1, 100)?.label).toBe("R1")
+    expect(adjacentRail(rails, rails[0], -1, 100)).toBeNull()
+  })
+})
+
+describe("mountsOn", () => {
+  const type = { din_profiles: ["ts35" as const], width_mm: 60 }
+
+  it("takes rails of a profile the type lists", () => {
+    expect(mountsOn(type, "ts35")).toBe(true)
+    expect(mountsOn(type, "ts15")).toBe(false)
+  })
+
+  it("takes none for a type that is not DIN-mounted, and any while unknown", () => {
+    expect(mountsOn({ din_profiles: [], width_mm: 60 }, "ts35")).toBe(false)
+    expect(mountsOn({ ...type, width_mm: null }, "ts35")).toBe(false)
+    expect(mountsOn(undefined, "g32")).toBe(true)
+  })
+})
+
+describe("railNeighbours", () => {
+  it("names the devices on one rail, left to right, leaving one out", () => {
+    const onRail = (id: string) => ({ id })
+    const devices = [
+      { ...on("b", 200, 45), name: "relay-2", din_rail: onRail("r1") },
+      { ...on("a", 0), name: "plc-1", din_rail: onRail("r1") },
+      { ...on("c", 0), name: "psu-1", din_rail: onRail("r2") },
+      { ...on("d", 100), name: "self", din_rail: onRail("r1") },
+    ]
+    expect(railNeighbours(devices, "r1", "d")).toEqual([
+      { name: "plc-1", span: [0, 90] },
+      { name: "relay-2", span: [200, 245] },
+    ])
+  })
+})
+
+describe("the offset slider's gaps", () => {
+  // A 400 mm rail free in 0-100, 190-250 (60 mm) and 340-400 (60 mm).
+  const GAPS: RailSpan[] = [
+    [0, 100],
+    [190, 250],
+    [340, 400],
+  ]
+
+  it("keeps the gaps a device fits in", () => {
+    expect(fittingGaps(GAPS, 60)).toEqual(GAPS)
+    expect(fittingGaps(GAPS, 61)).toEqual([[0, 100]])
+  })
+
+  it("finds the gap under the device's middle, whole or overlapping", () => {
+    expect(gapAt(GAPS, 40, 200)).toEqual([190, 250])
+    // 230-270 runs over the device at 250; its middle, 250, is still in.
+    expect(gapAt(GAPS, 40, 230)).toEqual([190, 250])
+    // 240-280: its middle is on the device.
+    expect(gapAt(GAPS, 40, 240)).toBeNull()
+  })
+
+  it("jumps to the start of the next or previous gap the device fits in", () => {
+    expect(gapStep(GAPS, 40, 20, 1)).toBe(190)
+    expect(gapStep(GAPS, 40, 200, 1)).toBe(340)
+    expect(gapStep(GAPS, 40, 345, 1)).toBeNull()
+    expect(gapStep(GAPS, 40, 345, -1)).toBe(190)
+    expect(gapStep(GAPS, 40, 20, -1)).toBeNull()
+    // 60 mm fits 190-250 exactly; 70 mm fits only 0-100.
+    expect(gapStep(GAPS, 60, 20, 1)).toBe(190)
+    expect(gapStep(GAPS, 70, 20, 1)).toBeNull()
+    // From over a device, by its middle.
+    expect(gapStep(GAPS, 40, 240, 1)).toBe(340)
+    expect(gapStep(GAPS, 40, 240, -1)).toBe(190)
+  })
+
+  it("sets it flush against either end of its gap", () => {
+    expect(flushIn(GAPS, 40, 200, -1)).toBe(190)
+    expect(flushIn(GAPS, 40, 200, 1)).toBe(210)
+    expect(flushIn(GAPS, 40, 240, 1)).toBeNull()
+  })
+
+  it("spans the first and last place it fits", () => {
+    expect(fitRange(GAPS, 40)).toEqual([0, 360])
+    expect(fitRange(GAPS, 70)).toEqual([0, 30])
+    expect(fitRange(GAPS, 101)).toBeNull()
+  })
+
+  it("centres it in a gap, to the millimetre", () => {
+    expect(centreIn([190, 250], 40)).toBe(200)
+    expect(centreIn([0, 100], 45)).toBe(28)
   })
 })

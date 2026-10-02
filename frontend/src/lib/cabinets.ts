@@ -52,11 +52,10 @@ export function invalidateCabinetViews(qc: QueryClient) {
 }
 
 /** Every cached view a device's place in a cabinet shows in: the plate
- * drawings and Devices tabs, the per-rail lists the device form reads its
- * gaps from, and the cabinet pages that count their devices. */
+ * drawings - the device form's too, which reads its gaps from them - and
+ * Devices tabs, and the cabinet pages that count their devices. */
 export const CABINET_DEVICE_VIEW_KEYS: string[][] = [
   ["cabinet-devices"],
-  ["din-rail-devices"],
   ["cabinet"],
   ["cabinets"],
 ]

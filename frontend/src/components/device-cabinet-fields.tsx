@@ -1,33 +1,31 @@
-import { useQuery } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { Cabinet, Device, DeviceTypeMini, Paginated } from "@/lib/api"
+import type { Cabinet } from "@/lib/api"
 import {
   PROFILE_LABELS,
-  fmtGaps,
+  firstFit,
   freeGaps,
+  mountsOn,
   railSpans,
 } from "@/lib/din-geometry"
 import { CabinetPicker } from "@/components/cabinet-picker"
+import { useCabinetDevices } from "@/components/cabinet-devices"
+import { CabinetPlacement } from "@/components/cabinet-placement"
+import type { PlacedType } from "@/components/cabinet-placement"
 import { FormCombobox, FormText } from "@/components/forms"
-
-/** The devices on one rail - what the offset's hint reads the free gaps
- * from. */
-export function useRailDevices(railId: string | null | undefined) {
-  return useQuery({
-    queryKey: ["din-rail-devices", railId],
-    queryFn: () =>
-      api<Paginated<Device>>(`/api/devices/?din_rail=${railId}&page_size=500`),
-    enabled: !!railId,
-  })
-}
 
 /**
  * A device's place in a cabinet, the device form's alternative to a rack:
  * the cabinet (at the device's site, or any while it has none), one of its
- * rails, and the offset from the rail's left end. A blank offset lets the
- * server take the first gap the device fits in; the hint lists the rail's
- * free gaps, this device's own span left out.
+ * rails, and the offset from the rail's left end. A rail picked fresh fills
+ * the offset with the first gap the device fits in; one the user clears
+ * stays blank, and lets the server take that gap.
+ *
+ * Under the fields, the cabinet's plate: its rails and the devices on them,
+ * this device as an outline at its rail and offset. A click on a rail, a
+ * drag or the arrow keys place it there and fill the fields; the line under
+ * the plate lists the rail's free gaps, this device's own span left out, or
+ * says why it can't go where it is.
  */
 export function DeviceCabinetFields({
   siteId,
@@ -40,6 +38,7 @@ export function DeviceCabinetFields({
   onOffsetChange,
   deviceId,
   deviceType,
+  name = "",
   errors,
 }: {
   siteId: string | null
@@ -53,24 +52,61 @@ export function DeviceCabinetFields({
   onOffsetChange: (v: string) => void
   /** The device being edited: its own span is not in the way. */
   deviceId?: string
-  /** Rails of a profile the type does not mount on are offered disabled. */
-  deviceType: Pick<DeviceTypeMini, "din_profiles"> | undefined
+  /** Sizes the outline; rails of a profile it does not mount on are offered
+   * disabled and drawn faint. */
+  deviceType: PlacedType | undefined
+  /** The device's name, written in the outline. */
+  name?: string
   errors: Record<string, string | undefined>
 }) {
-  // The picked cabinet's rails - not a previous pick's, still loaded.
-  const rails = cabinet && cabinet.id === cabinetId ? cabinet.rails : []
-  const rail = rails.find((r) => r.id === railId)
-  const onRail = useRailDevices(rail?.id)
-  const gaps = rail
-    ? freeGaps(rail.length_mm, railSpans(onRail.data?.results ?? [], deviceId))
-    : []
-  const profiles = deviceType?.din_profiles ?? []
-  const gapHint =
-    rail && onRail.data
-      ? gaps.length
-        ? `Free ${fmtGaps(gaps)}`
-        : "Rail full"
-      : undefined
+  // The picked cabinet - not a previous pick's, still loaded.
+  const picked = cabinet && cabinet.id === cabinetId ? cabinet : undefined
+  const rails = picked?.rails ?? []
+  const inCabinet = useCabinetDevices(picked?.id)
+  const typed = offset.trim() === "" ? null : Number(offset)
+
+  // The rail whose first free gap the offset is waiting to be filled with:
+  // one picked while the offset was blank or another rail's - or opened
+  // with, offset blank. Filled once the cabinet's devices and the type's
+  // width are in; typing an offset first keeps what is typed.
+  const [prefill, setPrefill] = useState<string | null>(() =>
+    railId && offset.trim() === "" ? railId : null
+  )
+  const onCabinet = inCabinet.data?.results
+  const width = deviceType?.width_mm
+  useEffect(() => {
+    if (!prefill) return
+    if (prefill !== railId) {
+      setPrefill(null)
+      return
+    }
+    const rail = picked?.rails.find((r) => r.id === prefill)
+    if (!rail || !onCabinet || width == null) return
+    setPrefill(null)
+    if (!mountsOn(deviceType, rail.profile)) return
+    const taken = railSpans(
+      onCabinet.filter((d) => d.din_rail?.id === rail.id),
+      deviceId
+    )
+    const at = firstFit(freeGaps(rail.length_mm, taken), width)
+    // Nothing fits: blank, and the plate says so.
+    onOffsetChange(at == null ? "" : String(at))
+  }, [
+    prefill,
+    railId,
+    picked,
+    onCabinet,
+    width,
+    deviceType,
+    deviceId,
+    onOffsetChange,
+  ])
+
+  const pickRail = (id: string | null) => {
+    const fresh = offset.trim() === "" || (railId != null && id !== railId)
+    setPrefill(id && fresh ? id : null)
+    onRailChange(id)
+  }
 
   return (
     <>
@@ -86,12 +122,12 @@ export function DeviceCabinetFields({
         <FormCombobox
           label="Rail"
           value={railId}
-          onChange={onRailChange}
+          onChange={pickRail}
           options={rails.map((r) => ({
             value: r.id,
             label: r.label,
             hint: PROFILE_LABELS[r.profile],
-            disabled: profiles.length > 0 && !profiles.includes(r.profile),
+            disabled: !mountsOn(deviceType, r.profile),
           }))}
           noneLabel="No rail"
           placeholder={cabinetId ? "Pick a rail…" : "Select a cabinet first"}
@@ -102,25 +138,36 @@ export function DeviceCabinetFields({
         />
         <FormText
           label="Offset (mm)"
+          info="From the rail's left end; blank takes the first free gap. On the plate below, click a rail to place the device, drag it along or onto another rail, or nudge it with the arrow keys - Shift moves 10 mm."
           type="number"
           inputMode="decimal"
           min={0}
           step={0.1}
           value={offset}
-          onChange={onOffsetChange}
+          onChange={(v) => {
+            setPrefill(null)
+            onOffsetChange(v)
+          }}
           placeholder="First free"
           error={errors.din_offset_mm}
         />
       </div>
-      {/* Under the row, not beside the Offset label: a hint there wraps in
-          a half-width column and drops its input below the Rail's. */}
-      {gapHint && (
-        <p
-          data-part="gaps"
-          className="-mt-1.5 text-[10px] leading-snug text-muted-foreground"
-        >
-          {gapHint}
-        </p>
+      {picked && (
+        <CabinetPlacement
+          cabinet={picked}
+          devices={inCabinet.data?.results}
+          deviceId={deviceId}
+          type={deviceType}
+          name={name}
+          railId={railId}
+          offset={typed}
+          onPlace={(rail, at) => {
+            // Put on a rail before the type is known: filled in once it is.
+            setPrefill(at == null ? rail : null)
+            onRailChange(rail)
+            onOffsetChange(at == null ? "" : String(at))
+          }}
+        />
       )}
     </>
   )

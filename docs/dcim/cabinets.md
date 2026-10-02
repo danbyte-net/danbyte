@@ -104,9 +104,37 @@ new device on the rail you pick, which takes the first free gap; **Assign**
 puts an existing device of the site on a rail, offering only devices whose
 type fits the rail's profile. Each rail in those menus shows its widest free
 stretch. The **Devices** tab lists the cabinet's devices with their rail and
-offset. In the device form, **Mounting** switches between **Rack** and
-**Cabinet**: pick the cabinet, its rail and an offset - blank takes the first
-gap, and the rail's free stretches are listed under it.
+offset.
+
+### Placing a device
+
+In the device form, **Mounting** switches between **Rack** and **Cabinet**.
+On **Cabinet**, pick the cabinet and a rail: the offset starts at the first
+free spot the device fits, and the plate is drawn under the fields with the
+device's outline there. Click a free spot on a rail to put it there,
+double-click a gap to centre it in the gap, drag the outline along or across
+rails, or nudge it with the arrow keys (Shift for 10 mm). It snaps flush to a
+neighbour or the rail's end, and turns red where it would overlap or run off
+the rail; rails of a profile the device does not fit are dimmed.
+
+The slider under the plate moves the device along its rail; its track shows
+what is taken. Beside it, buttons jump to the previous or next gap the device
+fits in, or set it flush left or right in its gap; on the slider, Page Up and
+Page Down jump between gaps and Home and End go to the first and last spot.
+The line under the plate reads the device's edges (*120–180 mm*), or *No gap
+fits*. A blank offset still takes the first gap.
+
+### Arranging a cabinet
+
+**Arrange** in the Plate heading turns the plate into the same placer for
+every device in it: click a device to pick it, then drag it, nudge it or use
+the slider. Move as many as you like - moved devices show where they will go,
+red where they would clash - and **Save** applies them in one go, so devices
+can swap places. With nothing picked, click a free spot on a rail for **Add
+device here** or **Assign here**. Escape drops the pick; leaving with unsaved
+moves asks first. Arrange is offered to users who may change devices.
+
+### Where a device may sit
 
 A device in a cabinet is at the cabinet's site: one without a site takes it,
 and the cabinet's location when it has none; one at another site is refused.

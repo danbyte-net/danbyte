@@ -35,6 +35,8 @@ export interface ElevationRail {
   length_mm: number
   /** Drawn in the error colour: a rail the editor says will not save. */
   invalid?: boolean
+  /** Drawn faint: a rail the device being placed does not mount on. */
+  dimmed?: boolean
 }
 
 export interface CabinetElevationProps {
@@ -81,6 +83,7 @@ const TONE = {
   plain: "fill-muted-foreground/20 stroke-muted-foreground/60",
   selected: "fill-primary/20 stroke-primary",
   invalid: "fill-destructive/15 stroke-destructive",
+  dimmed: "fill-muted-foreground/[0.06] stroke-muted-foreground/25",
 } as const
 
 const NUDGE: Partial<Record<string, [number, number]>> = {
@@ -236,7 +239,13 @@ export function CabinetElevation({
       {rails.map((r) => {
         const [top, bottom] = band(r)
         const isSelected = selected === r.key
-        const tone = r.invalid ? "invalid" : isSelected ? "selected" : "plain"
+        const tone = r.invalid
+          ? "invalid"
+          : isSelected
+            ? "selected"
+            : r.dimmed
+              ? "dimmed"
+              : "plain"
         return (
           <Tooltip key={r.key}>
             <TooltipTrigger asChild>
@@ -244,6 +253,7 @@ export function CabinetElevation({
                 data-rail={r.label}
                 data-selected={isSelected || undefined}
                 data-invalid={r.invalid || undefined}
+                data-dimmed={r.dimmed || undefined}
                 tabIndex={interactive ? 0 : undefined}
                 role={interactive ? "button" : undefined}
                 aria-label={interactive ? `Rail ${r.label}` : undefined}
@@ -275,7 +285,10 @@ export function CabinetElevation({
                     y={r.y_mm}
                     dominantBaseline="central"
                     fontSize={px(11)}
-                    className="pointer-events-none fill-foreground font-medium"
+                    className={cn(
+                      "pointer-events-none font-medium",
+                      r.dimmed ? "fill-muted-foreground/60" : "fill-foreground"
+                    )}
                   >
                     {r.label}
                   </text>
@@ -327,7 +340,7 @@ function RailNumbers({ rail }: { rail: ElevationRail }) {
 
 /** A pointer's position in plate millimetres; null without a layout (a
  * detached node, a test DOM). */
-function toPlateMm(
+export function toPlateMm(
   svg: SVGSVGElement | null,
   e: { clientX: number; clientY: number }
 ): { x: number; y: number } | null {

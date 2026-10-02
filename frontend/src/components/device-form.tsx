@@ -46,6 +46,8 @@ import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
 import { DeviceTypePicker } from "@/components/device-type-picker"
 import { DeviceCabinetFields } from "@/components/device-cabinet-fields"
 import { RackPicker } from "@/components/rack-picker"
+import { RackPlacement } from "@/components/rack-placement"
+import { fmtUnits, unitBlocker } from "@/lib/rack-placement"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
@@ -96,9 +98,11 @@ export interface DeviceFormProps {
     siteId?: string
     /** Pre-pick a 0U side mount - "+ side device" from a rack's side lane. */
     mount?: "" | "side_left" | "side_right"
-    /** Pre-pick a cabinet and one of its rails - "Add device" on a rail. */
+    /** Pre-pick a cabinet and one of its rails - "Add device" on a rail -
+     * and a spot on it: "Add device here" on the cabinet's plate. */
     cabinetId?: string
     dinRailId?: string
+    dinOffset?: number
   }
   /** Clone seed (create only): the source's carried-over fields from
    * GET /api/devices/<id>/clone/. Identity/placement (name, serial, rack) are
@@ -184,7 +188,11 @@ export function DeviceForm({
     device?.din_rail?.id ?? initial?.dinRailId ?? null
   )
   const [dinOffset, setDinOffset] = useState(
-    device?.din_offset_mm != null ? String(device.din_offset_mm) : ""
+    device?.din_offset_mm != null
+      ? String(device.din_offset_mm)
+      : initial?.dinOffset != null
+        ? String(initial.dinOffset)
+        : ""
   )
   // A refusal about the hidden tab's fields brings that tab up, so the
   // field it highlights is on screen.
@@ -437,13 +445,16 @@ export function DeviceForm({
   // Side mounting is a 0U-only concept, and it replaces U placement - the
   // backend enforces both; the form just keeps the fields from fighting.
   const isZeroU = selectedType != null && selectedType.u_height === 0
+  // Only a type known to take units clears it: before the types load,
+  // selectedType is undefined, and a side-mounted strip must keep its mount.
+  const takesUnits = selectedType != null && selectedType.u_height !== 0
   useEffect(() => {
-    if (!isZeroU && mount !== "") {
+    if (takesUnits && mount !== "") {
       setMount("")
       setMountOffset("")
       setMountSpan("")
     }
-  }, [isZeroU, mount])
+  }, [takesUnits, mount])
   useEffect(() => {
     if (mount === "") return
     // A side-mounted strip has no U position and no half-width side. `face`
@@ -455,30 +466,21 @@ export function DeviceForm({
 
   // One option per possible *lowest* unit, in the rack's visual order (top
   // first). Units where the device would collide render disabled with the
-  // blocking device as hint - mirrors the backend overlap validation.
+  // blocking device as hint - the backend's overlap rules, which the
+  // elevation under the fields draws by too (lib/rack-placement).
   const unitOptions = useMemo(() => {
     if (!selectedRack) return []
     const first = selectedRack.starting_unit
     const last = selectedRack.starting_unit + selectedRack.u_height - 1
-    const others = (rackDevices.data?.results ?? []).filter(
-      (d) => d.id !== device?.id && d.position != null
-    )
-    const blockerAt = (p: number): Device | undefined =>
-      others.find((d) => {
-        // Different explicit faces never collide.
-        if (face && d.face && d.face !== face) return false
-        // Two half-width devices coexist on opposite sides of the same U.
-        if (
-          rackWidth === "half" &&
-          d.rack_width === "half" &&
-          side &&
-          d.rack_side &&
-          d.rack_side !== side
-        )
-          return false
-        const dTop = (d.position as number) + Math.max(1, d.u_height) - 1
-        return p <= dTop && p + deviceHeight - 1 >= (d.position as number)
-      })
+    const occupants = rackDevices.data?.results ?? []
+    const mounted = { face, width: rackWidth, side }
+    const blockerAt = (p: number) => {
+      for (let u = p; u < p + deviceHeight; u++) {
+        const b = unitBlocker(occupants, mounted, u, device?.id)
+        if (b) return b
+      }
+      return undefined
+    }
     const opts: {
       value: string
       label: string
@@ -490,7 +492,7 @@ export function DeviceForm({
       const blocker = blockerAt(p)
       opts.push({
         value: String(p),
-        label: deviceHeight > 1 ? `U${p}–U${p + deviceHeight - 1}` : `U${p}`,
+        label: fmtUnits(p, deviceHeight),
         disabled: !!blocker,
         hint: blocker ? blocker.name : undefined,
       })
@@ -894,6 +896,7 @@ export function DeviceForm({
             />
             {mountIn === "cabinet" ? (
               <DeviceCabinetFields
+                name={name}
                 siteId={siteId}
                 cabinetId={cabinetId}
                 onCabinetChange={pickCabinet}
@@ -940,6 +943,7 @@ export function DeviceForm({
                 <div className="grid gap-3 @md:grid-cols-2">
                   <FormCombobox
                     label="Position (U)"
+                    info="The device's lowest unit. Or click a free unit in the elevation below - the face you click sets Face."
                     value={position === "" ? null : position}
                     onChange={(v) => setPosition(v ?? "")}
                     options={unitOptions}
@@ -1037,6 +1041,21 @@ export function DeviceForm({
                       </>
                     )}
                   </div>
+                )}
+                {rackId && mount === "" && (
+                  <RackPlacement
+                    rackId={rackId}
+                    devices={rackDevices.data?.results}
+                    deviceId={device?.id}
+                    name={name}
+                    position={position}
+                    face={face}
+                    mount={{ width: rackWidth, side, height: deviceHeight }}
+                    onPlace={(p, f) => {
+                      setPosition(String(p))
+                      setFace(f)
+                    }}
+                  />
                 )}
               </>
             )}

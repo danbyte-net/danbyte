@@ -23,6 +23,7 @@ export const Route = createFileRoute("/devices/new")({
     site?: string
     cabinet?: string
     din_rail?: string
+    din_offset?: number
     clone?: string
   } & PlanSearch => ({
     ...(typeof s.rack === "string" ? { rack: s.rack } : {}),
@@ -35,6 +36,11 @@ export const Route = createFileRoute("/devices/new")({
     ...(typeof s.site === "string" ? { site: s.site } : {}),
     ...(typeof s.cabinet === "string" ? { cabinet: s.cabinet } : {}),
     ...(typeof s.din_rail === "string" ? { din_rail: s.din_rail } : {}),
+    ...((typeof s.din_offset === "number" ||
+      typeof s.din_offset === "string") &&
+    Number.isFinite(Number(s.din_offset))
+      ? { din_offset: Number(s.din_offset) }
+      : {}),
     ...(typeof s.position === "number" || typeof s.position === "string"
       ? { position: Number(s.position) }
       : {}),
@@ -55,6 +61,7 @@ function NewDevicePage() {
     site,
     cabinet,
     din_rail,
+    din_offset,
     clone,
   } = Route.useSearch()
   const cloneQ = useCloneSeed<Partial<Device>>("devices", clone)
@@ -91,6 +98,7 @@ function NewDevicePage() {
                   siteId: site,
                   cabinetId: cabinet,
                   dinRailId: din_rail,
+                  dinOffset: din_offset,
                 }
               : undefined
           }

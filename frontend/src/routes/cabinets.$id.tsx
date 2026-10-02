@@ -232,6 +232,7 @@ function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
           editTitle={`Rails · ${c.name}`}
           canEdit={canDo("cabinet", "change")}
           devices={devices}
+          cabinet={c}
           actions={<CabinetRailActions cabinet={c} devices={devices ?? []} />}
         />
       </div>

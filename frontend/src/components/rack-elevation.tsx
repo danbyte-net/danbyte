@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -26,6 +27,7 @@ import {
 } from "@/lib/api"
 import { readableText } from "@/components/cells/color-badge"
 import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
+import { unitRow } from "@/lib/rack-placement"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -52,6 +54,20 @@ const RENDER_PX_PER_MM = 1.35
 export type RackFace = "front" | "rear"
 export type RackDisplayMode = "names" | "images" | "render"
 
+/** The device form's unit picker: the elevation drawn for placing one
+ * device. Device blocks stop being links, the page's add, assign and drag
+ * affordances, side lanes and planned moves go, and a press on a unit - free
+ * or taken, a block lets it through - calls `onUnit`. */
+export interface RackUnitPicker {
+  /** Left out of the drawing: the device being placed. */
+  exclude?: string
+  onUnit: (unit: number) => void
+  /** The unit under the pointer; null once it leaves the units. */
+  onHover?: (unit: number | null) => void
+  /** Drawn over the units, as grid items: the device being placed. */
+  overlay?: ReactNode
+}
+
 export function RackElevation({
   rack,
   face: controlledFace,
@@ -61,6 +77,7 @@ export function RackElevation({
   showHeader = true,
   scale,
   draggable = false,
+  picker,
 }: {
   rack: Rack
   /** Controlled face - hides the internal Front/Rear toggle. */
@@ -77,6 +94,8 @@ export function RackElevation({
   scale?: number
   /** Rack page: drag device blocks between units to re-position them. */
   draggable?: boolean
+  /** The device form: pick a unit for the device being placed. */
+  picker?: RackUnitPicker
 }) {
   const [faceState, setFace] = useState<RackFace>("front")
   const [modeState, setMode] = useState<RackDisplayMode>("names")
@@ -86,8 +105,8 @@ export function RackElevation({
     "side_left" | "side_right" | null
   >(null)
   const { canDo } = useMe()
-  const canAddDevice = canDo("device", "add")
-  const canMoveDevice = canDo("device", "change")
+  const canAddDevice = !picker && canDo("device", "add")
+  const canMoveDevice = !picker && canDo("device", "change")
   const canDrag = draggable && canMoveDevice
   const qc = useQueryClient()
   const [dragging, setDragging] = useState<Device | null>(null)
@@ -133,12 +152,14 @@ export function RackElevation({
   }, [rack.starting_unit, rack.u_height, rack.desc_units])
 
   // Map a unit number to its 1-based grid row (top = row 1).
-  const rowOf = (unit: number) =>
-    rack.desc_units
-      ? unit - rack.starting_unit + 1
-      : rack.starting_unit + rack.u_height - 1 - unit + 1
+  const rowOf = (unit: number) => unitRow(rack, unit)
 
-  const devices = q.data?.results ?? []
+  const exclude = picker?.exclude
+  const onHover = picker?.onHover
+  const devices = useMemo(() => {
+    const all = q.data?.results ?? []
+    return exclude ? all.filter((d) => d.id !== exclude) : all
+  }, [q.data, exclude])
   // Side-mounted 0U strips (vertical PDUs) - they live in the rail lanes
   // flanking the U grid, not in it. A strip's `face` says which CHANNEL it
   // bolts into, so it only shows on that elevation; blank means unspecified
@@ -180,6 +201,7 @@ export function RackElevation({
         "/api/planning/planned-changes/?state=planned&page_size=300"
       ),
     staleTime: 60_000,
+    enabled: !picker,
   })
   const ghosts = useMemo(() => {
     const out: {
@@ -331,7 +353,7 @@ export function RackElevation({
         >
           <div className="overflow-x-auto rounded-lg border border-border bg-card p-1.5">
             <div className="flex gap-1.5">
-              {(mountedLeft.length > 0 || canAddDevice) && (
+              {!picker && (mountedLeft.length > 0 || canAddDevice) && (
                 <SideLane
                   side="side_left"
                   devices={mountedLeft}
@@ -344,6 +366,7 @@ export function RackElevation({
               )}
               <div
                 className="relative grid flex-1"
+                onPointerLeave={onHover ? () => onHover(null) : undefined}
                 style={{
                   gridTemplateRows: `repeat(${rack.u_height}, ${rowHeight}px)`,
                   // Two columns so half-width devices (rack_width="half") can
@@ -360,6 +383,8 @@ export function RackElevation({
                     unit={unit}
                     row={i + 1}
                     droppable={canDrag}
+                    onPick={picker ? () => picker.onUnit(unit) : undefined}
+                    onEnter={onHover ? () => onHover(unit) : undefined}
                   >
                     <span className="w-6 shrink-0 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
                       {unit}
@@ -421,11 +446,12 @@ export function RackElevation({
                       span={Math.max(1, d.u_height)}
                       column={column}
                       accent={rack.role?.color || undefined}
+                      inert={!!picker}
                     />
                   )
                 })}
                 {ghosts
-                  .filter((g) => g.ghostFace === face)
+                  .filter((g) => !picker && g.ghostFace === face)
                   .map((g) => {
                     const h = Math.max(1, g.dev.u_height)
                     const topUnit = rack.desc_units
@@ -454,8 +480,9 @@ export function RackElevation({
                       </div>
                     )
                   })}
+                {picker?.overlay}
               </div>
-              {(mountedRight.length > 0 || canAddDevice) && (
+              {!picker && (mountedRight.length > 0 || canAddDevice) && (
                 <SideLane
                   side="side_right"
                   devices={mountedRight}
@@ -564,11 +591,17 @@ function UnitBand({
   unit,
   row,
   droppable,
+  onPick,
+  onEnter,
   children,
 }: {
   unit: number
   row: number
   droppable: boolean
+  /** The device form's picker: a press on the unit. */
+  onPick?: () => void
+  /** The device form's picker: the pointer comes onto the unit. */
+  onEnter?: () => void
   children: React.ReactNode
 }) {
   const { setNodeRef, isOver } = useDroppable({
@@ -578,8 +611,12 @@ function UnitBand({
   return (
     <div
       ref={droppable ? setNodeRef : undefined}
+      data-unit={unit}
+      onClick={onPick}
+      onPointerEnter={onEnter}
       className={cn(
         "group/unit flex items-center gap-2 border-b border-border/60 bg-muted/30 px-2 last:border-b-0",
+        onPick && "cursor-pointer",
         isOver && "bg-primary/15 outline-1 outline-primary/50"
       )}
       style={{ gridRow: row, gridColumn: "1 / -1" }}
@@ -762,12 +799,16 @@ function DeviceBlock({
   column,
   accent,
   dragEnabled = false,
+  inert = false,
 }: {
   device: Device
   face: RackFace
   mode: RackDisplayMode
   /** Rack page: this block can be dragged to another unit. */
   dragEnabled?: boolean
+  /** The device form's picker: a picture, not a link - a press goes through
+   * to the unit under it. */
+  inert?: boolean
   /** Occupied from the other face (full-depth) - striped, muted. */
   hatched: boolean
   highlight: boolean
@@ -802,44 +843,31 @@ function DeviceBlock({
 
   const drag = useDraggable({ id: device.id, disabled: !dragEnabled })
 
-  return (
-    <Link
-      ref={drag.setNodeRef}
-      {...drag.attributes}
-      {...drag.listeners}
-      to="/devices/$id"
-      params={{ id: device.id }}
-      className={cn(
-        "group/dev relative z-10 flex items-center gap-2 overflow-hidden border px-2",
-        dragEnabled && "touch-none",
-        drag.isDragging && "opacity-40",
-        hatched
-          ? "border-border/60 bg-transparent hover:bg-muted/40"
-          : "border-border hover:brightness-110",
-        image ? "bg-zinc-950" : hatched || roleColor ? "" : "bg-card",
-        highlight && "z-20 border-primary ring-2 ring-primary/50"
-      )}
-      style={{
-        gridColumn: column,
-        gridRow: `${Math.max(1, startRow)} / span ${span}`,
-        backgroundColor: roleColor ?? undefined,
-        color: roleFg,
-        borderLeft:
-          accent && !hatched && !roleColor ? `3px solid ${accent}` : undefined,
-        // Diagonal stripes: this face is blocked by a full-depth
-        // device mounted on the other face.
-        backgroundImage: hatched
-          ? "repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, currentColor 18%, transparent) 5px, color-mix(in srgb, currentColor 18%, transparent) 7px)"
-          : undefined,
-      }}
-      title={`${device.name} · U${device.position}${
-        device.u_height > 1
-          ? `–U${(device.position as number) + device.u_height - 1}`
-          : ""
-      }${device.rack_width === "half" ? ` · ${device.rack_side || "left"} half` : ""}${
-        hatched ? ` · mounted on ${mountedOn}` : ""
-      }`}
-    >
+  const className = cn(
+    "group/dev relative z-10 flex items-center gap-2 overflow-hidden border px-2",
+    dragEnabled && "touch-none",
+    drag.isDragging && "opacity-40",
+    hatched
+      ? "border-border/60 bg-transparent hover:bg-muted/40"
+      : "border-border hover:brightness-110",
+    image ? "bg-zinc-950" : hatched || roleColor ? "" : "bg-card",
+    highlight && "z-20 border-primary ring-2 ring-primary/50"
+  )
+  const style = {
+    gridColumn: column,
+    gridRow: `${Math.max(1, startRow)} / span ${span}`,
+    backgroundColor: roleColor ?? undefined,
+    color: roleFg,
+    borderLeft:
+      accent && !hatched && !roleColor ? `3px solid ${accent}` : undefined,
+    // Diagonal stripes: this face is blocked by a full-depth
+    // device mounted on the other face.
+    backgroundImage: hatched
+      ? "repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, currentColor 18%, transparent) 5px, color-mix(in srgb, currentColor 18%, transparent) 7px)"
+      : undefined,
+  }
+  const content = (
+    <>
       {image && (
         <>
           <img
@@ -918,6 +946,37 @@ function DeviceBlock({
           )}
         </>
       )}
+    </>
+  )
+  if (inert)
+    return (
+      <div
+        data-device={device.name}
+        className={cn(className, "pointer-events-none")}
+        style={style}
+      >
+        {content}
+      </div>
+    )
+
+  return (
+    <Link
+      ref={drag.setNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
+      to="/devices/$id"
+      params={{ id: device.id }}
+      className={className}
+      style={style}
+      title={`${device.name} · U${device.position}${
+        device.u_height > 1
+          ? `–U${(device.position as number) + device.u_height - 1}`
+          : ""
+      }${device.rack_width === "half" ? ` · ${device.rack_side || "left"} half` : ""}${
+        hatched ? ` · mounted on ${mountedOn}` : ""
+      }`}
+    >
+      {content}
     </Link>
   )
 }

@@ -103,6 +103,11 @@ On a device (or in the rack), set:
 - **Face** - front or rear (leave blank for full-depth gear that occupies both).
 - **Side** - only for half-width device types: which half of the U (left/right).
 
+The form draws the rack's front and rear beside these fields: click a free unit
+to put the device there - that unit becomes its lowest - and its outline turns
+red where it would collide. Typing a position or choosing a face moves the
+outline.
+
 The device's **height** comes from its [device type](device-catalog.md), so the
 elevation knows how many units to fill. Danbyte checks the device actually fits -
 it won't let you mount a 2U device where only 1U is free, or overlap two devices

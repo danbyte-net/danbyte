@@ -292,11 +292,14 @@ export function railSpans(
 ): RailSpan[] {
   return devices
     .filter((d) => d.id !== exclude && d.din_offset_mm != null)
-    .map((d): RailSpan => {
-      const start = d.din_offset_mm as number
-      return [start, roundMm(start + (d.device_type?.width_mm ?? 0))]
-    })
+    .map(spanOf)
     .sort((a, b) => a[0] - b[0])
+}
+
+/** The stretch a device on a rail takes: from its offset, its type's width. */
+function spanOf(d: RailDevice): RailSpan {
+  const start = d.din_offset_mm ?? 0
+  return [start, roundMm(start + (d.device_type?.width_mm ?? 0))]
 }
 
 /** The free stretches of a rail `length` mm long around the `taken` spans,
@@ -331,6 +334,315 @@ export function widestGap(gaps: RailSpan[]): number {
 export function fmtGaps(gaps: RailSpan[]): string {
   if (gaps.length === 0) return ""
   return `${gaps.map(([s, e]) => `${fmtMm(s)}-${fmtMm(e)}`).join(", ")} mm`
+}
+
+// ── placing a device by pointer ─────────────────────────────────────────────
+// The device form draws the cabinet's plate under its fields: a click on a
+// rail puts the device there, a drag moves it along a rail or onto another,
+// and the arrow keys nudge it. These decide where it lands - on the rail and
+// over no device, as the server takes it - and what the server says where it
+// can't go.
+
+/** A moved device snaps flush to an edge this close, in mm. */
+export const SNAP_MM = 3
+
+/** A device on a rail, named for the messages: where it sits, from the
+ * rail's left end. */
+export interface RailNeighbour {
+  name: string
+  span: RailSpan
+}
+
+/** The devices on one rail, named, left to right - `railSpans` for the
+ * messages that name them. `exclude` leaves out the device being moved. */
+export function railNeighbours(
+  devices: (RailDevice & { name: string; din_rail: { id: string } | null })[],
+  railId: string,
+  exclude?: string | null
+): RailNeighbour[] {
+  return devices
+    .filter(
+      (d) =>
+        d.din_rail?.id === railId && d.id !== exclude && d.din_offset_mm != null
+    )
+    .map((d) => ({ name: d.name, span: spanOf(d) }))
+    .sort((a, b) => a.span[0] - b.span[0])
+}
+
+/** Whether a device of `type` goes on a rail of `profile`: the type lists
+ * the profile and has a width. Any rail while the type is unknown. */
+export function mountsOn(
+  type: Pick<DeviceTypeMini, "din_profiles" | "width_mm"> | null | undefined,
+  profile: DinProfile
+): boolean {
+  if (!type) return true
+  return type.width_mm != null && type.din_profiles.includes(profile)
+}
+
+/** A device's left edge `offset` moved flush against the nearest edge within
+ * `tolerance`: its left edge against the rail's left end or a device's right
+ * edge, its right edge against the rail's right end or a device's left edge.
+ * Unchanged where no edge is that close. */
+export function snapFlush(
+  offset: number,
+  width: number,
+  length: number,
+  taken: RailSpan[],
+  tolerance = SNAP_MM
+): number {
+  const candidates = [
+    0,
+    ...taken.map(([, end]) => end),
+    length - width,
+    ...taken.map(([start]) => start - width),
+  ]
+  let best = offset
+  let dist = Infinity
+  for (const c of candidates) {
+    const d = Math.abs(tenths(c) - tenths(offset))
+    if (d <= tenths(tolerance) && d < dist) {
+      best = c
+      dist = d
+    }
+  }
+  return roundMm(best)
+}
+
+/** Where a press on a rail puts a device: at `offset`, its left edge from
+ * the rail's left end; on `taken`, the device the press is on; or `narrow`,
+ * the free gap it is in when the device is wider than it. */
+export type RailPlacement =
+  | { offset: number }
+  | { taken: RailSpan }
+  | { narrow: RailSpan }
+
+/** Where a device `width` mm wide goes when its left edge is put `at` mm
+ * from a rail's left end - a click on the rail, or a drag let go: to the
+ * millimetre, flush against an edge within `tolerance`, and moved as little
+ * as it takes to lie in the free gap under `anchor` (the click; for a drag,
+ * the device's middle). Refused over a device, or in a gap too narrow. */
+export function placeOnRail(
+  at: number,
+  width: number,
+  length: number,
+  taken: RailSpan[],
+  {
+    anchor = at,
+    tolerance = SNAP_MM,
+  }: { anchor?: number; tolerance?: number } = {}
+): RailPlacement {
+  const x = tenths(Math.min(Math.max(anchor, 0), length))
+  const on = taken.find(([s, e]) => tenths(s) <= x && x < tenths(e))
+  if (on) return { taken: on }
+  const gap = freeGaps(length, taken).find(
+    ([s, e]) => tenths(s) <= x && x <= tenths(e)
+  )
+  if (!gap) {
+    // The rail's right end, against a device that ends there.
+    const last = taken.find(([s, e]) => tenths(s) <= x && x <= tenths(e))
+    return { taken: last ?? [length, length] }
+  }
+  const [start, end] = gap
+  if (tenths(end) - tenths(start) < tenths(width)) return { narrow: gap }
+  const fit = (o: number) => Math.min(Math.max(o, start), end - width)
+  const offset = fit(Math.round(at))
+  const snapped = snapFlush(offset, width, length, taken, tolerance)
+  const inGap =
+    tenths(snapped) >= tenths(start) &&
+    tenths(snapped) + tenths(width) <= tenths(end)
+  return { offset: roundMm(inGap ? snapped : offset) }
+}
+
+/** What the server answers for a device `width` mm wide at `offset` on a
+ * rail `length` mm long beside its `neighbours` - `place` in api/din.py,
+ * message for message: null where it fits. Devices may touch. */
+export function railClash(
+  offset: number,
+  width: number,
+  length: number,
+  neighbours: RailNeighbour[]
+): string | null {
+  const a = tenths(offset)
+  const b = a + tenths(width)
+  if (a < 0) return "Runs past the rail's start."
+  if (b > tenths(length))
+    return `Runs past the rail's end (${fmtMm(length)} mm).`
+  const hit = neighbours.find(
+    ({ span: [s, e] }) => a < tenths(e) && tenths(s) < b
+  )
+  return hit
+    ? `Overlaps ${hit.name} at ${fmtMm(hit.span[0])}-${fmtMm(hit.span[1])} mm.`
+    : null
+}
+
+/** The stretches of a device at `offset` that will not go: off either end
+ * of the rail, or over a device. From the rail's left end, left to right. */
+export function clashSpans(
+  offset: number,
+  width: number,
+  length: number,
+  taken: RailSpan[]
+): RailSpan[] {
+  const a = offset
+  const b = offset + width
+  const out: RailSpan[] = []
+  if (tenths(a) < 0) out.push([a, Math.min(0, b)])
+  for (const [s, e] of taken) {
+    const lo = Math.max(a, s)
+    const hi = Math.min(b, e)
+    if (tenths(lo) < tenths(hi)) out.push([lo, hi])
+  }
+  if (tenths(b) > tenths(length)) out.push([Math.max(a, length), b])
+  return out.sort((x, y) => x[0] - y[0])
+}
+
+// ── the offset slider ───────────────────────────────────────────────────────
+// Under the plate, a slider along the picked rail: its keys and buttons jump
+// between the gaps the device fits in, and set it flush against an end of
+// the one it is in.
+
+/** The free gaps a device `width` mm wide fits in, left to right. */
+export function fittingGaps(gaps: RailSpan[], width: number): RailSpan[] {
+  return gaps.filter(([s, e]) => tenths(e) - tenths(s) >= tenths(width))
+}
+
+/** The gap a device at `offset` is in: the fitting gap under its middle -
+ * where it lies whole, or where it would settle if let go there. */
+export function gapAt(
+  gaps: RailSpan[],
+  width: number,
+  offset: number
+): RailSpan | null {
+  const mid = tenths(offset + width / 2)
+  return (
+    fittingGaps(gaps, width).find(
+      ([s, e]) => tenths(s) <= mid && mid <= tenths(e)
+    ) ?? null
+  )
+}
+
+/** The start of the next (`1`) or previous (`-1`) gap the device fits in,
+ * from the one it is in - or from its middle, where it is in none. Null
+ * past the last. */
+export function gapStep(
+  gaps: RailSpan[],
+  width: number,
+  offset: number,
+  dir: -1 | 1
+): number | null {
+  const fit = fittingGaps(gaps, width)
+  const here = gapAt(gaps, width, offset)
+  if (here) {
+    const i = fit.findIndex(([s]) => s === here[0]) + dir
+    return i >= 0 && i < fit.length ? fit[i][0] : null
+  }
+  const mid = tenths(offset + width / 2)
+  const to =
+    dir > 0
+      ? fit.find(([s]) => tenths(s) > mid)
+      : [...fit].reverse().find(([, e]) => tenths(e) < mid)
+  return to ? to[0] : null
+}
+
+/** The device flush against the left (`-1`) or right (`1`) end of the gap
+ * it is in: a neighbour's edge, or the rail's end. Null where it is in no
+ * gap it fits. */
+export function flushIn(
+  gaps: RailSpan[],
+  width: number,
+  offset: number,
+  side: -1 | 1
+): number | null {
+  const gap = gapAt(gaps, width, offset)
+  if (!gap) return null
+  return side < 0 ? gap[0] : roundMm(gap[1] - width)
+}
+
+/** The first and the last offset the device fits at; null where it fits
+ * nowhere. */
+export function fitRange(
+  gaps: RailSpan[],
+  width: number
+): [number, number] | null {
+  const fit = fittingGaps(gaps, width)
+  if (fit.length === 0) return null
+  return [fit[0][0], roundMm(fit[fit.length - 1][1] - width)]
+}
+
+/** The offset that centres a device in a gap, to the millimetre. */
+export function centreIn(gap: RailSpan, width: number): number {
+  return Math.round(gap[0] + (gap[1] - gap[0] - width) / 2)
+}
+
+/** What the rail picking reads off a rail. */
+type RailPlace = Pick<RailGeometry, "profile" | "x_mm" | "y_mm" | "length_mm">
+
+/** The rail a point on the plate is on: within a rail's length, and within
+ * its band - or the body a device hangs from it, `above` and `below` the
+ * centreline, when that reaches further. Where two reach the point, the
+ * nearer centreline. Null off every rail. */
+export function railAtPoint<TRail extends RailPlace>(
+  rails: TRail[],
+  x: number,
+  y: number,
+  reach: { above: number; below: number } = { above: 0, below: 0 }
+): TRail | null {
+  let best: TRail | null = null
+  let dist = Infinity
+  for (const r of rails) {
+    if (x < r.x_mm || x > r.x_mm + r.length_mm) continue
+    const half = PROFILE_HEIGHT_MM[r.profile] / 2
+    if (y < r.y_mm - Math.max(half, reach.above)) continue
+    if (y > r.y_mm + Math.max(half, reach.below)) continue
+    const d = Math.abs(y - r.y_mm)
+    if (d < dist) {
+      best = r
+      dist = d
+    }
+  }
+  return best
+}
+
+/** The rail whose centreline runs nearest a point - where a dragged device
+ * goes. */
+export function nearestRail<TRail extends RailPlace>(
+  rails: TRail[],
+  x: number,
+  y: number
+): TRail | null {
+  let best: TRail | null = null
+  let dist = Infinity
+  for (const r of rails) {
+    const dx = Math.max(r.x_mm - x, 0, x - (r.x_mm + r.length_mm))
+    const d = Math.hypot(dx, y - r.y_mm)
+    if (d < dist) {
+      best = r
+      dist = d
+    }
+  }
+  return best
+}
+
+/** The next rail up (`-1`) or down (`1`) from `from`, for the arrow keys:
+ * the nearest centreline that way, and of those the one running nearest `x`
+ * across the plate. Null at the top or bottom. */
+export function adjacentRail<TRail extends RailPlace>(
+  rails: TRail[],
+  from: TRail,
+  dir: -1 | 1,
+  x: number
+): TRail | null {
+  const y = tenths(from.y_mm)
+  const across = (r: TRail) =>
+    Math.max(r.x_mm - x, 0, x - (r.x_mm + r.length_mm))
+  const ahead = rails
+    .filter((r) => (dir < 0 ? tenths(r.y_mm) < y : tenths(r.y_mm) > y))
+    .sort(
+      (a, b) =>
+        Math.abs(a.y_mm - from.y_mm) - Math.abs(b.y_mm - from.y_mm) ||
+        across(a) - across(b)
+    )
+  return ahead[0] ?? null
 }
 
 // ── a device's body on the plate ────────────────────────────────────────────

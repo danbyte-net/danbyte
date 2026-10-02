@@ -11,8 +11,15 @@ function Slider({
   value,
   min = 0,
   max = 100,
+  track,
+  thumbProps,
   ...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+}: React.ComponentProps<typeof SliderPrimitive.Root> & {
+  /** Drawn inside the track, under the range: marks along it. */
+  track?: React.ReactNode
+  /** Given to every thumb - a label, a value text, a size or a colour. */
+  thumbProps?: React.ComponentProps<typeof SliderPrimitive.Thumb>
+}) {
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -40,6 +47,7 @@ function Slider({
         data-slot="slider-track"
         className="relative grow overflow-hidden rounded-full bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5"
       >
+        {track}
         <SliderPrimitive.Range
           data-slot="slider-range"
           className="absolute bg-primary data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full"
@@ -49,7 +57,11 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
-          className="block size-3.5 shrink-0 rounded-full border border-primary bg-background shadow-sm transition-[color,box-shadow] hover:ring-2 hover:ring-ring/30 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none"
+          {...thumbProps}
+          className={cn(
+            "block size-3.5 shrink-0 rounded-full border border-primary bg-background shadow-sm transition-[color,box-shadow] hover:ring-2 hover:ring-ring/30 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none",
+            thumbProps?.className
+          )}
         />
       ))}
     </SliderPrimitive.Root>

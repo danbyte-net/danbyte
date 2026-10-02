@@ -14,6 +14,7 @@ import {
   freeGaps,
   railSpans,
 } from "@/lib/din-geometry"
+import type { RailSpan } from "@/lib/din-geometry"
 import { cabinetPhotoBox, effectiveFrontCal } from "@/lib/photo-calibration"
 import { cn } from "@/lib/utils"
 import { usePlatePx } from "@/components/cabinet-elevation"
@@ -45,6 +46,10 @@ export function useCabinetDevices(cabinetId: string | null | undefined) {
     enabled: !!cabinetId,
   })
 }
+
+/** How the arrange mode marks a body: moved but not saved yet, or where it
+ * would overlap another or not fit its rail. */
+export type BodyMark = "moved" | "clash"
 
 /** Screen pixels: the name's size, the strip it sits in, and its inset. */
 const NAME_PX = 10
@@ -132,11 +137,27 @@ export function CabinetDeviceBodies({
   rails,
   devices,
   highlight,
+  interactive = true,
+  keepClear = [],
+  marks,
+  onPick,
 }: {
-  rails: DinRail[]
+  /** `dimmed` writes a rail's label faint, as the elevation draws the rail. */
+  rails: (DinRail & { dimmed?: boolean })[]
   devices: Device[]
   /** Drawn in the selection colour - the device whose page this is. */
   highlight?: string | null
+  /** Off: drawn only - no links, no hovers, no tab stops. The device form's
+   * plate, where a press places the device being edited instead. */
+  interactive?: boolean
+  /** Stretches of rails the labels stay off as they stay off devices - the
+   * device the form is placing. */
+  keepClear?: { railId: string; span: RailSpan }[]
+  /** Bodies drawn moved or clashing, by device id. */
+  marks?: Record<string, BodyMark>
+  /** With `interactive` off: Enter or Space on a body picks it - the
+   * arrange mode's way in from the keyboard. */
+  onPick?: (d: Device) => void
 }) {
   const px = usePlatePx()
   const nav = useNavigate()
@@ -179,6 +200,7 @@ export function CabinetDeviceBodies({
         const fill = photo ? null : d.role?.color || null
         const ink = fill ? readableText(fill) : undefined
         const selected = d.id === highlight
+        const mark = marks?.[d.id]
         const label = nameLayout(
           d.name,
           body.width / px(1),
@@ -189,112 +211,144 @@ export function CabinetDeviceBodies({
         const cy = label?.vertical
           ? body.y + body.height / 2
           : body.y + px(STRIP_PX / 2)
+        const shape = (
+          <g
+            key={d.id}
+            data-device={d.name}
+            data-selected={selected || undefined}
+            {...(interactive && {
+              role: "link",
+              tabIndex: 0,
+              "aria-label": d.name,
+              onClick: () => void open(d),
+              onKeyDown: (e: KeyboardEvent<SVGGElement>) => onKey(d, e),
+            })}
+            {...(!interactive &&
+              onPick && {
+                role: "button",
+                tabIndex: 0,
+                "aria-label": d.name,
+                onKeyDown: (e: KeyboardEvent<SVGGElement>) => {
+                  if (e.key !== "Enter" && e.key !== " ") return
+                  e.preventDefault()
+                  onPick(d)
+                },
+              })}
+            className={cn(
+              "group/body outline-none",
+              interactive ? "cursor-pointer" : "pointer-events-none"
+            )}
+          >
+            {photo && cal ? (
+              trueBox && (
+                <>
+                  <defs>
+                    <clipPath id={clip}>
+                      <rect
+                        x={body.x}
+                        y={body.y}
+                        width={body.width}
+                        height={body.height}
+                      />
+                    </clipPath>
+                  </defs>
+                  <image
+                    data-part="photo"
+                    data-calibrated=""
+                    href={photo}
+                    x={trueBox.x}
+                    y={trueBox.y}
+                    width={trueBox.width}
+                    height={trueBox.height}
+                    preserveAspectRatio="none"
+                    clipPath={`url(#${clip})`}
+                  />
+                </>
+              )
+            ) : photo ? (
+              <image
+                href={photo}
+                x={body.x}
+                y={body.y}
+                width={body.width}
+                height={body.height}
+                preserveAspectRatio="none"
+              />
+            ) : (
+              <rect
+                data-part="body"
+                x={body.x}
+                y={body.y}
+                width={body.width}
+                height={body.height}
+                className={fill ? undefined : "fill-card"}
+                style={fill ? { fill } : undefined}
+              />
+            )}
+            {label && photo && (
+              <rect
+                x={body.x}
+                y={body.y}
+                width={body.width}
+                height={px(STRIP_PX)}
+                className="fill-background/85"
+              />
+            )}
+            {label && (
+              <text
+                data-part="name"
+                x={cx}
+                y={cy}
+                transform={
+                  label.vertical ? `rotate(90 ${cx} ${cy})` : undefined
+                }
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={px(NAME_PX)}
+                className={cn(
+                  "pointer-events-none font-medium",
+                  !ink && "fill-foreground"
+                )}
+                style={ink ? { fill: ink } : undefined}
+              >
+                {label.text}
+              </text>
+            )}
+            {mark === "clash" && (
+              <rect
+                x={body.x}
+                y={body.y}
+                width={body.width}
+                height={body.height}
+                className="fill-destructive/25"
+              />
+            )}
+            {/* The outline on top, so a photo gets one too. */}
+            <rect
+              data-part="outline"
+              data-mark={mark}
+              x={body.x}
+              y={body.y}
+              width={body.width}
+              height={body.height}
+              className={cn(
+                "fill-none",
+                mark === "clash"
+                  ? "stroke-destructive"
+                  : mark === "moved" || selected
+                    ? "stroke-primary"
+                    : "stroke-border group-hover/body:stroke-foreground/60 group-focus-visible/body:stroke-primary"
+              )}
+              strokeWidth={selected || mark ? 2 : 1}
+              strokeDasharray={mark === "moved" ? "4 3" : undefined}
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
+        )
+        if (!interactive) return shape
         return (
           <Tooltip key={d.id}>
-            <TooltipTrigger asChild>
-              <g
-                data-device={d.name}
-                data-selected={selected || undefined}
-                role="link"
-                tabIndex={0}
-                aria-label={d.name}
-                className="group/body cursor-pointer outline-none"
-                onClick={() => void open(d)}
-                onKeyDown={(e) => onKey(d, e)}
-              >
-                {photo && cal ? (
-                  trueBox && (
-                    <>
-                      <defs>
-                        <clipPath id={clip}>
-                          <rect
-                            x={body.x}
-                            y={body.y}
-                            width={body.width}
-                            height={body.height}
-                          />
-                        </clipPath>
-                      </defs>
-                      <image
-                        data-part="photo"
-                        data-calibrated=""
-                        href={photo}
-                        x={trueBox.x}
-                        y={trueBox.y}
-                        width={trueBox.width}
-                        height={trueBox.height}
-                        preserveAspectRatio="none"
-                        clipPath={`url(#${clip})`}
-                      />
-                    </>
-                  )
-                ) : photo ? (
-                  <image
-                    href={photo}
-                    x={body.x}
-                    y={body.y}
-                    width={body.width}
-                    height={body.height}
-                    preserveAspectRatio="none"
-                  />
-                ) : (
-                  <rect
-                    data-part="body"
-                    x={body.x}
-                    y={body.y}
-                    width={body.width}
-                    height={body.height}
-                    className={fill ? undefined : "fill-card"}
-                    style={fill ? { fill } : undefined}
-                  />
-                )}
-                {label && photo && (
-                  <rect
-                    x={body.x}
-                    y={body.y}
-                    width={body.width}
-                    height={px(STRIP_PX)}
-                    className="fill-background/85"
-                  />
-                )}
-                {label && (
-                  <text
-                    data-part="name"
-                    x={cx}
-                    y={cy}
-                    transform={
-                      label.vertical ? `rotate(90 ${cx} ${cy})` : undefined
-                    }
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize={px(NAME_PX)}
-                    className={cn(
-                      "pointer-events-none font-medium",
-                      !ink && "fill-foreground"
-                    )}
-                    style={ink ? { fill: ink } : undefined}
-                  >
-                    {label.text}
-                  </text>
-                )}
-                {/* The outline on top, so a photo gets one too. */}
-                <rect
-                  data-part="outline"
-                  x={body.x}
-                  y={body.y}
-                  width={body.width}
-                  height={body.height}
-                  className={cn(
-                    "fill-none",
-                    selected
-                      ? "stroke-primary"
-                      : "stroke-border group-hover/body:stroke-foreground/60 group-focus-visible/body:stroke-primary"
-                  )}
-                  strokeWidth={selected ? 2 : 1}
-                  vectorEffect="non-scaling-stroke"
-                />
-              </g>
-            </TooltipTrigger>
+            <TooltipTrigger asChild>{shape}</TooltipTrigger>
             <TooltipContent variant="panel" side="top">
               <DeviceNumbers device={d} rail={rail} />
             </TooltipContent>
@@ -303,7 +357,12 @@ export function CabinetDeviceBodies({
       })}
       <g data-part="rail-tags" className="pointer-events-none">
         {rails.map((r) => {
-          const at = railTagAt(r, devices, px)
+          const at = railTagAt(
+            r,
+            devices,
+            px,
+            keepClear.filter((k) => k.railId === r.id).map((k) => k.span)
+          )
           return (
             <g key={r.id} data-rail-tag={r.label}>
               {at.covered && (
@@ -321,7 +380,10 @@ export function CabinetDeviceBodies({
                 y={r.y_mm}
                 dominantBaseline="central"
                 fontSize={px(RAIL_LABEL_PX)}
-                className="fill-foreground font-medium"
+                className={cn(
+                  "font-medium",
+                  r.dimmed ? "fill-muted-foreground/60" : "fill-foreground"
+                )}
               >
                 {r.label}
               </text>
@@ -339,10 +401,15 @@ export function CabinetDeviceBodies({
 export function railTagAt(
   rail: DinRail,
   devices: Device[],
-  px: (n: number) => number
+  px: (n: number) => number,
+  /** More of the rail to stay off, besides its devices. */
+  also: RailSpan[] = []
 ): { offset: number; width: number; covered: boolean } {
   const width = px(rail.label.length * RAIL_LABEL_PX * CHAR_EM + 9)
-  const taken = railSpans(devices.filter((d) => d.din_rail?.id === rail.id))
+  const taken = [
+    ...railSpans(devices.filter((d) => d.din_rail?.id === rail.id)),
+    ...also,
+  ]
   const gap = freeGaps(rail.length_mm, taken).find(
     ([start, end]) => end - start >= width
   )

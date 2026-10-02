@@ -142,16 +142,19 @@ function RailItem({ rail, free }: { rail: DinRail; free: number }) {
   )
 }
 
-/** Put an existing device at the cabinet's site on `rail`: the server
+/** Put an existing device at the cabinet's site on `rail`: at `offset`
+ * when one is given - the arrange mode's "Assign here" - else the server
  * takes the first gap it fits in, or says why not. */
-function AssignDeviceDialog({
+export function AssignDeviceDialog({
   cabinet,
   rail,
+  offset = null,
   devices,
   onClose,
 }: {
   cabinet: Cabinet
   rail: DinRail | null
+  offset?: number | null
   devices: Device[]
   onClose: () => void
 }) {
@@ -161,7 +164,11 @@ function AssignDeviceDialog({
     mutationFn: ({ id, railId }: { id: string; railId: string }) =>
       api<Device>(`/api/devices/${id}/`, {
         method: "PATCH",
-        body: JSON.stringify({ din_rail_id: railId }),
+        body: JSON.stringify(
+          offset == null
+            ? { din_rail_id: railId }
+            : { din_rail_id: railId, din_offset_mm: offset }
+        ),
       }),
     onSuccess: (d) => {
       invalidateCabinetDeviceViews(qc)
@@ -194,7 +201,10 @@ function AssignDeviceDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Assign to {rail?.label}</DialogTitle>
+            <DialogTitle>
+              Assign to {rail?.label}
+              {offset != null && ` · ${fmtMm(offset)} mm`}
+            </DialogTitle>
           </DialogHeader>
           <DevicePicker
             siteId={cabinet.site.id}
