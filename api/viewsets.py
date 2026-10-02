@@ -15,6 +15,7 @@ from django.utils.text import slugify
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
+    OpenApiResponse,
     extend_schema,
     extend_schema_view,
 )
@@ -37,11 +38,14 @@ from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
 from .cf_search import cf_text_q
-from .face_ports import (
-    FACE_PORT_KINDS,
-    ComponentIndex,
-    effective_image_ports,
-    render_marker_name,
+from . import capacity, scene_geo
+from .face_ports import FACE_PORT_KINDS
+from .port_state import (
+    FacePortLoader,
+    PeerScope,
+    cable_state,
+    component_queryset,
+    interface_state,
 )
 from .models import (
     _TEMPLATE_MARKER_KIND,
@@ -85,7 +89,6 @@ from .models import (
 )
 from .serializers import (
     FAR_END_PREFETCH,
-    far_end,
     AntennaSerializer,
     AntennaTemplateSerializer,
     CableRouteSerializer,
@@ -3383,21 +3386,8 @@ def _region_and_descendant_ids(region_id):
     return ids
 
 
-def _cable_state(comp, term) -> str:
-    """free | connected | reserved | marked - the utilization card's
-    vocabulary, per port, for the face-panel glow. Reserved covers both a
-    planned cable and a direct PortReservation on an uncabled port; a real
-    cable (or mark_connected) outranks the hold."""
-    if term is not None:
-        status = term.cable.status if term.cable_id else None
-        if status is not None and status.slug == "planned":
-            return "reserved"
-        return "connected"
-    if getattr(comp, "mark_connected", False):
-        return "marked"
-    if any(True for _ in comp.reservations.all()):
-        return "reserved"
-    return "free"
+# Moved to api.port_state (#248); the old name stays for its importers.
+_cable_state = cable_state
 
 
 # Every relation an IPAddressSerializer row reads, for the device and
@@ -3647,12 +3637,27 @@ class DeviceViewSet(
         device = self.get_object()
         return Response(self._face_ports_payload(device))
 
+    @extend_schema(parameters=[
+        OpenApiParameter(
+            name="ids", type=OpenApiTypes.STR, location=OpenApiParameter.QUERY,
+            description="Comma-separated device ids, up to 200.",
+        ),
+        OpenApiParameter(
+            name="drift", type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY,
+            description="Add each marker's SNMP drift - costs queries per device.",
+        ),
+    ])
     @action(detail=False, methods=["get"], url_path="face-ports")
     def face_ports_bulk(self, request):
         """``?ids=a,b,c`` → ``{device id: {front, rear}}`` for up to 200 devices
         the caller may view. The 3D room resolves a rack's worth of markers
         in one request instead of one per device - forty round trips for a
-        full cabinet was what made its photo ports take seconds to light up."""
+        full cabinet was what made its photo ports take seconds to light up.
+
+        Resolved together (``api.port_state.FacePortLoader``), so the request
+        costs the same number of queries for two devices or two hundred. SNMP
+        drift costs queries per device, so entries carry ``drift: null``
+        unless ``drift=1`` asks for it."""
         import uuid
 
         ids = []
@@ -3668,151 +3673,33 @@ class DeviceViewSet(
         if not ids:
             return Response({})
         devices = self.get_queryset().filter(pk__in=ids).select_related("device_type")
-        return Response({str(d.id): self._face_ports_payload(d) for d in devices})
+        loader = FacePortLoader(devices)
+        with_drift = (request.query_params.get("drift") or "").lower() in ("1", "true", "yes")
+        out = {}
+        for device in loader.devices:
+            payload = loader.payload(device)
+            if with_drift:
+                self._add_face_drift(device, payload)
+            out[str(device.id)] = payload
+        return Response(out)
 
     def _face_ports_payload(self, device) -> dict:
-        """The resolved markers of one device - see ``face_ports``."""
-        image_ports = effective_image_ports(device) or {}
-        pos = device.vc_position
+        """The resolved markers of one device, with drift - see
+        ``face_ports``."""
+        payload = FacePortLoader([device]).payload(device)
+        self._add_face_drift(device, payload)
+        return payload
+
+    def _add_face_drift(self, device, payload) -> None:
+        """Fill each resolved entry's ``drift`` from SNMP. The fields beside
+        it stay the SOURCE OF TRUTH - drift is drawn beside intent, never
+        over it."""
         drift = self._face_drift(device)
-
-        # Load each component relation we actually need exactly once, indexed
-        # by name, with terminations prefetched for the cabled check.
-        indexes: dict[str, ComponentIndex] = {}
-
-        def index_for(relation, cabled: bool) -> ComponentIndex:
-            if relation not in indexes:
-                comps = getattr(device, relation)
-                # Only cable-able kinds have terminations; inventory items
-                # carry a status instead, and a module bay's occupancy is the
-                # reverse Module relation (there is no field on the bay).
-                if cabled:
-                    comps = comps.prefetch_related(
-                        "terminations__cable__status", "reservations", *FAR_END_PREFETCH
-                    )
-                elif relation == "module_bays":
-                    comps = comps.select_related("module__module_type")
-                else:
-                    comps = comps.select_related("status")
-                indexes[relation] = ComponentIndex(comps)
-            return indexes[relation]
-
-        def resolve(markers):
-            out = []
-            for m in markers if isinstance(markers, list) else []:
-                raw = m.get("name", "") if isinstance(m, dict) else ""
-                kind = m.get("kind", "interface") if isinstance(m, dict) else ""
-                name = render_marker_name(raw, pos)
-                entry = {
-                    "marker": raw, "name": name, "kind": None, "id": None,
-                    "connected": False, "cable_id": None,
-                    # Enough for the shared port-state colouring (portState):
-                    # interfaces carry enabled/speed/type; others default on.
-                    "enabled": True, "speed": "", "type": "",
-                    # Hardware markers (inventory items): lifecycle status.
-                    "status": None,
-                    # Module-bay markers: the installed module, or null for an
-                    # empty slot. Occupancy is the whole point of drawing a bay
-                    # on the photo, so it rides along rather than costing the
-                    # client a request per bay.
-                    "module": None,
-                    # What SNMP saw differently, or null when they agree. The
-                    # status/speed above stay the SOURCE OF TRUTH either way -
-                    # drift is drawn beside intent, never over it.
-                    "drift": None,
-                }
-                mapping = FACE_PORT_KINDS.get(kind)
-                if mapping:
-                    relation, term_kind = mapping
-                    comp = index_for(relation, term_kind is not None).match(name)
-                    if comp is not None:
-                        entry["drift"] = drift.get(str(comp.id))
-                    if comp is not None and kind == "module-bay":
-                        # Module bay - reads occupied/empty, never cable-able.
-                        # The reverse OneToOne raises (an AttributeError
-                        # subclass) when the bay is free, so getattr → None.
-                        mod = getattr(comp, "module", None)
-                        entry.update({
-                            "id": str(comp.id),
-                            "module": {
-                                "id": str(mod.id),
-                                "module_type": {
-                                    "id": str(mod.module_type_id),
-                                    "name": mod.module_type.name,
-                                },
-                                "serial_number": mod.serial_number,
-                            } if mod else None,
-                        })
-                    elif comp is not None and term_kind is None:
-                        # Inventory item - status-coloured, never cable-able.
-                        s = comp.status
-                        entry.update({
-                            "name": comp.name,
-                            "id": str(comp.id),
-                            "status": {"id": str(s.id), "name": s.name, "color": s.color}
-                            if s else None,
-                        })
-                    elif comp is not None:
-                        term = next(iter(comp.terminations.all()), None)
-                        # Only interfaces carry a network-speed string; other
-                        # kinds may have an int `speed` (power draw) - ignore it.
-                        speed = getattr(comp, "speed", "")
-                        ctype = getattr(comp, "type", "")
-                        entry.update({
-                            # The component's REAL name - after a rename the
-                            # marker still resolves via marker_key, and the
-                            # hover must say what the port is called NOW.
-                            "name": comp.name,
-                            "kind": term_kind,
-                            "id": str(comp.id),
-                            "connected": term is not None,
-                            "cable_state": _cable_state(comp, term),
-                            "cable_id": str(term.cable_id) if term else None,
-                            "enabled": bool(getattr(comp, "enabled", True)),
-                            "speed": speed if isinstance(speed, str) else "",
-                            "type": ctype if isinstance(ctype, str) else "",
-                            # Real-world name, when it differs from the
-                            # template-matching name ("X1-P1" on "Port 1").
-                            "label": getattr(comp, "label", "") or "",
-                            # What a port marker may print instead of the
-                            # label: the cable's label or the far end.
-                            "cable_label": (term.cable.label if term else "") or "",
-                            "peer": far_end(term),
-                            "label_hidden": bool(getattr(comp, "hide_label", False)),
-                            "label_color": getattr(comp, "label_color", "") or "",
-                        })
-                out.append(entry)
-            return out
-
-        front = resolve(image_ports.get("front"))
-        rear = resolve(image_ports.get("rear"))
-        # Power components no photo marker covers still have to be clickable
-        # and cable-able in the 3D room (a PDU strip has no photo at all, and
-        # many rear photos never got their inlets marked). Emit them as
-        # SYNTHETIC entries under "rear" - power lives on the back - keyed by
-        # the component's own name, which is exactly the name the room's
-        # synthetic quads carry. Component ids already claimed by a marker
-        # (exact or tolerant) are skipped, so nothing resolves twice.
-        claimed = {e["id"] for e in front + rear if e["id"]}
-        for marker_kind in ("power-port", "power-outlet"):
-            relation, term_kind = FACE_PORT_KINDS[marker_kind]
-            for comp in index_for(relation, cabled=True).components:
-                if str(comp.id) in claimed:
-                    continue
-                term = next(iter(comp.terminations.all()), None)
-                ctype = getattr(comp, "type", "")
-                rear.append({
-                    "marker": comp.name, "name": comp.name,
-                    "kind": term_kind, "id": str(comp.id),
-                    "connected": term is not None,
-                    "cable_state": _cable_state(comp, term),
-                    "cable_id": str(term.cable_id) if term else None,
-                    "enabled": True, "speed": "",
-                    "type": ctype if isinstance(ctype, str) else "",
-                    "status": None, "module": None,
-                    "drift": drift.get(str(comp.id)),
-                })
-        return {"front": front, "rear": rear}
+        if not drift:
+            return
+        for entry in payload["front"] + payload["rear"]:
+            if entry["id"]:
+                entry["drift"] = drift.get(entry["id"])
 
     def _render_target(self, request, device):
         """What ``?template=`` / ``?bundle=`` name for this device: a
@@ -6340,6 +6227,10 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
         from .models import Document
 
+        if self.action == "scene":
+            # The scene loads its own geometry (api.scene_geo); the figures
+            # below would only be thrown away.
+            return super().get_queryset()
         racked = (
             Device.objects.select_related("device_type")
             .annotate(outlet_n=Count("power_outlets", distinct=True))
@@ -6431,6 +6322,127 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 )
         result = sync_rack_from_type(rack, dims=dims, accessories=accessories)
         return Response({"applied": True, "diff": diff, "result": result})
+
+    def _viewable_devices(self, rack):
+        """The rack's devices the caller may view (device view, row scope)."""
+        from auth_api import rbac
+
+        from .views import _get_active_tenant
+
+        tenant = _get_active_tenant(self.request)
+        return rbac.restrict_queryset(
+            Device.objects.filter(tenant=tenant, rack=rack),
+            self.request.user, tenant, "device", "view",
+        )
+
+    @extend_schema(
+        summary="The ports of a rack's devices: state, photo markers and totals",
+        request=None,
+        responses=OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "`rack`: `u_height`, `u_used`, `u_free`, `power`, `ports` and "
+                "`count_virtual`. `devices`: per device the caller may view, its "
+                "`ports` counts, its `face` (the face-ports payload, `drift` null) "
+                "and its physical `interfaces` as the faceplate draws them."
+            ),
+        ),
+    )
+    @action(detail=True, methods=["get"], url_path="port-state")
+    def port_state(self, request, pk=None):
+        """Every port in the rack in a fixed number of queries, for the rack
+        page's Rack view (#248): per device, the counted ports, the photo
+        markers resolved to real components (``face``, as
+        ``/api/devices/face-ports/`` gives them) and the physical interfaces
+        with what the drawn faceplate colours and hovers them by.
+
+        The rack's totals count every device in it, as its U and power do;
+        the per-device detail lists only the devices the caller may view and,
+        as on the device page, only the interfaces they may view. A far end
+        (``peer``) is blanked unless its device is one they may view."""
+        from auth_api import rbac
+        from core.effective_settings import port_count_virtual
+
+        from .views import _get_active_tenant
+        from .visible_ips import assigned_ips_prefetch
+
+        rack = self.get_object()
+        tenant = _get_active_tenant(request)
+        count_virtual = port_count_virtual(tenant)
+        ports = capacity.rack_ports(
+            Device.objects.filter(tenant=tenant, rack=rack), count_virtual=count_virtual
+        )
+        devices = list(self._viewable_devices(rack).select_related("device_type"))
+        tagged_n = (
+            Interface.tagged_vlans.through.objects.filter(interface_id=OuterRef("pk"))
+            .order_by()
+            .values("interface_id")
+            .annotate(n=Count("pk"))
+            .values("n")
+        )
+        interfaces = list(rbac.restrict_queryset(
+            component_queryset("interfaces", [d.id for d in devices])
+            .select_related("vlan__zone", "lag")
+            .prefetch_related(assigned_ips_prefetch(request, tenant), "tags")
+            .annotate(tagged_vlan_n=Coalesce(Subquery(tagged_n), 0)),
+            request.user, tenant, "interface", "view",
+        )) if devices else []
+        # The same rows resolve the interface markers, so a port the caller
+        # may not view stays an unresolved marker there too.
+        loader = FacePortLoader(devices, rows={"interfaces": interfaces})
+        peers = PeerScope(request.user, tenant, loader.far_components())
+        listed: dict = {}
+        for iface in interfaces:
+            # The physical ports: what the device page's faceplate draws.
+            if not iface.virtual:
+                listed.setdefault(iface.device_id, []).append(
+                    interface_state(iface, peer=peers.far_end)
+                )
+        space = capacity.rack_space(rack)
+        return Response({
+            "rack": {
+                "id": str(rack.id),
+                "u_height": space["u_height"],
+                "u_used": space["u_used"],
+                "u_free": space["u_free"],
+                "power": capacity.rack_power(rack),
+                "ports": ports["total"],
+                "count_virtual": count_virtual,
+            },
+            "devices": {
+                str(d.id): {
+                    "ports": ports["devices"].get(d.id)
+                    or dict.fromkeys(capacity.PORT_FIELDS, 0),
+                    "face": loader.payload(d, peer=peers.far_end),
+                    "interfaces": listed.get(d.id, []),
+                }
+                for d in devices
+            },
+        })
+
+    @extend_schema(
+        summary="One rack's 3D geometry, as the floor plan's 3D room draws it",
+        request=None,
+        responses=OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "The rack as a floor-plan scene tile carries it (`tile.rack`): its "
+                "size and the positioned or side-mounted devices the caller may view."
+            ),
+        ),
+    )
+    @action(detail=True, methods=["get"], url_path="scene")
+    def scene(self, request, pk=None):
+        """This rack alone for a 3D view (#248): the same ``rack`` object a
+        floor-plan scene tile carries (api.scene_geo), its devices limited to
+        the ones the caller may view."""
+        rack = self.get_object()
+        loaded = scene_geo.load_racks(
+            Rack.objects.filter(pk=rack.pk), devices=self._viewable_devices(rack)
+        )[rack.pk]
+        return Response(scene_geo.rack_geo(
+            loaded, scene_geo.image_url(request), scene_geo.power_feed_types([loaded])
+        ))
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -9224,8 +9236,6 @@ class FloorPlanViewSet(TenantScopedViewSet):
         view polls exactly what the 2D canvas polls."""
         from django.utils import timezone
 
-        from .models import CableTermination
-
         plan = self.get_object()
         tiles_qs = plan.tiles.select_related(
             "tile_type", "role_type", "rack", "cabinet", "device__role",
@@ -9237,141 +9247,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
             .order_by().values("cabinet_id").annotate(n=Count("id"))
             .values_list("cabinet_id", "n")
         )
-        racks = {
-            r.id: r
-            for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
-                "devices__device_type", "devices__role",
-                "devices__status", "devices__primary_ip",
-                "devices__power_ports", "devices__power_outlets",
-            )
-        }
-
-        # Which redundant feed powers each PDU - the data-driven A/B signal the
-        # 3D room tints vertical strips by (primary vs redundant), instead of
-        # guessing from a name. One query: every inlet power-port in these racks
-        # → the feed on the far end of its cable. `""` when the inlet isn't
-        # cabled to a feed.
-        inlet_ids = [
-            p.id
-            for r in racks.values()
-            for d in r.devices.all()
-            for p in d.power_ports.all()
-        ]
-        feed_type_by_port: dict = {}
-        if inlet_ids:
-            # Two queries for the whole plan: the inlets' cables, then the
-            # feed on the far end of each of those cables - not one query per
-            # inlet (a 2,400-device hall paid 600 of them per scene load).
-            inlet_terms = list(
-                CableTermination.objects.filter(
-                    power_port_id__in=inlet_ids, cable__isnull=False
-                ).values_list("power_port_id", "cable_id")
-            )
-            feed_by_cable = dict(
-                CableTermination.objects.filter(
-                    cable_id__in={c for _, c in inlet_terms}, power_feed__isnull=False
-                ).values_list("cable_id", "power_feed__type")
-            )
-            for port_id, cable_id in inlet_terms:
-                if cable_id in feed_by_cable:
-                    feed_type_by_port[port_id] = feed_by_cable[cable_id]
-
-        def img(f):
-            return request.build_absolute_uri(f.url) if f else None
-
-        def device_geo(d):
-            dt = d.device_type
-            return {
-                "id": str(d.id),
-                "name": d.name,
-                "position": d.position,
-                # Stack member number: `{position}` in a photo marker's name
-                # renders to it, so member 2's ports anchor on their markers.
-                "vc_position": d.vc_position,
-                "face": d.face or "",
-                "rack_side": d.rack_side or "",
-                # Zero-U side mounting - position is None for these; the 3D
-                # room draws them as vertical strips on the named rail.
-                "mount": d.mount or "",
-                "mount_offset_mm": d.mount_offset_mm,
-                "mount_span_u": d.mount_span_u,
-                "u_height": dt.u_height if dt else 1,
-                "rack_width": (dt.rack_width if dt else "full") or "full",
-                "is_full_depth": dt.is_full_depth if dt else True,
-                # Port labels on this device's quads: inherit / on / off.
-                "port_labels": d.port_labels,
-                # Effective airflow (device override, else type default) so the
-                # 3D room can draw intake/exhaust glyphs. "" = unknown/passive.
-                "airflow": d.effective_airflow,
-                "role_color": d.role.color if d.role_id else "",
-                "role_name": d.role.name if d.role_id else "",
-                "device_type": dt.name if dt else "",
-                "status": {"name": d.status.name, "color": d.status.color}
-                if d.status_id else None,
-                "primary_ip": d.primary_ip.ip_address
-                if d.primary_ip_id else None,
-                "serial_number": d.serial_number or "",
-                "front_image": img(dt.front_image if dt else None),
-                "rear_image": img(dt.rear_image if dt else None),
-                "has_faceplate": bool(dt and dt.faceplate),
-                # Photo-anchored port markers (per device type; denormalized
-                # here like front_image so the 3D face can overlay them).
-                "image_ports": effective_image_ports(d),
-                # The device's REAL power component names - the room lays out
-                # deterministic clickable quads (and cable anchors) for any of
-                # these that no photo marker covers, incl. PDU strip outlets.
-                "power_ports": [p.name for p in d.power_ports.all()],
-                "power_outlets": [o.name for o in d.power_outlets.all()],
-                # Per-outlet/-port phase leg (A/B/C, "" if unset) - the vertical
-                # PDU strip colours its cells by this. Keyed by name so the
-                # existing name-list consumers are untouched.
-                # feed_leg lives on outlets (which leg of the feed each socket
-                # carries); inlets have no leg, so only outlets contribute.
-                "power_legs": {
-                    o.name: o.feed_leg for o in d.power_outlets.all()
-                },
-                # "primary" | "redundant" | "" - which redundant feed powers
-                # this PDU (its whole strip tints by it: the A/B story).
-                "power_feed_type": next(
-                    (
-                        feed_type_by_port[p.id]
-                        for p in d.power_ports.all()
-                        if p.id in feed_type_by_port
-                    ),
-                    "",
-                ),
-            }
+        # Racks, their devices and the feed each PDU hangs off: the geometry
+        # a rack page's 3D view draws too (api.scene_geo).
+        racks = scene_geo.load_racks(Rack.objects.filter(id__in=rack_ids))
+        feed_types = scene_geo.power_feed_types(racks.values())
+        img = scene_geo.image_url(request)
 
         def rack_geo(r):
-            return {
-                "id": str(r.id),
-                "name": r.name,
-                "u_height": r.u_height,
-                "starting_unit": r.starting_unit,
-                "desc_units": r.desc_units,
-                "width": r.width,
-                "outer_width_mm": r.outer_width_mm,
-                "outer_depth_mm": r.outer_depth_mm,
-                "devices": [
-                    device_geo(d)
-                    for d in r.devices.all()
-                    # Positioned gear AND side-mounted 0U strips - a mounted
-                    # PDU has no U position but very much exists in the room.
-                    if d.position is not None or d.mount
-                ],
-            }
+            return scene_geo.rack_geo(r, img, feed_types)
 
         def cabinet_geo(c):
-            # A closed box: the room shows the enclosure, not its plate. An
-            # unrecorded outer size is the plate plus 50 mm, 200 mm deep.
-            return {
-                "id": str(c.id),
-                "name": c.name,
-                "outer_width_mm": c.outer_width_mm or c.inner_width_mm + 50,
-                "outer_height_mm": c.outer_height_mm or c.inner_height_mm + 50,
-                "outer_depth_mm": c.outer_depth_mm or 200,
-                "device_count": cabinet_counts.get(c.id, 0),
-            }
+            return scene_geo.cabinet_geo(c, cabinet_counts.get(c.id, 0))
 
         tiles = [
             {

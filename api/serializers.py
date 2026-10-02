@@ -63,6 +63,15 @@ from .models import (
     L2VPN, L2VPNTermination, VirtualChassis,
     materialize_device_components, render_component_name, render_module_name,
 )
+from .capacity import rack_power, used_units
+# The far-end helpers moved to api.port_state (#248); re-exported here for
+# the imports that predate the move.
+from .port_state import (
+    _TERMINATION_COMPONENTS as _TERMINATION_COMPONENTS,
+    FAR_END_PREFETCH as FAR_END_PREFETCH,
+    far_end as far_end,
+    termination_component as termination_component,
+)
 
 
 def detail_only(default=None):
@@ -3206,53 +3215,6 @@ class CableMiniSerializer(NumIdModelSerializer):
         fields = ["id", "label", "type", "color", "status"]
 
 
-_TERMINATION_COMPONENTS = (
-    "interface", "front_port", "rear_port", "console_port", "console_server_port",
-    "power_port", "power_outlet", "aux_port", "power_feed", "circuit_termination",
-)
-
-
-def termination_component(term):
-    """The component a cable termination sits on (exactly one FK is set)."""
-    for name in _TERMINATION_COMPONENTS:
-        comp = getattr(term, name, None)
-        if comp is not None:
-            return comp
-    return None
-
-
-def far_end(term):
-    """``{"device": name, "port": name}`` for the other end of ``term``'s
-    cable, or None when the cable ends nowhere yet. Reads the prefetched
-    terminations, so a list costs no query per row."""
-    if term is None:
-        return None
-    for other in term.cable.terminations.all():
-        if other.pk == term.pk:
-            continue
-        comp = termination_component(other)
-        if comp is None:
-            return None
-        device = getattr(comp, "device", None)
-        return {
-            "device": device.name if device is not None else "",
-            "port": getattr(comp, "name", "") or "",
-            # The far port's own printed label - what a marker prints for
-            # "far-end port"; its name is never printed as a label.
-            "port_label": getattr(comp, "label", "") or "",
-        }
-    return None
-
-
-# Prefetch that lets ``far_end`` read the other end without a query per
-# row, for the kinds a faceplate marker can carry.
-FAR_END_PREFETCH = (
-    "terminations__cable__terminations__interface__device",
-    "terminations__cable__terminations__front_port__device",
-    "terminations__cable__terminations__rear_port__device",
-)
-
-
 _CHOICE_LABELS: dict = {}
 
 
@@ -5911,21 +5873,8 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         ).count()
 
     def get_used_units(self, obj) -> int:
-        # Distinct units occupied by any device - two half-width devices
-        # sharing a U count it once.
-        units: set[int] = set()
-        for d in obj.devices.all():
-            if d.position is None:
-                continue
-            if d.device_type and d.device_type.exclude_from_utilization:
-                continue  # blanking panels / cable management don't count
-            h = d.device_type.u_height if d.device_type else 1
-            if h <= 0:
-                # 0U gear (vertical strips, shelf appliances) occupies no
-                # units - the old `or 1` here charged each one a full U.
-                continue
-            units.update(range(d.position, d.position + h))
-        return len(units)
+        # Distinct units occupied by any device (api.capacity).
+        return used_units(obj.devices.all())
 
     total_weight_kg = serializers.SerializerMethodField()
     max_weight_kg = serializers.SerializerMethodField()
@@ -5948,37 +5897,9 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_power(self, obj):
-        """Rack power rollup. Supply = primary feeds delivered to the rack
-        (V × A × max-utilisation%, three-phase × √3).
-        Demand = the racked devices' power-port draws - allocated where
-        recorded, with the nameplate (maximum) sum alongside."""
-        available = 0.0
-        for f in obj.power_feeds.all():
-            if f.type != "primary" or not f.voltage or not f.amperage:
-                continue
-            watts = abs(f.voltage) * f.amperage * (f.max_utilization / 100)
-            if f.phase == "three":
-                watts *= 1.732
-            available += watts
-        allocated = maximum = 0
-        for d in obj.devices.all():
-            # A device WITH outlets is a distributor (a PDU): its inlet draw
-            # restates its children's draws, so counting both doubled the
-            # rack's demand. Distributors contribute supply topology, not
-            # demand.
-            outlet_n = getattr(d, "outlet_n", None)
-            if outlet_n is None:
-                outlet_n = d.power_outlets.count()
-            if outlet_n:
-                continue
-            for pp in d.power_ports.all():
-                allocated += pp.allocated_draw or 0
-                maximum += pp.maximum_draw or 0
-        return {
-            "available_w": round(available),
-            "allocated_w": allocated,
-            "maximum_w": maximum,
-        }
+        """Rack power rollup - supply from the primary feeds, demand from the
+        racked devices' draws (api.capacity.rack_power)."""
+        return rack_power(obj)
 
     class Meta:
         model = Rack

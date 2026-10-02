@@ -23,8 +23,11 @@ async function flush() {
   for (let i = 0; i < ids.length; i += MAX_IDS) {
     const chunk = ids.slice(i, i + MAX_IDS)
     try {
+      // drift=1: the room rings markers SNMP disagrees with. Drift costs the
+      // endpoint queries per device; the rest of the batch costs the same
+      // for two devices or two hundred.
       const out = await api<Record<string, FacePorts>>(
-        `/api/devices/face-ports/?ids=${chunk.join(",")}`
+        `/api/devices/face-ports/?ids=${chunk.join(",")}&drift=1`
       )
       for (const id of chunk) {
         const got = out[id]

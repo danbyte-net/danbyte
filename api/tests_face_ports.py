@@ -4,9 +4,12 @@ scene that sit on them."""
 from __future__ import annotations
 
 from types import SimpleNamespace as NS
+from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import SimpleTestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
@@ -18,8 +21,11 @@ from .face_ports import (
     render_marker_name,
 )
 from .models import (
+    Antenna,
     Cable,
     CableTermination,
+    ConsolePort,
+    ConsoleServerPort,
     Device,
     DeviceType,
     FloorPlan,
@@ -28,11 +34,15 @@ from .models import (
     Interface,
     InventoryItem,
     Location,
+    Module,
     ModuleBay,
+    ModuleType,
+    PortReservation,
     PowerOutlet,
     PowerPort,
     Rack,
     Site,
+    Status,
 )
 from .viewsets import DeviceViewSet
 
@@ -301,3 +311,171 @@ class SceneImagePortsTests(_TenantBase):
         self.assertEqual(devs["inherit"]["image_ports"], layout)
         self.assertEqual(devs["own"]["image_ports"], own)
         self.assertIsNone(devs["blank"]["image_ports"])
+
+
+class FacePortsBulkTests(_TenantBase):
+    """GET /api/devices/face-ports/?ids= resolves every device together
+    (api.port_state.FacePortLoader): the entries each device's own face-ports
+    gives, drift aside, in a number of queries that does not grow with the
+    devices asked for (#248)."""
+
+    def setUp(self):
+        super().setUp()
+        self.planned = Status.objects.create(
+            tenant=self.tenant, name="Planned", slug="planned", color="#f59e0b"
+        )
+        self.failed = Status.objects.create(
+            tenant=self.tenant, name="Failed", slug="failed", color="#ef4444"
+        )
+        self.module_type = ModuleType.objects.create(tenant=self.tenant, name="NM-8X")
+        self.dt = DeviceType.objects.create(
+            tenant=self.tenant, name="C9300-48P", u_height=1,
+            image_ports={
+                "front": [
+                    _marker("interface", "Gi{position}/0/1", 0.1),
+                    _marker("interface", "Gi{position}/0/2", 0.2),
+                    _marker("interface", "Gi{position}/0/3", 0.3),
+                    _marker("interface", "Gi{position}/0/4", 0.4),
+                    _marker("interface", "Gi{position}/0/9", 0.45),
+                    _marker("console-port", "con0", 0.5),
+                    _marker("module-bay", "Slot 1", 0.6),
+                    _marker("inventory-item", "disk 1", 0.7),
+                ],
+                "rear": [_marker("power-port", "PSU1", 0.9)],
+            },
+        )
+        # The far ends live off the switches: a core, a console server and
+        # a PDU whose outlets cord the switches' first PSU.
+        self.core = Device.objects.create(tenant=self.tenant, name="core1")
+        self.console = Device.objects.create(tenant=self.tenant, name="cons1")
+        self.pdu = Device.objects.create(tenant=self.tenant, name="pdu1")
+
+    def _cable(self, a, b, **kwargs):
+        cable = Cable.objects.create(tenant=self.tenant, **kwargs)
+        CableTermination.objects.create(cable=cable, end="A", **a)
+        CableTermination.objects.create(cable=cable, end="B", **b)
+        return cable
+
+    def _switch(self, n):
+        """A switch with every kind of marker the type draws: a cabled port, a
+        planned cable, a held port, an undocumented one, a console port on a
+        console server, an installed module, a failed disk, a PSU corded to the
+        PDU, and a PSU and an outlet no marker covers."""
+        dev = Device.objects.create(
+            tenant=self.tenant, name=f"sw{n:02}", device_type=self.dt, vc_position=1
+        )
+        ports = [
+            Interface.objects.create(device=dev, name=f"Gi1/0/{i}", speed="1G")
+            for i in range(1, 6)
+        ]
+        uplink = Interface.objects.create(
+            device=self.core, name=f"Te1/{n}", label=f"to sw{n}"
+        )
+        self._cable({"interface": ports[0]}, {"interface": uplink}, label=f"C{n}")
+        spare = Interface.objects.create(device=self.core, name=f"Te2/{n}")
+        self._cable({"interface": ports[1]}, {"interface": spare}, status=self.planned)
+        PortReservation.objects.create(tenant=self.tenant, interface=ports[2])
+        ports[3].mark_connected = True
+        ports[3].save(update_fields=["mark_connected"])
+        con = ConsolePort.objects.create(device=dev, name="con0")
+        line = ConsoleServerPort.objects.create(device=self.console, name=f"line{n}")
+        self._cable({"console_port": con}, {"console_server_port": line})
+        bay = ModuleBay.objects.create(device=dev, name="Slot 1")
+        Module.objects.create(
+            device=dev, module_bay=bay, module_type=self.module_type,
+            serial_number=f"M{n}",
+        )
+        InventoryItem.objects.create(
+            device=dev, name="Disk 1", kind="disk", status=self.failed
+        )
+        psu = PowerPort.objects.create(device=dev, name="PSU1")
+        PowerPort.objects.create(device=dev, name="PSU2")
+        PowerOutlet.objects.create(device=dev, name="OUT-1")
+        outlet = PowerOutlet.objects.create(device=self.pdu, name=f"C13-{n}")
+        self._cable({"power_outlet": outlet}, {"power_port": psu})
+        return dev
+
+    def _bulk(self, devices, query=""):
+        ids = ",".join(str(d.id) for d in devices)
+        resp = self.client.get(f"/api/devices/face-ports/?ids={ids}{query}")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        return resp.json()
+
+    def test_bulk_matches_each_devices_own_face_ports(self):
+        devices = [self._switch(n) for n in (1, 2, 3)]
+        bulk = self._bulk(devices)
+        self.assertEqual(set(bulk), {str(d.id) for d in devices})
+        for dev in devices:
+            single = self.client.get(f"/api/devices/{dev.id}/face-ports/").json()
+            for entry in single["front"] + single["rear"]:
+                entry["drift"] = None
+            self.assertEqual(bulk[str(dev.id)], single)
+
+        # And what it resolved, for one of them.
+        body = bulk[str(devices[1].id)]
+        front = {e["marker"]: e for e in body["front"]}
+        cabled = front["Gi{position}/0/1"]
+        self.assertEqual(
+            (cabled["cable_state"], cabled["cable_label"], cabled["peer"]),
+            ("connected", "C2", {"device": "core1", "port": "Te1/2", "port_label": "to sw2"}),
+        )
+        self.assertEqual(
+            [front[f"Gi{{position}}/0/{i}"]["cable_state"] for i in (2, 3, 4)],
+            ["reserved", "reserved", "marked"],
+        )
+        self.assertIsNone(front["Gi{position}/0/9"]["id"])
+        self.assertEqual(
+            front["con0"]["peer"], {"device": "cons1", "port": "line2", "port_label": ""}
+        )
+        self.assertEqual(front["Slot 1"]["module"]["serial_number"], "M2")
+        self.assertEqual(front["disk 1"]["status"]["name"], "Failed")
+        rear = {e["marker"]: e for e in body["rear"]}
+        self.assertEqual(
+            rear["PSU1"]["peer"], {"device": "pdu1", "port": "C13-2", "port_label": ""}
+        )
+        # The PSU and the outlet no marker covers, as synthetic entries.
+        self.assertEqual(list(rear), ["PSU1", "PSU2", "OUT-1"])
+        self.assertTrue(all(e["drift"] is None for e in body["front"] + body["rear"]))
+
+    def test_queries_do_not_grow_with_the_devices(self):
+        devices = [self._switch(n) for n in range(1, 13)]
+        # The first request of a run also loads the session idle timeout.
+        self._bulk(devices[:1])
+        counts = []
+        for batch in (devices[:2], devices):
+            with CaptureQueriesContext(connection) as ctx:
+                body = self._bulk(batch)
+            self.assertEqual(len(body), len(batch))
+            counts.append(len(ctx.captured_queries))
+        self.assertEqual(counts[0], counts[1], counts)
+
+    def test_drift_only_when_asked(self):
+        dev = self._switch(1)
+        psu = dev.power_ports.get(name="PSU2")
+        with mock.patch.object(
+            DeviceViewSet, "_face_drift", return_value={str(psu.id): "not reported by SNMP"}
+        ) as drift:
+            plain = self._bulk([dev])[str(dev.id)]
+            drift.assert_not_called()
+            asked = self._bulk([dev], "&drift=1")[str(dev.id)]
+        self.assertTrue(all(e["drift"] is None for e in plain["rear"]))
+        self.assertEqual(
+            {e["name"]: e["drift"] for e in asked["rear"]},
+            {"PSU1": None, "PSU2": "not reported by SNMP", "OUT-1": None},
+        )
+
+    def test_antenna_markers_resolve(self):
+        """An antenna marker is a part with no status: it used to break the
+        whole payload, now it resolves like a status-less hardware marker."""
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="AP", u_height=0,
+            image_ports={"front": [_marker("antenna", "ANT1")], "rear": []},
+        )
+        dev = Device.objects.create(tenant=self.tenant, name="ap1", device_type=dt)
+        antenna = Antenna.objects.create(device=dev, name="ANT1")
+        single = self.client.get(f"/api/devices/{dev.id}/face-ports/").json()
+        entry = single["front"][0]
+        self.assertEqual(
+            (entry["id"], entry["kind"], entry["status"]), (str(antenna.id), None, None)
+        )
+        self.assertEqual(self._bulk([dev])[str(dev.id)], single)

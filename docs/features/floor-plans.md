@@ -274,8 +274,13 @@ separate signal saying "look here". Click it and the card names the difference
 accept it on the device's Monitoring tab - see
 [SNMP discovery](snmp-discovery.md#drift-and-reconciliation).
 
-Drift rides along in the same per-device request the port markers already use,
-so a rack of cabinets costs no extra round trips.
+Drift rides along in the same batched request the port markers already use
+(`GET /api/devices/face-ports/?ids=…&drift=1`), so a rack of cabinets costs no
+extra round trips. Resolving the markers costs that request the same number of
+queries for two devices or two hundred; drift is the part that grows with the
+devices, so the request asks for it by name, and without `drift=1` every
+marker's `drift` is null. A single rack's
+[port state](../dcim/racks.md#api-port-state-and-3d-geometry) leaves drift out.
 
 ## Floors
 

@@ -221,3 +221,41 @@ photos (front/rear shots, cabling, labels). Uploading and removing require
 **change** permission on racks; viewers see it read-only. It's the same shared
 attachment system used on [devices](devices.md#images), sites, and locations -
 including the grid/list toggle and the file details the list shows.
+
+## API: port state and 3D geometry
+
+Two read-only endpoints serve a single rack's views. Both need **view** on
+racks, and each costs the same number of queries whatever the rack holds.
+
+`GET /api/racks/{id}/port-state/` returns every port in the rack:
+
+- `rack`: `u_height`, `u_used` and `u_free` (the units its devices occupy,
+  as the Overview's *Used* counts them), `power` (the same roll-up as the
+  rack page), `ports` and `count_virtual`. `ports` holds `total`,
+  `connected`, `reserved`, `free` and `marked`, counted by the
+  [port counting rule](devices.md#what-counts-as-a-port); `count_virtual`
+  says whether virtual interfaces were counted.
+- `devices`, keyed by device id, each with:
+    - `ports`: the device's counts, the same numbers as its Port utilization
+      card. A device with no counted ports reads zero.
+    - `face`: its photo-port markers resolved to its real components, as
+      `GET /api/devices/face-ports/?ids=` returns them, with `drift` always
+      null.
+    - `interfaces`: its physical interfaces, with what the drawn faceplate
+      colours and hovers them by: name, label, type, speed, enabled, VLAN
+      mode, VLAN and tagged count, LAG, IPs, MAC, MTU, description and tags.
+      The cable comes as its state (`free`, `connected`, `reserved` or
+      `marked`) with its id, label and type, and `peer` names the far end.
+
+The rack's figures count every device in the rack, as its used units and
+power do. The `devices` entries list only the devices you can view, and in
+them only the interfaces and IP addresses you can view. A far end is named
+only when its device (or, for a PDU inlet, its power feed) is one you can
+view.
+
+`GET /api/racks/{id}/scene/` returns the rack alone for a 3D view. It is the
+same object a [floor plan's](../features/floor-plans.md#the-3d-room-view) 3D
+scene carries for a rack tile: size, numbering and outer dimensions, plus the
+positioned and side-mounted devices with their photos, port markers, power
+component names and the feed type of each PDU. The devices are limited to the
+ones you can view.

@@ -27,6 +27,8 @@ describe("fetchFacePortsBatched", () => {
     ])
     expect(calls).toHaveLength(1)
     expect(calls[0]).toContain("ids=a,b")
+    // The room draws drift rings, so it asks for drift.
+    expect(new URL(calls[0], "http://x").searchParams.get("drift")).toBe("1")
     expect(a.front[0]).toEqual({ name: "a" })
     expect(b.front[0]).toEqual({ name: "b" })
     expect(c).toBe(a)
