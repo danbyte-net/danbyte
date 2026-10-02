@@ -293,7 +293,11 @@ the earlier modulus comparison only knew RSA and let an EC mismatch reach
 `nginx -t`.
 
 `show` reads the paths out of the **live** nginx configuration rather than
-assuming them, and so does everything that writes. Both the certificate *and*
+assuming them, and so does everything that writes - from Danbyte's own site
+(`/etc/nginx/sites-available/danbyte.conf`, as nginx loads it) only, so
+another site on the same nginx is never shown, regenerated from or written
+over. A live pair that is a certificate tool's links (certbot's `live/`) is
+not installed over: renew it with that tool. Both the certificate *and*
 the key path come from the config: this is not a detail, because a host that
 keeps its certificate in `/etc/ssl/certs` and its key in `/etc/ssl/private` is
 normal, and deriving one path from the other writes a key somewhere nginx does

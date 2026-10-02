@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import pwd
 import re
 import shutil
 import subprocess
@@ -34,6 +35,7 @@ echo "nginx $*" >>"$FAKE_CALLS"
 case "$1" in
   -v) echo "nginx version: nginx/${FAKE_NGINX_VERSION:-1.24.0}" >&2 ;;
   -t) grep -q BROKEN "$DANBYTE_HOST_ROOT/etc/nginx/sites-available/danbyte.conf" && exit 1 ;;
+  -T) cat "${FAKE_NGINX_T:-/dev/null}" ;;
 esac
 exit 0
 """,
@@ -416,3 +418,85 @@ class InstallHostTests(HostSandbox):
         r = self.finish(script=copy / "scripts" / "install-host.sh")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("nginx: ", r.stdout)
+
+
+class TlsApplyTests(HostSandbox):
+    """scripts/danbyte-tls-apply.sh, the root unit behind Settings → Site
+    certificate: the uploaded pair goes where Danbyte's own site reads it,
+    never where another site on the same nginx does (#279)."""
+
+    def setUp(self):
+        super().setUp()
+        if os.geteuid() == 0:
+            self.skipTest("the drop folder must not be root's")
+        (self.bin / "logger").write_text("#!/bin/sh\nexit 0\n")
+        (self.bin / "logger").chmod(0o755)
+        (self.root / "etc/ssl").mkdir(parents=True)
+        (self.root / "etc/nginx/conf.d").mkdir(parents=True)
+        ssl = self.tmp / "ssl"
+        ssl.mkdir()
+        self.other = self.pair("other.example", ssl / "other")
+        self.ours = self.pair("old.example", ssl / "danbyte")
+        self.new = self.pair("new.example", self.app / "deploy/nginx/certs/danbyte")
+        (self.root / "etc/nginx/conf.d/other.conf").write_text(self.server(*self.other))
+        (self.root / SITE).write_text(self.server(*self.ours))
+        (self.root / "etc/nginx/sites-enabled/danbyte.conf").symlink_to(self.root / SITE)
+        self.before = {p: p.read_bytes() for p in (*self.other, *self.ours)}
+
+    @staticmethod
+    def pair(cn: str, stem: Path) -> tuple[Path, Path]:
+        crt, key = stem.with_suffix(".crt"), stem.with_suffix(".key")
+        subprocess.run(["openssl", "req", "-x509", "-nodes", "-newkey", "ec", "-pkeyopt",
+                        "ec_paramgen_curve:prime256v1", "-days", "2", "-subj", f"/CN={cn}",
+                        "-keyout", str(key), "-out", str(crt)], check=True, capture_output=True)
+        return crt, key
+
+    @staticmethod
+    def server(crt: Path, key: Path) -> str:
+        return (f"server {{\n    listen 443 ssl;\n    ssl_certificate     {crt};\n"
+                f"    ssl_certificate_key {key};\n}}\n")
+
+    def apply(self, *loaded: str) -> dict:
+        """Drop the new pair and run the unit's script, with ``nginx -T``
+        printing nginx.conf and then ``loaded`` (under the scratch root)."""
+        dump = ["# configuration file /etc/nginx/nginx.conf:",
+                "http { include conf.d/*.conf; include sites-enabled/*; }"]
+        for rel in loaded:
+            dump += [f"# configuration file {self.root / rel}:", (self.root / rel).read_text()]
+        (self.tmp / "nginx-T").write_text("\n".join(dump) + "\n")
+        (self.app / "deploy/nginx/certs/danbyte.apply").write_text("")
+        subprocess.run(["bash", str(REPO / "scripts" / "danbyte-tls-apply.sh")], env={
+            **self.env, "DANBYTE_DIR": str(self.app), "FAKE_NGINX_T": str(self.tmp / "nginx-T"),
+            "DANBYTE_USER": pwd.getpwuid(os.getuid()).pw_name,
+            "DANBYTE_TLS_STATE": str(self.tmp / "state")}, capture_output=True, timeout=60)
+        return json.loads((self.tmp / "state/applied.json").read_text())
+
+    def test_the_pair_goes_to_danbytes_site_when_another_site_comes_first(self):
+        res = self.apply("etc/nginx/conf.d/other.conf", "etc/nginx/sites-enabled/danbyte.conf")
+        self.assertEqual(res["outcome"], "applied", res)
+        self.assertEqual(self.ours[0].read_bytes(), self.new[0].read_bytes())
+        self.assertEqual(self.ours[1].read_bytes(), self.new[1].read_bytes())
+        for p in self.other:
+            self.assertEqual(p.read_bytes(), self.before[p], p)
+        self.assertFalse((self.app / "deploy/nginx/certs/danbyte.apply").exists())
+
+    def test_nothing_is_written_while_nginx_does_not_load_danbytes_site(self):
+        res = self.apply("etc/nginx/conf.d/other.conf")
+        self.assertEqual(res["outcome"], "failed", res)
+        self.assertIn("does not load", res["detail"])
+        for p, data in self.before.items():
+            self.assertEqual(p.read_bytes(), data, p)
+
+    def test_a_certificate_tools_links_are_left_to_it(self):
+        live = self.tmp / "letsencrypt/live/danbyte"
+        live.mkdir(parents=True)
+        for name, target in (("fullchain.pem", self.ours[0]), ("privkey.pem", self.ours[1])):
+            (live / name).symlink_to(target)
+        (self.root / SITE).write_text(self.server(live / "fullchain.pem", live / "privkey.pem"))
+        res = self.apply("etc/nginx/sites-enabled/danbyte.conf")
+        self.assertEqual(res["outcome"], "failed", res)
+        self.assertIn("certbot", res["detail"])
+        self.assertTrue((live / "privkey.pem").is_symlink())
+        for p, data in self.before.items():
+            self.assertEqual(p.read_bytes(), data, p)
+

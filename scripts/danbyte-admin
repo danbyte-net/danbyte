@@ -964,6 +964,26 @@ def cmd_backup(ctx: Ctx, args) -> int:
 
 # ── tls ─────────────────────────────────────────────────────────────────────
 
+#: Danbyte's own nginx site, as scripts/host-sync.sh renders it. The tls
+#: commands read paths and names from it alone: another site on the same
+#: nginx is never Danbyte's to read or write (#279).
+NGINX_SITE = "/etc/nginx/sites-available/danbyte.conf"
+
+
+def site_section(text: str) -> str:
+    """Danbyte's site as ``nginx -T`` prints it: the lines under the
+    ``# configuration file`` header whose path resolves to NGINX_SITE (nginx
+    names the sites-enabled link). Empty when nginx does not load it."""
+    want = os.path.realpath(NGINX_SITE)
+    keep, lines = False, []
+    for line in text.splitlines():
+        if line.startswith("# configuration file ") and line.endswith(":"):
+            keep = os.path.realpath(line[len("# configuration file "):-1]) == want
+        elif keep:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def _live_cert_pair() -> tuple[str, str]:
     """The cert **and key** paths nginx actually reads, or ("", "").
 
@@ -973,14 +993,12 @@ def _live_cert_pair() -> tuple[str, str]:
     does not read and left the live pair mismatched - the site stayed up only
     because nginx had not reloaded yet.
     """
-    r = sh(["sudo", "-n", "nginx", "-T"])
-    if not r.ok:
-        r = sh(["nginx", "-T"])
-    if not r.ok:
+    text = nginx_text()
+    if not text:
         # An unreadable or invalid config is not a licence to guess a path.
         return "", ""
     cert = key = ""
-    for line in (r.out or "").splitlines():
+    for line in text.splitlines():
         text = line.strip()
         if text.startswith("ssl_certificate_key") and not key:
             key = text.split()[1].rstrip(";")
@@ -990,12 +1008,9 @@ def _live_cert_pair() -> tuple[str, str]:
 
 
 def _live_cert_paths() -> list[str]:
-    """Every certificate the live config serves - for reporting only."""
-    r = sh(["sudo", "-n", "nginx", "-T"])
-    if not r.ok:
-        r = sh(["nginx", "-T"])
+    """Every certificate Danbyte's site serves - for reporting only."""
     found = []
-    for line in (r.out or "").splitlines():
+    for line in nginx_text().splitlines():
         text = line.strip()
         if text.startswith("ssl_certificate") and not text.startswith("ssl_certificate_key"):
             found.append(text.split()[1].rstrip(";"))
@@ -1006,8 +1021,8 @@ def cmd_tls(ctx: Ctx, args) -> int:
     if args.action == "show":
         paths = _live_cert_paths()
         if not paths:
-            warn("could not read the live nginx config (needs root) - falling back to the "
-                 "canonical path")
+            warn(f"could not read {NGINX_SITE} from the live nginx config (needs root) - "
+                 "falling back to the canonical path")
             paths = ["/etc/ssl/danbyte/danbyte.crt"]
         _, key = _live_cert_pair()
         for p in paths:
@@ -1411,9 +1426,14 @@ def _install_pair(ctx: Ctx, cert: Path, key: Path) -> int:
     """
     dest_crt, dest_key = _live_cert_pair()
     if not (dest_crt and dest_key):
-        bad("could not read ssl_certificate and ssl_certificate_key from the "
-            "live nginx config, so there is nowhere safe to write.")
+        bad(f"could not read ssl_certificate and ssl_certificate_key from {NGINX_SITE} "
+            "in the live nginx config, so there is nowhere safe to write.")
         out(f"{DIM}  Run as root, or fix `sudo nginx -t` first.{OFF}")
+        return 1
+    links = cert_links(dest_crt, dest_key, nonint=sudo_nonint())
+    if links:
+        bad(f"{' and '.join(links)}: a link a certificate tool such as certbot manages - "
+            "nothing written; renew it there, or point Danbyte's site at plain files")
         return 1
     if pair_matches(cert, key) is False:
         bad("that key does not match that certificate - nothing written")
@@ -4661,10 +4681,18 @@ def served_fingerprint(host: str, port: int = 443, sni: str = "") -> dict | None
 
 
 def nginx_text() -> str:
+    """Danbyte's site in the live config, or "" when that is unreadable."""
     r = sh(["sudo", "-n", "nginx", "-T"], timeout=10)
     if not r.ok:
         r = sh(["nginx", "-T"], timeout=10)
-    return r.out if r.ok else ""
+    return site_section(r.out) if r.ok else ""
+
+
+def cert_links(*paths: str, nonint: bool = True) -> list[str]:
+    """The paths that are links - a certificate tool's (certbot's live/).
+    Installing over one leaves a plain file, with the link's 777 mode."""
+    sudo = ["sudo", "-n"] if nonint else ["sudo"]
+    return [p for p in paths if p and sh([*sudo, "test", "-L", p], timeout=10).ok]
 
 
 def server_names(text: str) -> list[str]:
@@ -4788,8 +4816,12 @@ def tls_review(ctx: Ctx, live_facts: dict, *, cert, key, source, chain) -> dict:
         checks.append(("warn", "identical to the live certificate"))
     dest_cert, dest_key = _live_cert_pair()
     if not (dest_cert and dest_key):
-        checks.append(("blocks", "live nginx config unreadable - nowhere safe to write"))
+        checks.append(("blocks", "Danbyte's site not in the live nginx config - nowhere safe "
+                                 "to write"))
         blocked = blocked or "nginx config unreadable"
+    elif cert_links(dest_cert, dest_key):
+        checks.append(("blocks", "the live pair is a certificate tool's links - renew it there"))
+        blocked = blocked or "certificate managed by another tool"
     return {"blocked": blocked, "source": str(src), "source_kind": kind, "source_detail": detail,
             "live": live, "new": new, "live_key_kind": (live_facts or {}).get("key_kind", ""),
             "new_key_kind": nk, "checks": checks, "dest_cert": dest_cert, "dest_key": dest_key,

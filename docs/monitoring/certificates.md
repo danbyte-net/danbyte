@@ -501,10 +501,15 @@ The app never touches nginx and never holds root. It writes the pair into
 `danbyte-tls.path` unit the installer sets up (`make install-tls-unit` on
 an upgraded host, once) notices the stamp and runs
 `scripts/danbyte-tls-apply.sh`: verify the pair (key matches, in date), keep
-the live pair aside, install onto the paths the live nginx config names
-with their existing owner and mode, `nginx -t`, reload - or put the old
-pair back if nginx refuses. The outcome lands in `danbyte.applied` and the
-card shows it: *waiting for the host*, *applied*, or the failure. Without
+the live pair aside, install onto the paths Danbyte's own site names in the
+live nginx config with their existing owner and mode, `nginx -t`, reload -
+or put the old pair back if nginx refuses. The paths come from
+`/etc/nginx/sites-available/danbyte.conf` as nginx loads it and from no
+other site on the same nginx; when nginx does not load that file, or its
+pair is a certificate tool's links (certbot's `live/`), nothing is written
+and the card says why - renew such a pair with that tool. The outcome lands
+in `danbyte.applied` and the card shows it: *waiting for the host*,
+*applied*, or the failure. Without
 the unit the card says so; `danbyte tls install deploy/nginx/certs/` from
 the [host console](../reference/danbyte-admin.md#tls) does the same by hand.
 

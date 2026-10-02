@@ -20,6 +20,9 @@
 set -u
 
 APP="${DANBYTE_DIR:?DANBYTE_DIR must point at the Danbyte checkout}"
+# Tests put the host's files under a scratch root; empty on a real host.
+R="${DANBYTE_HOST_ROOT:-}"
+SITE="$R/etc/nginx/sites-available/danbyte.conf"
 DROP="${DANBYTE_TLS_DROP:-$APP/deploy/nginx/certs}"
 OWNER="${DANBYTE_USER:-}"
 STATE_DIR="${DANBYTE_TLS_STATE:-/var/lib/danbyte-tls}"
@@ -66,11 +69,30 @@ mv "$W/danbyte.crt" "$W/crt"
 mv "$W/danbyte.key" "$W/key"
 chmod 600 "$W/key"
 
-# Where nginx reads from - the live config, never a guess. Both paths.
-conf="$(nginx -T 2>/dev/null)"
-LIVE_CRT="$(printf '%s\n' "$conf" | sed -n 's/^[[:space:]]*ssl_certificate[[:space:]]\+\([^;]*\);.*/\1/p' | head -n1)"
-LIVE_KEY="$(printf '%s\n' "$conf" | sed -n 's/^[[:space:]]*ssl_certificate_key[[:space:]]\+\([^;]*\);.*/\1/p' | head -n1)"
-[ -n "$LIVE_CRT" ] && [ -n "$LIVE_KEY" ] || { finish failed "could not read ssl_certificate paths from nginx -T"; exit 1; }
+# Where nginx reads from - the live config, never a guess. Both paths, and
+# only from Danbyte's own site: another site on this nginx is not ours to
+# write (#279). nginx -T heads each file with the path it included it by;
+# the sites-enabled link resolves to $SITE.
+want="$(readlink -f "$SITE" 2>/dev/null)"
+ours="" keep=0
+while IFS= read -r line; do
+  case "$line" in
+    "# configuration file "*:)
+      f="${line#"# configuration file "}"
+      if [ -n "$want" ] && [ "$(readlink -f "${f%:}" 2>/dev/null)" = "$want" ]; then keep=1; else keep=0; fi
+      continue ;;
+  esac
+  [ "$keep" -eq 1 ] && ours+="$line"$'\n'
+done <<<"$(nginx -T 2>/dev/null)"
+[ -n "$ours" ] || { finish failed "nginx does not load $SITE, Danbyte's site - nothing written"; exit 1; }
+LIVE_CRT="$(printf '%s' "$ours" | sed -n 's/^[[:space:]]*ssl_certificate[[:space:]]\+\([^;]*\);.*/\1/p' | head -n1)"
+LIVE_KEY="$(printf '%s' "$ours" | sed -n 's/^[[:space:]]*ssl_certificate_key[[:space:]]\+\([^;]*\);.*/\1/p' | head -n1)"
+[ -n "$LIVE_CRT" ] && [ -n "$LIVE_KEY" ] || { finish failed "no ssl_certificate and ssl_certificate_key in $SITE"; exit 1; }
+# A link belongs to a certificate tool (certbot's live/): installing over it
+# would leave a plain file - with the link's own 777 mode for the key.
+for f in "$LIVE_CRT" "$LIVE_KEY"; do
+  [ -L "$f" ] && { finish failed "$f is a link a certificate tool such as certbot manages - renew it there, or point Danbyte's site at plain files"; exit 1; }
+done
 
 # The pair must belong together and be in date; nginx would refuse a mismatch
 # later, but with the old pair already replaced.
@@ -82,7 +104,7 @@ kpub="$(openssl pkey -in "$W/key" -pubout -outform DER -passin pass: 2>/dev/null
 [ -n "$cpub" ] && [ "$cpub" = "$kpub" ] || { finish failed "the key does not match the certificate"; exit 1; }
 
 # Keep what is live in a root-only spot until nginx has accepted the new pair.
-PREV="$(mktemp -d /etc/ssl/danbyte-previous.XXXXXX)" || { finish failed "mktemp failed"; exit 1; }
+PREV="$(mktemp -d "$R/etc/ssl/danbyte-previous.XXXXXX")" || { finish failed "mktemp failed"; exit 1; }
 cp -a "$LIVE_CRT" "$PREV/crt" 2>/dev/null && cp -a "$LIVE_KEY" "$PREV/key" 2>/dev/null
 had_prev=$?
 
