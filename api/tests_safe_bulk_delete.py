@@ -5,6 +5,8 @@ happen, and the count is the rows asked about (#252 #253 #267)."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from api.models import (
@@ -14,6 +16,7 @@ from api.models import (
     Device,
     DeviceType,
     Provider,
+    ProviderNetwork,
     Site,
     VirtualChassis,
     WirelessLAN,
@@ -108,6 +111,60 @@ class CircuitAndProviderTests(_Base):
         r = self.bulk("/api/providers/", [theirs.id])
         self.assertEqual(r.json()["deleted"], 0)
         self.assertTrue(Provider.objects.filter(pk=theirs.pk).exists())
+
+
+class CostTests(_Base):
+    """The cost does not grow with the rows (#282): one collect answers for
+    all of them, and the rows go in one delete."""
+
+    def setUp(self):
+        super().setUp()
+        self.provider = Provider.objects.create(tenant=self.tenant, name="Telco", slug="telco")
+        self.ctype = CircuitType.objects.create(tenant=self.tenant, name="Fibre", slug="fibre")
+
+    def circuits(self, n, prefix):
+        out = []
+        for i in range(n):
+            c = Circuit.objects.create(tenant=self.tenant, cid=f"{prefix}-{i}",
+                                       provider=self.provider, type=self.ctype)
+            CircuitTermination.objects.create(circuit=c, term_side="A", site=self.site)
+            out.append(c)
+        return out
+
+    def queries(self, ids, dry_run):
+        with CaptureQueriesContext(connection) as q:
+            r = self.bulk("/api/circuits/", ids, dry_run=dry_run)
+        self.assertEqual(r.status_code, 200, r.content)
+        return len(q), r.json()
+
+    def test_a_dry_run_costs_the_same_for_five_rows_or_forty(self):
+        few, body = self.queries([c.id for c in self.circuits(5, "A")], True)
+        many, body = self.queries([c.id for c in self.circuits(40, "B")], True)
+        self.assertEqual(many, few)
+        self.assertEqual(body["impact"], [{"label": "circuit terminations", "count": 40}])
+
+    def test_a_delete_costs_no_collect_per_row(self):
+        few, _ = self.queries([c.id for c in self.circuits(5, "A")], False)
+        many, body = self.queries([c.id for c in self.circuits(40, "B")], False)
+        self.assertEqual(body["deleted"], 40)
+        self.assertFalse(Circuit.objects.filter(cid__startswith="B-").exists())
+        # What is left per row is the signals of what it deletes - the
+        # circuit and its termination, each logged, unindexed and offered to
+        # webhooks; a collect per row cost twice that.
+        self.assertLessEqual((many - few) / 35, 8)
+
+    def test_protected_rows_are_named_and_the_rest_go(self):
+        nets = [ProviderNetwork.objects.create(tenant=self.tenant, provider=self.provider,
+                                               name=f"net-{i}") for i in range(3)]
+        (c,) = self.circuits(1, "P")
+        CircuitTermination.objects.create(circuit=c, term_side="Z",
+                                          provider_network=nets[1])
+        r = self.bulk("/api/provider-networks/", [n.id for n in nets])
+        body = r.json()
+        self.assertEqual(sorted(body["deleted_ids"]), sorted([str(nets[0].id), str(nets[2].id)]))
+        self.assertEqual([s["id"] for s in body["skipped"]], [str(nets[1].id)])
+        self.assertIn("circuit termination", body["skipped"][0]["reason"])
+        self.assertTrue(ProviderNetwork.objects.filter(pk=nets[1].pk).exists())
 
 
 class WirelessTests(_Base):

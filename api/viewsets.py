@@ -7706,6 +7706,12 @@ class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScope
                     qs = qs.filter(**{field: val})
         return qs
 
+    def bulk_destroy(self, rows):
+        # As perform_destroy: each key leaves the secret store with its record.
+        for obj in rows:
+            obj.clear_psk()
+        self.delete_together(rows)
+
 
 # ─── VPN ─────────────────────────────────────────────────────────────────────
 class TunnelGroupViewSet(TenantScopedViewSet):
@@ -8059,6 +8065,14 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         log_bulk_update(list(instance.members.all()), released)
         instance.members.update(**released)
         super().perform_destroy(instance)
+
+    def bulk_destroy(self, rows):
+        # As perform_destroy, for every stack's members in one update.
+        released = {"virtual_chassis_id": None, "vc_position": None, "vc_priority": None}
+        members = Device.objects.filter(virtual_chassis__in=rows)
+        log_bulk_update(list(members), released)
+        members.update(**released)
+        self.delete_together(rows)
 
 
 # ─── Regions & Locations ─────────────────────────────────────────────────────
