@@ -146,14 +146,25 @@ starting points:
 - [NetBox import](https://docs.danbyte.net/features/netbox-import/)
 - [Permissions & access](https://docs.danbyte.net/features/permissions/)
 
+
+
+
 ## Status
 
 Danbyte is preparing its **first public preview**. It's already running real
 infrastructure, but expect some rough edges and moving parts while the public
 release settles. Feedback and issues are welcome.
 
+> [!CAUTION]
+> NEVER run vx.y.z-dev builds in PROD. (Pre-releases)
+> They are not tested for security, bugs, or general install / upgrade flows.
+> Dev builds are made to let others see new features, and help testing / finding bugs. 
+> 
+
 ## License
 
 Danbyte is licensed under the **Apache License, Version 2.0** - see
 [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, modify, and distribute
 it (including commercially) under the terms of that license.
+
+

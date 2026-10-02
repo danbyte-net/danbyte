@@ -325,12 +325,25 @@ class FocusedMapCostTests(_FabricBase):
             seen.append(len(cables))
             return real(cables)
 
-        url = f"/api/topology/?device={self.devs['srv2'].id}&depth=1"
-        with mock.patch.object(tv, "_links_from_cables", side_effect=spy):
+        # Count the graph build's own queries, not the request's: session,
+        # tenant and cache lookups in the middleware vary between runs (a
+        # cache entry expiring mid-test on a slow runner added nine).
+        counted = []
+        real_build = tv._build_graph
+
+        def build(*args, **kwargs):
             with CaptureQueriesContext(connection) as ctx:
-                r = self.client.get(url)
+                out = real_build(*args, **kwargs)
+            counted.append(len(ctx.captured_queries))
+            return out
+
+        url = f"/api/topology/?device={self.devs['srv2'].id}&depth=1"
+        with mock.patch.object(tv, "_links_from_cables", side_effect=spy), \
+                mock.patch.object(tv, "_build_graph", side_effect=build):
+            r = self.client.get(url)
         self.assertEqual(r.status_code, 200)
-        return len(ctx.captured_queries), sum(seen), r.json()
+        self.assertEqual(len(counted), 1)
+        return counted[0], sum(seen), r.json()
 
     def test_focused_cost_ignores_unrelated_cables(self):
         self._unrelated_pairs(5)
