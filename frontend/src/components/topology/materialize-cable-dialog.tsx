@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select"
 import { Combobox } from "@/components/ui/combobox"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 
 /**
  * Turn an LLDP "ghost" link into a real Cable. SNMP can't report the physical
@@ -71,6 +72,7 @@ export function MaterializeCableDialog({
       qc.invalidateQueries({ queryKey: ["topology-ghosts"] })
       qc.invalidateQueries({ queryKey: ["device-topology"] })
       qc.invalidateQueries({ queryKey: ["device-topology-ghosts"] })
+      invalidatePortCounts(qc)
       onClose()
     },
     onError: (e) => apiErrorToast(e),

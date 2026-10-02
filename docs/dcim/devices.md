@@ -106,7 +106,8 @@ Devices with ports also get a **Port utilization** card: a segmented bar plus
 counts of **connected** (the port terminates a cable), **reserved** (its cable
 carries the *Planned* status, or the uncabled port holds a direct
 [port reservation](cabling.md#port-reservations)), and **free** ports, broken
-down per kind (interfaces, front ports, rear ports). A port can also be
+down per kind (interfaces and front ports, plus virtual interfaces when they
+are counted). A port can also be
 **marked connected** (a one-click bolt action on the port rows, also a
 checkbox on the interface / front-port / rear-port forms) when a cable is
 physically in it but nobody has documented the cable yet - it counts as
@@ -140,6 +141,39 @@ the single port directly when the far end isn't known yet. Most useful on
 patch panels and access switches, where "how full is this thing" is the
 recurring question (`GET /api/devices/<id>/port-utilization/`).
 
+**What counts as a port.** Physical interfaces and front ports, including
+management-only and disabled ones - they are real ports, free or not.
+Wireless radios are physical ports and count too. Left out:
+{ #what-counts-as-a-port }
+
+- **Virtual interfaces** - SVIs, LAGs, loopbacks, tunnels and
+  sub-interfaces: anything ticked *Virtual*, or of type Virtual, Bridge or
+  LAG. The card says how many it left out (`12 virtual · not counted`).
+  **Settings → Component details → Port counting → Count virtual
+  interfaces** counts them, deployment-wide.
+- **Rear ports**, always: a patch panel's rear is the back of the ports its
+  front already counts, so a 24-port panel reads /24. The API still reports
+  them, and the virtual interfaces, per kind.
+- Interfaces whose status is *Not present* or *Decommissioning* leave the
+  math entirely.
+
+The same rule feeds every port figure: this card, the
+[stack card](virtual-chassis.md), the Port utilization page, the Devices
+list **Ports** column, the cable picker's free-ports bar,
+[spec sheets](../features/spec-sheets.md) and
+[port utilization rules](../features/monitoring.md#alert-rules). Each
+response says which basis it used (`count_virtual`).
+
+!!! note "Changed in 0.17"
+    Until 0.17 the total counted every interface and both sides of a patch
+    panel: a 48-port switch with 100 SVIs read 38/148, and a 24-port panel
+    /48. Totals now count physical interfaces and front ports, so most
+    switches and panels read fuller than before. Interfaces of type Virtual
+    or Bridge are now always flagged virtual, like LAGs, so they leave the
+    faceplate and lose Connect and Reserve. The upgrade flags the existing
+    ones, plus the SVIs, loopbacks and tunnels SNMP discovery created
+    without a type, going by what their last poll reported.
+
 The card is interactive: **hovering** a legend entry (connected / reserved /
 free / undocumented) highlights the matching ports on the Panel above it -
 on the photo faceplate and the rendered one alike - and **clicking** it
@@ -151,10 +185,13 @@ and *Mark connected* is bulk-editable, so ticking a whole undocumented
 panel is one selection.
 
 The estate-wide view lives at **DCIM → Connections → Port utilization**:
-every device with ports, fullest first, with the same
-connected/reserved/free split, site/role/type facets, search and export -
-so the patch panel about to run out is the first row you see
-(`GET /api/devices/port-utilization/`). The **Devices list** carries the same
+every device with counted ports, fullest first, with the same
+connected/reserved/free split, its site and rack, site/rack/role/type
+facets, search and export - so the patch panel about to run out is the
+first row you see (`GET /api/devices/port-utilization/`). It lists only the
+devices you can view. `?site=<id>` or `?rack=<id>` opens it with that facet
+ticked. A device with nothing counted - a router with only loopbacks - has
+no fill level, so it is not listed. The **Devices list** carries the same
 number as a **Ports** bar column (like the prefix utilization bar), and
 **port utilization rules** on the Alerts → Rules tab can notify when a
 device's fill crosses a threshold - see

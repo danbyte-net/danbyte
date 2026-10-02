@@ -3532,51 +3532,67 @@ class DeviceViewSet(
     @action(detail=True, methods=["get"], url_path="port-utilization")
     def port_utilization(self, request, pk=None):
         """Connected / reserved / free counts per port kind (issue #64) - see
-        ``port_utilization.utilization_payload`` for the rules."""
+        ``port_utilization`` for the rules."""
+        from core.effective_settings import port_count_virtual
+
         from .port_utilization import utilization_payload
 
         device = self.get_object()
-        return Response(utilization_payload(Device.objects.filter(pk=device.pk)))
+        return Response(utilization_payload(
+            Device.objects.filter(pk=device.pk),
+            count_virtual=port_count_virtual(_get_active_tenant(request)),
+        ))
 
     @action(detail=False, methods=["get"], url_path="port-utilization")
     def port_utilization_rollup(self, request):
-        """Every device with ports + its fill level, for the capacity
-        roll-up view (issue #64). Nine GROUP BY aggregates total - never
+        """Every device with counted ports + its fill level, for the capacity
+        roll-up view (issue #64). Twelve GROUP BY aggregates total - never
         per-device queries - and it rides the list queryset, so ?site= /
-        ?device_type= / ?role= narrow it like any device list.
+        ?device_type= / ?role= narrow it like any device list. A device whose
+        ports are all uncounted (virtual, rear) has no fill level to show.
         """
+        from core.effective_settings import port_count_virtual
+
         from .port_utilization import device_port_counts, used_pct
 
+        count_virtual = port_count_virtual(_get_active_tenant(request))
         devices = self.get_queryset()
-        counts = device_port_counts(devices)
+        counts = {
+            device_id: row
+            for device_id, row in device_port_counts(
+                devices, count_virtual=count_virtual
+            ).items()
+            if row["total"]
+        }
         # Only what the rows print - whole Device rows (custom fields, photo
         # markers, every joined catalog) for a hall of devices cost half a
         # second of transfer and decoding on their own.
         meta = devices.filter(id__in=counts).values(
-            "id", "name", "site_id", "site__name", "role_id", "role__name",
-            "role__color", "device_type__name",
+            "id", "name", "site_id", "site__name", "rack_id", "rack__name",
+            "role_id", "role__name", "role__color", "device_type__name",
         )
         rows = []
         for d in meta:
             row = counts[d["id"]]
-            total, conn, res = row["total"], row["connected"], row["reserved"]
             rows.append({
                 "id": str(d["id"]),
                 "name": d["name"],
                 "site": {"id": str(d["site_id"]), "name": d["site__name"]}
                 if d["site_id"] else None,
+                "rack": {"id": str(d["rack_id"]), "name": d["rack__name"]}
+                if d["rack_id"] else None,
                 "role": {"name": d["role__name"], "color": d["role__color"]}
                 if d["role_id"] else None,
                 "device_type": d["device_type__name"],
-                "total": total,
-                "connected": conn,
-                "reserved": res,
-                "free": total - conn - res,
+                "total": row["total"],
+                "connected": row["connected"],
+                "reserved": row["reserved"],
+                "free": row["free"],
                 "marked": row["marked"],
                 "pct": used_pct(row),
             })
         rows.sort(key=lambda r: (-r["pct"], r["name"]))
-        return Response({"results": rows})
+        return Response({"results": rows, "count_virtual": count_virtual})
 
     # Marker kind → (component relation, CableTermination kind); kept as an
     # alias of the shared table in ``face_ports``.
@@ -4385,9 +4401,11 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
     bulk_name_scope_field = "device_id"
 
     def normalize_bulk_updates(self, updates):
-        # Mirrors Interface.save(): aggregates are virtual, and LACP knobs
-        # only mean something under LACP.
-        if updates.get("type") == "lag":
+        # Mirrors Interface.save(): virtual, bridge and aggregate types are
+        # virtual, and LACP knobs only mean something under LACP.
+        from .dcim_choices import VIRTUAL_INTERFACE_TYPES
+
+        if updates.get("type") in VIRTUAL_INTERFACE_TYPES:
             updates["virtual"] = True
         if "lag_protocol" in updates and updates["lag_protocol"] != "lacp":
             updates["lacp_mode"] = ""
@@ -7991,10 +8009,15 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     def port_utilization(self, request, pk=None):
         """The device card's numbers, summed across every member of the
         stack - the same rules as ``/api/devices/<id>/port-utilization/``."""
+        from core.effective_settings import port_count_virtual
+
         from .port_utilization import utilization_payload
 
         vc = self.get_object()
-        return Response(utilization_payload(Device.objects.filter(virtual_chassis=vc)))
+        return Response(utilization_payload(
+            Device.objects.filter(virtual_chassis=vc),
+            count_virtual=port_count_virtual(_get_active_tenant(request)),
+        ))
 
     def bulk_released(self, obj):
         n = obj.members.count()

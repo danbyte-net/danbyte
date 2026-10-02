@@ -293,6 +293,12 @@ INTERFACE_TYPE_CHOICES: GroupedChoices = [
     ]),
 ]
 
+#: The "Virtual" group above: types with no physical port. An interface of
+#: one of these types is always ``virtual`` - ``Interface.save()``, bulk edit
+#: and the template and module installs set the flag - and port utilization
+#: counts it as virtual even where the flag was never set.
+VIRTUAL_INTERFACE_TYPES: tuple[str, ...] = ("virtual", "bridge", "lag")
+
 # ─── Cable types (standard cable-type taxonomy) ──────────────────────────────
 CABLE_TYPE_CHOICES: GroupedChoices = [
     ("Copper - twisted pair", [

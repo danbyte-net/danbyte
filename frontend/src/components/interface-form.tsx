@@ -28,6 +28,10 @@ import {
 } from "@/components/forms"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  invalidatePortCounts,
+  VIRTUAL_INTERFACE_TYPES,
+} from "@/lib/port-utilization"
 import { syncPortReservation } from "@/components/port-reservation-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DevicePicker } from "@/components/device-picker"
@@ -130,6 +134,9 @@ export function InterfaceForm({
     iface?.lag_min_links != null ? String(iface.lag_min_links) : ""
   )
   const isLag = type === "lag"
+  // Virtual, bridge and aggregate types have no physical port - the server
+  // flags them virtual whatever the box says.
+  const virtualType = VIRTUAL_INTERFACE_TYPES.has(type)
   const [tagIds, setTagIds] = useState<number[]>(
     iface?.tags.map((t) => t.id) ?? []
   )
@@ -178,13 +185,13 @@ export function InterfaceForm({
     reset()
   }, [iface, reset])
 
-  // Picking the LAG type makes this an aggregate: it is virtual and cannot be
-  // a member itself. Leaving the type drops the bundle settings, which only
-  // an aggregate has.
+  // A virtual, bridge or LAG type makes this virtual. The LAG type makes it
+  // an aggregate too, which cannot be a member itself; leaving the type drops
+  // the bundle settings, which only an aggregate has.
   const pickType = (v: string) => {
     setType(v)
+    if (VIRTUAL_INTERFACE_TYPES.has(v)) setVirtual(true)
     if (v === "lag") {
-      setVirtual(true)
       setLagId(null)
     } else if (type === "lag") {
       setLagProtocol("")
@@ -299,7 +306,7 @@ export function InterfaceForm({
         tagged_vlan_ids: mode === "tagged" ? taggedVlanIds : [],
         vrf_id: vrfId,
         tag_ids: tagIds,
-        virtual: isLag || virtual,
+        virtual: virtualType || virtual,
         parent_id: parentId,
         lag_id: isLag ? null : lagId,
         bridge_id: bridgeId,
@@ -360,6 +367,7 @@ export function InterfaceForm({
       qc.invalidateQueries({ queryKey: ["interfaces"] })
       qc.invalidateQueries({ queryKey: ["interface", saved.id] })
       qc.invalidateQueries({ queryKey: ["device-interfaces"] })
+      invalidatePortCounts(qc)
       toast.success(
         isEdit
           ? `Updated ${saved.name}`
@@ -780,10 +788,16 @@ export function InterfaceForm({
           <FormSection title="Nesting" card>
             <FormCheckbox
               label="Virtual interface"
-              checked={virtual}
+              checked={virtual || virtualType}
               onChange={setVirtual}
-              disabled={isLag}
-              hint={isLag ? "Aggregates are always virtual." : undefined}
+              disabled={virtualType}
+              hint={
+                isLag
+                  ? "Aggregates are always virtual."
+                  : virtualType
+                    ? "Always virtual for this type."
+                    : undefined
+              }
             />
             <FormCombobox
               label="Parent interface"
@@ -833,6 +847,7 @@ export function InterfaceForm({
                           void qc.invalidateQueries({
                             queryKey: ["device-interfaces", deviceId],
                           })
+                          invalidatePortCounts(qc)
                           setLagId(c.id)
                         }}
                       />

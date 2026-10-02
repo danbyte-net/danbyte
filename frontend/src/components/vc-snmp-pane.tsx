@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { DeviceSnmp, VcSnmpDrift } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,6 +37,7 @@ export function VcSnmpPane({ vcId }: { vcId: string }) {
     qc.invalidateQueries({ queryKey: ["device-snmp-drift"] })
     qc.invalidateQueries({ queryKey: ["vc-member-interfaces"] })
     qc.invalidateQueries({ queryKey: ["interfaces"] })
+    invalidatePortCounts(qc)
   }
 
   const poll = useMutation({

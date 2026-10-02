@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 
 export interface CableDeleteDialogProps {
   cable: Cable | null
@@ -39,8 +40,7 @@ export function CableDeleteDialog({
       qc.invalidateQueries({ queryKey: ["device-front-ports"] })
       qc.invalidateQueries({ queryKey: ["device-rear-ports"] })
       qc.invalidateQueries({ queryKey: ["device-face-ports"] })
-      qc.invalidateQueries({ queryKey: ["device-port-utilization"] })
-      qc.invalidateQueries({ queryKey: ["port-utilization-rollup"] })
+      invalidatePortCounts(qc)
       onOpenChange(false)
       onDeleted?.()
     },

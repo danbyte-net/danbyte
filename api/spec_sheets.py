@@ -140,13 +140,17 @@ def _tags(obj) -> str:
     return ", ".join(t.name for t in obj.tags.all())
 
 
-def _ports_used(devices) -> dict | None:
+def _ports_used(devices, tenant) -> dict | None:
     """The port-utilisation card's numbers for ``devices`` (a queryset):
-    ``{used, total, pct, connected, reserved, free}`` or ``None`` when there
-    are no ports."""
+    ``{used, total, pct, connected, reserved, free}`` or ``None`` when no
+    port is counted - the same rule as the card, ``tenant``'s setting
+    included."""
+    from core.effective_settings import port_count_virtual
+
     from .port_utilization import utilization_payload
 
-    comb = (utilization_payload(devices) or {}).get("combined") or {}
+    payload = utilization_payload(devices, count_virtual=port_count_virtual(tenant))
+    comb = payload.get("combined") or {}
     total = comb.get("total") or 0
     if not total:
         return None
@@ -317,7 +321,7 @@ def device_context(device, request=None) -> dict:
         "images": images,
         "elevation": elevation,
         "ip_count": IPAddress.objects.filter(assigned_device=device).count(),
-        "ports": _ports_used(type(device).objects.filter(pk=device.pk)),
+        "ports": _ports_used(type(device).objects.filter(pk=device.pk), device.tenant),
     }
 
 
@@ -434,7 +438,7 @@ def vc_context(vc, request=None) -> dict:
             "serial": m.serial_number,
             "status": m.status.name if m.status_id else "",
         })
-    ports = _ports_used(vc.members.all()) if members else None
+    ports = _ports_used(vc.members.all(), vc.tenant) if members else None
     details = [
         ("Domain", vc.domain),
         ("Master", master.name if master else ""),

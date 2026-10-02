@@ -135,6 +135,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "faceplate_group_labels",
             "faceplate_port_labels",
             "faceplate_port_label_color",
+            "port_count_virtual",
             "date_format",
             "time_style",
             "display_timezone",

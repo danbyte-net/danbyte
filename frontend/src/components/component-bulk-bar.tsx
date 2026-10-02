@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import type { QueryClient } from "@tanstack/react-query"
 import { Copy, Pencil, Replace, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
@@ -32,6 +33,7 @@ import type { BulkFieldSpec } from "@/components/forms"
 import { Input } from "@/components/ui/input"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 
 // Generic bulk bar for component tables (interfaces, ports, VM interfaces,
 // device-type component templates). Tick rows → the bar floats up; Edit
@@ -51,6 +53,23 @@ import { apiErrorToast } from "@/lib/api-toast"
 // controls. Re-exported here because the component panes import the type
 // alongside <ComponentBulkBar/>.
 export type { BulkFieldSpec, DcimChoiceListKey } from "@/components/forms"
+
+// Writes to these move port counts, so every count-showing query goes stale
+// with them - whatever keys the caller passes in.
+const PORT_ENDPOINTS = new Set([
+  "/api/interfaces/",
+  "/api/front-ports/",
+  "/api/rear-ports/",
+])
+
+function refresh(
+  qc: QueryClient,
+  endpoint: string,
+  invalidate: unknown[][]
+): void {
+  invalidate.forEach((k) => qc.invalidateQueries({ queryKey: k }))
+  if (PORT_ENDPOINTS.has(endpoint)) invalidatePortCounts(qc)
+}
 
 export interface ComponentBulkBarProps {
   endpoint: string
@@ -245,7 +264,7 @@ function BulkDeleteAction({
         body: JSON.stringify({ ids }),
       }),
     onSuccess: (r) => {
-      invalidate.forEach((k) => qc.invalidateQueries({ queryKey: k }))
+      refresh(qc, endpoint, invalidate)
       toast.success(`Deleted ${r.deleted}`)
       onDone()
     },
@@ -301,7 +320,7 @@ function BulkEditDialog({
       })
     },
     onSuccess: (r) => {
-      invalidate.forEach((k) => qc.invalidateQueries({ queryKey: k }))
+      refresh(qc, endpoint, invalidate)
       toast.success(`Updated ${r.updated} ${kindLabel}s`)
       onDone()
     },
@@ -459,7 +478,7 @@ function RenameCloneDialog({
         }),
       }),
     onSuccess: (r) => {
-      invalidate.forEach((k) => qc.invalidateQueries({ queryKey: k }))
+      refresh(qc, endpoint, invalidate)
       const n = r.renamed ?? r.created ?? 0
       toast.success(
         mode === "rename"

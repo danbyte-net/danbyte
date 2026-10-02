@@ -133,6 +133,7 @@ import {
 } from "@/components/columns/interface-columns"
 import { Loading } from "@/components/loading"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceMiniTopology } from "@/components/device-mini-topology"
 import { MiniMap } from "@/components/site-map/mini-map"
 import { DeviceTunnelsCard } from "@/components/device-tunnels-card"
@@ -1476,6 +1477,7 @@ function DeviceInterfacesPane({
       qc.invalidateQueries({ queryKey: ["device-ips", deviceId] })
       qc.invalidateQueries({ queryKey: ["device", deviceId] })
       qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
+      invalidatePortCounts(qc)
     },
     onError: (e) => apiErrorToast(e),
   })

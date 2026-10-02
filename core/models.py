@@ -749,6 +749,16 @@ class DeploymentSettings(TimestampedModel):
         max_length=7, blank=True, default="#ffffff",
         help_text="Text colour of the port labels (#rrggbb).",
     )
+    # Port utilization counts physical interfaces and front ports. On, it
+    # counts virtual interfaces (SVIs, LAGs, loopbacks, tunnels) too - the
+    # device and stack cards, the Port utilization page, the Devices list,
+    # spec sheets and port-utilization alerts alike. Read it through
+    # core.effective_settings.port_count_virtual, never directly.
+    port_count_virtual = models.BooleanField(
+        default=False, db_default=False,
+        help_text="Port utilization counts virtual interfaces (SVIs, LAGs, "
+                  "loopbacks, tunnels) as ports.",
+    )
 
     # ─── in-app updates ──────────────────────────────────────────────────
     # Release repo Danbyte checks for updates. Blank = the official repo. The

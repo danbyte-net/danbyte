@@ -85,6 +85,20 @@ class DeviceSheetTests(_Base):
         self.assertEqual(row["mac"], "00:1b:44:11:3a:b7")
         self.assertEqual(ctx["comments"], "Core switch, row 3.")
 
+    def test_ports_follow_the_counting_rule(self):
+        """The sheet's Port utilization block is the device card's: virtual
+        interfaces only when the deployment counts them (0.17)."""
+        from core.models import DeploymentSettings
+
+        Interface.objects.create(device=self.device, name="Vlan10", virtual=True)
+        ports = device_context(self.device)["ports"]
+        self.assertEqual((ports["used"], ports["total"]), (1, 1))
+        ds = DeploymentSettings.load()
+        ds.port_count_virtual = True
+        ds.save()
+        ports = device_context(self.device)["ports"]
+        self.assertEqual((ports["used"], ports["total"], ports["pct"]), (1, 2, 50))
+
     def test_html_and_pdf(self):
         html = render_spec_html("device", self.device)
         self.assertIn("aarhus-sw1", html)

@@ -73,7 +73,8 @@ Decommissioning ports are excluded from port-utilization capacity entirely.
 
 ### Management only
 
-Out-of-band management port; excluded from data-plane views.
+Out-of-band management port; excluded from data-plane views. Still counted
+in port utilization: it is a real port.
 
 ### Mark connected
 
@@ -131,7 +132,20 @@ device.
 ### Virtual interface
 
 Marks a sub-interface, LAG, or loopback - no physical attributes, cannot be
-cabled.
+cabled. Always set for types `virtual`, `bridge` and `lag`: `save()`, bulk
+edit and the device-type and module installs set it, and SNMP discovery
+creates loopbacks, SVIs, tunnels and VLAN interfaces as type `virtual`.
+[Port utilization](../dcim/devices.md#what-counts-as-a-port) counts an interface
+as virtual when this is set or its type is one of those three, and leaves
+virtual interfaces out of the total unless the deployment's
+`port_count_virtual` setting is on.
+
+!!! note "Changed in 0.17"
+    Only type `lag` set the flag before 0.17. Migrations `api.0193` and
+    `monitoring.0107` set it on existing rows: every `virtual`, `bridge` and
+    `lag` interface, and every blank-type interface whose name matches a port
+    its device's last SNMP poll reported as loopback, virtual, tunnel, l3vlan,
+    l2vlan or LAG.
 
 ### Parent interface
 

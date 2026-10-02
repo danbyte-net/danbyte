@@ -30,7 +30,11 @@ A4, built to print in black and white as well as colour:
   (with rail and offset), cluster, virtual chassis, description, tags, and
   every custom field that has a value and is not hidden in its definition.
 - **Port utilization** (device and virtual chassis) - the same bar as the
-  page: connected, reserved and free ports out of the total.
+  page: connected, reserved and free ports out of the counted total -
+  physical interfaces and front ports, plus virtual interfaces when the
+  deployment counts them (see
+  [What counts as a port](../dcim/devices.md#what-counts-as-a-port)). Left off
+  when nothing is counted.
 - **Modules and inventory** (device), **Storage** (VM), or the **member
   table** (virtual chassis: position, device, master or member, priority,
   type, serial, status) followed by every member's front elevation in
@@ -44,6 +48,13 @@ A4, built to print in black and white as well as colour:
 
 Every page carries the object name, its Danbyte URL and the page count in
 the footer.
+
+!!! note "Changed in 0.17"
+    The port figures - the Port utilization block and a virtual chassis's
+    *ports used* box - count physical interfaces and front ports, plus virtual
+    interfaces only when the deployment counts them. Until 0.17 they counted
+    every interface and rear port, so a switch with many SVIs printed a lower
+    fill.
 
 ## The hardware sheet
 

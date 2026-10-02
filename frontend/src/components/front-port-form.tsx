@@ -26,6 +26,7 @@ import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useStrandModelling } from "@/components/fiber/use-fiber-palette"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { syncPortReservation } from "@/components/port-reservation-dialog"
 
 export interface FrontPortFormProps {
@@ -206,6 +207,7 @@ export function FrontPortForm({
       qc.invalidateQueries({ queryKey: ["device-front-ports", deviceId] })
       // A front port consumes a rear strand - refresh rear views too.
       qc.invalidateQueries({ queryKey: ["device-rear-ports", deviceId] })
+      invalidatePortCounts(qc)
       toast.success(
         isEdit
           ? `Updated ${saved.name}`

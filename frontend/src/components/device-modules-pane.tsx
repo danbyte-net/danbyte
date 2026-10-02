@@ -41,6 +41,7 @@ import { FormCombobox, FormText, useFieldErrors } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { useSaveObject } from "@/lib/save-object"
 
 /** The device's module bays and what's installed in them. Installing a
@@ -75,6 +76,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
     // Photo/3D bay markers read occupancy from /face-ports/ - an emptied bay
     // has to go back to its faint outline.
     qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
+    invalidatePortCounts(qc)
   }
 
   const remove = useMutation({
@@ -275,6 +277,7 @@ export function InstallModuleDialog({
           x.queryKey[0].includes("interface"),
       })
       qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
+      invalidatePortCounts(qc)
       const n = r.created_interfaces ?? 0
       toast.success(
         `Module installed${n ? ` - ${n} interface${n === 1 ? "" : "s"} added` : ""}`

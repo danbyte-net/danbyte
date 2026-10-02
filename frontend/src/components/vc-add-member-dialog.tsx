@@ -13,6 +13,7 @@ import {
 import { FormFooter, FormText, useFieldErrors } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
 import { useSaveObject } from "@/lib/save-object"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 
 export interface VcAddMemberDialogProps {
   /** The chassis the picked device joins. */
@@ -71,6 +72,8 @@ export function VcAddMemberDialog({
       qc.invalidateQueries({ queryKey: ["virtual-chassis"] })
       qc.invalidateQueries({ queryKey: ["devices"] })
       qc.invalidateQueries({ queryKey: ["device", saved.id] })
+      // The stack card sums its members' ports.
+      invalidatePortCounts(qc)
       qc.invalidateQueries({
         predicate: (q) =>
           typeof q.queryKey[0] === "string" &&

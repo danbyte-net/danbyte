@@ -993,10 +993,24 @@ role (all set conditions AND together; nothing set = every device in the
 tenant). They ride the periodic utilization sweep and notify through the
 tenant's channels with hysteresis - a rule fires once per crossing and
 re-arms when the condition stops holding, exactly like prefix-utilization
-alerts. Counting matches the device page's Port utilization card: connected
+alerts. Counting matches the device page's
+[Port utilization card](../dcim/devices.md#what-counts-as-a-port): connected
 (including ports *marked connected* without a documented cable) or
-*Planned*-reserved ports over total interfaces, front ports and rear
-ports.
+*Planned*-reserved ports over the counted ports - physical interfaces and
+front ports, plus virtual interfaces when **Count virtual interfaces** is on
+(Settings → Component details). Rear ports never count. A device with no
+counted port has no fill level, so threshold rules skip it, while **no ports
+at all** still means no interface, front port or rear port of any kind. When
+virtual interfaces are left out and the device has some, the message says
+*Virtual interfaces not counted.*; the webhook payload carries `total`
+(counted ports), `virtual`, `rear_ports` and `count_virtual`.
+
+!!! note "Changed in 0.17"
+    `total` used to count every interface and rear port too. Under the new
+    count most devices read fuller, so a threshold rule can fire on the first
+    sweep after the upgrade; its message states the basis. A *no ports at
+    all* alert, or a *below* alert at 0%, also used to repeat on every sweep;
+    it now fires once per crossing like the rest.
 
 ### Acknowledge an alert
 

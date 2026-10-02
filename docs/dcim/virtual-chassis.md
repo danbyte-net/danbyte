@@ -108,7 +108,15 @@ A member's own device page shows a **Stack** badge in the header
 
 **Port utilization** sits under the stack elevation: the same card the device
 page shows - connected / reserved / free per port kind, undocumented cables
-counted as connected - summed across every member.
+counted as connected - summed across every member, by the same
+[counting rule](devices.md#what-counts-as-a-port): physical interfaces and front
+ports, virtual interfaces only when they are counted, rear ports never. The
+card refreshes after a cable, port or reservation change anywhere.
+
+!!! note "Changed in 0.17"
+    A stack's SVIs and port-channels no longer count as ports by default, so
+    the stack reads fuller than before. Until 0.17 the card also kept its old
+    numbers after a cable change until the page was reloaded.
 
 ## SNMP
 

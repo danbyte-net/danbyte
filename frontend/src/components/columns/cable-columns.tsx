@@ -7,6 +7,7 @@ import { api } from "@/lib/api"
 import type { Cable, Paginated, Status, Termination } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { fiberColor } from "@/lib/fiber"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import {
@@ -62,7 +63,11 @@ function CableStatusCell({
         method: "PATCH",
         body: JSON.stringify({ status_id: statusId }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["cables"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["cables"] })
+      // Planned holds its ports as reserved; any other status connects them.
+      invalidatePortCounts(qc)
+    },
     onError: (e: unknown) => apiErrorToast(e, "Could not change status"),
   })
   if (!canEdit) return <StatusBadge status={cable.status} />

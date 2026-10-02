@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { PortUtilizationCard } from "@/components/port-utilization-card"
 import { useUrlTab } from "@/lib/use-url-tab"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Crown, Pencil, Plus, Trash2, Unlink } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
@@ -407,6 +408,8 @@ function MembersTable({
     qc.invalidateQueries({ queryKey: ["virtual-chassis", vc.id] })
     qc.invalidateQueries({ queryKey: ["virtual-chassis"] })
     qc.invalidateQueries({ queryKey: ["devices"] })
+    // A member leaving takes its ports off the stack card.
+    invalidatePortCounts(qc)
   }
 
   // Leaving the stack is a device write - membership lives on the Device -

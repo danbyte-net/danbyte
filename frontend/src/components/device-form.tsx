@@ -43,6 +43,7 @@ import {
 } from "@/components/topology-photo-size-select"
 import { useSaveObject } from "@/lib/save-object"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceTypePicker } from "@/components/device-type-picker"
 import { DeviceCabinetFields } from "@/components/device-cabinet-fields"
 import { RackPicker } from "@/components/rack-picker"
@@ -582,6 +583,8 @@ export function DeviceForm({
       qc.invalidateQueries({ queryKey: ["devices"] })
       qc.invalidateQueries({ queryKey: ["devices-picker"] })
       qc.invalidateQueries({ queryKey: ["device", saved.id] })
+      // A new device brings its type's ports; a stack move moves them.
+      invalidatePortCounts(qc)
       if (saved.cabinet || device?.cabinet) invalidateCabinetDeviceViews(qc)
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
       if (againRef.current) {

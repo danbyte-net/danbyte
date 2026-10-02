@@ -137,11 +137,19 @@
     {
       "key": "component-details",
       "label": "Component details",
-      "description": "What a device component's popover shows",
+      "description": "Port popovers and how ports are counted",
       "to": "/settings/components",
       "group": "data",
       "scopes": ["deployment"],
-      "keywords": ["popover", "interface", "port", "hover", "component"]
+      "keywords": [
+        "popover",
+        "interface",
+        "port",
+        "hover",
+        "component",
+        "utilization",
+        "virtual"
+      ]
     },
     {
       "key": "maps",
@@ -450,6 +458,21 @@
       "description": "What a component popover shows, top to bottom",
       "page": "component-details",
       "keywords": ["popover", "hover", "interface", "port"]
+    },
+    {
+      "key": "data.port-counting",
+      "label": "Port counting",
+      "description": "Whether virtual interfaces count toward port utilization",
+      "page": "component-details",
+      "keywords": [
+        "port utilization",
+        "virtual",
+        "svi",
+        "lag",
+        "loopback",
+        "tunnel",
+        "capacity"
+      ]
     },
     {
       "key": "data.maps",

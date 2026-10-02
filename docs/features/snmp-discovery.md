@@ -188,12 +188,23 @@ The differences:
 
 - **Device name** vs `sysName`.
 - **Interface present on the device but not in Danbyte** (`interface_missing`).
+  Accepting it - or **Sync from SNMP** - creates a port the agent reports as a
+  loopback, propVirtual, tunnel or VLAN interface (`l3vlan`, `l2vlan`) with
+  **type Virtual**, so it is virtual: off the faceplate and out of
+  [port utilization](../dcim/devices.md#what-counts-as-a-port) by default.
+  Aggregates arrive typed LAG (below); everything else arrives with no type.
 - **MAC, admin-status, VLAN or speed mismatch** on an interface you already have.
 - **Stale** - Danbyte has an interface the device no longer reports (shown for
   awareness; discovery never deletes from the SoT).
 - **LAG membership** (`lag_membership`) - the aggregate a port reports itself
   under differs from its **LAG / aggregate** in Danbyte. See
   [Link aggregation](#lag-discovery).
+
+!!! note "Changed in 0.17"
+    Discovery used to create loopbacks, SVIs, tunnels and VLAN interfaces with
+    no type, as ordinary ports, so they counted in port utilization. The
+    upgrade marks the existing ones virtual by the type their last poll
+    reported; a type somebody set by hand is left alone.
 
 Wherever a component is *drawn*, a difference shows as an **amber outline** next
 to the record rather than replacing it: on the photo faceplate, on the

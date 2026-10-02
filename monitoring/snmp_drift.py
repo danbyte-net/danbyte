@@ -152,8 +152,13 @@ def _norm(value) -> str:
 
 
 # Observed ifType name → the Danbyte interface type a discovered row is created
-# with. Only the aggregate is mapped: it must be typed "lag" to take members.
-_OBSERVED_TYPE = {"lag": "lag"}
+# with. The aggregate must be typed "lag" to take members; loopbacks, SVIs,
+# tunnels and VLAN interfaces have no physical port, so they arrive typed
+# "virtual" - which makes them virtual (Interface.save()), off the faceplate
+# and out of port utilization. Physical media types stay unmapped: ifType
+# says "ethernet", not which connector.
+VIRTUAL_IFTYPES = ("loopback", "virtual", "tunnel", "l3vlan", "l2vlan")
+_OBSERVED_TYPE = {"lag": "lag", **dict.fromkeys(VIRTUAL_IFTYPES, "virtual")}
 
 
 def _lag_membership_items(

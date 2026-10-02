@@ -62,7 +62,9 @@ into **sub-categories**:
   OSFP, … (the *cage*, when the medium depends on the inserted optic)
 - **Backplane Ethernet, Wireless, Cellular, SONET/SDH, Fibre Channel,
   InfiniBand, Serial/WAN, Broadband, PON, Stacking**
-- **Virtual** - for logical ports (see [Virtual interfaces](virtual-interfaces.md))
+- **Virtual** - for logical ports (see [Virtual interfaces](virtual-interfaces.md)).
+  Virtual, Bridge and LAG always make the interface virtual: it leaves the
+  faceplate and, by default, the [port count](devices.md#what-counts-as-a-port).
 
 Start typing (e.g. `sfp28`, `10gbase-lr`, `qsfp`) to filter across all groups.
 Type is optional - leave it blank if you don't care to record it. The full
@@ -108,7 +110,7 @@ The State checkboxes:
 |---|---|
 | **Enabled** | Administratively up. |
 | **Status** | Lifecycle: Active (default), Disabled, Planned, Not present, Decommissioning. Not present = hardware the agent reports as absent; it and Decommissioning don't count as capacity in port utilization. |
-| **Management only** | Out-of-band management port; excluded from data-plane views. |
+| **Management only** | Out-of-band management port; excluded from data-plane views. Still a port in [port utilization](devices.md#the-device-page), like a disabled one. |
 | **Mark connected** | A cable is physically in the port, just not documented yet - counts as connected in [port utilization](devices.md#the-device-page) and clears itself when a real cable is attached. |
 | **Reserved** | A [port reservation](cabling.md#port-reservations) - hold the port before the far end is known. Released automatically when a cable lands. |
 | **Uplink** | Faces other network gear - discovery never suggests hosts on this port, and topology treats it as an infrastructure link. |

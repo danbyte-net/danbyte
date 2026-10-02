@@ -20,6 +20,7 @@ from .dcim_choices import (
     POWER_OUTLET_TYPE_CHOICES,
     POWER_PORT_TYPE_CHOICES,
     RF_CONNECTOR_CHOICES,
+    VIRTUAL_INTERFACE_TYPES,
 )
 from .fields import HostAddressField, split_host_mask
 from .natural import natural
@@ -1046,8 +1047,11 @@ def materialize_device_components(device) -> dict[str, int]:
     pos = device.vc_position
 
     have = _names(device.interfaces)
+    # bulk_create skips Interface.save(), so the virtual-type rule is
+    # applied here (and in install_module) by hand.
     made = [
         Interface(device=device, name=n, marker_key=n, type=t.type,
+                  virtual=t.type in VIRTUAL_INTERFACE_TYPES,
                   enabled=t.enabled,
                   mgmt_only=t.mgmt_only, combo_group=t.combo_group,
                   poe_mode=t.poe_mode, poe_type=t.poe_type,
@@ -1676,6 +1680,7 @@ def install_module(module) -> int:
     have = set(module.device.interfaces.values_list("name", flat=True))
     made = [
         Interface(device=module.device, name=n, type=t.type,
+                  virtual=t.type in VIRTUAL_INTERFACE_TYPES,
                   enabled=t.enabled, mgmt_only=t.mgmt_only,
                   description=t.description)
         for n, t in types.items()
@@ -3244,10 +3249,11 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         ordering = [natural("name")]
 
     def save(self, *args, **kwargs):
-        # An aggregate has no physical port, and LACP knobs mean nothing
-        # without LACP. Normalised here (not only in the serializer) so bulk
-        # edits, imports and shell writes land in the same shape.
-        if self.type == "lag":
+        # A virtual, bridge or aggregate type has no physical port, and LACP
+        # knobs mean nothing without LACP. Normalised here (not only in the
+        # serializer) so bulk edits, imports and shell writes land in the
+        # same shape - and port utilization agrees with the faceplate.
+        if self.type in VIRTUAL_INTERFACE_TYPES:
             self.virtual = True
         if self.lag_protocol != "lacp":
             self.lacp_mode = ""

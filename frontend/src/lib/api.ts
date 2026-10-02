@@ -7888,6 +7888,9 @@ export interface DeploymentSettings {
   faceplate_group_labels: boolean
   faceplate_port_labels: PortLabelSource
   faceplate_port_label_color: string
+  /** Port utilization counts virtual interfaces (SVIs, LAGs, loopbacks,
+   * tunnels) as ports. */
+  port_count_virtual: boolean
   date_format: DateFormat
   time_style: TimeStyle
   /** Raw stored value - blank inherits the server's TIME_ZONE. */

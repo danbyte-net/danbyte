@@ -140,6 +140,16 @@ def effective_datetime_values(tenant) -> dict:
     }
 
 
+def port_count_virtual(tenant) -> bool:
+    """Whether port utilization counts virtual interfaces (SVIs, LAGs,
+    loopbacks, tunnels) as ports for this tenant.
+
+    The deployment's value for now. Every consumer asks through here, so a
+    per-tenant override can arrive later without touching a caller.
+    """
+    return bool(_deployment().port_count_virtual)
+
+
 def effective_floorplan_row(tenant):
     """The object whose floor-plan popover config applies.
 

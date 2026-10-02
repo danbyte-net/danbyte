@@ -4,7 +4,14 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from rest_framework.test import APITestCase
 
-from api.models import Cable, CableTermination, Device, DeviceRole, Interface
+from api.models import (
+    Cable,
+    CableTermination,
+    Device,
+    DeviceRole,
+    Interface,
+    RearPort,
+)
 from core.models import Organization, Tenant
 
 from .models import PortUtilizationRule
@@ -95,6 +102,92 @@ class PortRuleEvalTests(APITestCase):
             name="Off", condition="above", threshold_pct=1, enabled=False
         )
         self.assertEqual(r["fired"], 0)
+
+
+class PortRuleCountingTests(APITestCase):
+    """The sweep reads the device card's counts (0.17): physical interfaces
+    and front ports, virtual interfaces only when the deployment counts
+    them, rear ports never."""
+
+    def setUp(self):
+        cache.clear()
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+        # sw: 1 of 1 physical port cabled, plus two SVIs (100% counted, 33%
+        # with the SVIs counted); vr: only a loopback; pp: only a rear port.
+        self.sw = Device.objects.create(tenant=self.tenant, name="sw")
+        i = Interface.objects.create(device=self.sw, name="Gi1")
+        c = Cable.objects.create(tenant=self.tenant)
+        CableTermination.objects.create(cable=c, end="A", interface=i)
+        Interface.objects.create(device=self.sw, name="Vlan10", virtual=True)
+        Interface.objects.create(device=self.sw, name="Vlan20", type="virtual")
+        self.vr = Device.objects.create(tenant=self.tenant, name="vr")
+        Interface.objects.create(device=self.vr, name="lo0", virtual=True)
+        self.pp = Device.objects.create(tenant=self.tenant, name="pp")
+        RearPort.objects.create(device=self.pp, name="R1", positions=12)
+        self.cam = Device.objects.create(tenant=self.tenant, name="cam")
+
+    def _run(self, **rule_kwargs):
+        PortUtilizationRule.objects.create(tenant=self.tenant, **rule_kwargs)
+        with patch("monitoring.port_utilization.notify_event") as mock:
+            result = evaluate_port_rules()
+        return result, {c.args[1].split()[1]: c.args for c in mock.call_args_list}
+
+    def test_no_ports_still_means_no_port_of_any_kind(self):
+        r, events = self._run(name="Bare", condition="no_ports")
+        # vr has only a virtual port and pp only a rear one: both have ports.
+        self.assertEqual(list(events), ["cam"])
+        self.assertEqual(r["fired"], 1)
+
+    def test_threshold_rules_skip_devices_with_nothing_counted(self):
+        r, events = self._run(name="Idle", condition="below", threshold_pct=50)
+        self.assertEqual(r["fired"], 0, events)
+
+    def test_setting_on_counts_virtual_interfaces(self):
+        from core.models import DeploymentSettings
+
+        ds = DeploymentSettings.load()
+        ds.port_count_virtual = True
+        ds.save()
+        r, events = self._run(name="Idle", condition="below", threshold_pct=50)
+        # sw: 1 of 3 (33%); vr: 0 of 1. pp's rear port still does not count.
+        self.assertEqual(sorted(events), ["sw", "vr"])
+        _, _, body, payload = events["sw"]
+        self.assertIn("uses 1 of 3 ports (33%)", body)
+        self.assertNotIn("Virtual interfaces not counted", body)
+        self.assertIs(payload["count_virtual"], True)
+
+    def test_message_and_payload_state_the_basis(self):
+        Device.objects.create(tenant=self.tenant, name="plain")
+        plain = Device.objects.get(name="plain")
+        j = Interface.objects.create(device=plain, name="Gi1")
+        c = Cable.objects.create(tenant=self.tenant)
+        CableTermination.objects.create(cable=c, end="A", interface=j)
+        r, events = self._run(name="Full", condition="above", threshold_pct=90)
+        self.assertEqual(sorted(events), ["plain", "sw"])
+        _, _, body, payload = events["sw"]
+        self.assertIn("uses 1 of 1 ports (100%)", body)
+        self.assertIn("Virtual interfaces not counted.", body)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["virtual"], 2)
+        self.assertIs(payload["count_virtual"], False)
+        self.assertNotIn("Virtual interfaces", events["plain"][2])
+
+    def test_no_ports_and_zero_percent_do_not_refire(self):
+        """The hysteresis flag stores the pct, and 0 is one: it must still
+        read as "already alerted"."""
+        PortUtilizationRule.objects.create(
+            tenant=self.tenant, name="Bare", condition="no_ports"
+        )
+        Interface.objects.create(device=self.pp, name="Gi1")  # 0% used
+        PortUtilizationRule.objects.create(
+            tenant=self.tenant, name="Idle", condition="below", threshold_pct=10
+        )
+        with patch("monitoring.port_utilization.notify_event") as mock:
+            evaluate_port_rules()
+            evaluate_port_rules()
+        names = sorted(c.args[1].split()[1] for c in mock.call_args_list)
+        self.assertEqual(names, ["cam", "pp"])
 
 
 class PortRuleApiTests(APITestCase):
