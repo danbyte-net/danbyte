@@ -319,3 +319,11 @@ class CabinetStatusSeedTests(CabinetTestCase):
             self.assertIn("cabinet", rows[slug].available_to, slug)
         self.assertIn("cabinet", rows["active"].default_for)
         self.assertEqual(seed_builtin_statuses(self.tenant2), 0)
+
+    def test_a_status_counts_its_cabinets(self):
+        self.assertEqual(self._cabinet(status_id=str(self.active.id)).status_code, 201)
+        row = next(s for s in self.client.get("/api/statuses/").json()["results"]
+                   if s["id"] == str(self.active.id))
+        self.assertEqual(row["usage_count"], 1)
+        detail = self.client.get(f"/api/statuses/{self.active.id}/").json()
+        self.assertEqual((detail["usage_count"], detail["ip_count"]), (1, 0))

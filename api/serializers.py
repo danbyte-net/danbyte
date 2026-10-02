@@ -1827,10 +1827,11 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
     text_color = serializers.CharField(read_only=True)
     slug = serializers.SlugField(required=False, allow_blank=True)
     usage_count = serializers.SerializerMethodField()
+    ip_count = serializers.SerializerMethodField()
 
     # Reverse relation names for every model whose status FKs Status.
     _USAGE_RELS = [
-        "ips", "devices", "prefixes", "ip_ranges", "racks", "clusters",
+        "ips", "devices", "prefixes", "ip_ranges", "racks", "cabinets", "clusters",
         "virtual_machines", "cables", "circuits", "power_feeds",
         "wireless_lans", "tunnels", "locations", "maintenance_events", "vlans",
     ]
@@ -1840,6 +1841,11 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
         if v is not None:
             return v
         return sum(getattr(obj, rn).count() for rn in self._USAGE_RELS)
+
+    @detail_only(0)
+    def get_ip_count(self, obj) -> int:
+        """The status page's IPs tab: addresses only, not every object."""
+        return obj.ips.count()
 
     def validate_monitoring_state(self, value):
         """A check state may be claimed by at most one status per tenant.
@@ -1880,8 +1886,9 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
                   "weight", "available_to", "default_for",
                   "is_available", "requires_note",
                   "suppresses_alerts", "is_closed", "monitoring_state",
-                  "usage_count", "created_at", "updated_at"]
-        read_only_fields = ["id", "text_color", "usage_count", "created_at", "updated_at"]
+                  "usage_count", "ip_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "text_color", "usage_count", "ip_count", "created_at",
+                            "updated_at"]
 
 
 class IPRoleSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, NumIdModelSerializer):
