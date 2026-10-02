@@ -439,6 +439,13 @@ dashed **ghost** edge appears (and a "N LLDP links" chip in the header). LLDP
 neighbours are matched to devices by name *or* observed `sysName`, so links show
 up even before you've reconciled a name.
 
+A [virtual chassis](../dcim/virtual-chassis.md) answers as one box: every
+member's table lists the whole stack's neighbours, and a neighbour names the
+stack rather than a member. Each link lands once, on the member that owns the
+port - the one with an interface of that name, else the one whose slot the
+name carries (`Gi2/0/1` is member 2), else the stack's master - so a polled
+stack draws one ghost per link, not one per member.
+
 Click a ghost edge to **materialise it into a real `Cable`**. SNMP can't report
 the physical connector, so you pick the cable type (and, if the devices are
 adjacent on more than one link, which port pair). Creating the cable needs
