@@ -212,4 +212,9 @@ def drop_calibration(doc, side: str):
     entry = view.get(side) if isinstance(view, dict) else None
     if not isinstance(entry, dict) or "cal" not in entry:
         return doc
-    return {**doc, "view": {**view, side: {k: v for k, v in entry.items() if k != "cal"}}}
+    # Prune what empties: a side with nothing left, then the view itself.
+    rest = {k: v for k, v in entry.items() if k != "cal"}
+    view = {**view, side: rest} if rest else {k: v for k, v in view.items() if k != side}
+    if view:
+        return {**doc, "view": view}
+    return {k: v for k, v in doc.items() if k != "view"}

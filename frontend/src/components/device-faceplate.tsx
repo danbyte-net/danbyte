@@ -86,6 +86,7 @@ import {
 } from "@/lib/port-label"
 import type { DevicePortLabels, PortLabelSource } from "@/lib/api"
 import { usePortLabelsShown } from "@/lib/port-labels-pref"
+import { displayScale } from "@/lib/photo-calibration"
 import { cn } from "@/lib/utils"
 import { TruncatedText } from "@/components/ui/truncated-text"
 
@@ -1250,9 +1251,9 @@ export function ImagePortsFaceplate({
   // Display size: the upload size (natural pixels, capped to the pane) unless
   // the editor saved an override for this side - a fraction of the natural
   // width, or null for "fit the pane". A raw `w-full` used to blow a portrait
-  // photo up to the column's width.
-  const photoView = photoDoc?.view?.[side]
-  const photoScale = photoView ? (photoView.scale ?? null) : 1
+  // photo up to the column's width. The side's view may hold only a
+  // calibration (#277), which is no size.
+  const photoScale = displayScale(photoDoc?.view?.[side])
   const [photoW, setPhotoW] = useState<number | null>(null)
   const [photoH, setPhotoH] = useState<number | null>(null)
   const wantsInventory =

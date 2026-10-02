@@ -12,6 +12,7 @@ import {
   exitTowards,
   faceOf,
   markerOf,
+  ownPhotoWidth,
   PHOTO,
   photoAnchors,
   photoFace,
@@ -112,6 +113,34 @@ describe("photoFace", () => {
     expect(din(undefined, 0.44).w).toBe(PHOTO.W)
     // An own size stays inside the map's bounds.
     expect(din("own", 100).w).toBe(PHOTO.MAX_W)
+  })
+
+  it("draws a calibrated photo at its true size against a 19-inch device", () => {
+    // The same switch calibrated 60 mm wide: what its pixels and saved
+    // size say no longer counts.
+    const din = (mm: number | null, size: "rack" | "own" = "own") =>
+      photoFace(
+        photoData({
+          size,
+          front: {
+            ...photoData().photo!.front!,
+            aspect: 2.4,
+            width: 205,
+            scale: 0.44,
+            mm,
+          },
+        })
+      )!
+    // 480 px per 482.6 mm: 60 mm is 60 px, and as tall as its aspect.
+    expect(din(60).w).toBe(Math.round((PHOTO.W * 60) / PHOTO.RACK_MM))
+    expect(din(60).w).toBe(60)
+    expect(din(60).imgH).toBe(144)
+    expect(din(null).w).toBe(90)
+    // Rack width still wins when the device does not ask for its own size.
+    expect(din(60, "rack").w).toBe(PHOTO.W)
+    // Kept inside the map's bounds.
+    expect(din(1).w).toBe(PHOTO.MIN_W)
+    expect(din(5000).w).toBe(PHOTO.MAX_W)
   })
 
   it("halves a half-width type", () => {
@@ -351,6 +380,17 @@ describe("captionRoom", () => {
         200
       )
     ).toEqual({ x: 0, room: 100, to: 100 })
+  })
+})
+
+describe("ownPhotoWidth", () => {
+  it("sizes by the true width, else the saved size, else the upload size", () => {
+    expect(ownPhotoWidth({ width: 205, scale: 0.44, mm: 241.3 })).toBe(240)
+    expect(ownPhotoWidth({ width: null, scale: null, mm: 60 })).toBe(60)
+    expect(ownPhotoWidth({ width: 205, scale: 0.44, mm: null })).toBe(90)
+    expect(ownPhotoWidth({ width: 205, scale: null })).toBe(205)
+    expect(ownPhotoWidth({ width: null, scale: null, mm: 0 })).toBeNull()
+    expect(ownPhotoWidth(null)).toBeNull()
   })
 })
 

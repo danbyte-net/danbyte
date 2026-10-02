@@ -194,22 +194,32 @@ function unitsTall(u: number | null | undefined): number {
   return (Math.max(1, u || 1) * PHOTO.W * PHOTO.U_MM) / PHOTO.RACK_MM
 }
 
-/** A photo's own width: the size its layout saved for every surface (Use
- * this size everywhere), else its upload size; null when unknown. */
+/** A photo's own width: its true size when it is calibrated (`mm`, at the
+ * scale every photo is drawn to - a 19-inch device is `PHOTO.W`), else the
+ * size its layout saved for every surface (Use this size everywhere), else
+ * its upload size; null when unknown. */
 export function ownPhotoWidth(
-  front: { width?: number | null; scale: number | null } | null | undefined
+  front:
+    | { width?: number | null; scale: number | null; mm?: number | null }
+    | null
+    | undefined
 ): number | null {
+  const bound = (w: number) =>
+    Math.round(Math.min(PHOTO.MAX_W, Math.max(PHOTO.MIN_W, w)))
+  const mm = front?.mm
+  if (mm && mm > 0) return bound((PHOTO.W * mm) / PHOTO.RACK_MM)
   const width = front?.width
   if (!width || width <= 0) return null
   const scale = front.scale && front.scale > 0 ? front.scale : 1
-  return Math.round(Math.min(PHOTO.MAX_W, Math.max(PHOTO.MIN_W, width * scale)))
+  return bound(width * scale)
 }
 
 /**
  * The photo node a device is drawn as, or null for its card: not marked,
  * or nothing to draw (no photo, no faceplate). The image is `PHOTO.W`
  * wide (half that for a half-width type) at the photo's own aspect - or,
- * when the device's photo size is `own`, at the photo's own width.
+ * when the device's photo size is `own`, at the photo's own width: its
+ * true size when calibrated (`ownPhotoWidth`).
  */
 export function photoFace(data: FacedData): PhotoFace | null {
   if (data.face !== "photo" || !data.photo) return null

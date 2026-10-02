@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react"
+import { Fragment, useEffect, useId, useMemo, useReducer } from "react"
 import type { KeyboardEvent } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
@@ -14,6 +14,7 @@ import {
   freeGaps,
   railSpans,
 } from "@/lib/din-geometry"
+import { cabinetPhotoBox, effectiveFrontCal } from "@/lib/photo-calibration"
 import { cn } from "@/lib/utils"
 import { usePlatePx } from "@/components/cabinet-elevation"
 import { dash } from "@/components/cells/dash"
@@ -82,6 +83,34 @@ export function nameLayout(
   return across ? { text: across, vertical: false } : null
 }
 
+/** Each photo's height over its width, once the browser has loaded it - a
+ * calibrated photo's true height needs it, and the device rows carry only
+ * its URL. Kept per URL for the session. */
+const PHOTO_ASPECTS = new Map<string, number>()
+
+function usePhotoAspects(urls: string[]): ReadonlyMap<string, number> {
+  const key = [...new Set(urls)].sort().join("\n")
+  const [, loaded] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => {
+    if (!key) return
+    let live = true
+    for (const url of key.split("\n")) {
+      if (PHOTO_ASPECTS.has(url)) continue
+      const img = new Image()
+      img.onload = () => {
+        if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return
+        PHOTO_ASPECTS.set(url, img.naturalHeight / img.naturalWidth)
+        if (live) loaded()
+      }
+      img.src = url
+    }
+    return () => {
+      live = false
+    }
+  }, [key])
+  return PHOTO_ASPECTS
+}
+
 /**
  * The devices on a cabinet's rails, drawn over its plate - the elevation's
  * `children`. A body sits at its rail's left end plus its offset, as wide and
@@ -89,6 +118,10 @@ export function nameLayout(
  * shows the type's front photo, stretched to the body, or the device role's
  * colour; hover for the numbers, click through to the device. Devices off a
  * rail have no place on the plate and are left out.
+ *
+ * A calibrated photo (#277) is drawn at its true size instead: its left
+ * guide on the body's left edge, its rail line on the rail, clipped to the
+ * body. It waits for the photo to load, which gives its height.
  *
  * It writes the rails' labels too (the elevation's own go, `railLabels`
  * off): a rail's first device sits at its left end, where the label was, so
@@ -107,7 +140,17 @@ export function CabinetDeviceBodies({
 }) {
   const px = usePlatePx()
   const nav = useNavigate()
+  const clipId = useId()
   const railById = new Map(rails.map((r) => [r.id, r]))
+  const calibrated = (d: Device) =>
+    d.device_type?.front_image ? effectiveFrontCal(d) : null
+  const aspects = usePhotoAspects(
+    devices.flatMap((d) =>
+      d.device_type?.front_image && calibrated(d)
+        ? [d.device_type.front_image]
+        : []
+    )
+  )
   const open = (d: Device) => nav({ to: "/devices/$id", params: { id: d.id } })
   const onKey = (d: Device, e: KeyboardEvent<SVGGElement>) => {
     if (e.key !== "Enter") return
@@ -128,6 +171,11 @@ export function CabinetDeviceBodies({
           : null
         if (!rail || !body) return null
         const photo = d.device_type?.front_image ?? null
+        const cal = calibrated(d)
+        const aspect = photo ? aspects.get(photo) : undefined
+        const trueBox =
+          cal && aspect ? cabinetPhotoBox(body, cal, aspect, rail.y_mm) : null
+        const clip = `${clipId}-${d.id}`
         const fill = photo ? null : d.role?.color || null
         const ink = fill ? readableText(fill) : undefined
         const selected = d.id === highlight
@@ -154,7 +202,33 @@ export function CabinetDeviceBodies({
                 onClick={() => void open(d)}
                 onKeyDown={(e) => onKey(d, e)}
               >
-                {photo ? (
+                {photo && cal ? (
+                  trueBox && (
+                    <>
+                      <defs>
+                        <clipPath id={clip}>
+                          <rect
+                            x={body.x}
+                            y={body.y}
+                            width={body.width}
+                            height={body.height}
+                          />
+                        </clipPath>
+                      </defs>
+                      <image
+                        data-part="photo"
+                        data-calibrated=""
+                        href={photo}
+                        x={trueBox.x}
+                        y={trueBox.y}
+                        width={trueBox.width}
+                        height={trueBox.height}
+                        preserveAspectRatio="none"
+                        clipPath={`url(#${clip})`}
+                      />
+                    </>
+                  )
+                ) : photo ? (
                   <image
                     href={photo}
                     x={body.x}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render } from "@testing-library/react"
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { Device, DeviceTypeMini, DinRail } from "@/lib/api"
@@ -95,9 +95,28 @@ const body = (name: string) => {
   return { g, x: n("x"), y: n("y"), width: n("width"), height: n("height") }
 }
 
+/** The calibration the type's photo carries: 48 mm between guides 0.1 and
+ * 0.9 of the way across - 60 mm wide - and the rail 0.55 of the way down. */
+const CAL = { left: 0.1, right: 0.9, span_mm: 48, rail: 0.55 }
+
+/** A photo that loads at once, 100 × 245 px. */
+class PhotoStub {
+  onload: (() => void) | null = null
+  naturalWidth = 0
+  naturalHeight = 0
+  set src(_url: string) {
+    queueMicrotask(() => {
+      this.naturalWidth = 100
+      this.naturalHeight = 245
+      this.onload?.()
+    })
+  }
+}
+
 afterEach(() => {
   cleanup()
   navMock.mockReset()
+  vi.unstubAllGlobals()
 })
 
 describe("CabinetDeviceBodies", () => {
@@ -164,6 +183,64 @@ describe("CabinetDeviceBodies", () => {
       ["x", "y", "width", "height"].map((a) => img?.getAttribute(a))
     ).toEqual(["210", "1.5", "60", "147"])
     expect(body("sw-1").g.querySelector("[data-part=body]")).toBeNull()
+  })
+
+  it("draws a calibrated photo at its true size, clipped to the body", async () => {
+    // The photo loads 100 × 245 px: 60 mm wide makes it 147 mm tall.
+    vi.stubGlobal("Image", PhotoStub)
+    draw([
+      device("sw-1", R1, 200, {
+        device_type: type({
+          front_image: "/media/cal-1.png",
+          front_cal: { ...CAL, photo_mm: 60 },
+        }),
+      }),
+    ])
+    const img = await waitFor(() => {
+      const el = body("sw-1").g.querySelector("image")
+      if (!el) throw new Error("not drawn yet")
+      return el
+    })
+    // Its left guide (0.1 in) on the body's left edge, 210; its rail line
+    // (0.55 down) on R1's centreline, 75.
+    expect(
+      ["x", "y", "width", "height"].map((a) => Number(img.getAttribute(a)))
+    ).toEqual([204, -5.85, 60, 147])
+    // Cut to the body, which keeps its box, name strip and outline.
+    const ref = /^url\(#(.+)\)$/.exec(img.getAttribute("clip-path") ?? "")
+    const clip = ref ? document.getElementById(ref[1]) : null
+    expect(clip?.tagName).toBe("clipPath")
+    const box = clip?.querySelector("rect")
+    expect(
+      ["x", "y", "width", "height"].map((a) => box?.getAttribute(a))
+    ).toEqual(["210", "1.5", "60", "147"])
+    expect(body("sw-1")).toMatchObject({ x: 210, y: 1.5, width: 60 })
+  })
+
+  it("takes the device's own calibration over its type's", async () => {
+    vi.stubGlobal("Image", PhotoStub)
+    draw([
+      device("sw-2", R1, 0, {
+        device_type: type({
+          front_image: "/media/cal-2.png",
+          front_cal: { ...CAL, photo_mm: 60 },
+        }),
+        image_ports: {
+          front: [],
+          rear: [],
+          view: { front: { cal: { ...CAL, span_mm: 24, rail: null } } },
+        },
+      }),
+    ])
+    const img = await waitFor(() => {
+      const el = body("sw-2").g.querySelector("image")
+      if (!el) throw new Error("not drawn yet")
+      return el
+    })
+    // 30 mm wide, 73.5 tall, hung from the body's top without a rail line.
+    expect(
+      ["x", "y", "width", "height"].map((a) => Number(img.getAttribute(a)))
+    ).toEqual([7, 1.5, 30, 73.5])
   })
 
   it("goes to the device on a click, or Enter", () => {

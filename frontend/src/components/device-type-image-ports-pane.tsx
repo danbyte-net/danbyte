@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Grid3x3, Search, X } from "lucide-react"
+import { Grid3x3, Ruler, Search, X } from "lucide-react"
 
 import {
   api,
@@ -11,12 +11,34 @@ import {
   type Paginated,
 } from "@/lib/api"
 import type { PortComponent, SlotKind } from "@/lib/faceplate-layout"
+import { PROFILE_HEIGHT_MM } from "@/lib/din-geometry"
+import {
+  draftCalibration,
+  draftOf,
+  fmtPhotoSize,
+  hasSavedSize,
+  newDraft,
+  parseSpan,
+  photoDocToSave,
+  photoHeightMm,
+  photoWidthMm,
+  resolveCalibration,
+  withCalibration,
+  withoutCalibrations,
+  withScale,
+} from "@/lib/photo-calibration"
+import type { CalibrationDraft, Guides } from "@/lib/photo-calibration"
 import {
   TEMPLATE_ENDPOINT,
   TEMPLATE_QUERY_KEY,
 } from "@/components/component-template-dialog"
+import {
+  CalibrationBar,
+  CalibrationGuides,
+} from "@/components/photo-calibration-guides"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Button } from "@/components/ui/button"
+import { InfoTip } from "@/components/ui/info-tip"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -161,6 +183,22 @@ const DEVICE_ENDPOINT: Record<string, string> = {
   "module-bay": "module-bays",
 }
 
+const EMPTY_DOC: ImagePorts = { front: [], rear: [] }
+
+/** The document the editor opens on: the type's, or the device's override.
+ * A device without one starts from a copy of the type's layout minus its
+ * calibrations - the device inherits those until it sets its own. */
+function startDoc(
+  deviceType: DeviceType,
+  device?: { image_ports: DeviceType["image_ports"] | null }
+): ImagePorts {
+  const own = device ? device.image_ports : deviceType.image_ports
+  if (own) return { ...EMPTY_DOC, ...own }
+  if (device && deviceType.image_ports)
+    return withoutCalibrations({ ...EMPTY_DOC, ...deviceType.image_ports })
+  return EMPTY_DOC
+}
+
 export function DeviceTypeImagePortsPane({
   deviceType,
   device,
@@ -204,12 +242,8 @@ export function DeviceTypeImagePortsPane({
   }, [...templateQueries.map((q) => q.data)])
 
   const [side, setSide] = useState<Side>("front")
-  const [ports, setPorts] = useState<ImagePorts>(
-    () =>
-      (device ? (device.image_ports ?? deviceType.image_ports) : deviceType.image_ports) ?? {
-        front: [],
-        rear: [],
-      }
+  const [ports, setPorts] = useState<ImagePorts>(() =>
+    startDoc(deviceType, device)
   )
   const [dirty, setDirty] = useState(false)
   const [sel, setSel] = useState<number | null>(null)
@@ -223,6 +257,11 @@ export function DeviceTypeImagePortsPane({
   // full pane width. Markers are %-positioned, so any scale stays true.
   const [zoom, setZoomState] = useState<number | null>(null)
   const [naturalW, setNaturalW] = useState<number | null>(null)
+  const [naturalH, setNaturalH] = useState<number | null>(null)
+  // Calibrate mode, per side: the side's draft while it is on (#277).
+  const [calDrafts, setCalDrafts] = useState<
+    Partial<Record<Side, CalibrationDraft>>
+  >({})
   const drag = useRef<{
     mode: "move" | "resize"
     i: number
@@ -232,12 +271,7 @@ export function DeviceTypeImagePortsPane({
   } | null>(null)
 
   useEffect(() => {
-    if (!dirty)
-      setPorts(
-        (device
-          ? (device.image_ports ?? deviceType.image_ports)
-          : deviceType.image_ports) ?? { front: [], rear: [] }
-      )
+    if (!dirty) setPorts(startDoc(deviceType, device))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceType.image_ports, device?.image_ports, dirty])
 
@@ -252,23 +286,88 @@ export function DeviceTypeImagePortsPane({
   // The zoom is saved with the layout (per side) so the device page and every
   // other photo surface draw the picture at the size chosen here.
   // Off = the photo draws at its upload size everywhere; on = this side's
-  // zoom (or Fit) is saved and every surface follows it.
-  const sizeOverride = ports.view?.[side] !== undefined
+  // zoom (or Fit) is saved and every surface follows it. The side's view
+  // also keeps its calibration, which neither touches.
+  const sizeOverride = hasSavedSize(ports, side)
   const savedScale = ports.view?.[side]?.scale ?? null
+  // While calibrating, the zoom only magnifies: the saved size stays, and
+  // comes back when calibrate mode ends.
+  const calibrating = !!calDrafts[side]
   useEffect(() => {
-    if (sizeOverride) setZoomState(savedScale)
-  }, [side, sizeOverride, savedScale])
+    if (sizeOverride && !calibrating) setZoomState(savedScale)
+  }, [side, sizeOverride, savedScale, calibrating])
   const setZoom = (next: number | null | ((z: number | null) => number | null)) => {
     const z = typeof next === "function" ? next(zoom) : next
     setZoomState(z)
-    if (sizeOverride) update({ ...ports, view: { ...ports.view, [side]: { scale: z } } })
+    if (sizeOverride && !calibrating) update(withScale(ports, side, z))
   }
-  const setSizeOverride = (on: boolean) => {
-    const view = { ...ports.view }
-    if (on) view[side] = { scale: zoom }
-    else delete view[side]
-    update({ ...ports, view })
+  const setSizeOverride = (on: boolean) =>
+    update(withScale(ports, side, on ? zoom : undefined))
+
+  // ── Calibrate mode (#277) ────────────────────────────────────────────────
+  // Two guides across the photo with the real distance between them, and
+  // the rail line. The draft is what the bar and the guides show; each edit
+  // that parses lands in the document's `view.<side>.cal`. On a device, the
+  // type's calibration shows (faded, "From type") until the device has one
+  // of its own; the first edit copies it into the override.
+  const calDraft = calDrafts[side]
+  // Read as the server reads them: guides it was sent without stand on the
+  // photo's edges.
+  const ownCal = resolveCalibration(ports.view?.[side]?.cal)
+  const typeCal = device
+    ? resolveCalibration(deviceType.image_ports?.view?.[side]?.cal)
+    : null
+  const calInherited = !ownCal && !!typeCal
+  const setCalDraft = (s: Side, d: CalibrationDraft | null) =>
+    setCalDrafts((all) => {
+      const next = { ...all }
+      if (d) next[s] = d
+      else delete next[s]
+      return next
+    })
+  const commitCal = (d: CalibrationDraft) => {
+    const cal = draftCalibration(d)
+    if (cal) update(withCalibration(ports, side, cal))
   }
+  const startCalibrate = () => {
+    const from = ownCal ?? typeCal
+    const d = from ? draftOf(from, deviceType) : newDraft(deviceType)
+    setCalDraft(side, d)
+    setSel(null)
+    setFill(null)
+    setPick(null)
+    // The guides want the photo at least at its own pixels where it fits.
+    if (zoom != null && zoom < 1) setZoomState(null)
+    // A new calibration starts from the defaults - the guides on the
+    // photo's edges, the type's width between them - so a photo cropped to
+    // its housing needs nothing more than Save.
+    if (!from && canWrite) commitCal(d)
+  }
+  const editCal = (patch: Partial<CalibrationDraft>) => {
+    if (!calDraft || !canWrite) return
+    const d = { ...calDraft, ...patch }
+    setCalDraft(side, d)
+    commitCal(d)
+  }
+  const clearCal = () => {
+    update(withCalibration(ports, side, null))
+    setCalDraft(side, typeCal ? draftOf(typeCal, deviceType) : null)
+  }
+  // The guides' true size: the photo's width from the guides, its height
+  // from its aspect, and the rail band at the type's first DIN profile.
+  const liveCal = calDraft ? draftCalibration(calDraft) : null
+  const photoMm = liveCal ? photoWidthMm(liveCal) : null
+  const photoHMm =
+    photoMm != null && naturalW && naturalH
+      ? photoHeightMm(photoMm, naturalH / naturalW)
+      : null
+  const profile = deviceType.din_profiles.at(0)
+  const railBand =
+    photoHMm && profile ? PROFILE_HEIGHT_MM[profile] / photoHMm : null
+  // A distance being typed that does not parse would save the last one.
+  const calBlocked = Object.values(calDrafts).some(
+    (d) => d.span.trim() !== "" && parseSpan(d.span) == null
+  )
 
   // Placed keys (both sides) so the palette hides what's already down.
   const placed = useMemo(() => {
@@ -381,6 +480,7 @@ export function DeviceTypeImagePortsPane({
   // Drop a palette template onto the image at the cursor.
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
+    if (calDraft) return // the markers rest while the guides are out
     const raw = e.dataTransfer.getData("text/plain")
     const box = imgRef.current?.getBoundingClientRect()
     if (!raw || !box) return
@@ -588,6 +688,7 @@ export function DeviceTypeImagePortsPane({
     onSuccess: () => {
       setDirty(false)
       setSel(null)
+      setCalDrafts({})
       toast.success("Back on the type's layout")
       qc.invalidateQueries({ queryKey: ["device", device!.id] })
       qc.invalidateQueries({ queryKey: ["device-face-ports", device!.id] })
@@ -597,8 +698,9 @@ export function DeviceTypeImagePortsPane({
 
 const save = useMutation({
     mutationFn: () => {
-      const body: ImagePorts | null =
-        ports.front.length || ports.rear.length ? ports : null
+      // Null clears the layout - only when nothing is left in it: a saved
+      // size or a calibration keeps the document without a single marker.
+      const body = photoDocToSave(ports)
       if (device)
         return api<DeviceType>(`/api/devices/${device.id}/`, {
           method: "PATCH",
@@ -615,6 +717,9 @@ const save = useMutation({
         qc.invalidateQueries({ queryKey: ["device", device.id] })
         qc.invalidateQueries({ queryKey: ["device-face-ports", device.id] })
       }
+      // Cabinet drawings and the Diagram size calibrated photos.
+      qc.invalidateQueries({ queryKey: ["cabinet-devices"] })
+      qc.invalidateQueries({ queryKey: ["topology"] })
       setDirty(false)
       toast.success("Photo ports saved")
     },
@@ -666,13 +771,38 @@ const save = useMutation({
           onChange={setSizeOverride}
         />
         {canWrite && (
-          <Button variant="outline" size="sm" onClick={openFill}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openFill}
+            disabled={!!calDraft}
+          >
             <Grid3x3 className="h-3.5 w-3.5" /> Bulk place
           </Button>
         )}
-        <p className="text-[12px] text-muted-foreground">
-          Drag a port onto the photo, or bulk-place a whole run at once.
-        </p>
+        {/* Read-only, there has to be a calibration to show. */}
+        {image && (canWrite || ownCal || typeCal) && (
+          <Button
+            variant={calDraft ? "default" : "outline"}
+            size="sm"
+            aria-pressed={!!calDraft}
+            onClick={() =>
+              calDraft ? setCalDraft(side, null) : startCalibrate()
+            }
+          >
+            <Ruler className="h-3.5 w-3.5" /> Calibrate
+          </Button>
+        )}
+        {calDraft ? (
+          <InfoTip>
+            Guides on two points a known distance apart, the dashed line on the
+            rail.
+          </InfoTip>
+        ) : (
+          <p className="text-[12px] text-muted-foreground">
+            Drag a port onto the photo, or bulk-place a whole run at once.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[260px_1fr]">
@@ -800,6 +930,19 @@ const save = useMutation({
               }}
             />
           )}
+          {image && calDraft && (
+            <CalibrationBar
+              span={calDraft.span}
+              onSpan={canWrite ? (span) => editCal({ span }) : undefined}
+              readout={
+                photoMm != null && photoHMm != null
+                  ? fmtPhotoSize(photoMm, photoHMm)
+                  : null
+              }
+              inherited={calInherited}
+              onClear={canWrite && ownCal ? clearCal : undefined}
+            />
+          )}
           {image ? (
             <div className="max-h-[75vh] overflow-auto">
             <div className="mb-1.5 flex items-center gap-1">
@@ -859,7 +1002,22 @@ const save = useMutation({
               <img
                 src={image}
                 alt={`${side} of ${deviceType.name}`}
-                onLoad={(e) => setNaturalW(e.currentTarget.naturalWidth)}
+                // A cached photo can be complete before onLoad is attached,
+                // so its size is read off the element as well.
+                ref={(el) => {
+                  if (el?.complete && el.naturalWidth) {
+                    setNaturalW((w) =>
+                      w === el.naturalWidth ? w : el.naturalWidth
+                    )
+                    setNaturalH((h) =>
+                      h === el.naturalHeight ? h : el.naturalHeight
+                    )
+                  }
+                }}
+                onLoad={(e) => {
+                  setNaturalW(e.currentTarget.naturalWidth)
+                  setNaturalH(e.currentTarget.naturalHeight)
+                }}
                 className={cn(
                   "pointer-events-none block",
                   zoom != null ? "w-full" : "h-auto max-h-[65vh] w-auto max-w-full"
@@ -899,7 +1057,8 @@ const save = useMutation({
                     "absolute cursor-move rounded-[2px] border",
                     i === sel
                       ? "border-primary bg-primary/30 ring-1 ring-primary"
-                      : "border-sky-400/80 bg-sky-400/20 hover:bg-sky-400/30"
+                      : "border-sky-400/80 bg-sky-400/20 hover:bg-sky-400/30",
+                    calDraft && "pointer-events-none opacity-40"
                   )}
                 >
                   {i === sel && canWrite && (
@@ -910,6 +1069,15 @@ const save = useMutation({
                   )}
                 </div>
               ))}
+              {calDraft && (
+                <CalibrationGuides
+                  guides={calDraft}
+                  band={railBand}
+                  inherited={calInherited}
+                  boxRef={imgRef}
+                  onChange={canWrite ? (g: Guides) => editCal(g) : undefined}
+                />
+              )}
             </div>
             </div>
           ) : (
@@ -924,7 +1092,7 @@ const save = useMutation({
         <div className="sticky bottom-0 z-10 -mx-1 flex items-center gap-2 border-t border-border bg-background/95 px-1 py-2.5 backdrop-blur">
           <Button
             onClick={() => save.mutate()}
-            disabled={!dirty || save.isPending}
+            disabled={!dirty || save.isPending || calBlocked}
           >
             {save.isPending ? "Saving…" : "Save photo ports"}
           </Button>
@@ -932,14 +1100,11 @@ const save = useMutation({
             variant="outline"
             disabled={!dirty}
             onClick={() => {
-              setPorts(
-                (device
-                  ? (device.image_ports ?? deviceType.image_ports)
-                  : deviceType.image_ports) ?? { front: [], rear: [] }
-              )
+              setPorts(startDoc(deviceType, device))
               setDirty(false)
               setSel(null)
               setFill(null)
+              setCalDrafts({})
             }}
           >
             Discard changes

@@ -83,7 +83,8 @@ class PhotoCalibrationTests(CabinetTestCase):
         self.assertEqual(self.dt.image_ports["view"]["rear"], {"cal": CAL})
         r = self.client.post(f"{self.url}images/", {"clear_rear": "1"})
         self.dt.refresh_from_db()
-        self.assertEqual(self.dt.image_ports["view"]["rear"], {})
+        # What empties is pruned: the rear side, and with it nothing else.
+        self.assertEqual(self.dt.image_ports["view"], {"front": {"scale": 1}})
 
     def test_the_compact_type_carries_the_front_calibration(self):
         self.put({"front": [], "view": {"front": {"cal": CAL}}})

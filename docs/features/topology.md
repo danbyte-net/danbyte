@@ -380,9 +380,10 @@ greyed out (it would change nothing).
   device's name is a caption under it, its card lines and the status pill
   after it, with no card fill.
 - **Own size:** a device that is not rack gear - a DIN-rail switch, a
-  desktop firewall - can be drawn at its photo's own size instead: the size
-  saved in the photo editor (*Use this size everywhere*), else the upload
-  size. **Topology photo size** - *Rack width* or *Own size* - is set on the
+  desktop firewall - can be drawn at its photo's own size instead: its true
+  size against a 19-inch device when the photo is
+  [calibrated](../dcim/device-catalog.md#photo-ports), else the size saved in
+  the photo editor (*Use this size everywhere*), else the upload size. **Topology photo size** - *Rack width* or *Own size* - is set on the
   device (Photo size, under Topology card), its device type or its role; the
   device's own setting wins, then its type's, then its role's, and with none
   set a photo is drawn at rack width.

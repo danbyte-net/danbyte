@@ -1252,11 +1252,34 @@ export interface ImagePortMarker {
 export interface ImagePorts {
   front: ImagePortMarker[]
   rear: ImagePortMarker[]
-  /** Display-size override per side, saved from the editor. A side that is
-   * present replaces the upload size everywhere the photo is drawn: `scale`
-   * is a fraction of the natural width (1 = pixel-true), null = fit the
-   * pane. A side that is absent draws at its upload size. */
-  view?: { front?: { scale: number | null }; rear?: { scale: number | null } }
+  /** Per side, saved from the editor: the display size and the photo's
+   * calibration. */
+  view?: { front?: PhotoView; rear?: PhotoView }
+}
+
+/** One side's `view`. A `scale` that is present replaces the upload size
+ * everywhere the photo is drawn: a fraction of the natural width (1 =
+ * pixel-true), null = fit the pane. Without one the photo draws at its
+ * upload size. */
+export interface PhotoView {
+  scale?: number | null
+  cal?: PhotoCalibration | null
+}
+
+/** How big a photo really is (#277): two guides at fractions of its width
+ * with the real distance between them, and the DIN rail's centreline as a
+ * fraction of its height (null = not marked). True width = span_mm /
+ * (right - left). */
+export interface PhotoCalibration {
+  left: number
+  right: number
+  span_mm: number
+  rail: number | null
+}
+
+/** A calibration with the whole photo's true width, mm (0.1). */
+export interface ResolvedPhotoCalibration extends PhotoCalibration {
+  photo_mm: number
 }
 
 export interface DeviceType extends LifecycleInfo {
@@ -1368,6 +1391,9 @@ export interface DeviceTypeMini {
   din_rail_mm: number | null
   front_image: string | null
   rear_image: string | null
+  /** The front photo's calibration, with its true width; null when it has
+   * none. A device's own `image_ports` calibration wins over it. */
+  front_cal?: ResolvedPhotoCalibration | null
   release_date?: string | null
   end_of_support?: string | null
   lifecycle_state?: LifecycleState
@@ -3245,6 +3271,9 @@ export interface TopoPhoto {
     /** Display-size override from the type's layout (`ImagePorts.view`):
      * a fraction of `width`, the size on every surface. */
     scale: number | null
+    /** The calibrated photo's true width, mm (the device's calibration,
+     * else its type's); null when it has none. */
+    mm?: number | null
     markers: TopoPhotoMarker[]
   } | null
   /** How wide the Diagram draws it: as a 19-inch device (`rack`), or at

@@ -520,8 +520,16 @@ the upload size (see [Photo nodes](../features/topology.md#photo-nodes)).
 known points across it - its edges, or any two features a known distance
 apart - with the real distance between them, and where the DIN rail runs
 across it. That gives the photo's true width in millimetres, which
-[cabinet](cabinets.md) drawings and the Diagram's *Own size* draw it at. A
-device can carry a calibration of its own; without one it uses its type's.
+[cabinet](cabinets.md) drawings and the Diagram's *Own size* draw it at.
+**Calibrate** in the photo editor shows the two guides (on the photo's edges
+to start) and the dashed rail line: drag them, or nudge the focused one with
+the arrow keys (Shift for bigger steps), and type the **Distance (mm)**
+between the guides - the type's width to start. The rail band is drawn at
+the true height of the type's first DIN profile, and the editor reads out the
+photo's size (*Photo 60.0 × 146.5 mm*). **Clear calibration** removes it;
+zooming while calibrating only magnifies. A device can carry a calibration of
+its own - its photo editor shows the type's, marked *From type*, until the
+device changes it; without one it uses its type's.
 Replacing or clearing a photo drops that side's calibration; resizing it keeps
 it. In the API it is `image_ports.view.<side>.cal = {left, right, span_mm,
 rail}`: the guides as fractions of the photo's width, the distance between
