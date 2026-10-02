@@ -8614,6 +8614,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
 
     _LINK_MODELS = {
         "rack": Rack,
+        "cabinet": Cabinet,
         "device": Device,
         "powerpanel": PowerPanel,
         "powerfeed": PowerFeed,
@@ -8621,6 +8622,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
     }
     _LINK_ROUTES = {
         "rack": "/racks/{id}",
+        "cabinet": "/cabinets/{id}",
         "device": "/devices/{id}",
         # Panels/feeds have no detail page - their edit page is the deep-link.
         "powerpanel": "/power-panels/{id}/edit",

@@ -6,9 +6,10 @@ icon: lucide/layout-grid
 
 **Maps → Floor plans** lays out a [location](regions-locations.md) - a room, a
 hall, a floor - as a grid of tiles: racks, aisles, walls, cooling units,
-cameras, doors… Each tile can **link to a real object** (a rack, a device, a
-power panel or feed, or another floor plan), so the drawing stays a live view
-of your DCIM data rather than a static diagram.
+cameras, doors… Each tile can **link to a real object** (a rack, a DIN-rail
+[cabinet](../dcim/cabinets.md), a device, a power panel or feed, or another
+floor plan), so the drawing stays a live view of your DCIM data rather than a
+static diagram.
 
 Everything is self-contained: an SVG canvas, uploaded background images served
 from your own deployment, no external tile servers - floor plans work fully
@@ -331,6 +332,11 @@ The canvas refreshes `GET /api/floor-plans/<id>/state/` every 30 seconds:
 - **Monitoring rollup** - a rack tile's border turns red the moment any
   device inside it goes down (worst status across the rack's devices' IPs);
   device tiles do the same for their own IPs.
+- **Cabinet tiles** report the cabinet's device and rail counts and roll up
+  its devices' monitoring the same way. A cable to a device in a placed
+  cabinet ends on the cabinet's tile, as one to a racked device ends on its
+  rack's, and in the 3D room the cabinet stands as a closed box of its outer
+  size.
 
 ## Rack & device deep view
 

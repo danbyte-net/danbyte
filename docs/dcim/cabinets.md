@@ -154,6 +154,16 @@ Sync from type skips a rail update that its devices would not survive and
 lists it as *blocked*, with the reason. Search shows where a device sits -
 *K1 · R2 @ 120 mm* - and finds it by its cabinet's name.
 
+## Floor plans
+
+A [floor plan](../features/floor-plans.md) tile can link to a cabinet. Its
+live state (`GET /api/floor-plans/{id}/state/`) carries the cabinet's
+`device_count`, `rail_count` and the worst monitoring `check` of its devices;
+cable runs to its devices end on its tile; the 3D scene lists it as a box of
+its outer size - the plate plus 50 mm, 200 mm deep, where the outer size is
+not recorded. `/api/floor-plan-tiles/?cabinet={id}` finds the tiles that link
+to it.
+
 ## Permissions
 
 Cabinets, cabinet types and cabinet roles are object types of their own in

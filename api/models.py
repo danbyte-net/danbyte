@@ -7463,6 +7463,7 @@ class FloorPlanTile(TimestampedModel):
     # topology map + CableSerializer use.
     LINK_FIELDS = {
         "rack": "rack",
+        "cabinet": "cabinet",
         "device": "device",
         "powerpanel": "power_panel",
         "powerfeed": "power_feed",
@@ -7506,6 +7507,13 @@ class FloorPlanTile(TimestampedModel):
     link_kind = models.CharField(max_length=16, blank=True, default="")
     rack = models.ForeignKey(
         Rack,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="floor_tiles",
+    )
+    cabinet = models.ForeignKey(
+        "Cabinet",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -7601,6 +7609,7 @@ class FloorPlanTile(TimestampedModel):
                                     f"{other}__isnull": True
                                     for other in [
                                         "rack",
+                                        "cabinet",
                                         "device",
                                         "power_panel",
                                         "power_feed",
@@ -7612,6 +7621,7 @@ class FloorPlanTile(TimestampedModel):
                         )
                         for set_field in [
                             "rack",
+                            "cabinet",
                             "device",
                             "power_panel",
                             "power_feed",

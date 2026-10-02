@@ -8933,10 +8933,11 @@ class FloorTileTypeViewSet(TenantScopedViewSet):
 def _resolve_route_endpoints(plan, body):
     """Resolve a route request's two endpoints to tile-centre coordinates.
 
-    Each endpoint is ``{"kind": "device"|"rack", "id": …}``; a device resolves
-    to its own tile, else its rack's tile - the same fallback ``cable_paths``
-    uses. Returns ``((a, b, rack_a, rack_b), None)`` on success - the racks (or
-    None) feed the vertical-drop estimate - or ``(None, error_message)``."""
+    Each endpoint is ``{"kind": "device"|"rack"|"cabinet", "id": …}``; a
+    device resolves to its own tile, else its rack's or cabinet's tile - the
+    same fallback ``cable_paths`` uses. Returns ``((a, b, rack_a, rack_b),
+    None)`` on success - the racks (or None) feed the vertical-drop estimate -
+    or ``(None, error_message)``."""
     from .models import Device
 
     tiles = list(plan.tiles.select_related("rack"))
@@ -8945,24 +8946,39 @@ def _resolve_route_endpoints(plan, body):
         return (t.x + t.width / 2, t.y + t.height / 2)
 
     def resolve(spec):
-        if not isinstance(spec, dict) or spec.get("kind") not in ("device", "rack"):
-            return None, None, "Each endpoint needs kind device|rack and id."
+        if not isinstance(spec, dict) or spec.get("kind") not in ("device", "rack", "cabinet"):
+            return None, None, "Each endpoint needs kind device|rack|cabinet and id."
         oid = str(spec.get("id") or "")
         if spec["kind"] == "rack":
             t = next((t for t in tiles if str(t.rack_id) == oid), None)
             return (centre(t), t.rack, None) if t else (
                 None, None, "That rack isn't placed on this plan.")
+        if spec["kind"] == "cabinet":
+            t = next((t for t in tiles if str(t.cabinet_id) == oid), None)
+            return (centre(t), None, None) if t else (
+                None, None, "That cabinet isn't placed on this plan.")
         t = next((t for t in tiles if str(t.device_id) == oid), None)
         if t:
             return centre(t), None, None
-        dev = Device.objects.filter(
-            id=oid, tenant=plan.tenant
-        ).only("rack_id").first()
+        try:
+            dev = Device.objects.filter(
+                id=oid, tenant=plan.tenant
+            ).only("rack_id", "cabinet_id").first()
+        except DjangoValidationError:
+            dev = None
         if dev is None:
             return None, None, "Unknown device."
-        t = next((t for t in tiles if t.rack_id == dev.rack_id), None)
-        return (centre(t), t.rack, None) if t else (
-            None, None, "That device (or its rack) isn't placed on this plan.")
+        # Its rack's tile, else its cabinet's - never a tile that merely has
+        # no rack either.
+        if dev.rack_id:
+            t = next((t for t in tiles if t.rack_id == dev.rack_id), None)
+            if t:
+                return centre(t), t.rack, None
+        if dev.cabinet_id:
+            t = next((t for t in tiles if t.cabinet_id == dev.cabinet_id), None)
+            if t:
+                return centre(t), None, None
+        return None, None, "That device (or its rack or cabinet) isn't placed on this plan."
 
     a, rack_a, err_a = resolve(body.get("from"))
     if err_a:
@@ -9073,7 +9089,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         plan = self.get_object()
         tiles = list(
-            plan.tiles.exclude(rack=None, device=None).select_related(
+            plan.tiles.exclude(rack=None, device=None, cabinet=None).select_related(
                 "rack", "device__status"
             )
         )
@@ -9084,14 +9100,23 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "devices__device_type", "power_feeds"
             )
         }
+        cabinets = {
+            c.id: c
+            for c in Cabinet.objects.filter(
+                id__in={t.cabinet_id for t in tiles if t.cabinet_id}
+            ).prefetch_related("devices", "rails")
+        }
 
         # Monitoring rollup: device → its IPs' check states, worst wins;
-        # a rack rolls up the worst across its racked devices.
+        # a rack or cabinet rolls up the worst across its devices.
         device_ids = {t.device_id for t in tiles if t.device_id}
         rack_devices: dict = {}
         for r in racks.values():
             rack_devices[r.id] = [d.id for d in r.devices.all()]
             device_ids.update(rack_devices[r.id])
+        cabinet_devices = {c.id: [d.id for d in c.devices.all()] for c in cabinets.values()}
+        for ids in cabinet_devices.values():
+            device_ids.update(ids)
         ip_to_device = dict(
             IPAddress.objects.filter(
                 assigned_device_id__in=device_ids
@@ -9120,6 +9145,14 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     "total_weight_kg": rs.get_total_weight_kg(rack),
                     "max_weight_kg": rs.get_max_weight_kg(rack),
                     "device_count": len(rack_devices[rack.id]),
+                    "check": worst_status(s for s in checks if s),
+                }
+            elif t.cabinet_id and t.cabinet_id in cabinets:
+                checks = [device_check(d) for d in cabinet_devices[t.cabinet_id]]
+                out[str(t.id)] = {
+                    "kind": "cabinet",
+                    "device_count": len(cabinet_devices[t.cabinet_id]),
+                    "rail_count": len(cabinets[t.cabinet_id].rails.all()),
                     "check": worst_status(s for s in checks if s),
                 }
             elif t.device_id and t.device is not None:
@@ -9201,10 +9234,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         plan = self.get_object()
         tiles_qs = plan.tiles.select_related(
-            "tile_type", "role_type", "rack", "device__role",
+            "tile_type", "role_type", "rack", "cabinet", "device__role",
             "device__device_type",
         )
         rack_ids = {t.rack_id for t in tiles_qs if t.rack_id}
+        cabinet_counts = dict(
+            Device.objects.filter(cabinet_id__in={t.cabinet_id for t in tiles_qs if t.cabinet_id})
+            .order_by().values("cabinet_id").annotate(n=Count("id"))
+            .values_list("cabinet_id", "n")
+        )
         racks = {
             r.id: r
             for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
@@ -9329,6 +9367,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 ],
             }
 
+        def cabinet_geo(c):
+            # A closed box: the room shows the enclosure, not its plate. An
+            # unrecorded outer size is the plate plus 50 mm, 200 mm deep.
+            return {
+                "id": str(c.id),
+                "name": c.name,
+                "outer_width_mm": c.outer_width_mm or c.inner_width_mm + 50,
+                "outer_height_mm": c.outer_height_mm or c.inner_height_mm + 50,
+                "outer_depth_mm": c.outer_depth_mm or 200,
+                "device_count": cabinet_counts.get(c.id, 0),
+            }
+
         tiles = [
             {
                 "id": str(t.id),
@@ -9338,6 +9388,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "status": t.status,
                 "label": t.label or "",
                 "kind": "rack" if t.rack_id else
+                        "cabinet" if t.cabinet_id else
                         "device" if t.device_id else "other",
                 # The linked device's name - the 2D canvas labels device tiles
                 # with it (tileName: label || linked.name) and the 3D room's
@@ -9362,6 +9413,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 ),
                 "rack": rack_geo(racks[t.rack_id])
                 if t.rack_id and t.rack_id in racks else None,
+                "cabinet": cabinet_geo(t.cabinet) if t.cabinet_id else None,
             }
             for t in tiles_qs
         ]
@@ -9419,29 +9471,33 @@ class FloorPlanViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"], url_path="cable-paths")
     def cable_paths(self, request, pk=None):
         """Resolve each cable on this plan to its two endpoint tiles - a
-        device-linked tile, else the device's rack tile - so the canvas can
+        device-linked tile, else the device's rack or cabinet tile - so the canvas can
         draw the physical A↔B run. Includes cables routed through a tray here,
         AND any cable whose ends are both placed on the plan (drawn straight
         when it has no tray)."""
         from .models import Cable, CableTermination, Device
 
         plan = self.get_object()
-        # tile lookups: device → tile, rack → tile (first placed wins).
+        # tile lookups: device / rack / cabinet → tile (first placed wins).
         device_tile: dict = {}
         rack_tile: dict = {}
+        cabinet_tile: dict = {}
         for t in plan.tiles.all():
             if t.device_id:
                 device_tile.setdefault(t.device_id, str(t.id))
             if t.rack_id:
                 rack_tile.setdefault(t.rack_id, str(t.id))
+            if t.cabinet_id:
+                cabinet_tile.setdefault(t.cabinet_id, str(t.id))
 
-        # Devices reachable on this plan: directly tiled, or in a tiled rack.
+        # Devices reachable on this plan: directly tiled, or in a tiled rack
+        # or cabinet.
         placed_device_ids = set(device_tile)
-        if rack_tile:
+        if rack_tile or cabinet_tile:
             placed_device_ids.update(
-                Device.objects.filter(rack_id__in=rack_tile).values_list(
-                    "id", flat=True
-                )
+                Device.objects.filter(
+                    Q(rack_id__in=rack_tile) | Q(cabinet_id__in=cabinet_tile)
+                ).values_list("id", flat=True)
             )
         # Cables to show: routed through a tray here, OR touching a placed
         # device (so a device↔device run shows even with no tray).
@@ -9469,19 +9525,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # the exact photo-port quad on the device face.
                 terms.append((term.end, dev_id, getattr(point, "name", "")))
             term_cache[cable.id] = terms
-        device_rack = dict(
-            Device.objects.filter(id__in=wanted_devices).values_list(
-                "id", "rack_id"
-            )
-        )
+        device_home = {
+            d: (rack_id, cabinet_id)
+            for d, rack_id, cabinet_id in Device.objects.filter(
+                id__in=wanted_devices
+            ).values_list("id", "rack_id", "cabinet_id")
+        }
 
         def tile_for(dev_id):
             if dev_id is None:
                 return None
             if dev_id in device_tile:
                 return device_tile[dev_id]
-            rack_id = device_rack.get(dev_id)
-            return rack_tile.get(rack_id) if rack_id else None
+            rack_id, cabinet_id = device_home.get(dev_id, (None, None))
+            if rack_id and rack_id in rack_tile:
+                return rack_tile[rack_id]
+            return cabinet_tile.get(cabinet_id) if cabinet_id else None
 
         result = []
         for cable in cables:
@@ -9604,7 +9663,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
     queryset = FloorPlanTile.objects.select_related(
-        "floor_plan", "tile_type", "role_type", "rack", "device",
+        "floor_plan", "tile_type", "role_type", "rack", "cabinet", "device",
         "power_panel", "power_feed", "linked_floor_plan",
     ).order_by("y", "x")
     serializer_class = FloorPlanTileSerializer
@@ -9620,6 +9679,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
             for param, field in (
                 ("floor_plan", "floor_plan_id"),
                 ("rack", "rack_id"),
+                ("cabinet", "cabinet_id"),
                 ("device", "device_id"),
                 # "Where is this tile type placed" - the floor-tile-type
                 # detail page's Tiles tab.
