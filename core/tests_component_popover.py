@@ -8,6 +8,7 @@ from django.test import Client, TestCase
 
 from core.deployment import (
     COMPONENT_POPOVER_FIELD_DEFAULTS,
+    COMPONENT_POPOVER_FIELDS,
     clean_component_popover_fields,
 )
 from core.models import DeploymentSettings
@@ -20,6 +21,16 @@ class CleanComponentFieldsTests(TestCase):
             ["mac", "name"],
         )
         self.assertEqual(clean_component_popover_fields("name"), [])
+
+    def test_far_end_is_a_field_and_on_by_default(self):
+        """``peer`` (Far end, #248): offered, kept, and shown unless an
+        admin's own list leaves it out - right after the port's state."""
+        self.assertIn("peer", COMPONENT_POPOVER_FIELDS)
+        self.assertEqual(
+            COMPONENT_POPOVER_FIELD_DEFAULTS,
+            ["name", "type", "state", "peer", "vlan", "live", "ips"],
+        )
+        self.assertEqual(clean_component_popover_fields(["peer", "name"]), ["peer", "name"])
 
 
 class ComponentPopoverEndpointTests(TestCase):
@@ -36,6 +47,7 @@ class ComponentPopoverEndpointTests(TestCase):
         self.assertEqual(
             r.json()["popover_fields"], COMPONENT_POPOVER_FIELD_DEFAULTS
         )
+        self.assertIn("peer", r.json()["available"])
 
         r = self.client.put(
             "/api/deployment/component-popover/",
@@ -55,6 +67,7 @@ class ComponentPopoverEndpointTests(TestCase):
         r = self.client.get("/api/component-popover/")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["fields"], COMPONENT_POPOVER_FIELD_DEFAULTS)
+        self.assertIn("peer", r.json()["fields"])
         r = self.client.put(
             "/api/deployment/component-popover/",
             json.dumps({"popover_fields": ["name"]}),

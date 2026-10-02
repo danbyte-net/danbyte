@@ -10,14 +10,16 @@ export const VIRTUAL_INTERFACE_TYPES: ReadonlySet<string> = new Set([
 
 /**
  * Every query that shows a port count: the device and stack Port utilization
- * cards, the cable picker's free-ports bar, and the roll-up behind the Port
- * utilization page and the Devices list Ports column. All of them read the
- * one server rule (`api/port_utilization.py`), so they go stale together.
+ * cards, the cable picker's free-ports bar, the roll-up behind the Port
+ * utilization page and the Devices list Ports column, and a rack's port
+ * state (its elevation's ports and totals). All of them read the one server
+ * rule (`api/port_utilization.py`), so they go stale together.
  */
 export const PORT_COUNT_QUERY_KEYS = [
   ["device-port-utilization"],
   ["vc-port-utilization"],
   ["port-utilization-rollup"],
+  ["rack-port-state"],
 ] as const
 
 /** Refresh every port count. Call after anything that can move one: a

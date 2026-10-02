@@ -1003,6 +1003,7 @@ COMPONENT_POPOVER_FIELDS = [
     "name",        # interface name, linked
     "type",        # connector/interface type
     "state",       # disabled / enabled·no cable / up · speed · cable type
+    "peer",        # "Far end": the device and port at the cable's other end
     "vlan",        # access VLAN or trunk summary
     "live",        # observed oper status + speed (SNMP), when present
     "ips",         # up to three assigned addresses, linked
@@ -1013,7 +1014,7 @@ COMPONENT_POPOVER_FIELDS = [
     "tags",
 ]
 
-COMPONENT_POPOVER_FIELD_DEFAULTS = ["name", "type", "state", "vlan", "live", "ips"]
+COMPONENT_POPOVER_FIELD_DEFAULTS = ["name", "type", "state", "peer", "vlan", "live", "ips"]
 
 
 def clean_component_popover_fields(value) -> list:

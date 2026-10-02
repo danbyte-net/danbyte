@@ -14,6 +14,8 @@ costs queries per device; the single-device face-ports endpoint adds it.
 
 ``PeerScope`` blanks the far ends a caller may not see, and
 ``interface_state`` is one interface as the drawn faceplate reads it.
+``FaceplateParts`` loads what else the drawn faceplate composes - installed
+modules and the components a saved layout places - for many devices at once.
 """
 from __future__ import annotations
 
@@ -442,3 +444,125 @@ def interface_state(iface, peer=far_end) -> dict:
             for t in iface.tags.all()
         ],
     }
+
+
+# ── what else the drawn faceplate composes ──────────────────────────────────
+
+# The kinds a saved faceplate layout can place besides interfaces, with the
+# device relation and RBAC object type of each - the lists the device page
+# loads with ``/api/console-ports/?device=`` and its siblings.
+FACEPLATE_SLOT_KINDS = {
+    "console-port": ("console_ports", "consoleport"),
+    "console-server-port": ("console_server_ports", "consoleserverport"),
+    "power-port": ("power_ports", "powerport"),
+    "power-outlet": ("power_outlets", "poweroutlet"),
+    "front-port": ("front_ports", "frontport"),
+    "rear-port": ("rear_ports", "rearport"),
+    "aux-port": ("aux_ports", "auxport"),
+}
+
+
+def faceplate_slot_kinds(doc) -> set[str]:
+    """The non-interface kinds a faceplate document (a type's or a module
+    type's ``faceplate``) places on either side."""
+    kinds: set[str] = set()
+    if not isinstance(doc, dict):
+        return kinds
+    for side in ("front", "rear"):
+        groups = doc.get(side)
+        for group in groups if isinstance(groups, list) else ():
+            slots = group.get("slots") if isinstance(group, dict) else None
+            for slot in slots if isinstance(slots, list) else ():
+                if not isinstance(slot, dict) or slot.get("t") != "port":
+                    continue
+                kind = slot.get("kind") or "interface"
+                if kind in FACEPLATE_SLOT_KINDS:
+                    kinds.add(kind)
+    return kinds
+
+
+def module_interfaces(module) -> list:
+    """The interfaces ``module`` contributes to its device, named as they
+    land there - ``{module}`` → the bay's position, ``{position}`` → the
+    device's stack position - with their type for cage sizing. Reads the
+    module's device, bay, type and the type's interface templates."""
+    from .models import render_component_name, render_module_name
+
+    pos = module.device.vc_position
+    bay_pos = module.module_bay.position
+    return [
+        {
+            "name": render_component_name(render_module_name(t.name, bay_pos), pos),
+            "type": t.type,
+        }
+        for t in module.module_type.interface_templates.all()
+    ]
+
+
+class FaceplateParts:
+    """The installed modules and the placed components of ``devices``, as
+    the drawn faceplate composes them, in a fixed number of queries.
+
+    ``modules`` per device: what ``/api/modules/?device=`` gives the
+    faceplate - ``id``, ``module_bay``, ``module_type_faceplate`` and
+    ``module_interfaces`` - in bay order. ``components`` per device: by slot
+    kind, ``{id, name, type}`` of every component of a kind the device's
+    type (or one of its modules' types) places on its faceplate, and only
+    those. Both are limited to what the caller may view, as those list
+    endpoints are. Each device needs its ``device_type`` loaded.
+    """
+
+    def __init__(self, devices, user, tenant):
+        from auth_api import rbac
+
+        from .models import Device, Module
+        from .natural import natural
+
+        devices = list(devices)
+        ids = [d.id for d in devices]
+        self._modules: dict = defaultdict(list)
+        self._components: dict = defaultdict(dict)
+        loaded = list(rbac.restrict_queryset(
+            Module.objects.filter(device_id__in=ids)
+            .select_related("device", "module_bay", "module_type")
+            .prefetch_related("module_type__interface_templates")
+            .order_by(natural("module_bay__name")),
+            user, tenant, "module", "view",
+        )) if ids else []
+        kinds_of: dict = defaultdict(set)
+        for module in loaded:
+            self._modules[module.device_id].append({
+                "id": str(module.id),
+                "module_bay": {
+                    "id": str(module.module_bay_id),
+                    "name": module.module_bay.name,
+                    "position": module.module_bay.position,
+                },
+                "module_type_faceplate": module.module_type.faceplate,
+                "module_interfaces": module_interfaces(module),
+            })
+            kinds_of[module.device_id] |= faceplate_slot_kinds(module.module_type.faceplate)
+        needed: dict = defaultdict(list)
+        for d in devices:
+            kinds = kinds_of[d.id]
+            if d.device_type is not None:
+                kinds = kinds | faceplate_slot_kinds(d.device_type.faceplate)
+            for kind in kinds:
+                needed[kind].append(d.id)
+        for kind in sorted(needed):
+            relation, slug = FACEPLATE_SLOT_KINDS[kind]
+            model = Device._meta.get_field(relation).related_model
+            rows = rbac.restrict_queryset(
+                model.objects.filter(device_id__in=needed[kind]),
+                user, tenant, slug, "view",
+            ).values("id", "name", "type", "device_id")
+            for row in rows:
+                self._components[row["device_id"]].setdefault(kind, []).append(
+                    {"id": str(row["id"]), "name": row["name"], "type": row["type"] or ""}
+                )
+
+    def modules(self, device) -> list:
+        return self._modules.get(device.id, [])
+
+    def components(self, device) -> dict:
+        return self._components.get(device.id, {})

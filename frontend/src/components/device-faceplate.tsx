@@ -299,6 +299,49 @@ function facePortLabelFacts(fp: FacePort): PortLabelFacts {
   }
 }
 
+/** A cabled port a page traces where it stands - the rack page opens the
+ * run's trace dialog rather than the port's own page. */
+export interface PortTrace {
+  /** An interface traces from the port; any other kind by its cable. */
+  kind: "interface" | "cable"
+  /** The interface's id, or the cable's. */
+  id: string
+  /** The port, and the device it is on, for the dialog's title. */
+  name: string
+  device: string
+}
+
+const PortTraceContext = React.createContext<((t: PortTrace) => void) | null>(
+  null
+)
+
+/** Inside it, a plain press on a cabled port calls `onTrace` instead of
+ * following the port's link. A free port, and a press with a modifier key
+ * (a new tab), keep the link. Null leaves every port its link. */
+export function PortTraceProvider({
+  onTrace,
+  children,
+}: {
+  onTrace: ((t: PortTrace) => void) | null
+  children: React.ReactNode
+}) {
+  return (
+    <PortTraceContext.Provider value={onTrace}>
+      {children}
+    </PortTraceContext.Provider>
+  )
+}
+
+/** A port link's click handler that traces instead of navigating. */
+function traceInstead(go: () => void): React.MouseEventHandler {
+  return (e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+      return
+    e.preventDefault()
+    go()
+  }
+}
+
 /** The port number kept above the label in a rendered cage needs this much
  * cage height (CSS px): an 8 px number band plus room for a readable label.
  * A life-size RJ45 cage is about 20 px; shorter cages print the label alone. */
@@ -376,12 +419,26 @@ function Cage({
   // the cabled path so it draws in its speed tier, not the free grey.
   const tintAsCabled = markedLit ? { ...tint, cable: true } : tint
   const capability = portCapabilityHex(tint)
+  // `use`, not `useContext`: this runs after the early returns above.
+  const onTrace = React.use(PortTraceContext)
   return (
     <HoverCard openDelay={100} closeDelay={80}>
       <HoverCardTrigger asChild>
         <Link
           to="/interfaces/$id"
           params={{ id: i.id }}
+          onClick={
+            onTrace && i.cable
+              ? traceInstead(() =>
+                  onTrace({
+                    kind: "interface",
+                    id: i.id,
+                    name: i.name,
+                    device: i.device.name,
+                  })
+                )
+              : undefined
+          }
           data-cable-state={cableState(i)}
           data-port-name={i.name}
           data-port-kind="interface"
@@ -470,7 +527,15 @@ function Cage({
 
 // ─── configurable hover card ────────────────────────────────────────────────
 
-const PORT_POPOVER_DEFAULTS = ["name", "type", "state", "vlan", "live", "ips"]
+const PORT_POPOVER_DEFAULTS = [
+  "name",
+  "type",
+  "state",
+  "peer",
+  "vlan",
+  "live",
+  "ips",
+]
 
 /** The admin-ordered field list for the port hover card - the component
  * analogue of the floor-plan tile popover (Settings → Components). */
@@ -520,6 +585,7 @@ function PortHoverBody({
               }`}
       </div>
     ),
+    peer: <FarEnd peer={i.link_peer} />,
     vlan: hasVlan ? (
       <div>
         <VlanRow i={i} />
@@ -563,6 +629,29 @@ function PortHoverBody({
       ))}
     </>
   )
+}
+
+/** A port's far end on its hover card: `→ device:port`, as the 3D port card
+ * writes it. A cable that reaches no device (a circuit) names only what it
+ * has; nothing when it reaches nothing named. */
+function FarEnd({ peer }: { peer?: { device: string; port: string } | null }) {
+  if (!peer || (!peer.device && !peer.port)) return null
+  return (
+    <div>
+      → {peer.device}
+      {peer.device && peer.port && (
+        <span className="text-muted-foreground">:</span>
+      )}
+      {peer.port}
+    </div>
+  )
+}
+
+/** The far end on a power / console / aux / panel-port marker's card, which
+ * has fixed rows otherwise: shown where the hover fields include it. */
+function MarkerFarEnd({ peer }: { peer?: FacePort["peer"] }) {
+  const fields = usePortPopoverFields()
+  return fields.includes("peer") ? <FarEnd peer={peer} /> : null
 }
 
 // ─── group (banked zigzag grid) ─────────────────────────────────────────────
@@ -770,10 +859,19 @@ export function DeviceFaceplate({
   observed,
   onLegend,
   legendKey = "panel",
+  modules,
+  components,
 }: {
   interfaces: Interface[]
   /** Enables resolving non-interface components a saved layout places. */
   deviceId?: string
+  /** The device's installed modules, when the caller already has them - the
+   * rack page loads every device's at once. No request of its own then. */
+  modules?: InstalledModule[]
+  /** The non-interface components the layout places, by slot kind, when the
+   * caller already has them; a kind left out has none. No request per kind
+   * then. */
+  components?: Partial<Record<SlotKind, PortComponent[]>>
   /** Enables the device type's saved faceplate layout. */
   deviceTypeId?: string | null
   /** Stack member number - resolves `{position}` in saved slot names. */
@@ -816,16 +914,16 @@ export function DeviceFaceplate({
     queryKey: ["device-modules-faceplate", deviceId],
     queryFn: () =>
       api<Paginated<InstalledModule>>(`/api/modules/?device=${deviceId}`),
-    enabled: !!deviceId,
+    enabled: !!deviceId && !modules,
     staleTime: 60_000,
   })
   const doc = useMemo<FaceplateDoc>(
     () =>
       composeModuleFaceplates(
         savedDoc ?? autoLayout(physical),
-        modulesQ.data?.results ?? []
+        modules ?? modulesQ.data?.results ?? []
       ),
-    [savedDoc, physical, modulesQ.data]
+    [savedDoc, physical, modules, modulesQ.data]
   )
 
   // Lazily fetch the non-interface component lists the doc references.
@@ -845,7 +943,7 @@ export function DeviceFaceplate({
         api<Paginated<PortComponent>>(
           `/api/${KIND_LIST_ENDPOINT[k]}/?device=${deviceId}&page_size=500`
         ),
-      enabled: !!deviceId,
+      enabled: !!deviceId && !components,
       staleTime: 60_000,
     })),
   })
@@ -855,7 +953,9 @@ export function DeviceFaceplate({
       interface: physical,
     }
     kindsNeeded.forEach((k, i) => {
-      componentsByKind[k] = kindQueries[i]?.data?.results ?? []
+      componentsByKind[k] = components
+        ? (components[k] ?? [])
+        : (kindQueries[i]?.data?.results ?? [])
     })
     return resolveLayout(
       doc,
@@ -871,6 +971,7 @@ export function DeviceFaceplate({
     physical,
     vcPosition,
     kindsNeeded,
+    components,
     ...kindQueries.map((q) => q.data),
   ])
 
@@ -1086,6 +1187,10 @@ export function FaceplateView({
   fit,
   fill,
   portLabels,
+  device,
+  facePorts,
+  modules,
+  components,
 }: {
   mode?: FaceplateMode
   deviceTypeId?: string | null
@@ -1103,6 +1208,12 @@ export function FaceplateView({
   fill?: boolean
   /** The device's own say over port labels: inherit / on / off. */
   portLabels?: DevicePortLabels | null
+  /** Data the caller already holds, so the panel makes no request of its
+   * own for it - see `ImagePortsFaceplate` and `DeviceFaceplate`. */
+  device?: PhotoDevice
+  facePorts?: FacePorts
+  modules?: InstalledModule[]
+  components?: Partial<Record<SlotKind, PortComponent[]>>
 }) {
   const hasImage = useHasImagePorts(deviceTypeId)
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
@@ -1126,6 +1237,8 @@ export function FaceplateView({
         legendKey={legendKey}
         className={className}
         fill={fill}
+        device={device}
+        facePorts={facePorts}
       />
     ) : (
       <DeviceFaceplate
@@ -1139,6 +1252,8 @@ export function FaceplateView({
         onLegend={onLegend}
         legendKey={legendKey}
         className={className}
+        modules={modules}
+        components={components}
       />
     )
   return (
@@ -1165,6 +1280,34 @@ export function useHasImagePorts(deviceTypeId?: string | null): boolean {
   return hasImg && !!ip && (ip.front.length > 0 || ip.rear.length > 0)
 }
 
+/** What the photo faceplate reads off the device's own record: its name and
+ * its photo-port layout override (null inherits the type's). */
+export type PhotoDevice = Pick<Device, "name" | "image_ports">
+
+/** A hardware marker's part as the face-ports payload resolves it - its name
+ * and lifecycle status, the rest blank. */
+function facePortPart(fp: FacePort): InventoryItemRow {
+  return {
+    id: fp.id ?? "",
+    device: { id: "", name: "" },
+    parent: null,
+    name: fp.name,
+    manufacturer: null,
+    part_id: "",
+    serial_number: "",
+    asset_tag: "",
+    description: "",
+    kind: "other",
+    media: "",
+    capacity_bytes: null,
+    speed: "",
+    slot: "",
+    cores: null,
+    status: fp.status,
+    tags: [],
+  }
+}
+
 /**
  * A device's front/rear PHOTO with its interface ports marked directly on the
  * image - the "photo faceplate". Markers come from the device type's
@@ -1184,11 +1327,21 @@ export function ImagePortsFaceplate({
   legendKey = "panel",
   className,
   fill = false,
+  device,
+  facePorts: givenFace,
 }: {
   deviceTypeId: string
   /** Resolves hardware (inventory-item) markers to the device's real parts -
    * status-coloured disk bays etc. Optional; without it they render ghosts. */
   deviceId?: string
+  /** The device's record, when the caller already has it - no request for
+   * its name and photo-port override then. */
+  device?: PhotoDevice
+  /** The device's face-ports payload, when the caller already has it - the
+   * rack page loads every device's at once. No request of its own then, and
+   * a hardware marker reads its part's name and status from it, without
+   * loading the device's parts (so parts are not edited from here). */
+  facePorts?: FacePorts
   interfaces: Interface[]
   vcPosition?: number | null
   side: FaceplateSide
@@ -1206,10 +1359,14 @@ export function ImagePortsFaceplate({
   const { faceplateMarkedLit } = useMe()
   const labelStyle = usePortLabelStyle()
   const { canDo } = useMe()
+  const onTrace = React.use(PortTraceContext)
   // Editing a bay writes to the device's parts, so it needs the same permission
   // the Hardware tab does - and a device to write them to. Module bays install
   // through the same gate (matching the Modules pane).
   const canEditParts = !!deviceId && canDo("device", "change")
+  // A part is edited from its row of the device's parts list, which a
+  // handed-in face-ports payload never loads.
+  const canEditInventory = canEditParts && !givenFace
   // Cabling a free power/console/aux/panel port from its marker.
   const canConnect = !!deviceId && canDo("cable", "add")
   const [partDialog, setPartDialog] = useState<{
@@ -1246,16 +1403,17 @@ export function ImagePortsFaceplate({
   const devDoc = useQuery({
     queryKey: ["device", deviceId],
     queryFn: () => api<Device>(`/api/devices/${deviceId}/`),
-    enabled: !!deviceId,
+    enabled: !!deviceId && !device,
     staleTime: 30_000,
   })
   // For the connect dialog's title. A patch panel has no interfaces to name
   // it, so the device's own record comes first.
-  const deviceName = devDoc.data?.name ?? interfaces.at(0)?.device.name ?? ""
+  const deviceName =
+    device?.name ?? devDoc.data?.name ?? interfaces.at(0)?.device.name ?? ""
   const photoDoc = useMemo(() => {
-    const override = devDoc.data?.image_ports
+    const override = device ? device.image_ports : devDoc.data?.image_ports
     return override != null ? override : dt.data?.image_ports
-  }, [devDoc.data, dt.data])
+  }, [device, devDoc.data, dt.data])
   const markers = useMemo(() => photoDoc?.[side] ?? [], [photoDoc, side])
   // Display size: the upload size (natural pixels, capped to the pane) unless
   // the editor saved an override for this side - a fraction of the natural
@@ -1266,13 +1424,14 @@ export function ImagePortsFaceplate({
   const [photoW, setPhotoW] = useState<number | null>(null)
   const [photoH, setPhotoH] = useState<number | null>(null)
   const wantsInventory =
-    !!deviceId && markers.some((m) => m.kind === "inventory-item")
+    !!deviceId && !givenFace && markers.some((m) => m.kind === "inventory-item")
   // Console / power / aux / panel-port markers resolve through the same
   // /face-ports/ payload the 3D room uses. Without this they fell through to
   // the "not on this device" ghost even when the component was right there -
   // this component knew only two of the nine kinds, while 3D knew them all.
   const wantsFacePorts =
     !!deviceId &&
+    !givenFace &&
     markers.some(
       (m) => m.kind && m.kind !== "interface" && m.kind !== "inventory-item"
     )
@@ -1283,8 +1442,8 @@ export function ImagePortsFaceplate({
     staleTime: 30_000,
   })
   const portByMarker = useMemo(
-    () => facePortsOnSide(facePorts.data, side),
-    [facePorts.data, side]
+    () => facePortsOnSide(givenFace ?? facePorts.data, side),
+    [givenFace, facePorts.data, side]
   )
   const inventory = useQuery({
     queryKey: ["device-inventory", deviceId],
@@ -1341,6 +1500,17 @@ export function ImagePortsFaceplate({
       ),
     [inventory.data]
   )
+  // A hardware marker's part: with a handed-in face-ports payload, the one
+  // the server resolved the marker to; else the parts list row by name.
+  const partFor = useMemo(
+    () =>
+      (marker: string, name: string): InventoryItemRow | undefined => {
+        if (!givenFace) return itemByName.get(normalizePortName(name))
+        const fp = portByMarker.get(marker)
+        return fp?.id ? facePortPart(fp) : undefined
+      },
+    [givenFace, itemByName, portByMarker]
+  )
 
   // What this panel puts on screen, walked exactly like the markers below:
   // only a marker that RESOLVED to something on this device is coloured, so
@@ -1358,7 +1528,7 @@ export function ImagePortsFaceplate({
         renderTemplateName(m.name, vcPosition ?? null)
       )
       if (kind === "inventory-item") {
-        const item = itemByName.get(key)
+        const item = partFor(m.name, key)
         if (item) parts.push(item)
         continue
       }
@@ -1392,15 +1562,7 @@ export function ImagePortsFaceplate({
       if (live) obs.set(key, live)
     }
     return legendContent({ ports, observed: obs, parts, bays })
-  }, [
-    image,
-    markers,
-    vcPosition,
-    ifaceByName,
-    itemByName,
-    portByMarker,
-    observed,
-  ])
+  }, [image, markers, vcPosition, ifaceByName, partFor, portByMarker, observed])
   useReportLegend(onLegend, legendKey, legend)
 
   if (!image) return null
@@ -1471,13 +1633,13 @@ export function ImagePortsFaceplate({
           // Hardware markers (disk bays…) - coloured by the PART's lifecycle
           // status (failed = red), not the port speed ramp.
           if (kind === "inventory-item") {
-            const item = itemByName.get(normalizePortName(name))
+            const item = partFor(m.name, name)
             const hex = item?.status?.color || "#64748b"
             // An empty bay: the marker is drawn but no part fills it. With write
             // access it's the install affordance - click to fit hardware here,
             // named after the bay so a sensor keyed on that name picks it up.
             if (!item)
-              return canEditParts ? (
+              return canEditInventory ? (
                 <button
                   key={`${m.name}-${idx}`}
                   type="button"
@@ -1501,7 +1663,7 @@ export function ImagePortsFaceplate({
                 closeDelay={80}
               >
                 <HoverCardTrigger asChild>
-                  {canEditParts ? (
+                  {canEditInventory ? (
                     <button
                       type="button"
                       style={{
@@ -1592,7 +1754,7 @@ export function ImagePortsFaceplate({
                       drift · SNMP says {partDrift.get(item.id)}
                     </div>
                   )}
-                  {canEditParts && (
+                  {canEditInventory && (
                     <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
                       Click to edit
                     </div>
@@ -1698,6 +1860,8 @@ export function ImagePortsFaceplate({
             // maker in place with this end already on side A. Cabled markers
             // keep the plain hovercard; unknown marker kinds stay inert.
             const connectable = !fp.connected && !!termKind && canConnect
+            // A cabled one opens its run's trace, where the page traces.
+            const traceCable = onTrace && fp.cable_id
             const portStyle = fp.connected
               ? { ...style, ...portOverlayStyle(hex) }
               : {
@@ -1752,6 +1916,30 @@ export function ImagePortsFaceplate({
                     >
                       {labelText}
                     </button>
+                  ) : traceCable ? (
+                    <button
+                      type="button"
+                      style={portStyle}
+                      data-cable-state={fp.cable_state}
+                      data-port-name={fp.name}
+                      data-port-kind={termKind ?? ""}
+                      data-port-id={fp.id}
+                      aria-label={`Trace ${fp.name}`}
+                      onClick={() =>
+                        onTrace({
+                          kind: "cable",
+                          id: traceCable,
+                          name: fp.name,
+                          device: deviceName,
+                        })
+                      }
+                      className={cn(
+                        portClass,
+                        "cursor-pointer hover:ring-2 hover:ring-primary/40"
+                      )}
+                    >
+                      {labelText}
+                    </button>
                   ) : (
                     <span
                       style={portStyle}
@@ -1783,6 +1971,7 @@ export function ImagePortsFaceplate({
                       .join(" · ")}
                   </div>
                   <div>{fp.connected ? "cabled" : "free"}</div>
+                  <MarkerFarEnd peer={fp.peer} />
                   {fp.drift && (
                     <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
                       drift · {fp.drift}
@@ -1819,6 +2008,18 @@ export function ImagePortsFaceplate({
                 <Link
                   to="/interfaces/$id"
                   params={{ id: iface.id }}
+                  onClick={
+                    onTrace && iface.cable
+                      ? traceInstead(() =>
+                          onTrace({
+                            kind: "interface",
+                            id: iface.id,
+                            name: iface.name,
+                            device: deviceName,
+                          })
+                        )
+                      : undefined
+                  }
                   data-cable-state={cableState(iface)}
                   data-port-name={iface.name}
                   data-port-kind="interface"
@@ -1897,7 +2098,7 @@ export function ImagePortsFaceplate({
           from the faceplate is the same write (and the same audit trail) as
           editing it on the Hardware tab. Shares its query key, so the bay
           recolours on save. */}
-        {canEditParts && partDialog && (
+        {canEditInventory && partDialog && (
           <InventoryItemDialog
             deviceId={deviceId!}
             item={partDialog.item}

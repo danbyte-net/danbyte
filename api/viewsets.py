@@ -42,6 +42,7 @@ from . import capacity, scene_geo
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
     FacePortLoader,
+    FaceplateParts,
     PeerScope,
     cable_state,
     component_queryset,
@@ -6343,8 +6344,10 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             description=(
                 "`rack`: `u_height`, `u_used`, `u_free`, `power`, `ports` and "
                 "`count_virtual`. `devices`: per device the caller may view, its "
-                "`ports` counts, its `face` (the face-ports payload, `drift` null) "
-                "and its physical `interfaces` as the faceplate draws them."
+                "`ports` counts, its `face` (the face-ports payload, `drift` null), "
+                "its physical `interfaces` as the faceplate draws them, its "
+                "installed `modules` and the `components` its faceplate layout "
+                "places, by kind."
             ),
         ),
     )
@@ -6353,8 +6356,12 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         """Every port in the rack in a fixed number of queries, for the rack
         page's Rack view (#248): per device, the counted ports, the photo
         markers resolved to real components (``face``, as
-        ``/api/devices/face-ports/`` gives them) and the physical interfaces
-        with what the drawn faceplate colours and hovers them by.
+        ``/api/devices/face-ports/`` gives them), the physical interfaces
+        with what the drawn faceplate colours and hovers them by, and what
+        else that faceplate composes - the installed ``modules`` and the
+        ``components`` a saved layout places (``api.port_state.
+        FaceplateParts``) - so the page draws every device without a
+        request of its own.
 
         The rack's totals count every device in it, as its U and power do;
         the per-device detail lists only the devices the caller may view and,
@@ -6391,6 +6398,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         # may not view stays an unresolved marker there too.
         loader = FacePortLoader(devices, rows={"interfaces": interfaces})
         peers = PeerScope(request.user, tenant, loader.far_components())
+        parts = FaceplateParts(devices, request.user, tenant)
         listed: dict = {}
         for iface in interfaces:
             # The physical ports: what the device page's faceplate draws.
@@ -6415,6 +6423,8 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                     or dict.fromkeys(capacity.PORT_FIELDS, 0),
                     "face": loader.payload(d, peer=peers.far_end),
                     "interfaces": listed.get(d.id, []),
+                    "modules": parts.modules(d),
+                    "components": parts.components(d),
                 }
                 for d in devices
             },

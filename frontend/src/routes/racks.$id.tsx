@@ -16,7 +16,9 @@ import {
 } from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 
-import { api, type Device, type Paginated, type Rack } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { Device, Paginated, Rack, RackPortState } from "@/lib/api"
+import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -53,8 +55,7 @@ function RackDetail() {
     queryKey: ["rack", id],
     queryFn: () => api<Rack>(`/api/racks/${id}/`),
   })
-  if (rack.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (rack.isLoading) return <Loading />
   if (rack.isError)
     return (
       <div className="p-6">
@@ -205,8 +206,7 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
       status,
     ]
   }, [])
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   if (rows.length === 0)
     return (
@@ -220,6 +220,10 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
  * description stay up top. */
 function RackOverview({ rack: r }: { rack: Rack }) {
   const { humanIds } = useMe()
+  // Every port in the rack, in one request while the Overview shows: the
+  // Capacity card's Ports and the elevation's live faces read it.
+  const portState = useRackPortState(r.id)
+  const rackPorts = portState.data?.rack.ports
   const util = r.u_height ? Math.round((r.used_units / r.u_height) * 100) : 0
   const hasPower =
     r.power.allocated_w > 0 || r.power.maximum_w > 0 || r.power.available_w > 0
@@ -300,6 +304,33 @@ function RackOverview({ rack: r }: { rack: Rack }) {
       ),
     },
     {
+      label: "Free",
+      value: (
+        <span className="num">{Math.max(0, r.u_height - r.used_units)} U</span>
+      ),
+    },
+    {
+      label: "Ports",
+      value: rackPorts ? (
+        rackPorts.total > 0 ? (
+          // The per-device breakdown is the Port utilization page's.
+          <Link
+            to="/port-utilization"
+            search={{ rack: r.id }}
+            className="link num"
+          >
+            {portsUsed(rackPorts)} / {rackPorts.total}
+          </Link>
+        ) : (
+          dash
+        )
+      ) : portState.isError ? (
+        dash
+      ) : (
+        <span className="text-muted-foreground">…</span>
+      ),
+    },
+    {
       label: "Power",
       value: hasPower ? <PowerStat power={r.power} /> : dash,
     },
@@ -331,7 +362,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
           />
           <KvCard title="Capacity" rows={capacityRows} />
         </div>
-        <RackFaces rack={r} />
+        <RackFaces rack={r} ports={portState.data} />
       </div>
       <ObjectImages apiBase={`/api/racks/${r.id}`} objectType="rack" />
     </div>
@@ -356,7 +387,7 @@ const RackScene = lazy(() => import("@/components/floorplan3d/rack-scene"))
 const VIZ = ["2d", "3d"] as const
 type Viz = (typeof VIZ)[number]
 
-function RackFaces({ rack }: { rack: Rack }) {
+function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
   // The rack in 2D or in 3D, in the URL as the cabinet keeps its plate's.
   const [viz, setViz] = useUrlTab<Viz>("2d", "viz", VIZ)
   const vizSwitch = (
@@ -498,6 +529,7 @@ function RackFaces({ rack }: { rack: Rack }) {
                       showHeader={false}
                       scale={zoom}
                       draggable
+                      ports={ports}
                     />
                   </div>
                 ))}

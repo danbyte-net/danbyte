@@ -61,7 +61,7 @@ from .models import (
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
-    materialize_device_components, render_component_name, render_module_name,
+    materialize_device_components,
 )
 from .capacity import rack_power, used_units
 # The far-end helpers moved to api.port_state (#248); re-exported here for
@@ -70,6 +70,7 @@ from .port_state import (
     _TERMINATION_COMPONENTS as _TERMINATION_COMPONENTS,
     FAR_END_PREFETCH as FAR_END_PREFETCH,
     far_end as far_end,
+    module_interfaces,
     termination_component as termination_component,
 )
 
@@ -4616,17 +4617,8 @@ class ModuleSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, Num
         # ({module} → bay position, {position} → stack member), with their type
         # for cage sizing. Lets the device faceplate auto-lay a module into its
         # bay placeholder even when the module type has no saved faceplate.
-        pos = obj.device.vc_position
-        bay_pos = obj.module_bay.position
-        return [
-            {
-                "name": render_component_name(
-                    render_module_name(t.name, bay_pos), pos
-                ),
-                "type": t.type,
-            }
-            for t in obj.module_type.interface_templates.all()
-        ]
+        # The rack's port state (#248) gives the same list.
+        return module_interfaces(obj)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

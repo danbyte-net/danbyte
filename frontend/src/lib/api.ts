@@ -2324,6 +2324,87 @@ export interface FacePorts {
   rear: FacePort[]
 }
 
+/** Counted ports under the shared rule - the Port utilization card's
+ * headline row. Used = connected + reserved. */
+export interface PortCountRow {
+  total: number
+  connected: number
+  reserved: number
+  free: number
+  /** Undocumented subset of connected (mark_connected, no cable row). */
+  marked: number
+}
+
+/** One physical interface in a rack's port state: what the drawn faceplate
+ * colours and hovers a port by, its cable reduced to state, id, label and
+ * type. `rackPortInterfaces` (lib/rack-port-state) makes `Interface`s of
+ * them. */
+export interface RackPortInterface {
+  id: string
+  name: string
+  label: string
+  type: string
+  type_display: string
+  speed: string
+  enabled: boolean
+  mode: string
+  mark_connected: boolean
+  cable_state: "free" | "connected" | "reserved" | "marked"
+  cable_id: string | null
+  cable_label: string
+  cable_type: string
+  /** The far end; null when uncabled or its device is not viewable. */
+  peer: { device: string; port: string; port_label: string } | null
+  hide_label: boolean
+  label_color: string
+  vlan: VLANMini | null
+  tagged_vlan_count: number
+  lag: { id: string; name: string } | null
+  ip_addresses: { id: string; ip_address: string }[]
+  description: string
+  mac_address: string
+  mtu: number | null
+  tags: Tag[]
+}
+
+/** An installed module as the drawn faceplate composes it into its device -
+ * the fields of `/api/modules/` it reads. */
+export interface RackPortModule {
+  id: string
+  module_bay: { id: string; name: string; position: string }
+  module_type_faceplate: FaceplateDoc | null
+  module_interfaces: { name: string; type: string }[]
+}
+
+/** One device in a rack's port state. */
+export interface RackPortDevice {
+  ports: PortCountRow
+  /** Its photo-port markers resolved, as `/face-ports/` gives them (drift
+   * always null). */
+  face: FacePorts
+  interfaces: RackPortInterface[]
+  modules: RackPortModule[]
+  /** By slot kind (`console-port`, `power-port`…): the components of the
+   * kinds its saved faceplate layout places, and only those. */
+  components: Record<string, { id: string; name: string; type: string }[]>
+}
+
+/** `GET /api/racks/{id}/port-state/` (#248): every port in the rack. The
+ * rack's figures count every device in it; `devices` lists the ones the
+ * caller may view. */
+export interface RackPortState {
+  rack: {
+    id: string
+    u_height: number
+    u_used: number
+    u_free: number
+    power: { available_w: number; allocated_w: number; maximum_w: number }
+    ports: PortCountRow
+    count_virtual: boolean
+  }
+  devices: Record<string, RackPortDevice>
+}
+
 /** A user-defined SNMP health sensor (GET/POST /api/monitoring/snmp-sensors/). */
 export interface SnmpSensor {
   id: string

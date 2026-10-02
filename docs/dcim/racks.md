@@ -171,7 +171,8 @@ from there. The Devices tab keeps a single toggleable elevation. Three
 | **Render** | The type's **faceplate drawn as hardware** (the same mm-true port rendering as the device page), whole rack at true proportions. |
 
 In Images and Render modes a **Text** tick toggles the name overlay, so a
-photo-real rack stays clean when you want it to.
+photo-real rack stays clean when you want it to. On the rack's own page the
+elevation also shows each device's **live ports** - see below.
 
 **Depth-aware faces:** a device mounts on one face, but if its device type is
 **full depth** (the default) it occupies the other face too - the opposite
@@ -190,6 +191,51 @@ block on an empty band and the device re-mounts with that band as its top U
 (occupied space, rack edges and half-width columns are respected; a plain
 click still opens the device). The **PNG** button snapshots the front + rear
 pair for a change ticket or wiki page.
+
+### Live ports on the elevation
+
+On the rack's own page the elevation carries every device's port state,
+read for the whole rack in one request while the Overview is open (the
+[port state](#api-port-state-and-3d-geometry) below):
+
+- **Render** draws each device as its device page's Panel does. A type with
+  [photo ports](device-catalog.md#photo-ports) shows its photo with the
+  ports marked on it; any other draws its faceplate as hardware - its type's
+  saved layout with the installed modules composed in, or the automatic one.
+  **Images** marks the ports on the photo the same way; a type without photo
+  ports keeps its plain photo.
+- Ports wear the device page's colours: cabled ports in their speed tier,
+  free ones outlined, reserved amber, disabled dashed, trunks notched; a
+  hardware marker wears its part's status and a module bay its occupancy.
+  Where the device is polled over SNMP, a port also wears its **live dot**.
+- **Hover** a port for the device page's hover card - the fields set under
+  **Settings → Component details**, including **Far end**: the device and
+  port its cable reaches, named only when you can view that device.
+- **Click** a cabled port to open the trace of its run in a dialog; a free
+  port opens its own page, and a click between ports opens the device, as
+  before. Disk bays and other hardware markers only show their part here -
+  edit parts from the device.
+- Every block shows its **ports in use** over its counted ports - `38 / 48`,
+  in all three modes - by the
+  [port counting rule](devices.md#what-counts-as-a-port): connected plus
+  reserved, over physical interfaces and front ports. A device with no
+  counted ports shows none. In Images and Render the count goes with the
+  name, so **Text** off clears both.
+- A full-depth device seen from its other face stays hatched; its rear
+  panel is not drawn there.
+
+The elevation asks nothing per device for its ports: each device type loads
+once, and the live SNMP state once per device that draws interface ports in
+Images or Render - shared with the device page and the 3D room, and fresh for
+a minute. Names mode asks for no SNMP state at all.
+
+The **Capacity** card gives the rack's **Free** units (those no device
+occupies) and its **Ports**: ports in use over counted ports across the whole
+rack. Ports links to **DCIM → Connections → Port utilization** filtered to
+this rack (`/port-utilization?rack=<id>`), for the per-device breakdown.
+Like the rack's used units and power, the rack's port figures count every
+device in it, while the blocks and the breakdown list the devices you can
+view.
 
 ### The rack in 3D
 
@@ -263,12 +309,18 @@ racks, and each costs the same number of queries whatever the rack holds.
       mode, VLAN and tagged count, LAG, IPs, MAC, MTU, description and tags.
       The cable comes as its state (`free`, `connected`, `reserved` or
       `marked`) with its id, label and type, and `peer` names the far end.
+    - `modules`: its installed modules as the drawn faceplate composes them -
+      `id`, `module_bay`, `module_type_faceplate` and `module_interfaces`,
+      as `GET /api/modules/?device=` gives them.
+    - `components`: by kind (`console-port`, `power-port`, `front-port`…),
+      the `id`, `name` and `type` of each component of a kind its type's
+      saved faceplate layout (or a module type's) places - only those kinds.
 
 The rack's figures count every device in the rack, as its used units and
 power do. The `devices` entries list only the devices you can view, and in
-them only the interfaces and IP addresses you can view. A far end is named
-only when its device (or, for a PDU inlet, its power feed) is one you can
-view.
+them only the interfaces, IP addresses, modules and components you can view.
+A far end is named only when its device (or, for a PDU inlet, its power
+feed) is one you can view.
 
 `GET /api/racks/{id}/scene/` returns the rack alone for a 3D view. It is the
 same object a [floor plan's](../features/floor-plans.md#the-3d-room-view) 3D

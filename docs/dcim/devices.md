@@ -304,7 +304,9 @@ numbers on top, even below, banked in twelves), media groups split where the
 connector type changes, and color carries link state UniFi-style: sky for
 10G+, emerald for 1G, amber below that, neutral for free ports, dashed for
 disabled. Trunk ports carry a top notch. Hover any port for its name, type,
-speed, VLAN (access/trunk + native), and IPs - click to open the interface.
+speed, far end (the device and port its cable reaches), VLAN (access/trunk +
+native), and IPs - the fields and their order are set under **Settings →
+Component details** - and click to open the interface.
 
 Below the panel sits the **Topology card**: **Paths** lists one flat
 end-to-end strip per cabled port (panels crossed `front ⇄ rear`, segments in

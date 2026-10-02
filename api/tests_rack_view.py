@@ -13,9 +13,11 @@ from core.models import Organization, Tag, Tenant
 from .capacity import rack_ports, rack_space
 from .models import (
     VLAN,
+    AuxPort,
     Cabinet,
     Cable,
     CableTermination,
+    ConsolePort,
     Device,
     DeviceRole,
     DeviceType,
@@ -26,6 +28,10 @@ from .models import (
     Interface,
     IPAddress,
     Location,
+    Module,
+    ModuleBay,
+    ModuleInterfaceTemplate,
+    ModuleType,
     PortReservation,
     PowerFeed,
     PowerOutlet,
@@ -44,6 +50,23 @@ User = get_user_model()
 
 def _marker(kind, name, x=0.5):
     return {"kind": kind, "name": name, "x": x, "y": 0.5, "w": 0.03, "h": 0.4}
+
+
+def _layout(front=(), rear=()):
+    """A saved faceplate document: one group per side, a port slot per
+    ``(kind, name)``."""
+
+    def group(gid, slots):
+        return {
+            "id": gid, "rows": 1, "bank": 0,
+            "slots": [{"t": "port", "kind": kind, "name": name} for kind, name in slots],
+        }
+
+    return {
+        "v": 1,
+        "front": [group("f", front)] if front else [],
+        "rear": [group("r", rear)] if rear else [],
+    }
 
 
 class _RackBase(APITestCase):
@@ -359,6 +382,10 @@ class _PortFixture(_ViewerMixin, _RackBase):
                 ],
                 "rear": [_marker("power-port", "PSU1", 0.9)],
             },
+            # A saved layout that places the console port beside the ports.
+            faceplate=_layout(
+                front=[("interface", "Gi1/0/1"), ("console-port", "CON")]
+            ),
         )
         dt_panel = DeviceType.objects.create(tenant=self.tenant, name="Panel", u_height=1)
         dt_strip = DeviceType.objects.create(tenant=self.tenant, name="Strip", u_height=0)
@@ -416,6 +443,20 @@ class _PortFixture(_ViewerMixin, _RackBase):
         PowerPort.objects.create(device=self.pdu, name="inlet")
         outlet = PowerOutlet.objects.create(device=self.pdu, name="C13-1")
         self._cable({"power_outlet": outlet}, {"power_port": psu})
+        self.console = ConsolePort.objects.create(device=self.sw1, name="CON", type="rj-45")
+        self.aux = AuxPort.objects.create(device=self.sw1, name="AUX")
+        # A line card in bay "2" whose own layout places an aux port.
+        card = ModuleType.objects.create(
+            tenant=self.tenant, name="NM-1X",
+            faceplate=_layout(front=[("interface", "Te1/{module}/1"), ("aux-port", "AUX")]),
+        )
+        ModuleInterfaceTemplate.objects.create(
+            module_type=card, name="Te1/{module}/1", type="10gbase-x-sfpp"
+        )
+        bay = ModuleBay.objects.create(device=self.sw1, name="Slot 2", position="2")
+        self.module = Module.objects.create(
+            device=self.sw1, module_bay=bay, module_type=card, serial_number="M-1"
+        )
 
     def _cable(self, a, b, **kwargs):
         cable = Cable.objects.create(tenant=self.tenant, **kwargs)
@@ -518,6 +559,44 @@ class RackPortStateTests(_PortFixture):
             ["connected", "connected", "reserved", "marked", "free"],
         )
 
+    def test_modules_and_placed_components_as_the_device_page_lists_them(self):
+        """What the drawn faceplate composes besides the interfaces - the
+        installed modules, and the components its saved layout (or a
+        module's) places - as the device page's own requests give them."""
+        body = self._state()
+        sw1 = body["devices"][str(self.sw1.id)]
+        listed = self.client.get(f"/api/modules/?device={self.sw1.id}").json()["results"]
+        keys = ("id", "module_bay", "module_type_faceplate", "module_interfaces")
+        self.assertEqual(sw1["modules"], [{k: m[k] for k in keys} for m in listed])
+        self.assertEqual(
+            sw1["modules"][0]["module_interfaces"],
+            [{"name": "Te1/2/1", "type": "10gbase-x-sfpp"}],
+        )
+        for kind, path in (("console-port", "console-ports"), ("aux-port", "aux-ports")):
+            rows = self.client.get(f"/api/{path}/?device={self.sw1.id}").json()["results"]
+            self.assertEqual(
+                sw1["components"][kind],
+                [{"id": r["id"], "name": r["name"], "type": r["type"]} for r in rows],
+                kind,
+            )
+        self.assertEqual(sw1["components"]["console-port"][0]["type"], "rj-45")
+        # Only the kinds a layout places: sw-1's PSU stays out.
+        self.assertEqual(set(sw1["components"]), {"console-port", "aux-port"})
+        # sw-2 shares the layout but has no console port; the panel places nothing.
+        for dev in (self.sw2, self.panel):
+            row = body["devices"][str(dev.id)]
+            self.assertEqual((row["modules"], row["components"]), ([], {}), dev.name)
+
+    def test_modules_and_components_follow_their_grants(self):
+        user = self._viewer((["rack"], None), (["device"], None), (["interface"], None))
+        sw1 = self._state()["devices"][str(self.sw1.id)]
+        self.assertEqual((sw1["modules"], sw1["components"]), ([], {}))
+        _grant(user, self.tenant, ["module"])
+        _grant(user, self.tenant, ["consoleport", "auxport"], {"name": "CON"})
+        sw1 = self._state()["devices"][str(self.sw1.id)]
+        self.assertEqual([m["id"] for m in sw1["modules"]], [str(self.module.id)])
+        self.assertEqual(list(sw1["components"]), ["console-port"])
+
     def test_counting_virtual_interfaces(self):
         _set_count_virtual(True)
         body = self._state()
@@ -589,7 +668,16 @@ class RackPortStateQueryTests(_ViewerMixin, _RackBase):
                 "front": [_marker("interface", f"Gi1/0/{i}", i / 10) for i in range(1, 5)],
                 "rear": [_marker("power-port", "PSU1", 0.9)],
             },
+            faceplate=_layout(front=[("interface", "Gi1/0/1"), ("console-port", "CON")]),
         )
+        self.card = ModuleType.objects.create(
+            tenant=self.tenant, name="NM-1X",
+            faceplate=_layout(front=[("interface", "Te1/{module}/1"), ("aux-port", "AUX")]),
+        )
+        for n in (1, 2):
+            ModuleInterfaceTemplate.objects.create(
+                module_type=self.card, name=f"Te1/{{module}}/{n}", type="10gbase-x-sfpp"
+            )
         self.strip = DeviceType.objects.create(tenant=self.tenant, name="Strip", u_height=0)
         self.core = Device.objects.create(tenant=self.tenant, name="core", site=self.site)
         zone = Zone.objects.create(tenant=self.tenant, name="dmz", slug="dmz")
@@ -609,7 +697,8 @@ class RackPortStateQueryTests(_ViewerMixin, _RackBase):
     def _rack(self, name, n):
         """A rack of ``n`` switches, each with a cabled port in a VLAN, a LAG
         and a tag with an address, a trunk on a planned cable, a held port,
-        and a PSU corded to the rack's PDU."""
+        a PSU corded to the rack's PDU, a console port its layout places and
+        a line card whose own layout places an aux port."""
         rack = Rack.objects.create(tenant=self.tenant, site=self.site, name=name)
         pdu = Device.objects.create(
             tenant=self.tenant, name=f"{name}-pdu", site=self.site, device_type=self.strip,
@@ -642,6 +731,10 @@ class RackPortStateQueryTests(_ViewerMixin, _RackBase):
             psu = PowerPort.objects.create(device=dev, name="PSU1")
             outlet = PowerOutlet.objects.create(device=pdu, name=f"C13-{i}")
             self._cable({"power_outlet": outlet}, {"power_port": psu})
+            ConsolePort.objects.create(device=dev, name="CON")
+            AuxPort.objects.create(device=dev, name="AUX")
+            bay = ModuleBay.objects.create(device=dev, name="Slot 1", position="1")
+            Module.objects.create(device=dev, module_bay=bay, module_type=self.card)
         return rack
 
     def _counts(self, racks):
@@ -660,11 +753,15 @@ class RackPortStateQueryTests(_ViewerMixin, _RackBase):
         counts, body = self._counts(racks)
         self.assertEqual(len(body["devices"]), 13)
         self.assertEqual(counts[0], counts[1], counts)
+        sw = next(d for d in body["devices"].values() if d["modules"])
+        self.assertEqual(set(sw["components"]), {"console-port", "aux-port"})
+        self.assertEqual(len(sw["modules"][0]["module_interfaces"]), 2)
 
         # And for a viewer whose grants are narrowed by constraints.
         self._viewer(
             (["rack"], None), (["device"], {"name__contains": "-sw"}),
             (["interface"], {"enabled": True}), (["ipaddress"], None),
+            (["module"], None), (["consoleport", "auxport"], {"name__in": ["CON", "AUX"]}),
         )
         counts, body = self._counts(racks)
         self.assertEqual(len(body["devices"]), 12)

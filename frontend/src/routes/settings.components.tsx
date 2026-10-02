@@ -38,6 +38,10 @@ const FIELD_META: Record<string, { label: string; hint: string }> = {
     label: "State",
     hint: "Disabled · no cable · up with speed and cable type",
   },
+  peer: {
+    label: "Far end",
+    hint: "The device and port at the other end of the cable",
+  },
   vlan: { label: "VLAN", hint: "Access VLAN, or the trunk summary" },
   live: {
     label: "Live (SNMP)",

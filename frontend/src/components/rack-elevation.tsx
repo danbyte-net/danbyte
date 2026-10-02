@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import {
   DndContext,
@@ -18,12 +18,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { CalendarClock } from "lucide-react"
 
-import {
-  api,
-  type Device,
-  type Paginated,
-  type PlanningPlannedChange,
-  type Rack,
+import { api } from "@/lib/api"
+import type {
+  Device,
+  Paginated,
+  PlanningPlannedChange,
+  PortCountRow,
+  Rack,
+  RackPortState,
 } from "@/lib/api"
 import { readableText } from "@/components/cells/color-badge"
 import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
@@ -40,6 +42,11 @@ import { DevicePicker } from "@/components/device-picker"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { FormCheckbox } from "@/components/forms"
 import { TypeFaceplate } from "@/components/device-faceplate"
+import type { PortTrace } from "@/components/device-faceplate"
+import { CableTraceDialog } from "@/components/cable-trace-dialog"
+import { InterfaceTraceDialog } from "@/components/interface-trace-dialog"
+import { PortsBadge, RackLiveFace } from "@/components/rack-live-face"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
@@ -78,6 +85,7 @@ export function RackElevation({
   scale,
   draggable = false,
   picker,
+  ports,
 }: {
   rack: Rack
   /** Controlled face - hides the internal Front/Rear toggle. */
@@ -96,6 +104,11 @@ export function RackElevation({
   draggable?: boolean
   /** The device form: pick a unit for the device being placed. */
   picker?: RackUnitPicker
+  /** The rack page (#248): the rack's port state. Every block then shows
+   * its ports in use over its counted ports; Images and Render draw each
+   * device's ports live, as its device page does, and a press on a cabled
+   * port opens its trace. */
+  ports?: RackPortState
 }) {
   const [faceState, setFace] = useState<RackFace>("front")
   const [modeState, setMode] = useState<RackDisplayMode>("names")
@@ -110,6 +123,8 @@ export function RackElevation({
   const canDrag = draggable && canMoveDevice
   const qc = useQueryClient()
   const [dragging, setDragging] = useState<Device | null>(null)
+  // A cabled port pressed on a live face: its run, in a dialog.
+  const [trace, setTrace] = useState<PortTrace | null>(null)
   const sensors = useSensors(
     // 6px activation distance keeps plain clicks navigating to the device.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -431,23 +446,57 @@ export function RackElevation({
                         ? "2"
                         : "1"
                       : "1 / -1"
+                  const span = Math.max(1, d.u_height)
+                  const accent = rack.role?.color || undefined
+                  // The rack page's live face, over the block it belongs to,
+                  // on the face the device is mounted on: in Render, and in
+                  // Images where it has a photo - without one it keeps its
+                  // role-coloured block.
+                  const liveMode =
+                    hatched || mode === "names"
+                      ? null
+                      : mode === "images" && !d.device_type?.front_image
+                        ? null
+                        : mode
+                  const live = liveMode ? ports?.devices[d.id] : undefined
                   return (
-                    <DeviceBlock
-                      key={d.id}
-                      device={d}
-                      face={face}
-                      mode={mode}
-                      hatched={hatched}
-                      dragEnabled={canDrag && !hatched}
-                      highlight={d.id === highlightDeviceId}
-                      showText={labels}
-                      startRow={top}
-                      // span clamps to the visible grid in case of overflow
-                      span={Math.max(1, d.u_height)}
-                      column={column}
-                      accent={rack.role?.color || undefined}
-                      inert={!!picker}
-                    />
+                    <Fragment key={d.id}>
+                      <DeviceBlock
+                        device={d}
+                        face={face}
+                        mode={mode}
+                        hatched={hatched}
+                        dragEnabled={canDrag && !hatched}
+                        highlight={d.id === highlightDeviceId}
+                        showText={labels}
+                        startRow={top}
+                        // span clamps to the visible grid in case of overflow
+                        span={span}
+                        column={column}
+                        accent={accent}
+                        inert={!!picker}
+                        overlaid={!!live}
+                        ports={ports?.devices[d.id]?.ports}
+                      />
+                      {live && liveMode && (
+                        <RackLiveFace
+                          device={d}
+                          state={live}
+                          mode={liveMode}
+                          side="front"
+                          pxPerMm={pxPerMm}
+                          text={labels}
+                          onTrace={setTrace}
+                          className={cn(dragging?.id === d.id && "opacity-40")}
+                          style={{
+                            gridColumn: column,
+                            gridRow: `${Math.max(1, top)} / span ${span}`,
+                            // Clear of the block's accent rail.
+                            borderLeftWidth: accent ? 3 : undefined,
+                          }}
+                        />
+                      )}
+                    </Fragment>
                   )
                 })}
                 {ghosts
@@ -507,9 +556,7 @@ export function RackElevation({
         </DndContext>
       )}
 
-      {q.isLoading && (
-        <p className="mt-2 text-xs text-muted-foreground">Loading devices…</p>
-      )}
+      {q.isLoading && <Loading className="mt-2 min-h-16" />}
 
       <SideAssignDialog
         rack={rack}
@@ -522,8 +569,33 @@ export function RackElevation({
         face={face}
         onOpenChange={(o) => !o && setAssignUnit(null)}
       />
+      {ports && (
+        <>
+          <InterfaceTraceDialog
+            target={
+              trace?.kind === "interface"
+                ? { id: trace.id, name: traceName(trace) }
+                : null
+            }
+            onOpenChange={(o) => !o && setTrace(null)}
+          />
+          <CableTraceDialog
+            target={
+              trace?.kind === "cable"
+                ? { id: trace.id, label: traceName(trace) }
+                : null
+            }
+            onOpenChange={(o) => !o && setTrace(null)}
+          />
+        </>
+      )}
     </div>
   )
+}
+
+/** A traced port as the dialog's title names it: `device:port`. */
+function traceName(t: PortTrace): string {
+  return t.device ? `${t.device}:${t.name}` : t.name
 }
 
 /** One empty-unit band: hover Add/Assign affordances, and - when the
@@ -800,10 +872,17 @@ function DeviceBlock({
   accent,
   dragEnabled = false,
   inert = false,
+  overlaid = false,
+  ports,
 }: {
   device: Device
   face: RackFace
   mode: RackDisplayMode
+  /** A live face lies over this block (`RackLiveFace`): the block keeps its
+   * frame, link and drag, and leaves the picture and the text to it. */
+  overlaid?: boolean
+  /** The device's counted ports - its block shows those in use over them. */
+  ports?: PortCountRow
   /** Rack page: this block can be dragged to another unit. */
   dragEnabled?: boolean
   /** The device form's picker: a picture, not a link - a press goes through
@@ -828,17 +907,20 @@ function DeviceBlock({
   // opposite face. (Keying off the elevation `face` alone showed rear-mounted
   // devices' rear image on the rear elevation.)
   const image =
-    mode === "images" && !hatched
+    mode === "images" && !hatched && !overlaid
       ? face === mountedOn
         ? device.device_type?.front_image
         : device.device_type?.rear_image
       : null
-  const renderPanel = mode === "render" && !hatched && device.device_type
-  const text = mode === "names" || hatched || showText
+  const renderPanel =
+    mode === "render" && !hatched && !overlaid && device.device_type
+  const text = !overlaid && (mode === "names" || hatched || showText)
   // Occupied units fill edge-to-edge (square corners) and take
   // the DEVICE ROLE's color as the block background in names mode.
   const roleColor =
-    !hatched && !image && !renderPanel ? device.role?.color || null : null
+    !hatched && !image && !renderPanel && !overlaid
+      ? device.role?.color || null
+      : null
   const roleFg = roleColor ? readableText(roleColor) : undefined
 
   const drag = useDraggable({ id: device.id, disabled: !dragEnabled })
@@ -895,7 +977,7 @@ function DeviceBlock({
           />
         </div>
       )}
-      {(text || (!image && !renderPanel)) && (
+      {!overlaid && (text || (!image && !renderPanel)) && (
         <>
           <span
             className={cn(
@@ -930,10 +1012,15 @@ function DeviceBlock({
               {device.name}
             </span>
           )}
+          {!hatched && (
+            <PortsBadge ports={ports} className="relative ml-auto" />
+          )}
           {device.u_height > 1 && !renderPanel && (
             <span
               className={cn(
-                "relative ml-auto shrink-0 text-[10px] tabular-nums",
+                "relative shrink-0 text-[10px] tabular-nums",
+                // After the ports badge when there is one.
+                !(ports?.total && !hatched) && "ml-auto",
                 image
                   ? "text-zinc-300"
                   : roleColor

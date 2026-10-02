@@ -50,8 +50,9 @@ function place(b: PlateBox, f: PlateFrame): CSSProperties {
 
 /** The layer itself lets presses through to the bodies under it - a press
  * between ports opens the device, as in the other modes; the ports, their
- * hover cards and the panel's buttons take their own. */
-const LIVE =
+ * hover cards and the panel's buttons take their own. The rack elevation's
+ * live faces (#248) lie over their blocks the same way. */
+export const LIVE =
   "[&_a]:pointer-events-auto [&_button]:pointer-events-auto **:data-[slot=hover-card-trigger]:pointer-events-auto"
 
 /**
@@ -242,7 +243,7 @@ function NameStrip({ text, className }: { text: string; className?: string }) {
 
 /** Its child at its own size, centred - shrunk to fit where it is larger
  * than the box. */
-function FitInBox({
+export function FitInBox({
   className,
   children,
 }: {

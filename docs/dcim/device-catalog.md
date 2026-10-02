@@ -492,11 +492,16 @@ Bulk place on a fully placed side seeds the grid from where the run sits now,
 and the header counts how many markers a placement would overwrite.
 
 What the **port hover card** shows is configurable deployment-wide under
-**Settings → Component popover**: an ordered field list (name, type, state,
-VLAN, live SNMP facts, IPs, description, MAC, MTU, LAG, tags - defaults to the
-first six). A field with no value on that port simply doesn't render, so a
-rich list costs nothing on sparse interfaces. The same list applies to the
-schematic and the photo faceplate alike.
+**Settings → Component details**: an ordered field list (name, type, state,
+far end, VLAN, live SNMP facts, IPs, description, MAC, MTU, LAG, tags -
+defaults to the first seven). **Far end** names the device and port at the
+other end of the port's cable (`→ sw-2:Gi1/0/1`); on a rack's elevation it
+shows only when that device is one you can view. A field with no value on
+that port simply doesn't render, so a rich list costs nothing on sparse
+interfaces. The same list applies to the schematic and the photo faceplate
+alike, on the device page and on the
+[rack's elevation](racks.md#live-ports-on-the-elevation). A list an admin
+saved before Far end existed keeps its own fields; add Far end to it there.
 
 Once a type has an image **and** at least one placed marker, its devices show
 the **photo faceplate** in place of the schematic one - each marker matched to
@@ -504,8 +509,11 @@ the device's real interface by name (so it carries the same state colour, live
 SNMP dot, hover card and link), and the markers also render **on the device's
 face in the [3D room view](../features/floor-plans.md#the-3d-room-view)**.
 **Hover.** A photo port's hover card shows the same rows as the drawn
-faceplate's - name and printed label, type, state, VLAN (native / trunk),
-live SNMP state, IPs - in the order set under **Settings → Components**.
+faceplate's - name and printed label, type, state, far end, VLAN (native /
+trunk), live SNMP state, IPs - in the order set under **Settings → Component
+details**. A power, console, aux or panel-port marker shows its kind and
+type, whether it is cabled, and - when that list includes Far end - what its
+cable reaches.
 
 **Size.** By default the photo draws at its upload size (its own pixels,
 never wider than the pane). Tick **Use this size everywhere** in the editor
