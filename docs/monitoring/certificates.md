@@ -612,7 +612,8 @@ users with the grant - an **Edit** button (the only writable fields, `name` and
 - **Overview** - the certificate's facts in grouped cards: *Identity* (subject,
   issuer, serial, SHA-256 fingerprint, SANs), *Validity* (not-before, not-after,
   the expiry tag, last seen), *Key* (algorithm, size, signature algorithm,
-  self-signed), and the *Record* card (origin, name, notes, timestamps). For an
+  self-signed), the *Record* card (origin, name, notes, timestamps), and
+  *Usage* (how many endpoints serve it and what it is assigned to). For an
   **uploaded** certificate the stored public **PEM** is shown below the cards in
   a scrolling block with **copy** and **download** actions.
 - **Bindings** - the endpoints that served this certificate: endpoint, IP, port,

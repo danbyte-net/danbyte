@@ -184,7 +184,7 @@ its allocatable space:
   ranges, and **Add pool** offers each range as a preset in place of *Whole
   prefix*; a pool straddling a range edge is cut to the range.
 - **Utilisation** counts used against the ranges' size, and the Addressing
-  card shows *Used 1 of 7 · Free 6*; Subnet details gain **Allocation**,
+  card shows it with *Used 1 of 7 · Free 6*; Subnet details gain **Allocation**,
   **Managed addresses**, **Used** and **Available** rows under the subnet's
   theoretical capacity.
 - The IP form requires a **Range** pick (a lone range is picked for you), and

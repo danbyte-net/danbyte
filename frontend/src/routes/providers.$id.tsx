@@ -20,12 +20,7 @@ import { BusinessHoursSummary } from "@/components/business-hours-field"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ProviderDeleteDialog } from "@/components/provider-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -91,20 +86,10 @@ function Body({ provider: p }: { provider: Provider }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={p.name}
-            tags={p.tags.length > 0 && <TagList tags={p.tags} />}
-            statCols={1}
-            stats={
-              <DetailStat
-                label="Circuits"
-                value={<span className="num">{p.circuit_count}</span>}
-              />
-            }
-          />
-          <CustomFieldValues model="provider" values={p.custom_fields} />
-        </>
+        <DetailHero
+          title={p.name}
+          tags={p.tags.length > 0 && <TagList tags={p.tags} />}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -204,6 +189,10 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
       value: p.noc_phone ? <PhoneLink phone={p.noc_phone} /> : dash,
       copy: p.noc_phone || undefined,
     },
+    {
+      label: "Circuits",
+      value: <span className="num">{p.circuit_count}</span>,
+    },
   ]
 
   // The details you actually need in your hand when filing a case, kept in
@@ -265,6 +254,11 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Provider" rows={details} />
+      <CustomFieldValues
+        model="provider"
+        values={p.custom_fields}
+        layout="cards"
+      />
       <KvCard title="Support" rows={support} />
       <KvCard title="Record" rows={record} />
       <KvCard title="Notes" rows={notes} />

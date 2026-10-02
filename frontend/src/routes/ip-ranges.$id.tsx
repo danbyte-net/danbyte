@@ -19,19 +19,14 @@ import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { Button } from "@/components/ui/button"
-import { KvCard, type KvRow } from "@/components/kv-card"
+import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { DataTable } from "@/components/data-table"
 import { IpRangeDeleteDialog } from "@/components/ip-range-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/ip-ranges/$id")({
@@ -114,26 +109,6 @@ function Body({ range: r }: { range: IPRange }) {
           }
           tags={r.tags.length > 0 && <TagList tags={r.tags} />}
           description={r.description}
-          stats={
-            <>
-              <DetailStat
-                label="Size"
-                value={
-                  <span className="num">
-                    {r.size != null ? r.size.toLocaleString() : "-"}
-                  </span>
-                }
-              />
-              <DetailStat
-                label="Family"
-                value={
-                  <span className="num">
-                    {r.family ? `IPv${r.family}` : "-"}
-                  </span>
-                }
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -383,6 +358,10 @@ function IpRangeOverview({ range: r }: { range: IPRange }) {
         ]
       : []),
     {
+      label: "Family",
+      value: r.family ? <span className="num">{`IPv${r.family}`}</span> : dash,
+    },
+    {
       label: "VRF",
       value: <span className="text-xs">{r.vrf ? r.vrf.name : "Global"}</span>,
     },
@@ -399,6 +378,15 @@ function IpRangeOverview({ range: r }: { range: IPRange }) {
       ) : (
         <span className="text-muted-foreground">-</span>
       ),
+    },
+    {
+      label: "Size",
+      value:
+        r.size != null ? (
+          <span className="num">{r.size.toLocaleString()}</span>
+        ) : (
+          dash
+        ),
     },
   ]
   return (

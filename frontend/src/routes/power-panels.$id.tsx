@@ -15,12 +15,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { PowerPanelDeleteDialog } from "@/components/power-panel-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -85,21 +80,11 @@ function Body({ panel: p }: { panel: PowerPanel }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={p.name}
-            subtitle={p.site && <SiteCell site={p.site} />}
-            tags={p.tags.length > 0 && <TagList tags={p.tags} />}
-            statCols={1}
-            stats={
-              <DetailStat
-                label="Feeds"
-                value={<span className="num">{p.feed_count}</span>}
-              />
-            }
-          />
-          <CustomFieldValues model="powerpanel" values={p.custom_fields} />
-        </>
+        <DetailHero
+          title={p.name}
+          subtitle={p.site && <SiteCell site={p.site} />}
+          tags={p.tags.length > 0 && <TagList tags={p.tags} />}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -172,6 +157,11 @@ function PanelOverview({ panel: p }: { panel: PowerPanel }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Panel" rows={details} />
+      <CustomFieldValues
+        model="powerpanel"
+        values={p.custom_fields}
+        layout="cards"
+      />
       <KvCard title="Record" rows={record} />
       <KvCard title="Notes" rows={notes} />
     </div>

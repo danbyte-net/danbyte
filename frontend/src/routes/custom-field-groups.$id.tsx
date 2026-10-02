@@ -19,12 +19,7 @@ import { LocalityBadge } from "@/components/locality-badge"
 import { QueryError } from "@/components/query-error"
 import { CustomFieldGroupDeleteDialog } from "@/components/custom-field-group-delete-dialog"
 import { buildCustomFieldColumns } from "@/components/columns/custom-field-columns"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 
@@ -101,18 +96,6 @@ function Body({ group: g }: { group: CustomFieldGroup }) {
           }
           subtitle={<span className="font-mono">{g.slug}</span>}
           description={g.description}
-          stats={
-            <>
-              <DetailStat
-                label="Fields"
-                value={<span className="num">{g.field_count}</span>}
-              />
-              <DetailStat
-                label="Weight"
-                value={<span className="num">{g.weight}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[

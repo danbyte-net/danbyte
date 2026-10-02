@@ -17,12 +17,7 @@ import {
   EmbeddedContactGroupTable,
   EmbeddedContactTable,
 } from "@/components/embedded-tables"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 
@@ -112,18 +107,6 @@ function Body({ group: g }: { group: ContactGroup }) {
             )
           }
           description={g.description}
-          stats={
-            <>
-              <DetailStat
-                label="Contacts"
-                value={<span className="num">{g.contact_count}</span>}
-              />
-              <DetailStat
-                label="Subgroups"
-                value={<span className="num">{g.child_count}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[

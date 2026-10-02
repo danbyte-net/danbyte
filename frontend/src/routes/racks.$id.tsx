@@ -25,12 +25,7 @@ import {
 } from "@/components/rack-elevation"
 import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { FormCheckbox } from "@/components/forms"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -100,67 +95,15 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={r.name}
-            badges={<StatusBadge status={r.status} />}
-            subtitle={
-              r.facility_id && (
-                <span className="font-mono">{r.facility_id}</span>
-              )
-            }
-            tags={r.tags.length > 0 && <TagList tags={r.tags} />}
-            description={r.description}
-            stats={
-              <>
-                <DetailStat
-                  label="Site"
-                  value={
-                    <Link
-                      to="/sites/$id"
-                      params={{ id: r.site.id }}
-                      className="link text-xs"
-                    >
-                      {r.site.name}
-                    </Link>
-                  }
-                />
-                <DetailStat
-                  label="Height"
-                  value={<span className="num">{r.u_height}U</span>}
-                />
-                {(r.power.allocated_w > 0 ||
-                  r.power.maximum_w > 0 ||
-                  r.power.available_w > 0) && (
-                  <DetailStat
-                    label="Power"
-                    value={<PowerStat power={r.power} />}
-                  />
-                )}
-                {(r.total_weight_kg > 0 || r.max_weight_kg != null) && (
-                  <DetailStat
-                    label="Weight"
-                    value={
-                      <span
-                        className={
-                          r.max_weight_kg != null &&
-                          r.total_weight_kg > r.max_weight_kg
-                            ? "num font-medium text-destructive"
-                            : "num"
-                        }
-                      >
-                        {r.total_weight_kg} kg
-                        {r.max_weight_kg != null && ` / ${r.max_weight_kg} kg`}
-                      </span>
-                    }
-                  />
-                )}
-              </>
-            }
-          />
-
-          <CustomFieldValues model="rack" values={r.custom_fields} />
-        </>
+        <DetailHero
+          title={r.name}
+          badges={<StatusBadge status={r.status} />}
+          subtitle={
+            r.facility_id && <span className="font-mono">{r.facility_id}</span>
+          }
+          tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+          description={r.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -262,10 +205,15 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
 }
 
 /** The rack's attributes, grouped into labelled tables - the detail that used
- * to crowd the page header. Only name, status, and location stay up top. */
+ * to crowd the page header. Only name, status, facility ID, tags and
+ * description stay up top. */
 function RackOverview({ rack: r }: { rack: Rack }) {
   const { humanIds } = useMe()
   const util = r.u_height ? Math.round((r.used_units / r.u_height) * 100) : 0
+  const hasPower =
+    r.power.allocated_w > 0 || r.power.maximum_w > 0 || r.power.available_w > 0
+  const overWeight =
+    r.max_weight_kg != null && r.total_weight_kg > r.max_weight_kg
   const rackRows: KvRow[] = [
     ...(humanIds && r.numid != null
       ? [
@@ -340,11 +288,34 @@ function RackOverview({ rack: r }: { rack: Rack }) {
         </span>
       ),
     },
+    {
+      label: "Power",
+      value: hasPower ? <PowerStat power={r.power} /> : dash,
+    },
+    {
+      label: "Weight",
+      value:
+        r.total_weight_kg > 0 || r.max_weight_kg != null ? (
+          <span
+            className={overWeight ? "num font-medium text-destructive" : "num"}
+          >
+            {r.total_weight_kg} kg
+            {r.max_weight_kg != null && ` / ${r.max_weight_kg} kg`}
+          </span>
+        ) : (
+          dash
+        ),
+    },
   ]
   return (
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard title="Rack" rows={rackRows} />
+        <CustomFieldValues
+          model="rack"
+          values={r.custom_fields}
+          layout="cards"
+        />
         <KvCard title="Capacity" rows={capacityRows} />
       </div>
       <RackFaces rack={r} />

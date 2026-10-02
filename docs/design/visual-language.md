@@ -362,9 +362,9 @@ Every object detail page follows one tab convention (source of truth:
 `routes/devices.$id.tsx` and `routes/interfaces.$id.tsx`):
 
 - The breadcrumb header and the summary section carry **only the headline**:
-  the object's name/title, status/state badges, tags, description, and at most
-  one or two truly identifying stats (e.g. Site + Primary IP on a device).
-  Don't crowd the header with a long `<dl>` of attributes.
+  the object's name/title, status/state badges, one subtitle line, tags and
+  the description. No facts, counts or figures - not even one or two - and no
+  bands of text under it: every fact goes in the Overview cards.
 - All the remaining attributes live in an **Overview** tab - the first tab,
   and the default - rendered as `KvCard` tables (`<KvCard title rows>`) in a
   `grid gap-6 lg:grid-cols-2`, grouped into a few sensibly-titled cards. This
@@ -385,8 +385,8 @@ tab's `KvCard`s; history and journal are always their own tabs.
 
 The summary section itself is `DetailHero`, passed to `DetailShell`'s `hero`
 prop (source of truth: `frontend/src/components/detail-shell.tsx`, reference
-implementation `routes/aggregates.$id.tsx`). It owns the section wrapper, the
-title element and its size, and the stat rail - a page only supplies content:
+implementation `routes/aggregates.$id.tsx`). It owns the section wrapper and
+the title element and its size - a page only supplies content:
 
 | slot | renders |
 |---|---|
@@ -396,7 +396,13 @@ title element and its size, and the stat rail - a page only supplies content:
 | `tags` | `<TagList tags={…} />` |
 | `description` | the object's description |
 | `children` | anything else in the left column, below the description |
-| `stats` + `statCols` | `<DetailStat/>`s in the right-hand rail (1, 2 or 3 columns) |
+| `stats` + `statCols` | the SLA page's figure rail - no other page uses it |
+
+Facts do not go in the header: a count, size or utilisation is a row in an
+Overview `KvCard` - custom fields included, as `CustomFieldValues
+layout="cards"` in the Overview grid. The one exception is the SLA page, whose
+`stats` rail keeps the agreement's live figures (this period, budget left,
+members); no other page passes `stats`.
 
 **Never pass a title size, and never hand-roll the section.** The hero was
 copied 42× before this primitive existed and had drifted to four title sizes

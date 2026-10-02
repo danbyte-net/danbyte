@@ -13,12 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { IpStatusDeleteDialog } from "@/components/ip-status-delete-dialog"
@@ -99,35 +94,19 @@ function Body({ status: s }: { status: Status }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={<ColorBadge name={s.name} color={s.color || undefined} />}
-            subtitle={flags.map((f) => (
-              <Badge key={f} variant="secondary">
-                {f}
-              </Badge>
-            ))}
-            description={s.description}
-            stats={
-              <DetailStat
-                label="IPs"
-                value={<span className="num">{s.usage_count}</span>}
-              />
-            }
-          />
-
-          <section className="shrink-0 border-b border-border px-6 py-4">
-            <p className="text-sm text-muted-foreground">
-              {s.usage_count > 0
-                ? `${s.usage_count} IP${s.usage_count === 1 ? "" : "s"} currently carry this status.`
-                : "No IPs use this status yet."}
-            </p>
-          </section>
-        </>
+        <DetailHero
+          title={<ColorBadge name={s.name} color={s.color || undefined} />}
+          subtitle={flags.map((f) => (
+            <Badge key={f} variant="secondary">
+              {f}
+            </Badge>
+          ))}
+          description={s.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "ips", label: "IPs", count: s.usage_count },
+        { value: "ips", label: "IPs", count: s.ip_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -194,6 +173,15 @@ function IpStatusOverview({ status: s }: { status: Status }) {
     { label: "Available to", value: chipsValue(s.available_to) },
     { label: "Default for", value: chipsValue(s.default_for) },
     { label: "Check state", value: monitoringValue(s.monitoring_state) },
+    // usage_count sums every model that can carry a status, not just IPs.
+    {
+      label: "Used by",
+      value: (
+        <span className="num">
+          {s.usage_count} object{s.usage_count === 1 ? "" : "s"}
+        </span>
+      ),
+    },
   ]
   return (
     <div className="grid gap-6 lg:grid-cols-2">

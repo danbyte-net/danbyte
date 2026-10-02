@@ -212,7 +212,8 @@ export function DetailTab({
 }
 
 /** How many columns the stat rail lays its `DetailStat`s out in. `3` stays
- * two-up on narrow viewports. */
+ * two-up on narrow viewports. Only the SLA page keeps a stat rail; every
+ * other page puts its facts in the Overview cards. */
 export type DetailStatCols = 1 | 2 | 3
 
 const STAT_COLS: Record<DetailStatCols, string> = {

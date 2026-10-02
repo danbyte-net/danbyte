@@ -70,12 +70,7 @@ import { DataTable } from "@/components/data-table"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { VlanBadge } from "@/components/cells/vlan-badge"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import {
   Table,
   TableBody,
@@ -332,13 +327,6 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           subtitle={<MastersChain prefix={p} />}
           tags={p.tags.length > 0 && <TagList tags={p.tags} />}
           description={p.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Utilisation"
-              value={<UtilPct pct={p.utilisation_pct} />}
-            />
-          }
         />
       }
       tabs={[
@@ -503,8 +491,8 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
 
 /** The prefix's attributes, grouped into labelled tables - the detail that used
  * to crowd the page header. Only headline data (CIDR, VRF, status, tags,
- * description) and the single most-scanned metric (utilisation) stay up top;
- * everything else reads here. */
+ * description) stays up top; everything else, utilisation included, reads
+ * here. */
 function PrefixOverview({
   prefix: p,
   humanIds,
@@ -555,6 +543,7 @@ function PrefixOverview({
           } satisfies KvRow,
         ]
       : []),
+    { label: "Utilisation", value: <UtilPct pct={p.utilisation_pct} /> },
     {
       label: "Used",
       value: (
@@ -613,12 +602,12 @@ function UtilPct({ pct }: { pct: number | null }) {
         : ""
   const bar = pct > 95 ? "bg-red-500" : pct > 85 ? "bg-amber-500" : "bg-primary"
   return (
-    <>
+    <div className="flex items-center gap-3">
       <span className={`num ${tone}`}>{pct}%</span>
-      <div className="mt-1 h-1 w-28 overflow-hidden rounded-full bg-border">
+      <div className="h-1 w-28 overflow-hidden rounded-full bg-border">
         <div className={`h-full ${bar}`} style={{ width: `${pct}%` }} />
       </div>
-    </>
+    </div>
   )
 }
 

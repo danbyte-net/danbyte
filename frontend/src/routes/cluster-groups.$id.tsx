@@ -11,12 +11,7 @@ import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ClusterGroupDeleteDialog } from "@/components/cluster-group-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedClusterTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -82,19 +77,7 @@ function Body({ clusterGroup: m }: { clusterGroup: ClusterGroup }) {
           )}
         </>
       }
-      hero={
-        <DetailHero
-          title={m.name}
-          description={m.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Clusters"
-              value={<span className="num">{m.cluster_count}</span>}
-            />
-          }
-        />
-      }
+      hero={<DetailHero title={m.name} description={m.description} />}
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "clusters", label: "Clusters", count: m.cluster_count },
@@ -147,6 +130,10 @@ function ClusterGroupOverview({
       label: "Slug",
       value: <span className="font-mono text-[13px]">{m.slug}</span>,
       copy: m.slug,
+    },
+    {
+      label: "Clusters",
+      value: <span className="num">{m.cluster_count}</span>,
     },
     { label: "Created", value: <TimeCell iso={m.created_at} /> },
     { label: "Updated", value: <TimeCell iso={m.updated_at} /> },

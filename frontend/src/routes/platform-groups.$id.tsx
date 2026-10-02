@@ -13,12 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { PlatformGroupDeleteDialog } from "@/components/platform-group-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
@@ -65,6 +60,14 @@ function Body({ group: g }: { group: PlatformGroup }) {
   })
 
   const rows: KvRow[] = [
+    ...(humanIds && g.numid != null
+      ? [
+          {
+            label: "Number",
+            value: <span className="num font-mono">#{g.numid}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
     { label: "Name", value: g.name, copy: g.name },
     { label: "Slug", value: mono(g.slug), copy: g.slug },
     {
@@ -101,6 +104,10 @@ function Body({ group: g }: { group: PlatformGroup }) {
       ),
     },
     { label: "Description", value: g.description || dash },
+    {
+      label: "Platforms",
+      value: <span className="num">{g.platform_count}</span>,
+    },
   ]
 
   return (
@@ -145,25 +152,6 @@ function Body({ group: g }: { group: PlatformGroup }) {
             )
           }
           description={g.description}
-          statCols={1}
-          stats={
-            <>
-              {humanIds && g.numid != null && (
-                <DetailStat
-                  label="Number"
-                  value={<span className="num font-mono">#{g.numid}</span>}
-                />
-              )}
-              <DetailStat
-                label="Platforms"
-                value={<span className="num">{g.platform_count}</span>}
-              />
-              <DetailStat
-                label="Subgroups"
-                value={<span className="num">{g.child_count}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[

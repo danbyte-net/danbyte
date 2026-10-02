@@ -135,10 +135,10 @@ Clicking a name in **Customize → Export templates** opens that template's deta
 page, the same way every other object in Danbyte works. The pencil in the header
 edits it; **Render** produces the file without leaving the page.
 
-- **Overview** - what the template is for (name, object type, description), what
-  it produces (file extension, MIME type, inline or attachment), when it was
-  created and last changed, and then the **template body itself**, rendered in a
-  scrollable monospace box.
+- **Overview** - what the template is for (name, object type, description, and
+  how many lines it has), what it produces (file extension, MIME type, inline or
+  attachment), when it was created and last changed, and then the **template
+  body itself**, rendered in a scrollable monospace box.
 - **Journal** - your notes on this template.
 - **Change log** - the automatic record of changes to the row.
 

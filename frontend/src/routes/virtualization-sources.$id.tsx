@@ -29,12 +29,7 @@ import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
 import { SyncStatusBadge } from "@/components/integrations/sync-status-badge"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { VirtChangesPanel } from "@/components/integrations/virt-changes-dialog"
 import { SourceDialog } from "./virtualization-sources.index"
@@ -348,19 +343,6 @@ function SourceDetailPage() {
               error={source.last_sync_error}
               skipped={skipped}
             />
-          }
-          statCols={2}
-          stats={
-            <>
-              <DetailStat
-                label="Platform"
-                value={<span className="text-xs">{source.kind_display}</span>}
-              />
-              <DetailStat
-                label="Skipped last run"
-                value={<span className="num">{skipped.length}</span>}
-              />
-            </>
           }
         />
       }

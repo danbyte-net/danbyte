@@ -12,12 +12,7 @@ import { QueryError } from "@/components/query-error"
 import { DataTable } from "@/components/data-table"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Section } from "@/components/ui/section"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { transitionColumns } from "@/components/columns/transition-columns"
 import {
   availabilityTone,
@@ -134,29 +129,6 @@ function Body({
               <span className="font-mono text-[11px] uppercase">{c.kind}</span>
             </>
           }
-          statCols={3}
-          stats={
-            <>
-              <DetailStat
-                label="Availability"
-                value={
-                  <span
-                    className={`num font-medium ${availabilityTone(f.availability)}`}
-                  >
-                    {fmtPct(f.availability)}
-                  </span>
-                }
-              />
-              <DetailStat
-                label="p95"
-                value={<span className="num">{fmtMs(f.p95)}</span>}
-              />
-              <DetailStat
-                label="Baseline"
-                value={<span className="num">{fmtMs(c.baseline_ms)}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -254,6 +226,10 @@ function Body({
                       {fmtMs(f.p50)} / {fmtMs(f.p95)} / {fmtMs(f.p99)}
                     </span>
                   ),
+                },
+                {
+                  label: "Baseline",
+                  value: <span className="num">{fmtMs(c.baseline_ms)}</span>,
                 },
                 {
                   label: "Spike threshold",

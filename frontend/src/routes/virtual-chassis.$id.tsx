@@ -61,12 +61,7 @@ import { VcAddMemberDialog } from "@/components/vc-add-member-dialog"
 import { VcMembershipDialog } from "@/components/vc-membership-dialog"
 import { VcSnmpPane } from "@/components/vc-snmp-pane"
 import { SpecSheetButton } from "@/components/spec-sheet-button"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -174,30 +169,6 @@ function Body({ vc }: { vc: VirtualChassis }) {
           title={vc.name}
           tags={vc.tags.length > 0 && <TagList tags={vc.tags} />}
           description={vc.description}
-          stats={
-            <>
-              <DetailStat
-                label="Master"
-                value={
-                  vc.master ? (
-                    <Link
-                      to="/devices/$id"
-                      params={{ id: vc.master.id }}
-                      className="link font-mono text-[13px]"
-                    >
-                      {vc.master.name}
-                    </Link>
-                  ) : (
-                    dash
-                  )
-                }
-              />
-              <DetailStat
-                label="Members"
-                value={<span className="num">{vc.member_count}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[

@@ -15,12 +15,7 @@ import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RirDeleteDialog } from "@/components/rir-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 
@@ -93,12 +88,6 @@ function Body({ rir: r }: { rir: RIR }) {
             )
           }
           description={r.description}
-          stats={
-            <DetailStat
-              label="Aggregates"
-              value={<span className="num">{r.aggregate_count}</span>}
-            />
-          }
         />
       }
       tabs={[
@@ -137,7 +126,7 @@ function Body({ rir: r }: { rir: RIR }) {
 }
 
 /** RIR attributes, moved out of the page header. Only the name, public/private
- * badge, description and aggregate count stay up top. */
+ * badge and description stay up top. */
 function RirOverview({ rir: r }: { rir: RIR }) {
   const { humanIds } = useMe()
 
@@ -162,6 +151,10 @@ function RirOverview({ rir: r }: { rir: RIR }) {
       ) : (
         <Badge variant="success">Public</Badge>
       ),
+    },
+    {
+      label: "Aggregates",
+      value: <span className="num">{r.aggregate_count}</span>,
     },
     { label: "Created", value: <TimeCell iso={r.created_at} /> },
     { label: "Updated", value: <TimeCell iso={r.updated_at} /> },

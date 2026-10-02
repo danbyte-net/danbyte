@@ -33,12 +33,7 @@ import {
 } from "@/components/ui/dialog"
 import { FormText } from "@/components/forms/text"
 import { FormTextarea } from "@/components/forms/textarea"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import {
@@ -147,20 +142,6 @@ function Body({ cert }: { cert: Certificate }) {
             <span className="font-mono">
               {cert.issuer_cn ? `Issued by ${cert.issuer_cn}` : cert.issuer}
             </span>
-          }
-          statCols={3}
-          stats={
-            <>
-              <DetailStat
-                label="Endpoints"
-                value={<span className="num">{cert.binding_count}</span>}
-              />
-              <DetailStat
-                label="Assigned to"
-                value={<span className="num">{cert.assignment_count}</span>}
-              />
-              <DetailStat label="Key" value={fmtKey(cert)} />
-            </>
           }
         />
       }
@@ -429,6 +410,17 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
     { label: "Updated", value: <TimeCell iso={cert.updated_at} /> },
   ]
 
+  const usage: KvRow[] = [
+    {
+      label: "Endpoints",
+      value: <span className="num">{cert.binding_count}</span>,
+    },
+    {
+      label: "Assigned to",
+      value: <span className="num">{cert.assignment_count}</span>,
+    },
+  ]
+
   return (
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
@@ -436,6 +428,7 @@ function CertificateOverview({ cert }: { cert: Certificate }) {
         <KvCard title="Validity" rows={validity} />
         <KvCard title="Key" rows={key} />
         <KvCard title="Record" rows={record} />
+        <KvCard title="Usage" rows={usage} />
       </div>
 
       <WatchedBySection certificateId={cert.id} />

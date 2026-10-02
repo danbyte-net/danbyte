@@ -13,12 +13,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TunnelGroupDeleteDialog } from "@/components/tunnel-group-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { EmbeddedTunnelTable } from "@/components/embedded-tables"
@@ -81,19 +76,7 @@ function Body({ group: g }: { group: TunnelGroup }) {
           )}
         </>
       }
-      hero={
-        <DetailHero
-          title={g.name}
-          description={g.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Tunnels"
-              value={<span className="num">{g.tunnel_count}</span>}
-            />
-          }
-        />
-      }
+      hero={<DetailHero title={g.name} description={g.description} />}
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "tunnels", label: "Tunnels", count: g.tunnel_count },
@@ -129,8 +112,8 @@ function Body({ group: g }: { group: TunnelGroup }) {
   )
 }
 
-/** Tunnel-group attributes. The name, description and tunnel count stay in the
- * hero; everything else lands here. */
+/** Tunnel-group attributes. The name and description stay in the hero;
+ * everything else lands here. */
 function TunnelGroupOverview({ group: g }: { group: TunnelGroup }) {
   const { humanIds } = useMe()
 

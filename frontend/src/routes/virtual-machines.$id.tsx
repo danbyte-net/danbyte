@@ -13,12 +13,7 @@ import { DataTable } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
@@ -153,39 +148,6 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           }
           tags={vm.tags.length > 0 && <TagList tags={vm.tags} />}
           description={vm.description}
-          statCols={3}
-          stats={
-            <>
-              <DetailStat
-                label="Cluster"
-                value={
-                  <Link
-                    to="/clusters/$id"
-                    params={{ id: vm.cluster.id }}
-                    className="link text-xs"
-                  >
-                    {vm.cluster.name}
-                  </Link>
-                }
-              />
-              <DetailStat
-                label="Primary IP"
-                value={
-                  vm.primary_ip ? (
-                    <Link
-                      to="/ips/$id"
-                      params={{ id: vm.primary_ip.id }}
-                      className="link font-mono text-[13px]"
-                    >
-                      {vm.primary_ip.ip_address}
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground">-</span>
-                  )
-                }
-              />
-            </>
-          }
         />
       }
       tabs={[

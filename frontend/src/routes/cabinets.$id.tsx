@@ -93,21 +93,15 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={c.name}
-            badges={<StatusBadge status={c.status} />}
-            subtitle={
-              c.facility_id && (
-                <span className="font-mono">{c.facility_id}</span>
-              )
-            }
-            tags={c.tags.length > 0 && <TagList tags={c.tags} />}
-            description={c.description}
-          />
-
-          <CustomFieldValues model="cabinet" values={c.custom_fields} />
-        </>
+        <DetailHero
+          title={c.name}
+          badges={<StatusBadge status={c.status} />}
+          subtitle={
+            c.facility_id && <span className="font-mono">{c.facility_id}</span>
+          }
+          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          description={c.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -223,6 +217,11 @@ function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="grid content-start gap-6">
           <KvCard title="Cabinet" rows={cabinetRows} />
+          <CustomFieldValues
+            model="cabinet"
+            values={c.custom_fields}
+            layout="cards"
+          />
           <KvCard title="Sizes" rows={sizeRows} />
         </div>
         <CabinetPlateSection

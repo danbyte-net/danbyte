@@ -16,12 +16,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
 import { VlanAssignPrefixDialog } from "@/components/vlan-assign-prefix-dialog"
 import { KvCard, type KvRow } from "@/components/kv-card"
@@ -127,12 +122,6 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
           }
           tags={v.tags.length > 0 && <TagList tags={v.tags} />}
           description={v.description}
-          stats={
-            <DetailStat
-              label="Prefixes"
-              value={<span className="num">{v.prefix_count}</span>}
-            />
-          }
         />
       }
       tabs={[
@@ -201,6 +190,7 @@ function VlanOverview({
       label: "VRF",
       value: <VrfCell vrf={v.vrf} noneLabel="-" />,
     },
+    { label: "Prefixes", value: <span className="num">{v.prefix_count}</span> },
     {
       label: "Updated",
       value: <TimeCell iso={v.updated_at} />,

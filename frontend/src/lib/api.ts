@@ -1001,6 +1001,8 @@ export interface Status {
    * status. See MONITORING_STATES. */
   monitoring_state: string
   usage_count: number
+  /** The status page's IPs tab - addresses only. */
+  ip_count?: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
   created_at: string

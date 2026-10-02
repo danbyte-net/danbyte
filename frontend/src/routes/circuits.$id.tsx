@@ -22,12 +22,7 @@ import { CircuitDeleteDialog } from "@/components/circuit-delete-dialog"
 import { CircuitTerminationDialog } from "@/components/circuit-termination-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { hereUrl } from "@/lib/return-url"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -118,50 +113,22 @@ function Body({ circuit: c }: { circuit: Circuit }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={c.cid}
-            mono
-            badges={
-              <>
-                {humanIds && c.numid != null && (
-                  <span className="num font-mono text-sm text-muted-foreground">
-                    #{c.numid}
-                  </span>
-                )}
-                <StatusBadge status={c.status} />
-              </>
-            }
-            tags={c.tags.length > 0 && <TagList tags={c.tags} />}
-            description={c.description}
-            stats={
-              <>
-                <DetailStat
-                  label="Provider"
-                  value={
-                    c.provider ? (
-                      <Link
-                        to="/providers/$id"
-                        params={{ id: c.provider.id }}
-                        className="link"
-                      >
-                        {c.provider.name}
-                      </Link>
-                    ) : (
-                      dash
-                    )
-                  }
-                />
-                <DetailStat
-                  label="Commit rate"
-                  value={fmtKbps(c.commit_rate_kbps)}
-                />
-              </>
-            }
-          />
-
-          <CustomFieldValues model="circuit" values={c.custom_fields} />
-        </>
+        <DetailHero
+          title={c.cid}
+          mono
+          badges={
+            <>
+              {humanIds && c.numid != null && (
+                <span className="num font-mono text-sm text-muted-foreground">
+                  #{c.numid}
+                </span>
+              )}
+              <StatusBadge status={c.status} />
+            </>
+          }
+          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          description={c.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -297,6 +264,11 @@ function CircuitOverview({ circuit: c }: { circuit: Circuit }) {
       <UpcomingMaintenancePanel objectType="circuit" objectId={c.id} />
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard title="Circuit" rows={circuitRows} />
+        <CustomFieldValues
+          model="circuit"
+          values={c.custom_fields}
+          layout="cards"
+        />
         <KvCard title="Service" rows={serviceRows} />
         <KvCard title="Notes" rows={notesRows} />
       </div>

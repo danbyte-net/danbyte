@@ -14,12 +14,7 @@ import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RevealPskButton } from "@/components/reveal-psk-button"
 import { IPSecProfileDeleteDialog } from "@/components/ipsec-profile-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { EmbeddedTunnelTable } from "@/components/embedded-tables"
@@ -92,13 +87,6 @@ function Body({ profile: p }: { profile: IPSecProfile }) {
             </span>
           }
           description={p.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Tunnels"
-              value={<span className="num">{p.tunnel_count}</span>}
-            />
-          }
         />
       }
       tabs={[

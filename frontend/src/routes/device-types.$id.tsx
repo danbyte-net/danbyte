@@ -149,28 +149,24 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={d.name}
-            badges={
-              <>
-                <LifecycleBadge state={d.lifecycle_state} />
-                <LocalityBadge owningSite={d.owning_site} />
-                {canPromote && (
-                  <PromoteToGlobalButton
-                    url={`/api/device-types/${d.id}/promote/`}
-                    name={d.name}
-                    invalidate={[["device-types"], ["device-type", d.id]]}
-                  />
-                )}
-              </>
-            }
-            tags={d.tags.length > 0 && <TagList tags={d.tags} />}
-            description={d.description}
-          />
-
-          <CustomFieldValues model="devicetype" values={d.custom_fields} />
-        </>
+        <DetailHero
+          title={d.name}
+          badges={
+            <>
+              <LifecycleBadge state={d.lifecycle_state} />
+              <LocalityBadge owningSite={d.owning_site} />
+              {canPromote && (
+                <PromoteToGlobalButton
+                  url={`/api/device-types/${d.id}/promote/`}
+                  name={d.name}
+                  invalidate={[["device-types"], ["device-type", d.id]]}
+                />
+              )}
+            </>
+          }
+          tags={d.tags.length > 0 && <TagList tags={d.tags} />}
+          description={d.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -385,6 +381,11 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="grid gap-6">
         <KvCard title="Hardware" rows={hardware} />
+        <CustomFieldValues
+          model="devicetype"
+          values={d.custom_fields}
+          layout="cards"
+        />
         <KvCard title="Size and DIN rail" rows={sizeRows} />
         {componentRows.length > 0 && (
           <KvCard title="Components" rows={componentRows} />

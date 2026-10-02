@@ -12,12 +12,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RegionDeleteDialog } from "@/components/region-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { MiniMap } from "@/components/site-map/mini-map"
@@ -96,18 +91,6 @@ function Body({ region: r }: { region: Region }) {
             )
           }
           description={r.description}
-          stats={
-            <>
-              <DetailStat
-                label="Sites"
-                value={<span className="num">{r.site_count}</span>}
-              />
-              <DetailStat
-                label="Sub-regions"
-                value={<span className="num">{r.child_count}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -171,6 +154,11 @@ function RegionOverview({ region: r }: { region: Region }) {
       ) : (
         dash
       ),
+    },
+    { label: "Sites", value: <span className="num">{r.site_count}</span> },
+    {
+      label: "Sub-regions",
+      value: <span className="num">{r.child_count}</span>,
     },
   ]
 

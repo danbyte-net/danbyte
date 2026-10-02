@@ -8,12 +8,9 @@ import { api, type Platform } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { PlatformDeleteDialog } from "@/components/platform-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
+import { KvCard } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -51,6 +48,18 @@ function Body({ platform: p }: { platform: Platform }) {
   const [deleting, setDeleting] = useState<Platform | null>(null)
   const goBack = useCallback(() => nav({ to: "/platforms" }), [nav])
   const { canDo, humanIds } = useMe()
+
+  const rows: KvRow[] = [
+    ...(humanIds && p.numid != null
+      ? [
+          {
+            label: "Number",
+            value: <span className="num font-mono">#{p.numid}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
+    { label: "Devices", value: <span className="num">{p.device_count}</span> },
+  ]
 
   return (
     <DetailShell
@@ -95,21 +104,6 @@ function Body({ platform: p }: { platform: Platform }) {
             )
           }
           description={p.description}
-          statCols={1}
-          stats={
-            <>
-              {humanIds && p.numid != null && (
-                <DetailStat
-                  label="Number"
-                  value={<span className="num font-mono">#{p.numid}</span>}
-                />
-              )}
-              <DetailStat
-                label="Devices"
-                value={<span className="num">{p.device_count}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -122,7 +116,8 @@ function Body({ platform: p }: { platform: Platform }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <div className="max-w-xl">
+        <div className="max-w-xl space-y-6">
+          <KvCard title="Platform" rows={rows} />
           <LifecycleCard item={p} title="OS lifecycle" />
         </div>
       </DetailTab>

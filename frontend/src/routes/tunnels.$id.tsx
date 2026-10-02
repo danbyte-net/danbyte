@@ -27,12 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TagList } from "@/components/cells/tag-list"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
@@ -112,36 +107,12 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={t.name}
-            badges={<StatusBadge status={t.status} />}
-            tags={t.tags.length > 0 && <TagList tags={t.tags} />}
-            description={t.description}
-            stats={
-              <>
-                <DetailStat
-                  label="Encapsulation"
-                  value={t.encapsulation_display}
-                />
-                <DetailStat
-                  label="Group"
-                  value={
-                    t.group ? (
-                      <Link to="/tunnel-groups" className="link">
-                        {t.group.name}
-                      </Link>
-                    ) : (
-                      dash
-                    )
-                  }
-                />
-              </>
-            }
-          />
-
-          <CustomFieldValues model="tunnel" values={t.custom_fields} />
-        </>
+        <DetailHero
+          title={t.name}
+          badges={<StatusBadge status={t.status} />}
+          tags={t.tags.length > 0 && <TagList tags={t.tags} />}
+          description={t.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -185,7 +156,7 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
 }
 
 /** The tunnel's attributes, grouped into labelled tables. Only headline data
- * (name, status, encapsulation, group) stays up top; everything else reads
+ * (name, status, tags, description) stays up top; everything else reads
  * here. */
 function TunnelOverview({ tunnel: t }: { tunnel: Tunnel }) {
   const { humanIds } = useMe()
@@ -213,7 +184,11 @@ function TunnelOverview({ tunnel: t }: { tunnel: Tunnel }) {
     {
       label: "Group",
       value: t.group ? (
-        <Link to="/tunnel-groups" className="link">
+        <Link
+          to="/tunnel-groups/$id"
+          params={{ id: t.group.id }}
+          className="link"
+        >
           {t.group.name}
         </Link>
       ) : (
@@ -251,6 +226,11 @@ function TunnelOverview({ tunnel: t }: { tunnel: Tunnel }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Tunnel" rows={attributes} />
+      <CustomFieldValues
+        model="tunnel"
+        values={t.custom_fields}
+        layout="cards"
+      />
       <KvCard title="Notes" rows={notes} />
     </div>
   )

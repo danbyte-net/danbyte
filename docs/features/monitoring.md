@@ -818,8 +818,7 @@ the address is excluded writes nothing and raises no alert.
 ### The check page {#check-page}
 
 Each check has its own page at `/monitoring/checks/<id>`. The hero shows the
-status and the address, device and kind, with availability, p95 and baseline
-in the stat rail.
+status and the address, device and kind.
 
 The **Overview** tab holds:
 
@@ -828,7 +827,7 @@ The **Overview** tab holds:
     - availability and coverage;
     - incidents and time to recover;
     - p50 / p95 / p99;
-    - the spike threshold and the spike count;
+    - the baseline, the spike threshold and the spike count;
 - a bar chart of availability per day, or per hour for the 24-hour window;
 - latency against the check's baseline (dashed) and spike threshold
   (dotted), with spikes as bars;

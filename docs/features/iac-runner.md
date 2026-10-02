@@ -45,7 +45,7 @@ Edit button is still there, next to **Test**):
 
 | Tab | What's on it |
 |---|---|
-| **Overview** | Kind, enabled, endpoint, AWX job-template id, TLS verification, whether a credential is stored, auto-deploy-on-change, the object types it can deploy, and any extra vars. |
+| **Overview** | Kind, enabled, endpoint, AWX job-template id, TLS verification, whether a credential is stored, auto-deploy-on-change, the object types it can deploy, the number of runs, and any extra vars. |
 | **Runs** | Every dispatch Danbyte handed to *this* target, newest first - the same rows as **Deploy runs**, pre-filtered (`GET /api/deploy-runs/?target=<id>`), with the same **Retry** on a failed run. |
 | **Journal** | Your notes on this target. |
 | **Change log** | Every create/edit/delete of the target itself - see [Change log](change-log.md). |

@@ -50,12 +50,7 @@ import {
   traceUrl,
 } from "@/components/cable-trace-path"
 import { PathRow } from "@/components/device-paths-list"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
@@ -230,34 +225,6 @@ function Body({ iface: i }: { iface: Interface }) {
             </>
           }
           tags={i.tags.length > 0 && <TagList tags={i.tags} />}
-          stats={
-            <>
-              <DetailStat
-                label="Device"
-                value={
-                  <Link
-                    to="/devices/$id"
-                    params={{ id: i.device.id }}
-                    className="link font-mono"
-                  >
-                    {i.device.name}
-                  </Link>
-                }
-              />
-              <DetailStat
-                label="Type"
-                value={
-                  i.type ? (
-                    <span className="font-mono text-[13px]">
-                      {i.type_display}
-                    </span>
-                  ) : (
-                    dash
-                  )
-                }
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -340,8 +307,8 @@ function Body({ iface: i }: { iface: Interface }) {
 }
 
 /** The interface's attributes, grouped into labelled tables - the detail that
- * used to crowd the page header. Only headline data (name, state, device,
- * type) stays up top; everything else reads here. */
+ * used to crowd the page header. Only headline data (name, state) stays up
+ * top; everything else, device and type included, reads here. */
 function InterfaceOverview({
   iface: i,
   ips,
@@ -356,6 +323,18 @@ function InterfaceOverview({
   onMembers: () => void
 }) {
   const attributes: KvRow[] = [
+    {
+      label: "Device",
+      value: (
+        <Link
+          to="/devices/$id"
+          params={{ id: i.device.id }}
+          className="link font-mono"
+        >
+          {i.device.name}
+        </Link>
+      ),
+    },
     {
       label: "Enabled",
       value: i.enabled ? "Yes" : "No",

@@ -14,12 +14,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { DeviceRoleDeleteDialog } from "@/components/device-role-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -90,18 +85,6 @@ function Body({ role: r }: { role: DeviceRole }) {
           <DetailHero
             title={<ColorBadge name={r.name} color={r.color || undefined} />}
             description={r.description}
-            stats={
-              <>
-                <DetailStat
-                  label="Devices"
-                  value={<span className="num">{r.device_count}</span>}
-                />
-                <DetailStat
-                  label="VMs"
-                  value={<span className="num">{r.vm_count}</span>}
-                />
-              </>
-            }
           />
 
           <section className="border-b border-border px-6 py-4">
@@ -152,7 +135,7 @@ function Body({ role: r }: { role: DeviceRole }) {
 }
 
 /** Device-role attributes that used to crowd the header, grouped into tables.
- * Only the colored name badge, description and counts stay up top. */
+ * Only the colored name badge and description stay up top. */
 function DeviceRoleOverview({ role: r }: { role: DeviceRole }) {
   const { humanIds } = useMe()
 
@@ -195,6 +178,8 @@ function DeviceRoleOverview({ role: r }: { role: DeviceRole }) {
         dash
       ),
     },
+    { label: "Devices", value: <span className="num">{r.device_count}</span> },
+    { label: "VMs", value: <span className="num">{r.vm_count}</span> },
     { label: "Created", value: <TimeCell iso={r.created_at} /> },
     { label: "Updated", value: <TimeCell iso={r.updated_at} /> },
   ]
