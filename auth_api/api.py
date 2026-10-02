@@ -492,7 +492,7 @@ class ObjectPermissionSerializer(serializers.ModelSerializer):
 class ObjectPermissionViewSet(viewsets.ModelViewSet):
     queryset = (
         ObjectPermission.objects.all()
-        .prefetch_related("groups", "users", "tenants")
+        .prefetch_related("groups", "users", "tenants", "sites")
         .order_by("name")
     )
     serializer_class = ObjectPermissionSerializer
