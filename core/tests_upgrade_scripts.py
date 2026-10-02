@@ -15,11 +15,13 @@ No database and no real systemd: safe anywhere, fast enough for CI.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -27,6 +29,7 @@ import tempfile
 import textwrap
 import time
 from pathlib import Path
+from unittest import mock
 
 from django.conf import settings
 from django.test import SimpleTestCase
@@ -764,6 +767,21 @@ class BundleStageTests(StageTestCase):
         self.assertEqual(h.status()["outcome"]["code"], "restored")
         self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
 
+    def test_run_folders_are_the_service_accounts_alone(self):
+        # #281: a run folder gets a full database snapshot, and one an older
+        # stage left behind (a failed restore keeps it) was readable.
+        h = self.host()
+        left = h.home / ".danbyte-upgrade" / "20200101T000000Z-0.16.13"
+        left.mkdir(parents=True)
+        (left / "snapshot.dump").write_text("schema=v0\n")
+        left.chmod(0o755)
+        r = h.upgrade(env={"FAKE_VERIFY_RC": "1", "FAKE_RESTORE_FAIL": "1"})
+        self.assertEqual(r.returncode, 1)
+        (work,) = (h.home / ".danbyte-upgrade").glob("*-0.17.0-dev2")
+        self.assertTrue((work / "snapshot.dump").exists())
+        for folder in (work, left):
+            self.assertEqual(stat.S_IMODE(folder.stat().st_mode), 0o700, folder)
+
     def test_unattended_upgrade_needs_a_database_it_can_roll_back(self):
         h = self.host()
         r = h.upgrade(env={"FAKE_DB_ROLLBACK": "0", "DANBYTE_UPGRADE_TRIGGER": "auto"})
@@ -981,6 +999,32 @@ class LauncherBackupTests(StageTestCase):
                 self.assertGreaterEqual(steps["backup"]["ended"] - steps["backup"]["started"], 1)
                 self.assertLessEqual(steps["backup"]["ended"], steps["preflight"]["started"])
                 self.assertFalse((h.home / ".danbyte-upgrade").exists())
+
+
+class DbToolTests(SimpleTestCase):
+    def test_the_snapshot_is_private_from_its_first_byte(self):
+        # #281: pg_dump creates the file with the caller's umask.
+        spec = importlib.util.spec_from_file_location(
+            "upgrade_dbtool", REPO / "scripts" / "upgrade" / "dbtool.py")
+        dbtool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dbtool)
+        modes = []
+
+        def dump(path):
+            Path(path).write_text("dump")
+            modes.append(stat.S_IMODE(os.stat(path).st_mode))
+
+        dest = Path(tempfile.mkdtemp(prefix="dbtool-")) / "snapshot.dump"
+        self.addCleanup(shutil.rmtree, dest.parent, ignore_errors=True)
+        before = os.umask(0o022)
+        try:
+            with mock.patch.object(dbtool, "_setup"), \
+                    mock.patch("backups.engine.dump_database", dump):
+                self.assertEqual(dbtool.snapshot(str(dest)), 0)
+            self.assertEqual(os.umask(0o022), 0o022)
+        finally:
+            os.umask(before)
+        self.assertEqual(modes, [0o600])
 
 
 class UnitFileTests(SimpleTestCase):

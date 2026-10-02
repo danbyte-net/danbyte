@@ -1358,6 +1358,19 @@ def sudo_read(path: str | Path) -> str:
         return ""
 
 
+def svc_tail(ctx: Ctx, path: Path, size: int = 16384) -> str:
+    """The end of a file only the service account can read - the upgrade's
+    run folder is private to it (#281). Never prompts."""
+    if not ctx.as_service:
+        return ""
+    try:
+        p = subprocess.run(_user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user, nonint=True)
+                           + ["tail", "-c", str(size), str(path)], capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return p.stdout.decode(errors="replace") if p.returncode == 0 else ""
+
+
 def sudo_listdir(path: Path) -> list[str]:
     try:
         return sorted(os.listdir(path))
@@ -3923,6 +3936,8 @@ class Upgrade(Screen):
                 size = f.tell()
                 f.seek(max(0, size - 16384))
                 self.log_lines = f.read().decode(errors="replace").splitlines()[-200:]
+        except PermissionError:
+            self.log_lines = svc_tail(self.con.ctx, path).splitlines()[-200:]
         except OSError:
             self.log_lines = []
 

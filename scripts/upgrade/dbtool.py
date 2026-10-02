@@ -162,7 +162,13 @@ def snapshot(path: str) -> int:
     _setup()
     from backups.engine import dump_database
 
-    dump_database(path)
+    # The whole database (#281): the service account's alone from pg_dump's
+    # first byte, not made private after the fact.
+    old = os.umask(0o077)
+    try:
+        dump_database(path)
+    finally:
+        os.umask(old)
     return 0
 
 

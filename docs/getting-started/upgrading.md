@@ -358,7 +358,7 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 | quiesce | timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |
 | swap | the new code, frontend, static files and (bundle) vendor/ in place; the old ones kept aside; files the release no longer ships moved aside; new unit files linked | maintenance page |
 | deps, check | dependencies installed, `manage.py check`, the migration plan | maintenance page |
-| snapshot | `pg_dump` of the database - only when migrations are pending | maintenance page |
+| snapshot | `pg_dump` of the database - only when migrations are pending - into the run folder beside the app, which only the service user can read | maintenance page |
 | migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was | maintenance page |
 | static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
 | verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |

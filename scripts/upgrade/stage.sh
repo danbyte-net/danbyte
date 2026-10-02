@@ -72,7 +72,9 @@ OUTCOME=""
 # (core/management/commands/migrate.py) must never step in.
 export DANBYTE_UPGRADE_STAGE=1
 
-mkdir -p "$WORK" || { echo "cannot create $WORK" >&2; exit 1; }
+# Private: the run folder gets a full database snapshot (#281). The folder
+# only - what is built inside it moves into the app with its own modes.
+mkdir -p "$WORK" && chmod 700 "$WORK" || { echo "cannot create $WORK" >&2; exit 1; }
 ctx_paths
 cd "$APP" || { echo "no app directory $APP" >&2; exit 1; }
 : >>"$LOG"
@@ -149,11 +151,13 @@ if [ "$KIND" = git ]; then
 else
   [ -d "$SRC/vendor/wheels" ] || fail "the bundle has no vendor/wheels - not an offline bundle"
 fi
-# Leftovers of earlier runs: keep the newest one that failed, for its log.
+# Leftovers of earlier runs: keep the newest one that failed, for its log,
+# as private as this run's - older stages left theirs readable (#281).
 for _old in $(find "$UPG_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name recover ! -path "$WORK" 2>/dev/null \
     | LC_ALL=C sort -r | tail -n +2); do
   rm -rf "$_old"
 done
+find "$UPG_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name recover -exec chmod 700 {} + 2>/dev/null
 [ "$(stat -c %d "$UPG_ROOT")" = "$(stat -c %d "$APP")" ] || fail "$UPG_ROOT is not on the filesystem of $APP"
 
 # Facts only the running release can answer, with its own code and .env.
