@@ -359,6 +359,8 @@ describe("merging into a factory's columns", () => {
       "updated_at:Updated:datetime",
       "location:Location:object",
       "rack:Rack:object",
+      "cabinet:Cabinet:object",
+      "din_rail:Din rail:object",
     ].map((s) => {
       const [key, label, kind] = s.split(":")
       return { key, label, kind, group: "fields" } as ListField
@@ -370,9 +372,42 @@ describe("merging into a factory's columns", () => {
       .map((c) => resolveColumnLabel(c.id!, c))
     const dupes = labels.filter((l, i) => labels.indexOf(l) !== i)
     expect(dupes).toEqual([])
-    expect(merged.map((c) => c.id)).toContain("site.region")
-    expect(merged.map((c) => c.id)).not.toContain("device_type")
-    expect(merged.map((c) => c.id)).not.toContain("serial_number")
+    const ids = merged.map((c) => c.id)
+    expect(ids).toContain("site.region")
+    expect(ids).not.toContain("device_type")
+    expect(ids).not.toContain("serial_number")
+    // Rack and Cabinet are the factory's, side by side after Site - where a
+    // device sits, a rack or a cabinet, never both.
+    expect(ids.slice(ids.indexOf("site"), ids.indexOf("site") + 3)).toEqual([
+      "site",
+      "rack",
+      "cabinet",
+    ])
+    expect(ids.filter((id) => id === "cabinet")).toHaveLength(1)
+  })
+
+  it("offers the device factory's Rack and Cabinet hidden, linked, with no facet", () => {
+    const cols = buildDeviceColumns<Device>({ include: ["rack", "cabinet"] })
+    expect(
+      cols.map((c) => [c.id, c.meta?.defaultHidden, c.meta?.facet])
+    ).toEqual([
+      ["rack", true, undefined],
+      ["cabinet", true, undefined],
+    ])
+    const qc = new QueryClient()
+    const row = {
+      cabinet: { id: "c1", name: "K1" },
+      rack: null,
+    } as unknown as Device
+    const Cell = cols[1].cell as (ctx: unknown) => React.ReactNode
+    render(
+      <QueryClientProvider client={qc}>
+        {Cell({ row: { original: row } })}
+      </QueryClientProvider>
+    )
+    expect(screen.getByRole("link", { name: "K1" }).getAttribute("href")).toBe(
+      "/cabinets/$id"
+    )
   })
 
   it("leaves the cable factory with no second copy of its ends", () => {

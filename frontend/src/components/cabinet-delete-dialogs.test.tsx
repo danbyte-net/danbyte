@@ -11,14 +11,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type * as Api from "@/lib/api"
 import { ApiError } from "@/lib/api"
-import type { CabinetRole, CabinetType } from "@/lib/api"
+import type { Cabinet, CabinetRole, CabinetType } from "@/lib/api"
+import { CabinetDeleteDialog } from "./cabinet-delete-dialog"
 import { CabinetRoleDeleteDialog } from "./cabinet-role-delete-dialog"
 import { CabinetTypeDeleteDialog } from "./cabinet-type-delete-dialog"
 
 // A cabinet type or role in use can't be deleted: the server answers 409
 // with how many cabinets use it. The dialogs say so before the click when the
 // count shows it, and show the server's answer - and stay open - when cabinets
-// took the type or role after the page loaded.
+// took the type or role after the page loaded. A cabinet with devices on its
+// rails is refused the same way.
 
 const { apiMock, toastMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -56,6 +58,31 @@ const cabinetType = (cabinet_count: number): CabinetType => ({
   description: "",
   cabinet_count,
   tags: [],
+  created_at: "2026-10-01T00:00:00Z",
+  updated_at: "2026-10-01T00:00:00Z",
+})
+
+const cabinet = (): Cabinet => ({
+  id: "c1",
+  numid: 1,
+  name: "K1",
+  facility_id: "",
+  site: { id: "s1", name: "HQ" },
+  location: null,
+  role: null,
+  cabinet_type: null,
+  status: null,
+  inner_width_mm: 525,
+  inner_height_mm: 625,
+  outer_width_mm: null,
+  outer_height_mm: null,
+  outer_depth_mm: null,
+  rails: [],
+  description: "",
+  document_count: 0,
+  device_count: 1,
+  tags: [],
+  custom_fields: {},
   created_at: "2026-10-01T00:00:00Z",
   updated_at: "2026-10-01T00:00:00Z",
 })
@@ -189,6 +216,42 @@ describe("CabinetTypeDeleteDialog", () => {
       )
     )
     expect(screen.getByText("This action can't be undone.")).toBeTruthy()
+    expect(deleteButton()).toHaveProperty("disabled", false)
+  })
+})
+
+describe("CabinetDeleteDialog", () => {
+  it("shows the server's 409 for devices on the rails, and stays open", async () => {
+    apiMock.mockRejectedValue(
+      new ApiError(409, {
+        detail: "1 device is on its rails - take them off first.",
+      })
+    )
+    const onOpenChange = vi.fn()
+    wrap(
+      <CabinetDeleteDialog cabinet={cabinet()} onOpenChange={onOpenChange} />
+    )
+    expect(screen.getByText("This action can't be undone.")).toBeTruthy()
+    fireEvent.click(deleteButton())
+    await waitFor(() =>
+      expect(
+        screen.getByText("1 device is on its rails - take them off first.")
+      ).toBeTruthy()
+    )
+    expect(apiMock).toHaveBeenCalledWith("/api/cabinets/c1/", {
+      method: "DELETE",
+    })
+    expect(deleteButton()).toHaveProperty("disabled", true)
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(toastMock).not.toHaveBeenCalled()
+  })
+
+  it("toasts any other failure", async () => {
+    const err = new ApiError(500, { detail: "boom" })
+    apiMock.mockRejectedValue(err)
+    wrap(<CabinetDeleteDialog cabinet={cabinet()} onOpenChange={vi.fn()} />)
+    fireEvent.click(deleteButton())
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith(err))
     expect(deleteButton()).toHaveProperty("disabled", false)
   })
 })

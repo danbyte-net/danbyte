@@ -1,4 +1,4 @@
-import type { DinProfile, DinRail } from "@/lib/api"
+import type { DeviceTypeMini, DinProfile, DinRail } from "@/lib/api"
 
 // DIN rails on a cabinet's mounting plate (#277) - the TS twin of
 // `api/din.py`, so the rail editor flags what the server would refuse, in the
@@ -265,5 +265,91 @@ export function clampToPlate(
   return {
     x_mm: roundMm(clamp(x, 0, width - rail.length_mm)),
     y_mm: roundMm(clamp(y, half, height - half)),
+  }
+}
+
+// ── devices on a rail ───────────────────────────────────────────────────────
+// A device sits on a rail at an offset from the rail's left end and takes its
+// type's width from there; devices on one rail may touch but not overlap.
+// `spans`, `free_gaps` and the no-offset path of `place` in api/din.py.
+
+/** A stretch of a rail, from and to the rail's left end, in mm. */
+export type RailSpan = [number, number]
+
+/** What the gap math reads off a device row. */
+export interface RailDevice {
+  id: string
+  din_offset_mm: number | null
+  device_type: { width_mm: number | null } | null
+}
+
+/** The stretches the devices on one rail take, left to right. A device whose
+ * type has no width takes none, as on the server; `exclude` leaves one out -
+ * the device being moved. */
+export function railSpans(
+  devices: RailDevice[],
+  exclude?: string | null
+): RailSpan[] {
+  return devices
+    .filter((d) => d.id !== exclude && d.din_offset_mm != null)
+    .map((d): RailSpan => {
+      const start = d.din_offset_mm as number
+      return [start, roundMm(start + (d.device_type?.width_mm ?? 0))]
+    })
+    .sort((a, b) => a[0] - b[0])
+}
+
+/** The free stretches of a rail `length` mm long around the `taken` spans,
+ * left to right. Spans that touch leave no gap between them. */
+export function freeGaps(length: number, taken: RailSpan[]): RailSpan[] {
+  const gaps: RailSpan[] = []
+  let at = 0
+  for (const [start, end] of [...taken].sort((a, b) => a[0] - b[0])) {
+    if (tenths(start) > tenths(at)) gaps.push([at, start])
+    at = Math.max(at, end)
+  }
+  if (tenths(at) < tenths(length)) gaps.push([at, length])
+  return gaps
+}
+
+/** Where the server puts a device `width` mm wide sent with a rail and no
+ * offset: the left end of the first gap from the left it fits in. Null when
+ * none fits - "No gap on R1 is 90 mm wide." */
+export function firstFit(gaps: RailSpan[], width: number): number | null {
+  const hit = gaps.find(
+    ([start, end]) => tenths(end) - tenths(start) >= tenths(width)
+  )
+  return hit ? hit[0] : null
+}
+
+/** The widest free stretch, in mm; 0 on a full rail. */
+export function widestGap(gaps: RailSpan[]): number {
+  return gaps.reduce((w, [start, end]) => Math.max(w, roundMm(end - start)), 0)
+}
+
+/** "0-120, 210-525 mm" - gaps as the server's messages print a span. */
+export function fmtGaps(gaps: RailSpan[]): string {
+  if (gaps.length === 0) return ""
+  return `${gaps.map(([s, e]) => `${fmtMm(s)}-${fmtMm(e)}`).join(", ")} mm`
+}
+
+// ── a device's body on the plate ────────────────────────────────────────────
+
+/** The body a device draws on the plate: its left edge at the rail's left
+ * end plus its offset, its top so the rail's centreline crosses the body
+ * `din_rail_mm` below its top edge (the middle when the type leaves it
+ * empty). Null while the device is off a rail or its type has no size. */
+export function deviceBody(
+  rail: Pick<RailGeometry, "x_mm" | "y_mm">,
+  offset: number | null,
+  type: Pick<DeviceTypeMini, "width_mm" | "height_mm" | "din_rail_mm"> | null
+): { x: number; y: number; width: number; height: number } | null {
+  if (offset == null || !type?.width_mm || !type.height_mm) return null
+  const railAt = type.din_rail_mm ?? type.height_mm / 2
+  return {
+    x: roundMm(rail.x_mm + offset),
+    y: roundMm(rail.y_mm - railAt),
+    width: type.width_mm,
+    height: type.height_mm,
   }
 }

@@ -50,3 +50,19 @@ export function invalidateCabinetViews(qc: QueryClient) {
   for (const queryKey of CABINET_VIEW_KEYS)
     void qc.invalidateQueries({ queryKey })
 }
+
+/** Every cached view a device's place in a cabinet shows in: the plate
+ * drawings and Devices tabs, the per-rail lists the device form reads its
+ * gaps from, and the cabinet pages that count their devices. */
+export const CABINET_DEVICE_VIEW_KEYS: string[][] = [
+  ["cabinet-devices"],
+  ["din-rail-devices"],
+  ["cabinet"],
+  ["cabinets"],
+]
+
+/** Refetch them after a device moves into, along or out of a cabinet. */
+export function invalidateCabinetDeviceViews(qc: QueryClient) {
+  for (const queryKey of CABINET_DEVICE_VIEW_KEYS)
+    void qc.invalidateQueries({ queryKey })
+}

@@ -1289,6 +1289,16 @@ export interface DeviceType extends LifecycleInfo {
   weight_unit: string
   subdevice_role: string
   exclude_from_utilization: boolean
+  /** The body's size in mm, one decimal; null when unknown. A type that
+   * mounts on DIN rails needs its width and height. */
+  width_mm: number | null
+  height_mm: number | null
+  depth_mm: number | null
+  /** The DIN rail profiles the type mounts on; empty = not DIN-mounted. */
+  din_profiles: DinProfile[]
+  /** The rail's centreline below the body's top edge, in mm; null = the
+   * middle of the body. */
+  din_rail_mm: number | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   device_count: number
@@ -1327,6 +1337,11 @@ export interface DeviceTypeWritePayload {
   airflow?: string
   weight?: string | null
   weight_unit?: string
+  width_mm?: number | null
+  height_mm?: number | null
+  depth_mm?: number | null
+  din_profiles?: DinProfile[]
+  din_rail_mm?: number | null
   release_date?: string | null
   end_of_sale?: string | null
   end_of_security_updates?: string | null
@@ -1334,13 +1349,32 @@ export interface DeviceTypeWritePayload {
   lifecycle_url?: string
 }
 
-/** Picker shape (?picker=1) - DeviceTypeMiniSerializer. */
-export interface DeviceTypeOption {
+/** The compact device type - DeviceTypeMiniSerializer: the `device_type` a
+ * device row carries, and the picker shape (?picker=1). */
+export interface DeviceTypeMini {
   id: string
   name: string
+  manufacturer: string | null
+  manufacturer_id: string | null
   u_height: number
   rack_width: "full" | "half"
+  is_full_depth: boolean
+  /** Body width and height in mm; what a cabinet drawing sizes it by. */
+  width_mm: number | null
+  height_mm: number | null
+  /** Empty = not DIN-mounted. */
+  din_profiles: DinProfile[]
+  /** The rail's centreline below the body's top edge; null = the middle. */
+  din_rail_mm: number | null
+  front_image: string | null
+  rear_image: string | null
+  release_date?: string | null
+  end_of_support?: string | null
+  lifecycle_state?: LifecycleState
 }
+
+/** Picker shape (?picker=1) - DeviceTypeMiniSerializer. */
+export type DeviceTypeOption = DeviceTypeMini
 
 export interface ImageAttachment {
   id: string
@@ -1419,20 +1453,7 @@ export interface Device {
   topology_card?: string[] | null
   /** Photo size on the topology Diagram; "" inherits. */
   topology_photo_size?: "" | TopologyPhotoSize
-  device_type: {
-    id: string
-    name: string
-    manufacturer: string | null
-    manufacturer_id: string | null
-    u_height: number
-    rack_width: "full" | "half"
-    is_full_depth: boolean
-    front_image: string | null
-    rear_image: string | null
-    release_date?: string | null
-    end_of_support?: string | null
-    lifecycle_state?: LifecycleState
-  } | null
+  device_type: DeviceTypeMini | null
   site: SiteRegionMini | null
   role: {
     id: string
@@ -1520,6 +1541,15 @@ export interface Device {
     starting_unit: number
     desc_units: boolean
   } | null
+  // ─── Cabinet placement (DIN rails, #277) ─────────────────────────────
+  /** The cabinet the device sits in - never a rack as well. */
+  cabinet: { id: string; name: string } | null
+  /** The cabinet's rail it sits on; null in no cabinet, or in one off any
+   * rail. */
+  din_rail: { id: string; label: string; profile: DinProfile } | null
+  /** From the rail's left end to the device's left edge, in mm; null off a
+   * rail. */
+  din_offset_mm: number | null
   permissions?: ObjectPerms
   created_at: string
   updated_at: string
@@ -1544,6 +1574,11 @@ export interface DeviceWritePayload {
   mount?: "side_left" | "side_right" | ""
   mount_offset_mm?: number | null
   mount_span_u?: number | null
+  /** A rail sets its cabinet; a rail without an offset takes the first gap
+   * from the left the device fits in. */
+  cabinet_id?: string | null
+  din_rail_id?: string | null
+  din_offset_mm?: number | null
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments?: string
   airflow?: string
@@ -2031,6 +2066,14 @@ export interface CabinetTypeWritePayload {
   tag_ids?: number[]
 }
 
+/** Picker shape (?picker=1) - CabinetMiniSerializer. */
+export interface CabinetOption extends CabinetSizes {
+  id: string
+  numid: number | null
+  name: string
+  site: { id: string; name: string }
+}
+
 export interface Cabinet extends CabinetSizes {
   id: string
   numid: number | null
@@ -2045,6 +2088,8 @@ export interface Cabinet extends CabinetSizes {
   rails: DinRail[]
   description: string
   document_count: number
+  /** Devices in the cabinet, on its rails or off them. */
+  device_count: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
@@ -2054,24 +2099,31 @@ export interface Cabinet extends CabinetSizes {
 /** A rail field the sync compares, with the cabinet's and the type's value. */
 export type CabinetSyncRailField = "profile" | "x_mm" | "y_mm" | "length_mm"
 
+/** What a rail would change, field by field. */
+export type CabinetSyncRailChanges = Partial<
+  Record<
+    CabinetSyncRailField,
+    { cabinet: number | string; type: number | string }
+  >
+>
+
 /** How a cabinet differs from its type. Rails are matched by label: `add` are
  * template rails the cabinet lacks, `update` rails with a template's label
- * that sit elsewhere or have another profile, and `extra` the cabinet's own
- * rails, which a sync leaves alone. Empty when the cabinet matches. */
+ * that sit elsewhere or have another profile, `blocked` such updates the
+ * devices on the rail would not survive (a sync skips them, with the
+ * reason), and `extra` the cabinet's own rails, which a sync leaves alone.
+ * Empty when the cabinet matches. */
 export interface CabinetSyncDiff {
   sizes?: Partial<
     Record<keyof CabinetSizes, { cabinet: number | null; type: number | null }>
   >
   rails?: {
     add: string[]
-    update: {
+    update: { label: string; changes: CabinetSyncRailChanges }[]
+    blocked: {
       label: string
-      changes: Partial<
-        Record<
-          CabinetSyncRailField,
-          { cabinet: number | string; type: number | string }
-        >
-      >
+      changes: CabinetSyncRailChanges
+      reason: string
     }[]
     extra: string[]
   }

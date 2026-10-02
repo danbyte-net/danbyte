@@ -271,6 +271,7 @@ describe("CabinetForm sizes", () => {
       rails: [],
       description: "",
       document_count: 0,
+      device_count: 0,
       tags: [],
       custom_fields: {},
       created_at: "2026-10-01T00:00:00Z",

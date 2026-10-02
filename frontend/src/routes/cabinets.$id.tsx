@@ -20,7 +20,12 @@ import { ObjectImages } from "@/components/object-images"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { CabinetDeleteDialog } from "@/components/cabinet-delete-dialog"
+import {
+  CabinetDevicesPane,
+  useCabinetDevices,
+} from "@/components/cabinet-devices"
 import { CabinetPlateSection } from "@/components/cabinet-plate-section"
+import { CabinetRailActions } from "@/components/cabinet-rail-actions"
 import { CabinetSyncTypeButton } from "@/components/cabinet-sync-type-button"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -51,7 +56,7 @@ function CabinetDetail() {
 
 function Body({ cabinet: c }: { cabinet: Cabinet }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "documents" | "journal" | "history"
+    "overview" | "devices" | "documents" | "journal" | "history"
   >("overview")
   const { canDo } = useMe()
   const nav = useNavigate()
@@ -106,6 +111,7 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "devices", label: "Devices", count: c.device_count },
         { value: "documents", label: "Documents", count: c.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -115,6 +121,9 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
     >
       <DetailTab value="overview">
         <CabinetOverview cabinet={c} />
+      </DetailTab>
+      <DetailTab value="devices">
+        <CabinetDevicesPane cabinetId={c.id} />
       </DetailTab>
       <DetailTab value="documents">
         <ObjectDocuments objectType="api.cabinet" objectId={c.id} />
@@ -136,10 +145,11 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
 }
 
 /** The cabinet's attributes and sizes, grouped into labelled tables, beside
- * its mounting plate and rails. Only name, status, facility ID and tags stay
- * up top. */
+ * its mounting plate with its rails and the devices on them. Only name,
+ * status, facility ID and tags stay up top. */
 function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
   const { canDo, humanIds } = useMe()
+  const devices = useCabinetDevices(c.id).data?.results
   const cabinetRows: KvRow[] = [
     ...(humanIds && c.numid != null
       ? [
@@ -222,6 +232,8 @@ function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
           railKey="rails"
           editTitle={`Rails · ${c.name}`}
           canEdit={canDo("cabinet", "change")}
+          devices={devices}
+          actions={<CabinetRailActions cabinet={c} devices={devices ?? []} />}
         />
       </div>
       <ObjectImages apiBase={`/api/cabinets/${c.id}`} objectType="cabinet" />

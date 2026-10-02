@@ -1,0 +1,362 @@
+import { Fragment, useMemo } from "react"
+import type { KeyboardEvent } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
+import type { ColumnDef } from "@tanstack/react-table"
+
+import { api } from "@/lib/api"
+import type { Device, DinRail, Paginated } from "@/lib/api"
+import { readableText } from "@/lib/color"
+import {
+  PROFILE_LABELS,
+  deviceBody,
+  fmtMm,
+  freeGaps,
+  railSpans,
+} from "@/lib/din-geometry"
+import { cn } from "@/lib/utils"
+import { usePlatePx } from "@/components/cabinet-elevation"
+import { dash } from "@/components/cells/dash"
+import { buildDeviceColumns } from "@/components/columns/device-columns"
+import type { DeviceColumnId } from "@/components/columns/device-columns"
+import { DataTable, SortHeader } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
+import { QueryError } from "@/components/query-error"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
+// The devices in a cabinet (#277): one list per cabinet, shared by the plate
+// drawing, the Devices tab and the per-rail actions, so a placement made in
+// one shows in the others.
+
+/** The devices in a cabinet, on its rails or off them. */
+export function useCabinetDevices(cabinetId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["cabinet-devices", cabinetId],
+    queryFn: () =>
+      api<Paginated<Device>>(
+        `/api/devices/?cabinet=${cabinetId}&page_size=500`
+      ),
+    enabled: !!cabinetId,
+  })
+}
+
+/** Screen pixels: the name's size, the strip it sits in, and its inset. */
+const NAME_PX = 10
+const STRIP_PX = 16
+const INSET_PX = 3
+/** A character of the name is about this wide, as a share of its size. */
+const CHAR_EM = 0.6
+/** A rail's label, as the plate writes it. */
+const RAIL_LABEL_PX = 11
+
+/** The name cut to what fits `lengthPx`, with the one-character ellipsis;
+ * empty when not even three of its characters do. */
+export function fitName(name: string, lengthPx: number): string {
+  const room = Math.floor((lengthPx - 2 * INSET_PX) / (NAME_PX * CHAR_EM))
+  if (name.length <= room) return name
+  return room >= 4 ? `${name.slice(0, room - 1)}…` : ""
+}
+
+/** How a body carries its name: across its top while the name fits there;
+ * else down its middle when the body stands tall and more of the name fits
+ * that way - DIN gear is mostly narrow and tall, and the rack's side lane
+ * writes its strips' names the same way. Cut to the room it has, or left
+ * out under three characters. A photo keeps the name across its top, so the
+ * picture stays whole. */
+export function nameLayout(
+  name: string,
+  widthPx: number,
+  heightPx: number,
+  photo: boolean
+): { text: string; vertical: boolean } | null {
+  const across = heightPx >= STRIP_PX ? fitName(name, widthPx) : ""
+  if (across !== name && !photo && widthPx >= STRIP_PX && heightPx > widthPx) {
+    const down = fitName(name, heightPx)
+    if (down.length > across.length) return { text: down, vertical: true }
+  }
+  return across ? { text: across, vertical: false } : null
+}
+
+/**
+ * The devices on a cabinet's rails, drawn over its plate - the elevation's
+ * `children`. A body sits at its rail's left end plus its offset, as wide and
+ * tall as its type, its type's rail position on the rail's centreline. It
+ * shows the type's front photo, stretched to the body, or the device role's
+ * colour; hover for the numbers, click through to the device. Devices off a
+ * rail have no place on the plate and are left out.
+ *
+ * It writes the rails' labels too (the elevation's own go, `railLabels`
+ * off): a rail's first device sits at its left end, where the label was, so
+ * each label moves to the first stretch of its rail left free - over the
+ * devices, on a backdrop, only on a full rail.
+ */
+export function CabinetDeviceBodies({
+  rails,
+  devices,
+  highlight,
+}: {
+  rails: DinRail[]
+  devices: Device[]
+  /** Drawn in the selection colour - the device whose page this is. */
+  highlight?: string | null
+}) {
+  const px = usePlatePx()
+  const nav = useNavigate()
+  const railById = new Map(rails.map((r) => [r.id, r]))
+  const open = (d: Device) => nav({ to: "/devices/$id", params: { id: d.id } })
+  const onKey = (d: Device, e: KeyboardEvent<SVGGElement>) => {
+    if (e.key !== "Enter") return
+    e.preventDefault()
+    void open(d)
+  }
+  // The highlighted device last, so nothing on another rail covers it.
+  const ordered = [...devices].sort(
+    (a, b) => Number(a.id === highlight) - Number(b.id === highlight)
+  )
+
+  return (
+    <g data-part="devices">
+      {ordered.map((d) => {
+        const rail = d.din_rail ? railById.get(d.din_rail.id) : undefined
+        const body = rail
+          ? deviceBody(rail, d.din_offset_mm, d.device_type)
+          : null
+        if (!rail || !body) return null
+        const photo = d.device_type?.front_image ?? null
+        const fill = photo ? null : d.role?.color || null
+        const ink = fill ? readableText(fill) : undefined
+        const selected = d.id === highlight
+        const label = nameLayout(
+          d.name,
+          body.width / px(1),
+          body.height / px(1),
+          !!photo
+        )
+        const cx = body.x + body.width / 2
+        const cy = label?.vertical
+          ? body.y + body.height / 2
+          : body.y + px(STRIP_PX / 2)
+        return (
+          <Tooltip key={d.id}>
+            <TooltipTrigger asChild>
+              <g
+                data-device={d.name}
+                data-selected={selected || undefined}
+                role="link"
+                tabIndex={0}
+                aria-label={d.name}
+                className="group/body cursor-pointer outline-none"
+                onClick={() => void open(d)}
+                onKeyDown={(e) => onKey(d, e)}
+              >
+                {photo ? (
+                  <image
+                    href={photo}
+                    x={body.x}
+                    y={body.y}
+                    width={body.width}
+                    height={body.height}
+                    preserveAspectRatio="none"
+                  />
+                ) : (
+                  <rect
+                    data-part="body"
+                    x={body.x}
+                    y={body.y}
+                    width={body.width}
+                    height={body.height}
+                    className={fill ? undefined : "fill-card"}
+                    style={fill ? { fill } : undefined}
+                  />
+                )}
+                {label && photo && (
+                  <rect
+                    x={body.x}
+                    y={body.y}
+                    width={body.width}
+                    height={px(STRIP_PX)}
+                    className="fill-background/85"
+                  />
+                )}
+                {label && (
+                  <text
+                    data-part="name"
+                    x={cx}
+                    y={cy}
+                    transform={
+                      label.vertical ? `rotate(90 ${cx} ${cy})` : undefined
+                    }
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={px(NAME_PX)}
+                    className={cn(
+                      "pointer-events-none font-medium",
+                      !ink && "fill-foreground"
+                    )}
+                    style={ink ? { fill: ink } : undefined}
+                  >
+                    {label.text}
+                  </text>
+                )}
+                {/* The outline on top, so a photo gets one too. */}
+                <rect
+                  data-part="outline"
+                  x={body.x}
+                  y={body.y}
+                  width={body.width}
+                  height={body.height}
+                  className={cn(
+                    "fill-none",
+                    selected
+                      ? "stroke-primary"
+                      : "stroke-border group-hover/body:stroke-foreground/60 group-focus-visible/body:stroke-primary"
+                  )}
+                  strokeWidth={selected ? 2 : 1}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </g>
+            </TooltipTrigger>
+            <TooltipContent variant="panel" side="top">
+              <DeviceNumbers device={d} rail={rail} />
+            </TooltipContent>
+          </Tooltip>
+        )
+      })}
+      <g data-part="rail-tags" className="pointer-events-none">
+        {rails.map((r) => {
+          const at = railTagAt(r, devices, px)
+          return (
+            <g key={r.id} data-rail-tag={r.label}>
+              {at.covered && (
+                <rect
+                  x={r.x_mm + px(3)}
+                  y={r.y_mm - px(7)}
+                  width={at.width - px(2)}
+                  height={px(14)}
+                  rx={px(2)}
+                  className="fill-background/85"
+                />
+              )}
+              <text
+                x={r.x_mm + at.offset + px(6)}
+                y={r.y_mm}
+                dominantBaseline="central"
+                fontSize={px(RAIL_LABEL_PX)}
+                className="fill-foreground font-medium"
+              >
+                {r.label}
+              </text>
+            </g>
+          )
+        })}
+      </g>
+    </g>
+  )
+}
+
+/** Where a rail's label goes, from its left end: the first free stretch it
+ * fits in, or - on a full rail - the left end, `covered`, over the first
+ * device. `width` is what the label takes, in plate mm. */
+export function railTagAt(
+  rail: DinRail,
+  devices: Device[],
+  px: (n: number) => number
+): { offset: number; width: number; covered: boolean } {
+  const width = px(rail.label.length * RAIL_LABEL_PX * CHAR_EM + 9)
+  const taken = railSpans(devices.filter((d) => d.din_rail?.id === rail.id))
+  const gap = freeGaps(rail.length_mm, taken).find(
+    ([start, end]) => end - start >= width
+  )
+  return gap
+    ? { offset: gap[0], width, covered: false }
+    : { offset: 0, width, covered: true }
+}
+
+/** A device's type and place, for its hover - the rail's hover, for a
+ * device. */
+function DeviceNumbers({ device: d, rail }: { device: Device; rail: DinRail }) {
+  const rows: [string, string][] = [
+    ["Rail", rail.label],
+    ["Offset", `${fmtMm(d.din_offset_mm ?? 0)} mm`],
+  ]
+  return (
+    <div className="grid gap-1">
+      <div className="flex items-baseline gap-2 font-medium">
+        {d.name}
+        {d.device_type && (
+          <span className="font-normal text-muted-foreground">
+            {d.device_type.name}
+          </span>
+        )}
+      </div>
+      <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5">
+        {rows.map(([label, value]) => (
+          <Fragment key={label}>
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="num text-right">{value}</dd>
+          </Fragment>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+/** The devices in a cabinet, as the rack page lists a rack's: the shared
+ * device cells, with the rail and offset spliced in after the name. */
+export function CabinetDevicesPane({ cabinetId }: { cabinetId: string }) {
+  const q = useCabinetDevices(cabinetId)
+  const rows = q.data?.results ?? []
+  const columns = useMemo<ColumnDef<Device>[]>(() => {
+    const shared = buildDeviceColumns({
+      include: ["name", "role", "type", "status"],
+    })
+    const col = (id: DeviceColumnId) => shared.filter((c) => c.id === id)
+    return [
+      ...col("name"),
+      {
+        id: "din_rail",
+        accessorFn: (d) => d.din_rail?.label ?? "",
+        header: ({ column }) => <SortHeader column={column} label="Rail" />,
+        cell: ({ row }) => {
+          const r = row.original.din_rail
+          if (!r) return dash
+          return (
+            <span className="inline-flex items-baseline gap-1.5 text-xs">
+              <span className="font-medium">{r.label}</span>
+              <span className="text-muted-foreground">
+                {PROFILE_LABELS[r.profile]}
+              </span>
+            </span>
+          )
+        },
+      },
+      {
+        id: "din_offset_mm",
+        accessorFn: (d) => d.din_offset_mm ?? undefined,
+        sortUndefined: "last",
+        header: ({ column }) => <SortHeader column={column} label="Offset" />,
+        cell: ({ row }) =>
+          row.original.din_offset_mm != null ? (
+            <span className="num text-xs">
+              {fmtMm(row.original.din_offset_mm)} mm
+            </span>
+          ) : (
+            dash
+          ),
+      },
+      ...col("role"),
+      ...col("type"),
+      ...col("status"),
+    ]
+  }, [])
+  if (q.isLoading) return <Loading />
+  if (q.isError) return <QueryError error={q.error} />
+  if (rows.length === 0)
+    return <EmptyState title="No devices in this cabinet." />
+  return <DataTable data={rows} columns={columns} flexColumn="name" embedded />
+}

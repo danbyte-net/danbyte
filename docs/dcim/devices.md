@@ -96,7 +96,7 @@ The default tab lays the device's facts out in four cards:
 | -------------- | ------------------------------------------------------------ |
 | **Device**     | name, status, role, platform, description, comments          |
 | **Hardware**   | device type, serial number, asset tag, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
-| **Location**   | site, location, rack, position, face, coordinates            |
+| **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 
 Technical values (name, serial, asset tag, primary IP, DNS name) have a small
@@ -166,8 +166,9 @@ monitored, a **Monitoring** summary (roll-up badge + per-IP grid) appears at the
 The Devices list also has a **Monitoring** column rolling that status up per
 device. Where the device physically sits - its **rack elevation** with this
 device highlighted - is drawn compactly (front **and** rear side by side) in the
-right column; it's hidden for unracked devices. If the device's **type** has a
-rack-face image, that front/rear photo shows below the cards too.
+right column; a device in a DIN-rail cabinet gets the cabinet's plate instead,
+highlighted the same way. It's hidden for a device in neither. If the device's
+**type** has a rack-face image, that front/rear photo shows below the cards too.
 
 ### Images
 

@@ -26,6 +26,8 @@ export interface FormTextProps extends Base {
     | "search"
   min?: number
   max?: number
+  /** Number inputs: the finest value accepted - 0.1 for tenths of a mm. */
+  step?: number
   /** Common values, offered in a dropdown. The field stays free text. */
   suggestions?: string[]
 }
@@ -44,6 +46,7 @@ export function FormText({
   inputMode,
   min,
   max,
+  step,
   suggestions,
   ...field
 }: FormTextProps) {
@@ -57,6 +60,7 @@ export function FormText({
     inputMode,
     min,
     max,
+    step,
     className: cn(mono && "font-mono", inputClassName),
   }
   return (

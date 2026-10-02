@@ -38,6 +38,7 @@ ACRONYM_WORDS: dict[str, str] = {
     "url": "URL", "poe": "PoE", "lag": "LAG", "lacp": "LACP", "rd": "RD",
     "bgp": "BGP", "ospf": "OSPF", "eigrp": "EIGRP", "ldp": "LDP", "bfd": "BFD",
     "vtep": "VTEP", "vni": "VNI", "evpn": "EVPN", "nat": "NAT", "ssid": "SSID",
+    "din": "DIN",
     "psk": "PSK", "fhrp": "FHRP", "snmp": "SNMP", "ssh": "SSH", "api": "API",
     "tls": "TLS", "ipsec": "IPsec", "l2vpn": "L2VPN", "ipv4": "IPv4",
     "ipv6": "IPv6", "dhcp": "DHCP", "sla": "SLA", "cpu": "CPU",

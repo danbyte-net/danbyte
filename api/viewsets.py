@@ -4179,6 +4179,12 @@ class DeviceViewSet(
                 v = _uuid_param(self.request.query_params, key)
                 if v:
                     qs = qs.filter(**{field: v})
+            # Devices whose type mounts on a DIN rail of this profile (#277).
+            profile = self.request.query_params.get("din_profile")
+            if profile:
+                if profile not in {"ts35", "ts15", "g32"}:
+                    raise ValidationError({"din_profile": "One of ts35, ts15, g32."})
+                qs = qs.filter(device_type__din_profiles__contains=[profile])
             # The physical hosts behind a virtualization source. There is no
             # FK from Device to the source - the honest link is that the source
             # syncs VMs onto them, or into a cluster they belong to. Covers a

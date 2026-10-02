@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useRef, useState } from "react"
+import {
+  createContext,
+  Fragment,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react"
 
 import type { DinProfile } from "@/lib/api"
@@ -47,9 +54,22 @@ export interface CabinetElevationProps {
    * arrow keys (1 mm, 10 with Shift). Called with the rail's new left end
    * and centreline, kept on the plate. */
   onMove?: (key: string, at: { x_mm: number; y_mm: number }) => void
-  /** Drawn over the rails, in plate millimetres. */
+  /** Write each rail's label at its left end. Off when the devices drawn
+   * over the rails write the labels where the rails still show. */
+  railLabels?: boolean
+  /** Drawn over the rails, in plate millimetres - the devices on them.
+   * `usePlatePx()` sizes text and gaps in screen pixels inside it. */
   children?: ReactNode
   className?: string
+}
+
+/** Screen pixels as plate millimetres, at the size the plate is drawn. */
+const PlatePx = createContext<(n: number) => number>((n) => n)
+
+/** For what is drawn over the plate: `px(10)` is ten screen pixels, in the
+ * plate's millimetres, so text keeps its size however large the plate is. */
+export function usePlatePx(): (n: number) => number {
+  return useContext(PlatePx)
 }
 
 /** Screen pixels a press travels before it drags, so a click never nudges. */
@@ -91,6 +111,7 @@ export function CabinetElevation({
   selected,
   onSelect,
   onMove,
+  railLabels = true,
   children,
   className,
 }: CabinetElevationProps) {
@@ -171,7 +192,8 @@ export function CabinetElevation({
       ref={svgRef}
       viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
       className={cn("block h-auto max-h-[28rem] w-full select-none", className)}
-      role={interactive ? "group" : "img"}
+      // Devices drawn over the plate are links; an img would hide them.
+      role={interactive || children ? "group" : "img"}
       aria-label={`Plate ${fmtMm(width)}×${fmtMm(height)} mm, ${rails.length} rail${rails.length === 1 ? "" : "s"}`}
     >
       {box && (
@@ -247,15 +269,17 @@ export function CabinetElevation({
                   strokeWidth={isSelected ? 2 : 1}
                   vectorEffect="non-scaling-stroke"
                 />
-                <text
-                  x={r.x_mm + px(6)}
-                  y={r.y_mm}
-                  dominantBaseline="central"
-                  fontSize={px(11)}
-                  className="pointer-events-none fill-foreground font-medium"
-                >
-                  {r.label}
-                </text>
+                {railLabels && (
+                  <text
+                    x={r.x_mm + px(6)}
+                    y={r.y_mm}
+                    dominantBaseline="central"
+                    fontSize={px(11)}
+                    className="pointer-events-none fill-foreground font-medium"
+                  >
+                    {r.label}
+                  </text>
+                )}
               </g>
             </TooltipTrigger>
             <TooltipContent
@@ -269,7 +293,7 @@ export function CabinetElevation({
           </Tooltip>
         )
       })}
-      {children}
+      <PlatePx.Provider value={px}>{children}</PlatePx.Provider>
     </svg>
   )
 }

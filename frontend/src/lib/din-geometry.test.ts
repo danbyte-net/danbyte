@@ -6,14 +6,20 @@ import {
   PROFILE_LABELS,
   band,
   clampToPlate,
+  deviceBody,
+  firstFit,
+  fmtGaps,
+  freeGaps,
   newRail,
   nextRailLabel,
   parseRailDraft,
   railErrors,
+  railSpans,
   roundMm,
   span,
+  widestGap,
 } from "./din-geometry"
-import type { RailGeometry } from "./din-geometry"
+import type { RailDevice, RailGeometry } from "./din-geometry"
 
 // The twin of api/din.py: the editor shows what the server would refuse, in
 // the server's words, before anything is sent. The messages are pinned here
@@ -289,5 +295,151 @@ describe("clampToPlate", () => {
   it("holds a rail longer than the plate at the left edge", () => {
     const r = { profile: "ts15" as DinProfile, length_mm: 600 }
     expect(clampToPlate(r, 30, 50, 500, 600).x_mm).toBe(0)
+  })
+})
+
+// ── devices on a rail ───────────────────────────────────────────────────────
+
+/** A device on a rail, `width` mm wide (its type's), at `offset`. */
+const on = (id: string, offset: number | null, width: number | null = 90) =>
+  ({
+    id,
+    din_offset_mm: offset,
+    device_type: { width_mm: width },
+  }) satisfies RailDevice
+
+describe("freeGaps", () => {
+  it("is the whole rail while nothing is on it", () => {
+    expect(freeGaps(400, [])).toEqual([[0, 400]])
+  })
+
+  it("leaves no gap between devices that touch, or at a rail's full end", () => {
+    expect(
+      freeGaps(400, [
+        [0, 90],
+        [90, 180],
+      ])
+    ).toEqual([[180, 400]])
+    expect(
+      freeGaps(180, [
+        [90, 180],
+        [0, 90],
+      ])
+    ).toEqual([])
+  })
+
+  it("finds the stretches between and around the devices, left to right", () => {
+    expect(
+      freeGaps(525, [
+        [210, 300],
+        [12.5, 120],
+      ])
+    ).toEqual([
+      [0, 12.5],
+      [120, 210],
+      [300, 525],
+    ])
+  })
+
+  it("compares tenths, so a hair of float never opens a gap", () => {
+    expect(freeGaps(0.3, [[0, 0.1 + 0.2]])).toEqual([])
+  })
+})
+
+describe("firstFit", () => {
+  // The server's own sequence (api/tests_din_mounting.py): a 400 mm rail, a
+  // 90 mm PLC at 100, then PLCs with no offset, then an 18 mm relay.
+  it("takes the first gap from the left a device fits in, as the server does", () => {
+    const devices = [on("a", 100)]
+    const next = () => firstFit(freeGaps(400, railSpans(devices)), 90)
+    for (const [id, want] of [
+      ["b", 0],
+      ["c", 190],
+      ["d", 280],
+    ] as const) {
+      expect(next()).toBe(want)
+      devices.push(on(id, want))
+    }
+    // "No gap on R1 is 90 mm wide."
+    expect(next()).toBeNull()
+    // A narrower device still fits the 30 mm left at the end, not the 10 mm
+    // between the first two.
+    expect(firstFit(freeGaps(400, railSpans(devices)), 18)).toBe(370)
+  })
+
+  it("fits a gap exactly as wide as the device", () => {
+    expect(firstFit([[90, 180]], 90)).toBe(90)
+    expect(firstFit([[90, 179.9]], 90)).toBeNull()
+  })
+})
+
+describe("railSpans", () => {
+  it("spans each device from its offset by its type's width, left to right", () => {
+    expect(railSpans([on("b", 200, 45.5), on("a", 0)])).toEqual([
+      [0, 90],
+      [200, 245.5],
+    ])
+  })
+
+  it("leaves out the device being moved, and devices off the rail", () => {
+    const devices = [on("a", 0), on("b", 90), on("c", null)]
+    expect(railSpans(devices, "a")).toEqual([[90, 180]])
+  })
+
+  it("counts a type with no width as taking nothing, like the server", () => {
+    expect(railSpans([on("a", 50, null)])).toEqual([[50, 50]])
+    expect(freeGaps(100, railSpans([on("a", 50, null)]))).toEqual([
+      [0, 50],
+      [50, 100],
+    ])
+  })
+})
+
+describe("gap labels", () => {
+  it("prints gaps as the server prints a span", () => {
+    expect(
+      fmtGaps([
+        [0, 12.5],
+        [120, 525],
+      ])
+    ).toBe("0-12.5, 120-525 mm")
+    expect(fmtGaps([])).toBe("")
+  })
+
+  it("measures the widest gap", () => {
+    expect(
+      widestGap([
+        [0, 12.5],
+        [120, 525],
+      ])
+    ).toBe(405)
+    expect(widestGap([])).toBe(0)
+  })
+})
+
+describe("deviceBody", () => {
+  const r1 = { x_mm: 10, y_mm: 75 }
+  const type = { width_mm: 60, height_mm: 147, din_rail_mm: null }
+
+  it("sits at the rail's left end plus the offset, centred on the rail", () => {
+    expect(deviceBody(r1, 120, type)).toEqual({
+      x: 130,
+      y: 1.5,
+      width: 60,
+      height: 147,
+    })
+  })
+
+  it("hangs the body from the type's rail position when it has one", () => {
+    expect(deviceBody(r1, 0, { ...type, din_rail_mm: 40 })).toMatchObject({
+      x: 10,
+      y: 35,
+    })
+  })
+
+  it("draws nothing off a rail, or for a type without a size", () => {
+    expect(deviceBody(r1, null, type)).toBeNull()
+    expect(deviceBody(r1, 0, { ...type, height_mm: null })).toBeNull()
+    expect(deviceBody(r1, 0, null)).toBeNull()
   })
 })

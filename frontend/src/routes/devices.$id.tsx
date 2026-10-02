@@ -22,6 +22,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
 import { api, DEFAULT_DEVICE_FIELD_VISIBILITY } from "@/lib/api"
+import { PROFILE_LABELS, fmtMm } from "@/lib/din-geometry"
 import type {
   Device,
   DeviceType,
@@ -32,6 +33,7 @@ import type {
   VirtualChassis,
 } from "@/lib/api"
 import { RackElevation } from "@/components/rack-elevation"
+import { DeviceCabinetCard } from "@/components/device-cabinet-card"
 import { ObjectImages } from "@/components/object-images"
 import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import { ObjectDocuments } from "@/components/object-documents"
@@ -907,34 +909,9 @@ function DeviceOverview({
           } satisfies KvRow,
         ]
       : []),
-    {
-      label: "Rack",
-      value: d.rack ? (
-        <Link to="/racks/$id" params={{ id: d.rack.id }} className="link">
-          {d.rack.name}
-        </Link>
-      ) : (
-        dash
-      ),
-    },
-    {
-      label: "Position",
-      value:
-        d.position != null ? (
-          <span className="num">
-            U{d.position}
-            {d.rack_width === "half" && (
-              <span className="text-muted-foreground">
-                {" "}
-                · {d.rack_side || "left"} half
-              </span>
-            )}
-          </span>
-        ) : (
-          dash
-        ),
-    },
-    { label: "Face", value: d.face || dash },
+    // A device sits in a rack or a cabinet, never both: a cabinet's rail
+    // and offset stand where a rack's unit and face do.
+    ...(d.cabinet ? cabinetRows(d, d.cabinet) : rackRows(d)),
     ...(visibility.latitude || visibility.longitude
       ? [
           {
@@ -1122,6 +1099,7 @@ function DeviceOverview({
             <DeviceMiniTopology deviceId={d.id} />
             <DeviceTunnelsCard deviceId={d.id} />
             <DeviceRackCard device={d} />
+            <DeviceCabinetCard device={d} />
           </div>
         </div>
       ) : (
@@ -1137,10 +1115,86 @@ function DeviceOverview({
           <DeviceMiniTopology deviceId={d.id} />
           <DeviceTunnelsCard deviceId={d.id} />
           <DeviceRackCard device={d} />
+          <DeviceCabinetCard device={d} />
         </div>
       )}
     </div>
   )
+}
+
+/** The Location card's rack rows: the rack, the unit and the face. */
+function rackRows(d: Device): KvRow[] {
+  return [
+    {
+      label: "Rack",
+      value: d.rack ? (
+        <Link to="/racks/$id" params={{ id: d.rack.id }} className="link">
+          {d.rack.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Position",
+      value:
+        d.position != null ? (
+          <span className="num">
+            U{d.position}
+            {d.rack_width === "half" && (
+              <span className="text-muted-foreground">
+                {" "}
+                · {d.rack_side || "left"} half
+              </span>
+            )}
+          </span>
+        ) : (
+          dash
+        ),
+    },
+    { label: "Face", value: d.face || dash },
+  ]
+}
+
+/** The Location card's cabinet rows: the cabinet, the rail and the offset
+ * from the rail's left end. */
+function cabinetRows(
+  d: Device,
+  cabinet: NonNullable<Device["cabinet"]>
+): KvRow[] {
+  return [
+    {
+      label: "Cabinet",
+      value: (
+        <Link to="/cabinets/$id" params={{ id: cabinet.id }} className="link">
+          {cabinet.name}
+        </Link>
+      ),
+    },
+    {
+      label: "Rail",
+      value: d.din_rail ? (
+        <span>
+          {d.din_rail.label}
+          <span className="text-muted-foreground">
+            {" "}
+            · {PROFILE_LABELS[d.din_rail.profile]}
+          </span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Offset",
+      value:
+        d.din_offset_mm != null ? (
+          <span className="num">{fmtMm(d.din_offset_mm)} mm</span>
+        ) : (
+          dash
+        ),
+    },
+  ]
 }
 
 /** Where the device physically sits - its rack drawn with this device

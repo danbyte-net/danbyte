@@ -153,6 +153,16 @@ class DevicePlacementTests(DinMountingTestCase):
         self.assertEqual(names(f"cabinet={self.cab.id}"), ["a", "b"])
         self.assertEqual(names(f"din_rail={self.r2.id}"), ["b"])
         self.assertEqual(self.client.get("/api/devices/?cabinet=nope").status_code, 400)
+        # What a rail's Assign offers: devices whose type fits its profile.
+        self.assertEqual(names("din_profile=ts15"), ["b"])
+        self.assertEqual(names("din_profile=ts35"), ["a", "b"])
+        self.assertEqual(self.client.get("/api/devices/?din_profile=x").status_code, 400)
+
+    def test_the_rail_field_reads_din(self):
+        from .field_labels import label_for_field
+
+        self.assertEqual(label_for_field("api.device", Device._meta.get_field("din_rail")),
+                         "DIN rail")
 
     def test_search_shows_where_on_the_rail(self):
         d = Device.objects.get(pk=self.mount("plc-1", self.r1, 120).json()["id"])

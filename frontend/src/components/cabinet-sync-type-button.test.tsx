@@ -51,6 +51,7 @@ const cabinet = (patch: Partial<Cabinet> = {}): Cabinet => ({
   rails: [],
   description: "",
   document_count: 0,
+  device_count: 0,
   tags: [],
   custom_fields: {},
   created_at: "2026-10-01T00:00:00Z",
@@ -71,6 +72,7 @@ const DRIFT: CabinetSyncDiff = {
         },
       },
     ],
+    blocked: [],
     extra: ["X1"],
   },
 }
@@ -164,11 +166,60 @@ describe("CabinetSyncTypeButton", () => {
   })
 
   it("says so when the cabinet matches its type", async () => {
-    diff = { rails: { add: [], update: [], extra: ["X1"] } }
+    diff = { rails: { add: [], update: [], blocked: [], extra: ["X1"] } }
     renderButton()
     const dialog = await openPreview()
     expect(dialog.textContent).toContain("This cabinet matches its type.")
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull()
     expect(screen.getAllByRole("button", { name: "Close" }).length).toBe(2)
+  })
+
+  // A move the devices on a rail would not survive is skipped by the sync.
+  const BLOCKED_R3 = {
+    label: "R3",
+    changes: {
+      profile: { cabinet: "ts15", type: "ts35" },
+      length_mm: { cabinet: 255, type: 525 },
+    },
+    reason: "relay-1 cannot mount on a TS 35 rail.",
+  }
+
+  it("lists a move the devices would not survive as blocked, with the reason", async () => {
+    diff = {
+      rails: { add: [], update: [], blocked: [BLOCKED_R3], extra: [] },
+    }
+    renderButton()
+    const dialog = await openPreview()
+    expect(dialog.textContent).toContain("Blocked, kept")
+    const row = dialog.querySelector('[data-blocked="R3"]')
+    expect(row?.textContent).toContain("R3 profileTS 15→ TS 35")
+    expect(row?.textContent).toContain("R3 length255 mm→ 525 mm")
+    expect(row?.textContent).toContain("relay-1 cannot mount on a TS 35 rail.")
+    // The rail keeps its value: the old one is not struck through.
+    expect(row?.querySelector(".line-through")).toBeNull()
+    // Nothing that can apply, yet the cabinet does not match its type.
+    expect(dialog.textContent).not.toContain("This cabinet matches its type.")
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull()
+  })
+
+  it("applies the moves that can go, without the blocked one", async () => {
+    diff = {
+      rails: {
+        add: [],
+        update: [{ label: "R1", changes: { y_mm: { cabinet: 80, type: 75 } } }],
+        blocked: [BLOCKED_R3],
+        extra: [],
+      },
+    }
+    renderButton()
+    const dialog = await openPreview()
+    expect(dialog.querySelector('[data-blocked="R1"]')).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }))
+    await waitFor(() => expect(calls).toHaveLength(2))
+    // No size differs, so only the rails apply.
+    expect(calls[1].body).toEqual({ apply: true, sizes: false, rails: true })
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Synced - moved R1")
+    )
   })
 })

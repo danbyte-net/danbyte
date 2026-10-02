@@ -28,6 +28,8 @@ import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { LifecycleFlag } from "@/components/cells/lifecycle-cell"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import { cabinetColumn } from "@/components/cells/cabinet-cell"
+import { rackColumn } from "@/components/cells/rack-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -54,6 +56,8 @@ export type DeviceColumnId =
   | "type"
   | "manufacturer"
   | "site"
+  | "rack"
+  | "cabinet"
   | "serial"
   | "ips"
   | "ports"
@@ -76,6 +80,8 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "type",
   "manufacturer",
   "site",
+  "rack",
+  "cabinet",
   "serial",
   "ips",
   "ports",
@@ -157,6 +163,17 @@ export function buildDeviceColumns<T extends Device = Device>(
   if (!opts.portUtil) omit.add("ports")
   const keep = (id: DeviceColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
+
+  // Where a device sits - a rack or a cabinet, never both - side by side,
+  // offered hidden in the Columns menu as the catalog's Rack column was. No
+  // facets: the rail keeps to what a fleet is narrowed by.
+  const placement = (
+    col: ColumnDef<T, unknown>,
+    label: string
+  ): ColumnDef<T, unknown> => ({
+    ...col,
+    meta: { label, defaultHidden: true },
+  })
 
   const ipDesignation = (
     id: "primary_ip" | "secondary_ip" | "oob_ip",
@@ -343,6 +360,9 @@ export function buildDeviceColumns<T extends Device = Device>(
       },
     }),
     site: () => siteColumn<T>({ get: (r) => r.site }),
+    rack: () => placement(rackColumn<T>({ get: (r) => r.rack }), "Rack"),
+    cabinet: () =>
+      placement(cabinetColumn<T>({ get: (r) => r.cabinet }), "Cabinet"),
     serial: () => ({
       id: "serial",
       accessorKey: "serial_number",

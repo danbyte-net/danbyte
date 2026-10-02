@@ -30,6 +30,7 @@ const TYPE_LABEL: Record<string, string> = {
   virtualmachine: "Virtual machine",
   site: "Site",
   rack: "Rack",
+  cabinet: "Cabinet",
   prefix: "Prefix",
   ipaddress: "IP address",
   cluster: "Cluster",

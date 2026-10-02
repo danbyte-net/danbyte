@@ -54,7 +54,9 @@ const railValue = (field: CabinetSyncRailField, v: number | string) =>
  * Re-align a cabinet with its type - the cabinet twin of the rack's Sync
  * type. Dry run first: the dialog shows the sizes that differ and the rails
  * the type would add or move before anything is written. Rails the type
- * does not name are reported and left alone; a sync never removes one.
+ * does not name are reported and left alone; a sync never removes one. A
+ * move the devices on a rail would not survive is listed as blocked, with
+ * the reason, and skipped.
  */
 export function CabinetSyncTypeButton({ cabinet }: { cabinet: Cabinet }) {
   const qc = useQueryClient()
@@ -105,9 +107,12 @@ export function CabinetSyncTypeButton({ cabinet }: { cabinet: Cabinet }) {
   ][]
   const add = diff?.rails?.add ?? []
   const update = diff?.rails?.update ?? []
+  const blocked = diff?.rails?.blocked ?? []
   const extra = diff?.rails?.extra ?? []
   const hasSizes = sizes.length > 0
   const hasRails = add.length > 0 || update.length > 0
+  // Nothing to apply - which is not the same as matching the type while a
+  // blocked move is outstanding.
   const inStep = !hasSizes && !hasRails
   // Both parts differ: each can be left out.
   const pick = hasSizes && hasRails
@@ -139,7 +144,7 @@ export function CabinetSyncTypeButton({ cabinet }: { cabinet: Cabinet }) {
           </DialogHeader>
 
           <div className="grid gap-4 text-sm">
-            {inStep && (
+            {inStep && blocked.length === 0 && (
               <p className="text-muted-foreground">
                 This cabinet matches its type.
               </p>
@@ -189,6 +194,32 @@ export function CabinetSyncTypeButton({ cabinet }: { cabinet: Cabinet }) {
                       : []
                   })
                 )}
+              </Part>
+            )}
+
+            {blocked.length > 0 && (
+              <Part title="Blocked, kept">
+                {blocked.map((b) => (
+                  <div key={b.label} data-blocked={b.label} className="grid">
+                    {RAIL_FIELDS.flatMap((field) => {
+                      const v = b.changes[field]
+                      return v
+                        ? [
+                            <Change
+                              key={field}
+                              label={`${b.label} ${RAIL_FIELD_LABEL[field].toLowerCase()}`}
+                              from={railValue(field, v.cabinet)}
+                              to={railValue(field, v.type)}
+                              kept
+                            />,
+                          ]
+                        : []
+                    })}
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      {b.reason}
+                    </p>
+                  </div>
+                ))}
               </Part>
             )}
 
@@ -255,23 +286,28 @@ function Part({
   )
 }
 
-/** "Plate width   500 mm → 525 mm", the old value struck through. */
+/** "Plate width   500 mm → 525 mm", the old value struck through - or,
+ * `kept`, the old value standing and the type's muted. */
 function Change({
   label,
   from,
   to,
+  kept,
 }: {
   label: string
   from: string
   to: string
+  kept?: boolean
 }) {
   return (
     <div className="flex items-baseline gap-2">
       <span className="min-w-28 whitespace-nowrap text-muted-foreground">
         {label}
       </span>
-      <span className="num text-muted-foreground line-through">{from}</span>
-      <span className="num">→ {to}</span>
+      <span className={kept ? "num" : "num text-muted-foreground line-through"}>
+        {from}
+      </span>
+      <span className={kept ? "num text-muted-foreground" : "num"}>→ {to}</span>
     </div>
   )
 }

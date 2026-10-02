@@ -94,6 +94,17 @@ a millimetre - and takes its type's width from there. Devices on one rail may
 touch but not overlap, and stay on the rail. With no offset, a device takes
 the first gap from the left that it fits in.
 
+On the cabinet's Overview the plate draws each device on its rail at its
+type's size - its front photo, else a box in its role's colour - and its name;
+hover for its type and offset, click to open it. **Add device** in the Plate
+heading opens a new device on the rail you pick, which takes the first free
+gap; **Assign** puts an existing device of the site on a rail, offering only
+devices whose type fits the rail's profile. Each rail in those menus shows its
+widest free stretch. The **Devices** tab lists the cabinet's devices with their
+rail and offset. In the device form, **Mounting** switches between **Rack**
+and **Cabinet**: pick the cabinet, its rail and an offset - blank takes the
+first gap, and the rail's free stretches are listed under it.
+
 A device in a cabinet is at the cabinet's site: one without a site takes it,
 and the cabinet's location when it has none; one at another site is refused.
 A device sits in a rack or a cabinet, never both. Taking a device out of its
@@ -147,6 +158,7 @@ removed. Errors come back per rail, in the order sent.
 
 A device reads `cabinet`, `din_rail` and `din_offset_mm`, and writes
 `cabinet_id`, `din_rail_id` and `din_offset_mm`; `/api/devices/?cabinet=` and
-`?din_rail=` filter by them. A device type has `width_mm`, `height_mm`,
+`?din_rail=` filter by them, and `?din_profile=ts35` keeps devices whose type
+mounts on that profile. A device type has `width_mm`, `height_mm`,
 `depth_mm`, `din_profiles` (a list of `ts35`, `ts15`, `g32`) and
 `din_rail_mm`. A cabinet counts its devices in `device_count`.

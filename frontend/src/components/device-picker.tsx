@@ -16,6 +16,11 @@ export interface DevicePickerProps extends Omit<ObjectPickerProps, "label"> {
   /** Ghost (show disabled, with an "in <stack>" hint) any device that already
    * belongs to a virtual chassis - a switch can only be in one stack. */
   ghostAssignedVc?: boolean
+  /** Only devices at this site - in the list, and as the search's starting
+   * filter. */
+  siteId?: string | null
+  /** Only devices whose type mounts on a DIN rail of this profile. */
+  dinProfile?: string | null
 }
 
 /** ?picker=1&with_vc=1 shape - the compact option plus its current stack. */
@@ -90,6 +95,8 @@ export const DEVICE_PICKER_FILTERS: PickerFilter[] = [
 export function DevicePicker({
   label = "Device",
   ghostAssignedVc,
+  siteId,
+  dinProfile,
   ...rest
 }: DevicePickerProps) {
   const spec = useMemo<ObjectPickerSpec<Device, DeviceVcOption>>(
@@ -97,13 +104,20 @@ export function DevicePicker({
       noun: "device",
       // With ghosting on we need each device's stack, so fetch the with_vc
       // picker shape under its own cache key (no collision with the plain
-      // list every other form shares).
-      pickerEndpoint: ghostAssignedVc
-        ? "/api/devices/?picker=1&with_vc=1"
-        : "/api/devices/?picker=1",
-      pickerQueryKey: ghostAssignedVc
-        ? ["devices-picker", "with-vc"]
-        : ["devices-picker"],
+      // list every other form shares). A site narrows either, under a key of
+      // its own that still starts with "devices-picker".
+      pickerEndpoint:
+        (ghostAssignedVc
+          ? "/api/devices/?picker=1&with_vc=1"
+          : "/api/devices/?picker=1") +
+        (siteId ? `&site=${siteId}` : "") +
+        (dinProfile ? `&din_profile=${dinProfile}` : ""),
+      pickerQueryKey: [
+        "devices-picker",
+        ...(ghostAssignedVc ? ["with-vc"] : []),
+        ...(siteId ? ["site", siteId] : []),
+        ...(dinProfile ? ["din", dinProfile] : []),
+      ],
       optionState: ghostAssignedVc
         ? (o) =>
             o.virtual_chassis
@@ -152,10 +166,15 @@ export function DevicePicker({
               : {}
         : undefined,
     }),
-    [ghostAssignedVc]
+    [ghostAssignedVc, siteId, dinProfile]
   )
 
   return (
-    <ObjectPicker<Device, DeviceVcOption> spec={spec} label={label} {...rest} />
+    <ObjectPicker<Device, DeviceVcOption>
+      spec={spec}
+      label={label}
+      initialFilters={siteId ? { site: siteId } : undefined}
+      {...rest}
+    />
   )
 }
