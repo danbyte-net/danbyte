@@ -2376,6 +2376,8 @@ class SnmpInterfaceSample(TimestampedModel):
         indexes = [
             models.Index(fields=["device", "if_index", "sampled_at"]),
             models.Index(fields=["vm", "if_index", "sampled_at"]),
+            # The retention prune walks the oldest rows.
+            models.Index(fields=["sampled_at"]),
         ]
 
     def __str__(self) -> str:

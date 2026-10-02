@@ -247,6 +247,36 @@ class SnmpUtilizationTests(APITestCase):
         self.assertEqual(util["1"][-1]["in_pct"], 100.0)
         self.assertEqual(util["1"][-1]["out_pct"], 0.0)
 
+    def test_old_samples_are_pruned_and_not_read(self):
+        # They grew without bound; now the prune keeps the retention window
+        # and the series reads only that.
+        from datetime import timedelta
+
+        from django.test import override_settings
+        from django.utils import timezone
+
+        from monitoring.models import SnmpInterfaceSample
+        from monitoring.retention import prune
+        from monitoring.snmp_util import compute_device_utilization
+
+        now = timezone.now()
+        for age, octets in ((timedelta(days=5), 0), (timedelta(days=5) - timedelta(seconds=10),
+                                                     1_250_000_000)):
+            SnmpInterfaceSample.objects.create(
+                tenant=self.tenant, device=self.device, if_index="1", in_octets=octets,
+                out_octets=0, speed_mbps=1000, sampled_at=now - age,
+            )
+        with override_settings(MONITORING_SNMP_SAMPLE_RETENTION_DAYS=7):
+            self.assertIn("1", compute_device_utilization(self.device))
+        self.assertEqual(compute_device_utilization(self.device), {})
+        SnmpInterfaceSample.objects.create(
+            tenant=self.tenant, device=self.device, if_index="1", in_octets=0,
+            out_octets=0, speed_mbps=1000, sampled_at=now,
+        )
+        out = prune(now)
+        self.assertEqual((out["snmp_samples_deleted"], out["snmp_sample_retention_days"]), (2, 3))
+        self.assertEqual(SnmpInterfaceSample.objects.count(), 1)
+
     def test_utilization_endpoint(self):
         r = self.client.get(
             f"/api/monitoring/devices/{self.device.id}/snmp/utilization/"

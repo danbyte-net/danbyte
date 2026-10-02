@@ -155,6 +155,11 @@ interface speed. A counter that goes backwards (reset/reboot/wrap) yields a `0`
 delta rather than a negative spike. Schedule `poll_snmp` from cron or a systemd
 timer at whatever interval you want the sparklines sampled.
 
+Samples are kept for `MONITORING_SNMP_SAMPLE_RETENTION_DAYS` (3 by default);
+the daily monitoring prune deletes older ones, and the sparklines read only
+that window. Before 0.17 nothing pruned them, so an install that polled for a
+long time sheds its backlog on the first prune after the upgrade.
+
 !!! note "Counter64-safe"
     HC octet counters are SNMP Counter64 (unsigned 64-bit). Danbyte stores them
     as a 20-digit decimal so a large counter on a long-running, high-traffic

@@ -2,8 +2,10 @@
 
 ``CheckResult`` grows fast (one row per check per run), so old rows are deleted
 on a schedule. ``StateTransition`` is the audit timeline and is kept much
-longer. Both windows are settings (``MONITORING_RESULT_RETENTION_DAYS`` /
-``MONITORING_TRANSITION_RETENTION_DAYS``).
+longer. SNMP interface samples feed the utilisation sparklines and are kept
+for days. The windows are settings (``MONITORING_RESULT_RETENTION_DAYS`` /
+``MONITORING_TRANSITION_RETENTION_DAYS`` /
+``MONITORING_SNMP_SAMPLE_RETENTION_DAYS``).
 
 Deletes run in bounded batches so pruning a huge backlog never holds one giant
 transaction or blocks writers. A native monthly RANGE partition on
@@ -17,7 +19,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 
-from .models import CheckResult, StateTransition
+from .models import CheckResult, SnmpInterfaceSample, StateTransition
 
 _BATCH = 5000
 
@@ -51,6 +53,10 @@ def prune(now=None) -> dict:
     transitions_deleted = _prune_older_than(
         StateTransition, "at", now - timedelta(days=transition_days)
     )
+    sample_days = int(getattr(settings, "MONITORING_SNMP_SAMPLE_RETENTION_DAYS", 3))
+    samples_deleted = _prune_older_than(
+        SnmpInterfaceSample, "sampled_at", now - timedelta(days=sample_days)
+    )
     from .rollups import prune as prune_rollups
 
     rollups_deleted = prune_rollups(now)
@@ -58,6 +64,8 @@ def prune(now=None) -> dict:
         "results_deleted": results_deleted,
         "hourly_rollups_deleted": rollups_deleted,
         "transitions_deleted": transitions_deleted,
+        "snmp_samples_deleted": samples_deleted,
         "result_retention_days": result_days,
         "transition_retention_days": transition_days,
+        "snmp_sample_retention_days": sample_days,
     }

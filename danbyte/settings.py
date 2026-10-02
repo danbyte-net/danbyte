@@ -655,6 +655,11 @@ MONITORING_RESULT_RETENTION_DAYS = int(
 MONITORING_TRANSITION_RETENTION_DAYS = int(
     os.getenv("MONITORING_TRANSITION_RETENTION_DAYS", "365")
 )
+# SNMP interface counter samples (the utilisation sparklines) are kept this
+# long; one row per interface per poll grew without bound before.
+MONITORING_SNMP_SAMPLE_RETENTION_DAYS = int(
+    os.getenv("MONITORING_SNMP_SAMPLE_RETENTION_DAYS", "3")
+)
 # Hourly check rollups (monitoring/rollups.py) are kept this long; daily
 # rollups are kept for good - they are what an SLA period is read from.
 MONITORING_ROLLUP_HOURLY_RETENTION_DAYS = int(
