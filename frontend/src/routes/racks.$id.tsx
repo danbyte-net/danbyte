@@ -30,6 +30,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { FormCheckbox } from "@/components/forms"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { downloadPng } from "@/lib/png-export"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/racks/$id")({
@@ -354,20 +355,11 @@ function RackFaces({ rack }: { rack: Rack }) {
     setZoom(ZOOM_STEPS[next])
   }
 
-  // Snapshot both faces to a PNG (html-to-image), theme-aware background.
+  // Snapshot both faces to a PNG, theme-aware background.
   const exportPng = async () => {
     const el = facesRef.current
     if (!el) return
-    const { toPng } = await import("html-to-image")
-    const dark = document.documentElement.classList.contains("dark")
-    const url = await toPng(el, {
-      backgroundColor: dark ? "#09090b" : "#ffffff",
-      pixelRatio: 2,
-    })
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${rack.name}-elevation.png`
-    a.click()
+    await downloadPng(el, `${rack.name}-elevation.png`)
   }
 
   return (

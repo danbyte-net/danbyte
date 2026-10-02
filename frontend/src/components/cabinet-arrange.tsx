@@ -17,7 +17,7 @@ import {
 } from "@/lib/din-geometry"
 import { invalidateObjectQueries } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
-import type { BodyMark } from "@/components/cabinet-devices"
+import type { BodyLook, BodyMark } from "@/components/cabinet-devices"
 import { PlatePlacer, railRefusal } from "@/components/cabinet-placement"
 import type { FreeSpot, PlateNote } from "@/components/cabinet-placement"
 import { AssignDeviceDialog } from "@/components/cabinet-rail-actions"
@@ -248,13 +248,22 @@ export function ArrangeActions({
 /** The plate while arranging: a press on a device picks it, and the picked
  * one moves as in the device form; a press on a free stretch with nothing
  * picked offers to add a device there or assign one. Leaving the page with
- * moves unsaved asks first. */
+ * moves unsaved asks first. Drawn at the page's zoom, its bodies as the
+ * page draws them, in a frame that scrolls. */
 export function ArrangePlate({
   cabinet,
   arrangement: a,
+  pxPerMm,
+  look,
+  names,
+  railTags,
 }: {
   cabinet: Cabinet
   arrangement: Arrangement
+  pxPerMm?: number
+  look?: BodyLook
+  names?: boolean
+  railTags?: boolean
 }) {
   const { canDo } = useMe()
   const [menu, setMenu] = useState<FreeSpot | null>(null)
@@ -342,6 +351,12 @@ export function ArrangePlate({
         near={near}
         standing={standing}
         box
+        frame="overflow-auto"
+        elevationClassName="mx-auto"
+        pxPerMm={pxPerMm}
+        look={look}
+        names={names}
+        railTags={railTags}
         onPlace={(railId, offset) => {
           if (a.picked && offset != null) a.move(a.picked, railId, offset)
         }}

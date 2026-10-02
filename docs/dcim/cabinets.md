@@ -99,7 +99,18 @@ type's size - its front photo, else a box in its role's colour - and its name.
 A [calibrated](device-catalog.md#photo-ports) photo is drawn at its true size,
 its left guide on the device's left edge and its rail line on the rail; an
 uncalibrated one is stretched to the device's size. Hover a device for its
-type and offset; click to open it. **Add device** in the Plate heading opens a
+type and offset; click to open it.
+
+The toolbar over the plate works like a rack's elevation. **Images** (the
+default) is the look above; **Names** draws each device as a box in its role's
+colour with its name; **Render** lays each device's live faceplate on it - its
+ports coloured by cable, speed and SNMP state, with the device page's hover
+card, a click opening the port - at true size when the photo is calibrated.
+**Labels** hides the device names (and, in Names, the rail labels); **−** and
+**+** zoom, starting fitted to the column (Render starts larger) and
+scrolling when the plate grows wider; **PNG** downloads
+`<cabinet>-plate.png`. The mode, zoom and labels are remembered in your
+browser. **Add device** in the Plate heading opens a
 new device on the rail you pick, which takes the first free gap; **Assign**
 puts an existing device of the site on a rail, offering only devices whose
 type fits the rail's profile. Each rail in those menus shows its widest free
@@ -132,7 +143,8 @@ the slider. Move as many as you like - moved devices show where they will go,
 red where they would clash - and **Save** applies them in one go, so devices
 can swap places. With nothing picked, click a free spot on a rail for **Add
 device here** or **Assign here**. Escape drops the pick; leaving with unsaved
-moves asks first. Arrange is offered to users who may change devices.
+moves asks first. Arrange is offered to users who may change devices. While
+arranging, a plate in Render shows Images until you save or cancel.
 
 ### Where a device may sit
 

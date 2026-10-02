@@ -255,6 +255,61 @@ describe("CabinetDeviceBodies", () => {
     expect(navMock).toHaveBeenCalledTimes(1)
   })
 
+  it("draws every body in its role's colour in Names, photo or not", () => {
+    const role = {
+      id: "ro1",
+      name: "Access",
+      slug: "access",
+      color: "#2563eb",
+      icon: "",
+    }
+    render(
+      <CabinetElevation
+        width={525}
+        height={625}
+        rails={[R1].map((r) => ({ key: r.id, ...r }))}
+        railLabels={false}
+      >
+        <CabinetDeviceBodies
+          rails={[R1]}
+          devices={[
+            device("sw-1", R1, 200, {
+              role,
+              device_type: type({ front_image: "/media/sw.png" }),
+            }),
+          ]}
+          look="names"
+        />
+      </CabinetElevation>
+    )
+    expect(body("sw-1").g.querySelector("image")).toBeNull()
+    const fill = body("sw-1").g.querySelector<SVGElement>("[data-part=body]")
+    expect(fill?.style.fill).toBe("rgb(37, 99, 235)")
+    // Light ink on the blue, and the name down or across as it fits.
+    const name = body("sw-1").g.querySelector<SVGElement>("[data-part=name]")
+    expect(name?.style.fill).toBe("rgb(255, 255, 255)")
+  })
+
+  it("leaves out the names and the rails' labels when asked", () => {
+    render(
+      <CabinetElevation
+        width={525}
+        height={625}
+        rails={[R1].map((r) => ({ key: r.id, ...r }))}
+        railLabels={false}
+      >
+        <CabinetDeviceBodies
+          rails={[R1]}
+          devices={[device("plc-1", R1, 0)]}
+          names={false}
+          railTags={false}
+        />
+      </CabinetElevation>
+    )
+    expect(body("plc-1").g.querySelector("[data-part=name]")).toBeNull()
+    expect(document.querySelector("[data-rail-tag]")).toBeNull()
+  })
+
   it("draws the device of the page it is on in the selection colour", () => {
     draw([device("a", R1, 0), device("b", R1, 60)], "a")
     expect(body("a").g.getAttribute("data-selected")).toBe("true")

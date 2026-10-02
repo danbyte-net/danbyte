@@ -33,7 +33,7 @@ import {
 import type { RailNeighbour } from "@/lib/din-geometry"
 import { cn } from "@/lib/utils"
 import { CabinetDeviceBodies, nameLayout } from "@/components/cabinet-devices"
-import type { BodyMark } from "@/components/cabinet-devices"
+import type { BodyLook, BodyMark } from "@/components/cabinet-devices"
 import { RailSlider } from "@/components/cabinet-rail-slider"
 import {
   CabinetElevation,
@@ -222,6 +222,10 @@ export function PlatePlacer({
   box = false,
   frame,
   elevationClassName,
+  pxPerMm,
+  look,
+  names,
+  railTags,
   onPlace,
   onBody,
   onFree,
@@ -253,6 +257,14 @@ export function PlatePlacer({
   /** Classes for a frame around the drawing. */
   frame?: string
   elevationClassName?: string
+  /** The drawing's zoom, as the cabinet page has it; fills the column
+   * without. */
+  pxPerMm?: number
+  /** How the bodies are drawn - photos or role colours - and whether they
+   * and the rails carry their labels, as the cabinet page has it. */
+  look?: BodyLook
+  names?: boolean
+  railTags?: boolean
   onPlace: (railId: string, offset: number | null) => void
   /** A press on a body picks it; a press off every rail drops the pick. */
   onBody?: (deviceId: string | null) => void
@@ -367,11 +379,15 @@ export function PlatePlacer({
           rails={drawn}
           railLabels={false}
           emptyText="No rails."
+          pxPerMm={pxPerMm}
           className={elevationClassName}
         >
           <CabinetDeviceBodies
             rails={drawn}
             devices={drawnBodies}
+            look={look}
+            names={names}
+            railTags={railTags}
             interactive={false}
             marks={marks}
             onPick={

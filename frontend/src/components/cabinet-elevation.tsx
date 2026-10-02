@@ -62,7 +62,41 @@ export interface CabinetElevationProps {
   /** Drawn over the rails, in plate millimetres - the devices on them.
    * `usePlatePx()` sizes text and gaps in screen pixels inside it. */
   children?: ReactNode
+  /** Draw at this many screen pixels per millimetre, in a frame that
+   * scrolls, instead of filling the column - the cabinet page's zoom. */
+  pxPerMm?: number
   className?: string
+}
+
+/** The drawing's frame, mm, from the plate's top-left corner: the box,
+ * centred on the plate, when both its sides are known, else the plate - with
+ * a margin so the outline's own pixel is never cut off. */
+export function plateView(
+  width: number,
+  height: number,
+  outerWidth?: number | null,
+  outerHeight?: number | null
+): {
+  x: number
+  y: number
+  w: number
+  h: number
+  box: { w: number; h: number } | null
+} {
+  const box =
+    outerWidth != null && outerHeight != null
+      ? { w: Math.max(outerWidth, width), h: Math.max(outerHeight, height) }
+      : null
+  const frameW = box?.w ?? width
+  const frameH = box?.h ?? height
+  const pad = Math.max(frameW, frameH) * 0.01
+  return {
+    x: -(frameW - width) / 2 - pad,
+    y: -(frameH - height) / 2 - pad,
+    w: frameW + 2 * pad,
+    h: frameH + 2 * pad,
+    box,
+  }
 }
 
 /** Screen pixels as plate millimetres, at the size the plate is drawn. */
@@ -116,27 +150,16 @@ export function CabinetElevation({
   onMove,
   railLabels = true,
   children,
+  pxPerMm,
   className,
 }: CabinetElevationProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const drag = useRef<Drag | null>(null)
 
-  const box =
-    outerWidth != null && outerHeight != null
-      ? { w: Math.max(outerWidth, width), h: Math.max(outerHeight, height) }
-      : null
-  const frameW = box?.w ?? width
-  const frameH = box?.h ?? height
-  // A margin so the outline's own pixel is never cut off.
-  const pad = Math.max(frameW, frameH) * 0.01
-  const view = {
-    x: -(frameW - width) / 2 - pad,
-    y: -(frameH - height) / 2 - pad,
-    w: frameW + 2 * pad,
-    h: frameH + 2 * pad,
-  }
-  const scale =
-    useDrawnScale(svgRef, view.w, view.h) || ASSUMED_WIDTH_PX / view.w
+  const view = plateView(width, height, outerWidth, outerHeight)
+  const box = view.box
+  const drawn = useDrawnScale(svgRef, view.w, view.h)
+  const scale = pxPerMm ?? (drawn || ASSUMED_WIDTH_PX / view.w)
   /** Screen pixels as plate millimetres. */
   const px = (n: number) => n / scale
   const interactive = !!onMove
@@ -194,7 +217,16 @@ export function CabinetElevation({
     <svg
       ref={svgRef}
       viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      className={cn("block h-auto max-h-[28rem] w-full select-none", className)}
+      className={cn(
+        "block select-none",
+        !pxPerMm && "h-auto max-h-[28rem] w-full",
+        className
+      )}
+      style={
+        pxPerMm
+          ? { width: view.w * pxPerMm, height: view.h * pxPerMm }
+          : undefined
+      }
       // Devices drawn over the plate are links; an img would hide them.
       role={interactive || children ? "group" : "img"}
       aria-label={`Plate ${fmtMm(width)}×${fmtMm(height)} mm, ${rails.length} rail${rails.length === 1 ? "" : "s"}`}

@@ -1084,6 +1084,7 @@ export function FaceplateView({
   legendKey = "panel",
   className,
   fit,
+  fill,
   portLabels,
 }: {
   mode?: FaceplateMode
@@ -1097,6 +1098,9 @@ export function FaceplateView({
   legendKey?: string
   className?: string
   fit?: "container" | number
+  /** The photo, markers and all, stretched over the wrapper's box (see
+   * `ImagePortsFaceplate`). */
+  fill?: boolean
   /** The device's own say over port labels: inherit / on / off. */
   portLabels?: DevicePortLabels | null
 }) {
@@ -1121,6 +1125,7 @@ export function FaceplateView({
         onLegend={onLegend}
         legendKey={legendKey}
         className={className}
+        fill={fill}
       />
     ) : (
       <DeviceFaceplate
@@ -1178,6 +1183,7 @@ export function ImagePortsFaceplate({
   onLegend,
   legendKey = "panel",
   className,
+  fill = false,
 }: {
   deviceTypeId: string
   /** Resolves hardware (inventory-item) markers to the device's real parts -
@@ -1193,6 +1199,9 @@ export function ImagePortsFaceplate({
   /** Identifies this panel to the collector; default fits one panel per page. */
   legendKey?: string
   className?: string
+  /** Stretch the photo, markers and all, over the wrapper's box, with no
+   * frame of its own - a device's body on a cabinet's plate, which sizes it. */
+  fill?: boolean
 }) {
   const { faceplateMarkedLit } = useMe()
   const labelStyle = usePortLabelStyle()
@@ -1397,11 +1406,21 @@ export function ImagePortsFaceplate({
   if (!image) return null
 
   return (
-    <div className={cn("flex w-full justify-center", className)}>
+    <div
+      className={cn(
+        fill ? "h-full w-full" : "flex w-full justify-center",
+        className
+      )}
+    >
       <div
-        className="relative inline-block max-w-full overflow-hidden rounded-md border border-border bg-muted/30"
+        className={cn(
+          "relative overflow-hidden",
+          fill
+            ? "h-full w-full"
+            : "inline-block max-w-full rounded-md border border-border bg-muted/30"
+        )}
         style={
-          photoScale != null && photoW
+          !fill && photoScale != null && photoW
             ? { width: Math.round(photoW * photoScale) }
             : undefined
         }
@@ -1425,9 +1444,11 @@ export function ImagePortsFaceplate({
           }}
           className={cn(
             "block select-none",
-            photoScale != null
-              ? "w-full"
-              : "h-auto max-h-[60vh] w-auto max-w-full"
+            fill
+              ? "h-full w-full"
+              : photoScale != null
+                ? "w-full"
+                : "h-auto max-h-[60vh] w-auto max-w-full"
           )}
           draggable={false}
         />

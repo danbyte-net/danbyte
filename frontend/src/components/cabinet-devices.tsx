@@ -16,6 +16,7 @@ import {
 } from "@/lib/din-geometry"
 import type { RailSpan } from "@/lib/din-geometry"
 import { cabinetPhotoBox, effectiveFrontCal } from "@/lib/photo-calibration"
+import type { PlateBox } from "@/lib/photo-calibration"
 import { cn } from "@/lib/utils"
 import { usePlatePx } from "@/components/cabinet-elevation"
 import { dash } from "@/components/cells/dash"
@@ -93,7 +94,41 @@ export function nameLayout(
  * its URL. Kept per URL for the session. */
 const PHOTO_ASPECTS = new Map<string, number>()
 
-function usePhotoAspects(urls: string[]): ReadonlyMap<string, number> {
+/** The front photos of `devices` drawn at their true size: the ones whose
+ * aspect a drawing has to wait for. */
+export function calibratedPhotos(devices: Device[]): string[] {
+  return devices.flatMap((d) =>
+    d.device_type?.front_image && effectiveFrontCal(d)
+      ? [d.device_type.front_image]
+      : []
+  )
+}
+
+/** Where a device's front photo is drawn on the plate: stretched over its
+ * body, or - calibrated (#277) - at its true size, its left guide on the
+ * body's left edge and its rail line on the rail, `box` null until the
+ * photo has loaded and given its height. Null for a type with no photo. */
+export function frontPhoto(
+  d: Device,
+  rail: Pick<DinRail, "y_mm">,
+  body: PlateBox,
+  aspects: ReadonlyMap<string, number>
+): { href: string; calibrated: boolean; box: PlateBox | null } | null {
+  const href = d.device_type?.front_image
+  if (!href) return null
+  const cal = effectiveFrontCal(d)
+  if (!cal) return { href, calibrated: false, box: body }
+  const aspect = aspects.get(href)
+  return {
+    href,
+    calibrated: true,
+    box: aspect ? cabinetPhotoBox(body, cal, aspect, rail.y_mm) : null,
+  }
+}
+
+/** The aspects of `urls`, loading the ones not known yet; re-renders as
+ * each arrives. */
+export function usePhotoAspects(urls: string[]): ReadonlyMap<string, number> {
   const key = [...new Set(urls)].sort().join("\n")
   const [, loaded] = useReducer((n: number) => n + 1, 0)
   useEffect(() => {
@@ -116,6 +151,10 @@ function usePhotoAspects(urls: string[]): ReadonlyMap<string, number> {
   return PHOTO_ASPECTS
 }
 
+/** How the bodies are drawn: their type's front photo where it has one,
+ * or always the role's colour. */
+export type BodyLook = "images" | "names"
+
 /**
  * The devices on a cabinet's rails, drawn over its plate - the elevation's
  * `children`. A body sits at its rail's left end plus its offset, as wide and
@@ -136,6 +175,9 @@ function usePhotoAspects(urls: string[]): ReadonlyMap<string, number> {
 export function CabinetDeviceBodies({
   rails,
   devices,
+  look = "images",
+  names = true,
+  railTags = true,
   highlight,
   interactive = true,
   keepClear = [],
@@ -145,6 +187,12 @@ export function CabinetDeviceBodies({
   /** `dimmed` writes a rail's label faint, as the elevation draws the rail. */
   rails: (DinRail & { dimmed?: boolean })[]
   devices: Device[]
+  /** "names" leaves the photos out: every body in its role's colour. */
+  look?: BodyLook
+  /** Write each device's name on its body. */
+  names?: boolean
+  /** Write the rails' labels. */
+  railTags?: boolean
   /** Drawn in the selection colour - the device whose page this is. */
   highlight?: string | null
   /** Off: drawn only - no links, no hovers, no tab stops. The device form's
@@ -163,15 +211,9 @@ export function CabinetDeviceBodies({
   const nav = useNavigate()
   const clipId = useId()
   const railById = new Map(rails.map((r) => [r.id, r]))
-  const calibrated = (d: Device) =>
-    d.device_type?.front_image ? effectiveFrontCal(d) : null
-  const aspects = usePhotoAspects(
-    devices.flatMap((d) =>
-      d.device_type?.front_image && calibrated(d)
-        ? [d.device_type.front_image]
-        : []
-    )
-  )
+  const photos = look === "images"
+  const aspects = usePhotoAspects(photos ? calibratedPhotos(devices) : [])
+  const tagged = railTags ? rails : []
   const open = (d: Device) => nav({ to: "/devices/$id", params: { id: d.id } })
   const onKey = (d: Device, e: KeyboardEvent<SVGGElement>) => {
     if (e.key !== "Enter") return
@@ -191,22 +233,16 @@ export function CabinetDeviceBodies({
           ? deviceBody(rail, d.din_offset_mm, d.device_type)
           : null
         if (!rail || !body) return null
-        const photo = d.device_type?.front_image ?? null
-        const cal = calibrated(d)
-        const aspect = photo ? aspects.get(photo) : undefined
-        const trueBox =
-          cal && aspect ? cabinetPhotoBox(body, cal, aspect, rail.y_mm) : null
+        const placed = photos ? frontPhoto(d, rail, body, aspects) : null
+        const photo = placed?.href ?? null
         const clip = `${clipId}-${d.id}`
         const fill = photo ? null : d.role?.color || null
         const ink = fill ? readableText(fill) : undefined
         const selected = d.id === highlight
         const mark = marks?.[d.id]
-        const label = nameLayout(
-          d.name,
-          body.width / px(1),
-          body.height / px(1),
-          !!photo
-        )
+        const label = names
+          ? nameLayout(d.name, body.width / px(1), body.height / px(1), !!photo)
+          : null
         const cx = body.x + body.width / 2
         const cy = label?.vertical
           ? body.y + body.height / 2
@@ -239,8 +275,8 @@ export function CabinetDeviceBodies({
               interactive ? "cursor-pointer" : "pointer-events-none"
             )}
           >
-            {photo && cal ? (
-              trueBox && (
+            {placed?.calibrated ? (
+              placed.box && (
                 <>
                   <defs>
                     <clipPath id={clip}>
@@ -255,11 +291,11 @@ export function CabinetDeviceBodies({
                   <image
                     data-part="photo"
                     data-calibrated=""
-                    href={photo}
-                    x={trueBox.x}
-                    y={trueBox.y}
-                    width={trueBox.width}
-                    height={trueBox.height}
+                    href={placed.href}
+                    x={placed.box.x}
+                    y={placed.box.y}
+                    width={placed.box.width}
+                    height={placed.box.height}
                     preserveAspectRatio="none"
                     clipPath={`url(#${clip})`}
                   />
@@ -356,7 +392,7 @@ export function CabinetDeviceBodies({
         )
       })}
       <g data-part="rail-tags" className="pointer-events-none">
-        {rails.map((r) => {
+        {tagged.map((r) => {
           const at = railTagAt(
             r,
             devices,
