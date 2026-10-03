@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from unittest import mock
 
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
@@ -221,11 +222,32 @@ class DownscaleOnUploadTests(APITestCase):
 
     def test_small_upload_passes_through_untouched(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import ImageFile
 
         from api.images import downscale_image
 
-        up = SimpleUploadedFile("small.png", _png_bytes(), "image/png")
-        self.assertIs(downscale_image(up), up)
+        # A small image Pillow decodes, also with truncated loading on as
+        # WeasyPrint leaves it once a PDF export has run in the process.
+        for truncated in (False, True):
+            with self.subTest(truncated=truncated), \
+                    mock.patch.object(ImageFile, "LOAD_TRUNCATED_IMAGES", truncated):
+                up = SimpleUploadedFile("small.png", self._big_png(40, 10), "image/png")
+                self.assertIs(downscale_image(up), up)
+
+    def test_a_small_rotated_photo_is_turned_upright(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import ExifTags, Image
+
+        from api.images import downscale_image
+
+        buf = io.BytesIO()
+        exif = Image.Exif()
+        exif[ExifTags.Base.Orientation] = 6
+        Image.new("RGB", (40, 10), (30, 30, 30)).save(buf, format="JPEG", exif=exif)
+        up = SimpleUploadedFile("turned.jpg", buf.getvalue(), "image/jpeg")
+        out = downscale_image(up)
+        self.assertIsNot(out, up)
+        self.assertEqual(Image.open(io.BytesIO(out.read())).size, (10, 40))
 
     def test_non_image_passes_through(self):
         from django.core.files.uploadedfile import SimpleUploadedFile

@@ -22,7 +22,7 @@ def downscale_image(uploaded, max_edge: int = MAX_EDGE):
     even when it needs no resize. Files Pillow cannot decode pass through -
     the ImageField's own validation decides their fate.
     """
-    from PIL import Image, ImageOps
+    from PIL import ExifTags, Image, ImageOps
 
     try:
         img = Image.open(uploaded)
@@ -31,11 +31,14 @@ def downscale_image(uploaded, max_edge: int = MAX_EDGE):
         uploaded.seek(0)
         return uploaded
     fmt = (img.format or "PNG").upper()
-    oriented = ImageOps.exif_transpose(img)
-    w, h = oriented.size
-    if max(w, h) <= max_edge and oriented is img:
+    # exif_transpose hands back a copy even when there is nothing to turn,
+    # so the orientation tag decides whether the upload can pass through.
+    turned = img.getexif().get(ExifTags.Base.Orientation, 1) in range(2, 9)
+    if max(img.size) <= max_edge and not turned:
         uploaded.seek(0)
         return uploaded
+    oriented = ImageOps.exif_transpose(img)
+    w, h = oriented.size
     if max(w, h) > max_edge:
         scale = max_edge / max(w, h)
         oriented = oriented.resize(
