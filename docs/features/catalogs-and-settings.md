@@ -92,7 +92,9 @@ Roles carry their own flags:
 **Settings** opens on a grid of every page you can reach, grouped by what a
 setting is *about* - Identity & access, Integrations, Notifications, Your
 data, Devices & polling, This install - rather than by which admin tier owns
-it. Which tier a setting belongs to is a control on the page itself: a page
+it. Monitoring, for one, sits under Devices & polling beside the SNMP
+profiles and sensors: most of its page is about polling and discovery, and
+alerting is one card on it. Which tier a setting belongs to is a control on the page itself: a page
 that exists at more than one scope, like Email or Directory, carries a
 **Deployment / This tenant / This site** switch, and a card that is
 inheriting shows the value it would fall back to.

@@ -77,9 +77,9 @@
     {
       "key": "monitoring",
       "label": "Monitoring",
-      "description": "Schedules, alerting, drift and digests",
+      "description": "Schedules, discovery, MAC tracking and alerting",
       "to": "/settings/monitoring",
-      "group": "notifications",
+      "group": "devices",
       "scopes": ["deployment", "tenant"],
       "defaultScope": "tenant",
       "keywords": [
