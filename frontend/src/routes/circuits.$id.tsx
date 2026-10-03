@@ -14,6 +14,7 @@ import {
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { TagList } from "@/components/cells/tag-list"
 import { CopyButton, KvCard, dash, type KvRow } from "@/components/kv-card"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { fmtKbps } from "@/lib/speed"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 
 export const Route = createFileRoute("/circuits/$id")({
@@ -51,8 +53,7 @@ function CircuitDetail() {
     queryKey: ["circuit", id],
     queryFn: () => api<Circuit>(`/api/circuits/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -63,9 +64,10 @@ function CircuitDetail() {
   return <Body circuit={q.data} />
 }
 
-function fmtKbps(kbps: number | null): React.ReactNode {
-  if (kbps == null) return dash
-  return <span className="num">{(kbps / 1000).toLocaleString()} Mbps</span>
+/** A rate in kbps as "10 Gbps" - the shared speed formatter's long form. */
+function rate(kbps: number | null): React.ReactNode {
+  const text = fmtKbps(kbps, { long: true })
+  return text ? <span className="num">{text}</span> : dash
 }
 
 function Body({ circuit: c }: { circuit: Circuit }) {
@@ -244,7 +246,7 @@ function CircuitOverview({ circuit: c }: { circuit: Circuit }) {
         dash
       ),
     },
-    { label: "Commit rate", value: fmtKbps(c.commit_rate_kbps) },
+    { label: "Commit rate", value: rate(c.commit_rate_kbps) },
   ]
 
   const notesRows: KvRow[] = [
@@ -389,8 +391,8 @@ function TerminationCard({
         dash
       ),
     },
-    { label: "Port speed", value: fmtKbps(t.port_speed_kbps) },
-    { label: "Upstream speed", value: fmtKbps(t.upstream_speed_kbps) },
+    { label: "Port speed", value: rate(t.port_speed_kbps) },
+    { label: "Upstream speed", value: rate(t.upstream_speed_kbps) },
     {
       label: "Cross-connect",
       value: t.xconnect_id ? (

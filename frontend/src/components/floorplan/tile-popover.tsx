@@ -27,10 +27,13 @@ import {
   formatCustomValue,
   useCustomFieldDefs,
 } from "@/components/custom-field-display"
-import { tileName, utilizationColor } from "@/components/floorplan/floor-canvas"
+import { tileName } from "@/components/floorplan/floor-canvas"
+import { CapacityBar } from "@/components/cells/capacity-bar"
+import { PowerFigure } from "@/components/cells/power-figure"
 import { FaceplateView } from "@/components/device-faceplate"
 import type { FaceplateSide } from "@/lib/faceplate-layout"
 import { useDateFormat } from "@/lib/datetime"
+import { capacityRatio, hasPowerData } from "@/lib/rack-capacity"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
 
@@ -256,19 +259,12 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     label: "Utilization",
     render: ({ live }) => {
       const r = rack(live)
-      if (!r || r.u_height <= 0) return null
-      const ratio = r.used_units / r.u_height
+      const ratio = r ? capacityRatio(r.used_units, r.u_height) : null
+      if (!r || ratio == null) return null
       return (
         <span className="flex items-center gap-2">
-          <span className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-            <span
-              className="block h-full rounded-full"
-              style={{
-                width: `${Math.min(100, ratio * 100)}%`,
-                background: utilizationColor(ratio),
-              }}
-            />
-          </span>
+          {/* Narrower than a table cell's: "42/42U · 100%" fits beside it. */}
+          <CapacityBar ratio={ratio} className="w-10" />
           <span className="num text-[11px]">
             {r.used_units}/{r.u_height}U · {Math.round(ratio * 100)}%
           </span>
@@ -279,13 +275,10 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
   power: {
     label: "Power",
     render: ({ live }) => {
+      // Demand / supply, as the rack page reads it.
       const r = rack(live)
-      if (!r || !r.power?.maximum_w) return null
-      return (
-        <span className="num text-[11px]">
-          {r.power.allocated_w}/{r.power.maximum_w} W
-        </span>
-      )
+      if (!r || !hasPowerData(r.power)) return null
+      return <PowerFigure power={r.power} className="text-[11px]" />
     },
   },
   weight: {

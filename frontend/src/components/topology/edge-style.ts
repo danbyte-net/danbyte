@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react"
 
 import type { TopoEdge } from "@/lib/api"
+import { speedTierOf } from "@/lib/speed"
 import { cssColor } from "@/lib/utils"
 
 // How each kind of topology edge is drawn - stroke width, colour, dash and
@@ -51,27 +52,15 @@ export function typeColor(type: string): string {
   return TYPE_PALETTE[Math.abs(h) % TYPE_PALETTE.length]
 }
 
-/** "10G" / "2.5 Gbps" / "1000" (Mbps) → Mbps, or null when unparsable. */
-function speedMbps(s: string): number | null {
-  const m = /([\d.]+)\s*([tgm]?)/i.exec(s.trim())
-  if (!m) return null
-  const n = parseFloat(m[1])
-  if (!isFinite(n)) return null
-  const u = m[2].toLowerCase()
-  return u === "t" ? n * 1e6 : u === "g" ? n * 1000 : n
-}
+/** The stroke of a cable whose speed doesn't parse: the plain zinc line. */
+export const UNKNOWN_SPEED_HEX = "#71717a"
 
-/** Speed tier hue - faster = hotter. Unparsable/absent speeds stay zinc. */
+/** A cable's speed tier hue - the one scale the faceplates and the site map
+ * use (`lib/speed.ts`), so a 10G link wears the same colour as a 10G port.
+ * No speed: the default line; a speed that doesn't parse: zinc. */
 export function speedColor(s?: string | null): string | undefined {
   if (!s) return undefined
-  const mb = speedMbps(s)
-  if (mb == null) return "#71717a"
-  if (mb >= 100000) return "#e11d48" // 100G+
-  if (mb >= 40000) return "#f59e0b" // 40G
-  if (mb >= 25000) return "#8b5cf6" // 25G
-  if (mb >= 10000) return "#0ea5e9" // 10G
-  if (mb >= 1000) return "#10b981" // 1G
-  return "#71717a"
+  return speedTierOf(s)?.hex ?? UNKNOWN_SPEED_HEX
 }
 
 /** A cable's status hue: the status record's own colour, or - for a

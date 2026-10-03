@@ -311,8 +311,23 @@ plan's 3D View menu on this device. Cables are not drawn in this view yet.
 Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,
 three-phase × √3), demand is the racked devices' power-port draws -
-allocated where you've recorded it, otherwise the nameplate sum (labelled as
-such). The rack page shows **demand / supply W** and turns red when over.
+allocated where you've recorded it, otherwise the nameplate sum (labelled
+*nameplate*). The rack page shows **demand / supply** (`1.2 kW / 3.6 kW`,
+in W below 1 kW) and turns red when over; a rack drawing power with no feed
+says *No feed*. The floor plan's tile popover and rack panel read the same
+figure, and so does the racks list's **Power** column, with a bar in front:
+it is offered in the list's **Columns** menu, hidden until you tick it, and
+sorts by how much of the supply the demand takes.
+
+A rack's space and power share one scale wherever they are drawn as a bar:
+green up to 80 % full, amber above 80 %, red above 95 %. The racks list's
+**Used** bar, the floor plan's tiles and the tile popover all use it.
+
+!!! note "Changed in 0.17"
+    Power figures of 1 kW and up read in kW (`3.6 kW` where the page showed
+    `3600 W`), and a rack with demand but no feed says *No feed*. The racks
+    list's **Used** bar measures the exact share: a 42U rack with 40U used
+    (95.2 %) is red there now, as it already was on the floor plan.
 
 !!! note "Power numbers changed with the PDU fix"
     Devices that **have power outlets** (PDUs - distributors) no longer

@@ -77,6 +77,15 @@ when it doesn't terminate at your own facility.
    rate** (in kbps).
 5. Save, then open the circuit and add its **terminations** (below).
 
+Rates are entered in kbps and read in the unit that suits them - `10 Gbps`,
+`500 Mbps`, `1.544 Mbps` - on the circuit page, its terminations and the
+list's **Commit** column.
+
+!!! note "Changed in 0.17"
+    Rates read in Mbps only until 0.17 (`10,000 Mbps`, `0.5 Mbps`); they now
+    take the unit that suits them (`10 Gbps`, `500 kbps`). The figures are
+    the same.
+
 ## Terminate a circuit
 
 Each end of a circuit is a **termination** - side **A** and side **Z**. A

@@ -258,9 +258,12 @@ uploaded blueprint textures it.
   fly to *that* device, framed for its height, from whichever aisle its face
   is on.
 - The **key** in the top-right corner appears only once something photo-anchored
-  is in view, and lists the hardware statuses actually on screen. The speed ramp
-  itself is always the full FE→400G+ scale, so it reads the same here as under a
-  2D panel - see [The panel's key](../dcim/devices.md#the-panels-key).
+  is in view, and lists the hardware statuses actually on screen, as their
+  pills. The speed ramp itself is always the full <100M→400G+ scale, so it
+  reads the same here as under a 2D panel - see
+  [The panel's key](../dcim/devices.md#the-panels-key). It is the maps' legend
+  box: **Hide legend** folds it to a **Legend** chip, and the room remembers
+  that per browser.
 - The view is **read-only** in v1 - layout editing stays in 2D.
 - Everything is drawn from the same millimetre constants as the 2D elevation
   and faceplates, so proportions match reality (EIA-310 rack opening, 44.45 mm
@@ -359,7 +362,8 @@ stay zones.
 The canvas refreshes `GET /api/floor-plans/<id>/state/` every 30 seconds:
 
 - **Rack tiles** carry a space-utilization bar (green ≤80% · amber 80–95% ·
-  red >95%) and a percentage.
+  red >95%) and a percentage. The racks list's **Used** and **Power** bars
+  and the tile popover's bar use the same scale.
 - **Monitoring rollup** - a rack tile's border turns red the moment any
   device inside it goes down (worst status across the rack's devices' IPs);
   device tiles do the same for their own IPs.
@@ -629,7 +633,9 @@ cable runs, just the trays, or both.
   monitoring state - for a cabinet, its devices and rails. **Click to pin** it - a pinned popover stays put so you can
   read it, follow its link, or hit *Contents & trace*; **Esc** or a click
   outside dismisses it. Which rows appear is configurable - see
-  [Popover fields](#popover-fields).
+  [Popover fields](#popover-fields). **Power** reads as the rack page reads
+  it: demand over supply (`1.2 kW / 3.6 kW`), marked *nameplate* when no draw
+  is recorded and *No feed* when no feed is.
 - **Objects** (header toggle) opens a side list of everything placed on the
   plan - the same Objects sidebar the [site map](site-map.md) and the
   [topology map](topology.md) open. Tiles fold into groups by **device role**
@@ -661,6 +667,13 @@ cable runs, just the trays, or both.
   listing them. The Rack and Device detail pages carry a button
   that jumps to where they're placed (a device falls back to *its rack's* or
   *its cabinet's* plan, marked "via rack" or "via cabinet").
+
+!!! note "Changed in 0.17"
+    The tile popover's **Power** row showed the allocated draw over the
+    nameplate maximum (`1200/2000 W`). It now shows demand over the rack's
+    supply, the figure the rack page shows, so the two agree, and the rack
+    panel's heading (*Contents & trace*) reads the same figure. Large figures
+    read in kW.
 
 ## Cloning a plan
 

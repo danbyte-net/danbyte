@@ -613,8 +613,9 @@ whichever view is active (the Logical view keys its own roles, rails and
 legs); its open/closed state is remembered per browser. On the Diagram
 and the Hierarchy it lists the roles on the map as their badges, and the
 monitoring pill when a card can show it. With **Color by** on *Type*
-or *Speed* it keys the cable types on the map, or the speed tiers, as short
-lines in their colors; on *Cable* or *Status* it says so in one line
+or *Speed* it keys the cable types on the map, or the speed tiers of the
+cables on the map, as short lines in their colors; on *Cable* or *Status*,
+or when no cable has a type or a speed, it says so in one line
 (*Color by cable*). Its **Hide legend** button folds it to a small
 **Legend** chip, which opens it again. The legend is solid, so nothing on
 the map shows through it, and a fit (opening the map, **Fit view**, a new
@@ -1249,8 +1250,16 @@ its chip when all of them share one.
 | **Cable** | the literal color recorded on each cable (default) |
 | **Type** | a stable hue per cable type (cat6, OM4, DAC…) |
 | **Status** | each cable's status color from your [status catalog](catalogs-and-settings.md) |
-| **Speed** | link speed from the endpoint interface's **speed** field - green 1G, blue 10G, violet 25G, amber 40G, red 100G+ - with the speed as the edge label |
+| **Speed** | link speed from the endpoint interface's **speed** field, in the speed tiers the device faceplates and the 3D room use - dark amber below 100M, amber 100M, green 1G, teal 2.5G, sky 10G, blue 25G, indigo 40G, violet 100G, purple 200G, fuchsia 400G+ - with the speed as the edge label. A speed that doesn't read as one stays grey |
 | **None** | monochrome |
+
+!!! note "Changed in 0.17"
+    *Speed* uses the one speed scale the faceplates use, so a 100G link is
+    the violet of a 100G port. Until 0.17 the map had five colours of its own:
+    25G was violet (now blue), 40G amber (now indigo), and everything from
+    100G up red (now violet, purple or fuchsia). Links below 1G were grey and
+    now wear the two amber tiers. A speed stored as a bare number is read as
+    kbps, as the server reads it: `1000000` is 1G.
 
 ## Levels {#levels-role-tiers}
 

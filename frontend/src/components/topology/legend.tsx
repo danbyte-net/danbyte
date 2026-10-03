@@ -1,67 +1,18 @@
-import { useState } from "react"
-import { List, X } from "lucide-react"
-
-import { ColorBadge } from "@/components/cells/color-badge"
-import { CheckStatusBadge } from "@/components/monitoring/status-badge"
-import { SectionLabel } from "@/components/map-panel"
-import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { LegendFrame, LegendItems } from "@/components/map-legend"
+import type { LegendItem } from "@/components/map-legend"
 import type { TopologyGraph } from "@/lib/api"
+import { SPEED_TIERS, speedTierOf } from "@/lib/speed"
 import { TUNNEL_DASH, typeColor } from "./edge-style"
 import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
 import { naturalCompare } from "@/lib/natural-sort"
 
-// Line-key legend for the topology views. Collapsible, remembered per
-// browser, and its rows adapt to the active view + color mode so it only
-// explains lines that are actually on screen.
+// Line-key legend for the topology views, in the maps' shared legend frame.
+// Collapsible, remembered per browser, and its rows adapt to the active view
+// + color mode so it only explains lines that are actually on screen.
+
+export type { LegendItem } from "@/components/map-legend"
 
 const KEY = "topology:legend"
-
-function Line({
-  dash,
-  width = 2,
-  color = "var(--muted-foreground)",
-  length = 26,
-}: {
-  dash?: string
-  width?: number
-  color?: string
-  length?: number
-}) {
-  return (
-    <svg width={length} height="10" className="shrink-0">
-      <line
-        x1="1"
-        y1="5"
-        x2={length - 1}
-        y2="5"
-        stroke={color}
-        strokeWidth={width}
-        strokeDasharray={dash}
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-function RowItem({
-  swatch,
-  label,
-}: {
-  swatch: React.ReactNode
-  label: string
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      {swatch}
-      <span className="min-w-0">{label}</span>
-    </div>
-  )
-}
 
 // One terse line per mode - the docs explain, the legend just labels. The
 // words are the Display popover's Color by options.
@@ -69,46 +20,25 @@ const COLOR_MODE_NOTE: Record<EdgeColorMode, string> = {
   cable: "Color by cable",
   type: "Color by type",
   status: "Color by status",
-  speed: "",
+  speed: "Color by speed",
   none: "",
 }
-
-const SPEED_TIERS: [string, string][] = [
-  ["#10b981", "1G"],
-  ["#0ea5e9", "10G"],
-  ["#8b5cf6", "25G"],
-  ["#f59e0b", "40G"],
-  ["#e11d48", "100G"],
-]
 
 /** The most role fills the Diagram legend lists; the rest are on the map. */
 const MAX_ROLES = 12
 /** The most cable types the legend swatches. */
 const MAX_TYPES = 8
 
-/** One legend entry. The canvas legend draws these, and the exports turn
- * them into their own legend rows (to-document.ts `printLegend`). */
-export type LegendItem =
-  /** A Diagram card fill: the role's colour. */
-  | { kind: "role"; label: string; color?: string }
-  /** The monitoring pill a card shows while down. */
-  | { kind: "pill"; label: string }
-  /** A line style. `sem` names the edge kind when the look is that kind's
-   * own (the exports draw it with their print colours). */
-  | {
-      kind: "line"
-      label: string
-      width?: number
-      dash?: string
-      color?: string
-      sem?: "cable" | "bundle" | "ghost" | "bgp"
-    }
-  /** A box: a site/location card, or a patch panel's dashed outline. */
-  | { kind: "box"; label: string; dashed?: boolean }
-  /** A color-mode swatch: a cable type or a speed tier. */
-  | { kind: "tone"; label: string; color: string; mono?: boolean }
-  /** A color-mode note. */
-  | { kind: "note"; label: string }
+/** The speed tiers to key: those the map's cables fall in, in scale order -
+ * or the whole scale when the map doesn't say. */
+function speedTones(speeds?: readonly string[]): LegendItem[] {
+  const present = speeds
+    ? new Set(speeds.map((s) => speedTierOf(s)?.label))
+    : null
+  return SPEED_TIERS.filter((t) => !present || present.has(t.label)).map(
+    (t) => ({ kind: "tone", label: t.label, color: t.hex })
+  )
+}
 
 export interface LegendOptions {
   viewStyle: NodeStyle
@@ -116,6 +46,9 @@ export interface LegendOptions {
   colorMode: EdgeColorMode
   /** Cable types present on the map - swatched when coloring by type. */
   types?: string[]
+  /** Cable speeds present on the map - their tiers are keyed when coloring
+   * by speed. Absent: the whole scale. */
+  speeds?: readonly string[]
   /** Diagram and Hierarchy: the roles on the map - each card (a
    * Hierarchy card's header) is filled with its role's colour. */
   roles?: { name: string; color?: string }[]
@@ -177,6 +110,7 @@ export function legendRows({
   grouped,
   colorMode,
   types = [],
+  speeds,
   roles = [],
   monitorPill = false,
   present,
@@ -268,12 +202,12 @@ export function legendRows({
       { kind: "box", label: "Patch panel", dashed: true }
     )
   }
+  const tiers = colorMode === "speed" ? speedTones(speeds) : []
   if (colorMode === "type" && types.length > 0)
     for (const t of types.slice(0, MAX_TYPES))
       out.push({ kind: "tone", label: t, color: typeColor(t), mono: true })
-  else if (colorMode === "speed")
-    for (const [color, label] of SPEED_TIERS)
-      out.push({ kind: "tone", label, color })
+  else if (tiers.length > 0) out.push(...tiers)
+  // A type or speed legend with nothing to key says which mode it is.
   else if (COLOR_MODE_NOTE[colorMode])
     out.push({ kind: "note", label: COLOR_MODE_NOTE[colorMode] })
   return out
@@ -290,135 +224,10 @@ export function CanvasLegend({
   /** Open until the viewer closes it; an embedded map starts on the chip. */
   defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(() => {
-    try {
-      const v = localStorage.getItem(storageKey)
-      return v ? v !== "closed" : defaultOpen
-    } catch {
-      return defaultOpen
-    }
-  })
-  const toggle = (v: boolean) => {
-    setOpen(v)
-    try {
-      localStorage.setItem(storageKey, v ? "open" : "closed")
-    } catch {
-      /* private window or blocked storage: the choice lasts this visit */
-    }
-  }
-
-  // A chip on the canvas: bordered, no shadow (shadows are for overlays).
-  if (!open)
-    return (
-      <Button
-        variant="outline"
-        size="xs"
-        onClick={() => toggle(true)}
-        className="bg-background text-muted-foreground shadow-none"
-      >
-        <List /> Legend
-      </Button>
-    )
-
-  const items = legendRows(props)
-  const roles = items.filter((i) => i.kind === "role").slice(0, MAX_ROLES)
-  const tones = items.filter((i) => i.kind === "tone")
-  const note = items.find((i) => i.kind === "note")
   return (
-    <div className="w-60 rounded-md border border-border bg-background p-2.5 pt-1.5 text-[11px]">
-      <div className="mb-1 flex items-center justify-between">
-        <SectionLabel className="mb-0">Legend</SectionLabel>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="-mr-1.5"
-              aria-label="Hide legend"
-              onClick={() => toggle(false)}
-            >
-              <X />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" variant="default">
-            Hide legend
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      <div className="space-y-1">
-        {roles.length > 0 && (
-          <div className="flex flex-wrap gap-1 pb-1">
-            {roles.map((r) => (
-              <ColorBadge
-                key={r.label}
-                name={r.label}
-                color={r.color}
-                className="h-4 px-1.5 text-[10px]"
-              />
-            ))}
-          </div>
-        )}
-        {items.map((r, i) =>
-          r.kind === "pill" ? (
-            <RowItem
-              key={i}
-              swatch={
-                <CheckStatusBadge
-                  status="down"
-                  className="h-4 px-[7px] text-[9px]"
-                />
-              }
-              label={r.label}
-            />
-          ) : r.kind === "line" ? (
-            <RowItem
-              key={i}
-              swatch={<Line dash={r.dash} width={r.width} color={r.color} />}
-              label={r.label}
-            />
-          ) : r.kind === "box" ? (
-            <RowItem
-              key={i}
-              swatch={
-                r.dashed ? (
-                  <span className="h-3 w-6 shrink-0 rounded-sm border border-dashed border-muted-foreground/60 bg-card" />
-                ) : (
-                  <span className="h-3 w-6 shrink-0 rounded-sm border-2 border-border bg-card" />
-                )
-              }
-              label={r.label}
-            />
-          ) : null
-        )}
-        {tones.length > 0 ? (
-          <div
-            className={
-              props.colorMode === "speed"
-                ? "flex items-center gap-2 pt-1"
-                : "flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1"
-            }
-          >
-            {tones.map((t) => (
-              // A tone colours the lines: its swatch is a line, as in
-              // the exports.
-              <span key={t.label} className="flex items-center gap-1">
-                <Line color={t.color} width={2.5} length={14} />
-                <span
-                  className={
-                    t.mono
-                      ? "font-mono text-muted-foreground"
-                      : "text-muted-foreground"
-                  }
-                >
-                  {t.label}
-                </span>
-              </span>
-            ))}
-          </div>
-        ) : note ? (
-          <p className="pt-1 text-muted-foreground">{note.label}</p>
-        ) : null}
-      </div>
-    </div>
+    <LegendFrame storageKey={storageKey} defaultOpen={defaultOpen}>
+      {/* A tone colours the lines: its swatch is a line, as in the exports. */}
+      <LegendItems rows={legendRows(props)} maxRoles={MAX_ROLES} />
+    </LegendFrame>
   )
 }

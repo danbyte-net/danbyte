@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
+import { LEGEND_PILL } from "@/components/map-legend"
+import { StatusBadge } from "@/components/status-badge"
 import { api, type Paginated, type Status } from "@/lib/api"
 import {
   AIRFLOW_HEX,
@@ -9,9 +11,14 @@ import {
   mergeLegend,
   PORT_NEUTRAL,
   SPEED_TIERS,
+  speedTier,
   type LegendContent,
 } from "@/lib/faceplate-colors"
 import { cn } from "@/lib/utils"
+
+/** The "idle" swatch's outline: a free cage drawn in a capable type's tier,
+ * keyed with the 100G tier's hue. */
+const IDLE_TIER_HEX = speedTier(100_000).hex
 
 // ─── who tells the legend what's on screen ───────────────────────────────────
 // A legend must key the pixels, and only the renderer knows which markers
@@ -82,7 +89,7 @@ export function useReportLegend(
 
 /**
  * The port speed legend, drawn as a compact COLORBAR (like a map scale), not a
- * wall of labelled chips: one segmented ramp FE→400G+ with the tier labels
+ * wall of labelled chips: one segmented ramp <100M→400G+ with the tier labels
  * under their segments, plus a short neutral row (free/disabled/down). Reads
  * in a glance, stays out of the way. Used identically under the 2D faceplate
  * and in the 3D room HUD so the two views can't teach different colours.
@@ -99,37 +106,36 @@ export function SpeedScale({
    * dots), so callers never stack a second wrapping line. */
   extras?: React.ReactNode
 }) {
-  // The ramp is STATIC - always all nine tiers, always the same width per
-  // segment. It was briefly filtered to only the tiers on screen, which sounds
-  // right and looks wrong: the segments are `flex-1` inside a fixed `w-72`, so
+  // The ramp is STATIC - always every tier, always the same width per
+  // segment (wide enough for ten labels, "<100M" the longest). It was briefly filtered to only the tiers on screen, which sounds
+  // right and looks wrong: the segments are `flex-1` inside a fixed width, so
   // a two-speed panel rendered two 144px slabs. A colour ramp is a scale, and a
   // scale you can't compare between pages isn't one. Filtering belongs to the
   // HARDWARE key below, where the entries are chips and shrinking the list is
-  // just a shorter list.
+  // just a shorter list. Each segment is named by the label under it.
   return (
     <div className={cn("grid w-fit gap-1.5", className)}>
-      <div className="flex h-2 w-72 gap-px overflow-hidden rounded-full">
+      <div className="flex h-2 w-88 gap-px overflow-hidden rounded-full">
         {SPEED_TIERS.map((t) => (
           <span
             key={t.label}
             className="h-full flex-1"
             style={{ backgroundColor: t.hex }}
-            title={t.label}
           />
         ))}
       </div>
-      <div className="num flex w-72 text-[9px] leading-none text-muted-foreground">
+      <div className="num flex w-88 text-[9px] leading-none text-muted-foreground">
         {SPEED_TIERS.map((t) => (
           <span key={t.label} className="flex-1 text-center">
             {t.label}
           </span>
         ))}
       </div>
-      <div className="mt-0.5 flex w-72 flex-nowrap items-center gap-x-3 overflow-hidden text-[10px] leading-none whitespace-nowrap text-muted-foreground">
+      <div className="mt-0.5 flex w-88 flex-nowrap items-center gap-x-3 overflow-hidden text-[10px] leading-none whitespace-nowrap text-muted-foreground">
         <span className="inline-flex items-center gap-1">
           <span
             className="h-2 w-2 rounded-[3px] border"
-            style={{ borderColor: `${SPEED_TIERS[6].hex}66` }}
+            style={{ borderColor: `${IDLE_TIER_HEX}66` }}
           />
           idle
         </span>
@@ -169,16 +175,17 @@ export function HardwareStatusKey({
     .filter((s) => !statusIds || statusIds.has(s.id))
     .slice(0, 6)
   if (rows.length === 0) return null
+  // A status is its pill, here as everywhere - never a swatch beside a name.
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-none text-muted-foreground",
+        "flex flex-wrap items-center gap-1 text-[10px] leading-none text-muted-foreground",
         className
       )}
     >
-      <span className="text-muted-foreground/70">Hardware</span>
+      <span className="mr-2 text-muted-foreground/70">Hardware</span>
       {rows.map((s) => (
-        <Swatch key={s.id} hex={s.color || "#64748b"} label={s.name} />
+        <StatusBadge key={s.id} status={s} className={LEGEND_PILL} />
       ))}
     </div>
   )

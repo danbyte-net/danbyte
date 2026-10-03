@@ -5,8 +5,11 @@ import type { Rack } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
+import { CapacityBar } from "@/components/cells/capacity-bar"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
+import { PowerFigure } from "@/components/cells/power-figure"
+import { capacityRatio, rackPowerRatio } from "@/lib/rack-capacity"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { SiteCell, siteColumn } from "@/components/cells/site-cell"
 import type { SiteVariant } from "@/components/cells/site-cell"
@@ -26,7 +29,8 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 //
 // "height"/"devices"/"utilisation" are the list page's capacity trio;
 // "width"/"used" are the compact pair the embedded pane shows instead. Both
-// live here so either surface can ask for what it needs.
+// live here so either surface can ask for what it needs. "power" is offered
+// hidden in the Columns menu.
 
 export type RackColumnId =
   | "numid"
@@ -39,6 +43,7 @@ export type RackColumnId =
   | "devices"
   | "utilisation"
   | "used"
+  | "power"
   | "tags"
   | "description"
   | "updated"
@@ -54,6 +59,7 @@ const CANONICAL_ORDER: RackColumnId[] = [
   "devices",
   "utilisation",
   "used",
+  "power",
   "tags",
   "description",
   "updated",
@@ -76,22 +82,13 @@ export interface RackColumnOpts<T extends Rack = Rack> {
   actions?: ActionsColumnOpts<T>
 }
 
-/** Rack occupancy: a thin bar plus the raw "used/height" U counts. Rack's own
- * cell - the shared `UtilCell` prints a percentage instead. */
+/** Rack occupancy: the capacity bar plus the raw "used/height" U counts, on
+ * the racks' shared 80 / 95 % scale (`lib/rack-capacity.ts`). Rack's own cell
+ * - the IPAM `UtilCell` prints a percentage on the prefix scale instead. */
 function RackUtilCell({ rack }: { rack: Rack }) {
-  const pct = rack.u_height
-    ? Math.round((rack.used_units / rack.u_height) * 100)
-    : 0
-  const tone =
-    pct > 95 ? "bg-red-500" : pct > 80 ? "bg-amber-500" : "bg-emerald-500"
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-        <div
-          className={tone}
-          style={{ width: `${Math.min(100, pct)}%`, height: "100%" }}
-        />
-      </div>
+      <CapacityBar ratio={capacityRatio(rack.used_units, rack.u_height)} />
       <span className="num text-[11px] text-muted-foreground">
         {rack.used_units}/{rack.u_height}
       </span>
@@ -234,6 +231,14 @@ export function buildRackColumns<T extends Rack = Rack>(
           {row.original.used_units} / {row.original.u_height} U
         </span>
       ),
+    }),
+    power: () => ({
+      id: "power",
+      header: ({ column }) => <SortHeader column={column} label="Power" />,
+      // By load; a rack with no feed to measure against sorts first.
+      accessorFn: (r) => rackPowerRatio(r.power) ?? -1,
+      cell: ({ row }) => <PowerFigure power={row.original.power} bar />,
+      meta: { label: "Power", defaultHidden: true },
     }),
     tags: () =>
       tagsColumn<T>({

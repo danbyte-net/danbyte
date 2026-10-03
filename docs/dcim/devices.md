@@ -371,15 +371,23 @@ source of truth stays yours.
 
 ### The panel's key
 
-The **speed ramp is always the full scale**, FE → 400G+, at a fixed width. It's a
+The **speed ramp is always the full scale**, <100M → 400G+, at a fixed width. It's a
 scale, and a scale only means something if it reads identically on every page -
 so it doesn't shrink to the speeds on the panel in front of you. (It briefly did.
 With two speeds present, two segments split a fixed-width bar into two enormous
-slabs, which looked like a different control rather than a shorter one.)
+slabs, which looked like a different control rather than a shorter one.) It is
+the same scale the topology map's *Speed* colouring uses.
+
+!!! note "Changed in 0.17"
+    The ramp gained a **100M** tier. Everything below 1G used to share one
+    amber tier, *FE*; 100M up to 1G keeps that amber, and anything slower -
+    a 10M port, a 50M circuit - is now **<100M**, a darker amber. A speed
+    stored as a bare number is read as kbps, as the server reads it.
 
 The **hardware key** does adapt, because its entries are chips and a shorter list
 is just a shorter list: a server whose photo panel is nothing but disk bays gets
-`Active · Empty`, not the tenant's whole inventory-status catalog.
+`Active · Empty`, not the tenant's whole inventory-status catalog. Each status
+is its pill, in the catalog's colour.
 
 A virtual chassis draws one key for the whole stack, unioning what its members
 drew. In the [3D room](../features/floor-plans.md#the-3d-room-view) the key is

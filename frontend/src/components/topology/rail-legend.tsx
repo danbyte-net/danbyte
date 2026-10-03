@@ -1,23 +1,14 @@
-import { useState } from "react"
-import { List, X } from "lucide-react"
-
-import { ColorBadge } from "@/components/cells/color-badge"
-import { SectionLabel } from "@/components/map-panel"
-import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { LegendFrame, LegendItems, LegendLine } from "@/components/map-legend"
+import type { LegendItem } from "@/components/map-legend"
 import { RAIL } from "@/lib/diagram/rails"
 import { cn } from "@/lib/utils"
-import type { LegendItem } from "./legend"
 
-// The rail diagram's legend: the topology legend's panel in the canvas
-// corner, folding to a Legend chip, open or closed as the topology legend
-// is (one choice per browser). It lists the roles on the cards as their
-// badges, then the rail, the card kinds and the legs. The exports print the
-// same list (to-document `printLegend` keeps the roles and the lines).
+// The rail diagram's legend: the maps' legend frame in the canvas corner,
+// folding to a Legend chip, open or closed as the topology legend is (one
+// choice per browser). It lists the roles on the cards as their badges,
+// then the rail, the card kinds and the legs, each keyed as the rail
+// diagram draws it. The exports print the same list (to-document
+// `printLegend` keeps the roles and the lines).
 
 const KEY = "topology:legend"
 
@@ -67,7 +58,9 @@ export function railLegendRows(
   return out
 }
 
-function Swatch({ item }: { item: LegendItem }) {
+/** A rail-diagram row's key: a rail as a bar, a card as the muted box the
+ * diagram draws, a leg as its line (dashed legs with square ends). */
+function railSwatch(item: LegendItem) {
   if (item.kind === "box")
     return (
       <span
@@ -89,99 +82,26 @@ function Swatch({ item }: { item: LegendItem }) {
       />
     )
   return (
-    <svg width="26" height="10" className="shrink-0">
-      <line
-        x1="1"
-        y1="5"
-        x2="25"
-        y2="5"
-        stroke={item.color ?? KEY_COLOR}
-        strokeWidth={w}
-        strokeDasharray={item.dash}
-        strokeLinecap={item.dash ? "butt" : "round"}
-      />
-    </svg>
+    <LegendLine
+      color={item.color ?? KEY_COLOR}
+      width={w}
+      dash={item.dash}
+      cap={item.dash ? "butt" : "round"}
+    />
   )
-}
-
-function readOpen(): boolean {
-  try {
-    return localStorage.getItem(KEY) !== "closed"
-  } catch {
-    return true
-  }
 }
 
 export function RailLegend({ rows }: { rows: readonly LegendItem[] }) {
-  const [open, setOpen] = useState(readOpen)
-  const toggle = (v: boolean) => {
-    setOpen(v)
-    try {
-      localStorage.setItem(KEY, v ? "open" : "closed")
-    } catch {
-      /* private window or blocked storage: the choice lasts this visit */
-    }
-  }
-
-  // A chip on the canvas: bordered, no shadow (shadows are for overlays).
-  if (!open)
-    return (
-      <Button
-        variant="outline"
-        size="xs"
-        onClick={() => toggle(true)}
-        className="bg-background text-muted-foreground shadow-none"
-      >
-        <List /> Legend
-      </Button>
-    )
-
-  const roles = rows.filter(
-    (r): r is Extract<LegendItem, { kind: "role" }> => r.kind === "role"
-  )
   return (
-    <div className="w-60 rounded-md border border-border bg-background p-2.5 pt-1.5 text-[11px]">
-      <div className="mb-1 flex items-center justify-between">
-        <SectionLabel className="mb-0">Legend</SectionLabel>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="-mr-1.5"
-              aria-label="Hide legend"
-              onClick={() => toggle(false)}
-            >
-              <X />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" variant="default">
-            Hide legend
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      <div className="space-y-1">
-        {roles.length > 0 && (
-          <div className="flex flex-wrap gap-1 pb-1">
-            {roles.map((r) => (
-              <ColorBadge
-                key={r.label}
-                name={r.label}
-                color={r.color}
-                className="h-4 px-1.5 text-[10px]"
-              />
-            ))}
-          </div>
+    <LegendFrame storageKey={KEY}>
+      <LegendItems
+        // Only the roles, the lines and the boxes: a rail map has no
+        // colour modes.
+        rows={rows.filter(
+          (r) => r.kind === "role" || r.kind === "line" || r.kind === "box"
         )}
-        {rows
-          .filter((r) => r.kind === "line" || r.kind === "box")
-          .map((r) => (
-            <div key={r.label} className="flex items-center gap-2">
-              <Swatch item={r} />
-              <span className="min-w-0">{r.label}</span>
-            </div>
-          ))}
-      </div>
-    </div>
+        swatch={railSwatch}
+      />
+    </LegendFrame>
   )
 }

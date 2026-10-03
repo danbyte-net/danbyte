@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { SPEED_TIERS } from "@/lib/speed"
 import {
   bundleStroke,
   edgeLook,
@@ -165,15 +166,28 @@ describe("edge colours", () => {
     expect(typeColor("cat6")).toMatch(/^#[0-9a-f]{6}$/)
   })
 
-  it("tiers speeds, faster = hotter", () => {
-    expect(speedColor("100G")).toBe("#e11d48")
-    expect(speedColor("40G")).toBe("#f59e0b")
-    expect(speedColor("25 Gbps")).toBe("#8b5cf6")
-    expect(speedColor("10000")).toBe("#0ea5e9")
-    expect(speedColor("1000")).toBe("#10b981")
-    expect(speedColor("100")).toBe("#71717a")
+  it("tiers speeds on the faceplates' scale, faster = hotter", () => {
+    // One scale (lib/speed.ts): a 100G link wears a 100G port's violet.
+    for (const [speed, label] of [
+      ["100G", "100G"],
+      ["40G", "40G"],
+      ["25 Gbps", "25G"],
+      ["10G", "10G"],
+      ["1 Gbps", "1G"],
+      ["100M", "100M"],
+      ["10 Mbps", "<100M"],
+    ])
+      expect(speedColor(speed)).toBe(
+        SPEED_TIERS.find((t) => t.label === label)!.hex
+      )
+    expect(speedColor("100G")).toBe("#8b5cf6")
+    expect(speedColor("10G")).toBe("#0ea5e9")
+    // A bare number is kbps, as on the server: 10000 is 10M, not 10G.
+    expect(speedColor("10000000")).toBe("#0ea5e9")
+    expect(speedColor("10000")).toBe(speedColor("10M"))
     expect(speedColor("fast")).toBe("#71717a")
     expect(speedColor(null)).toBeUndefined()
+    expect(speedColor("")).toBeUndefined()
   })
 
   it("keeps a bundle's colour only when every member agrees", () => {

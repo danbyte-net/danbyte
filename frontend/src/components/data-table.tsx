@@ -141,6 +141,14 @@ interface DataTableProps<T> {
    * colors (arbitrary hex) that can't be expressed as a Tailwind class. Row
    * hover/selection still win (declared `!important` in tokens.css). */
   rowStyle?: (original: T) => React.CSSProperties | undefined
+  /** Opt-in: the pointer is over this row, or (`null`) over none - it left
+   * the rows, or is on a group banner. A page uses it to point at the row's
+   * object elsewhere, e.g. a rack on a floor plan. */
+  onRowHover?: (row: T | null) => void
+  /** Opt-in: a click on the row itself. A click on a link, checkbox, button,
+   * input or other control in a cell stays that control's, and so does a
+   * text selection or a click inside a menu or dialog a cell opened. */
+  onRowClick?: (row: T, event: React.MouseEvent<HTMLTableRowElement>) => void
   /** Embedded in a detail-page tab / pane - suppress the Export + Columns
    * toolbar (those belong on full list pages). The selection count still
    * appears when rows are ticked; with nothing selected the toolbar bar is
@@ -215,6 +223,8 @@ export function DataTable<T>({
   exportTitle,
   rowClassName,
   rowStyle,
+  onRowHover,
+  onRowClick,
   embedded,
   pagedWhenGrouped,
   searchable,
@@ -863,7 +873,9 @@ export function DataTable<T>({
               </TableRow>
             ))}
           </TableHeader>
-          <TableBody>
+          <TableBody
+            onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
+          >
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => {
                 // Grouped header row: rendered when the row is a grouping
@@ -877,6 +889,9 @@ export function DataTable<T>({
                     <TableRow
                       key={row.id}
                       className="bg-muted/30 hover:bg-muted/40"
+                      onMouseEnter={
+                        onRowHover ? () => onRowHover(null) : undefined
+                      }
                     >
                       <TableCell
                         colSpan={table.getVisibleLeafColumns().length}
@@ -918,8 +933,21 @@ export function DataTable<T>({
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() ? "selected" : undefined}
-                    className={rowClassName?.(row.original as T)}
+                    className={cn(
+                      rowClassName?.(row.original as T),
+                      onRowClick && "cursor-pointer"
+                    )}
                     style={rowStyle?.(row.original as T)}
+                    onMouseEnter={
+                      onRowHover ? () => onRowHover(row.original) : undefined
+                    }
+                    onClick={
+                      onRowClick
+                        ? (e) => {
+                            if (isRowClick(e)) onRowClick(row.original, e)
+                          }
+                        : undefined
+                    }
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell
@@ -1139,6 +1167,57 @@ export function resolveColumnLabel(
   if (typeof columnDef?.header === "string" && columnDef.header.trim())
     return columnDef.header
   return prettifyColumnId(id)
+}
+
+// ─── Row clicks ──────────────────────────────────────────────────────────
+
+/** The controls a cell can hold: a click on one is the control's own. */
+const ROW_CONTROL = [
+  "a",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "label",
+  "summary",
+  "[contenteditable='true']",
+  "[data-row-click='ignore']",
+  ...[
+    "button",
+    "checkbox",
+    "combobox",
+    "link",
+    "menuitem",
+    "option",
+    "radio",
+    "switch",
+    "tab",
+  ].map((r) => `[role='${r}']`),
+].join(",")
+
+/**
+ * Whether a click on a row (`currentTarget`) is the row's own, for
+ * `onRowClick`: not on a link, checkbox, button or other control in a cell,
+ * not the end of a text selection, and not from a menu or dialog a cell
+ * opened (React bubbles those through their portal, from outside the row).
+ */
+export function isRowClick(e: {
+  target: EventTarget | null
+  currentTarget: EventTarget | null
+  defaultPrevented?: boolean
+}): boolean {
+  const row = e.currentTarget
+  const target = e.target
+  if (e.defaultPrevented) return false
+  if (!(row instanceof Element) || !(target instanceof Node)) return false
+  if (!row.contains(target)) return false
+  const el = target instanceof Element ? target : target.parentElement
+  const control = el?.closest(ROW_CONTROL)
+  if (control && control !== row && row.contains(control)) return false
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed && selection.toString().trim())
+    return false
+  return true
 }
 
 // ─── Column-order helpers ────────────────────────────────────────────────

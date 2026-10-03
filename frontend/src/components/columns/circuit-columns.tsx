@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { Circuit } from "@/lib/api"
+import { fmtKbps } from "@/lib/speed"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
@@ -201,14 +202,10 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
       id: "commit",
       accessorKey: "commit_rate_kbps",
       header: ({ column }) => <SortHeader column={column} label="Commit" />,
-      cell: ({ row }) =>
-        row.original.commit_rate_kbps != null ? (
-          <span className="num text-xs">
-            {(row.original.commit_rate_kbps / 1000).toLocaleString()} Mbps
-          </span>
-        ) : (
-          dash
-        ),
+      cell: ({ row }) => {
+        const rate = fmtKbps(row.original.commit_rate_kbps, { long: true })
+        return rate ? <span className="num text-xs">{rate}</span> : dash
+      },
     }),
     description: () => ({
       id: "description",

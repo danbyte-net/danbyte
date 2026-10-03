@@ -132,8 +132,9 @@ import {
   tileHasFov,
   tileIsZone,
   tileName,
-  utilizationColor,
 } from "@/components/floorplan/floor-canvas"
+import { CapacityBar } from "@/components/cells/capacity-bar"
+import { PowerFigure } from "@/components/cells/power-figure"
 import type {
   FloorCanvasApi,
   PaletteEntry,
@@ -185,6 +186,7 @@ import {
 } from "@/lib/render-quality"
 import type { RenderQualitySetting } from "@/lib/render-quality"
 import { usePageTitle } from "@/lib/page-title"
+import { capacityRatio, hasPowerData } from "@/lib/rack-capacity"
 
 /** Arms the canvas's drag-rect painter while drawing a raised-floor area -
  * the ghost rect reuses the palette machinery, nothing else reads this. */
@@ -3090,8 +3092,9 @@ function RackDeepView({
       </div>
     )
 
-  const utilization =
-    rack && rack.u_height > 0 ? rack.used_units / rack.u_height : null
+  const utilization = rack
+    ? capacityRatio(rack.used_units, rack.u_height)
+    : null
 
   return (
     <div className="flex h-full flex-col">
@@ -3104,10 +3107,12 @@ function RackDeepView({
                 {rack.used_units}/{rack.u_height}U used
               </span>
               {" · "}
-              <span className="num">
-                {rack.power.allocated_w}/{rack.power.available_w} W
-              </span>
-              {" · "}
+              {hasPowerData(rack.power) && (
+                <>
+                  <PowerFigure power={rack.power} />
+                  {" · "}
+                </>
+              )}
               <span className="num">{rack.device_count}</span> device
               {rack.device_count === 1 ? "" : "s"}
             </>
@@ -3117,15 +3122,7 @@ function RackDeepView({
       <div className="grid gap-4 px-4 pb-4">
         {rackQ.isError && <QueryError error={rackQ.error} />}
         {utilization !== null && (
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${Math.min(100, Math.round(utilization * 100))}%`,
-                backgroundColor: utilizationColor(utilization),
-              }}
-            />
-          </div>
+          <CapacityBar ratio={utilization} className="w-full" />
         )}
         {rack && (
           <OpenLink to="/racks/$id" params={{ id: rack.id }} className="w-fit">

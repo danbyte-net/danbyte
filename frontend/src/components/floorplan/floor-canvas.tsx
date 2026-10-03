@@ -24,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { capacityColor, capacityRatio } from "@/lib/rack-capacity"
 import { cn } from "@/lib/utils"
 
 import { routeCable } from "./cable-route"
@@ -119,13 +120,6 @@ export function cableRoutePoints(
     .map((tid) => trays.find((tr) => tr.id === tid)?.points)
     .filter((p): p is [number, number][] => !!p)
   return routeCable(a, b, polys)
-}
-
-/** Utilization tier → color (≤80 calm, 80–95 amber, >95 red). */
-export function utilizationColor(ratio: number): string {
-  if (ratio > 0.95) return "#ef4444"
-  if (ratio > 0.8) return "#f59e0b"
-  return "#10b981"
 }
 
 const CHECK_COLOR: Record<string, string> = {
@@ -1821,10 +1815,9 @@ function TileShape({
   const check = live?.check ?? null
   const checkColor = check ? CHECK_COLOR[check] : undefined
   const rackLive = live?.kind === "rack" ? live : null
-  const utilization =
-    rackLive && rackLive.u_height > 0
-      ? rackLive.used_units / rackLive.u_height
-      : null
+  const utilization = rackLive
+    ? capacityRatio(rackLive.used_units, rackLive.u_height)
+    : null
   const cabinetLive = live?.kind === "cabinet" ? live : null
 
   if (zone) {
@@ -1956,7 +1949,7 @@ function TileShape({
             )}
             height={4}
             rx={2}
-            fill={utilizationColor(utilization)}
+            fill={capacityColor(utilization)}
           />
           {w >= CELL * 2 && (
             <text

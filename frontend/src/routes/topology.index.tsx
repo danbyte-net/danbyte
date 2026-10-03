@@ -1839,6 +1839,12 @@ function TopologyPage() {
       if (e.data?.cable_type) s.add(e.data.cable_type)
     return [...s].sort()
   }, [graph])
+  // The speeds on the map: Color by speed keys only their tiers.
+  const presentSpeeds = useMemo(() => {
+    const s = new Set<string>()
+    for (const e of graph?.edges ?? []) if (e.data?.speed) s.add(e.data.speed)
+    return [...s]
+  }, [graph])
 
   // The Diagram's layer bands (diagram/bands.ts): Arrange writes the bands
   // and the cards it moved as one undo step, like every band edit that
@@ -3517,6 +3523,7 @@ function TopologyPage() {
                 grouped,
                 colorMode,
                 types: presentTypes,
+                speeds: presentSpeeds,
                 roles: rolesInGraph,
                 monitorPill: cardMonitor,
               })}
@@ -3810,6 +3817,7 @@ function TopologyPage() {
                 grouped={grouped}
                 colorMode={colorMode}
                 types={presentTypes}
+                speeds={presentSpeeds}
                 roles={rolesInGraph}
                 monitorPill={cardMonitor}
               />

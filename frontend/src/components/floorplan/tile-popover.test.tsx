@@ -52,13 +52,17 @@ const cabinetLive: FloorPlanLiveState["tiles"][string] = {
   check: "down",
 }
 
-function open(t: FloorPlanTile, fields: string[]) {
+function open(
+  t: FloorPlanTile,
+  fields: string[],
+  live: FloorPlanLiveState["tiles"][string] = cabinetLive
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
       <TilePopover
         target={{ tile: t, x: 10, y: 10, pinned: true }}
-        live={cabinetLive}
+        live={live}
         fields={fields}
         onOpenChange={() => undefined}
         renderLinked={(x) => <a href={x.linked!.route}>Open cabinet</a>}
@@ -135,5 +139,56 @@ describe("TilePopover on a cabinet tile", () => {
     expect(await screen.findByText("#7")).toBeTruthy()
     expect(screen.getByText("Line 3 control")).toBeTruthy()
     expect(apiMock).toHaveBeenCalledWith("/api/custom-fields/?model=cabinet")
+  })
+})
+
+describe("TilePopover on a rack tile", () => {
+  const rackTile = tile({
+    link_kind: "rack",
+    linked: { kind: "rack", id: "r1", name: "A01", route: "/racks/r1" },
+  })
+  const rackLive = (
+    power: { available_w: number; allocated_w: number; maximum_w: number },
+    used_units = 21
+  ): FloorPlanLiveState["tiles"][string] => ({
+    kind: "rack",
+    used_units,
+    u_height: 42,
+    power,
+    total_weight_kg: 0,
+    max_weight_kg: null,
+    device_count: 3,
+    check: null,
+  })
+
+  it("reads power as demand over supply, as the rack page does", () => {
+    // It read allocated over nameplate until 0.17.
+    const rows = open(
+      rackTile,
+      ["utilization", "power"],
+      rackLive({ available_w: 3_600, allocated_w: 1_200, maximum_w: 2_000 }, 40)
+    )
+    expect(rows.Power.textContent).toBe("1.2 kW / 3.6 kW")
+    expect(rows.Utilization.textContent).toBe("40/42U · 95%")
+    // 95.2 %: past the critical line, on the racks' shared scale.
+    expect(
+      rows.Utilization.querySelector("[data-level]")?.getAttribute("data-level")
+    ).toBe("critical")
+  })
+
+  it("says No feed, and skips a rack with no power at all", () => {
+    const rows = open(
+      rackTile,
+      ["power"],
+      rackLive({ available_w: 0, allocated_w: 0, maximum_w: 900 })
+    )
+    expect(rows.Power.textContent).toBe("900 Wnameplate · No feed")
+    cleanup()
+    const none = open(
+      rackTile,
+      ["name", "power"],
+      rackLive({ available_w: 0, allocated_w: 0, maximum_w: 0 })
+    )
+    expect(none.Power).toBeUndefined()
   })
 })

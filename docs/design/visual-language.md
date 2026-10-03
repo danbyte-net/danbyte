@@ -152,7 +152,10 @@ parts, so a control reads the same on each:
 | A right-click menu on a canvas | `PointerMenu` (`components/pointer-menu.tsx`): the shared dropdown opened at the pointer. A key an item shows (++h++, ++delete++) is passed in `keys`, so it acts on what was right-clicked, not on the selection |
 | The detail panel over a canvas | `PanelShell` (`components/map-panel.tsx`): title and Close, `PanelRow` key/value rows, `PanelSection`s under a `SectionLabel`, and the actions at the foot (*Open …* first). `SectionLabel` also heads a legend |
 | A chip on a canvas (*Partial map*) | Bordered `bg-background/95`, no shadow and no blur: shadows are for overlays |
-| A legend on a canvas | `CanvasLegend` (`components/topology/legend.tsx`) or `RailLegend`: bordered and opaque `bg-background`, open or folded, so a colored rail or card behind it never shows through; folded, an outline `xs` button with the List icon. `TopologyCanvas` takes its box as `keepClear`, so a fit keeps the map beside or above it; `RailCanvas` keeps room for it under the drawing |
+| A legend on a canvas | `LegendFrame` (`components/map-legend.tsx`): bordered and opaque `bg-background`, no shadow and no blur, headed *Legend* with a *Hide legend* button, open or folded (remembered per browser under its `storageKey`, or held by the page), so a colored rail or card behind it never shows through; folded, an outline `xs` button with the List icon. `w-60` unless its rows need their own width (`w-fit`). The topology's `CanvasLegend`, the rail maps' `RailLegend`, the site map's legend and the 3D room's key are built on it. `TopologyCanvas` takes its box as `keepClear`, so a fit keeps the map beside or above it; `RailCanvas` keeps room for it under the drawing |
+| A legend's rows | From `components/map-legend.tsx`: `LegendRow` (swatch, then label), `LegendLine` (a line keys a line), `LegendTones` (a colour mode's keys as short lines, wrapping), and `LegendPills` / `LegendStatuses` for roles and statuses as their `ColorBadge` / `StatusBadge` pills - never a coloured dot beside a name. `LegendItems` draws a list of `LegendItem`s in that order |
+| Speeds | `lib/speed.ts`: `parseSpeedMbps` (a bare number is kbps, as on the server), `fmtKbps` / `fmtMbps` (short `10G`, `100/20M`; long `10 Gbps`) and the one tier scale, `SPEED_TIERS`, that the faceplates, the 3D room and the topology's *Speed* colouring share |
+| How full a rack is | `lib/rack-capacity.ts`: above 80 % amber, above 95 % red, in the status colours - never the accent - and `formatWatts`. `CapacityBar` (`components/cells/capacity-bar.tsx`) is its thin bar; `PowerFigure` (`components/cells/power-figure.tsx`) reads a rack's power as *demand / supply*. IPAM prefixes keep their own scale (`UtilCell`) |
 
 Anything that copies to the clipboard goes through `copyWithToast()`
 (`lib/clipboard.ts`), so a copy that fails always says *Couldn't copy*.
@@ -234,6 +237,12 @@ can't drift page to page (source of truth:
   prefixes showing exactly 500 and looking complete.
 - A list that is a view *of* another list (e.g. `/racks/elevations`) gets the
   shell's `backTo` / `backLabel` breadcrumb rather than its own nav.
+- A table that points at its rows' objects somewhere else on the page (a
+  rack on a floor plan) uses `DataTable`'s opt-in `onRowHover` (the row under
+  the pointer, `null` once it leaves) and `onRowClick`. A click on a link,
+  checkbox, button, input or other control in a cell stays that control's, as
+  does a text selection or a click in a menu a cell opened; a cell can mark
+  more with `data-row-click="ignore"`. Without the props a table is unchanged.
 
 Row actions always go through `RowActions` / `actionsColumn()`, and every
 list-page table names a `tableId` so it gets the persistent column picker.

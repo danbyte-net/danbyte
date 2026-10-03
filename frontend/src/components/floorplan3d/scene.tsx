@@ -20,6 +20,7 @@ import type {
 import { legendIsEmpty } from "@/lib/faceplate-colors"
 import { useLegendCollector } from "@/components/speed-scale"
 import { FaceplateLegend } from "@/components/device-faceplate"
+import { LegendFrame } from "@/components/map-legend"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { Button } from "@/components/ui/button"
@@ -1077,13 +1078,15 @@ export default function FloorScene3D({
           }}
         />
       )}
-      {/* The SAME legend the 2D faceplate uses, keyed to what the near-tier
+      {/* The SAME key the 2D faceplate uses, keyed to what the near-tier
           devices actually draw - so it's absent until a photo panel with real
-          ports is in view, and then explains only those colours. The overlay
-          toggles live in the route's View popover. */}
+          ports is in view, and then explains only those colours - in the maps'
+          legend frame. The overlay toggles live in the route's View popover. */}
       {!legendIsEmpty(legend) && (
-        <div className="absolute top-3 right-3 rounded-lg border border-border bg-popover/90 p-2 text-popover-foreground shadow backdrop-blur">
-          <FaceplateLegend observed content={legend} />
+        <div className="absolute top-3 right-3">
+          <LegendFrame storageKey="floorplan:3d-legend" className="w-fit">
+            <FaceplateLegend observed content={legend} />
+          </LegendFrame>
         </div>
       )}
     </div>

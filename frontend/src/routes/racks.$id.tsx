@@ -22,6 +22,7 @@ import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { PowerFigure } from "@/components/cells/power-figure"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -224,8 +225,6 @@ function RackOverview({ rack: r }: { rack: Rack }) {
   const portState = useRackPortState(r.id)
   const rackPorts = portState.data?.rack.ports
   const util = r.u_height ? Math.round((r.used_units / r.u_height) * 100) : 0
-  const hasPower =
-    r.power.allocated_w > 0 || r.power.maximum_w > 0 || r.power.available_w > 0
   const overWeight =
     r.max_weight_kg != null && r.total_weight_kg > r.max_weight_kg
   const rackRows: KvRow[] = [
@@ -331,7 +330,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
     },
     {
       label: "Power",
-      value: hasPower ? <PowerStat power={r.power} /> : dash,
+      value: <PowerFigure power={r.power} />,
     },
     {
       label: "Weight",
@@ -560,26 +559,5 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
         )}
       </div>
     </section>
-  )
-}
-
-/** "demand / supply W" - demand prefers recorded allocated draw, falling
- * back to the nameplate sum; red when demand exceeds the feeds' capacity. */
-function PowerStat({
-  power,
-}: {
-  power: { available_w: number; allocated_w: number; maximum_w: number }
-}) {
-  const demand = power.allocated_w > 0 ? power.allocated_w : power.maximum_w
-  const over = power.available_w > 0 && demand > power.available_w
-  return (
-    <span className={over ? "num font-medium text-destructive" : "num"}>
-      {demand} W{power.available_w > 0 && ` / ${power.available_w} W`}
-      {power.allocated_w === 0 && power.maximum_w > 0 && (
-        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-          nameplate
-        </span>
-      )}
-    </span>
   )
 }

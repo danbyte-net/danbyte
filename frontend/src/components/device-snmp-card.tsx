@@ -38,6 +38,7 @@ import {
   useDeviceMacs,
 } from "@/lib/mac-tracking"
 import type { MacSource } from "@/lib/mac-tracking"
+import { fmtMbps } from "@/lib/speed"
 
 // Friendly labels for the system-group OIDs we poll. Anything unmapped falls
 // back to the raw key.
@@ -227,7 +228,11 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
     {
       id: "speed",
       header: "Speed",
-      cell: (i) => <span className="font-mono">{fmtSpeed(i.speed_mbps)}</span>,
+      cell: (i) => (
+        <span className="font-mono">
+          {fmtMbps(Number(i.speed_mbps), { long: true }) || "-"}
+        </span>
+      ),
     },
     {
       id: "util",
@@ -471,12 +476,6 @@ export function DeviceArpCard({ deviceId }: { deviceId: string }) {
 
 function Muted() {
   return <span className="text-muted-foreground">-</span>
-}
-
-function fmtSpeed(mbps: string): string {
-  const n = Number(mbps)
-  if (!n) return "-"
-  return n >= 1000 ? `${n / 1000} Gbps` : `${n} Mbps`
 }
 
 /** An interface name that links to its detail page when Danbyte records it. */

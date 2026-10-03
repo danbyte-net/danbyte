@@ -3,9 +3,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import type { TopologyGraph } from "@/lib/api"
+import { SPEED_TIERS } from "@/lib/speed"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { TUNNEL_DASH } from "./edge-style"
 import { CanvasLegend, graphLegend, legendRows } from "./legend"
+import type { LegendItem } from "./legend"
 
 // The map's legend: roles as their badges and colour keys as lines -
 // never a coloured dot beside a name.
@@ -39,6 +41,29 @@ describe("CanvasLegend", () => {
     const tier = screen.getByText("10G").previousElementSibling!
     expect(tier.nodeName.toLowerCase()).toBe("svg")
     expect(tier.querySelector("line")!.getAttribute("stroke")).toBe("#0ea5e9")
+  })
+
+  it("keys the speed tiers on the map, from the faceplates' scale", () => {
+    const { container } = render(
+      <CanvasLegend
+        viewStyle="diagram"
+        grouped={false}
+        colorMode="speed"
+        speeds={["100G", "10G", "10 Gbps", "auto"]}
+      />
+    )
+    const tiers = [...container.querySelectorAll(".flex-wrap svg + span")].map(
+      (s) => s.textContent
+    )
+    // Scale order, one per tier, nothing that doesn't parse.
+    expect(tiers).toEqual(["10G", "100G"])
+    const stroke = (label: string) =>
+      screen
+        .getByText(label)
+        .previousElementSibling!.querySelector("line")!
+        .getAttribute("stroke")
+    expect(stroke("100G")).toBe("#8b5cf6")
+    expect(stroke("10G")).toBe("#0ea5e9")
   })
 
   it("keys the media types as lines too", () => {
@@ -125,6 +150,24 @@ describe("legendRows", () => {
     expect(labels("diagram", "type")).toContain("Color by type")
     // No parenthesised counts: the chips on the lines carry those.
     expect(labels("diagram").some((l) => l.includes("("))).toBe(false)
+  })
+
+  it("keys the whole speed scale when the map doesn't say, and the mode when nothing has a speed", () => {
+    const speed = (speeds?: string[]) =>
+      legendRows({
+        viewStyle: "diagram",
+        grouped: false,
+        colorMode: "speed",
+        speeds,
+      })
+    const tones = speed().filter(
+      (r): r is Extract<LegendItem, { kind: "tone" }> => r.kind === "tone"
+    )
+    expect(tones.map((t) => t.label)).toEqual(SPEED_TIERS.map((t) => t.label))
+    expect(tones.map((t) => t.color)).toEqual(SPEED_TIERS.map((t) => t.hex))
+    const none = speed(["", "auto"])
+    expect(none.some((r) => r.kind === "tone")).toBe(false)
+    expect(none.at(-1)).toEqual({ kind: "note", label: "Color by speed" })
   })
 })
 

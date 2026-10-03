@@ -5,9 +5,7 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { toast } from "sonner"
 import {
-  Building2,
   Expand,
-  List,
   MapPin,
   Maximize,
   PanelRight,
@@ -64,12 +62,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { InfoTip } from "@/components/ui/info-tip"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { SectionLabel } from "@/components/map-panel"
 import { useCableTypeLabel } from "@/lib/use-dcim-choices"
 import {
   Dialog,
@@ -127,11 +119,8 @@ import {
 } from "@/components/site-map/cable-geo-route"
 import { FovEditor } from "@/components/site-map/fov-editor"
 import { DevicePicker } from "@/components/device-picker"
-import {
-  buildConnectionsLayer,
-  KIND_COLOR,
-} from "@/components/site-map/connections-layer"
-import { TileBadge } from "@/components/floorplan/tile-badge"
+import { buildConnectionsLayer } from "@/components/site-map/connections-layer"
+import { SiteMapLegend } from "@/components/site-map/site-map-legend"
 import {
   LABEL_ZOOM,
   markerZ,
@@ -366,14 +355,6 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     if (document.fullscreenElement) void document.exitFullscreen()
     else void wrapRef.current?.requestFullscreen()
   }
-  const [legendOpen, setLegendOpen] = useState(
-    () => localStorage.getItem("site-map:legend") === "open"
-  )
-  const toggleLegend = () =>
-    setLegendOpen((v) => {
-      localStorage.setItem("site-map:legend", v ? "closed" : "open")
-      return !v
-    })
   // Arriving with ?focus=<deviceId>: fly to it and open its popover, once.
   const focusedRef = useRef(false)
   useEffect(() => {
@@ -1694,7 +1675,10 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             </div>
           )}
 
-          <MapLegend open={legendOpen} onToggle={toggleLegend} />
+          {/* Above the Leaflet scale control. */}
+          <div className="absolute bottom-9 left-3 z-[900]">
+            <SiteMapLegend />
+          </div>
 
           {/* The sidebar carries the count while it is open. Top right is
               the corner the map leaves free: zoom is top left, the legend
@@ -2146,105 +2130,6 @@ function MapSearch({
 }
 
 // ── popovers (anchored quick-glance cards; the inspector holds the tools) ──
-
-function MapLegend({
-  open,
-  onToggle,
-}: {
-  open: boolean
-  onToggle: () => void
-}) {
-  // Sits above the Leaflet scale control. A chip on the map, as on the
-  // topology canvas: bordered, no shadow (shadows are for overlays).
-  if (!open)
-    return (
-      <Button
-        variant="outline"
-        size="xs"
-        onClick={onToggle}
-        className="absolute bottom-9 left-3 z-[900] bg-background/95 text-muted-foreground shadow-none"
-      >
-        <List /> Legend
-      </Button>
-    )
-  const line = (color: string, dashed = false) => (
-    <span
-      aria-hidden
-      className="inline-block h-0 w-6 shrink-0"
-      style={{
-        borderTop: `2px ${dashed ? "dashed" : "solid"} ${color}`,
-      }}
-    />
-  )
-  return (
-    <div className="absolute bottom-9 left-3 z-[900] w-fit rounded-md border border-border bg-background/95 p-2.5 pt-1.5 text-[11px]">
-      <div className="mb-1 flex items-center justify-between gap-4">
-        <SectionLabel className="mb-0">Legend</SectionLabel>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="-mr-1.5"
-              aria-label="Hide legend"
-              onClick={onToggle}
-            >
-              <X />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" variant="default">
-            Hide legend
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      <div className="grid gap-1.5 whitespace-nowrap text-muted-foreground">
-        <span className="flex items-center gap-2">
-          <span className="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-[0_0_0_1px_var(--border)]">
-            <Building2 className="size-3" />
-          </span>
-          Site
-        </span>
-        <span className="flex items-center gap-2">
-          <TileBadge color="#8b5cf6" />
-          Device / marker
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-background px-1 text-[10px] font-semibold text-foreground shadow-[0_0_0_1px_var(--border)]">
-            5
-          </span>
-          Cluster
-        </span>
-        {/* A pin wears its monitoring state as its ring, in the tenant's
-            names for the states. */}
-        <span className="flex items-center gap-1">
-          {(["up", "degraded", "down"] as const).map((c) => (
-            <CheckStatusBadge
-              key={c}
-              status={c}
-              className="h-4 px-[7px] text-[9px]"
-            />
-          ))}
-        </span>
-        <span className="flex items-center gap-2">
-          {line(KIND_COLOR.circuit)}
-          Circuit
-        </span>
-        <span className="flex items-center gap-2">
-          {line(KIND_COLOR.tunnel)}
-          Tunnel
-        </span>
-        <span className="flex items-center gap-2">
-          {line(KIND_COLOR.cable)}
-          Cable
-        </span>
-        <span className="flex items-center gap-2">
-          {line(KIND_COLOR.cable, true)}
-          Cable without a drawn route
-        </span>
-      </div>
-    </div>
-  )
-}
 
 function PopHeader({
   title,
