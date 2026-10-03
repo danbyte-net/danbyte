@@ -711,6 +711,21 @@ class FieldWriteAllowList:
         }
 
 
+def _bulk_status_offered(status_id, model, key="status_id") -> None:
+    """A bulk edit may only set a status the catalog offers ``model`` - as the
+    form and the API's single edit (``serializers.offered_status``). Run it
+    after the tenant check: the status is then known to be the tenant's."""
+    from .status_registry import status_label, status_offered
+
+    if not status_id:
+        return
+    status = Status.objects.filter(pk=status_id).first()
+    if status is not None and not status_offered(status, model):
+        raise ValidationError(
+            {key: f"“{status.name}” isn't a status for {status_label(model)}."}
+        )
+
+
 class ComponentBulkMixin(FieldWriteAllowList):
     """``bulk-update`` + ``bulk-delete`` for component viewsets (interfaces,
     ports, VM interfaces, device-type component templates).
@@ -801,6 +816,8 @@ class ComponentBulkMixin(FieldWriteAllowList):
                 v = fields[k]
                 if v and not model.objects.filter(pk=v, tenant=tenant).exists():
                     raise ValidationError({k: "Not found in this tenant."})
+                if model is Status:
+                    _bulk_status_offered(v, self.get_queryset().model, k)
                 updates[k] = v or None
 
         qs = self.get_queryset().filter(pk__in=ids)
@@ -1682,6 +1699,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             val = fields.get(key)
             if val and not model.objects.filter(pk=val, tenant=tenant).exists():
                 raise ValidationError({key: "Not found in this tenant."})
+        _bulk_status_offered(fields.get("status_id"), Prefix)
 
         qs = self.get_queryset().filter(pk__in=ids)
         updates = _bulk_field_updates(
@@ -1845,6 +1863,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             val = fields.get(key)
             if val and not model.objects.filter(pk=val, tenant=tenant).exists():
                 raise ValidationError({key: "Not found in this tenant."})
+        _bulk_status_offered(fields.get("status_id"), IPAddress)
 
         qs = self.get_queryset().filter(pk__in=ids)
         updates = _bulk_field_updates(fields, ("status_id", "role_id", "description"))
@@ -2170,6 +2189,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # Local catalogs sit behind the site fence too, as on the edit form.
         for key, model in (("zone_id", Zone), ("vrf_id", VRF), ("status_id", Status)):
             resolve_fenced(request, tenant, model, fields.get(key), key)
+        _bulk_status_offered(fields.get("status_id"), VLAN)
 
         qs = self.get_queryset().filter(pk__in=ids)
         updates = _bulk_field_updates(

@@ -39,6 +39,23 @@ STATUSABLE_MODELS = [
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
+
+def status_label(model) -> str:
+    """How a message names ``model``'s rows: "devices", "IP addresses",
+    "VLANs" - the registry's label, lower-cased unless it opens with an
+    acronym."""
+    label = dict(STATUSABLE_MODELS).get(model._meta.model_name) or str(
+        model._meta.verbose_name_plural
+    )
+    return label if label[:2].isupper() else label[0].lower() + label[1:]
+
+
+def status_offered(status, model) -> bool:
+    """Whether ``status`` may be put on a ``model`` row: its ``available_to``
+    lists the model's slug. A model the registry doesn't list passes."""
+    slug = model._meta.model_name
+    return slug not in STATUSABLE_MODEL_VALUES or slug in (status.available_to or [])
+
 # The states a monitoring check can end in - the machine's vocabulary, and the
 # names Danbyte ships for them. A tenant may relabel and recolour any one of
 # them with a Status row (``Status.monitoring_state``); the stored state never

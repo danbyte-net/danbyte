@@ -720,6 +720,21 @@ class StatusMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "slug", "color", "text_color"]
 
 
+def offered_status(value, model, instance):
+    """``value`` when the catalog offers it to ``model`` - the pickers show
+    only those, and the API holds to it too. An object already wearing
+    another keeps it through an edit that leaves the status alone."""
+    from .status_registry import status_label, status_offered
+
+    if value is None or status_offered(value, model):
+        return value
+    if instance is not None and getattr(instance, "status_id", None) == value.id:
+        return value
+    raise serializers.ValidationError(
+        f"“{value.name}” isn't a status for {status_label(model)}."
+    )
+
+
 class StatusSerializerMixin(serializers.Serializer):
     """Shared status fields for any model with a ``Status`` FK: a nested
     read-only ``status`` ({id,name,color,text_color}) + a write-only
@@ -734,6 +749,9 @@ class StatusSerializerMixin(serializers.Serializer):
         required=False,
         allow_null=True,
     )
+
+    def validate_status_id(self, value):
+        return offered_status(value, self.Meta.model, self.instance)
 
 
 class VLANSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
@@ -1625,6 +1643,9 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+
+    def validate_status_id(self, value):
+        return offered_status(value, IPAddress, self.instance)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -4460,18 +4481,6 @@ class InventoryItemSerializer(
             {"id": str(obj.parent_id), "name": obj.parent.name}
             if obj.parent_id
             else None
-        )
-
-    def validate_status_id(self, value):
-        """Only a status the catalog offers parts: the picker shows those, and
-        the API holds to it. A part already wearing another keeps it through
-        an edit that leaves the status alone."""
-        if value is None or "inventoryitem" in (value.available_to or []):
-            return value
-        if self.instance is not None and self.instance.status_id == value.id:
-            return value
-        raise serializers.ValidationError(
-            f"“{value.name}” isn't a status for inventory items."
         )
 
     def validate(self, attrs):
