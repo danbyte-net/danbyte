@@ -441,7 +441,7 @@ def build_snmp_work(engine) -> list[dict]:
     site/location-scoped) credentials. No claiming - SNMP discovery is periodic
     and idempotent (last write wins), so a re-poll is harmless."""
     from .engines import devices_for_engine
-    from .snmp_poll import _device_target
+    from .snmp_poll import _device_target, snmp_params
     from .snmp_resolve import resolve_device_profile
 
     work = []
@@ -456,7 +456,10 @@ def build_snmp_work(engine) -> list[dict]:
             "device_id": str(device.id),
             "target": target,
             "version": profile.version,
-            "params": profile.params or {},
+            # The profile's params plus, in per-VLAN "always" mode, the VLAN
+            # hint (#284). An agent that predates MAC tracking ignores keys it
+            # doesn't know.
+            "params": snmp_params(profile, device),
             "secret_params": profile.secret_params or {},
             "timeout_ms": profile.timeout_ms,
         })
@@ -516,23 +519,25 @@ def outpost_snmp_work_view(request):
 @permission_classes([IsAuthenticated])
 def outpost_snmp_results_view(request):
     """Ingest SNMP results the Outpost fetched → the same persistence as a local
-    poll (``persist_snmp_result``). Scoped to the engine's tenant."""
-    from api.models import Device
+    poll (``persist_snmp_result``).
 
+    Only for the devices this engine polls (``devices_for_engine``) - the set
+    its work list hands out. Results carry learned MACs and ARP now (#284),
+    so an agent's token must not be able to write sightings for a device in
+    another site of its tenant, or one the core or another Outpost polls."""
+    from .engines import devices_for_engine
     from .snmp_poll import persist_snmp_result
     from .snmp_resolve import resolve_device_profile
 
     eng = request.auth
     rows = request.data.get("results") or []
-    ids = [r.get("device_id") for r in rows if r.get("device_id")]
-    devices = {
-        str(d.id): d
-        for d in Device.objects.filter(tenant=eng.tenant, id__in=ids)
-    }
+    devices = {str(d.id): d for d in devices_for_engine(eng)}
     ingested = 0
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         device = devices.get(str(r.get("device_id", "")))
-        if device is None:  # unknown / other tenant → ignore
+        if device is None:  # unknown, another tenant, or not this engine's
             continue
         profile, _ = resolve_device_profile(device, eng.tenant)
         persist_snmp_result(eng.tenant, profile, r, device=device)

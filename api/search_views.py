@@ -7,7 +7,8 @@ trigram similarity plus substring tests, so ``aarhus`` finds ``Århus DC`` and
 a near-miss still ranks. Ranking: exact folded title > title prefix > word
 start > substring > trigram similarity, plus the row's type weight.
 Special forms rank first: an IP or CIDR also lists the prefixes containing
-it, an all-digit query matches the short id exactly.
+it, an all-digit query matches the short id exactly, and a whole MAC in any
+notation finds every row carrying it plus the port it is located on (#284).
 
 ``key:value`` tokens narrow the query: ``type:device site:esbjerg
 role:firewall status:active tag:core``. Every hit is re-checked against the
@@ -236,6 +237,55 @@ def _network_hits(q: str, tenant) -> list[dict]:
     return out
 
 
+# A whole MAC in the notations people paste: 3c:52:82:aa:10:44,
+# 3C-52-82-AA-10-44, 3c52.82aa.1044, 3c5282-aa1044, 3c5282aa1044 (#284).
+_MAC_QUERY = re.compile(
+    r"^(?:[0-9a-f]{2}([:\-])(?:[0-9a-f]{2}\1){4}[0-9a-f]{2}"
+    r"|[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}"
+    r"|[0-9a-f]{6}-[0-9a-f]{6}"
+    r"|[0-9a-f]{12})$",
+    re.IGNORECASE,
+)
+
+
+def mac_query(q: str) -> str | None:
+    """The canonical ``aa:bb:cc:dd:ee:ff`` form of a MAC-shaped query, else
+    ``None``. Fragments wait for a later release."""
+    q = (q or "").strip()
+    if not _MAC_QUERY.match(q):
+        return None
+    key = re.sub(r"[^0-9a-f]", "", q.lower())
+    return ":".join(key[i:i + 2] for i in range(0, 12, 2))
+
+
+def _mac_hits(mac: str, tokens: dict, tenant, user) -> list[dict]:
+    """Extra candidates for a MAC query: the same address in the notation the
+    other indexes carry, and the port the MAC is located on - the first thing
+    somebody pasting a MAC wants. The port is an ``interface`` row, so
+    ``_allowed`` applies the caller's interface scope to it like any hit."""
+    rows = ranked_candidates(mac.replace(":", ""), tokens, tenant)
+    types = {_resolve_type(t) for t in tokens.get("type", [])}
+    if types and "interface" not in types:
+        return rows
+    from monitoring.mac_location import locate
+
+    loc = locate(tenant, [mac], user).get(mac)
+    if loc is None or not loc.at.interface_id:
+        return rows
+    where = "learned here" if loc.kind == "access" else "behind uplink"
+    vlan = f", VLAN {loc.at.vlan}" if loc.at.vlan else ""
+    rows.append({
+        "object_type": "interface", "object_id": loc.at.interface_id,
+        "title": loc.at.interface_name or loc.at.port_name,
+        "subtitle": f"{loc.at.device_name} · {where}{vlan}",
+        "url": f"/interfaces/{loc.at.interface_id}", "facets": {}, "numid": None,
+        "context": {"device": loc.at.device_name, "mac": mac},
+        # Above an exact name match: this is the answer to the question.
+        "score": 6.0,
+    })
+    return rows
+
+
 def _allowed(rows: list[dict], user, tenant) -> list[dict]:
     """Keep the candidates the caller may view, per type, in one query each."""
     by_type: dict[str, list] = {}
@@ -303,8 +353,19 @@ def search(request):
     if tenant is None:
         raise PermissionDenied("No active tenant selected.")
 
-    rows = ranked_candidates(q, tokens, tenant)
-    if q and (not tokens.get("type") or "prefix" in tokens.get("type", [])):
+    mac = mac_query(q)
+    rows = ranked_candidates(mac or q, tokens, tenant)
+    if mac:
+        by_key = {(r["object_type"], r["object_id"]): r for r in rows}
+        for h in _mac_hits(mac, tokens, tenant, request.user):
+            cur = by_key.get((h["object_type"], h["object_id"]))
+            if cur is None:
+                by_key[(h["object_type"], h["object_id"])] = h
+                rows.append(h)
+            elif float(cur["score"]) < float(h["score"]):
+                cur.update(score=h["score"], subtitle=h["subtitle"])
+        rows.sort(key=lambda r: (-float(r["score"]), r["title"]))
+    elif q and (not tokens.get("type") or "prefix" in tokens.get("type", [])):
         by_key = {(r["object_type"], r["object_id"]): r for r in rows}
         for h in _network_hits(q, tenant):
             cur = by_key.get((h["object_type"], h["object_id"]))
@@ -340,11 +401,15 @@ def search(request):
         }
         for r in page
     ]
-    return Response({
+    body = {
         "q": raw,
         "total": len(rows),
         "hits": hits,
         "facets": facets,
         "next_cursor": offset + limit if offset + limit < len(rows) else None,
-    })
+    }
+    if mac:
+        # The palette offers "Look up MAC …" for this address.
+        body["mac"] = mac
+    return Response(body)
 

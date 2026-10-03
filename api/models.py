@@ -3099,6 +3099,15 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "behind it, not on it. The escape hatch when the automatic uplink "
         "detection misreads a topology.",
     )
+    # Uplink: Automatic (both off) / Always (is_uplink) / Never (this). Two
+    # booleans rather than one choice keep is_uplink's API meaning; the
+    # serializer refuses both at once (#284).
+    never_uplink = models.BooleanField(
+        default=False, db_default=False,
+        help_text="Never treat this port as an uplink, whatever the automatic "
+        "detection says - a server bond, or a phone that announces itself as "
+        "a bridge. Its learned MACs are located here.",
+    )
     #: ``evpn mh uplink``: a fabric-facing port on an EVPN multihomed leaf.
     #: FRR tracks these to decide whether the leaf is isolated from the
     #: fabric and should stop being a designated forwarder.

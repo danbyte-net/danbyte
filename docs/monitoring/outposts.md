@@ -165,6 +165,26 @@ key is there**: an agent that looked must send `lag_if_index` on every row
 simply show no membership drift. Additive - no protocol bump; re-sync
 `danbyte_checks` into the agent to pick it up.
 
+## MAC tables from an Outpost {#mac-tables}
+
+An SNMP result may carry the [MAC table](../features/snmp-discovery.md#mac-tables)
+with its VLANs and an `fdb_meta` object saying how the read went, an
+`arp_meta` object saying whether the ARP read finished, ARP rows with their
+`type`, and LLDP neighbours with a `local_if_index` and the neighbour's
+`remote_caps`. As with `ptr` and `lag_if_index`, the core decides
+on **whether `fdb_meta` is there**: a result without it comes from an agent
+that predates MAC tracking and is read the old way - no VLANs, the core
+filters out the switch's own and group addresses, and the read counts as
+complete only when it returned rows, so an empty table from an old agent never
+closes anything. The same goes for ARP without `arp_meta`. Additive - no protocol bump; re-sync `danbyte_checks` into
+the agent and release it to get VLANs and the per-VLAN tables.
+
+The core accepts SNMP results only for the devices that Outpost polls - the
+ones its work list hands out (`devices_for_engine`). A result for any other
+device, even one in the same tenant, is ignored rather than written.
+**Refresh MACs** on a device an Outpost polls is queued for that Outpost,
+like Poll now; the agent reads the whole table on its next cycle.
+
 ## Transports - which way traffic flows
 
 Sites differ in what their firewall allows, so an Outpost's **transport** is set

@@ -3547,11 +3547,20 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         if protocol != "lacp":
             attrs["lacp_mode"] = ""
             attrs["lacp_rate"] = ""
+        # Uplink is Automatic (neither), Always (is_uplink) or Never
+        # (never_uplink) - never both (#284).
+        if attrs.get("is_uplink", getattr(self.instance, "is_uplink", False)) and attrs.get(
+            "never_uplink", getattr(self.instance, "never_uplink", False)
+        ):
+            raise serializers.ValidationError(
+                {"never_uplink": "A port can't be both always and never an uplink."}
+            )
         return attrs
 
     class Meta:
         model = Interface
         fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink",
+                  "never_uplink",
                   "evpn_mh_uplink", "type",
                   "type_display",
                   "speed", "mtu",

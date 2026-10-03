@@ -4304,7 +4304,9 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         "type", "mode", "speed", "duplex", "description",
         "lag_protocol", "lacp_mode", "lacp_rate",
     )
-    bulk_bool_fields = ("enabled", "mgmt_only", "mark_connected")
+    bulk_bool_fields = (
+        "enabled", "mgmt_only", "mark_connected", "is_uplink", "never_uplink",
+    )
     bulk_int_fields = ("mtu", "lag_min_links")
     bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
     bulk_name_scope_field = "device_id"
@@ -4314,6 +4316,16 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         # virtual, and LACP knobs only mean something under LACP.
         from .dcim_choices import VIRTUAL_INTERFACE_TYPES
 
+        # Uplink Always and Never exclude each other (#284): setting one
+        # clears the other; asking for both is refused, as the form does.
+        if updates.get("is_uplink") and updates.get("never_uplink"):
+            raise ValidationError(
+                {"never_uplink": "A port can't be both always and never an uplink."}
+            )
+        if updates.get("is_uplink"):
+            updates["never_uplink"] = False
+        elif updates.get("never_uplink"):
+            updates["is_uplink"] = False
         if updates.get("type") in VIRTUAL_INTERFACE_TYPES:
             updates["virtual"] = True
         if "lag_protocol" in updates and updates["lag_protocol"] != "lacp":

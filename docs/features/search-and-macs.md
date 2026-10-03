@@ -44,6 +44,12 @@ as well; this is the same catalog, reachable without opening it first.
 - **Short id**: an all-digit query matches the number printed on labels and
   short links. Every type numbers from 1, so add a type token to pin it.
 - **VLAN id** matches the VLAN.
+- **MAC address**, in any notation - `3c:52:82:aa:10:44`, `3C-52-82-AA-10-44`,
+  `3c52.82aa.1044`, `3c5282-aa1044` or `3c5282aa1044` - finds every interface,
+  IP and MAC object carrying it, and the first hit is the port the MAC is
+  [located](#where-is-this-mac) on: `Gi1/0/5 · sw-acc-03 · learned here,
+  VLAN 10`. That hit follows your interface permissions like any other. Part
+  of a MAC is matched as text for now.
 
 ### Narrowing with tokens
 
@@ -94,10 +100,12 @@ links. The row also shows the **description and tags** of any MAC object recorde
 for that address.
 
 The MAC detail page additionally lists **SNMP sightings** - the polled devices
-whose ARP or MAC tables observed the address, with the IP or port involved. A
-MAC clicked on a device's monitoring cards therefore always resolves, even
-when nothing in Danbyte carries it yet: the page says where it was seen
-instead of returning "not found".
+whose ARP or MAC tables observed the address, with the IP or port involved,
+the VLAN, first and last seen, whether it is still there and whether the port
+is an access port or an uplink. A MAC clicked on a device's monitoring cards
+therefore always resolves, even when nothing in Danbyte carries it yet: the
+page says where it was seen instead of returning "not found". The page takes
+the address in any notation.
 
 Both pages need MAC address view permission, and each source is then cut to
 what you may view on its own: interfaces, VM interfaces, IP addresses and MAC
@@ -106,6 +114,56 @@ constraints. An IP's device and interface are named only when you may view
 them too, and SNMP sightings list only devices and VMs you may view. A viewer
 limited to one site never learns another site's addresses or ports through a
 shared MAC; a MAC that only such rows carry is not listed at all.
+
+### Where is this MAC? {#where-is-this-mac}
+
+Polled switches report which MACs they learned on which port, and Danbyte
+keeps each as a [sighting](snmp-discovery.md#mac-tables) with first and last
+seen. From those, a MAC page answers three questions:
+
+- **Location** - the port the MAC really sits on: device, port, VLAN (with
+  the Danbyte VLAN that number means at the switch's site), since when, and
+  when it was last seen. Uplinks never win while any switch reports the MAC
+  on an access port; when none does - an unmanaged desk switch, a switch
+  Danbyte doesn't poll - the Location is the nearest uplink, marked
+  **behind uplink**. How a port counts as an uplink, and the overrides, are
+  under [Uplinks](snmp-discovery.md#uplinks); the exact tie-breaks under
+  [Location](snmp-discovery.md#mac-location).
+- **IP** - from the ARP table of any polled router, L3 switch, firewall or
+  virtual router (only the tenant's **ARP sources**, when it names some),
+  DHCP leases and reservations, and IP addresses paired with the MAC.
+- **Name** - a Danbyte interface, VM interface or MAC object carrying the
+  MAC (`srv-db-01 · eth0`) first, then reverse DNS, DNS records and DHCP
+  host names for its IPs.
+
+A MAC that moved shows as two sightings, one gone and one present; gone
+sightings stay for the tenant's **Forget MACs unseen for** window (30 days by
+default) and are the MAC's history. Nothing here writes: learned MACs never
+become MAC objects or change an IP address on their own.
+
+`GET /api/macs/<mac>/` returns these as `location`, `ips_observed` (each IP
+with its sources) and `names` / `name`, next to the existing keys.
+
+#### The Learned list {#the-learned-list}
+
+`GET /api/monitoring/mac-sightings/` is the network-wide learned table: one
+row per MAC at its Location, with vendor, device, port, VLAN, IP, name and
+first and last seen, paged on the server (`page`, `page_size`, at most 500).
+It filters by `site`, `device` and `vlan` (against where each MAC is
+located), `state` (`present`, `gone`, `all`), `kind` (`access` or
+`behind_uplink`), and `q` - a MAC in any notation, part of one, or a device or
+port name.
+
+#### Who sees what
+
+Everything follows the viewer's permissions, type by type. Sightings and
+Locations come only from devices you may view - a MAC whose access port sits
+on a switch you can't see is located behind the nearest uplink you can, never
+on the hidden switch. An IP read from a router's ARP table shows only when you
+may view that router or an IP address row with that address, and the router
+is named only when you may view it. DHCP leases and reservations follow their
+own view permissions, DNS records theirs, interfaces and VM interfaces
+theirs. The Learned list needs view on MAC addresses as well.
 
 ### Vendors
 

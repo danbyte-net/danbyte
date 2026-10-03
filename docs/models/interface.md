@@ -90,8 +90,17 @@ the reserve actions or `/api/port-reservations/`.
 
 ### Uplink
 
-Faces other network gear: discovery never suggests hosts on this port, and
-topology treats it as an infrastructure link.
+**Automatic**, **Always** or **Never** - two fields on the API:
+
+- `is_uplink` (Always) - faces other network gear: discovery never suggests
+  hosts on this port, a learned MAC is located on it only as *behind uplink*
+  when no access port reports it, and topology treats it as an infrastructure
+  link.
+- `never_uplink` (Never) - never an uplink, whatever the automatic
+  [uplink rules](../features/snmp-discovery.md#uplinks) say (an LLDP switch
+  neighbour, a LAG, more learned MACs than *Uplink above*).
+
+Both off is Automatic. Both on is refused (400).
 
 ## Hardware
 

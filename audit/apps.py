@@ -149,7 +149,9 @@ AUDITED_MODELS = [
     "api.FloorPlanRaisedFloorArea",
     "api.FloorPlanWall",
     "api.CableRoute",
-    # Customisation + monitoring config (not high-volume engine state).
+    # Customisation + monitoring config (not high-volume engine state). The
+    # MAC-tracking sightings (monitoring.MacSighting / ArpSighting, #284) are
+    # observed, high-churn data like integrations.DnsRecord: not audited.
     "customization.CustomField",
     "customization.CustomFieldGroup",
     "monitoring.CheckTemplate",

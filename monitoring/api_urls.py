@@ -19,6 +19,13 @@ from .history_views import (
     timeline_batch_view,
     transitions_view,
 )
+from .mac_api import (
+    device_mac_refresh_view,
+    device_macs_view,
+    interface_macs_view,
+    mac_refresh_run_view,
+    mac_sightings_view,
+)
 from .maintenance_api import EventImpactViewSet, MaintenanceEventViewSet
 from .sla_api import (
     HolidayCalendarViewSet,
@@ -207,6 +214,14 @@ urlpatterns = [
     path("devices/<uuid:device_id>/snmp/reconcile/", device_snmp_reconcile_view, name="monitoring-device-snmp-reconcile"),
     path("devices/<uuid:device_id>/snmp/sync/", device_snmp_sync_view, name="monitoring-device-snmp-sync"),
     path("devices/<uuid:device_id>/snmp-poll/", device_snmp_poll_view, name="monitoring-device-snmp-poll"),
+    # MAC tracking (#284).
+    path("devices/<uuid:device_id>/macs/", device_macs_view, name="monitoring-device-macs"),
+    path("devices/<uuid:device_id>/mac-refresh/", device_mac_refresh_view,
+         name="monitoring-device-mac-refresh"),
+    path("interfaces/<uuid:interface_id>/macs/", interface_macs_view,
+         name="monitoring-interface-macs"),
+    path("mac-sightings/", mac_sightings_view, name="monitoring-mac-sightings"),
+    path("mac-refresh/<str:run_id>/", mac_refresh_run_view, name="monitoring-mac-refresh-run"),
     path("virtual-chassis/<uuid:vc_id>/snmp-poll/", vc_snmp_poll_view, name="monitoring-vc-snmp-poll"),
     path("virtual-chassis/<uuid:vc_id>/snmp/drift/", vc_snmp_drift_view, name="monitoring-vc-snmp-drift"),
     path("virtual-chassis/<uuid:vc_id>/snmp/sync/", vc_snmp_sync_view, name="monitoring-vc-snmp-sync"),

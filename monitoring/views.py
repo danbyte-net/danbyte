@@ -2576,6 +2576,7 @@ def _empty_snmp(device):
         "device": str(device.id), "profile": None, "profile_name": None,
         "data": {}, "interfaces": [], "neighbors": [], "arp": [],
         "reachable": None, "error": "", "polled_at": None,
+        "fdb_polled_at": None, "fdb_meta": {},
     }
 
 
@@ -2628,6 +2629,51 @@ def device_snmp_poll_view(request, device_id):
     return _snmp_poll(request, device, tenant)
 
 
+def _queue_on_outpost(device, tenant, profile=None):
+    """``None`` when ``device`` polls from the core; otherwise the 202 (or a
+    400 setup error) for a device whose site or location an Outpost polls.
+
+    The agent pulls work, so "now" means its next poll: stamp the request and
+    answer 202. The same profile/target validation applies, so the caller
+    gets an actionable error instead of a queue that never delivers. Shared
+    by Poll now and Refresh MACs."""
+    from .engines import engine_for_device
+
+    engine = engine_for_device(device)
+    if engine.kind == MonitoringEngine.LOCAL or not engine.enabled:
+        return None
+    from .snmp_poll import _device_target
+    from .snmp_resolve import resolve_device_profile
+
+    if profile is None:
+        profile, _src = resolve_device_profile(device, tenant)
+    if profile is None:
+        return Response(
+            {"detail": "No SNMP profile resolves for this device - assign "
+             "one on the device, its role, its type, or set a tenant "
+             "default."},
+            status=400,
+        )
+    if not _device_target(device):
+        return Response(
+            {"detail": "Device has no primary IP or name to poll."},
+            status=400,
+        )
+    engine.snmp_requested_at = timezone.now()
+    engine.save(update_fields=["snmp_requested_at"])
+    detail = f"Queued on Outpost '{engine.name}' - results land on its next pass."
+    if engine.stale_since is not None:
+        detail = (
+            f"Queued, but Outpost '{engine.name}' is currently unreachable "
+            "- it will poll when it reconnects."
+        )
+    return Response(
+        {"queued": True, "queued_on_outpost": True, "engine": engine.name,
+         "engine_stale": engine.stale_since is not None, "detail": detail},
+        status=202,
+    )
+
+
 def _snmp_poll(request, device, tenant):
     """The poll itself, on an already-authenticated request. The stack view
     calls this too: re-dispatching the device view with the raw request made
@@ -2641,46 +2687,14 @@ def _snmp_poll(request, device, tenant):
 
     # A device whose site/location is bound to an Outpost polls from THERE -
     # central polling would report outpost-only networks unreachable (#128).
-    # The agent pulls work, so "now" means its next poll: stamp the request
-    # and answer 202; the same profile/target validation still applies so the
-    # caller gets an actionable error instead of a queue that never delivers.
-    from .engines import engine_for_device
-
-    engine = engine_for_device(device)
-    if engine.kind != MonitoringEngine.LOCAL and engine.enabled:
-        from .snmp_poll import _device_target
-        from .snmp_resolve import resolve_device_profile
-
-        if profile is None:
-            profile, _src = resolve_device_profile(device, tenant)
-        if profile is None:
-            return Response(
-                {"detail": "No SNMP profile resolves for this device - assign "
-                 "one on the device, its role, its type, or set a tenant "
-                 "default."},
-                status=400,
-            )
-        if not _device_target(device):
-            return Response(
-                {"detail": "Device has no primary IP or name to poll."},
-                status=400,
-            )
-        engine.snmp_requested_at = timezone.now()
-        engine.save(update_fields=["snmp_requested_at"])
-        detail = f"Queued on Outpost '{engine.name}' - results land on its next pass."
-        if engine.stale_since is not None:
-            detail = (
-                f"Queued, but Outpost '{engine.name}' is currently unreachable "
-                "- it will poll when it reconnects."
-            )
-        return Response(
-            {"queued": True, "engine": engine.name,
-             "engine_stale": engine.stale_since is not None, "detail": detail},
-            status=202,
-        )
+    queued = _queue_on_outpost(device, tenant, profile)
+    if queued is not None:
+        return queued
 
     # profile=None → poll_device resolves it (device → role → type → default).
-    state, reason = poll_device(device, tenant, profile)
+    # Poll now is synchronous, so its MAC-table read is the quick one (#284):
+    # a short budget and no per-VLAN contexts. Refresh MACs reads it all.
+    state, reason = poll_device(device, tenant, profile, mac_mode="quick")
     if reason == "no_profile":
         return Response(
             {"detail": "No SNMP profile resolves for this device - assign one on "
@@ -2745,7 +2759,7 @@ def vm_snmp_view(request, vm_id):
             "vm": str(vm.id), "device": None, "profile": None,
             "profile_name": None, "data": {}, "interfaces": [], "neighbors": [],
             "arp": [], "sensors": [], "reachable": None, "error": "",
-            "polled_at": None,
+            "polled_at": None, "fdb_polled_at": None, "fdb_meta": {},
         })
     return Response(DeviceSnmpSerializer(state).data)
 

@@ -61,25 +61,88 @@ def _visible_ids(model, tenant_path, ids, user, tenant, slug) -> set:
 
 
 def _snmp_sightings(tenant, mac: str, user) -> list[dict]:
-    """Where polling has *observed* this MAC - the ARP/FDB rows on each
-    device's SNMP state. A MAC clicked on a monitoring card often exists only
-    here (a neighbour's address learned on a port), so the detail page must
-    be able to say "seen on sw1 port eth2" instead of pretending the address
-    doesn't exist. Only devices and VMs the caller may view are listed."""
-    from django.db.models import Q
+    """Where polling has *observed* this MAC. A MAC clicked on a monitoring
+    card often exists only here (a neighbour's address learned on a port), so
+    the detail page must be able to say "seen on sw1 port eth2" instead of
+    pretending the address doesn't exist. Only devices and VMs the caller may
+    view are listed.
 
-    from monitoring.models import (
-        DeviceSnmp,  # local: api must not import monitoring at module level
-    )
+    Since #284 these are indexed reads of the sighting tables: every port the
+    MAC was learned on and every ARP entry naming it, present and gone (the
+    history, within the tenant's retention). A ``fdb`` row carries its VLAN,
+    first and last seen, whether it is still there and the port's role
+    (access or uplink) next to the original ``device``/``source``/``port``
+    keys. A device polled before 0.17 still answers from its JSON tables
+    until its next poll - only those rows are loaded."""
+    from django.db.models import F, Q
+
+    # Local: api must not import monitoring at module level.
+    from monitoring.mac_location import UplinkContext, seen_rows
+    from monitoring.mac_tables import canon_mac
+    from monitoring.models import ArpSighting, DeviceSnmp, MacSighting
 
     key = _hexkey(mac)
+    canon = canon_mac(key)
     seen: list[dict] = []
     devices = _visible(Device.objects.filter(tenant=tenant), user, tenant, "device")
     vms = _visible(
         VirtualMachine.objects.filter(tenant=tenant), user, tenant, "virtualmachine"
     )
+    if canon:
+        rows = seen_rows(
+            MacSighting.objects.filter(tenant=tenant, mac=canon, device__in=devices)
+            .order_by(F("gone_at").desc(nulls_first=True), "-last_seen")
+        )
+        ctx = UplinkContext(tenant).load(
+            {r.polled_device_id for r in rows}, {r.interface_id for r in rows}
+        )
+        for r in rows:
+            uplink = ctx.classify(r.polled_device_id, r.port_key, r.interface_id)
+            seen.append({
+                "device": {"id": str(r.device_id), "name": r.device_name},
+                "source": "fdb",
+                "port": r.port_name,
+                "interface": (
+                    {"id": str(r.interface_id), "name": r.interface_name}
+                    if r.interface_id else None
+                ),
+                "vlan": r.vlan,
+                "first_seen": r.first_seen,
+                "last_seen": r.last_seen,
+                "gone_at": r.gone_at,
+                "present": r.gone_at is None,
+                "role": "uplink" if uplink.is_uplink else "access",
+            })
+        for a in (
+            ArpSighting.objects.filter(tenant=tenant, mac=canon)
+            .filter(Q(device__in=devices) | Q(vm__in=vms))
+            .order_by(F("gone_at").desc(nulls_first=True), "-last_seen")
+            .values(
+                "device_id", "device__name", "vm_id", "vm__name", "ip",
+                "interface_id", "interface__name", "first_seen", "last_seen", "gone_at",
+            )
+        ):
+            owner = (
+                {"device": {"id": str(a["device_id"]), "name": a["device__name"]}}
+                if a["device_id"]
+                else {"vm": {"id": str(a["vm_id"]), "name": a["vm__name"]}}
+            )
+            seen.append({
+                **owner, "source": "arp", "ip": a["ip"],
+                "interface": (
+                    {"id": str(a["interface_id"]), "name": a["interface__name"]}
+                    if a["interface_id"] else None
+                ),
+                "vlan": None,
+                "first_seen": a["first_seen"],
+                "last_seen": a["last_seen"],
+                "gone_at": a["gone_at"],
+                "present": a["gone_at"] is None,
+                "role": None,
+            })
+
     states = (
-        DeviceSnmp.objects.filter(tenant=tenant)
+        DeviceSnmp.objects.filter(tenant=tenant, fdb_meta={})
         .filter(Q(device__in=devices) | Q(vm__in=vms))
         .select_related("device", "vm")
     )
@@ -94,6 +157,10 @@ def _snmp_sightings(tenant, mac: str, user) -> list[dict]:
             owner = {"vm": {"id": str(state.vm_id), "name": state.vm.name}}
         else:
             continue
+        legacy = {
+            "interface": None, "vlan": None, "first_seen": None,
+            "last_seen": state.polled_at, "gone_at": None, "present": True, "role": None,
+        }
         ifname = {
             str(o.get("if_index")): o.get("name")
             for o in (state.interfaces or [])
@@ -101,14 +168,25 @@ def _snmp_sightings(tenant, mac: str, user) -> list[dict]:
         }
         for a in state.arp or []:
             if _hexkey(a.get("mac", "")) == key:
-                seen.append({**owner, "source": "arp", "ip": a.get("ip")})
+                seen.append({**owner, "source": "arp", "ip": a.get("ip"), **legacy})
         for f in state.fdb or []:
             if _hexkey(f.get("mac", "")) == key:
                 seen.append({
                     **owner, "source": "fdb",
                     "port": ifname.get(str(f.get("if_index") or "")),
+                    **legacy,
                 })
     return seen
+
+
+def _match_mac(qs, field: str, key: str, canon: str | None):
+    """``qs`` rows whose ``field`` holds this MAC: in any notation when the
+    query is a whole MAC, else the old case-insensitive match."""
+    if canon:
+        from monitoring.mac_tables import filter_hex
+
+        return filter_hex(qs, field, [canon])
+    return qs.filter(**{f"{field}__iexact": key})
 
 
 def _iface_ref(iface) -> dict:
@@ -249,13 +327,15 @@ def mac_list_view(request):
 
 @extend_schema(
     summary="Detail for one MAC address: interfaces bearing it, IPs paired with "
-    "it, and first-class MAC objects recorded for it",
+    "it, first-class MAC objects recorded for it, and where the network has "
+    "seen it",
     tags=["mac-addresses"],
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="{mac, objects[], interfaces[], vm_interfaces[], ips[]} for "
-        "the given MAC address, or 404 when nothing carries it.",
+        description="{mac, vendor, objects[], interfaces[], vm_interfaces[], ips[], "
+        "seen[], location, ips_observed[], names[], name, name_source} for the "
+        "given MAC address in any notation, or 404 when nothing carries it.",
     ),
 )
 @api_view(["GET"])
@@ -271,27 +351,33 @@ def mac_detail_view(request, mac):
     if not rbac.has_action(user, tenant, "macaddress", "view"):
         return Response({"detail": "macaddress.view required."}, status=403)
 
+    from monitoring.mac_location import enrich, locate, location_payload, vlan_objects
+    from monitoring.mac_tables import canon_mac
+
     key = _norm(mac)
+    # Any notation of a whole MAC - colons, dashes, Cisco dots, bare hex -
+    # names the same address (#284).
+    canon = canon_mac(key)
     ifaces = _visible(
-        Interface.objects.filter(device__tenant=tenant, mac_address__iexact=key)
+        _match_mac(Interface.objects.filter(device__tenant=tenant), "mac_address", key, canon)
         .select_related("device")
         .order_by(natural("device__name"), natural("name")),
         user, tenant, "interface",
     )
     vm_ifaces = _visible(
-        VMInterface.objects.filter(vm__tenant=tenant, mac_address__iexact=key)
+        _match_mac(VMInterface.objects.filter(vm__tenant=tenant), "mac_address", key, canon)
         .select_related("vm")
         .order_by(natural("vm__name"), natural("name")),
         user, tenant, "vminterface",
     )
     ips = _visible(
-        IPAddress.objects.filter(tenant=tenant, mac_address__iexact=key)
+        _match_mac(IPAddress.objects.filter(tenant=tenant), "mac_address", key, canon)
         .select_related("assigned_device", "assigned_interface", "status")
         .order_by("ip_address"),
         user, tenant, "ipaddress",
     )
     objects = _visible(
-        MACAddress.objects.filter(tenant=tenant, mac_address__iexact=key)
+        _match_mac(MACAddress.objects.filter(tenant=tenant), "mac_address", key, canon)
         .select_related("assigned_interface__device")
         .prefetch_related("tags")
         .order_by(
@@ -300,12 +386,23 @@ def mac_detail_view(request, mac):
         user, tenant, "macaddress",
     )
     seen = _snmp_sightings(tenant, key, user)
+    # Where it is, what it answers to and what it's called - each source cut
+    # to the caller's scope for its own type (#284).
+    location = None
+    observed = {"ips": [], "names": [], "name": None, "name_source": None}
+    if canon:
+        loc = locate(tenant, [canon], user).get(canon)
+        if loc is not None:
+            vlans = vlan_objects(tenant, user, {(loc.at.site_id, loc.at.vlan)})
+            location = location_payload(loc, vlans)
+        observed = enrich(tenant, [canon], user).get(canon) or observed
     if (
         not ifaces.exists()
         and not vm_ifaces.exists()
         and not ips.exists()
         and not objects.exists()
         and not seen
+        and not observed["ips"]
     ):
         return Response({"detail": "Not found."}, status=404)
 
@@ -318,7 +415,7 @@ def mac_detail_view(request, mac):
     elif objects.exists():
         display = objects.first().mac_address
     else:
-        display = key
+        display = canon or key
 
     override = next((m.vendor_override for m in objects if m.vendor_override), "")
     vendor = (
@@ -340,6 +437,11 @@ def mac_detail_view(request, mac):
             "mac": display,
             "vendor": vendor,
             "seen": seen,
+            "location": location,
+            "ips_observed": observed["ips"],
+            "names": observed["names"],
+            "name": observed["name"],
+            "name_source": observed["name_source"],
             "objects": [_mac_object(m, with_custom_fields=True) for m in objects],
             "interfaces": [
                 {**_iface_ref(i), "enabled": i.enabled} for i in ifaces

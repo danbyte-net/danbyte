@@ -30,6 +30,7 @@ import hashlib
 import uuid
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -1017,6 +1018,31 @@ class MonitoringSettings(TimestampedModel):
         related_name="+",
         help_text="Merge these devices' ARP tables (e.g. the gateway "
         "firewalls) for switch-link suggestions instead of each switch's own.",
+    )
+
+    # ─── MAC tracking (#284) ─────────────────────────────────────────────
+    # db_default on each so a rolling upgrade's old code can still insert a
+    # settings row while the new columns exist.
+    mac_port_display_limit = models.PositiveSmallIntegerField(
+        default=4, db_default=4,
+        validators=[MinValueValidator(0), MaxValueValidator(64)],
+        help_text="Learned MACs listed per port before '+N more'. 0 = all.",
+    )
+    mac_uplink_threshold = models.PositiveIntegerField(
+        default=4, db_default=4,
+        validators=[MinValueValidator(0), MaxValueValidator(4096)],
+        help_text="A port that learns more distinct MACs than this counts as "
+        "an uplink. 0 turns the count rule off.",
+    )
+    mac_uplink_lldp = models.BooleanField(
+        default=True, db_default=True,
+        help_text="A port whose LLDP neighbour is a switch counts as an uplink.",
+    )
+    mac_retention_days = models.PositiveSmallIntegerField(
+        default=30, db_default=30,
+        validators=[MinValueValidator(1), MaxValueValidator(365)],
+        help_text="Learned MACs and ARP entries unseen for longer than this "
+        "are forgotten.",
     )
 
     # ─── flapping monitor (M22) ──────────────────────────────────────────
@@ -2071,6 +2097,25 @@ class DeviceSnmp(TimestampedModel):
     reachable = models.BooleanField(null=True, blank=True)
     error = models.TextField(blank=True, default="")
     polled_at = models.DateTimeField(null=True, blank=True)
+    # ─── MAC tracking (#284) ─────────────────────────────────────────────
+    # The forwarding table itself lives in MacSighting rows; these say how
+    # the last read went. An empty ``fdb_meta`` means the MAC pipeline has
+    # never processed this row (polled before 0.17), so the JSON ``fdb`` /
+    # ``arp`` above are still its only MAC data.
+    fdb_polled_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="The last complete MAC-table read.",
+    )
+    fdb_meta = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+        help_text="How the last MAC-table read went: source, complete, "
+        "truncated, VLAN and port mapping, drop counts, error.",
+    )
+    mac_ports = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+        help_text="Per-port summary of the last read: {port_key: {if_index, "
+        "name, count, lldp, lag}}. Uplinks are classified from it on read.",
+    )
 
     class Meta:
         ordering = ["-polled_at"]
@@ -2090,6 +2135,143 @@ class DeviceSnmp(TimestampedModel):
 
     def __str__(self) -> str:
         return f"SNMP({self.device_id or self.vm_id})"
+
+
+class MacSighting(models.Model):
+    """One MAC on one switch port in one VLAN, for as long as it stays there
+    (#284).
+
+    Written only by ``monitoring.mac_tables.record_mac_tables`` from a
+    reachable poll. A row opens when the MAC first appears on the port,
+    ``last_seen`` follows every poll that still reports it, and ``gone_at``
+    closes it once a complete read no longer does - so a move is one closed
+    row and one open one, and that pair is the history. Observed data:
+    high churn, never audited, never search-indexed, pruned after the
+    tenant's retention window.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Every read filters on tenant first; the composite indexes below lead
+    # with it, so the FK's own single-column index would only cost writes.
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="+", db_index=False
+    )
+    # Whose poll reported it - the stack owner for a virtual chassis.
+    polled_device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="mac_sightings_polled"
+    )
+    # The member that owns the port (the polled device when standalone).
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="mac_sightings"
+    )
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="mac_sightings",
+    )
+    # Normalised observed ifName (ifDescr fallback): survives ifIndex
+    # renumbering, which the agent is free to do on a reboot.
+    port_key = models.CharField(max_length=128)
+    port_name = models.CharField(max_length=128, blank=True, default="")
+    if_index = models.CharField(max_length=16, blank=True, default="")
+    # Null = unknown: a shared FDB, or an agent too old to say.
+    vlan_vid = models.PositiveSmallIntegerField(null=True, blank=True)
+    fdb_id = models.PositiveIntegerField(null=True, blank=True)
+    mac = models.CharField(max_length=17)  # canonical lowercase colon form
+    status = models.CharField(max_length=8, blank=True, default="")
+    first_seen = models.DateTimeField()
+    # Not indexed on purpose: the per-poll bump then stays a HOT update.
+    last_seen = models.DateTimeField()
+    gone_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["polled_device", "port_key", "vlan_vid", "mac"],
+                condition=models.Q(gone_at__isnull=True),
+                nulls_distinct=False,
+                name="uniq_macsighting_present",
+            ),
+        ]
+        indexes = [
+            # Location (present rows) and the MAC page's history (gone rows
+            # too) both look a MAC up by address.
+            models.Index(fields=["tenant", "mac"], name="macsighting_tenant_mac"),
+            # The daily prune.
+            models.Index(
+                fields=["tenant", "gone_at"],
+                condition=models.Q(gone_at__isnull=False),
+                name="macsighting_gone",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.mac} on {self.port_name or self.port_key}"
+
+
+class ArpSighting(models.Model):
+    """One IP↔MAC pair in one device's (or VM's) ARP table (#284). Same
+    life cycle as :class:`MacSighting`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="+", db_index=False
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="arp_sightings",
+    )
+    vm = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="arp_sightings",
+    )
+    # The L3 port / SVI the entry was learned on, when Danbyte has it.
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="arp_sightings",
+    )
+    if_index = models.CharField(max_length=16, blank=True, default="")
+    ip = models.GenericIPAddressField()
+    mac = models.CharField(max_length=17)
+    first_seen = models.DateTimeField()
+    last_seen = models.DateTimeField()
+    gone_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                name="arpsighting_device_xor_vm",
+                condition=(
+                    models.Q(device__isnull=False, vm__isnull=True)
+                    | models.Q(device__isnull=True, vm__isnull=False)
+                ),
+            ),
+            models.UniqueConstraint(
+                fields=["device", "ip", "mac"],
+                condition=models.Q(gone_at__isnull=True, device__isnull=False),
+                name="uniq_arpsighting_device_present",
+            ),
+            models.UniqueConstraint(
+                fields=["vm", "ip", "mac"],
+                condition=models.Q(gone_at__isnull=True, vm__isnull=False),
+                name="uniq_arpsighting_vm_present",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "mac"], name="arpsighting_tenant_mac"),
+            models.Index(
+                fields=["tenant", "ip"],
+                condition=models.Q(gone_at__isnull=True),
+                name="arpsighting_present_ip",
+            ),
+            models.Index(
+                fields=["tenant", "gone_at"],
+                condition=models.Q(gone_at__isnull=False),
+                name="arpsighting_gone",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.ip} is {self.mac}"
 
 
 class SnmpSensor(TimestampedModel):

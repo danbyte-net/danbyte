@@ -20,6 +20,8 @@ This page is organised by task. Jump to:
 - [Scheduled polling & utilisation](#scheduled-polling) - the sparkline series
 - [Drift & reconciliation](#drift-and-reconciliation) - accept observed into intent
 - [Topology: LLDP & ARP](#topology) - neighbours and the ARP table
+- [MAC tables](#mac-tables) - learned MACs per port, [uplinks](#uplinks),
+  [history](#mac-history) and [Refresh MACs](#refresh-macs)
 - [Custom SNMP sensors](#sensors) - vendor health OIDs, and
   [sharing them as a pack](#sensor-packs)
 - [Permissions](#permissions)
@@ -49,6 +51,9 @@ mirrors how monitoring check credentials are stored.
 Mark one profile **default** for the tenant. Setting a new default automatically
 clears the previous one, so there's always at most one default and switching it
 actually switches it.
+
+**Per-VLAN MAC tables** (Auto / Always / Off) says whether the agent's
+per-VLAN forwarding tables are read - see [MAC tables](#mac-tables).
 
 ## Credential hierarchy {#credential-hierarchy}
 
@@ -100,6 +105,12 @@ timestamp.
 A poll **never** touches the device's source-of-truth fields - it only refreshes
 this card.
 
+Poll now also reads the device's [MAC table](#mac-tables), but quickly: it
+has to answer before the web server gives up on the request, so it stops
+after a short time budget and skips per-VLAN tables. A big switch can come
+back with a *partial* table that way; [Refresh MACs](#refresh-macs) reads the
+whole thing in the background.
+
 The tab is laid out by content width: the system facts, the interface table and
 the [drift inbox](#drift-and-reconciliation) run full width, and the narrow
 cards below them - [LLDP neighbours and the ARP table](#topology),
@@ -139,6 +150,10 @@ The stack page has its own **SNMP** tab with **Poll stack**, **Sync stack from
 SNMP** (each member in position order) and every member's drift inbox; the
 fleet [drift view](#fleet-wide-drift-view) lists one row per member.
 
+The stack's [MAC table](#mac-tables) is recorded once, from the owner's poll,
+with each learned MAC placed on the member that owns its port by the same
+rules. An Outpost that polls every member adds nothing a second time.
+
 ## Scheduled polling & utilisation {#scheduled-polling}
 
 The on-demand button is a snapshot. To build a **utilisation series** for the
@@ -148,8 +163,8 @@ per-interface sparklines, run the poller on a schedule:
 python manage.py poll_snmp
 ```
 
-Each run records the interface HC octet counters (`ifHCInOctets` /
-`ifHCOutOctets`) as a time-stamped sample. Utilisation is then derived as a rate
+Each run is a full poll, MAC table included, and records the interface HC
+octet counters (`ifHCInOctets` / `ifHCOutOctets`) as a time-stamped sample. Utilisation is then derived as a rate
 between consecutive samples - `Δoctets · 8 / Δt`, as a percentage of the
 interface speed. A counter that goes backwards (reset/reboot/wrap) yields a `0`
 delta rather than a negative spike. Schedule `poll_snmp` from cron or a systemd
@@ -407,29 +422,28 @@ correct independent of any one device's quirks.
 
 ### Switch-link suggestions & the uplink guard
 
-On a bridging device, drift joins the ARP table (IP ↔ MAC) with the
-forwarding table (MAC ↔ port) to suggest which access port each
-already-tracked IP hangs off - reviewed and accepted like any other drift.
+On a bridging device, drift suggests which access port each already-tracked
+IP hangs off - reviewed and accepted like any other drift, and applied by
+**Sync from SNMP**. Since 0.17 the suggestion follows the MAC's
+[Location](#mac-location): an IP is suggested on a port of this device when
+its MAC is located there as an *access* sighting. Location is one answer for
+the whole network, so two switches can no longer both claim a host and
+re-claim it from each other on every poll.
 
-Uplinks are excluded, because a trunk learns every MAC behind it and would
-otherwise claim hosts that really sit on another switch (each poll then
-re-claiming them back and forth). A port gets no suggestions when it learns
-more than a handful of distinct MACs, is a LAG aggregate or member, or has an
-LLDP neighbour that is itself a bridging device Danbyte polls. A server or
-phone announcing LLDP does *not* mute its port - only known switches do.
+The IP comes from the ARP table of **any** polled device - a router, an L3
+switch, a firewall, a virtual router - with the switch's own table asked
+first, then the others in device-name order; the first answer per MAC wins.
+**ARP sources** (Settings → Monitoring → Switch-link suggestions) narrows that
+to the devices you name, in name order, exactly as before: on L2-only
+networks list the gateways and firewalls that actually route. If two sources
+disagree about a MAC, the first answer in device-name order wins,
+deterministically, rather than flapping between polls.
 
-Two manual overrides ride on top of the automatic detection:
-
-- **Uplink** (interface form) - flag a port as facing other network gear and
-  it never gets suggestions, whatever the heuristics think.
-- **ARP sources** (Settings → Monitoring → Switch-link suggestions) - on
-  L2-only networks a switch's own ARP table is nearly empty; add the
-  device(s) that actually route (gateways, firewalls) and their **merged**
-  ARP tables feed every switch's suggestions instead of each switch's own.
-  Several sources matter when more than one firewall routes for the tenant -
-  each contributes the part of the network it knows. If two sources disagree
-  about a MAC, the first answer in device-name order wins, deterministically,
-  rather than flapping between polls.
+[Uplinks](#uplinks) never get suggestions: a trunk learns every MAC behind it.
+The old fixed limit of four MACs is now the tenant's **Uplink above** setting,
+and **Uplink: Never** on an interface lets a busy port take suggestions
+anyway. A device not polled since the upgrade keeps answering from its
+pre-0.17 tables, with the same rules, until its next poll.
 
 ### Ghost cables on the topology map
 
@@ -452,6 +466,142 @@ adjacent on more than one link, which port pair). Creating the cable needs
 `cable.add`, and both interfaces must already exist - if an end is missing,
 accept its interface drift first. Once cabled, the ghost is replaced by a solid
 edge.
+
+## MAC tables {#mac-tables}
+
+A switch's forwarding table says which MAC addresses it learned on which
+port. Every poll of a bridging device reads it, and Danbyte keeps it as
+**sightings**: one MAC, on one port, in one VLAN, with when it was first and
+last seen and when it went away.
+
+### What is read and kept
+
+The table comes from the 802.1Q (Q-BRIDGE-MIB) forwarding database, falling
+back to the plain BRIDGE-MIB one. Some agents (Cisco among them) keep one
+table per VLAN; the SNMP profile's **Per-VLAN MAC tables** option decides
+whether those are read: **Auto** (default) reads them when the agent lists
+them, **Always** reads them anyway - using the VLANs Danbyte has on the
+device's ports when the agent names none - and **Off** never does. Over the
+API the option is the profile's `params.mac_vlan_contexts`
+(`auto`/`always`/`off`), with `mac_max_vlans` (1-1024, default 128) and
+`mac_budget_s` (5-600 seconds, default 120) next to it.
+
+Only **learned** entries are kept. Dropped: the switch's own and invalid
+entries, multicast and broadcast addresses, all-zero MACs, and any MAC that
+is one of the polled device's own interface addresses - so a port never
+"learns" itself. Entries marked *mgmt* or *other* (port security, static
+entries) stay.
+
+Each entry is placed on the stack member and the Danbyte interface that own
+its port, by the same name matching drift uses - the agent's ifName or
+ifDescr, or an [SNMP name link](#interface-linking). A port Danbyte doesn't
+have yet keeps its observed name; the poll after you add it links it. A MAC
+learned on a port-channel stays on the aggregate. The VLAN is the one the
+agent reports; it is blank where the agent shares one table across VLANs, and
+for an agent that predates MAC tracking.
+
+ARP tables are kept the same way: one IP ↔ MAC pair per device (or VM), with
+first and last seen, which is what joins a MAC to its IP address. An ARP read
+closes entries only when the agent says it finished; one from an agent that
+predates MAC tracking counts as finished when it returned any rows.
+
+### Complete and partial reads
+
+A read that **finished** is the truth: MACs it no longer reports are closed
+as gone. A read that **stopped early** - the time budget ran out, the
+100,000-row cap was hit, a walk failed, per-VLAN tables could not be opened -
+is **partial**: it adds and refreshes what it saw and closes nothing, so a
+slow switch never reads as "every MAC left". VLANs left out of a read - over
+`mac_max_vlans`, or a per-VLAN table that failed - don't make it partial, so a
+big switch still closes what moved elsewhere; the MACs in those VLANs are
+simply neither closed nor refreshed by that read. A poll that never reached
+the device writes nothing at all.
+
+The device's SNMP state carries `fdb_polled_at` - the last complete read - and
+`fdb_meta`, how the last read went: the source table, `complete`,
+`truncated`, how VLANs and ports were mapped, what was dropped and why, and
+the error, if any. Credentials never appear in it.
+
+### History and retention {#mac-history}
+
+A sighting is open while the MAC is there. A MAC that moves from `Gi1/0/5`
+to `Gi1/0/9` closes one row and opens another, and that pair is its history.
+Rows unseen for longer than **Forget MACs unseen for** (Settings → Monitoring,
+default 30 days) are closed and then deleted by the daily prune - so a switch
+that stops answering stops locating MACs once its rows age out - and closed
+rows are deleted once they are that old. A row last seen more than a day ago
+reads as *stale*. ARP entries follow the same rules.
+
+!!! note "Privacy"
+    A month of which MAC sat on which port with which IP address is close to
+    personal data on an office network. The retention setting bounds how long
+    it is kept, and every read follows the viewer's permissions.
+
+Sightings are observed data that change on every poll: like DNS records they
+are not in the change log, send no webhooks and are not in the search index.
+No MAC objects are created for learned MACs; **Add object** on a MAC page
+still makes one by hand.
+
+### Uplinks {#uplinks}
+
+A trunk learns every MAC behind it, so an uplink must never be where a MAC
+"is". A port is an **uplink** when any of these holds:
+
+1. Its interface says **Uplink: Always**.
+2. Its LLDP neighbour is a switch: one whose announced capabilities include
+   bridge or router but **not** telephone - an IP phone announces bridge +
+   telephone and stays an access port - or a device Danbyte polls with a MAC
+   table. **LLDP switch neighbours mark uplinks** turns this rule off.
+3. It is a LAG aggregate or a LAG member.
+4. It learns more distinct MACs, counted across VLANs, than **Uplink above**
+   (default 4; 0 turns the count rule off).
+
+**Uplink: Never** on the interface beats rules 2-4, and **Always** beats
+everything (see [the interface form](../dcim/interfaces.md#add-an-interface)).
+The rules are evaluated when the table is read, from what the last poll
+stored and the current settings, so changing a setting applies without a
+re-poll. Every answer carries its reasons - *LLDP neighbour sw-core-01*,
+*6 MACs, above 4*, *Set on the interface*, *Aggregate*.
+
+An uplink's MACs are still stored: the port shows a count and lists them on
+demand, each with where it really sits. An uplink is never a MAC's
+[Location](#mac-location) while any switch reports the MAC on an access port,
+and it gets no switch-link suggestions.
+
+### Location {#mac-location}
+
+A MAC's **Location** is the port it really sits on: of its present sightings
+on devices you may view, an access port wins over an uplink; with several,
+a sighting that began after another was last seen replaces it (the MAC
+moved), one more than a day older than the newest is dropped (a switch that
+stopped answering), then the port with the fewest MACs, then the device and
+port name. When no switch reports it on an access port - a desk switch
+Danbyte doesn't poll, say - the Location falls back to the uplink with the
+fewest MACs, marked **behind uplink**, so the MAC is still found. See
+[Where is this MAC?](search-and-macs.md#where-is-this-mac).
+
+### Refresh MACs {#refresh-macs}
+
+**Refresh MACs** reads one device's whole MAC table - the full time budget
+and the per-VLAN tables - in the background, where Poll now has to be quick.
+On a stack member it refreshes the stack's owner. It needs **change** on the
+device, which the job checks again when it runs, so a permission revoked in
+the meantime stops it. One refresh per device runs at a time; asking again
+while one runs returns that run. A device an [Outpost](../monitoring/outposts.md)
+polls is queued for its Outpost, like Poll now. If the job queue is
+unavailable the refresh runs at once in the quick mode. There is no per-port
+refresh: SNMP cannot read one port's MACs without walking the whole table.
+
+### The API {#mac-api}
+
+| Endpoint | What it returns |
+|---|---|
+| `GET /api/monitoring/devices/<id>/macs/` | Learned MACs per port: each port's uplink state and reasons, its MAC count, how many are located there, and up to "MACs shown per port" MACs with vendor, VLANs, IPs, name, first and last seen, and where each really sits. `?view=observed` gives a stack owner's whole observation; `?limit=` overrides the per-port count (0 = all). Device view. |
+| `GET /api/monitoring/interfaces/<id>/macs/` | One port's MACs, `?state=present` (default) or `all` with the gone history, paged by `?cursor=` and `?limit=`, plus the port's uplink state. Interface view. |
+| `GET /api/monitoring/mac-sightings/` | The network-wide learned table, one row per MAC at its Location - see [the Learned list](search-and-macs.md#the-learned-list). |
+| `POST /api/monitoring/devices/<id>/mac-refresh/` | Starts [Refresh MACs](#refresh-macs): `202 {queued, run_id, running}`, or `{queued_on_outpost}` for an Outpost's device. |
+| `GET /api/monitoring/mac-refresh/<run_id>/` | The run: `status` (queued, running, done, unreachable, denied, skipped, error), `done`, `macs`, `ports`, `complete`, `error`. For the user who started it, or anyone who may view the device. |
+| `GET /api/monitoring/devices/<id>/snmp/` | Now also `fdb_polled_at` and `fdb_meta`; the raw table is not returned. |
 
 ## BMC hardware health (Redfish) {#redfish}
 
@@ -702,13 +852,18 @@ disk-status column is what you point the sensor at.
 
 ## Permissions {#permissions}
 
-- **Read** (poll, view observed facts, view drift, view topology) - any
-  authenticated member of the tenant.
+- **Read** (view observed facts, view drift, view topology, learned MACs per
+  device) - **view** on the device, within its site scope. A port's MAC list
+  needs view on the interface; the network-wide learned list needs view on
+  MAC addresses and lists only devices you may view.
+- **Poll now and Refresh MACs** - **`device.change`**. Refresh MACs checks it
+  again when the job runs.
 - **Accept drift** (reconcile observed → intended) - requires **`device.change`**.
   This is the one source-of-truth write in the whole feature, so it's gated like
   editing the device itself, not merely tenant membership.
+- **Uplink: Always / Never** - an interface edit, so **`interface.change`**.
 - **Manage profiles & bindings** - gated to users who can change the device /
-  manage settings.
+  manage settings. The MAC-tracking settings are tenant admin settings.
 
 Three more per-tenant policies (Monitoring settings → SNMP discovery, all
 off by default) shape how SNMP meets your source of truth:
@@ -721,7 +876,9 @@ off by default) shape how SNMP meets your source of truth:
 - **Interface MAC from the MAC table** - the MAC drift/sync value becomes the
   address *learned* on the port (the attached device, per the switch's MAC
   table) instead of the port's own hardware MAC. Ports with several learned
-  MACs are left alone.
+  MACs are left alone. Since 0.17 it reads the port's present
+  [sightings](#mac-tables), so the switch's own addresses never count as a
+  learner.
 
 Port access-VLANs resolve against your existing VLANs by VLAN ID - ungrouped
 first, then grouped (virt-sync groups excluded) - before a new ungrouped VLAN

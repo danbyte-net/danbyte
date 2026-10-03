@@ -2587,7 +2587,11 @@ export interface Interface {
   snmp_name: string
   /** Excluded from SNMP drift - never compared, never flagged stale. */
   snmp_ignore: boolean
+  /** Uplink: Always. With `never_uplink` this is the form's Automatic /
+   * Always / Never - both false is Automatic, both true is refused (#284). */
   is_uplink?: boolean
+  /** Uplink: Never - beats every automatic uplink rule. */
+  never_uplink?: boolean
   /** `evpn mh uplink`: fabric-facing on an EVPN multihomed leaf. */
   evpn_mh_uplink?: boolean
   /** Media type slug (e.g. 10gbase-x-sfpp), or "" if unset. */
@@ -2675,6 +2679,7 @@ export interface InterfaceWritePayload {
   snmp_name?: string
   snmp_ignore?: boolean
   is_uplink?: boolean
+  never_uplink?: boolean
   evpn_mh_uplink?: boolean
   mgmt_only?: boolean
   mark_connected?: boolean
@@ -3928,7 +3933,9 @@ export interface MacDetail {
     interface: { id: string; name: string } | null
   }[]
   /** SNMP sightings - the ARP/FDB rows on polled devices that carry this MAC.
-   * A MAC clicked on a monitoring card may exist only here. */
+   * A MAC clicked on a monitoring card may exist only here. Present and gone
+   * rows (the history) since #284; a device polled before 0.17 still answers
+   * from its old tables with `first_seen` null. */
   seen: {
     /** The polled owner - a device OR a VM (#139), never both. */
     device?: { id: string; name: string } | null
@@ -3936,7 +3943,23 @@ export interface MacDetail {
     source: "arp" | "fdb"
     ip?: string | null
     port?: string | null
+    interface?: { id: string; name: string } | null
+    vlan?: number | null
+    first_seen?: string | null
+    last_seen?: string | null
+    gone_at?: string | null
+    present?: boolean
+    /** fdb rows: is the port an access port or an uplink. */
+    role?: "access" | "uplink" | null
   }[]
+  /** Where the MAC really sits; null when no viewable switch reports it. */
+  location?: MacLocation | null
+  /** IPs the MAC answers to, with where each was learned. */
+  ips_observed?: ObservedIp[]
+  /** Names in label priority: known object, then DNS, then DHCP. */
+  names?: ObservedName[]
+  name?: string | null
+  name_source?: ObservedName["source"] | null
 }
 
 /** Full first-class MAC object - the `/api/mac-addresses/` CRUD serializer.
@@ -6018,6 +6041,9 @@ export interface SearchResponse {
   facets: { types: { type: string; label: string; count: number }[] }
   /** Offset for the next page, or null on the last one. */
   next_cursor: number | null
+  /** The canonical form of a MAC-shaped query (any notation), for the
+   * palette's "Look up MAC …" row (#284). */
+  mac?: string
 }
 
 // ─── Monitoring / check engine ─────────────────────────────────────────────
@@ -6349,6 +6375,16 @@ export interface MonitoringSettings {
   /** Devices whose merged ARP tables feed switch-link suggestions. */
   arp_source_devices?: string[]
   arp_source_devices_detail?: { id: string; name: string }[]
+  /** MAC tracking (#284): learned MACs listed per port before "+N more";
+   * 0 = all (0-64). */
+  mac_port_display_limit: number
+  /** "Uplink above": more distinct learned MACs than this makes a port an
+   * uplink; 0 turns the count rule off (0-4096). */
+  mac_uplink_threshold: number
+  /** An LLDP switch neighbour (not a phone) marks a port an uplink. */
+  mac_uplink_lldp: boolean
+  /** "Forget MACs unseen for" N days (1-365). */
+  mac_retention_days: number
   global_enabled: boolean
   default_interval_seconds: number
   stale_after_scans: number
@@ -7887,11 +7923,17 @@ export interface SnmpNeighbor {
   local_port: string
   remote_device: string
   remote_port: string
+  /** The local port as an ifIndex, from an agent that resolved it (#284). */
+  local_if_index?: string
+  /** The neighbour's announced LLDP capabilities, e.g. ["bridge"]. */
+  remote_caps?: string[] | string
 }
 export interface SnmpArpEntry {
   ip: string
   mac: string
   if_index: string
+  /** ipNetToMediaType from a current agent: dynamic, static, other. */
+  type?: string
 }
 
 export interface DeviceSnmp {
@@ -7909,6 +7951,304 @@ export interface DeviceSnmp {
   reachable: boolean | null
   error: string
   polled_at: string | null
+  /** The last complete MAC-table read (#284). */
+  fdb_polled_at?: string | null
+  /** How the last MAC-table read went; {} before the first read. */
+  fdb_meta?: MacTableMeta | Record<string, never>
+}
+
+// ─── MAC tracking (#284) ────────────────────────────────────────────────────
+
+/** SNMP profile `params` options for reading MAC tables. Absent keys take
+ * the collector's defaults (auto, 128 VLANs, 120 s). */
+export type MacVlanContexts = "auto" | "always" | "off"
+export interface SnmpMacParams {
+  mac_vlan_contexts?: MacVlanContexts
+  /** 1-1024 */
+  mac_max_vlans?: number
+  /** 5-600 seconds */
+  mac_budget_s?: number
+}
+
+/** `DeviceSnmp.fdb_meta` - how the last MAC-table read went. */
+export interface MacTableMeta {
+  /** qbridge | bridge | bridge-vlan | none, or legacy for an old agent. */
+  source: string
+  /** False = partial: the read stopped early and closed nothing. */
+  complete: boolean
+  truncated?: boolean
+  /** fdb-id | assumed | none - how FDB ids became VLANs. */
+  vlan_map?: string
+  port_map?: string
+  vlans?: { read: number[]; skipped: number[]; failed: number[] }
+  dropped?: Record<string, number>
+  rows?: number
+  elapsed_ms?: number
+  mode?: string
+  /** Why the read stopped early - names a VLAN, never a credential. */
+  error: string
+  /** An agent that predates MAC tracking (no VLANs). */
+  legacy: boolean
+  /** source "stack": a member's own poll - its stack owner records the
+   * table; this is the owner's id. */
+  owner?: string
+  /** What the core recorded: present MACs, opened/closed rows, ports. */
+  core?: {
+    present: number
+    opened?: number
+    closed?: number
+    ports?: number
+    dropped?: Record<string, number>
+  }
+  arp?: { complete: boolean; present: number; opened: number; closed: number }
+}
+
+export interface UplinkReason {
+  code: "always" | "lldp" | "lag" | "count"
+  /** Terse, ready to show: "LLDP neighbour sw-core-01", "6 MACs, above 4",
+   * "Set on the interface", "Aggregate", "LAG member". */
+  text: string
+  neighbor?: string
+  lag?: "aggregate" | "member"
+  count?: number
+  threshold?: number
+}
+
+/** A port's uplink state, evaluated on read. `mode` is the interface's
+ * Uplink setting; `reasons` are the rules that hold (kept under Never). */
+export interface UplinkState {
+  is: boolean
+  mode: "auto" | "always" | "never"
+  reasons: UplinkReason[]
+}
+
+/** Compact "where it really sits" for a table cell. */
+export interface MacLocationRef {
+  kind: "access" | "behind_uplink"
+  device: { id: string; name: string }
+  interface: { id: string; name: string } | null
+  port_name: string
+}
+
+export interface MacSightingRef {
+  device: { id: string; name: string }
+  interface: { id: string; name: string } | null
+  port_name: string
+  vlan: number | null
+  first_seen: string
+  last_seen: string
+  present: boolean
+  role: "access" | "uplink"
+  stale: boolean
+}
+
+/** The MAC page's Location. */
+export interface MacLocation extends MacLocationRef {
+  vlan: number | null
+  /** The Danbyte VLAN that VID means at the switch's site, when viewable. */
+  vlan_object: { id: string; name: string; vid: number } | null
+  since: string
+  last_seen: string
+  /** Last seen more than a day ago. */
+  stale: boolean
+  uplink: UplinkState
+  /** The MAC's other present sightings. */
+  others: MacSightingRef[]
+}
+
+export interface ObservedIpSource {
+  kind: "arp" | "dhcp_lease" | "dhcp_reservation" | "ipaddress"
+  /** arp: the device/VM whose table has it - null when not viewable. */
+  device?: { id: string; name: string } | null
+  vm?: { id: string; name: string } | null
+  hostname?: string
+  name?: string
+  /** ipaddress: the paired IP address's id. */
+  id?: string
+  last_seen?: string | null
+}
+
+export interface ObservedIp {
+  ip: string
+  /** A viewable IP address row with this address, when there is one. */
+  ip_id: string | null
+  last_seen: string | null
+  sources: ObservedIpSource[]
+}
+
+export interface ObservedName {
+  name: string
+  source:
+    | "interface"
+    | "vminterface"
+    | "macaddress"
+    | "dns"
+    | "dns_record"
+    | "dhcp_lease"
+    | "dhcp_reservation"
+  ip?: string
+}
+
+/** One MAC in a port's cell. */
+export interface LearnedMac {
+  mac: string
+  vendor: MacVendor | null
+  /** Every VLAN it was seen in on this port (a phone in voice + data VLAN
+   * is one line). */
+  vlans: number[]
+  ips: { ip: string; id: string | null }[]
+  name: string | null
+  name_source: ObservedName["source"] | null
+  first_seen: string
+  last_seen: string
+  /** Located on this port. */
+  here: boolean
+  /** Where it really sits, when not here. */
+  location: MacLocationRef | null
+}
+
+/** One port in `GET /api/monitoring/devices/<id>/macs/`. */
+export interface PortMacs {
+  interface_id: string | null
+  interface_name: string | null
+  /** The stack member that owns the port (null for an LLDP-only row). */
+  device_id: string | null
+  port_name: string
+  port_key: string
+  if_index: string
+  uplink: UplinkState
+  /** Distinct MACs learned on the port. */
+  count: number
+  /** How many of them are located here. */
+  located: number
+  /** Up to `limit` MACs; always empty on an uplink (show the count). */
+  macs: LearnedMac[]
+}
+
+export interface DeviceMacs {
+  device: { id: string; name: string }
+  /** A stack member reads its owner's observation. */
+  polled_via: { id: string; name: string } | null
+  view: "member" | "observed"
+  /** The last complete read. */
+  read_at: string | null
+  polled_at: string | null
+  stale: boolean
+  meta: MacTableMeta | Record<string, never>
+  /** The tenant's "MACs shown per port" unless overridden; 0 = all. */
+  limit: number
+  macs: number
+  ports: PortMacs[]
+}
+
+/** A row of `GET /api/monitoring/interfaces/<id>/macs/`. */
+export interface InterfaceMacRow {
+  id: string
+  mac: string
+  vendor: MacVendor | null
+  vlan: number | null
+  vlan_object: { id: string; name: string; vid: number } | null
+  ips: { ip: string; id: string | null }[]
+  name: string | null
+  name_source: ObservedName["source"] | null
+  first_seen: string
+  last_seen: string
+  gone_at: string | null
+  state: "present" | "gone"
+  stale: boolean
+  here: boolean
+  location: MacLocationRef | null
+}
+
+export interface InterfaceMacs {
+  interface: { id: string; name: string; device: { id: string; name: string } }
+  uplink: UplinkState
+  counts: { present: number; all: number }
+  read_at: string | null
+  stale: boolean
+  state: "present" | "all"
+  results: InterfaceMacRow[]
+  next_cursor: number | null
+}
+
+/** A row of the network-wide Learned list (`/api/monitoring/mac-sightings/`). */
+export interface MacSightingRow {
+  mac: string
+  vendor: MacVendor | null
+  state: "present" | "gone"
+  kind: "access" | "behind_uplink" | null
+  device: { id: string; name: string }
+  interface: { id: string; name: string } | null
+  port_name: string
+  vlan: number | null
+  vlan_object: { id: string; name: string; vid: number } | null
+  ips: { ip: string; id: string | null }[]
+  name: string | null
+  name_source: ObservedName["source"] | null
+  first_seen: string
+  last_seen: string
+  gone_at: string | null
+  stale: boolean
+}
+
+export interface MacSightingPage {
+  count: number
+  page: number
+  page_size: number
+  num_pages: number
+  results: MacSightingRow[]
+}
+
+/** `POST /api/monitoring/devices/<id>/mac-refresh/`. */
+export type MacRefreshStart =
+  | {
+      queued: true
+      run_id: string
+      /** A refresh was already running; this is its run. */
+      running: boolean
+      device: { id: string; name: string }
+    }
+  | {
+      queued: true
+      queued_on_outpost: true
+      engine: string
+      engine_stale: boolean
+      detail: string
+    }
+  | {
+      queued: false
+      inline: true
+      run_id: null
+      device: { id: string; name: string }
+      status: "done" | "unreachable"
+      macs: number
+      ports: number
+      complete: boolean
+      error: string
+    }
+
+/** `GET /api/monitoring/mac-refresh/<run_id>/`. */
+export interface MacRefreshRun {
+  run_id: string
+  found: boolean
+  done: boolean
+  status:
+    | "queued"
+    | "running"
+    | "done"
+    | "unreachable"
+    | "denied"
+    | "skipped"
+    | "error"
+    | "unknown"
+  device?: { id: string; name: string }
+  queued_at?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  macs?: number
+  ports?: number
+  complete?: boolean | null
+  error?: string
 }
 
 export interface DeploymentSettings {

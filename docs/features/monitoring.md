@@ -872,6 +872,23 @@ defaults**.
 | **Skip statuses** | IP statuses whose IPs should never be checked. |
 | **Reverse-DNS sync** | Keep IPs' DNS names current automatically (see below). |
 | **Discovery & cleanup** | Auto-discovery and stale-IP cleanup options (see below). |
+| **MAC tracking** | How learned MACs are shown, which ports count as uplinks, and how long they are kept (see below). |
+
+### MAC tracking {#mac-tracking}
+
+Settings for the learned MAC tables SNMP discovery keeps - see
+[MAC tables](snmp-discovery.md#mac-tables). They apply on the next read; no
+re-poll is needed.
+
+| Setting | Default | What it does |
+|---|---|---|
+| **MACs shown per port** | 4 | How many learned MACs a port lists before *+N more*. 0 lists them all. (`mac_port_display_limit`, 0-64) |
+| **Uplink above** | 4 | A port that learns more distinct MACs than this counts as an [uplink](snmp-discovery.md#uplinks). 0 turns the count rule off. (`mac_uplink_threshold`, 0-4096) |
+| **LLDP switch neighbours mark uplinks** | On | A port whose LLDP neighbour is a switch - not a phone - counts as an uplink. (`mac_uplink_lldp`) |
+| **Forget MACs unseen for** | 30 days | Learned MACs and ARP entries nobody has seen for this long are dropped by the daily prune. (`mac_retention_days`, 1-365) |
+
+"Uplink above" replaces the fixed limit of four MACs that switch-link
+suggestions used before 0.17, with the same default.
 
 ### Flapping {#flapping}
 
@@ -1273,7 +1290,9 @@ and plugin directory, retention windows) are set by an administrator - see
 Check history is high-volume (hundreds of thousands of raw results per day on a
 busy install), so Danbyte automatically prunes old results (default **30 days**,
 `MONITORING_RESULT_RETENTION_DAYS`) and old status-change records (default 365
-days, kept longer as an audit timeline) on a schedule. The rolled-up per-check
+days, kept longer as an audit timeline) on a schedule. The same daily prune
+ages learned MACs and ARP entries by each tenant's
+[Forget MACs unseen for](#mac-tracking) setting. The rolled-up per-check
 state, the status-change timeline and the [rollups](#rollups) carry the
 long-term story; raw results only need to cover the sparkline/history windows.
 

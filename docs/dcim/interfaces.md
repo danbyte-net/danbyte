@@ -113,7 +113,7 @@ The State checkboxes:
 | **Management only** | Out-of-band management port; excluded from data-plane views. Still a port in [port utilization](devices.md#the-device-page), like a disabled one. |
 | **Mark connected** | A cable is physically in the port, just not documented yet - counts as connected in [port utilization](devices.md#the-device-page) and clears itself when a real cable is attached. |
 | **Reserved** | A [port reservation](cabling.md#port-reservations) - hold the port before the far end is known. Released automatically when a cable lands. |
-| **Uplink** | Faces other network gear - discovery never suggests hosts on this port, and topology treats it as an infrastructure link. |
+| **Uplink** | **Automatic** (default), **Always** or **Never**. Automatic leaves it to the [uplink rules](../features/snmp-discovery.md#uplinks) - an LLDP switch neighbour, a LAG, more learned MACs than *Uplink above*. **Always** marks the port as facing other network gear: discovery never suggests hosts on it, a MAC is located on it only as *behind uplink* when no access port reports it, and topology treats it as an infrastructure link. **Never** keeps a port an access port whatever the rules say - a server bond, a desk with a phone, PC and printer - so the MACs it learns are located there. |
 
 Bulk add is the one to use for a whole
 switch face: it does the work server-side, keeps zero-padding, and skips
@@ -127,6 +127,9 @@ dialog that applies your changes to every selected interface.
 
 Each field starts on **Keep current** and is left untouched unless you change it,
 so you can retype one field across 48 ports without disturbing the rest.
+**Uplink** takes Automatic, Always or Never the same way; over the API
+(`POST /api/interfaces/bulk-update/`) setting `is_uplink` clears `never_uplink`
+and the other way round, and asking for both is refused.
 Choice-backed fields - type, 802.1Q mode, duplex - are searchable dropdowns
 listing the real values, grouped the same way as the single-interface form; each
 also offers a **Clear** row to blank the field. Free-text fields (speed,
@@ -161,6 +164,11 @@ rest while the interface names stay readable.
 Click an interface name to open its page. It shows the device, type, speed, MTU,
 VLAN, MAC, description, any parent/LAG/bridge relationships, the IPs assigned to
 it, and a cable trace.
+
+The MACs a switch learned on the port - present ones, or with their history -
+come from `GET /api/monitoring/interfaces/<id>/macs/?state=present|all`, with
+the port's uplink state and its reasons; on an uplink each MAC says where it
+really sits. See [MAC tables](../features/snmp-discovery.md#mac-tables).
 
 The **IP addresses** tab is the same IP table as the device's **IPs** tab, with
 only this interface's addresses: Address, Designation, Status, Monitoring,
