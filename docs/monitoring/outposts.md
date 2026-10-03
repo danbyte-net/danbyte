@@ -176,8 +176,10 @@ on **whether `fdb_meta` is there**: a result without it comes from an agent
 that predates MAC tracking and is read the old way - no VLANs, the core
 filters out the switch's own and group addresses, and the read counts as
 complete only when it returned rows, so an empty table from an old agent never
-closes anything. The same goes for ARP without `arp_meta`. Additive - no protocol bump; re-sync `danbyte_checks` into
-the agent and release it to get VLANs and the per-VLAN tables.
+closes anything. The same goes for ARP without `arp_meta`. Additive - no protocol bump.
+**Outpost 0.9.0** is the first agent that sends all of this, VLANs and
+per-VLAN tables included; upload it under Governance → Monitoring engines →
+Outpost versions and roll it out to the sites whose switches it polls.
 
 The core accepts SNMP results only for the devices that Outpost polls - the
 ones its work list hands out (`devices_for_engine`). A result for any other
