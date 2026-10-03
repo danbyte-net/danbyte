@@ -264,6 +264,24 @@ step_end ok
 
 # ── 4. quiesce - from here nothing writes but this stage ────────────────────
 step_begin quiesce 35
+# A host that just booted is often still installing its updates, and
+# needrestart restarts PostgreSQL when they touch it - mid-migrate, that
+# failed the upgrade. Wait for the system's package run while everything is
+# still up; past the limit, stop here, retryable, with nothing stopped.
+apt_busy() {
+  for _u in apt-daily-upgrade.service apt-daily.service; do
+    [ "$(systemctl show -p ActiveState --value "$_u" 2>/dev/null)" = activating ] && return 0
+  done
+  return 1
+}
+_waited=0
+while apt_busy; do
+  [ "$_waited" -ge "${DANBYTE_UPGRADE_APT_WAIT:-1200}" ] \
+    && fail "the system is still installing package updates - upgrade once they are done" true
+  [ "$_waited" -eq 0 ] && log "waiting for the system's package updates to finish"
+  sleep 10
+  _waited=$((_waited + 10))
+done
 record_units
 j_set quiesced 1
 stop_all || fail "the services did not stop: $(tail -n 3 "$LOG" | tr '\n' ' ')"
@@ -362,6 +380,15 @@ if fault migrate3; then
 fi
 run 7200 "$PY" manage.py upgrade_migrate
 _rc=$?
+# The database went away mid-migrate (a package update restarting PostgreSQL)
+# and the migration rolled back whole: wait for it and try once more.
+if [ "$_rc" = 3 ] && grep -qiE "server closed the connection|terminating connection|connection to server|could not connect to server|connection refused" "$OUT"; then
+  warn "the database restarted during the migration; trying it once more"
+  if run 300 "$PY" "$TOOL" wait-db 240; then
+    run 7200 "$PY" manage.py upgrade_migrate
+    _rc=$?
+  fi
+fi
 case "$_rc" in
   # Nothing pending: the database is as it was, and there is no snapshot to
   # restore - a later failure rolls back the code only (#278).
@@ -489,6 +516,9 @@ trap '' INT TERM HUP
 unit_loaded danbyte-search-reindex.service && sc start --no-block danbyte-search-reindex.service
 run 900 "$PY" manage.py housekeeping || warn "housekeeping: $(tail_out)"
 run 120 "$PY" manage.py upgrade_notes || :
+# install.sh's root unit takes over now and does the steps that need root;
+# the list above names them before it clears them.
+[ "$TRIGGER" != installer ] || log "the installer runs the steps that need root next"
 if [ "$KIND" = bundle ]; then
   cp "$STATE_DIR/new.list" "$APP/.release-files" 2>/dev/null || :
   if [ -n "$TARBALL" ]; then rm -f "$TARBALL"; fi
@@ -502,5 +532,7 @@ log "now on $VERSION"
 remove_recover
 finish "done"
 rm -rf "$WORK"
+# A run that failed earlier was kept for its log; this one succeeded.
+find "$UPG_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name recover -exec rm -rf {} + 2>/dev/null
 tidy_root
 exit 0

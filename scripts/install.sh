@@ -151,8 +151,10 @@ if [ "$need_pkg" -eq 1 ]; then
   if command -v apt-get >/dev/null 2>&1; then
     # A fresh image's package lists are usually older than the archive;
     # without a refresh the install fails on 404s for packages that moved.
-    DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
-    DEBIAN_FRONTEND=noninteractive apt-get install -y $PKGS \
+    # A host that just booted is often still installing its own updates and
+    # holds the dpkg lock: wait for it rather than fail.
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 update -qq >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y $PKGS \
       || die "apt could not install $PKGS - install them, then re-run."
   else
     die "$PKGS missing and apt-get not found - pre-install them."
@@ -165,7 +167,7 @@ systemctl enable --now postgresql redis-server >/dev/null 2>&1 || true
 # label printing works on fresh installs and existing upgrades alike.
 if command -v apt-get >/dev/null 2>&1; then
   step "PDF rendering libraries (WeasyPrint: pango/cairo/gdk-pixbuf)"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y \
     libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
     libffi8 fonts-dejavu-core \
     || warn "Could not install WeasyPrint libraries - label PDF printing may fail until they're present."

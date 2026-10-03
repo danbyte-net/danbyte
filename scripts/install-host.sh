@@ -50,6 +50,7 @@ done
 [ -n "$APP" ] && [ -n "$SVC_USER" ] && [ -n "$VERSION" ] \
   || { echo "install-host: --app, --user and --version are required" >&2; exit 2; }
 SVC_UID=$(id -u "$SVC_USER" 2>/dev/null) || { echo "install-host: no user $SVC_USER" >&2; exit 2; }
+SVC_GID=$(id -g "$SVC_USER" 2>/dev/null) || SVC_GID=$SVC_UID
 STATUS="$APP/.upgrade-status.json"
 STAMP="$R/etc/danbyte/host-sync.json"
 INSTALL_HINT="sudo ./install.sh --host-only from the bundle of $VERSION, or sudo make -C $APP host-sync"
@@ -60,11 +61,15 @@ say() {
   if [ -n "$LOG" ]; then printf '%s\n' "$*" >>"$LOG"; fi
   return 0
 }
-field() {  # <key>: a string field of the upgrade status
-  sed -n "s/.*\"$1\": *\"\\([^\"]*\\)\".*/\\1/p" "$STATUS" 2>/dev/null | head -n 1
+field() {  # <key>: a string field of the upgrade status, quotes and backslashes unescaped
+  sed -n 's/.*"'"$1"'": *"\(\([^"\\]\|\\.\)*\)".*/\1/p' "$STATUS" 2>/dev/null | head -n 1 \
+    | sed 's/\\"/"/g; s/\\\\/\\/g'
 }
+# As the service user without a PAM session: runuser opens one per call,
+# and polling every 2 s filled the journal with session lines.
 user_sc() {
-  runuser -u "$SVC_USER" -- env XDG_RUNTIME_DIR="/run/user/$SVC_UID" \
+  setpriv --reuid="$SVC_UID" --regid="$SVC_GID" --init-groups \
+    env XDG_RUNTIME_DIR="/run/user/$SVC_UID" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$SVC_UID/bus" systemctl --user "$@"
 }
 recovery_pending() {

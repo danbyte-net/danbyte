@@ -197,6 +197,11 @@ case "$1" in
           [ "${FAKE_PENDING:-1}" = 0 ] || echo "schema=partial" >"$FAKE_ROOT/db.state"
           sleep "$FAKE_MIGRATE_SLEEP"
         fi
+        if [ -n "${FAKE_MIGRATE_FLAKY:-}" ] && [ ! -f "$FAKE_ROOT/flaky-done" ]; then
+          : >"$FAKE_ROOT/flaky-done"
+          echo "django.db.utils.OperationalError: server closed the connection unexpectedly"
+          exit 3
+        fi
         rc=${FAKE_MIGRATE_RC:-0}
         # Nothing pending changes nothing.
         [ "$rc" = 3 ] || [ "${FAKE_PENDING:-1}" = 0 ] || echo "schema=v2" >"$FAKE_ROOT/db.state"
@@ -766,6 +771,40 @@ class BundleStageTests(StageTestCase):
         self.assertEqual(h.state("danbyte-web.service")[0], "enabled")
         self.assertEqual(h.status()["outcome"]["code"], "restored")
         self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
+
+    def test_a_success_removes_an_earlier_failed_runs_folder(self):
+        # N4: the folder kept for a failed run's log outlived every later success.
+        h = self.host()
+        left = h.home / ".danbyte-upgrade" / "20200101T000000Z-0.16.13"
+        left.mkdir(parents=True)
+        (left / "upgrade.log").write_text("failed\n")
+        r = h.upgrade()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse((h.home / ".danbyte-upgrade").exists())
+
+    def test_package_updates_hold_the_upgrade_before_anything_stops(self):
+        # N1: needrestart restarted PostgreSQL mid-migrate on a host still
+        # installing its boot-time updates.
+        h = self.host()
+        (h.sd / "apt-daily-upgrade.service.active").write_text("activating\n")
+        r = h.upgrade(env={"DANBYTE_UPGRADE_APT_WAIT": "0"})
+        self.assertEqual(r.returncode, 1)
+        st = h.status()
+        self.assertIn("still installing package updates", st["error"])
+        self.assertTrue(st["retryable"], st)
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service"), ("enabled", "active"), unit)
+        self.assertFalse(h.called(r"^systemctl --user stop "))
+
+    def test_a_migration_cut_off_by_a_database_restart_runs_once_more(self):
+        h = self.host()
+        r = h.upgrade(env={"FAKE_MIGRATE_FLAKY": "1"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(h.status()["state"], "done")
+        runs = [c for c in h.calls_list() if c == "py manage.py upgrade_migrate"]
+        self.assertEqual(len(runs), 2)
+        self.assertOrder(h, r"^py manage.py upgrade_migrate$", r"^py dbtool wait-db",
+                         r"^py manage.py upgrade_migrate$")
 
     def test_run_folders_are_the_service_accounts_alone(self):
         # #281: a run folder gets a full database snapshot, and one an older

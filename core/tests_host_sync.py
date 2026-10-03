@@ -52,6 +52,8 @@ done
 exit 0
 """,
     "runuser": '#!/bin/sh\nwhile [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n',
+    "setpriv": '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in --*) shift ;; *) break ;; esac; done\n'
+               'exec "$@"\n',
     "id": '#!/bin/sh\n[ "$1" = -u ] && [ $# -eq 1 ] && { echo 0; exit 0; }\n[ "$1" = -u ] && { echo 1000; exit 0; }\nexec /usr/bin/id "$@"\n',
     "install": """#!/bin/sh
 # root's owner and group are not ours to give in a test
@@ -331,6 +333,14 @@ class InstallHostTests(HostSandbox):
         self.assertNotIn("daemon-reload", self.calls.read_text())
         self.assertEqual((self.runs / "run.log.rc").read_text().strip(), "1")
         self.assertFalse((self.app / ".upgrade.lock").exists())   # its own lock goes all the same
+
+    def test_a_failure_summary_keeps_the_quotes_in_its_error(self):
+        # The status writes `"` as `\"`; the summary used to stop at the first.
+        self.status("failed", error='could not swap "frontend/dist": no space left on device')
+        self.lock("installer-1")
+        r = self.finish(*self.upgrade_args())
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn('could not swap "frontend/dist": no space left on device', r.stdout)
 
     def test_it_waits_for_a_recovery_and_keeps_a_lock_that_is_not_its_own(self):
         self.sync("--fresh", "--host", "db.example.test")

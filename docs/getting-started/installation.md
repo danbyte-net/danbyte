@@ -102,7 +102,7 @@ The other tabs cover building from source and a local dev checkout.
 
         **What the installer does**, in order:
 
-        1. Installs OS services from your distro - `postgresql`, `redis-server`, and (unless `--no-nginx`) `nginx`.
+        1. Installs OS services from your distro - `postgresql`, `redis-server`, and (unless `--no-nginx`) `nginx`. On a host that just booted and is still installing its own updates, it waits up to 15 minutes for the package lock instead of failing.
         2. Creates the dedicated **`danbyte`** service user (rootless), home = the install path.
         3. Deploys the app to `<service-home>/danbyte` and builds the venv from the bundle's vendored CPython 3.13 + wheelhouse (no internet needed).
         4. **Generates secrets** with Python's CSPRNG and writes a `chmod 600`, service-user-owned `.env` - `DJANGO_SECRET_KEY` + `MONITORING_SECRET_KEY` (~400-bit), a 24-char DB password, and a 20-char admin password.

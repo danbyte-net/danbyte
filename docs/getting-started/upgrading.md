@@ -355,16 +355,16 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 | preflight | refuses an older release than the one running, inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk; installs the recovery unit | up |
 | backup | the pre-upgrade backup, with the running code; when the launcher took it before handing over, the step shows that run and its duration | up |
 | prepare | git: `npm ci` and the frontend build in a scratch copy; dependencies resolved (bundle: checked offline); a copy of the virtualenv | up |
-| quiesce | timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |
+| quiesce | first, while the system is still installing its own package updates (`apt-daily`, unattended-upgrades - a host that just booted), it waits for them, up to 20 minutes, with everything still up, since a package update can restart PostgreSQL; past that it stops, retryable, with nothing stopped. Then timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |
 | swap | the new code, frontend, static files and (bundle) vendor/ in place; the old ones kept aside; files the release no longer ships moved aside; new unit files linked | maintenance page |
 | deps, check | dependencies installed, `manage.py check`, the migration plan | maintenance page |
 | snapshot | `pg_dump` of the database - only when migrations are pending - into the run folder beside the app, which only the service user can read | maintenance page |
-| migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was | maintenance page |
+| migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was; a migration that lost its database to a restart and rolled back whole runs once more | maintenance page |
 | static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
 | verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |
 | start | web, websockets, frontend, docs, workers - while the site still answers 503; `/api/health/` must say `ok` with the new version, the admin page must render, and nothing may keep restarting | 503 |
 | resume | the site opens; the timers that ran before start again (a timer you turned off stays off); a release's new timers are turned on | up |
-| done | the search index rebuilt in the background, housekeeping, the after-upgrade steps listed; the work folder, the recovery units and their lock removed, so nothing is left beside the app | up |
+| done | the search index rebuilt in the background, housekeeping, the after-upgrade steps listed; the work folder, the folder an earlier failed run kept for its log, the recovery units and their lock removed, so nothing is left beside the app | up |
 
 **If a step before *resume* fails**, everything goes back as it was and
 what ran before starts again. The database is restored from the snapshot
