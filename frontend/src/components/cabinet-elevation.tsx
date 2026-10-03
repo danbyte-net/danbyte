@@ -9,6 +9,7 @@ import {
 import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react"
 
 import type { DinProfile } from "@/lib/api"
+import { plateView } from "@/lib/cabinet-drawing"
 import { PROFILE_LABELS, band, clampToPlate, fmtMm } from "@/lib/din-geometry"
 import { cn } from "@/lib/utils"
 import {
@@ -68,36 +69,8 @@ export interface CabinetElevationProps {
   className?: string
 }
 
-/** The drawing's frame, mm, from the plate's top-left corner: the box,
- * centred on the plate, when both its sides are known, else the plate - with
- * a margin so the outline's own pixel is never cut off. */
-export function plateView(
-  width: number,
-  height: number,
-  outerWidth?: number | null,
-  outerHeight?: number | null
-): {
-  x: number
-  y: number
-  w: number
-  h: number
-  box: { w: number; h: number } | null
-} {
-  const box =
-    outerWidth != null && outerHeight != null
-      ? { w: Math.max(outerWidth, width), h: Math.max(outerHeight, height) }
-      : null
-  const frameW = box?.w ?? width
-  const frameH = box?.h ?? height
-  const pad = Math.max(frameW, frameH) * 0.01
-  return {
-    x: -(frameW - width) / 2 - pad,
-    y: -(frameH - height) / 2 - pad,
-    w: frameW + 2 * pad,
-    h: frameH + 2 * pad,
-    box,
-  }
-}
+// The frame is the exported drawing's too (lib/cabinet-drawing.ts).
+export { plateView }
 
 /** Screen pixels as plate millimetres, at the size the plate is drawn. */
 const PlatePx = createContext<(n: number) => number>((n) => n)

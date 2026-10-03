@@ -4,7 +4,7 @@ import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { RackSyncTypeButton } from "@/components/rack-sync-type-button"
 import { useQuery } from "@tanstack/react-query"
-import { Camera, Minus, Pencil, Plus, Trash2 } from "lucide-react"
+import { Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import {
   Suspense,
   lazy,
@@ -40,8 +40,8 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { FormCheckbox } from "@/components/forms"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
-import { downloadPng } from "@/lib/png-export"
-import { BarButton, BarIconButton } from "@/components/map-toolbar"
+import { BarIconButton } from "@/components/map-toolbar"
+import { RackExportMenu } from "@/components/rack-export-menu"
 import { Loading } from "@/components/loading"
 import { useMe } from "@/lib/use-me"
 
@@ -443,13 +443,6 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
     setZoom(ZOOM_STEPS[next])
   }
 
-  // Snapshot both faces to a PNG, theme-aware background.
-  const exportPng = async () => {
-    const el = facesRef.current
-    if (!el) return
-    await downloadPng(el, `${rack.name}-elevation.png`)
-  }
-
   return (
     <section className="min-w-0">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -506,10 +499,13 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                   <Plus />
                 </BarIconButton>
               </div>
-              <BarButton className="ml-auto" onClick={exportPng}>
-                <Camera />
-                <span className="sr-only @[34rem]:not-sr-only">PNG</span>
-              </BarButton>
+              <RackExportMenu
+                rack={rack}
+                mode={mode}
+                labels={labels}
+                snapshot={facesRef}
+                className="ml-auto"
+              />
             </div>
             <div ref={frameRef} className="overflow-auto">
               <div

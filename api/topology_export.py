@@ -2,25 +2,12 @@
 
 The browser draws the map as an SVG (``frontend/src/lib/diagram/svg.ts``,
 the same drawing as the SVG export) and posts it here with the paper and
-the title block's text. The server sanitizes it (``api/svg_sanitize.py``)
-and lays it out with WeasyPrint on one sheet of real paper: the drawing
-fitted to the printable area, under it a title block with the view, the
-tenant, the filters, the date, the Danbyte version and the page. A browser
-can't be made to print at a paper size - ``@page`` is advisory and the print
-dialog wins - so the size is baked into a PDF, as for labels and spec sheets.
-
-WeasyPrint reads nothing from the network or the disk on the caller's
-behalf: its URL fetcher serves the posted drawing from memory, decodes
-``data:`` URIs, reads device-type photos from ``MEDIA_ROOT`` (public images,
-#227) and the vendored Inter faces in ``api/pdf_fonts/`` (SIL OFL, static
-instances of the app's variable Inter so every weight embeds), and refuses
-everything else.
-
-Rendering is bounded three ways: the sanitizer's caps (what a drawing may
-cost as rendered), one render per user and ``RENDER_SLOTS`` across the
-deployment at a time (the cache counts them), and a hard deadline - the
-render runs in a forked child that is killed after ``RENDER_TIMEOUT``
-seconds, well inside gunicorn's worker timeout.
+the title block's text. ``api/drawing_pdf.py`` - which renders every
+drawing's PDF - sanitizes it and lays it out with WeasyPrint on one sheet of
+real paper: the drawing fitted to the printable area, under it a title block
+with the view, the tenant, the filters, the date, the Danbyte version and the
+page. There, too: what WeasyPrint may read, the caps, the render slots, the
+deadline and the print links.
 
 ``?print=1`` keeps the PDF in the cache for five minutes and answers with a
 link, ``GET /api/topology/export/pdf/<token>/``, that only the same user in
@@ -33,23 +20,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import mimetypes
-import multiprocessing
-import re
-import secrets
-import unicodedata
-from functools import lru_cache
-from html import escape
-from pathlib import Path
-from urllib.parse import unquote, urlsplit
-from urllib.request import DataHandler, Request, url2pathname
 
-from django.conf import settings
-from django.core.cache import cache
-from django.http import HttpResponse
+from django.core.cache import cache  # noqa: F401 - the print links' store
 from django.urls import reverse
 from django.utils import timezone
-from django.utils._os import safe_join
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -64,167 +38,51 @@ from rest_framework.response import Response
 
 from auth_api import rbac
 
-from .svg_sanitize import MAX_SVG_BYTES, SvgRejected, sanitize_svg
+from .drawing_pdf import (  # noqa: F401 - the sheet's names, as this module always had them
+    BASE_URL,
+    DIAGRAM_URL,
+    FONT_DIR,
+    FONT_RANGES,
+    FONT_WEIGHTS,
+    GAP_MM,
+    MARGIN_MM,
+    MAX_BODY_BYTES,
+    MAX_MEDIA_BYTES,
+    MAX_PDF_BYTES,
+    MAX_SCALE,
+    MEDIA_IMAGES_URL,
+    ORIENTATIONS,
+    PAPERS_MM,
+    PRINT_TTL,
+    PX_MM,
+    RENDER_LOCK_TTL,
+    RENDER_SLOTS,
+    RENDER_TIMEOUT,
+    TITLE_MM,
+    TITLE_W_MM,
+    PdfUrlFetcher,
+    RenderTimeout,
+    body_too_large,
+    deliver,
+    detail,
+    file_name,
+    file_slug,
+    kept_pdf,
+    plan_sheet,
+    render_guarded,
+    render_pdf,
+    run_with_deadline,
+    sheet_html,
+    svg_size,
+)
+from .drawing_pdf import font_files as _font_files  # noqa: F401
+from .svg_sanitize import MAX_SVG_BYTES, sanitize_svg
 from .views import _get_active_tenant
-
-# Paper sizes in mm, landscape (width, height).
-PAPERS_MM = {
-    "a4": (297.0, 210.0),
-    "a3": (420.0, 297.0),
-    "letter": (279.4, 215.9),
-    "tabloid": (431.8, 279.4),
-}
-ORIENTATIONS = ("landscape", "portrait")
-# The sheet, in mm - mirrored by frontend/src/lib/diagram/sheet.ts.
-MARGIN_MM = 10.0
-TITLE_MM = 14.0
-GAP_MM = 4.0
-TITLE_W_MM = 120.0
-# CSS px → mm at 96 dpi; a small map is enlarged to at most 1.5x that.
-PX_MM = 25.4 / 96
-MAX_SCALE = 1.5 * PX_MM
-
-# The whole request, and the finished PDF kept for a print link.
-MAX_BODY_BYTES = 10 * 1024 * 1024
-MAX_PDF_BYTES = 48 * 1024 * 1024
-PRINT_TTL = 300
-# A render is killed past this many seconds (gunicorn's timeout is 60).
-RENDER_TIMEOUT = 30
-# Renders at once across the deployment, and one per user; the locks
-# outlive a render that never released them.
-RENDER_SLOTS = 2
-RENDER_LOCK_TTL = RENDER_TIMEOUT + 60
 
 log = logging.getLogger(__name__)
 
-FONT_DIR = Path(__file__).resolve().parent / "pdf_fonts"
-FONT_WEIGHTS = (400, 500, 600, 700)
-# From @fontsource-variable/inter's @font-face rules.
-FONT_RANGES = {
-    "latin": (
-        "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,"
-        "U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,"
-        "U+2215,U+FEFF,U+FFFD"
-    ),
-    "latin-ext": (
-        "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,"
-        "U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,"
-        "U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
-    ),
-}
-
-# The origin WeasyPrint resolves against. `.invalid` never resolves; the
-# fetcher answers for it without a network.
-BASE_URL = "https://danbyte.invalid/"
-DIAGRAM_URL = BASE_URL + "_/diagram.svg"
-MEDIA_IMAGES_URL = BASE_URL + "media/device-type-images/"
-MAX_MEDIA_BYTES = 12 * 1024 * 1024
-
-_TOKEN = re.compile(r"^[A-Za-z0-9_-]{24,64}$")
-
 
 # ─── The sheet ──────────────────────────────────────────────────────────────
-
-
-def plan_sheet(
-    width_px: float,
-    height_px: float,
-    paper: str = "a3",
-    orientation: str = "landscape",
-    title_block: bool = True,
-) -> dict:
-    """Where a ``width_px``×``height_px`` drawing sits on the page, in mm:
-    fitted to the printable area (never enlarged past ``MAX_SCALE``), at its
-    top and centred across it, above the title block."""
-    pw, ph = PAPERS_MM[paper]
-    if orientation == "portrait":
-        pw, ph = ph, pw
-    aw = pw - 2 * MARGIN_MM
-    ah = ph - 2 * MARGIN_MM - (TITLE_MM + GAP_MM if title_block else 0)
-    w = max(float(width_px), 1.0)
-    h = max(float(height_px), 1.0)
-    scale = min(aw / w, ah / h, MAX_SCALE)
-    dw, dh = w * scale, h * scale
-    return {
-        "page": (pw, ph),
-        "area": (MARGIN_MM, MARGIN_MM, aw, ah),
-        "at": (MARGIN_MM + (aw - dw) / 2, MARGIN_MM, dw, dh),
-        "scale": scale,
-    }
-
-
-_ROOT = re.compile(rb"<svg\b[^>]*>")
-_ATTR = r'\s{}="([^"]*)"'
-_UNITS_PX = {"": 1.0, "px": 1.0, "pt": 96 / 72, "mm": 96 / 25.4, "cm": 96 / 2.54, "in": 96.0}
-
-
-def svg_size(svg: bytes) -> tuple[float, float]:
-    """The drawing's size in CSS px: the root's width and height, else its
-    viewBox, else a square."""
-    m = _ROOT.search(svg[:16384])
-    tag = m.group(0).decode("utf-8", "replace") if m else ""
-
-    def length(name):
-        m = re.search(_ATTR.format(name), tag)
-        u = m and re.match(r"^\s*([0-9.]+)\s*(px|pt|mm|cm|in)?\s*$", m.group(1))
-        return float(u.group(1)) * _UNITS_PX[u.group(2) or ""] if u else None
-
-    w, h = length("width"), length("height")
-    if not (w and h):
-        m = re.search(_ATTR.format("viewBox"), tag)
-        parts = m.group(1).replace(",", " ").split() if m else []
-        try:
-            w, h = float(parts[2]), float(parts[3])
-        except (IndexError, ValueError):
-            w = h = 1000.0
-    return max(w, 1.0), max(h, 1.0)
-
-
-@lru_cache(maxsize=1)
-def _font_files() -> dict[str, Path]:
-    """The vendored faces by resolved path - the only files WeasyPrint may
-    read."""
-    files = {}
-    for subset in FONT_RANGES:
-        for weight in FONT_WEIGHTS:
-            p = (FONT_DIR / f"inter-{subset}-{weight}.woff2").resolve()
-            if p.is_file():
-                files[str(p)] = p
-    return files
-
-
-@lru_cache(maxsize=16)
-def _font_bytes(path: str) -> bytes:
-    """A vendored face as plain TrueType, unpacked once per process: WOFF2
-    keeps the repository small, and unpacking all eight on every render
-    cost about 0.6 s."""
-    from io import BytesIO
-
-    from fontTools.ttLib import TTFont
-
-    font = TTFont(path)
-    font.flavor = None
-    out = BytesIO()
-    font.save(out)
-    return out.getvalue()
-
-
-def _font_faces() -> str:
-    faces = []
-    for subset, urange in FONT_RANGES.items():
-        for weight in FONT_WEIGHTS:
-            p = (FONT_DIR / f"inter-{subset}-{weight}.woff2").resolve()
-            if str(p) in _font_files():
-                faces.append(
-                    f'@font-face{{font-family:"Inter";font-style:normal;'
-                    f'font-weight:{weight};src:url("{p.as_uri()}");'
-                    f"unicode-range:{urange}}}"
-                )
-    return "".join(faces)
-
-
-def _stamp(when: dt.datetime) -> str:
-    return when.astimezone(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _sheet_html(
@@ -236,147 +94,26 @@ def _sheet_html(
     generated: dt.datetime,
     title_block: bool,
 ) -> str:
-    from danbyte import __version__
-
-    pw, ph = plan["page"]
-    ax, ay, aw, ah = plan["area"]
-    x, y, w, h = plan["at"]
-    mm = lambda v: f"{v:.3f}mm"  # noqa: E731
-    block = ""
-    if title_block:
-        sub = " · ".join(s for s in (tenant, filters) if s)
-        small = " · ".join((_stamp(generated), f"Danbyte {__version__}", "Page 1 / 1"))
-        block = (
-            '<div class="block">'
-            f'<div class="t">{escape(title)}</div>'
-            f'<div class="s">{escape(sub)}</div>'
-            f'<div class="m">{escape(small)}</div>'
-            "</div>"
-        )
-    # Positions are relative to the page area (inside the 10 mm margin).
-    return (
-        "<!doctype html><html><head><meta charset='utf-8'>"
-        f"<title>{escape(title)}</title>"
-        f"<meta name='generator' content='Danbyte {escape(__version__)}'>"
-        "<style>"
-        f"{_font_faces()}"
-        f"@page{{size:{mm(pw)} {mm(ph)};margin:{mm(MARGIN_MM)}}}"
-        "html,body{margin:0;padding:0}"
-        "body{font-family:Inter,'DejaVu Sans',sans-serif;color:#18181b}"
-        f".sheet{{position:relative;width:{mm(pw - 2 * MARGIN_MM)};"
-        f"height:{mm(ph - 2 * MARGIN_MM - 0.5)};overflow:hidden}}"
-        f".drawing{{position:absolute;display:block;left:{mm(x - ax)};"
-        f"top:{mm(y - ay)};width:{mm(w)};height:{mm(h)}}}"
-        f".block{{position:absolute;right:0;bottom:0;"
-        f"width:{mm(min(TITLE_W_MM, aw))};height:{mm(TITLE_MM)};"
-        "box-sizing:border-box;border:0.25mm solid #d4d4d8;border-radius:1mm;"
-        "padding:1.4mm 2.5mm 0;text-align:right}"
-        ".block div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
-        ".t{font-size:11pt;font-weight:700;line-height:1.2}"
-        ".s{font-size:7.5pt;color:#52525b;line-height:1.35}"
-        ".m{font-size:7pt;color:#71717a;line-height:1.35}"
-        "</style></head><body><div class='sheet'>"
-        f"<img class='drawing' src='{DIAGRAM_URL}' alt=''>"
-        f"{block}</div></body></html>"
+    """The topology's sheet: the tenant and the filters under the title."""
+    return sheet_html(
+        plan,
+        title=title,
+        subtitle=" · ".join(s for s in (tenant, filters) if s),
+        generated=generated,
+        title_block=title_block,
     )
 
 
-# ─── The URL fetcher ────────────────────────────────────────────────────────
-
-
-def _response(url: str, body: bytes, mime: str):
-    """What WeasyPrint's fetchers return: a URLFetcherResponse (69+), else
-    the older dict."""
-    try:
-        from weasyprint.urls import URLFetcherResponse
-    except ImportError:  # WeasyPrint < 69
-        return {"string": body, "mime_type": mime, "redirected_url": url}
-    return URLFetcherResponse(url, body, {"Content-Type": mime})
-
-
-class PdfUrlFetcher:
-    """WeasyPrint's only way out: the posted drawing, ``data:`` URIs, the
-    vendored fonts and device-type photos. Anything else - http(s), other
-    files, other media - raises, and WeasyPrint leaves it out."""
-
-    def __init__(self, svg: bytes):
-        self.svg = svg
-
-    def __call__(self, url: str):
-        if url == DIAGRAM_URL:
-            return _response(url, self.svg, "image/svg+xml")
-        scheme = url.split(":", 1)[0].lower()
-        if scheme == "data":
-            with DataHandler().data_open(Request(url)) as res:
-                return _response(url, res.read(), res.headers.get_content_type())
-        if scheme == "file":
-            path = str(Path(url2pathname(urlsplit(url).path)).resolve())
-            if path not in _font_files():
-                raise ValueError("Only the vendored fonts are readable.")
-            return _response(url, _font_bytes(path), "font/ttf")
-        if url.startswith(MEDIA_IMAGES_URL) and "?" not in url and "#" not in url:
-            return self._media(url)
-        raise ValueError(f"Refused to fetch {url[:80]}")
-
-    @staticmethod
-    def _media(url: str):
-        rel = unquote(url[len(MEDIA_IMAGES_URL) :])
-        if not rel or ".." in rel.split("/") or rel.startswith("/"):
-            raise ValueError("Bad media path.")
-        mime = mimetypes.guess_type(rel)[0]
-        if mime not in ("image/png", "image/jpeg", "image/webp"):
-            raise ValueError("Not a photo.")
-        path = Path(safe_join(str(settings.MEDIA_ROOT), "device-type-images", rel))
-        if not path.is_file() or path.stat().st_size > MAX_MEDIA_BYTES:
-            raise ValueError("No such photo.")
-        return _response(url, path.read_bytes(), mime)
-
-
-class RenderTimeout(Exception):
-    """The render ran past its deadline and was stopped."""
-
-
-def _render_child(conn, kwargs: dict) -> None:
-    """The forked renderer: the PDF, or why not, back through ``conn``."""
-    try:
-        conn.send((True, render_topology_pdf(**kwargs)))
-    except BaseException as exc:  # noqa: BLE001 - reported to the parent
-        conn.send((False, f"{type(exc).__name__}: {exc}"))
-    finally:
-        conn.close()
+def _render(svg: bytes, **kwargs) -> bytes:
+    # Looked up when called, so the child renders what this module names.
+    return render_topology_pdf(svg, **kwargs)
 
 
 def render_with_deadline(svg: bytes, *, timeout: float = RENDER_TIMEOUT, **kwargs) -> bytes:
     """:func:`render_topology_pdf` in a forked child that is killed after
-    ``timeout`` seconds (:class:`RenderTimeout`), so no drawing holds a web
-    worker until gunicorn kills it. WeasyPrint and the unpacked fonts are
-    loaded here first and the child inherits them. Without ``fork`` (not
-    Linux) it renders in place."""
-    import weasyprint  # noqa: F401 - loaded once per worker, not per child
-
-    for path in _font_files():
-        _font_bytes(path)
-    if "fork" not in multiprocessing.get_all_start_methods():
-        return render_topology_pdf(svg, **kwargs)
-    ctx = multiprocessing.get_context("fork")
-    recv, send = ctx.Pipe(duplex=False)
-    proc = ctx.Process(target=_render_child, args=(send, {"svg": svg, **kwargs}))
-    proc.start()
-    send.close()
-    try:
-        if not recv.poll(timeout):
-            raise RenderTimeout
-        ok, payload = recv.recv()
-    except EOFError as exc:
-        raise RuntimeError("The PDF renderer stopped without an answer.") from exc
-    finally:
-        if proc.is_alive():
-            proc.kill()
-        proc.join(5)
-        recv.close()
-    if not ok:
-        raise RuntimeError(payload)
-    return payload
+    ``timeout`` seconds (:class:`RenderTimeout`) - see
+    :func:`api.drawing_pdf.run_with_deadline`."""
+    return run_with_deadline(_render, svg, timeout=timeout, **kwargs)
 
 
 def render_topology_pdf(
@@ -391,21 +128,15 @@ def render_topology_pdf(
     title_block: bool = True,
 ) -> bytes:
     """A sanitized drawing on one sheet of ``paper``, as PDF bytes."""
-    import weasyprint
-
-    w, h = svg_size(svg)
-    plan = plan_sheet(w, h, paper, orientation, title_block)
-    html = _sheet_html(
-        plan,
+    return render_pdf(
+        svg,
         title=title,
-        tenant=tenant,
-        filters=filters,
-        generated=generated or timezone.now(),
+        subtitle=" · ".join(s for s in (tenant, filters) if s),
+        generated=generated,
+        paper=paper,
+        orientation=orientation,
         title_block=title_block,
     )
-    return weasyprint.HTML(
-        string=html, base_url=BASE_URL, url_fetcher=PdfUrlFetcher(svg)
-    ).write_pdf()
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────
@@ -440,8 +171,7 @@ class TopologyPdfRequestSerializer(serializers.Serializer):
     title_block = serializers.BooleanField(required=False, default=True)
 
 
-def _detail(msg: str, status: int) -> Response:
-    return Response({"detail": msg}, status=status)
+_detail = detail
 
 
 def _gate(request):
@@ -454,67 +184,20 @@ def _gate(request):
     return tenant, None
 
 
-# Letters with no accent to strip, as the names people read them by.
-_FOLD = str.maketrans({
-    "ø": "o", "Ø": "o", "æ": "ae", "Æ": "ae", "œ": "oe", "Œ": "oe",
-    "ß": "ss", "đ": "d", "Đ": "d", "ð": "d", "Ð": "d", "ł": "l", "Ł": "l",
-    "þ": "th", "Þ": "th",
-})
-
-
 def _file_slug(title: str) -> str:
     """``title`` as a file name's stem, as the map's other exports are named
-    in the browser (export-menu.tsx ``exportFileName``): letters folded to
-    ASCII, anything else a hyphen, at most 60 characters. ``København HQ``
-    → ``kobenhavn-hq``; ``Ethernet1/1`` → ``ethernet1-1``."""
-    text = unicodedata.normalize("NFKD", title.translate(_FOLD))
-    text = re.sub("[\u0300-\u036f]", "", text).lower()
-    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:60].rstrip("-")
-    return slug or "topology"
+    in the browser - :func:`api.drawing_pdf.file_slug`, ``topology`` when
+    nothing is left."""
+    return file_slug(title, "topology")
 
 
 def _file_name(title: str, when: dt.datetime) -> str:
-    return f"{_file_slug(title)}-{when.astimezone(dt.UTC):%Y-%m-%d}.pdf"
+    return file_name(title, when, "topology")
 
 
 def _print_key(user_id, tenant_id) -> str:
     """The one print PDF a user keeps per tenant; its token is inside."""
     return f"topology-pdf-print:{user_id}:{tenant_id}"
-
-
-def _take(key: str, ttl: int) -> str | None:
-    """A lock in the cache: its token when taken, None when someone holds
-    it, "" when there is no cache (the render goes ahead unguarded)."""
-    token = secrets.token_hex(8)
-    try:
-        return token if cache.add(key, token, ttl) else None
-    except Exception:  # noqa: BLE001 - no cache: no lock
-        return ""
-
-
-def _release(key: str, token: str) -> None:
-    if not token:
-        return
-    try:
-        if cache.get(key) == token:
-            cache.delete(key)
-    except Exception:  # noqa: BLE001, S110 - it expires on its own
-        pass
-
-
-def _take_slot() -> tuple[str, str] | None:
-    """One of the deployment's RENDER_SLOTS: (key, token), or None when
-    every one is taken."""
-    for i in range(RENDER_SLOTS):
-        key = f"topology-pdf-slot:{i}"
-        token = _take(key, RENDER_LOCK_TTL)
-        if token is not None:
-            return key, token
-    return None
-
-
-def _flag(request, name: str) -> bool:
-    return str(request.query_params.get(name, "")).lower() in ("1", "true", "yes")
 
 
 @extend_schema(
@@ -559,11 +242,7 @@ def topology_pdf_view(request):
     tenant, denied = _gate(request)
     if denied:
         return denied
-    try:
-        length = int(request.META.get("CONTENT_LENGTH") or 0)
-    except ValueError:
-        length = 0
-    if length > MAX_BODY_BYTES:
+    if body_too_large(request, MAX_BODY_BYTES):
         return _detail("The request is over 10 MB.", 413)
     ser = TopologyPdfRequestSerializer(data=request.data)
     ser.is_valid(raise_exception=True)
@@ -575,62 +254,36 @@ def topology_pdf_view(request):
     # the PDF was made.
     generated = timezone.now()
 
-    lock = f"topology-pdf-busy:{request.user.pk}"
-    mine = _take(lock, RENDER_LOCK_TTL)
-    if mine is None:
-        return _detail("A PDF is already being made.", 429)
-    slot = None
-    try:
-        slot = _take_slot()
-        if slot is None:
-            return _detail("Other PDFs are being made. Try again in a minute.", 429)
-        try:
-            svg = sanitize_svg(data["svg"])
-        except SvgRejected as exc:
-            return _detail(str(exc), exc.status)
-        try:
-            pdf = render_with_deadline(
-                svg,
-                title=title,
-                tenant=tenant.name,
-                filters=(meta.get("filters") or "").strip(),
-                generated=generated,
-                paper=paper.get("size", "a3"),
-                orientation=paper.get("orientation", "landscape"),
-                title_block=data.get("title_block", True),
-            )
-        except RenderTimeout:
-            log.warning(
-                "Topology PDF for user %s stopped after %ss", request.user.pk, RENDER_TIMEOUT
-            )
-            return _detail(
-                "The drawing took too long to render. Export a smaller part of the map.", 413
-            )
-    finally:
-        if slot:
-            _release(*slot)
-        _release(lock, mine)
+    def render(svg: bytes) -> bytes:
+        return render_with_deadline(
+            svg,
+            title=title,
+            tenant=tenant.name,
+            filters=(meta.get("filters") or "").strip(),
+            generated=generated,
+            paper=paper.get("size", "a3"),
+            orientation=paper.get("orientation", "landscape"),
+            title_block=data.get("title_block", True),
+        )
 
-    name = _file_name(title, generated)
-    if _flag(request, "print"):
-        if len(pdf) > MAX_PDF_BYTES:
-            return _detail("The PDF is too large to keep for printing.", 413)
-        token = secrets.token_urlsafe(32)
-        try:
-            # One per user and tenant: a new print link replaces the last.
-            cache.set(
-                _print_key(request.user.pk, tenant.pk),
-                {"token": token, "pdf": pdf, "name": name},
-                PRINT_TTL,
-            )
-        except Exception:  # noqa: BLE001 - the cache is down or too slow
-            log.warning("Topology PDF print link not kept", exc_info=True)
-            return _detail("The PDF could not be kept for its link. Try again in a minute.", 503)
-        return Response({"url": reverse("topology-export-pdf-file", kwargs={"token": token})})
-    resp = HttpResponse(pdf, content_type="application/pdf")
-    resp["Content-Disposition"] = f'attachment; filename="{name}"'
-    resp["Cache-Control"] = "private, no-store"
-    return resp
+    try:
+        pdf = render_guarded(request, data["svg"], sanitize=sanitize_svg, render=render)
+    except RenderTimeout:
+        log.warning("Topology PDF for user %s stopped after %ss", request.user.pk, RENDER_TIMEOUT)
+        return _detail(
+            "The drawing took too long to render. Export a smaller part of the map.", 413
+        )
+    if isinstance(pdf, Response):
+        return pdf
+    return deliver(
+        request,
+        pdf,
+        name=_file_name(title, generated),
+        # One per user and tenant: a new print link replaces the last.
+        key=_print_key(request.user.pk, tenant.pk),
+        link=lambda token: reverse("topology-export-pdf-file", kwargs={"token": token}),
+        label="Topology",
+    )
 
 
 @extend_schema(
@@ -659,26 +312,6 @@ def topology_pdf_view(request):
 @permission_classes([IsAuthenticated])
 def topology_pdf_file_view(request, token):
     tenant = _get_active_tenant(request)
-    if (
-        tenant is None
-        or not _TOKEN.match(token)
-        or rbac.row_filter(request.user, tenant, "device", "view") is None
-    ):
+    if tenant is None or rbac.row_filter(request.user, tenant, "device", "view") is None:
         return _detail("Not found.", 404)
-    try:
-        entry = cache.get(_print_key(request.user.pk, tenant.pk))
-    except Exception:  # noqa: BLE001 - the cache is down or too slow
-        return _detail("Print links are unavailable right now.", 503)
-    if (
-        not isinstance(entry, dict)
-        or not isinstance(entry.get("pdf"), bytes)
-        or not isinstance(entry.get("token"), str)
-        or not secrets.compare_digest(entry["token"], token)
-    ):
-        return _detail("Not found.", 404)
-    resp = HttpResponse(entry["pdf"], content_type="application/pdf")
-    how = "attachment" if _flag(request, "download") else "inline"
-    resp["Content-Disposition"] = f'{how}; filename="{entry["name"]}"'
-    resp["Cache-Control"] = "private, no-store"
-    resp["X-Content-Type-Options"] = "nosniff"
-    return resp
+    return kept_pdf(request, token, key=_print_key(request.user.pk, tenant.pk))

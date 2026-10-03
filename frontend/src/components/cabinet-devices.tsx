@@ -6,14 +6,16 @@ import type { ColumnDef } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
 import type { Device, DinRail, Paginated } from "@/lib/api"
-import { readableText } from "@/lib/color"
 import {
-  PROFILE_LABELS,
-  deviceBody,
-  fmtMm,
-  freeGaps,
-  railSpans,
-} from "@/lib/din-geometry"
+  NAME_PX,
+  RAIL_LABEL_PX,
+  STRIP_PX,
+  fitName,
+  nameLayout,
+  railTagAt,
+} from "@/lib/cabinet-drawing"
+import { readableText } from "@/lib/color"
+import { PROFILE_LABELS, deviceBody, fmtMm } from "@/lib/din-geometry"
 import type { RailSpan } from "@/lib/din-geometry"
 import { cabinetPhotoBox, effectiveFrontCal } from "@/lib/photo-calibration"
 import type { PlateBox } from "@/lib/photo-calibration"
@@ -52,42 +54,9 @@ export function useCabinetDevices(cabinetId: string | null | undefined) {
  * would overlap another or not fit its rail. */
 export type BodyMark = "moved" | "clash"
 
-/** Screen pixels: the name's size, the strip it sits in, and its inset. */
-const NAME_PX = 10
-const STRIP_PX = 16
-const INSET_PX = 3
-/** A character of the name is about this wide, as a share of its size. */
-const CHAR_EM = 0.6
-/** A rail's label, as the plate writes it. */
-const RAIL_LABEL_PX = 11
-
-/** The name cut to what fits `lengthPx`, with the one-character ellipsis;
- * empty when not even three of its characters do. */
-export function fitName(name: string, lengthPx: number): string {
-  const room = Math.floor((lengthPx - 2 * INSET_PX) / (NAME_PX * CHAR_EM))
-  if (name.length <= room) return name
-  return room >= 4 ? `${name.slice(0, room - 1)}…` : ""
-}
-
-/** How a body carries its name: across its top while the name fits there;
- * else down its middle when the body stands tall and more of the name fits
- * that way - DIN gear is mostly narrow and tall, and the rack's side lane
- * writes its strips' names the same way. Cut to the room it has, or left
- * out under three characters. A photo keeps the name across its top, so the
- * picture stays whole. */
-export function nameLayout(
-  name: string,
-  widthPx: number,
-  heightPx: number,
-  photo: boolean
-): { text: string; vertical: boolean } | null {
-  const across = heightPx >= STRIP_PX ? fitName(name, widthPx) : ""
-  if (across !== name && !photo && widthPx >= STRIP_PX && heightPx > widthPx) {
-    const down = fitName(name, heightPx)
-    if (down.length > across.length) return { text: down, vertical: true }
-  }
-  return across ? { text: across, vertical: false } : null
-}
+// The plate's words - names on bodies, labels on rails - are placed by
+// lib/cabinet-drawing.ts, which the exported drawing shares.
+export { fitName, nameLayout, railTagAt }
 
 /** Each photo's height over its width, once the browser has loaded it - a
  * calibrated photo's true height needs it, and the device rows carry only
@@ -429,29 +398,6 @@ export function CabinetDeviceBodies({
       </g>
     </g>
   )
-}
-
-/** Where a rail's label goes, from its left end: the first free stretch it
- * fits in, or - on a full rail - the left end, `covered`, over the first
- * device. `width` is what the label takes, in plate mm. */
-export function railTagAt(
-  rail: DinRail,
-  devices: Device[],
-  px: (n: number) => number,
-  /** More of the rail to stay off, besides its devices. */
-  also: RailSpan[] = []
-): { offset: number; width: number; covered: boolean } {
-  const width = px(rail.label.length * RAIL_LABEL_PX * CHAR_EM + 9)
-  const taken = [
-    ...railSpans(devices.filter((d) => d.din_rail?.id === rail.id)),
-    ...also,
-  ]
-  const gap = freeGaps(rail.length_mm, taken).find(
-    ([start, end]) => end - start >= width
-  )
-  return gap
-    ? { offset: gap[0], width, covered: false }
-    : { offset: 0, width, covered: true }
 }
 
 /** A device's type and place, for its hover - the rail's hover, for a

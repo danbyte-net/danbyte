@@ -29,6 +29,11 @@ import { useStatusLabels } from "@/components/monitoring/status-palette"
 import { api } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
+  exportFileName,
+  openPrintTab,
+  sendPdf,
+} from "@/lib/diagram/export-file"
+import {
   MIN_PRINT_PT,
   PAPERS,
   PAPER_LABELS,
@@ -119,47 +124,7 @@ function writePrefs(p: Prefs) {
   }
 }
 
-/** Letters with no accent to strip, as the names people read them by.
- * The server names a PDF the same way (topology_export.py `_file_slug`). */
-const FOLD: Record<string, string> = {
-  ø: "o",
-  Ø: "o",
-  æ: "ae",
-  Æ: "ae",
-  œ: "oe",
-  Œ: "oe",
-  ß: "ss",
-  đ: "d",
-  Đ: "d",
-  ð: "d",
-  Ð: "d",
-  ł: "l",
-  Ł: "l",
-  þ: "th",
-  Þ: "th",
-}
-
-/** `DC1 fabric` on 26 Sep 2026 → `dc1-fabric-2026-09-26.<ext>`;
- * `København HQ` → `kobenhavn-hq-…`. */
-export function exportFileName(
-  name: string,
-  ext: string,
-  date: Date = new Date()
-): string {
-  const slug =
-    name
-      .replace(/[øØæÆœŒßđĐðÐłŁþÞ]/g, (c) => FOLD[c])
-      .normalize("NFKD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60)
-      .replace(/-+$/, "") || "topology"
-  const p = (n: number) => String(n).padStart(2, "0")
-  const day = `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`
-  return `${slug}-${day}.${ext}`
-}
+export { exportFileName }
 
 /** Menu radio and checkbox rows adjust the export without closing it. */
 const keepOpen = (e: Event) => e.preventDefault()
@@ -168,14 +133,6 @@ const keepOpen = (e: Event) => e.preventDefault()
 const SMALLEST_TEXT_PX = 9
 
 const PDF_URL = "/api/topology/export/pdf/?print=1"
-
-/** Save a same-origin file URL (the server names it as an attachment). */
-function saveUrl(url: string, fileName: string) {
-  const a = window.document.createElement("a")
-  a.href = url
-  a.download = fileName
-  a.click()
-}
 
 export function ExportMenu({
   document: buildDocument,
@@ -218,16 +175,8 @@ export function ExportMenu({
   }
 
   const run = async (format: ExportFormat) => {
-    // Print's tab opens now, while the click still counts as the user's:
-    // a tab opened after the render would be taken for a pop-up.
-    const tab = format === "print" ? window.open("", "_blank") : null
-    if (tab)
-      try {
-        tab.opener = null
-        tab.document.title = "Preparing PDF…"
-      } catch {
-        /* a browser that keeps the blank tab to itself: it still navigates */
-      }
+    // Print's tab opens now, while the click still counts as the user's.
+    const tab = format === "print" ? openPrintTab() : null
     let printing = false
     setBusy(true)
     try {
@@ -273,14 +222,11 @@ export function ExportMenu({
             title_block: prefs.extras,
           }),
         })
-        if (format === "print" && tab) {
-          tab.location.replace(url)
-          printing = true
-        } else {
-          if (format === "print")
-            toast.warning("Pop-ups are blocked, so the PDF was downloaded")
-          saveUrl(`${url}?download=1`, exportFileName(name, "pdf"))
-        }
+        printing = sendPdf(url, {
+          print: format === "print",
+          tab,
+          fileName: exportFileName(name, "pdf"),
+        })
         const plan = planSheet(svgSize(svg), paper, {
           titleBlock: prefs.extras,
         })

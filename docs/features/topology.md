@@ -2062,8 +2062,10 @@ from the server's own copy (`api/pdf_fonts/`, SIL Open Font License).
 
 Anyone signed in with an active tenant and `device.view` (at any scope) may
 call it; otherwise it is a 403. One PDF is made at a time per user, and two
-at a time across the whole server; a request past either is a 429 (try
-again in a minute). A render is stopped after 30 seconds - well inside the
+at a time across the whole server - a rack's or a cabinet's
+([racks](../dcim/racks.md#api-the-elevation-as-a-pdf),
+[cabinets](../dcim/cabinets.md#api)) counts too; a request past either is a
+429 (try again in a minute). A render is stopped after 30 seconds - well inside the
 web worker's own timeout - and answered with a 413.
 
 The SVG is rebuilt from an allowlist before it is drawn: shapes, paths,

@@ -1,5 +1,5 @@
 // A drawing on a sheet of paper, for the PDF export: where it sits and at
-// what scale. The server lays the page out (api/topology_export.py
+// what scale. The server lays the page out (api/drawing_pdf.py
 // `plan_sheet`); this is the same arithmetic, so the page can say before
 // the round trip how large the text will print. Keep the two in step.
 

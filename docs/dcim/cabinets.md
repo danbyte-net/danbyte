@@ -108,14 +108,46 @@ ports coloured by cable, speed and SNMP state, with the device page's hover
 card, a click opening the port - at true size when the photo is calibrated.
 **Labels** hides the device names (and, in Names, the rail labels); **−** and
 **+** zoom, starting fitted to the column (Render starts larger) and
-scrolling when the plate grows wider; **PNG** downloads
-`<cabinet>-plate.png`. The mode, zoom and labels are remembered in your
-browser. **Add device** in the Plate heading opens a
+scrolling when the plate grows wider; **Export** saves the plate as a file
+or prints it (see [Export](#export)). The mode, zoom and labels are
+remembered in your browser. **Add device** in the Plate heading opens a
 new device on the rail you pick, which takes the first free gap; **Assign**
 puts an existing device of the site on a rail, offering only devices whose
 type fits the rail's profile. Each rail in those menus shows its widest free
 stretch. The **Devices** tab lists the cabinet's devices with their rail and
 offset.
+
+### Export
+
+**Export**, at the end of the plate's toolbar, saves the plate as a file (on
+a narrow screen the button is its icon). The file is drawn from the
+cabinet's data, not captured from the screen, and is light-themed whatever
+theme the app is in: the plate true to its millimetres inside its box, the
+rails with their labels, and each device on its rail at its offset in the
+mode on screen - Names, or Images with each calibrated photo at its true
+size and the rest stretched over their devices - its name where the page
+writes it, with **Labels** on.
+
+| Format | What you get |
+|---|---|
+| **PNG** | The drawing at twice screen resolution |
+| **SVG** | The same drawing as vectors, one pixel to the millimetre, with its font and every photo inside the file |
+| **PDF…** | The drawing on one sheet of A4, A3, Letter or Tabloid, portrait or landscape - A4 landscape until you choose - fitted, under a title block |
+| **Print** | The same PDF on the paper last chosen, in a new tab to print |
+
+The PNG and SVG carry the cabinet's name over the drawing, with its site,
+location, plate size and the time. On a PDF the title block is written by
+the server from the cabinet: its name; its site, location, type and plate
+size; the date, the Danbyte version and the page. Print it at **Actual
+size**; if the browser blocks the new tab, the PDF is downloaded instead.
+The paper is remembered in your browser, and Print shows which it will use.
+
+Every file is named after the cabinet and the day:
+`k1-plate-2026-10-02.svg`. A photo that will not load is drawn as its
+device's Names box, and the menu says how many. **Render** has no vector
+drawing yet: in Render the PNG is a picture of the screen, and the SVG and
+PDF draw the Images look - the menu and the PDF dialog say so. There is no
+Export while you arrange the plate.
 
 ### The plate in 3D
 
@@ -248,3 +280,20 @@ null rail taking a device off its rail. The arrangement is checked as a whole
 - every rail's devices fit and none overlap, moved or not - so devices can
 swap places; errors come back per placement, in order, and nothing changes
 unless all of it fits. It needs change on every device it moves.
+
+`POST /api/cabinets/{id}/export/pdf/` lays the plate out on one sheet of
+paper and returns the PDF as a download: `svg` is the drawing, as the Export
+menu's SVG draws it (required); `paper` is `{size: a4|a3|letter|tabloid,
+orientation: portrait|landscape}`, A4 landscape when absent, either key alone
+keeping the other's default; `title_block: false` leaves the title block
+off. The server writes the title block from the cabinet - its name; its
+site, location, type and plate size; the date, the Danbyte version and
+`Page 1 / 1` - and nothing in the request changes it. It needs view on
+cabinets (a 403 without), and another tenant's cabinet, or one outside the
+sites you are limited to, is a 404. The SVG is checked and limited as the
+[topology's PDF](../features/topology.md#pdf-export-api) is, and the same
+one PDF at a time per user and two across the server count every drawing's
+PDFs together. `?print=1` answers `{"url":
+"/api/cabinets/{id}/export/pdf/<token>/"}` instead: the PDF for five
+minutes, to you alone in the same tenant while you can view the cabinet,
+`?download=1` to save it; a newer one replaces it.

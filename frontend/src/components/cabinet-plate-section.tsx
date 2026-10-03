@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import type { ReactNode, RefObject } from "react"
-import { Camera, Minus, Move, Pencil, Plus } from "lucide-react"
+import { Minus, Move, Pencil, Plus } from "lucide-react"
 
 import type {
   Cabinet,
@@ -19,7 +19,6 @@ import {
 } from "@/lib/cabinet-plate-view"
 import type { PlateMode, PlateZoom } from "@/lib/cabinet-plate-view"
 import { legendIsEmpty } from "@/lib/faceplate-colors"
-import { downloadPng } from "@/lib/png-export"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import {
@@ -29,11 +28,12 @@ import {
 } from "@/components/cabinet-arrange"
 import { CabinetDeviceBodies } from "@/components/cabinet-devices"
 import { CabinetElevation, plateView } from "@/components/cabinet-elevation"
+import { CabinetExportMenu } from "@/components/cabinet-export-menu"
 import { CabinetFaceplates } from "@/components/cabinet-faceplates"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { DinRailEditor } from "@/components/din-rail-editor"
 import { FormCheckbox } from "@/components/forms"
-import { BarButton, BarIconButton } from "@/components/map-toolbar"
+import { BarIconButton } from "@/components/map-toolbar"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useLegendCollector } from "@/components/speed-scale"
 
@@ -52,8 +52,9 @@ const ASSUMED_COLUMN_PX = 480
  * may change devices move them about on the plate and save the lot.
  *
  * A cabinet's plate takes the rack elevation's controls: Names, Images or
- * Render, its labels on or off, a zoom, and a PNG of the drawing - kept in
- * this browser, so the page reopens as it was left. `lead` goes first on
+ * Render, its labels on or off and a zoom - kept in this browser, so the
+ * page reopens as it was left - and an Export menu of the drawing: PNG, SVG,
+ * PDF and Print (cabinet-export-menu.tsx). `lead` goes first on
  * that toolbar (the cabinet page's 2D | 3D switch); `scene`, when given,
  * takes the drawing's place - the 3D view, which brings its own toolbar. */
 export function CabinetPlateSection({
@@ -127,11 +128,8 @@ export function CabinetPlateSection({
     if (m !== mode) setView({ ...view, mode: m, zoom: defaultZoom(m, fit) })
   }
 
+  // The drawing on screen: Render's PNG is a picture of it.
   const drawing = useRef<HTMLDivElement>(null)
-  const exportPng = () => {
-    if (drawing.current && cabinet)
-      void downloadPng(drawing.current, `${cabinet.name}-plate.png`)
-  }
 
   // Render's key: the colours its faceplates drew, and the live dot where
   // any device's ports carry SNMP facts.
@@ -256,15 +254,16 @@ export function CabinetPlateSection({
                           <Plus />
                         </BarIconButton>
                       </div>
-                      {/* The word goes when the row is narrow, so it never
-                          wraps; screen readers keep it. */}
                       {!arranging && (
-                        <BarButton className="ml-auto" onClick={exportPng}>
-                          <Camera />
-                          <span className="sr-only @[34rem]:not-sr-only">
-                            PNG
-                          </span>
-                        </BarButton>
+                        <CabinetExportMenu
+                          cabinet={cabinet}
+                          devices={devices ?? []}
+                          mode={mode}
+                          labels={view.labels}
+                          railTags={railTags}
+                          snapshot={drawing}
+                          className="ml-auto"
+                        />
                       )}
                     </>
                   )}

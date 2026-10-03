@@ -1,8 +1,10 @@
 """An allowlist SVG sanitizer for drawings the server renders.
 
-The topology PDF (``api/topology_export.py``) renders an SVG the browser
-drew - untrusted markup that goes into WeasyPrint. This module rebuilds it
-from what the diagram writer (``frontend/src/lib/diagram/svg.ts``) emits:
+The drawing PDFs (``api/drawing_pdf.py``: the topology map, a rack's
+elevation, a cabinet's plate) render an SVG the browser drew - untrusted
+markup that goes into WeasyPrint. This module rebuilds it from what the
+writers (``frontend/src/lib/diagram/svg.ts``, ``frontend/src/lib/elevation/``)
+emit:
 shapes, paths, text, clip paths, photo symbols and a few presentation
 attributes, each value checked against a pattern. Everything else goes:
 

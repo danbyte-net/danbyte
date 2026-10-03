@@ -18,14 +18,15 @@ import { CabinetPlateSection } from "./cabinet-plate-section"
 
 // The cabinet page's Plate takes the rack elevation's controls: Names,
 // Images or Render; its labels on or off; a zoom in steps, with the plate
-// fitted to its column as one of them; and a PNG of the drawing - all kept
-// in this browser, so the page reopens as it was left. Arrange works in
-// Names and Images, and draws Images while Render is picked.
+// fitted to its column as one of them - all kept in this browser, so the
+// page reopens as it was left - and an Export menu of the drawing. Arrange
+// works in Names and Images, and draws Images while Render is picked.
 
-const { apiMock, canDo, pngMock } = vi.hoisted(() => ({
+const { apiMock, canDo, pngMock, downloadMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
   canDo: vi.fn((_type: string, _action: string) => true),
   pngMock: vi.fn<(el: HTMLElement, name: string) => Promise<void>>(),
+  downloadMock: vi.fn<(file: string, mime: string, body: BlobPart) => void>(),
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<typeof Api>()),
@@ -33,6 +34,10 @@ vi.mock("@/lib/api", async (orig) => ({
 }))
 vi.mock("@/lib/use-me", () => ({ useMe: () => ({ canDo }) }))
 vi.mock("@/lib/png-export", () => ({ downloadPng: pngMock }))
+vi.mock("@/lib/table-export", async (orig) => ({
+  ...(await orig<object>()),
+  downloadBlob: downloadMock,
+}))
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<object>()),
@@ -243,6 +248,7 @@ beforeEach(() => {
   apiMock.mockReset()
   pngMock.mockReset()
   pngMock.mockResolvedValue()
+  downloadMock.mockReset()
   canDo.mockImplementation(() => true)
   apiMock.mockImplementation((path) =>
     path in ROUTES
@@ -284,6 +290,12 @@ function renderPlate(
 const button = (name: string) =>
   screen.getByRole<HTMLButtonElement>("button", { name })
 const tab = (name: "Names" | "Images" | "Render") => button(name)
+/** Radix opens a menu on the pointer going down. */
+const openExport = () =>
+  fireEvent.pointerDown(
+    button("Export"),
+    new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+  )
 const active = () =>
   screen
     .getAllByRole("button")
@@ -416,18 +428,38 @@ describe("the Plate's controls", () => {
     expect(svg().closest(".overflow-auto")).not.toBeNull()
   })
 
-  it("exports the drawing as <cabinet>-plate.png", () => {
+  it("exports Render's PNG as a picture of the drawing", async () => {
     renderPlate()
     fireEvent.click(tab("Render"))
-    fireEvent.click(button("PNG"))
-    expect(pngMock).toHaveBeenCalledTimes(1)
+    openExport()
+    // SVG and PDF can't draw Render yet, and the menu says so.
+    expect(
+      await screen.findByText("SVG and PDF in the Images look")
+    ).toBeTruthy()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "PNG" }))
+    await waitFor(() => expect(pngMock).toHaveBeenCalledTimes(1))
     const [el, name] = pngMock.mock.calls[0]
-    expect(name).toBe("K1-plate.png")
+    expect(name).toMatch(/^k1-plate-\d{4}-\d{2}-\d{2}\.png$/)
     // The drawing: the plate and the faceplates over it, not the controls.
     expect(el.dataset.part).toBe("drawing")
     expect(el.contains(svg())).toBe(true)
     expect(el.querySelector('[data-part="faceplates"]')).not.toBeNull()
-    expect(el.contains(button("PNG"))).toBe(false)
+    expect(el.contains(button("Export"))).toBe(false)
+  })
+
+  it("exports the plate as an SVG drawn from its data", async () => {
+    renderPlate()
+    fireEvent.click(tab("Names"))
+    openExport()
+    expect(screen.queryByText("SVG and PDF in the Images look")).toBeNull()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "SVG" }))
+    await waitFor(() => expect(downloadMock).toHaveBeenCalledTimes(1))
+    const [file, mime, body] = downloadMock.mock.calls[0]
+    expect(file).toMatch(/^k1-plate-\d{4}-\d{2}-\d{2}\.svg$/)
+    expect(mime).toBe("image/svg+xml")
+    expect(String(body)).toMatch(/^<svg /)
+    expect(String(body)).toContain("<title>K1 plate</title>")
+    expect(pngMock).not.toHaveBeenCalled()
   })
 
   it("remembers the mode, the zoom and the labels in this browser", () => {
@@ -457,7 +489,7 @@ describe("the Plate's controls", () => {
   it("leaves a cabinet type's plate as it was drawn", () => {
     renderPlate({ devices: undefined, cabinet: undefined })
     expect(screen.queryByRole("button", { name: "Render" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "PNG" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull()
     // Filling its column, as before the zoom.
     expect(svg().getAttribute("class")).toContain("w-full")
     expect(svg().style.width).toBe("")
@@ -470,12 +502,12 @@ describe("Arrange with the controls", () => {
     fireEvent.click(tab("Render"))
     await waitFor(() => expect(faces()).toHaveLength(3))
     fireEvent.click(button("Arrange"))
-    // The placer: photos, Render out of the tabs, no PNG, the zoom kept.
+    // The placer: photos, Render out of the tabs, no Export, the zoom kept.
     expect(document.querySelector('[data-part="target"]')).not.toBeNull()
     expect(faces()).toEqual([])
     expect(screen.queryByRole("button", { name: "Render" })).toBeNull()
     expect(active()).toEqual(["Images"])
-    expect(screen.queryByRole("button", { name: "PNG" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull()
     expect(zoom()).toBe(1.3)
     await waitFor(() =>
       expect(document.querySelectorAll("image").length).toBeGreaterThan(0)

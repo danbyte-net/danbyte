@@ -38,7 +38,7 @@ from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
 from .cf_search import cf_text_q
-from . import capacity, scene_geo
+from . import capacity, elevation_pdf, scene_geo
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
     FacePortLoader,
@@ -6085,8 +6085,9 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     serializer_class = CabinetSerializer
     pagination_class = StandardPagination
     # Arranging moves devices, not the cabinet: seeing the cabinet is enough
-    # here, and the action demands change on every device it moves.
-    rbac_action_map = {"arrange": "view"}
+    # here, and the action demands change on every device it moves. A PDF of
+    # the plate is a way of looking at the cabinet.
+    rbac_action_map = {"arrange": "view", "export_pdf": "view", "export_pdf_file": "view"}
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -6206,11 +6207,26 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             )
         return Response({"applied": True, "diff": din.diff_cabinet_from_type(cabinet)})
 
+    @elevation_pdf.pdf_schema("cabinet")
+    @action(detail=True, methods=["post"], url_path="export/pdf")
+    def export_pdf(self, request, pk=None):
+        """The cabinet's plate, as the page drew it, on one sheet of paper
+        with a title block written from the cabinet (api.elevation_pdf)."""
+        return elevation_pdf.export_pdf(request, self.get_object(), "cabinet")
+
+    @elevation_pdf.pdf_file_schema("cabinet")
+    @action(detail=True, methods=["get"], url_path=r"export/pdf/(?P<token>[A-Za-z0-9_-]+)")
+    def export_pdf_file(self, request, pk=None, token=None):
+        """The PDF an ``export/pdf/?print=1`` kept, behind its print link."""
+        return elevation_pdf.export_pdf_file(request, self.get_object(), "cabinet", token)
+
 
 class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     queryset = Rack.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = RackSerializer
     pagination_class = StandardPagination
+    # A PDF of the elevation is a way of looking at the rack.
+    rbac_action_map = {"export_pdf": "view", "export_pdf_file": "view"}
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -6228,9 +6244,10 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
         from .models import Document
 
-        if self.action == "scene":
-            # The scene loads its own geometry (api.scene_geo); the figures
-            # below would only be thrown away.
+        if self.action in ("scene", "export_pdf_file"):
+            # The scene loads its own geometry (api.scene_geo), and a print
+            # link only checks the rack is still in view; the figures below
+            # would only be thrown away.
             return super().get_queryset()
         racked = (
             Device.objects.select_related("device_type")
@@ -6453,6 +6470,19 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         return Response(scene_geo.rack_geo(
             loaded, scene_geo.image_url(request), scene_geo.power_feed_types([loaded])
         ))
+
+    @elevation_pdf.pdf_schema("rack")
+    @action(detail=True, methods=["post"], url_path="export/pdf")
+    def export_pdf(self, request, pk=None):
+        """The rack's elevation, as the page drew it, on one sheet of paper
+        with a title block written from the rack (api.elevation_pdf)."""
+        return elevation_pdf.export_pdf(request, self.get_object(), "rack")
+
+    @elevation_pdf.pdf_file_schema("rack")
+    @action(detail=True, methods=["get"], url_path=r"export/pdf/(?P<token>[A-Za-z0-9_-]+)")
+    def export_pdf_file(self, request, pk=None, token=None):
+        """The PDF an ``export/pdf/?print=1`` kept, behind its print link."""
+        return elevation_pdf.export_pdf_file(request, self.get_object(), "rack", token)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()

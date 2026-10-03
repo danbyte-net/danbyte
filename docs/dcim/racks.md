@@ -189,8 +189,41 @@ edge-to-edge and take the **device role's color** in Names mode.
 On a rack's own page you can **drag device blocks between units** - drop a
 block on an empty band and the device re-mounts with that band as its top U
 (occupied space, rack edges and half-width columns are respected; a plain
-click still opens the device). The **PNG** button snapshots the front + rear
-pair for a change ticket or wiki page.
+click still opens the device). **Export** saves the front + rear pair for a
+change ticket, a wiki page or the rack door (see [Export](#export)).
+
+### Export
+
+**Export**, at the end of the Elevation toolbar, saves the rack as a file
+(on a narrow screen the button is its icon). The file is drawn from the
+rack's data, not captured from the screen, and is light-themed whatever
+theme the app is in: the front and rear side by side under their names,
+the units numbered beside each frame in the rack's own numbering, every
+device in its units in the mode on screen - Names, or Images with **Text**
+on or off - half-width devices in their half, the 0U strips in their rail
+lanes, and full-depth gear hatched on the face it isn't mounted on.
+
+| Format | What you get |
+|---|---|
+| **PNG** | The drawing at twice screen resolution |
+| **SVG** | The same drawing as vectors, with its font and every photo inside the file, so it opens anywhere without Danbyte |
+| **PDF…** | The drawing on one sheet of A4, A3, Letter or Tabloid, portrait or landscape - A4 portrait until you choose - fitted, under a title block |
+| **Print** | The same PDF on the paper last chosen, in a new tab to print |
+
+The PNG and SVG carry the rack's name over the drawing, with its site,
+location, width, units used and the time. On a PDF the title block sits in
+the sheet's bottom-right corner and is written by the server from the rack:
+its name; its site, location, type and the units used and free; the date,
+the Danbyte version and the page. Print it at **Actual size**; if the
+browser blocks the new tab, the PDF is downloaded instead. The paper is
+remembered in your browser, and Print shows which it will use.
+
+Every file is named after the rack and the day:
+`r12-elevation-2026-10-02.pdf`. A photo that will not load is drawn as its
+device's Names block, and the menu says how many. **Render** has no vector
+drawing yet: in Render the PNG is a picture of the screen, and the SVG and
+PDF draw the Images look - the menu and the PDF dialog say so. The 3D view
+keeps its own **PNG**.
 
 ### Live ports on the elevation
 
@@ -328,3 +361,35 @@ scene carries for a rack tile: size, numbering and outer dimensions, plus the
 positioned and side-mounted devices with their photos, port markers, power
 component names and the feed type of each PDU. The devices are limited to the
 ones you can view.
+
+## API: the elevation as a PDF
+
+`POST /api/racks/{id}/export/pdf/` lays the elevation out on one sheet of
+paper and returns the PDF as a download. The body:
+
+| Field | Shape |
+|---|---|
+| `svg` | the drawing, as the Export menu's SVG draws it (required) |
+| `paper` | `{size: a4\|a3\|letter\|tabloid, orientation: portrait\|landscape}`; A4 portrait when absent, and either key alone keeps the other's default |
+| `title_block` | `false` leaves the title block off; `true` by default |
+
+The title block is written by the server from the rack - its name; its
+site, location, type and the units used and free, counted as the rack's
+*Used* figure counts them; the date, the Danbyte version and `Page 1 / 1` -
+and nothing in the request changes it. The drawing is the one your browser
+made from the devices you can view.
+
+It needs **view** on racks (a 403 without), and the rack must be one you can
+see: another tenant's, or one outside the sites you are limited to, is a
+404. The SVG is checked and limited exactly as the topology's is - the same
+sanitizer and size, text and render limits (see
+[PDF export API](../features/topology.md#pdf-export-api)) - and the same
+one PDF at a time per user and two at a time across the server count every
+drawing's PDFs together.
+
+`?print=1` answers `{"url": "/api/racks/{id}/export/pdf/<token>/"}` instead
+of the file: the PDF for five minutes, to you alone and in the same tenant,
+while you can still view the rack. `GET` it to open the PDF in the browser,
+or add `?download=1` to save it. You keep one such rack PDF per tenant: a
+newer one replaces it, and the older link is a 404. Without a cache to keep
+it the answer is a 503.
