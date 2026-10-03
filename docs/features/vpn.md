@@ -76,6 +76,10 @@ deployment's [secret store](../architecture/tenant-settings.md).
    IPSec.
 6. Save.
 
+A tunnel can also record how fast its path is: `capacity_kbps` in the tunnel
+API (`/api/tunnels/`), empty when unknown. Nothing derives it, and the form
+does not show it yet.
+
 ## Terminate a tunnel
 
 A tunnel is inert until its ends are bound. Each **termination** attaches one
