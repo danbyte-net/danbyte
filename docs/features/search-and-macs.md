@@ -166,6 +166,8 @@ page, ordered by MAC. The rail filters by **Site**, **Device**, **VLAN** (the
 VID) and **State** (Present, Gone or All; the State column shows when the
 list can mix them), and the search box takes a MAC in any notation, part of
 one, or a device or port name. Download takes every match, not just the page.
+A gone MAC shows the access port it was last seen on rather than an uplink
+that kept it a little longer, and under a filter, a row the filter matches.
 
 It reads `GET /api/monitoring/mac-sightings/`, paged on the server (`page`,
 `page_size`, at most 500). It filters by `site`, `device` and `vlan` (against

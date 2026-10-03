@@ -518,12 +518,22 @@ def mac_sightings_view(request):
         base.filter(gone_at__isnull=True, mac__in=page_macs).values_list("mac", flat=True)
     )
     locs = locate(tenant, present_macs, user, ctx=ctx)
-    last_gone: dict = {}
-    for r in seen_rows(
+    # A gone MAC shows the access port it was last seen on, as a present one
+    # shows its Location - the uplink that saw it too keeps it a little
+    # longer - and only a row the filters match, so a device filter never
+    # lists another device's row.
+    gone_rows = seen_rows(
         base.filter(gone_at__isnull=False, mac__in=set(page_macs) - present_macs)
+        .filter(filters)
         .order_by("mac", "-last_seen", "-gone_at")
-    ):
-        last_gone.setdefault(r.mac, r)
+    )
+    ctx.load({r.polled_device_id for r in gone_rows})
+    last_gone: dict = {}
+    on_uplink: dict = {}
+    for r in gone_rows:
+        up = ctx.classify(r.polled_device_id, r.port_key, r.interface_id).is_uplink
+        if r.mac not in last_gone or (on_uplink[r.mac] and not up):
+            last_gone[r.mac], on_uplink[r.mac] = r, up
     vendors = vendors_for(page_macs, tenant)
     info = enrich(tenant, page_macs, user)
     picked = {

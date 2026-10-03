@@ -819,6 +819,27 @@ class LearnedListApiTests(_Base):
         r = self.client.get("/api/monitoring/mac-sightings/")
         self.assertEqual(r.status_code, 403)
 
+    def test_a_gone_mac_shows_the_access_port_it_left(self):
+        def without_pc(rows):
+            return [r for r in rows if r["mac"] != PC]
+
+        later = self.t0 + timedelta(minutes=5)
+        self.poll(self.acc, result(ACC_IFACES, without_pc(acc_fdb()), neighbors=ACC_NEIGHBORS),
+                  later)
+        self.poll(self.core, result(CORE_IFACES, core_fdb(), neighbors=CORE_NEIGHBORS), later)
+        self.poll(self.core, result(CORE_IFACES, without_pc(core_fdb()), neighbors=CORE_NEIGHBORS),
+                  later + timedelta(minutes=5))
+
+        def port(**params):
+            (row,) = [r for r in self.rows(state="gone", **params)["results"] if r["mac"] == PC]
+            return row["interface"]["id"]
+
+        # The core's uplink kept it five minutes longer; the port it left wins.
+        self.assertEqual(port(), str(self.gi5.id))
+        # A device filter shows that device's own row.
+        self.assertEqual(port(device=str(self.core.id)), str(self.core_te1.id))
+        self.assertEqual(port(device=str(self.acc.id)), str(self.gi5.id))
+
 
 class MacDetailAndSearchTests(_Base):
     def setUp(self):
