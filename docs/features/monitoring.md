@@ -255,7 +255,9 @@ for the tenant (500 by default; 0 turns it off) - the rest, and every fast
 check whenever the lane is not running, run on the minute beat at the
 check's ordinary interval, which is why a fast check still carries one. The
 Overview shows the lane's checks and probes per second, and the red strip
-at the top says when the lane is down while fast checks exist.
+at the top says when the lane is down while fast checks exist. After a
+database restart the lane drops its old connection at the first failed write
+and reconnects on the next one; it no longer needs a restart of its own.
 
 An Outpost runs the same loop for the fast checks bound to it: it pulls
 its set, probes it locally, and reports buffered probes every poll - or at

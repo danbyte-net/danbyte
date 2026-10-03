@@ -625,10 +625,16 @@ class FastLane:
 
     async def run(self) -> None:
         from asgiref.sync import sync_to_async
+        from django.db import connections
 
         reload = sync_to_async(self.reload, thread_sensitive=True)
         flush = sync_to_async(self.flush, thread_sensitive=True)
         beat = sync_to_async(self._beat, thread_sensitive=True)
+        # A long-lived process gets no request signals, so Django never drops
+        # a dead connection for it: after a PostgreSQL restart every flush
+        # failed on the old one for good. Close the thread's connections after
+        # a database error; the next flush or reload opens a fresh one.
+        reset = sync_to_async(connections.close_all, thread_sensitive=True)
         await reload()
         await beat()
         next_reload = time.monotonic() + RELOAD_SECONDS
@@ -644,6 +650,7 @@ class FastLane:
                     await flush()
                 except Exception:  # noqa: BLE001
                     log.exception("fast lane flush failed")
+                    await reset()
             if now_m >= next_beat:
                 next_beat = now_m + 5
                 await beat()
@@ -653,6 +660,7 @@ class FastLane:
                     await reload()
                 except Exception:  # noqa: BLE001
                     log.exception("fast lane reload failed")
+                    await reset()
             await asyncio.sleep(TICK_SECONDS)
         await flush()
         await sync_to_async(self.release_all, thread_sensitive=True)()
