@@ -15,12 +15,16 @@ import {
   buildInterfaceColumns,
   DEVICE_INTERFACE_COLUMNS,
   nestInterfaces,
-  type InterfaceActionsOpts,
-  type NestedInterface,
+} from "@/components/columns/interface-columns"
+import type {
+  InterfaceActionsOpts,
+  InterfaceColumnOpts,
+  NestedInterface,
 } from "@/components/columns/interface-columns"
 import { portTint } from "@/components/cable-status-control"
 import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { naturalCompare } from "@/lib/natural-sort"
 
@@ -86,12 +90,16 @@ export function StackInterfacesTable({
   loading,
   error,
   highlightMemberId,
+  learnedMacs,
   actions,
 }: {
   rows: StackInterfaceRow[]
   loading: boolean
   error: Error | null
   highlightMemberId?: string
+  /** The stack's learned MACs by interface id (#284) - adds the Learned MACs
+   * column, as on the per-device table. */
+  learnedMacs?: InterfaceColumnOpts<Interface>["learnedMacs"]
   /** Row actions, identical to the per-device table's. Omit `deviceIdFor` - the
    * stack table resolves the owning member per row. Leave unset to render the
    * table read-only. */
@@ -168,6 +176,7 @@ export function StackInterfacesTable({
         planned: plannedMap,
         include: DEVICE_INTERFACE_COLUMNS,
         drift,
+        learnedMacs,
       }) as ColumnDef<StackRow>[]),
       ...actionCols,
     ]
@@ -182,10 +191,11 @@ export function StackInterfacesTable({
     onTrace,
     onAssignIp,
     drift,
+    learnedMacs,
   ])
 
   if (error) return <QueryError error={error} />
-  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (loading) return <Loading />
   if (data.length === 0)
     return (
       <p className="text-sm text-muted-foreground">

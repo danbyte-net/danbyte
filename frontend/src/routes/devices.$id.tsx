@@ -54,6 +54,14 @@ import {
 } from "@/components/cells/lifecycle-cell"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
+import { RefreshMacsButton } from "@/components/learned-macs-cell"
+import {
+  UPLINK_OPTIONS,
+  learnedByInterface,
+  uplinkFields,
+  useDeviceMacs,
+} from "@/lib/mac-tracking"
+import type { UplinkMode } from "@/lib/mac-tracking"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import {
   PortUtilizationCard,
@@ -1531,6 +1539,20 @@ function DeviceInterfacesPane({
     }
     return m
   }, [driftQ.data])
+  // MAC tracking (#284): one fetch for the table's Learned MACs column - this
+  // device's ports, or the whole stack's observation for the stack table.
+  const macsQ = useDeviceMacs(deviceId, "member")
+  const learnedMacs = useMemo(
+    () => learnedByInterface(macsQ.data, { deviceId, view: "member" }),
+    [macsQ.data, deviceId]
+  )
+  const stackMacsQ = useDeviceMacs(deviceId, "observed", {
+    enabled: !!virtualChassis && scope === "stack",
+  })
+  const stackLearnedMacs = useMemo(
+    () => learnedByInterface(stackMacsQ.data, { deviceId, view: "observed" }),
+    [stackMacsQ.data, deviceId]
+  )
   const columns = useMemo<ColumnDef<NestedInterface>[]>(() => {
     // Same columns + same row actions as the whole-stack table (shared builders)
     // - the two views must never drift apart.
@@ -1552,6 +1574,7 @@ function DeviceInterfacesPane({
         include: DEVICE_INTERFACE_COLUMNS,
         driftByIface,
         planned: plannedMap,
+        learnedMacs,
       }),
       ...actions,
     ]
@@ -1564,6 +1587,7 @@ function DeviceInterfacesPane({
     canConnect,
     canReserve,
     driftByIface,
+    learnedMacs,
   ])
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
@@ -1610,6 +1634,9 @@ function DeviceInterfacesPane({
                 Sync from SNMP
               </Button>
             )}
+            {canSync && learnedMacs && (
+              <RefreshMacsButton deviceId={deviceId} />
+            )}
             {canConnect && (
               <Button size="sm" variant="outline" asChild>
                 <Link to="/cables/new">
@@ -1647,6 +1674,7 @@ function DeviceInterfacesPane({
           loading={stackIfaces.loading || vcQuery.isLoading}
           error={stackIfaces.error ?? (vcQuery.error as Error | null)}
           highlightMemberId={deviceId}
+          learnedMacs={stackLearnedMacs}
           // Same row actions as "This member" - the dialogs below serve both
           // (Assign IP carries the row's own member id).
           actions={{
@@ -1682,7 +1710,8 @@ function DeviceInterfacesPane({
         kindLabel="interface"
         selected={selIfaces}
         onCleared={() => setSelIfaces([])}
-        invalidate={[["device-interfaces", deviceId]]}
+        // The Uplink choice reclassifies ports, so the MAC tables reread.
+        invalidate={[["device-interfaces", deviceId], ["device-macs"]]}
         fields={[
           { key: "enabled", label: "Enabled", kind: "bool" },
           { key: "mark_connected", label: "Mark connected", kind: "bool" },
@@ -1715,6 +1744,14 @@ function DeviceInterfacesPane({
             choices: "interface_duplex",
           },
           { key: "mgmt_only", label: "Management only", kind: "bool" },
+          {
+            // One choice, two fields (#284) - see uplinkFields.
+            key: "uplink",
+            label: "Uplink",
+            kind: "options",
+            options: UPLINK_OPTIONS,
+            expand: (v) => uplinkFields(v as UplinkMode),
+          },
           { key: "description", label: "Description", kind: "text" },
         ]}
         tags

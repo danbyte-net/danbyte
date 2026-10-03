@@ -98,15 +98,16 @@ The single **Add interface** form takes a `[a-b]` range too (`eth[0-3]`), which
 is handier for a few ports since you get the full field set - type, MTU, PoE,
 VLANs, VRF, LAG - applied to all of them. The form is grouped into sections:
 device/name/type up top, then **Switching** (802.1Q, VLANs, VRF), **State**
-(enabled, mark connected, reserved, uplink), and collapsible **Hardware**,
+(status, uplink, enabled, mark connected, reserved), and collapsible **Hardware**,
 **Nesting**, and **SNMP** groups for the rarely touched fields - a group with
 values set opens automatically and summarises its values while collapsed.
 Your open/closed choices are remembered per browser, and Ctrl/Cmd+Enter
 saves from any field.
 
-The State checkboxes:
+The State fields - **Status** and **Uplink** are selects side by side, the
+rest checkboxes:
 
-| Flag | Meaning |
+| Field | Meaning |
 |---|---|
 | **Enabled** | Administratively up. |
 | **Status** | Lifecycle: Active (default), Disabled, Planned, Not present, Decommissioning. Not present = hardware the agent reports as absent; it and Decommissioning don't count as capacity in port utilization. |
@@ -165,10 +166,31 @@ Click an interface name to open its page. It shows the device, type, speed, MTU,
 VLAN, MAC, description, any parent/LAG/bridge relationships, the IPs assigned to
 it, and a cable trace.
 
-The MACs a switch learned on the port - present ones, or with their history -
-come from `GET /api/monitoring/interfaces/<id>/macs/?state=present|all`, with
-the port's uplink state and its reasons; on an uplink each MAC says where it
-really sits. See [MAC tables](../features/snmp-discovery.md#mac-tables).
+On the Overview, the **Switching** card has an **Uplink** row: the
+interface's setting and, for Automatic, what the
+[uplink rules](../features/snmp-discovery.md#uplinks) decided -
+`Automatic · yes, LLDP sw-core-01`, `Automatic · no`, `Always` or `Never`.
+
+### The MACs tab {#macs-tab}
+
+On a port of a device that reads a [MAC table](../features/snmp-discovery.md#mac-tables),
+the **MACs** tab (its count is the MACs there now) lists what the switch learned
+on the port: MAC, Vendor, VLAN, IP, Name, First seen, Last seen and State
+(**Present** or **Gone**; a present MAC whose switch has not finished a read
+for a day reads **Stale**). **Present** is the default; **All** adds the gone
+rows the tenant keeps for *Forget MACs unseen for*, which are the port's
+history - a MAC that moved away shows here as Gone. Long lists page 100 at a
+time.
+
+On an uplink, a line above the table says why it is one -
+`Uplink · LLDP neighbour sw-core-01` - and the table lists the MACs seen
+*through* the port, with a **Location** column: `here`, or where each one
+really sits (`→ sw-core-01 · Eth1/5`, with an `uplink` chip when even that
+is only the nearest uplink).
+
+**Refresh MACs** (with change on the device) re-reads the device's whole MAC
+table - there is no per-port read, SNMP walks the whole table either way. The
+tab reads `GET /api/monitoring/interfaces/<id>/macs/?state=present|all`.
 
 The **IP addresses** tab is the same IP table as the device's **IPs** tab, with
 only this interface's addresses: Address, Designation, Status, Monitoring,

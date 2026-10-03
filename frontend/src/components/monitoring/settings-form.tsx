@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DevicePicker } from "@/components/device-picker"
+import { InfoTip } from "@/components/ui/info-tip"
+import { cardAnchor } from "@/components/settings/settings-card"
 import { INTERVALS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
@@ -158,6 +160,10 @@ export function MonitoringSettingsForm() {
           engine_offline_after_minutes: Number(
             draft.engine_offline_after_minutes
           ),
+          mac_port_display_limit: Number(draft.mac_port_display_limit),
+          mac_uplink_threshold: Number(draft.mac_uplink_threshold),
+          mac_uplink_lldp: draft.mac_uplink_lldp,
+          mac_retention_days: Number(draft.mac_retention_days),
         })
       }}
     >
@@ -332,6 +338,49 @@ export function MonitoringSettingsForm() {
               </span>
             </span>
           </label>
+        </Section>
+
+        <Section title="MAC tracking">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <NumberField
+              label="MACs shown per port"
+              info="0 = all"
+              value={draft.mac_port_display_limit}
+              onChange={(v) => set("mac_port_display_limit", v)}
+            />
+            <NumberField
+              label="Uplink above"
+              unit="MACs"
+              info="A port that learns more MACs than this counts as an uplink; 0 turns the count rule off."
+              value={draft.mac_uplink_threshold}
+              onChange={(v) => set("mac_uplink_threshold", v)}
+            />
+          </div>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.mac_uplink_lldp}
+              onCheckedChange={(v) => set("mac_uplink_lldp", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                LLDP switch neighbours mark uplinks
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                An IP phone stays an access port.
+              </span>
+            </span>
+          </label>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <NumberField
+              label="Forget MACs unseen for"
+              unit="days"
+              info="Gone MACs stay this long as each port's history."
+              min={1}
+              value={draft.mac_retention_days}
+              onChange={(v) => set("mac_retention_days", v)}
+            />
+          </div>
         </Section>
 
         <Section title="Reverse DNS">
@@ -738,9 +787,10 @@ export function MonitoringSettingsForm() {
             the device(s) that actually route (gateways, firewalls); their
             merged tables feed every switch's suggestions. More than one matters
             when several firewalls each route part of the network. Leave empty
-            to use each switch's own table. Mark individual ports as{" "}
-            <span className="font-medium">Uplink</span> on the interface form to
-            exclude them.
+            to use each switch's own table.{" "}
+            <span className="font-medium">Uplink: Always</span> on the interface
+            form leaves a port out; <span className="font-medium">Never</span>{" "}
+            keeps a busy one in.
           </p>
         </Section>
       </div>
@@ -773,7 +823,11 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card">
+    // The anchor lets a settings search result scroll to the group.
+    <section
+      id={cardAnchor(title)}
+      className="scroll-mt-6 rounded-lg border border-border bg-card"
+    >
       <header className="border-b border-border px-4 py-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
@@ -786,24 +840,45 @@ function Section({
 function NumberField({
   label,
   hint,
+  info,
+  unit,
+  min = 0,
   value,
   onChange,
 }: {
   label: string
   hint?: string
+  /** The why, behind an (i) beside the label. */
+  info?: ReactNode
+  /** A unit after the input ("MACs", "days") - the label reads into it. */
+  unit?: string
+  min?: number
   value: number
   onChange: (v: number) => void
 }) {
+  const input = (
+    <Input
+      type="number"
+      min={min}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className={cn("h-8 text-sm", unit && "w-24")}
+    />
+  )
   return (
     <div className="space-y-1">
-      <Label className="text-xs">{label}</Label>
-      <Input
-        type="number"
-        min={0}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="h-8 text-sm"
-      />
+      <Label className="flex items-center gap-1 text-xs whitespace-nowrap">
+        {label}
+        {info && <InfoTip>{info}</InfoTip>}
+      </Label>
+      {unit ? (
+        <div className="flex items-center gap-2">
+          {input}
+          <span className="text-xs text-muted-foreground">{unit}</span>
+        </div>
+      ) : (
+        input
+      )}
       {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
     </div>
   )

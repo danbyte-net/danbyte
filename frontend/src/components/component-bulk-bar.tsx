@@ -283,6 +283,22 @@ function BulkDeleteAction({
   )
 }
 
+/** The fields a bulk edit sends: what was set, with a choice that stands for
+ * several fields (`expand`) replaced by those fields. */
+export function bulkFields(
+  values: Record<string, unknown>,
+  fields: BulkFieldSpec[]
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(values)) {
+    const spec = fields.find((f) => f.key === key)
+    if (spec?.kind === "options" && spec.expand && value != null)
+      Object.assign(out, spec.expand(String(value)))
+    else out[key] = value
+  }
+  return out
+}
+
 function BulkEditDialog({
   endpoint,
   kindLabel,
@@ -311,7 +327,7 @@ function BulkEditDialog({
 
   const save = useMutation({
     mutationFn: () => {
-      const out: Record<string, unknown> = { ...values }
+      const out = bulkFields(values, fields)
       if (addTags.length) out.add_tag_ids = addTags
       if (removeTags.length) out.remove_tag_ids = removeTags
       return api<{ updated: number }>(`${endpoint}bulk-update/`, {

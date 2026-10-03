@@ -418,6 +418,21 @@
       "keywords": ["digest", "summary", "weekly", "recipients"]
     },
     {
+      "key": "monitoring.mac-tracking",
+      "label": "MAC tracking",
+      "description": "MACs shown per port, uplinks and how long learned MACs are kept",
+      "page": "monitoring",
+      "keywords": [
+        "mac table",
+        "learned mac",
+        "fdb",
+        "uplink",
+        "lldp",
+        "retention",
+        "switch port"
+      ]
+    },
+    {
       "key": "sso.providers",
       "label": "Providers",
       "description": "Each identity provider offered on the login page",
@@ -486,7 +501,16 @@
       "label": "Profiles",
       "description": "Reusable SNMP credentials for polling",
       "page": "snmp-profiles",
-      "keywords": ["snmp", "v2c", "v3", "community", "credential"]
+      "keywords": [
+        "snmp",
+        "v2c",
+        "v3",
+        "community",
+        "credential",
+        "per-vlan",
+        "mac table",
+        "vlan context"
+      ]
     },
     {
       "key": "devices.snmp-sensors",

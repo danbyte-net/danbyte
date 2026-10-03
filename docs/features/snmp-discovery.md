@@ -53,7 +53,9 @@ clears the previous one, so there's always at most one default and switching it
 actually switches it.
 
 **Per-VLAN MAC tables** (Auto / Always / Off) says whether the agent's
-per-VLAN forwarding tables are read - see [MAC tables](#mac-tables).
+per-VLAN forwarding tables are read - see [MAC tables](#mac-tables). Saving
+the form keeps the parameters it has no field for (`mac_max_vlans`,
+`mac_budget_s`, a port set over the API).
 
 ## Credential hierarchy {#credential-hierarchy}
 
@@ -94,7 +96,7 @@ poll a management address instead of the primary IP).
 
 ## Poll a device {#poll-a-device}
 
-Open a device → its **Monitoring** tab → the **Observed** card → **Poll now**.
+Open a device → its **SNMP** tab → the **Observed** card → **Poll now**.
 Danbyte does one synchronous SNMP read of the system group (`sysName`,
 `sysDescr`, `sysObjectID`, `sysUpTime`, `sysContact`, `sysLocation`) plus the
 interface tables (`ifTable`/`ifXTable`), and stores them as observed facts. The
@@ -408,7 +410,7 @@ sources Danbyte has (your runner, and SNMP).
 ## Topology: LLDP & ARP {#topology}
 
 A poll also walks **LLDP-MIB** for directly-connected neighbours and reads the
-device's **ARP table**. The device's **Monitoring** tab renders both as their
+device's **ARP table**. The device's **SNMP** tab renders both as their
 own cards, side by side below the interface table:
 
 - **LLDP neighbours** - `local-port ↔ remote-device : remote-port`.
@@ -579,6 +581,32 @@ port name. When no switch reports it on an access port - a desk switch
 Danbyte doesn't poll, say - the Location falls back to the uplink with the
 fewest MACs, marked **behind uplink**, so the MAC is still found. See
 [Where is this MAC?](search-and-macs.md#where-is-this-mac).
+
+### On the device's pages {#learned-macs-ui}
+
+On a device that reads a MAC table, the **SNMP** tab's interface table shows
+**Learned MACs** instead of the ports' own hardware addresses:
+
+- Each port lists up to **MACs shown per port** MACs
+  ([Settings → Monitoring](monitoring.md#mac-tracking)), one per line with a
+  muted name · IP; a phone seen in its voice and its data VLAN is one line.
+  **+N more** opens the port's whole list - MAC, VLAN, IP, name, first seen. A
+  MAC the port learned but that sits elsewhere shows where
+  (`→ sw-acc-07 · Gi1/0/12`).
+- An uplink shows an **Uplink** badge, its reasons in the tooltip, and a
+  count instead of a list. Clicking the count lists the MACs seen through it
+  and where each really sits, and links to the port's
+  [MACs tab](../dcim/interfaces.md#macs-tab).
+- Under the table, `MAC table · 412 MACs on 37 ports · read 3m ago` - the
+  last complete read. A **partial** badge marks a read that stopped early;
+  its tooltip says why.
+- **Refresh MACs**, beside Poll now, starts [Refresh MACs](#refresh-macs) and
+  reads `Refreshing…` until the run is over; a toast then gives the count.
+
+**Components → Interfaces** has the same Learned MACs column, an `uplink`
+chip after the name of each uplink and Refresh MACs in its toolbar; the
+whole-stack table reads the stack's MACs the same way. Only people who may
+change the device see Refresh MACs.
 
 ### Refresh MACs {#refresh-macs}
 

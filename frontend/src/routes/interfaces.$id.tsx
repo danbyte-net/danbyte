@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { useQueries, useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query"
 import {
   Bookmark,
   Cable as CableIcon,
@@ -13,11 +13,13 @@ import {
 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import {
-  api,
-  type Interface,
-  type InterfaceLagSummary,
-  type SnmpDriftItem,
+import { api } from "@/lib/api"
+import type {
+  Interface,
+  InterfaceLagSummary,
+  InterfaceMacs,
+  SnmpDriftItem,
+  UplinkState,
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
@@ -56,10 +58,21 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { InterfaceRoutingCard } from "@/components/routing/interface-routing-card"
 import { useMe } from "@/lib/use-me"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns"
+import { RefreshMacsButton, UplinkBadge } from "@/components/learned-macs-cell"
+import { uplinkModeOf, uplinkWhy } from "@/lib/mac-tracking"
+import type { LearnedMacColumnId } from "@/components/columns/learned-mac-columns"
 
 export const Route = createFileRoute("/interfaces/$id")({
+  // `?tab=macs` opens the MACs tab - an uplink's MAC count links there.
+  validateSearch: (s: Record<string, unknown>): { tab?: string } =>
+    typeof s.tab === "string" ? { tab: s.tab } : {},
   component: InterfaceDetail,
 })
+
+/** Rows per page on the MACs tab. */
+const MAC_PAGE = 100
 
 function InterfaceDetail() {
   const { id } = Route.useParams()
@@ -80,9 +93,21 @@ function InterfaceDetail() {
 
 function Body({ iface: i }: { iface: Interface }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "ips" | "members" | "trace" | "journal" | "history"
+    "overview" | "ips" | "members" | "macs" | "trace" | "journal" | "history"
   >("overview")
   const isLag = i.type === "lag"
+  // MAC tracking (#284): the port's uplink state and MAC counts - the tab and
+  // the Switching card read them; the tab pages through the MACs itself.
+  const macs = useQuery({
+    queryKey: ["interface-macs", i.id, "summary"],
+    queryFn: () =>
+      api<InterfaceMacs>(
+        `/api/monitoring/interfaces/${i.id}/macs/?state=present&limit=1`
+      ),
+  })
+  // A port of a device that reads a MAC table, or one with history.
+  const hasMacs =
+    !!macs.data && (macs.data.read_at != null || macs.data.counts.all > 0)
   // The bundle summary (members, capacity, peers) - aggregates only.
   const lag = useQuery({
     queryKey: ["interface-lag", i.id],
@@ -233,6 +258,9 @@ function Body({ iface: i }: { iface: Interface }) {
         ...(isLag
           ? [{ value: "members", label: "Members", count: lag.data?.count }]
           : []),
+        ...(hasMacs
+          ? [{ value: "macs", label: "MACs", count: macs.data.counts.present }]
+          : []),
         { value: "trace", label: "Trace" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -246,8 +274,15 @@ function Body({ iface: i }: { iface: Interface }) {
           ips={ips.data?.results ?? []}
           lag={isLag ? lag.data : undefined}
           onMembers={() => setTab("members")}
+          uplink={macs.data?.uplink}
+          macTable={hasMacs}
         />
       </DetailTab>
+      {hasMacs && (
+        <DetailTab value="macs">
+          <InterfaceMacsPane iface={i} summary={macs.data} />
+        </DetailTab>
+      )}
       {isLag && (
         <DetailTab value="members">
           <LagMembers iface={i} summary={lag.data} loading={lag.isLoading} />
@@ -314,6 +349,8 @@ function InterfaceOverview({
   ips,
   lag,
   onMembers,
+  uplink,
+  macTable,
 }: {
   iface: Interface
   /** The addresses the viewer may see, for the summary card. */
@@ -321,6 +358,10 @@ function InterfaceOverview({
   /** The bundle summary - set for aggregates once loaded. */
   lag?: InterfaceLagSummary
   onMembers: () => void
+  /** How the uplink rules classify the port (#284). */
+  uplink?: UplinkState
+  /** Its device reads a MAC table, so Automatic has an answer. */
+  macTable: boolean
 }) {
   const attributes: KvRow[] = [
     {
@@ -466,6 +507,10 @@ function InterfaceOverview({
       ) : (
         <span className="text-muted-foreground">Global</span>
       ),
+    },
+    {
+      label: "Uplink",
+      value: <UplinkValue iface={i} uplink={uplink} macTable={macTable} />,
     },
   ]
 
@@ -749,6 +794,145 @@ function InterfaceDriftAlert({
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+/** Uplink: Automatic / Always / Never, and what Automatic decided (#284). */
+function UplinkValue({
+  iface,
+  uplink,
+  macTable,
+}: {
+  iface: Interface
+  uplink?: UplinkState
+  macTable: boolean
+}) {
+  const mode = uplinkModeOf(iface)
+  if (mode === "always") return <span>Always</span>
+  if (mode === "never") return <span>Never</span>
+  // Automatic says yes or no once there is something to decide on.
+  if (!uplink || (!macTable && uplink.reasons.length === 0))
+    return <span>Automatic</span>
+  return (
+    <span>
+      Automatic
+      <span className="text-muted-foreground">
+        {" · "}
+        {uplink.is && uplink.reasons.length
+          ? `yes, ${uplinkWhy(uplink.reasons[0])}`
+          : uplink.is
+            ? "yes"
+            : "no"}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * The port's MACs tab (#284): what the switch learned on it - present ones,
+ * or All with the history the tenant keeps. On an uplink these are the MACs
+ * seen through the port, each with where it really sits.
+ */
+function InterfaceMacsPane({
+  iface,
+  summary,
+}: {
+  iface: Interface
+  summary: InterfaceMacs
+}) {
+  const { canDo } = useMe()
+  const [state, setState] = useState<"present" | "all">("present")
+  const [page, setPage] = useState(1)
+  const q = useQuery({
+    queryKey: ["interface-macs", iface.id, state, page],
+    queryFn: () =>
+      api<InterfaceMacs>(
+        `/api/monitoring/interfaces/${iface.id}/macs/?state=${state}&limit=${MAC_PAGE}&cursor=${(page - 1) * MAC_PAGE}`
+      ),
+    placeholderData: keepPreviousData,
+  })
+  const data = q.data ?? summary
+  const total = data.counts[state]
+  const pages = Math.max(1, Math.ceil(total / MAC_PAGE))
+  const uplink = data.uplink
+  // One page holds the whole list: sorting it sorts everything.
+  const columns = useMemo(
+    () =>
+      buildLearnedMacColumns<InterfaceMacs["results"][number]>({
+        include: [
+          "mac",
+          "vendor",
+          "vlan",
+          "ip",
+          "name",
+          ...(uplink.is ? (["location"] as LearnedMacColumnId[]) : []),
+          "first_seen",
+          "last_seen",
+          "state",
+        ],
+        sortable: pages <= 1,
+      }),
+    [uplink.is, pages]
+  )
+  const reason = uplink.reasons.at(0)
+  return (
+    <div className="space-y-3">
+      {uplink.is && (
+        <p className="flex items-center gap-2 text-[13px]">
+          <UplinkBadge uplink={uplink} label="Uplink" />
+          {reason?.code === "lldp" && reason.neighbor ? (
+            <span>
+              LLDP neighbour{" "}
+              <span className="font-mono">{reason.neighbor}</span>
+            </span>
+          ) : (
+            <span>{reason?.text ?? "Set on the interface"}</span>
+          )}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedTabs
+          value={state}
+          onValueChange={(v) => {
+            setState(v)
+            setPage(1)
+          }}
+          items={[
+            { value: "present", label: "Present", count: data.counts.present },
+            { value: "all", label: "All", count: data.counts.all },
+          ]}
+        />
+        {canDo("device", "change") && (
+          // No per-port read exists: SNMP walks the whole table.
+          <RefreshMacsButton deviceId={iface.device.id} className="ml-auto" />
+        )}
+      </div>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <QueryError error={q.error} />
+      ) : data.results.length === 0 ? (
+        <EmptyState title="No MACs learned on this port yet." />
+      ) : (
+        <DataTable
+          data={data.results}
+          columns={columns}
+          embedded
+          // The name gives way first; the location never truncates.
+          flexColumn="name"
+          serverPagination={
+            pages > 1
+              ? {
+                  page,
+                  pageCount: pages,
+                  totalRows: total,
+                  onPageChange: setPage,
+                }
+              : undefined
+          }
+        />
+      )}
     </div>
   )
 }

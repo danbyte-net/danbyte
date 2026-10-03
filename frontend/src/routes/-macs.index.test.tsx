@@ -41,6 +41,10 @@ vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<object>()),
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }))
+// The page opens on its Recorded tab - the list under test.
+vi.mock("@/lib/use-url-tab", () => ({
+  useUrlTab: () => ["recorded", () => {}],
+}))
 // The page's chrome is not under test: the shell keeps its search box and
 // children, the header actions and dialogs render nothing.
 vi.mock("@/components/list-page-shell", () => ({

@@ -42,6 +42,8 @@ import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { QuickAddDialog } from "@/components/forms/quick-add"
 import { naturalCompare } from "@/lib/natural-sort"
+import { UPLINK_OPTIONS, uplinkFields, uplinkModeOf } from "@/lib/mac-tracking"
+import type { UplinkMode } from "@/lib/mac-tracking"
 
 type LagProtocol = Interface["lag_protocol"]
 type LacpMode = Interface["lacp_mode"]
@@ -103,7 +105,10 @@ export function InterfaceForm({
   // The name SNMP reports for this port; clearing it unlinks discovery.
   const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
   const [snmpIgnore, setSnmpIgnore] = useState(iface?.snmp_ignore ?? false)
-  const [isUplink, setIsUplink] = useState(iface?.is_uplink ?? false)
+  // Uplink: Automatic / Always / Never (#284) - is_uplink and never_uplink.
+  const [uplinkMode, setUplinkMode] = useState<UplinkMode>(
+    iface ? uplinkModeOf(iface) : "auto"
+  )
   const [evpnUplink, setEvpnUplink] = useState(iface?.evpn_mh_uplink ?? false)
   const [duplex, setDuplex] = useState(iface?.duplex ?? "")
   const [poeMode, setPoeMode] = useState(iface?.poe_mode ?? "")
@@ -160,7 +165,7 @@ export function InterfaceForm({
     setComboGroup(iface.combo_group ?? "")
     setSnmpName(iface.snmp_name ?? "")
     setSnmpIgnore(iface.snmp_ignore ?? false)
-    setIsUplink(iface.is_uplink ?? false)
+    setUplinkMode(uplinkModeOf(iface))
     setEvpnUplink(iface.evpn_mh_uplink ?? false)
     setDuplex(iface.duplex)
     setPoeMode(iface.poe_mode)
@@ -294,7 +299,7 @@ export function InterfaceForm({
         combo_group: comboGroup.trim(),
         snmp_name: snmpName.trim(),
         snmp_ignore: snmpIgnore,
-        is_uplink: isUplink,
+        ...uplinkFields(uplinkMode),
         evpn_mh_uplink: evpnUplink,
         duplex,
         poe_mode: poeMode,
@@ -367,6 +372,9 @@ export function InterfaceForm({
       qc.invalidateQueries({ queryKey: ["interfaces"] })
       qc.invalidateQueries({ queryKey: ["interface", saved.id] })
       qc.invalidateQueries({ queryKey: ["device-interfaces"] })
+      // Uplink: Always / Never reclassifies the port's learned MACs.
+      qc.invalidateQueries({ queryKey: ["device-macs"] })
+      qc.invalidateQueries({ queryKey: ["interface-macs"] })
       invalidatePortCounts(qc)
       toast.success(
         isEdit
@@ -608,7 +616,7 @@ export function InterfaceForm({
 
         <FormColumn>
           <FormSection title="State" card>
-            <div className="mb-3 max-w-xs">
+            <div className="mb-3 grid max-w-md grid-cols-2 gap-3">
               <FormStatusSelect
                 value={statusId}
                 onChange={setStatusId}
@@ -616,6 +624,14 @@ export function InterfaceForm({
                 noneLabel="Active"
                 placeholder="Active"
                 error={fieldErrors.status_id}
+              />
+              <FormSelect
+                label="Uplink"
+                info="Automatic: a port with an LLDP switch neighbour, a LAG, or more MACs than Uplink above. An uplink is never a MAC's location."
+                value={uplinkMode}
+                onChange={(v) => setUplinkMode((v ?? "auto") as UplinkMode)}
+                options={UPLINK_OPTIONS}
+                error={fieldErrors.never_uplink || fieldErrors.is_uplink}
               />
             </div>
             <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
@@ -647,11 +663,6 @@ export function InterfaceForm({
                   }}
                 />
               )}
-              <FormCheckbox
-                label="Uplink"
-                checked={isUplink}
-                onChange={setIsUplink}
-              />
               <FormCheckbox
                 label="EVPN MH uplink"
                 hint="evpn mh uplink - fabric-facing on a multihomed leaf"

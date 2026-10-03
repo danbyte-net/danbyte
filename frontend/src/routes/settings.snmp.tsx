@@ -4,7 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Pencil, Trash2 } from "lucide-react"
 
-import { api, type Paginated, type SnmpProfileOption } from "@/lib/api"
+import { api } from "@/lib/api"
+import type {
+  MacVlanContexts,
+  Paginated,
+  SnmpProfileOption,
+  SnmpProfileParams,
+} from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,6 +36,20 @@ export const Route = createFileRoute("/settings/snmp")({
 
 type Version = "v1" | "v2c" | "v3"
 
+/** The params this form edits; the rest ride along untouched. */
+const FORM_PARAMS = [
+  "username",
+  "auth_proto",
+  "priv_proto",
+  "mac_vlan_contexts",
+]
+
+const PER_VLAN_OPTIONS: { value: MacVlanContexts; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "always", label: "Always" },
+  { value: "off", label: "Off" },
+]
+
 function SnmpProfilesPage() {
   // Every other settings page guards in-component; this one relied on the
   // hidden nav link + backend RBAC only - close the gap.
@@ -51,9 +71,16 @@ function SnmpProfilesPage() {
   const [privProto, setPrivProto] = useState("aes")
   const [privKey, setPrivKey] = useState("")
   const [isDefault, setIsDefault] = useState(false)
+  // MAC tracking (#284): whether per-VLAN MAC tables are read.
+  const [perVlan, setPerVlan] = useState<MacVlanContexts>("auto")
+  // Params set over the API that the form has no field for (mac_max_vlans,
+  // mac_budget_s, a port) - an edit must not drop them.
+  const [otherParams, setOtherParams] = useState<SnmpProfileParams>({})
 
   const reset = () => {
     setEditingId(null)
+    setPerVlan("auto")
+    setOtherParams({})
     setName("")
     setCommunity("")
     setUsername("")
@@ -75,6 +102,12 @@ function SnmpProfilesPage() {
     setUsername(p.params?.username ?? "")
     setAuthProto(p.params?.auth_proto ?? "sha")
     setPrivProto(p.params?.priv_proto ?? "aes")
+    setPerVlan(p.params?.mac_vlan_contexts ?? "auto")
+    setOtherParams(
+      Object.fromEntries(
+        Object.entries(p.params ?? {}).filter(([k]) => !FORM_PARAMS.includes(k))
+      )
+    )
     setCommunity("")
     setAuthKey("")
     setPrivKey("")
@@ -84,7 +117,10 @@ function SnmpProfilesPage() {
 
   const save = useMutation({
     mutationFn: () => {
-      const params: Record<string, unknown> = {}
+      const params: SnmpProfileParams = {
+        ...otherParams,
+        mac_vlan_contexts: perVlan,
+      }
       const secret_params: Record<string, unknown> = {}
       if (version === "v3") {
         params.username = username
@@ -319,6 +355,29 @@ function SnmpProfilesPage() {
               />
             </Field>
           )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Per-VLAN MAC tables"
+              info="Some agents keep one MAC table per VLAN; Auto reads them when the agent lists them."
+            >
+              <Select
+                value={perVlan}
+                onValueChange={(v) => setPerVlan(v as MacVlanContexts)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PER_VLAN_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
 
           <FormCheckbox
             label="Default profile"

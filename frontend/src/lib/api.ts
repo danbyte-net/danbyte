@@ -7797,7 +7797,16 @@ export interface SnmpProfileOption {
   version: string
   is_default: boolean
   has_secrets: boolean
-  params?: Record<string, string>
+  params?: SnmpProfileParams
+}
+
+/** An SNMP profile's non-secret `params`. */
+export interface SnmpProfileParams extends SnmpMacParams {
+  username?: string
+  auth_proto?: string
+  priv_proto?: string
+  /** Anything else the API carries (a port, …) - kept as it is on save. */
+  [key: string]: unknown
 }
 
 export interface SnmpInterface {

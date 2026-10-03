@@ -48,8 +48,9 @@ as well; this is the same catalog, reachable without opening it first.
   `3c52.82aa.1044`, `3c5282-aa1044` or `3c5282aa1044` - finds every interface,
   IP and MAC object carrying it, and the first hit is the port the MAC is
   [located](#where-is-this-mac) on: `Gi1/0/5 · sw-acc-03 · learned here,
-  VLAN 10`. That hit follows your interface permissions like any other. Part
-  of a MAC is matched as text for now.
+  VLAN 10`. That hit follows your interface permissions like any other. The
+  palette also offers **Look up MAC 3c:52:82:aa:10:44**, which opens the MAC
+  page itself. Part of a MAC is matched as text for now.
 
 ### Narrowing with tokens
 
@@ -85,8 +86,9 @@ list's own filter box keeps matching them as well.
 
 ## MAC address tracking
 
-The **MAC list** (`/macs`) answers the question "where have I seen this MAC?" It
-gathers every MAC address known in your tenant from four places:
+The **MAC list** (`/macs`) has two tabs. **Recorded** answers the question
+"where have I recorded this MAC?" It gathers every MAC address known in your
+tenant from four places:
 
 - **Device interface ports** that recorded a MAC.
 - **Virtual machine interfaces** that recorded a MAC (linked to the VM's
@@ -99,13 +101,18 @@ that appears on both a switch port and an assigned IP shows up once, with both
 links. The row also shows the **description and tags** of any MAC object recorded
 for that address.
 
-The MAC detail page additionally lists **SNMP sightings** - the polled devices
-whose ARP or MAC tables observed the address, with the IP or port involved,
-the VLAN, first and last seen, whether it is still there and whether the port
-is an access port or an uplink. A MAC clicked on a device's monitoring cards
-therefore always resolves, even when nothing in Danbyte carries it yet: the
-page says where it was seen instead of returning "not found". The page takes
-the address in any notation.
+**Learned** is the network's own MAC table - see
+[the Learned list](#the-learned-list).
+
+The MAC detail page additionally shows what polling observed, on its
+**Observed** tab: a **Ports** table - every switch port that learned the
+address, with device, port, VLAN, role (Access or Uplink), first and last
+seen and Present / Gone - and an **ARP** table of the devices whose ARP
+tables paired it with an IP. A MAC that moved is two port rows, one gone and
+one present. A MAC clicked on a device's monitoring cards therefore always
+resolves, even when nothing in Danbyte carries it yet: the page says where it
+was seen instead of returning "not found". The page takes the address in any
+notation.
 
 Both pages need MAC address view permission, and each source is then cut to
 what you may view on its own: interfaces, VM interfaces, IP addresses and MAC
@@ -119,22 +126,28 @@ shared MAC; a MAC that only such rows carry is not listed at all.
 
 Polled switches report which MACs they learned on which port, and Danbyte
 keeps each as a [sighting](snmp-discovery.md#mac-tables) with first and last
-seen. From those, a MAC page answers three questions:
+seen. From those, a MAC page answers three questions - the **Location**,
+**IP** and **Name** rows of its overview card:
 
 - **Location** - the port the MAC really sits on: device, port, VLAN (with
   the Danbyte VLAN that number means at the switch's site), since when, and
-  when it was last seen. Uplinks never win while any switch reports the MAC
+  when it was last seen - `sw-acc-03 · Gi1/0/5 · 10 · Users`, `since … ·
+  seen 3m ago`. Uplinks never win while any switch reports the MAC
   on an access port; when none does - an unmanaged desk switch, a switch
   Danbyte doesn't poll - the Location is the nearest uplink, marked
-  **behind uplink**. How a port counts as an uplink, and the overrides, are
+  **behind uplink**: `Behind sw-core-01 · Eth1/5` with an `uplink` chip whose
+  tooltip says why the port is one. A MAC no switch reports any more reads
+  **Gone**, with when it was last seen. How a port counts as an uplink, and
+  the overrides, are
   under [Uplinks](snmp-discovery.md#uplinks); the exact tie-breaks under
   [Location](snmp-discovery.md#mac-location).
 - **IP** - from the ARP table of any polled router, L3 switch, firewall or
   virtual router (only the tenant's **ARP sources**, when it names some),
-  DHCP leases and reservations, and IP addresses paired with the MAC.
+  DHCP leases and reservations, and IP addresses paired with the MAC. Each IP
+  says where it came from: `ARP on sw-core-01`, `DHCP lease`, …
 - **Name** - a Danbyte interface, VM interface or MAC object carrying the
   MAC (`srv-db-01 · eth0`) first, then reverse DNS, DNS records and DHCP
-  host names for its IPs.
+  host names for its IPs, each with its source.
 
 A MAC that moved shows as two sightings, one gone and one present; gone
 sightings stay for the tenant's **Forget MACs unseen for** window (30 days by
@@ -146,13 +159,18 @@ with its sources) and `names` / `name`, next to the existing keys.
 
 #### The Learned list {#the-learned-list}
 
-`GET /api/monitoring/mac-sightings/` is the network-wide learned table: one
-row per MAC at its Location, with vendor, device, port, VLAN, IP, name and
-first and last seen, paged on the server (`page`, `page_size`, at most 500).
-It filters by `site`, `device` and `vlan` (against where each MAC is
-located), `state` (`present`, `gone`, `all`), `kind` (`access` or
-`behind_uplink`), and `q` - a MAC in any notation, part of one, or a device or
-port name.
+The **Learned** tab of `/macs` is the network-wide learned table: one row per
+MAC at its Location - MAC, Vendor, Device, Port (an `uplink` chip when the MAC
+is only seen behind one), VLAN, IP, Name, First seen and Last seen - 50 to a
+page, ordered by MAC. The rail filters by **Site**, **Device**, **VLAN** (the
+VID) and **State** (Present, Gone or All; the State column shows when the
+list can mix them), and the search box takes a MAC in any notation, part of
+one, or a device or port name. Download takes every match, not just the page.
+
+It reads `GET /api/monitoring/mac-sightings/`, paged on the server (`page`,
+`page_size`, at most 500). It filters by `site`, `device` and `vlan` (against
+where each MAC is located), `state` (`present`, `gone`, `all`), `kind`
+(`access` or `behind_uplink`), and `q`.
 
 #### Who sees what
 

@@ -19,7 +19,7 @@ import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import type { PlannedTargetRow } from "@/components/planning/planned-change-badge"
 
 import { api } from "@/lib/api"
-import type { Cable, Interface, SnmpDriftItem } from "@/lib/api"
+import type { Cable, Interface, PortMacs, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
@@ -47,6 +47,8 @@ import {
 } from "@/components/ui/hover-card"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
+import { LearnedMacsCell, UplinkBadge } from "@/components/learned-macs-cell"
+import type { MacSource } from "@/lib/mac-tracking"
 
 /** An interface row with its nesting depth (sub-interfaces indent under their
  * parent). Shared by the device interfaces table and the whole-stack table. */
@@ -89,6 +91,7 @@ export type InterfaceColumnId =
   | "type"
   | "lag"
   | "mac"
+  | "learned_macs"
   | "layer"
   | "enabled"
   | "status"
@@ -107,6 +110,7 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
   "type",
   "lag",
   "mac",
+  "learned_macs",
   "layer",
   "enabled",
   "status",
@@ -129,6 +133,7 @@ export const DEVICE_INTERFACE_COLUMNS: InterfaceColumnId[] = [
   "type",
   "lag",
   "mac",
+  "learned_macs",
   "layer",
   "enabled",
   "status",
@@ -160,6 +165,11 @@ export interface InterfaceColumnOpts<T extends Interface> {
   drift?: Map<string, InterfaceDriftEntry>
   /** Open planned changes keyed by "api.interface:<id>". */
   planned?: Map<string, PlannedTargetRow>
+  /** The device's learned MACs (#284) by interface id - adds the Learned MACs
+   * column and the `uplink` chip after the name. Only the per-device and
+   * whole-stack tables pass it: the fleet list would need a fetch per device.
+   * `source` is where a port's `+N more` reads its full list. */
+  learnedMacs?: { ports: Map<string, PortMacs>; source: MacSource }
   /** Cabled rows show an editable cable-status control instead of the plain
    * cable count. The per-device tables put that control in their actions
    * column, so they leave this off. */
@@ -181,9 +191,12 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
   opts: InterfaceColumnOpts<T> = {}
 ): ColumnDef<T, unknown>[] {
   const driftByIface = opts.driftByIface
+  const learned = opts.learnedMacs
   const omit = new Set(opts.omit ?? [])
   const keep = (id: InterfaceColumnId) =>
-    !omit.has(id) && (!opts.include || opts.include.includes(id))
+    !omit.has(id) &&
+    (!opts.include || opts.include.includes(id)) &&
+    (id !== "learned_macs" || !!learned)
 
   const byId: Record<InterfaceColumnId, () => ColumnDef<T, unknown>> = {
     device: () => ({
@@ -212,6 +225,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
       cell: ({ row }) => {
         const depth =
           (row.original as Interface & { _depth?: number })._depth ?? 0
+        const uplink = learned?.ports.get(row.original.id)?.uplink
         return (
           <div
             className="flex items-center gap-1.5"
@@ -239,6 +253,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
                 virtual
               </Badge>
             )}
+            {uplink?.is && <UplinkBadge uplink={uplink} small />}
             {row.original.mgmt_only && (
               <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
                 mgmt
@@ -369,6 +384,19 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
           >
             {row.original.mac_address}
           </Link>
+        ) : (
+          dash
+        ),
+    }),
+    learned_macs: () => ({
+      id: "learned_macs",
+      header: "Learned MACs",
+      cell: ({ row }) =>
+        learned ? (
+          <LearnedMacsCell
+            port={learned.ports.get(row.original.id)}
+            source={learned.source}
+          />
         ) : (
           dash
         ),

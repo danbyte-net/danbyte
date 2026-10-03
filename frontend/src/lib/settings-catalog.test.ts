@@ -13,7 +13,10 @@ import {
 // Where a page's cards are actually rendered. Most live in the route file;
 // a few were lifted into components so a merged page's route stays thin.
 const EXTRA_SOURCES: Record<string, string[]> = {
-  monitoring: ["src/components/settings/monitoring-deployment.tsx"],
+  monitoring: [
+    "src/components/settings/monitoring-deployment.tsx",
+    "src/components/monitoring/settings-form.tsx",
+  ],
   separation: ["src/components/settings/separation-deployment.tsx"],
   security: ["src/components/settings/chat-model-card.tsx"],
   directory: ["src/components/settings/ldap-directory.tsx"],
