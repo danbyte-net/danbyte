@@ -1,13 +1,14 @@
 import type { InlinedPhoto } from "../photos"
 import type { ElevationDevice, ElevationRack } from "../rack-svg"
 
-// A 12U rack with gear on every kind of mount: a full-depth switch and
-// server on the front (hatched on the rear), a shallow patch panel with no
-// role (front only, the rack role's stripe), two half-width switches sharing
-// a unit, a shallow UPS on the rear only, a full-depth device mounted on the
-// rear (hatched on the front), a vertical PDU on the left rail with no
-// channel (both faces) and one on the right rail in the rear channel - and an
-// unracked device, which no face draws.
+// A 12U rack with gear on every kind of mount: a full-depth switch with a
+// rear photo and a full-depth server without one on the front (their other
+// sides on the rear), a shallow patch panel with no role (front only, the
+// rack role's stripe), two half-width switches sharing a unit, a shallow UPS
+// on the rear only, a full-depth device mounted on the rear (its other side
+// on the front), a vertical PDU on the left rail with no channel (both
+// faces) and one on the right rail in the rear channel - and an unracked
+// device, which no face draws.
 
 export const rack: ElevationRack = {
   name: "R12",
@@ -50,7 +51,10 @@ export const devices: ElevationDevice[] = [
     name: "core-sw-01",
     position: 11,
     role: { color: "#2563eb" },
-    device_type: type({ front_image: "/media/device-type-images/switch.png" }),
+    device_type: type({
+      front_image: "/media/device-type-images/switch.png",
+      rear_image: "/media/device-type-images/switch-rear.png",
+    }),
   }),
   device({
     id: "d-srv",
@@ -121,9 +125,10 @@ export const devices: ElevationDevice[] = [
 export const PNG_1PX =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
-/** The switch's and the half-width switches' photos; the server's would
- * not load. */
+/** The switch's front and rear and the half-width switches' photos; the
+ * server's would not load. */
 export const photos: ReadonlyMap<string, InlinedPhoto> = new Map([
   ["/media/device-type-images/switch.png", { src: PNG_1PX, aspect: 0.1 }],
+  ["/media/device-type-images/switch-rear.png", { src: PNG_1PX, aspect: 0.1 }],
   ["/media/device-type-images/half.png", { src: PNG_1PX, aspect: 0.2 }],
 ])

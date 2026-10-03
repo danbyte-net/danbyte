@@ -22,15 +22,22 @@ import type { InlinedPhoto } from "./photos"
 // Each face is the rack's frame with the units numbered beside it in the
 // rack's own numbering (`starting_unit`, `desc_units`), its devices in their
 // units - half-width ones in their half - and a lane down either side for
-// the 0U strips on that rail. A device takes its own face; a full-depth one
-// is hatched on the other, and a shallow one is left off it, as on screen.
-// Names: each device a block in its role's colour (white with the rack
-// role's stripe where it has none) with its name and, past 1U, its height.
-// Images: the type's photo over the block, and with labels the name on a
-// chip; a device whose photo is missing keeps its Names block.
+// the 0U strips on that rail. A device takes its own face, where it shows
+// its front; a full-depth one fills the other face too and shows its other
+// side there, and a shallow one is left off it, as on screen. Names: each
+// device a block in its role's colour (white with the rack role's stripe
+// where it has none) with its name and, past 1U, its height - on either
+// face. Images: the type's photo over the block - its front photo on its
+// own face, its rear photo on the other - and with labels the name on a
+// chip; on its own face a device whose photo is missing keeps its Names
+// block, on the other it is hatched, its name muted. With `show` set to one
+// face, the gear mounted on the other is hatched space with no name, so the
+// used and free units still read true.
 
 export type ElevationFace = "front" | "rear"
 export type ElevationLook = "names" | "images"
+/** All the gear, or only what is mounted on one face. */
+export type ElevationShow = "all" | ElevationFace
 
 /** What the drawing reads off a rack. */
 export interface ElevationRack {
@@ -72,6 +79,9 @@ export interface RackSvgOptions {
   look?: ElevationLook
   /** Images: each photo's name on a chip. On by default. */
   labels?: boolean
+  /** Only the gear mounted on one face; the rest is hatched space. All by
+   * default. */
+  show?: ElevationShow
   /** Photos inlined by `inlinePhotos`, by URL. A photo not here is drawn as
    * its device's Names block. */
   photos?: ReadonlyMap<string, InlinedPhoto>
@@ -138,12 +148,13 @@ const INK = {
   hatchEdge: mix(PRINT.border, BAND, 0.6),
 } as const
 
-/** A device in a face's units. */
+/** A device in a face's units: its front where it is mounted (`own`), its
+ * other side where it is full depth (`other`), or space the Show filter
+ * leaves it out of (`hidden`). */
 interface Block {
   d: ElevationDevice
   box: Box
-  /** Taken from the other face by a full-depth device mounted there. */
-  hatched: boolean
+  view: "own" | "other" | "hidden"
 }
 
 interface FaceLayout {
@@ -173,19 +184,22 @@ function unitsTopDown(rack: ElevationRack): number[] {
 }
 
 /** A face's devices in their units: its own, and the full-depth ones
- * mounted on the other face, hatched - those under the rest. */
+ * mounted on the other face - those under the rest. */
 function blocksOf(
   rack: ElevationRack,
   devices: readonly ElevationDevice[],
   face: ElevationFace,
   grid: Box,
-  rowH: number
+  rowH: number,
+  show: ElevationShow
 ): Block[] {
   const out: Block[] = []
   for (const d of devices) {
     if (d.position == null || d.mount) continue
     const own = mounted(d) === face
     if (!own && !(d.device_type?.is_full_depth ?? true)) continue
+    const view =
+      show !== "all" && mounted(d) !== show ? "hidden" : own ? "own" : "other"
     const h = Math.max(1, d.u_height)
     const top = rack.desc_units ? d.position : d.position + h - 1
     const first = Math.max(1, unitRow(rack, top))
@@ -196,7 +210,7 @@ function blocksOf(
     const w = half ? grid.w / 2 : grid.w
     out.push({
       d,
-      hatched: !own,
+      view,
       box: {
         x: grid.x + (right ? grid.w / 2 : 0),
         y: grid.y + (first - 1) * rowH,
@@ -206,7 +220,10 @@ function blocksOf(
     })
   }
   // The other face's gear first, so a device mounted here draws over it.
-  return [...out.filter((b) => b.hatched), ...out.filter((b) => !b.hatched)]
+  return [
+    ...out.filter((b) => b.view !== "own"),
+    ...out.filter((b) => b.view === "own"),
+  ]
 }
 
 /** The 0U strips on one rail that show on `face`: those in its channel,
@@ -307,7 +324,7 @@ function layout(
           : null,
       },
       strips,
-      blocks: blocksOf(rack, devices, face, grid, rowH),
+      blocks: blocksOf(rack, devices, face, grid, rowH, opts.show ?? "all"),
     }
     x += f.width + S.FACE_GAP
     return f
@@ -331,12 +348,12 @@ function layout(
   }
 }
 
-/** The photo a block shows: on its own face, its type's front photo - the
- * face you are looking at is its front. */
-function photoOf(b: Block, face: ElevationFace): string | null {
-  if (b.hatched) return null
+/** The photo a block shows: on its own face its type's front photo - the
+ * face you are looking at is its front - and on the other its rear photo. */
+function photoOf(b: Block): string | null {
+  if (b.view === "hidden") return null
   const t = b.d.device_type
-  return (face === mounted(b.d) ? t?.front_image : t?.rear_image) || null
+  return (b.view === "own" ? t?.front_image : t?.rear_image) || null
 }
 
 /** The photos a drawing with these options shows, each with the widest it
@@ -344,14 +361,14 @@ function photoOf(b: Block, face: ElevationFace): string | null {
 export function rackPhotoRequests(
   rack: ElevationRack,
   devices: readonly ElevationDevice[],
-  opts: Pick<RackSvgOptions, "faces" | "look"> = {}
+  opts: Pick<RackSvgOptions, "faces" | "look" | "show"> = {}
 ): Map<string, number> {
   const out = new Map<string, number>()
   if (opts.look !== "images") return out
   const lay = layout(rack, devices, { ...opts, heading: false }, () => 0)
   for (const f of lay.faces)
     for (const b of f.blocks) {
-      const href = photoOf(b, f.face)
+      const href = photoOf(b)
       if (href) out.set(href, Math.max(out.get(href) ?? 0, b.box.w))
     }
   return out
@@ -429,8 +446,8 @@ function blockText(
   return out
 }
 
-/** A block taken from the other face: hatched, outlined faintly, its name
- * muted. */
+/** Units this face can't use: hatched, outlined faintly - with the
+ * device's name muted, or nameless where the Show filter leaves it out. */
 function hatchedBlock(b: Block, measure: Measure): string {
   const { x, y, w, h } = b.box
   return [
@@ -447,7 +464,9 @@ function hatchedBlock(b: Block, measure: Measure): string {
       stroke: INK.hatchEdge,
       "stroke-width": 1,
     }),
-    ...blockText(b, 1, { text: PRINT.subtle, sub: PRINT.subtle }, measure),
+    ...(b.view === "hidden"
+      ? []
+      : blockText(b, 1, { text: PRINT.subtle, sub: PRINT.subtle }, measure)),
   ].join("")
 }
 
@@ -625,10 +644,15 @@ function faceSvg(
     )
   )
   for (const b of f.blocks) {
-    const href = look === "images" ? photoOf(b, f.face) : null
-    if (b.hatched) out.push(hatchedBlock(b, measure))
-    else if (href && photos.get(href))
-      out.push(photoBlock(b, href, photos, accent, labels, measure))
+    const href = look === "images" ? photoOf(b) : null
+    const photo = href && photos.get(href) ? href : null
+    if (b.view === "hidden") out.push(hatchedBlock(b, measure))
+    else if (photo)
+      out.push(photoBlock(b, photo, photos, accent, labels, measure))
+    // Images draws the other side's plate - a full-depth device with no rear
+    // photo is hatched there, never a bare block.
+    else if (b.view === "other" && look === "images")
+      out.push(hatchedBlock(b, measure))
     else out.push(namesBlock(b, accent, measure))
   }
   if (f.lanes.left) out.push(laneSvg(f.lanes.left, f.strips.left, measure))
@@ -682,8 +706,15 @@ export function rackSvg(
     desc: [
       `${faceNames[0].toUpperCase()}${faceNames.slice(1)}`,
       look === "images" ? "Images" : "Names",
+      opts.show === "front"
+        ? "Front-mounted"
+        : opts.show === "rear"
+          ? "Rear-mounted"
+          : "",
       `${rack.u_height} U`,
-    ].join(" · "),
+    ]
+      .filter(Boolean)
+      .join(" · "),
     defs: photos.defs(),
     embedFont: opts.embedFont,
     body,

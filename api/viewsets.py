@@ -47,6 +47,7 @@ from .port_state import (
     cable_state,
     component_queryset,
     interface_state,
+    snmp_observed,
 )
 from .models import (
     _TEMPLATE_MARKER_KIND,
@@ -6363,8 +6364,9 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 "`count_virtual`. `devices`: per device the caller may view, its "
                 "`ports` counts, its `face` (the face-ports payload, `drift` null), "
                 "its physical `interfaces` as the faceplate draws them, its "
-                "installed `modules` and the `components` its faceplate layout "
-                "places, by kind."
+                "installed `modules`, the `components` its faceplate layout "
+                "places, by kind, and whether SNMP may have `observed` its "
+                "ports."
             ),
         ),
     )
@@ -6416,6 +6418,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         loader = FacePortLoader(devices, rows={"interfaces": interfaces})
         peers = PeerScope(request.user, tenant, loader.far_components())
         parts = FaceplateParts(devices, request.user, tenant)
+        observed = snmp_observed(devices, tenant)
         listed: dict = {}
         for iface in interfaces:
             # The physical ports: what the device page's faceplate draws.
@@ -6442,6 +6445,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                     "interfaces": listed.get(d.id, []),
                     "modules": parts.modules(d),
                     "components": parts.components(d),
+                    "observed": d.id in observed,
                 }
                 for d in devices
             },

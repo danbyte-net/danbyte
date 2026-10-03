@@ -19,6 +19,7 @@ import {
 } from "@/lib/cabinet-plate-view"
 import type { PlateMode, PlateZoom } from "@/lib/cabinet-plate-view"
 import { legendIsEmpty } from "@/lib/faceplate-colors"
+import { setLivePortsShown, useLivePortsShown } from "@/lib/live-ports-pref"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import {
@@ -35,7 +36,7 @@ import { FaceplateLegend } from "@/components/device-faceplate"
 import type { PortTrace } from "@/components/device-faceplate"
 import { InterfaceTraceDialog } from "@/components/interface-trace-dialog"
 import { DinRailEditor } from "@/components/din-rail-editor"
-import { FormCheckbox } from "@/components/forms"
+import { DrawingDisplayMenu } from "@/components/drawing-display-menu"
 import { BarIconButton } from "@/components/map-toolbar"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useLegendCollector } from "@/components/speed-scale"
@@ -148,8 +149,15 @@ export function CabinetPlateSection({
     })
   }, [])
   // Live faces: every device in Render, the photos with ports marked on
-  // them in Images - as the rack's elevation draws them.
-  const faces = mode !== "names" && !!devices?.length && pxPerMm != null
+  // them in Images - as the rack's elevation draws them. With the Ports
+  // tick off (shared with the rack's), Images keeps the bodies' photos and
+  // Render draws each type plain.
+  const livePorts = useLivePortsShown()
+  const faces =
+    mode !== "names" &&
+    !!devices?.length &&
+    pxPerMm != null &&
+    (livePorts || mode === "render")
   // A cabled port pressed on a face: its run, in a dialog.
   const [trace, setTrace] = useState<PortTrace | null>(null)
 
@@ -239,11 +247,24 @@ export function CabinetPlateSection({
                             : MODES
                         }
                       />
-                      <FormCheckbox
-                        label="Labels"
-                        checked={view.labels}
-                        onChange={(labels) => setView({ ...view, labels })}
-                        className="items-center gap-1 text-[11px] text-muted-foreground"
+                      <DrawingDisplayMenu
+                        ticks={[
+                          {
+                            label: "Labels",
+                            checked: view.labels,
+                            onChange: (labels) => setView({ ...view, labels }),
+                          },
+                          // Names has no ports to show or hide.
+                          ...(mode !== "names"
+                            ? [
+                                {
+                                  label: "Ports",
+                                  checked: livePorts,
+                                  onChange: setLivePortsShown,
+                                },
+                              ]
+                            : []),
+                        ]}
                       />
                       <div className="flex items-center gap-1">
                         <BarIconButton
@@ -307,6 +328,7 @@ export function CabinetPlateSection({
                         onLegend={onLegend}
                         onLive={onLive}
                         onTrace={setTrace}
+                        live={livePorts}
                       />
                     )}
                   </div>

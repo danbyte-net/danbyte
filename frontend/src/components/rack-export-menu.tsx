@@ -6,12 +6,14 @@ import type { DrawingRequest } from "@/components/drawing-export-menu"
 import { api } from "@/lib/api"
 import type { Device, Paginated, Rack } from "@/lib/api"
 import { exportFileName } from "@/lib/diagram/export-file"
+import type { ElevationShow } from "@/lib/elevation/rack-svg"
 import { downloadPng } from "@/lib/png-export"
 
 // A rack's Export menu (#248): the elevation as the SVG, PNG and PDF exports
-// draw it (lib/elevation/rack-svg.ts) - the faces and mode the page shows,
-// Render drawn in the Images look, whose PNG is a picture of the screen
-// instead. The devices are the elevation's own list, from the same query.
+// draw it (lib/elevation/rack-svg.ts) - the faces, mode and Show filter the
+// page shows, Render drawn in the Images look, whose PNG is a picture of the
+// screen instead. The devices are the elevation's own list, from the same
+// query.
 
 export type RackExportFace = "front" | "rear" | "both"
 
@@ -30,6 +32,7 @@ export function RackExportMenu({
   face = "both",
   mode,
   labels = true,
+  show = "all",
   snapshot,
   className,
 }: {
@@ -43,6 +46,9 @@ export function RackExportMenu({
   mode: "names" | "images" | "render"
   /** Images: each photo's name on it. */
   labels?: boolean
+  /** All the gear, or only what is mounted on one face - the rest drawn as
+   * hatched space, as the page shows it. */
+  show?: ElevationShow
   /** The drawing on screen: Render's PNG is a picture of it. */
   snapshot?: RefObject<HTMLElement | null>
   className?: string
@@ -62,12 +68,13 @@ export function RackExportMenu({
       ])
     const faces = face === "both" ? (["front", "rear"] as const) : [face]
     const { photos, missing } = await inlinePhotos(
-      rackPhotoRequests(rack, list, { faces, look })
+      rackPhotoRequests(rack, list, { faces, look, show })
     )
     const svg = rackSvg(rack, list, {
       faces,
       look,
       labels,
+      show,
       photos,
       heading,
       generatedAt: new Date().toISOString(),

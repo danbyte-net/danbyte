@@ -2387,6 +2387,9 @@ export interface RackPortDevice {
   /** By slot kind (`console-port`, `power-port`…): the components of the
    * kinds its saved faceplate layout places, and only those. */
   components: Record<string, { id: string; name: string; type: string }[]>
+  /** Whether SNMP may have seen its ports - polled with interfaces, or a
+   * stack member: the page asks for live port state only for these. */
+  observed: boolean
 }
 
 /** `GET /api/racks/{id}/port-state/` (#248): every port in the rack. The

@@ -41,7 +41,7 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { FormCheckbox } from "@/components/forms"
-import { TypeFaceplate } from "@/components/device-faceplate"
+import { TypeFaceplate, useSavedFaceplate } from "@/components/device-faceplate"
 import type { PortTrace } from "@/components/device-faceplate"
 import { CableTraceDialog } from "@/components/cable-trace-dialog"
 import { InterfaceTraceDialog } from "@/components/interface-trace-dialog"
@@ -60,6 +60,14 @@ const RENDER_PX_PER_MM = 1.35
 
 export type RackFace = "front" | "rear"
 export type RackDisplayMode = "names" | "images" | "render"
+/** Which gear the elevation shows: all of it, or only what is mounted on
+ * one face - the rest still takes its units, hatched. */
+export type RackShow = "all" | "front" | "rear"
+
+/** How a device draws on a face: its front where it is mounted (`own`), its
+ * other side where it is full depth (`other`), or as hatched space the Show
+ * filter keeps it out of (`hidden`). */
+type BlockView = "own" | "other" | "hidden"
 
 /** The device form's unit picker: the elevation drawn for placing one
  * device. Device blocks stop being links, the page's add, assign and drag
@@ -86,6 +94,7 @@ export function RackElevation({
   draggable = false,
   picker,
   ports,
+  show = "all",
 }: {
   rack: Rack
   /** Controlled face - hides the internal Front/Rear toggle. */
@@ -109,6 +118,8 @@ export function RackElevation({
    * device's ports live, as its device page does, and a press on a cabled
    * port opens its trace. */
   ports?: RackPortState
+  /** Only the gear mounted on one face; the rest is hatched space. */
+  show?: RackShow
 }) {
   const [faceState, setFace] = useState<RackFace>("front")
   const [modeState, setMode] = useState<RackDisplayMode>("names")
@@ -188,21 +199,28 @@ export function RackElevation({
     (d) => d.mount === "side_right" && onThisFace(d)
   )
   // Mounting semantics: a device mounts on ONE face (face "" ≈ front); when its
-  // type is full-depth it *occupies* the opposite face too - drawn hatched
-  // there, so the rear view shows what's blocking the space.
+  // type is full-depth it *occupies* the opposite face too and shows its
+  // other side there - its rear plate, or hatching where the type has none.
+  // A shallow device leaves the other face free. A device the Show filter
+  // leaves out still takes its units, hatched, so used and free U stay true.
   const visible = useMemo(
     () =>
       devices
         .filter((d) => d.position != null)
         .map((d) => {
           const mounted: RackFace = d.face === "rear" ? "rear" : "front"
-          const fullDepth = d.device_type?.is_full_depth ?? true
-          if (mounted === face) return { d, hatched: false }
-          if (fullDepth) return { d, hatched: true }
-          return null
+          const own = mounted === face
+          if (!own && !(d.device_type?.is_full_depth ?? true)) return null
+          const view: BlockView =
+            show !== "all" && mounted !== show
+              ? "hidden"
+              : own
+                ? "own"
+                : "other"
+          return { d, view }
         })
-        .filter((x): x is { d: Device; hatched: boolean } => x !== null),
-    [devices, face]
+        .filter((x): x is { d: Device; view: BlockView } => x !== null),
+    [devices, face, show]
   )
 
   // Planned rack-elevation moves, drawn as ghosts: a device in THIS rack
@@ -430,7 +448,7 @@ export function RackElevation({
                 ))}
 
                 {/* Device blocks spanning their u_height. */}
-                {visible.map(({ d, hatched }) => {
+                {visible.map(({ d, view }) => {
                   // When desc_units is false (highest at top), a device occupying
                   // positions p..p+h-1 starts visually at its *top-most* unit
                   // (p+h-1), so anchor on that row; ascending anchors on p.
@@ -448,14 +466,17 @@ export function RackElevation({
                       : "1 / -1"
                   const span = Math.max(1, d.u_height)
                   const accent = rack.role?.color || undefined
-                  // The rack page's live face, over the block it belongs to,
-                  // on the face the device is mounted on: in Render, and in
-                  // Images where it has a photo - without one it keeps its
-                  // role-coloured block.
+                  const own = view === "own"
+                  // The rack page's live face, over the block it belongs to:
+                  // in Render, and in Images where the side it shows has a
+                  // photo - without one the block draws itself.
+                  const photo = own
+                    ? d.device_type?.front_image
+                    : d.device_type?.rear_image
                   const liveMode =
-                    hatched || mode === "names"
+                    view === "hidden" || mode === "names"
                       ? null
-                      : mode === "images" && !d.device_type?.front_image
+                      : mode === "images" && !photo
                         ? null
                         : mode
                   const live = liveMode ? ports?.devices[d.id] : undefined
@@ -465,8 +486,8 @@ export function RackElevation({
                         device={d}
                         face={face}
                         mode={mode}
-                        hatched={hatched}
-                        dragEnabled={canDrag && !hatched}
+                        view={view}
+                        dragEnabled={canDrag && own}
                         highlight={d.id === highlightDeviceId}
                         showText={labels}
                         startRow={top}
@@ -475,17 +496,20 @@ export function RackElevation({
                         column={column}
                         accent={accent}
                         inert={!!picker}
-                        overlaid={!!live}
-                        ports={ports?.devices[d.id]?.ports}
+                        live={!!live}
+                        ports={own ? ports?.devices[d.id]?.ports : undefined}
+                        countVirtual={ports?.rack.count_virtual}
                       />
                       {live && liveMode && (
                         <RackLiveFace
                           device={d}
                           state={live}
                           mode={liveMode}
-                          side="front"
+                          side={own ? "front" : "rear"}
                           pxPerMm={pxPerMm}
                           text={labels}
+                          countPorts={own}
+                          countVirtual={ports?.rack.count_virtual}
                           onTrace={setTrace}
                           className={cn(dragging?.id === d.id && "opacity-40")}
                           style={{
@@ -863,7 +887,7 @@ function DeviceBlock({
   device,
   face,
   mode,
-  hatched,
+  view,
   highlight,
   showText,
   startRow,
@@ -872,24 +896,29 @@ function DeviceBlock({
   accent,
   dragEnabled = false,
   inert = false,
-  overlaid = false,
+  live = false,
   ports,
+  countVirtual = false,
 }: {
   device: Device
   face: RackFace
   mode: RackDisplayMode
-  /** A live face lies over this block (`RackLiveFace`): the block keeps its
-   * frame, link and drag, and leaves the picture and the text to it. */
-  overlaid?: boolean
+  /** Its front where it is mounted, its other side where it is full depth,
+   * or hatched space the Show filter leaves it out of. */
+  view: BlockView
+  /** A live face lies over this block (`RackLiveFace`). On the face it is
+   * mounted on the face draws the picture and the text; on its other side
+   * the block keeps its hatching under it, for a type with no plate there. */
+  live?: boolean
   /** The device's counted ports - its block shows those in use over them. */
   ports?: PortCountRow
+  /** The deployment counts virtual interfaces too (the badge says so). */
+  countVirtual?: boolean
   /** Rack page: this block can be dragged to another unit. */
   dragEnabled?: boolean
   /** The device form's picker: a picture, not a link - a press goes through
    * to the unit under it. */
   inert?: boolean
-  /** Occupied from the other face (full-depth) - striped, muted. */
-  hatched: boolean
   highlight: boolean
   /** Overlay position + name on image/render blocks (names mode: always). */
   showText: boolean
@@ -900,12 +929,31 @@ function DeviceBlock({
   accent?: string
 }) {
   const mountedOn: RackFace = device.face === "rear" ? "rear" : "front"
+  const own = view === "own"
+  const hidden = view === "hidden"
+  const overlaid = own && live
+  // The other side's plate, where nothing live lies over it: Images, the
+  // type's rear photo; Render, the type's drawing of its rear. Names draws
+  // the other side as a plain block.
+  const rearDoc = useSavedFaceplate(
+    view === "other" && mode === "render" && !live
+      ? device.device_type?.id
+      : null
+  )
+  const otherPlate =
+    mode === "names" ||
+    (!live &&
+      (mode === "images"
+        ? !!device.device_type?.rear_image
+        : (rearDoc?.rear.length ?? 0) > 0))
+  // Hatched: hidden by the Show filter, or the other side of a type with no
+  // plate for it - never an empty plain block.
+  const hatched = hidden || (view === "other" && !otherPlate)
   // Images mode: paint the type's rack-face image across the block with a
   // legibility scrim. Render mode: draw the type's faceplate at rack scale.
-  // A non-hatched block is drawn on the device's OWN mounted face, so you're
-  // looking at its front - use front_image there, rear_image only on the
-  // opposite face. (Keying off the elevation `face` alone showed rear-mounted
-  // devices' rear image on the rear elevation.)
+  // The device's own face shows its front - front_image - and its other
+  // side its rear - rear_image. (Keying off the elevation `face` alone showed
+  // rear-mounted devices' rear image on the rear elevation.)
   const image =
     mode === "images" && !hatched && !overlaid
       ? face === mountedOn
@@ -914,7 +962,7 @@ function DeviceBlock({
       : null
   const renderPanel =
     mode === "render" && !hatched && !overlaid && device.device_type
-  const text = !overlaid && (mode === "names" || hatched || showText)
+  const text = !overlaid && !hidden && (mode === "names" || hatched || showText)
   // Occupied units fill edge-to-edge (square corners) and take
   // the DEVICE ROLE's color as the block background in names mode.
   const roleColor =
@@ -942,8 +990,8 @@ function DeviceBlock({
     color: roleFg,
     borderLeft:
       accent && !hatched && !roleColor ? `3px solid ${accent}` : undefined,
-    // Diagonal stripes: this face is blocked by a full-depth
-    // device mounted on the other face.
+    // Diagonal stripes: units this face can't use - a full-depth device's
+    // other side with no plate, or gear the Show filter leaves out.
     backgroundImage: hatched
       ? "repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, currentColor 18%, transparent) 5px, color-mix(in srgb, currentColor 18%, transparent) 7px)"
       : undefined,
@@ -977,7 +1025,7 @@ function DeviceBlock({
           />
         </div>
       )}
-      {!overlaid && (text || (!image && !renderPanel)) && (
+      {!overlaid && !hidden && (text || (!image && !renderPanel)) && (
         <>
           <span
             className={cn(
@@ -1012,15 +1060,19 @@ function DeviceBlock({
               {device.name}
             </span>
           )}
-          {!hatched && (
-            <PortsBadge ports={ports} className="relative ml-auto" />
+          {own && (
+            <PortsBadge
+              ports={ports}
+              countVirtual={countVirtual}
+              className="relative ml-auto"
+            />
           )}
           {device.u_height > 1 && !renderPanel && (
             <span
               className={cn(
                 "relative shrink-0 text-[10px] tabular-nums",
                 // After the ports badge when there is one.
-                !(ports?.total && !hatched) && "ml-auto",
+                !(own && ports?.total) && "ml-auto",
                 image
                   ? "text-zinc-300"
                   : roleColor
@@ -1045,6 +1097,17 @@ function DeviceBlock({
         {content}
       </div>
     )
+  // Left out by the Show filter: the space it takes, and nothing to open.
+  if (hidden)
+    return (
+      <div
+        aria-hidden
+        data-device={device.name}
+        data-view="hidden"
+        className={className}
+        style={style}
+      />
+    )
 
   return (
     <Link
@@ -1053,6 +1116,7 @@ function DeviceBlock({
       {...drag.listeners}
       to="/devices/$id"
       params={{ id: device.id }}
+      data-view={view}
       className={className}
       style={style}
       title={`${device.name} · U${device.position}${
@@ -1060,7 +1124,7 @@ function DeviceBlock({
           ? `–U${(device.position as number) + device.u_height - 1}`
           : ""
       }${device.rack_width === "half" ? ` · ${device.rack_side || "left"} half` : ""}${
-        hatched ? ` · mounted on ${mountedOn}` : ""
+        own ? "" : ` · mounted on ${mountedOn}`
       }`}
     >
       {content}

@@ -5,10 +5,12 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from auth_api.models import ObjectPermission, UserProfile
 from core.models import Organization, Tag, Tenant
+from monitoring.models import DeviceSnmp
 
 from .capacity import rack_ports, rack_space
 from .models import (
@@ -42,6 +44,7 @@ from .models import (
     RearPort,
     Site,
     Status,
+    VirtualChassis,
     Zone,
 )
 
@@ -597,6 +600,32 @@ class RackPortStateTests(_PortFixture):
         self.assertEqual([m["id"] for m in sw1["modules"]], [str(self.module.id)])
         self.assertEqual(list(sw1["components"]), ["console-port"])
 
+    def test_observed_says_whose_ports_snmp_may_have_seen(self):
+        """A page asks for a device's live port state only where SNMP may
+        have seen its ports: polled with interfaces, or a stack member."""
+        now = timezone.now()
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.sw1, polled_at=now,
+            interfaces=[{"name": "Gi1/0/1", "oper_status": "up"}],
+        )
+        # Polled, nothing seen; and seen once, never polled since.
+        DeviceSnmp.objects.create(tenant=self.tenant, device=self.panel, polled_at=now)
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.pdu, interfaces=[{"name": "inlet"}]
+        )
+        # A stack member: its stack's poll may describe it.
+        self.sw2.virtual_chassis = VirtualChassis.objects.create(
+            tenant=self.tenant, name="stack-1"
+        )
+        self.sw2.vc_position = 2
+        self.sw2.save(update_fields=["virtual_chassis", "vc_position"])
+        devices = self._state()["devices"]
+        self.assertEqual(
+            {d.name: devices[str(d.id)]["observed"]
+             for d in (self.sw1, self.sw2, self.panel, self.pdu)},
+            {"sw-1": True, "sw-2": True, "panel-1": False, "pdu-1": False},
+        )
+
     def test_counting_virtual_interfaces(self):
         _set_count_virtual(True)
         body = self._state()
@@ -735,6 +764,11 @@ class RackPortStateQueryTests(_ViewerMixin, _RackBase):
             AuxPort.objects.create(device=dev, name="AUX")
             bay = ModuleBay.objects.create(device=dev, name="Slot 1", position="1")
             Module.objects.create(device=dev, module_bay=bay, module_type=self.card)
+            if i % 2 == 0:
+                DeviceSnmp.objects.create(
+                    tenant=self.tenant, device=dev, polled_at=timezone.now(),
+                    interfaces=[{"name": "Gi1/0/1", "oper_status": "up"}],
+                )
         return rack
 
     def _counts(self, racks):
@@ -756,6 +790,7 @@ class RackPortStateQueryTests(_ViewerMixin, _RackBase):
         sw = next(d for d in body["devices"].values() if d["modules"])
         self.assertEqual(set(sw["components"]), {"console-port", "aux-port"})
         self.assertEqual(len(sw["modules"][0]["module_interfaces"]), 2)
+        self.assertEqual(sum(d["observed"] for d in body["devices"].values()), 6)
 
         # And for a viewer whose grants are narrowed by constraints.
         self._viewer(

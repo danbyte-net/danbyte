@@ -115,11 +115,15 @@ one request; the interfaces they stand for load per device, as Render loads
 them, and the live SNMP state only for a photo that marks interfaces. Disk
 bays and other hardware markers only show their part in Images - edit parts
 from the device.
-**Labels** hides the device names (and, in Names, the rail labels); **−** and
-**+** zoom, starting fitted to the column (Render starts larger) and
-scrolling when the plate grows wider; **Export** saves the plate as a file
-or prints it (see [Export](#export)). The mode, zoom and labels are
-remembered in your browser. **Add device** in the Plate heading opens a
+**Display ▾** holds the plate's ticks (on a narrow screen the button is its
+icon): **Labels** hides the device names (and, in Names, the rail labels);
+**Ports** (Images and Render) draws the live ports - off, Images shows the
+bare photos and Render each type's plain drawing, as on a
+[rack's elevation](racks.md#live-ports-on-the-elevation), whose Ports tick is
+the same one. **−** and **+** zoom, starting fitted to the column (Render
+starts larger) and scrolling when the plate grows wider; **Export** saves
+the plate as a file or prints it (see [Export](#export)). The mode, zoom,
+labels and ports are remembered in your browser. **Add device** in the Plate heading opens a
 new device on the rail you pick, which takes the first free gap; **Assign**
 puts an existing device of the site on a rail, offering only devices whose
 type fits the rail's profile. Each rail in those menus shows its widest free

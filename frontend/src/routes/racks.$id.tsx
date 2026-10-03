@@ -29,18 +29,17 @@ import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
 import { QueryError } from "@/components/query-error"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
-import {
-  RackElevation,
-  type RackDisplayMode,
-} from "@/components/rack-elevation"
+import { RackElevation } from "@/components/rack-elevation"
+import type { RackDisplayMode, RackShow } from "@/components/rack-elevation"
 import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { FormCheckbox } from "@/components/forms"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { BarIconButton } from "@/components/map-toolbar"
+import { DrawingDisplayMenu } from "@/components/drawing-display-menu"
+import { setLivePortsShown, useLivePortsShown } from "@/lib/live-ports-pref"
 import { RackExportMenu } from "@/components/rack-export-menu"
 import { Loading } from "@/components/loading"
 import { useMe } from "@/lib/use-me"
@@ -387,6 +386,13 @@ const RackScene = lazy(() => import("@/components/floorplan3d/rack-scene"))
 const VIZ = ["2d", "3d"] as const
 type Viz = (typeof VIZ)[number]
 
+const SHOWS: readonly RackShow[] = ["all", "front", "rear"]
+const SHOW_OPTIONS: readonly { value: RackShow; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "front", label: "Front-mounted" },
+  { value: "rear", label: "Rear-mounted" },
+]
+
 function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
   // The rack in 2D or in 3D, in the URL as the cabinet keeps its plate's.
   const [viz, setViz] = useUrlTab<Viz>("2d", "viz", VIZ)
@@ -402,6 +408,10 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
   )
   const [mode, setMode] = useState<RackDisplayMode>("names")
   const [labels, setLabels] = useState(true)
+  // Which gear to show, in the URL like the 2D | 3D switch; the live ports,
+  // a choice this browser keeps (Ports, shared with the cabinet's plate).
+  const [show, setShow] = useUrlTab<RackShow>("all", "show", SHOWS)
+  const livePorts = useLivePortsShown()
   const [zoom, setZoom] = useState(DEFAULT_ZOOM.names)
   const facesRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
@@ -464,7 +474,10 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
           </Suspense>
         ) : (
           <>
-            <div className="@container mb-3 flex items-center gap-3">
+            <div
+              data-part="elevation-toolbar"
+              className="@container mb-3 flex items-center gap-3"
+            >
               {vizSwitch}
               <SegmentedTabs<RackDisplayMode>
                 value={mode}
@@ -475,14 +488,24 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                   { value: "render", label: "Render" },
                 ]}
               />
-              {mode !== "names" && (
-                <FormCheckbox
-                  label="Text"
-                  checked={labels}
-                  onChange={setLabels}
-                  className="items-center gap-1 text-[11px] text-muted-foreground"
-                />
-              )}
+              <DrawingDisplayMenu<RackShow>
+                ticks={[
+                  ...(mode !== "names"
+                    ? [{ label: "Text", checked: labels, onChange: setLabels }]
+                    : []),
+                  {
+                    label: "Ports",
+                    checked: livePorts,
+                    onChange: setLivePortsShown,
+                  },
+                ]}
+                choice={{
+                  label: "Show",
+                  value: show,
+                  options: SHOW_OPTIONS,
+                  onChange: setShow,
+                }}
+              />
               <div className="flex items-center gap-1">
                 <BarIconButton
                   label="Zoom out"
@@ -503,6 +526,7 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                 rack={rack}
                 mode={mode}
                 labels={labels}
+                show={show}
                 snapshot={facesRef}
                 className="ml-auto"
               />
@@ -525,7 +549,8 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                       showHeader={false}
                       scale={zoom}
                       draggable
-                      ports={ports}
+                      ports={livePorts ? ports : undefined}
+                      show={show}
                     />
                   </div>
                 ))}

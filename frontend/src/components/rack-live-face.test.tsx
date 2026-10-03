@@ -226,6 +226,7 @@ const STATE: RackPortState = {
       components: {
         "console-port": [{ id: "cp1", name: "CON", type: "rj-45" }],
       },
+      observed: true,
     },
     d2: {
       ports: counts(2, 2, 0),
@@ -276,6 +277,7 @@ const STATE: RackPortState = {
       ],
       modules: [],
       components: {},
+      observed: true,
     },
     // A device with no counted port gets no badge.
     d3: {
@@ -284,6 +286,7 @@ const STATE: RackPortState = {
       interfaces: [],
       modules: [],
       components: {},
+      observed: false,
     },
   },
 }

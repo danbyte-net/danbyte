@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type * as Api from "@/lib/api"
 import { ApiError } from "@/lib/api"
 import type { Cabinet, Device, DeviceTypeMini } from "@/lib/api"
+import { setLivePortsShown } from "@/lib/live-ports-pref"
 import { CabinetPlateSection } from "./cabinet-plate-section"
 
 // The cabinet page's Plate takes the rack elevation's controls: Names,
@@ -228,6 +229,10 @@ const ROUTES: Record<string, unknown> = {
     image_ports: { front: [marker], rear: [] },
   },
   "/api/device-types/t-sch/": { ...SCHEMATIC, image_ports: null },
+  // What the PLC's type draws from with the live ports off.
+  "/api/interface-templates/?device_type=t-sch": page([
+    { id: "tp1", name: "eth1", type: "1000base-t" },
+  ]),
   "/api/device-types/t-bare/": { ...BARE, image_ports: null },
   "/api/devices/sw-1/interfaces/": page([
     { id: "i1", name: "P1", virtual: false },
@@ -301,7 +306,29 @@ const active = () =>
     .getAllByRole("button")
     .filter((b) => b.getAttribute("aria-current") === "page")
     .map((b) => b.textContent)
-const labels = () => screen.getByRole("checkbox", { name: "Labels" })
+/** A tick on Display ▾: the menu opened, the tick read, the menu closed -
+ * null where the menu has no such tick. */
+function tick(name: "Labels" | "Ports"): string | null {
+  fireEvent.pointerDown(
+    button("Display"),
+    new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+  )
+  const state =
+    screen
+      .queryByRole("menuitemcheckbox", { name })
+      ?.getAttribute("aria-checked") ?? null
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+  return state
+}
+/** Flip a tick on Display ▾. */
+function flip(name: "Labels" | "Ports") {
+  fireEvent.pointerDown(
+    button("Display"),
+    new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+  )
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name }))
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+}
 /** The plate's drawing - not one of the toolbar's icons. */
 const svg = () =>
   document.querySelector<SVGSVGElement>('svg[aria-label^="Plate"]')!
@@ -328,7 +355,7 @@ describe("the Plate's controls", () => {
     renderPlate()
     expect(active()).toEqual(["Images"])
     expect(zoom()).toBe(FIT)
-    expect(labels().getAttribute("aria-checked")).toBe("true")
+    expect(tick("Labels")).toBe("true")
     // The photos: sw-1's stretched over its body, sw-2's at true size once
     // its photo has loaded.
     await waitFor(() =>
@@ -391,8 +418,8 @@ describe("the Plate's controls", () => {
     renderPlate()
     expect(names()).toEqual(expect.arrayContaining(["sw-1", "plc-1"]))
     expect(railTags()).toEqual(["R1", "R2"])
-    fireEvent.click(labels())
-    expect(labels().getAttribute("aria-checked")).toBe("false")
+    flip("Labels")
+    expect(tick("Labels")).toBe("false")
     // Images keeps the rails' labels to find the way by.
     expect(names()).toEqual([])
     expect(railTags()).toEqual(["R1", "R2"])
@@ -400,7 +427,7 @@ describe("the Plate's controls", () => {
     fireEvent.click(tab("Names"))
     expect(names()).toEqual([])
     expect(railTags()).toEqual([])
-    fireEvent.click(labels())
+    flip("Labels")
     expect(names()).toEqual(expect.arrayContaining(["sw-1", "plc-1"]))
     expect(railTags()).toEqual(["R1", "R2"])
   })
@@ -466,13 +493,41 @@ describe("the Plate's controls", () => {
     const first = renderPlate()
     fireEvent.click(tab("Names"))
     fireEvent.click(button("Zoom in"))
-    fireEvent.click(labels())
+    flip("Labels")
     expect(stored()).toEqual({ mode: "names", zoom: 0.8, labels: false })
     first.unmount()
     renderPlate()
     expect(active()).toEqual(["Names"])
     expect(zoom()).toBe(0.8)
-    expect(labels().getAttribute("aria-checked")).toBe("false")
+    expect(tick("Labels")).toBe("false")
+  })
+
+  it("draws bare photos, and each type plain in Render, with the Ports off", async () => {
+    renderPlate()
+    expect(tick("Ports")).toBe("true")
+    fireEvent.click(tab("Render"))
+    await waitFor(() =>
+      expect(faces()).toEqual(["sw-1:photo", "sw-2:photo", "plc-1:schematic"])
+    )
+    flip("Ports")
+    try {
+      expect(tick("Ports")).toBe("false")
+      // The PLC's type, drawn from its templates with no state; the photo
+      // types draw nothing plain, so their bodies show.
+      await waitFor(() => expect(faces()).toEqual(["plc-1:plain"]))
+      expect(document.querySelector("[data-testid=faceplate]")).toBeNull()
+      // Images: the bodies' photos, nothing over them.
+      fireEvent.click(tab("Images"))
+      expect(faces()).toEqual([])
+      await waitFor(() =>
+        expect(document.querySelectorAll("image")).toHaveLength(2)
+      )
+      // Names has no ports to show or hide.
+      fireEvent.click(tab("Names"))
+      expect(tick("Ports")).toBeNull()
+    } finally {
+      setLivePortsShown(true)
+    }
   })
 
   it("reopens on Render as it was left", async () => {
@@ -532,7 +587,7 @@ describe("Arrange with the controls", () => {
         '[data-device="sw-1"] [data-part="body"]'
       )?.style.fill
     ).toBe("rgb(37, 99, 235)")
-    fireEvent.click(labels())
+    flip("Labels")
     expect(names()).toEqual([])
     expect(railTags()).toEqual([])
     // Picking and moving a device works as it does in Images.

@@ -82,6 +82,16 @@ describe("RackExportMenu", () => {
     expect(svg).not.toContain("<use")
   })
 
+  it("exports the gear the Show filter keeps, the rest as hatched space", async () => {
+    const svg = await svgOf(
+      <RackExportMenu rack={rack} devices={devices} mode="names" show="rear" />
+    )
+    // srv-01 is mounted on the front: its units stay, with no name.
+    expect(svg).not.toContain(">srv-01<")
+    expect(svg).toContain(">rear-fan<")
+    expect(svg).toContain("Rear-mounted")
+  })
+
   it("exports one face", async () => {
     const svg = await svgOf(
       <RackExportMenu rack={rack} devices={devices} face="rear" mode="names" />

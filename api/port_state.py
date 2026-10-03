@@ -15,7 +15,8 @@ costs queries per device; the single-device face-ports endpoint adds it.
 ``PeerScope`` blanks the far ends a caller may not see, and
 ``interface_state`` is one interface as the drawn faceplate reads it.
 ``FaceplateParts`` loads what else the drawn faceplate composes - installed
-modules and the components a saved layout places - for many devices at once.
+modules and the components a saved layout places - for many devices at once,
+and ``snmp_observed`` says whose ports SNMP may have seen.
 """
 from __future__ import annotations
 
@@ -444,6 +445,29 @@ def interface_state(iface, peer=far_end) -> dict:
             for t in iface.tags.all()
         ],
     }
+
+
+# ── whose ports SNMP may have seen ──────────────────────────────────────────
+
+def snmp_observed(devices, tenant) -> set:
+    """The ids of ``devices`` whose ports SNMP may have observed - those the
+    device SNMP view (``monitoring.vc_stack.stack_state``) can answer with
+    interfaces: a device polled with interfaces, and any stack member, whose
+    stack's poll may describe it. One query; a page asks for live port state
+    only for these."""
+    from monitoring.models import DeviceSnmp
+
+    devices = list(devices)
+    if not devices or tenant is None:
+        return set()
+    polled = set(
+        DeviceSnmp.objects.filter(
+            tenant=tenant, device_id__in=[d.id for d in devices], polled_at__isnull=False,
+        )
+        .exclude(interfaces=[])
+        .values_list("device_id", flat=True)
+    )
+    return polled | {d.id for d in devices if d.virtual_chassis_id is not None}
 
 
 # ── what else the drawn faceplate composes ──────────────────────────────────

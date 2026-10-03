@@ -23,8 +23,11 @@ import {
 import {
   FaceplateView,
   PortTraceProvider,
+  TypeFaceplate,
   useObservedPorts,
+  useSavedFaceplate,
 } from "@/components/device-faceplate"
+import type { PortComponent } from "@/lib/faceplate-layout"
 import type { PortTrace } from "@/components/device-faceplate"
 import type { LegendReporter } from "@/components/speed-scale"
 
@@ -104,6 +107,10 @@ export function useCabinetFacePorts(devices: Device[], enabled: boolean) {
  * nothing per device for them; the interfaces the markers stand for load
  * per device, as Render loads them, and SNMP state only for a face that
  * draws interfaces. A press on a cabled port goes to `onTrace`.
+ *
+ * With `live` off (the Ports tick) there is no live state: Render draws
+ * each type's plain drawing, as the rack's elevation does, and Images
+ * nothing over the bodies' photos.
  */
 export function CabinetFaceplates({
   rails,
@@ -114,6 +121,7 @@ export function CabinetFaceplates({
   onLegend,
   onLive,
   onTrace,
+  live = true,
 }: {
   rails: DinRail[]
   devices: Device[]
@@ -128,10 +136,13 @@ export function CabinetFaceplates({
   onLive?: (deviceId: string, live: boolean) => void
   /** A cabled port pressed: its run, to trace. */
   onTrace?: (t: PortTrace) => void
+  /** Off: no live state - Render draws each type's plain drawing. */
+  live?: boolean
 }) {
   const railById = new Map(rails.map((r) => [r.id, r]))
   const aspects = usePhotoAspects(calibratedPhotos(devices))
-  const bulk = useCabinetFacePorts(devices, mode === "images")
+  const bulk = useCabinetFacePorts(devices, live && mode === "images")
+  if (!live && mode === "images") return null
   return (
     <PortTraceProvider onTrace={onTrace ?? null}>
       <div
@@ -144,6 +155,17 @@ export function CabinetFaceplates({
             ? deviceBody(rail, d.din_offset_mm, d.device_type)
             : null
           if (!rail || !body || !d.device_type) return null
+          if (!live)
+            return (
+              <PlainFace
+                key={d.id}
+                device={d}
+                typeId={d.device_type.id}
+                body={body}
+                frame={frame}
+                labels={labels}
+              />
+            )
           return (
             <DeviceFace
               key={d.id}
@@ -301,6 +323,60 @@ function DeviceFace({
         />
       </FitInBox>
       {outline}
+    </div>
+  )
+}
+
+/** A device's type drawn plain over its body - Render with the live ports
+ * off: the type's faceplate from its templates, no state, nothing to press.
+ * A type with nothing to draw leaves the body under it. */
+function PlainFace({
+  device: d,
+  typeId,
+  body,
+  frame,
+  labels,
+}: {
+  device: Device
+  typeId: string
+  body: PlateBox
+  frame: PlateFrame
+  labels: boolean
+}) {
+  // What TypeFaceplate draws from, in its own caches: the saved layout, or
+  // the automatic one from the interface templates.
+  const saved = useSavedFaceplate(typeId)
+  const templates = useQuery({
+    queryKey: ["dt-interface-templates", typeId],
+    queryFn: () =>
+      api<Paginated<PortComponent>>(
+        `/api/interface-templates/?device_type=${typeId}`
+      ),
+    staleTime: 5 * 60_000,
+  })
+  const draws = !!saved?.front.length || !!templates.data?.results.length
+  if (!draws) return null
+  const z = frame.pxPerMm
+  const label = labels
+    ? nameLayout(d.name, body.width * z, body.height * z, true)
+    : null
+  return (
+    <div
+      data-face={d.name}
+      data-look="plain"
+      className="absolute flex flex-col overflow-hidden bg-card"
+      style={place(body, frame)}
+    >
+      {label && <NameStrip text={label.text} className="shrink-0" />}
+      <div className="flex min-h-0 flex-1 items-center px-1">
+        <TypeFaceplate
+          deviceTypeId={typeId}
+          pxPerMm={z}
+          vcPosition={d.vc_position}
+          compact
+        />
+      </div>
+      <div className="pointer-events-none absolute inset-0 border border-border" />
     </div>
   )
 }

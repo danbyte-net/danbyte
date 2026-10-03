@@ -170,16 +170,27 @@ from there. The Devices tab keeps a single toggleable elevation. Three
 | **Images** | The device type's [rack-face image](device-catalog.md#rack-face-images) stretched across the block, name overlaid. |
 | **Render** | The type's **faceplate drawn as hardware** (the same mm-true port rendering as the device page), whole rack at true proportions. |
 
-In Images and Render modes a **Text** tick toggles the name overlay, so a
-photo-real rack stays clean when you want it to. On the rack's own page the
-elevation also shows each device's **live ports** - see below.
+**Display ▾**, after the modes, holds the drawing's ticks: **Text** (Images
+and Render) writes the names over the photos and drawings, so a photo-real
+rack stays clean when you want it to; **Ports** draws each device's live
+ports - see [below](#live-ports-on-the-elevation); and **Show** picks the
+gear to show. On a narrow screen the button is its icon.
 
 **Depth-aware faces:** a device mounts on one face, but if its device type is
-**full depth** (the default) it occupies the other face too - the opposite
-view draws it **hatched** (diagonal stripes), so the rear elevation shows
-exactly what's blocking the space. Mark shallow gear (patch
+**full depth** (the default) it fills the other face too, and shows its
+**other side** there: in Names a block like its own; in Images its type's
+rear photo; in Render its rear photo with the ports marked on it, or the
+drawing of its rear. Where the type has no rear photo or drawing, the block
+is **hatched** (diagonal stripes) with its name, so the face still shows
+what's blocking the space - never an empty block. Mark shallow gear (patch
 panels, half-depth switches) as *not* full depth on the device type and it
 frees the other face.
+
+**Show** keeps the gear mounted on one face - **Front-mounted** or
+**Rear-mounted** - or **All**. The gear it leaves out stays in its units as
+nameless hatched space, on both faces, so the used and free units still read
+true; the 0U strips on the rails always show. The choice is in the URL
+(`?show=rear`), like the 2D | 3D switch, so a link opens the same view.
 
 Elevations follow the rack's **width** (10″ / 19″ / 21″ / 23″) - a 10″
 lab rack draws narrower than a 23″ telco rack, and Images/Render modes use
@@ -201,7 +212,10 @@ theme the app is in: the front and rear side by side under their names,
 the units numbered beside each frame in the rack's own numbering, every
 device in its units in the mode on screen - Names, or Images with **Text**
 on or off - half-width devices in their half, the 0U strips in their rail
-lanes, and full-depth gear hatched on the face it isn't mounted on.
+lanes, and full-depth gear's other side on the face it isn't mounted on: a
+block like its own in Names, its rear photo in Images, hatched with its name
+where it has none. **Show** applies too: the gear it leaves out is drawn as
+nameless hatched space.
 
 | Format | What you get |
 |---|---|
@@ -220,15 +234,17 @@ remembered in your browser, and Print shows which it will use.
 
 Every file is named after the rack and the day:
 `r12-elevation-2026-10-02.pdf`. A photo that will not load is drawn as its
-device's Names block, and the menu says how many. **Render** has no vector
+device's Names block - on a device's other side, hatched - and the menu says
+how many. **Render** has no vector
 drawing yet: in Render the PNG is a picture of the screen, and the SVG and
 PDF draw the Images look - the menu and the PDF dialog say so. The 3D view
 keeps its own **PNG**.
 
 ### Live ports on the elevation
 
-On the rack's own page the elevation carries every device's port state,
-read for the whole rack in one request while the Overview is open (the
+On the rack's own page, with **Ports** ticked in Display ▾ (the default),
+the elevation carries every device's port state, read for the whole rack in
+one request while the Overview is open (the
 [port state](#api-port-state-and-3d-geometry) below):
 
 - **Render** draws each device as its device page's Panel does. A type with
@@ -236,7 +252,9 @@ read for the whole rack in one request while the Overview is open (the
   ports marked on it; any other draws its faceplate as hardware - its type's
   saved layout with the installed modules composed in, or the automatic one.
   **Images** marks the ports on the photo the same way; a type without photo
-  ports keeps its plain photo.
+  ports keeps its plain photo. On the face a full-depth device isn't mounted
+  on, its rear plate is live the same way: a server's NICs and power inlets
+  on its rear photo.
 - Ports wear the device page's colours: cabled ports in their speed tier,
   free ones outlined, reserved amber, disabled dashed, trunks notched; a
   hardware marker wears its part's status and a module bay its occupancy.
@@ -249,18 +267,23 @@ read for the whole rack in one request while the Overview is open (the
   before. Disk bays and other hardware markers only show their part here -
   edit parts from the device.
 - Every block shows its **ports in use** over its counted ports - `38 / 48`,
-  in all three modes - by the
-  [port counting rule](devices.md#what-counts-as-a-port): connected plus
-  reserved, over physical interfaces and front ports. A device with no
-  counted ports shows none. In Images and Render the count goes with the
-  name, so **Text** off clears both.
-- A full-depth device seen from its other face stays hatched; its rear
-  panel is not drawn there.
+  in all three modes, on the face the device is mounted on only - by the
+  [port counting rule](devices.md#what-counts-as-a-port): ports cabled or
+  reserved, out of its physical interfaces and front ports, plus its virtual
+  interfaces where **Count virtual interfaces** is on. Hover the count for
+  that in words. A device with no counted ports shows none. In Images and
+  Render the count goes with the name, so **Text** off clears both.
+
+**Ports** off draws the elevation as it was before: the bare photos in
+Images, each type's plain drawing in Render, and no counts. The tick is kept
+in your browser, and it is the same one as on a
+[cabinet's plate](cabinets.md).
 
 The elevation asks nothing per device for its ports: each device type loads
 once, and the live SNMP state once per device that draws interface ports in
-Images or Render - shared with the device page and the 3D room, and fresh for
-a minute. Names mode asks for no SNMP state at all.
+Images or Render and that SNMP may have seen - polled with interfaces, or a
+stack member. It is shared with the device page and the 3D room, and fresh
+for a minute. Names mode asks for no SNMP state at all.
 
 The **Capacity** card gives the rack's **Free** units (those no device
 occupies) and its **Ports**: ports in use over counted ports across the whole
@@ -348,6 +371,9 @@ racks, and each costs the same number of queries whatever the rack holds.
     - `components`: by kind (`console-port`, `power-port`, `front-port`…),
       the `id`, `name` and `type` of each component of a kind its type's
       saved faceplate layout (or a module type's) places - only those kinds.
+    - `observed`: whether SNMP may have seen its ports - it was polled with
+      interfaces, or it is a stack member, whose stack's poll may describe
+      it. The page asks for live port state only for these.
 
 The rack's figures count every device in the rack, as its used units and
 power do. The `devices` entries list only the devices you can view, and in

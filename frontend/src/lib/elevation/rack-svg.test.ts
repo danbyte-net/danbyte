@@ -35,6 +35,18 @@ function blockOf(group: Element, name: string): Element | null {
 
 const num = (el: Element | null, a: string) => Number(el?.getAttribute(a))
 
+/** A face's hatching: the paths without a stroke (the unit rules have one). */
+const hatch = (g: Element) =>
+  [...g.getElementsByTagName("path")].filter(
+    (p) => p.getAttribute("stroke") === null
+  )
+
+/** The ink a device's name is written in on a face. */
+const fill = (g: Element, name: string) =>
+  [...g.getElementsByTagName("text")]
+    .find((t) => t.textContent === name)!
+    .getAttribute("fill")
+
 describe("rackSvg", () => {
   it("matches the golden file in Names, and is deterministic", async () => {
     const out = rackSvg(rack, devices, opts())
@@ -128,7 +140,7 @@ describe("rackSvg", () => {
     expect(num(b, "x")).toBeCloseTo(num(a, "x") + num(a, "width") + 1, 5)
   })
 
-  it("hatches full-depth gear on the other face and leaves shallow gear off it", () => {
+  it("shows full-depth gear's other side and leaves shallow gear off it", () => {
     const doc = parse(rackSvg(rack, devices, opts()))
     const front = doc.getElementById("rk-front")!
     const rear = doc.getElementById("rk-rear")!
@@ -137,21 +149,68 @@ describe("rackSvg", () => {
     expect(texts(rear)).not.toContain("patch-01")
     expect(texts(rear)).toContain("ups-01")
     expect(texts(front)).not.toContain("ups-01")
-    // Full depth: hatched, its name muted, on the face it isn't mounted on.
-    const hatch = (g: Element) =>
-      [...g.getElementsByTagName("path")].filter(
-        (p) => p.getAttribute("stroke") === null
-      )
-    // core-sw-01, srv-01 and both half-width switches.
-    expect(hatch(rear).length).toBe(4)
-    expect(hatch(front).length).toBe(1) // rear-fan
-    const muted = (g: Element, name: string) =>
-      [...g.getElementsByTagName("text")]
-        .find((t) => t.textContent === name)!
-        .getAttribute("fill")
-    expect(muted(front, "rear-fan")).toBe(PRINT.subtle)
-    expect(muted(rear, "rear-fan")).not.toBe(PRINT.subtle)
-    expect(muted(rear, "srv-01")).toBe(PRINT.subtle)
+    // Full depth, in Names: a block on either face, in its role's colour,
+    // its name as on its own face - nothing hatched.
+    expect(hatch(rear)).toHaveLength(0)
+    expect(hatch(front)).toHaveLength(0)
+    expect(blockOf(rear, "srv-01")!.getAttribute("fill")).toBe("#16a34a")
+    expect(blockOf(front, "rear-fan")!.getAttribute("fill")).toBe("#7c3aed")
+    expect(fill(rear, "srv-01")).toBe(fill(front, "srv-01"))
+    expect(fill(front, "rear-fan")).toBe(fill(rear, "rear-fan"))
+  })
+
+  it("draws the other side's rear photo in Images, hatched where there is none", () => {
+    const doc = parse(rackSvg(rack, devices, opts({ look: "images", photos })))
+    const front = doc.getElementById("rk-front")!
+    const rear = doc.getElementById("rk-rear")!
+    // core-sw-01's rear photo, under its name.
+    const uses = [...rear.getElementsByTagName("use")]
+    expect(uses.map((u) => u.getAttribute("href"))).toEqual(["#rk-ph2"])
+    expect(texts(rear)).toContain("core-sw-01")
+    expect(doc.getElementById("rk-ph2")).not.toBeNull()
+    // srv-01, the half-width switches and rear-fan have no rear photo:
+    // hatched, their names muted - never a bare block.
+    expect(hatch(rear)).toHaveLength(3)
+    expect(hatch(front)).toHaveLength(1)
+    expect(fill(rear, "srv-01")).toBe(PRINT.subtle)
+    expect(fill(front, "rear-fan")).toBe(PRINT.subtle)
+    expect(fill(rear, "rear-fan")).not.toBe(PRINT.subtle)
+  })
+
+  it("shows only one face's gear, the rest as nameless hatched space", () => {
+    const doc = parse(
+      rackSvg(rack, devices, opts({ look: "images", photos, show: "rear" }))
+    )
+    const front = doc.getElementById("rk-front")!
+    const rear = doc.getElementById("rk-rear")!
+    // The front-mounted gear keeps its units, hatched, with no name: on the
+    // front its own face, on the rear its other side.
+    for (const name of ["core-sw-01", "srv-01", "patch-01", "tor-a"]) {
+      expect(texts(front)).not.toContain(name)
+      expect(texts(rear)).not.toContain(name)
+    }
+    // core-sw-01, srv-01, patch-01 and both half-width switches, and
+    // rear-fan's other side below; on the rear the full-depth four.
+    expect(hatch(front)).toHaveLength(6)
+    expect(hatch(rear)).toHaveLength(4)
+    // The rear-mounted gear as ever: rear-fan's other side on the front
+    // (no rear photo: hatched, its name muted), ups-01 on the rear.
+    expect(fill(front, "rear-fan")).toBe(PRINT.subtle)
+    expect(texts(rear)).toContain("ups-01")
+    expect(texts(rear)).toContain("rear-fan")
+    // No photo of hidden gear is drawn.
+    expect(rear.getElementsByTagName("use")).toHaveLength(0)
+    expect(front.getElementsByTagName("use")).toHaveLength(0)
+    expect(doc.querySelector("desc")!.textContent).toBe(
+      "Front and rear · Images · Rear-mounted · 12 U"
+    )
+    // And the other way round.
+    const fronts = parse(
+      rackSvg(rack, devices, opts({ show: "front" }))
+    ).getElementById("rk-rear")!
+    expect(texts(fronts)).not.toContain("ups-01")
+    expect(texts(fronts)).not.toContain("rear-fan")
+    expect(texts(fronts)).toContain("srv-01")
   })
 
   it("gives a device without a role the rack role's stripe", () => {
@@ -190,13 +249,13 @@ describe("rackSvg", () => {
     const doc = parse(svg)
     const front = doc.getElementById("rk-front")!
     const uses = [...front.getElementsByTagName("use")]
-    // core-sw-01, tor-a and tor-b; one symbol per photo.
+    // core-sw-01, tor-a and tor-b; one symbol per photo, the rear's too.
     expect(uses.map((u) => u.getAttribute("href"))).toEqual([
       "#rk-ph0",
       "#rk-ph1",
       "#rk-ph1",
     ])
-    expect(doc.querySelectorAll("symbol")).toHaveLength(2)
+    expect(doc.querySelectorAll("symbol")).toHaveLength(3)
     expect(texts(front)).toContain("core-sw-01")
     // The server's photo would not load: its Names block.
     expect(blockOf(front, "srv-01")!.getAttribute("fill")).toBe("#16a34a")
@@ -226,7 +285,12 @@ describe("rackSvg", () => {
         ["/media/device-type-images/switch.png", full],
         ["/media/device-type-images/server.png", full],
         ["/media/device-type-images/half.png", full / 2],
+        ["/media/device-type-images/switch-rear.png", full],
       ])
     )
+    // Gear the Show filter leaves out shows no photo.
+    expect(
+      rackPhotoRequests(rack, devices, { look: "images", show: "rear" })
+    ).toEqual(new Map())
   })
 })
