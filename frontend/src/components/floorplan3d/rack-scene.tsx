@@ -15,7 +15,13 @@ import { QueryError } from "@/components/query-error"
 import { useLegendCollector } from "@/components/speed-scale"
 
 import type { FlyToRequest } from "./camera-rig"
-import { CARD_PLACE, DeviceHud, PortHud, useCardPlace } from "./hud-cards"
+import {
+  CARD_PLACE,
+  DeviceHud,
+  PortHud,
+  rackPortPosition,
+  useCardPlace,
+} from "./hud-cards"
 import {
   OBJECT_VIEWS,
   SOLO_PLAN,
@@ -220,8 +226,8 @@ function RackView({
         )}
         {picked && selection?.kind === "port" && (
           <PortHud
-            tile={tile}
-            dev={picked}
+            device={picked}
+            position={rackPortPosition(tile, picked)}
             selection={selection}
             showReserved
             className={CARD_PLACE[card.place]}

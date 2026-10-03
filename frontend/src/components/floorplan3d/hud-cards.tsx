@@ -154,6 +154,13 @@ export function DeviceHud({
   )
 }
 
+/** Where a racked device's port is, for its card: the rack and the unit,
+ * or the rack alone for a side-mounted strip, which has no U. */
+export function rackPortPosition(tile: SceneTile, dev: SceneDevice): string {
+  const rack = tile.rack!
+  return dev.position != null ? `${rack.name} · U${dev.position}` : rack.name
+}
+
 /**
  * Overlay card for a clicked photo port. Resolves the marker to the real
  * component (same face-ports fetch the quads use), and:
@@ -162,22 +169,27 @@ export function DeviceHud({
  *    with jump-offs to the cable and an in-room trace of its run.
  * A view without the room's flows leaves their props out: no `planId`, no
  * Trace run; no `onConnect`, `onInstall` or `onEditPart`, no such button.
+ * `preview` is the hover card: the same facts, no buttons, and the pointer
+ * passes through it.
  */
 export function PortHud({
   planId,
-  tile,
-  dev,
+  device,
+  position,
   selection,
   onConnect,
   onInstall,
   onEditPart,
   showReserved = false,
+  preview = false,
   className,
 }: {
   /** The floor plan the room is drawn from - Trace run draws the run there. */
   planId?: string
-  tile: SceneTile
-  dev: SceneDevice
+  /** The device the port is on. */
+  device: { id: string; name: string }
+  /** Where it sits: `rackPortPosition`, or a cabinet's rail and offset. */
+  position: string
   selection: Sel
   onConnect?: (path: "maker" | "3d") => void
   /** An empty module bay was clicked - open the install dialog for it. */
@@ -187,6 +199,8 @@ export function PortHud({
   /** A port held but not cabled reads "reserved", as its quad is drawn
    * amber where the view marks reservations. */
   showReserved?: boolean
+  /** The hover card: facts only, and the pointer passes through it. */
+  preview?: boolean
   /** Moves the card, e.g. `CARD_PLACE.bottom`. */
   className?: string
 }) {
@@ -195,15 +209,16 @@ export function PortHud({
   // the Modules pane and the 2D faceplate use.
   const canEditParts = canDo("device", "change")
   const [choosing, setChoosing] = useState(false)
-  const rack = tile.rack!
+  // A preview offers no action: the room's flows go with the click.
+  const act = !preview
   // The saved marker name is a template ("Ethernet{position}/1"); render it the
   // same way the 2D faceplate does so the card shows the real port label.
   const portLabel = renderTemplateName(selection.portName ?? "", null)
 
   // Resolve this marker → real port (shared cache with the port quads).
   const facePorts = useQuery({
-    queryKey: ["device-face-ports", dev.id],
-    queryFn: () => api<FacePorts>(`/api/devices/${dev.id}/face-ports/`),
+    queryKey: ["device-face-ports", device.id],
+    queryFn: () => api<FacePorts>(`/api/devices/${device.id}/face-ports/`),
     staleTime: 30_000,
   })
   const fp = (
@@ -267,8 +282,11 @@ export function PortHud({
     : null
   return (
     <div
+      role="group"
+      aria-label={`Port ${fp?.name || portLabel}`}
       className={cn(
         "absolute top-3 left-3 w-72 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur",
+        preview && "pointer-events-none",
         className
       )}
     >
@@ -289,7 +307,7 @@ export function PortHud({
         )}
       </div>
       <div className="mt-1.5 grid gap-1 text-[12px] text-muted-foreground">
-        {row("Device", <span className="font-mono">{dev.name}</span>)}
+        {row("Device", <span className="font-mono">{device.name}</span>)}
         {selection.portKind &&
           row(
             "Kind",
@@ -297,11 +315,7 @@ export function PortHud({
               {selection.portKind.replace(/-/g, " ")}
             </span>
           )}
-        {/* Side-mounted strips have no U - the rack alone locates them. */}
-        {row(
-          "Position",
-          dev.position != null ? `${rack.name} · U${dev.position}` : rack.name
-        )}
+        {row("Position", position)}
         {fp?.speed && row("Speed", <span className="num">{fp.speed}</span>)}
         {bay &&
           row(
@@ -381,7 +395,7 @@ export function PortHud({
               )}
             </>
           )}
-          {cable.data && (
+          {cable.data && act && (
             <div className="mt-1 flex gap-1.5">
               <OpenLink
                 to="/cables/$id"
@@ -409,7 +423,7 @@ export function PortHud({
       )}
 
       {/* ── Free PORT: the connect flow (hardware parts can't cable) ───── */}
-      {fp && !fp.connected && fp.id && fp.kind && onConnect && (
+      {fp && !fp.connected && fp.id && fp.kind && onConnect && act && (
         <>
           {choosing ? (
             <div className="mt-2 grid gap-1.5">
@@ -458,7 +472,7 @@ export function PortHud({
         </>
       )}
       {/* ── Empty BAY: seat a module right here (2D-faceplate parity) ──── */}
-      {fp && bay && !fp.module && canEditParts && onInstall && (
+      {fp && bay && !fp.module && canEditParts && onInstall && act && (
         <Button
           size="sm"
           className="mt-2 h-7 w-full"
@@ -468,7 +482,7 @@ export function PortHud({
         </Button>
       )}
       {/* ── Hardware part: the same editor the 2D faceplate opens ──────── */}
-      {fp && hardware && canEditParts && onEditPart && (
+      {fp && hardware && canEditParts && onEditPart && act && (
         <Button
           size="sm"
           className="mt-2 h-7 w-full"
@@ -484,13 +498,15 @@ export function PortHud({
         </p>
       )}
 
-      <OpenLink
-        to="/devices/$id"
-        params={{ id: dev.id }}
-        className="mt-1.5 w-full"
-      >
-        Open device
-      </OpenLink>
+      {act && (
+        <OpenLink
+          to="/devices/$id"
+          params={{ id: device.id }}
+          className="mt-1.5 w-full"
+        >
+          Open device
+        </OpenLink>
+      )}
     </div>
   )
 }

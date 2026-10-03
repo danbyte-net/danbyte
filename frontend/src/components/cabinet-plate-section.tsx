@@ -30,7 +30,10 @@ import { CabinetDeviceBodies } from "@/components/cabinet-devices"
 import { CabinetElevation, plateView } from "@/components/cabinet-elevation"
 import { CabinetExportMenu } from "@/components/cabinet-export-menu"
 import { CabinetFaceplates } from "@/components/cabinet-faceplates"
+import { CableTraceDialog } from "@/components/cable-trace-dialog"
 import { FaceplateLegend } from "@/components/device-faceplate"
+import type { PortTrace } from "@/components/device-faceplate"
+import { InterfaceTraceDialog } from "@/components/interface-trace-dialog"
 import { DinRailEditor } from "@/components/din-rail-editor"
 import { FormCheckbox } from "@/components/forms"
 import { BarIconButton } from "@/components/map-toolbar"
@@ -131,8 +134,8 @@ export function CabinetPlateSection({
   // The drawing on screen: Render's PNG is a picture of it.
   const drawing = useRef<HTMLDivElement>(null)
 
-  // Render's key: the colours its faceplates drew, and the live dot where
-  // any device's ports carry SNMP facts.
+  // The live faces' key: the colours they drew, and the live dot where any
+  // device's ports carry SNMP facts.
   const { content: legend, report: onLegend } = useLegendCollector()
   const [live, setLive] = useState<ReadonlySet<string>>(() => new Set())
   const onLive = useCallback((id: string, on: boolean) => {
@@ -144,7 +147,11 @@ export function CabinetPlateSection({
       return next
     })
   }, [])
-  const rendering = mode === "render" && !!devices?.length && pxPerMm != null
+  // Live faces: every device in Render, the photos with ports marked on
+  // them in Images - as the rack's elevation draws them.
+  const faces = mode !== "names" && !!devices?.length && pxPerMm != null
+  // A cabled port pressed on a face: its run, in a dialog.
+  const [trace, setTrace] = useState<PortTrace | null>(null)
 
   const elevation = (
     <CabinetElevation
@@ -290,20 +297,22 @@ export function CabinetPlateSection({
                     className="relative mx-auto w-max"
                   >
                     {elevation}
-                    {rendering && (
+                    {faces && (
                       <CabinetFaceplates
                         rails={rails}
                         devices={devices}
                         frame={{ x: frame.x, y: frame.y, pxPerMm }}
+                        mode={mode === "render" ? "render" : "images"}
                         labels={view.labels}
                         onLegend={onLegend}
                         onLive={onLive}
+                        onTrace={setTrace}
                       />
                     )}
                   </div>
                 </div>
               )}
-              {rendering && !arranging && !legendIsEmpty(legend) && (
+              {faces && !arranging && !legendIsEmpty(legend) && (
                 <FaceplateLegend
                   className="mt-3"
                   content={legend}
@@ -314,6 +323,22 @@ export function CabinetPlateSection({
           )}
         </div>
       </div>
+      <InterfaceTraceDialog
+        target={
+          trace?.kind === "interface"
+            ? { id: trace.id, name: traceName(trace) }
+            : null
+        }
+        onOpenChange={(o) => !o && setTrace(null)}
+      />
+      <CableTraceDialog
+        target={
+          trace?.kind === "cable"
+            ? { id: trace.id, label: traceName(trace) }
+            : null
+        }
+        onOpenChange={(o) => !o && setTrace(null)}
+      />
       {canEdit && (
         <DinRailEditor
           open={editing}
@@ -327,6 +352,11 @@ export function CabinetPlateSection({
       )}
     </section>
   )
+}
+
+/** A traced port as the dialog's title names it: `device:port`. */
+function traceName(t: PortTrace): string {
+  return t.device ? `${t.device}:${t.name}` : t.name
 }
 
 /** An element's width, px: read before the first paint, so the plate is

@@ -12,6 +12,7 @@ import type {
   Cable,
   FacePorts,
   FloorPlanLiveState,
+  ImagePortMarker,
   InventoryItemRow,
   Paginated,
   TerminationInput,
@@ -50,11 +51,14 @@ import {
   CabinetDeviceHud,
   CabinetHoverHud,
   CabinetHud,
+  CabinetPortHoverHud,
+  CabinetPortHud,
   createHoverStore,
   deviceHoverKey,
+  portHoverKey,
 } from "./cabinet-hud"
 import { CabinetMesh } from "./cabinet-mesh"
-import { DeviceHud, PortHud } from "./hud-cards"
+import { DeviceHud, PortHud, rackPortPosition } from "./hud-cards"
 import type { FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh } from "./rack-mesh"
@@ -173,6 +177,21 @@ export default function FloorScene3D({
     (tileId: string, deviceId: string, on: boolean) =>
       deviceHover.set(deviceHoverKey(tileId, deviceId), on),
     [deviceHover]
+  )
+  // And for a port on one of those devices' photos.
+  const [portHover] = useState(createHoverStore)
+  const hoverCabinetPort = useCallback(
+    (tileId: string, deviceId: string, marker: ImagePortMarker, on: boolean) =>
+      portHover.set(
+        portHoverKey({
+          tileId,
+          deviceId,
+          marker: marker.name,
+          kind: marker.kind,
+        }),
+        on
+      ),
+    [portHover]
   )
   // Cabinet doors standing open, by tile. Opening one is what fetches its
   // insides, so a room never loads the contents of a shut cabinet.
@@ -451,9 +470,12 @@ export default function FloorScene3D({
       ? { id: t.cabinet.id, name: t.label || t.cabinet.name }
       : null
   }
-  // A device clicked inside an open cabinet: that cabinet.
+  // A device clicked inside an open cabinet: that cabinet. A port on one of
+  // its devices' photos the same.
   const selCabinetDevice =
     selection?.kind === "device" ? cabinetOf(selection.tileId) : null
+  const selCabinetPort =
+    selection?.kind === "port" ? cabinetOf(selection.tileId) : null
 
   // ── Isolation ──────────────────────────────────────────────────────────
   // Pure client state: a set of tile ids that stay mounted, everything else
@@ -612,16 +634,41 @@ export default function FloorScene3D({
             attention={attention}
             doorOpen={openDoors.has(t.id)}
             selectedDeviceId={
-              selection?.tileId === t.id && selection.kind === "device"
+              selection?.tileId === t.id &&
+              (selection.kind === "device" || selection.kind === "port")
                 ? (selection.deviceId ?? null)
                 : null
             }
+            selectedPort={
+              selection?.tileId === t.id &&
+              selection.kind === "port" &&
+              selection.deviceId &&
+              selection.portName
+                ? { deviceId: selection.deviceId, marker: selection.portName }
+                : null
+            }
+            // A hold on a port inside draws amber, as on the rack page.
+            markReserved
+            portLabelSource={portLabelsShown ? faceplatePortLabels : ""}
+            portLabelColor={faceplatePortLabelColor}
             onSelect={handleSelect}
             onHover={hoverStore.set}
             onSelectDevice={(tileId, deviceId) =>
               handleSelect({ kind: "device", tileId, deviceId })
             }
             onHoverDevice={hoverCabinetDevice}
+            onSelectPort={(tileId, deviceId, marker) =>
+              handleSelect({
+                kind: "port",
+                tileId,
+                deviceId,
+                portName: marker.name,
+                portKind: marker.kind,
+                portSide: "front",
+              })
+            }
+            onHoverPort={hoverCabinetPort}
+            onLegend={onLegend}
             onFlyTo={(target, position) => {
               flyToRef.current = { target, position }
               setViewSide("front")
@@ -765,6 +812,37 @@ export default function FloorScene3D({
         cabinetOf={cabinetOf}
         hidden={!!selection || !!cableSel || !!traySel}
       />
+      <CabinetPortHoverHud
+        store={portHover}
+        cabinetOf={cabinetOf}
+        hidden={!!selection || !!cableSel || !!traySel}
+        showReserved
+      />
+      {selCabinetPort &&
+        selection?.kind === "port" &&
+        selection.deviceId &&
+        selection.portName && (
+          // The room's port card, its flows and all: a port in a cabinet
+          // cables, installs and traces as a racked one does.
+          <CabinetPortHud
+            cabinet={selCabinetPort}
+            port={{
+              tileId: selection.tileId,
+              deviceId: selection.deviceId,
+              marker: selection.portName,
+              kind: selection.portKind ?? "",
+            }}
+            planId={planId}
+            showReserved
+            onConnect={(path) => void startConnect(selection, path)}
+            onInstall={(bay) =>
+              setInstallBay({ deviceId: selection.deviceId!, ...bay })
+            }
+            onEditPart={(part) =>
+              setPartEdit({ deviceId: selection.deviceId!, ...part })
+            }
+          />
+        )}
       {selCabinetDevice && selection?.deviceId && (
         <CabinetDeviceHud
           cabinet={selCabinetDevice}
@@ -805,8 +883,8 @@ export default function FloorScene3D({
       {selTile && selDevice && selection?.kind === "port" && (
         <PortHud
           planId={planId}
-          tile={selTile}
-          dev={selDevice}
+          device={selDevice}
+          position={rackPortPosition(selTile, selDevice)}
           selection={selection}
           onConnect={(path) => void startConnect(selection, path)}
           onInstall={(bay) => setInstallBay({ deviceId: selDevice.id, ...bay })}

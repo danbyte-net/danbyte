@@ -175,10 +175,13 @@ uploaded blueprint textures it.
   when the system asks for reduced motion) and shows the inside as the
   cabinet page's [3D view](../dcim/cabinets.md#the-plate-in-3d) does: the
   mounting plate, its rails, and each device on its rail at its type's true
-  size, wearing its front photo. Hover a device for its card; click it for
-  the card with **Open device**. **Close door** on the cabinet's card shuts
-  it again. A cabinet's contents are fetched the first time its door opens,
-  never for a shut one. Cable runs end on the box's lid, each in its own
+  size, wearing its front photo with the ports marked on it, coloured as a
+  racked device's (a port held for a cable amber) and in the room's key.
+  Hover a device or a port for its card; click a device for the card with
+  **Open device**, a port for the same card a racked port gets - its cable
+  and far end, **Connect cable**, **Trace run**. **Close door** on the
+  cabinet's card shuts it again. A cabinet's contents are fetched the first
+  time its door opens, never for a shut one, and its ports in one request. Cable runs end on the box's lid, each in its own
   lane; a cable between two devices in one cabinet stays inside it and is
   not drawn.
 - **Side-mounted 0U strips** (vertical PDUs with a

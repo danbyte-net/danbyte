@@ -105,7 +105,16 @@ The toolbar over the plate works like a rack's elevation. **Images** (the
 default) is the look above; **Names** draws each device as a box in its role's
 colour with its name; **Render** lays each device's live faceplate on it - its
 ports coloured by cable, speed and SNMP state, with the device page's hover
-card, a click opening the port - at true size when the photo is calibrated.
+card - at true size when the photo is calibrated. **Images** marks the ports
+on a photo the same way, where the device type has
+[photo ports](device-catalog.md#photo-ports), as a rack's elevation does; a
+device without keeps its plain photo. In both, a click on a cabled port opens
+the trace of its run in a dialog, a free port opens its own page, and the key
+to the colours sits under the plate. Images reads every device's markers in
+one request; the interfaces they stand for load per device, as Render loads
+them, and the live SNMP state only for a photo that marks interfaces. Disk
+bays and other hardware markers only show their part in Images - edit parts
+from the device.
 **Labels** hides the device names (and, in Names, the rail labels); **−** and
 **+** zoom, starting fitted to the column (Render starts larger) and
 scrolling when the plate grows wider; **Export** saves the plate as a file
@@ -160,13 +169,23 @@ the photo is [calibrated](device-catalog.md#photo-ports), stretched over the
 face where it is not, the role's colour where there is none. A type with no
 depth recorded is drawn 90 mm deep.
 
+The ports marked on a device's photo are drawn on it, at their markers, as
+the 3D room draws a racked device's: cabled ports in their speed tier, free
+ones faint in their type's, disabled grey, a port held for a cable amber,
+live SNMP state where the device is polled, a part's status on a hardware
+marker and an amber outline where SNMP disagrees with the record. Where a
+calibrated photo is clipped to its device, so are its ports. They resolve
+in one request when the view opens - the room's own, so the drift outline
+costs a check per device - and the key to their colours sits under the view.
+
 Drag to turn it and scroll to zoom. **Close door** and **Open door** swing
 the door on its left-hand hinge (it snaps when the system asks for reduced
 motion); **Front** and **Rear** look straight at either side, as a
 double-click on the cabinet does; **PNG** downloads `<cabinet>-3d.png`.
 Hover a device for its card - type, role, rail and offset, size - and click
-it to keep the card with **Open device**. The view draws at the quality
-picked in a floor plan's 3D View menu on this device. The same cabinet,
+it to keep the card with **Open device**; hover a port for its card - state,
+speed, the cable and its far end - and click it to keep that one. The view
+draws at the quality picked in a floor plan's 3D View menu on this device. The same cabinet,
 door and all, opens in a floor plan's
 [3D room](../features/floor-plans.md#the-3d-room-view).
 

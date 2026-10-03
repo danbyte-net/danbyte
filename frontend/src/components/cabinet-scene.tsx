@@ -3,13 +3,21 @@ import type { ReactNode } from "react"
 import { Camera, DoorClosed, DoorOpen } from "lucide-react"
 import * as THREE from "three"
 
-import type { Cabinet } from "@/lib/api"
+import type { Cabinet, ImagePortMarker } from "@/lib/api"
+import { legendIsEmpty } from "@/lib/faceplate-colors"
+import { usePortLabelsShown } from "@/lib/port-labels-pref"
+import { useMe } from "@/lib/use-me"
+import { FaceplateLegend } from "@/components/device-faceplate"
 import { BarButton } from "@/components/map-toolbar"
+import { useLegendCollector } from "@/components/speed-scale"
 import {
   CabinetDeviceHoverHud,
   CabinetDeviceHud,
+  CabinetPortHoverHud,
+  CabinetPortHud,
   createHoverStore,
   deviceHoverKey,
+  portHoverKey,
 } from "@/components/floorplan3d/cabinet-hud"
 import { CabinetMesh } from "@/components/floorplan3d/cabinet-mesh"
 import { CARD_PLACE, useCardPlace } from "@/components/floorplan3d/hud-cards"
@@ -34,13 +42,21 @@ import {
 import type { StageCapture } from "@/components/floorplan3d/stage"
 import { cabinetBoxM, webglSupported } from "@/components/floorplan3d/world"
 
+/** What was clicked inside: a device, or a port on its photo. */
+type Picked = {
+  deviceId: string
+  port?: { marker: string; kind: string }
+} | null
+
 /**
  * A cabinet on its own in 3D - the Plate's 3D view on the cabinet page.
  * The room's cabinet, door open to start with: the plate, its rails and the
- * devices on them at their true size, their front photos on their faces.
+ * devices on them at their true size, their front photos on their faces and
+ * the ports marked on the photos coloured by their state, as in the room.
  * Drag turns it, the wheel zooms; Front and Rear look straight at either
- * side, and a double-click on it is Front. Hover a device for its card,
- * click it to keep the card with the way to its page. PNG saves the view.
+ * side, and a double-click on it is Front. Hover a device or a port for its
+ * card, click it to keep the card with the way to its page. The key to the
+ * ports' colours sits under the view. PNG saves the view.
  *
  * Lazy: the 3D stack stays in its own chunk, loaded when 3D is picked.
  * `lead` is the 2D | 3D switch, first on the toolbar as on the 2D plate's.
@@ -77,7 +93,7 @@ export default function CabinetScene({
   const start = viewpoint("angle", true)
 
   const [doorOpen, setDoorOpen] = useState(true)
-  const [picked, setPicked] = useState<string | null>(null)
+  const [picked, setPicked] = useState<Picked>(null)
   const card = useCardPlace()
   const [hover] = useState(createHoverStore)
   const hoverDevice = useCallback(
@@ -85,6 +101,24 @@ export default function CabinetScene({
       hover.set(deviceHoverKey(tileId, deviceId), on),
     [hover]
   )
+  const [portHover] = useState(createHoverStore)
+  const hoverPort = useCallback(
+    (tileId: string, deviceId: string, marker: ImagePortMarker, on: boolean) =>
+      portHover.set(
+        portHoverKey({
+          tileId,
+          deviceId,
+          marker: marker.name,
+          kind: marker.kind,
+        }),
+        on
+      ),
+    [portHover]
+  )
+  // The ports' key, and their labels as the deployment prints them.
+  const { content: legend, report: onLegend } = useLegendCollector()
+  const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
+  const portLabelsShown = usePortLabelsShown()
   const flyToRef = useRef<FlyToRequest | null>(null)
   const invalidateRef = useRef<(() => void) | null>(null)
   const captureRef = useRef<StageCapture | null>(null)
@@ -154,7 +188,7 @@ export default function CabinetScene({
                 keyboard: false,
                 dollyThrough: false,
               }}
-              stamp={`${doorOpen}|${picked}`}
+              stamp={`${doorOpen}|${picked?.deviceId}|${picked?.port?.marker}`}
               invalidateRef={invalidateRef}
               captureRef={captureRef}
               onPointerMissed={() => setPicked(null)}
@@ -165,11 +199,27 @@ export default function CabinetScene({
                 selected={false}
                 nameplate={false}
                 doorOpen={doorOpen}
-                selectedDeviceId={picked}
+                selectedDeviceId={picked?.deviceId ?? null}
+                selectedPort={
+                  picked?.port
+                    ? { deviceId: picked.deviceId, marker: picked.port.marker }
+                    : null
+                }
+                markReserved
+                portLabelSource={portLabelsShown ? faceplatePortLabels : ""}
+                portLabelColor={faceplatePortLabelColor}
                 onSelect={() => setPicked(null)}
                 onFlyTo={() => look("front")}
-                onSelectDevice={(_, deviceId) => setPicked(deviceId)}
+                onSelectDevice={(_, deviceId) => setPicked({ deviceId })}
                 onHoverDevice={hoverDevice}
+                onSelectPort={(_, deviceId, marker) =>
+                  setPicked({
+                    deviceId,
+                    port: { marker: marker.name, kind: marker.kind },
+                  })
+                }
+                onHoverPort={hoverPort}
+                onLegend={onLegend}
               />
               <ShadowFloor size={size * 6} />
             </Stage>
@@ -178,19 +228,48 @@ export default function CabinetScene({
               cabinetOf={() => named}
               hidden={!!picked}
             />
-            {picked && (
-              <CabinetDeviceHud
-                cabinet={named}
-                deviceId={picked}
-                pinned
-                className={CARD_PLACE[card.place]}
-              />
-            )}
+            <CabinetPortHoverHud
+              store={portHover}
+              cabinetOf={() => named}
+              hidden={!!picked}
+              showReserved
+            />
+            {picked &&
+              (picked.port ? (
+                <CabinetPortHud
+                  cabinet={named}
+                  port={{
+                    tileId: cabinet.id,
+                    deviceId: picked.deviceId,
+                    marker: picked.port.marker,
+                    kind: picked.port.kind,
+                  }}
+                  showReserved
+                  className={CARD_PLACE[card.place]}
+                />
+              ) : (
+                <CabinetDeviceHud
+                  cabinet={named}
+                  deviceId={picked.deviceId}
+                  pinned
+                  className={CARD_PLACE[card.place]}
+                />
+              ))}
           </>
         ) : (
           <NoWebGL />
         )}
       </div>
+      {/* The key to what the ports draw - under the view, as the rack's
+          3D view and the 2D plate keep theirs. */}
+      {supported && doorOpen && !legendIsEmpty(legend) && (
+        <FaceplateLegend
+          className="mt-3"
+          // SNMP's red only where a port it says is down is drawn.
+          observed={legend.states.has("down")}
+          content={legend}
+        />
+      )}
     </div>
   )
 }

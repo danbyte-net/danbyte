@@ -9,10 +9,11 @@ import { ApiError } from "@/lib/api"
 import type { Device, DeviceTypeMini, DinRail, Interface } from "@/lib/api"
 import { CabinetFaceplates } from "./cabinet-faceplates"
 
-// Render mode's faceplates, laid over the plate: the device page's Panel for
+// The live faces laid over the plate: in Render the device page's Panel for
 // each device - its photo with the ports marked on it, at true size where
 // the photo is calibrated, else its schematic faceplate shrunk into the
-// body - with the ports coloured by state and linking to themselves.
+// body - with the ports coloured by state and linking to themselves. Images
+// lays only the photos with ports marked on them, from one bulk request.
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string) => Promise<unknown>>(),
@@ -162,6 +163,30 @@ const CAL = mini({
 })
 const SCHEMATIC = mini({ id: "t-sch", name: "PLC", front_image: null })
 const BARE = mini({ id: "t-bare", name: "Relay", front_image: null })
+/** A photo whose only marker is a console port. */
+const CONSOLE = mini({
+  id: "t-con",
+  name: "Gateway",
+  width_mm: 60,
+  front_image: "/media/gw.png",
+})
+
+/** A marker resolved to its port, as the face-ports payload gives it. */
+const entry = (name: string, id: string | null, kind = "interface") => ({
+  marker: name,
+  name,
+  kind: id ? kind : null,
+  id,
+  connected: id === "i1",
+  cable_state: id === "i1" ? "connected" : "free",
+  cable_id: id === "i1" ? "c-i1" : null,
+  enabled: true,
+  speed: "",
+  type: "",
+  status: null,
+  module: null,
+  drift: null,
+})
 
 const ROUTES: Record<string, unknown> = {
   "/api/device-types/t-photo/": {
@@ -197,15 +222,44 @@ const ROUTES: Record<string, unknown> = {
   ]),
   "/api/modules/?device=d3": page([]),
   "/api/devices/d4/interfaces/": page([]),
+  "/api/device-types/t-con/": {
+    ...CONSOLE,
+    faceplate: null,
+    image_ports: {
+      front: [{ ...marker("Console", 0.5), kind: "console-port" }],
+      rear: [],
+    },
+  },
+  "/api/devices/d5/interfaces/": page([]),
 }
+
+/** Each device's markers resolved, as the bulk face-ports request answers
+ * for the ids it is asked for. */
+const FACE: Record<string, unknown> = {
+  d1: {
+    front: [entry("P1", "i1"), entry("P2", "i2"), entry("P9", null)],
+    rear: [],
+  },
+  d2: { front: [entry("P1", "i21")], rear: [] },
+  d5: { front: [entry("Console", "cp1", "console-port")], rear: [] },
+}
+const BULK = "/api/devices/face-ports/?ids="
 
 beforeEach(() => {
   apiMock.mockReset()
-  apiMock.mockImplementation((path) =>
-    path in ROUTES
+  apiMock.mockImplementation((path) => {
+    if (path.startsWith(BULK)) {
+      const ids = path.slice(BULK.length).split(",")
+      return Promise.resolve(
+        Object.fromEntries(
+          ids.filter((id) => id in FACE).map((id) => [id, FACE[id]])
+        )
+      )
+    }
+    return path in ROUTES
       ? Promise.resolve(ROUTES[path])
       : Promise.reject(new ApiError(404, { detail: "Not found." }))
-  )
+  })
   vi.stubGlobal("Image", PhotoStub)
 })
 afterEach(() => {
@@ -217,8 +271,15 @@ function draw(
   devices: Device[],
   {
     labels = true,
+    mode,
     onLive,
-  }: { labels?: boolean; onLive?: (id: string, live: boolean) => void } = {}
+    onTrace,
+  }: {
+    labels?: boolean
+    mode?: "images" | "render"
+    onLive?: (id: string, live: boolean) => void
+    onTrace?: (t: unknown) => void
+  } = {}
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -230,8 +291,10 @@ function draw(
           rails={[R1]}
           devices={devices}
           frame={FRAME}
+          mode={mode}
           labels={labels}
           onLive={onLive}
+          onTrace={onTrace}
         />
       </div>
     </QueryClientProvider>
@@ -344,5 +407,79 @@ describe("CabinetFaceplates", () => {
     draw([device("d1", "sw-1", PHOTO, 0)], { labels: false })
     await waitFor(() => expect(face("sw-1")).not.toBeNull())
     expect(screen.queryByText("sw-1")).toBeNull()
+  })
+})
+
+describe("CabinetFaceplates in Images", () => {
+  const called = (path: string) =>
+    apiMock.mock.calls.filter(([p]) => p === path).length
+  const all = [
+    device("d1", "sw-1", PHOTO, 0),
+    device("d2", "sw-2", CAL, 140),
+    device("d3", "plc-1", SCHEMATIC, 200),
+    device("d4", "relay-1", BARE, 300),
+  ]
+
+  it("marks a photo's ports from one request for the whole plate", async () => {
+    draw([...all, device("d5", "gw-1", CONSOLE, 400)], { mode: "images" })
+    const f = await waitFor(() => {
+      const el = face("sw-1")
+      if (!el) throw new Error("not drawn yet")
+      return el
+    })
+    expect(f.dataset.look).toBe("photo")
+    const p1 = await waitFor(() => {
+      const el = f.querySelector<HTMLAnchorElement>('a[data-port-name="P1"]')
+      if (!el) throw new Error("no P1 yet")
+      return el
+    })
+    expect(p1.style.borderColor).toBe("rgb(16, 185, 129)") // the 1G tier
+    await waitFor(() => expect(face("sw-2")).not.toBeNull())
+    // A device without photo ports keeps its plain photo or its body.
+    expect(face("plc-1")).toBeNull()
+    expect(face("relay-1")).toBeNull()
+    // One request resolves every photo's markers; none per device, nor the
+    // device records the panel would otherwise load.
+    expect(apiMock.mock.calls.filter(([p]) => p.startsWith(BULK))).toEqual([
+      [`${BULK}d1,d2,d5`],
+    ])
+    for (const id of ["d1", "d2", "d5"]) {
+      expect(called(`/api/devices/${id}/face-ports/`)).toBe(0)
+      expect(called(`/api/devices/${id}/`)).toBe(0)
+    }
+    // Interfaces only where a photo's markers stand for them; nothing for
+    // the devices Images leaves alone.
+    expect(called("/api/devices/d3/interfaces/")).toBe(0)
+    expect(called("/api/devices/d4/interfaces/")).toBe(0)
+  })
+
+  it("asks SNMP only for a photo that marks interfaces", async () => {
+    draw([device("d1", "sw-1", PHOTO, 0), device("d5", "gw-1", CONSOLE, 400)], {
+      mode: "images",
+    })
+    await waitFor(() => expect(face("gw-1")).not.toBeNull())
+    await waitFor(() =>
+      expect(called("/api/monitoring/devices/d1/snmp/")).toBe(1)
+    )
+    expect(called("/api/monitoring/devices/d5/snmp/")).toBe(0)
+  })
+
+  it("traces a cabled port's run instead of opening it", async () => {
+    const onTrace = vi.fn()
+    draw([device("d1", "sw-1", PHOTO, 0)], { mode: "images", onTrace })
+    const p1 = await waitFor(() => {
+      const el = document.querySelector<HTMLAnchorElement>(
+        '[data-face="sw-1"] a[data-port-name="P1"]'
+      )
+      if (!el) throw new Error("no P1 yet")
+      return el
+    })
+    p1.click()
+    expect(onTrace).toHaveBeenCalledWith({
+      kind: "interface",
+      id: "i1",
+      name: "P1",
+      device: "sw-1",
+    })
   })
 })

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react"
+import type { ComponentProps } from "react"
 
-import type { FloorPlanLiveState } from "@/lib/api"
+import type { Device, FloorPlanLiveState } from "@/lib/api"
 import { fmtMm } from "@/lib/din-geometry"
 import { cn } from "@/lib/utils"
 import { useCabinetDevices } from "@/components/cabinet-devices"
@@ -9,6 +10,7 @@ import { RowCheckBadge } from "@/components/foldable-group"
 import { BarButton, BarTip } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 
+import { PortHud } from "./hud-cards"
 import type { SceneTile } from "./world"
 
 /**
@@ -167,6 +169,106 @@ export function CabinetHud({
   )
 }
 
+/** Where a device in a cabinet sits, for its cards: the cabinet, its rail
+ * and offset - `K1 · R2 @ 120 mm`, as search writes it - or the cabinet
+ * alone off the rails. */
+export function cabinetPosition(
+  cabinetName: string,
+  d: Pick<Device, "din_rail" | "din_offset_mm">
+): string {
+  return d.din_rail
+    ? `${cabinetName} · ${d.din_rail.label} @ ${fmtMm(d.din_offset_mm ?? 0)} mm`
+    : cabinetName
+}
+
+/** A port on the photo of a device in an open cabinet: the tile (or, off a
+ * floor plan, the cabinet), the device, and the marker's name and kind. */
+export interface CabinetPortRef {
+  tileId: string
+  deviceId: string
+  marker: string
+  kind: string
+}
+
+/** A port as the hover store keys it. A marker's name can hold a slash
+ * (`Ethernet1/1`), so the key is the four as JSON. */
+export function portHoverKey(port: CabinetPortRef): string {
+  return JSON.stringify([port.tileId, port.deviceId, port.marker, port.kind])
+}
+
+/** The port a `portHoverKey` names. */
+export function parsePortHoverKey(key: string): CabinetPortRef | null {
+  try {
+    const parts: unknown = JSON.parse(key)
+    if (!Array.isArray(parts) || parts.length !== 4) return null
+    const [tileId, deviceId, marker, kind]: unknown[] = parts
+    return typeof tileId === "string" &&
+      typeof deviceId === "string" &&
+      typeof marker === "string" &&
+      typeof kind === "string"
+      ? { tileId, deviceId, marker, kind }
+      : null
+  } catch {
+    return null
+  }
+}
+
+/** The card for a port on a device in an open cabinet: the room's port card,
+ * the device looked up in the cabinet's device list - already fetched - for
+ * its name and place on the rails. */
+export function CabinetPortHud({
+  cabinet,
+  port,
+  ...card
+}: {
+  cabinet: { id: string; name: string }
+  port: CabinetPortRef
+} & Omit<ComponentProps<typeof PortHud>, "device" | "position" | "selection">) {
+  const devices = useCabinetDevices(cabinet.id)
+  const d = devices.data?.results.find((x) => x.id === port.deviceId)
+  if (!d) return null
+  return (
+    <PortHud
+      {...card}
+      device={d}
+      position={cabinetPosition(cabinet.name, d)}
+      selection={{
+        kind: "port",
+        tileId: port.tileId,
+        deviceId: d.id,
+        portName: port.marker,
+        portKind: port.kind,
+        portSide: "front",
+      }}
+    />
+  )
+}
+
+/** The hovered port's card while the corner is free, as a preview. */
+export function CabinetPortHoverHud({
+  store,
+  cabinetOf,
+  hidden = false,
+  showReserved = false,
+}: {
+  store: HoverStore
+  cabinetOf: (tileId: string) => { id: string; name: string } | null
+  hidden?: boolean
+  showReserved?: boolean
+}) {
+  const key = useHoveredTile(store)
+  const port = key && !hidden ? parsePortHoverKey(key) : null
+  const cabinet = port ? cabinetOf(port.tileId) : null
+  return port && cabinet ? (
+    <CabinetPortHud
+      cabinet={cabinet}
+      port={port}
+      preview
+      showReserved={showReserved}
+    />
+  ) : null
+}
+
 /** A device in an open cabinet, as the hover store keys it: the tile (or,
  * off a floor plan, the cabinet) and the device. */
 export function deviceHoverKey(tileId: string, deviceId: string): string {
@@ -273,10 +375,7 @@ export function CabinetDeviceHud({
         {d.din_rail &&
           row(
             "Position",
-            <span className="num">
-              {cabinet.name} · {d.din_rail.label} @{" "}
-              {fmtMm(d.din_offset_mm ?? 0)} mm
-            </span>
+            <span className="num">{cabinetPosition(cabinet.name, d)}</span>
           )}
         {type?.width_mm != null &&
           type.height_mm != null &&

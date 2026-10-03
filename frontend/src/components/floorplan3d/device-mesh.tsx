@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useThree } from "@react-three/fiber"
 import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 
-import { type FacePort, type ImagePortMarker } from "@/lib/api"
+import { type FacePort, type FacePorts, type ImagePortMarker } from "@/lib/api"
 import {
   bayHex,
   EMPTY_LEGEND,
@@ -12,10 +12,12 @@ import {
   portCapabilityHex,
   portHex,
 } from "@/lib/faceplate-colors"
+import type { LegendContent } from "@/lib/faceplate-colors"
 import {
   normalizePortName,
   useObservedPorts,
 } from "@/components/device-faceplate"
+import type { ObservedPort } from "@/components/device-faceplate"
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
 import type { PortLabelSource } from "@/lib/api"
@@ -185,6 +187,306 @@ export function useFaceTexture(url: string | null): THREE.Texture | null {
 }
 
 /**
+ * A face's photo-port markers resolved to the device's real ports, and their
+ * live state - what `PortQuads` colours by. The face-ports payload comes
+ * through the room's batched bulk request (drift included, so a marker SNMP
+ * disagrees with gets its halo), keyed per device so the port card reads
+ * the same entry; SNMP observed state through the 2D faceplate's own query.
+ * Reports the colours the quads put on screen to `onLegend`, by device.
+ *
+ * `enabled` resolves the markers - one more device in the next bulk
+ * request. `observe` polls SNMP, a request per device, so a caller keeps it
+ * to the faces that draw interface ports. With the demand frameloop, a
+ * frame is kicked whenever either lands.
+ */
+export function useFacePortState({
+  deviceId,
+  markers,
+  side,
+  enabled,
+  observe = enabled,
+  onLegend,
+}: {
+  deviceId: string
+  markers: ImagePortMarker[]
+  side: "front" | "rear"
+  enabled: boolean
+  observe?: boolean
+  onLegend?: LegendReporter
+}): {
+  resolved: Map<string, FacePort>
+  observed: Map<string, ObservedPort> | null
+} {
+  const facePorts = useQuery({
+    queryKey: ["device-face-ports", deviceId],
+    // One bulk request per rack-load, not one per device: every mesh that
+    // asks within the same short window rides the same call.
+    queryFn: (): Promise<FacePorts> => fetchFacePortsBatched(deviceId),
+    enabled,
+    staleTime: 30_000,
+  })
+  const resolved = useMemo(
+    () => facePortsOnSide(facePorts.data, side),
+    [facePorts.data, side]
+  )
+  // Live SNMP facts, same source (and cache) as the 2D faceplate - near
+  // devices with markers only, so the room doesn't poll every cabinet.
+  const observed = useObservedPorts(observe ? deviceId : undefined)
+  // Demand frameloop: nudge a redraw when the resolved/live state (colours) land.
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    invalidate()
+  }, [resolved, observed, invalidate])
+
+  // Which colours this face actually uses - walked exactly like the quads,
+  // so the room's legend can't claim a tier nothing on screen wears.
+  const legend = useMemo((): LegendContent => {
+    if (!enabled || markers.length === 0) return EMPTY_LEGEND
+    const ports: Parameters<typeof legendContent>[0]["ports"] = []
+    const parts: { status?: { id: string } | null }[] = []
+    const bays: { occupied: boolean }[] = []
+    const obs = new Map<string, { oper_status: string; admin_status: string }>()
+    for (const m of markers) {
+      const fp = resolved.get(m.name)
+      if (!fp?.id) continue
+      // A module bay reads occupancy, not health - and it shares `kind: null`
+      // with hardware, so the MARKER's kind is what tells them apart.
+      if (m.kind === "module-bay") {
+        bays.push({ occupied: !!fp.module })
+        continue
+      }
+      // kind === null is a hardware marker: status colour, not a speed tier.
+      if (fp.kind === null) {
+        parts.push({ status: fp.status })
+        continue
+      }
+      ports.push({
+        enabled: fp.enabled,
+        cable: fp.connected,
+        speed: fp.speed,
+        type: fp.type,
+      })
+      const key = normalizePortName(fp.name)
+      const live = observed?.get(key)
+      if (live) obs.set(key, live)
+    }
+    return legendContent({ ports, observed: obs, parts, bays })
+  }, [enabled, markers, resolved, observed])
+  useReportLegend(onLegend, deviceId, legend)
+  return { resolved, observed }
+}
+
+/**
+ * A face's photo-port markers as quads: on a racked device's face in the
+ * room, and on a cabinet device's photo. The face is `width` × `height`
+ * metres, centred on the group, its plane facing +Z; each marker sits at its
+ * fractions of it (x right, y down from the top-left), a hair in front of
+ * the photo. Coloured as the 2D faceplate colours a port - live SNMP, else
+ * speed and cable, a free port its capability faint, a bay its occupancy, a
+ * part its status, a hold amber where `markReserved` - with an amber halo
+ * where SNMP drifts and the port's label inside. Each quad takes its own
+ * pointer, so a port is hovered and clicked on its own.
+ */
+export function PortQuads({
+  markers,
+  resolved,
+  observed,
+  width: dw,
+  height: boxH,
+  selectedPort,
+  markReserved = false,
+  labelSource,
+  labelColor: portLabelColor,
+  onSelect,
+  onHover,
+}: {
+  markers: ImagePortMarker[]
+  resolved: Map<string, FacePort>
+  observed: Map<string, ObservedPort> | null
+  width: number
+  height: number
+  /** Name of the marker currently selected on this face, if any. */
+  selectedPort?: string | null
+  /** Draw ports held for a cable amber (`PORT_RESERVED`). */
+  markReserved?: boolean
+  /** What a port's label shows (the device's own say applied). */
+  labelSource: PortLabelSource
+  labelColor: string
+  onSelect: (marker: ImagePortMarker) => void
+  /** Pointer over (true) or off (false) a marker. */
+  onHover?: (marker: ImagePortMarker, on: boolean) => void
+}) {
+  const [hoveredPort, setHoveredPort] = useState<number | null>(null)
+  // A face unmounted under the pointer (a door shut, a tier dropped) never
+  // gets its pointer-out: let go of the hover on the way out.
+  const hoveredRef = useRef<ImagePortMarker | null>(null)
+  const hoverRef = useRef(onHover)
+  useEffect(() => {
+    hoverRef.current = onHover
+  })
+  useEffect(
+    () => () => {
+      if (hoveredRef.current) hoverRef.current?.(hoveredRef.current, false)
+    },
+    []
+  )
+  return (
+    <>
+      {markers.map((m, i) => {
+        // image (mx,my): x right, y DOWN from top-left → plane-local X
+        // right, Y up, so flip y. Each quad owns its pointer events and
+        // stops propagation, so a port is hoverable/clickable on its own
+        // rather than folding into the whole device's click.
+        const isSel = selectedPort != null && m.name === selectedPort
+        const isHot = hoveredPort === i
+        const fp = resolved.get(m.name)
+        const defined = !!fp?.id
+        // Same colouring as the 2D faceplate: live SNMP wins when present,
+        // else the speed/cable/enabled tint (with the type's max speed as
+        // fallback). Free ports show their capability tier, faded.
+        const obs = defined
+          ? observed?.get(normalizePortName(fp!.name))
+          : undefined
+        const tint = defined
+          ? {
+              enabled: fp!.enabled,
+              cable: fp!.connected,
+              speed: fp!.speed,
+              type: fp!.type,
+            }
+          : null
+        const capability = tint ? portCapabilityHex(tint) : null
+        // Module bays share `kind: null` with hardware, so the MARKER's
+        // kind separates them: a bay reads occupied/empty, a part reads
+        // health. Both from the shared colour module, so 2D and 3D can't
+        // teach different colours.
+        const bay = defined && m.kind === "module-bay"
+        const bayFull = bay && !!fp.module
+        // Hardware markers (disk bays…): the PART's status colour
+        // (failed = red), same as the 2D photo faceplate.
+        const hardware = defined && !bay && fp!.kind === null
+        // Held for a cable, where the view marks holds: amber, over the
+        // live state - a reserved port is down by definition.
+        const reserved =
+          markReserved && defined && !bay && !hardware && isReserved(fp)
+        const color = isSel
+          ? PORT_SELECTED
+          : !defined
+            ? PORT_UNDEFINED
+            : bay
+              ? bayHex(bayFull)
+              : hardware
+                ? fp!.status?.color || "#64748b"
+                : reserved
+                  ? PORT_RESERVED
+                  : obs
+                    ? liveHex(obs)
+                    : (capability ?? portHex(tint!))
+        // Undefined markers sit dim in the back; idle ports and empty bays
+        // faint (the photo stays the star - mirrors the 2D ~35% outline);
+        // lit ports, hardware and filled bays solid.
+        const opacity =
+          isSel || isHot
+            ? 0.9
+            : !defined
+              ? 0.2
+              : bay
+                ? bayFull
+                  ? 0.66
+                  : 0.32
+                : !hardware && capability && !reserved
+                  ? 0.32
+                  : 0.66
+        return (
+          <group key={i}>
+            {/* Drift halo: an amber quad a touch larger, sitting just
+                BEHIND the marker so only its border shows - the 3D reading
+                of the 2D ring. Declarative <planeGeometry> so r3f owns
+                (and disposes) it; raycast off so it never eats a click. */}
+            {defined && fp!.drift && !isSel && (
+              <mesh
+                raycast={() => null}
+                position={[(m.x - 0.5) * dw, (0.5 - m.y) * boxH, 0.001]}
+              >
+                <planeGeometry
+                  args={[m.w * dw + DRIFT_HALO_M, m.h * boxH + DRIFT_HALO_M]}
+                />
+                <meshBasicMaterial
+                  color={PORT_DRIFT}
+                  transparent
+                  opacity={0.95}
+                  toneMapped={false}
+                  depthWrite={false}
+                />
+              </mesh>
+            )}
+            <mesh
+              name={m.name}
+              position={[(m.x - 0.5) * dw, (0.5 - m.y) * boxH, 0.0015]}
+              onClick={(e) => {
+                e.stopPropagation()
+                onSelect(m)
+              }}
+              onPointerOver={(e) => {
+                e.stopPropagation()
+                setHoveredPort(i)
+                hoveredRef.current = m
+                onHover?.(m, true)
+                document.body.style.cursor = "pointer"
+              }}
+              onPointerOut={(e) => {
+                e.stopPropagation()
+                setHoveredPort((cur) => (cur === i ? null : cur))
+                if (hoveredRef.current === m) hoveredRef.current = null
+                onHover?.(m, false)
+                document.body.style.cursor = ""
+              }}
+            >
+              <planeGeometry args={[m.w * dw, m.h * boxH]} />
+              <meshBasicMaterial
+                color={color}
+                transparent
+                opacity={opacity}
+                toneMapped={false}
+                depthWrite={false}
+              />
+              {/* The port's label, fitted inside the marker: the band is
+                  capped by the marker's width and height, so a long label
+                  shrinks rather than spills. */}
+              {(() => {
+                const t =
+                  labelSource && defined
+                    ? portLabelText(labelSource, {
+                        label: fp!.label,
+                        hideLabel: fp!.label_hidden,
+                        cableLabel: fp!.cable_label,
+                        peerDevice: fp!.peer?.device,
+                        peerPortLabel: fp!.peer?.port_label,
+                      })
+                    : ""
+                return t ? (
+                  <FaceLabel
+                    text={t}
+                    position={[0, 0, 0.0005]}
+                    rotation={[0, 0, 0]}
+                    heightM={m.h * boxH * 0.8}
+                    maxWidthM={m.w * dw * 0.9}
+                    align="center"
+                    fontFamily="'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif"
+                    color={fp!.label_color || portLabelColor}
+                    background="rgba(0,0,0,0.55)"
+                  />
+                ) : null
+              })()}
+            </mesh>
+          </group>
+        )
+      })}
+    </>
+  )
+}
+
+/**
  * One racked device: a box at its true U position, clickable, wearing its
  * device-type face image on the exposed side when one exists (the rest of the
  * box keeps the role color). Rendered only in the rack's near-LOD tier, so
@@ -251,7 +553,6 @@ export function DeviceMesh({
   markReserved?: boolean
 }) {
   const [hovered, setHovered] = useState(false)
-  const [hoveredPort, setHoveredPort] = useState<number | null>(null)
   const labelSource = effectivePortLabelSource(portLabelSource, dev.port_labels)
   // Shared geometry - the cables layer anchors runs to these same numbers.
   const { y, h, dx, dz, dw, dd, boxH, mountedRear } = deviceBoxM(
@@ -297,62 +598,13 @@ export function DeviceMesh({
   // gates is resolving them to real ports and polling live SNMP, which is two
   // requests per device. See the caller for why that has to stay bounded.
   const wantPorts = showTexture && livePorts && markers.length > 0
-  const facePorts = useQuery({
-    queryKey: ["device-face-ports", dev.id],
-    // One bulk request per rack-load, not one per device: every mesh that
-    // asks within the same short window rides the same call.
-    queryFn: () => fetchFacePortsBatched(dev.id),
+  const { resolved, observed } = useFacePortState({
+    deviceId: dev.id,
+    markers,
+    side,
     enabled: wantPorts,
-    staleTime: 30_000,
+    onLegend,
   })
-  const resolved = useMemo(
-    () => facePortsOnSide(facePorts.data, side),
-    [facePorts.data, side]
-  )
-  // Live SNMP facts, same source (and cache) as the 2D faceplate - near
-  // devices with markers only, so the room doesn't poll every cabinet.
-  const observed = useObservedPorts(wantPorts ? dev.id : undefined)
-  // Demand frameloop: nudge a redraw when the resolved/live state (colours) land.
-  const invalidate = useThree((s) => s.invalidate)
-  useEffect(() => {
-    invalidate()
-  }, [resolved, observed, invalidate])
-
-  // Which colours this face actually uses - walked exactly like the quads
-  // below, so the room's legend can't claim a tier nothing on screen wears.
-  const legend = useMemo(() => {
-    if (!wantPorts) return EMPTY_LEGEND
-    const ports: Parameters<typeof legendContent>[0]["ports"] = []
-    const parts: { status?: { id: string } | null }[] = []
-    const bays: { occupied: boolean }[] = []
-    const obs = new Map<string, { oper_status: string; admin_status: string }>()
-    for (const m of markers) {
-      const fp = resolved.get(m.name)
-      if (!fp?.id) continue
-      // A module bay reads occupancy, not health - and it shares `kind: null`
-      // with hardware, so the MARKER's kind is what tells them apart.
-      if (m.kind === "module-bay") {
-        bays.push({ occupied: !!fp.module })
-        continue
-      }
-      // kind === null is a hardware marker: status colour, not a speed tier.
-      if (fp.kind === null) {
-        parts.push({ status: fp.status })
-        continue
-      }
-      ports.push({
-        enabled: fp.enabled,
-        cable: fp.connected,
-        speed: fp.speed,
-        type: fp.type,
-      })
-      const key = normalizePortName(fp.name)
-      const live = observed?.get(key)
-      if (live) obs.set(key, live)
-    }
-    return legendContent({ ports, observed: obs, parts, bays })
-  }, [wantPorts, markers, resolved, observed])
-  useReportLegend(onLegend, dev.id, legend)
 
   const bodyColor = selected
     ? DEVICE_SELECTED
@@ -438,160 +690,23 @@ export function DeviceMesh({
               material={sharedFaceMaterial(texture)}
             />
           )}
-          {markers.map((m, i) => {
-            // image (mx,my): x right, y DOWN from top-left → plane-local X
-            // right, Y up, so flip y. Each quad owns its pointer events and
-            // stops propagation, so a port is hoverable/clickable on its own
-            // rather than folding into the whole device's click.
-            const isSel = selectedPort != null && m.name === selectedPort
-            const isHot = hoveredPort === i
-            const fp = resolved.get(m.name)
-            const defined = !!fp?.id
-            // Same colouring as the 2D faceplate: live SNMP wins when present,
-            // else the speed/cable/enabled tint (with the type's max speed as
-            // fallback). Free ports show their capability tier, faded.
-            const obs = defined
-              ? observed?.get(normalizePortName(fp!.name))
-              : undefined
-            const tint = defined
-              ? {
-                  enabled: fp!.enabled,
-                  cable: fp!.connected,
-                  speed: fp!.speed,
-                  type: fp!.type,
-                }
-              : null
-            const capability = tint ? portCapabilityHex(tint) : null
-            // Module bays share `kind: null` with hardware, so the MARKER's
-            // kind separates them: a bay reads occupied/empty, a part reads
-            // health. Both from the shared colour module, so 2D and 3D can't
-            // teach different colours.
-            const bay = defined && m.kind === "module-bay"
-            const bayFull = bay && !!fp.module
-            // Hardware markers (disk bays…): the PART's status colour
-            // (failed = red), same as the 2D photo faceplate.
-            const hardware = defined && !bay && fp!.kind === null
-            // Held for a cable, where the view marks holds: amber, over the
-            // live state - a reserved port is down by definition.
-            const reserved =
-              markReserved && defined && !bay && !hardware && isReserved(fp)
-            const color = isSel
-              ? PORT_SELECTED
-              : !defined
-                ? PORT_UNDEFINED
-                : bay
-                  ? bayHex(bayFull)
-                  : hardware
-                    ? fp!.status?.color || "#64748b"
-                    : reserved
-                      ? PORT_RESERVED
-                      : obs
-                        ? liveHex(obs)
-                        : (capability ?? portHex(tint!))
-            // Undefined markers sit dim in the back; idle ports and empty bays
-            // faint (the photo stays the star - mirrors the 2D ~35% outline);
-            // lit ports, hardware and filled bays solid.
-            const opacity =
-              isSel || isHot
-                ? 0.9
-                : !defined
-                  ? 0.2
-                  : bay
-                    ? bayFull
-                      ? 0.66
-                      : 0.32
-                    : !hardware && capability && !reserved
-                      ? 0.32
-                      : 0.66
-            return (
-              <group key={i}>
-                {/* Drift halo: an amber quad a touch larger, sitting just
-                    BEHIND the marker so only its border shows - the 3D reading
-                    of the 2D ring. Declarative <planeGeometry> so r3f owns
-                    (and disposes) it; raycast off so it never eats a click. */}
-                {defined && fp!.drift && !isSel && (
-                  <mesh
-                    raycast={() => null}
-                    position={[(m.x - 0.5) * dw, (0.5 - m.y) * boxH, 0.001]}
-                  >
-                    <planeGeometry
-                      args={[
-                        m.w * dw + DRIFT_HALO_M,
-                        m.h * boxH + DRIFT_HALO_M,
-                      ]}
-                    />
-                    <meshBasicMaterial
-                      color={PORT_DRIFT}
-                      transparent
-                      opacity={0.95}
-                      toneMapped={false}
-                      depthWrite={false}
-                    />
-                  </mesh>
-                )}
-                <mesh
-                  name={m.name}
-                  position={[(m.x - 0.5) * dw, (0.5 - m.y) * boxH, 0.0015]}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    // The panel this marker is ON (the shown side), not the
-                    // face the box is bolted to: a front-mounted server's PSU
-                    // markers live in image_ports.rear, and face-ports
-                    // resolves per panel - passing the mount face made every
-                    // rear-panel port unresolvable from the HUD.
-                    onSelectPort(dev.id, m, side)
-                  }}
-                  onPointerOver={(e) => {
-                    e.stopPropagation()
-                    setHoveredPort(i)
-                    document.body.style.cursor = "pointer"
-                  }}
-                  onPointerOut={(e) => {
-                    e.stopPropagation()
-                    setHoveredPort((cur) => (cur === i ? null : cur))
-                    document.body.style.cursor = ""
-                  }}
-                >
-                  <planeGeometry args={[m.w * dw, m.h * boxH]} />
-                  <meshBasicMaterial
-                    color={color}
-                    transparent
-                    opacity={opacity}
-                    toneMapped={false}
-                    depthWrite={false}
-                  />
-                  {/* The port's label, fitted inside the marker: the band is
-                      capped by the marker's width and height, so a long label
-                      shrinks rather than spills. */}
-                  {(() => {
-                    const t =
-                      labelSource && defined
-                        ? portLabelText(labelSource, {
-                            label: fp!.label,
-                            hideLabel: fp!.label_hidden,
-                            cableLabel: fp!.cable_label,
-                            peerDevice: fp!.peer?.device,
-                            peerPortLabel: fp!.peer?.port_label,
-                          })
-                        : ""
-                    return t ? (
-                      <FaceLabel
-                        text={t}
-                        position={[0, 0, 0.0005]}
-                        rotation={[0, 0, 0]}
-                        heightM={m.h * boxH * 0.8}
-                        maxWidthM={m.w * dw * 0.9}
-                        align="center"
-                        fontFamily="'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif"
-                        color={fp!.label_color || portLabelColor}
-                        background="rgba(0,0,0,0.55)"
-                      />
-                    ) : null
-                  })()}
-                </mesh>
-              </group>
-            )
-          })}
+          <PortQuads
+            markers={markers}
+            resolved={resolved}
+            observed={observed}
+            width={dw}
+            height={boxH}
+            selectedPort={selectedPort}
+            markReserved={markReserved}
+            labelSource={labelSource}
+            labelColor={portLabelColor}
+            // The panel this marker is ON (the shown side), not the face the
+            // box is bolted to: a front-mounted server's PSU markers live in
+            // image_ports.rear, and face-ports resolves per panel - passing
+            // the mount face made every rear-panel port unresolvable from the
+            // HUD.
+            onSelect={(m) => onSelectPort(dev.id, m, side)}
+          />
         </group>
       )}
       {edges && (

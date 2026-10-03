@@ -10,7 +10,12 @@ import { useFrame, useThree } from "@react-three/fiber"
 import { Line } from "@react-three/drei"
 import * as THREE from "three"
 
-import type { FloorTileCheck } from "@/lib/api"
+import type {
+  FloorTileCheck,
+  ImagePortMarker,
+  PortLabelSource,
+} from "@/lib/api"
+import type { LegendReporter } from "@/components/speed-scale"
 
 import {
   CABINET_DOOR_M,
@@ -109,12 +114,19 @@ export function CabinetMesh({
   attention = null,
   doorOpen = false,
   selectedDeviceId = null,
+  selectedPort = null,
   nameplate = true,
+  markReserved = false,
+  portLabelSource = "",
+  portLabelColor = "#ffffff",
   onSelect,
   onFlyTo,
   onHover,
   onSelectDevice,
   onHoverDevice,
+  onSelectPort,
+  onHoverPort,
+  onLegend,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
@@ -132,8 +144,15 @@ export function CabinetMesh({
   doorOpen?: boolean
   /** The device inside drawn as selected. */
   selectedDeviceId?: string | null
+  /** The port picked on a device inside: the device and the marker. */
+  selectedPort?: { deviceId: string; marker: string } | null
   /** The name over the front - off where the page already names it. */
   nameplate?: boolean
+  /** Draw ports held for a cable amber. */
+  markReserved?: boolean
+  /** The deployment's port-label choice and colour, for the ports inside. */
+  portLabelSource?: PortLabelSource
+  portLabelColor?: string
   onSelect: (sel: Sel) => void
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
   /** Pointer over (true) or off (false) this cabinet. */
@@ -143,6 +162,21 @@ export function CabinetMesh({
   /** Pointer over (true) or off (false) a device inside. Keep it stable:
    * a device lets go of its hover whenever it changes. */
   onHoverDevice?: (tileId: string, deviceId: string, on: boolean) => void
+  /** A port on a device inside was clicked. */
+  onSelectPort?: (
+    tileId: string,
+    deviceId: string,
+    marker: ImagePortMarker
+  ) => void
+  /** Pointer over (true) or off (false) a port on a device inside. */
+  onHoverPort?: (
+    tileId: string,
+    deviceId: string,
+    marker: ImagePortMarker,
+    on: boolean
+  ) => void
+  /** The colours the ports inside put on screen, by device. */
+  onLegend?: LegendReporter
 }) {
   const cabinet = tile.cabinet!
   const box = useMemo(() => cabinetBoxM(cabinet), [cabinet])
@@ -261,6 +295,16 @@ export function CabinetMesh({
     (deviceId: string, on: boolean) => onHoverDevice?.(tileId, deviceId, on),
     [onHoverDevice, tileId]
   )
+  const selectPort = useCallback(
+    (deviceId: string, marker: ImagePortMarker) =>
+      onSelectPort?.(tileId, deviceId, marker),
+    [onSelectPort, tileId]
+  )
+  const hoverPort = useCallback(
+    (deviceId: string, marker: ImagePortMarker, on: boolean) =>
+      onHoverPort?.(tileId, deviceId, marker, on),
+    [onHoverPort, tileId]
+  )
 
   const flyTo = () => {
     const vp = rackViewpoint(plan, tile, height, "front")
@@ -356,8 +400,15 @@ export function CabinetMesh({
               cabinetId={cabinet.id}
               box={box}
               selectedDeviceId={selectedDeviceId}
+              selectedPort={selectedPort}
+              markReserved={markReserved}
+              portLabelSource={portLabelSource}
+              portLabelColor={portLabelColor}
               onSelectDevice={selectDevice}
               onHoverDevice={hoverDevice}
+              onSelectPort={onSelectPort ? selectPort : undefined}
+              onHoverPort={onHoverPort ? hoverPort : undefined}
+              onLegend={onLegend}
             />
           </group>
         </>

@@ -7,6 +7,7 @@ import type {
   Device,
   DeviceType,
   DinRail,
+  FacePorts,
   Interface,
   Paginated,
 } from "@/lib/api"
@@ -19,16 +20,23 @@ import {
   nameLayout,
   usePhotoAspects,
 } from "@/components/cabinet-devices"
-import { FaceplateView, useObservedPorts } from "@/components/device-faceplate"
+import {
+  FaceplateView,
+  PortTraceProvider,
+  useObservedPorts,
+} from "@/components/device-faceplate"
+import type { PortTrace } from "@/components/device-faceplate"
 import type { LegendReporter } from "@/components/speed-scale"
 
-// The cabinet plate's Render mode (#277): each device's live faceplate over
-// its body - the device page's Panel, its ports coloured by cable and SNMP
-// state, with their hover cards and a click through to the port. The
-// faceplates are HTML (router links, hover cards, the schematic's lanes of
-// cages), so they are laid over the plate's SVG rather than drawn in it:
-// boxes placed in the plate's millimetres at the drawing's zoom, so each
-// sits exactly on its body.
+// The cabinet plate's live faces (#277): each device's faceplate over its
+// body - the device page's Panel, its ports coloured by cable and SNMP
+// state, with their hover cards, and a cabled port's run traced on a click.
+// Render lays one on every device; Images only on a device whose photo has
+// ports marked on it, as the rack's elevation does (#248). The faceplates
+// are HTML (router links, hover cards, the schematic's lanes of cages), so
+// they are laid over the plate's SVG rather than drawn in it: boxes placed
+// in the plate's millimetres at the drawing's zoom, so each sits exactly on
+// its body.
 
 /** The drawing's frame: where its viewBox starts, plate mm, and its zoom,
  * screen px per mm. */
@@ -56,59 +64,104 @@ export const LIVE =
   "[&_a]:pointer-events-auto [&_button]:pointer-events-auto **:data-[slot=hover-card-trigger]:pointer-events-auto"
 
 /**
+ * The photo-port markers of a cabinet's devices resolved to their ports, in
+ * one bulk request: `/api/devices/face-ports/` for every device with a
+ * front photo, without SNMP drift - as the rack page's port state - so it
+ * costs the same few queries for one device or all of them.
+ */
+export function useCabinetFacePorts(devices: Device[], enabled: boolean) {
+  const ids = useMemo(
+    () =>
+      devices
+        .filter((d) => d.device_type?.front_image)
+        .map((d) => d.id)
+        .sort()
+        // The endpoint's limit; no cabinet comes near it.
+        .slice(0, 200),
+    [devices]
+  )
+  return useQuery({
+    queryKey: ["cabinet-face-ports", ids.join(",")],
+    queryFn: () =>
+      api<Record<string, FacePorts>>(
+        `/api/devices/face-ports/?ids=${ids.join(",")}`
+      ),
+    enabled: enabled && ids.length > 0,
+    staleTime: 30_000,
+  })
+}
+
+/**
  * The devices' faceplates over the plate, for the drawing's `relative`
  * wrapper. A type with photo ports shows its photo with the ports marked on
  * it - at its true size where the photo is calibrated, its markers where
- * they are on the photo, else stretched to the body as Images draws it. A
- * type without draws its schematic faceplate, shrunk into the body where it
- * is larger. A device with neither keeps the body drawn under it.
+ * they are on the photo, else stretched to the body as Images draws it. In
+ * Render a type without draws its schematic faceplate, shrunk into the body
+ * where it is larger; in Images it keeps its plain photo, drawn under it. A
+ * device with neither keeps the body drawn under it.
+ *
+ * Images reads every device's markers from one bulk request and asks
+ * nothing per device for them; the interfaces the markers stand for load
+ * per device, as Render loads them, and SNMP state only for a face that
+ * draws interfaces. A press on a cabled port goes to `onTrace`.
  */
 export function CabinetFaceplates({
   rails,
   devices,
   frame,
+  mode = "render",
   labels,
   onLegend,
   onLive,
+  onTrace,
 }: {
   rails: DinRail[]
   devices: Device[]
   frame: PlateFrame
+  /** Render: every device's face. Images: the photos with ports marked. */
+  mode?: "images" | "render"
   /** Write each device's name across its top, as Images does. */
   labels: boolean
   /** Report the colours each faceplate draws, keyed by device. */
   onLegend?: LegendReporter
   /** Whether a device's ports carry live SNMP facts. */
   onLive?: (deviceId: string, live: boolean) => void
+  /** A cabled port pressed: its run, to trace. */
+  onTrace?: (t: PortTrace) => void
 }) {
   const railById = new Map(rails.map((r) => [r.id, r]))
   const aspects = usePhotoAspects(calibratedPhotos(devices))
+  const bulk = useCabinetFacePorts(devices, mode === "images")
   return (
-    <div
-      data-part="faceplates"
-      className="pointer-events-none absolute inset-0"
-    >
-      {devices.map((d) => {
-        const rail = d.din_rail ? railById.get(d.din_rail.id) : undefined
-        const body = rail
-          ? deviceBody(rail, d.din_offset_mm, d.device_type)
-          : null
-        if (!rail || !body || !d.device_type) return null
-        return (
-          <DeviceFace
-            key={d.id}
-            device={d}
-            typeId={d.device_type.id}
-            body={body}
-            photo={frontPhoto(d, rail, body, aspects)}
-            frame={frame}
-            labels={labels}
-            onLegend={onLegend}
-            onLive={onLive}
-          />
-        )
-      })}
-    </div>
+    <PortTraceProvider onTrace={onTrace ?? null}>
+      <div
+        data-part="faceplates"
+        className="pointer-events-none absolute inset-0"
+      >
+        {devices.map((d) => {
+          const rail = d.din_rail ? railById.get(d.din_rail.id) : undefined
+          const body = rail
+            ? deviceBody(rail, d.din_offset_mm, d.device_type)
+            : null
+          if (!rail || !body || !d.device_type) return null
+          return (
+            <DeviceFace
+              key={d.id}
+              device={d}
+              typeId={d.device_type.id}
+              body={body}
+              photo={frontPhoto(d, rail, body, aspects)}
+              frame={frame}
+              mode={mode}
+              facePorts={mode === "images" ? bulk.data?.[d.id] : undefined}
+              labels={labels}
+              onLegend={onLegend}
+              onLive={onLive}
+            />
+          )
+        })}
+      </div>
+    </PortTraceProvider>
   )
 }
 
@@ -118,6 +171,8 @@ function DeviceFace({
   body,
   photo,
   frame,
+  mode,
+  facePorts,
   labels,
   onLegend,
   onLive,
@@ -127,6 +182,9 @@ function DeviceFace({
   body: PlateBox
   photo: ReturnType<typeof frontPhoto>
   frame: PlateFrame
+  mode: "images" | "render"
+  /** Images: this device's markers, from the plate's one bulk request. */
+  facePorts?: FacePorts
   labels: boolean
   onLegend?: LegendReporter
   onLive?: (deviceId: string, live: boolean) => void
@@ -137,12 +195,28 @@ function DeviceFace({
     queryFn: () => api<DeviceType>(`/api/device-types/${typeId}/`),
     staleTime: 5 * 60_000,
   })
+  // A photo with ports marked on it is what Images draws live; Render draws
+  // every device.
+  const marked = type.data?.image_ports
+  const photoPorts =
+    !!photo && !!marked && marked.front.length + marked.rear.length > 0
+  const images = mode === "images"
   const ifaces = useQuery({
     queryKey: ["device-interfaces", d.id],
     queryFn: () =>
       api<Paginated<Interface>>(`/api/devices/${d.id}/interfaces/`),
+    enabled: !images || photoPorts,
   })
-  const observed = useObservedPorts(d.id)
+  // Images asks SNMP only for a photo that marks interfaces - the device's
+  // own markers where it has them, as the panel reads them.
+  const markers = (d.image_ports ?? marked)?.front ?? []
+  const observed = useObservedPorts(
+    !images ||
+      (photoPorts &&
+        markers.some((m) => (m.kind || "interface") === "interface"))
+      ? d.id
+      : undefined
+  )
   const live = !!observed
   useEffect(() => {
     if (!onLive) return
@@ -153,8 +227,11 @@ function DeviceFace({
     () => (ifaces.data?.results ?? []).filter((i) => !i.virtual),
     [ifaces.data]
   )
-  // Until both are in, the body drawn under this one shows.
+  // Until both are in, the body drawn under this one shows. Images draws
+  // only a photo with ports, and waits for the plate's bulk markers rather
+  // than asking for its own.
   if (!type.data || ifaces.isPending) return null
+  if (images && (!photoPorts || !facePorts)) return null
 
   const z = frame.pxPerMm
   const label = labels
@@ -170,14 +247,16 @@ function DeviceFace({
     onLegend,
     legendKey: d.id,
     portLabels: d.port_labels,
+    // Images hands the panel what it would otherwise ask for per device:
+    // its markers and its own record.
+    ...(images ? { facePorts, device: d } : {}),
   }
   const outline = (
     <div className="pointer-events-none absolute inset-0 border border-border" />
   )
 
   // Photo ports: what the device page's Panel draws as Photo.
-  const marked = type.data.image_ports
-  if (photo && marked && marked.front.length + marked.rear.length > 0) {
+  if (photo && photoPorts) {
     const at = photo.calibrated ? photo.box : body
     if (!at) return null
     return (
