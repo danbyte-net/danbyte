@@ -182,7 +182,14 @@ so you can see the hardware without opening the type.
 Uploads are downscaled server-side to at most 2000 px on the longest edge -
 aspect ratio preserved, EXIF rotation applied - so a raw phone photo doesn't
 ship megabytes to every rack view. Library-fetched images get the same
-treatment.
+treatment, and so do image attachments.
+
+Every upload also loses its metadata - the GPS position, the camera and its
+serial, XMP and IPTC data, comments - because device type photos are served
+without a login. A photo that carries none is stored exactly as uploaded.
+0.17.0-dev3 kept the metadata of photos under 2000 px; `manage.py
+strip_photo_metadata` (with `--dry-run` to list them first) re-saves the
+photos stored since without it.
 
 ### Recovering lost images {#reimport-images}
 
