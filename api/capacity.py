@@ -73,9 +73,10 @@ def rack_power(rack) -> dict:
     Supply = the primary feeds delivered to the rack (V × A ×
     max-utilisation%, three-phase × √3), ``supply`` ``"feed"``. Where no
     primary feed gives a figure, the rated (maximum) draw of the inlets of the
-    rack's PDUs stands in, ``supply`` ``"pdu_rating"``: both strips of an A/B
-    pair count, since nothing says which one is the spare. ``supply`` is None
-    when neither is known (``available_w`` 0).
+    rack's PDUs stands in, ``supply`` ``"pdu_rating"``. Two or more rated PDUs
+    are taken as an A/B pair, so the supply is half their ratings: either side
+    must carry the whole rack alone. ``supply`` is None when neither is known
+    (``available_w`` 0).
 
     Demand = the racked devices' power-port draws - allocated where
     recorded, with the nameplate (maximum) sum alongside."""
@@ -87,7 +88,7 @@ def rack_power(rack) -> dict:
         if f.phase == "three":
             watts *= 1.732
         available += watts
-    allocated = maximum = rating = 0
+    allocated = maximum = rating = pdus = 0
     for d in rack.devices.all():
         # A device WITH outlets is a distributor (a PDU): its inlet draw
         # restates its children's draws, so counting both doubled the
@@ -97,7 +98,10 @@ def rack_power(rack) -> dict:
         if outlet_n is None:
             outlet_n = d.power_outlets.count()
         if outlet_n:
-            rating += sum(pp.maximum_draw or 0 for pp in d.power_ports.all())
+            inlet = sum(pp.maximum_draw or 0 for pp in d.power_ports.all())
+            if inlet:
+                rating += inlet
+                pdus += 1
             continue
         for pp in d.power_ports.all():
             allocated += pp.allocated_draw or 0
@@ -106,7 +110,7 @@ def rack_power(rack) -> dict:
     if fed:
         supply, available_w = SUPPLY_FEED, fed
     elif rating:
-        supply, available_w = SUPPLY_PDU_RATING, rating
+        supply, available_w = SUPPLY_PDU_RATING, round(rating / 2 if pdus > 1 else rating)
     else:
         supply, available_w = None, 0
     return {

@@ -141,19 +141,21 @@ class RackPowerTests(_Base):
 
     def test_without_a_feed_the_pdus_rating_stands_in(self):
         rack = self._rack(pdu_w=3680)
+        self.assertEqual(self._power(rack)["available_w"], 3680)
         second = Device.objects.create(
             tenant=self.tenant, site=self.site, rack=rack, name="pdu-b",
             device_type=self.dt_strip, mount="side_right",
         )
         PowerPort.objects.create(device=second, name="inlet", maximum_draw=3680)
         PowerOutlet.objects.create(device=second, name="C13")
-        # A redundant feed is no supply of its own, so the rating still stands.
+        # A redundant feed is no supply of its own, so the rating still stands
+        # - and two PDUs are an A/B pair: one side must carry the rack alone.
         PowerFeed.objects.create(
             tenant=self.tenant, power_panel=self.panel, rack=rack, name="B",
             voltage=230, amperage=16, type="redundant",
         )
         self.assertEqual(self._power(rack), {
-            "available_w": 7360, "allocated_w": 400, "maximum_w": 800,
+            "available_w": 3680, "allocated_w": 400, "maximum_w": 800,
             "supply": "pdu_rating",
         })
 

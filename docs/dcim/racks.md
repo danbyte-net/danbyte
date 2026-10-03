@@ -312,7 +312,8 @@ Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,
 three-phase × √3) - or, where no primary feed with a voltage and amperage
 reaches the rack, the rated (maximum) draw of the inlets of the rack's PDUs,
-marked as a **PDU rating**. Demand is the racked devices' power-port draws -
+marked as a **PDU rating** - half of it when the rack has two or more PDUs,
+taken as an A/B pair whose either side must carry the rack alone. Demand is the racked devices' power-port draws -
 allocated where you've recorded it, otherwise the nameplate sum (labelled
 *nameplate*). The rack page shows **demand / supply** (`1.2 kW / 3.6 kW`,
 in W below 1 kW) and turns red when over; a rack drawing power with neither
@@ -329,9 +330,9 @@ green up to 80 % full, amber above 80 %, red above 95 %. The racks list's
 !!! note "Changed in 0.17"
     Power figures of 1 kW and up read in kW (`3.6 kW` where the page showed
     `3600 W`). A rack with no primary feed had no supply figure at all; it now
-    falls back to its PDUs' inlet ratings. Both strips of an A/B pair count,
-    since nothing says which one is the spare - model the feeds (a primary and
-    a redundant one) for the figure that leaves the redundancy alone. The
+    falls back to its PDUs' inlet ratings, halved for two or more PDUs as an
+    A/B pair - model the feeds (a primary and a redundant one) for the exact
+    figure. The
     racks list's **Used** bar measures the exact share: a 42U rack with 40U
     used (95.2 %) is red there now, as it already was on the floor plan.
 
@@ -387,7 +388,8 @@ number of queries whatever stands in them, ports or not.
 
 A rack's `power` holds `available_w`, `allocated_w`, `maximum_w` and
 `supply`: `feed` when the supply is its primary feeds, `pdu_rating` when it is
-its PDUs' inlet ratings, null when there is neither. A site adds its racks up
+its PDUs' inlet ratings (halved for two or more PDUs), null when there is
+neither. A site adds its racks up
 floor plan by floor plan on its [Capacity](../models/site.md#capacity) API.
 
 ## API: port state and 3D geometry
