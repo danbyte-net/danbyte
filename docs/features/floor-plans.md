@@ -359,7 +359,13 @@ stay zones.
 
 ## Live state on tiles
 
-The canvas refreshes `GET /api/floor-plans/<id>/state/` every 30 seconds:
+The canvas refreshes `GET /api/floor-plans/<id>/state/` every 30 seconds - a
+poll that costs the same number of queries however many devices the plan
+holds. A rack tile's figures are the rack page's, its `power` included (see
+[Racks](../dcim/racks.md#api-a-floor-plans-racks-and-their-ports)); a
+plan's racks with their port figures are
+`GET /api/racks/?floor_plan=<id>&include=ports`, asked for once rather than
+on every poll.
 
 - **Rack tiles** carry a space-utilization bar (green ≤80% · amber 80–95% ·
   red >95%) and a percentage. The racks list's **Used** and **Power** bars

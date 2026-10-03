@@ -158,6 +158,34 @@ All three circuit lists are the same table the main Circuits page draws. They
 are powered by `GET /api/circuits/?provider=<id>`, `?provider_network=<id>`,
 and `?type=<id>`.
 
+## Link speed on the site map
+
+The [site map](site-map.md#link-speed) works out how fast
+each line between two sites is from what you have already recorded. The
+first figure it finds wins, and it says which one it used:
+
+1. **Commit rate** - the circuit's committed rate, when it is set.
+2. **Port speed** - otherwise the terminations' port speeds, the slower side
+   winning. Where a side records an upstream speed (DSL, DOCSIS), the link
+   carries both directions: `100/20M`.
+3. **Cabled interfaces** - otherwise the speed of the interfaces its sides
+   are cabled to, through any patch panels; the slower one.
+
+Other lines between sites follow the same idea:
+
+- A **tunnel** has only its own **Capacity**, set on the tunnel - nothing is
+  worked out from its interfaces. Every spoke of a hub tunnel shows the
+  hub's figure.
+- A **cable** runs at the lower of its two end interfaces' speeds. A trunk
+  between two patch panels is followed through the panels to the ports its
+  strands reach, and carries one link per strand patched at both ends: four
+  10G links read `4×10G`.
+- Several **cables between the same two sites** add up the same way -
+  `2×10G` when they match, the sum when they don't - and the ones with no
+  known speed are counted separately.
+
+When nothing is known the line has no figure rather than a guess.
+
 ## Circuit SLAs
 
 A circuit can be a member of a

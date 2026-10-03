@@ -42,6 +42,15 @@ describe("PowerFigure", () => {
     expect(both.container.textContent).toBe("2 kWnameplate · No feed")
   })
 
+  it("marks a supply read from the PDUs' rating", () => {
+    const { container } = render(
+      <PowerFigure
+        power={{ ...power(3_680, 400, 800), supply: "pdu_rating" }}
+      />
+    )
+    expect(container.textContent).toBe("400 W / 3.68 kWPDU rating")
+  })
+
   it("turns red when demand is over supply", () => {
     const { container } = render(<PowerFigure power={power(1_000, 1_200, 0)} />)
     expect(container.querySelector(".text-destructive")?.textContent).toBe(

@@ -49,6 +49,34 @@ agreements [provided for it](../features/sla.md#the-parts-of-an-agreement),
 with each agreement's whole figure; its availability is over the site's
 devices. The Circuits tab shows each circuit's SLA and availability too.
 
+## Capacity
+
+`GET /api/sites/{id}/capacity/` adds up the site's racks floor plan by floor
+plan, for the site page's Capacity tab. The site's `rack_count` (on its own
+`GET /api/sites/{id}/`) says whether it has any racks at all.
+
+| Field | What it holds |
+|---|---|
+| `floor_plans` | One entry per [floor plan](../features/floor-plans.md) of the site: its `name`, `location`, `grid_width` / `grid_height`, the `racks` of the site that stand on it with their `totals`, and `tiles` - its rack tiles only (`rack_id`, `x`, `y`, `w`, `h`, `orientation`), enough to draw a thumbnail. |
+| `unplaced` | The site's racks that stand on no floor plan, with their `totals`. |
+| `totals` | Every rack of the site you can view. |
+| `count_virtual` | Whether virtual interfaces were counted as ports. |
+
+A rack carries its `role`, `status`, `u_height`, `u_used` and `u_pct` (units
+in use, as a percentage), `power` (with `supply`: `feed`, `pdu_rating` or
+null), `ports`, `panel_ports` and `device_count` - the figures its own
+[rack page](../dcim/racks.md#api-a-floor-plans-racks-and-their-ports) gives
+it. `totals` add these up, with the number of `racks` and `devices`; under
+`power`, `pdu_rating` and `no_supply` count the racks whose supply is only
+their PDUs' rating, or that have no supply figure at all.
+
+It needs **view** on sites (another tenant's site, or one outside the sites
+you are limited to, is a 404), and lists only the floor plans and racks you
+can view. A rack on a floor plan you cannot see is in the site's `totals` but
+on no card - it is not "on no floor plan". A rack's figures count every
+device in it, as its units and power do. The answer costs about twenty
+queries, whatever the site holds.
+
 ## Coming in Phase 4
 
 `SiteMasterSubnet` - explicit CIDR blocks "owned" by a site, used to validate

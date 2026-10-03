@@ -62,11 +62,12 @@ def _blank() -> dict:
     return dict.fromkeys(METRICS, 0)
 
 
-def port_kinds(devices) -> dict:
+def port_kinds(devices, *, rear_ports: bool = True) -> dict:
     """``{device_id: {kind: {"total", "connected", "reserved", "marked"}}}``
     for every device in ``devices`` (a queryset) with at least one port of
     any kind, ``kind`` being each of :data:`KINDS`. ``connected`` includes
-    ``marked``."""
+    ``marked``. ``rear_ports=False`` leaves rear ports uncounted - they read
+    zero - for a caller that never shows them: four queries fewer."""
     from .models import (
         CableTermination,
         FrontPort,
@@ -75,12 +76,11 @@ def port_kinds(devices) -> dict:
         RearPort,
     )
 
+    tables = [(Interface, "interface"), (FrontPort, "front_port")]
+    if rear_ports:
+        tables.append((RearPort, "rear_port"))
     out: dict = {}
-    for model, term_field in (
-        (Interface, "interface"),
-        (FrontPort, "front_port"),
-        (RearPort, "rear_port"),
-    ):
+    for model, term_field in tables:
         base = model.objects.filter(device__in=devices)
         keys = ["device_id"]
         if model is Interface:

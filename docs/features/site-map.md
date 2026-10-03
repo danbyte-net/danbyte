@@ -377,3 +377,58 @@ they're scriptable like everything else.
 end carries the point it draws at, its `device_id` and its `site_id` - a
 device with no coordinates of its own is drawn at its site's point, and that
 device is not in the payload above, so the site is what identifies it.
+
+`GET /api/site-map/connections/` returns the lines between sites - circuits,
+tunnels and each site pair's cables, as
+[What draws a line between two sites](#what-draws-a-line-between-two-sites)
+describes. Each kind needs its own view permission, and both sites must be
+ones you can view.
+
+### Link speed: `?include=capacity` {#link-speed}
+
+Both line endpoints take `?include=capacity`, and each line then also
+carries:
+
+| Field | What it holds |
+|---|---|
+| `capacity` | The line's speed: `kbps`, `up_kbps` (only when the other direction differs), `label` (`10G`, `100/20M`, `2×10G`), `source`, and `count` / `unknown` - how many of its links have a known speed and how many do not. `null` when no speed is known: never a guess. |
+| `links` | The end-to-end links the figure is made of, the first 50: each with its `a` and `z` end, its own `capacity` and the `cable_id` that carries it (null for a circuit or tunnel). |
+| `link_count` | How many links there are in all. |
+
+Without it the payloads are as before. The map widget and the site and
+device locators share these endpoints and don't ask, so they pay nothing
+for it.
+
+`source` names where the figure came from - the rules, and which one wins,
+are under [Circuits → Link speed on the site map](circuits.md#link-speed-on-the-site-map):
+
+| `source` | Line | The figure |
+|---|---|---|
+| `commit` | circuit | its commit rate |
+| `port` | circuit | the slower termination's port speed, with the upstream speed where it differs |
+| `interface` | circuit | the slower of the interfaces its sides are cabled to |
+| `override` | tunnel | the tunnel's own capacity |
+| `cable` | cable | per link, the lower of its two end interfaces' speeds; a line with several links adds them up |
+
+A cable into a patch panel is followed through the panels to where its
+strands come out. A trunk between two panels carries one link per strand
+patched at both ends - a duplex connector's two strands are one link - and a
+strand that stops dark inside a panel carries none. A site pair's line adds
+up every link its cables carry, each once; a cable that carries no link at
+all counts as one of unknown speed.
+
+An end names its `site_id`, the `device` - or for a tunnel the
+`virtual_machine` - and the `port` it lands on, with the port's `kind` and,
+for an interface, its `speed_kbps`. A circuit's ends carry their
+`termination` too: its side, port speed and upstream speed. What you see
+follows your permissions:
+
+- a device or virtual machine is named only when you can view it; otherwise
+  the end reads `restricted: true` and carries nothing else;
+- a circuit's ends are traced to what they are cabled to only when you can
+  view cables;
+- a speed read off interfaces makes a link's figure only when you can view
+  the devices at both of its ends - otherwise the link counts as unknown.
+
+The figures cost the same number of queries however many links the map
+draws.

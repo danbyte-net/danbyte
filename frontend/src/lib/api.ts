@@ -1181,6 +1181,87 @@ export interface SiteMapConnection {
   color: string
   status: { name: string; color: string } | null
   meta: Record<string, unknown>
+  /** `?include=capacity` only - see `SiteMapLineCapacity`. A cable edge's
+   * links are every link its site pair's cables carry, `a` at `site_a`. */
+  capacity?: SiteMapCapacity | null
+  links?: SiteMapLink[]
+  link_count?: number
+}
+
+/** Where a site map line's speed comes from (#246): a circuit's `commit`
+ * rate, its terminations' `port` / upstream speeds, the `interface`s cabled
+ * to it, a tunnel's own figure (`override`), or the lower end speed of a
+ * `cable` link. */
+export type LinkCapacitySource =
+  | "commit"
+  | "port"
+  | "interface"
+  | "override"
+  | "cable"
+  | "mixed"
+
+/** One link's speed in kbps; `up_kbps` only when the other direction
+ * differs. `label` is the short form: `10G`, `500M`, `100/20M`. */
+export interface LinkCapacity {
+  kbps: number
+  up_kbps: number | null
+  source: LinkCapacitySource
+  label: string
+}
+
+/** A line's speed: its one link's, or its links added up (`2×10G` when they
+ * match, else the sum). `count` links have a known speed and `unknown` do
+ * not - a cable that carries no link at all counts as one unknown. */
+export interface SiteMapCapacity extends LinkCapacity {
+  count: number
+  unknown: number
+}
+
+/** One end of a link on the site map. */
+export interface SiteMapLinkEnd {
+  site_id: string | null
+  /** What the end lands on, when you may view it. */
+  device: { id: string; name: string } | null
+  /** A tunnel end on a virtual machine. */
+  virtual_machine?: { id: string; name: string } | null
+  /** `kind`: interface, vm_interface, front_port / rear_port (a splitter),
+   * circuit_termination… `speed_kbps` is an interface's parsed speed. */
+  port: {
+    id: string
+    name: string
+    kind: string
+    speed_kbps: number | null
+  } | null
+  /** It lands on something you may not view (or, for a circuit end, you may
+   * not view cables) - nothing about it is sent. */
+  restricted: boolean
+  /** A circuit end: the termination's own figures. */
+  termination?: {
+    id: string
+    side: "A" | "Z"
+    port_speed_kbps: number | null
+    upstream_speed_kbps: number | null
+  }
+}
+
+/** An end-to-end link behind a site map line: a circuit, a tunnel, or a
+ * cable run from port to port through any patch panels. */
+export interface SiteMapLink {
+  a: SiteMapLinkEnd
+  z: SiteMapLinkEnd
+  /** Null when no speed is known, or a cable link has an end you may not
+   * view. */
+  capacity: LinkCapacity | null
+  /** The cable carrying it; null for circuits and tunnels. */
+  cable_id: string | null
+}
+
+/** What `?include=capacity` adds to a site map connection or cable. */
+export interface SiteMapLineCapacity {
+  capacity: SiteMapCapacity | null
+  /** The first 50 links. */
+  links: SiteMapLink[]
+  link_count: number
 }
 
 export interface SiteMapPayload {
@@ -1890,6 +1971,21 @@ export interface RackTypeWritePayload {
   tag_ids?: number[]
 }
 
+/** Where a rack's power supply figure comes from: its primary feeds, or -
+ * with none - the rated draw of its PDUs' inlets (both strips of an A/B
+ * pair). Null: no supply figure (`available_w` 0). */
+export type RackPowerSupply = "feed" | "pdu_rating" | null
+
+/** A rack's power roll-up (api.capacity.rack_power). */
+export interface RackPower {
+  available_w: number
+  /** Demand: allocated draw where recorded, beside the nameplate sum. */
+  allocated_w: number
+  maximum_w: number
+  /** Always sent; optional so older fixtures still type. */
+  supply?: RackPowerSupply
+}
+
 export interface Rack {
   id: string
   numid: number | null
@@ -1912,8 +2008,16 @@ export interface Rack {
   /** Sum of racked devices' type weights, normalised to kg. */
   total_weight_kg: number
   max_weight_kg: number | null
-  /** Supply from primary feeds vs the racked devices' power-port draws. */
-  power: { available_w: number; allocated_w: number; maximum_w: number }
+  /** Supply from primary feeds (else the PDUs' rating) vs the racked
+   * devices' power-port draws. */
+  power: RackPower
+  /** `?include=ports` only, else null (#247): the counted interfaces of
+   * devices that are not patch panels. */
+  ports?: PortCountRow | null
+  /** `?include=ports` only, else null: front ports, and every counted port
+   * of a patch-panel device. `ports` + `panel_ports` = the rack's counted
+   * ports (`RackPortState.rack.ports`). */
+  panel_ports?: PortCountRow | null
   u_height: number
   starting_unit: number
   desc_units: boolean
@@ -2401,7 +2505,7 @@ export interface RackPortState {
     u_height: number
     u_used: number
     u_free: number
-    power: { available_w: number; allocated_w: number; maximum_w: number }
+    power: RackPower
     ports: PortCountRow
     count_virtual: boolean
   }
@@ -4468,6 +4572,8 @@ export interface Site {
   device_count: number
   /** VMs whose own site is this one (a cluster's site isn't inherited). */
   vm_count: number
+  /** Racks at the site (detail only; 0 on the list) - the Capacity tab
+   * shows when it is above 0. */
   rack_count: number
   cabinet_count: number
   /** Locations in the site, every level of the tree. */
@@ -4478,6 +4584,73 @@ export interface Site {
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+/** One rack on a site's Capacity tab (#247), with the figures its own page
+ * gives it. */
+export interface SiteCapacityRack {
+  id: string
+  name: string
+  role: { id: string; name: string; color: string } | null
+  status: StatusMini | null
+  u_height: number
+  u_used: number
+  /** Units in use, as a whole percentage; null for a 0U rack. */
+  u_pct: number | null
+  power: RackPower
+  ports: PortCountRow
+  panel_ports: PortCountRow
+  device_count: number
+}
+
+/** Racks' figures added up. `power.pdu_rating` / `power.no_supply`: how
+ * many of the racks have only their PDUs' rating, or no supply figure. */
+export interface SiteCapacityTotals {
+  racks: number
+  devices: number
+  u_height: number
+  u_used: number
+  u_pct: number | null
+  power: {
+    available_w: number
+    allocated_w: number
+    maximum_w: number
+    pdu_rating: number
+    no_supply: number
+  }
+  ports: PortCountRow
+  panel_ports: PortCountRow
+}
+
+/** One floor plan's card: the site's racks standing on it and a thumbnail -
+ * its rack tiles only, in grid cells. */
+export interface SiteCapacityPlan {
+  id: string
+  name: string
+  location: { id: string; name: string }
+  grid_width: number
+  grid_height: number
+  totals: SiteCapacityTotals
+  racks: SiteCapacityRack[]
+  tiles: {
+    rack_id: string
+    x: number
+    y: number
+    w: number
+    h: number
+    orientation: number
+  }[]
+}
+
+/** `GET /api/sites/{id}/capacity/`: the floor plans and racks you may view.
+ * `unplaced` is the racks on no floor plan at all; `totals` every rack of
+ * the site you may view. */
+export interface SiteCapacity {
+  site: { id: string; name: string }
+  count_virtual: boolean
+  totals: SiteCapacityTotals
+  floor_plans: SiteCapacityPlan[]
+  unplaced: { totals: SiteCapacityTotals; racks: SiteCapacityRack[] }
 }
 
 export interface SiteWritePayload {
@@ -10424,6 +10597,11 @@ export interface SiteMapCable {
   z: SiteMapCableEnd
   route_ids: string[]
   same_point: boolean
+  /** `?include=capacity` only - see `SiteMapLineCapacity`. The links its
+   * strands carry, `a` at its A end: a trunk lists one per patched strand. */
+  capacity?: SiteMapCapacity | null
+  links?: SiteMapLink[]
+  link_count?: number
 }
 
 export interface CableRouteWritePayload {
@@ -10494,7 +10672,7 @@ export interface FloorTileRackState {
   kind: "rack"
   used_units: number
   u_height: number
-  power: { available_w: number; allocated_w: number; maximum_w: number }
+  power: RackPower
   total_weight_kg: number
   max_weight_kg: number | null
   device_count: number

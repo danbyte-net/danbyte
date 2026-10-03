@@ -9,6 +9,8 @@
  * IPAM prefix utilisation keeps its own scale (`cells/util-cell.tsx`).
  */
 
+import type { RackPower } from "@/lib/api"
+
 /** Above this share of capacity a rack is filling up. */
 export const CAPACITY_WARN = 0.8
 /** Above this share it is full, or over. */
@@ -68,15 +70,10 @@ export function formatWatts(watts: number): string {
 // ─── Power ───────────────────────────────────────────────────────────────────
 
 /** A rack's power roll-up as the server sends it on a rack, a floor-plan
- * tile and the rack's port state (`api/capacity.py rack_power`). */
-export interface RackPower {
-  /** Supply: the primary feeds delivered to the rack. 0 = no feed known. */
-  available_w: number
-  /** Recorded (allocated) draw of the racked devices. */
-  allocated_w: number
-  /** Their nameplate (maximum) draw. */
-  maximum_w: number
-}
+ * tile and the rack's port state (`api/capacity.py rack_power`): supply is
+ * the primary feeds, else the PDUs' inlet rating (`supply: "pdu_rating"`),
+ * 0 when neither is known. */
+export type { RackPower }
 
 /** The demand a rack reports: the allocated draw where it is recorded,
  * else the nameplate sum - and which it is. */

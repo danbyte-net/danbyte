@@ -2016,6 +2016,9 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 0,
             )
 
+        if self.action == "capacity_overview":
+            # The capacity reads the site's id and name; it loads the rest.
+            return super().get_queryset().prefetch_related(None)
         qs = super().get_queryset().annotate(
             prefix_n=_n(Prefix), vlan_n=_n(VLAN), device_n=_n(Device),
             vm_n=_n(VirtualMachine),
@@ -2034,6 +2037,34 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if region:
             qs = qs.filter(region_id=region)
         return qs
+
+    @extend_schema(
+        summary="The site's rack capacity, floor plan by floor plan",
+        request=None,
+        responses=OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "`totals` for the site's racks you may view; `floor_plans`: per "
+                "floor plan of the site you may view, the `totals` and `racks` of "
+                "the site's racks on it and `tiles` - its rack tiles only (`rack_id`, "
+                "`x`, `y`, `w`, `h`, `orientation`) with `grid_width` / "
+                "`grid_height`; `unplaced`: the racks on no floor plan. A rack "
+                "carries `u_height`, `u_used`, `u_pct`, `power` (with `supply`: "
+                "`feed`, `pdu_rating` or null), `ports`, `panel_ports` and "
+                "`device_count`; `totals` add them up, with `racks`, `devices` "
+                "and, under `power`, how many racks have only their PDUs' rating "
+                "(`pdu_rating`) or no supply figure (`no_supply`). `count_virtual` "
+                "says whether virtual interfaces were counted."
+            ),
+        ),
+    )
+    @action(detail=True, methods=["get"], url_path="capacity")
+    def capacity_overview(self, request, pk=None):
+        """The site page's Capacity tab (#247), in a fixed number of queries
+        (api.site_capacity)."""
+        from .site_capacity import site_capacity
+
+        return Response(site_capacity(request, self.get_object()))
 
     @action(detail=False, methods=["get"], url_path="geocode")
     def geocode(self, request):
@@ -6254,6 +6285,32 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         return elevation_pdf.export_pdf_file(request, self.get_object(), "cabinet", token)
 
 
+RACK_INCLUDE_PARAMETER = OpenApiParameter(
+    name="include",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    description=(
+        "`ports`: each rack carries `ports` and `panel_ports`, its counted ports "
+        "split as the capacity figures split them. Without it both are null."
+    ),
+)
+
+
+@extend_schema_view(
+    list=extend_schema(parameters=[
+        OpenApiParameter(
+            name="floor_plan",
+            type=OpenApiTypes.UUID,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Only the racks the tiles of this floor plan stand for; none unless "
+                "you may view the plan."
+            ),
+        ),
+        RACK_INCLUDE_PARAMETER,
+    ]),
+    retrieve=extend_schema(parameters=[RACK_INCLUDE_PARAMETER]),
+)
 class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     queryset = Rack.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = RackSerializer
@@ -6270,11 +6327,10 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         # Everything the serializer's figures read (units, weight, power,
-        # documents) is fetched per page here: the racked devices with their
-        # type, port draws and an outlet count, plus a document count per
-        # rack - a page of racks costs the same whatever sits in them (#188).
-        from django.db.models import Prefetch
-
+        # ports, documents) is fetched per page here: the racked devices with
+        # their type, role, port draws and an outlet count, plus a document
+        # count per rack - a page of racks costs the same whatever sits in
+        # them (#188).
         from .models import Document
 
         if self.action in ("scene", "export_pdf_file"):
@@ -6282,11 +6338,6 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             # link only checks the rack is still in view; the figures below
             # would only be thrown away.
             return super().get_queryset()
-        racked = (
-            Device.objects.select_related("device_type")
-            .annotate(outlet_n=Count("power_outlets", distinct=True))
-            .prefetch_related("power_ports")
-        )
         documents = (
             Document.objects.filter(object_type="api.rack", object_id=OuterRef("pk"))
             .order_by()
@@ -6299,7 +6350,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             .select_related(
                 "site", "site__region", "role", "location", "rack_type__manufacturer"
             )
-            .prefetch_related("tags", Prefetch("devices", queryset=racked), "power_feeds")
+            .prefetch_related("tags", capacity.racked_devices_prefetch(), "power_feeds")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
         )
         if self.request:
@@ -6324,7 +6375,51 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             rack_type = self.request.query_params.get("rack_type")
             if rack_type:
                 qs = qs.filter(rack_type_id=rack_type)
+            floor_plan = self.request.query_params.get("floor_plan")
+            if floor_plan:
+                qs = self._on_floor_plan(qs, floor_plan)
         return qs
+
+    def _on_floor_plan(self, qs, raw):
+        """The racks the tiles of one floor plan stand for (#247) - none
+        unless the caller may view that plan in the active tenant."""
+        from auth_api import rbac
+
+        from .topology_views import _parse_uuid
+        from .views import _get_active_tenant
+
+        tenant = _get_active_tenant(self.request)
+        plans = rbac.restrict_queryset(
+            FloorPlan.objects.filter(tenant=tenant, pk=_parse_uuid(raw, "floor_plan")),
+            self.request.user, tenant, "floorplan", "view",
+        )
+        tiles = FloorPlanTile.objects.filter(floor_plan__in=plans, rack__isnull=False)
+        return qs.filter(pk__in=tiles.values("rack_id"))
+
+    def _include_ports(self) -> bool:
+        """``?include=ports``: each rack carries its ``ports`` and
+        ``panel_ports`` (#247)."""
+        if not self.request or self.action not in ("list", "retrieve"):
+            return False
+        raw = self.request.query_params.get("include") or ""
+        return "ports" in {token.strip() for token in raw.split(",")}
+
+    def get_serializer(self, *args, **kwargs):
+        # The port figures of every rack on the page in one go - eight
+        # grouped queries for the page, never a round per rack.
+        if args and args[0] is not None and self._include_ports():
+            from core.effective_settings import port_count_virtual
+
+            from .views import _get_active_tenant
+
+            data = args[0]
+            racks = [data] if isinstance(data, Rack) else list(data)
+            kwargs.setdefault("context", self.get_serializer_context())
+            kwargs["context"]["rack_ports"] = capacity.rack_port_split(
+                racks, count_virtual=port_count_virtual(_get_active_tenant(self.request))
+            )
+            args = (data if isinstance(data, Rack) else racks, *args[1:])
+        return super().get_serializer(*args, **kwargs)
 
     @action(detail=True, methods=["post"], url_path="sync-from-type")
     def sync_from_type(self, request, pk=None):
@@ -9176,10 +9271,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
             )
         )
         rack_ids = {t.rack_id for t in tiles if t.rack_id}
+        # The racks with what their figures read (api.capacity): the poll
+        # costs the same however many devices the plan holds.
         racks = {
             r.id: r
             for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
-                "devices__device_type", "power_feeds"
+                capacity.racked_devices_prefetch(), "power_feeds"
             )
         }
         cabinets = {

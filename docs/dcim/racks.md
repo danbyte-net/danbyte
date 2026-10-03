@@ -310,14 +310,17 @@ plan's 3D View menu on this device. Cables are not drawn in this view yet.
 
 Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,
-three-phase × √3), demand is the racked devices' power-port draws -
+three-phase × √3) - or, where no primary feed with a voltage and amperage
+reaches the rack, the rated (maximum) draw of the inlets of the rack's PDUs,
+marked as a **PDU rating**. Demand is the racked devices' power-port draws -
 allocated where you've recorded it, otherwise the nameplate sum (labelled
 *nameplate*). The rack page shows **demand / supply** (`1.2 kW / 3.6 kW`,
-in W below 1 kW) and turns red when over; a rack drawing power with no feed
-says *No feed*. The floor plan's tile popover and rack panel read the same
-figure, and so does the racks list's **Power** column, with a bar in front:
-it is offered in the list's **Columns** menu, hidden until you tick it, and
-sorts by how much of the supply the demand takes.
+in W below 1 kW) and turns red when over; a rack drawing power with neither
+a feed nor a PDU rating says *No feed*. The floor plan's tile popover and
+rack panel read the same figure, and so does the racks list's **Power**
+column, with a bar in front: it is offered in the list's **Columns** menu,
+hidden until you tick it, and sorts by how much of the supply the demand
+takes.
 
 A rack's space and power share one scale wherever they are drawn as a bar:
 green up to 80 % full, amber above 80 %, red above 95 %. The racks list's
@@ -325,9 +328,12 @@ green up to 80 % full, amber above 80 %, red above 95 %. The racks list's
 
 !!! note "Changed in 0.17"
     Power figures of 1 kW and up read in kW (`3.6 kW` where the page showed
-    `3600 W`), and a rack with demand but no feed says *No feed*. The racks
-    list's **Used** bar measures the exact share: a 42U rack with 40U used
-    (95.2 %) is red there now, as it already was on the floor plan.
+    `3600 W`). A rack with no primary feed had no supply figure at all; it now
+    falls back to its PDUs' inlet ratings. Both strips of an A/B pair count,
+    since nothing says which one is the spare - model the feeds (a primary and
+    a redundant one) for the figure that leaves the redundancy alone. The
+    racks list's **Used** bar measures the exact share: a 42U rack with 40U
+    used (95.2 %) is red there now, as it already was on the floor plan.
 
 !!! note "Power numbers changed with the PDU fix"
     Devices that **have power outlets** (PDUs - distributors) no longer
@@ -357,6 +363,32 @@ photos (front/rear shots, cabling, labels). Uploading and removing require
 **change** permission on racks; viewers see it read-only. It's the same shared
 attachment system used on [devices](devices.md#images), sites, and locations -
 including the grid/list toggle and the file details the list shows.
+
+## API: a floor plan's racks and their ports
+
+`GET /api/racks/?floor_plan=<id>` lists the racks the tiles of one
+[floor plan](../features/floor-plans.md) stand for, each once - none unless you
+can view that plan. Add `include=ports`, on the list or on one rack's
+`GET /api/racks/{id}/`, and each rack also carries its port figures, split in
+two:
+
+- `ports`: the counted interfaces - physical, plus virtual ones where
+  **Count virtual interfaces** is on - of its devices that are not patch
+  panels;
+- `panel_ports`: its front ports, and every counted port of a device whose
+  role is a patch-panel role.
+
+Each holds `total`, `connected`, `reserved`, `free` and `marked` under the
+[port counting rule](devices.md#what-counts-as-a-port); added together they
+are the rack's `ports` in the [port state](#api-port-state-and-3d-geometry)
+below. Without `include=ports` both are null. Like the rack's units and
+power, they count every device in the rack. A page of racks costs the same
+number of queries whatever stands in them, ports or not.
+
+A rack's `power` holds `available_w`, `allocated_w`, `maximum_w` and
+`supply`: `feed` when the supply is its primary feeds, `pdu_rating` when it is
+its PDUs' inlet ratings, null when there is neither. A site adds its racks up
+floor plan by floor plan on its [Capacity](../models/site.md#capacity) API.
 
 ## API: port state and 3D geometry
 

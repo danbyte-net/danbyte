@@ -5,14 +5,19 @@ The first answer Danbyte has wins, and the answer names where it came from:
 * a circuit: its commit rate, then its terminations' port and upstream speeds
   (one per direction), then the speed of an interface cabled to it;
 * a tunnel: its capacity override - nothing derives one in 0.17;
-* a cable: the lower of its two ends' interface speeds.
+* a cable: the lower of its two ends' interface speeds. A cable into a patch
+  panel ends where its strands come out through the panels, so a trunk
+  carries one link per patched strand, and those add up.
 
 Several links between two sites add up (``2×10G``). Unknown is ``None``, never
-a guess. Pure functions over plain values: the callers load the rows.
+a guess. Pure functions over plain values: the callers load the rows
+(``api.site_map_links`` for the site map).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from .speed import speed_mbps
 
 
 @dataclass(frozen=True)
@@ -31,6 +36,13 @@ class Capacity:
 
 def _positive(values) -> list[int]:
     return [int(v) for v in values if v]
+
+
+def interface_kbps(speed) -> int | None:
+    """An interface's free-text speed (``"10G"``, ``"1 Gbps"``, a bare kbps
+    number - see ``api.speed``) in kbps; None when it is not a speed."""
+    mbps = speed_mbps(speed)
+    return mbps * 1000 if mbps else None
 
 
 def circuit_capacity(commit_kbps, terminations=(), interface_kbps=None) -> Capacity | None:
@@ -71,6 +83,30 @@ def bundle(capacities) -> dict:
     else:
         label = short(total)
     return {"kbps": total or None, "count": len(known), "unknown": unknown, "label": label}
+
+
+def combined(capacities) -> dict | None:
+    """The figure for one line on the map that carries ``capacities`` - one
+    per link, None where a link's speed is unknown: a single link's own
+    figure, several added up as ``bundle`` adds them. ``count`` is the links
+    whose speed is known and ``unknown`` the rest. None when no link's speed
+    is known."""
+    capacities = list(capacities)
+    known = [c for c in capacities if c is not None]
+    if not known:
+        return None
+    if len(capacities) == 1:
+        return {**known[0].as_dict(), "count": 1, "unknown": 0}
+    summed = bundle(capacities)
+    sources = {c.source for c in known}
+    return {
+        "kbps": summed["kbps"],
+        "up_kbps": None,
+        "source": sources.pop() if len(sources) == 1 else "mixed",
+        "label": summed["label"],
+        "count": summed["count"],
+        "unknown": summed["unknown"],
+    }
 
 
 def short(kbps, up_kbps=None) -> str:

@@ -5755,10 +5755,10 @@ class RackMiniSerializer(NumIdModelSerializer):
 
 
 class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
-    # The power roll-up is a set of figures the rack page draws, not one
-    # value a column can show; max_weight_kg repeats Max weight in kg for the
-    # load bar (see api.list_fields).
-    list_columns_exclude = ("power", "max_weight_kg")
+    # The power roll-up and the two port rows are sets of figures the rack
+    # page draws, not one value a column can show; max_weight_kg repeats Max
+    # weight in kg for the load bar (see api.list_fields).
+    list_columns_exclude = ("power", "max_weight_kg", "ports", "panel_ports")
     site = SiteRegionMiniSerializer(read_only=True)
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True
@@ -5919,9 +5919,33 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_power(self, obj):
-        """Rack power rollup - supply from the primary feeds, demand from the
-        racked devices' draws (api.capacity.rack_power)."""
+        """Rack power rollup - supply from the primary feeds (else the PDUs'
+        rating), demand from the racked devices' draws
+        (api.capacity.rack_power)."""
         return rack_power(obj)
+
+    # ``?include=ports`` (#247): the viewset splits the page's counted ports
+    # in one go (api.capacity.rack_port_split) and hands them in as the
+    # ``rack_ports`` context; without it both read null.
+    ports = serializers.SerializerMethodField()
+    panel_ports = serializers.SerializerMethodField()
+
+    def _port_split(self, obj):
+        figures = self.context.get("rack_ports")
+        return figures.get(obj.pk) if figures is not None else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_ports(self, obj):
+        """Counted interfaces of the rack's devices that are not patch panels:
+        total, connected, reserved, free, marked."""
+        split = self._port_split(obj)
+        return split["ports"] if split else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_panel_ports(self, obj):
+        """Front ports, and the counted ports of patch-panel devices."""
+        split = self._port_split(obj)
+        return split["panel_ports"] if split else None
 
     class Meta:
         model = Rack
@@ -5933,7 +5957,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                   "max_weight", "max_weight_unit",
                   "total_weight_kg", "max_weight_kg", "power",
                   "starting_unit", "desc_units", "description",
-                  "device_count", "used_units", "document_count",
+                  "device_count", "used_units", "ports", "panel_ports", "document_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "device_count", "used_units",
                             "document_count", "created_at", "updated_at"]

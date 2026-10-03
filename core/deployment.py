@@ -532,6 +532,9 @@ FLOORPLAN_POPOVER_FIELDS = [
     "device_count",
     "rail_count",
     "check",
+    # ── rack capacity, from the plan's racks (/api/racks/?floor_plan=…&include=
+    # ports) - fetched once for the plan when on, never part of the 30 s poll ──
+    "ports",
     # ── the linked rack/device (lazily fetched when one of these is on) ──
     "linked_status",
     "linked_role",
