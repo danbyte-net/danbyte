@@ -29,6 +29,7 @@ import {
   tierFor,
 } from "./world"
 import type { ScenePayload, SceneTile, Tier } from "./world"
+import type { PointerMenuAt } from "@/components/pointer-menu"
 
 /** Monitoring worst-status → beacon color (same semantics as the 2D rings).
  * A DIN-rail cabinet's outline takes the same colours. */
@@ -98,6 +99,7 @@ export function RackMesh({
   onSelect,
   onFlyTo,
   onLegend,
+  onPortMenu,
   portLabelSource = "",
   portLabelColor = "#ffffff",
   engaged: engagedProp = false,
@@ -129,6 +131,8 @@ export function RackMesh({
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
   /** Forwarded to each device so the room's legend keys what's on screen. */
   onLegend?: LegendReporter
+  /** A hardware marker right-clicked: the port it is, at the pointer. */
+  onPortMenu?: (sel: Sel, at: PointerMenuAt) => void
   /** Deployment port-label choice and colour, forwarded to each device. */
   portLabelSource?: PortLabelSource
   portLabelColor?: string
@@ -361,6 +365,22 @@ export function RackMesh({
                     portKind: marker.kind,
                     portSide: side,
                   })
+                }
+                onPortMenu={
+                  onPortMenu
+                    ? (deviceId, marker, side, at) =>
+                        onPortMenu(
+                          {
+                            kind: "port",
+                            tileId: tile.id,
+                            deviceId,
+                            portName: marker.name,
+                            portKind: marker.kind,
+                            portSide: side,
+                          },
+                          at
+                        )
+                    : undefined
                 }
               />
             )

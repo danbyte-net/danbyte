@@ -15,6 +15,7 @@ import { ColorBadge } from "@/components/cells/color-badge"
 import { Loading } from "@/components/loading"
 import { BarButton, BarTip } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
+import { PartStatusPicker, useCanSetPartStatus } from "@/components/part-status"
 
 import { PORT_RESERVED, isReserved } from "./device-mesh"
 import type { Sel } from "./rack-mesh"
@@ -208,6 +209,8 @@ export function PortHud({
   // Installing a module / editing a part writes to the device - the same gate
   // the Modules pane and the 2D faceplate use.
   const canEditParts = canDo("device", "change")
+  // A part's status is set right on its card (inventoryitem change).
+  const canSetStatus = useCanSetPartStatus()
   const [choosing, setChoosing] = useState(false)
   // A preview offers no action: the room's flows go with the click.
   const act = !preview
@@ -481,7 +484,20 @@ export function PortHud({
           Install module
         </Button>
       )}
-      {/* ── Hardware part: the same editor the 2D faceplate opens ──────── */}
+      {/* ── Hardware part: its status, set here; the full editor below ── */}
+      {fp?.id && hardware && canSetStatus && act && (
+        <div className="mt-2 grid gap-1">
+          <span className="text-[11px] text-muted-foreground">Status</span>
+          <PartStatusPicker
+            part={{
+              id: fp.id,
+              name: fp.name,
+              deviceId: device.id,
+              status: fp.status,
+            }}
+          />
+        </div>
+      )}
       {fp && hardware && canEditParts && onEditPart && act && (
         <Button
           size="sm"

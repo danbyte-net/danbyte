@@ -18,6 +18,7 @@ import {
   useObservedPorts,
 } from "@/components/device-faceplate"
 import type { ObservedPort } from "@/components/device-faceplate"
+import type { PointerMenuAt } from "@/components/pointer-menu"
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
 import type { PortLabelSource } from "@/lib/api"
@@ -299,6 +300,7 @@ export function PortQuads({
   labelColor: portLabelColor,
   onSelect,
   onHover,
+  onMenu,
 }: {
   markers: ImagePortMarker[]
   resolved: Map<string, FacePort>
@@ -315,8 +317,13 @@ export function PortQuads({
   onSelect: (marker: ImagePortMarker) => void
   /** Pointer over (true) or off (false) a marker. */
   onHover?: (marker: ImagePortMarker, on: boolean) => void
+  /** A hardware marker right-clicked - pressed and let go where it was
+   * pressed, so a right-drag still pans the camera - at the pointer. */
+  onMenu?: (marker: ImagePortMarker, at: PointerMenuAt) => void
 }) {
   const [hoveredPort, setHoveredPort] = useState<number | null>(null)
+  // Where the right button went down, to tell a click from a pan.
+  const rightDown = useRef<{ x: number; y: number } | null>(null)
   // A face unmounted under the pointer (a door shut, a tier dropped) never
   // gets its pointer-out: let go of the hover on the way out.
   const hoveredRef = useRef<ImagePortMarker | null>(null)
@@ -427,6 +434,30 @@ export function PortQuads({
                 e.stopPropagation()
                 onSelect(m)
               }}
+              onPointerDown={
+                hardware && onMenu
+                  ? (e) => {
+                      if (e.nativeEvent.button === 2)
+                        rightDown.current = {
+                          x: e.nativeEvent.clientX,
+                          y: e.nativeEvent.clientY,
+                        }
+                    }
+                  : undefined
+              }
+              onPointerUp={
+                hardware && onMenu
+                  ? (e) => {
+                      const from = rightDown.current
+                      rightDown.current = null
+                      if (e.nativeEvent.button !== 2 || !from) return
+                      const { clientX: x, clientY: y } = e.nativeEvent
+                      if (Math.hypot(x - from.x, y - from.y) > 4) return
+                      e.stopPropagation()
+                      onMenu(m, { x, y })
+                    }
+                  : undefined
+              }
               onPointerOver={(e) => {
                 e.stopPropagation()
                 setHoveredPort(i)
@@ -505,6 +536,7 @@ export function DeviceMesh({
   livePorts,
   onSelect,
   onSelectPort,
+  onPortMenu,
   onZoomTo,
   onLegend,
   portLabelSource = "",
@@ -538,6 +570,13 @@ export function DeviceMesh({
     deviceId: string,
     marker: ImagePortMarker,
     side: "front" | "rear"
+  ) => void
+  /** A hardware marker right-clicked, at the pointer: its part's menu. */
+  onPortMenu?: (
+    deviceId: string,
+    marker: ImagePortMarker,
+    side: "front" | "rear",
+    at: PointerMenuAt
   ) => void
   /** Double-click - fly the camera onto this device's face. Same gesture the
    * rack already answers, one level down. */
@@ -706,6 +745,11 @@ export function DeviceMesh({
             // the mount face made every rear-panel port unresolvable from the
             // HUD.
             onSelect={(m) => onSelectPort(dev.id, m, side)}
+            onMenu={
+              onPortMenu
+                ? (m, at) => onPortMenu(dev.id, m, side, at)
+                : undefined
+            }
           />
         </group>
       )}

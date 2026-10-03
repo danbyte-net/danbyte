@@ -344,6 +344,21 @@ power / console / aux / front / rear marker connects a cable in place - see
 [Cabling](cabling.md#connecting-from-a-port). Removing a module stays on the
 Hardware tab.
 
+**Part status.** A hardware marker - a disk, a PSU, a fan - wears its part's
+status, and the status can be changed wherever the marker shows: on the
+device page's photo panel, on a [rack's elevation](racks.md#live-ports-on-the-elevation),
+on a [cabinet's plate](cabinets.md), and on the part's card in the
+[3D room](../features/floor-plans.md#the-3d-room-view), a rack's 3D view and a
+cabinet's. The part's card lists the statuses the catalog offers inventory
+items as pills, the current one ticked; press one to set it. A
+**right-click** on the marker opens the same choices as a menu. The marker
+recolours at once in every view; if the server refuses, it goes back. The
+choices show only to users who may change inventory items, and the server
+checks each part against the user's scope, as for any edit; the change is in
+the part's change log. A port's state is not set this way - it comes from
+its cable and its enabled flag.
+{ #part-status }
+
 Racked devices also show a **Rack** card - the whole rack drawn with this
 device highlighted, linking to the [rack page](racks.md).
 

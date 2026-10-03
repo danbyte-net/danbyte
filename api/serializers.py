@@ -4462,6 +4462,18 @@ class InventoryItemSerializer(
             else None
         )
 
+    def validate_status_id(self, value):
+        """Only a status the catalog offers parts: the picker shows those, and
+        the API holds to it. A part already wearing another keeps it through
+        an edit that leaves the status alone."""
+        if value is None or "inventoryitem" in (value.available_to or []):
+            return value
+        if self.instance is not None and self.instance.status_id == value.id:
+            return value
+        raise serializers.ValidationError(
+            f"“{value.name}” isn't a status for inventory items."
+        )
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         parent = attrs.get("parent")

@@ -10,6 +10,8 @@ import { useMe } from "@/lib/use-me"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { BarButton } from "@/components/map-toolbar"
 import { useLegendCollector } from "@/components/speed-scale"
+import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
+import type { PartMarkerAt } from "@/components/part-status"
 import {
   CabinetDeviceHoverHud,
   CabinetDeviceHud,
@@ -94,6 +96,9 @@ export default function CabinetScene({
 
   const [doorOpen, setDoorOpen] = useState(true)
   const [picked, setPicked] = useState<Picked>(null)
+  // A right-click on a part: its statuses at the pointer.
+  const canSetStatus = useCanSetPartStatus()
+  const [partMenu, setPartMenu] = useState<PartMarkerAt | null>(null)
   const card = useCardPlace()
   const [hover] = useState(createHoverStore)
   const hoverDevice = useCallback(
@@ -220,6 +225,17 @@ export default function CabinetScene({
                 }
                 onHoverPort={hoverPort}
                 onLegend={onLegend}
+                onPortMenu={
+                  canSetStatus
+                    ? (_, deviceId, marker, at) =>
+                        setPartMenu({
+                          ...at,
+                          deviceId,
+                          marker: marker.name,
+                          side: "front",
+                        })
+                    : undefined
+                }
               />
               <ShadowFloor size={size * 6} />
             </Stage>
@@ -255,6 +271,7 @@ export default function CabinetScene({
                   className={CARD_PLACE[card.place]}
                 />
               ))}
+            <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
           </>
         ) : (
           <NoWebGL />

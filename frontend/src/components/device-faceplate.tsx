@@ -48,6 +48,14 @@ import {
   type LegendReporter,
 } from "@/components/speed-scale"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
+import {
+  PartStatusMenuItems,
+  PartStatusPicker,
+  useCanSetPartStatus,
+} from "@/components/part-status"
+import type { PartRef } from "@/components/part-status"
+import { PointerMenu } from "@/components/pointer-menu"
+import { StatusBadge } from "@/components/status-badge"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { CableForm } from "@/components/cable-form"
 import { VlanBadge } from "@/components/cells/vlan-badge"
@@ -1369,6 +1377,14 @@ export function ImagePortsFaceplate({
   const canEditInventory = canEditParts && !givenFace
   // Cabling a free power/console/aux/panel port from its marker.
   const canConnect = !!deviceId && canDo("cable", "add")
+  // A part's status, set from its card or a right-click on its marker -
+  // wherever photo ports show, the rack's elevation included.
+  const canSetStatus = useCanSetPartStatus() && !!deviceId
+  const [statusMenu, setStatusMenu] = useState<{
+    x: number
+    y: number
+    part: PartRef
+  } | null>(null)
   const [partDialog, setPartDialog] = useState<{
     item: InventoryItemRow | null
     /** The marker's rendered name - the bay being filled, when creating. */
@@ -1635,6 +1651,23 @@ export function ImagePortsFaceplate({
           if (kind === "inventory-item") {
             const item = partFor(m.name, name)
             const hex = item?.status?.color || "#64748b"
+            const part: PartRef | null =
+              item && deviceId
+                ? {
+                    id: item.id,
+                    name: item.name,
+                    deviceId,
+                    status: item.status,
+                  }
+                : null
+            // Right-click: the part's statuses at the pointer.
+            const onContextMenu =
+              part && canSetStatus
+                ? (e: React.MouseEvent) => {
+                    e.preventDefault()
+                    setStatusMenu({ x: e.clientX, y: e.clientY, part })
+                  }
+                : undefined
             // An empty bay: the marker is drawn but no part fills it. With write
             // access it's the install affordance - click to fit hardware here,
             // named after the bay so a sensor keyed on that name picks it up.
@@ -1677,6 +1710,9 @@ export function ImagePortsFaceplate({
                           : `${item.name} - click to edit`
                       }
                       onClick={() => setPartDialog({ item, name })}
+                      onContextMenu={onContextMenu}
+                      data-port-kind="inventory-item"
+                      data-port-name={item.name}
                       className={cn(
                         "absolute cursor-pointer rounded-[2px] border-2 transition-opacity hover:opacity-100 hover:ring-2 hover:ring-primary/40",
                         // Observed health disagrees with the set status: ring it
@@ -1693,6 +1729,9 @@ export function ImagePortsFaceplate({
                         borderColor: hex,
                         backgroundColor: `${hex}40`,
                       }}
+                      onContextMenu={onContextMenu}
+                      data-port-kind="inventory-item"
+                      data-port-name={item.name}
                       className="absolute rounded-[2px] border-2 transition-opacity hover:opacity-100"
                     />
                   )}
@@ -1714,10 +1753,16 @@ export function ImagePortsFaceplate({
                       .filter(Boolean)
                       .join(" · ") || "hardware"}
                   </div>
-                  {item.status && (
-                    <div style={{ color: item.status.color || undefined }}>
-                      {item.status.name}
-                    </div>
+                  {/* Its status: the catalog's pills to pick from where the
+                      user may set it, else its own pill. */}
+                  {part && canSetStatus ? (
+                    <PartStatusPicker part={part} className="py-0.5" />
+                  ) : (
+                    item.status && (
+                      <div>
+                        <StatusBadge status={item.status} />
+                      </div>
+                    )
                   )}
                   {item.manufacturer?.name && (
                     <div className="text-muted-foreground">
@@ -2094,6 +2139,14 @@ export function ImagePortsFaceplate({
             </HoverCard>
           )
         })}
+        <PointerMenu
+          menu={statusMenu}
+          onClose={() => setStatusMenu(null)}
+          label="Part status"
+          className="w-48"
+        >
+          {(menu) => <PartStatusMenuItems part={menu.part} />}
+        </PointerMenu>
         {/* The real part editor, not a copy of it - so changing a disk's status
           from the faceplate is the same write (and the same audit trail) as
           editing it on the Hardware tab. Shares its query key, so the bay

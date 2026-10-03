@@ -264,8 +264,10 @@ one request while the Overview is open (the
   port its cable reaches, named only when you can view that device.
 - **Click** a cabled port to open the trace of its run in a dialog; a free
   port opens its own page, and a click between ports opens the device, as
-  before. Disk bays and other hardware markers only show their part here -
-  edit parts from the device.
+  before. A disk bay or another hardware marker shows its part, and its
+  card - or a right-click on it - sets the part's
+  [status](devices.md#part-status); the rest of the part is edited on the
+  device.
 - Every block shows its **ports in use** over its counted ports - `38 / 48`,
   in all three modes, on the face the device is mounted on only - by the
   [port counting rule](devices.md#what-counts-as-a-port): ports cabled or

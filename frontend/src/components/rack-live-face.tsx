@@ -32,15 +32,30 @@ import type { PortTrace } from "@/components/device-faceplate"
 export function PortsBadge({
   ports,
   countVirtual = false,
+  passive = false,
   className,
 }: {
   ports?: PortCountRow
   /** The deployment counts virtual interfaces too. */
   countVirtual?: boolean
+  /** Over a photo whose ports lie under it: the pointer goes through to
+   * them, so no hover of its own. */
+  passive?: boolean
   className?: string
 }) {
   if (!ports?.total) return null
   const used = portsUsed(ports)
+  if (passive)
+    return (
+      <Badge
+        variant="secondary"
+        data-part="ports"
+        className={cn("num h-4 px-1 text-[10px] leading-none", className)}
+      >
+        {used} / {ports.total}
+        <span className="sr-only"> ports in use</span>
+      </Badge>
+    )
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -188,7 +203,12 @@ export function RackLiveFace({
   }
   const pictured = look === "photo" || look === "image"
   const badge = countPorts ? (
-    <PortsBadge ports={state.ports} countVirtual={countVirtual} />
+    <PortsBadge
+      ports={state.ports}
+      countVirtual={countVirtual}
+      // On a photo with its ports marked, the ports under it come first.
+      passive={look === "photo"}
+    />
   ) : null
   return (
     <PortTraceProvider onTrace={onTrace ?? null}>

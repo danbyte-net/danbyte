@@ -59,6 +59,8 @@ import {
 } from "./cabinet-hud"
 import { CabinetMesh } from "./cabinet-mesh"
 import { DeviceHud, PortHud, rackPortPosition } from "./hud-cards"
+import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
+import type { PartMarkerAt } from "@/components/part-status"
 import type { FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh } from "./rack-mesh"
@@ -149,6 +151,9 @@ export default function FloorScene3D({
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
   const portLabelsShown = usePortLabelsShown()
   const [selection, setSelection] = useState<Sel | null>(null)
+  // A right-click on a disk or a PSU: its part's statuses at the pointer.
+  const canSetStatus = useCanSetPartStatus()
+  const [partMenu, setPartMenu] = useState<PartMarkerAt | null>(null)
   const [cableSel, setCableSel] = useState<string | null>(null)
   /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
   const [traySel, setTraySel] = useState<string | null>(null)
@@ -614,6 +619,19 @@ export default function FloorScene3D({
             }
             onSelect={handleSelect}
             onLegend={onLegend}
+            onPortMenu={
+              canSetStatus
+                ? (sel, at) =>
+                    sel.deviceId &&
+                    sel.portName &&
+                    setPartMenu({
+                      ...at,
+                      deviceId: sel.deviceId,
+                      marker: sel.portName,
+                      side: sel.portSide,
+                    })
+                : undefined
+            }
             onFlyTo={(target, position) => {
               flyToRef.current = { target, position }
               setViewSide("front")
@@ -668,6 +686,17 @@ export default function FloorScene3D({
               })
             }
             onHoverPort={hoverCabinetPort}
+            onPortMenu={
+              canSetStatus
+                ? (_, deviceId, marker, at) =>
+                    setPartMenu({
+                      ...at,
+                      deviceId,
+                      marker: marker.name,
+                      side: "front",
+                    })
+                : undefined
+            }
             onLegend={onLegend}
             onFlyTo={(target, position) => {
               flyToRef.current = { target, position }
@@ -894,6 +923,7 @@ export default function FloorScene3D({
         />
       )}
       {cableSel && <CableHud planId={planId} cableId={cableSel} />}
+      <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
       {traySel && (
         <TrayHud
           planId={planId}

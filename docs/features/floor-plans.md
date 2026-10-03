@@ -212,7 +212,12 @@ uploaded blueprint textures it.
   markers on the image, colored exactly as on the device page - speed tier
   for cabled ports, the part's status for hardware bays. Click one for a card
   with its cable, far end and, when SNMP disagrees with the record, the
-  **difference** (see [drift in the room](#drift-in-the-room)). Marker names
+  **difference** (see [drift in the room](#drift-in-the-room)). A hardware
+  bay's card carries the part's **status** as pills to pick from, and a
+  right-click on the bay - pressed and let go without dragging, since a
+  right-drag pans - opens the same choices at the pointer (see
+  [part status](../dcim/devices.md#part-status)). The same goes for a rack's
+  3D view and a cabinet's. Marker names
   match their components case-insensitively, so a photo marked `Psu 1` still
   resolves a port named `PSU 1`.
 - **Power ports the photo doesn't mark still exist**: any power port or

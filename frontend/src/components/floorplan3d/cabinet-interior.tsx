@@ -38,6 +38,7 @@ import {
   useFaceTexture,
 } from "./device-mesh"
 import { mm } from "./world"
+import type { PointerMenuAt } from "@/components/pointer-menu"
 
 /** Galvanised steel: the mounting plate, and the brighter zinc of the
  * rails. */
@@ -119,6 +120,7 @@ export function CabinetInterior({
   onHoverDevice,
   onSelectPort,
   onHoverPort,
+  onPortMenu,
   onLegend,
 }: {
   cabinetId: string
@@ -137,6 +139,12 @@ export function CabinetInterior({
   onSelectPort?: (deviceId: string, marker: ImagePortMarker) => void
   /** Pointer over (true) or off (false) a port. */
   onHoverPort?: (deviceId: string, marker: ImagePortMarker, on: boolean) => void
+  /** A hardware marker right-clicked, at the pointer. */
+  onPortMenu?: (
+    deviceId: string,
+    marker: ImagePortMarker,
+    at: PointerMenuAt
+  ) => void
   /** The colours the ports put on screen, by device. */
   onLegend?: LegendReporter
 }) {
@@ -241,6 +249,7 @@ export function CabinetInterior({
           onHover={onHoverDevice}
           onSelectPort={onSelectPort}
           onHoverPort={onHoverPort}
+          onPortMenu={onPortMenu}
           onLegend={onLegend}
         />
       ))}
@@ -262,6 +271,7 @@ function InteriorDevice({
   onHover,
   onSelectPort,
   onHoverPort,
+  onPortMenu,
   onLegend,
 }: {
   placed: PlacedDevice
@@ -276,6 +286,11 @@ function InteriorDevice({
   onHover?: (deviceId: string, on: boolean) => void
   onSelectPort?: (deviceId: string, marker: ImagePortMarker) => void
   onHoverPort?: (deviceId: string, marker: ImagePortMarker, on: boolean) => void
+  onPortMenu?: (
+    deviceId: string,
+    marker: ImagePortMarker,
+    at: PointerMenuAt
+  ) => void
   onLegend?: LegendReporter
 }) {
   const { device: d, rail, body, box } = placed
@@ -392,6 +407,7 @@ function InteriorDevice({
             onHover={
               onHoverPort ? (m, on) => onHoverPort(id, m, on) : undefined
             }
+            onMenu={onPortMenu ? (m, at) => onPortMenu(id, m, at) : undefined}
           />
         </group>
       )}

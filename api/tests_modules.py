@@ -429,6 +429,28 @@ class InventoryHardwareTests(_Base):
         self.assertEqual(data["speed"], "PCIe 4.0 x4")
         self.assertEqual(data["status"]["name"], "Failed")
 
+    def test_status_must_be_one_the_catalog_offers_parts(self):
+        from api.models import InventoryItem, Status
+
+        failed = Status.objects.get(tenant=self.tenant, slug="failed")
+        device_only = Status.objects.create(
+            tenant=self.tenant, name="Racked", slug="racked", available_to=["device"],
+        )
+        item = InventoryItem.objects.create(device=self.device, name="disk4", kind="disk")
+        url = f"/api/inventory-items/{item.id}/"
+        resp = self.client.patch(url, {"status_id": str(device_only.id)}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("status_id", resp.json())
+        resp = self.client.patch(url, {"status_id": str(failed.id)}, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["status"]["name"], "Failed")
+        # A part set before the check keeps its status through other edits.
+        InventoryItem.objects.filter(pk=item.pk).update(status=device_only)
+        resp = self.client.patch(
+            url, {"status_id": str(device_only.id), "serial_number": "S-4"}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+
     def test_rejects_unknown_kind(self):
         resp = self.client.post(
             "/api/inventory-items/",

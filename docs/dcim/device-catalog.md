@@ -551,7 +551,8 @@ templates** under *Hardware* - place disk bays, PSUs and other parts on the
 photo the same way. Hardware markers resolve to the device's real parts by
 name and are coloured by the **part's status** (a *Failed* disk reads red on
 the faceplate and in 3D); hovering shows the part's media, capacity, speed,
-status and serial. Hardware markers are informational - they never join the
+status and serial. The status can be set right there - see
+[part status](devices.md#part-status). Hardware markers never join the
 cable-connect flow.
 
 **[Module bay](#module-types) templates** are placeable too, under *Module bays

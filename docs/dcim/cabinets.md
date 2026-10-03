@@ -113,8 +113,9 @@ the trace of its run in a dialog, a free port opens its own page, and the key
 to the colours sits under the plate. Images reads every device's markers in
 one request; the interfaces they stand for load per device, as Render loads
 them, and the live SNMP state only for a photo that marks interfaces. Disk
-bays and other hardware markers only show their part in Images - edit parts
-from the device.
+bays and other hardware markers show their part, and their card - or a
+right-click - sets the part's [status](devices.md#part-status); the rest of
+the part is edited on the device.
 **Display ▾** holds the plate's ticks (on a narrow screen the button is its
 icon): **Labels** hides the device names (and, in Names, the rail labels);
 **Ports** (Images and Render) draws the live ports - off, Images shows the
