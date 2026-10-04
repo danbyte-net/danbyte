@@ -258,6 +258,11 @@ def import_bundle(
             for f in TYPE_FIELDS
             if f != "name" and payload.get(f) is not None
         }
+        # Each value as its field holds it: JSON carries a width as a float,
+        # which the rail checks add to Decimal offsets (#289), and a value
+        # that is no number is refused rather than saved.
+        for f, value in list(fields.items()):
+            fields[f] = DeviceType._meta.get_field(f).to_python(value)
         fields["manufacturer"] = manufacturer
         if "din_profiles" in fields:
             # Only the profiles there are, as the type form allows.

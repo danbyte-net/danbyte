@@ -4,6 +4,8 @@ cabinets and types refuse changes their devices would not survive."""
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from .models import Cabinet, Device, DeviceType, DinRail, Location
 from .search_index import SPECS, _context
 from .tests_cabinets import CabinetTestCase
@@ -280,6 +282,18 @@ class DinDeviceTypeTests(DinMountingTestCase):
             import_bundle({**bundle, "width_mm": 30}, self.tenant, replace=True)
         self.relay.refresh_from_db()
         self.assertEqual(self.relay.width_mm, 18)
+
+    def test_an_exported_bundle_imports_back_over_mounted_devices(self):
+        # Over HTTP the widths travel as JSON numbers (18.0), not Decimals.
+        self.mount("a", self.r1, 0, dtype=self.relay)
+        bundle = self.client.get(f"/api/device-types/{self.relay.id}/library-export/").json()
+        url = "/api/device-types/import-bundle/?replace=1"
+        for width, status in ((bundle["width_mm"], 200), (18.5, 200), (9999, 400), ("x", 400)):
+            with self.subTest(width=width):
+                r = self.client.post(url, {**bundle, "width_mm": width}, format="json")
+                self.assertEqual(r.status_code, status, r.content)
+        self.relay.refresh_from_db()
+        self.assertEqual(self.relay.width_mm, Decimal("18.5"))
 
 
 class DinRoundTripTests(DinMountingTestCase):
