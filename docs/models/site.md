@@ -49,6 +49,12 @@ agreements [provided for it](../features/sla.md#the-parts-of-an-agreement),
 with each agreement's whole figure; its availability is over the site's
 devices. The Circuits tab shows each circuit's SLA and availability too.
 
+## Racks and cabinets
+
+A site's **Racks** tab lists its racks - name, role, status, width and units
+used - and **Cabinets** its DIN-rail cabinets, wherever in the site they
+stand; a location's tabs list only its own.
+
 ## The Capacity tab
 
 How full the site's racks are, floor plan by floor plan. The tab shows when

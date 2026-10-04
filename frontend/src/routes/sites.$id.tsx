@@ -38,6 +38,7 @@ import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import {
   EmbeddedCabinetTable,
   EmbeddedCircuitTable,
+  EmbeddedRackTable,
 } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -78,6 +79,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
     | "overview"
     | "locations"
     | "devices"
+    | "racks"
     | "cabinets"
     | "capacity"
     | "vms"
@@ -167,6 +169,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         { value: "overview", label: "Overview" },
         { value: "locations", label: "Locations", count: s.location_count },
         { value: "devices", label: "Devices", count: s.device_count },
+        { value: "racks", label: "Racks", count: s.rack_count },
         { value: "cabinets", label: "Cabinets", count: s.cabinet_count },
         ...(showCapacity ? [{ value: "capacity", label: "Capacity" }] : []),
         { value: "vms", label: "Virtual machines", count: s.vm_count },
@@ -204,6 +207,13 @@ function SiteDetailBody({ site: s }: { site: Site }) {
             emptyText="No devices at this site yet."
           />
         </div>
+      </DetailTab>
+      <DetailTab value="racks">
+        <EmbeddedRackTable
+          filter={{ site: s.id }}
+          include={["name", "role", "status", "width", "used"]}
+          emptyText="No racks at this site yet."
+        />
       </DetailTab>
       <DetailTab value="cabinets">
         <EmbeddedCabinetTable

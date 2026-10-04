@@ -36,7 +36,10 @@ import { buildL2VPNColumns } from "@/components/columns/l2vpn-columns"
 import type { L2VPNColumnId } from "@/components/columns/l2vpn-columns"
 import { buildPowerFeedColumns } from "@/components/columns/power-feed-columns"
 import type { PowerFeedColumnId } from "@/components/columns/power-feed-columns"
-import { buildRackColumns } from "@/components/columns/rack-columns"
+import {
+  buildRackColumns,
+  type RackColumnId,
+} from "@/components/columns/rack-columns"
 import {
   buildBGPSessionColumns,
   buildStaticRouteColumns,
@@ -131,18 +134,22 @@ export function EmbeddedIpTable({
 export function EmbeddedRackTable({
   filter,
   emptyText = "No racks.",
+  include = ["name", "site", "width", "used"],
 }: {
   filter: Record<string, string>
   emptyText?: string
+  /** The columns, in the rack factory's terms - a site's tab leaves out Site. */
+  include?: RackColumnId[]
 }) {
   const q = useEmbed<Rack>("embedded-racks", "/api/racks/", filter)
+  const key = include.join(",")
   const columns = useMemo<ColumnDef<Rack>[]>(
     () =>
       buildRackColumns({
-        include: ["name", "site", "width", "used"],
+        include: key.split(",") as RackColumnId[],
         siteVariant: "plain",
       }),
-    []
+    [key]
   )
   return (
     <Frame
