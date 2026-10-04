@@ -11,16 +11,17 @@ import {
   X,
 } from "lucide-react"
 
-import {
-  api,
-  type FrontPort,
-  type Interface,
-  type Paginated,
-  type RearPort,
-  type SiteMapConnection,
-  type SiteMapDevice,
-  type SiteMapMarker,
-  type SiteMapSite,
+import { api } from "@/lib/api"
+import type {
+  FrontPort,
+  Interface,
+  Paginated,
+  RearPort,
+  SiteMapCable,
+  SiteMapConnection,
+  SiteMapDevice,
+  SiteMapMarker,
+  SiteMapSite,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -46,6 +47,7 @@ import {
   SITE_FIELD_OPTIONS,
   SiteDetailRows,
 } from "@/components/site-map/detail-rows"
+import { CableSummary, LinkFacts } from "@/components/site-map/link-facts"
 import { useCustomFieldDefs } from "@/components/custom-field-display"
 import {
   Popover,
@@ -611,7 +613,6 @@ export function ConnectionInspector({
   onClose: () => void
 }) {
   const rawId = e.id.split(":")[1]
-  const meta = e.meta as Record<string, unknown>
   return (
     <InspectorShell kind="Link" onClose={onClose}>
       <div className="flex items-center gap-2 text-sm">
@@ -644,32 +645,7 @@ export function ConnectionInspector({
           {e.site_z.name}
         </Link>
       </div>
-      {e.kind === "circuit" && (
-        <div className="grid gap-0.5 text-[12px] text-muted-foreground">
-          {meta.provider ? (
-            <span>Provider: {String(meta.provider)}</span>
-          ) : null}
-          {meta.type ? <span>Type: {String(meta.type)}</span> : null}
-          {meta.commit_rate_kbps ? (
-            <span className="num">
-              Commit: {Number(meta.commit_rate_kbps) / 1000} Mbps
-            </span>
-          ) : null}
-        </div>
-      )}
-      {e.kind === "tunnel" && (
-        <div className="grid gap-0.5 text-[12px] text-muted-foreground">
-          {meta.encapsulation ? (
-            <span className="font-mono">{String(meta.encapsulation)}</span>
-          ) : null}
-          {meta.group ? <span>Group: {String(meta.group)}</span> : null}
-        </div>
-      )}
-      {e.kind === "cable" && (
-        <div className="text-[12px] text-muted-foreground">
-          {String(meta.count)} cable{Number(meta.count) === 1 ? "" : "s"}
-        </div>
-      )}
+      <LinkFacts line={e} />
       {(e.kind === "circuit" || e.kind === "tunnel") && (
         <div className="mt-auto grid gap-2 border-t border-border pt-3">
           {e.kind === "circuit" ? (
@@ -691,6 +667,33 @@ export function ConnectionInspector({
           )}
         </div>
       )}
+    </InspectorShell>
+  )
+}
+
+/** A cable picked on the map: what it is, how fast its links are, and the
+ * ports at their ends - the facts its popover shows, with every link. */
+export function CableInspector({
+  cable: c,
+  onClose,
+}: {
+  cable: SiteMapCable
+  onClose: () => void
+}) {
+  return (
+    <InspectorShell kind="Cable" onClose={onClose}>
+      <div className="flex items-center gap-2 text-sm">
+        <span className="min-w-0 truncate font-mono font-medium">
+          {c.label || "Cable"}
+        </span>
+      </div>
+      <CableSummary cable={c} />
+      <LinkFacts line={{ ...c, kind: "cable", name: c.label }} />
+      <div className="mt-auto grid gap-2 border-t border-border pt-3">
+        <OpenLink to="/cables/$id" params={{ id: c.id }} className="w-full">
+          Open cable
+        </OpenLink>
+      </div>
     </InspectorShell>
   )
 }

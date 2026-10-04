@@ -7,7 +7,9 @@ import {
   projectToMeters,
   unprojectFromMeters,
 } from "@/components/site-map/geo"
-import { bezierPoints } from "@/components/site-map/connections-layer"
+import { bezierPoints, lineTip } from "@/components/site-map/connections-layer"
+import { lineColor } from "@/components/site-map/line-style"
+import type { LineColorBy } from "@/components/site-map/line-style"
 
 // Every cable draws on the map - whether or not it's on a route. A cable on
 // a route follows that geometry (Dijkstra through the route graph, run in a
@@ -35,13 +37,16 @@ export function routeCableGeo(
   return unprojectFromMeters(path, refLat)
 }
 
-/** A cable to draw: its path plus identity/styling and whether it's routed. */
+/** A cable to draw: its path plus identity/styling and whether it's routed.
+ * `status` and `capacity` feed the Status and Speed colourings. */
 export interface DrawnCable {
   id: string
   label: string
   color: string
   path: Pt[]
   routed: boolean
+  status?: SiteMapCable["status"]
+  capacity?: SiteMapCable["capacity"]
 }
 
 /** Compute every cable's map polyline from the /site-map/cables payload.
@@ -76,6 +81,7 @@ export function buildDrawnCables(
       .map((id) => routeWaypoints.get(id))
       .filter((p): p is Pt[] => !!p)
 
+    const look = { status: c.status, capacity: c.capacity }
     if (polys.length) {
       out.push({
         id: c.id,
@@ -83,6 +89,7 @@ export function buildDrawnCables(
         color: c.color,
         path: routeCableGeo(a, z, polys),
         routed: true,
+        ...look,
       })
       continue
     }
@@ -95,6 +102,7 @@ export function buildDrawnCables(
         color: c.color,
         path: [a, offsetPoint(a[0], a[1], 45, 12), z],
         routed: false,
+        ...look,
       })
       continue
     }
@@ -110,6 +118,7 @@ export function buildDrawnCables(
       color: c.color,
       path: bezierPoints(a, z, bend),
       routed: false,
+      ...look,
     })
   }
   return out
@@ -129,12 +138,15 @@ export function offsetPath(path: Pt[], meters: number): Pt[] {
 }
 
 /** Leaflet layer for cables; members of `highlightIds` thicken, the rest dim
- * when anything is highlighted. Un-routed cables draw dashed. */
+ * when anything is highlighted. Un-routed cables draw dashed. A cable with
+ * no colour of its own is amber, the legend's Cable. */
 export function buildDrawnCablesLayer(
   cables: DrawnCable[],
   opts: {
     highlightIds: Set<string>
     onSelect?: (cableId: string) => void
+    /** Color by (the site map's Display popover); Type by default. */
+    colorBy?: LineColorBy
   }
 ): L.LayerGroup {
   const group = L.layerGroup()
@@ -143,7 +155,7 @@ export function buildDrawnCablesLayer(
     const highlighted = opts.highlightIds.has(c.id)
     const dimmed = anyHi && !highlighted
     const line = L.polyline(c.path, {
-      color: c.color || "#0ea5e9",
+      color: lineColor({ ...c, kind: "cable" }, opts.colorBy ?? "type"),
       weight: highlighted ? 4 : 2,
       opacity: dimmed ? 0.12 : highlighted ? 1 : c.routed ? 0.85 : 0.6,
       dashArray: c.routed ? undefined : "5 4",
@@ -152,7 +164,10 @@ export function buildDrawnCablesLayer(
       interactive: false,
     })
     const hit = L.polyline(c.path, { color: "#000", weight: 12, opacity: 0 })
-    hit.bindTooltip(c.label || "cable", { sticky: true, direction: "top" })
+    hit.bindTooltip(lineTip(c.label || "cable", "", c.capacity?.label), {
+      sticky: true,
+      direction: "top",
+    })
     hit.on("click", (e: L.LeafletMouseEvent) => {
       L.DomEvent.stopPropagation(e)
       opts.onSelect?.(c.id)

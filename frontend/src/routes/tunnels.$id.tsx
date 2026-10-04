@@ -40,6 +40,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { fmtKbps } from "@/lib/speed"
 
 // Lazy like the topology canvas - React Flow stays out of the main bundle.
 const TunnelMap = lazy(() =>
@@ -205,6 +206,14 @@ function TunnelOverview({ tunnel: t }: { tunnel: Tunnel }) {
         >
           {t.ipsec_profile.name}
         </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Capacity",
+      value: t.capacity_kbps ? (
+        <span className="num">{fmtKbps(t.capacity_kbps, { long: true })}</span>
       ) : (
         dash
       ),

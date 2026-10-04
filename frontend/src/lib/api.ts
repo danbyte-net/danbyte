@@ -9501,6 +9501,9 @@ export interface Tunnel {
   group: TunnelGroupOption | null
   ipsec_profile: IPSecProfileOption | null
   terminations: TunnelTermination[]
+  /** How fast the tunnel's path is, in kbps; null when unknown. The site map
+   * shows it on the tunnel's line (#246) - nothing derives it. */
+  capacity_kbps: number | null
   description: string
   comments: string
   tags: Tag[]
@@ -9516,6 +9519,7 @@ export interface TunnelWritePayload {
   tunnel_id?: number | null
   group_id?: string | null
   ipsec_profile_id?: string | null
+  capacity_kbps?: number | null
   description?: string
   comments?: string
   tag_ids?: number[]

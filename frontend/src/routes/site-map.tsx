@@ -12,7 +12,6 @@ import {
   Satellite,
   Search,
   Shrink,
-  SlidersHorizontal,
   Waypoints,
   X,
 } from "lucide-react"
@@ -43,12 +42,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Loading } from "@/components/loading"
-import {
-  BarIconButton,
-  BarMenuTrigger,
-  BarTip,
-  BarToggle,
-} from "@/components/map-toolbar"
+import { BarIconButton, BarTip, BarToggle } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { Input } from "@/components/ui/input"
 import {
@@ -61,15 +55,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { InfoTip } from "@/components/ui/info-tip"
-import { useCableTypeLabel } from "@/lib/use-dcim-choices"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FormCheckbox } from "@/components/forms"
+import { Field } from "@/components/forms"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import {
@@ -98,11 +90,25 @@ import {
 } from "@/components/hidden-objects"
 import { HiddenChip } from "@/components/hidden-chip"
 import {
+  CableInspector,
   ConnectionInspector,
   DeviceInspector,
   MarkerInspector,
   SiteInspector,
 } from "@/components/site-map/inspector"
+import { SiteMapDisplayMenu } from "@/components/site-map/display-menu"
+import type { SiteMapLayers } from "@/components/site-map/display-menu"
+import { useLineDisplay } from "@/components/site-map/line-display"
+import { lineKey } from "@/components/site-map/line-style"
+import { CableSummary, LinkFacts } from "@/components/site-map/link-facts"
+import {
+  showSpeedLabels,
+  speedLabelLines,
+} from "@/components/site-map/speed-labels"
+import {
+  useMapCables,
+  useMapConnections,
+} from "@/components/site-map/use-map-lines"
 import {
   RouteInspector,
   RouteNameDialog,
@@ -119,7 +125,10 @@ import {
 } from "@/components/site-map/cable-geo-route"
 import { FovEditor } from "@/components/site-map/fov-editor"
 import { DevicePicker } from "@/components/device-picker"
-import { buildConnectionsLayer } from "@/components/site-map/connections-layer"
+import {
+  buildConnectionsLayer,
+  chordMidpoint,
+} from "@/components/site-map/connections-layer"
 import { SiteMapLegend } from "@/components/site-map/site-map-legend"
 import {
   LABEL_ZOOM,
@@ -226,16 +235,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const [selected, setSelected] = useState<MapSelected | null>(null)
   const [popPos, setPopPos] = useState<{ x: number; y: number } | null>(null)
   // Layer toggles survive the visit (per browser, like the other map prefs).
-  type LayerToggles = {
-    sites: boolean
-    devices: boolean
-    links: boolean
-    /** Plain cables. Off = only circuits and tunnels draw between sites. */
-    cables: boolean
-    routes: boolean
-    regions: boolean
-  }
-  const [layers, setLayers] = useState<LayerToggles>(() => {
+  const [layers, setLayers] = useState<SiteMapLayers>(() => {
     const all = {
       sites: true,
       devices: true,
@@ -247,7 +247,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     try {
       const stored = JSON.parse(
         localStorage.getItem("site-map:layers")!
-      ) as Partial<LayerToggles>
+      ) as Partial<SiteMapLayers>
       return { ...all, ...stored }
     } catch {
       return all
@@ -310,6 +310,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     localStorage.setItem("site-map:labels", v ? "on" : "off")
     setShowLabelsState(v)
   }
+  // Color by and the Speed labels (#246), per browser like the rest.
+  const { colorBy, setColorBy, speedLabels, setSpeedLabels } = useLineDisplay()
   // Stacking: cluster colliding markers (default) or shrink them in place.
   const [stacking, setStackingState] = useState(stackingEnabled)
   const setStacking = (v: boolean) => {
@@ -489,11 +491,9 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     [tileTypes.data, roles.data]
   )
 
-  const connQuery = useQuery({
-    queryKey: ["site-map-connections"],
-    queryFn: () =>
-      api<{ connections: SiteMapConnection[] }>("/api/site-map/connections/"),
-  })
+  // With their speeds and links, under the page's own keys - the mini maps
+  // keep the plain payload (use-map-lines.ts).
+  const connQuery = useMapConnections()
   const connections = useMemo(
     () => connQuery.data?.connections ?? [],
     [connQuery.data]
@@ -518,10 +518,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const drawnCablesRef = useRef<L.LayerGroup | null>(null)
 
   // Every cable with two placeable ends - drawn whether or not it's routed.
-  const cablesQuery = useQuery({
-    queryKey: ["site-map-cables"],
-    queryFn: () => api<{ cables: SiteMapCable[] }>("/api/site-map/cables/"),
-  })
+  const cablesQuery = useMapCables()
   // An end is hidden when its device is, or when its site is - a device with
   // no coordinates of its own is drawn at its site's point and never appears
   // in the map's device list, so the device check alone would miss it.
@@ -578,6 +575,36 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const shownConnections = useMemo(
     () => connections.filter((c) => c.kind !== "cable" && linked(c)),
     [connections, linked]
+  )
+  // The lines on the map right now, for the legend's Status and Speed keys
+  // and the Speed labels.
+  const drawnLineKey = useMemo(
+    () =>
+      lineKey([
+        ...(layers.links ? shownConnections : []),
+        ...(layers.cables
+          ? drawnCables.map((c) => ({ ...c, kind: "cable" }))
+          : []),
+      ]),
+    [layers.links, layers.cables, shownConnections, drawnCables]
+  )
+  const labelLines = useMemo(
+    () =>
+      speedLabels
+        ? speedLabelLines({
+            connections: layers.links ? shownConnections : [],
+            cables: layers.cables ? drawnCables : [],
+            highlight: highlightCableIds,
+          })
+        : [],
+    [
+      speedLabels,
+      layers.links,
+      layers.cables,
+      shownConnections,
+      drawnCables,
+      highlightCableIds,
+    ]
   )
 
   const invalidate = useCallback(() => {
@@ -934,13 +961,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     connRef.current?.remove()
     midpointsRef.current = new Map()
     if (!layers.links || shownConnections.length === 0) return
-    const built = buildConnectionsLayer(shownConnections, (id) =>
-      setSelected({ kind: "connection", id })
+    const built = buildConnectionsLayer(
+      shownConnections,
+      (id) => setSelected({ kind: "connection", id }),
+      colorBy
     )
     built.group.addTo(map)
     connRef.current = built.group
     midpointsRef.current = built.midpoints
-  }, [shownConnections, layers.links])
+  }, [shownConnections, layers.links, colorBy])
 
   // Route channels (view + edit); rebuilt on selection so the selected one
   // reads heavier, exactly like tray selection on the floor plan.
@@ -968,6 +997,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     if (!layers.cables || drawnCables.length === 0) return
     const layer = buildDrawnCablesLayer(drawnCables, {
       highlightIds: highlightCableIds,
+      colorBy,
       onSelect: (id) => {
         setHighlightCableIds((prev) =>
           prev.size === 1 && prev.has(id) ? new Set() : new Set([id])
@@ -981,7 +1011,14 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     })
     layer.addTo(map)
     drawnCablesRef.current = layer
-  }, [drawnCables, highlightCableIds, layers.cables])
+  }, [drawnCables, highlightCableIds, layers.cables, colorBy])
+
+  // Speed labels on the lines in view, re-picked as the view settles.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || labelLines.length === 0) return
+    return showSpeedLabels(map, labelLines)
+  }, [labelLines, mapReady])
 
   // Arriving with ?trace=<cableId>: highlight the cable and fit the view -
   // once, when the data lands.
@@ -1329,7 +1366,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     const ll: [number, number] = target
       ? [Number(target.latitude), Number(target.longitude)]
       : selConn
-        ? (midpointsRef.current.get(selConn.id) ?? [0, 0])
+        ? (midpointsRef.current.get(selConn.id) ?? chordMidpoint(selConn))
         : (cablePath?.[Math.floor(cablePath.length / 2)] ?? [0, 0])
     const update = () => {
       const p = map.latLngToContainerPoint(ll)
@@ -1531,78 +1568,20 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           <BarToggle pressed={showObjects} onClick={toggleObjects}>
             <PanelRight /> Objects
           </BarToggle>
-          <Popover>
-            <PopoverTrigger asChild>
-              <BarMenuTrigger>
-                <SlidersHorizontal /> Display
-              </BarMenuTrigger>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-56 gap-1 p-2">
-              <FormCheckbox
-                label="Sites"
-                checked={layers.sites}
-                onChange={(v) => setLayers((l) => ({ ...l, sites: v }))}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Devices"
-                checked={layers.devices}
-                onChange={(v) => setLayers((l) => ({ ...l, devices: v }))}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Links (circuits · tunnels)"
-                checked={layers.links}
-                onChange={(v) => setLayers((l) => ({ ...l, links: v }))}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Cables"
-                checked={layers.cables}
-                onChange={(v) => setLayers((l) => ({ ...l, cables: v }))}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Cable routes"
-                checked={layers.routes}
-                onChange={(v) => setLayers((l) => ({ ...l, routes: v }))}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Stack nearby markers"
-                checked={stacking}
-                onChange={setStacking}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label="Region boundaries"
-                checked={layers.regions}
-                onChange={(v) => setLayers((l) => ({ ...l, regions: v }))}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <div className="my-1 h-px bg-border" />
-              <FormCheckbox
-                label="Camera FOV cones"
-                checked={showFov}
-                onChange={setShowFov}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-              <FormCheckbox
-                label={
-                  <span className="flex items-center gap-1">
-                    Labels
-                    <InfoTip>
-                      On: name chips appear as you zoom in. Off: names only on
-                      hover or selection.
-                    </InfoTip>
-                  </span>
-                }
-                checked={showLabels}
-                onChange={setShowLabels}
-                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
-              />
-            </PopoverContent>
-          </Popover>
+          <SiteMapDisplayMenu
+            layers={layers}
+            onLayersChange={setLayers}
+            stacking={stacking}
+            onStackingChange={setStacking}
+            showFov={showFov}
+            onShowFovChange={setShowFov}
+            nameLabels={showLabels}
+            onNameLabelsChange={setShowLabels}
+            speedLabels={speedLabels}
+            onSpeedLabelsChange={setSpeedLabels}
+            colorBy={colorBy}
+            onColorByChange={setColorBy}
+          />
         </div>
       </header>
 
@@ -1677,7 +1656,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
           {/* Above the Leaflet scale control. */}
           <div className="absolute bottom-9 left-3 z-[900]">
-            <SiteMapLegend />
+            <SiteMapLegend colorBy={colorBy} lines={drawnLineKey} />
           </div>
 
           {/* The sidebar carries the count while it is open. Top right is
@@ -1884,6 +1863,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             onClose={() => setSelected(null)}
           />
         )}
+        {!selectedRoute && selCable && (
+          <CableInspector
+            cable={selCable}
+            onClose={() => {
+              setSelected(null)
+              setHighlightCableIds(new Set())
+            }}
+          />
+        )}
 
         {/* Outermost right aside, so it coexists with whichever inspector is
             open rather than fighting it for the gutter. */}
@@ -1930,7 +1918,10 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             onSelect={setSelected}
             onFocus={flyTo}
             onFocusConnection={(id) => {
-              const mid = midpointsRef.current.get(id)
+              const conn = connections.find((c) => c.id === id)
+              const mid =
+                midpointsRef.current.get(id) ??
+                (conn ? chordMidpoint(conn) : undefined)
               const map = mapRef.current
               if (mid && map) map.flyTo(mid, map.getZoom())
             }}
@@ -2459,39 +2450,11 @@ function CablePopover({
   cable: SiteMapCable
   onClose: () => void
 }) {
-  const typeLabel = useCableTypeLabel()
-  const strands = c.fiber_count ?? 0
   return (
     <div className="grid gap-2">
       <PopHeader title={c.label || "Cable"} mono onClose={onClose} />
-      {(c.type || c.status || strands > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {c.type && <Badge variant="outline">{typeLabel(c.type)}</Badge>}
-          {c.status && (
-            <ColorBadge
-              name={c.status.name}
-              color={c.status.color || undefined}
-            />
-          )}
-          {strands > 0 && (
-            <Badge variant="outline">
-              <span className="num">{strands}</span>{" "}
-              {strands === 1 ? "strand" : "strands"}
-            </Badge>
-          )}
-        </div>
-      )}
-      <div className="text-[12px] text-muted-foreground">
-        <Link to="/devices/$id" params={{ id: c.a.device_id }} className="link">
-          {c.a.device_name}
-        </Link>
-        <span className="font-mono">:{c.a.port}</span>
-        {" ↔ "}
-        <Link to="/devices/$id" params={{ id: c.z.device_id }} className="link">
-          {c.z.device_name}
-        </Link>
-        <span className="font-mono">:{c.z.port}</span>
-      </div>
+      <CableSummary cable={c} />
+      <LinkFacts line={{ ...c, kind: "cable", name: c.label }} compact />
       <OpenLink to="/cables/$id" params={{ id: c.id }}>
         Open cable
       </OpenLink>
@@ -2507,7 +2470,6 @@ function ConnectionPopover({
   onClose: () => void
 }) {
   const rawId = e.id.split(":")[1]
-  const meta = e.meta as Record<string, unknown>
   return (
     <div className="grid gap-2">
       <PopHeader title={e.name} mono={e.kind === "circuit"} onClose={onClose} />
@@ -2531,32 +2493,7 @@ function ConnectionPopover({
           {e.site_z.name}
         </Link>
       </div>
-      {e.kind === "circuit" && (
-        <div className="grid gap-0.5 text-[12px] text-muted-foreground">
-          {meta.provider ? (
-            <span>Provider: {String(meta.provider)}</span>
-          ) : null}
-          {meta.type ? <span>Type: {String(meta.type)}</span> : null}
-          {meta.commit_rate_kbps ? (
-            <span className="num">
-              Commit: {Number(meta.commit_rate_kbps) / 1000} Mbps
-            </span>
-          ) : null}
-        </div>
-      )}
-      {e.kind === "tunnel" && (
-        <div className="grid gap-0.5 text-[12px] text-muted-foreground">
-          {meta.encapsulation ? (
-            <span className="font-mono">{String(meta.encapsulation)}</span>
-          ) : null}
-          {meta.group ? <span>Group: {String(meta.group)}</span> : null}
-        </div>
-      )}
-      {e.kind === "cable" && (
-        <div className="text-[12px] text-muted-foreground">
-          {String(meta.count)} cable{Number(meta.count) === 1 ? "" : "s"}
-        </div>
-      )}
+      <LinkFacts line={e} compact />
       {e.kind === "circuit" && (
         <OpenLink to="/circuits/$id" params={{ id: rawId }}>
           Open circuit

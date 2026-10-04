@@ -42,6 +42,22 @@ export function parseSpeedMbps(
   return n * UNIT_MBPS[m[2].toLowerCase()]
 }
 
+/**
+ * A speed typed into a form, in whole kbps for a `*_kbps` field: "500M" is
+ * 500000, "1G" 1000000, a bare number kbps as above. Null for blank text;
+ * undefined when the text is not a speed above zero, so the form can say so
+ * rather than store a guess.
+ */
+export function parseSpeedKbps(
+  value: string | null | undefined
+): number | null | undefined {
+  if (!(value ?? "").trim()) return null
+  const mbps = parseSpeedMbps(value)
+  if (mbps == null) return undefined
+  const kbps = Math.round(mbps * 1_000)
+  return kbps >= 1 ? kbps : undefined
+}
+
 // ─── Formatting ──────────────────────────────────────────────────────────────
 
 export interface SpeedFormat {

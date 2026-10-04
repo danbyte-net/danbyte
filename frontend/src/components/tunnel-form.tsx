@@ -27,6 +27,11 @@ import {
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
+import { fmtKbps, parseSpeedKbps } from "@/lib/speed"
+import { useDcimChoices } from "@/lib/use-dcim-choices"
+
+/** Thrown to stop a save the form itself refused; never a toast. */
+const CLIENT_VALIDATION = "__client_validation__"
 
 const ENCAPS: { value: TunnelEncapsulation; label: string }[] = [
   { value: "ipsec-tunnel", label: "IPSec - Tunnel" },
@@ -64,6 +69,11 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
   const [profileId, setProfileId] = useState<string | null>(
     tunnel?.ipsec_profile?.id ?? null
   )
+  // Typed as a speed ("500M", "1G") and stored in kbps - the site map's
+  // figure for the tunnel's line (#246).
+  const [capacity, setCapacity] = useState(fmtKbps(tunnel?.capacity_kbps))
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({})
+  const choices = useDcimChoices()
   const [description, setDescription] = useState(tunnel?.description ?? "")
   const [comments, setComments] = useState(tunnel?.comments ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
@@ -81,6 +91,8 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
     setTunnelId(tunnel.tunnel_id != null ? String(tunnel.tunnel_id) : "")
     setGroupId(tunnel.group?.id ?? null)
     setProfileId(tunnel.ipsec_profile?.id ?? null)
+    setCapacity(fmtKbps(tunnel.capacity_kbps))
+    setClientErrors({})
     setDescription(tunnel.description)
     setComments(tunnel.comments)
     setTagIds(tunnel.tags.map((t) => t.id))
@@ -112,6 +124,17 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
 
   const mutation = useMutation({
     mutationFn: async () => {
+      // Left as shown, the stored figure goes back exactly: the short form
+      // rounds to six digits.
+      const capacityKbps =
+        tunnel && capacity === fmtKbps(tunnel.capacity_kbps)
+          ? tunnel.capacity_kbps
+          : parseSpeedKbps(capacity)
+      if (capacityKbps === undefined) {
+        setClientErrors({ capacity_kbps: "Enter a speed, such as 500M or 1G." })
+        throw new Error(CLIENT_VALIDATION)
+      }
+      setClientErrors({})
       const payload: TunnelWritePayload = {
         name: name.trim(),
         status_id: statusId,
@@ -119,6 +142,7 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
         tunnel_id: tunnelId ? Number(tunnelId) : null,
         group_id: groupId,
         ipsec_profile_id: ipsec ? profileId : null,
+        capacity_kbps: capacityKbps,
         description: description.trim(),
         comments: comments.trim(),
         tag_ids: tagIds,
@@ -139,6 +163,7 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
       onSaved(saved)
     },
     onError: (err) => {
+      if (err.message === CLIENT_VALIDATION) return
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
     },
@@ -186,6 +211,18 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
                 searchPlaceholder="Search groups…"
                 emptyText="No groups."
                 error={fieldErrors.group_id}
+              />
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Capacity"
+                hint="optional"
+                info="How fast the tunnel's path is, such as 500M or 1G - a bare number is kbps. The site map shows it on the tunnel's line."
+                value={capacity}
+                onChange={setCapacity}
+                placeholder="1G"
+                suggestions={choices.common_speeds}
+                error={clientErrors.capacity_kbps || fieldErrors.capacity_kbps}
               />
             </div>
           </FormSection>

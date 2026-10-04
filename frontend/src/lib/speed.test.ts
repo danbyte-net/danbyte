@@ -4,10 +4,32 @@ import {
   SPEED_TIERS,
   fmtKbps,
   fmtMbps,
+  parseSpeedKbps,
   parseSpeedMbps,
   speedTier,
   speedTierOf,
 } from "./speed"
+
+describe("parseSpeedKbps", () => {
+  it("turns a typed speed into whole kbps, and back through fmtKbps", () => {
+    expect(parseSpeedKbps("500M")).toBe(500_000)
+    expect(parseSpeedKbps("1G")).toBe(1_000_000)
+    expect(parseSpeedKbps("2.5 Gbps")).toBe(2_500_000)
+    // A bare number is kbps, as on the server.
+    expect(parseSpeedKbps("64")).toBe(64)
+    for (const typed of ["500M", "1G", "10G", "2.5G", "64k"])
+      expect(fmtKbps(parseSpeedKbps(typed))).toBe(typed)
+  })
+
+  it("is null for nothing and undefined for what is not a speed", () => {
+    expect(parseSpeedKbps("")).toBeNull()
+    expect(parseSpeedKbps("  ")).toBeNull()
+    expect(parseSpeedKbps(null)).toBeNull()
+    expect(parseSpeedKbps("fast")).toBeUndefined()
+    expect(parseSpeedKbps("0")).toBeUndefined()
+    expect(parseSpeedKbps("0.0001k")).toBeUndefined()
+  })
+})
 
 describe("parseSpeedMbps", () => {
   it("reads the shapes a speed is stored in", () => {

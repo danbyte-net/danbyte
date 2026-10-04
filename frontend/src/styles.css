@@ -375,6 +375,30 @@
   font-family: var(--font-mono, monospace);
 }
 
+/* Speed labels on the site map's lines (#246): a chip centred on the line,
+   in a pane of its own above the lines and under the pins, taking no
+   clicks (speed-labels.ts picks which lines get one). */
+.sm-speed-anchor {
+  background: transparent;
+  border: none;
+}
+.sm-speed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Label declutter (full map only - the container carries .sm-zl). Name chips
    hide until their zoom threshold; the route toggles .sm-zl-sites /
    .sm-zl-devices on zoomend. Hover and selection always win, so a buried

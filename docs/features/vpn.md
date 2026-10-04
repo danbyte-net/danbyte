@@ -74,11 +74,21 @@ deployment's [secret store](../architecture/tenant-settings.md).
 5. Optionally put it in a **group**. For IPSec encapsulations, you can also pick
    an **IPSec profile** - that field only appears when the encapsulation is
    IPSec.
-6. Save.
+6. Optionally set its **Capacity** - how fast the tunnel's path is.
+7. Save.
 
-A tunnel can also record how fast its path is: `capacity_kbps` in the tunnel
-API (`/api/tunnels/`), empty when unknown. Nothing derives it, and the form
-does not show it yet.
+### Capacity
+
+**Capacity** is typed the way an interface's speed is - `500M`, `1G`,
+`2.5G`, with the common speeds offered as you type; a bare number is kbps.
+Leave it empty when you don't know. The tunnel's page shows it on its
+**Overview** (`500 Mbps`), and the [site map](site-map.md#link-speed-on-the-map)
+writes it on the tunnel's line and colors the line by it under **Color by →
+Speed**. Every spoke of a hub tunnel shows the hub's figure.
+
+Nothing works the figure out from the tunnel's interfaces or the path under
+it: it is only what you set. In the API it is `capacity_kbps` on
+`/api/tunnels/`, in kbps, `null` when unknown.
 
 ## Terminate a tunnel
 
