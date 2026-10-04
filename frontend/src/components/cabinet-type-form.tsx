@@ -29,6 +29,7 @@ import {
 } from "@/components/cabinet-size-fields"
 import type { CabinetSizeValues } from "@/components/cabinet-size-fields"
 import { useSaveObject } from "@/lib/save-object"
+import { invalidateCabinetViews } from "@/lib/cabinets"
 
 export interface CabinetTypeFormProps {
   cabinetType?: CabinetType
@@ -96,9 +97,8 @@ export function CabinetTypeForm({
       })
     },
     onSuccess: (saved) => {
-      qc.invalidateQueries({ queryKey: ["cabinet-types"] })
+      invalidateCabinetViews(qc)
       qc.invalidateQueries({ queryKey: ["cabinet-types-picker"] })
-      qc.invalidateQueries({ queryKey: ["cabinet-type", saved.id] })
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
       onSaved(saved)
     },

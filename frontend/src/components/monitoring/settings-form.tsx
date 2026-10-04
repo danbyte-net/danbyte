@@ -79,6 +79,14 @@ export function MonitoringSettingsForm() {
     onSuccess: (data) => {
       qc.setQueryData(["monitoring-settings"], data)
       qc.invalidateQueries({ queryKey: ["monitoring-stats"] })
+      // The MAC lists apply the MAC tracking settings when served (#305).
+      for (const queryKey of [
+        ["device-macs"],
+        ["interface-macs"],
+        ["mac"],
+        ["mac-sightings"],
+      ])
+        void qc.invalidateQueries({ queryKey })
       toast.success("Monitoring settings saved")
     },
     onError: (err) => apiErrorToast(err),

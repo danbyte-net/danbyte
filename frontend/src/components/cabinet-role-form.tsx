@@ -12,6 +12,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { invalidateCabinetViews } from "@/lib/cabinets"
 
 export interface CabinetRoleFormProps {
   role?: CabinetRole
@@ -74,9 +75,8 @@ export function CabinetRoleForm({
       })
     },
     onSuccess: (saved) => {
-      qc.invalidateQueries({ queryKey: ["cabinet-roles"] })
+      invalidateCabinetViews(qc)
       qc.invalidateQueries({ queryKey: ["cabinet-roles-picker"] })
-      qc.invalidateQueries({ queryKey: ["cabinet-role", saved.id] })
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
       onSaved(saved)
     },

@@ -1711,7 +1711,14 @@ function DeviceInterfacesPane({
         selected={selIfaces}
         onCleared={() => setSelIfaces([])}
         // The Uplink choice reclassifies ports, so the MAC tables reread.
-        invalidate={[["device-interfaces", deviceId], ["device-macs"]]}
+        invalidate={[
+          ["device-interfaces", deviceId],
+          ["device-macs"],
+          // An interface page and its MACs tab show the Uplink setting (#306).
+          ["interface"],
+          ["interface-macs"],
+          ["mac"],
+        ]}
         fields={[
           { key: "enabled", label: "Enabled", kind: "bool" },
           { key: "mark_connected", label: "Mark connected", kind: "bool" },

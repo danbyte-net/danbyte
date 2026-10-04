@@ -43,9 +43,15 @@ export const CABINET_VIEW_KEYS: string[][] = [
   ["cabinet-type"],
   ["cabinet-roles"],
   ["cabinet-role"],
+  // A cabinet page names its type and role (#303); a site's and a
+  // location's pages count their cabinets on the tab (#304).
+  ["cabinet"],
+  ["site"],
+  ["location"],
 ]
 
-/** Refetch every cabinet view after a cabinet is created, edited or deleted. */
+/** Refetch every cabinet view after a cabinet - or a cabinet type or role,
+ * whose name the cabinet views show - is created, edited or deleted. */
 export function invalidateCabinetViews(qc: QueryClient) {
   for (const queryKey of CABINET_VIEW_KEYS)
     void qc.invalidateQueries({ queryKey })
