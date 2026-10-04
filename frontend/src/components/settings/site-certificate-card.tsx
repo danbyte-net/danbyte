@@ -297,9 +297,9 @@ export function SiteCertificateCard() {
         )}
         {!a.unit_installed && (
           <p className="mt-1 text-xs text-muted-foreground">
-            Run <code>sudo make install-tls-unit</code> in the Danbyte
-            directory once; until then a dropped pair is installed with{" "}
-            <code>danbyte tls install deploy/nginx/certs/</code>.
+            Run <code>sudo ./install.sh --host-only</code> in the unpacked
+            bundle of this release once; until then a dropped pair is installed
+            with <code>danbyte tls install deploy/nginx/certs/</code>.
           </p>
         )}
         {d.acme?.order && (

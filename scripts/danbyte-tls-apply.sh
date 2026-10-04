@@ -12,8 +12,9 @@
 # never touched.
 #
 # The unit runs a root-owned copy (/usr/local/libexec/danbyte/, put there by
-# the installer or `make install-tls-unit`), never the file in the app tree:
-# the app's user owns that tree. For the same reason nothing here writes into
+# the installer's root steps from the bundle, or by `make install-tls-unit`
+# from a tree root owns), never the file in the app tree: the app's user
+# owns that tree. For the same reason nothing here writes into
 # the drop folder or follows a link out of it: the folder is entered once,
 # must belong to the app's user, and the pair is copied out without following
 # links before anything reads it.

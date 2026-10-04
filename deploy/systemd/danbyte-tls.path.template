@@ -1,4 +1,5 @@
-# Installed by `make install-tls-unit` (root). Watches the folder the app
+# Installed as root by the installer's root steps (scripts/host-sync.sh) or
+# `make install-tls-unit`, from a tree root owns. Watches the folder the app
 # owns for the stamp it writes after dropping a certificate pair, and starts
 # danbyte-tls.service to put that pair in front of nginx.
 [Unit]

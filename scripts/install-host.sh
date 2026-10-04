@@ -7,7 +7,7 @@
 #
 #   install-host.sh --app DIR --user USER --version VER [--from VER]
 #                   [--wait-stage] [--lock-owner OWNER] [--host NAME]
-#                   [--log-dir DIR] [--no-nginx] [--old-template FILE]
+#                   [--log-dir DIR] [--no-nginx] [--adopt] [--old-template FILE]
 #                   [--log FILE] [--cleanup DIR]
 #
 # install.sh runs it from a root-only copy of the bundle's files, as the
@@ -17,7 +17,8 @@
 # end - and, when that stopped part-way, for its recovery. Only an upgrade
 # that ended done on VER gets the root steps; any other end leaves the host
 # as it was. Without --wait-stage (install.sh --host-only) it runs them at
-# once.
+# once. Either way from the bundle: never from the app directory, which the
+# service account owns.
 #
 # The summary goes to stdout (the unit's journal) and to --log, which
 # install.sh prints; <log>.rc gets the exit code: 0 upgraded (or the root
@@ -29,7 +30,7 @@ TREE=$(cd "$(dirname "$0")/.." && pwd)
 # Tests put the host's files under a scratch root; empty on a real host.
 R="${DANBYTE_HOST_ROOT:-}"
 APP="" SVC_USER="" VERSION="" FROM="" WAIT=0 LOCK_OWNER="" HOST=""
-LOG_DIR=/var/log/danbyte NGINX=1 OLD_TEMPLATE="" LOG="" CLEANUP=""
+LOG_DIR=/var/log/danbyte NGINX=1 ADOPT=0 OLD_TEMPLATE="" LOG="" CLEANUP=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --app) APP="$2"; shift 2 ;;
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
     --host) HOST="$2"; shift 2 ;;
     --log-dir) LOG_DIR="$2"; shift 2 ;;
     --no-nginx) NGINX=0; shift ;;
+    --adopt) ADOPT=1; shift ;;
     --old-template) OLD_TEMPLATE="$2"; shift 2 ;;
     --log) LOG="$2"; shift 2 ;;
     --cleanup) CLEANUP="$2"; shift 2 ;;
@@ -53,7 +55,7 @@ SVC_UID=$(id -u "$SVC_USER" 2>/dev/null) || { echo "install-host: no user $SVC_U
 SVC_GID=$(id -g "$SVC_USER" 2>/dev/null) || SVC_GID=$SVC_UID
 STATUS="$APP/.upgrade-status.json"
 STAMP="$R/etc/danbyte/host-sync.json"
-INSTALL_HINT="sudo ./install.sh --host-only from the bundle of $VERSION, or sudo make -C $APP host-sync"
+INSTALL_HINT="sudo ./install.sh --host-only, in the unpacked bundle of $VERSION"
 
 # The summary: to the journal, and to the log install.sh prints.
 say() {
@@ -130,6 +132,7 @@ if [ "$END" = "done" ]; then
   set -- --app "$APP" --user "$SVC_USER" --log-dir "$LOG_DIR"
   [ -z "$HOST" ] || set -- "$@" --host "$HOST"
   [ "$NGINX" = 1 ] || set -- "$@" --no-nginx
+  [ "$ADOPT" = 0 ] || set -- "$@" --adopt
   [ -z "$OLD_TEMPLATE" ] || set -- "$@" --old-template "$OLD_TEMPLATE"
   _out=$(mktemp)
   bash "$TREE/scripts/host-sync.sh" "$@" >"$_out" 2>&1

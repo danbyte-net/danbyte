@@ -9,7 +9,10 @@ paths and name; the previous site back when ``nginx -t`` refuses the new one;
 a hand-edited site left alone with the new render beside it; the certificate
 unit running a root-owned copy of its script; and a stamp of what it applied.
 What install-host must: the root steps only once the upgrade ended done, the
-installer's lock released, and a summary of how it went.
+installer's lock released, and a summary of how it went. And the ways an
+administrator runs them again - install.sh --host-only from the bundle, make
+host-sync from a tree root owns - must never run a file from the app
+directory, which the service account owns (#287).
 """
 from __future__ import annotations
 
@@ -428,6 +431,149 @@ class InstallHostTests(HostSandbox):
         r = self.finish(script=copy / "scripts" / "install-host.sh")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("nginx: ", r.stdout)
+
+
+class InstallerHostOnlyTests(HostSandbox):
+    """install.sh --host-only, run for real from a bundle laid out as
+    build-release.sh lays one out: the root steps alone, for the release that
+    runs. It is what Settings → Updates gives for them - also on a git
+    install - because root then runs only the bundle's files, never one the
+    service account could have changed in the app directory (#287)."""
+
+    VERSION = "0.17.0-dev9"
+
+    def setUp(self):
+        super().setUp()
+        self.bundle = self.tmp / f"danbyte-{self.VERSION}-linux-x86_64"
+        sources = subprocess.run(["bash", str(REPO / "scripts/host-sync.sh"), "--print-sources"],
+                                 capture_output=True, text=True, check=True).stdout.split()
+        for rel in (*sources, "scripts/install-host.sh", "scripts/upgrade/lib.sh"):
+            (self.bundle / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO / rel, self.bundle / rel)
+        shutil.copy2(REPO / "scripts/install.sh", self.bundle / "install.sh")
+        (self.bundle / "vendor/wheels").mkdir(parents=True)
+        (self.bundle / "vendor/python/bin").mkdir(parents=True)
+        (self.bundle / "vendor/python/bin/python3").write_text("#!/bin/sh\n")
+        (self.bundle / "vendor/python/bin/python3").chmod(0o755)
+        for tree in (self.bundle, self.app):
+            (tree / "danbyte").mkdir(exist_ok=True)
+            (tree / "danbyte/__init__.py").write_text(f'__version__ = "{self.VERSION}"\n')
+        (self.app / "manage.py").write_text("# the install\n")
+        (self.app / ".env").write_text("DJANGO_SECRET_KEY=x\n")
+
+    def host_only(self, *args: str):
+        return subprocess.run(
+            ["bash", str(self.bundle / "install.sh"), "--host-only", "--host", "db.example.test", *args],
+            env={**self.env, "SERVICE_HOME": str(self.tmp), "SERVICE_USER": "danbyte"},
+            capture_output=True, text=True, timeout=120)
+
+    def test_root_runs_the_bundles_files_not_what_the_service_account_changed(self):
+        # The account that owns the app directory changed the scripts there.
+        marker = self.tmp / "ran-as-root"
+        for rel in ("scripts/host-sync.sh", "scripts/danbyte-tls-apply.sh"):
+            (self.app / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.app / rel).write_text(f"#!/bin/sh\necho changed >{marker}\n")
+        r = self.host_only()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"The root steps of Danbyte {self.VERSION} are done.", r.stdout)
+        self.assertFalse(marker.exists())
+        self.assertIn("server_name db.example.test;", self.site())
+        # the certificate unit's root-owned script is the bundle's
+        self.assertEqual((self.root / "usr/local/libexec/danbyte/danbyte-tls-apply.sh").read_bytes(),
+                         (self.bundle / "scripts/danbyte-tls-apply.sh").read_bytes())
+        self.assertEqual(self.stamp()["version"], self.VERSION)
+
+    def test_a_git_checkout_takes_the_root_steps_from_the_bundle(self):
+        # --host-only changes no code, so a checkout is no reason to refuse.
+        from core.upgrade_notes import host_sources_digest
+
+        (self.app / ".git").mkdir()
+        r = self.host_only()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"The root steps of Danbyte {self.VERSION} are done.", r.stdout)
+        self.assertEqual(self.stamp()["sources"], host_sources_digest(self.bundle))
+        self.assertTrue((self.root / "etc/logrotate.d/danbyte").exists())
+
+    def test_only_the_bundle_of_the_release_that_runs(self):
+        (self.app / "danbyte/__init__.py").write_text('__version__ = "0.17.0-dev8"\n')
+        r = self.host_only()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("takes the bundle of the release that runs", r.stderr)
+        self.assertFalse((self.root / SITE).exists())
+
+    def test_adopt_takes_the_new_render_over_a_site_edited_by_hand(self):
+        self.sync("--fresh", "--host", "db.example.test")
+        edited = self.site() + "\n# my own tile server in the CSP\n"
+        (self.root / SITE).write_text(edited)
+        r = self.host_only()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.site(), edited)
+        # what to run to take it anyway: from the bundle, never make in the app
+        self.assertIn("sudo ./install.sh --host-only --adopt", r.stdout)
+        self.assertNotRegex(r.stdout, r"\bmake\b")
+        r = self.host_only("--adopt")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("my own tile server", self.site())
+        self.assertTrue(list((self.root / "etc/nginx/sites-available").glob("danbyte.conf.bak-*")))
+
+
+# sudo [-u USER] CMD: there is no one to become in a test; it runs CMD.
+SUDO = r"""#!/bin/sh
+printf 'sudo %s\n' "$*" >>"$FAKE_CALLS"
+while [ $# -gt 0 ]; do case "$1" in -u) shift 2 ;; -*) shift ;; *) break ;; esac; done
+exec "$@"
+"""
+
+
+class MakeRootStepsTests(HostSandbox):
+    """The Makefile targets that run this tree's files as root - host-sync,
+    install-tls-unit and the proxy targets that write nginx - refuse a tree
+    that is neither root's nor that of whoever runs make: a production
+    install's app directory belongs to the service account (#287)."""
+
+    def setUp(self):
+        super().setUp()
+        if os.geteuid() == 0:
+            self.skipTest("the tree make runs from is root's here")
+        (self.bin / "sudo").write_text(SUDO)
+        (self.bin / "sudo").chmod(0o755)
+        self.env.pop("SUDO_UID", None)
+
+    def make(self, *args: str, env: dict | None = None):
+        return subprocess.run(["make", "-s", "-C", str(REPO), *args, f"APP={self.app}"],
+                              env={**self.env, **(env or {})}, capture_output=True, text=True,
+                              timeout=120)
+
+    def test_root_runs_nothing_from_a_tree_it_does_not_own(self):
+        # id -u answers 0: root runs make in a tree the test user owns, as it
+        # would in the service account's app directory.
+        certs = self.tmp / "certs"
+        for target in ("host-sync", "install-tls-unit", "proxy-install", "proxy-reload"):
+            with self.subTest(target):
+                r = self.make(target, f"CERT_DIR={certs}")
+                self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn("root runs nothing from it", r.stderr)
+                self.assertIn("sudo ./install.sh --host-only", r.stderr)
+        self.assertNotIn("sudo", self.calls.read_text())
+        self.assertFalse(certs.exists())
+        self.assertFalse((self.root / SITE).exists())
+        self.assertFalse((self.root / "etc/danbyte").exists())
+
+    def test_host_sync_runs_from_a_checkout_of_whoever_runs_it(self):
+        # Your own checkout (or one root made), for the install APP names.
+        # A shell's own HOST (zsh sets one) renames nothing.
+        self.sync("--fresh", "--host", "db.example.test")
+        mine = {"SUDO_UID": str(os.getuid()), "HOST": "zsh.example.test"}
+        r = self.make("host-sync", env=mine)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("server_name db.example.test;", self.site())
+        unit = (self.root / "etc/systemd/system/danbyte-tls.service").read_text()
+        self.assertIn(f"Environment=DANBYTE_DIR={self.app}", unit)
+        self.assertIn(f"Environment=DANBYTE_USER={pwd.getpwuid(os.getuid()).pw_name}", unit)
+        self.assertIn("sudo bash", self.calls.read_text())
+        r = self.make("host-sync", "HOST=new.example.test", env=mine)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("server_name new.example.test;", self.site())
 
 
 class TlsApplyTests(HostSandbox):

@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Relocate an existing Danbyte install to a new service-user home (default
-# /opt/danbyte) and switch on /var/log/danbyte file logging. Run as root:
+# /opt/danbyte) and switch on /var/log/danbyte file logging. Run as root,
+# from the unpacked bundle of the release that runs:
 #
 #   sudo ./scripts/danbyte-relocate.sh                 # → /opt/danbyte
 #   sudo ./scripts/danbyte-relocate.sh --to /opt/danbyte --user danbyte
+#
+# Never from the app directory: the service account owns it, and a file
+# changed there would run as root (#287). The logrotate config comes from
+# this script's own tree, and the app's .env is written as the service user.
 #
 # This is OPTIONAL. Version upgrades work fine wherever Danbyte already lives -
 # the systemd units are home-relative (%h/danbyte). This only changes WHERE it
@@ -33,6 +38,14 @@ step() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo ./scripts/danbyte-relocate.sh)"
+# Only from a tree root owns (or the one of whoever ran sudo, on a checkout
+# of their own) - such as the unpacked bundle.
+SELF="$(cd "$(dirname "$0")/.." && pwd)"
+for p in "$SELF" "$SELF/scripts" "$0" "$SELF/deploy/logrotate/danbyte"; do
+  o="$(stat -c %u "$p")" || die "$p is missing"
+  [ "$o" = 0 ] || [ "$o" = "${SUDO_UID:-0}" ] \
+    || die "$p is not root's: run this from the unpacked bundle of the release that runs (sudo tar xzf), never from the app directory"
+done
 id -u "$SERVICE_USER" >/dev/null 2>&1 || die "no such user: $SERVICE_USER"
 
 OLD_HOME="$(getent passwd "$SERVICE_USER" | cut -d: -f6)"
@@ -78,7 +91,8 @@ if [ "$MOVE" -eq 1 ]; then
   # -m moves the home directory's contents; -d updates the passwd entry.
   usermod -m -d "$NEW_HOME" "$SERVICE_USER"
   chmod 755 "$NEW_HOME"
-  chmod o+x "$NEW_HOME" "$APP" 2>/dev/null || true   # let nginx traverse to staticfiles
+  # let nginx traverse to staticfiles; inside the home, as its owner
+  as_user "$NEW_HOME" chmod o+x "$APP" 2>/dev/null || true
   loginctl enable-linger "$SERVICE_USER"
   # Wait for the user manager (linger spins it up) before touching --user units.
   for _ in $(seq 1 20); do [ -S "/run/user/$SVC_UID/bus" ] && break; sleep 0.5; done
@@ -86,8 +100,11 @@ fi
 
 step "Log dir $LOG_DIR + DANBYTE_LOG_DIR in .env"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 755 "$LOG_DIR"
-if [ -f "$APP/.env" ] && ! grep -qE '^DANBYTE_LOG_DIR=' "$APP/.env"; then
-  printf '\nDANBYTE_LOG_DIR=%s\n' "$LOG_DIR" >> "$APP/.env"
+# .env and its folder are the service user's: read and written as that user,
+# so a link put in place of .env leads root nowhere (#287).
+# shellcheck disable=SC2016  # $1 and $2 are the inner shell's
+if as_user "$NEW_HOME" sh -c '[ -f "$1" ] && ! grep -qE "^DANBYTE_LOG_DIR=" "$1" \
+    && printf "\nDANBYTE_LOG_DIR=%s\n" "$2" >>"$1"' _ "$APP/.env" "$LOG_DIR"; then
   echo "  added DANBYTE_LOG_DIR=$LOG_DIR"
 fi
 # Rotation for the log files. The app writes them from many processes and
@@ -95,7 +112,7 @@ fi
 # size-capped handler and gunicorn keeps its logs in the journal (#231).
 if [ -d /etc/logrotate.d ]; then
   sed -e "s#@@LOG_DIR@@#$LOG_DIR#g" -e "s#@@USER@@#$SERVICE_USER#g" \
-    "$APP/deploy/logrotate/danbyte" > /etc/logrotate.d/danbyte
+    "$SELF/deploy/logrotate/danbyte" > /etc/logrotate.d/danbyte
   chmod 644 /etc/logrotate.d/danbyte
 fi
 

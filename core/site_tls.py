@@ -4,9 +4,11 @@ certificate, issue #126).
 The app never touches nginx and never holds root. It writes a pair into
 ``deploy/nginx/certs/`` - a folder it owns, the same one the installer
 stages the self-signed pair in - then a stamp file as its last write. The
-root ``danbyte-tls.path`` unit the installer sets up (``make
-install-tls-unit``) notices the stamp, and ``scripts/danbyte-tls-apply.sh``
-verifies the pair, keeps the live one aside, installs, runs ``nginx -t``,
+root ``danbyte-tls.path`` unit the installer sets up (on an upgraded host,
+``install.sh --host-only`` from the bundle) notices the stamp, and a
+root-owned copy of ``scripts/danbyte-tls-apply.sh`` - never the one in this
+tree, which the service account owns - verifies the pair, keeps the live
+one aside, installs, runs ``nginx -t``,
 reloads, or rolls back - and writes ``/var/lib/danbyte-tls/applied.json``
 for this module to read back (a unit installed before 0.17 wrote
 ``danbyte.applied`` into the drop folder; that is still read). Four ways in, one way out: an uploaded pair, a self-signed one

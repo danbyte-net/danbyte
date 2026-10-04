@@ -25,8 +25,11 @@
 # (scripts/install-host.sh) applies nginx, logrotate and the certificate unit
 # from a root-only copy of this bundle's files (scripts/host-sync.sh). A
 # dropped SSH session stops neither; this script only follows them.
-# --host-only does those root steps alone, for the release that runs. Root
-# only ever runs files from this bundle, never from the app directory.
+# --host-only does those root steps alone, for the release that runs - on a
+# git checkout too, since it changes no code. Root only ever runs files from
+# this bundle, never from the app directory, and writes into that directory
+# only as the service user: the account owns it, and a link it put there
+# would take root's write somewhere else (#287).
 set -euo pipefail
 
 # ── Config (env or flags) ────────────────────────────────────────────────────
@@ -42,6 +45,7 @@ DO_NGINX=1
 FORCE=0
 SKIP_BACKUP=0
 HOST_ONLY=0
+ADOPT=0
 # Root-only: the copy of this bundle's files the root steps of an upgrade
 # run from, and their summaries.
 HS_BASE=/var/lib/danbyte/installer
@@ -55,6 +59,7 @@ while [ $# -gt 0 ]; do
     --force) FORCE=1; shift ;;
     --skip-backup) SKIP_BACKUP=1; shift ;;
     --host-only) HOST_ONLY=1; shift ;;
+    --adopt) ADOPT=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -100,7 +105,8 @@ upgrade_root() {
 EXISTING=0
 if [ -f "$APP/manage.py" ] && [ -f "$APP/.env" ]; then
   EXISTING=1
-  [ ! -d "$APP/.git" ] || [ "$FORCE" -eq 1 ] \
+  # --host-only changes no code, so a git checkout takes it as well.
+  [ ! -d "$APP/.git" ] || [ "$FORCE" -eq 1 ] || [ "$HOST_ONLY" -eq 1 ] \
     || die "$APP is a git checkout - upgrade it from Settings -> Updates or with danbyte-admin upgrade, not with a bundle (--force to overlay it anyway)."
   if [ -z "$HOST" ] && [ -f /etc/nginx/sites-available/danbyte.conf ]; then
     # Keep the name the site already answers to.
@@ -127,6 +133,7 @@ if [ "$HOST_ONLY" -eq 1 ]; then
   fi
   set -- --app "$APP" --user "$SERVICE_USER" --host "$HOST" --log-dir "$LOG_DIR" --version "$ver"
   [ "$DO_NGINX" -eq 1 ] || set -- "$@" --no-nginx
+  [ "$ADOPT" -eq 0 ] || set -- "$@" --adopt
   exec /bin/sh "$BUNDLE/scripts/install-host.sh" "$@"
 fi
 
@@ -236,6 +243,20 @@ as_user() {
     DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$SVC_UID/bus" \
     "$@"
 }
+# The app's .env is read and written as the service user, never by root:
+# the file and its folder are that account's, and root following a link
+# put in its place would append to whatever the link names (#287). Values
+# go through a pipe, never onto a command line another user can read.
+env_get() {  # <key>: its value; fails when .env has none
+  as_user grep -E "^$1=" "$APP/.env" | cut -d= -f2-
+}
+env_backfill() {  # <key> <value>: appends KEY=VALUE when .env has no KEY
+  # shellcheck disable=SC2016  # $1 and $2 are the inner shell's
+  printf '%s' "$2" | as_user sh -c \
+    'v=$(cat); grep -qE "^$2=" "$1" && exit 0; printf "\n%s=%s\n" "$2" "$v" >>"$1"' \
+    _ "$APP/.env" "$1" \
+    || warn "could not add $1 to $APP/.env as $SERVICE_USER - add it yourself"
+}
 # Wait for the user manager (linger spins it up) so systemctl --user works.
 for _ in $(seq 1 20); do [ -S "/run/user/$SVC_UID/bus" ] && break; sleep 0.5; done
 
@@ -297,7 +318,9 @@ upgrade_existing() {
   # shellcheck disable=SC2046  # one path per word
   (cd "$BUNDLE" && cp --parents $(bash scripts/host-sync.sh --print-sources) \
     scripts/install-host.sh danbyte/__init__.py "$hs/") || die "could not copy the root steps to $hs"
-  cp "$APP/deploy/nginx/danbyte.prod.conf.template" "$hs/old.template" 2>/dev/null || : >"$hs/old.template"
+  # Read by the service user too: root opens nothing in the app directory.
+  as_user cat "$APP/deploy/nginx/danbyte.prod.conf.template" >"$hs/old.template" 2>/dev/null \
+    || : >"$hs/old.template"
   work="$root/$(date -u +%Y%m%dT%H%M%SZ)-$ver"
   as_user mkdir -p "$work/src"
   # Copied by the service user through a pipe: the admin's home is often
@@ -323,6 +346,7 @@ upgrade_existing() {
          --version "$ver" --from "$from" --wait-stage --lock-owner "installer-$now"
          --old-template "$hs/old.template" --log "$hs.log" --cleanup "$hs")
   [ "$DO_NGINX" -eq 1 ] || hargs+=(--no-nginx)
+  [ "$ADOPT" -eq 0 ] || hargs+=(--adopt)
   # From the stage's start to the root unit's, a hang-up must not land.
   trap '' HUP INT TERM
   if ! as_user "$@" -p OnFailure=danbyte-upgrade-recover.service \
@@ -383,19 +407,23 @@ upgrade_existing() {
 
 if [ "$EXISTING" -eq 1 ]; then
   # Settings releases from before 0.17 did not backfill themselves.
-  grep -qE '^DANBYTE_HTTPS=' "$APP/.env" \
-    || printf '\nDANBYTE_HTTPS=%s\n' "$HTTPS_VAL" >>"$APP/.env"
+  env_backfill DANBYTE_HTTPS "$HTTPS_VAL"
   upgrade_existing
 fi
 
 if [ "$EXISTING" -eq 0 ]; then
 # ── 4. Deploy the app to $APP ────────────────────────────────────────────────
 step "Deploying app → $APP"
-install -d "$APP"
-# Everything except the outer installer copy; keep vendor/ (python+wheels+node).
-tar -C "$BUNDLE" --exclude=./install.sh -cf - . | tar -C "$APP" -xf -
+# The home, with anything an earlier run left in it, is the service user's,
+# and that user unpacks the app into it through a pipe: root writes nothing
+# into the app directory (#287). -p keeps the bundle's modes, as root's tar
+# did: nginx reads the static files and the maintenance page as another user.
 chown -R "$SERVICE_USER:$SERVICE_USER" "$SERVICE_HOME"
-chmod o+x "$SERVICE_HOME" "$APP"   # let nginx traverse to staticfiles
+as_user mkdir -p "$APP"
+# Everything except the outer installer copy; keep vendor/ (python+wheels+node).
+tar -C "$BUNDLE" --exclude=./install.sh -cf - . | as_user tar -C "$APP" -xpf -
+chmod o+x "$SERVICE_HOME"
+as_user chmod o+x "$APP"   # let nginx traverse to staticfiles
 
 # ── 5. Python venv from the bundled wheelhouse ───────────────────────────────
 step "Python venv (offline wheelhouse)"
@@ -404,33 +432,33 @@ as_user bash -lc "cd '$APP' && vendor/python/bin/python3 -m venv .venv \
 
 # ── 6. Secrets + .env (reuse existing on re-run) ─────────────────────────────
 step "Configuring .env"
-PYGEN="$APP/vendor/python/bin/python3"
+# The bundle's interpreter: root runs nothing from the app directory.
+PYGEN="$BUNDLE/vendor/python/bin/python3"
 if [ -f "$APP/.env" ]; then
   echo "  keeping existing $APP/.env"
-  DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$APP/.env" | cut -d= -f2-)"
-  ADMIN_PASSWORD="$(grep -E '^DJANGO_SUPERUSER_PASSWORD=' "$APP/.env" | cut -d= -f2- || true)"
+  DB_PASSWORD="$(env_get DB_PASSWORD)"
+  ADMIN_PASSWORD="$(env_get DJANGO_SUPERUSER_PASSWORD || true)"
   # Backfill DANBYTE_LOG_DIR for installs that predate file logging.
-  grep -qE '^DANBYTE_LOG_DIR=' "$APP/.env" \
-    || printf '\nDANBYTE_LOG_DIR=%s\n' "$LOG_DIR" >> "$APP/.env"
+  env_backfill DANBYTE_LOG_DIR "$LOG_DIR"
   # Backfill MONITORING_SECRET_KEY (now required when DEBUG=False) for installs
   # that predate it - a fresh random key; existing secrets were encrypted under
   # the SECRET_KEY-derived key, so preserve behaviour by seeding it FROM the
   # current SECRET_KEY (keeps existing SNMP/SMTP/LDAP secrets decryptable).
-  grep -qE '^MONITORING_SECRET_KEY=' "$APP/.env" \
-    || printf '\nMONITORING_SECRET_KEY=%s\n' \
-       "$(grep -E '^DJANGO_SECRET_KEY=' "$APP/.env" | cut -d= -f2-)" >> "$APP/.env"
+  env_backfill MONITORING_SECRET_KEY "$(env_get DJANGO_SECRET_KEY)"
   # Backfill DANBYTE_HTTPS to match this install's front end: True when nginx +
   # TLS is managed here, False for --no-nginx (no terminator → Secure cookies
   # would break login). Defaults off in settings so plain-http is never locked out.
-  grep -qE '^DANBYTE_HTTPS=' "$APP/.env" \
-    || printf '\nDANBYTE_HTTPS=%s\n' "$HTTPS_VAL" >> "$APP/.env"
+  env_backfill DANBYTE_HTTPS "$HTTPS_VAL"
 else
   SECRET_KEY="$("$PYGEN" -c 'import secrets;print(secrets.token_urlsafe(50))')"
   MONITORING_SECRET_KEY="$("$PYGEN" -c 'import secrets;print(secrets.token_urlsafe(50))')"
   DB_PASSWORD="$("$PYGEN" -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(24)))')"
   ADMIN_PASSWORD="$("$PYGEN" -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(20)))')"
   umask 077
-  cat > "$APP/.env" <<EOF
+  # Written by the service user, its own and private from the first byte;
+  # the secrets reach it on stdin.
+  # shellcheck disable=SC2016  # $1 is the inner shell's
+  as_user sh -c 'umask 077 && cat >"$1"' _ "$APP/.env" <<EOF
 DJANGO_SECRET_KEY=$SECRET_KEY
 DEBUG=False
 ALLOWED_HOSTS=$HOST,127.0.0.1,localhost
@@ -458,14 +486,16 @@ DJANGO_SUPERUSER_USERNAME=admin
 DJANGO_SUPERUSER_EMAIL=admin@$HOST
 DJANGO_SUPERUSER_PASSWORD=$ADMIN_PASSWORD
 EOF
-  chown "$SERVICE_USER:$SERVICE_USER" "$APP/.env"
-  chmod 600 "$APP/.env"
+  as_user chmod 600 "$APP/.env"
 fi
 
 # ── 7. PostgreSQL role + database (idempotent) ───────────────────────────────
 step "PostgreSQL role + database"
+# The password may come from a .env the service account wrote: psql quotes it
+# (:'pw'), so no value can end the string and run SQL as postgres.
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='danbyte'" | grep -q 1 \
-  || sudo -u postgres psql -qc "CREATE ROLE danbyte LOGIN PASSWORD '$DB_PASSWORD'"
+  || printf '%s\n' "CREATE ROLE danbyte LOGIN PASSWORD :'pw';" \
+     | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -v pw="$DB_PASSWORD"
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='danbyte'" | grep -q 1 \
   || sudo -u postgres psql -qc "CREATE DATABASE danbyte OWNER danbyte"
 

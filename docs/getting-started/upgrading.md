@@ -197,9 +197,16 @@ current `/opt` layout.
     To run only the root steps again - after they failed, or after an
     upgrade from the app - use the bundle of the release that runs:
     `sudo ./install.sh --host-only`. It runs no upgrade stage, so nothing
-    stops.
+    stops, and it changes no code, so a git checkout takes it too. With
+    `--adopt` (here or on an upgrade) it replaces a Danbyte site edited by
+    hand with the new render, keeping a backup.
 
-    It refuses to run over a git checkout or while another upgrade runs
+    Whatever the installer puts in the app directory - the code, the `.env`
+    it fills in - the service account writes, and root runs nothing from
+    there: a script that account changed, or a link it put in place of
+    `.env`, leads root nowhere.
+
+    It refuses to upgrade over a git checkout or while another upgrade runs
     (`--force` overrides those two), and for an older release than the one
     installed, which nothing overrides: a pre-release is older than the next
     one and than its final, so a 0.17.0-dev bundle cannot go over 0.17.0.
@@ -474,24 +481,51 @@ done. A fresh install starts with nothing pending.
 
 The steps on the host - nginx, logrotate, the site-certificate unit - are
 what an upgrade from the app cannot do, because it never has root.
-Re-running `install.sh` from the bundle does them, as does
-`sudo ./install.sh --host-only` from the bundle of the release that runs.
-Each run records what it applied in `/etc/danbyte/host-sync.json`; until
-that names this release's files, the steps list *Apply this release's
-nginx, logrotate and certificate-unit files*. On a host upgraded from the
-app, one command does them all, from the app directory as a user with
-sudo:
+Re-running `install.sh` from the bundle does them. On a host upgraded from
+the app, the bundle of the release that runs does them all at once - the
+command these steps lead with:
 
 ```bash
-sudo make -C ~danbyte/danbyte host-sync
+sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz    # the release that runs
+cd danbyte-<version>-linux-x86_64
+sudo ./install.sh --host-only
 ```
 
-It renders from the app directory as root (which the service user owns),
-so prefer the installer from a bundle you verified. A site edited by hand
-is not replaced: the new render lands next to it as `danbyte.conf.new`;
-`make host-sync ADOPT=1` replaces it anyway, keeping a backup. An install
-made with `--no-nginx` gets no nginx site from it while it has none. From
-the shell:
+Each run records what it applied in `/etc/danbyte/host-sync.json`; until
+that names this release's files, the steps list *Apply this release's
+nginx, logrotate and certificate-unit files*. A site edited by hand is not
+replaced: the new render lands next to it as `danbyte.conf.new`, and
+`--host-only --adopt` replaces it anyway, keeping a backup. An install made
+with `--no-nginx` gets no nginx site from it while it has none, and no
+certificate unit either; `sudo make install-tls-unit APP=<app directory>`,
+in the same bundle, installs the unit alone.
+
+!!! warning "Root runs only files root owns"
+    The app directory belongs to the service account. A script or template
+    changed there would run as root, or become root's configuration, so no
+    root step runs from it: unpack the bundle as root (`sudo tar xzf`), so
+    that root owns what it runs. The Makefile targets that run their tree's
+    files as root - `host-sync`, `install-tls-unit`, `proxy-install`,
+    `proxy-reload` - refuse a tree that is neither root's nor yours.
+    Earlier releases said `sudo make -C <app> host-sync` and
+    `sudo make install-tls-unit` in the app directory; use the bundle
+    instead.
+
+**On a git install** the bundle of the release it runs does the same:
+`--host-only` changes no code, so it takes a git checkout. Download it from
+the releases page, check its SHA-256 and unpack it as root, as above. Or
+make the copy root owns with git - for a checkout between releases, of the
+commit it runs - and run the steps from there, naming the install:
+
+```bash
+sudo git clone --depth 1 --branch vX.Y.Z https://github.com/danbyte-net/danbyte /root/danbyte-vX.Y.Z
+sudo make -C /root/danbyte-vX.Y.Z host-sync APP=/opt/danbyte/danbyte
+```
+
+`ADOPT=1` takes the new render over a site edited by hand, as `--adopt`
+does.
+
+The steps themselves, from the shell:
 
 ```bash
 manage.py upgrade_notes              # print the pending steps (the upgrade scripts do this at the end)
@@ -538,18 +572,21 @@ untouched.** Back up first.
 
 === "Script"
 
-    From the app directory, as root:
+    As root, from the unpacked bundle of the release that runs - never from
+    the app directory, which the service account owns:
 
     ```bash
-    cd ~danbyte/danbyte            # or wherever the app is
+    cd danbyte-<version>-linux-x86_64     # unpacked with sudo tar xzf
     sudo ./scripts/danbyte-relocate.sh          # → /opt/danbyte
     # custom target / user:
     sudo ./scripts/danbyte-relocate.sh --to /opt/danbyte --user danbyte
     ```
 
-    It stops the services, moves the home with `usermod -m`, repoints the nginx
-    `root`/`alias` paths, creates `/var/log/danbyte`, restarts, and
-    health-checks. If something looks wrong afterwards, the move is reversible:
+    It refuses to run from a tree that is not root's. It stops the services,
+    moves the home with `usermod -m`, repoints the nginx `root`/`alias`
+    paths, creates `/var/log/danbyte` (the service account adds it to its
+    `.env`), restarts, and health-checks. If something looks wrong
+    afterwards, the move is reversible:
     `sudo usermod -m -d /srv/danbyte danbyte` (then restart).
 
 === "Manual"

@@ -36,7 +36,10 @@ class UpgradeNote:
     host: bool = False
 
     def as_dict(self) -> dict:
-        snippet = self.snippet
+        from django.conf import settings
+
+        # @@APP@@: this install's app directory, as the templates spell it.
+        snippet = self.snippet.replace("@@APP@@", str(settings.BASE_DIR))
         if self.host:
             snippet = f"{host_sync_command()}\n# or by hand:\n{snippet}" if snippet \
                 else host_sync_command()
@@ -54,10 +57,16 @@ class UpgradeNote:
 def host_sync_command() -> str:
     """What does the root steps of every release at once: logrotate, the
     certificate unit, and the nginx site - re-rendered only while it is still
-    what Danbyte rendered (a changed one gets danbyte.conf.new beside it)."""
-    from django.conf import settings
+    what Danbyte rendered (a changed one gets danbyte.conf.new beside it).
 
-    return f"sudo make -C {settings.BASE_DIR} host-sync"
+    From the unpacked bundle of the release that runs, which root owns, and
+    never from the app directory: the service account owns that, and a
+    script changed there would run as root (#287). A git install takes the
+    same bundle - ``--host-only`` changes no code."""
+    from danbyte import __version__
+
+    return (f"# as root, in the unpacked bundle of {__version__}, not in the app directory:\n"
+            "sudo ./install.sh --host-only")
 
 
 # The block as the installer renders it today - with buffering on (0.16.12),
@@ -82,12 +91,29 @@ _NGINX_BACKUPS_BUFFER = """\
     proxy_max_temp_file_size 10240m;
 # then: sudo nginx -t && sudo systemctl reload nginx"""
 
+# deploy/logrotate/danbyte as the installer fills it in, spelled out: root
+# installs what the snippet shows, never a file from the app directory,
+# which the service account could have changed (#287).
 _LOGROTATE = """\
-# as root, from the app directory (adjust the user and log dir to yours):
-sudo sed -e 's#@@LOG_DIR@@#/var/log/danbyte#g' -e 's#@@USER@@#danbyte#g' \\
-    deploy/logrotate/danbyte | sudo tee /etc/logrotate.d/danbyte >/dev/null
+# as root (adjust the log dir and the user to yours):
+sudo tee /etc/logrotate.d/danbyte >/dev/null <<'EOF'
+/var/log/danbyte/*.log {
+    su danbyte danbyte
+    size 10M
+    rotate 5
+    compress
+    delaycompress
+    copytruncate
+    missingok
+    notifempty
+}
+EOF
 # then, as the service user:
 systemctl --user restart danbyte-web danbyte-workers danbyte-ws danbyte-fastlane"""
+
+# The certificate unit alone - which the installer's root steps leave out on
+# an install without nginx - from the same root-owned bundle.
+_TLS_UNIT = "sudo make install-tls-unit APP=@@APP@@   # the unit alone, in the same bundle"
 
 _NGINX_ACME = """\
 # in the :80 server, before the redirect:
@@ -183,7 +209,7 @@ def _tls_unit_runs_root_owned_script() -> bool:
 
 
 #: What scripts/host-sync.sh last applied - install.sh runs it after its
-#: upgrade, an administrator with ``make host-sync``.
+#: upgrade and with ``--host-only``.
 HOST_SYNC_STAMP = "/etc/danbyte/host-sync.json"
 #: The files it renders the host from, in the order it hashes them (its
 #: ``--print-sources``).
@@ -347,8 +373,9 @@ NOTES: tuple[UpgradeNote, ...] = (
             "They come with the release and need root. install.sh applies them "
             "after its upgrade; an upgrade from the app cannot, and this host "
             "has not had this release's files yet. The nginx site is replaced "
-            "only while it is still what Danbyte rendered. From the unpacked "
-            "bundle of this release, sudo ./install.sh --host-only does the same."
+            "only while it is still what Danbyte rendered. Root runs them from "
+            "the bundle of this release, on a git install too, and never from "
+            "the app directory: the service account owns it."
         ),
         docs="getting-started/upgrading/#after-an-upgrade",
         platforms=("systemd",),
@@ -364,11 +391,11 @@ NOTES: tuple[UpgradeNote, ...] = (
             "its script from the Danbyte directory, which the service account "
             "owns - so that account could have changed what root runs. It now "
             "runs a copy in /usr/local/libexec/danbyte/ and answers outside "
-            "the Danbyte directory. Re-run the installer from the bundle, or "
-            "install the unit again."
+            "the Danbyte directory. The installer's root steps install it, "
+            "from the bundle."
         ),
-        snippet="sudo make install-tls-unit   # from the Danbyte directory",
-        docs="getting-started/installation/",
+        snippet=_TLS_UNIT,
+        docs="getting-started/upgrading/#after-an-upgrade",
         platforms=("systemd",),
         check=_tls_unit_runs_root_owned_script,
         host=True,
@@ -482,10 +509,10 @@ NOTES: tuple[UpgradeNote, ...] = (
             "Settings → Updates → Site certificate drops a certificate pair "
             "in a folder Danbyte owns; a root systemd path unit puts it in "
             "front of nginx. Fresh installs get the unit from the installer; "
-            "an upgraded host installs it once, as a user with sudo, from the "
-            "Danbyte directory."
+            "an upgraded host gets it from the installer's root steps, run "
+            "from the bundle."
         ),
-        snippet="sudo make install-tls-unit",
+        snippet=_TLS_UNIT,
         docs="monitoring/certificates/#the-sites-own-certificate",
         platforms=("systemd",),
         check=_tls_unit_installed,

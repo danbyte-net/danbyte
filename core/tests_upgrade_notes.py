@@ -191,15 +191,59 @@ class RealNotesTests(APITestCase):
             self.assertIsNone(un.host_sources_digest(Path(d)))     # a tree without them
         note = next(n for n in un.NOTES if n.id == "0.17.0-host-files")
         self.assertEqual(note.platforms, ("systemd",))
-        self.assertTrue(note.as_dict()["snippet"].startswith("sudo make -C "))
-        self.assertIn("install.sh --host-only", note.body)
+        self.assertEqual(note.as_dict()["snippet"], un.host_sync_command())
+        self.assertIn("never from the app directory", note.body)
 
     def test_host_steps_lead_with_the_one_command(self):
+        from danbyte import __version__
+
+        command = un.host_sync_command()
+        # the root steps of the release that runs, from its bundle
+        self.assertEqual(command.splitlines()[-1], "sudo ./install.sh --host-only")
+        self.assertIn(f"in the unpacked bundle of {__version__}", command)
+        note = next(n for n in un.NOTES if n.id == "0.16.12-logrotate")
+        self.assertTrue(note.as_dict()["snippet"].startswith(f"{command}\n# or by hand:\n"))
+        wildcard = next(n for n in un.NOTES if n.id == "0.17.0-wildcard-access")
+        self.assertNotIn("install.sh", wildcard.as_dict()["snippet"])
+
+    def test_no_step_has_root_run_a_file_from_the_app_directory(self):
+        # The app directory belongs to the service account: a script or a
+        # template changed there must never be what root runs or installs
+        # (#287). The root steps run from the bundle, and a step by hand
+        # spells out what root writes.
+        import re
+
+        for n in un.NOTES:
+            snippet = n.as_dict()["snippet"]
+            with self.subTest(n.id):
+                if n.host:
+                    self.assertTrue(snippet.startswith(un.host_sync_command()), snippet)
+                self.assertNotRegex(snippet, r"make -C|host-sync|from the (app|Danbyte) directory")
+                for line in snippet.splitlines():
+                    if not re.match(r"\s*sudo ", line):
+                        continue
+                    self.assertNotRegex(line, r"(?<![\w/.-])(deploy|scripts)/", line)
+                    if re.search(r"\bmake\b", line):     # in the bundle, for the install
+                        self.assertIn(" APP=", line)
+
+    def test_the_certificate_unit_alone_comes_from_the_bundle_too(self):
+        # The root steps leave the unit out on an install without nginx;
+        # make in the same bundle installs it for this install's directory.
         from django.conf import settings
 
-        note = next(n for n in un.NOTES if n.id == "0.16.12-logrotate")
-        snippet = note.as_dict()["snippet"]
-        self.assertTrue(snippet.startswith(f"sudo make -C {settings.BASE_DIR} host-sync\n"))
-        self.assertIn("deploy/logrotate/danbyte", snippet)
-        wildcard = next(n for n in un.NOTES if n.id == "0.17.0-wildcard-access")
-        self.assertNotIn("host-sync", wildcard.as_dict()["snippet"])
+        for nid in ("0.16.0-tls-unit", "0.17.0-tls-unit-root-script"):
+            snippet = next(n for n in un.NOTES if n.id == nid).as_dict()["snippet"]
+            self.assertIn(f"sudo make install-tls-unit APP={settings.BASE_DIR}", snippet)
+            self.assertNotIn("@@", snippet)
+
+    def test_the_logrotate_step_spells_out_the_shipped_config(self):
+        # Root writes what the snippet shows; it must be what the installer
+        # renders from deploy/logrotate/danbyte, with the default user and
+        # log directory.
+        from django.conf import settings
+
+        rendered = [line for line in (Path(settings.BASE_DIR) / "deploy/logrotate/danbyte").read_text()
+                    .replace("@@LOG_DIR@@", "/var/log/danbyte").replace("@@USER@@", "danbyte").splitlines()
+                    if line and not line.startswith("#")]
+        shown = un._LOGROTATE.split("<<'EOF'\n", 1)[1].split("\nEOF\n", 1)[0].splitlines()
+        self.assertEqual(shown, rendered)

@@ -1093,6 +1093,115 @@ class BundleOwnershipTests(SimpleTestCase):
                 self.assertTrue(line.startswith("sudo tar "), f"{rel}: {line}")
 
 
+# sudo -u USER CMD: a test cannot become another user, so the service user
+# is the test user with the files only root may touch closed to it while CMD
+# runs ($FAKE_ROOT_ONLY). What root writes itself skips this shim.
+SUDO_AS_SERVICE_USER = r"""#!/bin/sh
+printf 'sudo %s\n' "$*" >>"$FAKE_CALLS"
+[ "$1" = -u ] && shift 2
+for f in $FAKE_ROOT_ONLY; do chmod 000 "$f"; done
+"$@"; rc=$?
+for f in $FAKE_ROOT_ONLY; do chmod 644 "$f"; done
+exit $rc
+"""
+
+
+class InstallerAppFolderTests(SimpleTestCase):
+    """What install.sh writes into the app directory, the service user writes:
+    the account owns the directory, so a link it put there would take a write
+    of root's wherever it points - such as appending DANBYTE_HTTPS=True to a
+    file only root may change (#287)."""
+
+    def setUp(self):
+        if os.geteuid() == 0:
+            self.skipTest("nothing is closed to root")
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.app = self.tmp / "home" / "danbyte"
+        self.app.mkdir(parents=True)
+        bin_ = self.tmp / "bin"
+        bin_.mkdir()
+        (bin_ / "sudo").write_text(SUDO_AS_SERVICE_USER)
+        (bin_ / "sudo").chmod(0o755)
+        self.calls = self.tmp / "calls"
+        self.calls.write_text("")
+        self.root_only = self.tmp / "root-only"
+        self.root_only.write_text("ROOT_ONLY=1\n")
+        self.env = {**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}",
+                    "FAKE_CALLS": str(self.calls), "FAKE_ROOT_ONLY": str(self.root_only),
+                    "APP": str(self.app), "SERVICE_USER": "danbyte",
+                    "SERVICE_HOME": str(self.app.parent), "SVC_UID": "1000"}
+
+    def installer(self, script: str):
+        """``script`` run with install.sh's own .env helpers, under its options."""
+        text = (REPO / "scripts" / "install.sh").read_text()
+        funcs = [re.search(rf"^{name}\(\) \{{.*?^\}}$", text, re.M | re.S).group(0)
+                 for name in ("as_user", "env_get", "env_backfill")]
+        funcs.append(re.search(r"^warn\(\) \{.*\}$", text, re.M).group(0))
+        return subprocess.run(["bash", "-c", "set -euo pipefail\n" + "\n".join(funcs) + "\n" + script],
+                              env=self.env, capture_output=True, text=True, timeout=60)
+
+    def test_root_never_appends_to_env_through_a_link(self):
+        (self.app / ".env").symlink_to(self.root_only)
+        r = self.installer("env_backfill DANBYTE_HTTPS True")
+        self.assertEqual(r.returncode, 0, r.stderr)          # said, and the upgrade goes on
+        self.assertIn("could not add DANBYTE_HTTPS", r.stderr)
+        self.assertEqual(self.root_only.read_text(), "ROOT_ONLY=1\n")
+        self.assertTrue(self.calls.read_text().startswith("sudo -u danbyte "))
+
+    def test_the_service_user_backfills_its_own_env(self):
+        env = self.app / ".env"
+        env.write_text("DJANGO_SECRET_KEY=s3cret-value\nDANBYTE_HTTPS=False\n")
+        r = self.installer("env_backfill DANBYTE_HTTPS True\n"
+                           'env_backfill MONITORING_SECRET_KEY "$(env_get DJANGO_SECRET_KEY)"\n'
+                           "env_backfill DANBYTE_LOG_DIR /var/log/danbyte\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(env.read_text(), "DJANGO_SECRET_KEY=s3cret-value\nDANBYTE_HTTPS=False\n"
+                         "\nMONITORING_SECRET_KEY=s3cret-value\n\nDANBYTE_LOG_DIR=/var/log/danbyte\n")
+        calls = self.calls.read_text().splitlines()
+        self.assertTrue(calls and all(c.startswith("sudo -u danbyte ") for c in calls), calls)
+        # the secret went through a pipe, never onto a command line
+        self.assertNotIn("s3cret-value", self.calls.read_text())
+
+    def test_root_writes_and_runs_nothing_in_the_app_directory(self):
+        # Root's own commands only read there: a redirect, an unpack, a
+        # chown, chmod or mkdir of root's into $APP, or root running a
+        # program from it, would act on whatever the account put there.
+        text = (REPO / "scripts" / "install.sh").read_text()
+        code = "\n".join(line for line in re.sub(r"\\\n\s*", " ", text).splitlines()
+                         if not line.lstrip().startswith("#"))
+        self.assertEqual(re.findall(r'>>?\s*"?\$APP\b.*', code), [])
+        self.assertEqual(re.findall(r'(?<!as_user )\btar -C "\$APP".*', code), [])
+        self.assertEqual(re.findall(r'^\s*(?:chown|chmod|install|mkdir|cp|mv|tee|touch)\b.*"\$APP\b.*',
+                                    code, re.M), [])
+        self.assertRegex(code, r'(?m)^PYGEN="\$BUNDLE/vendor/python/bin/python3"$')
+
+    def test_relocate_runs_from_a_tree_root_owns_and_writes_env_as_the_service_user(self):
+        text = (REPO / "scripts" / "danbyte-relocate.sh").read_text()
+        code = "\n".join(line for line in re.sub(r"\\\n\s*", " ", text).splitlines()
+                         if not line.lstrip().startswith("#"))
+        self.assertEqual(re.findall(r'>>?\s*"?\$APP\b.*', code), [])
+        self.assertEqual(re.findall(r'^\s*(?:chown|chmod|install|mkdir|cp|mv|tee|touch)\b.*"\$APP\b.*',
+                                    code, re.M), [])
+        # logrotate is root's configuration: rendered from this tree, not the app's
+        self.assertNotIn('"$APP/deploy/', code)
+        self.assertIn('"$SELF/deploy/logrotate/danbyte"', code)
+        # run as root from a tree that is not root's - the app directory, say -
+        # it stops before it touches anything
+        shim = self.tmp / "root-bin"
+        shim.mkdir()
+        (shim / "id").write_text('#!/bin/sh\n[ "$*" = -u ] && { echo 0; exit 0; }\nexec /usr/bin/id "$@"\n')
+        (shim / "id").chmod(0o755)
+        env = {**self.env, "PATH": f"{shim}:{self.env['PATH']}"}
+        env.pop("SUDO_UID", None)
+        r = subprocess.run(["bash", str(REPO / "scripts" / "danbyte-relocate.sh")], env=env,
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("never from the app directory", r.stderr)
+        self.assertNotIn("Stopping", r.stdout)
+        self.assertEqual(self.calls.read_text(), "")
+
+
 class VersionOrderTests(SimpleTestCase):
     """lib.sh's ver_cmp, the order install.sh and the stage refuse a
     downgrade by: the app's own (core.version.compare_versions), in plain awk,

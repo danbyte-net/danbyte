@@ -32,6 +32,11 @@ writes the site config, and reloads nginx):
 make proxy-install
 ```
 
+It is for a checkout of your own: it renders the site from the tree's
+template as root, so it refuses a tree that is neither yours nor root's.
+A production install's nginx comes from the installer - see
+[Upgrading → After an upgrade](../getting-started/upgrading.md#after-an-upgrade).
+
 Override the hostname/IP baked into the cert + `server_name`:
 
 ```bash

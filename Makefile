@@ -22,7 +22,7 @@ SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
-.PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync \
+.PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync root-tree-only \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
         docs-up docs-down docs-restart docs-logs docs-build schema \
@@ -267,7 +267,7 @@ sed -e "s|@@SERVER_NAME@@|$(PROXY_HOST)|g" \
     $(NGINX_TMPL) | sudo tee $(NGINX_SITE) >/dev/null
 endef
 
-proxy-install: proxy-cert
+proxy-install: root-tree-only proxy-cert
 	@command -v nginx >/dev/null || { echo "Installing nginx ..."; sudo apt-get update -qq && sudo apt-get install -y nginx; }
 	@echo "Installing cert to /etc/ssl/danbyte ..."
 	@sudo mkdir -p /etc/ssl/danbyte
@@ -285,27 +285,60 @@ proxy-install: proxy-cert
 	@echo "Self-signed cert: your browser will warn once; accept it for the LAN."
 	@echo "Make sure the dev servers are up:  make docs-up backend-up  +  make frontend-dev"
 
+# ---- root steps: only from a tree root owns ----------------------------------
+# install-tls-unit, host-sync and proxy-install/-reload run this tree's files
+# as root or make them root's: the certificate unit's script, the nginx site,
+# logrotate. Root runs only files that root owns, or that belong to whoever
+# runs make on a checkout of their own. A production install's app directory
+# belongs to the service account, and a file changed there would run as root
+# (#287), so from such a tree they refuse. Use the unpacked bundle of the
+# release that runs (sudo ./install.sh --host-only), or a checkout root made,
+# with APP naming the install:
+#   sudo git clone --depth 1 --branch vX.Y.Z <repository> /root/danbyte-vX.Y.Z
+#   sudo make -C /root/danbyte-vX.Y.Z host-sync APP=/opt/danbyte/danbyte
+# APP and HOST count only on the command line: a shell's own (zsh sets HOST)
+# must not point the root steps somewhere else.
+ROOT_APP  := $(if $(filter command line,$(origin APP)),$(APP),$(PROJECT_DIR))
+ROOT_HOST := $(if $(filter command line,$(origin HOST)),$(HOST))
+root-tree-only:
+	@me=$${SUDO_UID:-$$(id -u)}; \
+	bad=$$(find $(PROJECT_DIR)/Makefile $(PROJECT_DIR)/scripts $(PROJECT_DIR)/deploy \
+	  ! -uid 0 ! -uid "$$me" -print -quit 2>/dev/null); \
+	d=$(PROJECT_DIR); \
+	while [ -z "$$bad" ] && [ "$$d" != / ]; do \
+	  o=$$(stat -c %u "$$d"); [ "$$o" = 0 ] || [ "$$o" = "$$me" ] || bad=$$d; \
+	  d=$$(dirname "$$d"); \
+	done; \
+	[ -z "$$bad" ] || { \
+	  echo "make $(MAKECMDGOALS): $$bad belongs to $$(stat -c %U "$$bad"), not to root or you - root runs nothing from it." >&2; \
+	  echo "  From the unpacked bundle of this release: sudo ./install.sh --host-only" >&2; \
+	  echo "  Or from a checkout root made: sudo make -C <checkout> $(MAKECMDGOALS) APP=$(ROOT_APP)" >&2; \
+	  exit 1; }
+
 # The root path unit that applies a certificate pair the app drops in
-# deploy/nginx/certs/ (Settings → Updates → Site certificate). Needs sudo;
-# install.sh does the same from the bundle. The unit runs a root-owned copy
-# of the apply script: the one in this tree belongs to the app's user.
+# deploy/nginx/certs/ (Settings → Updates → Site certificate), for the
+# install in APP. Needs sudo; install.sh does the same from the bundle. The
+# unit runs a root-owned copy of the apply script, from this tree.
 TLS_LIBEXEC := /usr/local/libexec/danbyte
-install-tls-unit:
+install-tls-unit: root-tree-only
 	@sudo install -d -o root -g root -m 755 $(TLS_LIBEXEC) /var/lib/danbyte-tls
-	@sudo install -o root -g root -m 755 scripts/danbyte-tls-apply.sh $(TLS_LIBEXEC)/danbyte-tls-apply.sh
-	@owner=$$(stat -c %U $(PROJECT_DIR)); for u in path service; do \
-		sed -e "s|@@APP@@|$(PROJECT_DIR)|g" -e "s|@@USER@@|$$owner|g" deploy/systemd/danbyte-tls.$$u.template \
+	@sudo install -o root -g root -m 755 $(PROJECT_DIR)/scripts/danbyte-tls-apply.sh $(TLS_LIBEXEC)/danbyte-tls-apply.sh
+	@owner=$$(stat -c %U $(ROOT_APP)); for u in path service; do \
+		sed -e "s|@@APP@@|$(ROOT_APP)|g" -e "s|@@USER@@|$$owner|g" $(PROJECT_DIR)/deploy/systemd/danbyte-tls.$$u.template \
 		  | sudo tee /etc/systemd/system/danbyte-tls.$$u >/dev/null ; \
 	done
 	@sudo systemctl daemon-reload
 	@sudo systemctl enable --now danbyte-tls.path
-	@# The drop folder has to be the app's: a proxy-install run as root left
-	@# it root-only, and then nothing can be dropped.
-	@[ ! -L $(CERT_DIR) ] || { echo "$(CERT_DIR) is a link - refusing to change it as root"; exit 1; }
-	@sudo mkdir -p $(CERT_DIR)
-	@sudo chown -R $$(stat -c %U:%G $(PROJECT_DIR)) $(CERT_DIR)
-	@sudo chmod 750 $(CERT_DIR)
-	@echo "  danbyte-tls.path watches $(CERT_DIR)/danbyte.apply"
+	@# The drop folder is made by the app's user, as host-sync makes it: root
+	@# never creates, chowns or chmods in the app's tree. One that user does
+	@# not own (a proxy-install run as root) is that user's to move aside.
+	@owner=$$(stat -c %U $(ROOT_APP)); certs=$(ROOT_APP)/deploy/nginx/certs; \
+	if [ -e "$$certs" ] && [ "$$(stat -c %U "$$certs")" != "$$owner" ]; then \
+	  echo "$$certs is not $$owner's: as $$owner, move it aside (mv $$certs $$certs.old) and run this again" >&2; \
+	  exit 1; \
+	fi; \
+	sudo -u "$$owner" mkdir -p "$$certs" && sudo -u "$$owner" chmod 750 "$$certs"
+	@echo "  danbyte-tls.path watches $(ROOT_APP)/deploy/nginx/certs/danbyte.apply"
 
 uninstall-tls-unit:
 	@sudo systemctl disable --now danbyte-tls.path 2>/dev/null || true
@@ -316,14 +349,14 @@ uninstall-tls-unit:
 # What install.sh does as root after an upgrade - logrotate, the nginx site
 # (re-rendered only while it is still what Danbyte rendered, with its live
 # certificate and name, and put back if nginx -t refuses it) and the
-# certificate unit - for a host upgraded from the app. It runs this tree's
-# scripts/host-sync.sh as root; this tree belongs to the app's user, so
-# prefer re-running install.sh from a verified bundle.
-host-sync:
-	@sudo bash $(PROJECT_DIR)/scripts/host-sync.sh --app $(PROJECT_DIR) --user $$(stat -c %U $(PROJECT_DIR)) \
-		--log-dir $(LOG_DIR) $(if $(ADOPT),--adopt)
+# certificate unit - from this tree, for the install in APP. HOST names a
+# new site (an existing one keeps its name unless given); ADOPT=1 takes the
+# new render over a site edited by hand, keeping a backup.
+host-sync: root-tree-only
+	@sudo bash $(PROJECT_DIR)/scripts/host-sync.sh --app $(ROOT_APP) --user $$(stat -c %U $(ROOT_APP)) \
+		--log-dir $(LOG_DIR) $(if $(ROOT_HOST),--host $(ROOT_HOST)) $(if $(ADOPT),--adopt)
 
-proxy-reload:
+proxy-reload: root-tree-only
 	@$(RENDER_NGINX)
 	@sudo nginx -t && sudo systemctl reload nginx && echo "Reloaded."
 

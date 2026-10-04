@@ -5,10 +5,12 @@
 #                [--log-dir DIR] [--no-nginx] [--adopt]
 #   host-sync.sh --print-sources    the files it renders the host from
 #
-# Run as root from a tree root owns - the unpacked bundle, from install.sh -
-# or, with `sudo make host-sync`, from the app's own tree (the administrator's
-# choice: that tree belongs to the app's user). It renders files from the
-# tree it lives in and never runs anything from the app directory:
+# Run as root from a tree root owns: the unpacked bundle (install.sh, or
+# install.sh --host-only), or a checkout root made (make host-sync APP=...).
+# Never from the app's own tree: the app's user owns it, and a file changed
+# there would run as root or become root's configuration (#287). It renders
+# files from the tree it lives in and never runs anything from the app
+# directory:
 #
 #   * logrotate for the log directory;
 #   * the site-certificate unit, with its apply script as a root-owned copy;
@@ -26,7 +28,8 @@
 # site serves is self-signed. The app's after-upgrade steps compare that hash
 # with their own tree's; install.sh reads the certificate from it. An install
 # made with --no-nginx stays out of nginx on a later run without the flag
-# (make host-sync) while it has no site; --fresh adds one.
+# (install.sh --host-only, make host-sync) while it has no site; --fresh
+# adds one.
 set -euo pipefail
 
 TREE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -224,7 +227,7 @@ else
     fi
   else
     SITE_WENT=edited
-    note "$SITE was changed by hand (or rendered before 0.17), so it was left alone. The new render is $SITE.new - merge it, then: nginx -t && systemctl reload nginx. To take the new one as it is: host-sync with --adopt (make host-sync ADOPT=1)"
+    note "$SITE was changed by hand (or rendered before 0.17), so it was left alone. The new render is $SITE.new - merge it, then: nginx -t && systemctl reload nginx. To take the new one as it is: sudo ./install.sh --host-only --adopt, in the unpacked bundle"
   fi
 fi
 

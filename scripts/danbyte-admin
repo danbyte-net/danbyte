@@ -4295,7 +4295,7 @@ class Tls(Screen):
         applied = ap.get("applied") or {}
         row = []
         if not ap.get("unit_installed"):
-            row.append(("apply unit not installed - sudo make install-tls-unit", A[WARN]))
+            row.append(("apply unit not installed - sudo ./install.sh --host-only, in the bundle", A[WARN]))
         elif ap.get("pending"):
             row.append(("waiting for the host to apply the drop", A[WARN]))
         elif applied and st.get("dropped_sha256"):
