@@ -5,6 +5,17 @@ import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  BatchFailure,
+  IDS_PER_CALL,
+  askInBatches,
+  batchCount,
+  batchStoppedToast,
+  runBatches,
+  sumCounts,
+  sumOf,
+} from "@/lib/bulk-batches"
+import type { BatchProgress } from "@/lib/bulk-batches"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -17,6 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Loading } from "@/components/loading"
+import { PendingLabel } from "@/components/pending-label"
 
 /** What a `bulk-delete` endpoint built on the backend's SafeBulkDeleteMixin
  * answers - for a dry run as for the real thing. */
@@ -48,11 +60,29 @@ export interface SafeBulkDeleteBarProps<T extends { id: string }> {
 const plural = (n: number, [one, many]: [string, string]) =>
   `${n} ${n === 1 ? one : many}`
 
+/** Several answers as one, for a selection sent in batches: the rows and
+ * what goes with them added up, and every batch's kept rows. */
+export function mergeDeleteAnswers(
+  answers: SafeBulkDeleteResult[]
+): SafeBulkDeleteResult {
+  return {
+    deleted: sumOf(answers, (a) => a.deleted),
+    deleted_ids: answers.flatMap((a) => a.deleted_ids),
+    skipped: answers.flatMap((a) => a.skipped),
+    impact: sumCounts(answers.map((a) => a.impact)),
+    released: sumCounts(answers.map((a) => a.released ?? [])),
+    dry_run: answers.every((a) => a.dry_run),
+  }
+}
+
 /**
  * The selection bar for lists whose rows may be in use. Delete first asks the
  * server what would happen (a dry run): which rows go, what goes with them,
  * and which are skipped because something still uses them - then deletes
  * only the free ones. Nothing is removed halfway without the user seeing it.
+ * More rows than one call takes go in batches, the dry run and the delete
+ * alike (#286); a batch that fails stops the delete, and the toast says how
+ * far it got.
  */
 export function SafeBulkDeleteBar<T extends { id: string }>({
   selected,
@@ -126,23 +156,34 @@ function SafeBulkDeleteDialog({
 }) {
   const qc = useQueryClient()
   const url = `${endpoint}bulk-delete/`
+  const [progress, setProgress] = useState<BatchProgress | null>(null)
+  const send = (part: string[], dryRun: boolean) =>
+    api<SafeBulkDeleteResult>(url, {
+      method: "POST",
+      body: JSON.stringify(
+        dryRun ? { ids: part, dry_run: true } : { ids: part }
+      ),
+    })
   const preview = useMutation({
-    mutationFn: () =>
-      api<SafeBulkDeleteResult>(url, {
-        method: "POST",
-        body: JSON.stringify({ ids, dry_run: true }),
-      }),
+    mutationFn: async () =>
+      mergeDeleteAnswers(
+        await askInBatches(ids, IDS_PER_CALL, (part) => send(part, true))
+      ),
     onError: (err) => {
       apiErrorToast(err)
       onClose()
     },
   })
   const run = useMutation({
-    mutationFn: () =>
-      api<SafeBulkDeleteResult>(url, {
-        method: "POST",
-        body: JSON.stringify({ ids }),
-      }),
+    mutationFn: async () =>
+      mergeDeleteAnswers(
+        await runBatches(
+          ids,
+          IDS_PER_CALL,
+          (part) => send(part, false),
+          setProgress
+        )
+      ),
     onSuccess: (res) => {
       const skipped = res.skipped.length
       toast.success(
@@ -152,7 +193,20 @@ function SafeBulkDeleteDialog({
       onClose()
       onDone()
     },
-    onError: (err) => apiErrorToast(err),
+    onError: (err) => {
+      if (!(err instanceof BatchFailure)) {
+        apiErrorToast(err)
+        return
+      }
+      // Some batches went through: say how many rows went, and close. The
+      // rest stay selected for another go.
+      const went: SafeBulkDeleteResult[] = err.results
+      batchStoppedToast(
+        `Deleted ${sumOf(went, (r) => r.deleted)} of ${plural(ids.length, noun)}.`,
+        err
+      )
+      onClose()
+    },
     onSettled: () => {
       for (const key of invalidate) qc.invalidateQueries({ queryKey: key })
     },
@@ -233,7 +287,13 @@ function SafeBulkDeleteDialog({
               run.mutate()
             }}
           >
-            {run.isPending ? "Deleting…" : `Delete ${free || ""}`.trim()}
+            <PendingLabel
+              label={`Delete ${free || ""}`.trim()}
+              verb="Deleting…"
+              pending={run.isPending}
+              progress={progress}
+              batches={batchCount(ids.length, IDS_PER_CALL)}
+            />
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

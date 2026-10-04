@@ -293,7 +293,9 @@ back on its next sync unless they are also gone at the source.
 The API behind it is `POST /api/macs/bulk-remove/` with
 `{values, remove_objects, clear_interfaces, unpair_ips, dry_run}`: `values`
 are the MAC addresses (at most 2000 per call), and `dry_run: true` returns
-the same per-source counts without writing anything.
+the same per-source counts without writing anything. The list sends a bigger
+selection 2000 at a time and adds the counts up (see
+[Large selections](table-preferences.md#large-selections)).
 
 To delete MAC objects by id instead, `POST /api/mac-addresses/bulk-delete/`
 takes `{ids}` (at most 2000) and answers `{deleted}`, like the other bulk

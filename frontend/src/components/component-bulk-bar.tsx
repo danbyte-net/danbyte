@@ -32,13 +32,26 @@ import {
 import type { BulkFieldSpec } from "@/components/forms"
 import { Input } from "@/components/ui/input"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { PendingLabel } from "@/components/pending-label"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  BatchFailure,
+  IDS_PER_CALL,
+  batchCount,
+  batchStoppedToast,
+  runBatches,
+  sumOf,
+} from "@/lib/bulk-batches"
+import type { BatchProgress } from "@/lib/bulk-batches"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 
 // Generic bulk bar for component tables (interfaces, ports, VM interfaces,
 // device-type component templates). Tick rows → the bar floats up; Edit
 // opens a KEEP/SET dialog where only explicitly chosen fields are sent to
 // the viewset's bulk-update endpoint; Delete confirms then bulk-deletes.
+// Edit and Delete send more rows than one call takes in batches (#286);
+// rename and clone check names across the whole selection, so they take
+// one call's worth at most.
 //
 //   <ComponentBulkBar
 //     endpoint="/api/interfaces/"
@@ -211,75 +224,120 @@ export function ComponentBulkBar({
         />
       )}
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete {ids.length} {kindLabel}
-              {ids.length === 1 ? "" : "s"}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {selected
-                .slice(0, 5)
-                .map((r) => r.name)
-                .join(", ")}
-              {selected.length > 5 ? ` … and ${selected.length - 5} more` : ""}.
-              This can't be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <BulkDeleteAction
-              endpoint={endpoint}
-              ids={ids}
-              invalidate={invalidate}
-              onDone={() => {
-                setDeleteOpen(false)
-                onCleared()
-              }}
-            />
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <BulkDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        endpoint={endpoint}
+        kindLabel={kindLabel}
+        selected={selected}
+        invalidate={invalidate}
+        onDone={() => {
+          setDeleteOpen(false)
+          onCleared()
+        }}
+      />
     </>
   )
 }
 
-function BulkDeleteAction({
+function BulkDeleteDialog({
+  open,
+  onOpenChange,
   endpoint,
-  ids,
+  kindLabel,
+  selected,
   invalidate,
   onDone,
 }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
   endpoint: string
-  ids: string[]
+  kindLabel: string
+  selected: { id: string; name: string }[]
   invalidate: unknown[][]
   onDone: () => void
 }) {
   const qc = useQueryClient()
+  const ids = selected.map((r) => r.id)
+  const [progress, setProgress] = useState<BatchProgress | null>(null)
   const del = useMutation({
-    mutationFn: () =>
-      api<{ deleted: number }>(`${endpoint}bulk-delete/`, {
-        method: "POST",
-        body: JSON.stringify({ ids }),
-      }),
-    onSuccess: (r) => {
-      refresh(qc, endpoint, invalidate)
-      toast.success(`Deleted ${r.deleted}`)
+    mutationFn: async () =>
+      sumOf(
+        await runBatches(
+          ids,
+          IDS_PER_CALL,
+          (part) =>
+            api<{ deleted: number }>(`${endpoint}bulk-delete/`, {
+              method: "POST",
+              body: JSON.stringify({ ids: part }),
+            }),
+          setProgress
+        ),
+        (r) => r.deleted
+      ),
+    onSuccess: (deleted) => {
+      toast.success(`Deleted ${deleted}`)
       onDone()
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (e) => {
+      if (!(e instanceof BatchFailure)) {
+        apiErrorToast(e)
+        return
+      }
+      // Some batches went through: say how many, and close. The rest stay
+      // selected for another go.
+      const went: { deleted: number }[] = e.results
+      batchStoppedToast(
+        `Deleted ${sumOf(went, (r) => r.deleted)} of ${ids.length} ${kindLabel}s.`,
+        e
+      )
+      onOpenChange(false)
+    },
+    onSettled: () => refresh(qc, endpoint, invalidate),
   })
   return (
-    <AlertDialogAction
-      variant="destructive"
-      onClick={(e) => {
-        e.preventDefault()
-        del.mutate()
+    <AlertDialog
+      open={open}
+      onOpenChange={(o) => {
+        if (o || !del.isPending) onOpenChange(o)
       }}
     >
-      {del.isPending ? "Deleting…" : "Delete"}
-    </AlertDialogAction>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Delete {ids.length} {kindLabel}
+            {ids.length === 1 ? "" : "s"}?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {selected
+              .slice(0, 5)
+              .map((r) => r.name)
+              .join(", ")}
+            {selected.length > 5 ? ` … and ${selected.length - 5} more` : ""}.
+            This can't be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={del.isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={del.isPending}
+            onClick={(e) => {
+              e.preventDefault()
+              del.mutate()
+            }}
+          >
+            <PendingLabel
+              label="Delete"
+              verb="Deleting…"
+              pending={del.isPending}
+              progress={progress}
+              batches={batchCount(ids.length, IDS_PER_CALL)}
+            />
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
@@ -323,24 +381,44 @@ function BulkEditDialog({
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
+  const [progress, setProgress] = useState<BatchProgress | null>(null)
   const options = useFieldEditorOptions(fields, { tags })
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const out = bulkFields(values, fields)
       if (addTags.length) out.add_tag_ids = addTags
       if (removeTags.length) out.remove_tag_ids = removeTags
-      return api<{ updated: number }>(`${endpoint}bulk-update/`, {
-        method: "POST",
-        body: JSON.stringify({ ids, fields: out }),
-      })
+      const answers = await runBatches(
+        ids,
+        IDS_PER_CALL,
+        (part) =>
+          api<{ updated: number }>(`${endpoint}bulk-update/`, {
+            method: "POST",
+            body: JSON.stringify({ ids: part, fields: out }),
+          }),
+        setProgress
+      )
+      return sumOf(answers, (r) => r.updated)
     },
-    onSuccess: (r) => {
-      refresh(qc, endpoint, invalidate)
-      toast.success(`Updated ${r.updated} ${kindLabel}s`)
+    onSuccess: (updated) => {
+      toast.success(`Updated ${updated} ${kindLabel}s`)
       onDone()
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (e) => {
+      if (!(e instanceof BatchFailure)) {
+        apiErrorToast(e)
+        return
+      }
+      // Some batches went through: say how many. The dialog stays open with
+      // its fields - applying the same edit again is harmless.
+      const went: { updated: number }[] = e.results
+      batchStoppedToast(
+        `Updated ${sumOf(went, (r) => r.updated)} of ${ids.length} ${kindLabel}s.`,
+        e
+      )
+    },
+    onSettled: () => refresh(qc, endpoint, invalidate),
   })
 
   const dirty =
@@ -358,7 +436,7 @@ function BulkEditDialog({
     })
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    <Dialog open onOpenChange={(o) => !o && !save.isPending && onClose()}>
       <DialogContent
         size="lg"
         className="max-h-[85vh] overflow-auto"
@@ -405,14 +483,20 @@ function BulkEditDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
             onClick={() => save.mutate()}
             disabled={!dirty || save.isPending}
           >
-            {save.isPending ? "Applying…" : `Apply to ${ids.length}`}
+            <PendingLabel
+              label={`Apply to ${ids.length}`}
+              verb="Applying…"
+              pending={save.isPending}
+              progress={progress}
+              batches={batchCount(ids.length, IDS_PER_CALL)}
+            />
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -481,6 +565,10 @@ function RenameCloneDialog({
   const dupClone =
     mode === "clone" &&
     new Set(preview.map((p) => p.next)).size !== preview.length
+  // The server checks every new name against the whole selection - a shift
+  // or a swap only works in one call - and a second run would rename or
+  // clone again. So no batches here: past one call's worth, say so (#286).
+  const tooMany = selected.length > IDS_PER_CALL
 
   const run = useMutation({
     mutationFn: () =>
@@ -507,7 +595,10 @@ function RenameCloneDialog({
   })
 
   const canRun =
-    !regexError && !dupClone && (mode === "clone" || (!!find && changed > 0))
+    !tooMany &&
+    !regexError &&
+    !dupClone &&
+    (mode === "clone" || (!!find && changed > 0))
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -558,6 +649,11 @@ function RenameCloneDialog({
           {dupClone && (
             <p className="text-[12px] text-destructive">
               Clones would share a name - add a find/replace so they differ.
+            </p>
+          )}
+          {tooMany && (
+            <p className="text-[12px] text-destructive">
+              At most {IDS_PER_CALL} {kindLabel}s at a time.
             </p>
           )}
         </div>

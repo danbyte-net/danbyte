@@ -146,7 +146,8 @@ deleted with the stack.
 To delete several stacks, tick them in **Virtual chassis** and press **Delete**
 in the bar. The confirmation says how many member devices are released, and
 each stack releases its members the same way
-(`POST /api/virtual-chassis/bulk-delete/`).
+(`POST /api/virtual-chassis/bulk-delete/`). More than 1000 stacks go 1000 at a
+time (see [Large selections](../features/table-preferences.md#large-selections)).
 
 ## Editing several stacks
 

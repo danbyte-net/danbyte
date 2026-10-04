@@ -17,7 +17,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { PendingLabel } from "@/components/pending-label"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  BatchFailure,
+  batchCount,
+  batchStoppedToast,
+  runBatches,
+  sumOf,
+} from "@/lib/bulk-batches"
+import type { BatchProgress } from "@/lib/bulk-batches"
+
+// Types per call. The server takes 1000, but a library import is easily 800
+// types with dozens of port templates each, and one request for all of them
+// outran the backend's request timeout (#178).
+const TYPES_PER_CALL = 100
 
 // Floating action bar for /device-types - appears when rows are ticked. No
 // Edit link: there is no /device-types/bulk-edit route (unlike sites, IPs,
@@ -93,39 +107,57 @@ function BulkDeleteConfirm({
   onDone: () => void
 }) {
   const qc = useQueryClient()
+  const [progress, setProgress] = useState<BatchProgress | null>(null)
   const m = useMutation({
-    // Batches of 100: a library import is easily 800 types with dozens of
-    // port templates each, and one request for all of them outran the
-    // backend's request timeout (#178).
-    mutationFn: async () => {
-      let deleted = 0
-      for (let i = 0; i < ids.length; i += 100) {
-        const res = await api<{ deleted: number }>(
-          "/api/device-types/bulk-delete/",
-          {
-            method: "POST",
-            body: JSON.stringify({ ids: ids.slice(i, i + 100) }),
-          }
-        )
-        deleted += res.deleted
-      }
-      return { deleted }
-    },
-    onSuccess: (res) => {
+    mutationFn: async () =>
+      sumOf(
+        await runBatches(
+          ids,
+          TYPES_PER_CALL,
+          (part) =>
+            api<{ deleted: number }>("/api/device-types/bulk-delete/", {
+              method: "POST",
+              body: JSON.stringify({ ids: part }),
+            }),
+          setProgress
+        ),
+        (r) => r.deleted
+      ),
+    onSuccess: (deleted) => {
       toast.success(
-        `Deleted ${res.deleted} device type${res.deleted === 1 ? "" : "s"}.`
+        `Deleted ${deleted} device type${deleted === 1 ? "" : "s"}.`
       )
-      qc.invalidateQueries({ queryKey: ["device-types"] })
-      qc.invalidateQueries({ queryKey: ["device-types-picker"] })
       onOpenChange(false)
       onDone()
     },
-    onError: (err) => apiErrorToast(err),
+    onError: (err) => {
+      if (!(err instanceof BatchFailure)) {
+        apiErrorToast(err)
+        return
+      }
+      // Some batches went through: say how many, and close. The rest stay
+      // selected for another go.
+      const went: { deleted: number }[] = err.results
+      batchStoppedToast(
+        `Deleted ${sumOf(went, (r) => r.deleted)} of ${ids.length} device types.`,
+        err
+      )
+      onOpenChange(false)
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["device-types"] })
+      qc.invalidateQueries({ queryKey: ["device-types-picker"] })
+    },
   })
 
   const extra = Math.max(0, ids.length - sample.length)
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(o) => {
+        if (o || !m.isPending) onOpenChange(o)
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
@@ -160,7 +192,13 @@ function BulkDeleteConfirm({
               m.mutate()
             }}
           >
-            {m.isPending ? "Deleting…" : `Delete ${ids.length}`}
+            <PendingLabel
+              label={`Delete ${ids.length}`}
+              verb="Deleting…"
+              pending={m.isPending}
+              progress={progress}
+              batches={batchCount(ids.length, TYPES_PER_CALL)}
+            />
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

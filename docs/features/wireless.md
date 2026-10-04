@@ -117,7 +117,9 @@ are structured fields, not free text.
 
 Tick rows in the Wireless LANs or Wireless LAN groups list to delete several
 at once. Before anything is removed Danbyte shows which rows go and which it
-keeps because something still uses them. Only the free rows are deleted. The
+keeps because something still uses them. Only the free rows are deleted. More
+than 1000 rows go 1000 at a time, under one confirmation (see
+[Large selections](table-preferences.md#large-selections)). The
 bulk delete is `POST /api/wireless-lans/bulk-delete/` (or
 `/api/wireless-lan-groups/bulk-delete/`) with `{"ids": [...]}` (add
 `"dry_run": true` for the preview) and needs the *delete* permission on the

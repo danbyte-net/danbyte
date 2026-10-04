@@ -77,6 +77,24 @@ leaves the selection too, and stays unticked when it comes back, so a bulk
 action never reaches a row you can't find. Ticked rows on other pages stay
 ticked; that is what **Select all N** is for.
 
+### Large selections {#large-selections}
+
+One bulk call takes at most 1000 rows (2000 on the MAC list), so a bigger
+selection goes in batches of that size, one after another. Where the
+confirmation first counts what would happen - what a delete removes, releases
+and keeps, or what a MAC removal reaches - it adds the batches up into one
+answer. While the action runs, its button shows the batch on its way:
+*Deleting… 2 / 3*.
+
+If a batch fails, the run stops there. The batches before it stand, the ones
+after it are never sent, and the message says how many rows went through and
+why the rest did not. What is left stays selected, so pressing the button again
+finishes the job - a delete, an edit or an add is safe to repeat.
+
+**Rename** and **Clone** on a component table check every new name against the
+whole selection, so they take at most 1000 rows at a time and say so before
+anything runs.
+
 ## Where your settings live
 
 Manage all your saved table layouts in one place under **User → Preferences**,

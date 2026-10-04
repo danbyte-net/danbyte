@@ -13,6 +13,7 @@ import type { MacEntry } from "@/lib/api"
 import {
   attachments,
   MacBulkRemoveDialog,
+  mergeRemovals,
   optionPlan,
   removalSummary,
 } from "./mac-bulk-bar"
@@ -80,12 +81,12 @@ beforeEach(() => {
   })
 })
 
-function mount(onDone = vi.fn()) {
+function mount(onDone = vi.fn(), macs = [ON_SWITCH, LOOSE]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
       <MacBulkRemoveDialog
-        macs={[ON_SWITCH, LOOSE]}
+        macs={macs}
         open
         onOpenChange={() => undefined}
         onDone={onDone}
@@ -180,5 +181,76 @@ describe("MacBulkRemoveDialog", () => {
     fireEvent.click(screen.getAllByRole("checkbox")[0])
     const remove = screen.getByRole("button", { name: "Remove" })
     expect(remove.hasAttribute("disabled")).toBe(true)
+  })
+
+  // More MACs than one call takes (#286) go 2000 at a time: the counts add
+  // up, and Remove shows the batch on its way.
+  it("asks and removes in batches of 2000", async () => {
+    const many = Array.from({ length: 2500 }, (_, i) => mac(`02:00:${i}`))
+    // The first removal waits here, so the button is seen mid-run.
+    const gate: { open?: () => void } = {}
+    let removals = 0
+    apiMock.mockImplementation((_path, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}"))
+      posted.push(body)
+      if (body.dry_run) return Promise.resolve(preview)
+      const done = Promise.resolve({
+        ...preview,
+        dry_run: false,
+        sources: { ...preview.sources, objects: plan(true, 12, 1, true) },
+      })
+      removals += 1
+      if (removals > 1) return done
+      return new Promise((resolve) => {
+        gate.open = () => resolve(done)
+      })
+    })
+    const onDone = mount(vi.fn(), many)
+    expect(await screen.findByText("Delete 24 MAC objects")).toBeTruthy()
+    expect(screen.getByText("2 outside your permissions")).toBeTruthy()
+    expect(posted.map((b) => (b.values as string[]).length)).toEqual([
+      2000, 500,
+    ])
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }))
+    expect(
+      await screen.findByRole("button", { name: "Removing… 1 / 2" })
+    ).toBeTruthy()
+    gate.open?.()
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    const writes = posted.filter((b) => !b.dry_run)
+    expect(writes.map((b) => (b.values as string[]).length)).toEqual([
+      2000, 500,
+    ])
+    expect(writes[1]).toMatchObject({
+      remove_objects: true,
+      clear_interfaces: false,
+      unpair_ips: false,
+    })
+  })
+})
+
+describe("mergeRemovals", () => {
+  it("adds each source up over the batches", () => {
+    const second: MacBulkRemoveResult = {
+      dry_run: true,
+      macs: 1,
+      sources: {
+        objects: plan(true, 1),
+        interfaces: plan(true, 0, 4),
+        vm_interfaces: plan(false, 0, 1),
+        ips: plan(false, 0),
+      },
+    }
+    expect(mergeRemovals([preview, second])).toEqual({
+      dry_run: true,
+      macs: 3,
+      sources: {
+        objects: plan(true, 13, 1),
+        interfaces: plan(true, 3, 4),
+        vm_interfaces: plan(false, 0, 3),
+        ips: plan(false, 0, 7),
+      },
+    })
   })
 })

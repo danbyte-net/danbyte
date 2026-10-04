@@ -630,7 +630,7 @@ contract.
 | `POST …/sla-agreements/<id>/recompute/` | Recompute now |
 | `burn_alerts` on an agreement | Up to four rules: `{name, long_min, short_min, burn, on}`; `current.burn` has each rule's last result |
 | `/api/monitoring/sla-check-groups/` | Groups; `items` are written inline |
-| `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once. A circuit takes `monitor_ip`; a stack is `object_type: api.virtualchassis`. A folded stack's row in the figures has `via` and `member_ids` |
+| `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once; **Add to SLA** on a bigger selection sends it 1,000 at a time. A circuit takes `monitor_ip`; a stack is `object_type: api.virtualchassis`. A folded stack's row in the figures has `via` and `member_ids` |
 | `/api/monitoring/sla-exclusions/` | Excluded time |
 | `/api/monitoring/holiday-calendars/` | Shared holiday calendars. `dates` is a list of `{date, name, yearly}`, dated 1970-2099; a plain `YYYY-MM-DD` string is also accepted |
 | `GET …/sla-agreements/<id>/report/?period=&file=pdf\|csv` | A period's report (`file`, not `format`, which the API keeps for itself) |

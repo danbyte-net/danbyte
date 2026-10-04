@@ -13,9 +13,19 @@ import type {
   SlaStatusResponse,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  BatchFailure,
+  SLA_MEMBERS_PER_CALL,
+  batchCount,
+  batchStoppedToast,
+  runBatches,
+  sumOf,
+} from "@/lib/bulk-batches"
+import type { BatchProgress } from "@/lib/bulk-batches"
 import { useMe } from "@/lib/use-me"
 import { FormCombobox, FormSelect, FormText } from "@/components/forms"
 import { Loading } from "@/components/loading"
+import { PendingLabel } from "@/components/pending-label"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -80,23 +90,34 @@ export function AddToSlaDialog({
   })
   const groupRows = groups.data?.results ?? []
   const pickedGroup: string | null = group ?? groupRows.at(0)?.id ?? null
+  const [progress, setProgress] = useState<BatchProgress | null>(null)
+  // A list's selection may be more than one call takes: it goes in batches
+  // (#286). Adding again is harmless - a member already there is skipped.
   const add = useMutation({
-    mutationFn: () =>
-      api<{ created: number; skipped: number }>(
-        "/api/monitoring/sla-members/bulk-add/",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            agreement,
-            group: pickedGroup,
-            redundancy_group: redundancy.trim(),
-            objects: ids.map((id) => ({
-              object_type: objectType,
-              object_id: id,
-            })),
-          }),
-        }
-      ),
+    mutationFn: async () => {
+      const answers = await runBatches(
+        ids,
+        SLA_MEMBERS_PER_CALL,
+        (part) =>
+          api<{ created: number; skipped: number }>(
+            "/api/monitoring/sla-members/bulk-add/",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                agreement,
+                group: pickedGroup,
+                redundancy_group: redundancy.trim(),
+                objects: part.map((id) => ({
+                  object_type: objectType,
+                  object_id: id,
+                })),
+              }),
+            }
+          ),
+        setProgress
+      )
+      return { created: sumOf(answers, (r) => r.created) }
+    },
     onSuccess: (r) => {
       toast.success(
         r.created === 0
@@ -105,15 +126,31 @@ export function AddToSlaDialog({
             ? "Added to the agreement"
             : `Added ${r.created}`
       )
-      qc.invalidateQueries({ queryKey: ["sla-status"] })
-      qc.invalidateQueries({ queryKey: ["sla-agreements"] })
       onAdded?.()
       onOpenChange(false)
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (e) => {
+      if (!(e instanceof BatchFailure)) {
+        apiErrorToast(e)
+        return
+      }
+      // Some batches went through: say how far it got, and close.
+      batchStoppedToast(`Added ${e.done.length} of ${ids.length}.`, e)
+      onAdded?.()
+      onOpenChange(false)
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["sla-status"] })
+      qc.invalidateQueries({ queryKey: ["sla-agreements"] })
+    },
   })
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (o || !add.isPending) onOpenChange(o)
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
@@ -175,12 +212,19 @@ export function AddToSlaDialog({
             <Button
               type="button"
               variant="ghost"
+              disabled={add.isPending}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
             <Button type="submit" disabled={!pickedGroup || add.isPending}>
-              {add.isPending ? "Adding…" : "Add"}
+              <PendingLabel
+                label="Add"
+                verb="Adding…"
+                pending={add.isPending}
+                progress={progress}
+                batches={batchCount(ids.length, SLA_MEMBERS_PER_CALL)}
+              />
             </Button>
           </DialogFooter>
         </form>

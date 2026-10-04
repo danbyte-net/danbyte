@@ -164,7 +164,12 @@ markers.
 
 Deletion runs through `POST /api/device-types/bulk-delete/` (`{ids}`) and
 returns `{"deleted": n}` - a count of **types**, not of the templates that
-cascaded with them. The submitted ids are re-checked server-side against your
+cascaded with them. The bar sends 100 types per call, one call after another -
+a library's worth of templates in one request outruns the request timeout -
+and the button counts the calls (*Deleting… 3 / 8*). A call that fails stops
+the run and the message says how many types went; the rest stay selected (see
+[Large selections](../features/table-preferences.md#large-selections)). The
+submitted ids are re-checked server-side against your
 tenant and, where the deployment scopes catalogs per site, your site scope: an
 id you can see but not write (a tenant-wide entry, or one local to another
 site) is skipped rather than deleted, so `n` can be smaller than the number you
@@ -317,7 +322,8 @@ Tick rows to reveal a bulk bar with **Edit**, **Rename**, **Clone**, and
 - **Rename** - find/replace across the selected templates' names (optional
   regex), with a live before→after preview. Ideal for renumbering a bank of
   ports (`Gi` → `GigabitEthernet`, `1/0/` → `2/0/`). It refuses names that would
-  collide. Photo-port markers, faceplate slots, and the placed ports on
+  collide, and takes at most 1000 rows at a time, as **Clone** does.
+  Photo-port markers, faceplate slots, and the placed ports on
   existing devices follow the rename, exactly as a single rename does - a
   marker left on an old name would otherwise read as a port the type still
   has, and syncing a device would stamp it a second time as a bare

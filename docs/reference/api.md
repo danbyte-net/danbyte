@@ -122,6 +122,11 @@ that is not one, or a body that is not an object, answers `400` with
 `{"ids": "«nope» is not an id."}` and touches nothing. Ids outside the active
 tenant or the caller's permissions are left out, as in a list.
 
+More ids than a call takes answer `400` (`{"ids": "At most 1000 ids per
+call."}`) and touch nothing. Send them in consecutive calls of at most that
+many, as the web UI does with a big selection (see
+[Large selections](../features/table-preferences.md#large-selections)).
+
 A value a field cannot take answers `400` too - `{"non_field_errors":
 [...]}` when no serializer named the field - never a server error.
 

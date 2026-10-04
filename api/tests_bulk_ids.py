@@ -74,3 +74,31 @@ class DjangoValidationErrorTests(SimpleTestCase):
         r = exception_handler(DjangoValidationError("“nope” is not a valid UUID."), {})
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.data, {"non_field_errors": ["“nope” is not a valid UUID."]})
+
+
+class FrontendBatchSizeTests(SimpleTestCase):
+    """The web UI sends a big selection in batches (#286), sized in
+    frontend/src/lib/bulk-batches.ts. A batch over the server's limit would
+    be refused whole, so the sizes must fit the limits here."""
+
+    def test_the_ui_batches_fit_the_server_limits(self):
+        import re
+        from pathlib import Path
+
+        from django.conf import settings
+
+        from api.bulk_delete import MAX_IDS
+        from api.mac_bulk import MAX_BULK_MACS
+
+        src = Path(settings.BASE_DIR) / "frontend/src/lib/bulk-batches.ts"
+        if not src.exists():
+            self.skipTest("frontend source not present")
+        text = src.read_text()
+
+        def size(name: str) -> int:
+            m = re.search(rf"export const {name} = (\d+)", text)
+            self.assertIsNotNone(m, f"{name} is not in bulk-batches.ts")
+            return int(m.group(1))
+
+        self.assertLessEqual(size("IDS_PER_CALL"), MAX_IDS)
+        self.assertLessEqual(size("MACS_PER_CALL"), MAX_BULK_MACS)

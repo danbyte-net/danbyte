@@ -3,13 +3,19 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { SafeBulkDeleteBar } from "./safe-bulk-delete-bar"
+import { ApiError } from "@/lib/api"
+import { mergeDeleteAnswers, SafeBulkDeleteBar } from "./safe-bulk-delete-bar"
 import type { SafeBulkDeleteResult } from "./safe-bulk-delete-bar"
 
-const { apiMock } = vi.hoisted(() => ({
+const { apiMock, toastMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
+  toastMock: { success: vi.fn(), error: vi.fn() },
 }))
-vi.mock("@/lib/api", () => ({ api: apiMock }))
+vi.mock("@/lib/api", async (orig) => ({
+  ...(await orig<object>()),
+  api: apiMock,
+}))
+vi.mock("sonner", () => ({ toast: toastMock }))
 
 afterEach(cleanup)
 
@@ -22,6 +28,9 @@ const answer = (o: Partial<SafeBulkDeleteResult>): SafeBulkDeleteResult => ({
   dry_run: true,
   ...o,
 })
+
+const rows = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ id: `r${i}` }))
 
 function renderBar(
   extra: Partial<Parameters<typeof SafeBulkDeleteBar>[0]> = {}
@@ -45,8 +54,22 @@ function renderBar(
   return onCleared
 }
 
+/** The ids of every call so far, and whether it was a dry run. */
+const sent = () =>
+  apiMock.mock.calls.map(([, init]) => {
+    const body = JSON.parse(String(init?.body)) as {
+      ids: string[]
+      dry_run?: boolean
+    }
+    return { n: body.ids.length, dry: !!body.dry_run, first: body.ids[0] }
+  })
+
 describe("SafeBulkDeleteBar", () => {
-  beforeEach(() => apiMock.mockReset())
+  beforeEach(() => {
+    apiMock.mockReset()
+    toastMock.success.mockReset()
+    toastMock.error.mockReset()
+  })
 
   it("asks first what would go, what is released and what is kept", async () => {
     apiMock.mockResolvedValueOnce(
@@ -88,5 +111,159 @@ describe("SafeBulkDeleteBar", () => {
     })
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: /Delete/ })).toBeNull()
+  })
+})
+
+// "Select all" past what one call takes (#286): the dry run and the delete
+// go 1000 ids at a time, the previews add up to one, the button shows the
+// batch on its way, and a failure part-way says how far it got.
+describe("SafeBulkDeleteBar over more rows than one call takes", () => {
+  const previews = [
+    answer({
+      deleted: 1000,
+      impact: [{ label: "circuit terminations", count: 2 }],
+    }),
+    answer({
+      deleted: 999,
+      impact: [{ label: "circuit terminations", count: 1 }],
+      released: [{ label: "member devices", count: 3 }],
+      skipped: [{ id: "r1500", name: "stack-7", reason: "In use: 1 circuit." }],
+    }),
+    answer({ deleted: 500 }),
+  ]
+
+  let held: (() => void) | null = null
+  beforeEach(() => {
+    apiMock.mockReset()
+    toastMock.success.mockReset()
+    toastMock.error.mockReset()
+    held = null
+  })
+
+  /** Dry runs answer `previews`; real batches answer `run`, in turn. */
+  function serve(run: (batch: number) => Promise<unknown>) {
+    let dry = 0
+    let real = 0
+    apiMock.mockImplementation((_path, init) => {
+      const body = JSON.parse(String(init?.body)) as { dry_run?: boolean }
+      if (body.dry_run) return Promise.resolve(previews[dry++])
+      return run(++real)
+    })
+  }
+
+  async function openDialog() {
+    const onCleared = renderBar({ selected: rows(2500) })
+    fireEvent.click(screen.getByRole("button", { name: /Delete/ }))
+    await screen.findByText("2499 virtual chassis will be deleted.")
+    return onCleared
+  }
+
+  it("asks in batches and shows one preview", async () => {
+    serve(() => Promise.resolve(answer({ dry_run: false })))
+    await openDialog()
+    expect(sent()).toEqual([
+      { n: 1000, dry: true, first: "r0" },
+      { n: 1000, dry: true, first: "r1000" },
+      { n: 500, dry: true, first: "r2000" },
+    ])
+    // One line per kind of row that goes along, summed over the batches.
+    expect(screen.getByText("3 circuit terminations")).toBeTruthy()
+    expect(screen.getByText("3 member devices")).toBeTruthy()
+    expect(screen.getByText("stack-7")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Delete 2499" })).toBeTruthy()
+  })
+
+  it("deletes batch by batch with the batch on its way on the button", async () => {
+    serve((batch) => {
+      const done = Promise.resolve(
+        answer({ ...previews[batch - 1], dry_run: false })
+      )
+      if (batch !== 2) return done
+      return new Promise((resolve) => {
+        held = () => resolve(done)
+      })
+    })
+    const onCleared = await openDialog()
+    fireEvent.click(screen.getByRole("button", { name: "Delete 2499" }))
+    expect(
+      await screen.findByRole("button", { name: "Deleting… 2 / 3" })
+    ).toBeTruthy()
+    expect(sent().filter((c) => !c.dry)).toHaveLength(2)
+    held?.()
+    await vi.waitFor(() => expect(onCleared).toHaveBeenCalled())
+    expect(sent().filter((c) => !c.dry)).toEqual([
+      { n: 1000, dry: false, first: "r0" },
+      { n: 1000, dry: false, first: "r1000" },
+      { n: 500, dry: false, first: "r2000" },
+    ])
+    expect(toastMock.success).toHaveBeenCalledWith(
+      "Deleted 2499 virtual chassis. 1 still in use, kept."
+    )
+  })
+
+  it("stops at a failed batch, says how far it got and keeps the rest selected", async () => {
+    serve((batch) =>
+      batch === 2
+        ? Promise.reject(new ApiError(503, { detail: "Try again later." }))
+        : Promise.resolve(answer({ dry_run: false, deleted: 1000 }))
+    )
+    const onCleared = await openDialog()
+    fireEvent.click(screen.getByRole("button", { name: "Delete 2499" }))
+    await vi.waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "Deleted 1000 of 2500 virtual chassis.",
+        { description: "Try again later." }
+      )
+    )
+    // The third batch never went, the dialog closed, the selection stays.
+    expect(sent().filter((c) => !c.dry)).toHaveLength(2)
+    await vi.waitFor(() =>
+      expect(
+        screen.queryByText("2499 virtual chassis will be deleted.")
+      ).toBeNull()
+    )
+    expect(onCleared).not.toHaveBeenCalled()
+    expect(toastMock.success).not.toHaveBeenCalled()
+  })
+
+  it("keeps the dialog for another try when the first batch fails", async () => {
+    serve(() =>
+      Promise.reject(new ApiError(503, { detail: "Try again later." }))
+    )
+    const onCleared = await openDialog()
+    fireEvent.click(screen.getByRole("button", { name: "Delete 2499" }))
+    await vi.waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith("Try again later.")
+    )
+    expect(sent().filter((c) => !c.dry)).toHaveLength(1)
+    expect(screen.getByRole("button", { name: "Delete 2499" })).toBeTruthy()
+    expect(onCleared).not.toHaveBeenCalled()
+  })
+})
+
+describe("mergeDeleteAnswers", () => {
+  it("adds the rows up and keeps every batch's kept rows", () => {
+    const merged = mergeDeleteAnswers([
+      answer({
+        deleted: 2,
+        deleted_ids: ["a", "b"],
+        impact: [{ label: "cables", count: 1 }],
+      }),
+      answer({
+        deleted: 1,
+        deleted_ids: ["c"],
+        skipped: [{ id: "d", name: "d", reason: "In use: 1 circuit." }],
+        impact: [{ label: "cables", count: 2 }],
+        released: undefined,
+      }),
+    ])
+    expect(merged).toEqual({
+      deleted: 3,
+      deleted_ids: ["a", "b", "c"],
+      skipped: [{ id: "d", name: "d", reason: "In use: 1 circuit." }],
+      impact: [{ label: "cables", count: 3 }],
+      released: [],
+      dry_run: true,
+    })
   })
 })

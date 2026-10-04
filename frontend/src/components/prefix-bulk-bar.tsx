@@ -24,7 +24,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { PendingLabel } from "@/components/pending-label"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  BatchFailure,
+  IDS_PER_CALL,
+  batchCount,
+  batchStoppedToast,
+  runBatches,
+  sumOf,
+} from "@/lib/bulk-batches"
+import type { BatchProgress } from "@/lib/bulk-batches"
 
 // Floating action bar that sits at the bottom of /prefixes whenever the
 // user has selected rows. Edit is a Link to /prefixes/bulk-edit (real
@@ -226,28 +236,59 @@ function BulkDeleteConfirm({
   onDone: () => void
 }) {
   const qc = useQueryClient()
+  const [progress, setProgress] = useState<BatchProgress | null>(null)
+  // More prefixes than one call takes go in batches (#286). An address may
+  // land on a prefix a later batch deletes and move on from there: it ends
+  // up where one call would have put it.
   const m = useMutation({
-    mutationFn: () =>
-      api<{ deleted: number }>("/api/prefixes/bulk-delete/", {
-        method: "POST",
-        body: JSON.stringify({ ids }),
-      }),
-    onSuccess: (res) => {
-      toast.success(
-        `Deleted ${res.deleted} prefix${res.deleted === 1 ? "" : "es"}.`
-      )
-      qc.invalidateQueries({ queryKey: ["prefixes"] })
-      qc.invalidateQueries({ queryKey: ["prefix-space-map"] })
+    mutationFn: async () =>
+      sumOf(
+        await runBatches(
+          ids,
+          IDS_PER_CALL,
+          (part) =>
+            api<{ deleted: number }>("/api/prefixes/bulk-delete/", {
+              method: "POST",
+              body: JSON.stringify({ ids: part }),
+            }),
+          setProgress
+        ),
+        (r) => r.deleted
+      ),
+    onSuccess: (deleted) => {
+      toast.success(`Deleted ${deleted} prefix${deleted === 1 ? "" : "es"}.`)
       onOpenChange(false)
       onDone()
     },
-    onError: (err) => apiErrorToast(err),
+    onError: (err) => {
+      if (!(err instanceof BatchFailure)) {
+        apiErrorToast(err)
+        return
+      }
+      // Some batches went through: say how many, and close. The rest stay
+      // selected for another go.
+      const went: { deleted: number }[] = err.results
+      batchStoppedToast(
+        `Deleted ${sumOf(went, (r) => r.deleted)} of ${ids.length} prefixes.`,
+        err
+      )
+      onOpenChange(false)
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["prefixes"] })
+      qc.invalidateQueries({ queryKey: ["prefix-space-map"] })
+    },
   })
 
   const extra = Math.max(0, ids.length - sample.length)
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(o) => {
+        if (o || !m.isPending) onOpenChange(o)
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
@@ -275,7 +316,13 @@ function BulkDeleteConfirm({
               m.mutate()
             }}
           >
-            {m.isPending ? "Deleting…" : `Delete ${ids.length}`}
+            <PendingLabel
+              label={`Delete ${ids.length}`}
+              verb="Deleting…"
+              pending={m.isPending}
+              progress={progress}
+              batches={batchCount(ids.length, IDS_PER_CALL)}
+            />
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

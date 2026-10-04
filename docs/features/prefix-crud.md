@@ -63,6 +63,13 @@ contains them - the next one up, longest match - and keep their assignments;
 the confirmation says how many move and where. Only addresses no other prefix
 covers are removed with it, and the confirmation counts those too.
 
+To delete several, tick them in the **Prefixes** list and press **Delete** in
+the bar. Their addresses move the same way, onto prefixes that stay. More than
+1000 go 1000 at a time (see
+[Large selections](table-preferences.md#large-selections)); an address on a
+prefix a later batch deletes moves on again, so it ends up where one call
+would have put it.
+
 ## What gets validated
 
 Danbyte checks a few things when you save, so your data stays clean:

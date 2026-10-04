@@ -6,6 +6,16 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { MacEntry } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  BatchFailure,
+  MACS_PER_CALL,
+  askInBatches,
+  batchCount,
+  batchStoppedToast,
+  runBatches,
+  sumOf,
+} from "@/lib/bulk-batches"
+import type { BatchProgress } from "@/lib/bulk-batches"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { FormCheckbox } from "@/components/forms"
@@ -16,8 +26,17 @@ import { QueryError } from "@/components/query-error"
 // from several places, so the bar sends values and the dialog asks where to
 // remove them from: the MAC objects, the interfaces that carry them, the IPs
 // paired with them. A dry run fills in the counts before anything is written.
+// More values than one call takes go in batches, the dry run and the removal
+// alike, and their counts are added up (#286).
 
 type SourceKey = "objects" | "interfaces" | "vm_interfaces" | "ips"
+
+const SOURCE_KEYS: SourceKey[] = [
+  "objects",
+  "interfaces",
+  "vm_interfaces",
+  "ips",
+]
 
 interface SourcePlan {
   /** The caller holds the grant this source needs. */
@@ -65,6 +84,28 @@ export function optionPlan(
 
 const plural = (n: number, one: string, many = `${one}s`) =>
   `${n} ${n === 1 ? one : many}`
+
+/** Several answers as one, for values sent in batches: each source's counts
+ * added up. */
+export function mergeRemovals(
+  answers: MacBulkRemoveResult[]
+): MacBulkRemoveResult {
+  const sources = {} as Record<SourceKey, SourcePlan>
+  for (const key of SOURCE_KEYS) {
+    const plans = answers.map((a) => a.sources[key])
+    sources[key] = {
+      permitted: plans.some((p) => p.permitted),
+      count: sumOf(plans, (p) => p.count),
+      skipped: sumOf(plans, (p) => p.skipped),
+      applied: plans.some((p) => p.applied),
+    }
+  }
+  return {
+    dry_run: answers.every((a) => a.dry_run),
+    macs: sumOf(answers, (a) => a.macs),
+    sources,
+  }
+}
 
 /** The toast after a removal: what was done, per option. */
 export function removalSummary(res: MacBulkRemoveResult): string {
@@ -157,18 +198,24 @@ export function MacBulkRemoveDialog({
   const qc = useQueryClient()
   const values = macs.map((m) => m.mac)
   const [checked, setChecked] = useState(DEFAULTS)
+  const [progress, setProgress] = useState<BatchProgress | null>(null)
 
-  const post = (body: object) =>
+  const post = (part: string[], body: object) =>
     api<MacBulkRemoveResult>("/api/macs/bulk-remove/", {
       method: "POST",
-      body: JSON.stringify({ values, ...body }),
+      body: JSON.stringify({ values: part, ...body }),
     })
 
   // Counts come from the server's dry run, so they are what this user may
   // change - never a guess from the rows on screen. Re-asked on every open.
   const preview = useQuery({
     queryKey: ["macs-bulk-remove", values],
-    queryFn: () => post({ dry_run: true }),
+    queryFn: async () =>
+      mergeRemovals(
+        await askInBatches(values, MACS_PER_CALL, (part) =>
+          post(part, { dry_run: true })
+        )
+      ),
     enabled: open,
     staleTime: 0,
     gcTime: 0,
@@ -190,14 +237,40 @@ export function MacBulkRemoveDialog({
   }
 
   const remove = useMutation({
-    mutationFn: () =>
-      post({
+    mutationFn: async () => {
+      const options = {
         remove_objects: chosen.includes("remove_objects"),
         clear_interfaces: chosen.includes("clear_interfaces"),
         unpair_ips: chosen.includes("unpair_ips"),
-      }),
+      }
+      return mergeRemovals(
+        await runBatches(
+          values,
+          MACS_PER_CALL,
+          (part) => post(part, options),
+          setProgress
+        )
+      )
+    },
     onSuccess: (res) => {
       toast.success(removalSummary(res))
+      close(false)
+      onDone()
+    },
+    onError: (err) => {
+      if (!(err instanceof BatchFailure)) {
+        apiErrorToast(err)
+        return
+      }
+      // Some batches went through: say how far it got, and close. What is
+      // left stays selected, and removing again is harmless.
+      batchStoppedToast(
+        `Removed ${err.done.length} of ${plural(values.length, "MAC")}.`,
+        err
+      )
+      close(false)
+    },
+    onSettled: () => {
       for (const key of [
         "macs",
         "mac",
@@ -209,10 +282,7 @@ export function MacBulkRemoveDialog({
         "ip",
       ])
         qc.invalidateQueries({ queryKey: [key] })
-      close(false)
-      onDone()
     },
-    onError: (err) => apiErrorToast(err),
   })
 
   const sample = macs.slice(0, 5)
@@ -250,6 +320,8 @@ export function MacBulkRemoveDialog({
       confirmLabel="Remove"
       pendingLabel="Removing…"
       pending={remove.isPending}
+      progress={progress}
+      batches={batchCount(values.length, MACS_PER_CALL)}
       confirmDisabled={!preview.data || chosen.length === 0}
       onConfirm={() => remove.mutate()}
     >
