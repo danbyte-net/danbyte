@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
+import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 
 import {
@@ -29,6 +30,7 @@ import {
 } from "@/components/custom-field-display"
 import { tileName } from "@/components/floorplan/floor-canvas"
 import { CapacityBar } from "@/components/cells/capacity-bar"
+import { PortsFigure } from "@/components/cells/ports-figure"
 import { PowerFigure } from "@/components/cells/power-figure"
 import { FaceplateView } from "@/components/device-faceplate"
 import type { FaceplateSide } from "@/lib/faceplate-layout"
@@ -86,6 +88,10 @@ export interface PopoverCtx {
   linked?: LinkedDetail | null
   /** Custom-field definitions for the linked object's model, for formatting. */
   cfDefs?: CustomField[]
+  /** A rack tile's rack as the plan's racks list it, port figures and all
+   * (`GET /api/racks/?floor_plan=…&include=ports`) - fetched once for the
+   * plan while a field or the plan's colouring needs it, never per tile. */
+  planRack?: Rack | null
 }
 
 export interface PopoverField {
@@ -279,6 +285,39 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
       const r = rack(live)
       if (!r || !hasPowerData(r.power)) return null
       return <PowerFigure power={r.power} className="text-[11px]" />
+    },
+  },
+  ports: {
+    label: "Ports",
+    // A rack's ports in use, then its patch-panel ports - the split the
+    // racks list and the rack page show - each opening the per-device
+    // breakdown on the Port utilization page.
+    render: ({ tile, planRack }) => {
+      if (tile.linked?.kind !== "rack" || !planRack?.ports) return null
+      const rows = [
+        { key: "ports", row: planRack.ports, label: null },
+        { key: "panel", row: planRack.panel_ports, label: "Panel" },
+      ].filter((r) => r.row && r.row.total > 0)
+      if (rows.length === 0) return null
+      return (
+        <span className="grid gap-0.5">
+          {rows.map((r) => (
+            <Link
+              key={r.key}
+              to="/port-utilization"
+              search={{ rack: planRack.id }}
+              className="flex items-center gap-2 hover:underline"
+            >
+              <PortsFigure row={r.row} bar barClassName="w-10" />
+              {r.label && (
+                <span className="text-[11px] text-muted-foreground">
+                  {r.label}
+                </span>
+              )}
+            </Link>
+          ))}
+        </span>
+      )
     },
   },
   weight: {
@@ -551,6 +590,7 @@ function useLinkedDetail(tile: FloorPlanTile | undefined, needed: boolean) {
 export function TilePopover({
   target,
   live,
+  planRack,
   fields,
   onOpenChange,
   renderLinked,
@@ -558,6 +598,8 @@ export function TilePopover({
 }: {
   target: HoverTarget | null
   live?: LiveTile
+  /** The hovered rack tile's rack from the plan's racks, when loaded. */
+  planRack?: Rack | null
   /** Ordered field keys to show. Unknown keys are ignored. */
   fields: string[]
   onOpenChange: (open: boolean) => void
@@ -580,7 +622,7 @@ export function TilePopover({
   const { linked, cfDefs, loading } = useLinkedDetail(target?.tile, needsLinked)
 
   const ctx: PopoverCtx | null = target
-    ? { tile: target.tile, live, linked, cfDefs }
+    ? { tile: target.tile, live, linked, cfDefs, planRack }
     : null
 
   // Build the rows in configured order, dropping any field with nothing to say

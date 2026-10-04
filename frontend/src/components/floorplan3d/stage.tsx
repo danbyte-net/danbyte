@@ -253,7 +253,7 @@ function StudioEnvironment() {
  * parent before invalidateInstance's parent guard runs), so toggling a layer
  * OFF would leave its last frame on screen until the next orbit. One kicked
  * frame per view-pref change closes that whole class. */
-function InvalidateOnToggle({ stamp }: { stamp: string }) {
+export function InvalidateOnToggle({ stamp }: { stamp: string }) {
   const invalidate = useThree((s) => s.invalidate)
   useEffect(() => {
     invalidate()

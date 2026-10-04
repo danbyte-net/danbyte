@@ -130,6 +130,13 @@ uploaded blueprint textures it.
 - **View rear** on a rack's card flips the camera to the cabinet's other
   face - the same framing as a double-click fly-to, mirrored through the
   rack - and flips back with **View front**.
+- **A rack's card** gives its devices, **Space**, **Power**, **Ports** and
+  **Panel ports** as bars on the racks' scale, and its role and status as
+  their pills.
+- **Color by** (Display) colours the room's racks as it colours their 2D
+  tiles: a cabinet takes its tile's fill - the whole frame from afar, the
+  posts, caps and side panels up close - with the same legend in the corner,
+  and a row of the [rack table](#the-rack-table) lights its cabinet up.
 - **Light that grounds the room**: one shadow-casting key light plus a
   procedural studio environment (no downloaded assets - it works
   airgapped), so cabinets stand *on* the floor instead of floating in
@@ -312,6 +319,7 @@ The page has two bars, split the way the [topology map](topology.md)'s are.
 The header names the plan, with the floor switcher and the **Edited** badge,
 and holds the **2D / 3D** and **Layout / Structure / Cables** tabs. The bar
 under it has *Find on plan…*, **Fit to view** and **Grid** on the left, and
+**Racks** (while the plan is [coloured by its racks](#color-by)),
 **Objects**, **Display**, **Background**, **PNG**, plan settings and **Save**
 on the right. When that bar is too narrow for all of them (a small window),
 Grid, Background, PNG and plan settings move into **More**, so nothing is
@@ -347,9 +355,10 @@ browser's own leave-site prompt instead, since that never reaches the app.
 Switching the same plan between 2D and 3D, or clearing a cable trace, is a view
 change rather than an exit, so neither is guarded.
 
-Under **Display**: **Fit labels to tiles** auto-sizes each tile's text to its
-footprint (so single-cell tiles keep readable names) - the preference is
-saved on the plan; and **Camera FOV cones** shows/hides the camera wedges.
+Under **Display**: **Color by** heads the menu - see [below](#color-by);
+**Fit labels to tiles** auto-sizes each tile's text to its footprint (so
+single-cell tiles keep readable names) - the preference is saved on the plan;
+and **Camera FOV cones** shows/hides the camera wedges.
 
 **Changing a tile's type.** Select a placed tile and pick another **Type**
 in the inspector - any tile type, or a device role standing in as one. The
@@ -369,7 +378,8 @@ on every poll.
 
 - **Rack tiles** carry a space-utilization bar (green ≤80% · amber 80–95% ·
   red >95%) and a percentage. The racks list's **Used** and **Power** bars
-  and the tile popover's bar use the same scale.
+  and the tile popover's bar use the same scale. Coloured by a rack measure
+  ([Color by](#color-by)), the bar and the figure show that measure instead.
 - **Monitoring rollup** - a rack tile's border turns red the moment any
   device inside it goes down (worst status across the rack's devices' IPs);
   device tiles do the same for their own IPs.
@@ -379,6 +389,66 @@ on every poll.
   cabinet ends on the cabinet's tile, as one to a racked device ends on its
   rack's, and in the 3D room the cabinet stands as a closed box of its outer
   size.
+
+## Color by
+
+**Display → Color by** colours the plan's racks by how full they are, or by
+what they are - in 2D and in the 3D room alike:
+
+| Choice | A rack's tile shows |
+|---|---|
+| **Type** (the default) | The plan as it always looked: every tile in its type's colour. |
+| **Space** | Units in use over its height. |
+| **Power** | Demand over supply, as the [rack page](../dcim/racks.md) reads it. |
+| **Ports** | Ports in use - cabled or reserved - over its devices' counted interfaces, patch panels aside. |
+| **Panel ports** | The same for its front ports and patch-panel devices. |
+| **Rack role** | Its role's colour. |
+| **Status** | Its status's colour. |
+
+- The four measures fill a rack's tile with its level on the racks' one
+  scale - green up to 80 %, amber above 80 %, red above 95 % - and grey where
+  there is nothing to measure: no supply, no ports counted. The figure is
+  always written on the tile, `86%` or *No data*, on a one-cell rack too, so
+  the reading never rests on colour alone; the bar along the tile's foot
+  shows the same measure.
+- **Rack role** and **Status** take the role's or the status's own colour,
+  grey for a rack without one, and keep the space bar.
+- **Monitoring keeps the outline** in every mode: a rack with a device down
+  is outlined red whatever its fill says.
+- Tiles that are not racks - walls, aisles, a rack tile with no rack linked
+  yet - turn neutral and faint while the racks are coloured; zones keep their
+  tint.
+- A **legend** in the plan's corner keys the colours: the levels with how
+  many racks sit in each, or the roles and statuses as their pills, and what
+  the outline means while a rack is alarming. It is part of the picture,
+  with no Hide button, so the [PNG](#export) carries it.
+- The choice is saved with the plan, like its other view settings: an
+  editor's choice is the plan's, a viewer's lasts the visit.
+- Units and power refresh with the 30-second [live state](#live-state-on-tiles);
+  ports, roles and statuses come from the plan's racks, asked for once when a
+  rack choice is picked (`GET /api/racks/?floor_plan=<id>&include=ports`),
+  never on the poll.
+
+### The rack table
+
+While the plan is coloured by its racks, a table of them opens under it,
+the width of the page: the racks list's own columns - **Name**, **Role**,
+**Status**, **Devices**, **Used**, **Power**, **Ports**, **Panel ports** and
+**Tags** - sortable, with the rest and the custom fields in **Columns**.
+*Find rack…* matches a name or facility ID; the rail filters by role, status
+and tag, and its advanced filter reaches custom fields.
+
+- Pointing at a row rings its rack on the plan; a click on the row - not on
+  its links - selects the rack and zooms to it, and in the 3D room flies to
+  its front.
+- While anything is filtered, the racks the table leaves out fade on the 2D
+  plan.
+- The Ports figures open **Port utilization** on the rack.
+- Drag the table's top edge to resize it (remembered per browser). **Racks**
+  on the bar, or the table's ×, closes it, and the plan fits itself to the
+  room it gets back.
+- The table lists the racks the [Objects](#finding-things) sidebar otherwise
+  would: while it is open, the sidebar keeps the plan's other tiles.
 
 ## Rack & device deep view
 
@@ -652,7 +722,9 @@ cable runs, just the trays, or both.
   hit), the **All · Down · Degraded · Up** tabs narrow the list to one
   monitoring state, and a labelled tile shows its linked object's real name as
   a muted second line. Click a row to select and zoom to that tile. Editors'
-  toggle state is saved with the plan.
+  toggle state is saved with the plan. While the plan is
+  [coloured by its racks](#color-by), the rack table under it lists the racks
+  and the sidebar keeps the rest.
 - **Hiding things** - the same eyes the [site map](site-map.md) and the
   [topology map](topology.md) have. Every group header in
   the Objects list (a device role, a tile type) and every tile row carries an
@@ -694,7 +766,9 @@ away. Needs the floor-plan add permission.
 
 **PNG** exports the current view, theme-aware, at 2× resolution - same as the
 topology map and rack elevation exports. Trays and their labels are included,
-so the export doubles as the builder's pull sheet.
+so the export doubles as the builder's pull sheet. The [Color by](#color-by)
+legend is part of the picture too, so a coloured plan explains itself on
+paper.
 
 ## Tenancy, permissions, audit
 
@@ -712,6 +786,13 @@ automatically - no rack utilization on a wall tile - so turning one on is safe
 everywhere. A cabinet has no units to fill, so on its tile **Utilization**
 reads as its devices and rails; **Rails** shows the rail count on its own, and
 the cabinet's custom fields can be picked like a rack's.
+
+**Ports** (off by default) gives a rack tile's ports in use over its counted
+ports, and its **panel ports** under them when it has any - the split the
+racks list and the rack page show - each opening **Port utilization** on the
+rack. It reads the plan's racks, asked for once for the whole plan while the
+field is on (or the plan is [coloured by its racks](#color-by)), never per
+tile and never on the 30-second poll.
 
 ### Showing the device's panel {#faceplate-field}
 

@@ -91,6 +91,39 @@ describe("rack columns", () => {
     expect(cell("power", rack()).textContent).toBe("-")
   })
 
+  it("offers Ports and Panel ports hidden, shown where a table asks (#247)", () => {
+    const meta = (id: RackColumnId, opts = {}) =>
+      buildRackColumns(opts).find((c) => c.id === id)?.meta
+    expect(meta("ports")).toMatchObject({ label: "Ports", defaultHidden: true })
+    expect(meta("panel_ports")).toMatchObject({
+      label: "Panel ports",
+      defaultHidden: true,
+    })
+    const shown = { show: ["power", "ports", "panel_ports"] as RackColumnId[] }
+    expect(meta("ports", shown)?.defaultHidden).toBe(false)
+    expect(meta("panel_ports", shown)?.defaultHidden).toBe(false)
+    expect(meta("power", shown)?.defaultHidden).toBe(false)
+  })
+
+  it("reads ports in use over ports counted, on the racks' scale", () => {
+    const row = (connected: number, total: number, reserved = 0) => ({
+      total,
+      connected,
+      reserved,
+      free: total - connected - reserved,
+      marked: 0,
+    })
+    const el = cell("ports", rack({ ports: row(40, 48, 6) }))
+    expect(el.textContent).toBe("46 / 48")
+    expect(level(el)).toBe("critical")
+    const panel = cell("panel_ports", rack({ panel_ports: row(10, 24) }))
+    expect(panel.textContent).toBe("10 / 24")
+    expect(level(panel)).toBe("good")
+    // Not asked for (`?include=ports` off), or none counted: a dash.
+    expect(cell("ports", rack()).textContent).toBe("-")
+    expect(cell("ports", rack({ ports: row(0, 0) })).textContent).toBe("-")
+  })
+
   it("leaves the embedded panes' columns as they were", () => {
     const ids = buildRackColumns({
       include: ["name", "site", "width", "used"],

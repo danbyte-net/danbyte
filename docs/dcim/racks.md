@@ -288,12 +288,21 @@ stack member. It is shared with the device page and the 3D room, and fresh
 for a minute. Names mode asks for no SNMP state at all.
 
 The **Capacity** card gives the rack's **Free** units (those no device
-occupies) and its **Ports**: ports in use over counted ports across the whole
-rack. Ports links to **DCIM → Connections → Port utilization** filtered to
-this rack (`/port-utilization?rack=<id>`), for the per-device breakdown.
-Like the rack's used units and power, the rack's port figures count every
-device in it, while the blocks and the breakdown list the devices you can
-view.
+occupies) and its ports in use over counted ports, in two rows: **Ports**,
+the counted interfaces of its devices that are not patch panels, and
+**Panel ports**, its front ports and every port of a patch-panel device -
+the split the racks list, the floor plan and the site's
+[Capacity](../models/site.md#the-capacity-tab) tab show, so a rack reads the
+same everywhere. Each links to **DCIM → Connections → Port utilization**
+filtered to this rack (`/port-utilization?rack=<id>`), for the per-device
+breakdown. Like the rack's used units and power, the rack's port figures
+count every device in it, while the blocks and the breakdown list the
+devices you can view.
+
+!!! note "Changed in 0.17"
+    The Capacity card's **Ports** row counted a rack's patch-panel ports
+    together with its devices' interfaces. They are now two rows, **Ports**
+    and **Panel ports**, which add up to the old figure.
 
 ### The rack in 3D
 
@@ -323,9 +332,17 @@ column, with a bar in front: it is offered in the list's **Columns** menu,
 hidden until you tick it, and sorts by how much of the supply the demand
 takes.
 
-A rack's space and power share one scale wherever they are drawn as a bar:
-green up to 80 % full, amber above 80 %, red above 95 %. The racks list's
-**Used** bar, the floor plan's tiles and the tile popover all use it.
+The racks list offers **Ports** and **Panel ports** the same way - hidden
+until ticked, each a bar and *in use / counted* (`46 / 48`), sorting by the
+share in use and opening the Port utilization page on the rack. Counting
+ports costs the list a few queries, so it asks for them
+(`?include=ports`) only while one of the two is shown.
+
+A rack's space, power and ports share one scale wherever they are drawn as a
+bar or a colour: green up to 80 % full, amber above 80 %, red above 95 %.
+The racks list's **Used**, **Power** and **Ports** bars, the floor plan's
+tiles and its [Color by](../features/floor-plans.md#color-by), the tile
+popover and the site's Capacity tab all use it.
 
 !!! note "Changed in 0.17"
     Power figures of 1 kW and up read in kW (`3.6 kW` where the page showed

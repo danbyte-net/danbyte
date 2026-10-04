@@ -155,6 +155,7 @@ const ROWS: Row[] = [
   ["embedded-device-types", "Device types (embedded)", "DCIM", "/api/device-types/", sub],
   ["embedded-cables", "Cables (embedded)", "DCIM", "/api/cables/", sub],
   ["rack-type-racks", "Rack type · Racks", "DCIM", "/api/racks/", sub],
+  ["floorplan-racks", "Floor plan · Racks", "DCIM", "/api/racks/", sub],
 
   // ─── Power & circuits ──────────────────────────────────────────────────
   ["power-panels", "Power panels", "Power", "/api/power-panels/"],

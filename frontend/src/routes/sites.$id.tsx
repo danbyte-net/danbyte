@@ -44,6 +44,7 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { ContactsPanel } from "@/components/contacts-panel"
 import { SiteRoleDialog } from "@/components/site-role-dialog"
 import { SiteAssignPrefixDialog } from "@/components/site-assign-prefix-dialog"
+import { SiteCapacityTab, showCapacityTab } from "@/components/site-capacity"
 import { Badge } from "@/components/ui/badge"
 import { useMe } from "@/lib/use-me"
 
@@ -78,6 +79,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
     | "locations"
     | "devices"
     | "cabinets"
+    | "capacity"
     | "vms"
     | "prefixes"
     | "vlans"
@@ -94,6 +96,9 @@ function SiteDetailBody({ site: s }: { site: Site }) {
   // (limited to inviting viewers, enforced server-side).
   const canDelegateHere = canDelegateSite(s.id)
   const showAccess = canManage || canDelegateHere
+  // How full the site's racks are (#247): only where there are racks to
+  // read, for those who may see them.
+  const showCapacity = showCapacityTab(s, canDo("rack", "view"))
   const [deleting, setDeleting] = useState<Site | null>(null)
   const openDelete = useCallback(() => setDeleting(s), [s])
   const closeDelete = useCallback((o: boolean) => {
@@ -163,6 +168,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         { value: "locations", label: "Locations", count: s.location_count },
         { value: "devices", label: "Devices", count: s.device_count },
         { value: "cabinets", label: "Cabinets", count: s.cabinet_count },
+        ...(showCapacity ? [{ value: "capacity", label: "Capacity" }] : []),
         { value: "vms", label: "Virtual machines", count: s.vm_count },
         { value: "prefixes", label: "Prefixes", count: s.prefix_count },
         { value: "vlans", label: "VLANs", count: s.vlan_count },
@@ -206,6 +212,11 @@ function SiteDetailBody({ site: s }: { site: Site }) {
           emptyText="No cabinets at this site yet."
         />
       </DetailTab>
+      {showCapacity && (
+        <DetailTab value="capacity">
+          <SiteCapacityTab siteId={s.id} />
+        </DetailTab>
+      )}
       <DetailTab value="prefixes">
         <SitePrefixesTable siteId={s.id} siteName={s.name} />
       </DetailTab>

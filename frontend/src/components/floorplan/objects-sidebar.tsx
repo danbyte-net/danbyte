@@ -81,6 +81,7 @@ export function ObjectsSidebar({
   onPick,
   hidden = NO_FLOOR_HIDDEN,
   onHiddenChange,
+  omitRacks = false,
 }: {
   tiles: FloorPlanTile[]
   liveState?: FloorPlanLiveState | null
@@ -91,6 +92,9 @@ export function ObjectsSidebar({
    * every tile, dimmed when hidden, so it can be brought back. */
   hidden?: FloorHidden
   onHiddenChange?: (next: FloorHidden) => void
+  /** Leave out the tiles linked to a rack: the rack table under the plan
+   * lists them while the plan is coloured by its racks. */
+  omitRacks?: boolean
 }) {
   const [q, setQ] = useState("")
   const [status, setStatus] = useState<CheckFilter>(null)
@@ -102,7 +106,9 @@ export function ObjectsSidebar({
   const { roleGroups, typeGroups, total, statusCounts, first } = useMemo(() => {
     const needle = q.trim().toLowerCase()
     // Zones are background paint, not placed objects - they'd drown the list.
-    const placed = tiles.filter((t) => !tileIsZone(t))
+    const placed = tiles.filter(
+      (t) => !tileIsZone(t) && !(omitRacks && t.linked?.kind === "rack")
+    )
     const searched = needle
       ? placed.filter((t) =>
           [tileName(t), t.linked?.name, t.role_type?.name, t.tile_type?.name]
@@ -124,7 +130,7 @@ export function ObjectsSidebar({
       ),
       first: byRole.at(0)?.tiles.at(0) ?? byType.at(0)?.tiles.at(0),
     }
-  }, [tiles, q, status, liveState])
+  }, [tiles, q, status, liveState, omitRacks])
 
   const section = (
     label: string,
@@ -233,6 +239,11 @@ export function ObjectsSidebar({
         onHiddenChange ? () => onHiddenChange(NO_FLOOR_HIDDEN) : undefined
       }
     >
+      {omitRacks && (
+        <p className="px-1 pb-2 text-[11px] text-muted-foreground">
+          Racks: in the table below
+        </p>
+      )}
       {total === 0 ? (
         <ObjectsEmpty filtered={!!q.trim() || !!status} />
       ) : (

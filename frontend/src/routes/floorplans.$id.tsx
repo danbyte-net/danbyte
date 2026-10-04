@@ -18,6 +18,7 @@ import {
   Grid3x3,
   Image as ImageIcon,
   Maximize,
+  PanelBottom,
   PanelRight,
   Plus,
   RotateCw,
@@ -145,6 +146,15 @@ import {
   useTilePopover,
 } from "@/components/floorplan/tile-popover"
 import { ObjectsSidebar } from "@/components/floorplan/objects-sidebar"
+import { ColorByLegend } from "@/components/floorplan/color-by-legend"
+import { ColorBySelect } from "@/components/floorplan/color-by-select"
+import { RackTablePanel } from "@/components/floorplan/rack-table-panel"
+import { readColorBy } from "@/components/floorplan/tile-paint"
+import type { ColorBy } from "@/components/floorplan/tile-paint"
+import {
+  popoverShowsPorts,
+  usePlanCapacity,
+} from "@/components/floorplan/use-plan-capacity"
 import { CabinetLinkField } from "@/components/floorplan/cabinet-link-field"
 import { CabinetPanel } from "@/components/floorplan/cabinet-panel"
 import { resizedRect } from "@/components/floorplan/cabinet-tile"
@@ -265,7 +275,7 @@ function FloorPlanPage() {
   const { id } = Route.useParams()
   const nav = useNavigate()
   const qc = useQueryClient()
-  const { canDo } = useMe()
+  const { canDo, humanIds } = useMe()
   const { theme } = useTheme()
   const canEdit = canDo("floorplan", "change")
 
@@ -412,6 +422,15 @@ function FloorPlanPage() {
   )
   // Cabinet shell (3D): solid / cutaway / x-ray - a mode, not a checkbox.
   const [shell3dLocal, setShell3dLocal] = useState<ShellMode3D | null>(null)
+  // Color by (#247) and the rack table it opens - plan prefs like the rest.
+  const [colorByLocal, setColorByLocal] = useState<ColorBy | null>(null)
+  const [showRacksLocal, setShowRacksLocal] = useState<boolean | null>(null)
+  // A rack table row clicked in 3D: the room selects that rack and flies
+  // to it (a new count each click, so the same row flies again).
+  const [rackFocus3d, setRackFocus3d] = useState<{
+    tileId: string
+    n: number
+  } | null>(null)
   // 3D effects budget - PER-DEVICE (localStorage), not a plan pref: the
   // workstation's High must not follow the plan onto a weak laptop.
   const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
@@ -529,6 +548,9 @@ function FloorPlanPage() {
     setSelectedWallId(null)
     setDoorArmed(false)
     setShell3dLocal(null)
+    setColorByLocal(null)
+    setShowRacksLocal(null)
+    setRackFocus3d(null)
   }, [id])
 
   // Hydrate local tiles from the server whenever fresh data lands and we
@@ -725,6 +747,30 @@ function FloorPlanPage() {
       patchPlan.mutate({ state: { ...plan.state, shell_3d: v } })
   }
 
+  // Color by (#247): what rack tiles are coloured by, in 2D and in the 3D
+  // room - Type, the default, is the plan as it always looked. A rack
+  // measure brings the rack table up under the plan, which then lists the
+  // racks the Objects sidebar otherwise would.
+  const colorBy = colorByLocal ?? readColorBy(plan?.state.color_by)
+  const capacity = usePlanCapacity({
+    planId: id,
+    tiles: shownTiles,
+    live: liveState.data ?? null,
+    colorBy,
+    wantPorts: popoverShowsPorts(popoverCfg.data),
+  })
+  const showRacks =
+    showRacksLocal ?? (plan?.state.show_racks as boolean | undefined) ?? true
+  const racksOpen = colorBy !== "type" && showRacks && capacity.hasRacks
+  // The table takes the plan's lower part: fit the plan to the room left
+  // when it opens or closes - unless the page arrived focused on a tile or
+  // a trace, which keeps its framing.
+  useEffect(() => {
+    if (tileParam || traceParam) return
+    const frame = requestAnimationFrame(() => canvasApi.current?.fit())
+    return () => cancelAnimationFrame(frame)
+  }, [racksOpen, tileParam, traceParam])
+
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
   // ?tile=<id> → select it and zoom in on it, once the tiles have landed.
@@ -767,10 +813,14 @@ function FloorPlanPage() {
       | "show_3d_walls"
       | "show_3d_ceiling"
       | "show_3d_names_scope"
-      | "show_3d_names_edge",
-    value: boolean | "all" | "selected"
+      | "show_3d_names_edge"
+      | "color_by"
+      | "show_racks",
+    value: boolean | "all" | "selected" | ColorBy
   ) => {
     if (key === "label_fit") setLabelFitLocal(value as boolean)
+    else if (key === "color_by") setColorByLocal(value as ColorBy)
+    else if (key === "show_racks") setShowRacksLocal(value as boolean)
     else if (key === "show_fov") setShowFovLocal(value as boolean)
     else if (key === "show_zone_labels")
       setShowZoneLabelsLocal(value as boolean)
@@ -1246,6 +1296,8 @@ function FloorPlanPage() {
       qc.invalidateQueries({ queryKey: ["floor-plans"] })
       // Tile moves change cable endpoints - refresh the routed paths too.
       qc.invalidateQueries({ queryKey: ["floor-plan-cable-paths", id] })
+      // A tile linked to another rack changes which racks the plan holds.
+      qc.invalidateQueries({ queryKey: ["floor-plan-racks", id] })
       toast.success("Floor plan saved")
     },
     onError: (err) => apiErrorToast(err),
@@ -1383,6 +1435,18 @@ function FloorPlanPage() {
   if (planQuery.isLoading) return <Loading />
   if (planQuery.isError) return <QueryError error={planQuery.error} />
   if (!plan) return null
+
+  // The key to the Color by, in the corner of the 2D plan - inside its
+  // export area - and of the 3D room.
+  const colorLegend = colorBy !== "type" && capacity.hasRacks && (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+      <ColorByLegend
+        colorBy={colorBy}
+        figures={capacity.legend.figures}
+        alarm={capacity.legend.alarm}
+      />
+    </div>
+  )
 
   // The background image's controls: a popover off the header on a wide
   // screen, a dialog from More on a narrow one.
@@ -1578,6 +1642,14 @@ function FloorPlanPage() {
           <Grid3x3 /> Grid
         </BarToggle>
         <div className="ml-auto flex items-center gap-2">
+          {colorBy !== "type" && capacity.hasRacks && (
+            <BarToggle
+              pressed={showRacks}
+              onClick={() => setViewPref("show_racks", !showRacks)}
+            >
+              <PanelBottom /> Racks
+            </BarToggle>
+          )}
           <BarToggle
             pressed={showObjects}
             onClick={() => setViewPref("show_objects", !showObjects)}
@@ -1602,6 +1674,11 @@ function FloorPlanPage() {
               )}
             >
               <div className="grid content-start gap-1">
+                <ColorBySelect
+                  value={colorBy}
+                  onChange={(v) => setViewPref("color_by", v)}
+                />
+                <div className="my-1 h-px bg-border" />
                 <FormCheckbox
                   label="Fit labels to tiles"
                   checked={labelFit}
@@ -2020,8 +2097,13 @@ function FloorPlanPage() {
                   quality={quality3d}
                   cableScale={cableScale}
                   cableLook={cableLook}
+                  tints={capacity.tints}
+                  racks={capacity.rackById}
+                  pointTileIds={capacity.highlightTileIds}
+                  focusRack={rackFocus3d}
                 />
               </Suspense>
+              {colorLegend}
               {show3dHint && (
                 <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
                   Drag to orbit · scroll to zoom · right-drag to pan · arrows /
@@ -2111,6 +2193,12 @@ function FloorPlanPage() {
                 onOpenTile={openTile}
                 exportRef={exportRef}
                 liveState={liveState.data ?? null}
+                colorBy={colorBy}
+                rackFigures={capacity.figures}
+                highlightTileIds={capacity.highlightTileIds}
+                dimTileIds={racksOpen ? capacity.dimTileIds : undefined}
+                // Inside the export area, so the PNG carries the key.
+                overlay={colorLegend}
                 labelFit={labelFit}
                 showFov={showFov}
                 showZoneLabels={showZoneLabels}
@@ -2293,6 +2381,11 @@ function FloorPlanPage() {
                     ? liveState.data?.tiles[popover.target.tile.id]
                     : undefined
                 }
+                planRack={
+                  popover.target?.tile.linked?.kind === "rack"
+                    ? capacity.rackById.get(popover.target.tile.linked.id)
+                    : undefined
+                }
                 fields={popoverFields}
                 onOpenChange={(open) => !open && popover.close()}
                 renderLinked={(tile) =>
@@ -2439,9 +2532,38 @@ function FloorPlanPage() {
             }}
             hidden={hidden}
             onHiddenChange={setHiddenPref}
+            // While the rack table is open it lists the racks.
+            omitRacks={racksOpen}
           />
         )}
       </div>
+
+      {/* The plan's racks while it is coloured by them: under the plan,
+          the width of the page, its height dragged from its top edge. */}
+      {racksOpen && (
+        <RackTablePanel
+          racks={capacity.rows}
+          loading={capacity.query.isLoading}
+          error={capacity.query.error}
+          humanIds={humanIds}
+          onHover={(r) => capacity.setPointRackId(r?.id ?? null)}
+          onFocus={(r) => {
+            const tile = shownTiles.find((t) => t.id === r.tileIds[0])
+            if (!tile) return
+            if (view3d) {
+              setRackFocus3d((cur) => ({
+                tileId: tile.id,
+                n: (cur?.n ?? 0) + 1,
+              }))
+              return
+            }
+            setSelectedId(tile.id)
+            canvasApi.current?.focusTile(tile, 2)
+          }}
+          onMatchChange={capacity.setMatch}
+          onClose={() => setViewPref("show_racks", false)}
+        />
+      )}
 
       <TrayNameDialog
         points={namingPoints}

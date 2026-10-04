@@ -111,6 +111,14 @@ A rack's power supply is its primary feeds. Where a rack has none, the
 of it for two or more PDUs, taken as an A/B pair) - see
 [Racks](../dcim/racks.md) for how a rack rolls power up.
 
+To see where power runs short, colour a floor plan's racks by **Power**
+([Color by](floor-plans.md#color-by)): each rack's demand over its supply on
+the shared scale - green up to 80 %, amber above 80 %, red above 95 % - and
+grey with *No data* where a rack has no supply figure to measure against. The
+rack table under the plan sorts by the same share, and a site's
+[Capacity](../models/site.md#the-capacity-tab) tab adds the figures up per
+floor plan.
+
 ## Tags & custom fields
 
 Need to track something extra - a breaker number, a UPS reference, a circuit

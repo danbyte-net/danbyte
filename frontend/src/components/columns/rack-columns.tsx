@@ -1,14 +1,16 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
-import type { Rack } from "@/lib/api"
+import type { PortCountRow, Rack } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { CapacityBar } from "@/components/cells/capacity-bar"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
+import { PortsFigure, portsRatio } from "@/components/cells/ports-figure"
 import { PowerFigure } from "@/components/cells/power-figure"
+import { portsUsed } from "@/lib/rack-port-state"
 import { capacityRatio, rackPowerRatio } from "@/lib/rack-capacity"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { SiteCell, siteColumn } from "@/components/cells/site-cell"
@@ -29,8 +31,10 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 //
 // "height"/"devices"/"utilisation" are the list page's capacity trio;
 // "width"/"used" are the compact pair the embedded pane shows instead. Both
-// live here so either surface can ask for what it needs. "power" is offered
-// hidden in the Columns menu.
+// live here so either surface can ask for what it needs. "power", "ports"
+// and "panel_ports" are offered hidden in the Columns menu (the ports need
+// the rows fetched with `?include=ports`); a table about capacity - the
+// floor plan's rack table - shows them with `show`.
 
 export type RackColumnId =
   | "numid"
@@ -44,6 +48,8 @@ export type RackColumnId =
   | "utilisation"
   | "used"
   | "power"
+  | "ports"
+  | "panel_ports"
   | "tags"
   | "description"
   | "updated"
@@ -60,6 +66,8 @@ const CANONICAL_ORDER: RackColumnId[] = [
   "utilisation",
   "used",
   "power",
+  "ports",
+  "panel_ports",
   "tags",
   "description",
   "updated",
@@ -70,6 +78,10 @@ export interface RackColumnOpts<T extends Rack = Rack> {
   omit?: RackColumnId[]
   /** Keep only these columns (canonical order still applies). */
   include?: RackColumnId[]
+  /** Show these where the factory offers them hidden ("power", "ports",
+   * "panel_ports") - for a table about capacity. A saved layout still
+   * wins. */
+  show?: RackColumnId[]
   /** Leading checkbox column for bulk selection. */
   selection?: boolean
   /** Leading "#" numid column - gate on `useMe().humanIds`. */
@@ -104,6 +116,42 @@ export function buildRackColumns<T extends Rack = Rack>(
   if (!opts.humanIds) omit.add("numid")
   const keep = (id: RackColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
+  const hidden = (id: RackColumnId) => !opts.show?.includes(id)
+  // A rack's Ports / Panel ports: the bar and `used / total`, opening the
+  // Port utilization page on the rack's devices; by load, a rack with none
+  // counted first.
+  const portsColumn = (
+    id: "ports" | "panel_ports",
+    label: string,
+    get: (r: T) => PortCountRow | null | undefined
+  ): ColumnDef<T, unknown> => ({
+    id,
+    header: ({ column }) => <SortHeader column={column} label={label} />,
+    accessorFn: (r) => portsRatio(get(r)) ?? -1,
+    cell: ({ row }) => {
+      const ports = get(row.original)
+      if (!ports || ports.total <= 0) return dash
+      return (
+        <Link
+          to="/port-utilization"
+          search={{ rack: row.original.id }}
+          className="hover:underline"
+        >
+          <PortsFigure row={ports} bar />
+        </Link>
+      )
+    },
+    meta: {
+      label,
+      defaultHidden: hidden(id),
+      export: {
+        value: (r: T) => {
+          const p = get(r)
+          return p && p.total > 0 ? `${portsUsed(p)}/${p.total}` : ""
+        },
+      },
+    },
+  })
 
   const byId: Record<RackColumnId, () => ColumnDef<T, unknown>> = {
     numid: () => numidColumn<T>({ get: (r) => r.numid }),
@@ -238,8 +286,11 @@ export function buildRackColumns<T extends Rack = Rack>(
       // By load; a rack with no feed to measure against sorts first.
       accessorFn: (r) => rackPowerRatio(r.power) ?? -1,
       cell: ({ row }) => <PowerFigure power={row.original.power} bar />,
-      meta: { label: "Power", defaultHidden: true },
+      meta: { label: "Power", defaultHidden: hidden("power") },
     }),
+    ports: () => portsColumn("ports", "Ports", (r) => r.ports),
+    panel_ports: () =>
+      portsColumn("panel_ports", "Panel ports", (r) => r.panel_ports),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

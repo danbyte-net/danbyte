@@ -41,7 +41,35 @@ export const CHECK_COLOR: Record<string, string> = {
 }
 
 const FRAME_COLOR = "#18181b"
+const FRAME_HOVER = "#3f3f46"
 const FRAME_SELECTED = "#0ea5e9"
+
+const WHITE = new THREE.Color("#ffffff")
+
+/** A tint a quarter of the way to white: the same colour, under the
+ * pointer. */
+function lighter(hex: string): string {
+  return `#${new THREE.Color(hex).lerp(WHITE, 0.25).getHexString()}`
+}
+
+/**
+ * A cabinet body's colour: the selection blue while it is selected - or
+ * pointed at from the plan's rack table - else its Color by tint (#247), a
+ * shade lighter under the pointer, else painted steel.
+ */
+export function rackFrameColor({
+  tint,
+  selected,
+  hovered,
+}: {
+  tint: string | null | undefined
+  selected: boolean
+  hovered: boolean
+}): string {
+  if (selected) return FRAME_SELECTED
+  if (tint) return hovered ? lighter(tint) : tint
+  return hovered ? FRAME_HOVER : FRAME_COLOR
+}
 
 /** A focus-ghosted rack (everything that is NOT the focused one). */
 const FOCUS_GHOST_OPACITY = 0.08
@@ -104,6 +132,8 @@ export function RackMesh({
   portLabelColor = "#ffffff",
   engaged: engagedProp = false,
   markReserved = false,
+  tint = null,
+  highlighted = false,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
@@ -141,6 +171,13 @@ export function RackMesh({
   engaged?: boolean
   /** Draw ports held for a cable amber, as the 2D faceplate does. */
   markReserved?: boolean
+  /** The plan's Color by colour for this rack (#247): the cabinet's body
+   * takes it - the frame far off, the posts, caps and panels up close - as
+   * its 2D tile's fill does. Null: painted steel. Pass it in the room's
+   * frame stamp too, or the canvas keeps the old colour. */
+  tint?: string | null
+  /** Pointed at from outside the room - a row in the plan's rack table. */
+  highlighted?: boolean
 }) {
   const rack = tile.rack!
   const { width, depth, height } = rackFootprintM(rack)
@@ -233,11 +270,11 @@ export function RackMesh({
 
   const rackSelected =
     selection?.tileId === tile.id && selection.kind === "rack"
-  const frameColor = rackSelected
-    ? FRAME_SELECTED
-    : hovered && !ghosted
-      ? "#3f3f46"
-      : FRAME_COLOR
+  const frameColor = rackFrameColor({
+    tint,
+    selected: rackSelected || highlighted,
+    hovered: hovered && !ghosted,
+  })
   const beacon = check ? (CHECK_COLOR[check] ?? null) : null
 
   const flyTo = () => {
@@ -389,7 +426,12 @@ export function RackMesh({
       ) : (
         <group>
           {xray ? (
-            <OutlineShell w={width} h={height} d={depth} />
+            <OutlineShell
+              w={width}
+              h={height}
+              d={depth}
+              color={tint ?? undefined}
+            />
           ) : (
             <Frame w={width} h={height} d={depth} color={frameColor} />
           )}
@@ -558,7 +600,18 @@ function Frame({
  * ghost boxes. The invisible box underneath keeps the cabinet clickable
  * (colorWrite/depthWrite off - raycastable, never drawn).
  */
-function OutlineShell({ w, h, d }: { w: number; h: number; d: number }) {
+function OutlineShell({
+  w,
+  h,
+  d,
+  color = "#71717a",
+}: {
+  w: number
+  h: number
+  d: number
+  /** The rack's Color by tint, else a neutral grey. */
+  color?: string
+}) {
   const edges = useMemo(
     () => new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)),
     [w, h, d]
@@ -575,7 +628,7 @@ function OutlineShell({ w, h, d }: { w: number; h: number; d: number }) {
         position={[0, h / 2, 0]}
         raycast={() => null}
       >
-        <lineBasicMaterial color="#71717a" transparent opacity={0.9} />
+        <lineBasicMaterial color={color} transparent opacity={0.9} />
       </lineSegments>
     </group>
   )

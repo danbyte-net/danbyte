@@ -108,6 +108,20 @@ describe("LegendFrame", () => {
     expect(screen.getByTestId("state").textContent).toBe("true")
     expect(screen.getByText("rows")).toBeTruthy()
   })
+
+  it("stays open with no Hide button where an export carries it (#247)", () => {
+    // A choice stored as folded, or a page holding it shut, has no say: the
+    // key is part of the picture, and a button would land in the PNG.
+    localStorage.setItem("kept", "closed")
+    const { container } = wrap(
+      <LegendFrame storageKey="kept" open={false} hideable={false}>
+        <p>rows</p>
+      </LegendFrame>
+    )
+    expect(screen.getByText("rows")).toBeTruthy()
+    expect(screen.getByText("Legend")).toBeTruthy()
+    expect(container.querySelector("button")).toBeNull()
+  })
 })
 
 describe("legend rows", () => {

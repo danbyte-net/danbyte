@@ -24,12 +24,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { capacityColor, capacityRatio } from "@/lib/rack-capacity"
 import { cn } from "@/lib/utils"
 
 import { routeCable } from "./cable-route"
 import type { Pt } from "./cable-route"
+import { rackFigures, tileFill, tilePaint } from "./tile-paint"
+import type { ColorBy, RackFigures } from "./tile-paint"
 import { usePanZoom } from "./use-pan-zoom"
+
+export { tileFill }
 
 /** Default tray color when the user hasn't picked one - neutral gray. */
 const TRAY_DEFAULT = "#71717a"
@@ -60,10 +63,6 @@ export interface PaletteEntry {
   defaultHeight: number
   isZone: boolean
   hasFov: boolean
-}
-
-export function tileFill(t: FloorPlanTile): string {
-  return t.color || t.tile_type?.color || t.role_type?.color || "#a1a1aa"
 }
 
 export function tileName(t: FloorPlanTile): string {
@@ -122,12 +121,6 @@ export function cableRoutePoints(
   return routeCable(a, b, polys)
 }
 
-const CHECK_COLOR: Record<string, string> = {
-  down: "#ef4444",
-  stale: "#ef4444",
-  degraded: "#f59e0b",
-}
-
 export interface CellPoint {
   x: number
   y: number
@@ -166,6 +159,19 @@ export interface FloorCanvasProps {
   /** Live per-tile metrics from /state/ - paints rack utilization bars,
    * cabinet device counts and monitoring rings. */
   liveState?: FloorPlanLiveState | null
+  /** What rack tiles are coloured by (#247, `tile-paint.ts`). `type`, the
+   * default, is the plan as it always looked. */
+  colorBy?: ColorBy
+  /** Each rack tile's figures, by tile id (`plan-racks.ts`
+   * `tileRackFigures`). Without it a rack reads its live state alone. */
+  rackFigures?: ReadonlyMap<string, RackFigures>
+  /** Tiles outlined as pointed at - a row hovered in the rack table. */
+  highlightTileIds?: ReadonlySet<string>
+  /** Tiles faded - racks the rack table's filter leaves out. */
+  dimTileIds?: ReadonlySet<string>
+  /** Drawn over the plan inside the export area, so the PNG carries it -
+   * the Color by legend. */
+  overlay?: React.ReactNode
   /** Auto-size labels to fit their tile instead of a fixed 11px + ellipsis. */
   labelFit?: boolean
   /** Draw camera FOV cones for tiles whose type/role has them. */
@@ -297,6 +303,11 @@ export function FloorCanvas({
   onHoverTile,
   exportRef,
   liveState,
+  colorBy = "type",
+  rackFigures: figures,
+  highlightTileIds,
+  dimTileIds,
+  overlay,
   labelFit = false,
   showFov = true,
   showZoneLabels = true,
@@ -1074,6 +1085,10 @@ export function FloorCanvas({
                 labelFit={labelFit}
                 showZoneLabels={showZoneLabels}
                 live={liveState?.tiles[tile.id]}
+                colorBy={colorBy}
+                figures={figures?.get(tile.id)}
+                highlighted={!!highlightTileIds?.has(tile.id)}
+                dimmed={!!dimTileIds?.has(tile.id)}
                 onPointerDown={(e) => handleTileDown(tile, e)}
                 onResizeDown={(e) => handleResizeDown(tile, e)}
                 // In Cables mode a double-click finishes a tray draw - don't
@@ -1219,6 +1234,8 @@ export function FloorCanvas({
           />
         </g>
       </svg>
+
+      {overlay}
 
       {/* Right-click menu - a small, extensible action list.
           The trigger is a zero-size anchor parked at the pointer (the same trick
@@ -1781,6 +1798,10 @@ function TileShape({
   labelFit,
   showZoneLabels = true,
   live,
+  colorBy = "type",
+  figures,
+  highlighted = false,
+  dimmed = false,
   onPointerDown,
   onResizeDown,
   onDoubleClick,
@@ -1793,6 +1814,15 @@ function TileShape({
   labelFit: boolean
   showZoneLabels?: boolean
   live?: FloorPlanLiveState["tiles"][string]
+  /** What the plan colours its racks by (`tile-paint.ts`). */
+  colorBy?: ColorBy
+  /** This rack tile's figures; without them a rack reads its live state. */
+  figures?: RackFigures
+  /** Pointed at from outside the canvas - a rack table row under the
+   * pointer. */
+  highlighted?: boolean
+  /** Left out by the rack table's filter. */
+  dimmed?: boolean
   onPointerDown: (e: React.PointerEvent) => void
   onResizeDown: (e: React.PointerEvent) => void
   onDoubleClick: () => void
@@ -1803,24 +1833,43 @@ function TileShape({
 }) {
   const w = tile.width * CELL
   const h = tile.height * CELL
-  const fill = tileFill(tile)
   const name = tileName(tile)
   const zone = tileIsZone(tile)
   const dashed = tile.status === "planned" || tile.status === "reserved"
   const showLabel = !!name
-  const label = showLabel ? labelLayout(name, w, h, labelFit) : null
 
   // Live monitoring: down/degraded overrides the stroke so a rack going red
-  // is visible at any zoom.
-  const check = live?.check ?? null
-  const checkColor = check ? CHECK_COLOR[check] : undefined
+  // is visible at any zoom - whatever the fill says about its capacity.
   const rackLive = live?.kind === "rack" ? live : null
-  const utilization = rackLive
-    ? capacityRatio(rackLive.used_units, rackLive.u_height)
-    : null
+  const paint = tilePaint({
+    tile,
+    colorBy,
+    rack: figures ?? rackFigures(null, rackLive),
+    check: live?.check ?? null,
+    selected,
+    dimmed,
+  })
+  const fill = paint.fill
   const cabinetLive = live?.kind === "cabinet" ? live : null
+  // The figure along the foot: on a two-cell tile its text sits at the
+  // right; a capacity mode writes it on a one-cell tile too, centred. Where
+  // the tile is too small for both side by side, the name moves up to make
+  // room - never under Type, which keeps the plan's look.
+  const figure = paint.figure
+  const wide = w >= CELL * 2
+  const figureText = figure && (wide || figure.always) ? figure.text : null
+  const stacked = !!figureText && (!wide || (!!figure?.always && h < CELL * 2))
+  const label = showLabel
+    ? stacked
+      ? stackedLabel(labelLayout(name, w, h - 14, labelFit), h)
+      : labelLayout(name, w, h, labelFit)
+    : null
+  const labelY = stacked
+    ? (h - 14) / 2 + (label?.fontSize ?? 0) / 3
+    : h / 2 + (label?.fontSize ?? 0) / 3
 
   if (zone) {
+    const zoneFill = tileFill(tile)
     // Zones: soft area tint under everything, label pinned top-left, no
     // selection handles beyond the outline.
     return (
@@ -1834,9 +1883,9 @@ function TileShape({
           width={w}
           height={h}
           rx={4}
-          fill={fill}
+          fill={zoneFill}
           fillOpacity={0.14}
-          stroke={fill}
+          stroke={zoneFill}
           strokeOpacity={selected ? 0.9 : 0.35}
           strokeWidth={selected ? 2 : 1}
           strokeDasharray="4 4"
@@ -1846,7 +1895,7 @@ function TileShape({
             x={6}
             y={14}
             fontSize={10}
-            fill={fill}
+            fill={zoneFill}
             pointerEvents="none"
             fontWeight={500}
           >
@@ -1873,7 +1922,10 @@ function TileShape({
   return (
     <g
       transform={`translate(${tile.x * CELL},${tile.y * CELL})`}
-      opacity={tile.status === "decommissioning" ? 0.55 : 1}
+      opacity={paint.opacity}
+      data-tile={tile.id}
+      data-highlighted={highlighted || undefined}
+      data-dimmed={dimmed || undefined}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
       onPointerEnter={onPointerEnter}
@@ -1888,50 +1940,68 @@ function TileShape({
       {/* The rect sits a gutter inside the cell footprint so adjacent tiles
           get a visible seam instead of touching strokes. Linked tiles fill
           heavier than unlinked planning tiles - same read as the 3D room's
-          solid cabinets vs ghost massing - which replaces the old link dot. */}
+          solid cabinets vs ghost massing - which replaces the old link dot.
+          Coloured by a rack measure, the fill is the rack's level. */}
       <rect
+        data-part="fill"
         x={GUTTER}
         y={GUTTER}
         width={w - GUTTER * 2}
         height={h - GUTTER * 2}
         rx={5}
         fill={fill}
-        fillOpacity={tile.linked ? 0.26 : 0.13}
-        stroke={checkColor ?? fill}
-        strokeOpacity={selected || checkColor ? 1 : 0.55}
-        strokeWidth={selected ? 2 : checkColor ? 2 : 1}
+        fillOpacity={paint.fillOpacity}
+        stroke={paint.stroke}
+        strokeOpacity={paint.strokeOpacity}
+        strokeWidth={paint.strokeWidth}
         strokeDasharray={dashed ? "6 3" : undefined}
       />
+      {/* Pointed at from the rack table: a ring just outside the tile, in
+          the accent, so it reads over any fill. */}
+      {highlighted && (
+        <rect
+          data-part="highlight"
+          x={GUTTER - 2.5}
+          y={GUTTER - 2.5}
+          width={w - GUTTER * 2 + 5}
+          height={h - GUTTER * 2 + 5}
+          rx={7}
+          fill="none"
+          className="stroke-primary"
+          strokeWidth={2.5}
+          pointerEvents="none"
+        />
+      )}
       {/* Facing is the tile's own property (build-in-advance): every
           non-zone tile shows its front edge, linked or not - otherwise the
           bulk facing arrows change unlinked tiles invisibly. */}
-      {!tileIsZone(tile) && (
-        <g transform={`translate(${GUTTER},${GUTTER})`}>
-          <FacingEdge
-            w={w - GUTTER * 2}
-            h={h - GUTTER * 2}
-            orientation={tile.orientation}
-            color={fill}
-          />
-        </g>
-      )}
+      <g transform={`translate(${GUTTER},${GUTTER})`}>
+        <FacingEdge
+          w={w - GUTTER * 2}
+          h={h - GUTTER * 2}
+          orientation={tile.orientation}
+          color={fill}
+        />
+      </g>
       {/* Icons live in the palette rail only - tiles stay clean: color,
           label, and live state. */}
       {label && (
         <text
           x={w / 2}
-          y={h / 2 + label.fontSize / 3}
+          y={labelY}
           textAnchor="middle"
           fontSize={label.fontSize}
           fill="currentColor"
+          opacity={paint.muted ? 0.6 : 1}
           pointerEvents="none"
         >
           {label.text}
         </text>
       )}
-      {utilization !== null && (
-        // Rack tiles: a thin utilization bar along the bottom edge.
-        <g pointerEvents="none">
+      {figure && (
+        // Rack tiles: a thin bar along the bottom edge - space, or the
+        // measure the plan is coloured by - and its figure.
+        <g pointerEvents="none" data-part="figure">
           <rect
             x={GUTTER + 3}
             y={h - GUTTER - 7}
@@ -1940,28 +2010,30 @@ function TileShape({
             rx={2}
             className="fill-foreground/10"
           />
-          <rect
-            x={GUTTER + 3}
-            y={h - GUTTER - 7}
-            width={Math.max(
-              2,
-              (w - GUTTER * 2 - 6) * Math.min(1, utilization)
-            )}
-            height={4}
-            rx={2}
-            fill={capacityColor(utilization)}
-          />
-          {w >= CELL * 2 && (
+          {figure.ratio != null && (
+            <rect
+              x={GUTTER + 3}
+              y={h - GUTTER - 7}
+              width={Math.max(
+                2,
+                (w - GUTTER * 2 - 6) * Math.min(1, figure.ratio)
+              )}
+              height={4}
+              rx={2}
+              fill={figure.color}
+            />
+          )}
+          {figureText && (
             <text
-              x={w - GUTTER - 4}
+              x={wide ? w - GUTTER - 4 : w / 2}
               y={h - GUTTER - 10}
-              textAnchor="end"
+              textAnchor={wide ? "end" : "middle"}
               fontSize={8}
               fill="currentColor"
-              opacity={0.7}
+              opacity={figure.always ? 0.85 : 0.7}
               className="num"
             >
-              {Math.round(utilization * 100)}%
+              {figureText}
             </text>
           )}
         </g>
@@ -1990,6 +2062,15 @@ function TileShape({
       )}
     </g>
   )
+}
+
+/** A one-cell tile that also carries its figure: the name gets the room
+ * above it, no larger than the cell can hold beside the figure. */
+function stackedLabel(
+  label: { fontSize: number; text: string },
+  h: number
+): { fontSize: number; text: string } {
+  return { ...label, fontSize: Math.min(label.fontSize, (h - 14) * 0.45) }
 }
 
 /** A cabinet tile's device count, small in its bottom-right corner: the

@@ -17,7 +17,14 @@ import {
 import { type ColumnDef } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
-import type { Device, Paginated, Rack, RackPortState } from "@/lib/api"
+import type {
+  Device,
+  Paginated,
+  PortCountRow,
+  Rack,
+  RackPortState,
+} from "@/lib/api"
+import { WITH_PORTS } from "@/lib/port-utilization"
 import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
@@ -221,9 +228,34 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
 function RackOverview({ rack: r }: { rack: Rack }) {
   const { humanIds } = useMe()
   // Every port in the rack, in one request while the Overview shows: the
-  // Capacity card's Ports and the elevation's live faces read it.
+  // elevation's live faces read it.
   const portState = useRackPortState(r.id)
-  const rackPorts = portState.data?.rack.ports
+  // The Capacity card's Ports and Panel ports: the rack's counted ports
+  // split as the racks list, the floor plan and the site's Capacity tab
+  // split them (`?include=ports`), so the rack reads one way everywhere.
+  const split = useQuery({
+    queryKey: ["rack", r.id, WITH_PORTS],
+    queryFn: () => api<Rack>(`/api/racks/${r.id}/?include=ports`),
+  })
+  const portsRow = (row: PortCountRow | null | undefined): React.ReactNode =>
+    row ? (
+      row.total > 0 ? (
+        // The per-device breakdown is the Port utilization page's.
+        <Link
+          to="/port-utilization"
+          search={{ rack: r.id }}
+          className="link num"
+        >
+          {portsUsed(row)} / {row.total}
+        </Link>
+      ) : (
+        dash
+      )
+    ) : split.isError ? (
+      dash
+    ) : (
+      <span className="text-muted-foreground">…</span>
+    )
   const util = r.u_height ? Math.round((r.used_units / r.u_height) * 100) : 0
   const overWeight =
     r.max_weight_kg != null && r.total_weight_kg > r.max_weight_kg
@@ -307,27 +339,8 @@ function RackOverview({ rack: r }: { rack: Rack }) {
         <span className="num">{Math.max(0, r.u_height - r.used_units)} U</span>
       ),
     },
-    {
-      label: "Ports",
-      value: rackPorts ? (
-        rackPorts.total > 0 ? (
-          // The per-device breakdown is the Port utilization page's.
-          <Link
-            to="/port-utilization"
-            search={{ rack: r.id }}
-            className="link num"
-          >
-            {portsUsed(rackPorts)} / {rackPorts.total}
-          </Link>
-        ) : (
-          dash
-        )
-      ) : portState.isError ? (
-        dash
-      ) : (
-        <span className="text-muted-foreground">…</span>
-      ),
-    },
+    { label: "Ports", value: portsRow(split.data?.ports) },
+    { label: "Panel ports", value: portsRow(split.data?.panel_ports) },
     {
       label: "Power",
       value: <PowerFigure power={r.power} />,

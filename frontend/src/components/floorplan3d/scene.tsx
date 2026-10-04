@@ -15,6 +15,7 @@ import type {
   ImagePortMarker,
   InventoryItemRow,
   Paginated,
+  Rack,
   TerminationInput,
 } from "@/lib/api"
 import { legendIsEmpty } from "@/lib/faceplate-colors"
@@ -24,9 +25,8 @@ import { LegendFrame } from "@/components/map-legend"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { Button } from "@/components/ui/button"
-import { RowCheckBadge } from "@/components/foldable-group"
 import { Loading } from "@/components/loading"
-import { BarButton, BarTip } from "@/components/map-toolbar"
+import { BarButton } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -66,6 +66,8 @@ import type { FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh } from "./rack-mesh"
 import type { Sel, ShellMode } from "./rack-mesh"
+import { RackHud } from "./rack-hud"
+import { roomStamp } from "./room-stamp"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { NoWebGL, Stage, roomLights } from "./stage"
 import { TileGhostMesh } from "./tile-ghost-mesh"
@@ -113,6 +115,10 @@ export default function FloorScene3D({
   quality = "auto",
   cableScale = 1,
   cableLook = "auto",
+  tints,
+  racks,
+  pointTileIds,
+  focusRack = null,
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -144,6 +150,17 @@ export default function FloorScene3D({
   cableScale?: number
   /** Tubes, lines, or auto (tubes up to the room's tube limit). */
   cableLook?: "auto" | "tubes" | "lines"
+  /** Each rack tile's colour under the plan's Color by (#247), by tile id -
+   * the 2D fill, as the cabinet's tint. */
+  tints?: ReadonlyMap<string, string>
+  /** The plan's racks with their figures, by rack id, when the plan has
+   * asked for them - the selected rack's card reads them. */
+  racks?: ReadonlyMap<string, Rack>
+  /** Rack tiles pointed at from the rack table: lit as selected. */
+  pointTileIds?: ReadonlySet<string>
+  /** A rack table row clicked: select that rack and fly to its front. A
+   * new `n` flies again to the same rack. */
+  focusRack?: { tileId: string; n: number } | null
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -398,6 +415,28 @@ export default function FloorScene3D({
     return () => window.removeEventListener("keydown", onKey)
   }, [selection, focusOn, isolation, connecting])
 
+  // A rack table row clicked under the room: select that rack and fly to
+  // its front - the double-click's framing - once the room has loaded.
+  const focusedRef = useRef(0)
+  useEffect(() => {
+    const d = scene.data
+    if (!focusRack || !d || focusedRef.current === focusRack.n) return
+    const t = d.tiles.find((x) => x.id === focusRack.tileId)
+    if (!t?.rack) return
+    focusedRef.current = focusRack.n
+    setCableSel(null)
+    setTraySel(null)
+    setSelection({ kind: "rack", tileId: t.id })
+    setViewSide("front")
+    const vp = rackViewpoint(d.plan, t, rackFootprintM(t.rack).height, "front")
+    flyToRef.current = {
+      target: new THREE.Vector3(...vp.target),
+      position: new THREE.Vector3(...vp.position),
+    }
+    // A prop change, demand frameloop: kick a frame so the rig moves.
+    invalidateRef.current?.()
+  }, [focusRack, scene.data])
+
   // Every near-tier device reports the colours it draws; the HUD legend keys
   // their union (and hides when nothing photo-anchored is in view). Above the
   // WebGL/loading early returns - hook order has to be unconditional.
@@ -585,7 +624,23 @@ export default function FloorScene3D({
           roomDiag: diag,
           requestRef: flyToRef,
         }}
-        stamp={`${showWalls}|${showCables}|${showCeiling}|${showAirflow}|${showNames}|${namesScope}|${namesAtEdge}|${showUNumbers}|${floorPeek}|${shellMode}|${rq}`}
+        // Every view setting, the racks' tints among them: a change the
+        // demand frameloop doesn't see would leave the old picture.
+        stamp={roomStamp({
+          showWalls,
+          showCables,
+          showCeiling,
+          showAirflow,
+          showNames,
+          namesScope,
+          namesAtEdge,
+          showUNumbers,
+          floorPeek,
+          shellMode,
+          quality: rq,
+          tints,
+          pointed: pointTileIds,
+        })}
         invalidateRef={invalidateRef}
         onPointerMissed={() => {
           setSelection(null)
@@ -602,6 +657,8 @@ export default function FloorScene3D({
             plan={plan}
             tile={t}
             check={liveState?.tiles[t.id]?.check ?? null}
+            tint={tints?.get(t.id) ?? null}
+            highlighted={!!pointTileIds?.has(t.id)}
             selection={selection}
             attention={attention}
             showUNumbers={showUNumbers}
@@ -802,6 +859,7 @@ export default function FloorScene3D({
         <RackHud
           tile={selTile}
           liveState={liveState}
+          info={racks?.get(selTile.rack!.id)}
           focused={focusOn}
           viewSide={viewSide}
           onToggleFocus={() => setFocusOn((v) => !v)}
@@ -1089,87 +1147,6 @@ export default function FloorScene3D({
           </LegendFrame>
         </div>
       )}
-    </div>
-  )
-}
-
-/** Overlay card for the selected rack - name, live rollup, the operator's
- * focus/isolate/flip controls, jump-off. */
-function RackHud({
-  tile,
-  liveState,
-  focused,
-  viewSide,
-  onToggleFocus,
-  onFlip,
-  onIsolateRow,
-  onIsolateZone,
-}: {
-  tile: SceneTile
-  liveState: FloorPlanLiveState | null
-  focused: boolean
-  viewSide: "front" | "rear"
-  onToggleFocus: () => void
-  onFlip: () => void
-  onIsolateRow: () => void
-  /** Present only when the rack stands in a zone (smallest zone wins). */
-  onIsolateZone?: () => void
-}) {
-  const rack = tile.rack!
-  const live = liveState?.tiles[tile.id]
-  return (
-    <div className="absolute top-3 left-3 w-60 rounded-lg border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur">
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-mono text-[13px] font-semibold">
-          {tile.label || rack.name}
-        </span>
-        <span className="text-[11px] text-muted-foreground">
-          {rack.u_height}U
-        </span>
-      </div>
-      <div className="mt-1 grid gap-0.5 text-[12px] text-muted-foreground">
-        <span>
-          {rack.devices.length} device{rack.devices.length === 1 ? "" : "s"}
-        </span>
-        {live?.kind === "rack" && (
-          <span className="flex items-center gap-1.5">
-            {live.used_units}/{live.u_height}U used
-            <RowCheckBadge check={live.check} />
-          </span>
-        )}
-        <span className="text-[11px]">double-click to zoom in</span>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <BarTip tip="Focus" shortcut="F">
-          <BarButton
-            variant={focused ? "default" : "outline"}
-            onClick={onToggleFocus}
-          >
-            Focus
-          </BarButton>
-        </BarTip>
-        <BarButton onClick={onFlip}>
-          {viewSide === "front" ? "View rear" : "View front"}
-        </BarButton>
-      </div>
-      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-        <BarButton
-          className={onIsolateZone ? undefined : "col-span-2"}
-          onClick={onIsolateRow}
-        >
-          Isolate row
-        </BarButton>
-        {onIsolateZone && (
-          <BarButton onClick={onIsolateZone}>Isolate zone</BarButton>
-        )}
-      </div>
-      <OpenLink
-        to="/racks/$id"
-        params={{ id: rack.id }}
-        className="mt-1.5 w-full"
-      >
-        Open rack
-      </OpenLink>
     </div>
   )
 }

@@ -58,13 +58,15 @@ function readOpen(key: string, fallback: boolean): boolean {
 /**
  * The legend box. Open or folded is remembered per browser under
  * `storageKey` ("open" / "closed"), or held by the page when it passes
- * `open` and `onOpenChange`.
+ * `open` and `onOpenChange`. `hideable={false}` keeps it open with no Hide
+ * button - a legend that is part of the picture, which an export carries.
  */
 export function LegendFrame({
   storageKey,
   defaultOpen = true,
   open: openProp,
   onOpenChange,
+  hideable = true,
   className = "w-60",
   children,
 }: {
@@ -76,6 +78,10 @@ export function LegendFrame({
   /** Controlled: the page keeps the open state. */
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  /** False: always open, headed *Legend* with no Hide button and never
+   * folded - for a legend drawn inside an export's area (the floor plan's
+   * Color by key), where a button would land in the picture. */
+  hideable?: boolean
   /** The open box's width - `w-60` unless the rows need their own. */
   className?: string
   children: ReactNode
@@ -83,7 +89,7 @@ export function LegendFrame({
   const [own, setOwn] = useState(() =>
     storageKey ? readOpen(storageKey, defaultOpen) : defaultOpen
   )
-  const open = openProp ?? own
+  const open = !hideable || (openProp ?? own)
   const toggle = (v: boolean) => {
     setOwn(v)
     onOpenChange?.(v)
@@ -114,24 +120,33 @@ export function LegendFrame({
         className
       )}
     >
-      <div className="mb-1 flex items-center justify-between gap-4">
+      <div
+        className={cn(
+          "mb-1 flex items-center justify-between gap-4",
+          // The Hide button sets the header's height; without it the label
+          // keeps the same rhythm.
+          !hideable && "h-6"
+        )}
+      >
         <SectionLabel className="mb-0">Legend</SectionLabel>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="-mr-1.5"
-              aria-label="Hide legend"
-              onClick={() => toggle(false)}
-            >
-              <X />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" variant="default">
-            Hide legend
-          </TooltipContent>
-        </Tooltip>
+        {hideable && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="-mr-1.5"
+                aria-label="Hide legend"
+                onClick={() => toggle(false)}
+              >
+                <X />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" variant="default">
+              Hide legend
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
       {children}
     </div>

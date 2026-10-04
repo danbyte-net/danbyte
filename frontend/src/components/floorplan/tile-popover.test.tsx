@@ -3,9 +3,10 @@ import { cleanup, render, screen, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
+import type { FloorPlanLiveState, FloorPlanTile, Rack } from "@/lib/api"
 import {
   DEFAULT_POPOVER_FIELDS,
+  POPOVER_FIELDS,
   TilePopover,
   fieldsForTile,
 } from "./tile-popover"
@@ -19,6 +20,26 @@ const { apiMock } = vi.hoisted(() => ({
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   api: apiMock,
+}))
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    to,
+    search,
+    className,
+  }: {
+    children: React.ReactNode
+    to: string
+    search?: Record<string, string>
+    className?: string
+  }) => (
+    <a
+      className={className}
+      href={`${to}${search ? `?${new URLSearchParams(search).toString()}` : ""}`}
+    >
+      {children}
+    </a>
+  ),
 }))
 
 beforeEach(() => {
@@ -55,7 +76,8 @@ const cabinetLive: FloorPlanLiveState["tiles"][string] = {
 function open(
   t: FloorPlanTile,
   fields: string[],
-  live: FloorPlanLiveState["tiles"][string] = cabinetLive
+  live: FloorPlanLiveState["tiles"][string] = cabinetLive,
+  rack?: Rack | null
 ) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -63,6 +85,7 @@ function open(
       <TilePopover
         target={{ tile: t, x: 10, y: 10, pinned: true }}
         live={live}
+        planRack={rack}
         fields={fields}
         onOpenChange={() => undefined}
         renderLinked={(x) => <a href={x.linked!.route}>Open cabinet</a>}
@@ -190,5 +213,64 @@ describe("TilePopover on a rack tile", () => {
       rackLive({ available_w: 0, allocated_w: 0, maximum_w: 0 })
     )
     expect(none.Power).toBeUndefined()
+  })
+
+  // #247: the plan's racks carry their ports; the Ports field reads them.
+  const row = (connected: number, total: number, reserved = 0) => ({
+    total,
+    connected,
+    reserved,
+    free: total - connected - reserved,
+    marked: 0,
+  })
+  const planRack = (patch: Partial<Rack>) =>
+    ({ id: "r1", name: "A01", ...patch }) as Rack
+
+  it("offers Ports, off by default", () => {
+    expect(POPOVER_FIELDS.ports.label).toBe("Ports")
+    expect(DEFAULT_POPOVER_FIELDS).not.toContain("ports")
+  })
+
+  it("reads a rack's ports and panel ports, each opening Port utilization", () => {
+    const rows = open(
+      rackTile,
+      ["ports"],
+      rackLive({ available_w: 0, allocated_w: 0, maximum_w: 0 }),
+      planRack({ ports: row(70, 114, 4), panel_ports: row(20, 24) })
+    )
+    const links = within(rows.Ports).getAllByRole("link")
+    expect(links.map((a) => a.textContent)).toEqual([
+      "74 / 114",
+      "20 / 24Panel",
+    ])
+    for (const a of links)
+      expect(a.getAttribute("href")).toBe("/port-utilization?rack=r1")
+    // On the racks' shared scale: 83 % of the panel is in use.
+    expect(
+      links[1].querySelector("[data-level]")?.getAttribute("data-level")
+    ).toBe("warn")
+  })
+
+  it("leaves out what a rack does not have, and racks the plan has not loaded", () => {
+    const live = rackLive({ available_w: 0, allocated_w: 0, maximum_w: 0 })
+    const only = open(
+      rackTile,
+      ["ports"],
+      live,
+      planRack({ ports: row(3, 15), panel_ports: row(0, 0) })
+    )
+    expect(within(only.Ports).getAllByRole("link")).toHaveLength(1)
+    cleanup()
+    expect(
+      open(rackTile, ["name", "ports"], live, planRack({ ports: row(0, 0) }))
+        .Ports
+    ).toBeUndefined()
+    cleanup()
+    expect(
+      open(rackTile, ["name", "ports"], live, undefined).Ports
+    ).toBeUndefined()
+    cleanup()
+    // A cabinet tile has no rack to read.
+    expect(open(tile(), ["name", "ports"]).Ports).toBeUndefined()
   })
 })

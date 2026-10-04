@@ -52,7 +52,8 @@ const FIELD_META: Partial<Record<string, FieldMeta>> = {
     label: "Utilization",
     hint: "Racks: used U + a bar · cabinets: devices, rails",
   },
-  power: { label: "Power", hint: "Racks: allocated vs maximum watts" },
+  power: { label: "Power", hint: "Racks: demand vs supply" },
+  ports: { label: "Ports", hint: "Racks: ports and panel ports in use" },
   weight: { label: "Weight", hint: "Racks: total vs maximum load" },
   device_count: {
     label: "Device count",
@@ -105,6 +106,7 @@ const GROUPS: { title: string; keys: string[] }[] = [
     keys: [
       "utilization",
       "power",
+      "ports",
       "weight",
       "device_count",
       "rail_count",
