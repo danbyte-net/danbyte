@@ -247,3 +247,42 @@ class RealNotesTests(APITestCase):
                     if line and not line.startswith("#")]
         shown = un._LOGROTATE.split("<<'EOF'\n", 1)[1].split("\nEOF\n", 1)[0].splitlines()
         self.assertEqual(shown, rendered)
+
+
+class HostCardTests(APITestCase):
+    """Root steps show as one card with one command; each keeps its by-hand
+    form as a part, and acknowledging the card covers them all."""
+
+    def setUp(self):
+        notes = (
+            un.UpgradeNote(id="1.1.0-nginx", version="1.1.0", title="Nginx", body="b",
+                           snippet="sudo nginx -t", platforms=("systemd",), host=True),
+            un.UpgradeNote(id="1.1.0-plain", version="1.1.0", title="Plain", body="b"),
+            un.UpgradeNote(id="1.0.0-unit", version="1.0.0", title="Unit", body="b",
+                           platforms=("systemd",), host=True),
+        )
+        p = patch.object(un, "NOTES", notes)
+        p.start()
+        self.addCleanup(p.stop)
+        for target, value in (("core.upgrade_notes.system_version",
+                               {"version": "1.1.0", "commit": "x", "tag": ""}),
+                              ("core.upgrade_notes.deployment_method", "systemd")):
+            q = patch(target, return_value=value)
+            q.start()
+            self.addCleanup(q.stop)
+        dep = DeploymentSettings.load()
+        dep.upgrade_notes_done = []
+        dep.save()
+        self.client.force_login(get_user_model().objects.create_superuser("admin", "a@e.com", "x"))
+
+    def test_one_card_for_every_root_step(self):
+        pending = self.client.get("/api/system/upgrade-notes/").json()["pending"]
+        self.assertEqual([n["id"] for n in pending], [un.HOST_STEPS_ID, "1.1.0-plain"])
+        card = pending[0]
+        self.assertEqual(card["snippet"].splitlines()[-1], "sudo ./install.sh --host-only")
+        self.assertEqual([p["id"] for p in card["parts"]], ["1.1.0-nginx", "1.0.0-unit"])
+        self.assertEqual(card["parts"][0]["snippet"], "sudo nginx -t")
+        r = self.client.post("/api/system/upgrade-notes/ack/", {"ids": [un.HOST_STEPS_ID]},
+                             format="json")
+        self.assertEqual([n["id"] for n in r.json()["pending"]], ["1.1.0-plain"])
+        self.assertEqual(sorted(r.json()["done"]), ["1.0.0-unit", "1.1.0-nginx"])

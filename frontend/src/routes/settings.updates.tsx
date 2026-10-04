@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { ChevronDown, ChevronRight } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
@@ -960,10 +961,20 @@ function UpgradeNoteRow({
           Done
         </Button>
       </div>
+      {note.parts && note.parts.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-5 text-[13px]">
+          {note.parts.map((p) => (
+            <li key={p.id}>{p.title}</li>
+          ))}
+        </ul>
+      )}
       {note.snippet && (
         <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
           {note.snippet}
         </pre>
+      )}
+      {note.parts && note.parts.some((p) => p.snippet) && (
+        <ByHand parts={note.parts} />
       )}
       {note.docs && (
         <a
@@ -975,6 +986,42 @@ function UpgradeNoteRow({
           Docs
         </a>
       )}
+    </div>
+  )
+}
+
+/** Each root step's by-hand form, folded away: the one command above does
+ * them all. */
+function ByHand({ parts }: { parts: UpgradeNote[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="space-y-2">
+      <Button
+        size="sm"
+        variant="ghost"
+        className="-ml-2 h-7 px-2 text-xs"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? (
+          <ChevronDown className="size-3.5" />
+        ) : (
+          <ChevronRight className="size-3.5" />
+        )}
+        Do it by hand
+      </Button>
+      {open &&
+        parts
+          .filter((p) => p.snippet)
+          .map((p) => (
+            <div key={p.id} className="space-y-1">
+              <div className="text-xs font-medium">{p.title}</div>
+              <p className="text-xs text-muted-foreground">{p.body}</p>
+              <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
+                {p.snippet}
+              </pre>
+            </div>
+          ))}
     </div>
   )
 }

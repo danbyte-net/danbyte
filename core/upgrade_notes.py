@@ -35,12 +35,14 @@ class UpgradeNote:
     # the snippet starts with the one command that does all of those.
     host: bool = False
 
-    def as_dict(self) -> dict:
+    def as_dict(self, by_hand: bool = False) -> dict:
+        """``by_hand``: a root step's own snippet alone, without the command
+        that does every root step (the combined card shows that once)."""
         from django.conf import settings
 
         # @@APP@@: this install's app directory, as the templates spell it.
         snippet = self.snippet.replace("@@APP@@", str(settings.BASE_DIR))
-        if self.host:
+        if self.host and not by_hand:
             snippet = f"{host_sync_command()}\n# or by hand:\n{snippet}" if snippet \
                 else host_sync_command()
         return {
@@ -589,10 +591,17 @@ def pending(dep, version: str | None = None, platform: str | None = None) -> lis
     return [n for n in applicable(version, platform) if n.id not in done]
 
 
+# The card that stands for every pending root step (``payload``).
+HOST_STEPS_ID = "host-steps"
+
+
 def acknowledge(dep, ids: list[str] | None = None) -> list[str]:
     """Mark notes done; ``None`` means every pending one. Unknown ids are
-    ignored. Returns the ids that were added."""
+    ignored; ``HOST_STEPS_ID`` means every pending root step. Returns the ids
+    that were added."""
     known = {n.id for n in NOTES}
+    if ids is not None and HOST_STEPS_ID in ids:
+        ids = [i for i in ids if i != HOST_STEPS_ID] + [n.id for n in pending(dep) if n.host]
     wanted = [n.id for n in pending(dep)] if ids is None else [i for i in ids if i in known]
     current = list(dep.upgrade_notes_done or [])
     added = [i for i in wanted if i not in current]
@@ -602,10 +611,32 @@ def acknowledge(dep, ids: list[str] | None = None) -> list[str]:
     return added
 
 
+def _host_card(notes: list[UpgradeNote]) -> dict:
+    """Every pending root step as one card. They all end in the same command,
+    so it shows once, with the steps it covers as ``parts`` - each with its
+    by-hand form, for a host that would rather not run it."""
+    return {
+        "id": HOST_STEPS_ID,
+        "version": notes[0].version,
+        "title": "Run this release's root steps",
+        "body": (
+            "These need root, so an upgrade from the app cannot run them. One "
+            "command applies them all from this release's bundle."
+        ),
+        "snippet": host_sync_command(),
+        "docs": "getting-started/upgrading/#after-an-upgrade",
+        "platforms": ["systemd"],
+        "parts": [n.as_dict(by_hand=True) for n in notes],
+    }
+
+
 def payload(dep) -> dict:
+    notes = pending(dep)
+    host = [n for n in notes if n.host]
+    cards = ([_host_card(host)] if host else []) + [n.as_dict() for n in notes if not n.host]
     return {
         "version": system_version()["version"],
         "deployment": deployment_method(),
-        "pending": [n.as_dict() for n in pending(dep)],
+        "pending": cards,
         "done": list(dep.upgrade_notes_done or []),
     }

@@ -6809,6 +6809,9 @@ export interface UpgradeNote {
   snippet: string
   docs: string
   platforms: string[]
+  /** The combined root-steps card: the steps its one command covers, each
+   * with its by-hand snippet. */
+  parts?: UpgradeNote[]
 }
 
 export interface UpgradeNotes {

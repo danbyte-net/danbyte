@@ -479,6 +479,12 @@ A step that can tell it is done (the nginx site has the location, the unit
 file exists) disappears by itself once it is; the others stay until marked
 done. A fresh install starts with nothing pending.
 
+The steps that need root - nginx, logrotate, the certificate unit - share
+one card, **Run this release's root steps**: it lists what it covers and
+gives the one command that applies them all, `sudo ./install.sh --host-only`
+from this release's bundle. **Do it by hand** opens each step's own snippet,
+and **Done** on the card marks every one of them done.
+
 The steps on the host - nginx, logrotate, the site-certificate unit - are
 what an upgrade from the app cannot do, because it never has root.
 Re-running `install.sh` from the bundle does them. On a host upgraded from
