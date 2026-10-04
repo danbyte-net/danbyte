@@ -436,3 +436,51 @@ class DeviceListTests(_Base):
             lookups[size] = sum(1 for q in ctx.captured_queries if "core_tenant" in q["sql"])
         self.assertEqual(lookups[5], lookups[20])
         self.assertLess(lookups[20], 20)
+
+
+class InterfaceListTests(_Base):
+    """A port's parent, LAG and bridge come with the page, not joined to every
+    interface in the tenant before the page is taken (#298)."""
+
+    def test_page_cost_is_flat_and_relations_are_prefetched(self):
+        from .models import Interface
+
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        for i in range(6):
+            d = Device.objects.create(tenant=self.tenant, name=f"sw-{i}", site=site)
+            ports = [Interface.objects.create(device=d, name=f"eth{k}") for k in range(4)]
+            ae = Interface.objects.create(
+                device=d, name="ae0", type="lag", lag_protocol="lacp", lacp_mode="active"
+            )
+            br = Interface.objects.create(device=d, name="br0", type="bridge")
+            ports[0].lag = ae
+            ports[1].bridge = br
+            ports[3].parent = ports[2]
+            for p in (ports[0], ports[1], ports[3]):
+                p.save()
+        # The first page is sw-0's six ports, so it already uses all three.
+        small, _ = self._queries("/api/interfaces/?page_size=6")
+        big, body = self._queries("/api/interfaces/?page_size=36")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {(r["device"]["name"], r["name"]): r for r in body["results"]}
+        sw3 = Device.objects.get(name="sw-3")
+        ae = Interface.objects.get(device=sw3, name="ae0")
+        self.assertEqual(rows[("sw-3", "eth0")]["lag"], {
+            "id": str(ae.id), "name": "ae0",
+            "device": {"id": str(sw3.id), "name": "sw-3"},
+            "lag_protocol": "lacp", "lacp_mode": "active",
+        })
+        self.assertEqual(rows[("sw-3", "eth1")]["bridge"]["name"], "br0")
+        self.assertEqual(rows[("sw-3", "eth3")]["parent"]["name"], "eth2")
+        self.assertEqual(rows[("sw-3", "eth3")]["parent"]["device"]["name"], "sw-3")
+        self.assertIsNone(rows[("sw-3", "eth2")]["parent"])
+        self.assertIsNone(rows[("sw-3", "eth2")]["lag"])
+        self.assertEqual(rows[("sw-3", "ae0")]["lag_member_count"], 1)
+        with CaptureQueriesContext(connection) as ctx:
+            self.client.get("/api/interfaces/?page_size=36")
+        page = [
+            q["sql"] for q in ctx.captured_queries
+            if q["sql"].startswith('SELECT "api_interface"') and " LIMIT " in q["sql"]
+        ]
+        self.assertEqual(len(page), 1)
+        self.assertNotIn('JOIN "api_interface"', page[0])

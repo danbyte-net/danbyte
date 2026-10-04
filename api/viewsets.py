@@ -4375,11 +4375,16 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
     bulk_tags = True
 
     queryset = (
-        Interface.objects.select_related(
-            "device", "vlan", "vrf", "status",
-            "parent__device", "lag__device", "bridge__device",
-        )
+        Interface.objects.select_related("device", "vlan", "vrf", "status")
+        # The parent, LAG and bridge (with their devices) are prefetched, not
+        # joined: joined, Postgres joined every interface in the tenant to
+        # them before it could sort and take one page (#298). Most rows have
+        # none of the three; a page that does pays one small query each.
         .prefetch_related(
+            *(
+                Prefetch(rel, queryset=Interface.objects.select_related("device"))
+                for rel in ("parent", "lag", "bridge")
+            ),
             "tags", "terminations__cable__status", "reservations", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
