@@ -38,7 +38,7 @@ class IORegistryTests(APITestCase):
         self.assertEqual(_infer_natural_key(Device), ["name"])  # (tenant,name)
 
 
-class IORoundTripTests(APITestCase):
+class _IOCase(APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
@@ -62,6 +62,8 @@ class IORoundTripTests(APITestCase):
             format="json",
         )
 
+
+class IORoundTripTests(_IOCase):
     def test_export_header_and_rows(self):
         resp = self._export()
         self.assertEqual(resp.status_code, 200)
@@ -538,3 +540,35 @@ class CsvDialectTests(APITestCase):
         res = self._import("name,time_zone\n,Asia/Kolkata\n")
         self.assertEqual(res["created"], 0)
         self.assertEqual(res["errors"][0]["error"], "name: This field cannot be blank.")
+
+
+class IOImportStatusTests(_IOCase):
+    """A status goes only on the kinds of object its catalog entry offers it
+    to - through either import, as through the API (#292)."""
+
+    def setUp(self):
+        super().setUp()
+        from api.models import Status
+
+        self.cable_only = Status.objects.create(
+            tenant=self.tenant, name="Cable only", slug="cable-only", available_to=["cable"]
+        )
+
+    def test_a_status_not_offered_to_the_kind_is_refused(self):
+        body = self._import("id,cidr,status,description\n,10.7.7.0/24,cable-only,x\n").json()
+        self.assertEqual(body["created"], 0)
+        self.assertIn("“Cable only” isn't a status for prefixes.",
+                      json.dumps(body["errors"], ensure_ascii=False))
+        from api.bulk_import import import_rows
+
+        result = import_rows(Prefix, self.tenant, [{"cidr": "10.6.6.0/24", "status": "cable-only"}],
+                             user=self.admin)
+        self.assertEqual(result["created"], 0)
+        self.assertIn("isn't a status for prefixes", result["errors"][0]["error"])
+
+    def test_a_row_already_wearing_it_imports_back_unchanged(self):
+        Prefix.objects.filter(pk=self.p1.pk).update(status=self.cable_only)
+        body = self._import(_csv(self._export())).json()
+        self.assertEqual((body["updated"], body["errors"]), (1, []))
+        self.p1.refresh_from_db()
+        self.assertEqual(self.p1.status_id, self.cable_only.id)

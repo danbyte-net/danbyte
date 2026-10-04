@@ -29,7 +29,13 @@ from django.utils.text import slugify
 from auth_api.object_types import model_for, registry_payload, slug_for_model
 from core.models import CustomFieldsMixin, TaggableMixin, Tag
 
-from .bulk_import import _SKIP, _coerce, _importable_fields, importable_field_names
+from .bulk_import import (
+    _SKIP,
+    _coerce,
+    _importable_fields,
+    check_status_offered,
+    importable_field_names,
+)
 
 
 def _is_tenant_scoped(model) -> bool:
@@ -244,6 +250,7 @@ class ModelIOHandler:
                 continue
             val = _coerce(field, raw, tenant, user)
             if field.is_relation:
+                check_status_offered(field, val, existing)
                 fk_set[field.name] = val
             else:
                 setattr(obj, field.attname, val)

@@ -109,6 +109,22 @@ def _resolve_fk(field, value, tenant, user=None):
     )
 
 
+def check_status_offered(field, value, instance=None) -> None:
+    """Refuse a ``status`` the catalog doesn't offer the row's kind of object,
+    as the API's single and bulk edits do (#292). A row that already wears it
+    keeps it, so an exported sheet imports back unchanged."""
+    from .models import Status
+    from .status_registry import status_label, status_offered
+
+    if field.name != "status" or not isinstance(value, Status):
+        return
+    if status_offered(value, field.model):
+        return
+    if instance is not None and getattr(instance, "status_id", None) == value.id:
+        return
+    raise ValidationError(f"“{value.name}” isn't a status for {status_label(field.model)}.")
+
+
 def _coerce(field, value, tenant, user=None):
     if value is None:
         return None
@@ -139,6 +155,7 @@ def _build(model, tenant, row, fields, user=None):
             continue  # unknown column - ignored
         val = _coerce(field, raw, tenant, user)
         if field.is_relation:
+            check_status_offered(field, val)
             fk_set[field.name] = val
         else:
             setattr(obj, field.attname, val)
