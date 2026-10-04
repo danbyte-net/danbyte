@@ -66,7 +66,27 @@ class TemplateMiniSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "kind"]
 
 
-class SnmpProfileSerializer(serializers.ModelSerializer):
+class SecretParamsMergeMixin:
+    """``secret_params`` on an edit adds to the stored keys rather than
+    replacing them, so a form that sends only the key it changed keeps the
+    others (#302); a key sent as ``null`` is removed. Write-only, so a client
+    never has the stored keys to send back."""
+
+    def validate_secret_params(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Expected an object.")
+        return value
+
+    def update(self, instance, validated_data):
+        if "secret_params" in validated_data:
+            merged = {**(instance.secret_params or {}), **validated_data["secret_params"]}
+            validated_data["secret_params"] = {k: v for k, v in merged.items() if v is not None}
+        return super().update(instance, validated_data)
+
+
+class SnmpProfileSerializer(SecretParamsMergeMixin, serializers.ModelSerializer):
     """Reusable SNMP credentials. ``secret_params`` is write-only (encrypted at
     rest); reads expose only ``has_secrets``."""
 
@@ -610,7 +630,7 @@ class SnmpSensorSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class CheckTemplateSerializer(serializers.ModelSerializer):
+class CheckTemplateSerializer(SecretParamsMergeMixin, serializers.ModelSerializer):
     has_secrets = serializers.SerializerMethodField()
     usage_count = serializers.SerializerMethodField()
     secret_params = serializers.JSONField(write_only=True, required=False)

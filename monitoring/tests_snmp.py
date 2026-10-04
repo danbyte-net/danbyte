@@ -65,6 +65,21 @@ class SnmpPhase1Tests(APITestCase):
         self.assertTrue(body["has_secrets"])
         self.assertEqual(body["slug"], "prod-v2c")
 
+    def test_editing_one_v3_key_keeps_the_other(self):
+        # #302: the form sends only the key it changed.
+        p = SnmpProfile.objects.create(
+            tenant=self.tenant, name="v3", slug="v3", version="v3",
+            params={"username": "u"}, secret_params={"auth_key": "a", "priv_key": "p"},
+        )
+        url = f"/api/monitoring/snmp-profiles/{p.id}/"
+        r = self.client.patch(url, {"secret_params": {"auth_key": "new"}}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        p.refresh_from_db()
+        self.assertEqual(p.secret_params, {"auth_key": "new", "priv_key": "p"})
+        self.client.patch(url, {"secret_params": {"priv_key": None}}, format="json")
+        p.refresh_from_db()
+        self.assertEqual(p.secret_params, {"auth_key": "new"})
+
     @patch("danbyte_checks.snmp_facts.fetch_interfaces_sync")
     @patch("danbyte_checks.snmp_facts.fetch_system_facts_sync")
     def test_poll_stores_observed_facts_and_interfaces(self, mock_facts, mock_ifaces):

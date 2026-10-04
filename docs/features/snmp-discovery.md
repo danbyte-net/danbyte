@@ -46,7 +46,9 @@ them under **Settings → SNMP profiles**.
 
 Secrets (the community, the v3 keys) are **encrypted at rest** and **write-only**
 over the API - a `GET` never returns them, only a `has_secrets` flag. This
-mirrors how monitoring check credentials are stored.
+mirrors how monitoring check credentials are stored. An edit changes only the
+keys it sends - a new auth key keeps the stored privacy key - and a key sent
+as `null` is removed.
 
 Mark one profile **default** for the tenant. Setting a new default automatically
 clears the previous one, so there's always at most one default and switching it
