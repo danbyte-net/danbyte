@@ -3726,7 +3726,9 @@ class DeviceViewSet(
         if not ids:
             return Response({})
         devices = self.get_queryset().filter(pk__in=ids).select_related("device_type")
-        loader = FacePortLoader(devices)
+        loader = FacePortLoader(
+            devices, user=request.user, tenant=_get_active_tenant(request)
+        )
         with_drift = (request.query_params.get("drift") or "").lower() in ("1", "true", "yes")
         out = {}
         for device in loader.devices:
@@ -3739,7 +3741,9 @@ class DeviceViewSet(
     def _face_ports_payload(self, device) -> dict:
         """The resolved markers of one device, with drift - see
         ``face_ports``."""
-        payload = FacePortLoader([device]).payload(device)
+        payload = FacePortLoader(
+            [device], user=self.request.user, tenant=_get_active_tenant(self.request)
+        ).payload(device)
         self._add_face_drift(device, payload)
         return payload
 
@@ -6542,7 +6546,9 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         )) if devices else []
         # The same rows resolve the interface markers, so a port the caller
         # may not view stays an unresolved marker there too.
-        loader = FacePortLoader(devices, rows={"interfaces": interfaces})
+        loader = FacePortLoader(
+            devices, rows={"interfaces": interfaces}, user=request.user, tenant=tenant
+        )
         peers = PeerScope(request.user, tenant, loader.far_components())
         parts = FaceplateParts(devices, request.user, tenant)
         observed = snmp_observed(devices, tenant)

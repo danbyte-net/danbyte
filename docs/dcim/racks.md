@@ -429,8 +429,10 @@ racks, and each costs the same number of queries whatever the rack holds.
 The rack's figures count every device in the rack, as its used units and
 power do. The `devices` entries list only the devices you can view, and in
 them only the interfaces, IP addresses, modules and components you can view.
-A far end is named only when its device (or, for a PDU inlet, its power
-feed) is one you can view.
+A photo marker for a port you can't view - a front port, a power port - stays
+unresolved, without its id, cable or far end; `GET /api/devices/face-ports/`
+follows the same rule. A far end is named only when its device (or, for a
+PDU inlet, its power feed) is one you can view.
 
 `GET /api/racks/{id}/scene/` returns the rack alone for a 3D view. It is the
 same object a [floor plan's](../features/floor-plans.md#the-3d-room-view) 3D

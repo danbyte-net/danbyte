@@ -161,11 +161,17 @@ class FacePortLoader:
     ``rows`` hands in relations the caller already loaded for every one of
     ``devices`` (``{"interfaces": [...]}``, built on ``component_queryset``),
     so a caller that reads the same rows for more does not load them twice.
+
+    ``user`` (with ``tenant``) limits every relation loaded here to the rows
+    that user may view, as the components' own list endpoints do: a port they
+    may not view stays an unresolved marker, its cable and far end unsaid
+    (#294). Rows handed in through ``rows`` are the caller's to restrict.
     """
 
-    def __init__(self, devices, rows=None):
+    def __init__(self, devices, rows=None, *, user=None, tenant=None):
         self.devices = list(devices)
         self._rows = dict(rows or {})
+        self._user, self._tenant = user, tenant
         needed = {FACE_PORT_KINDS[k][0] for k in _SYNTHETIC_KINDS}
         for device in self.devices:
             layout = effective_image_ports(device) or {}
@@ -177,13 +183,24 @@ class FacePortLoader:
         self._indexes: dict[str, dict] = {}
         for relation in sorted(needed):
             if relation not in self._rows:
-                self._rows[relation] = list(component_queryset(relation, ids)) if ids else []
+                self._rows[relation] = self._load(relation, ids) if ids else []
             by_device: dict = defaultdict(list)
             for comp in self._rows[relation]:
                 by_device[comp.device_id].append(comp)
             self._indexes[relation] = {
                 device_id: ComponentIndex(comps) for device_id, comps in by_device.items()
             }
+
+    def _load(self, relation, ids) -> list:
+        from auth_api import rbac
+
+        from .models import Device
+
+        qs = component_queryset(relation, ids)
+        if self._user is None:
+            return list(qs)
+        slug = Device._meta.get_field(relation).related_model._meta.model_name
+        return list(rbac.restrict_queryset(qs, self._user, self._tenant, slug, "view"))
 
     def _index(self, relation, device_id) -> ComponentIndex:
         return self._indexes.get(relation, {}).get(device_id, _NO_COMPONENTS)

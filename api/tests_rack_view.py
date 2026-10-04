@@ -641,7 +641,8 @@ class RackPortStateTests(_PortFixture):
 
     def test_a_viewer_sees_only_what_they_may_view(self):
         self._viewer(
-            (["rack"], None), (["device"], {"name__startswith": "sw-"}), (["interface"], None),
+            (["rack"], None), (["device"], {"name__startswith": "sw-"}),
+            (["interface", "powerport"], None),
         )
         body = self._state()
         self.assertEqual(set(body["devices"]), {str(self.sw1.id), str(self.sw2.id)})
@@ -670,6 +671,29 @@ class RackPortStateTests(_PortFixture):
         face = {e["marker"]: e for e in sw1["face"]["front"]}
         self.assertEqual(face["Gi1/0/1"]["id"], str(self.up.id))
         self.assertIsNone(face["Gi1/0/2"]["id"])
+
+    def test_photo_markers_follow_each_ports_grant(self):
+        user = self._viewer((["rack"], None), (["device"], None), (["interface"], None))
+        sw1, pdu = str(self.sw1.id), str(self.pdu.id)
+
+        def faces():
+            rack = self._state()["devices"]
+            bulk = self.client.get(f"/api/devices/face-ports/?ids={sw1},{pdu}").json()
+            one = self.client.get(f"/api/devices/{sw1}/face-ports/").json()
+            return [(rack[sw1]["face"], rack[pdu]["face"]), (bulk[sw1], bulk[pdu]),
+                    (one, None)]
+
+        for sw_face, pdu_face in faces():
+            psu = next(e for e in sw_face["rear"] if e["marker"] == "PSU1")
+            self.assertEqual((psu["id"], psu["cable_id"], psu.get("peer")), (None, None, None))
+            if pdu_face is not None:
+                self.assertEqual(pdu_face["rear"], [])
+        _grant(user, self.tenant, ["powerport", "poweroutlet"])
+        for sw_face, pdu_face in faces():
+            psu = next(e for e in sw_face["rear"] if e["marker"] == "PSU1")
+            self.assertTrue(psu["id"] and psu["cable_id"])
+            if pdu_face is not None:
+                self.assertEqual({e["name"] for e in pdu_face["rear"]}, {"inlet", "C13-1"})
 
     def test_gated_on_rack_view(self):
         self._viewer((["device"], None), (["interface"], None))
