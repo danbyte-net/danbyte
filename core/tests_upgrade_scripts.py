@@ -170,7 +170,8 @@ case "$1" in
         if [ -n "${FAKE_KILL_RECOVERY:-}" ]; then
           kill -9 "$(ps -o ppid= -p "$PPID" | tr -d ' ')"
           exit 1
-        fi ;;
+        fi
+        if [ -n "${FAKE_WAITDB_FAIL:-}" ]; then exit 1; fi ;;
       snapshot) cp "$FAKE_ROOT/db.state" "$2" ;;
       restore)
         [ -n "${FAKE_RESTORE_FAIL:-}" ] && { echo "pg_restore: connection lost" >&2; exit 1; }
@@ -805,6 +806,16 @@ class BundleStageTests(StageTestCase):
         self.assertEqual(len(runs), 2)
         self.assertOrder(h, r"^py manage.py upgrade_migrate$", r"^py dbtool wait-db",
                          r"^py manage.py upgrade_migrate$")
+
+    def test_a_database_that_stays_away_rolls_back_the_code_only(self):
+        # #301: the failed wait used to overwrite the "rolled back in full"
+        # exit code, so the stage restored a database that never changed.
+        h = self.host()
+        r = h.upgrade(env={"FAKE_MIGRATE_FLAKY": "1", "FAKE_WAITDB_FAIL": "1"})
+        self.assertEqual(r.returncode, 1)
+        self.assertRolledBack(h, restored_db=False)
+        runs = [c for c in h.calls_list() if c == "py manage.py upgrade_migrate"]
+        self.assertEqual(len(runs), 1)
 
     def test_run_folders_are_the_service_accounts_alone(self):
         # #281: a run folder gets a full database snapshot, and one an older

@@ -387,6 +387,9 @@ if [ "$_rc" = 3 ] && grep -qiE "server closed the connection|terminating connect
   if run 300 "$PY" "$TOOL" wait-db 240; then
     run 7200 "$PY" manage.py upgrade_migrate
     _rc=$?
+  else
+    # Still rolled back in full: the wait failing changes nothing (#301).
+    _rc=3
   fi
 fi
 case "$_rc" in
