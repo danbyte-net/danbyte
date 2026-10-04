@@ -80,7 +80,12 @@ refuse.
 Search runs on one index table that every save and delete keeps current. A
 nightly job rebuilds it to catch bulk edits, and an upgrade rebuilds it
 after migrating. `manage.py rebuild_search_index` does it by hand (add
-`--type device` to limit it). Custom-field **values** are indexed too, so an
+`--type device` to limit it). Each row keeps its name and text in folded
+form (lowercase, accents stripped) next to the original, so matching never
+folds at query time. A one- or two-character query, which no index can
+serve, ranks names first and reads descriptions only when they could still
+reach the list - the results are the same as a full match. Custom-field
+**values** are indexed too, so an
 imported NetBox id or an asset number finds its object, hidden or not; each
 list's own filter box keeps matching them as well.
 

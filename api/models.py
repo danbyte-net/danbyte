@@ -7899,8 +7899,9 @@ class SearchEntry(models.Model):
     query instead of a fan-out per type. Kept current by save/delete signals
     for every indexed model, a nightly rebuild for bulk paths that bypass
     signals, and ``manage.py rebuild_search_index`` after upgrades. Text is
-    matched through ``danbyte_fold()`` (lowercase, accents stripped) with
-    trigram indexes, so ``aarhus`` finds ``Århus DC`` and a typo still lands.
+    matched on its ``danbyte_fold()`` form (lowercase, accents stripped),
+    stored with trigram indexes, so ``aarhus`` finds ``Århus DC`` and a typo
+    still lands.
 
     ``facets`` holds lowercase name and slug lists per key (``site``, ``role``,
     ``status``, ``tag``, …) so ``site:esbjerg`` is a JSON containment test.
@@ -7938,9 +7939,13 @@ class SearchEntry(models.Model):
         indexes = [
             models.Index(fields=["tenant", "object_type"], name="searchentry_tenant_type"),
             models.Index(fields=["tenant", "numid"], name="searchentry_tenant_numid"),
-            # The trigram indexes on danbyte_fold(title) / danbyte_fold(body)
-            # are created by migration 0159 in SQL: Django renders an OpClass
-            # over a function call with doubled parentheses Postgres rejects.
+            # title_f / body_f, danbyte_fold() of title / body as stored
+            # generated columns, and their trigram indexes are created by
+            # migration 0195 in SQL and are not fields: only the search SQL
+            # reads them and PostgreSQL computes them on every write (#300).
+            # Changing the type of title or body means dropping them first;
+            # redefining danbyte_fold() means rewriting every row, which
+            # rebuild_search_index does.
             GinIndex(fields=["facets"], name="searchentry_facets_gin"),
         ]
 

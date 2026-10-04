@@ -2,7 +2,8 @@
 
 ``GET /api/search/?q=<query>&type=<slug>&limit=<n>&cursor=<offset>``
 
-Matching runs through ``danbyte_fold()`` (lowercase, accents stripped) with
+Matching runs on the ``danbyte_fold()`` form of each row's title and body
+(lowercase, accents stripped; stored as ``title_f`` / ``body_f``) with
 trigram similarity plus substring tests, so ``aarhus`` finds ``Århus DC`` and
 a near-miss still ranks. Ranking: exact folded title > title prefix > word
 start > substring > trigram similarity, plus the row's type weight.
@@ -94,14 +95,14 @@ def parse_query(raw: str) -> tuple[str, dict[str, list[str]]]:
 _RANK_SQL = """
 SELECT e.object_type, e.object_id, e.title, e.subtitle, e.url, e.facets, e.numid, e.context,
        (CASE
-          WHEN danbyte_fold(e.title) = %(q)s THEN 4.0
-          WHEN danbyte_fold(e.title) LIKE %(prefix)s THEN 3.0
-          WHEN danbyte_fold(e.title) LIKE %(word)s THEN 2.5
-          WHEN danbyte_fold(e.title) LIKE %(sub)s THEN 2.0
-          WHEN danbyte_fold(e.body) LIKE %(sub)s THEN 1.0
+          WHEN e.title_f = %(q)s THEN 4.0
+          WHEN e.title_f LIKE %(prefix)s THEN 3.0
+          WHEN e.title_f LIKE %(word)s THEN 2.5
+          WHEN e.title_f LIKE %(sub)s THEN 2.0
+          WHEN e.body_f LIKE %(sub)s THEN 1.0
           ELSE 0 END)
-       + similarity(danbyte_fold(e.title), %(q)s)
-       + 0.5 * similarity(danbyte_fold(e.body), %(q)s)
+       + similarity(e.title_f, %(q)s)
+       + 0.5 * similarity(e.body_f, %(q)s)
        + e.weight / 10.0
        + (CASE WHEN e.numid IS NOT NULL AND e.numid = %(numid)s THEN 5.0 ELSE 0 END)
        AS score
@@ -115,14 +116,29 @@ LIMIT %(limit)s
 """
 
 # Words: substring anywhere, or a trigram near-miss on the name.
-_TEXT_MATCH = """danbyte_fold(e.title) LIKE %(sub)s
-       OR danbyte_fold(e.body) LIKE %(sub)s
-       OR danbyte_fold(e.title) %% %(q)s
+_TEXT_MATCH = """e.title_f LIKE %(sub)s
+       OR e.body_f LIKE %(sub)s
+       OR e.title_f %% %(q)s
        OR (e.numid IS NOT NULL AND e.numid = %(numid)s)"""
+# A term of one or two letters or digits has no trigram, so no index serves
+# it and every row of the tenant is read (#300). Reading names is cheap;
+# matching bodies and scoring the thousands of rows they add is not. So such
+# a term first ranks only the rows whose name contains it (or whose short id
+# it is). When that fills the candidates and the last one scores above
+# _BODY_ONLY_MAX - the most a row matching only in its body, or only as a
+# near-miss, can score: 1.0 for the body, 0.25 title similarity (a name
+# without the term shares at most one of its trigrams), 0.5 body similarity
+# and the heaviest type weight - the full match returns the same list, so
+# it is not run.
+_NAME_MATCH = """e.title_f LIKE %(sub)s
+       OR (e.numid IS NOT NULL AND e.numid = %(numid)s)"""
+_SHORT_TERM = 3
+_BODY_ONLY_MAX = 1.0 + 0.25 + 0.5 + max(spec.weight for spec in SPECS.values()) / 10.0
+
 # Addresses and numbers: the name must start with the query. Trigrams on
 # "10.0.0.201" would drag in every 10.x address; containment adds the
 # prefixes separately.
-_ADDR_MATCH = """danbyte_fold(e.title) LIKE %(prefix)s
+_ADDR_MATCH = """e.title_f LIKE %(prefix)s
        OR (e.numid IS NOT NULL AND e.numid = %(numid)s)"""
 _ADDR_RE = re.compile(r"^[0-9a-f.:/\-]+$")
 
@@ -174,21 +190,27 @@ def ranked_candidates(q: str, tokens: dict, tenant) -> list[dict]:
     if not fq:
         if not tokens:
             return []
-        sql = _BROWSE_SQL.format(type_clause=type_clause, facet_clause=facet_clause)
-    else:
-        like = _like(fq)
-        params.update({
-            "q": fq,
-            "prefix": f"{like}%",
-            "word": f"% {like}%",
-            "sub": f"%{like}%",
-            "numid": int(fq) if fq.isdigit() and len(fq) < 10 else -1,
-        })
-        sql = _RANK_SQL.format(
-            type_clause=type_clause, facet_clause=facet_clause,
-            match_clause=_ADDR_MATCH if _ADDR_RE.match(fq) and re.search(r"[.:/]", fq)
-            else _TEXT_MATCH,
-        )
+        return _fetch(_BROWSE_SQL.format(type_clause=type_clause, facet_clause=facet_clause),
+                      params)
+    like = _like(fq)
+    params.update({
+        "q": fq,
+        "prefix": f"{like}%",
+        "word": f"% {like}%",
+        "sub": f"%{like}%",
+        "numid": int(fq) if fq.isdigit() and len(fq) < 10 else -1,
+    })
+    clauses = {"type_clause": type_clause, "facet_clause": facet_clause}
+    if _ADDR_RE.match(fq) and re.search(r"[.:/]", fq):
+        return _fetch(_RANK_SQL.format(**clauses, match_clause=_ADDR_MATCH), params)
+    if len(fq) < _SHORT_TERM and fq.isascii() and fq.isalnum():
+        rows = _fetch(_RANK_SQL.format(**clauses, match_clause=_NAME_MATCH), params)
+        if len(rows) == CANDIDATES and float(rows[-1]["score"]) > _BODY_ONLY_MAX:
+            return rows
+    return _fetch(_RANK_SQL.format(**clauses, match_clause=_TEXT_MATCH), params)
+
+
+def _fetch(sql: str, params: dict) -> list[dict]:
     with connection.cursor() as cur:
         cur.execute(sql, params)
         cols = [c[0] for c in cur.description]
