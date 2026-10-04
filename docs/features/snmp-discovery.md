@@ -624,7 +624,7 @@ refresh: SNMP cannot read one port's MACs without walking the whole table.
 
 | Endpoint | What it returns |
 |---|---|
-| `GET /api/monitoring/devices/<id>/macs/` | Learned MACs per port: each port's uplink state and reasons, its MAC count, how many are located there, and up to "MACs shown per port" MACs with vendor, VLANs, IPs, name, first and last seen, and where each really sits. `?view=observed` gives a stack owner's whole observation; `?limit=` overrides the per-port count (0 = all). Device view. |
+| `GET /api/monitoring/devices/<id>/macs/` | Learned MACs per port: each port's uplink state and reasons, its MAC count, how many are located there, and up to "MACs shown per port" MACs with vendor, VLANs, IPs, name, first and last seen, and where each really sits. `?view=observed` gives a stack owner's whole observation - the ports of the members you may view; `?limit=` overrides the per-port count (0 = all). Device view. |
 | `GET /api/monitoring/interfaces/<id>/macs/` | One port's MACs, `?state=present` (default) or `all` with the gone history, paged by `?cursor=` and `?limit=`, plus the port's uplink state. Interface view. |
 | `GET /api/monitoring/mac-sightings/` | The network-wide learned table, one row per MAC at its Location - see [the Learned list](search-and-macs.md#the-learned-list). |
 | `POST /api/monitoring/devices/<id>/mac-refresh/` | Starts [Refresh MACs](#refresh-macs): `202 {queued, run_id, running}`, or `{queued_on_outpost}` for an Outpost's device. |

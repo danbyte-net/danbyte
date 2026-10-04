@@ -79,16 +79,29 @@ def _ips(entry) -> list[dict]:
 
 
 def _port_label_map(members) -> dict:
-    """``{lowercased name or SNMP name: (interface id, name)}`` over the
-    members' interfaces - for ports a poll summarised but no MAC placed."""
+    """``{lowercased name or SNMP name: (interface id, name, device id)}`` over
+    the members' interfaces - for ports a poll summarised but no MAC placed."""
     out: dict = {}
-    for pk, name, snmp_name in Interface.objects.filter(
+    for pk, name, snmp_name, device_id in Interface.objects.filter(
         device_id__in=[m.id for m in members]
-    ).values_list("id", "name", "snmp_name"):
+    ).values_list("id", "name", "snmp_name", "device_id"):
         for n in (snmp_name, name):
             if n:
-                out.setdefault(n.strip().lower(), (pk, name))
+                out.setdefault(n.strip().lower(), (pk, name, device_id))
     return out
+
+
+def _visible_members(tenant, members, user) -> set:
+    """The ids of the stack ``members`` this user may view."""
+    from api.models import Device
+
+    ids = [m.id for m in members]
+    scope = viewable_devices(tenant, user)
+    if scope is None:
+        return set(ids)
+    return set(
+        Device.objects.filter(pk__in=ids).filter(pk__in=scope).values_list("pk", flat=True)
+    )
 
 
 # ─── device ─────────────────────────────────────────────────────────────────
@@ -111,6 +124,16 @@ def device_macs_payload(tenant, device, user, *, view="member", limit=None) -> d
     )
     if member_id is not None:
         rows_qs = rows_qs.filter(device_id=member_id)
+        visible = {member_id}
+    else:
+        # The whole observation spans the stack: only the members this user
+        # may view, and ports no member claims only while the owner is one
+        # of them (#290).
+        visible = _visible_members(tenant, members, user)
+        mine = Q(device_id__in=visible)
+        if owner.id in visible:
+            mine |= Q(device_id__isnull=True)
+        rows_qs = rows_qs.filter(mine)
     rows = seen_rows(rows_qs)
     ctx.load({owner.id}, {r.interface_id for r in rows})
 
@@ -135,7 +158,9 @@ def device_macs_payload(tenant, device, user, *, view="member", limit=None) -> d
         if extra:
             labels = _port_label_map(members if view == "observed" else [device])
             for key, entry in extra.items():
-                pk, name = labels.get(key, (None, None))
+                pk, name, on = labels.get(key, (None, None, owner.id))
+                if on not in visible:
+                    continue
                 ports[key] = {
                     "rows": [], "interface_id": pk, "interface_name": name,
                     "port_name": entry.get("name") or key,

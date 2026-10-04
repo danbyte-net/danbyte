@@ -714,6 +714,30 @@ class DeviceMacsApiTests(_Base):
 
         self.assertEqual(count_for(3), count_for(12))
 
+    def test_a_stacks_observed_view_leaves_out_members_one_may_not_view(self):
+        vc = VirtualChassis.objects.create(tenant=self.tenant, name="stack")
+        m = Device.objects.create(tenant=self.tenant, name="M", virtual_chassis=vc, vc_position=1)
+        n = Device.objects.create(tenant=self.tenant, name="SECRET-N", virtual_chassis=vc,
+                                  vc_position=2)
+        vc.master = m
+        vc.save()
+        Interface.objects.create(device=m, name="Gi1/0/5")
+        Interface.objects.create(device=n, name="Gi2/0/7")
+        hidden = "aa:bb:cc:00:00:77"
+        self.poll(m, result([iface_row(1, "Gi1/0/5"), iface_row(2, "Gi2/0/7")],
+                            [fdb_row(PC, 1), fdb_row(hidden, 2)]))
+        user = self.user_with(["device"])
+        ObjectPermission.objects.filter(users=user).update(constraints={"name": "M"})
+        self.login(user)
+        r = self.client.get(f"/api/monitoring/devices/{m.id}/macs/", {"view": "observed"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual({p["port_name"] for p in r.json()["ports"]}, {"Gi1/0/5"})
+        for secret in (hidden, str(n.id), "Gi2/0/7"):
+            self.assertNotIn(secret, r.content.decode())
+        self.login(self.admin)
+        everything = self.get(m, view="observed")
+        self.assertEqual({p["port_name"] for p in everything["ports"]}, {"Gi1/0/5", "Gi2/0/7"})
+
     def test_bad_parameters(self):
         r = self.client.get(f"/api/monitoring/devices/{self.acc.id}/macs/?view=x")
         self.assertEqual(r.status_code, 400)
