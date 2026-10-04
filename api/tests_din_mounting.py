@@ -323,6 +323,12 @@ class ArrangeTests(DinMountingTestCase):
         device.refresh_from_db()
         return (device.din_rail_id, device.din_offset_mm)
 
+    def test_a_body_that_is_not_an_object_is_a_400(self):
+        for body in ([1], "x", 5):
+            with self.subTest(body=body):
+                r = self.client.post(self.url, body, format="json")
+                self.assertEqual(r.status_code, 400, r.content)
+
     def test_two_devices_swap_places_in_one_save(self):
         r = self.arrange(self.place(self.a, self.r1, 90), self.place(self.b, self.r1, 0))
         self.assertEqual(r.status_code, 200, r.content)

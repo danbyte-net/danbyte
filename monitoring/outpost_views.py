@@ -524,14 +524,28 @@ def outpost_snmp_results_view(request):
     Only for the devices this engine polls (``devices_for_engine``) - the set
     its work list hands out. Results carry learned MACs and ARP now (#284),
     so an agent's token must not be able to write sightings for a device in
-    another site of its tenant, or one the core or another Outpost polls."""
+    another site of its tenant, or one the core or another Outpost polls.
+    Only the posted devices are checked, so the cost follows the results
+    (#293)."""
+    import uuid
+
     from .engines import devices_for_engine
     from .snmp_poll import persist_snmp_result
     from .snmp_resolve import resolve_device_profile
 
     eng = request.auth
+    if not isinstance(request.data, dict):
+        return Response({"detail": "Expected a JSON object."}, status=400)
     rows = request.data.get("results") or []
-    devices = {str(d.id): d for d in devices_for_engine(eng)}
+    if not isinstance(rows, list):
+        return Response({"results": ["Expected a list."]}, status=400)
+    ids = set()
+    for r in rows:
+        try:
+            ids.add(uuid.UUID(str(r.get("device_id"))))
+        except (AttributeError, ValueError):
+            continue
+    devices = {str(d.id): d for d in devices_for_engine(eng, ids)} if ids else {}
     ingested = 0
     for r in rows:
         if not isinstance(r, dict):

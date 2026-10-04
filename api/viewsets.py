@@ -6224,7 +6224,9 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         from . import din
 
         cabinet = self.get_object()
-        placements = (request.data or {}).get("placements")
+        if not isinstance(request.data, dict):
+            return Response({"detail": "Expected a JSON object."}, status=400)
+        placements = request.data.get("placements")
         ids = set()
         for p in placements if isinstance(placements, list) else ():
             try:

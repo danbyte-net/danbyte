@@ -1087,6 +1087,29 @@ class OutpostIngestTests(_Base):
         self.assertFalse(DeviceSnmp.objects.filter(device=self.core).exists())
         self.assertTrue(MacSighting.objects.filter(polled_device=self.acc).exists())
 
+    def test_a_bad_body_is_a_400(self):
+        for body in (["x"], {"results": 5}, {"results": "x"}):
+            with self.subTest(body=body):
+                r = self.client.post("/api/outpost/snmp/", body, format="json",
+                                     HTTP_AUTHORIZATION="Bearer tkn-mac")
+                self.assertEqual(r.status_code, 400, r.content)
+        r = self.post([{"device_id": "not-an-id"}, "x", {"device_id": str(self.acc.id)}])
+        self.assertEqual(r.json(), {"ingested": 1})
+
+    def test_the_cost_follows_the_results_not_the_site(self):
+        def queries():
+            row = {"device_id": str(self.gw.id), "reachable": True, "data": {},
+                   "interfaces": [], "neighbors": [], "arp": []}
+            self.post([row])
+            with CaptureQueriesContext(connection) as ctx:
+                self.assertEqual(self.post([row]).json(), {"ingested": 1})
+            return len(ctx.captured_queries)
+
+        few = queries()
+        for i in range(30):
+            Device.objects.create(tenant=self.tenant, name=f"filler-{i}", site=self.site_a)
+        self.assertEqual(queries(), few)
+
     def test_a_legacy_payload_is_accepted(self):
         legacy = result(ACC_IFACES, [{"mac": PC, "if_index": "10105"}], fdb_meta=None)
         r = self.post([{"device_id": str(self.acc.id), **legacy}])
