@@ -1,0 +1,141 @@
+import { useEffect, useState } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+
+import type { CabinetRole, CabinetRoleWritePayload } from "@/lib/api"
+import {
+  FormColor,
+  FormFooter,
+  FormSection,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
+import { invalidateCabinetViews } from "@/lib/cabinets"
+
+export interface CabinetRoleFormProps {
+  role?: CabinetRole
+  onSaved: (r: CabinetRole) => void
+  onCancel: () => void
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50)
+}
+
+export function CabinetRoleForm({
+  role,
+  onSaved,
+  onCancel,
+}: CabinetRoleFormProps) {
+  const isEdit = !!role
+  const qc = useQueryClient()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
+
+  const [name, setName] = useState(role?.name ?? "")
+  const [slug, setSlug] = useState(role?.slug ?? "")
+  const [slugDirty, setSlugDirty] = useState(isEdit)
+  const [color, setColor] = useState(role?.color ?? "")
+  const [description, setDescription] = useState(role?.description ?? "")
+
+  useEffect(() => {
+    if (!role) return
+    setName(role.name)
+    setSlug(role.slug)
+    setSlugDirty(true)
+    setColor(role.color)
+    setDescription(role.description)
+    reset()
+  }, [role, reset])
+
+  function onNameChange(v: string) {
+    setName(v)
+    if (!slugDirty && !isEdit) setSlug(slugify(v))
+  }
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const payload: CabinetRoleWritePayload = {
+        name: name.trim(),
+        slug: slug.trim() || slugify(name),
+        color: color || "",
+        description: description.trim(),
+      }
+      return saveObject<CabinetRole>({
+        objectType: "api.cabinetrole",
+        endpoint: "/api/cabinet-roles/",
+        id: role?.id,
+        payload,
+      })
+    },
+    onSuccess: (saved) => {
+      invalidateCabinetViews(qc)
+      qc.invalidateQueries({ queryKey: ["cabinet-roles-picker"] })
+      toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      onSaved(saved)
+    },
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
+  })
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate()
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="Cabinet role" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={onNameChange}
+            placeholder="Distribution"
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            placeholder="distribution"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
+            }}
+            mono
+            error={fieldErrors.slug}
+          />
+        </div>
+        <FormColor
+          label="Color"
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create role"}
+      />
+    </form>
+  )
+}

@@ -5,13 +5,17 @@ import { ChevronDown, ChevronUp, Plus, RotateCcw, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import { FormCheckbox } from "@/components/forms/checkbox"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import {
   SettingsCard,
   SettingsHeader,
 } from "@/components/settings/settings-card"
+import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/settings/components")({
@@ -33,6 +37,10 @@ const FIELD_META: Record<string, { label: string; hint: string }> = {
   state: {
     label: "State",
     hint: "Disabled · no cable · up with speed and cable type",
+  },
+  peer: {
+    label: "Far end",
+    hint: "The device and port at the other end of the cable",
   },
   vlan: { label: "VLAN", hint: "Access VLAN, or the trunk summary" },
   live: {
@@ -95,8 +103,7 @@ function ComponentPopoverSettings() {
         <QueryError error={q.error} />
       </div>
     )
-  if (!q.data || fields === null)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (!q.data || fields === null) return <Loading />
 
   const remaining = q.data.available.filter((k) => !fields.includes(k))
   const commit = (next: string[]) => {
@@ -201,6 +208,62 @@ function ComponentPopoverSettings() {
           </Button>
         </div>
       )}
+
+      <PortCountingCard />
     </div>
+  )
+}
+
+/**
+ * Which ports port utilization counts. Physical interfaces and front ports
+ * always; virtual interfaces only when this is on. Deployment-wide, like the
+ * faceplate knobs - the server reads it through
+ * `core.effective_settings.port_count_virtual`.
+ */
+function PortCountingCard() {
+  const qc = useQueryClient()
+  const { canManageDeployment } = useMe()
+  const { data, save, savingKey } = useDeploymentSettings()
+  const [countVirtual, setCountVirtual] = useState(false)
+
+  useEffect(() => {
+    if (data) setCountVirtual(data.port_count_virtual)
+  }, [data])
+
+  if (!data) return null
+  return (
+    <SettingsCard
+      title="Port counting"
+      onSave={
+        canManageDeployment
+          ? () =>
+              save.mutate(
+                {
+                  key: "port-counting",
+                  patch: { port_count_virtual: countVirtual },
+                },
+                { onSuccess: () => invalidatePortCounts(qc) }
+              )
+          : undefined
+      }
+      dirty={countVirtual !== data.port_count_virtual}
+      saving={savingKey === "port-counting"}
+    >
+      <FormCheckbox
+        label="Count virtual interfaces"
+        checked={countVirtual}
+        onChange={setCountVirtual}
+        disabled={!canManageDeployment}
+        info={
+          <>
+            Virtual interfaces are SVIs, LAGs, loopbacks, tunnels and
+            sub-interfaces. Counting them adds ports that are rarely cabled, so
+            utilization reads lower. Applies to the device and stack cards, the
+            Port utilization page, the Devices list, spec sheets and port
+            utilization alerts. Rear ports never count.
+          </>
+        }
+      />
+    </SettingsCard>
   )
 }

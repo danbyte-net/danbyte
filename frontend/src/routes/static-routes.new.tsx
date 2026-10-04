@@ -16,7 +16,7 @@ function NewPage() {
         { label: "Add" },
       ]}
       title="Add static route"
-      subtitle="One path on one device: a prefix, the table it sits in, and where it goes."
+      subtitle="One path on one device or VM: a prefix, the table it sits in, and where it goes."
     >
       <StaticRouteForm
         onSaved={(v) => nav({ to: "/static-routes/$id", params: { id: v.id } })}

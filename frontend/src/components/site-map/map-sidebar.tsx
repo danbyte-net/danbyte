@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react"
-import { EyeOff, Search } from "lucide-react"
 
 import type {
   CableRoute,
@@ -15,22 +14,31 @@ import {
   setHidden,
 } from "@/components/hidden-objects"
 import type { HiddenSet } from "@/components/hidden-objects"
-import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import { useCableTypeLabel } from "@/lib/use-dcim-choices"
+import { ColorBadge } from "@/components/cells/color-badge"
 import {
-  CheckChip,
-  CheckCountChip,
+  CheckCountBadge,
   FoldableGroup,
+  RowCheckBadge,
   VisibilityToggle,
 } from "@/components/foldable-group"
+import {
+  ObjectsEmpty,
+  ObjectsPanel,
+  ObjectsSection,
+  checkCounts,
+} from "@/components/objects-panel"
+import type { CheckFilter } from "@/components/objects-panel"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
+import { naturalCompare } from "@/lib/natural-sort"
 
-// "On this map" - the site map's clone of the floor planner's ObjectsSidebar:
-// one search box, foldable groups, click to fly-to + select. Links (circuits /
-// tunnels / cross-site cables) are listed here too, grouped by kind, exactly
-// like tile types group tiles. No z-index: the map subtree is isolated, so
-// portal'd dropdowns stack above everything naturally.
+// The site map's Objects sidebar - the same panel the floor plan and the
+// topology map open: one search box, foldable groups, click to fly-to +
+// select. Links (circuits / tunnels / cross-site cables) are listed here too,
+// grouped by kind, exactly like tile types group tiles. No z-index: the map
+// subtree is isolated, so portal'd dropdowns stack above everything naturally.
 
 export type MapSelected =
   | { kind: "site"; id: string }
@@ -115,7 +123,7 @@ function SiteRow({
         <VisibilityToggle
           vis={{ shown, onChange: onShownChange, what: s.name }}
         />
-        <CheckChip check={s.check} />
+        <RowCheckBadge check={s.check} />
         <span className="num text-[11px] text-muted-foreground/70">
           {s.device_count}
         </span>
@@ -128,8 +136,6 @@ function SiteRow({
 function checkRank(check: string | null | undefined): number {
   return check === "down" ? 0 : check === "degraded" ? 1 : 2
 }
-
-type StatusFilter = "down" | "degraded" | "up" | null
 
 export function MapObjectsSidebar({
   sites,
@@ -168,8 +174,9 @@ export function MapObjectsSidebar({
   /** Fit the map to a region's boundary. */
   onFocusRegion: (region: SiteMapRegion) => void
 }) {
+  const typeLabel = useCableTypeLabel()
   const [q, setQ] = useState("")
-  const [status, setStatus] = useState<StatusFilter>(null)
+  const [status, setStatus] = useState<CheckFilter>(null)
   const filter = q.trim().toLowerCase()
   const match = (name: string) => !filter || name.toLowerCase().includes(filter)
   const matchStatus = (check: string | null | undefined) =>
@@ -196,7 +203,7 @@ export function MapObjectsSidebar({
     .sort(
       (a, b) =>
         checkRank(a.check) - checkRank(b.check) ||
-        a.name.localeCompare(b.name, undefined, { numeric: true })
+        naturalCompare(a.name, b.name)
     )
   const shownMarkers = markers.filter((m) =>
     match(m.label || m.device?.name || m.type?.name || "")
@@ -223,7 +230,7 @@ export function MapObjectsSidebar({
           ? 1
           : b.title === "No region"
             ? -1
-            : a.title.localeCompare(b.title)
+            : naturalCompare(a.title, b.title)
       )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sites, regions, filter, status])
@@ -256,11 +263,9 @@ export function MapObjectsSidebar({
         ...g,
         down: g.rows.filter((d) => d.check === "down").length,
         degraded: g.rows.filter((d) => d.check === "degraded").length,
-        rows: g.rows.sort((a, b) =>
-          a.name.localeCompare(b.name, undefined, { numeric: true })
-        ),
+        rows: g.rows.sort((a, b) => naturalCompare(a.name, b.name)),
       }))
-      .sort((a, b) => a.title.localeCompare(b.title))
+      .sort((a, b) => naturalCompare(a.title, b.title))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devices, filter, status])
 
@@ -275,7 +280,6 @@ export function MapObjectsSidebar({
       check: string
       lat: number
       lng: number
-      mono: boolean
     }[] = []
     for (const s of shownSites)
       // Hidden objects are off the map, so they are not this map's problems.
@@ -287,7 +291,6 @@ export function MapObjectsSidebar({
           check: s.check,
           lat: s.latitude!,
           lng: s.longitude!,
-          mono: false,
         })
     for (const g of deviceGroups)
       if (!hiddenRoles.has(g.title))
@@ -300,12 +303,11 @@ export function MapObjectsSidebar({
               check: d.check,
               lat: d.latitude,
               lng: d.longitude,
-              mono: true,
             })
     return rows.sort(
       (a, b) =>
         checkRank(a.check) - checkRank(b.check) ||
-        a.name.localeCompare(b.name, undefined, { numeric: true })
+        naturalCompare(a.name, b.name)
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownSites, deviceGroups, status, hidden])
@@ -315,9 +317,16 @@ export function MapObjectsSidebar({
     for (const c of shownConnections) {
       map.set(c.kind, [...(map.get(c.kind) ?? []), c])
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
+    return [...map.entries()].sort(([a], [b]) => naturalCompare(a, b))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connections, filter])
+
+  // The filter's counts: every site and device the search matches, before
+  // the status filter narrows the list.
+  const statusCounts = checkCounts([
+    ...placed.filter((s) => match(s.name)).map((s) => s.check),
+    ...devices.filter((d) => match(d.name)).map((d) => d.check),
+  ])
 
   const total =
     shownSites.length +
@@ -329,89 +338,39 @@ export function MapObjectsSidebar({
         shownRoutes.length +
         shownRegions.length)
 
+  const enterFirst = () => {
+    // Enter jumps straight to the first hit.
+    const site = shownSites[0]
+    const d = deviceGroups[0]?.rows[0]
+    if (site) {
+      onFocus(site.latitude!, site.longitude!)
+      onSelect({ kind: "site", id: site.id })
+    } else if (d) {
+      onFocus(d.latitude, d.longitude)
+      onSelect({ kind: "device", id: d.id })
+    } else if (shownMarkers[0]) {
+      const m = shownMarkers[0]
+      onFocus(m.latitude, m.longitude)
+      onSelect({ kind: "marker", id: m.id })
+    }
+  }
+
   return (
-    <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-[11px] font-semibold tracking-wide uppercase">
-          On this map
-        </p>
-        <span className="num text-[11px] text-muted-foreground">{total}</span>
-      </div>
-      <div className="relative mb-2">
-        <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter jumps straight to the first hit.
-            if (e.key !== "Enter") return
-            const s = shownSites[0]
-            const d = deviceGroups[0]?.rows[0]
-            if (s) {
-              onFocus(s.latitude!, s.longitude!)
-              onSelect({ kind: "site", id: s.id })
-            } else if (d) {
-              onFocus(d.latitude, d.longitude)
-              onSelect({ kind: "device", id: d.id })
-            } else if (shownMarkers[0]) {
-              const m = shownMarkers[0]
-              onFocus(m.latitude, m.longitude)
-              onSelect({ kind: "marker", id: m.id })
-            }
-          }}
-          placeholder="Search the map…"
-          className="h-8 pl-7 text-[13px]"
-        />
-      </div>
-
-      <div className="mb-3 flex items-center gap-1">
-        {(
-          [
-            [null, "All"],
-            ["down", "down"],
-            ["degraded", "degraded"],
-            ["up", "up"],
-          ] as [StatusFilter, string][]
-        ).map(([value, label]) => (
-          <button
-            key={label}
-            type="button"
-            onClick={() => setStatus(value)}
-            className={cn(
-              "rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium",
-              status === value
-                ? "bg-foreground text-background"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {hiddenCount(hidden) > 0 && (
-        <button
-          type="button"
-          onClick={() => onHiddenChange(NO_HIDDEN)}
-          className="mb-3 flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-        >
-          <EyeOff className="size-3 shrink-0" />
-          <span className="num">{hiddenCount(hidden)}</span> hidden
-          <span className="ml-auto underline underline-offset-2">Show all</span>
-        </button>
-      )}
-
-      {total === 0 && (
-        <p className="px-1 text-[13px] text-muted-foreground">
-          {filter || status ? "No matches." : "Nothing placed yet."}
-        </p>
-      )}
+    <ObjectsPanel
+      total={total}
+      query={q}
+      onQueryChange={setQ}
+      onSearchEnter={enterFirst}
+      status={status}
+      onStatusChange={setStatus}
+      statusCounts={statusCounts}
+      hiddenCount={hiddenCount(hidden)}
+      onShowAll={() => onHiddenChange(NO_HIDDEN)}
+    >
+      {total === 0 && <ObjectsEmpty filtered={!!filter || !!status} />}
 
       {problems.length > 0 && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Problems
-          </p>
+        <ObjectsSection heading="Problems">
           {problems.map((p) => (
             <button
               key={`${p.kind}:${p.id}`}
@@ -421,8 +380,7 @@ export function MapObjectsSidebar({
                 onSelect({ kind: p.kind, id: p.id })
               }}
               className={cn(
-                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left",
-                p.mono ? "font-mono text-[12px]" : "text-[13px]",
+                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
                 selected?.kind === p.kind && selected.id === p.id
                   ? "bg-muted font-medium"
                   : "hover:bg-muted/60"
@@ -430,18 +388,15 @@ export function MapObjectsSidebar({
             >
               <span className="min-w-0 truncate">{p.name}</span>
               <span className="ml-auto shrink-0">
-                <CheckChip check={p.check} />
+                <RowCheckBadge check={p.check} />
               </span>
             </button>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {shownSites.length > 0 && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Sites
-          </p>
+        <ObjectsSection heading="Sites">
           {/* One flat list while no site has a region; region folds (like
               the device role folds) as soon as regions are in use. */}
           {siteGroups.length === 1 && siteGroups[0].title === "No region"
@@ -459,18 +414,18 @@ export function MapObjectsSidebar({
             : siteGroups.map((g) => (
                 <FoldableGroup
                   key={g.title}
-                  title={g.title}
+                  name={g.title}
                   count={g.rows.length}
                   storageId={FOLDS}
                   visibility={{
                     shown: !hiddenRegions.has(g.title),
                     onChange: (v) => toggle("regions", g.title, v),
-                    what: `${g.title} sites`,
+                    what: g.title,
                   }}
                   extra={
                     <>
-                      <CheckCountChip check="down" n={g.down} />
-                      <CheckCountChip check="degraded" n={g.degraded} />
+                      <CheckCountBadge check="down" n={g.down} />
+                      <CheckCountBadge check="degraded" n={g.degraded} />
                     </>
                   }
                 >
@@ -488,49 +443,49 @@ export function MapObjectsSidebar({
                   ))}
                 </FoldableGroup>
               ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {shownRegions.length > 0 && !status && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Regions
-          </p>
+        <ObjectsSection heading="Regions">
           {shownRegions.map((r) => (
             <button
               key={r.id}
               type="button"
               onClick={() => onFocusRegion(r)}
               className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-muted/60"
-              title="Fit the map to this region"
             >
               <span className="min-w-0 truncate">{r.name}</span>
             </button>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {deviceGroups.length > 0 && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Devices
-          </p>
+        <ObjectsSection heading="Devices">
           {deviceGroups.map((g) => (
             <FoldableGroup
               key={g.title}
-              title={g.title}
+              name={g.title}
               count={g.rows.length}
-              badge={<TileBadge color={g.color} icon={g.icon} />}
+              label={
+                // The role's badge; "No role" as the plain one.
+                <ColorBadge
+                  name={g.title}
+                  color={g.color || undefined}
+                  className="max-w-44"
+                />
+              }
               storageId={FOLDS}
               visibility={{
                 shown: !hiddenRoles.has(g.title),
                 onChange: (v) => toggle("roles", g.title, v),
-                what: `${g.title} devices`,
+                what: g.title,
               }}
               extra={
                 <>
-                  <CheckCountChip check="down" n={g.down} />
-                  <CheckCountChip check="degraded" n={g.degraded} />
+                  <CheckCountBadge check="down" n={g.down} />
+                  <CheckCountBadge check="degraded" n={g.degraded} />
                 </>
               }
             >
@@ -543,7 +498,7 @@ export function MapObjectsSidebar({
                     onSelect({ kind: "device", id: d.id })
                   }}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left font-mono text-[12px]",
+                    "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[13px]",
                     !deviceShown(d) && "text-muted-foreground/60",
                     selected?.kind === "device" && selected.id === d.id
                       ? "bg-muted font-medium"
@@ -552,25 +507,22 @@ export function MapObjectsSidebar({
                 >
                   <span className="min-w-0 truncate">{d.name}</span>
                   {filter && d.site && (
-                    <span className="min-w-0 truncate font-sans text-[10px] text-muted-foreground/70">
+                    <span className="min-w-0 truncate text-[10px] text-muted-foreground/70">
                       {d.site.name}
                     </span>
                   )}
                   <span className="ml-auto shrink-0">
-                    <CheckChip check={d.check} />
+                    <RowCheckBadge check={d.check} />
                   </span>
                 </button>
               ))}
             </FoldableGroup>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {shownMarkers.length > 0 && !status && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Markers
-          </p>
+        <ObjectsSection heading="Markers">
           {shownMarkers.map((m) => (
             <button
               key={m.id}
@@ -586,6 +538,7 @@ export function MapObjectsSidebar({
                   : "hover:bg-muted/60"
               )}
             >
+              {/* The marker type's icon, as the pin wears it. */}
               <TileBadge
                 color={m.type?.color ?? ""}
                 icon={m.type?.icon}
@@ -596,24 +549,22 @@ export function MapObjectsSidebar({
               </span>
             </button>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {shownRoutes.length > 0 && !status && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Cable routes
-          </p>
+        <ObjectsSection heading="Cable routes">
           {shownRoutes.map((r) => (
             <FoldableGroup
               key={r.id}
-              title={r.name}
+              name={r.name}
               count={r.cables.length}
               storageId={FOLDS}
-              badge={
-                <span
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{ background: r.color || "#71717a" }}
+              label={
+                <ColorBadge
+                  name={r.name}
+                  color={r.color || undefined}
+                  className="max-w-44"
                 />
               }
             >
@@ -637,40 +588,35 @@ export function MapObjectsSidebar({
                   key={c.id}
                   type="button"
                   onClick={() => onPickRoute(r.id, c.id)}
-                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left font-mono text-[12px] hover:bg-muted/60"
+                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[12px] hover:bg-muted/60"
                 >
-                  <span
-                    className="size-1.5 shrink-0 rounded-full"
-                    style={{ background: c.color || "#0ea5e9" }}
-                  />
-                  <span className="min-w-0 truncate">{c.label}</span>
+                  <span className="min-w-0 truncate font-mono">{c.label}</span>
                   {c.type && (
-                    <span className="ml-auto font-sans text-[10px] text-muted-foreground/70">
-                      {c.type}
+                    <span className="ml-auto text-[10px] text-muted-foreground/70">
+                      {typeLabel(c.type)}
                     </span>
                   )}
                 </button>
               ))}
             </FoldableGroup>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {linkGroups.length > 0 && !status && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Links
-          </p>
+        <ObjectsSection heading="Links">
           {linkGroups.map(([kind, rows]) => (
             <FoldableGroup
               key={kind}
-              title={LINK_KIND_TITLE[kind] ?? kind}
+              name={LINK_KIND_TITLE[kind] ?? kind}
               count={rows.length}
               storageId={FOLDS}
-              badge={
-                <span
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{ background: KIND_COLOR[kind] ?? "#71717a" }}
+              label={
+                // The kind's line color on the map.
+                <ColorBadge
+                  name={LINK_KIND_TITLE[kind] ?? kind}
+                  color={KIND_COLOR[kind]}
+                  className="max-w-44"
                 />
               }
             >
@@ -689,10 +635,6 @@ export function MapObjectsSidebar({
                       : "hover:bg-muted/60"
                   )}
                 >
-                  <span
-                    className="size-1.5 shrink-0 rounded-full"
-                    style={{ background: c.color || KIND_COLOR[c.kind] }}
-                  />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{c.name}</span>
                     <span className="block truncate text-[11px] text-muted-foreground">
@@ -703,8 +645,8 @@ export function MapObjectsSidebar({
               ))}
             </FoldableGroup>
           ))}
-        </div>
+        </ObjectsSection>
       )}
-    </aside>
+    </ObjectsPanel>
   )
 }

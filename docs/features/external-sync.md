@@ -42,10 +42,10 @@ Two places, on purpose:
 - **IPAM → DHCP / DNS** (clusters inside the IPAM section - scopes,
   reservations and zones are address-space state) - where you *read and act on
   the synced data*, aggregated across every server. Virtualization lands under
-  **Virtualization** (VMs, virtual switches, network topology). Each list
-  filters by server and links back to the prefixes and IP addresses the data
-  maps to. The connection pages appear once the matching toggle is on; the
-  DNS/DHCP data pages are always there.
+  **Virtualization** (VMs, virtual switches) and **Maps → Virtual topology**.
+  Each list filters by server and links back to the prefixes and IP addresses
+  the data maps to. The connection pages appear once the matching toggle is on;
+  the DNS/DHCP data pages are always there.
 
 ## Internal hosts and the outbound allowlist
 

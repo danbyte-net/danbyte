@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from django.apps import apps
+from django.core.exceptions import ValidationError
 
 # ─── Customizable models (applies_to) ────────────────────────────────────────
 
@@ -97,10 +98,12 @@ def reference_model(slug: str) -> ReferenceModel | None:
 
 
 for _e in [
-    ReferenceModel("user", "Users", "auth.User", "/api/users/",
+    # People pick from the tenant-member endpoints, not /api/users/ and
+    # /api/groups/: those are user administration and need a grant on users.
+    ReferenceModel("user", "Users", "auth.User", "/api/people/",
                    label_field="username", picker=False, tenant_field=None,
                    route=None),
-    ReferenceModel("group", "Groups", "auth.Group", "/api/groups/",
+    ReferenceModel("group", "Groups", "auth.Group", "/api/people/groups/",
                    picker=False, tenant_field=None, route=None),
     ReferenceModel("device", "Devices", "api.Device", "/api/devices/",
                    route="/devices/$id"),
@@ -116,6 +119,8 @@ for _e in [
                    "/api/module-types/", route="/module-types/$id"),
     ReferenceModel("rack", "Racks", "api.Rack", "/api/racks/",
                    route="/racks/$id"),
+    ReferenceModel("cabinet", "Cabinets", "api.Cabinet", "/api/cabinets/",
+                   route="/cabinets/$id"),
     ReferenceModel("site", "Sites", "api.Site", "/api/sites/",
                    route="/sites/$id"),
     ReferenceModel("location", "Locations", "api.Location",
@@ -153,17 +158,68 @@ for _e in [
     register_reference_model(_e)
 
 
-def resolve_labels(slug: str, ids: list[str], tenant=None) -> list[dict]:
+def _member_labels(ref: ReferenceModel, qs, tenant, user):
+    """``qs`` cut to the tenant's active members (users) or the groups they
+    are in, for a caller with no grant on users or groups; ``None`` for any
+    other model."""
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+
+    if tenant is None:
+        return None
+    if ref.model is get_user_model():
+        from auth_api.people_api import tenant_members
+
+        return qs.filter(pk__in=tenant_members(tenant, user).values("pk"))
+    if ref.model is Group:
+        from auth_api.people_api import tenant_groups
+
+        return qs.filter(pk__in=tenant_groups(tenant, user).values("pk"))
+    return None
+
+
+def resolve_labels(slug: str, ids: list[str], tenant=None, user=None) -> list[dict]:
     """Bulk id → {id, label, route} for display of object-field values.
-    Unknown ids are silently dropped (the caller shows the raw id)."""
+    Unknown ids are silently dropped (the caller shows the raw id).
+
+    With ``user`` (a request's caller), a label is served only for an object
+    that user may view: an RBAC-controlled type needs its view grant, cut to
+    the rows that grant reaches - a label names the object, so it is read
+    access like any other. Users and groups are the exception: without a
+    grant on them the caller still gets the names of the tenant's active
+    members and of the groups they are in, the same names the tenant's
+    pickers, journal and task board already show."""
     ref = reference_model(slug)
     if ref is None or not ids:
         return []
-    qs = ref.model.objects.filter(pk__in=ids)
+    # A malformed stored value (not a UUID, not a number) would make the
+    # whole batch's query fail; it is only an unknown id.
+    pk = ref.model._meta.pk
+    valid = []
+    for i in ids:
+        try:
+            valid.append(pk.to_python(i))
+        except (ValidationError, TypeError, ValueError):
+            continue
+    if not valid:
+        return []
+    qs = ref.model.objects.filter(pk__in=valid)
     if ref.select_related:
         qs = qs.select_related(*ref.select_related)
     if ref.tenant_field and tenant is not None:
         qs = qs.filter(**{ref.tenant_field: tenant})
+    if user is not None:
+        from auth_api import rbac
+        from auth_api.object_types import is_registered
+
+        rbac_slug = ref.model._meta.model_name
+        if is_registered(rbac_slug):
+            if rbac.has_action(user, tenant, rbac_slug, "view"):
+                qs = rbac.restrict_queryset(qs, user, tenant, rbac_slug, "view")
+            else:
+                qs = _member_labels(ref, qs, tenant, user)
+                if qs is None:
+                    return []
     out = []
     for obj in qs:
         label = getattr(obj, ref.label_field, None) if ref.label_field else None

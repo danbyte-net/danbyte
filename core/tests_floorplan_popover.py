@@ -29,6 +29,15 @@ class CleanFieldsTests(TestCase):
             ["size", "name"],
         )
 
+    def test_a_cabinets_rail_count_is_a_field(self):
+        self.assertEqual(clean_popover_fields(["device_count", "rail_count"]),
+                         ["device_count", "rail_count"])
+
+    def test_a_racks_ports_are_a_field(self):
+        # #247: a rack tile's Ports and Panel ports, from the plan's racks.
+        self.assertEqual(clean_popover_fields(["ports", "power"]), ["ports", "power"])
+        self.assertNotIn("ports", FLOORPLAN_POPOVER_FIELD_DEFAULTS)
+
     def test_non_list_is_empty(self):
         self.assertEqual(clean_popover_fields("name"), [])
         self.assertEqual(clean_popover_fields(None), [])

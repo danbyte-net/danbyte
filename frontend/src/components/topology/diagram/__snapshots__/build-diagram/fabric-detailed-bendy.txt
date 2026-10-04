@@ -1,0 +1,152 @@
+# buildDiagram(graph, {"mode":"detailed","line":"bendy","colorMode":"cable","direction":"TB"})
+
+nodes 10
+dev:@fw-01  card @1037,634 172x71
+  fill #ef4444 ink #fff
+  title "fw-01" top 6
+  lines primary_ip="10.0.2.1" loopback="10.255.0.1" serial="SN FDO22000X"
+  nubs T78:ethernet1/2 T94:ethernet1/1
+dev:@leaf-01  card @95,334.7 180x71
+  fill #0ea5e9 ink #fff
+  title "leaf-01" top 6
+  lines primary_ip="10.0.1.1" loopback="10.255.0.2" serial="SN FDO22001X"
+  nubs T74:Ethernet1/50 T90:Ethernet1/49 T106:Ethernet1/51 R27.5:Ethernet1/54 R43.5:Ethernet1/53
+dev:@leaf-02  card @1055,334.7 182x71
+  fill #0ea5e9 ink #fff
+  title "leaf-02" top 6
+  lines primary_ip="10.0.1.2" loopback="10.255.0.3" serial="SN FDO22002X"
+  nubs T91:Ethernet1/51 L19.5:Ethernet1/49 L35.5:Ethernet1/54 L51.5:Ethernet1/53
+dev:@leaf-03  card @360,334.7 182x71
+  fill #0ea5e9 ink #fff
+  title "leaf-03" top 6
+  lines primary_ip="10.0.1.3" loopback="10.255.0.4" serial="SN FDO22003X"
+  nubs T83:Ethernet1/49 T99:Ethernet1/51 B83:Ethernet1/47 B99:Ethernet1/48
+dev:@leaf-04  card @598,334.7 182x71
+  fill #0ea5e9 ink #fff
+  title "leaf-04" top 6
+  lines primary_ip="10.0.1.4" loopback="10.255.0.5" serial="SN FDO22004X"
+  nubs T83:Ethernet1/49 T99:Ethernet1/51 B75:Ethernet1/48 B91:Ethernet1/2 B107:Ethernet1/1
+dev:@oob-con-01  card @103.5,825 207x71
+  fill #a855f7 ink #fff
+  title "oob-con-01" top 6
+  lines primary_ip="10.0.9.1" loopback="10.255.0.6" serial="SN FDO22005X"
+dev:@pp-c01  card @598,634 88x28
+  fill #71717a ink #fff
+  title "pp-c01" top 6
+  nubs T44:1
+dev:@spine-01  card @95,35.5 190x71
+  fill #6366f1 ink #fff
+  title "spine-01" top 6
+  lines primary_ip="10.0.0.1" loopback="10.255.0.8" serial="SN FDO22007X"
+  nubs R35.5:Ethernet1/3 B71:Ethernet1/2 B87:Ethernet1/1 B103:Ethernet1/4 B119:Ethernet1/5
+dev:@spine-02  card @342,35.5 192x71
+  fill #6366f1 ink #fff
+  title "spine-02" top 6
+  lines primary_ip="10.0.0.2" loopback="10.255.0.9" serial="SN FDO22008X"
+  nubs B72:Ethernet1/1 B88:Ethernet1/3 B104:Ethernet1/4 B120:Ethernet1/2
+dev:@srv-db-01  card @796.5,634 197x57
+  fill #10b981 ink #fff
+  title "srv-db-01" top 6
+  lines loopback="10.255.0.10" serial="SN FDO22009X"
+  nubs T90.5:eno2 T106.5:eno1
+
+edges 17
+e:@c1:@leaf-01:@spine-01  link cable bendy
+  style {"strokeWidth":1.25}
+  a B87:Ethernet1/1
+  b T90:Ethernet1/49
+  path M 87,77 Q 87,111.21 87,137.38 Q 87,163.55 91,185.12 Q 95,206.68 95,225.12 Q 95,243.55 95,293.24
+    ports a 87,109.2@-90 b 95,257.2@-90
+e:@c2:@leaf-01:@spine-01  link cable bendy
+  style {"strokeWidth":1.25}
+  a B71:Ethernet1/2
+  b T74:Ethernet1/50
+  path M 71,77 Q 71,114.87 71,139.21 Q 71,163.55 75,185.12 Q 79,206.68 79,225.5 Q 79,244.31 79,293.24
+    ports a 71,110.1@-90 b 79,257.4@-90
+e:@c3:@leaf-02:@spine-01  link cable bendy
+  style {"strokeWidth":1.25}
+  a R35.5:Ethernet1/3
+  b L19.5:Ethernet1/49
+  path M 196,35.5 L 204,35.5 Q 210,35.5 210,41.5 L 210,171.11865234375 Q 210,177.11865234375 216,177.11865234375 L 938,177.11865234375 Q 944,177.11865234375 944,183.11865234375 L 944,312.7373046875 Q 944,318.7373046875 950,318.7373046875 L 958,318.7373046875 (elbow)
+    ports a off b off
+e:@c4:@spine-01:@leaf-03  link cable bendy
+  style {"strokeWidth":1.25,"stroke":"#f59e0b"}
+  a B103:Ethernet1/4
+  b T83:Ethernet1/49
+  path M 103,77 Q 103,93.96 103,139.54 Q 103,185.12 227.5,185.12 Q 352,185.12 352,225.12 Q 352,265.12 352,293.24
+    ports a 103,110.3@-90 b 352,253.2@-90.2
+e:@c5:@spine-01:@leaf-04  link cable bendy
+  style {"strokeWidth":1.25}
+  a B119:Ethernet1/5
+  b T83:Ethernet1/49
+  path M 119,77 Q 119,78 119,150.82 Q 119,223.64 354.5,185.12 Q 590,146.59 590,219.42 Q 590,292.24 590,293.24
+    ports a 119,110@-90 b 590,253.2@-90
+e:@c6:@leaf-01:@spine-02  link cable bendy
+  style {"strokeWidth":1.25}
+  a B72:Ethernet1/1
+  b T106:Ethernet1/51
+  path M 318,77 Q 318,89.65 318,137.38 Q 318,185.12 214.5,185.12 Q 111,185.12 111,227.51 Q 111,269.91 111,293.24
+    ports a 318,109.2@-90 b 111,258.4@-90
+e:@c7:@leaf-02:@spine-02  link cable bendy
+  style {"strokeWidth":1.25}
+  a B120:Ethernet1/2
+  b T91:Ethernet1/51
+  path M 366,77 Q 366,78 366,157.5 Q 366,237 710.5,185.12 Q 1055,133.24 1055,212.74 Q 1055,292.24 1055,293.24
+    ports a 366,110.1@-90 b 1055,258.4@-90
+e:@c8:@spine-02:@leaf-03  link cable bendy
+  style {"strokeWidth":1.25,"stroke":"#f59e0b"}
+  a B88:Ethernet1/3
+  b T99:Ethernet1/51
+  path M 334,77 Q 334,114.01 334,139.28 Q 334,164.56 351,185.12 Q 368,205.68 368,227.51 Q 368,249.35 368,293.24
+    ports a 334,110.1@-90 b 368,254.4@-90
+e:@c9:@spine-02:@leaf-04  link cable bendy
+  style {"strokeWidth":1.25}
+  a B104:Ethernet1/4
+  b T99:Ethernet1/51
+  path M 350,77 Q 350,93.96 350,139.54 Q 350,185.12 478,185.12 Q 606,185.12 606,227.51 Q 606,269.91 606,293.24
+    ports a 350,110.3@-90 b 606,254.4@-90.2
+e:@c12:@fw-01:@leaf-04  link cable bendy
+  style {"strokeWidth":1.25,"stroke":"#3b82f6"}
+  a B107:Ethernet1/1 B91:Ethernet1/2
+  b T94:ethernet1/1 T78:ethernet1/2
+  path M 614,376.24 Q 614,388.89 614,436.62 Q 614,484.36 829.5,484.36 Q 1045,484.36 1045,532.25 Q 1045,580.15 1045,592.47
+    ports a 614,410.4@-90 b off
+  path M 598,376.24 Q 598,392.54 598,438.45 Q 598,484.36 813.5,484.36 Q 1029,484.36 1029,530.42 Q 1029,576.49 1029,592.47
+    ports a 598,411.3@-90 b 1029,559.4@-90
+e:@c13:@leaf-03:@srv-db-01  link cable bendy
+  style {"strokeWidth":1.25,"strokeDasharray":"10 4"}
+  a B99:Ethernet1/48
+  b T106.5:eno1
+  path M 368,376.24 Q 368,400.83 368,444.34 Q 368,487.86 586.25,487.86 Q 804.5,487.86 804.5,543.17 Q 804.5,598.47 804.5,599.47
+    ports a 368,414.3@-90 b 804.5,580.7@-90
+e:@c14:@pp-c01:@leaf-04  link cable bendy
+  style {"strokeWidth":1.25}
+  a B75:Ethernet1/48
+  b T44:1
+  path M 582,376.24 Q 582,417.14 582,444.34 Q 582,471.55 590,495.11 Q 598,518.66 598,565.82 Q 598,612.97 598,613.97
+    ports a 582,414.3@-90 b 598,603.1@-90
+e:@c17:@leaf-03:@srv-db-01  link cable bendy
+  style {"strokeWidth":1.25}
+  a B83:Ethernet1/47
+  b T90.5:eno2
+  path M 352,376.24 Q 352,399.88 352,443.87 Q 352,487.86 570.25,487.86 Q 788.5,487.86 788.5,543.17 Q 788.5,598.47 788.5,599.47
+    ports a 352,414.1@-90 b 788.5,579.7@-90
+ghost:@leaf-02:@fw-01  link ghost straight simple mid ["LLDP"]
+  style {"strokeWidth":1.5,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","opacity":0.8}
+  a B91
+  b T86
+  mid at 0.5
+  path M 1055,370.24 L 1037,598.47
+bgp:@fw-01:@spine-01:  overlay bgp straight
+  style {"strokeWidth":1.25,"stroke":"var(--primary)","strokeDasharray":"3 5","opacity":0.45}
+bgp:@spine-01:@spine-02:underlay  overlay bgp straight
+  style {"strokeWidth":1.25,"stroke":"var(--primary)","strokeDasharray":"3 5","opacity":0.45}
+lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  link lagbundle bendy mid ["Po10 ⇄ Po10 · 2x"]
+  style {"strokeWidth":2.5}
+  a R43.5:Ethernet1/53 R27.5:Ethernet1/54
+  b L51.5:Ethernet1/53 L35.5:Ethernet1/54
+  mid at 0.42
+  path M 191,342.7373046875 L 199,342.7373046875 Q 205,342.7373046875 205,348.7373046875 L 205,376.7373046875 Q 205,382.7373046875 211,382.7373046875 L 938,382.7373046875 Q 944,382.7373046875 944,376.7373046875 L 944,356.7373046875 Q 944,350.7373046875 950,350.7373046875 L 958,350.7373046875 (elbow)
+    ports a off b off
+  path M 191,326.7373046875 L 199,326.7373046875 Q 205,326.7373046875 205,320.7373046875 L 205,291.2373046875 Q 205,285.2373046875 211,285.2373046875 L 926,285.2373046875 Q 932,285.2373046875 932,291.2373046875 L 932,328.7373046875 Q 932,334.7373046875 938,334.7373046875 L 958,334.7373046875 (elbow)
+    ports a off b off

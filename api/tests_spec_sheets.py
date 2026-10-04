@@ -85,6 +85,20 @@ class DeviceSheetTests(_Base):
         self.assertEqual(row["mac"], "00:1b:44:11:3a:b7")
         self.assertEqual(ctx["comments"], "Core switch, row 3.")
 
+    def test_ports_follow_the_counting_rule(self):
+        """The sheet's Port utilization block is the device card's: virtual
+        interfaces only when the deployment counts them (0.17)."""
+        from core.models import DeploymentSettings
+
+        Interface.objects.create(device=self.device, name="Vlan10", virtual=True)
+        ports = device_context(self.device)["ports"]
+        self.assertEqual((ports["used"], ports["total"]), (1, 1))
+        ds = DeploymentSettings.load()
+        ds.port_count_virtual = True
+        ds.save()
+        ports = device_context(self.device)["ports"]
+        self.assertEqual((ports["used"], ports["total"], ports["pct"]), (1, 2, 50))
+
     def test_html_and_pdf(self):
         html = render_spec_html("device", self.device)
         self.assertIn("aarhus-sw1", html)
@@ -151,6 +165,99 @@ class DeviceSheetTests(_Base):
         r = self.client.get(f"/api/devices/{self.device.id}/spec-sheet/?variant=full")
         self.assertEqual(r.status_code, 200, r.content[:200])
         self.assertIn("aarhus-sw1-spec-full-FOC1234.pdf", r["Content-Disposition"])
+
+    def test_memory_in_gb_and_parts_in_natural_order(self):
+        """#244: a BMC stores DIMMs in binary bytes, so 16 x 64 GiB used to
+        read "1.1 TB" and "16 x 68.72 GB"; and synced parts carry no slot, so
+        their names ordered them as DIMM 1, DIMM 10, DIMM 11, ..., DIMM 2."""
+        from .models import InventoryItem
+
+        order = (16, 3, 12, 1, 10, 2, 11, 4, 9, 5, 15, 6, 14, 7, 13, 8)
+        for n in order:
+            InventoryItem.objects.create(
+                device=self.device, name=f"DIMM {n}", kind="ram",
+                capacity_bytes=64 * 1024**3, speed="4800 MT/s",
+            )
+        for n in (10, 2, 1):
+            InventoryItem.objects.create(
+                device=self.device, name=f"Disk {n}", kind="disk", slot=f"Bay {n}",
+                capacity_bytes=960_000_000_000,
+            )
+        ctx = device_hardware_context(self.device)
+        stats = {s["label"]: s for s in ctx["stats"]}
+        self.assertEqual(stats["Memory"]["value"], "1024 GB")
+        self.assertIn("16 × 64 GB", stats["Memory"]["hint"])
+        self.assertEqual([r["name"] for r in ctx["rams"]], [f"DIMM {n}" for n in range(1, 17)])
+        self.assertEqual(ctx["rams"][0]["capacity"], "64 GB")
+        # Disks keep the decimal, largest-unit formatting.
+        self.assertEqual(stats["Storage"]["value"], "2.88 TB")
+        self.assertEqual([r["slot"] for r in ctx["disks"]], ["Bay 1", "Bay 2", "Bay 10"])
+        # The Modules and inventory list on the datasheet reads the same way.
+        names = [r["name"] for r in device_context(self.device)["inventory"]]
+        self.assertEqual(names[:3], ["DIMM 1", "DIMM 2", "DIMM 3"])
+        self.assertEqual(names[-3:], ["Disk 1", "Disk 2", "Disk 10"])
+
+        html = render_spec_html("device_hardware", self.device)
+        at = [html.index(f"<td>DIMM {n}</td>") for n in range(1, 17)]
+        self.assertEqual(at, sorted(at))
+        self.assertIn("1024 GB", html)
+
+    def test_mixed_sizes_count_each_size(self):
+        """Two 2 TB and eight 10 TB disks read "2 × 2 TB · 8 × 10 TB", not ten
+        times the most common size; mixed DIMMs likewise."""
+        from .models import InventoryItem
+
+        mk = InventoryItem.objects.create
+        for n in range(8):
+            mk(device=self.device, name=f"Data {n}", kind="disk", media="hdd",
+               capacity_bytes=10_000_000_000_000)
+        for n in range(2):
+            mk(device=self.device, name=f"Boot {n}", kind="disk", media="hdd",
+               capacity_bytes=2_000_000_000_000)
+        for n, size in enumerate((32, 32, 64, 64, 64, 64)):
+            mk(device=self.device, name=f"DIMM {n}", kind="ram",
+               capacity_bytes=size * 1024**3)
+        stats = {s["label"]: s for s in device_hardware_context(self.device)["stats"]}
+        self.assertEqual(stats["Storage"]["value"], "84 TB")
+        self.assertIn("2 × 2 TB · 8 × 10 TB", stats["Storage"]["hint"])
+        self.assertNotIn("10 × ", stats["Storage"]["hint"])
+        self.assertEqual(stats["Memory"]["value"], "320 GB")
+        self.assertIn("2 × 32 GB · 4 × 64 GB", stats["Memory"]["hint"])
+
+        # Mixed media: each size names its medium, and no medium trails.
+        InventoryItem.objects.filter(name__startswith="Boot").update(media="ssd")
+        hint = {s["label"]: s for s in device_hardware_context(self.device)["stats"]}["Storage"]["hint"]
+        self.assertTrue(hint.startswith("2 × 2 TB SSD"), hint)
+        self.assertIn("8 × 10 TB HDD", hint)
+
+    def test_slots_order_before_names(self):
+        from .models import InventoryItem
+
+        for n in (12, 1, 10, 2, 11, 3):
+            InventoryItem.objects.create(
+                device=self.device, name=f"RAM{13 - n}", kind="ram", slot=f"DIMM A{n}",
+                capacity_bytes=32_000_000_000,
+            )
+        ctx = device_hardware_context(self.device)
+        self.assertEqual(
+            [r["slot"] for r in ctx["rams"]],
+            ["DIMM A1", "DIMM A2", "DIMM A3", "DIMM A10", "DIMM A11", "DIMM A12"],
+        )
+        self.assertEqual(ctx["stats"][1]["value"], "192 GB")
+
+    def test_memory_formatting(self):
+        from .spec_sheets import _memory, format_memory
+
+        self.assertEqual(format_memory(32 * 1024**3), "32 GB")  # BMC, binary
+        self.assertEqual(format_memory(32_000_000_000), "32 GB")  # form, decimal
+        self.assertEqual(format_memory(512 * 1024**2), "0.5 GB")
+        self.assertEqual(format_memory(1_500_000_000), "1.5 GB")
+        self.assertEqual(format_memory(33_300_000_000), "33.3 GB")
+        self.assertEqual(format_memory(None), "")
+        self.assertEqual(format_memory(0), "")
+        self.assertEqual(_memory(1536), "1.5 GB")
+        self.assertEqual(_memory(1024 * 1024), "1024 GB")
+        self.assertEqual(_memory(0), "—")
 
     def test_needs_view_permission(self):
         member = User.objects.create_user("m", password="x")

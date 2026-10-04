@@ -3,16 +3,18 @@ import { useQuery } from "@tanstack/react-query"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
 import { useMemo, useState } from "react"
 
-import {
-  api,
-  type MacDetail,
-  type MacObjectDetail,
-  type OuiStatus,
+import { api } from "@/lib/api"
+import type {
+  MacDetail,
+  MacLocation,
+  MacObjectDetail,
+  ObservedIp,
+  ObservedName,
+  OuiStatus,
 } from "@/lib/api"
-import { copyText } from "@/lib/clipboard"
+import { copyWithToast } from "@/lib/clipboard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -37,6 +39,15 @@ import {
   formatCustomValue,
 } from "@/components/custom-field-display"
 import { useMe } from "@/lib/use-me"
+import { useDateFormat } from "@/lib/datetime"
+import { Loading } from "@/components/loading"
+import { VlanBadge } from "@/components/cells/vlan-badge"
+import { timeAgo } from "@/components/cells/time-ago"
+import { Section } from "@/components/ui/section"
+import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns"
+import { LocationRef, UplinkBadge } from "@/components/learned-macs-cell"
+import { NAME_SOURCE_LABEL, ipSourceLabel } from "@/lib/mac-tracking"
+import type { LearnedMacRow } from "@/components/columns/learned-mac-columns"
 
 export const Route = createFileRoute("/macs/$mac")({ component: MacDetailPage })
 
@@ -45,64 +56,107 @@ type MacVmInterface = MacDetail["vm_interfaces"][number]
 type MacIp = MacDetail["ips"][number]
 type MacSighting = MacDetail["seen"][number]
 
-const seenColumns: ColumnDef<MacSighting>[] = [
+/** A forwarding-table sighting as a learned-MAC row: one port, one VLAN. */
+type PortRow = LearnedMacRow & { key: string }
+
+/** Present before gone, the access port before the uplinks that also see
+ * the MAC, newest first. */
+const portOrder = (a: PortRow, b: PortRow) =>
+  Number(a.state === "gone") - Number(b.state === "gone") ||
+  Number(a.role === "uplink") - Number(b.role === "uplink") ||
+  (b.last_seen ?? "").localeCompare(a.last_seen ?? "")
+
+function portRows(seen: MacSighting[]): PortRow[] {
+  return seen
+    .filter((s) => s.source === "fdb")
+    .map(
+      (s, n): PortRow => ({
+        key: `${n}`,
+        device: s.device ?? null,
+        interface: s.interface ?? null,
+        port_name: s.port ?? null,
+        vlan: s.vlan ?? null,
+        role: s.role ?? null,
+        first_seen: s.first_seen ?? null,
+        last_seen: s.last_seen ?? null,
+        state: s.present === false ? "gone" : "present",
+      })
+    )
+    .sort(portOrder)
+}
+
+const PORT_COLUMNS = buildLearnedMacColumns<PortRow>({
+  include: [
+    "device",
+    "port",
+    "vlan",
+    "role",
+    "first_seen",
+    "last_seen",
+    "state",
+  ],
+})
+
+/** An ARP sighting: which device (or VM) paired the MAC with which IP. */
+type ArpRow = LearnedMacRow & { key: string; owner: MacSighting; ip: string }
+
+function arpRows(seen: MacSighting[]): ArpRow[] {
+  return seen
+    .filter((s) => s.source === "arp")
+    .map((s, n) => ({
+      key: `${n}`,
+      owner: s,
+      ip: s.ip ?? "",
+      first_seen: s.first_seen ?? null,
+      last_seen: s.last_seen ?? null,
+      state: s.present === false ? "gone" : "present",
+    }))
+}
+
+const ARP_COLUMNS: ColumnDef<ArpRow, unknown>[] = [
   {
     id: "device",
-    accessorFn: (s) => s.device?.name ?? s.vm?.name ?? "",
-    header: "Seen by",
+    accessorFn: (r) => r.owner.device?.name ?? r.owner.vm?.name ?? "",
+    header: ({ column }) => <SortHeader column={column} label="Device" />,
     cell: ({ row }) => {
-      const s = row.original
-      if (s.device)
+      const { device, vm } = row.original.owner
+      if (device)
         return (
           <Link
             to="/devices/$id"
-            params={{ id: s.device.id }}
-            className="link font-medium"
+            params={{ id: device.id }}
+            className="link font-mono text-xs"
           >
-            {s.device.name}
+            {device.name}
           </Link>
         )
-      if (s.vm)
+      if (vm)
         return (
           <Link
             to="/virtual-machines/$id"
-            params={{ id: s.vm.id }}
-            className="link font-medium"
+            params={{ id: vm.id }}
+            className="link font-mono text-xs"
           >
-            {s.vm.name}
+            {vm.name}
           </Link>
         )
       return <span className="text-muted-foreground">-</span>
     },
   },
   {
-    id: "table",
-    accessorKey: "source",
-    header: "Table",
+    id: "ip",
+    accessorKey: "ip",
+    header: ({ column }) => <SortHeader column={column} label="IP" />,
     cell: ({ row }) =>
-      row.original.source === "arp" ? "ARP" : "MAC (forwarding)",
-  },
-  {
-    id: "detail",
-    header: "Detail",
-    enableSorting: false,
-    cell: ({ row }) => {
-      const s = row.original
-      if (s.source === "arp")
-        return s.ip ? (
-          <span className="font-mono">{s.ip}</span>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )
-      return s.port ? (
-        <span>
-          port <span className="font-mono">{s.port}</span>
-        </span>
+      row.original.ip ? (
+        <span className="font-mono text-xs">{row.original.ip}</span>
       ) : (
         <span className="text-muted-foreground">-</span>
-      )
-    },
+      ),
   },
+  ...buildLearnedMacColumns<ArpRow>({
+    include: ["first_seen", "last_seen", "state"],
+  }),
 ]
 
 function MacDetailPage() {
@@ -112,8 +166,7 @@ function MacDetailPage() {
     queryFn: () => api<MacDetail>(`/api/macs/${encodeURIComponent(mac)}/`),
   })
 
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -154,9 +207,7 @@ function Body({ data }: { data: MacDetail }) {
   })
 
   async function copy() {
-    const ok = await copyText(data.mac)
-    if (ok) toast.success(`Copied ${data.mac}`)
-    else toast.error("Couldn't copy - clipboard blocked by the browser")
+    await copyWithToast(data.mac, `Copied ${data.mac}`)
   }
 
   const interfaceColumns = useMemo<ColumnDef<MacInterface>[]>(
@@ -171,7 +222,18 @@ function Body({ data }: { data: MacDetail }) {
   const vmIfaces = data.vm_interfaces ?? []
   const seen = data.seen ?? []
   const ifaceCount = data.interfaces.length + vmIfaces.length
-  const seenDevices = new Set(seen.map((s) => s.device?.id ?? s.vm?.id)).size
+  // MAC tracking (#284): every port that learned the address (a move is two
+  // rows) and every ARP table that paired it with an IP.
+  const ports = useMemo(() => portRows(seen), [seen])
+  const arps = useMemo(() => arpRows(seen), [seen])
+  // A MAC that left a port and came back is two rows of one port.
+  const portCount = new Set(
+    ports.map((p) => `${p.device?.id}|${p.interface?.id ?? p.port_name}`)
+  ).size
+  const switches = new Set(ports.map((p) => p.device?.id)).size
+  const arpOwners = new Set(
+    arps.map((a) => a.owner.device?.id ?? a.owner.vm?.id)
+  ).size
 
   const details: KvRow[] = [
     { label: "MAC address", value: mono(data.mac), copy: data.mac },
@@ -196,6 +258,20 @@ function Body({ data }: { data: MacDetail }) {
         dash
       ),
     },
+    ...(ports.length > 0 || data.location
+      ? [
+          {
+            label: "Location",
+            value: <LocationValue loc={data.location ?? null} ports={ports} />,
+          },
+        ]
+      : []),
+    ...(data.ips_observed?.length
+      ? [{ label: "IP", value: <ObservedIps ips={data.ips_observed} /> }]
+      : []),
+    ...(data.names?.length
+      ? [{ label: "Name", value: <ObservedNames names={data.names} /> }]
+      : []),
     {
       label: "Interfaces",
       value: <span className="num">{ifaceCount}</span>,
@@ -207,10 +283,14 @@ function Body({ data }: { data: MacDetail }) {
     {
       label: "Seen via SNMP",
       value:
-        seen.length > 0 ? (
+        ports.length > 0 ? (
           <span className="num">
-            {seen.length} sighting{seen.length === 1 ? "" : "s"} on{" "}
-            {seenDevices} device{seenDevices === 1 ? "" : "s"}
+            {portCount} {portCount === 1 ? "port" : "ports"} on {switches}{" "}
+            {switches === 1 ? "switch" : "switches"}
+          </span>
+        ) : arps.length > 0 ? (
+          <span className="num">
+            ARP on {arpOwners} {arpOwners === 1 ? "device" : "devices"}
           </span>
         ) : (
           dash
@@ -275,8 +355,11 @@ function Body({ data }: { data: MacDetail }) {
             </h2>
             {data.objects.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No MAC object yet - this address is only known from a recorded
-                interface or IP.{" "}
+                No MAC object yet - this address is only known from{" "}
+                {ifaceCount + data.ips.length > 0
+                  ? "a recorded interface or IP"
+                  : "the network"}
+                .{" "}
                 {canAdd && (
                   <button
                     type="button"
@@ -363,18 +446,35 @@ function Body({ data }: { data: MacDetail }) {
             No polled device has seen this address in its ARP or MAC table.
           </p>
         ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Polling saw this address on these devices - observations, not
-              records. Every switch on the L2 path learns a host's MAC, so one
-              address on several devices is normal.
-            </p>
-            <DataTable
-              data={seen}
-              columns={seenColumns}
-              tableId="mac-sightings"
-              flexColumn="detail"
-            />
+          <div className="space-y-8">
+            <Section title="Ports" count={ports.length}>
+              {ports.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No switch has learned this address.
+                </p>
+              ) : (
+                <DataTable
+                  data={ports}
+                  columns={PORT_COLUMNS}
+                  embedded
+                  flexColumn="role"
+                />
+              )}
+            </Section>
+            <Section title="ARP" count={arps.length}>
+              {arps.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No ARP table pairs this address with an IP.
+                </p>
+              ) : (
+                <DataTable
+                  data={arps}
+                  columns={ARP_COLUMNS}
+                  embedded
+                  flexColumn="ip"
+                />
+              )}
+            </Section>
           </div>
         )}
       </DetailTab>
@@ -413,6 +513,112 @@ function Body({ data }: { data: MacDetail }) {
         onOpenChange={(o) => !o && setDeleting(null)}
       />
     </DetailShell>
+  )
+}
+
+/** Where the MAC sits: device · port · VLAN, since when and when last seen -
+ * or the uplink it is seen behind, when no access port reports it. */
+function LocationValue({
+  loc,
+  ports,
+}: {
+  loc: MacLocation | null
+  ports: PortRow[]
+}) {
+  const { formatDateTime } = useDateFormat()
+  if (!loc) {
+    // Not on any port right now (rows from before 0.17 can't say).
+    if (ports.some((p) => p.state === "present")) return dash
+    const last = ports
+      .filter((p) => p.last_seen)
+      .sort((a, b) => (b.last_seen ?? "").localeCompare(a.last_seen ?? ""))
+      .at(0)
+    return (
+      <span className="flex flex-col gap-0.5">
+        <span className="text-muted-foreground">Gone</span>
+        {last?.last_seen && (
+          <span className="text-[11px] text-muted-foreground">
+            last seen {timeAgo(last.last_seen)}
+            {last.device ? ` on ${last.device.name}` : ""}
+          </span>
+        )}
+      </span>
+    )
+  }
+  const vlan = loc.vlan_object
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        {loc.kind === "behind_uplink" && <span>Behind</span>}
+        <LocationRef loc={loc} size="text-[13px]" />
+        {(vlan || loc.vlan != null) && (
+          <>
+            <span className="text-muted-foreground">·</span>
+            {vlan ? (
+              <VlanBadge
+                vlan={{ id: vlan.id, vlan_id: vlan.vid, name: vlan.name }}
+              />
+            ) : (
+              <span>VLAN {loc.vlan}</span>
+            )}
+          </>
+        )}
+        {loc.kind === "behind_uplink" && (
+          <UplinkBadge uplink={loc.uplink} small />
+        )}
+      </span>
+      <span className="text-[11px] text-muted-foreground">
+        since {formatDateTime(loc.since)} · seen {timeAgo(loc.last_seen)}
+      </span>
+    </span>
+  )
+}
+
+/** The IPs the MAC answers to, each with where it was learned. */
+function ObservedIps({ ips }: { ips: ObservedIp[] }) {
+  return (
+    <span className="flex flex-col gap-0.5">
+      {ips.map((ip) => (
+        <span
+          key={ip.ip}
+          className="inline-flex flex-wrap items-baseline gap-x-2"
+        >
+          {ip.ip_id ? (
+            <Link
+              to="/ips/$id"
+              params={{ id: ip.ip_id }}
+              className="link font-mono text-[13px]"
+            >
+              {ip.ip}
+            </Link>
+          ) : (
+            <span className="font-mono text-[13px]">{ip.ip}</span>
+          )}
+          <span className="text-[11px] text-muted-foreground">
+            {[...new Set(ip.sources.map(ipSourceLabel))].join(" · ")}
+          </span>
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/** Its names in label priority - a known object, then DNS, then DHCP. */
+function ObservedNames({ names }: { names: ObservedName[] }) {
+  return (
+    <span className="flex flex-col gap-0.5">
+      {names.map((n) => (
+        <span
+          key={`${n.source}-${n.name}`}
+          className="inline-flex flex-wrap items-baseline gap-x-2"
+        >
+          <span className="font-mono text-[13px]">{n.name}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {NAME_SOURCE_LABEL[n.source]}
+          </span>
+        </span>
+      ))}
+    </span>
   )
 }
 

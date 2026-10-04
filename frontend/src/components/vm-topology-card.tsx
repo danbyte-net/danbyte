@@ -1,38 +1,29 @@
-import { useNavigate } from "@tanstack/react-router"
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import {
-  api,
-  type Paginated,
-  type VMInterface,
-  type VirtNetwork,
-} from "@/lib/api"
-import { railText } from "@/components/topology/rail-diagram"
+import { api } from "@/lib/api"
+import type { Paginated, StatusMini, VMInterface, VirtNetwork } from "@/lib/api"
+import type { RailModel } from "@/lib/diagram/rails"
+import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
+import { RailFrame } from "@/components/topology/rail-diagram"
 
-// Mirrors the main topology view's language at VM scale: the VM box on top,
-// its networks as solid coloured rails below, one coloured leg per attachment.
-const W = 780
-const PAD = 8
-const VM_W = 150
-const VM_H = 44
-const RAIL_H = 30
-const RAIL_GAP = 22 // room for the interface label sitting above each rail
-const DROP = 26 // space between the box and the first rail
+// The Virtual topology's rail diagram at VM scale: this VM's networks as
+// rails, the VM's card under the first with a leg to each (labelled with
+// the interface), the switch at each rail's right end. Same layout, colors
+// and pills as the Virtual topology and the topology page's Logical tab.
 
-// Shades of the Danbyte blue - zone colours (firewall semantics) override.
-const PALETTE = [
-  "#1d63ed",
-  "#0ea5e9",
-  "#1e40af",
-  "#38bdf8",
-  "#2563eb",
-  "#0369a1",
-  "#60a5fa",
-  "#075985",
-]
-
-function fit(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max - 1) + "…" : s
+/** The card's heading over whatever it holds - the map, its loader or its
+ * empty state - in the detail page's section-title style. */
+function TopologySection({ children }: { children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+        Topology
+      </h2>
+      {children}
+    </section>
+  )
 }
 
 /** VM-centric slice of the network topology: this VM's interfaces → the
@@ -41,7 +32,14 @@ function fit(s: string, max: number): string {
 type Conn = {
   key: string
   ifaceName: string
-  vlan: { id: string; vlan_id: number; name: string; color?: string | null } | null
+  vlan: {
+    id: string
+    vlan_id: number
+    name: string
+    color?: string | null
+    zone?: { color: string } | null
+    status?: StatusMini | null
+  } | null
   net: VirtNetwork | null
 }
 
@@ -56,7 +54,6 @@ export function VmTopologyCard({
    * copy so it never tells the user to enable something already on. */
   syncedFromId?: string | null
 }) {
-  const nav = useNavigate()
   const ifaces = useQuery({
     queryKey: ["vm-interfaces", vmId],
     queryFn: () =>
@@ -79,182 +76,102 @@ export function VmTopologyCard({
     enabled: !!syncedFromId,
   })
 
-  const conns: Conn[] = []
-  const seen = new Set<string>()
-  for (const net of nets.data?.results ?? []) {
-    for (const v of net.vms ?? []) {
-      if (v.id !== vmId) continue
-      const ifaceName = v.iface ?? ""
-      const k = `${net.id}:${ifaceName}`
-      if (seen.has(k)) continue
-      seen.add(k)
-      conns.push({ key: k, ifaceName, vlan: net.vlan ?? null, net })
+  const { conns, model } = useMemo(() => {
+    const found: Conn[] = []
+    const seen = new Set<string>()
+    // The VM as the sync reports it on a network: its status and role.
+    let self: VirtNetwork["vms"][number] | undefined
+    for (const net of nets.data?.results ?? []) {
+      for (const v of net.vms) {
+        if (v.id !== vmId) continue
+        self ??= v
+        const ifaceName = v.iface ?? ""
+        const k = `${net.id}:${ifaceName}`
+        if (seen.has(k)) continue
+        seen.add(k)
+        found.push({ key: k, ifaceName, vlan: net.vlan ?? null, net })
+      }
     }
-  }
-  // Operator-modelled interfaces with a VLAN but no sync link still render.
-  for (const i of ifaces.data?.results ?? []) {
-    if (!i.vlan) continue
-    if (conns.some((c) => c.ifaceName === i.name)) continue
-    conns.push({
-      key: `vlan:${i.id}`,
-      ifaceName: i.name,
-      vlan: i.vlan,
-      net: null,
-    })
-  }
+    // Operator-modelled interfaces with a VLAN but no sync link still render.
+    for (const i of ifaces.data?.results ?? []) {
+      if (!i.vlan) continue
+      if (found.some((c) => c.ifaceName === i.name)) continue
+      found.push({
+        key: `vlan:${i.id}`,
+        ifaceName: i.name,
+        vlan: i.vlan,
+        net: null,
+      })
+    }
+    const rails: RailModel = {
+      sections: [
+        {
+          id: "vm",
+          rails: found.map((c) => {
+            const name =
+              c.net?.name || c.vlan?.name || c.net?.ext_key || "network"
+            const sw = c.net?.vswitch_name
+            return {
+              id: c.key,
+              label: name + (c.vlan ? ` · VLAN ${c.vlan.vlan_id}` : ""),
+              // The network's VLAN color already falls back to its zone's;
+              // an interface's own VLAN says so itself.
+              color: c.vlan?.color || c.vlan?.zone?.color,
+              status: c.vlan?.status ?? null,
+              // The switch it rides, unless the network is named after it.
+              ...(sw && sw !== name ? { detail: sw } : {}),
+              ...(c.vlan
+                ? { target: { kind: "vlan" as const, id: c.vlan.id } }
+                : {}),
+            }
+          }),
+        },
+      ],
+      // This VM's own card: no link, this is its page.
+      boxes: [
+        {
+          id: vmId,
+          name: vmName ?? self?.name ?? "This VM",
+          vm: true,
+          role: self?.role ?? null,
+          status: self?.status_mini ?? null,
+          legs: found.map((c) => ({ rail: c.key, label: c.ifaceName })),
+        },
+      ],
+    }
+    return { conns: found, model: rails }
+  }, [nets.data, ifaces.data, vmId, vmName])
 
   if (ifaces.isLoading || nets.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (conns.length === 0) {
-    const syncOn = source.data?.sync_networks
     return (
-      <p className="text-sm text-muted-foreground">
-        {syncOn ? (
-          <>
-            The source syncs networks, but hasn&rsquo;t linked this
-            VM&rsquo;s interfaces to one yet. Run a sync - and note vCenter
-            network links need Danbyte v0.13.0 or newer.
-          </>
-        ) : syncedFromId ? (
-          <>
-            This VM isn&rsquo;t on a mapped virtual network yet. Enable{" "}
-            <span className="font-medium">
-              virtual switches &amp; networks
-            </span>{" "}
-            sync on its source to populate this.
-          </>
-        ) : (
-          <>
-            No virtual networks are mapped for this VM. Networks appear here
-            when a virtualization source syncs them, or when an interface is
-            assigned a VLAN.
-          </>
-        )}
-      </p>
+      <TopologySection>
+        <Loading />
+      </TopologySection>
     )
-  }
-
-  const vmCx = PAD + VM_W / 2
-  const railsY = (i: number) => PAD + VM_H + DROP + i * (RAIL_H + RAIL_GAP)
-  const height = railsY(conns.length - 1) + RAIL_H + PAD
-  const colorFor = (i: number) =>
-    conns[i].vlan?.color || PALETTE[i % PALETTE.length]
+  if (conns.length === 0)
+    return (
+      <TopologySection>
+        <EmptyState title="No virtual networks yet.">
+          {source.data?.sync_networks ? (
+            "Run a sync on its source."
+          ) : syncedFromId ? (
+            <>
+              Turn on{" "}
+              <span className="font-medium">
+                Sync virtual switches &amp; networks
+              </span>{" "}
+              on its source.
+            </>
+          ) : (
+            "Assign a VLAN to one of its interfaces."
+          )}
+        </EmptyState>
+      </TopologySection>
+    )
 
   return (
-    <section>
-      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
-        Network topology
-      </h2>
-      <div className="overflow-x-auto rounded-lg border border-border bg-muted/10 p-2">
-        <svg width={W} height={height} style={{ fontFamily: "inherit" }}>
-          {/* legs - ribbon-cable lanes: each attachment runs box → its rail in
-              its own parallel lane, labelled above the rail it plugs into */}
-          {conns.map((c, i) => {
-            const color = colorFor(i)
-            const lx = vmCx + (i - (conns.length - 1) / 2) * 8
-            return (
-              <line
-                key={c.key}
-                x1={lx}
-                y1={PAD + VM_H}
-                x2={lx}
-                y2={railsY(i) + RAIL_H / 2}
-                stroke={color}
-                strokeWidth={3}
-                strokeLinecap="round"
-              />
-            )
-          })}
-
-          {/* interface labels - drawn after the lanes and placed clear of the
-              whole ribbon, so a lane never crosses its own or another label */}
-          {conns.map((c, i) => (
-            <text
-              key={`lbl-${c.key}`}
-              x={vmCx + ((conns.length - 1) / 2) * 8 + 10}
-              y={railsY(i) - 5}
-              fontSize={10}
-              className="font-mono"
-              fill="var(--muted-foreground)"
-            >
-              {c.ifaceName}
-            </text>
-          ))}
-
-          {/* the VM */}
-          <rect
-            x={PAD}
-            y={PAD}
-            width={VM_W}
-            height={VM_H}
-            rx={8}
-            fill="var(--card)"
-            stroke="var(--border)"
-          />
-          <text
-            x={vmCx}
-            y={PAD + VM_H / 2 + 4}
-            fontSize={12}
-            fontWeight={600}
-            textAnchor="middle"
-            fill="var(--foreground)"
-          >
-            {fit(vmName ?? "This VM", 18)}
-          </text>
-
-          {/* network rails */}
-          {conns.map((c, i) => {
-            const color = colorFor(i)
-            const y = railsY(i)
-            const label =
-              (c.net?.name || c.vlan?.name || c.net?.ext_key || "network") +
-              (c.vlan ? `  ·  VLAN ${c.vlan.vlan_id}` : "")
-            const vlanId = c.vlan?.id
-            return (
-              <g
-                key={`rail-${c.key}`}
-                className={vlanId ? "cursor-pointer" : undefined}
-                onClick={
-                  vlanId
-                    ? () => nav({ to: "/vlans/$id", params: { id: vlanId } })
-                    : undefined
-                }
-              >
-                <rect
-                  x={PAD}
-                  y={y}
-                  width={W - 2 * PAD}
-                  height={RAIL_H}
-                  rx={6}
-                  fill={color}
-                  fillOpacity={1}
-                />
-                <text
-                  x={PAD + 12}
-                  y={y + RAIL_H / 2 + 4}
-                  fontSize={12}
-                  fontWeight={600}
-                  fill={railText(color)}
-                >
-                  {fit(label, 40)}
-                </text>
-                {c.net?.vswitch_name && (
-                  <text
-                    x={W - PAD - 12}
-                    y={y + RAIL_H / 2 + 4}
-                    fontSize={10}
-                    textAnchor="end"
-                    fill={railText(color)}
-                    opacity={0.85}
-                  >
-                    {fit(c.net.vswitch_name, 28)}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-        </svg>
-      </div>
-    </section>
+    <TopologySection>
+      <RailFrame model={model} label="Topology" />
+    </TopologySection>
   )
 }

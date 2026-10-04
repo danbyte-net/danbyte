@@ -57,8 +57,11 @@ A status that still has tasks can't be deleted - move them first.
 ## Assignees & teams
 
 Assign a task to one or more people from the task sheet. The picker reads
-`/api/planning/assignable-users/`, which lists active users **of the current
-tenant** and is gated on *task* rights rather than user-administration rights -
+`/api/planning/assignable-users/`, which lists the active accounts that can
+work in **the current tenant** (the same list as the other
+[people pickers](permissions.md#picking-people-outside-admin); superusers and
+deployment admins see everyone) and is gated on *task* rights rather than
+user-administration rights -
 so an engineer who can edit tasks can assign them without also being able to
 administer accounts. Email addresses are included only for callers who may
 already read users.
@@ -184,8 +187,10 @@ IPAM, DCIM, connectivity, organization and customization form goes through the o
 save path, so its type is plan-capable. The exceptions are deliberate - a **cable
 connection**, whose form is a pair of termination pickers rather than a set of
 fields; the multi-step **wizards** (onboarding, automation target), which build
-several objects in sequence; and **users, groups and tags**, which a planned
-change can't point at because their primary keys aren't UUIDs.
+several objects in sequence; **tags**, which a planned change can't point at
+because their primary keys aren't UUIDs; and **users, groups and
+permissions**, which are changed directly: the server refuses to stage or
+apply a plan for them, including one staged before 0.17.
 
 !!! note "Secrets are never stored in a plan"
     A plan is readable by everyone who can see the task, so any field the API

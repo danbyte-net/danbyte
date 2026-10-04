@@ -21,7 +21,9 @@ def _viewable_types(request):
     """The set of object-type labels (``app.model`` lower - matching the stored
     ``object_type``) the caller may ``view``, or ``None`` for "all" (superuser).
     Built-in groups hold the ``*`` wildcard so their effective_actions expands
-    to every registered slug; a narrow custom role sees only its granted types.
+    to every registered slug except users, groups and permissions (which only
+    a grant naming them reaches); a narrow custom role sees only its granted
+    types.
     Keeps audit/journal history from leaking changes on objects the caller
     can't otherwise view."""
     from auth_api import rbac
@@ -99,7 +101,9 @@ def _can_act_on_object(request, object_type_label, object_id, action="view") -> 
 
         sp = site_path_for(slug, tenant)
         if sp and sp != "id":
-            base = base.filter(**{f"{sp}__tenant": tenant})
+            from auth_api.site_paths import site_tenant_q
+
+            base = base.filter(site_tenant_q(sp, tenant))
     scoped = rbac.restrict_queryset(base, request.user, tenant, slug, action)
     return scoped.filter(pk=object_id).exists()
 
@@ -160,7 +164,7 @@ def _visibility_q(request):
     readable through unconstrained grants because their stored site survives;
     constrained grants fail closed once the live object is gone."""
     from auth_api import rbac
-    from auth_api.object_types import model_for
+    from auth_api.object_types import grant_covers, model_for
     from auth_api.site_paths import site_path_for
 
     user = request.user
@@ -192,10 +196,7 @@ def _visibility_q(request):
             permission
             for permission in applicable
             if "view" in (permission.actions or [])
-            and (
-                slug in (permission.object_types or [])
-                or "*" in (permission.object_types or [])
-            )
+            and grant_covers(permission.object_types, slug)
         ]
 
         for permission in granting:

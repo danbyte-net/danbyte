@@ -1,12 +1,15 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
-import { handleId } from "./stencil-node"
+import { ColorBadge } from "@/components/cells/color-badge"
+
+import { GROUP_H, GROUP_W } from "./group-size"
+import { handleId } from "./port-handles"
 
 // Aggregated topology node: one card per site (or location) with its device
-// count and role breakdown. Double-click drills into the group.
+// count and its biggest roles as their badges. Double-click drills into the
+// group.
 
-export const GROUP_W = 212
-export const GROUP_H = 76
+export { GROUP_H, GROUP_W }
 
 export interface TopoGroupData {
   group_id: string | null
@@ -32,7 +35,8 @@ const SIDES = [
 
 export function GroupNode({ data, selected }: NodeProps) {
   const d = data as unknown as TopoGroupData
-  const shown = d.roles.slice(0, 3)
+  // Two badges fit the card whole; more would all end in an ellipsis.
+  const shown = d.roles.slice(0, 2)
   const extra = d.roles.length - shown.length
   return (
     <div
@@ -40,7 +44,6 @@ export function GroupNode({ data, selected }: NodeProps) {
         selected ? "border-primary ring-2 ring-primary/30" : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
       style={{ width: GROUP_W, height: GROUP_H }}
-      title="Double-click to open this group"
     >
       {SIDES.map(({ side, pos }) => (
         <span key={side}>
@@ -62,33 +65,38 @@ export function GroupNode({ data, selected }: NodeProps) {
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
           {d.name}
         </span>
-        <span className="num shrink-0 text-[11px] text-muted-foreground">
-          {d.device_count}
+        <span className="shrink-0 text-[11px] whitespace-nowrap text-muted-foreground">
+          <span className="num">{d.device_count}</span>{" "}
+          {d.device_count === 1 ? "device" : "devices"}
         </span>
       </div>
-      <div className="flex items-center gap-2">
-        {shown.map((r) => (
-          <span
-            key={r.name}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground"
-            title={r.name}
-          >
+      {shown.length > 0 && (
+        // The biggest roles as their badges, sharing the row; a long name
+        // ends in an ellipsis and its tip has it in full.
+        <div className="flex min-w-0 items-center gap-1">
+          {shown.map((r) => (
             <span
-              className="h-2 w-2 shrink-0 rounded-full"
-              style={{ background: r.color || "var(--border)" }}
-            />
-            <span className="num">{r.count}</span>
-          </span>
-        ))}
-        {extra > 0 && (
-          <span className="text-[10px] text-muted-foreground">+{extra}</span>
-        )}
-        {d.roles.length === 0 && (
-          <span className="text-[10px] text-muted-foreground">
-            device{d.device_count === 1 ? "" : "s"}
-          </span>
-        )}
-      </div>
+              key={r.name}
+              className="flex min-w-0 shrink"
+              data-tip={`${r.name} · ${r.count}`}
+              data-tip-plain=""
+            >
+              <ColorBadge
+                name={r.name}
+                color={r.color || undefined}
+                // A block badge has no flex gap: the count keeps its own.
+                suffix={<span className="num ml-1">{r.count}</span>}
+                className="block h-4 max-w-full min-w-0 truncate px-1.5 py-0 text-[10px] leading-[14px]"
+              />
+            </span>
+          ))}
+          {extra > 0 && (
+            <span className="num shrink-0 text-[10px] text-muted-foreground">
+              +{extra}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

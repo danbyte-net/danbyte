@@ -67,13 +67,15 @@ class SegmentTests(_Base):
         segs = segments_for_pairs(self.tenant.id, [self.key()], self.since, self.now)[self.key()]
         self.assertEqual([s["status"] for s in segs], ["up"])
 
-    def test_many_pairs_in_two_queries(self):
+    def test_many_pairs_in_three_queries(self):
+        """Opening status, changes inside, and the addresses whose window is
+        cut (a reset, an exclusion) - three, however many pairs."""
         for ip in (self.ip, self.ip2):
             for t in (self.ping, self.https):
                 self.tr(self.since - timedelta(hours=1), "up", ip=ip, template=t)
                 self.tr(self.now - timedelta(hours=2), "down", ip=ip, template=t)
         pairs = [self.key(ip, t) for ip in (self.ip, self.ip2) for t in (self.ping, self.https)]
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(3):
             out = segments_for_pairs(self.tenant.id, pairs, self.since, self.now)
         self.assertEqual(len(out), 4)
         for segs in out.values():

@@ -33,7 +33,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { OBJECT_DETAIL_ROUTES } from "@/lib/object-routes"
+import { SITE_VIEW_TYPES, invalidateSiteViews } from "@/lib/site-cache"
 import { ObjectRow, objectIcon, slugFromObjectType } from "./object-chip"
 
 /** What a task will change, grouped by the object it changes.
@@ -167,6 +169,14 @@ function ChangeSetRow({
     qc.invalidateQueries({ queryKey: ["device"] })
     qc.invalidateQueries({ queryKey: ["device-interfaces"] })
     qc.invalidateQueries({ queryKey: ["interfaces"] })
+    // An applied port, module or cable write moves the port counts.
+    invalidatePortCounts(qc)
+    // A site or region apply lands through this generic endpoint, so the map
+    // payloads must be dropped here or the site map keeps the old colour.
+    if (SITE_VIEW_TYPES.has(c.object_type)) {
+      const id = c.object_id ?? c.created_object_id
+      invalidateSiteViews(qc, id ? [id] : [])
+    }
   }
 
   const act = useMutation({

@@ -503,6 +503,50 @@ class ClaimTests(_Base):
             self.assertEqual(ZabbixDriver().claim(self.engine, timezone.now()), 0)
         h.assert_not_called()
 
+    def test_an_excluded_address_is_not_claimed(self):
+        """Parked (next_run NULL), so never due - Zabbix is not even asked."""
+        from monitoring.exclusion import set_excluded
+
+        set_excluded(self.ips[0], True, None)
+        with mock.patch.object(ZabbixClient, "hosts_by_ip", return_value={}) as h, \
+             mock.patch.object(ZabbixClient, "problems_by_host", return_value={}):
+            ZabbixDriver().claim(self.engine, timezone.now())
+        self.assertEqual(h.call_args[0][0], {"10.8.0.11"})
+
+    def test_a_rearmed_row_on_an_excluded_address_is_not_claimed(self):
+        """A racing write re-armed a parked row: still not claimed."""
+        from api.models import IPAddress
+        from monitoring.models import CheckState
+
+        IPAddress.objects.filter(pk=self.ips[0].pk).update(monitoring_excluded=True)
+        CheckState.objects.filter(target_ip=self.ips[0]).update(
+            next_run=timezone.now() - timedelta(seconds=5))
+        with mock.patch.object(ZabbixClient, "hosts_by_ip", return_value={}) as h, \
+             mock.patch.object(ZabbixClient, "problems_by_host", return_value={}):
+            ZabbixDriver().claim(self.engine, timezone.now())
+        self.assertEqual(h.call_args[0][0], {"10.8.0.11"})
+
+    def test_a_claim_racing_the_exclusion_is_parked_again(self):
+        """The driver claims without SKIP LOCKED: an exclusion that lands
+        while Zabbix is being asked is caught by the write guard - the answer
+        is dropped and the row parked again, not rescheduled."""
+        from api.models import IPAddress
+        from monitoring.models import CheckResult, CheckState
+
+        def excluded_meanwhile(_wanted):
+            IPAddress.objects.filter(pk=self.ips[0].pk).update(monitoring_excluded=True)
+            return {}
+
+        with mock.patch.object(ZabbixClient, "hosts_by_ip", side_effect=excluded_meanwhile), \
+             mock.patch.object(ZabbixClient, "problems_by_host", return_value={}):
+            n = ZabbixDriver().claim(self.engine, timezone.now())
+        self.assertEqual(n, 1)
+        st = CheckState.objects.get(target_ip=self.ips[0])
+        self.assertIsNone(st.next_run)
+        self.assertFalse(st.in_flight)
+        self.assertEqual(st.status, "skipped")
+        self.assertFalse(CheckResult.objects.filter(target_ip=self.ips[0]).exists())
+
     def test_the_mask_is_stripped_before_asking_zabbix(self):
         """Danbyte stores 10.8.0.10/24; Zabbix knows 10.8.0.10."""
         with mock.patch.object(ZabbixClient, "hosts_by_ip", return_value={}) as h, \

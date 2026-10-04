@@ -12,12 +12,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RackRoleDeleteDialog } from "@/components/rack-role-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedRackTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -85,12 +80,6 @@ function Body({ role: r }: { role: RackRole }) {
         <DetailHero
           title={<ColorBadge name={r.name} color={r.color || undefined} />}
           description={r.description}
-          stats={
-            <DetailStat
-              label="Racks"
-              value={<span className="num">{r.rack_count}</span>}
-            />
-          }
         />
       }
       tabs={[
@@ -125,7 +114,7 @@ function Body({ role: r }: { role: RackRole }) {
 }
 
 /** Rack-role attributes, moved out of the page header. Only the colored name
- * badge, description and rack count stay up top. */
+ * badge and description stay up top. */
 function RackRoleOverview({ role: r }: { role: RackRole }) {
   const { humanIds } = useMe()
 
@@ -157,6 +146,7 @@ function RackRoleOverview({ role: r }: { role: RackRole }) {
         dash
       ),
     },
+    { label: "Racks", value: <span className="num">{r.rack_count}</span> },
     { label: "Created", value: <TimeCell iso={r.created_at} /> },
     { label: "Updated", value: <TimeCell iso={r.updated_at} /> },
   ]

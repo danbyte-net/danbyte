@@ -15,12 +15,7 @@ import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { UtilCell } from "@/components/cells/util-cell"
 import { AggregateDeleteDialog } from "@/components/aggregate-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -109,13 +104,6 @@ function Body({ aggregate: a }: { aggregate: Aggregate }) {
           }
           tags={a.tags.length > 0 && <TagList tags={a.tags} />}
           description={a.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Utilisation"
-              value={<UtilCell pct={a.utilisation_pct} />}
-            />
-          }
         />
       }
       tabs={[
@@ -135,7 +123,11 @@ function Body({ aggregate: a }: { aggregate: Aggregate }) {
         <AggregateOverview aggregate={a} />
       </DetailTab>
       <DetailTab value="prefixes">
-        <AggregatePrefixes aggregate={a} rows={children.data?.results ?? []} loading={children.isLoading} />
+        <AggregatePrefixes
+          aggregate={a}
+          rows={children.data?.results ?? []}
+          loading={children.isLoading}
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.aggregate" objectId={a.id} />
@@ -173,6 +165,7 @@ function AggregateOverview({ aggregate: a }: { aggregate: Aggregate }) {
       label: "Date added",
       value: <span className="num text-xs">{a.date_added ?? "-"}</span>,
     },
+    { label: "Utilisation", value: <UtilCell pct={a.utilisation_pct} /> },
   ]
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -185,7 +178,6 @@ function AggregateOverview({ aggregate: a }: { aggregate: Aggregate }) {
     </div>
   )
 }
-
 
 function AggregatePrefixes({
   aggregate,

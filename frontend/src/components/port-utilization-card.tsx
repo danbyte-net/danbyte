@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils"
 // Port utilization for high-port-density gear (issue #64): how full is this
 // patch panel / switch, and how much is left. Connected = cabled; reserved =
 // cabled with a "planned" cable (earmarked, not yet patched); free = open.
+// The total is the server's counted ports (api/port_utilization.py):
+// physical interfaces and front ports, virtual interfaces only when the
+// deployment counts them, never rear ports.
 
 interface KindRow {
   total: number
@@ -18,19 +21,44 @@ interface KindRow {
 }
 
 interface Payload {
+  /** Physical interfaces. */
   interfaces: KindRow
+  /** Absent from a server older than 0.17. */
+  virtual?: KindRow
   front_ports: KindRow
+  /** Reported, never counted. */
   rear_ports: KindRow
+  /** The counted kinds summed - the headline. */
   combined: KindRow
+  /** Whether `combined` includes the virtual interfaces. */
+  count_virtual: boolean
 }
 
-const KIND_LABEL: Record<string, string> = {
+/** The breakdown rows, in card order. */
+type RowKind = "interfaces" | "virtual" | "front_ports"
+
+const KIND_LABEL: Record<RowKind, string> = {
   interfaces: "Interfaces",
+  virtual: "Virtual interfaces",
   front_ports: "Front ports",
-  rear_ports: "Rear ports",
 }
 
 export type PortKind = "interfaces" | "front_ports" | "rear_ports"
+
+/** The port list a row opens - virtual interfaces sit with the rest. */
+const LIST_OF: Record<RowKind, PortKind> = {
+  interfaces: "interfaces",
+  virtual: "interfaces",
+  front_ports: "front_ports",
+}
+
+const NONE: KindRow = {
+  total: 0,
+  connected: 0,
+  reserved: 0,
+  free: 0,
+  marked: 0,
+}
 
 export function PortUtilizationCard({
   deviceId,
@@ -65,24 +93,29 @@ export function PortUtilizationCard({
   const used = d.combined.connected + d.combined.reserved
   const pct = Math.round((used / d.combined.total) * 100)
   const w = (n: number) => `${(n / d.combined.total) * 100}%`
-  const kinds = (Object.keys(KIND_LABEL) as (keyof typeof KIND_LABEL)[]).filter(
-    (k) => d[k as keyof Payload].total > 0
-  )
+  const virtual = d.virtual ?? NONE
+  const row = (k: RowKind) => (k === "virtual" ? virtual : d[k])
+  const counted: RowKind[] = d.count_virtual
+    ? ["interfaces", "virtual", "front_ports"]
+    : ["interfaces", "front_ports"]
+  const kinds = counted.filter((k) => row(k).total > 0)
 
   // The kind holding the most ports in a state - the legend click's target.
   const kindFor = (s: CableState): PortKind => {
-    const metric = (row: KindRow) =>
+    const metric = (r: KindRow) =>
       s === "connected"
-        ? row.connected - row.marked
+        ? r.connected - r.marked
         : s === "reserved"
-          ? row.reserved
+          ? r.reserved
           : s === "marked"
-            ? row.marked
-            : row.free
-    return (["interfaces", "front_ports", "rear_ports"] as PortKind[]).reduce(
-      (best, k) => (metric(d[k]) > metric(d[best]) ? k : best),
-      "interfaces" as PortKind
-    )
+            ? r.marked
+            : r.free
+    return LIST_OF[
+      counted.reduce(
+        (best, k) => (metric(row(k)) > metric(row(best)) ? k : best),
+        counted[0]
+      )
+    ]
   }
   const legend = (s: CableState, body: React.ReactNode, extra?: string) =>
     onPick ? (
@@ -162,16 +195,21 @@ export function PortUtilizationCard({
               </>,
               "Marked connected without a documented cable"
             )}
+          {!d.count_virtual && virtual.total > 0 && (
+            <span className="px-1 py-0.5">
+              <span className="num">{virtual.total}</span> virtual · not counted
+            </span>
+          )}
         </div>
         {kinds.length > 1 && (
           <div className="mt-3 grid gap-1 border-t border-border pt-2 text-[12px]">
             {kinds.map((k) => {
-              const row = d[k as keyof Payload]
+              const r = row(k)
               const body = (
                 <>
                   <span className="text-muted-foreground">{KIND_LABEL[k]}</span>
                   <span className="num">
-                    {row.connected + row.reserved}/{row.total}
+                    {r.connected + r.reserved}/{r.total}
                   </span>
                 </>
               )
@@ -181,7 +219,7 @@ export function PortUtilizationCard({
                   type="button"
                   className="flex items-baseline justify-between rounded-[4px] px-1 py-0.5 hover:bg-muted"
                   title="Open this port list"
-                  onClick={() => onPick(null, k as PortKind)}
+                  onClick={() => onPick(null, LIST_OF[k])}
                 >
                   {body}
                 </button>

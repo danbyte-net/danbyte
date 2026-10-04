@@ -14,10 +14,11 @@ import {
   ArrowUp,
   ChevronRight,
   Download,
-  ExternalLink,
+  Ellipsis,
   Grid3x3,
   Image as ImageIcon,
   Maximize,
+  PanelBottom,
   PanelRight,
   Plus,
   RotateCw,
@@ -68,6 +69,16 @@ import type {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ColorBadge } from "@/components/cells/color-badge"
+import { Loading } from "@/components/loading"
+import {
+  BarButton,
+  BarIconButton,
+  BarMenuTrigger,
+  BarTip,
+  BarToggle,
+} from "@/components/map-toolbar"
+import { OpenLink } from "@/components/open-link"
 import { ColorPicker } from "@/components/ui/color-picker"
 import {
   Select,
@@ -76,23 +87,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { LeaveGuardDialog } from "@/components/leave-guard-dialog"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import {
   Popover,
   PopoverContent,
@@ -118,8 +133,9 @@ import {
   tileHasFov,
   tileIsZone,
   tileName,
-  utilizationColor,
 } from "@/components/floorplan/floor-canvas"
+import { CapacityBar } from "@/components/cells/capacity-bar"
+import { PowerFigure } from "@/components/cells/power-figure"
 import type {
   FloorCanvasApi,
   PaletteEntry,
@@ -130,6 +146,18 @@ import {
   useTilePopover,
 } from "@/components/floorplan/tile-popover"
 import { ObjectsSidebar } from "@/components/floorplan/objects-sidebar"
+import { ColorByLegend } from "@/components/floorplan/color-by-legend"
+import { ColorBySelect } from "@/components/floorplan/color-by-select"
+import { RackTablePanel } from "@/components/floorplan/rack-table-panel"
+import { readColorBy } from "@/components/floorplan/tile-paint"
+import type { ColorBy } from "@/components/floorplan/tile-paint"
+import {
+  popoverShowsPorts,
+  usePlanCapacity,
+} from "@/components/floorplan/use-plan-capacity"
+import { CabinetLinkField } from "@/components/floorplan/cabinet-link-field"
+import { CabinetPanel } from "@/components/floorplan/cabinet-panel"
+import { resizedRect } from "@/components/floorplan/cabinet-tile"
 import {
   type FloorHidden,
   NO_FLOOR_HIDDEN,
@@ -168,6 +196,7 @@ import {
 } from "@/lib/render-quality"
 import type { RenderQualitySetting } from "@/lib/render-quality"
 import { usePageTitle } from "@/lib/page-title"
+import { capacityRatio, hasPowerData } from "@/lib/rack-capacity"
 
 /** Arms the canvas's drag-rect painter while drawing a raised-floor area -
  * the ghost rect reuses the palette machinery, nothing else reads this. */
@@ -188,6 +217,12 @@ const AREA_PSEUDO_ENTRY = {
  * stored there falls back to cutaway. */
 const SHELL_MODES_3D = ["solid", "cutaway", "xray"] as const
 type ShellMode3D = (typeof SHELL_MODES_3D)[number]
+
+/** Second-bar controls that move into More once the bar is narrower than
+ * 52rem - never at 1280px with the app sidebar open, only on a narrower
+ * window - so nothing on the bar is ever clipped or scrolled out of sight. */
+const WIDE_ONLY = "hidden @min-[52rem]:inline-flex"
+const NARROW_ONLY = "@min-[52rem]:hidden"
 
 export const Route = createFileRoute("/floorplans/$id")({
   component: FloorPlanPage,
@@ -229,6 +264,7 @@ const STATUS_OPTIONS = [
 
 const LINK_KIND_OPTIONS = [
   { value: "rack", label: "Rack" },
+  { value: "cabinet", label: "Cabinet" },
   { value: "device", label: "Device" },
   { value: "powerpanel", label: "Power panel" },
   { value: "powerfeed", label: "Power feed" },
@@ -239,7 +275,7 @@ function FloorPlanPage() {
   const { id } = Route.useParams()
   const nav = useNavigate()
   const qc = useQueryClient()
-  const { canDo } = useMe()
+  const { canDo, humanIds } = useMe()
   const { theme } = useTheme()
   const canEdit = canDo("floorplan", "change")
 
@@ -352,8 +388,11 @@ function FloorPlanPage() {
   const [paletteTab, setPaletteTab] = useState<"tiles" | "zones">("tiles")
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [backgroundOpen, setBackgroundOpen] = useState(false)
   // Deep view: the rack/device contents + end-to-end trace side sheet.
   const [deepTile, setDeepTile] = useState<FloorPlanTile | null>(null)
+  // A cabinet tile's panel over the canvas: its plate and devices.
+  const [cabinetTileId, setCabinetTileId] = useState<string | null>(null)
   // View prefs - seeded from plan.state, persisted back for editors.
   const [labelFitLocal, setLabelFitLocal] = useState<boolean | null>(null)
   const [showFovLocal, setShowFovLocal] = useState<boolean | null>(null)
@@ -383,6 +422,15 @@ function FloorPlanPage() {
   )
   // Cabinet shell (3D): solid / cutaway / x-ray - a mode, not a checkbox.
   const [shell3dLocal, setShell3dLocal] = useState<ShellMode3D | null>(null)
+  // Color by (#247) and the rack table it opens - plan prefs like the rest.
+  const [colorByLocal, setColorByLocal] = useState<ColorBy | null>(null)
+  const [showRacksLocal, setShowRacksLocal] = useState<boolean | null>(null)
+  // A rack table row clicked in 3D: the room selects that rack and flies
+  // to it (a new count each click, so the same row flies again).
+  const [rackFocus3d, setRackFocus3d] = useState<{
+    tileId: string
+    n: number
+  } | null>(null)
   // 3D effects budget - PER-DEVICE (localStorage), not a plan pref: the
   // workstation's High must not follow the plan onto a weak laptop.
   const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
@@ -463,11 +511,12 @@ function FloorPlanPage() {
       isDirtyRef.current && !samePath(next.pathname, current.pathname),
     []
   )
-  // withResolver hands back proceed/reset, which the themed AlertDialog at the
-  // end of this component drives - a native window.confirm can't be styled and
-  // reads as a browser error. enableBeforeUnload stays off because the blocker
-  // is registered whether or not the plan is dirty; the ref-gated listener
-  // below owns the browser-level case, which no router blocker can reach.
+  // withResolver hands back proceed/reset, which the shared LeaveGuardDialog
+  // at the end of this component drives - a native window.confirm can't be
+  // styled and reads as a browser error. enableBeforeUnload stays off because
+  // the blocker is registered whether or not the plan is dirty; the ref-gated
+  // listener below owns the browser-level case, which no router blocker can
+  // reach.
   const leaveGuard = useBlocker({
     shouldBlockFn: shouldBlockLeave,
     enableBeforeUnload: false,
@@ -483,6 +532,7 @@ function FloorPlanPage() {
     setSelectedId(null)
     setArmed(null)
     setDeepTile(null)
+    setCabinetTileId(null)
     setLabelFitLocal(null)
     setShowFovLocal(null)
     setMode("layout")
@@ -498,6 +548,9 @@ function FloorPlanPage() {
     setSelectedWallId(null)
     setDoorArmed(false)
     setShell3dLocal(null)
+    setColorByLocal(null)
+    setShowRacksLocal(null)
+    setRackFocus3d(null)
   }, [id])
 
   // Hydrate local tiles from the server whenever fresh data lands and we
@@ -694,6 +747,30 @@ function FloorPlanPage() {
       patchPlan.mutate({ state: { ...plan.state, shell_3d: v } })
   }
 
+  // Color by (#247): what rack tiles are coloured by, in 2D and in the 3D
+  // room - Type, the default, is the plan as it always looked. A rack
+  // measure brings the rack table up under the plan, which then lists the
+  // racks the Objects sidebar otherwise would.
+  const colorBy = colorByLocal ?? readColorBy(plan?.state.color_by)
+  const capacity = usePlanCapacity({
+    planId: id,
+    tiles: shownTiles,
+    live: liveState.data ?? null,
+    colorBy,
+    wantPorts: popoverShowsPorts(popoverCfg.data),
+  })
+  const showRacks =
+    showRacksLocal ?? (plan?.state.show_racks as boolean | undefined) ?? true
+  const racksOpen = colorBy !== "type" && showRacks && capacity.hasRacks
+  // The table takes the plan's lower part: fit the plan to the room left
+  // when it opens or closes - unless the page arrived focused on a tile or
+  // a trace, which keeps its framing.
+  useEffect(() => {
+    if (tileParam || traceParam) return
+    const frame = requestAnimationFrame(() => canvasApi.current?.fit())
+    return () => cancelAnimationFrame(frame)
+  }, [racksOpen, tileParam, traceParam])
+
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
   // ?tile=<id> → select it and zoom in on it, once the tiles have landed.
@@ -736,10 +813,14 @@ function FloorPlanPage() {
       | "show_3d_walls"
       | "show_3d_ceiling"
       | "show_3d_names_scope"
-      | "show_3d_names_edge",
-    value: boolean | "all" | "selected"
+      | "show_3d_names_edge"
+      | "color_by"
+      | "show_racks",
+    value: boolean | "all" | "selected" | ColorBy
   ) => {
     if (key === "label_fit") setLabelFitLocal(value as boolean)
+    else if (key === "color_by") setColorByLocal(value as ColorBy)
+    else if (key === "show_racks") setShowRacksLocal(value as boolean)
     else if (key === "show_fov") setShowFovLocal(value as boolean)
     else if (key === "show_zone_labels")
       setShowZoneLabelsLocal(value as boolean)
@@ -1020,6 +1101,21 @@ function FloorPlanPage() {
     [setTileFacing]
   )
 
+  // Size a tile to what it links to (a cabinet's footprint) - on its own
+  // corner, inside the grid, and never onto a neighbour.
+  const fitTile = useCallback(
+    (tile: EditTile, size: { width: number; height: number }) => {
+      if (!plan) return
+      const rect = resizedRect(tile, size, plan)
+      if (!tileIsZone(tile) && findCollision(tiles, rect, tile.id)) {
+        toast.error("No room to fit it - a neighbour is in the way.")
+        return
+      }
+      changeTile(tile.id, rect)
+    },
+    [changeTile, plan, tiles]
+  )
+
   const addDrawPoint = useCallback((pt: [number, number]) => {
     setDrawPoints((prev) => {
       const arr = prev ?? []
@@ -1092,6 +1188,7 @@ function FloorPlanPage() {
         setSelectedTrayId(null)
         setSelectedWallId(null)
         setDrawPoints(null)
+        setCabinetTileId(null)
         return
       }
       if (e.key === "Escape" && doorArmed) {
@@ -1199,6 +1296,8 @@ function FloorPlanPage() {
       qc.invalidateQueries({ queryKey: ["floor-plans"] })
       // Tile moves change cable endpoints - refresh the routed paths too.
       qc.invalidateQueries({ queryKey: ["floor-plan-cable-paths", id] })
+      // A tile linked to another rack changes which racks the plan holds.
+      qc.invalidateQueries({ queryKey: ["floor-plan-racks", id] })
       toast.success("Floor plan saved")
     },
     onError: (err) => apiErrorToast(err),
@@ -1296,6 +1395,13 @@ function FloorPlanPage() {
       setDeepTile(tile)
       return
     }
+    // A cabinet tile opens its panel over the canvas - in place of the
+    // popover a click pinned on the way.
+    if (tile.linked?.kind === "cabinet") {
+      popover.close()
+      setCabinetTileId(tile.id)
+      return
+    }
     setSelectedId(tile.id)
   }
 
@@ -1304,6 +1410,7 @@ function FloorPlanPage() {
   const traceCablesOnMap = useCallback(
     (cableIds: string[]) => {
       setDeepTile(null)
+      setCabinetTileId(null)
       setShowLinksLocal(true)
       setHighlightCableIds(cableIds)
       const pts = cableIds
@@ -1318,20 +1425,105 @@ function FloorPlanPage() {
     [cablePaths, trays, shownTiles]
   )
 
-  if (planQuery.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  // The panel follows its tile - its label as edited, and gone with the
+  // tile, its cabinet link or its eye.
+  const cabinetPanelTile =
+    shownTiles.find(
+      (t) => t.id === cabinetTileId && t.linked?.kind === "cabinet"
+    ) ?? null
+
+  if (planQuery.isLoading) return <Loading />
   if (planQuery.isError) return <QueryError error={planQuery.error} />
   if (!plan) return null
 
+  // The key to the Color by, in the corner of the 2D plan - inside its
+  // export area - and of the 3D room.
+  const colorLegend = colorBy !== "type" && capacity.hasRacks && (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+      <ColorByLegend
+        colorBy={colorBy}
+        figures={capacity.legend.figures}
+        alarm={capacity.legend.alarm}
+      />
+    </div>
+  )
+
+  // The background image's controls: a popover off the header on a wide
+  // screen, a dialog from More on a narrow one.
+  const backgroundControls = (
+    <>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) uploadBackground.mutate(f)
+          e.target.value = ""
+        }}
+      />
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={uploadBackground.isPending}
+          onClick={() => fileInput.current?.click()}
+        >
+          {plan.background_image ? "Replace image…" : "Upload image…"}
+        </Button>
+        {plan.background_image && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={uploadBackground.isPending}
+            onClick={() => uploadBackground.mutate(null)}
+          >
+            Remove
+          </Button>
+        )}
+      </div>
+      {plan.background_image && (
+        <label className="grid gap-1 text-xs">
+          <span className="text-muted-foreground">
+            Opacity - <span className="num">{plan.background_opacity}%</span>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            defaultValue={plan.background_opacity}
+            onMouseUp={(e) =>
+              patchPlan.mutate({
+                background_opacity: Number(
+                  (e.target as HTMLInputElement).value
+                ),
+              })
+            }
+            onTouchEnd={(e) =>
+              patchPlan.mutate({
+                background_opacity: Number(
+                  (e.target as HTMLInputElement).value
+                ),
+              })
+            }
+          />
+        </label>
+      )}
+    </>
+  )
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {/* ── Header ──────────────────────────────────────────────────── */}
+      {/* ── Header: which plan, which floor, which mode ──────────────── */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
-        <Button variant="ghost" size="sm" asChild className="-ml-2">
-          <Link to="/floorplans">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
+        <BarTip tip="Floor plans">
+          <Button variant="ghost" size="icon-sm" asChild className="-ml-2">
+            <Link to="/floorplans" aria-label="Floor plans">
+              <ArrowLeft />
+            </Link>
+          </Button>
+        </BarTip>
         <div className="min-w-0">
           <h1 className="truncate text-base font-semibold">{plan.name}</h1>
           <p className="truncate text-[11px] text-muted-foreground">
@@ -1342,7 +1534,7 @@ function FloorPlanPage() {
             cells
           </p>
         </div>
-        {isDirty && <Badge variant="secondary">unsaved</Badge>}
+        {isDirty && <Badge variant="secondary">Edited</Badge>}
         {(floors.data?.results.length ?? 0) > 0 && (
           <div className="ml-4 flex min-w-0 items-center gap-1">
             <SegmentedTabs
@@ -1361,20 +1553,17 @@ function FloorPlanPage() {
               }))}
             />
             {canEdit && (
-              <Button
-                variant="ghost"
-                size="sm"
-                asChild
-                className="h-8 px-1.5"
-                title="Add a floor to this location"
-              >
-                <Link
-                  to="/floorplans/new"
-                  search={{ location: plan.location.id }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+              <BarTip tip="Add floor">
+                <Button variant="ghost" size="icon-sm" asChild>
+                  <Link
+                    to="/floorplans/new"
+                    search={{ location: plan.location.id }}
+                    aria-label="Add floor"
+                  >
+                    <Plus className="size-3.5" />
+                  </Link>
+                </Button>
+              </BarTip>
             )}
           </div>
         )}
@@ -1420,47 +1609,58 @@ function FloorPlanPage() {
               ]}
             />
           )}
-          {mode === "layout" && (
-            <TileSearch
-              tiles={tiles}
-              value={search}
-              onChange={setSearch}
-              onPick={(tile) => {
-                setSelectedId(tile.id)
-                canvasApi.current?.focusTile(tile)
-              }}
-            />
+        </div>
+      </header>
+
+      {/* ── Second bar: find and view on the left, the panel, display and
+          file actions on the right - the topology map's split. A container,
+          so the overflow into More follows the bar's own width (the app
+          sidebar open or not) rather than the window's. */}
+      <div className="@container flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
+        {mode === "layout" && (
+          <TileSearch
+            tiles={tiles}
+            value={search}
+            onChange={setSearch}
+            onPick={(tile) => {
+              setSelectedId(tile.id)
+              canvasApi.current?.focusTile(tile)
+            }}
+          />
+        )}
+        <BarIconButton
+          label="Fit to view"
+          onClick={() => canvasApi.current?.fit()}
+        >
+          <Maximize />
+        </BarIconButton>
+        <BarToggle
+          pressed={showGrid}
+          className={WIDE_ONLY}
+          onClick={() => setShowGrid((g) => !g)}
+        >
+          <Grid3x3 /> Grid
+        </BarToggle>
+        <div className="ml-auto flex items-center gap-2">
+          {colorBy !== "type" && capacity.hasRacks && (
+            <BarToggle
+              pressed={showRacks}
+              onClick={() => setViewPref("show_racks", !showRacks)}
+            >
+              <PanelBottom /> Racks
+            </BarToggle>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            title="Fit to view"
-            onClick={() => canvasApi.current?.fit()}
-          >
-            <Maximize className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowGrid((g) => !g)}
-            className={cn(!showGrid && "text-muted-foreground")}
-          >
-            <Grid3x3 className="h-3.5 w-3.5" /> Grid
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
+          <BarToggle
+            pressed={showObjects}
             onClick={() => setViewPref("show_objects", !showObjects)}
-            className={cn(!showObjects && "text-muted-foreground")}
-            title="List the objects placed on this plan"
           >
-            <PanelRight className="h-3.5 w-3.5" /> Objects
-          </Button>
+            <PanelRight /> Objects
+          </BarToggle>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm">
-                <SlidersHorizontal className="h-3.5 w-3.5" /> View
-              </Button>
+              <BarMenuTrigger>
+                <SlidersHorizontal /> Display
+              </BarMenuTrigger>
             </PopoverTrigger>
             {/* Two columns once the 3D block is in play. As one 224px stack
                 this ran past the bottom of a laptop viewport and had to be
@@ -1474,6 +1674,11 @@ function FloorPlanPage() {
               )}
             >
               <div className="grid content-start gap-1">
+                <ColorBySelect
+                  value={colorBy}
+                  onChange={(v) => setViewPref("color_by", v)}
+                />
+                <div className="my-1 h-px bg-border" />
                 <FormCheckbox
                   label="Fit labels to tiles"
                   checked={labelFit}
@@ -1651,96 +1856,69 @@ function FloorPlanPage() {
           {canEdit && (
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <ImageIcon className="h-3.5 w-3.5" /> Background
-                </Button>
+                <BarMenuTrigger className={WIDE_ONLY}>
+                  <ImageIcon /> Background
+                </BarMenuTrigger>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-64 gap-3 p-3">
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) uploadBackground.mutate(f)
-                    e.target.value = ""
-                  }}
-                />
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={uploadBackground.isPending}
-                    onClick={() => fileInput.current?.click()}
-                  >
-                    {plan.background_image ? "Replace image…" : "Upload image…"}
-                  </Button>
-                  {plan.background_image && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={uploadBackground.isPending}
-                      onClick={() => uploadBackground.mutate(null)}
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
-                {plan.background_image && (
-                  <label className="grid gap-1 text-xs">
-                    <span className="text-muted-foreground">
-                      Opacity -{" "}
-                      <span className="num">{plan.background_opacity}%</span>
-                    </span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      defaultValue={plan.background_opacity}
-                      onMouseUp={(e) =>
-                        patchPlan.mutate({
-                          background_opacity: Number(
-                            (e.target as HTMLInputElement).value
-                          ),
-                        })
-                      }
-                      onTouchEnd={(e) =>
-                        patchPlan.mutate({
-                          background_opacity: Number(
-                            (e.target as HTMLInputElement).value
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                )}
+                {backgroundControls}
               </PopoverContent>
             </Popover>
           )}
-          <Button variant="outline" size="sm" onClick={exportPng}>
-            <Download className="h-3.5 w-3.5" /> PNG
-          </Button>
+          <BarButton className={WIDE_ONLY} onClick={exportPng}>
+            <Download /> PNG
+          </BarButton>
           {canEdit && (
-            <Button
-              variant="outline"
-              size="sm"
+            <BarIconButton
+              label="Plan settings"
+              className={WIDE_ONLY}
               onClick={() => setSettingsOpen(true)}
             >
-              <Settings2 className="h-3.5 w-3.5" />
-            </Button>
+              <Settings2 />
+            </BarIconButton>
           )}
+          {/* What the wide header shows as its own buttons, gathered here
+              when the header is too narrow for all of them. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <BarMenuTrigger className={NARROW_ONLY}>
+                <Ellipsis /> More
+              </BarMenuTrigger>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuCheckboxItem
+                checked={showGrid}
+                onCheckedChange={(v) => setShowGrid(v)}
+              >
+                Grid
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              {canEdit && (
+                <DropdownMenuItem onSelect={() => setBackgroundOpen(true)}>
+                  <ImageIcon /> Background…
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={exportPng}>
+                <Download /> PNG
+              </DropdownMenuItem>
+              {canEdit && (
+                <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
+                  <Settings2 /> Plan settings…
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {canEdit && (
-            <Button
-              size="sm"
+            <BarButton
+              variant="default"
               disabled={!isDirty || save.isPending}
               onClick={() => save.mutate()}
             >
               {save.isPending ? "Saving…" : "Save"}
-            </Button>
+            </BarButton>
           )}
         </div>
-      </header>
+      </div>
 
       {/* ── Body: palette rail · canvas · inspector ─────────────────── */}
       <div className="flex min-h-0 flex-1">
@@ -1800,15 +1978,17 @@ function FloorPlanPage() {
               <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                 Palette
               </span>
-              <Button variant="ghost" size="sm" asChild className="h-6 px-1.5">
-                <Link
-                  to="/floor-tile-types/new"
-                  search={{ from: plan.id }}
-                  title="Add tile type"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+              <BarTip tip="Add tile type">
+                <Button variant="ghost" size="icon-xs" asChild>
+                  <Link
+                    to="/floor-tile-types/new"
+                    search={{ from: plan.id }}
+                    aria-label="Add tile type"
+                  >
+                    <Plus className="size-3.5" />
+                  </Link>
+                </Button>
+              </BarTip>
             </div>
             <div className="px-2 pb-1">
               <SegmentedTabs<"tiles" | "zones">
@@ -1858,11 +2038,23 @@ function FloorPlanPage() {
                       "bg-muted ring-1 ring-foreground/20"
                   )}
                 >
-                  <TileBadge color={entry.color} icon={entry.icon} />
-                  <span className="truncate">{entry.name}</span>
-                  {(entry.kind === "role" || entry.hasFov) && (
+                  {/* A role is a colored catalog object: its badge, as
+                      everywhere else. A tile type shows its tile. */}
+                  {entry.kind === "role" ? (
+                    <ColorBadge
+                      name={entry.name}
+                      color={entry.color}
+                      className="max-w-full min-w-0 truncate"
+                    />
+                  ) : (
+                    <>
+                      <TileBadge color={entry.color} icon={entry.icon} />
+                      <span className="truncate">{entry.name}</span>
+                    </>
+                  )}
+                  {entry.hasFov && (
                     <span className="ml-auto text-[10px] text-muted-foreground">
-                      {entry.kind === "role" ? "role" : "cam"}
+                      cam
                     </span>
                   )}
                 </button>
@@ -1886,13 +2078,7 @@ function FloorPlanPage() {
           )}
           {view3d && (
             <>
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    Loading 3D view…
-                  </div>
-                }
-              >
+              <Suspense fallback={<Loading />}>
                 <FloorScene3D
                   planId={plan.id}
                   liveState={liveState.data ?? null}
@@ -1911,8 +2097,13 @@ function FloorPlanPage() {
                   quality={quality3d}
                   cableScale={cableScale}
                   cableLook={cableLook}
+                  tints={capacity.tints}
+                  racks={capacity.rackById}
+                  pointTileIds={capacity.highlightTileIds}
+                  focusRack={rackFocus3d}
                 />
               </Suspense>
+              {colorLegend}
               {show3dHint && (
                 <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
                   Drag to orbit · scroll to zoom · right-drag to pan · arrows /
@@ -2002,6 +2193,12 @@ function FloorPlanPage() {
                 onOpenTile={openTile}
                 exportRef={exportRef}
                 liveState={liveState.data ?? null}
+                colorBy={colorBy}
+                rackFigures={capacity.figures}
+                highlightTileIds={capacity.highlightTileIds}
+                dimTileIds={racksOpen ? capacity.dimTileIds : undefined}
+                // Inside the export area, so the PNG carries the key.
+                overlay={colorLegend}
                 labelFit={labelFit}
                 showFov={showFov}
                 showZoneLabels={showZoneLabels}
@@ -2046,24 +2243,24 @@ function FloorPlanPage() {
                         { o: 270 as const, icon: ArrowLeft, label: "left" },
                       ] as const
                     ).map(({ o, icon: Icon, label }) => (
-                      <Button
-                        key={o}
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0"
-                        title={`Front faces ${label}`}
-                        aria-label={`Front faces ${label}`}
-                        onClick={() => {
-                          // Per-tile absolute facing - setTileFacing keeps the
-                          // footprint-swap + collision rules a hand rotate has.
-                          for (const tid of multiSel) {
-                            const t = tiles.find((x) => x.id === tid)
-                            if (t) setTileFacing(t, o)
-                          }
-                        }}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                      </Button>
+                      <BarTip key={o} tip={`Front faces ${label}`}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          aria-label={`Front faces ${label}`}
+                          onClick={() => {
+                            // Per-tile absolute facing - setTileFacing keeps the
+                            // footprint-swap + collision rules a hand rotate has.
+                            for (const tid of multiSel) {
+                              const t = tiles.find((x) => x.id === tid)
+                              if (t) setTileFacing(t, o)
+                            }
+                          }}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                        </Button>
+                      </BarTip>
                     ))}
                     <span className="h-4 w-px bg-border" />
                     <Select
@@ -2094,7 +2291,10 @@ function FloorPlanPage() {
                         }
                       }}
                     >
-                      <SelectTrigger className="h-7 w-32 text-xs">
+                      <SelectTrigger
+                        size="sm"
+                        className="w-32 text-xs data-[size=sm]:h-7"
+                      >
                         <SelectValue placeholder="Set type…" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2107,7 +2307,7 @@ function FloorPlanPage() {
                           ))}
                         {(roles.data?.results ?? []).map((r) => (
                           <SelectItem key={r.id} value={`role:${r.id}`}>
-                            {r.name} (role)
+                            <ColorBadge name={r.name} color={r.color} />
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -2124,15 +2324,17 @@ function FloorPlanPage() {
                     >
                       <Trash2 className="mr-1 h-3 w-3" /> Delete
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={() => setMultiSel(new Set())}
-                      title="Clear selection"
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
+                    <BarTip tip="Clear selection">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        onClick={() => setMultiSel(new Set())}
+                        aria-label="Clear selection"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </BarTip>
                   </div>
                 </div>
               )}
@@ -2179,6 +2381,11 @@ function FloorPlanPage() {
                     ? liveState.data?.tiles[popover.target.tile.id]
                     : undefined
                 }
+                planRack={
+                  popover.target?.tile.linked?.kind === "rack"
+                    ? capacity.rackById.get(popover.target.tile.linked.id)
+                    : undefined
+                }
                 fields={popoverFields}
                 onOpenChange={(open) => !open && popover.close()}
                 renderLinked={(tile) =>
@@ -2186,6 +2393,7 @@ function FloorPlanPage() {
                 }
                 renderActions={(tile) =>
                   tile.linked?.kind === "rack" ||
+                  tile.linked?.kind === "cabinet" ||
                   tile.linked?.kind === "device" ? (
                     <Button
                       variant="outline"
@@ -2193,21 +2401,42 @@ function FloorPlanPage() {
                       className="mt-3 w-full"
                       onClick={() => {
                         popover.close()
-                        setDeepTile(tile)
+                        openTile(tile)
                       }}
                     >
-                      {tile.linked.kind === "rack" ? (
-                        <PanelRight className="h-3.5 w-3.5" />
-                      ) : (
+                      {tile.linked.kind === "device" ? (
                         <Waypoints className="h-3.5 w-3.5" />
+                      ) : (
+                        <PanelRight className="h-3.5 w-3.5" />
                       )}
-                      {tile.linked.kind === "rack"
-                        ? "Contents & trace"
-                        : "Trace"}
+                      {tile.linked.kind === "device"
+                        ? "Trace"
+                        : "Contents & trace"}
                     </Button>
                   ) : null
                 }
               />
+              {cabinetPanelTile && (
+                <CabinetPanel
+                  key={cabinetPanelTile.id}
+                  tile={cabinetPanelTile}
+                  live={liveState.data?.tiles[cabinetPanelTile.id]}
+                  onClose={() => setCabinetTileId(null)}
+                  // A device's paths open in the deep view, as a racked
+                  // device's do; the panel waits underneath.
+                  onTraceDevice={(d) =>
+                    setDeepTile({
+                      ...cabinetPanelTile,
+                      linked: {
+                        kind: "device",
+                        id: d.id,
+                        name: d.name,
+                        route: `/devices/${d.id}`,
+                      },
+                    })
+                  }
+                />
+              )}
             </>
           )}
         </div>
@@ -2217,16 +2446,20 @@ function FloorPlanPage() {
             key={selected.id}
             tile={selected}
             planId={plan.id}
+            siteId={plan.site.id}
+            cellMm={plan.cell_mm}
             tileTypes={tileTypes.data?.results ?? []}
             roles={roles.data?.results ?? []}
             onChange={(patch) => changeTile(selected.id, patch)}
             onRotate={() => rotateTile(selected)}
             onSetFacing={(o) => setTileFacing(selected, o)}
+            onFit={(size) => fitTile(selected, size)}
             onDelete={() => deleteTile(selected.id)}
             onOpenContents={
               selected.linked?.kind === "rack" ||
+              selected.linked?.kind === "cabinet" ||
               selected.linked?.kind === "device"
-                ? () => setDeepTile(selected)
+                ? () => openTile(selected)
                 : undefined
             }
           />
@@ -2299,9 +2532,38 @@ function FloorPlanPage() {
             }}
             hidden={hidden}
             onHiddenChange={setHiddenPref}
+            // While the rack table is open it lists the racks.
+            omitRacks={racksOpen}
           />
         )}
       </div>
+
+      {/* The plan's racks while it is coloured by them: under the plan,
+          the width of the page, its height dragged from its top edge. */}
+      {racksOpen && (
+        <RackTablePanel
+          racks={capacity.rows}
+          loading={capacity.query.isLoading}
+          error={capacity.query.error}
+          humanIds={humanIds}
+          onHover={(r) => capacity.setPointRackId(r?.id ?? null)}
+          onFocus={(r) => {
+            const tile = shownTiles.find((t) => t.id === r.tileIds[0])
+            if (!tile) return
+            if (view3d) {
+              setRackFocus3d((cur) => ({
+                tileId: tile.id,
+                n: (cur?.n ?? 0) + 1,
+              }))
+              return
+            }
+            setSelectedId(tile.id)
+            canvasApi.current?.focusTile(tile, 2)
+          }}
+          onMatchChange={capacity.setMatch}
+          onClose={() => setViewPref("show_racks", false)}
+        />
+      )}
 
       <TrayNameDialog
         points={namingPoints}
@@ -2318,6 +2580,15 @@ function FloorPlanPage() {
         onTraceCables={traceCablesOnMap}
       />
 
+      <Dialog open={backgroundOpen} onOpenChange={setBackgroundOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Background</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">{backgroundControls}</div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent size="xl">
           <DialogHeader>
@@ -2332,87 +2603,68 @@ function FloorPlanPage() {
       </Dialog>
 
       {/* The leave guard's one dialog - for a floor switch, a sidebar link, and
-          browser back alike. The router holds the navigation open until this
-          resolves, so every close path must settle it: leave the blocker
-          hanging and the next navigation is stuck behind it forever. */}
-      <AlertDialog
-        open={leaveGuard.status === "blocked"}
-        onOpenChange={(open) => {
-          // Escape, an overlay click, and "Keep editing" all mean stay.
-          if (!open) leaveGuard.reset?.()
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This plan has unsaved changes. Leaving this page - including
-              switching to another floor - drops them. Save first to keep them.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            {/* Radix closes on action too, so onOpenChange's reset() lands right
-                after this proceed(). Both settle the same promise and only the
-                first wins, so the navigation still goes through. */}
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => leaveGuard.proceed?.()}
-            >
-              Discard and leave
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          browser back alike. */}
+      <LeaveGuardDialog
+        blocker={leaveGuard}
+        description="This plan has unsaved changes."
+      />
     </div>
   )
 }
 
-/** Client-side Link per link kind - plain <a href> would full-reload the SPA. */
+/** "Open device", "Open rack"… for the linked object - the router link the
+ * Maps panels share, so the SPA never reloads. */
 function LinkedObjectLink({
   linked,
 }: {
   linked: NonNullable<FloorPlanTile["linked"]>
 }) {
-  const label = (
-    <>
-      <ExternalLink className="h-3 w-3" />
-      Open {linked.kind === "floorplan" ? "plan" : linked.kind} {linked.name}
-    </>
-  )
-  const className =
-    "mt-2 inline-flex items-center gap-1.5 text-xs underline-offset-2 link"
+  const className = "mt-2 w-full"
   const params = { id: linked.id }
   switch (linked.kind) {
     case "rack":
       return (
-        <Link to="/racks/$id" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink to="/racks/$id" params={params} className={className}>
+          Open rack
+        </OpenLink>
+      )
+    case "cabinet":
+      return (
+        <OpenLink to="/cabinets/$id" params={params} className={className}>
+          Open cabinet
+        </OpenLink>
       )
     case "device":
       return (
-        <Link to="/devices/$id" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink to="/devices/$id" params={params} className={className}>
+          Open device
+        </OpenLink>
       )
     case "powerpanel":
       return (
-        <Link to="/power-panels/$id/edit" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink
+          to="/power-panels/$id/edit"
+          params={params}
+          className={className}
+        >
+          Open power panel
+        </OpenLink>
       )
     case "powerfeed":
       return (
-        <Link to="/power-feeds/$id/edit" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink
+          to="/power-feeds/$id/edit"
+          params={params}
+          className={className}
+        >
+          Open power feed
+        </OpenLink>
       )
     case "floorplan":
       return (
-        <Link to="/floorplans/$id" params={params} className={className}>
-          {label}
-        </Link>
+        <OpenLink to="/floorplans/$id" params={params} className={className}>
+          Open plan
+        </OpenLink>
       )
   }
 }
@@ -2464,21 +2716,29 @@ function FovSlider({
 function TileInspector({
   tile,
   planId,
+  siteId,
+  cellMm,
   tileTypes,
   roles,
   onChange,
   onRotate,
   onSetFacing,
+  onFit,
   onDelete,
   onOpenContents,
 }: {
   tile: FloorPlanTile
   planId: string
+  /** The plan's site and cell size - a cabinet link reads both. */
+  siteId: string
+  cellMm: number
   tileTypes: FloorTileTypeOption[]
   roles: DeviceRole[]
   onChange: (patch: Partial<FloorPlanTile>) => void
   onRotate: () => void
   onSetFacing: (o: 0 | 90 | 180 | 270) => void
+  /** Size the tile to what it links to, in cells. */
+  onFit: (size: { width: number; height: number }) => void
   onDelete: () => void
   onOpenContents?: () => void
 }) {
@@ -2497,6 +2757,11 @@ function TileInspector({
         route: "",
       },
     })
+  }
+  // A just-picked object's name, once known: the tile's label falls back to
+  // it before the plan is saved, as it does after.
+  const setLinkedName = (name: string) => {
+    if (tile.linked) onChange({ linked: { ...tile.linked, name } })
   }
 
   return (
@@ -2530,15 +2795,13 @@ function TileInspector({
         <span className="font-medium">
           {tile.tile_type?.name ?? tile.role_type?.name}
         </span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto h-7 px-2"
+        <BarIconButton
+          label="Rotate 90°"
+          className="ml-auto"
           onClick={onRotate}
-          title="Rotate 90° (swaps footprint, spins the icon)"
         >
-          <RotateCw className="h-3.5 w-3.5" />
-        </Button>
+          <RotateCw className="size-3.5" />
+        </BarIconButton>
       </div>
 
       {/* Re-type a placed tile: any tile type (zones stay zones), or a device
@@ -2599,20 +2862,20 @@ function TileInspector({
                 { o: 270 as const, icon: ArrowLeft, label: "Left" },
               ] as const
             ).map(({ o, icon: Icon, label }) => (
-              <Button
-                key={o}
-                variant={tile.orientation === o ? "secondary" : "outline"}
-                size="sm"
-                className={cn(
-                  "h-8 px-0",
-                  tile.orientation === o && "border-primary/50"
-                )}
-                onClick={() => onSetFacing(o)}
-                title={`Front faces ${label.toLowerCase()}`}
-                aria-label={`Front faces ${label.toLowerCase()}`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-              </Button>
+              <BarTip key={o} tip={`Front faces ${label.toLowerCase()}`}>
+                <Button
+                  variant={tile.orientation === o ? "secondary" : "outline"}
+                  size="sm"
+                  className={cn(
+                    "h-8 px-0",
+                    tile.orientation === o && "border-primary/50"
+                  )}
+                  onClick={() => onSetFacing(o)}
+                  aria-label={`Front faces ${label.toLowerCase()}`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </Button>
+              </BarTip>
             ))}
           </div>
         </Field>
@@ -2718,13 +2981,24 @@ function TileInspector({
           noneLabel="Not linked"
           placeholder="Not linked"
         />
-        <LinkTargetPicker
-          kind={tile.link_kind || null}
-          value={tile.linked?.id ?? null}
-          planId={planId}
-          roleId={tile.role_type?.id ?? null}
-          onPick={(id) => setLink(tile.link_kind || null, id)}
-        />
+        {tile.link_kind === "cabinet" ? (
+          <CabinetLinkField
+            tile={tile}
+            siteId={siteId}
+            cellMm={cellMm}
+            onPick={(id) => setLink("cabinet", id)}
+            onName={setLinkedName}
+            onFit={onFit}
+          />
+        ) : (
+          <LinkTargetPicker
+            kind={tile.link_kind || null}
+            value={tile.linked?.id ?? null}
+            planId={planId}
+            roleId={tile.role_type?.id ?? null}
+            onPick={(id) => setLink(tile.link_kind || null, id)}
+          />
+        )}
       </div>
 
       <div className="mt-auto grid gap-2 border-t border-border pt-3">
@@ -2735,12 +3009,12 @@ function TileInspector({
             className="w-full"
             onClick={onOpenContents}
           >
-            {tile.linked?.kind === "rack" ? (
-              <PanelRight className="h-3.5 w-3.5" />
-            ) : (
+            {tile.linked?.kind === "device" ? (
               <Waypoints className="h-3.5 w-3.5" />
+            ) : (
+              <PanelRight className="h-3.5 w-3.5" />
             )}
-            {tile.linked?.kind === "rack" ? "Contents & trace" : "Trace"}
+            {tile.linked?.kind === "device" ? "Trace" : "Contents & trace"}
           </Button>
         )}
         <Button
@@ -2940,8 +3214,9 @@ function RackDeepView({
       </div>
     )
 
-  const utilization =
-    rack && rack.u_height > 0 ? rack.used_units / rack.u_height : null
+  const utilization = rack
+    ? capacityRatio(rack.used_units, rack.u_height)
+    : null
 
   return (
     <div className="flex h-full flex-col">
@@ -2954,10 +3229,12 @@ function RackDeepView({
                 {rack.used_units}/{rack.u_height}U used
               </span>
               {" · "}
-              <span className="num">
-                {rack.power.allocated_w}/{rack.power.available_w} W
-              </span>
-              {" · "}
+              {hasPowerData(rack.power) && (
+                <>
+                  <PowerFigure power={rack.power} />
+                  {" · "}
+                </>
+              )}
               <span className="num">{rack.device_count}</span> device
               {rack.device_count === 1 ? "" : "s"}
             </>
@@ -2967,22 +3244,12 @@ function RackDeepView({
       <div className="grid gap-4 px-4 pb-4">
         {rackQ.isError && <QueryError error={rackQ.error} />}
         {utilization !== null && (
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${Math.min(100, Math.round(utilization * 100))}%`,
-                backgroundColor: utilizationColor(utilization),
-              }}
-            />
-          </div>
+          <CapacityBar ratio={utilization} className="w-full" />
         )}
         {rack && (
-          <Button variant="outline" size="sm" asChild className="w-fit">
-            <Link to="/racks/$id" params={{ id: rack.id }}>
-              <ExternalLink className="h-3.5 w-3.5" /> Open rack page
-            </Link>
-          </Button>
+          <OpenLink to="/racks/$id" params={{ id: rack.id }} className="w-fit">
+            Open rack
+          </OpenLink>
         )}
         {rack && (
           <div>
@@ -3029,26 +3296,23 @@ function RackDeepView({
                   {d.name}
                 </Link>
                 {d.role && (
-                  <span
-                    className="rounded-sm px-1.5 py-0.5 text-[10px]"
-                    style={{
-                      backgroundColor: `${d.role.color || "#a1a1aa"}22`,
-                      color: d.role.color || undefined,
-                    }}
-                  >
-                    {d.role.name}
-                  </span>
+                  <ColorBadge
+                    name={d.role.name}
+                    color={d.role.color || undefined}
+                    className="h-4 min-w-0 px-1.5 text-[10px]"
+                  />
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto h-7"
-                  title="Trace this device end-to-end"
-                  aria-label={`Trace ${d.name}`}
-                  onClick={() => setTraceDevice(d)}
-                >
-                  <Waypoints className="h-3.5 w-3.5" />
-                </Button>
+                <BarTip tip="Trace">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="ml-auto size-7"
+                    aria-label={`Trace ${d.name}`}
+                    onClick={() => setTraceDevice(d)}
+                  >
+                    <Waypoints className="size-3.5" />
+                  </Button>
+                </BarTip>
               </li>
             ))}
           </ul>
@@ -3079,11 +3343,9 @@ function DeviceDeepView({
       {/* Natural top-aligned stack - no flex-1 stretch, so the button sits
           right above the topology instead of leaving a tall gap. */}
       <div className="flex flex-col gap-3 px-4 pb-4">
-        <Button variant="outline" size="sm" asChild className="w-fit">
-          <Link to="/devices/$id" params={{ id: deviceId }}>
-            <ExternalLink className="h-3.5 w-3.5" /> Open device page
-          </Link>
-        </Button>
+        <OpenLink to="/devices/$id" params={{ id: deviceId }} className="w-fit">
+          Open device
+        </OpenLink>
         <DeviceMiniTopology deviceId={deviceId} onTraceCables={onTraceCables} />
       </div>
     </div>
@@ -3171,18 +3433,21 @@ function TileSearch({
   return (
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <div className="relative">
-          <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
+        <InputGroup className="h-7 w-40 shrink-0">
+          <InputGroupAddon>
+            <Search className="size-3" />
+          </InputGroupAddon>
+          <InputGroupInput
             placeholder="Find on plan…"
+            aria-label="Find on plan"
             value={value}
             onChange={(e) => {
               onChange(e.target.value)
               setOpen(true)
             }}
-            className="h-8 w-48 pl-8 text-xs"
+            className="h-7 text-xs md:text-xs"
           />
-        </div>
+        </InputGroup>
       </PopoverTrigger>
       <PopoverContent
         align="end"
@@ -3202,10 +3467,6 @@ function TileSearch({
               }}
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-muted/60"
             >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                style={{ backgroundColor: tileFill(t) }}
-              />
               <span className="truncate">{label}</span>
               {t.linked && (
                 <span className="ml-auto text-[10px] text-muted-foreground">
@@ -3874,7 +4135,6 @@ function TrayInspector({
             >
               <button
                 type="button"
-                title="Show this cable's A↔B run"
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 onClick={() =>
                   onHighlightCable(highlightCableId === c.id ? null : c.id)
@@ -3891,20 +4151,22 @@ function TrayInspector({
                   </span>
                 )}
               </button>
-              <button
-                type="button"
-                title="Remove"
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() =>
-                  onPatch({
-                    cable_ids: tray.cables
-                      .filter((x) => x.id !== c.id)
-                      .map((x) => x.id),
-                  })
-                }
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <BarTip tip="Remove">
+                <button
+                  type="button"
+                  aria-label={`Remove ${c.label}`}
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() =>
+                    onPatch({
+                      cable_ids: tray.cables
+                        .filter((x) => x.id !== c.id)
+                        .map((x) => x.id),
+                    })
+                  }
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </BarTip>
             </li>
           ))}
         </ul>

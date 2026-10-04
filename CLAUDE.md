@@ -175,7 +175,7 @@ Use the active shared system; do not hand-roll another version of existing UI:
 - Details: `DetailShell`, Overview first, then related tabs, with Journal and
   Change log last. Use `KvCard` for attribute groups.
 - Object selection: `ObjectPicker` or an existing domain picker preset.
-- State and errors: `QueryError`, `apiErrorToast`, and `EmptyState`.
+- State and errors: `Loading`, `QueryError`, `apiErrorToast`, and `EmptyState`.
 - Colored catalog objects: `ColorBadge`, `StatusBadge`, `RoleChip`, or the
   existing domain badge. Derive color from object data, never its name.
 - Count/label chips: the squarish `Badge` primitive, one badge per severity
@@ -183,6 +183,10 @@ Use the active shared system; do not hand-roll another version of existing UI:
   `rounded-full` pill. `rounded-full` is for status dots and avatars only.
 - Dates/times: `TimeCell` or the shared time helpers.
 - Tabs: the shared segmented-tabs component.
+- Maps chrome (Topology, Site map, Floor plans): `components/map-toolbar.tsx`
+  for bar controls, `ObjectsPanel`, `HiddenChip`, `PointerMenu`, and
+  `components/map-panel.tsx` for detail panels. The table in
+  `docs/design/visual-language.md` lists them.
 
 One entity should have one column factory, reused by list and embedded tables.
 Do not copy a shell, inline a second `ColumnDef[]`, add raw `<table>` markup, or
@@ -190,11 +194,15 @@ invent a different loading/error/empty treatment when a shared primitive fits.
 
 Loading rules:
 
-- Page/section fetch: muted `Loading...` text or the table's built-in row.
+- Page/section/panel/canvas fetch: the shared `<Loading />`
+  (`components/loading.tsx`) - the first-load splash spinner with a small muted
+  `Loading…` under it, centred in what it loads - or the table's built-in row.
+  Older bare `Loading…` text moves to `<Loading />` when its page is touched.
 - Pending labeled button: keep its dimensions and change the verb to
-  `Saving...`, `Deleting...`, etc.
-- Spinner: icon-only buttons only.
+  `Saving…`, `Deleting…`, etc.
+- Spinner on its own: icon-only buttons only.
 - Skeletons: existing sidebar and topology-canvas uses only.
+- Write the ellipsis as one `…` character, never three dots.
 
 Keep the UI restrained and operator-focused. Use semantic CSS variables and
 the established zinc-based palette, color only for meaning, `rounded-md` or

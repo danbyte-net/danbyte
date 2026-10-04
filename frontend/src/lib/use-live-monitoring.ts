@@ -24,6 +24,8 @@ export interface LiveUpdate extends Partial<EffectiveCheckState> {
   state_id: string
   template_id: string
   transition?: { from_status: string; to_status: string; at: string }
+  /** Sent when the address was excluded or included again. */
+  excluded?: boolean
   sample?: Probe
   /** The flush's whole batch (oldest first) when it held more than one. */
   probes?: Probe[]
@@ -49,6 +51,14 @@ export function useLiveMonitoring(ipId: string): { live: boolean } {
     let attempt = 0
 
     const apply = (u: LiveUpdate) => {
+      // Excluded or included by someone else: including writes no
+      // transition, so the switch itself is the signal to re-read.
+      const cached = qc.getQueryData<IpChecksResponse>(["ip-checks", ipId])
+      if (
+        u.excluded !== undefined &&
+        u.excluded !== (cached?.monitoring?.excluded ?? false)
+      )
+        void qc.invalidateQueries({ queryKey: ["ip-checks", ipId] })
       qc.setQueryData<IpChecksResponse>(["ip-checks", ipId], (cur) => {
         if (!cur) return cur
         return {

@@ -291,6 +291,32 @@ class LaneTests(_Base):
         self.assertIsNotNone(st.next_run)
         self.assertGreater(st.next_run, timezone.now())
 
+    def test_a_failed_flush_drops_the_connection_so_the_next_one_reconnects(self):
+        # After a PostgreSQL restart the old connection is dead; the lane used
+        # to fail every flush on it for good.
+        import asyncio
+
+        from django.db import OperationalError
+
+        lane = fastlane.FastLane()
+        calls = []
+
+        def flush():
+            calls.append("flush")
+            if len(calls) == 1:
+                raise OperationalError("server closed the connection unexpectedly")
+            lane.stopping = True
+
+        with mock.patch.object(lane, "reload"), mock.patch.object(lane, "_beat"), \
+                mock.patch.object(lane, "flush", side_effect=flush), \
+                mock.patch.object(fastlane.FastLane, "release_all"), \
+                mock.patch.object(fastlane, "FLUSH_SECONDS", 0), \
+                mock.patch.object(fastlane, "TICK_SECONDS", 0), \
+                mock.patch("django.db.connections.close_all") as close_all:
+            asyncio.run(lane.run())
+        self.assertEqual(close_all.call_count, 1)
+        self.assertGreaterEqual(len(calls), 2)
+
     def test_reload_drops_a_state_that_left_the_lane(self):
         st = self.state()
         lane = fastlane.FastLane()

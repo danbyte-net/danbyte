@@ -37,6 +37,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { useUrlEnum } from "@/lib/use-url-state"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { naturalCompare } from "@/lib/natural-sort"
 
 type ImageList = { count: number; results: ImageAttachment[] }
 
@@ -146,9 +147,7 @@ export function ObjectImages({
       : all
     if (sort !== "none" && layout === "list")
       out = [...out].sort(
-        (a, b) =>
-          shown(a).localeCompare(shown(b), undefined, { numeric: true }) *
-          (sort === "asc" ? 1 : -1)
+        (a, b) => naturalCompare(shown(a), shown(b)) * (sort === "asc" ? 1 : -1)
       )
     return out
   }, [all, search, sort, layout])

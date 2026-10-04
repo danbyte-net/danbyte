@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { useQueries, useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query"
 import {
   Bookmark,
   Cable as CableIcon,
@@ -13,14 +13,17 @@ import {
 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import {
-  api,
-  type Interface,
-  type InterfaceLagSummary,
-  type SnmpDriftItem,
+import { api } from "@/lib/api"
+import type {
+  Interface,
+  InterfaceLagSummary,
+  InterfaceMacs,
+  SnmpDriftItem,
+  UplinkState,
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { buildInterfaceColumns } from "@/components/columns/interface-columns"
 import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Badge } from "@/components/ui/badge"
@@ -38,27 +41,38 @@ import {
   UndocumentedBadge,
 } from "@/components/port-reservation-dialog"
 import {
-  AssignIpDialog,
-  type AssignIpTarget,
-} from "@/components/assign-ip-dialog"
+  AssignedIpsPane,
+  assignedIpsQuery,
+  type AssignedIpsScope,
+} from "@/components/assigned-ips-pane"
 import { TraceSection } from "@/components/topology/trace-section"
-import { TracePathStrip, TracePreview } from "@/components/cable-trace-path"
-import { PathRow } from "@/components/device-paths-list"
 import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+  TracePathStrip,
+  TracePreview,
+  traceUrl,
+} from "@/components/cable-trace-path"
+import { PathRow } from "@/components/device-paths-list"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { InterfaceRoutingCard } from "@/components/routing/interface-routing-card"
 import { useMe } from "@/lib/use-me"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns"
+import { RefreshMacsButton, UplinkBadge } from "@/components/learned-macs-cell"
+import { uplinkModeOf, uplinkWhy } from "@/lib/mac-tracking"
+import type { LearnedMacColumnId } from "@/components/columns/learned-mac-columns"
 
 export const Route = createFileRoute("/interfaces/$id")({
+  // `?tab=macs` opens the MACs tab - an uplink's MAC count links there.
+  validateSearch: (s: Record<string, unknown>): { tab?: string } =>
+    typeof s.tab === "string" ? { tab: s.tab } : {},
   component: InterfaceDetail,
 })
+
+/** Rows per page on the MACs tab. */
+const MAC_PAGE = 100
 
 function InterfaceDetail() {
   const { id } = Route.useParams()
@@ -66,8 +80,7 @@ function InterfaceDetail() {
     queryKey: ["interface", id],
     queryFn: () => api<Interface>(`/api/interfaces/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -80,23 +93,41 @@ function InterfaceDetail() {
 
 function Body({ iface: i }: { iface: Interface }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "ips" | "members" | "trace" | "journal" | "history"
+    "overview" | "ips" | "members" | "macs" | "trace" | "journal" | "history"
   >("overview")
   const isLag = i.type === "lag"
+  // MAC tracking (#284): the port's uplink state and MAC counts - the tab and
+  // the Switching card read them; the tab pages through the MACs itself.
+  const macs = useQuery({
+    queryKey: ["interface-macs", i.id, "summary"],
+    queryFn: () =>
+      api<InterfaceMacs>(
+        `/api/monitoring/interfaces/${i.id}/macs/?state=present&limit=1`
+      ),
+  })
+  // A port of a device that reads a MAC table, or one with history.
+  const hasMacs =
+    !!macs.data && (macs.data.read_at != null || macs.data.counts.all > 0)
   // The bundle summary (members, capacity, peers) - aggregates only.
   const lag = useQuery({
     queryKey: ["interface-lag", i.id],
     queryFn: () => api<InterfaceLagSummary>(`/api/interfaces/${i.id}/lag/`),
     enabled: isLag,
   })
+  // The IPs the viewer may see - the tab count, the IP addresses tab and the
+  // Overview card all read this one query.
+  const ipScope: AssignedIpsScope = {
+    kind: "interface",
+    deviceId: i.device.id,
+    interfaceId: i.id,
+    interfaceName: i.name,
+  }
+  const ips = useQuery(assignedIpsQuery(ipScope))
   const nav = useNavigate()
   const { canDo } = useMe()
   const [deleting, setDeleting] = useState<Interface | null>(null)
-  const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
   const [reserving, setReserving] = useState(false)
   const goBack = useCallback(() => nav({ to: "/interfaces" }), [nav])
-  const canAddIp = canDo("ipaddress", "add")
-  const canAssignIp = canDo("ipaddress", "change")
 
   return (
     <DetailShell
@@ -219,45 +250,16 @@ function Body({ iface: i }: { iface: Interface }) {
             </>
           }
           tags={i.tags.length > 0 && <TagList tags={i.tags} />}
-          stats={
-            <>
-              <DetailStat
-                label="Device"
-                value={
-                  <Link
-                    to="/devices/$id"
-                    params={{ id: i.device.id }}
-                    className="link font-mono"
-                  >
-                    {i.device.name}
-                  </Link>
-                }
-              />
-              <DetailStat
-                label="Type"
-                value={
-                  i.type ? (
-                    <span className="font-mono text-[13px]">
-                      {i.type_display}
-                    </span>
-                  ) : (
-                    dash
-                  )
-                }
-              />
-            </>
-          }
         />
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        {
-          value: "ips",
-          label: "IP addresses",
-          count: i.ip_addresses.length,
-        },
+        { value: "ips", label: "IP addresses", count: ips.data?.count },
         ...(isLag
           ? [{ value: "members", label: "Members", count: lag.data?.count }]
+          : []),
+        ...(hasMacs
+          ? [{ value: "macs", label: "MACs", count: macs.data.counts.present }]
           : []),
         { value: "trace", label: "Trace" },
         { value: "journal", label: "Journal" },
@@ -269,78 +271,44 @@ function Body({ iface: i }: { iface: Interface }) {
       <DetailTab value="overview">
         <InterfaceOverview
           iface={i}
+          ips={ips.data?.results ?? []}
           lag={isLag ? lag.data : undefined}
           onMembers={() => setTab("members")}
+          uplink={macs.data?.uplink}
+          macTable={hasMacs}
         />
       </DetailTab>
+      {hasMacs && (
+        <DetailTab value="macs">
+          <InterfaceMacsPane iface={i} summary={macs.data} />
+        </DetailTab>
+      )}
       {isLag && (
         <DetailTab value="members">
           <LagMembers iface={i} summary={lag.data} loading={lag.isLoading} />
         </DetailTab>
       )}
       <DetailTab value="ips">
-        <div className="mb-3 flex items-center justify-end gap-1.5">
-          {canAddIp && (
-            <Button size="sm" variant="outline" asChild className="h-7">
-              <Link
-                to="/ips/new"
-                search={{ device: i.device.id, interface: i.id }}
-              >
-                + Add IP
-              </Link>
-            </Button>
-          )}
-          {canAssignIp && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7"
-              onClick={() =>
-                setAssignTarget({
-                  deviceId: i.device.id,
-                  interfaceId: i.id,
-                  interfaceName: i.name,
-                })
-              }
-            >
-              Assign IP
-            </Button>
-          )}
-        </div>
-        {i.ip_addresses.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No IP is assigned to this interface yet.
-          </p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <ul className="divide-y divide-border">
-              {i.ip_addresses.map((ip) => (
-                <li key={ip.id}>
-                  <Link
-                    to="/ips/$id"
-                    params={{ id: ip.id }}
-                    className="link block px-3 py-2 font-mono text-[13px] hover:bg-muted/60"
-                  >
-                    {ip.ip_address}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <AssignedIpsPane
+          scope={ipScope}
+          canAddIp={canDo("ipaddress", "add")}
+          canAssignIp={canDo("ipaddress", "change")}
+          canChangeDevice={canDo("device", "change")}
+        />
       </DetailTab>
       <DetailTab value="trace">
         <div className="space-y-6">
           <TracePathStrip
-            url={`/api/interfaces/${i.id}/trace/`}
+            url={traceUrl("interface", i.id)}
             queryKey={["trace", "interface", i.id]}
             highlightPort={i.name}
           />
           <TraceSection
-            url={`/api/interfaces/${i.id}/trace/`}
+            url={traceUrl("interface", i.id)}
             queryKey={["trace", "interface", i.id]}
             focusNodeId={`dev:${i.device.id}`}
             urlKey="dir"
+            name={`Trace · ${i.device.name} ${i.name}`}
           />
         </div>
       </DetailTab>
@@ -355,10 +323,6 @@ function Body({ iface: i }: { iface: Interface }) {
         iface={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={goBack}
-      />
-      <AssignIpDialog
-        target={assignTarget}
-        onOpenChange={(o) => !o && setAssignTarget(null)}
       />
       <PortReservationDialog
         target={
@@ -378,19 +342,40 @@ function Body({ iface: i }: { iface: Interface }) {
 }
 
 /** The interface's attributes, grouped into labelled tables - the detail that
- * used to crowd the page header. Only headline data (name, state, device,
- * type) stays up top; everything else reads here. */
+ * used to crowd the page header. Only headline data (name, state) stays up
+ * top; everything else, device and type included, reads here. */
 function InterfaceOverview({
   iface: i,
+  ips,
   lag,
   onMembers,
+  uplink,
+  macTable,
 }: {
   iface: Interface
+  /** The addresses the viewer may see, for the summary card. */
+  ips: Interface["ip_addresses"]
   /** The bundle summary - set for aggregates once loaded. */
   lag?: InterfaceLagSummary
   onMembers: () => void
+  /** How the uplink rules classify the port (#284). */
+  uplink?: UplinkState
+  /** Its device reads a MAC table, so Automatic has an answer. */
+  macTable: boolean
 }) {
   const attributes: KvRow[] = [
+    {
+      label: "Device",
+      value: (
+        <Link
+          to="/devices/$id"
+          params={{ id: i.device.id }}
+          className="link font-mono"
+        >
+          {i.device.name}
+        </Link>
+      ),
+    },
     {
       label: "Enabled",
       value: i.enabled ? "Yes" : "No",
@@ -522,6 +507,10 @@ function InterfaceOverview({
       ) : (
         <span className="text-muted-foreground">Global</span>
       ),
+    },
+    {
+      label: "Uplink",
+      value: <UplinkValue iface={i} uplink={uplink} macTable={macTable} />,
     },
   ]
 
@@ -710,16 +699,16 @@ function InterfaceOverview({
             deviceId={i.device.id}
             evpnMhUplink={i.evpn_mh_uplink}
           />
-          {i.ip_addresses.length > 0 && (
+          {ips.length > 0 && (
             // The addresses at a glance - the IP tab stays where they're
             // assigned and removed.
             <div className="overflow-hidden rounded-lg border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border px-4 py-2">
                 <h2 className="text-sm font-semibold">IP addresses</h2>
-                <Badge variant="secondary">{i.ip_addresses.length}</Badge>
+                <Badge variant="secondary">{ips.length}</Badge>
               </div>
               <ul className="divide-y divide-border">
-                {i.ip_addresses.map((ip) => (
+                {ips.map((ip) => (
                   <li key={ip.id}>
                     <Link
                       to="/ips/$id"
@@ -742,7 +731,7 @@ function InterfaceOverview({
         {i.cable && (
           <div className="rounded-lg border border-border bg-card p-4">
             <TracePreview
-              url={`/api/interfaces/${i.id}/trace/`}
+              url={traceUrl("interface", i.id)}
               queryKey={["trace", "interface", i.id]}
               highlightPort={i.name}
               originInterfaceId={i.id}
@@ -809,6 +798,145 @@ function InterfaceDriftAlert({
   )
 }
 
+/** Uplink: Automatic / Always / Never, and what Automatic decided (#284). */
+function UplinkValue({
+  iface,
+  uplink,
+  macTable,
+}: {
+  iface: Interface
+  uplink?: UplinkState
+  macTable: boolean
+}) {
+  const mode = uplinkModeOf(iface)
+  if (mode === "always") return <span>Always</span>
+  if (mode === "never") return <span>Never</span>
+  // Automatic says yes or no once there is something to decide on.
+  if (!uplink || (!macTable && uplink.reasons.length === 0))
+    return <span>Automatic</span>
+  return (
+    <span>
+      Automatic
+      <span className="text-muted-foreground">
+        {" · "}
+        {uplink.is && uplink.reasons.length
+          ? `yes, ${uplinkWhy(uplink.reasons[0])}`
+          : uplink.is
+            ? "yes"
+            : "no"}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * The port's MACs tab (#284): what the switch learned on it - present ones,
+ * or All with the history the tenant keeps. On an uplink these are the MACs
+ * seen through the port, each with where it really sits.
+ */
+function InterfaceMacsPane({
+  iface,
+  summary,
+}: {
+  iface: Interface
+  summary: InterfaceMacs
+}) {
+  const { canDo } = useMe()
+  const [state, setState] = useState<"present" | "all">("present")
+  const [page, setPage] = useState(1)
+  const q = useQuery({
+    queryKey: ["interface-macs", iface.id, state, page],
+    queryFn: () =>
+      api<InterfaceMacs>(
+        `/api/monitoring/interfaces/${iface.id}/macs/?state=${state}&limit=${MAC_PAGE}&cursor=${(page - 1) * MAC_PAGE}`
+      ),
+    placeholderData: keepPreviousData,
+  })
+  const data = q.data ?? summary
+  const total = data.counts[state]
+  const pages = Math.max(1, Math.ceil(total / MAC_PAGE))
+  const uplink = data.uplink
+  // One page holds the whole list: sorting it sorts everything.
+  const columns = useMemo(
+    () =>
+      buildLearnedMacColumns<InterfaceMacs["results"][number]>({
+        include: [
+          "mac",
+          "vendor",
+          "vlan",
+          "ip",
+          "name",
+          ...(uplink.is ? (["location"] as LearnedMacColumnId[]) : []),
+          "first_seen",
+          "last_seen",
+          "state",
+        ],
+        sortable: pages <= 1,
+      }),
+    [uplink.is, pages]
+  )
+  const reason = uplink.reasons.at(0)
+  return (
+    <div className="space-y-3">
+      {uplink.is && (
+        <p className="flex items-center gap-2 text-[13px]">
+          <UplinkBadge uplink={uplink} label="Uplink" />
+          {reason?.code === "lldp" && reason.neighbor ? (
+            <span>
+              LLDP neighbour{" "}
+              <span className="font-mono">{reason.neighbor}</span>
+            </span>
+          ) : (
+            <span>{reason?.text ?? "Set on the interface"}</span>
+          )}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedTabs
+          value={state}
+          onValueChange={(v) => {
+            setState(v)
+            setPage(1)
+          }}
+          items={[
+            { value: "present", label: "Present", count: data.counts.present },
+            { value: "all", label: "All", count: data.counts.all },
+          ]}
+        />
+        {canDo("device", "change") && (
+          // No per-port read exists: SNMP walks the whole table.
+          <RefreshMacsButton deviceId={iface.device.id} className="ml-auto" />
+        )}
+      </div>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.isError ? (
+        <QueryError error={q.error} />
+      ) : data.results.length === 0 ? (
+        <EmptyState title="No MACs learned on this port yet." />
+      ) : (
+        <DataTable
+          data={data.results}
+          columns={columns}
+          embedded
+          // The name gives way first; the location never truncates.
+          flexColumn="name"
+          serverPagination={
+            pages > 1
+              ? {
+                  page,
+                  pageCount: pages,
+                  totalRows: total,
+                  onPageChange: setPage,
+                }
+              : undefined
+          }
+        />
+      )}
+    </div>
+  )
+}
+
 /** "LACP active" / "LACP" / "PAgP" for a member's chip; "" for static. */
 function lacpLabel(lag: NonNullable<Interface["lag"]>): string {
   if (lag.lag_protocol === "lacp")
@@ -845,7 +973,7 @@ function LagMembers({
       }),
     [spansDevices]
   )
-  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (loading) return <Loading />
   if (rows.length === 0)
     return (
       <EmptyState title="No members yet">
@@ -890,7 +1018,7 @@ function LagRuns({
         </span>
       </div>
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading className="min-h-16" />
       ) : runs.length === 0 ? (
         <p className="text-[12px] text-muted-foreground">
           No member is cabled yet.

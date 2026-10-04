@@ -8,9 +8,18 @@ import type { StatusMini } from "@/lib/api"
  */
 export function StatusBadge({
   status,
+  className,
 }: {
   status: StatusMini | null | undefined
+  /** Size overrides for dense surfaces (a topology card). */
+  className?: string
 }) {
   if (!status) return <span className="text-muted-foreground">-</span>
-  return <ColorBadge name={status.name} color={status.color || undefined} />
+  return (
+    <ColorBadge
+      name={status.name}
+      color={status.color || undefined}
+      className={className}
+    />
+  )
 }

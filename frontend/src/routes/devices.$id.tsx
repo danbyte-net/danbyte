@@ -10,7 +10,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ChevronDown,
   CopyPlus,
-  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -23,19 +22,18 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
 import { api, DEFAULT_DEVICE_FIELD_VISIBILITY } from "@/lib/api"
+import { PROFILE_LABELS, fmtMm } from "@/lib/din-geometry"
 import type {
   Device,
   DeviceType,
-  DeviceChecksResponse,
   DeviceFieldVisibility,
-  IPAddress,
   Interface,
-  PrefixIpStatus,
   Rack,
   SnmpDriftItem,
   VirtualChassis,
 } from "@/lib/api"
 import { RackElevation } from "@/components/rack-elevation"
+import { DeviceCabinetCard } from "@/components/device-cabinet-card"
 import { ObjectImages } from "@/components/object-images"
 import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import { ObjectDocuments } from "@/components/object-documents"
@@ -45,7 +43,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { TagList } from "@/components/cells/tag-list"
@@ -57,6 +54,14 @@ import {
 } from "@/components/cells/lifecycle-cell"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
+import { RefreshMacsButton } from "@/components/learned-macs-cell"
+import {
+  UPLINK_OPTIONS,
+  learnedByInterface,
+  uplinkFields,
+  useDeviceMacs,
+} from "@/lib/mac-tracking"
+import type { UplinkMode } from "@/lib/mac-tracking"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import {
   PortUtilizationCard,
@@ -127,17 +132,16 @@ import {
 import { DeviceConsolePane } from "@/components/device-console-pane"
 import { DevicePowerPane } from "@/components/device-power-pane"
 import { portTint } from "@/components/cable-status-control"
-import { buildIpColumns } from "@/components/columns/ip-columns"
 import {
   buildInterfaceColumns,
   DEVICE_INTERFACE_COLUMNS,
-  buildInterfaceActionsColumn,
+  buildInterfaceActionColumns,
   nestInterfaces,
   type NestedInterface,
 } from "@/components/columns/interface-columns"
-import { actionsColumn } from "@/components/columns/actions-column"
-import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceMiniTopology } from "@/components/device-mini-topology"
 import { MiniMap } from "@/components/site-map/mini-map"
 import { DeviceTunnelsCard } from "@/components/device-tunnels-card"
@@ -156,20 +160,22 @@ import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ServicesPane } from "@/components/services-pane"
-import { DeviceRoutingPanel } from "@/components/routing/device-routing-panel"
+import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
   DeviceMonitoring,
   DeviceMonitoringBadge,
 } from "@/components/monitoring/device-monitoring"
-import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { AssignIpDialog } from "@/components/assign-ip-dialog"
+import { AssignedIpsPane } from "@/components/assigned-ips-pane"
 import type { AssignIpTarget } from "@/components/assign-ip-dialog"
 import { useMe, objCan } from "@/lib/use-me"
 import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
 import { Switch } from "@/components/ui/switch"
 import { DeviceConnectMenu } from "@/components/device-connect-menu"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
+import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { naturalCompare } from "@/lib/natural-sort"
 
 const DEVICE_TABS = [
   "overview",
@@ -232,8 +238,7 @@ function DeviceDetail() {
     queryKey: ["device", id],
     queryFn: () => api<Device>(`/api/devices/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -269,7 +274,11 @@ function Body({ device: d }: { device: Device }) {
       actions={
         <>
           {" "}
-          <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
+          <ShowOnFloorPlan
+            deviceId={d.id}
+            rackId={d.rack?.id}
+            cabinetId={d.cabinet?.id}
+          />
           <ShowOnSiteMap
             deviceId={d.id}
             hasCoords={d.latitude != null && d.longitude != null}
@@ -430,7 +439,10 @@ function Body({ device: d }: { device: Device }) {
         </PendingFieldsProvider>
       </DetailTab>
       <DetailTab value="monitoring">
-        <DeviceChecksPanel deviceId={d.id} />
+        <div className="space-y-6">
+          <ObjectSlaPanel objectType="api.device" objectId={d.id} />
+          <DeviceChecksPanel deviceId={d.id} />
+        </div>
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">
@@ -470,9 +482,8 @@ function Body({ device: d }: { device: Device }) {
         </div>
       </DetailTab>
       <DetailTab value="ips">
-        <DeviceIpsPane
-          deviceId={d.id}
-          deviceName={d.name}
+        <AssignedIpsPane
+          scope={{ kind: "device", deviceId: d.id, deviceName: d.name }}
           canAddIp={canDo("ipaddress", "add")}
           canAssignIp={canDo("ipaddress", "change")}
           canChangeDevice={canDo("device", "change")}
@@ -501,7 +512,7 @@ function Body({ device: d }: { device: Device }) {
         />
       </DetailTab>
       <DetailTab value="routing">
-        <DeviceRoutingPanel device={{ id: d.id, name: d.name }} />
+        <RoutingPanel owner={{ kind: "device", id: d.id, name: d.name }} />
       </DetailTab>
       <DetailTab value="certificates">
         <div className="space-y-6">
@@ -608,8 +619,12 @@ function DeviceComponents({
         {/* min-w-0 on this root: without it the flex child grows to its widest
           table and drags the whole page sideways on laptop widths (#132) -
           wide content must scroll inside its own containers instead. */}
-        <div className="flex h-10 min-w-0 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
+        {/* The bar wraps when the sub-tabs and the actions don't fit one row,
+            so neither the switcher nor Add interface is squeezed or clipped
+            out of reach on a narrow window. */}
+        <div className="flex min-h-10 min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
           <SegmentedTabs
+            wrap
             value={sub}
             onValueChange={setSub}
             items={[
@@ -637,7 +652,7 @@ function DeviceComponents({
           />
           <div
             ref={setBarSlot}
-            className="ml-auto flex shrink-0 items-center gap-2"
+            className="ml-auto flex flex-wrap items-center justify-end gap-2"
           >
             {barAdds.length === 1 ? (
               <Button
@@ -907,34 +922,9 @@ function DeviceOverview({
           } satisfies KvRow,
         ]
       : []),
-    {
-      label: "Rack",
-      value: d.rack ? (
-        <Link to="/racks/$id" params={{ id: d.rack.id }} className="link">
-          {d.rack.name}
-        </Link>
-      ) : (
-        dash
-      ),
-    },
-    {
-      label: "Position",
-      value:
-        d.position != null ? (
-          <span className="num">
-            U{d.position}
-            {d.rack_width === "half" && (
-              <span className="text-muted-foreground">
-                {" "}
-                · {d.rack_side || "left"} half
-              </span>
-            )}
-          </span>
-        ) : (
-          dash
-        ),
-    },
-    { label: "Face", value: d.face || dash },
+    // A device sits in a rack or a cabinet, never both: a cabinet's rail
+    // and offset stand where a rack's unit and face do.
+    ...(d.cabinet ? cabinetRows(d, d.cabinet) : rackRows(d)),
     ...(visibility.latitude || visibility.longitude
       ? [
           {
@@ -1078,7 +1068,11 @@ function DeviceOverview({
         <h2 className="text-sm font-semibold">Location</h2>
         <div className="flex items-center gap-1.5">
           <ShowOnSiteMap deviceId={d.id} hasCoords />
-          <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
+          <ShowOnFloorPlan
+            deviceId={d.id}
+            rackId={d.rack?.id}
+            cabinetId={d.cabinet?.id}
+          />
         </div>
       </div>
       <div className="h-64 overflow-hidden rounded-b-lg">
@@ -1122,6 +1116,7 @@ function DeviceOverview({
             <DeviceMiniTopology deviceId={d.id} />
             <DeviceTunnelsCard deviceId={d.id} />
             <DeviceRackCard device={d} />
+            <DeviceCabinetCard device={d} />
           </div>
         </div>
       ) : (
@@ -1137,10 +1132,86 @@ function DeviceOverview({
           <DeviceMiniTopology deviceId={d.id} />
           <DeviceTunnelsCard deviceId={d.id} />
           <DeviceRackCard device={d} />
+          <DeviceCabinetCard device={d} />
         </div>
       )}
     </div>
   )
+}
+
+/** The Location card's rack rows: the rack, the unit and the face. */
+function rackRows(d: Device): KvRow[] {
+  return [
+    {
+      label: "Rack",
+      value: d.rack ? (
+        <Link to="/racks/$id" params={{ id: d.rack.id }} className="link">
+          {d.rack.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Position",
+      value:
+        d.position != null ? (
+          <span className="num">
+            U{d.position}
+            {d.rack_width === "half" && (
+              <span className="text-muted-foreground">
+                {" "}
+                · {d.rack_side || "left"} half
+              </span>
+            )}
+          </span>
+        ) : (
+          dash
+        ),
+    },
+    { label: "Face", value: d.face || dash },
+  ]
+}
+
+/** The Location card's cabinet rows: the cabinet, the rail and the offset
+ * from the rail's left end. */
+function cabinetRows(
+  d: Device,
+  cabinet: NonNullable<Device["cabinet"]>
+): KvRow[] {
+  return [
+    {
+      label: "Cabinet",
+      value: (
+        <Link to="/cabinets/$id" params={{ id: cabinet.id }} className="link">
+          {cabinet.name}
+        </Link>
+      ),
+    },
+    {
+      label: "Rail",
+      value: d.din_rail ? (
+        <span>
+          {d.din_rail.label}
+          <span className="text-muted-foreground">
+            {" "}
+            · {PROFILE_LABELS[d.din_rail.profile]}
+          </span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Offset",
+      value:
+        d.din_offset_mm != null ? (
+          <span className="num">{fmtMm(d.din_offset_mm)} mm</span>
+        ) : (
+          dash
+        ),
+    },
+  ]
 }
 
 /** Where the device physically sits - its rack drawn with this device
@@ -1337,253 +1408,6 @@ interface ListResp<T> {
   results: T[]
 }
 
-function DeviceIpsPane({
-  deviceId,
-  deviceName,
-  canAddIp,
-  canAssignIp,
-  canChangeDevice,
-}: {
-  deviceId: string
-  deviceName: string
-  canAddIp: boolean
-  canAssignIp: boolean
-  canChangeDevice: boolean
-}) {
-  const qc = useQueryClient()
-  const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
-  const q = useQuery({
-    queryKey: ["device-ips", deviceId],
-    queryFn: () => api<ListResp<IPAddress>>(`/api/devices/${deviceId}/ips/`),
-  })
-  const rows = q.data?.results ?? []
-
-  // Per-IP monitoring status - shares the device-checks fetch with the header
-  // badge and Overview summary (same query key). Keyed by IP id for the column.
-  const checksQ = useQuery({
-    queryKey: ["device-checks", deviceId],
-    queryFn: () =>
-      api<DeviceChecksResponse>(`/api/monitoring/devices/${deviceId}/checks/`),
-  })
-  const monByIp = useMemo(() => {
-    const m: Record<string, PrefixIpStatus> = {}
-    for (const ip of checksQ.data?.ips ?? []) m[ip.id] = ip
-    return m
-  }, [checksQ.data])
-
-  // PATCH the device's primary/secondary/management slots, then refresh both
-  // the IPs list (designation badges) and the device header.
-  const patchDesignation = useCallback(
-    async (body: Record<string, string | null>, successMsg: string) => {
-      try {
-        await api(`/api/devices/${deviceId}/`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        })
-        await Promise.all([
-          qc.invalidateQueries({ queryKey: ["device-ips", deviceId] }),
-          qc.invalidateQueries({ queryKey: ["device", deviceId] }),
-        ])
-        toast.success(successMsg)
-      } catch (e) {
-        apiErrorToast(e, "Couldn't update designation")
-      }
-    },
-    [deviceId, qc]
-  )
-
-  const columns = useMemo<ColumnDef<IPAddress>[]>(() => {
-    const cols = buildIpColumns<IPAddress>({
-      include: [
-        "ip",
-        "status",
-        "dhcp",
-        "role",
-        "vlan",
-        "zone",
-        "scope",
-        "dns",
-        "switch",
-        "switch_interface",
-        "description",
-        "tags",
-        "updated",
-      ],
-      copyButton: true,
-    })
-    const insertAfter = (id: string, ...extra: ColumnDef<IPAddress>[]) => {
-      const i = cols.findIndex((c) => c.id === id)
-      cols.splice(i + 1, 0, ...extra)
-    }
-    insertAfter("ip", {
-      id: "designation",
-      header: "Designation",
-      cell: ({ row }) => {
-        const ip = row.original
-        if (ip.is_primary_for_device)
-          return <Badge variant="success">★ Primary</Badge>
-        if (ip.is_oob_for_device) return <Badge variant="secondary">Mgmt</Badge>
-        if (ip.is_secondary_for_device)
-          return <Badge variant="secondary">2nd</Badge>
-        return <span className="text-muted-foreground">-</span>
-      },
-    })
-    insertAfter("status", {
-      id: "monitoring",
-      header: "Monitoring",
-      cell: ({ row }) => {
-        const e = monByIp[row.original.id]
-        if (!e || !e.status)
-          return <span className="text-muted-foreground">-</span>
-        return (
-          <span title={`${e.checks} check${e.checks === 1 ? "" : "s"}`}>
-            <MixedStatusBadge counts={e.counts} status={e.status} />
-          </span>
-        )
-      },
-    })
-    if (canChangeDevice) {
-      cols.push(
-        actionsColumn<IPAddress>({
-          extra: (ip) => <DesignationMenu ip={ip} onPatch={patchDesignation} />,
-        })
-      )
-    }
-    return cols
-  }, [canChangeDevice, patchDesignation, monByIp])
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (q.isError) return <QueryError error={q.error} />
-  return (
-    <div className="space-y-3">
-      {(canAddIp || canAssignIp) && (
-        <div className="flex justify-end gap-2">
-          {canAssignIp && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setAssignTarget({ deviceId, deviceName })}
-            >
-              Assign IP
-            </Button>
-          )}
-          {canAddIp && (
-            <Button size="sm" asChild>
-              <Link to="/ips/new" search={{ device: deviceId }}>
-                + Add IP
-              </Link>
-            </Button>
-          )}
-        </div>
-      )}
-      {rows.length === 0 ? (
-        <EmptyState title="No IPs yet.">
-          No IPs assigned to this device.
-        </EmptyState>
-      ) : (
-        <DataTable
-          data={rows}
-          total={q.data?.count}
-          columns={columns}
-          flexColumn="description"
-          tableId="device-ips"
-          // The wide set is available in the Columns menu; only the columns a
-          // device page actually needs at a glance are on by default.
-          initialColumnVisibility={{
-            scope: false,
-            dns: false,
-            switch: false,
-            switch_interface: false,
-            tags: false,
-            updated: false,
-          }}
-        />
-      )}
-      <AssignIpDialog
-        target={assignTarget}
-        onOpenChange={(o) => !o && setAssignTarget(null)}
-      />
-    </div>
-  )
-}
-
-// Per-IP "…" menu for the device IPs pane - sets/clears the device's
-// primary/secondary/management designation slots. Rendered in the
-// RowActions extra slot.
-function DesignationMenu({
-  ip,
-  onPatch,
-}: {
-  ip: IPAddress
-  onPatch: (body: Record<string, string | null>, successMsg: string) => void
-}) {
-  const hasDesignation =
-    ip.is_primary_for_device ||
-    ip.is_secondary_for_device ||
-    ip.is_oob_for_device
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7">
-          <MoreHorizontal className="h-3.5 w-3.5" />
-          <span className="sr-only">Open actions</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          disabled={ip.is_primary_for_device}
-          onSelect={() =>
-            onPatch(
-              { primary_ip_id: ip.id },
-              `${ip.ip_address} set as primary IP`
-            )
-          }
-        >
-          Set as primary
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={ip.is_secondary_for_device}
-          onSelect={() =>
-            onPatch(
-              { secondary_ip_id: ip.id },
-              `${ip.ip_address} set as secondary IP`
-            )
-          }
-        >
-          Set as secondary
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={ip.is_oob_for_device}
-          onSelect={() =>
-            onPatch(
-              { oob_ip_id: ip.id },
-              `${ip.ip_address} set as management IP`
-            )
-          }
-        >
-          Set as management
-        </DropdownMenuItem>
-        {hasDesignation && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => {
-                const body: Record<string, string | null> = {}
-                if (ip.is_primary_for_device) body.primary_ip_id = null
-                if (ip.is_secondary_for_device) body.secondary_ip_id = null
-                if (ip.is_oob_for_device) body.oob_ip_id = null
-                onPatch(body, `Cleared designation for ${ip.ip_address}`)
-              }}
-            >
-              Clear designation
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 function DeviceInterfacesPane({
   deviceId,
   virtualChassis,
@@ -1625,7 +1449,7 @@ function DeviceInterfacesPane({
       [...(vcQuery.data?.members ?? [])].sort((a, b) => {
         const pa = a.vc_position ?? Number.MAX_SAFE_INTEGER
         const pb = b.vc_position ?? Number.MAX_SAFE_INTEGER
-        return pa - pb || a.name.localeCompare(b.name)
+        return pa - pb || naturalCompare(a.name, b.name)
       }),
     [vcQuery.data]
   )
@@ -1669,6 +1493,7 @@ function DeviceInterfacesPane({
       qc.invalidateQueries({ queryKey: ["device-ips", deviceId] })
       qc.invalidateQueries({ queryKey: ["device", deviceId] })
       qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
+      invalidatePortCounts(qc)
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -1714,10 +1539,24 @@ function DeviceInterfacesPane({
     }
     return m
   }, [driftQ.data])
+  // MAC tracking (#284): one fetch for the table's Learned MACs column - this
+  // device's ports, or the whole stack's observation for the stack table.
+  const macsQ = useDeviceMacs(deviceId, "member")
+  const learnedMacs = useMemo(
+    () => learnedByInterface(macsQ.data, { deviceId, view: "member" }),
+    [macsQ.data, deviceId]
+  )
+  const stackMacsQ = useDeviceMacs(deviceId, "observed", {
+    enabled: !!virtualChassis && scope === "stack",
+  })
+  const stackLearnedMacs = useMemo(
+    () => learnedByInterface(stackMacsQ.data, { deviceId, view: "observed" }),
+    [stackMacsQ.data, deviceId]
+  )
   const columns = useMemo<ColumnDef<NestedInterface>[]>(() => {
     // Same columns + same row actions as the whole-stack table (shared builders)
     // - the two views must never drift apart.
-    const actions = buildInterfaceActionsColumn<NestedInterface>({
+    const actions = buildInterfaceActionColumns<NestedInterface>({
       deviceIdFor: () => deviceId,
       canAddIp,
       canAssignIp,
@@ -1735,8 +1574,9 @@ function DeviceInterfacesPane({
         include: DEVICE_INTERFACE_COLUMNS,
         driftByIface,
         planned: plannedMap,
+        learnedMacs,
       }),
-      ...(actions ? [actions] : []),
+      ...actions,
     ]
   }, [
     deviceId,
@@ -1747,9 +1587,9 @@ function DeviceInterfacesPane({
     canConnect,
     canReserve,
     driftByIface,
+    learnedMacs,
   ])
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   return (
     <div className="space-y-3">
@@ -1794,6 +1634,9 @@ function DeviceInterfacesPane({
                 Sync from SNMP
               </Button>
             )}
+            {canSync && learnedMacs && (
+              <RefreshMacsButton deviceId={deviceId} />
+            )}
             {canConnect && (
               <Button size="sm" variant="outline" asChild>
                 <Link to="/cables/new">
@@ -1831,6 +1674,7 @@ function DeviceInterfacesPane({
           loading={stackIfaces.loading || vcQuery.isLoading}
           error={stackIfaces.error ?? (vcQuery.error as Error | null)}
           highlightMemberId={deviceId}
+          learnedMacs={stackLearnedMacs}
           // Same row actions as "This member" - the dialogs below serve both
           // (Assign IP carries the row's own member id).
           actions={{
@@ -1866,7 +1710,15 @@ function DeviceInterfacesPane({
         kindLabel="interface"
         selected={selIfaces}
         onCleared={() => setSelIfaces([])}
-        invalidate={[["device-interfaces", deviceId]]}
+        // The Uplink choice reclassifies ports, so the MAC tables reread.
+        invalidate={[
+          ["device-interfaces", deviceId],
+          ["device-macs"],
+          // An interface page and its MACs tab show the Uplink setting (#306).
+          ["interface"],
+          ["interface-macs"],
+          ["mac"],
+        ]}
         fields={[
           { key: "enabled", label: "Enabled", kind: "bool" },
           { key: "mark_connected", label: "Mark connected", kind: "bool" },
@@ -1899,6 +1751,14 @@ function DeviceInterfacesPane({
             choices: "interface_duplex",
           },
           { key: "mgmt_only", label: "Management only", kind: "bool" },
+          {
+            // One choice, two fields (#284) - see uplinkFields.
+            key: "uplink",
+            label: "Uplink",
+            kind: "options",
+            options: UPLINK_OPTIONS,
+            expand: (v) => uplinkFields(v as UplinkMode),
+          },
           { key: "description", label: "Description", kind: "text" },
         ]}
         tags
@@ -1932,7 +1792,7 @@ function DevicePhotoPortsTab({ device: d }: { device: Device }) {
         No device type - photo ports live on the type's images.
       </p>
     )
-  if (!dt.data) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!dt.data) return <Loading />
   return (
     <div className="grid gap-3">
       <p className="text-[11px] text-muted-foreground">

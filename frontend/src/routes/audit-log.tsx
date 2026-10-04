@@ -434,8 +434,23 @@ function FieldVal({ value, label }: { value: unknown; label?: string }) {
       </span>
     )
   }
+  // A list of lines - a cabinet's rails before and after, one per rail -
+  // reads one per line rather than as a JSON array.
+  if (isLines(value))
+    return (
+      <>
+        {value.map((line, i) => (
+          <span key={i} className="block">
+            {line}
+          </span>
+        ))}
+      </>
+    )
   return <>{fmt(value)}</>
 }
+
+const isLines = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string")
 
 function fmt(v: unknown): string {
   if (v === null || v === undefined || v === "") return "∅"

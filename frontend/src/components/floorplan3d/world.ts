@@ -74,6 +74,18 @@ export interface SceneRack {
   devices: SceneDevice[]
 }
 
+/** A DIN-rail cabinet on a tile: the room draws its enclosure, closed, at
+ * its outer size. The server fills an unrecorded size - the plate plus
+ * 50 mm, 200 mm deep. */
+export interface SceneCabinet {
+  id: string
+  name: string
+  outer_width_mm: number
+  outer_height_mm: number
+  outer_depth_mm: number
+  device_count: number
+}
+
 export interface SceneTile {
   id: string
   x: number
@@ -83,10 +95,12 @@ export interface SceneTile {
   orientation: number
   status: string
   label: string
-  kind: "rack" | "device" | "other"
+  kind: "rack" | "cabinet" | "device" | "other"
   color: string
   is_zone: boolean
   rack: SceneRack | null
+  /** The linked cabinet. Optional so older cached payloads stay valid. */
+  cabinet?: SceneCabinet | null
   /** The linked device's name - labels device tiles like the 2D canvas does
    * (tile label wins, then this). */
   device_name?: string
@@ -261,6 +275,50 @@ export function rackFootprintM(rack: SceneRack): {
   // 42U cabinet is taller than 42U of rail, for exactly this reason.
   const height = mm(rack.u_height * PANEL_MM.uPitch) + RACK_BASE_M + RACK_CAP_M
   return { width, depth, height }
+}
+
+/** A cabinet's enclosure in metres: as wide as its outer width across the
+ * tile's front, as deep as its outer depth front to back, standing its outer
+ * height. Sizes the server left out fall back the way it fills them - the
+ * box never collapses to nothing. */
+export function cabinetBoxM(cabinet: SceneCabinet): {
+  width: number
+  depth: number
+  height: number
+} {
+  const size = (v: number | null | undefined, fallback: number) =>
+    mm(v != null && v > 0 ? v : fallback)
+  return {
+    width: size(cabinet.outer_width_mm, 600),
+    depth: size(cabinet.outer_depth_mm, 200),
+    height: size(cabinet.outer_height_mm, 800),
+  }
+}
+
+/** The twelve edges of a box standing on the floor (y 0…h), centred on x
+ * and z, as 24 points - pairs for a segments line, which is how a cabinet's
+ * outline is drawn. */
+export function boxEdgesM(
+  width: number,
+  height: number,
+  depth: number
+): [number, number, number][] {
+  const x = width / 2
+  const z = depth / 2
+  const corners: [number, number][] = [
+    [-x, -z],
+    [x, -z],
+    [x, z],
+    [-x, z],
+  ]
+  const out: [number, number, number][] = []
+  corners.forEach(([cx, cz], i) => {
+    const [nx, nz] = corners[(i + 1) % 4]
+    out.push([cx, 0, cz], [nx, 0, nz]) // floor ring
+    out.push([cx, height, cz], [nx, height, nz]) // top ring
+    out.push([cx, 0, cz], [cx, height, cz]) // upright
+  })
+  return out
 }
 
 /** 0U gear racked at a position is non-rack-format (a desktop appliance on a
@@ -665,6 +723,10 @@ export function rackViewpoint(
   }
 }
 
+/** The least a device fly-to stands off the faceplate, m - what a 1U gets
+ * on a 1 m rack. */
+export const FACE_STANDOFF_M = 0.1
+
 /**
  * Where to stand to read ONE device's face - the double-click framing, and
  * the device-scale twin of {@link rackViewpoint}.
@@ -678,15 +740,25 @@ export function rackViewpoint(
 export function deviceViewpoint(
   plan: ScenePayload["plan"],
   tile: SceneTile,
-  box: Pick<ReturnType<typeof deviceBoxM>, "y" | "h" | "dx" | "boxH"> & {
+  box: Pick<
+    ReturnType<typeof deviceBoxM>,
+    "y" | "h" | "dx" | "dz" | "dd" | "boxH"
+  > & {
     mountedRear: boolean
   }
 ): { target: [number, number, number]; position: [number, number, number] } {
   const [cx, cz] = cellToWorld(plan, tile.x + tile.w / 2, tile.y + tile.h / 2)
   const rotY = (-tile.orientation * Math.PI) / 180
   const sign = box.mountedRear ? 1 : -1
-  // Close enough to read port labels, far enough that a 10U chassis fits.
-  const dist = Math.min(2.4, Math.max(0.55, box.boxH * 9))
+  // Close enough to read port labels, far enough that a 10U chassis fits -
+  // measured from the rack's centre line, as tuned on 1 m racks, where a 1U
+  // face stands 0.45 m out. A deeper rack moves the face out past that
+  // reach, so never stand closer than FACE_STANDOFF_M to it.
+  const face = Math.abs(box.dz + (box.mountedRear ? box.dd / 2 : -box.dd / 2))
+  const dist = Math.max(
+    Math.min(2.4, Math.max(0.55, box.boxH * 9)),
+    face + FACE_STANDOFF_M
+  )
   const eyeY = box.y + box.h / 2
   // The device's own X offset (half-width gear) rotated into world space.
   const ox = box.dx * Math.cos(rotY)
@@ -1188,12 +1260,13 @@ export function trayJunctions(
   return out
 }
 
-/** The tallest cabinet top in the room (m) - what a tray-less run must clear. */
+/** The tallest cabinet top in the room (m) - a rack's or a DIN-rail
+ * cabinet's - what a tray-less run must clear. */
 export function tallestRackTopM(scene: ScenePayload): number {
   let top = 0
   for (const t of scene.tiles) {
-    if (!t.rack) continue
-    top = Math.max(top, rackFootprintM(t.rack).height)
+    if (t.rack) top = Math.max(top, rackFootprintM(t.rack).height)
+    else if (t.cabinet) top = Math.max(top, cabinetBoxM(t.cabinet).height)
   }
   return top
 }

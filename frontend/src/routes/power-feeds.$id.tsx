@@ -16,17 +16,11 @@ import type { KvRow } from "@/components/kv-card"
 import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { PowerFeedDeleteDialog } from "@/components/power-feed-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { EmbeddedCableTable } from "@/components/embedded-tables"
-import { fmtPower } from "@/components/columns/power-feed-columns"
 
 export const Route = createFileRoute("/power-feeds/$id")({
   component: PowerFeedDetail,
@@ -96,39 +90,22 @@ function Body({ feed: f }: { feed: PowerFeed }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={f.name}
-            badges={<StatusBadge status={f.status} />}
-            subtitle={
-              <>
-                <PanelLink panel={f.power_panel} />
-                {f.rack && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <RackCell rack={f.rack} />
-                  </>
-                )}
-              </>
-            }
-            tags={f.tags.length > 0 && <TagList tags={f.tags} />}
-            statCols={3}
-            stats={
-              <>
-                <DetailStat
-                  label="Rating"
-                  value={<span className="num">{fmtPower(f)}</span>}
-                />
-                <DetailStat label="Type" value={f.type_display} />
-                <DetailStat
-                  label="Max util."
-                  value={<span className="num">{f.max_utilization}%</span>}
-                />
-              </>
-            }
-          />
-          <CustomFieldValues model="powerfeed" values={f.custom_fields} />
-        </>
+        <DetailHero
+          title={f.name}
+          badges={<StatusBadge status={f.status} />}
+          subtitle={
+            <>
+              <PanelLink panel={f.power_panel} />
+              {f.rack && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <RackCell rack={f.rack} />
+                </>
+              )}
+            </>
+          }
+          tags={f.tags.length > 0 && <TagList tags={f.tags} />}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -224,6 +201,11 @@ function FeedOverview({ feed: f }: { feed: PowerFeed }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Feed" rows={details} />
+      <CustomFieldValues
+        model="powerfeed"
+        values={f.custom_fields}
+        layout="cards"
+      />
       <KvCard title="Electrical" rows={electrical} />
       <KvCard title="Record" rows={record} />
       <KvCard title="Notes" rows={notes} />

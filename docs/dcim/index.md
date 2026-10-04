@@ -19,14 +19,15 @@ Manufacturer  →  Device type  →  Device  →  Interfaces  →  Cables
 | Model a switch stack (StackWise, VC, VSF) | **Virtual chassis** | [Virtual chassis](virtual-chassis.md) |
 | Define a hardware model once, reuse it | **Device types / catalog** | [Device catalog](device-catalog.md) |
 | Lay out a rack and mount gear in it | **Racks** | [Racks](racks.md) |
+| Model a DIN-rail cabinet or distribution board | **Cabinets** | [Cabinets](cabinets.md) |
 | Add ports to a device | **Interfaces** | [Interfaces](interfaces.md) |
 | Model LAGs, sub-interfaces, loopbacks | **Virtual interfaces** | [Virtual & aggregate interfaces](virtual-interfaces.md) |
 | Track VMs, clusters and virtual switches | **Virtual machines** | [Virtual machines](../features/virtual-machines.md) |
 | Put an IP on an interface | **IP assignment** | [Assigning IP addresses](ip-assignment.md) |
 | Connect two ports with a cable | **Cabling** | [Cabling & connections](cabling.md) |
-| Draw the room and place the racks | **Floor plans** | [Floor plans](../features/floor-plans.md) |
-| See sites and links on a world map | **Site map** | [Site map](../features/site-map.md) |
-| See what connects to what | **Topology** | [Topology](../features/topology.md) |
+| Draw the room and place the racks | **Maps → Floor plans** | [Floor plans](../features/floor-plans.md) |
+| See sites and links on a world map | **Maps → Site map** | [Site map](../features/site-map.md) |
+| See what connects to what | **Maps → Topology** | [Topology](../features/topology.md) |
 | Track hardware end-of-life dates | **Lifecycle** | [Hardware lifecycle](../features/lifecycle.md) |
 
 ## How the pieces fit together

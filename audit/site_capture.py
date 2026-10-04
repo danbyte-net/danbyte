@@ -35,6 +35,17 @@ def entry_site_id(instance):
         return None
     if path == "id":  # the Site model itself
         return instance.pk
+    from auth_api.site_paths import alternatives
+
+    # The first alternative that reaches a site (a device's, else a VM's).
+    for alt in alternatives(path):
+        site_id = _walk(instance, alt)
+        if site_id is not None:
+            return site_id
+    return None
+
+
+def _walk(instance, path: str):
     from django.core.exceptions import ObjectDoesNotExist
 
     parts = path.split("__")

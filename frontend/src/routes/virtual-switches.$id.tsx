@@ -31,12 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
@@ -126,19 +121,7 @@ function Body({ sw }: { sw: VirtualSwitch }) {
       backLabel="Virtual switches"
       title={sw.name}
       presence={{ type: "virtualswitch", id: sw.id }}
-      hero={
-        <DetailHero
-          title={sw.name}
-          description={sw.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Kind"
-              value={<span className="text-xs">{sw.kind_display || "-"}</span>}
-            />
-          }
-        />
-      }
+      hero={<DetailHero title={sw.name} description={sw.description} />}
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "networks", label: "Networks", count: nets.length },

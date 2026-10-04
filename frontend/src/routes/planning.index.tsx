@@ -22,6 +22,7 @@ import { TagList } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { BoardDialog } from "@/components/planning/board-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/planning/")({
   component: BoardListPage,
@@ -73,7 +74,7 @@ function BoardListPage() {
       }
     return [...c.entries()]
       .map(([value, e]) => ({ value, label: e.label, count: e.count }))
-      .sort((a, b) => a.label.localeCompare(b.label)) as FacetOption[]
+      .sort((a, b) => naturalCompare(a.label, b.label)) as FacetOption[]
   }, [allRows])
 
   const del = useMutation({

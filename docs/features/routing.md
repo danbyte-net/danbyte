@@ -4,7 +4,8 @@ icon: lucide/route
 
 # Routing
 
-Routing is where you write down **how a device forwards** - the static routes
+Routing is where you write down **how a device or a virtual machine
+forwards** - the static routes
 it carries, and the policy objects every routing protocol shares: prefix
 lists, communities, community lists, AS-path lists, routing policies (route
 maps) and the keychains sessions authenticate with. BGP, OSPF, IS-IS, EIGRP
@@ -14,10 +15,11 @@ FRR, rendered from an opt-in demo fabric, are on
 
 Two ideas run through the whole module:
 
-- **Catalogs are tenant-wide, instances are per device.** A prefix list or a
+- **Catalogs are tenant-wide, instances are per box.** A prefix list or a
   policy is named once and used on every router; a static route, a BGP
-  session or an OSPF interface belongs to one device and is scoped to its
-  site like the device is.
+  session or an OSPF interface belongs to one device or one virtual machine
+  and is scoped to its site like that box is. See
+  [Routing on virtual machines](#routing-on-virtual-machines).
 - **Danbyte renders what is modelled; the template is yours.** Everything
   here reaches a device's [config template](export-templates.md#rendering-one-device)
   as a `routing` block, so one template renders the whole box - in whatever
@@ -113,12 +115,12 @@ Deleting a profile leaves BFD on and the timers at the default.
 
 ## Static routes
 
-**Routing → Static routes**, or a device's **Routing** tab. One row is one
-path on one device:
+**Routing → Static routes**, or a device's or VM's **Routing** tab. One row
+is one path on one box:
 
 | Field | What it records |
 |---|---|
-| **Device** | The router. |
+| **Runs on** | The router: a device or a virtual machine. |
 | **VRF** | The table the route sits in; blank is the global table. |
 | **Prefix** | The destination, in CIDR, normalised the way the box prints it. |
 | **IPAM prefix** | Optionally, the prefix object this route names, so the prefix's page can show who routes it. |
@@ -129,7 +131,7 @@ path on one device:
 | **Status** | Your own status catalog; the built-ins are active, planned and disabled. |
 
 The same prefix through two next hops is two rows (ECMP); the same path twice
-is refused. A next-hop interface on another device is refused too.
+is refused. A next-hop interface on another box is refused too.
 
 ## BGP
 
@@ -358,9 +360,34 @@ the `vpnv4-unicast` family on the PE's global instance carries the routes
 to the other PEs. The [FRR template](routing-templates.md#frr) prints all
 of it.
 
+## Routing on virtual machines
+
+A virtual router, a firewall VM or a route server runs the same routing a
+hardware box does, so a virtual machine gets a **Routing** tab too. Static
+routes, BGP, OSPF, IS-IS and EIGRP work there exactly as on a device:
+
+- Every static route and protocol instance **runs on** a device or a virtual
+  machine - one of the two, never both. The form asks which, and opening it
+  from the box's own Routing tab sets it for you.
+- Ports and addresses come from the same box. A VM's route, unnumbered BGP
+  session or IGP interface points at one of the VM's interfaces; a session's
+  local address must be assigned to that VM.
+- The uniqueness rules are the same per box: one BGP instance per VM and
+  table, one OSPF process per VM, table and version, and so on.
+- Site scoping follows the VM's site. A VM with no site is shared, like the
+  VM itself: site-scoped users can see its routing but not change it.
+- A VM's [config template](export-templates.md) gets the same `routing` block
+  as a device's, built from the VM's rows. The fabric parts stay empty for a
+  VM: VTEP and LDP are device-only, and so are first-hop groups and Ethernet
+  segments.
+- Deleting the VM deletes its routing, as deleting a device does.
+
+BGP sessions to or from a VM do not draw on the topology map, which shows
+devices only.
+
 ## Rendering a config
 
-Every device's render context carries a `routing` block, alongside `device`,
+Every device's and virtual machine's render context carries a `routing` block, alongside `device`,
 `interfaces` and `ip_addresses` (see [export templates](export-templates.md#rendering-one-device)
 for the address filters that turn an address into a mask or a length):
 
@@ -568,32 +595,38 @@ it.
 | `/api/routing/communities/` | Communities. |
 | `/api/routing/keychains/` | Keychains; `psk` is write-only, `reveal-psk` is the audited read. |
 | `/api/routing/bfd-profiles/` | BFD profiles; every instance, enrolled interface, session and peer group takes `bfd_profile_id`. |
-| `/api/routing/static-routes/` | Static routes; filter by `device`, `vrf` (`global` for the global table), `kind`, `status`, `site`, `prefix_obj`. |
-| `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `vrf`, `asn`, `site`, `status`. |
+| `/api/routing/static-routes/` | Static routes; filter by `device`, `virtual_machine`, `vrf` (`global` for the global table), `kind`, `status`, `site`, `prefix_obj`. |
+| `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `virtual_machine`, `vrf`, `asn`, `site`, `status`. |
 | `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`, `?ospf_instance=`, `?isis_instance=`, `?eigrp_instance=`); an address family or IGP instance accepts `redistributions: [...]`. |
 | `/api/routing/bgp-peer-groups/` | Peer groups. |
-| `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `instance`, `vrf` (`global`), `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
+| `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `virtual_machine`, `instance`, `vrf` (`global`), `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
 | `/api/routing/ospf-areas/` | Areas. |
-| `/api/routing/ospf-instances/`, `…/isis-instances/` | Instances with their interfaces and redistributions nested; accept `redistributions: [...]`; filter by `device`, `vrf`, `site`, `status`. |
+| `/api/routing/ospf-instances/`, `…/isis-instances/` | Instances with their interfaces and redistributions nested; accept `redistributions: [...]`; filter by `device`, `virtual_machine`, `vrf`, `site`, `status`. |
 | `/api/routing/ospf-interfaces/`, `…/isis-interfaces/` | Enrolled interfaces (`?instance=`, `?interface=`, `?area=`). |
-| `/api/routing/eigrp-instances/`, `…/eigrp-interfaces/` | EIGRP instances (interfaces and redistributions nested; filter by `device`, `vrf`, `site`, `status`) and their enrolled interfaces (`?instance=`, `?interface=`). |
+| `/api/routing/eigrp-instances/`, `…/eigrp-interfaces/` | EIGRP instances (interfaces and redistributions nested; filter by `device`, `virtual_machine`, `vrf`, `site`, `status`) and their enrolled interfaces (`?instance=`, `?interface=`). |
 | `/api/routing/vteps/` | One per device, VNI memberships nested; filter by `device`, `site`, `status`, `l2vpn`. |
 | `/api/routing/vtep-memberships/` | The VNI rows on their own (`?vtep=`, `?l2vpn=`). |
 | `/api/l2vpns/` | Gains `vrf`/`vrf_id` and `vtep_count`; `?vxlan=1` keeps the VXLAN types, `?vrf=` the L3VNIs of a VRF, `?vlan=` those terminating on a VLAN. |
 
 Child rows - address families, OSPF, IS-IS and EIGRP interface rows, VTEP
 memberships - carry their parent read-only on their own endpoints
-(`instance` or `vtep`: id, device, and the process or ASN), so a sync can
+(`instance` or `vtep`: id, device or virtual machine, and the process or
+ASN), so a sync can
 tell from the collection which parent a row is under; `instance_id` /
 `vtep_id` stay the write side.
+
+A row on a virtual machine is written with `virtual_machine_id` in place of
+`device_id`, and its ports with `vm_interface_id` (sessions and IGP
+interfaces) or `next_hop_vm_interface_id` (static routes). Reads carry both
+`device` and `virtual_machine`, one of them null, plus `site`.
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
 supports CSV import/export and bulk delete like the rest of Danbyte. A CSV
 row without an `id` is matched on what makes it unique - a static route by
 device, prefix and next hop, a BGP instance by device and VRF, a session by
 instance and remote address, an OSPF or IS-IS instance by device and
-process, a VTEP by its device; catalogs by name. An ASN is written as its
-number.
+process, a VTEP by its device; catalogs by name. Rows on a virtual machine
+match on their `id`. An ASN is written as its number.
 
 The routing that touches an object shows on that object's page: a device's
 **Routing** tab, an interface's **Routing** card, an ASN's **BGP sessions**

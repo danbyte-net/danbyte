@@ -14,12 +14,7 @@ import type { KvRow } from "@/components/kv-card"
 import { LocalityBadge } from "@/components/locality-badge"
 import { QueryError } from "@/components/query-error"
 import { IpRoleDeleteDialog } from "@/components/ip-role-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedIpTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -89,31 +84,15 @@ function Body({ role: r }: { role: IPRole }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={<ColorBadge name={r.name} color={r.color || undefined} />}
-            subtitle={flags.map((f) => (
-              <Badge key={f} variant="secondary">
-                {f}
-              </Badge>
-            ))}
-            description={r.description}
-            stats={
-              <DetailStat
-                label="IPs"
-                value={<span className="num">{r.usage_count}</span>}
-              />
-            }
-          />
-
-          <section className="shrink-0 border-b border-border px-6 py-4">
-            <p className="text-sm text-muted-foreground">
-              {r.usage_count > 0
-                ? `${r.usage_count} IP${r.usage_count === 1 ? "" : "s"} currently carry this role.`
-                : "No IPs use this role yet."}
-            </p>
-          </section>
-        </>
+        <DetailHero
+          title={<ColorBadge name={r.name} color={r.color || undefined} />}
+          subtitle={flags.map((f) => (
+            <Badge key={f} variant="secondary">
+              {f}
+            </Badge>
+          ))}
+          description={r.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -147,7 +126,7 @@ function Body({ role: r }: { role: IPRole }) {
 }
 
 /** IP-role attributes that used to crowd the header, grouped into tables. Only
- * the colored name badge, flags, description and IP count stay up top. */
+ * the colored name badge, flags, description and usage line stay up top. */
 function IpRoleOverview({ role: r }: { role: IPRole }) {
   const attributes: KvRow[] = [
     {
@@ -173,6 +152,7 @@ function IpRoleOverview({ role: r }: { role: IPRole }) {
     { label: "Weight", value: <span className="num">{r.weight}</span> },
     { label: "Gateway", value: r.is_gateway ? "Yes" : "No" },
     { label: "Virtual", value: r.is_virtual ? "Yes" : "No" },
+    { label: "IPs", value: <span className="num">{r.usage_count}</span> },
   ]
 
   const record: KvRow[] = [

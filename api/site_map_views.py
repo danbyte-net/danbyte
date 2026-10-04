@@ -10,7 +10,7 @@ the map.
 from __future__ import annotations
 
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -19,7 +19,21 @@ from auth_api import rbac
 from core.models import DeploymentSettings
 
 from .models import CableRoute, Device, Site, SiteMarker
+from .site_map_links import LinkFigures, include_capacity
 from .views import _get_active_tenant
+
+# ``?include=capacity`` on the two line endpoints (#246) - api.site_map_links.
+CAPACITY_PARAMETER = OpenApiParameter(
+    name="include",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    description=(
+        "`capacity`: each line also carries `capacity` (its speed and where the "
+        "figure came from, or null), `links` (the end-to-end links it carries, "
+        "the first 50, each with the device, port and speed at either end) and "
+        "`link_count`."
+    ),
+)
 
 # The exact URL the OSM tile usage policy mandates for their servers, and the
 # attribution + "report a map issue" link it requires/recommends. Only used
@@ -330,12 +344,15 @@ def _termination_site_id(term):
     summary="Derived site-to-site connection edges (circuits, tunnels, cables)",
     tags=["site-map"],
     request=None,
+    parameters=[CAPACITY_PARAMETER],
     responses={
         200: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
             description=(
                 "Connection edges between placed sites, derived from circuits, "
-                "tunnels, and cross-site cables; each independently RBAC-scoped."
+                "tunnels, and cross-site cables; each independently RBAC-scoped. "
+                "With `include=capacity`, each edge also carries `capacity`, "
+                "`links` and `link_count`."
             ),
         )
     },
@@ -355,7 +372,8 @@ def site_map_connections(request):
       placed sites, aggregated per site pair (a bundle is one edge).
 
     Each kind is independently RBAC-scoped, and the embedded sites are
-    intersected with the caller's site-view set.
+    intersected with the caller's site-view set. ``?include=capacity`` adds
+    each edge's speed and the links behind it (``api.site_map_links``).
     """
     from .models import Circuit, Tunnel
     from .topology_views import _physical_links
@@ -363,6 +381,16 @@ def site_map_connections(request):
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=400)
+
+    # Every cable hop of the tenant, loaded once: the cable lines below, and
+    # with ?include=capacity what each circuit is cabled to and where each
+    # trunk's strands come out.
+    cable_view = rbac.row_filter(request.user, tenant, "cable", "view")
+    links = _physical_links(tenant) if cable_view is not None else []
+    figures = (
+        LinkFigures(request.user, tenant, links, cable_view=cable_view is not None)
+        if include_capacity(request) else None
+    )
 
     visible_sites = {
         s.id: s
@@ -404,7 +432,7 @@ def site_map_connections(request):
         sa, sz = visible_sites.get(a.site_id), visible_sites.get(z.site_id)
         if not (sa and sz):
             continue
-        edges.append({
+        edge = {
             "id": f"circuit:{c.id}",
             "kind": "circuit",
             "name": c.cid,
@@ -418,7 +446,10 @@ def site_map_connections(request):
                 "type": c.type.name if c.type_id else None,
                 "commit_rate_kbps": c.commit_rate_kbps,
             },
-        })
+        }
+        if figures is not None:
+            edge.update(figures.circuit(c, a, z))
+        edges.append(edge)
 
     # ── tunnels ──────────────────────────────────────────────────────────
     tunnels = (
@@ -435,14 +466,14 @@ def site_map_connections(request):
     )
     for t in tunnels:
         by_site: dict = {}
-        hub_site = None
+        hub_site = hub_term = None
         for term in t.terminations.all():
             sid = _termination_site_id(term)
             if sid is None or sid not in visible_sites:
                 continue
-            by_site.setdefault(sid, term.role)
+            by_site.setdefault(sid, term)
             if term.role == "hub":
-                hub_site = sid
+                hub_site, hub_term = sid, term
         sids = list(by_site)
         pairs = []
         if hub_site is not None:
@@ -451,7 +482,7 @@ def site_map_connections(request):
             pairs = [(sids[0], sids[1])]
         # >2 peer sites without a hub: ambiguous mesh - skipped in v1.
         for i, (sa_id, sz_id) in enumerate(pairs):
-            edges.append({
+            edge = {
                 "id": f"tunnel:{t.id}" + (f":{i}" if len(pairs) > 1 else ""),
                 "kind": "tunnel",
                 "name": t.name,
@@ -463,27 +494,34 @@ def site_map_connections(request):
                     "encapsulation": t.encapsulation,
                     "group": t.group.name if t.group_id else None,
                 },
-            })
+            }
+            if figures is not None:
+                term_a = hub_term if sa_id == hub_site else by_site[sa_id]
+                edge.update(figures.tunnel(t, term_a, by_site[sz_id], sa_id, sz_id))
+            edges.append(edge)
 
     # ── cross-site cables, aggregated per site pair ─────────────────────
-    cable_view = rbac.row_filter(request.user, tenant, "cable", "view")
     if cable_view is not None:
         # Which geographic routes each cable follows - so a bundle can draw
         # along real geometry.
         routes_by_cable = _routes_by_cable(tenant)
         pair_cables: dict = {}
-        for cab, dev_a, _pa, _ka, dev_b, _pb, _kb in _physical_links(tenant):
+        for hop in links:
+            cab, dev_a, _pa, _ka, dev_b, _pb, _kb = hop
             sa_id, sz_id = dev_a.site_id, dev_b.site_id
             if not sa_id or not sz_id or sa_id == sz_id:
                 continue
             if sa_id not in visible_sites or sz_id not in visible_sites:
                 continue
             key = tuple(sorted((str(sa_id), str(sz_id))))
-            pair_cables.setdefault(key, {"a": sa_id, "z": sz_id, "cables": {}})
-            pair_cables[key]["cables"][str(cab.id)] = cab
+            entry = pair_cables.setdefault(
+                key, {"a": sa_id, "z": sz_id, "cables": {}, "hops": []}
+            )
+            entry["cables"][str(cab.id)] = cab
+            entry["hops"].append(hop)
         for key, entry in pair_cables.items():
             cables = list(entry["cables"].values())
-            edges.append({
+            edge = {
                 "id": f"cable:{key[0]}:{key[1]}",
                 "kind": "cable",
                 "name": (
@@ -507,7 +545,10 @@ def site_map_connections(request):
                         for c in cables[:10]
                     ],
                 },
-            })
+            }
+            if figures is not None:
+                edge.update(figures.cables(entry["hops"], site_a_id=entry["a"]))
+            edges.append(edge)
 
     return Response({"connections": edges})
 
@@ -526,13 +567,16 @@ def _routes_by_cable(tenant) -> dict:
     summary="Cables drawable on the map, each resolved to two map points",
     tags=["site-map"],
     request=None,
+    parameters=[CAPACITY_PARAMETER],
     responses={
         200: OpenApiResponse(
             response=OpenApiTypes.OBJECT,
             description=(
                 "Every cable with both endpoints resolvable to a coordinate "
                 "(device coords, else site coords), as a drawable segment; "
-                "RBAC: cable/view and both endpoint devices viewable."
+                "RBAC: cable/view and both endpoint devices viewable. With "
+                "`include=capacity`, each cable also carries `capacity`, `links` "
+                "and `link_count`."
             ),
         )
     },
@@ -548,6 +592,8 @@ def site_map_cables(request):
     Endpoint resolution per side: the device's own lat/lng if set, else its
     site's lat/lng (campus OSP within one site still draws). A cable is
     dropped when either side can't resolve. RBAC: ``cable``/``view``.
+    ``?include=capacity`` adds each cable's speed and the end-to-end links
+    its strands carry (``api.site_map_links``).
     """
     from .topology_views import _physical_links
 
@@ -584,9 +630,14 @@ def site_map_cables(request):
         return (sp[0], sp[1]) if sp else None
 
     routes_by_cable = _routes_by_cable(tenant)
+    links = _physical_links(tenant)
+    figures = (
+        LinkFigures(request.user, tenant, links, cable_view=True, devices=viewable_devs)
+        if include_capacity(request) else None
+    )
     out = []
     seen = set()
-    for cab, dev_a, pa, ka, dev_b, pb, kb in _physical_links(tenant):
+    for cab, dev_a, pa, ka, dev_b, pb, kb in links:
         if cab.id in seen:
             continue  # one segment per cable (first resolvable hop wins)
         if dev_a.id not in viewable_devs or dev_b.id not in viewable_devs:
@@ -596,7 +647,7 @@ def site_map_cables(request):
         if not a_pt or not b_pt:
             continue
         seen.add(cab.id)
-        out.append({
+        row = {
             "id": str(cab.id),
             "label": cab.label or cab.type or "cable",
             "type": cab.type,
@@ -624,5 +675,8 @@ def site_map_cables(request):
             },
             "route_ids": routes_by_cable.get(str(cab.id), []),
             "same_point": a_pt == b_pt,
-        })
+        }
+        if figures is not None:
+            row.update(figures.cable(cab.id))
+        out.append(row)
     return Response({"cables": out})

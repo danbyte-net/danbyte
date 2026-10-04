@@ -116,6 +116,9 @@ class BackupScheduleSerializer(serializers.ModelSerializer):
 
 
 class BackupSerializer(serializers.ModelSerializer):
+    # The manifest summary is a set of figures, not one value a column can
+    # show (see api.list_fields).
+    list_columns_exclude = ("summary",)
     schedule_name = serializers.CharField(source="schedule.name", read_only=True, default=None)
     target_name = serializers.CharField(source="target.name", read_only=True)
     target_kind = serializers.CharField(source="target.kind", read_only=True)

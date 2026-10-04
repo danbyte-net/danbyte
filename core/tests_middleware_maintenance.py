@@ -29,6 +29,21 @@ class MaintenanceMiddlewareTests(TestCase):
         maintenance.leave()
         self.assertEqual(self.client.get("/api/me/").status_code, 200)
 
+    def test_the_health_probe_says_the_site_is_held(self):
+        # Exempt from the flag (the upgrade waits on it), so it says so.
+        self.assertFalse(self.client.get("/api/health/").json()["maintenance"])
+        maintenance.enter("upgrade in progress", upgrade=True)
+        r = self.client.get("/api/health/")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["maintenance"])
+
+    def test_the_held_site_is_not_logged_as_errors(self):
+        # Every request polls through an upgrade; a 503 per poll at ERROR
+        # floods the log for a planned, healthy state.
+        maintenance.enter("upgrade in progress", upgrade=True)
+        with self.assertNoLogs("django.request"):
+            self.assertEqual(self.client.get("/api/me/").status_code, 503)
+
     def test_active_run_is_served_from_the_mirror(self):
         maintenance.enter("restore in progress", "abc")
         maintenance.set_progress("abc", {"id": "abc", "status": "running", "steps": [{"name": "database"}]})

@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { Paginated, Script } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { PEOPLE_ENDPOINT, PEOPLE_GROUPS_ENDPOINT } from "@/lib/people"
 import { SettingsCard } from "@/components/settings/settings-card"
 import { Field } from "@/components/forms/field"
 import { FormSelect } from "@/components/forms/select"
@@ -29,14 +30,16 @@ export function ScriptSharingPanel({
   const [users, setUsers] = useState<string[]>(script.shared_users)
   const [groups, setGroups] = useState<string[]>(script.shared_groups)
 
+  // Tenant members, not /api/users/: sharing a script is not user
+  // administration.
   const people = useQuery({
-    queryKey: ["rbac-users"],
-    queryFn: () => api<Paginated<Named>>("/api/users/"),
+    queryKey: ["people"],
+    queryFn: () => api<Paginated<Named>>(PEOPLE_ENDPOINT),
     enabled: visibility === "users",
   })
   const teams = useQuery({
-    queryKey: ["rbac-groups"],
-    queryFn: () => api<Paginated<Named>>("/api/groups/"),
+    queryKey: ["people-groups"],
+    queryFn: () => api<Paginated<Named>>(PEOPLE_GROUPS_ENDPOINT),
     enabled: visibility === "groups",
   })
 

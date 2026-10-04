@@ -40,6 +40,13 @@ served as `effective_airflow` and drives the 3D room's airflow cones),
     [custom field](../features/tags-and-custom-fields.md), in line with the
     zero-pre-filled-data philosophy.
 
+The form's **Topology card** section sets which lines this device's card
+shows on the topology Diagram. **Inherit** (the default) takes them from
+the map's saved view, the device role or All devices, and previews the
+role's or All devices list; **Custom** gives the device its own list, and
+**Name only** shows just its name. See
+[Card lines](../features/topology.md#card-lines).
+
 You can also add devices in bulk from a spreadsheet - see
 [Import & export](../features/import-export.md).
 
@@ -89,7 +96,7 @@ The default tab lays the device's facts out in four cards:
 | -------------- | ------------------------------------------------------------ |
 | **Device**     | name, status, role, platform, description, comments          |
 | **Hardware**   | device type, serial number, asset tag, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
-| **Location**   | site, location, rack, position, face, coordinates            |
+| **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 
 Technical values (name, serial, asset tag, primary IP, DNS name) have a small
@@ -99,13 +106,16 @@ Devices with ports also get a **Port utilization** card: a segmented bar plus
 counts of **connected** (the port terminates a cable), **reserved** (its cable
 carries the *Planned* status, or the uncabled port holds a direct
 [port reservation](cabling.md#port-reservations)), and **free** ports, broken
-down per kind (interfaces, front ports, rear ports). A port can also be
+down per kind (interfaces and front ports, plus virtual interfaces when they
+are counted). A port can also be
 **marked connected** (a one-click bolt action on the port rows, also a
 checkbox on the interface / front-port / rear-port forms) when a cable is
 physically in it but nobody has documented the cable yet - it counts as
 connected, the row shows an *Undocumented* badge with a green tint, the
 legend shows how many are *undocumented*, and the flag clears itself the
-moment a real cable is attached to the port. Faceplates and photo panels draw
+moment a real cable is attached to the port. The cable dialog lists such a
+port as *marked connected* and lets you pick it, so documenting the cable
+needs no unmarking first. Faceplates and photo panels draw
 such a port dimmed by default; **Settings → Admin → Faceplates → Light up
 ports marked connected** makes them draw it lit, like a cabled one. The same
 card's **Show interface prefixes on rendered faceplates** prints the derived
@@ -131,6 +141,39 @@ the single port directly when the far end isn't known yet. Most useful on
 patch panels and access switches, where "how full is this thing" is the
 recurring question (`GET /api/devices/<id>/port-utilization/`).
 
+**What counts as a port.** Physical interfaces and front ports, including
+management-only and disabled ones - they are real ports, free or not.
+Wireless radios are physical ports and count too. Left out:
+{ #what-counts-as-a-port }
+
+- **Virtual interfaces** - SVIs, LAGs, loopbacks, tunnels and
+  sub-interfaces: anything ticked *Virtual*, or of type Virtual, Bridge or
+  LAG. The card says how many it left out (`12 virtual · not counted`).
+  **Settings → Component details → Port counting → Count virtual
+  interfaces** counts them, deployment-wide.
+- **Rear ports**, always: a patch panel's rear is the back of the ports its
+  front already counts, so a 24-port panel reads /24. The API still reports
+  them, and the virtual interfaces, per kind.
+- Interfaces whose status is *Not present* or *Decommissioning* leave the
+  math entirely.
+
+The same rule feeds every port figure: this card, the
+[stack card](virtual-chassis.md), the Port utilization page, the Devices
+list **Ports** column, the cable picker's free-ports bar,
+[spec sheets](../features/spec-sheets.md) and
+[port utilization rules](../features/monitoring.md#alert-rules). Each
+response says which basis it used (`count_virtual`).
+
+!!! note "Changed in 0.17"
+    Until 0.17 the total counted every interface and both sides of a patch
+    panel: a 48-port switch with 100 SVIs read 38/148, and a 24-port panel
+    /48. Totals now count physical interfaces and front ports, so most
+    switches and panels read fuller than before. Interfaces of type Virtual
+    or Bridge are now always flagged virtual, like LAGs, so they leave the
+    faceplate and lose Connect and Reserve. The upgrade flags the existing
+    ones, plus the SVIs, loopbacks and tunnels SNMP discovery created
+    without a type, going by what their last poll reported.
+
 The card is interactive: **hovering** a legend entry (connected / reserved /
 free / undocumented) highlights the matching ports on the Panel above it -
 on the photo faceplate and the rendered one alike - and **clicking** it
@@ -142,10 +185,13 @@ and *Mark connected* is bulk-editable, so ticking a whole undocumented
 panel is one selection.
 
 The estate-wide view lives at **DCIM → Connections → Port utilization**:
-every device with ports, fullest first, with the same
-connected/reserved/free split, site/role/type facets, search and export -
-so the patch panel about to run out is the first row you see
-(`GET /api/devices/port-utilization/`). The **Devices list** carries the same
+every device with counted ports, fullest first, with the same
+connected/reserved/free split, its site and rack, site/rack/role/type
+facets, search and export - so the patch panel about to run out is the
+first row you see (`GET /api/devices/port-utilization/`). It lists only the
+devices you can view. `?site=<id>` or `?rack=<id>` opens it with that facet
+ticked. A device with nothing counted - a router with only loopbacks - has
+no fill level, so it is not listed. The **Devices list** carries the same
 number as a **Ports** bar column (like the prefix utilization bar), and
 **port utilization rules** on the Alerts → Rules tab can notify when a
 device's fill crosses a threshold - see
@@ -157,8 +203,9 @@ monitored, a **Monitoring** summary (roll-up badge + per-IP grid) appears at the
 The Devices list also has a **Monitoring** column rolling that status up per
 device. Where the device physically sits - its **rack elevation** with this
 device highlighted - is drawn compactly (front **and** rear side by side) in the
-right column; it's hidden for unracked devices. If the device's **type** has a
-rack-face image, that front/rear photo shows below the cards too.
+right column; a device in a DIN-rail cabinet gets the cabinet's plate instead,
+highlighted the same way. It's hidden for a device in neither. If the device's
+**type** has a rack-face image, that front/rear photo shows below the cards too.
 
 ### Images
 
@@ -257,12 +304,21 @@ numbers on top, even below, banked in twelves), media groups split where the
 connector type changes, and color carries link state UniFi-style: sky for
 10G+, emerald for 1G, amber below that, neutral for free ports, dashed for
 disabled. Trunk ports carry a top notch. Hover any port for its name, type,
-speed, VLAN (access/trunk + native), and IPs - click to open the interface.
+speed, far end (the device and port its cable reaches), VLAN (access/trunk +
+native), and IPs - the fields and their order are set under **Settings →
+Component details** - and click to open the interface.
 
 Below the panel sits the **Topology card**: **Paths** lists one flat
 end-to-end strip per cabled port (panels crossed `front ⇄ rear`, segments in
-the cable's color); **Map** shows the React Flow neighbourhood; *Full map*
-opens the [topology page](../features/topology.md) focused here. On the
+the cable's color); **Map** draws the 1-hop neighbourhood as the topology
+Diagram does - each neighbour a card in its role's color with its card
+lines, port names and addresses on their own cable, this device outlined,
+LLDP links seen with no cable dashed (click one to make it a cable), and a
+**Legend** chip in the corner ([Trace maps](../features/topology.md#trace-maps));
+**Open in Topology** opens the [topology page](../features/topology.md)
+focused here.
+Its header counts the runs and any LLDP links seen with no cable; a run
+that dead-ends is marked **Incomplete**. On the
 **Interfaces** tab, every cabled row carries a **trace** button (the same
 strip in a dialog) and uncabled physical rows a ghosted **connect** button
 that pre-seeds the cable form with the port as side A.
@@ -288,6 +344,21 @@ power / console / aux / front / rear marker connects a cable in place - see
 [Cabling](cabling.md#connecting-from-a-port). Removing a module stays on the
 Hardware tab.
 
+**Part status.** A hardware marker - a disk, a PSU, a fan - wears its part's
+status, and the status can be changed wherever the marker shows: on the
+device page's photo panel, on a [rack's elevation](racks.md#live-ports-on-the-elevation),
+on a [cabinet's plate](cabinets.md), and on the part's card in the
+[3D room](../features/floor-plans.md#the-3d-room-view), a rack's 3D view and a
+cabinet's. The part's card lists the statuses the catalog offers inventory
+items as pills, the current one ticked; press one to set it. A
+**right-click** on the marker opens the same choices as a menu. The marker
+recolours at once in every view; if the server refuses, it goes back. The
+choices show only to users who may change inventory items, and the server
+checks each part against the user's scope, as for any edit; the change is in
+the part's change log. A port's state is not set this way - it comes from
+its cable and its enabled flag.
+{ #part-status }
+
 Racked devices also show a **Rack** card - the whole rack drawn with this
 device highlighted, linking to the [rack page](racks.md).
 
@@ -300,15 +371,23 @@ source of truth stays yours.
 
 ### The panel's key
 
-The **speed ramp is always the full scale**, FE → 400G+, at a fixed width. It's a
+The **speed ramp is always the full scale**, <100M → 400G+, at a fixed width. It's a
 scale, and a scale only means something if it reads identically on every page -
 so it doesn't shrink to the speeds on the panel in front of you. (It briefly did.
 With two speeds present, two segments split a fixed-width bar into two enormous
-slabs, which looked like a different control rather than a shorter one.)
+slabs, which looked like a different control rather than a shorter one.) It is
+the same scale the topology map's *Speed* colouring uses.
+
+!!! note "Changed in 0.17"
+    The ramp gained a **100M** tier. Everything below 1G used to share one
+    amber tier, *FE*; 100M up to 1G keeps that amber, and anything slower -
+    a 10M port, a 50M circuit - is now **<100M**, a darker amber. A speed
+    stored as a bare number is read as kbps, as the server reads it.
 
 The **hardware key** does adapt, because its entries are chips and a shorter list
 is just a shorter list: a server whose photo panel is nothing but disk bays gets
-`Active · Empty`, not the tenant's whole inventory-status catalog.
+`Active · Empty`, not the tenant's whole inventory-status catalog. Each status
+is its pill, in the catalog's colour.
 
 A virtual chassis draws one key for the whole stack, unioning what its members
 drew. In the [3D room](../features/floor-plans.md#the-3d-room-view) the key is
@@ -382,7 +461,9 @@ device type - supports bulk editing. Tick rows and a floating bar appears:
 
 Changes go through `POST /api/<component>/bulk-update/` (`{ids, fields}`) and
 `bulk-delete/` (`{ids}`) - allow-listed fields per type, tenant-scoped,
-audited in the change log like any other edit.
+audited in the change log like any other edit. Edit and Delete send more than
+1000 rows 1000 at a time; **Rename** and **Clone** take at most 1000 rows (see
+[Large selections](../features/table-preferences.md#large-selections)).
 
 ## Spec sheet
 

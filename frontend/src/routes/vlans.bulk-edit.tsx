@@ -3,13 +3,16 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type SiteOption,
-  type TagOption,
-  type VLANBulkUpdateFields,
-  type ZoneOption,
+import { api } from "@/lib/api"
+import type {
+  Paginated,
+  SiteOption,
+  StatusOption,
+  TagOption,
+  VLANBulkUpdateFields,
+  VLANGroupOption,
+  VRFOption,
+  ZoneOption,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -20,8 +23,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { VrfCell } from "@/components/cells/vrf-cell"
+import { FieldEditor, useFieldEditorOptions } from "@/components/forms"
+import type { BulkFieldSpec } from "@/components/forms"
 import { EditPageShell } from "@/components/edit-page-shell"
+import { StatusBadge } from "@/components/status-badge"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/vlans/bulk-edit")({
@@ -33,6 +41,11 @@ export const Route = createFileRoute("/vlans/bulk-edit")({
 
 const KEEP = "__keep__"
 const NONE = "__none__"
+// The endpoint also takes a group move (#176).
+type BulkFields = VLANBulkUpdateFields & { group_id?: string | null }
+const DESCRIPTION: BulkFieldSpec[] = [
+  { key: "description", label: "Description", kind: "text" },
+]
 
 function BulkEditVlansPage() {
   const { ids: idsCsv } = Route.useSearch()
@@ -40,14 +53,31 @@ function BulkEditVlansPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
 
+  const [statusId, setStatusId] = useState<string>(KEEP)
   const [siteId, setSiteId] = useState<string>(KEEP)
+  const [groupId, setGroupId] = useState<string>(KEEP)
   const [zoneId, setZoneId] = useState<string>(KEEP)
+  const [vrfId, setVrfId] = useState<string>(KEEP)
+  // undefined = keep; a string (even "") is written to every row.
+  const [description, setDescription] = useState<string | undefined>()
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
 
+  const statuses = useQuery({
+    queryKey: ["statuses", "vlan"],
+    queryFn: () =>
+      api<Paginated<StatusOption>>("/api/statuses/?available_to=vlan&picker=1"),
+    staleTime: 5 * 60_000,
+  })
   const sites = useQuery({
     queryKey: ["sites-picker"],
     queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
+    staleTime: 10 * 60_000,
+  })
+  const groups = useQuery({
+    queryKey: ["vlan-groups-picker"],
+    queryFn: () =>
+      api<Paginated<VLANGroupOption>>("/api/vlan-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const zones = useQuery({
@@ -55,19 +85,30 @@ function BulkEditVlansPage() {
     queryFn: () => api<Paginated<ZoneOption>>("/api/zones/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    staleTime: 10 * 60_000,
+  })
   const tags = useQuery({
     queryKey: ["tags-picker"],
     queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
+  const editorOptions = useFieldEditorOptions(DESCRIPTION)
 
   const back = () => nav({ to: "/vlans" })
 
   const m = useMutation({
     mutationFn: () => {
-      const fields: VLANBulkUpdateFields = {}
+      const fields: BulkFields = {}
+      if (statusId !== KEEP)
+        fields.status_id = statusId === NONE ? null : statusId
       if (siteId !== KEEP) fields.site_id = siteId === NONE ? null : siteId
+      if (groupId !== KEEP) fields.group_id = groupId === NONE ? null : groupId
       if (zoneId !== KEEP) fields.zone_id = zoneId === NONE ? null : zoneId
+      if (vrfId !== KEEP) fields.vrf_id = vrfId === NONE ? null : vrfId
+      if (description !== undefined) fields.description = description
       if (addTags.length) fields.add_tag_ids = addTags
       if (removeTags.length) fields.remove_tag_ids = removeTags
       if (Object.keys(fields).length === 0) {
@@ -118,6 +159,22 @@ function BulkEditVlansPage() {
         }}
         className="grid gap-4"
       >
+        <Field label="Status">
+          <Select value={statusId} onValueChange={setStatusId}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={KEEP}>(keep)</SelectItem>
+              <SelectItem value={NONE}>No status</SelectItem>
+              {statuses.data?.results.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  <StatusBadge status={s} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         <Field label="Site">
           <Select value={siteId} onValueChange={setSiteId}>
             <SelectTrigger className="w-full">
@@ -134,6 +191,30 @@ function BulkEditVlansPage() {
             </SelectContent>
           </Select>
         </Field>
+        <Field label="Group">
+          <Select value={groupId} onValueChange={setGroupId}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={KEEP}>(keep)</SelectItem>
+              <SelectItem value={NONE}>No group</SelectItem>
+              {groups.data?.results.map((g) => (
+                <SelectItem
+                  key={g.id}
+                  value={g.id}
+                  aside={
+                    <span className="num text-xs text-muted-foreground">
+                      {g.min_vid}–{g.max_vid}
+                    </span>
+                  }
+                >
+                  {g.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         <Field label="Zone">
           <Select value={zoneId} onValueChange={setZoneId}>
             <SelectTrigger className="w-full">
@@ -144,12 +225,36 @@ function BulkEditVlansPage() {
               <SelectItem value={NONE}>No zone</SelectItem>
               {zones.data?.results.map((z) => (
                 <SelectItem key={z.id} value={z.id}>
-                  {z.name}
+                  <ColorBadge name={z.name} color={z.color || undefined} />
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
+        <Field label="VRF">
+          <Select value={vrfId} onValueChange={setVrfId}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={KEEP}>(keep)</SelectItem>
+              <SelectItem value={NONE}>No VRF</SelectItem>
+              {vrfs.data?.results.map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  <VrfCell vrf={v} linked={false} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <FieldEditor
+          spec={DESCRIPTION[0]}
+          mode="keep"
+          value={description}
+          onChange={(v) => setDescription(String(v ?? ""))}
+          onClear={() => setDescription(undefined)}
+          options={editorOptions}
+        />
         <Field label="Add tags">
           <TagMultiSelect
             options={tags.data?.results ?? []}

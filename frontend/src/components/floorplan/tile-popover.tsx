@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
+import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 
 import {
@@ -15,26 +16,33 @@ import {
   type Rack,
   type ImagePorts,
 } from "@/lib/api"
+import { cabinetState } from "@/components/floorplan/cabinet-tile"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { Loading } from "@/components/loading"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
 import {
   formatCustomValue,
   useCustomFieldDefs,
 } from "@/components/custom-field-display"
-import { tileName, utilizationColor } from "@/components/floorplan/floor-canvas"
+import { tileName } from "@/components/floorplan/floor-canvas"
+import { CapacityBar } from "@/components/cells/capacity-bar"
+import { PortsFigure } from "@/components/cells/ports-figure"
+import { PowerFigure } from "@/components/cells/power-figure"
 import { FaceplateView } from "@/components/device-faceplate"
 import type { FaceplateSide } from "@/lib/faceplate-layout"
 import { useDateFormat } from "@/lib/datetime"
+import { capacityRatio, hasPowerData } from "@/lib/rack-capacity"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
 
-/** The linked object, once fetched. Rack and Device share enough shape
- * (role/status/description/tags/custom_fields) that the linked_* fields work for
- * both; the ones only one of them has simply render null on the other. */
+/** The linked object, once fetched. Rack, Cabinet and Device share enough
+ * shape (role/status/description/tags/custom_fields) that the linked_* fields
+ * work for all three; the ones only some of them have simply render null on
+ * the others. */
 export type LinkedDetail = Partial<Rack> & Partial<Device>
 
 /** Which link kinds carry enough detail to be worth fetching. */
@@ -48,11 +56,16 @@ function Stamp({ iso }: { iso: string }) {
 
 const DETAIL_ENDPOINT: Record<string, string> = {
   rack: "/api/racks",
+  cabinet: "/api/cabinets",
   device: "/api/devices",
 }
 
 /** Which custom-field model a link kind maps to, for formatting cf_* values. */
-const CF_MODEL: Record<string, string> = { rack: "rack", device: "device" }
+const CF_MODEL: Record<string, string> = {
+  rack: "rack",
+  cabinet: "cabinet",
+  device: "device",
+}
 
 /** Tile status → semantic badge tone. A tile's status is a plain string union
  * (not a Status object), so it can't use StatusBadge. */
@@ -75,6 +88,10 @@ export interface PopoverCtx {
   linked?: LinkedDetail | null
   /** Custom-field definitions for the linked object's model, for formatting. */
   cfDefs?: CustomField[]
+  /** A rack tile's rack as the plan's racks list it, port figures and all
+   * (`GET /api/racks/?floor_plan=…&include=ports`) - fetched once for the
+   * plan while a field or the plan's colouring needs it, never per tile. */
+  planRack?: Rack | null
 }
 
 export interface PopoverField {
@@ -122,8 +139,7 @@ function TileFaceplate({
       }>(`/api/device-types/${deviceTypeId}/`),
     staleTime: 5 * 60_000,
   })
-  if (ifaces.isLoading)
-    return <p className="text-[11px] text-muted-foreground">Loading…</p>
+  if (ifaces.isLoading) return <Loading className="min-h-16" />
   // A rear side is only worth offering when there is something to show there.
   const hasRear = !!dt.data?.rear_image
   // No mapped ports on this side but an uploaded photo: show the photo as
@@ -226,12 +242,14 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
   orientation: {
     label: "Facing",
     render: ({ tile }) => {
-      // Racks always show which way the front points; other tiles only when
-      // rotated. Same compass the 3D room + facing edge use.
+      // Racks and cabinets always show which way the front points; other
+      // tiles only when rotated. Same compass the 3D room + facing edge use.
       const word = { 0: "up", 90: "right", 180: "down", 270: "left" }[
         tile.orientation
       ]
-      if (tile.linked?.kind !== "rack" && !tile.orientation) return null
+      const fronted =
+        tile.linked?.kind === "rack" || tile.linked?.kind === "cabinet"
+      if (!fronted && !tile.orientation) return null
       return (
         <span>
           {word}
@@ -247,19 +265,12 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     label: "Utilization",
     render: ({ live }) => {
       const r = rack(live)
-      if (!r || r.u_height <= 0) return null
-      const ratio = r.used_units / r.u_height
+      const ratio = r ? capacityRatio(r.used_units, r.u_height) : null
+      if (!r || ratio == null) return null
       return (
         <span className="flex items-center gap-2">
-          <span className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-            <span
-              className="block h-full rounded-full"
-              style={{
-                width: `${Math.min(100, ratio * 100)}%`,
-                background: utilizationColor(ratio),
-              }}
-            />
-          </span>
+          {/* Narrower than a table cell's: "42/42U · 100%" fits beside it. */}
+          <CapacityBar ratio={ratio} className="w-10" />
           <span className="num text-[11px]">
             {r.used_units}/{r.u_height}U · {Math.round(ratio * 100)}%
           </span>
@@ -270,11 +281,41 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
   power: {
     label: "Power",
     render: ({ live }) => {
+      // Demand / supply, as the rack page reads it.
       const r = rack(live)
-      if (!r || !r.power?.maximum_w) return null
+      if (!r || !hasPowerData(r.power)) return null
+      return <PowerFigure power={r.power} className="text-[11px]" />
+    },
+  },
+  ports: {
+    label: "Ports",
+    // A rack's ports in use, then its patch-panel ports - the split the
+    // racks list and the rack page show - each opening the per-device
+    // breakdown on the Port utilization page.
+    render: ({ tile, planRack }) => {
+      if (tile.linked?.kind !== "rack" || !planRack?.ports) return null
+      const rows = [
+        { key: "ports", row: planRack.ports, label: null },
+        { key: "panel", row: planRack.panel_ports, label: "Panel" },
+      ].filter((r) => r.row && r.row.total > 0)
+      if (rows.length === 0) return null
       return (
-        <span className="num text-[11px]">
-          {r.power.allocated_w}/{r.power.maximum_w} W
+        <span className="grid gap-0.5">
+          {rows.map((r) => (
+            <Link
+              key={r.key}
+              to="/port-utilization"
+              search={{ rack: planRack.id }}
+              className="flex items-center gap-2 hover:underline"
+            >
+              <PortsFigure row={r.row} bar barClassName="w-10" />
+              {r.label && (
+                <span className="text-[11px] text-muted-foreground">
+                  {r.label}
+                </span>
+              )}
+            </Link>
+          ))}
         </span>
       )
     },
@@ -295,8 +336,15 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
   device_count: {
     label: "Devices",
     render: ({ live }) => {
-      const r = rack(live)
+      const r = rack(live) ?? cabinetState(live)
       return r ? <span className="num">{r.device_count}</span> : null
+    },
+  },
+  rail_count: {
+    label: "Rails",
+    render: ({ live }) => {
+      const c = cabinetState(live)
+      return c ? <span className="num">{c.rail_count}</span> : null
     },
   },
   check: {
@@ -310,7 +358,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     },
   },
   color: {
-    label: "Colour",
+    label: "Color",
     render: ({ tile }) => {
       const c = tile.color
       if (!c) return null
@@ -482,6 +530,19 @@ export const DEFAULT_POPOVER_FIELDS = [
   "size",
 ]
 
+/** What a cabinet's tile shows where a rack's shows `utilization`: a
+ * cabinet has no units to fill, so how full it is reads as the devices and
+ * rails it carries. A key the list names elsewhere keeps its own place. */
+const CABINET_FILL = ["device_count", "rail_count"]
+
+/** The configured keys as they apply to one tile. */
+export function fieldsForTile(fields: string[], tile: FloorPlanTile): string[] {
+  if (tile.linked?.kind !== "cabinet") return fields
+  return fields.flatMap((k) =>
+    k === "utilization" ? CABINET_FILL.filter((c) => !fields.includes(c)) : [k]
+  )
+}
+
 export interface HoverTarget {
   tile: FloorPlanTile
   x: number
@@ -529,6 +590,7 @@ function useLinkedDetail(tile: FloorPlanTile | undefined, needed: boolean) {
 export function TilePopover({
   target,
   live,
+  planRack,
   fields,
   onOpenChange,
   renderLinked,
@@ -536,6 +598,8 @@ export function TilePopover({
 }: {
   target: HoverTarget | null
   live?: LiveTile
+  /** The hovered rack tile's rack from the plan's racks, when loaded. */
+  planRack?: Rack | null
   /** Ordered field keys to show. Unknown keys are ignored. */
   fields: string[]
   onOpenChange: (open: boolean) => void
@@ -546,10 +610,11 @@ export function TilePopover({
   renderActions?: (tile: FloorPlanTile) => React.ReactNode
 }) {
   const open = !!target
+  const shown = target ? fieldsForTile(fields, target.tile) : fields
 
   // Resolve once so we know whether anything needs the linked object BEFORE
   // fetching it - a popover of tile-intrinsic fields must stay fetch-free.
-  const resolved = fields
+  const resolved = shown
     .filter((k) => k !== "linked")
     .map((key) => ({ key, field: resolvePopoverField(key) }))
     .filter((r): r is { key: string; field: PopoverField } => !!r.field)
@@ -557,7 +622,7 @@ export function TilePopover({
   const { linked, cfDefs, loading } = useLinkedDetail(target?.tile, needsLinked)
 
   const ctx: PopoverCtx | null = target
-    ? { tile: target.tile, live, linked, cfDefs }
+    ? { tile: target.tile, live, linked, cfDefs, planRack }
     : null
 
   // Build the rows in configured order, dropping any field with nothing to say
@@ -569,7 +634,7 @@ export function TilePopover({
     wide?: boolean
   }[] = []
   if (ctx) {
-    for (const key of fields) {
+    for (const key of shown) {
       if (key === "linked") {
         const node = renderLinked?.(ctx.tile)
         if (node) rows.push({ key, label: "Linked", node })
@@ -652,11 +717,7 @@ export function TilePopover({
                 {r.node}
               </div>
             ))}
-            {loading && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Loading object details…
-              </p>
-            )}
+            {loading && <Loading className="mt-1 min-h-16" />}
             {target?.pinned ? (
               renderActions?.(ctx.tile)
             ) : (

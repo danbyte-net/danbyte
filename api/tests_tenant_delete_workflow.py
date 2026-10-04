@@ -99,6 +99,27 @@ class TenantDeleteWorkflowTests(APITestCase):
         self.assertFalse(Prefix.objects.filter(tenant_id=tenant.id).exists())
         self.assertFalse(Status.objects.filter(tenant_id=tenant.id).exists())
 
+    # 1b ── a cabinet whose rail carries a device: the rail PROTECTs it (#277)
+    def test_a_cabinet_with_a_device_on_its_rail_goes_with_its_tenant(self):
+        from api.models import Cabinet, Device, DeviceType, DinRail, Site
+
+        org = Organization.objects.create(name="Din", slug="din")
+        tenant = Tenant.objects.create(org=org, name="Din", slug="din")
+        site = Site.objects.create(tenant=tenant, name="plant")
+        cabinet = Cabinet.objects.create(tenant=tenant, site=site, name="K1",
+                                         inner_width_mm=500, inner_height_mm=600)
+        rail = DinRail.objects.create(cabinet=cabinet, label="R1", x_mm=0, y_mm=100,
+                                      length_mm=400)
+        plc = DeviceType.objects.create(tenant=tenant, name="PLC", width_mm=90,
+                                        height_mm=100, din_profiles=["ts35"])
+        Device.objects.create(tenant=tenant, name="plc-1", site=site, device_type=plc,
+                              cabinet=cabinet, din_rail=rail, din_offset_mm=0)
+
+        self._delete(tenant)
+
+        self.assertFalse(Cabinet.objects.filter(tenant_id=tenant.id).exists())
+        self.assertFalse(DinRail.objects.filter(pk=rail.pk).exists())
+
     # 2 ── every audited catalog we can build, so new models come along free
     def test_every_buildable_audited_model_is_covered(self):
         org = Organization.objects.create(name="Sweep", slug="sweep")

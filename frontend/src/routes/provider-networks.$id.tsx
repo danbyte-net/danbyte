@@ -12,12 +12,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ProviderNetworkDeleteDialog } from "@/components/provider-network-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -83,29 +78,19 @@ function Body({ network: n }: { network: ProviderNetwork }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={n.name}
-            subtitle={
-              <Link
-                to="/providers/$id"
-                params={{ id: n.provider.id }}
-                className="link"
-              >
-                {n.provider.name}
-              </Link>
-            }
-            tags={n.tags.length > 0 && <TagList tags={n.tags} />}
-            statCols={1}
-            stats={
-              <DetailStat
-                label="Circuits"
-                value={<span className="num">{n.circuit_count}</span>}
-              />
-            }
-          />
-          <CustomFieldValues model="providernetwork" values={n.custom_fields} />
-        </>
+        <DetailHero
+          title={n.name}
+          subtitle={
+            <Link
+              to="/providers/$id"
+              params={{ id: n.provider.id }}
+              className="link"
+            >
+              {n.provider.name}
+            </Link>
+          }
+          tags={n.tags.length > 0 && <TagList tags={n.tags} />}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -174,6 +159,10 @@ function NetworkOverview({ network: n }: { network: ProviderNetwork }) {
       ),
       copy: n.service_id || undefined,
     },
+    {
+      label: "Circuits",
+      value: <span className="num">{n.circuit_count}</span>,
+    },
   ]
 
   const record: KvRow[] = [
@@ -196,6 +185,11 @@ function NetworkOverview({ network: n }: { network: ProviderNetwork }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Provider network" rows={details} />
+      <CustomFieldValues
+        model="providernetwork"
+        values={n.custom_fields}
+        layout="cards"
+      />
       <KvCard title="Record" rows={record} />
       <KvCard title="Notes" rows={notes} />
     </div>

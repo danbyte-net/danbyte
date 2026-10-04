@@ -50,6 +50,12 @@ from auth_api.login_api import (
     totp_disable_api,
     totp_setup_api,
 )
+from auth_api.people_api import (
+    PeopleGroupDetail,
+    PeopleGroupList,
+    PeopleList,
+    PersonDetail,
+)
 from auth_api.sso_admin import IdentityProviderViewSet, SsoGroupMappingViewSet
 from auth_api.sso_api import (
     sso_acs,
@@ -79,6 +85,7 @@ from core import (
     tenant_settings as tenant_settings_mod,
 )
 from core.bookmarks import BookmarkFolderViewSet, BookmarkViewSet
+from core.dashboards import DashboardViewSet
 from core.saved_filters import SavedFilterViewSet
 from customization.api_views import customization_meta, object_labels
 from integrations.api import (
@@ -157,6 +164,8 @@ from .io_views import (
     io_import_view,
     io_types_view,
 )
+from .list_fields import list_fields_view
+from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import mac_detail_view, mac_list_view
 from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
 from .presence_views import (
@@ -167,6 +176,7 @@ from .presence_views import (
 from .search_views import search as search_view
 from .site_map_views import site_map, site_map_cables, site_map_connections
 from .terraform_views import vm_render_view
+from .topology_export import topology_pdf_file_view, topology_pdf_view
 from .topology_views import (
     topology_logical_view,
     topology_summary_view,
@@ -179,6 +189,9 @@ from .viewsets import (
     ASNViewSet,
     AuxPortTemplateViewSet,
     AuxPortViewSet,
+    CabinetRoleViewSet,
+    CabinetTypeViewSet,
+    CabinetViewSet,
     CableRouteViewSet,
     CableViewSet,
     CircuitTerminationViewSet,
@@ -353,6 +366,9 @@ router.register(r"rack-roles",    RackRoleViewSet,    basename="rack-role")
 router.register(r"rack-types",    RackTypeViewSet,    basename="rack-type")
 router.register(r"rack-type-accessories", RackTypeAccessoryViewSet,
                 basename="rack-type-accessory")
+router.register(r"cabinets",      CabinetViewSet,     basename="cabinet")
+router.register(r"cabinet-roles", CabinetRoleViewSet, basename="cabinet-role")
+router.register(r"cabinet-types", CabinetTypeViewSet, basename="cabinet-type")
 router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
 router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
@@ -450,6 +466,7 @@ router.register(r"changelog",     ChangeLogViewSet,   basename="changelog")
 router.register(r"bookmarks",     BookmarkViewSet,    basename="bookmark")
 router.register(r"bookmark-folders", BookmarkFolderViewSet, basename="bookmark-folder")
 router.register(r"saved-filters", SavedFilterViewSet, basename="saved-filter")
+router.register(r"dashboards", DashboardViewSet, basename="dashboard")
 router.register(r"api-tokens",    ApiTokenViewSet,    basename="api-token")
 router.register(r"webhooks",      WebhookViewSet,     basename="webhook")
 router.register(r"automation-targets", AutomationTargetViewSet, basename="automation-target")
@@ -508,6 +525,13 @@ urlpatterns = [
     path("rbac/site-role/", create_site_role, name="rbac-site-role"),
     path("users/<int:user_id>/access-summary/", user_access_summary,
          name="user-access-summary"),
+    # Tenant members for pickers outside user administration. The literal
+    # "groups/" routes come before "<int:pk>/".
+    path("people/", PeopleList.as_view(), name="people-list"),
+    path("people/groups/", PeopleGroupList.as_view(), name="people-group-list"),
+    path("people/groups/<int:pk>/", PeopleGroupDetail.as_view(),
+         name="people-group-detail"),
+    path("people/<int:pk>/", PersonDetail.as_view(), name="people-detail"),
     path("inventory/ansible/", ansible_inventory, name="inventory-ansible"),
     path("virtual-machines/<uuid:pk>/render/", vm_render_view, name="vm-render"),
     # Generic round-trip export/import (any IO-capable object type).
@@ -532,15 +556,27 @@ urlpatterns = [
     path("routing/topology/bgp/", bgp_topology_view, name="routing-topology-bgp"),
     path("topology/logical/", topology_logical_view, name="topology-logical"),
     path("topology/summary/", topology_summary_view, name="topology-summary"),
+    # The Diagram as a PDF (WeasyPrint); ?print=1 answers with a short-lived link.
+    path("topology/export/pdf/", topology_pdf_view, name="topology-export-pdf"),
+    path("topology/export/pdf/<str:token>/", topology_pdf_file_view,
+         name="topology-export-pdf-file"),
     path("customization/meta/", customization_meta, name="customization-meta"),
     path("customization/object-labels/", object_labels, name="customization-object-labels"),
     path("oui/status/", oui_status, name="oui-status"),
     path("oui/import/", oui_import, name="oui-import"),
     path("oui/import/<uuid:run_id>/", oui_import_run, name="oui-import-run"),
     path("macs/", mac_list_view, name="macs"),
+    path("macs/bulk-remove/", mac_bulk_remove_view, name="macs-bulk-remove"),
+    # Ahead of the router so it wins over the mac-addresses detail route.
+    path(
+        "mac-addresses/bulk-delete/",
+        mac_object_bulk_delete_view,
+        name="mac-address-bulk-delete",
+    ),
     path("macs/<str:mac>/", mac_detail_view, name="mac-detail"),
     path("dcim/choices/", dcim_choices_view, name="dcim-choices"),
     path("editable-fields/", editable_fields_view, name="editable-fields"),
+    path("list-fields/", list_fields_view, name="list-fields"),
     path("monitoring/", include("monitoring.api_urls")),
     path("zabbix/", include("zabbix.api_urls")),
     path("planning/", include("planning.api_urls")),
@@ -629,6 +665,10 @@ urlpatterns = [
     # tenant-settings/, like device fields).
     path("deployment/floorplan-popover/", deployment.floorplan_popover,
          name="deployment-floorplan-popover"),
+    # Topology Diagram card lines - deployment default (the tenant override
+    # rides tenant-settings/topology-card/).
+    path("deployment/topology-card/", deployment.topology_card,
+         name="deployment-topology-card"),
     path("deployment/component-popover/", deployment.component_popover,
          name="deployment-component-popover"),
     path("component-popover/", deployment.component_popover_effective,
@@ -651,6 +691,10 @@ urlpatterns = [
     path("tenant-settings/floorplan-popover/",
          tenant_settings_mod.tenant_floorplan_popover,
          name="tenant-floorplan-popover"),
+    # This tenant's topology card lines (tenant admin).
+    path("tenant-settings/topology-card/",
+         tenant_settings_mod.tenant_topology_card,
+         name="tenant-topology-card"),
     # Effective device-field visibility - readable by any member.
     path("device-fields/", tenant_settings_mod.device_fields_view,
          name="device-fields"),
@@ -658,6 +702,10 @@ urlpatterns = [
     # needs it to render a popover at all).
     path("floorplan-popover/", tenant_settings_mod.floorplan_popover_view,
          name="floorplan-popover"),
+    # Effective topology card lines - readable by any member (the Diagram
+    # and the device form's inherit preview).
+    path("topology-card/", tenant_settings_mod.topology_card_view,
+         name="topology-card"),
     # The default prefix for the caller's own site, if they have exactly one.
     path("my-default-prefix/", tenant_settings_mod.my_default_prefix,
          name="my-default-prefix"),

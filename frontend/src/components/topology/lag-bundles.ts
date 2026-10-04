@@ -42,13 +42,16 @@ export function groupLagEdges(edges: TopoEdge[]): {
   return { bundles: [...byKey.values()], rest }
 }
 
-/** "Po1 ⇄ Po10 ×2" */
+/** "Po1 ⇄ Po10 · 2x" - the Diagram's bundle chip. A one-cable LAG reads
+ * "Po1 ⇄ Po10": a "1x" count says nothing. */
 export function lagBundleLabel(lag: EdgeLag, n: number): string {
-  return `${lag.a?.name ?? "?"} ⇄ ${lag.b?.name ?? "?"} ×${n}`
+  const pair = `${lag.a?.name ?? "?"} ⇄ ${lag.b?.name ?? "?"}`
+  return n > 1 ? `${pair} · ${n}x` : pair
 }
 
 /** The aggregate pair every cable in a set shares, or null when they differ
- * (or any lacks one). Lets the flat view's ×N bundle name the aggregates. */
+ * (or any lacks one). Lets a bundle of a device pair's cables - the
+ * Diagram's Simple "2x", the Hierarchy's - name the aggregates. */
 export function sharedLag(cables: { lag?: EdgeLag }[]): EdgeLag | null {
   const first = cables[0]?.lag
   if (!first?.a || !first.b) return null

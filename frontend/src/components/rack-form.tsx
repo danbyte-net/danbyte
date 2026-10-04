@@ -32,6 +32,7 @@ import {
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
+import { invalidateSiteViews } from "@/lib/site-cache"
 
 const WIDTHS: { value: RackWidth; label: string }[] = [
   { value: 10, label: '10"' },
@@ -311,7 +312,7 @@ export function RackForm({
                   endpoint="/api/sites/"
                   fields={[{ name: "name", label: "Name", required: true }]}
                   onCreated={(s) => {
-                    qc.invalidateQueries({ queryKey: ["sites-picker"] })
+                    invalidateSiteViews(qc)
                     setSiteId(s.id)
                   }}
                 />

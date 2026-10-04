@@ -96,7 +96,7 @@ def vm_render_view(request, pk):
         return Response({"detail": "Unknown template."},
                         status=drf_status.HTTP_400_BAD_REQUEST)
     try:
-        output = render_vm_config(tmpl, vm, tenant)
+        output = render_vm_config(tmpl, vm, tenant, request.user)
     except (TemplateError, ValueError) as exc:
         return Response({"detail": str(exc)},
                         status=drf_status.HTTP_400_BAD_REQUEST)

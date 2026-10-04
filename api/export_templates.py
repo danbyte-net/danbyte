@@ -15,6 +15,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from collections.abc import Callable
+from functools import cache
 
 # key -> fn(obj) -> JSON-able value. Populated by apps at start-up.
 _CONTEXT_PROVIDERS: dict[str, Callable] = {}
@@ -106,9 +107,58 @@ TESTS = {"ipv4": _t_ipv4, "ipv6": _t_ipv6}
 # while the sandbox was busy blocking three other names (#216).
 _SAFE_MODEL_CALL = re.compile(r"^get_\w+_display$")
 
+# Rows a template never walks: accounts, groups, grants and the rest of the
+# access machinery, the change log, and the organisation and tenant rows
+# that lead to every other tenant. Reached through a relation, a few of them
+# still show a name (_OPEN_ATTRS) - what the API shows next to the row that
+# links them.
+_CLOSED_APPS = frozenset({"auth", "auth_api", "audit", "contenttypes", "sessions", "admin"})
+_CLOSED_MODELS = frozenset({
+    "core.organization", "core.tenant", "core.tenantgroup", "core.tenantsettings",
+    "core.deploymentsettings", "core.bookmark", "core.bookmarkfolder",
+})
+_OPEN_ATTRS = {
+    "auth.user": frozenset({"id", "pk", "username", "first_name", "last_name"}),
+    "auth.group": frozenset({"id", "pk", "name"}),
+    "core.tenant": frozenset({"id", "pk", "name", "slug"}),
+}
+# What a template may do with a set of rows. Lookups are checked on the call:
+# one field of that model, never a path through a relation.
+_QUERYSET_ATTRS = frozenset({
+    "all", "count", "exists", "first", "last", "filter", "exclude", "get",
+    "order_by", "reverse", "distinct", "none",
+})
+_LOOKUP_METHODS = frozenset({"filter", "exclude", "get", "order_by"})
+
+
+def _closed(model) -> bool:
+    meta = model._meta
+    return meta.app_label in _CLOSED_APPS or meta.label_lower in _CLOSED_MODELS
+
+
+@cache
+def _tenant_path(model, depth: int = 0) -> str | None:
+    """The lookup from ``model`` to the tenant that owns its rows: its own
+    ``tenant``, else the first parent that has one (an interface's device, a
+    termination's cable). ``None`` for a model that belongs to no tenant."""
+    fields = model._meta.concrete_fields
+    if any(f.name == "tenant" and f.is_relation for f in fields):
+        return "tenant"
+    if depth >= 2:
+        return None
+    for f in fields:
+        rel = f.related_model if f.is_relation and f.many_to_one else None
+        if rel is None or rel is model or isinstance(rel, str):
+            continue
+        sub = _tenant_path(rel, depth + 1)
+        if sub is not None:
+            return f"{f.name}__{sub}"
+    return None
+
 
 def _template_environment_class():
-    from jinja2.sandbox import SandboxedEnvironment
+    from django.db.models import Manager, Q, QuerySet
+    from jinja2.sandbox import SandboxedEnvironment, SecurityError
 
     class _Environment(SandboxedEnvironment):
         """The sandbox plus what a template must never reach on a model row
@@ -117,7 +167,45 @@ def _template_environment_class():
         secret or an Authorization header cannot be printed), the PSK
         accessors, and the escape hatches from one row to every row - a
         manager's or queryset's ``model`` and any attribute of a model
-        class, which would reach ``Model.objects`` across tenants."""
+        class, which would reach ``Model.objects`` across tenants.
+
+        Accounts, groups, grants, the organisation and the tenant rows show
+        a name at most, however they are reached. With a ``tenant`` the
+        sandbox is fenced to it: a row of another tenant reads as nothing,
+        and every set of rows a relation hands out is cut to the tenant -
+        and, with a ``user``, to the rows that user may view. A lookup or an
+        ordering names one field of the row, never a path through a
+        relation, so a filter cannot test a row the fence hides."""
+
+        def __init__(self, *args, tenant=None, user=None, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._tenant = tenant
+            self._tenant_id = getattr(tenant, "pk", tenant)
+            self._user = user
+            self._row_filters: dict = {}
+
+        # ── rows ───────────────────────────────────────────────────────
+        def _row_open(self, obj, attr) -> bool:
+            label = obj._meta.label_lower
+            if _closed(type(obj)):
+                if attr not in _OPEN_ATTRS.get(label, ()):
+                    return False
+                if label == "core.tenant" and self._tenant_id is not None:
+                    return obj.pk == self._tenant_id
+                return True
+            if self._tenant_id is not None:
+                tid = getattr(obj, "tenant_id", None)
+                if tid is not None and tid != self._tenant_id:
+                    return False
+            return True
+
+        def _value_open(self, value) -> bool:
+            if isinstance(value, (Manager, QuerySet)):
+                return not _closed(value.model)
+            meta = getattr(value, "_meta", None)
+            if meta is not None and hasattr(meta, "get_field") and not isinstance(value, type):
+                return not _closed(type(value)) or meta.label_lower in _OPEN_ATTRS
+            return True
 
         def is_safe_attribute(self, obj, attr, value):
             if not super().is_safe_attribute(obj, attr, value):
@@ -130,8 +218,12 @@ def _template_environment_class():
                 return False
             if isinstance(obj, type) and hasattr(obj, "_meta"):
                 return False
+            if isinstance(obj, (Manager, QuerySet)):
+                return attr in _QUERYSET_ATTRS and not _closed(obj.model)
             meta = getattr(obj, "_meta", None)
             if meta is not None and hasattr(meta, "get_field"):
+                if not self._row_open(obj, attr) or not self._value_open(value):
+                    return False
                 from django.core.exceptions import FieldDoesNotExist
 
                 from core.secret_fields import is_secret_field
@@ -145,22 +237,118 @@ def _template_environment_class():
                 # Not a stored field. A property is data and passes; a method
                 # is behaviour and does not, unless it is a choice label.
                 return not callable(value) or bool(_SAFE_MODEL_CALL.match(attr))
-            from django.db.models import Manager, QuerySet
+            return self._value_open(value)
 
-            if isinstance(obj, (Manager, QuerySet)) and attr in ("model", "raw", "extra", "db", "query"):
-                return False
-            return True
+        # ── sets of rows ───────────────────────────────────────────────
+        def _fence(self, value):
+            """Cut a relation's rows to the tenant and to what the user may
+            view. Idempotent, so a chained ``.filter()`` re-applies it."""
+            if isinstance(value, Manager):
+                value = value.all()
+            if not isinstance(value, QuerySet):
+                return value
+            model = value.model
+            if _closed(model):
+                return value.none()
+            if self._tenant_id is not None:
+                path = _tenant_path(model)
+                if path is not None:
+                    value = value.filter(
+                        Q(**{path: self._tenant_id}) | Q(**{f"{path}__isnull": True})
+                    )
+            user = self._user
+            if user is not None and not getattr(user, "is_superuser", False):
+                from auth_api import rbac
+                from auth_api.object_types import is_registered
+
+                slug = model._meta.model_name
+                if is_registered(slug):
+                    if slug not in self._row_filters:
+                        self._row_filters[slug] = rbac.row_filter(
+                            user, self._tenant, slug, "view"
+                        )
+                    q = self._row_filters[slug]
+                    if q is None:
+                        return value.none()
+                    if q is not True:
+                        value = value.filter(q)
+            return value
+
+        def _check_lookups(self, model, method, args, kwargs):
+            """One field of ``model`` per lookup, plus that field's own
+            lookups and transforms (``name__startswith``, ``site__in``) -
+            never ``site__name``, which walks into another table."""
+            from django.core.exceptions import FieldDoesNotExist
+
+            from core.secret_fields import is_secret_field
+
+            if method == "order_by":
+                if kwargs:
+                    raise SecurityError("order_by() takes field names only.")
+                keys = [str(a).lstrip("-") for a in args]
+            else:
+                if args:
+                    raise SecurityError(f"{method}() takes field=value lookups only.")
+                keys = list(kwargs)
+            for key in keys:
+                head, *rest = key.split("__")
+                if head == "pk":
+                    field = model._meta.pk
+                else:
+                    try:
+                        field = model._meta.get_field(head)
+                    except FieldDoesNotExist:
+                        field = next(
+                            (f for f in model._meta.concrete_fields if f.attname == head),
+                            None,
+                        )
+                if field is None or not getattr(field, "concrete", False):
+                    raise SecurityError(f"'{key}' is not a field of this row.")
+                if is_secret_field(model, field):
+                    raise SecurityError(f"'{key}' cannot be read.")
+                if method == "order_by" and rest:
+                    raise SecurityError(f"order_by('{key}') walks a relation.")
+                for part in rest:
+                    if field.get_lookup(part) is None and field.get_transform(part) is None:
+                        raise SecurityError(f"'{key}' walks a relation.")
+
+        def call(__self, __context, __obj, *args, **kwargs):  # noqa: N805
+            target = getattr(__obj, "__self__", None)
+            if isinstance(target, (Manager, QuerySet)) and (
+                getattr(__obj, "__name__", "") in _LOOKUP_METHODS
+            ):
+                __self._check_lookups(target.model, __obj.__name__, args, kwargs)
+            return __self._fence(super().call(__context, __obj, *args, **kwargs))
+
+        def getattr(self, obj, attribute):
+            return self._fence(super().getattr(obj, attribute))
+
+        def getitem(self, obj, argument):
+            return self._fence(super().getitem(obj, argument))
 
     return _Environment
 
 
-def _env():
+def _env(tenant=None, user=None):
+    """The sandbox for rendering. ``tenant`` fences every row a template
+    reaches to that tenant; ``user`` further cuts each relation to the rows
+    that user may view. Compiling a template (no render) needs neither."""
     env = _template_environment_class()(
-        trim_blocks=True, lstrip_blocks=True, autoescape=False
+        trim_blocks=True, lstrip_blocks=True, autoescape=False,
+        tenant=tenant, user=user,
     )
     env.filters.update(FILTERS)
     env.tests.update(TESTS)
     return env
+
+
+def template_subject_allowed(model) -> bool:
+    """Accounts, groups, grants and the organisation's rows are not a
+    template's subject: the sandbox shows them by name at most. A tenant is,
+    as the one the render runs in."""
+    if model is None:
+        return False
+    return not _closed(model) or model._meta.label_lower == "core.tenant"
 
 
 def has_secret_fields(model) -> bool:
@@ -195,9 +383,13 @@ def _objects_for(template, tenant, user=None, *, limit=None):
         return None
     if has_secret_fields(model):
         raise ValueError(f"{template.object_type} carries credentials and cannot be exported by template.")
+    if not template_subject_allowed(model):
+        raise ValueError(f"{template.object_type} cannot be exported by template.")
     qs = model.objects.all()
     if any(f.name == "tenant" for f in model._meta.concrete_fields):
         qs = qs.filter(tenant=tenant)
+    elif model._meta.label_lower == "core.tenant":
+        qs = qs.filter(pk=getattr(tenant, "pk", None))
     if user is None:
         return []
     qs = rbac.restrict_queryset(qs, user, tenant, template.object_type, "view")
@@ -242,7 +434,7 @@ def render_export_template(template, tenant, user=None, *, preview=False) -> str
         raise ValueError(f"Unknown object type: {template.object_type}")
 
     total = getattr(objects, "total", len(objects))
-    tmpl = _env().from_string(template.template_code or "")
+    tmpl = _env(tenant, user).from_string(template.template_code or "")
     return tmpl.render(objects=objects, queryset=objects, count=total)
 
 
@@ -300,41 +492,58 @@ def device_render_interfaces(device) -> list:
     return rows
 
 
-def render_device_config(template, device, tenant) -> str:
+def _render_ips(obj, tenant, user) -> list:
+    """The object's addresses for a render: those ``user`` may view, when the
+    render runs for someone; every one in the tenant for a system render."""
+    ips = obj.ip_addresses.filter(tenant=tenant)
+    if user is None:
+        return list(ips)
+    from auth_api import rbac
+
+    return list(rbac.restrict_queryset(ips, user, tenant, "ipaddress", "view"))
+
+
+def render_device_config(template, device, tenant, user=None) -> str:
     """Render an export template for a single device - the per-device
     intended-config generator. Context: ``device``, its merged ``config_context``,
     ``interfaces`` (each with ``link_peer``, the cable's far end),
     ``ip_addresses`` (and ``objects``/``count`` for parity), plus every
-    registered provider's key (``routing``)."""
+    registered provider's key (``routing``).
+
+    ``user`` is who the render is for: relations a template walks hold only
+    the rows they may view, as in an export. Leave it out only for a render
+    nobody started."""
     from .config_context import render_config_context
 
-    tmpl = _env().from_string(template.template_code or "")
+    tenant = tenant or device.tenant
+    tmpl = _env(tenant, user).from_string(template.template_code or "")
     return tmpl.render(
         device=device,
         config_context=render_config_context(device)["rendered"],
         interfaces=device_render_interfaces(device),
-        ip_addresses=list(device.ip_addresses.all()),
+        ip_addresses=_render_ips(device, tenant, user),
         objects=[device],
         count=1,
         **provider_context(device),
     )
 
 
-def render_vm_config(template, vm, tenant) -> str:
+def render_vm_config(template, vm, tenant, user=None) -> str:
     """Render an export template for a single virtual machine - the per-VM
     generator behind the Terraform-for-VMs flow (the template author writes
     tfvars/HCL). Context mirrors the device renderer: ``vm`` (also exposed as
     ``device`` for template parity), merged ``config_context``, ``interfaces``,
-    ``ip_addresses``."""
+    ``ip_addresses``. ``user`` limits what the template sees, as for devices."""
     from .config_context import render_config_context
 
-    tmpl = _env().from_string(template.template_code or "")
+    tenant = tenant or vm.tenant
+    tmpl = _env(tenant, user).from_string(template.template_code or "")
     return tmpl.render(
         vm=vm,
         device=vm,  # parity: templates can use the same `device.*` accessor
         config_context=render_config_context(vm)["rendered"],
         interfaces=list(vm.interfaces.all()),
-        ip_addresses=list(vm.ip_addresses.all()),
+        ip_addresses=_render_ips(vm, tenant, user),
         objects=[vm],
         count=1,
         **provider_context(vm),

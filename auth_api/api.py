@@ -23,7 +23,7 @@ from rest_framework.response import Response
 from .drf import DeploymentAdminForWrites, RBACObjectPermission
 from .models import GroupProfile, ObjectPermission, UserProfile
 from .permissions import can_manage_deployment, user_tenants
-from .object_types import ACTIONS, registry_payload
+from .object_types import ACCESS_TYPES, ACTIONS, registry_payload
 
 
 # ─── Users ───────────────────────────────────────────────────────────────────
@@ -412,6 +412,16 @@ class GroupViewSet(viewsets.ModelViewSet):
 
 
 # ─── Object permissions ──────────────────────────────────────────────────────
+def _is_builtin_admin_grant(perm) -> bool:
+    """The seeded Administrator grant: its seeded name, held by the built-in
+    Administrator group."""
+    from .builtin_groups import grant_names
+
+    return perm.name in grant_names("Administrator") and perm.groups.filter(
+        name="Administrator", profile__built_in=True
+    ).exists()
+
+
 class ObjectPermissionSerializer(serializers.ModelSerializer):
     groups = serializers.SerializerMethodField()
     users = serializers.SerializerMethodField()
@@ -449,6 +459,62 @@ class ObjectPermissionSerializer(serializers.ModelSerializer):
         if bad:
             raise serializers.ValidationError(f"Unknown actions: {bad}")
         return value
+
+    def validate_object_types(self, value):
+        # "*" no longer reaches users, groups and permissions. A browser tab
+        # opened before the upgrade (or a script) still writes a bare ["*"],
+        # which on the built-in Administrator grant would silently demote
+        # every administrator.
+        instance = self.instance
+        if (
+            instance is not None
+            and "*" in (value or [])
+            and not all(t in value for t in ACCESS_TYPES)
+            and _is_builtin_admin_grant(instance)
+        ):
+            raise serializers.ValidationError(
+                "The Administrator grant must keep Users, Groups and "
+                "Permissions. Reload the page and save again."
+            )
+        return value
+
+    def validate(self, attrs):
+        # Users, groups and permissions have no site, and nothing that checks
+        # them reads row constraints, so either limit on a grant naming them
+        # would look narrower than it is: its holders manage every account.
+        attrs = super().validate(attrs)
+        if not {"object_types", "site_ids", "constraints"} & set(attrs):
+            return attrs  # an enable/rename of an existing grant
+        inst = self.instance
+        types = attrs.get("object_types", getattr(inst, "object_types", None)) or []
+        if not any(t in types for t in ACCESS_TYPES):
+            return attrs
+        if "site_ids" in attrs:
+            has_sites = bool(attrs["site_ids"])
+        else:
+            has_sites = inst is not None and inst.sites.exists()
+        constraints = attrs.get("constraints", getattr(inst, "constraints", None))
+        if isinstance(constraints, dict):
+            constrained = bool(constraints)
+        elif isinstance(constraints, list):
+            constrained = any(isinstance(d, dict) and d for d in constraints)
+        else:
+            constrained = False
+        errors = {}
+        if has_sites:
+            errors["site_ids"] = [
+                "Users, groups and permissions have no site, so a site limit "
+                "does not narrow them. Remove the sites, or grant those types "
+                "on their own."
+            ]
+        if constrained:
+            errors["constraints"] = [
+                "Row constraints do not narrow users, groups or permissions. "
+                "Remove them, or grant those types on their own."
+            ]
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
     def _tenants(self, instance, tenant_ids):
         from core.models import Tenant
@@ -492,7 +558,7 @@ class ObjectPermissionSerializer(serializers.ModelSerializer):
 class ObjectPermissionViewSet(viewsets.ModelViewSet):
     queryset = (
         ObjectPermission.objects.all()
-        .prefetch_related("groups", "users", "tenants")
+        .prefetch_related("groups", "users", "tenants", "sites")
         .order_by("name")
     )
     serializer_class = ObjectPermissionSerializer
@@ -525,14 +591,20 @@ class ObjectPermissionViewSet(viewsets.ModelViewSet):
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="{object_types: [...], actions: [...]} used to populate the "
-        "permission-builder pickers.",
+        description="{object_types: [...], actions: [...], wildcard_excluded: "
+        "[...]} used to populate the permission-builder pickers. "
+        "wildcard_excluded lists the types \"*\" does not reach; a grant "
+        "reaches them only by naming them.",
     ),
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def rbac_object_types(request):
-    return Response({"object_types": registry_payload(), "actions": ACTIONS})
+    return Response({
+        "object_types": registry_payload(),
+        "actions": ACTIONS,
+        "wildcard_excluded": list(ACCESS_TYPES),
+    })
 
 
 def _apply_site_role(request, site_role, *, user_ids=None, group_ids=None):

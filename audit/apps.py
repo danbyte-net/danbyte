@@ -100,6 +100,9 @@ AUDITED_MODELS = [
     "api.RackType",
     "api.RackTypeAccessory",
     "api.Rack",
+    "api.CabinetRole",
+    "api.CabinetType",
+    "api.Cabinet",
     "api.DeviceRole",
     "api.PlatformGroup",
     "api.Platform",
@@ -146,7 +149,9 @@ AUDITED_MODELS = [
     "api.FloorPlanRaisedFloorArea",
     "api.FloorPlanWall",
     "api.CableRoute",
-    # Customisation + monitoring config (not high-volume engine state).
+    # Customisation + monitoring config (not high-volume engine state). The
+    # MAC-tracking sightings (monitoring.MacSighting / ArpSighting, #284) are
+    # observed, high-churn data like integrations.DnsRecord: not audited.
     "customization.CustomField",
     "customization.CustomFieldGroup",
     "monitoring.CheckTemplate",
@@ -159,6 +164,11 @@ AUDITED_MODELS = [
     "monitoring.Silence",
     "monitoring.MaintenanceEvent",
     "monitoring.EventImpact",
+    "monitoring.SlaAgreement",
+    "monitoring.SlaCheckGroup",
+    "monitoring.SlaMember",
+    "monitoring.SlaExclusion",
+    "monitoring.HolidayCalendar",
     "planning.Board",
     "planning.TaskStatus",
     "planning.TaskLabel",
@@ -186,6 +196,7 @@ AUDITED_MODELS = [
     "core.SiteCertificate",
     "core.TenantSettings",
     "core.SiteSettings",
+    "core.Dashboard",
     "integrations.NetBoxImportRun",
     "integrations.WindowsServerConnection",
     "integrations.VirtualizationSource",

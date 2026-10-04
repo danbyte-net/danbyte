@@ -31,6 +31,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TaskStatusManager } from "@/components/planning/task-status-manager"
 import { useMe, objCan } from "@/lib/use-me"
 import { cssColor } from "@/lib/utils"
+import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/statuses/")({
   validateSearch: (s: Record<string, unknown>): { tab?: "tasks" } => ({
@@ -154,7 +155,7 @@ function IpStatusesPage() {
       for (const m of s.available_to) c[m] = (c[m] ?? 0) + 1
     return Object.entries(c)
       .map(([value, count]) => ({ value, label: labelFor(value), count }))
-      .sort((a, b) => a.label.localeCompare(b.label)) as FacetOption[]
+      .sort((a, b) => naturalCompare(a.label, b.label)) as FacetOption[]
   }, [allRows])
 
   const defaultFacets = useMemo(() => {

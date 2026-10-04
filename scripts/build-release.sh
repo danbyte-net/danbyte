@@ -87,8 +87,12 @@ PYBIN="$STAGE/vendor/python/bin/python3"
 
 # ── 5. Wheelhouse: every dep as a binary wheel, built once here ───────────────
 # Built with the bundled python so wheels match the runtime; libldap2-dev must be
-# present in CI for python-ldap to compile its wheel.
+# present in CI for python-ldap to compile its wheel. That Python's sysconfig
+# names clang as the compiler; a builder with only gcc uses gcc.
 log "Building wheelhouse"
+if ! command -v clang >/dev/null 2>&1; then
+  export CC="${CC:-gcc}" CXX="${CXX:-g++}"
+fi
 "$PYBIN" -m pip install --upgrade pip wheel >/dev/null
 "$PYBIN" -m pip wheel -r "$STAGE/requirements.txt" -w "$STAGE/vendor/wheels"
 
@@ -99,6 +103,8 @@ BUILD_VENV="$(mktemp -d)/venv"
 "$BUILD_VENV/bin/pip" install --no-index --find-links "$STAGE/vendor/wheels" -r "$STAGE/requirements.txt" >/dev/null
 ( cd "$STAGE" && DJANGO_SECRET_KEY=build-only DEBUG=True \
     "$BUILD_VENV/bin/python" manage.py collectstatic --noinput >/dev/null )
+# nginx reads these from disk as another user; the tarball keeps the modes.
+chmod -R u=rwX,go=rX "$STAGE/staticfiles"
 
 # ── 7. Installer + metadata ──────────────────────────────────────────────────
 cp "$STAGE/scripts/install.sh" "$STAGE/install.sh"
@@ -113,7 +119,9 @@ EOF
 
 # ── 8. Tarball ───────────────────────────────────────────────────────────────
 log "Packing ${NAME}.tar.gz"
-tar -czf "$OUT/${NAME}.tar.gz" -C "$(dirname "$STAGE")" "$NAME"
+# Owned by root in the archive: extracted by root, nobody else on the host
+# can change the installer or anything it runs as root.
+tar -czf "$OUT/${NAME}.tar.gz" --owner=0 --group=0 --numeric-owner -C "$(dirname "$STAGE")" "$NAME"
 ( cd "$OUT" && sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256" )
 rm -rf "$(dirname "$STAGE")" "$(dirname "$BUILD_VENV")"
 

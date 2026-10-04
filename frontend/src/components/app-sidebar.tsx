@@ -38,6 +38,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
+  LayoutPanelTop,
   ArrowLeftRight,
   LayoutTemplate,
   ListChecks,
@@ -54,6 +55,7 @@ import {
   Rocket,
   Route as RouteIcon,
   Rows3,
+  Rows4,
   Server,
   Settings as SettingsIcon,
   Share2,
@@ -63,6 +65,7 @@ import {
   Split,
   SquareKanban,
   SquareStack,
+  SwatchBook,
   Tag,
   Tags as TagsIcon,
   Trash2,
@@ -141,6 +144,7 @@ import { usePluginUi } from "@/lib/plugins"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { DynamicIcon } from "@/components/dynamic-icon"
 import { apiErrorToast } from "@/lib/api-toast"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // Information architecture mirrors the original Danbyte CLAUDE.md - the
 // order is load-bearing (matches the user's mental model). Stub `/foo`
@@ -179,7 +183,7 @@ type NavSection = {
   clusters: NavCluster[]
 }
 
-const sections: NavSection[] = [
+export const sections: NavSection[] = [
   {
     label: "Organization",
     icon: Users,
@@ -659,6 +663,24 @@ const sections: NavSection[] = [
             icon: Rows3,
             objectType: "rackrole",
           },
+          {
+            title: "Cabinets",
+            url: "/cabinets",
+            icon: Rows4,
+            objectType: "cabinet",
+          },
+          {
+            title: "Cabinet types",
+            url: "/cabinet-types",
+            icon: LayoutPanelTop,
+            objectType: "cabinettype",
+          },
+          {
+            title: "Cabinet roles",
+            url: "/cabinet-roles",
+            icon: SwatchBook,
+            objectType: "cabinetrole",
+          },
         ],
       },
       {
@@ -688,12 +710,6 @@ const sections: NavSection[] = [
             icon: Gauge,
             objectType: "device",
           },
-          {
-            title: "Topology",
-            url: "/topology",
-            icon: Share2,
-            anyOf: ["device", "cable", "interface"],
-          },
         ],
       },
     ],
@@ -715,6 +731,18 @@ const sections: NavSection[] = [
             url: "/floorplans",
             icon: LayoutGrid,
             objectType: "floorplan",
+          },
+          {
+            title: "Topology",
+            url: "/topology",
+            icon: Share2,
+            anyOf: ["device", "cable", "interface"],
+          },
+          {
+            title: "Virtual topology",
+            url: "/virtual-topology",
+            icon: Waypoints,
+            objectType: "virtualswitch",
           },
         ],
       },
@@ -848,12 +876,6 @@ const sections: NavSection[] = [
             title: "Virtual switches",
             url: "/virtual-switches",
             icon: Network,
-            objectType: "virtualswitch",
-          },
-          {
-            title: "Network topology",
-            url: "/virtual-topology",
-            icon: Waypoints,
             objectType: "virtualswitch",
           },
           {
@@ -1691,7 +1713,7 @@ function FavoritesSection() {
                 </h3>
                 <div className="max-h-72 overflow-auto rounded-lg border border-border">
                   {[...folders]
-                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .sort((a, b) => naturalCompare(a.name, b.name))
                     .map((folder) => (
                       <div
                         key={folder.id}
@@ -1736,7 +1758,7 @@ function FavoritesSection() {
                       </div>
                     ))}
                   {[...bookmarks]
-                    .sort((a, b) => a.label.localeCompare(b.label))
+                    .sort((a, b) => naturalCompare(a.label, b.label))
                     .map((bookmark) => (
                       <div
                         key={bookmark.id}

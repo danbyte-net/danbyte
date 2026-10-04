@@ -25,12 +25,7 @@ import { ClusterVmGroups } from "@/components/cluster-vm-groups"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -103,48 +98,12 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={c.name}
-            badges={<StatusBadge status={c.status} />}
-            tags={c.tags.length > 0 && <TagList tags={c.tags} />}
-            description={c.description}
-            stats={
-              <>
-                <DetailStat
-                  label="Type"
-                  value={
-                    <Link
-                      to="/cluster-types/$id"
-                      params={{ id: c.type.id }}
-                      className="link text-xs"
-                    >
-                      {c.type.name}
-                    </Link>
-                  }
-                />
-                <DetailStat
-                  label="Site"
-                  value={
-                    c.site ? (
-                      <Link
-                        to="/sites/$id"
-                        params={{ id: c.site.id }}
-                        className="link text-xs"
-                      >
-                        {c.site.name}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )
-                  }
-                />
-              </>
-            }
-          />
-
-          <CustomFieldValues model="cluster" values={c.custom_fields} />
-        </>
+        <DetailHero
+          title={c.name}
+          badges={<StatusBadge status={c.status} />}
+          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          description={c.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -214,7 +173,7 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
 }
 
 /** The cluster's attributes, grouped into labelled tables - the detail that
- * used to crowd the page header. Only name, status, and type stay up top. */
+ * used to crowd the page header. Only name and status stay up top. */
 function ClusterOverview({ cluster: c }: { cluster: Cluster }) {
   const { humanIds } = useMe()
   const clusterRows: KvRow[] = [
@@ -279,6 +238,11 @@ function ClusterOverview({ cluster: c }: { cluster: Cluster }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Cluster" rows={clusterRows} />
+      <CustomFieldValues
+        model="cluster"
+        values={c.custom_fields}
+        layout="cards"
+      />
       <KvCard title="Members" rows={membersRows} />
     </div>
   )

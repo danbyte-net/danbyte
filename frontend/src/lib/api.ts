@@ -71,25 +71,27 @@ export async function apiStatus<T>(
   if (res.status === 401 && pathname !== "/api/me/") {
     onUnauthorized?.()
   }
-  if (!res.ok) {
-    // Read the body ONCE as text, then try to parse JSON from it. Calling
-    // both .json() and .text() on the same Response throws - the body
-    // stream is single-use.
-    const raw = await res.text()
-    let body: unknown = raw
-    try {
-      body = JSON.parse(raw)
-    } catch {
-      /* keep the raw string */
-    }
-    const detail =
-      body && typeof body === "object" && body !== null && "detail" in body
-        ? String(body.detail)
-        : raw.slice(0, 200)
-    throw new ApiError(res.status, body, `${path} → ${res.status} ${detail}`)
-  }
+  if (!res.ok) throw await apiErrorOf(res, path)
   if (res.status === 204) return { data: undefined as T, status: res.status }
   return { data: (await res.json()) as T, status: res.status }
+}
+
+// The ApiError a failed response carries. Reads the body ONCE as text, then
+// tries to parse JSON from it. Calling both .json() and .text() on the same
+// Response throws - the body stream is single-use.
+async function apiErrorOf(res: Response, path: string): Promise<ApiError> {
+  const raw = await res.text()
+  let body: unknown = raw
+  try {
+    body = JSON.parse(raw)
+  } catch {
+    /* keep the raw string */
+  }
+  const detail =
+    body && typeof body === "object" && body !== null && "detail" in body
+      ? String(body.detail)
+      : raw.slice(0, 200)
+  return new ApiError(res.status, body, `${path} → ${res.status} ${detail}`)
 }
 
 /** A file's own bytes as text, for previewing what an endpoint serves as a
@@ -420,6 +422,8 @@ export type RBACAction =
   | "grant_superuser"
   | "run"
   | "trust"
+  | "view_credits"
+  | "set_default"
 
 export interface RBACUser {
   id: number
@@ -553,14 +557,39 @@ export interface ColumnPrefSummary {
 
 // ─── Space map ─────────────────────────────────────────────────────────
 
+/** `full` - inside (or exactly) a child prefix. `partial` - no child covers
+ * it, but smaller children sit inside it. `free` - no child touches it. */
+export type SpaceMapCellState = "free" | "partial" | "full"
+
+/** A stretch of a cell, as `[start, end)` fractions of it, and the share of
+ * that stretch really in use (1 = solid; less when it spans free gaps). */
+export type SpaceMapSpan = [start: number, end: number, share: number]
+
 export interface SpaceMapCell {
   cidr: string
+  state: SpaceMapCellState
+  /** Any child prefix touches the cell (full or partial). */
   used: boolean
+  /** The cell is exactly an existing child prefix. */
+  exact: boolean
   dirty: boolean
   ip_count: number
+  /** Full: the covering prefixes, most specific first. Partial: the
+   * outermost children inside the cell. At most three. */
   overlap_with: string[]
-  /** Only populated for used cells - UUID of the prefix already covering
-   * this CIDR, so the map can deep-link to its detail page. */
+  /** How many prefixes `overlap_with` was cut from. */
+  overlap_count: number
+  /** Share of the cell's addresses the children take, 0-1. */
+  used_fraction: number
+  /** Where they sit. */
+  used_spans: SpaceMapSpan[]
+  /** IP ranges reaching a free or partly used cell (not ones wholly inside
+   * a child prefix): how many, up to three labels, and where they sit. */
+  range_count: number
+  ranges: string[]
+  range_spans: SpaceMapSpan[]
+  /** Only populated for used cells - UUID of `overlap_with[0]`, so the map
+   * can deep-link to its detail page. */
   prefix_id?: string | null
 }
 
@@ -568,9 +597,27 @@ export interface SpaceMapRow {
   prefixlen: number
   count: number
   free_count: number
+  partial_count: number
   dirty_count: number
+  /** Cells an IP range reaches. */
+  ranged_count: number
+  /** Empty for a row past the +8 window - see `runs`. */
   cells: SpaceMapCell[]
+  /** A row past the +8 window (`?deeper=`): runs of cells sharing a state,
+   * as cell indexes, instead of thousands of cells. */
+  runs?: SpaceMapRun[]
 }
+
+/** Cells `first`-`last` of a deep row; `prefix` is the outermost child
+ * prefix a used run sits in. */
+export type SpaceMapRun = [
+  first: number,
+  last: number,
+  state: SpaceMapCellState,
+  dirty: boolean,
+  ranged: boolean,
+  prefix: string | null,
+]
 
 export interface SubnetDetailRow {
   label: string
@@ -583,9 +630,14 @@ export interface SpaceMap {
   supported: boolean
   /** The CIDR the map is currently rooted at (the prefix, or a descended cell). */
   root?: string | null
+  /** The most specific child prefix holding a zoomed view (null = the map's
+   * own prefix) - free blocks on screen belong to it. */
+  context?: { id: string; cidr: string } | null
   subnet_details: SubnetDetailRow[] | null
   next_available: string[]
   rows: SpaceMapRow[]
+  /** The row `?deeper=` one more would add, or null when the map ends. */
+  more?: { prefixlen: number; count: number } | null
 }
 
 // ─── Picker shapes ─────────────────────────────────────────────────────
@@ -769,6 +821,9 @@ export interface StatusMini {
   slug?: string
   color: string
   text_color: string
+  /** The status a new object of its kind gets (its `default_for`); sent
+   * where a map draws pills only for the exceptions. */
+  is_default?: boolean
 }
 
 export interface IPRoleMini {
@@ -842,6 +897,11 @@ export interface IPAddress {
   last_seen: string | null
   discovered: boolean
   flap_exclude: boolean
+  /** Every check parked: nothing runs, nothing counts. Read-only here - set
+   * with POST /api/monitoring/ips/<id>/exclude/. */
+  monitoring_excluded?: boolean
+  /** Availability counts from here (a reset); null = all history counts. */
+  availability_since?: string | null
   is_primary_for_device: boolean
   /** This address is its VM's primary IP (#122). */
   is_primary_for_vm?: boolean
@@ -892,6 +952,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "prefix", label: "Prefixes" },
   { value: "iprange", label: "IP ranges" },
   { value: "rack", label: "Racks" },
+  { value: "cabinet", label: "Cabinets" },
   { value: "cluster", label: "Clusters" },
   { value: "virtualmachine", label: "Virtual machines" },
   { value: "cable", label: "Cables" },
@@ -908,6 +969,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "bgpsession", label: "BGP sessions" },
   { value: "routinginstance", label: "Routing instances" },
   { value: "vtep", label: "VTEPs" },
+  { value: "vlan", label: "VLANs" },
 ]
 
 // api/status_registry.MONITORING_STATES - the six states a check can end in.
@@ -939,6 +1001,8 @@ export interface Status {
    * status. See MONITORING_STATES. */
   monitoring_state: string
   usage_count: number
+  /** The status page's IPs tab - addresses only. */
+  ip_count?: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
   created_at: string
@@ -1117,6 +1181,87 @@ export interface SiteMapConnection {
   color: string
   status: { name: string; color: string } | null
   meta: Record<string, unknown>
+  /** `?include=capacity` only - see `SiteMapLineCapacity`. A cable edge's
+   * links are every link its site pair's cables carry, `a` at `site_a`. */
+  capacity?: SiteMapCapacity | null
+  links?: SiteMapLink[]
+  link_count?: number
+}
+
+/** Where a site map line's speed comes from (#246): a circuit's `commit`
+ * rate, its terminations' `port` / upstream speeds, the `interface`s cabled
+ * to it, a tunnel's own figure (`override`), or the lower end speed of a
+ * `cable` link. */
+export type LinkCapacitySource =
+  | "commit"
+  | "port"
+  | "interface"
+  | "override"
+  | "cable"
+  | "mixed"
+
+/** One link's speed in kbps; `up_kbps` only when the other direction
+ * differs. `label` is the short form: `10G`, `500M`, `100/20M`. */
+export interface LinkCapacity {
+  kbps: number
+  up_kbps: number | null
+  source: LinkCapacitySource
+  label: string
+}
+
+/** A line's speed: its one link's, or its links added up (`2×10G` when they
+ * match, else the sum). `count` links have a known speed and `unknown` do
+ * not - a cable that carries no link at all counts as one unknown. */
+export interface SiteMapCapacity extends LinkCapacity {
+  count: number
+  unknown: number
+}
+
+/** One end of a link on the site map. */
+export interface SiteMapLinkEnd {
+  site_id: string | null
+  /** What the end lands on, when you may view it. */
+  device: { id: string; name: string } | null
+  /** A tunnel end on a virtual machine. */
+  virtual_machine?: { id: string; name: string } | null
+  /** `kind`: interface, vm_interface, front_port / rear_port (a splitter),
+   * circuit_termination… `speed_kbps` is an interface's parsed speed. */
+  port: {
+    id: string
+    name: string
+    kind: string
+    speed_kbps: number | null
+  } | null
+  /** It lands on something you may not view (or, for a circuit end, you may
+   * not view cables) - nothing about it is sent. */
+  restricted: boolean
+  /** A circuit end: the termination's own figures. */
+  termination?: {
+    id: string
+    side: "A" | "Z"
+    port_speed_kbps: number | null
+    upstream_speed_kbps: number | null
+  }
+}
+
+/** An end-to-end link behind a site map line: a circuit, a tunnel, or a
+ * cable run from port to port through any patch panels. */
+export interface SiteMapLink {
+  a: SiteMapLinkEnd
+  z: SiteMapLinkEnd
+  /** Null when no speed is known, or a cable link has an end you may not
+   * view. */
+  capacity: LinkCapacity | null
+  /** The cable carrying it; null for circuits and tunnels. */
+  cable_id: string | null
+}
+
+/** What `?include=capacity` adds to a site map connection or cable. */
+export interface SiteMapLineCapacity {
+  capacity: SiteMapCapacity | null
+  /** The first 50 links. */
+  links: SiteMapLink[]
+  link_count: number
 }
 
 export interface SiteMapPayload {
@@ -1190,11 +1335,34 @@ export interface ImagePortMarker {
 export interface ImagePorts {
   front: ImagePortMarker[]
   rear: ImagePortMarker[]
-  /** Display-size override per side, saved from the editor. A side that is
-   * present replaces the upload size everywhere the photo is drawn: `scale`
-   * is a fraction of the natural width (1 = pixel-true), null = fit the
-   * pane. A side that is absent draws at its upload size. */
-  view?: { front?: { scale: number | null }; rear?: { scale: number | null } }
+  /** Per side, saved from the editor: the display size and the photo's
+   * calibration. */
+  view?: { front?: PhotoView; rear?: PhotoView }
+}
+
+/** One side's `view`. A `scale` that is present replaces the upload size
+ * everywhere the photo is drawn: a fraction of the natural width (1 =
+ * pixel-true), null = fit the pane. Without one the photo draws at its
+ * upload size. */
+export interface PhotoView {
+  scale?: number | null
+  cal?: PhotoCalibration | null
+}
+
+/** How big a photo really is (#277): two guides at fractions of its width
+ * with the real distance between them, and the DIN rail's centreline as a
+ * fraction of its height (null = not marked). True width = span_mm /
+ * (right - left). */
+export interface PhotoCalibration {
+  left: number
+  right: number
+  span_mm: number
+  rail: number | null
+}
+
+/** A calibration with the whole photo's true width, mm (0.1). */
+export interface ResolvedPhotoCalibration extends PhotoCalibration {
+  photo_mm: number
 }
 
 export interface DeviceType extends LifecycleInfo {
@@ -1209,6 +1377,8 @@ export interface DeviceType extends LifecycleInfo {
   u_height: number
   /** Horizontal rack footprint - "half" mounts two side-by-side per U. */
   rack_width: "full" | "half"
+  /** Photo size on the topology Diagram; "" inherits. */
+  topology_photo_size?: "" | TopologyPhotoSize
   description: string
   /** Absolute URL of the front rack-face image, or null. */
   front_image: string | null
@@ -1225,6 +1395,16 @@ export interface DeviceType extends LifecycleInfo {
   weight_unit: string
   subdevice_role: string
   exclude_from_utilization: boolean
+  /** The body's size in mm, one decimal; null when unknown. A type that
+   * mounts on DIN rails needs its width and height. */
+  width_mm: number | null
+  height_mm: number | null
+  depth_mm: number | null
+  /** The DIN rail profiles the type mounts on; empty = not DIN-mounted. */
+  din_profiles: DinProfile[]
+  /** The rail's centreline below the body's top edge, in mm; null = the
+   * middle of the body. */
+  din_rail_mm: number | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   device_count: number
@@ -1253,6 +1433,7 @@ export interface DeviceTypeWritePayload {
   platform_id?: string | null
   u_height?: number
   rack_width?: "full" | "half"
+  topology_photo_size?: "" | TopologyPhotoSize
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -1262,6 +1443,11 @@ export interface DeviceTypeWritePayload {
   airflow?: string
   weight?: string | null
   weight_unit?: string
+  width_mm?: number | null
+  height_mm?: number | null
+  depth_mm?: number | null
+  din_profiles?: DinProfile[]
+  din_rail_mm?: number | null
   release_date?: string | null
   end_of_sale?: string | null
   end_of_security_updates?: string | null
@@ -1269,13 +1455,35 @@ export interface DeviceTypeWritePayload {
   lifecycle_url?: string
 }
 
-/** Picker shape (?picker=1) - DeviceTypeMiniSerializer. */
-export interface DeviceTypeOption {
+/** The compact device type - DeviceTypeMiniSerializer: the `device_type` a
+ * device row carries, and the picker shape (?picker=1). */
+export interface DeviceTypeMini {
   id: string
   name: string
+  manufacturer: string | null
+  manufacturer_id: string | null
   u_height: number
   rack_width: "full" | "half"
+  is_full_depth: boolean
+  /** Body width and height in mm; what a cabinet drawing sizes it by. */
+  width_mm: number | null
+  height_mm: number | null
+  /** Empty = not DIN-mounted. */
+  din_profiles: DinProfile[]
+  /** The rail's centreline below the body's top edge; null = the middle. */
+  din_rail_mm: number | null
+  front_image: string | null
+  rear_image: string | null
+  /** The front photo's calibration, with its true width; null when it has
+   * none. A device's own `image_ports` calibration wins over it. */
+  front_cal?: ResolvedPhotoCalibration | null
+  release_date?: string | null
+  end_of_support?: string | null
+  lifecycle_state?: LifecycleState
 }
+
+/** Picker shape (?picker=1) - DeviceTypeMiniSerializer. */
+export type DeviceTypeOption = DeviceTypeMini
 
 export interface ImageAttachment {
   id: string
@@ -1336,27 +1544,26 @@ export interface Document {
   updated_at: string
 }
 
+/** A site with its region - what device, rack and VM rows embed. */
+export interface SiteRegionMini {
+  id: string
+  name: string
+  region?: { id: string; name: string; slug: string } | null
+}
+
 export interface Device {
   id: string
   numid: number | null
   name: string
   /** Per-device photo-port override; null = inherit the type's layout. */
   image_ports?: DeviceType["image_ports"] | null
-  device_type: {
-    id: string
-    name: string
-    manufacturer: string | null
-    manufacturer_id: string | null
-    u_height: number
-    rack_width: "full" | "half"
-    is_full_depth: boolean
-    front_image: string | null
-    rear_image: string | null
-    release_date?: string | null
-    end_of_support?: string | null
-    lifecycle_state?: LifecycleState
-  } | null
-  site: { id: string; name: string } | null
+  /** Topology card lines for this device; null inherits the view, role
+   * or global list, `[]` = name only. */
+  topology_card?: string[] | null
+  /** Photo size on the topology Diagram; "" inherits. */
+  topology_photo_size?: "" | TopologyPhotoSize
+  device_type: DeviceTypeMini | null
+  site: SiteRegionMini | null
   role: {
     id: string
     name: string
@@ -1381,6 +1588,8 @@ export interface Device {
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
   airflow: string
+  /** Read-only: the device's own airflow, else its type's default. */
+  effective_airflow?: string
   /** Port labels on this device's faceplate renders: inherit / on / off. */
   port_labels: DevicePortLabels
   latitude: string | null
@@ -1441,6 +1650,15 @@ export interface Device {
     starting_unit: number
     desc_units: boolean
   } | null
+  // ─── Cabinet placement (DIN rails, #277) ─────────────────────────────
+  /** The cabinet the device sits in - never a rack as well. */
+  cabinet: { id: string; name: string } | null
+  /** The cabinet's rail it sits on; null in no cabinet, or in one off any
+   * rail. */
+  din_rail: { id: string; label: string; profile: DinProfile } | null
+  /** From the rail's left end to the device's left edge, in mm; null off a
+   * rail. */
+  din_offset_mm: number | null
   permissions?: ObjectPerms
   created_at: string
   updated_at: string
@@ -1465,6 +1683,11 @@ export interface DeviceWritePayload {
   mount?: "side_left" | "side_right" | ""
   mount_offset_mm?: number | null
   mount_span_u?: number | null
+  /** A rail sets its cabinet; a rail without an offset takes the first gap
+   * from the left the device fits in. */
+  cabinet_id?: string | null
+  din_rail_id?: string | null
+  din_offset_mm?: number | null
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments?: string
   airflow?: string
@@ -1477,6 +1700,8 @@ export interface DeviceWritePayload {
   vc_position?: number | null
   vc_priority?: number | null
   config_template_id?: string | null
+  topology_card?: string[] | null
+  topology_photo_size?: "" | TopologyPhotoSize
 }
 
 // Admin-controlled visibility for the promoted built-in Device fields.
@@ -1538,6 +1763,8 @@ export interface DeviceRole {
   icon: string
   is_patch_panel: boolean
   has_fov: boolean
+  /** Photo size on the topology Diagram; "" inherits. */
+  topology_photo_size?: "" | TopologyPhotoSize
   config_template: { id: string; name: string } | null
   description: string
   custom_fields: Record<string, unknown>
@@ -1551,6 +1778,7 @@ export interface DeviceRole {
 export interface DeviceRoleWritePayload {
   is_patch_panel?: boolean
   has_fov?: boolean
+  topology_photo_size?: "" | TopologyPhotoSize
   name: string
   slug?: string
   color?: string
@@ -1743,12 +1971,27 @@ export interface RackTypeWritePayload {
   tag_ids?: number[]
 }
 
+/** Where a rack's power supply figure comes from: its primary feeds, or -
+ * with none - the rated draw of its PDUs' inlets (both strips of an A/B
+ * pair). Null: no supply figure (`available_w` 0). */
+export type RackPowerSupply = "feed" | "pdu_rating" | null
+
+/** A rack's power roll-up (api.capacity.rack_power). */
+export interface RackPower {
+  available_w: number
+  /** Demand: allocated draw where recorded, beside the nameplate sum. */
+  allocated_w: number
+  maximum_w: number
+  /** Always sent; optional so older fixtures still type. */
+  supply?: RackPowerSupply
+}
+
 export interface Rack {
   id: string
   numid: number | null
   name: string
   facility_id: string
-  site: { id: string; name: string }
+  site: SiteRegionMini
   role: {
     id: string
     name: string
@@ -1765,8 +2008,16 @@ export interface Rack {
   /** Sum of racked devices' type weights, normalised to kg. */
   total_weight_kg: number
   max_weight_kg: number | null
-  /** Supply from primary feeds vs the racked devices' power-port draws. */
-  power: { available_w: number; allocated_w: number; maximum_w: number }
+  /** Supply from primary feeds (else the PDUs' rating) vs the racked
+   * devices' power-port draws. */
+  power: RackPower
+  /** `?include=ports` only, else null (#247): the counted interfaces of
+   * devices that are not patch panels. */
+  ports?: PortCountRow | null
+  /** `?include=ports` only, else null: front ports, and every counted port
+   * of a patch-panel device. `ports` + `panel_ports` = the rack's counted
+   * ports (`RackPortState.rack.ports`). */
+  panel_ports?: PortCountRow | null
   u_height: number
   starting_unit: number
   desc_units: boolean
@@ -1836,6 +2087,227 @@ export interface RackOption {
   u_height: number
   starting_unit: number
   desc_units: boolean
+}
+
+// ─── DCIM: cabinets (DIN-rail enclosures, #277) ─────────────────────────────
+
+export interface CabinetRole {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  color: string
+  description: string
+  cabinet_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CabinetRoleWritePayload {
+  name: string
+  slug?: string
+  color?: string
+  description?: string
+}
+
+/** Picker shape (?picker=1) - the role's colour renders as its ColorBadge. */
+export interface CabinetRoleOption {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  color: string
+}
+
+/** A cabinet's sizes in whole millimetres: the mounting plate the rails sit
+ * on (inner, required) and the box around it (outer, optional). */
+export interface CabinetSizes {
+  inner_width_mm: number
+  inner_height_mm: number
+  outer_width_mm: number | null
+  outer_height_mm: number | null
+  outer_depth_mm: number | null
+}
+
+/** Picker shape (?picker=1) - carries the sizes so the cabinet form can
+ * pre-fill client-side; the cabinet stays the source of truth. */
+export interface CabinetTypeOption extends CabinetSizes {
+  id: string
+  numid: number | null
+  name: string
+  manufacturer: { id: string; name: string } | null
+}
+
+/** A DIN rail profile. It sets the band the rail takes on the plate: 35, 15
+ * or 32 mm (`lib/din-geometry.ts`). */
+export type DinProfile = "ts35" | "ts15" | "g32"
+
+/** A DIN rail on a cabinet's mounting plate (`rails`), or one a cabinet type
+ * gives each new cabinet (`rail_templates`). Placed by its left end and its
+ * centreline, from the plate's top-left corner; millimetres, one decimal. */
+export interface DinRail {
+  id: string
+  label: string
+  profile: DinProfile
+  x_mm: number
+  y_mm: number
+  length_mm: number
+}
+
+/** A rail in a write, which sends the whole set: an item with the id of one
+ * of the parent's rails updates it, one without is a new rail, and rails
+ * left out are removed. */
+export type DinRailWrite = Omit<DinRail, "id"> & { id?: string }
+
+/** The field a parent keeps its rails in. */
+export type DinRailKey = "rails" | "rail_templates"
+
+/** Replace a cabinet's rails (`rails`), or a cabinet type's templates
+ * (`rail_templates`), as one set. Errors come back per rail, in the order
+ * sent: `{rails: [{}, {y_mm: ["Overlaps rail C."]}]}`. */
+export function saveDinRails<T>(
+  endpoint: string,
+  key: DinRailKey,
+  rails: DinRailWrite[]
+): Promise<T> {
+  return api<T>(endpoint, {
+    method: "PATCH",
+    body: JSON.stringify({ [key]: rails }),
+  })
+}
+
+export interface CabinetType extends CabinetTypeOption {
+  rail_templates: DinRail[]
+  description: string
+  cabinet_count: number
+  tags: Tag[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CabinetTypeWritePayload {
+  name: string
+  manufacturer_id?: string | null
+  inner_width_mm?: number
+  inner_height_mm?: number
+  outer_width_mm?: number | null
+  outer_height_mm?: number | null
+  outer_depth_mm?: number | null
+  rail_templates?: DinRailWrite[]
+  description?: string
+  tag_ids?: number[]
+}
+
+/** Picker shape (?picker=1) - CabinetMiniSerializer. */
+export interface CabinetOption extends CabinetSizes {
+  id: string
+  numid: number | null
+  name: string
+  site: { id: string; name: string }
+}
+
+export interface Cabinet extends CabinetSizes {
+  id: string
+  numid: number | null
+  name: string
+  facility_id: string
+  site: SiteRegionMini
+  location: { id: string; name: string } | null
+  role: CabinetRoleOption | null
+  cabinet_type: CabinetTypeOption | null
+  status: StatusMini | null
+  /** Sorted by centreline, then left end, then label. */
+  rails: DinRail[]
+  description: string
+  document_count: number
+  /** Devices in the cabinet, on its rails or off them. */
+  device_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** A rail field the sync compares, with the cabinet's and the type's value. */
+export type CabinetSyncRailField = "profile" | "x_mm" | "y_mm" | "length_mm"
+
+/** What a rail would change, field by field. */
+export type CabinetSyncRailChanges = Partial<
+  Record<
+    CabinetSyncRailField,
+    { cabinet: number | string; type: number | string }
+  >
+>
+
+/** How a cabinet differs from its type. Rails are matched by label: `add` are
+ * template rails the cabinet lacks, `update` rails with a template's label
+ * that sit elsewhere or have another profile, `blocked` such updates the
+ * devices on the rail would not survive (a sync skips them, with the
+ * reason), and `extra` the cabinet's own rails, which a sync leaves alone.
+ * Empty when the cabinet matches. */
+export interface CabinetSyncDiff {
+  sizes?: Partial<
+    Record<keyof CabinetSizes, { cabinet: number | null; type: number | null }>
+  >
+  rails?: {
+    add: string[]
+    update: { label: string; changes: CabinetSyncRailChanges }[]
+    blocked: {
+      label: string
+      changes: CabinetSyncRailChanges
+      reason: string
+    }[]
+    extra: string[]
+  }
+}
+
+export interface CabinetSyncResponse {
+  applied: boolean
+  /** After an apply: what still differs (extras, and any part left out). */
+  diff: CabinetSyncDiff
+}
+
+/** Compare a cabinet with its type, or with `apply` copy the type's sizes and
+ * add or move the rails its templates name. `sizes` and `rails` (both on by
+ * default) narrow what applies. A result that would not fit the plate is
+ * refused as a whole with a 400 `detail`. */
+export function syncCabinetFromType(
+  id: string,
+  body: { apply?: boolean; sizes?: boolean; rails?: boolean } = {}
+): Promise<CabinetSyncResponse> {
+  return api<CabinetSyncResponse>(`/api/cabinets/${id}/sync-from-type/`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+}
+
+export interface CabinetWritePayload {
+  name: string
+  facility_id?: string
+  site_id: string
+  location_id?: string | null
+  role_id?: string | null
+  cabinet_type_id?: string | null
+  status_id?: string | null
+  /** Left out on a create with a type, the server copies the type's plate. */
+  inner_width_mm?: number
+  inner_height_mm?: number
+  outer_width_mm?: number | null
+  outer_height_mm?: number | null
+  outer_depth_mm?: number | null
+  /** Left out on a create with a type, the cabinet takes the type's rails. */
+  rails?: DinRailWrite[]
+  description?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
+}
+
+/** Picker shape (?picker=1) - CabinetMiniSerializer. */
+export interface CabinetOption extends CabinetSizes {
+  id: string
+  numid: number | null
+  name: string
+  site: { id: string; name: string }
 }
 
 // ─── DCIM: interfaces / cables ──────────────────────────────────────────────
@@ -1954,6 +2426,90 @@ export interface InstalledModuleMini {
 export interface FacePorts {
   front: FacePort[]
   rear: FacePort[]
+}
+
+/** Counted ports under the shared rule - the Port utilization card's
+ * headline row. Used = connected + reserved. */
+export interface PortCountRow {
+  total: number
+  connected: number
+  reserved: number
+  free: number
+  /** Undocumented subset of connected (mark_connected, no cable row). */
+  marked: number
+}
+
+/** One physical interface in a rack's port state: what the drawn faceplate
+ * colours and hovers a port by, its cable reduced to state, id, label and
+ * type. `rackPortInterfaces` (lib/rack-port-state) makes `Interface`s of
+ * them. */
+export interface RackPortInterface {
+  id: string
+  name: string
+  label: string
+  type: string
+  type_display: string
+  speed: string
+  enabled: boolean
+  mode: string
+  mark_connected: boolean
+  cable_state: "free" | "connected" | "reserved" | "marked"
+  cable_id: string | null
+  cable_label: string
+  cable_type: string
+  /** The far end; null when uncabled or its device is not viewable. */
+  peer: { device: string; port: string; port_label: string } | null
+  hide_label: boolean
+  label_color: string
+  vlan: VLANMini | null
+  tagged_vlan_count: number
+  lag: { id: string; name: string } | null
+  ip_addresses: { id: string; ip_address: string }[]
+  description: string
+  mac_address: string
+  mtu: number | null
+  tags: Tag[]
+}
+
+/** An installed module as the drawn faceplate composes it into its device -
+ * the fields of `/api/modules/` it reads. */
+export interface RackPortModule {
+  id: string
+  module_bay: { id: string; name: string; position: string }
+  module_type_faceplate: FaceplateDoc | null
+  module_interfaces: { name: string; type: string }[]
+}
+
+/** One device in a rack's port state. */
+export interface RackPortDevice {
+  ports: PortCountRow
+  /** Its photo-port markers resolved, as `/face-ports/` gives them (drift
+   * always null). */
+  face: FacePorts
+  interfaces: RackPortInterface[]
+  modules: RackPortModule[]
+  /** By slot kind (`console-port`, `power-port`…): the components of the
+   * kinds its saved faceplate layout places, and only those. */
+  components: Record<string, { id: string; name: string; type: string }[]>
+  /** Whether SNMP may have seen its ports - polled with interfaces, or a
+   * stack member: the page asks for live port state only for these. */
+  observed: boolean
+}
+
+/** `GET /api/racks/{id}/port-state/` (#248): every port in the rack. The
+ * rack's figures count every device in it; `devices` lists the ones the
+ * caller may view. */
+export interface RackPortState {
+  rack: {
+    id: string
+    u_height: number
+    u_used: number
+    u_free: number
+    power: RackPower
+    ports: PortCountRow
+    count_virtual: boolean
+  }
+  devices: Record<string, RackPortDevice>
 }
 
 /** A user-defined SNMP health sensor (GET/POST /api/monitoring/snmp-sensors/). */
@@ -2135,7 +2691,11 @@ export interface Interface {
   snmp_name: string
   /** Excluded from SNMP drift - never compared, never flagged stale. */
   snmp_ignore: boolean
+  /** Uplink: Always. With `never_uplink` this is the form's Automatic /
+   * Always / Never - both false is Automatic, both true is refused (#284). */
   is_uplink?: boolean
+  /** Uplink: Never - beats every automatic uplink rule. */
+  never_uplink?: boolean
   /** `evpn mh uplink`: fabric-facing on an EVPN multihomed leaf. */
   evpn_mh_uplink?: boolean
   /** Media type slug (e.g. 10gbase-x-sfpp), or "" if unset. */
@@ -2223,6 +2783,7 @@ export interface InterfaceWritePayload {
   snmp_name?: string
   snmp_ignore?: boolean
   is_uplink?: boolean
+  never_uplink?: boolean
   evpn_mh_uplink?: boolean
   mgmt_only?: boolean
   mark_connected?: boolean
@@ -2804,8 +3365,20 @@ export interface TopoNode {
     interface_id?: string
     status?: string
     status_display?: string
+    /** Device nodes: the lifecycle status row (`is_default` = the status a
+     * new device gets). Trace device nodes carry it too. */
+    status_mini?: (StatusMini & { is_default?: boolean }) | null
     device_type?: string | null
-    role?: { name: string; color: string; is_patch_panel?: boolean } | null
+    device_type_id?: string | null
+    /** Trace and LLDP-neighbour nodes carry no role or device_type_id. */
+    role?: {
+      id?: string
+      name: string
+      slug?: string
+      color: string
+      icon?: string
+      is_patch_panel?: boolean
+    } | null
     site?: string | null
     location?: string | null
     primary_ip?: string | null
@@ -2815,7 +3388,111 @@ export interface TopoNode {
     panel?: boolean
     /** Cabled ports, ordered - each is an edge anchor on the stencil card. */
     ports?: TopoPort[]
+    /** `include=card` only: the card lines this device resolved to. */
+    card?: TopoCard
+    /** `include=photo` only. */
+    photo?: TopoPhoto
   }
+}
+
+/** Where a device's card lines came from, most specific first. `view` =
+ * the query's `card_fields` (a saved view's own list). */
+export type TopoCardSource =
+  | "device"
+  | "view"
+  | "role"
+  | "tenant"
+  | "deployment"
+  | "default"
+
+/** An IP on a card line: `address` bare, `cidr` with its prefix length. */
+export interface TopoCardIp {
+  id: string
+  address: string
+  cidr: string
+}
+
+/** Card line values. Only the keys in the node's `card.fields` are present;
+ * site, location, role, device type and status are already on the node. */
+export interface TopoCardValues {
+  primary_ip?: TopoCardIp | null
+  secondary_ip?: TopoCardIp | null
+  oob_ip?: TopoCardIp | null
+  /** Addresses with the IP role `loopback` assigned to this device. */
+  loopback?: TopoCardIp[]
+  serial?: string
+  asset_tag?: string
+  /** The device's own platform, else its type's. */
+  platform?: { id: string; name: string } | null
+  manufacturer?: { id: string; name: string } | null
+  rack?: { id: string; name: string; position: number | null } | null
+  tags?: Pick<Tag, "name" | "slug" | "color">[]
+  /** Visible device custom fields, raw values. */
+  [cf: `cf_${string}`]: unknown
+}
+
+export interface TopoCard {
+  /** Resolved line keys (at most 8); `[]` = name only. */
+  fields: string[]
+  source: TopoCardSource
+  values: TopoCardValues
+}
+
+/** A photo marker resolved to one of this node's cabled ports. `x y w h`
+ * are fractions of the image; `port` is the port's current name. */
+export interface TopoPhotoMarker {
+  port: string
+  port_id: string
+  /** The marker kind as saved on the type (`interface`, `front-port`...). */
+  kind: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** A device's, type's or role's photo size on the Diagram; "" inherits. */
+export type TopologyPhotoSize = "rack" | "own"
+
+export interface TopoPhoto {
+  /** Null when the type has no front photo. */
+  front: {
+    /** Same-origin media URL. */
+    url: string
+    /** Height / width; null when unreadable (use `naturalWidth`). */
+    aspect: number | null
+    /** The file's own pixel width; null when unreadable. */
+    width?: number | null
+    /** Display-size override from the type's layout (`ImagePorts.view`):
+     * a fraction of `width`, the size on every surface. */
+    scale: number | null
+    /** The calibrated photo's true width, mm (the device's calibration,
+     * else its type's); null when it has none. */
+    mm?: number | null
+    markers: TopoPhotoMarker[]
+  } | null
+  /** How wide the Diagram draws it: as a 19-inch device (`rack`), or at
+   * the photo's own size (`own`) - the device's setting, else its type's,
+   * else its role's. */
+  size?: TopologyPhotoSize
+  /** The type can render a `TypeFaceplate` (on screen only). */
+  type_faceplate: boolean
+  u_height: number
+  /** The type's rack footprint: a half-width photo is drawn half as wide. */
+  rack_width?: "full" | "half"
+  vc_position: number | null
+}
+
+/** A subnet both ends of one cable pair sit in (`include=link_ips`). */
+export interface TopoLinkSubnet {
+  cidr: string
+  family: 4 | 6
+  /** The A and B end addresses (bare), oriented like the pair. */
+  a: string
+  b: string
+  /** The LAG or sub-interface carrying the address, when not the port. */
+  a_via?: string | null
+  b_via?: string | null
 }
 
 export interface TopoEdge {
@@ -2828,9 +3505,42 @@ export interface TopoEdge {
     cable_type?: string
     color?: string
     status?: string
-    pairs?: { a: string; b: string; a_port?: string; b_port?: string }[]
+    /** Cable edges: the cable's status row (`is_default` = the status a new
+     * cable gets). */
+    status_mini?: (StatusMini & { is_default?: boolean }) | null
+    /** `a_id`/`a_kind` (and b): the component at each end - its termination
+     * kind (interface, front_port, circuit_termination, ...). */
+    pairs?: {
+      a: string
+      b: string
+      a_port?: string
+      b_port?: string
+      a_id?: string
+      a_kind?: string
+      b_id?: string
+      b_kind?: string
+      /** The cable end (A/B) each side is terminated on, oriented like the
+       * rest of the pair; null where it cannot be told. */
+      a_end?: "A" | "B" | null
+      b_end?: "A" | "B" | null
+      /** `include=link_ips`: each end's addresses with length (at most 8). */
+      a_ips?: string[]
+      b_ips?: string[]
+      /** Subnets shared by both ends, v4 first (at most 8). */
+      subnets?: TopoLinkSubnet[]
+      /** More than 8 shared subnets; the rest were left out. */
+      subnets_truncated?: boolean
+      /** A tunnel map's link: each end's outside (underlay) address,
+       * drawn after its interface name. */
+      a_outside?: string | null
+      b_outside?: string | null
+    }[]
+    /** `include=link_ips`: every pair's shared subnets, de-duplicated. */
+    subnets?: string[]
     cable_numid?: number | null
     cable_label?: string
+    /** A tunnel map's link (tunnels/tunnel-graph.ts): the tunnel it is. */
+    tunnel?: { id: string; name: string }
     length?: string | null
     length_unit?: string
     /** Link speed from an endpoint interface (free-form, e.g. "10G"). */
@@ -2913,19 +3623,103 @@ export interface DevicePathRun {
   complete: boolean
 }
 
+/** The view styles that own an arrangement in a saved view. Mirrors
+ * `TopologyViewSerializer.POSITION_STYLES`. */
+export type TopologyPositionStyle = "stencil" | "hierarchy" | "flat" | "diagram"
+
+export type TopologyLineType = "straight" | "elbow" | "bendy" | "cyclical"
+
+/** A labelled box behind the map. Zones are annotation only; bands group
+ * the cards inside them by geometry. */
+export interface TopologyViewZone {
+  id: string
+  label: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** One of `ZONE_COLORS`; a band may be neutral (null or ""). */
+  color: string | null
+  /** Absent = "zone" (every view saved before bands). */
+  kind?: "zone" | "band"
+  /** Bands: a row (`h`) or a side band (`v`). */
+  orient?: "h" | "v"
+  /** Bands generated by Arrange: what they were generated from. */
+  rule?: { by: "role" | "device_type"; ids: string[] }
+  /** A row of several layers: a sub-row each (`stack`) or mixed in one
+   * (`row`, the default). */
+  layout?: "stack" | "row"
+}
+
+/** The Diagram tab's display settings (`state.filters.diagram`). */
+export interface TopologyDiagramDisplay {
+  mode: "simple" | "detailed"
+  face: "card" | "photo"
+  line: TopologyLineType
+  labels: ("subnet" | "ip" | "port")[]
+  /** The view's own card lines; absent inherits, `[]` = name only. */
+  fields?: string[]
+  /** Where cables meet a photo: on its ports (absent), or spread along
+   * its edge like a card's. */
+  photo_anchor?: TopologyPhotoAnchor
+}
+
+/** Where cables meet a device drawn as its photo. */
+export type TopologyPhotoAnchor = "ports" | "edge"
+
+/** `state.filters`: the map's settings under the page's own names. */
+export interface TopologyViewFilters {
+  [key: string]: unknown
+  diagram?: TopologyDiagramDisplay
+}
+
+/** A per-link override, keyed by the sorted device pair `"<uuid>|<uuid>"`. */
+export interface TopologyLinkOverride {
+  line?: TopologyLineType
+  /** Which side a cyclical arc bulges to. */
+  flip?: 1 | -1
+}
+
+/** A free-text or icon annotation on the Diagram tab. */
+/** A Diagram note: free text, or an icon with a caption under it. */
+export interface TopologyViewNote {
+  id: string
+  kind: "text" | "icon"
+  /** Its centre, as a card's. */
+  x: number
+  y: number
+  text?: string
+  icon?: "cloud" | "globe" | "building"
+  /** Absent = "m". */
+  size?: "s" | "m" | "l"
+  /** A text note on a chip with a hairline edge. */
+  outline?: boolean
+}
+
 export interface TopologyViewState {
-  filters?: Record<string, unknown>
+  filters?: TopologyViewFilters
   /** Node arrangements per view style - the cards differ in size between
    * styles, so each keeps its own coordinates. */
-  positions_by_style?: Record<string, Record<string, [number, number]>>
+  positions_by_style?: Partial<
+    Record<TopologyPositionStyle, Record<string, [number, number]>>
+  >
   /** The style-on-save arrangement. Predates `positions_by_style`; still
    * written so older readers keep working. */
   positions?: Record<string, [number, number]>
   /** Labelled backdrop boxes, per view style - same reason as positions. */
-  zones_by_style?: Record<string, unknown>
+  zones_by_style?: Partial<Record<TopologyPositionStyle, TopologyViewZone[]>>
   /** What the eyes switched off - `components/topology/hidden.ts`'s
    * TopoHidden; a flat list of node ids in views saved before it. */
   hidden?: unknown
+  /** Per-link line overrides (at most 20,000). */
+  links?: Record<string, TopologyLinkOverride>
+  /** Per-device overrides, keyed by device id. */
+  nodes?: Record<
+    string,
+    { face?: "card" | "photo"; anchor?: TopologyPhotoAnchor }
+  >
+  /** Diagram annotations (at most 500). */
+  notes?: TopologyViewNote[]
 }
 
 export interface TopologyViewSaved {
@@ -2937,9 +3731,163 @@ export interface TopologyViewSaved {
   updated_at: string
 }
 
+/** The light saved-view list (GET /api/topology-views/?picker=1) - no state. */
+export interface TopologyViewSummary {
+  id: string
+  numid: number | null
+  name: string
+  updated_at: string
+}
+
+export interface TopologyGraphMeta {
+  /** `include=card`: the tenant/deployment global list (before role, view
+   * and device lists). `uses_monitor` = some node lists `monitor` (fetch
+   * check states). */
+  card?: { fields: string[]; source: TopoCardSource; uses_monitor: boolean }
+}
+
 export interface TopologyGraph {
   nodes: TopoNode[]
   edges: TopoEdge[]
+  /** Present only when the query asked for an `include`. */
+  meta?: TopologyGraphMeta
+}
+
+export type TopologyInclude = "card" | "link_ips" | "photo"
+
+/** The /api/topology/ query - GET params, or the POST body for large sets. */
+export interface TopologyQuery {
+  /** Present (even empty) = the induced subgraph on exactly these devices;
+   * focus and filters are ignored. At most 10,000. */
+  devices?: string[]
+  device?: string
+  depth?: number
+  site?: string
+  location?: string
+  role?: string
+  status?: string
+  /** Tag slug. */
+  tag?: string
+  /** Walk patch panels end to end (the server default is on). */
+  collapse_panels?: boolean
+  group_by?: "site" | "location"
+  /** Opt-in enrichment; ignored with `group_by`. */
+  include?: TopologyInclude[]
+  /** A saved view's own card lines, applied over role and global lists. */
+  card_fields?: string[]
+}
+
+function topologyParams(q: TopologyQuery): URLSearchParams {
+  const p = new URLSearchParams()
+  if (q.devices) p.set("devices", q.devices.join(","))
+  for (const k of [
+    "device",
+    "site",
+    "location",
+    "role",
+    "status",
+    "tag",
+    "group_by",
+  ] as const) {
+    const v = q[k]
+    if (v) p.set(k, v)
+  }
+  if (q.depth !== undefined) p.set("depth", String(q.depth))
+  if (q.collapse_panels !== undefined)
+    p.set("collapse_panels", q.collapse_panels ? "1" : "0")
+  if (q.include?.length) p.set("include", q.include.join(","))
+  if (q.card_fields) p.set("card_fields", q.card_fields.join(","))
+  return p
+}
+
+/** POST /api/topology/ with the query as a JSON body. A device set rides
+ * here: a few hundred ids overflow gunicorn's 8190-byte request line. */
+export function postTopology(
+  q: TopologyQuery,
+  init: { signal?: AbortSignal } = {}
+): Promise<TopologyGraph> {
+  return api<TopologyGraph>("/api/topology/", {
+    method: "POST",
+    body: JSON.stringify(q),
+    signal: init.signal,
+  })
+}
+
+/** The topology graph: GET for a filtered or focused map, POST once a
+ * device set is given. */
+export function fetchTopology(
+  q: TopologyQuery,
+  init: { signal?: AbortSignal } = {}
+): Promise<TopologyGraph> {
+  if (q.devices !== undefined) return postTopology(q, init)
+  return api<TopologyGraph>(`/api/topology/?${topologyParams(q)}`, {
+    signal: init.signal,
+  })
+}
+
+/** The card-line vocabulary, served with the settings so it lives in one
+ * place. `cf_<key>` keys are not listed; add the tenant's device custom
+ * fields client-side. */
+export interface TopologyCardVocabulary {
+  available: string[]
+  /** The keys that render as the card's pill, not as a line. */
+  pills: string[]
+  defaults: string[]
+  max_fields: number
+}
+
+/** The effective card lines for the active tenant (GET /api/topology-card/).
+ * A `role:<slug>` absent from `role_overrides` inherits `fields`. */
+export interface TopologyCardConfig extends TopologyCardVocabulary {
+  fields: string[]
+  role_overrides: Record<string, string[]>
+  source: "tenant" | "deployment" | "default"
+}
+
+/** Card-lines editor shape: GET/PUT /api/deployment/topology-card/ and
+ * /api/tenant-settings/topology-card/. A PUT of `card_fields: null` resets
+ * to the built-in default. */
+export interface TopologyCardSettings extends TopologyCardVocabulary {
+  card_fields: string[]
+  /** `card_fields` is the built-in default (nothing stored). */
+  is_default: boolean
+  role_overrides: Record<string, string[]>
+  /** Tenant layer only: whether this tenant overrides the deployment. */
+  override?: boolean
+  /** Tenant layer only: what it inherits when `override` is false. */
+  deployment_defaults?: {
+    card_fields: string[]
+    /** The deployment stores no list: `card_fields` is the default. */
+    is_default: boolean
+    role_overrides: Record<string, string[]>
+  }
+}
+
+/** A device palette row (GET /api/devices/?picker=palette). */
+export interface DevicePaletteRow {
+  id: string
+  numid: number | null
+  name: string
+  role: {
+    id: string
+    name: string
+    slug: string
+    color: string
+    icon?: string
+    is_patch_panel?: boolean
+  } | null
+  device_type: {
+    id: string
+    name: string
+    model: string
+    manufacturer: { id: string; name: string } | null
+  } | null
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  rack: { id: string; name: string } | null
+  status: StatusMini | null
+  /** The type has a front photo. */
+  has_photo: boolean
 }
 
 /** GET /api/topology/logical/ - VLANs as rails, devices + VMs attached. */
@@ -2950,13 +3898,20 @@ export interface LogicalRail {
   /** VLAN's own color, else its zone's; "" = palette shade. */
   color: string
   group: string | null
+  /** The VLAN's status, for its pill on the rail. */
+  status?: StatusMini | null
 }
 
 export interface LogicalNode {
   kind: "device" | "vm"
   id: string
   name: string
+  /** The status's display name (older readers); `status_mini` has its
+   * color. */
   status: string | null
+  status_mini?: StatusMini | null
+  /** The role, whose color fills the card. */
+  role?: { id: string; name: string; color: string } | null
   /** Role name (devices) or cluster name (VMs). */
   sub: string | null
   attachments: {
@@ -2977,8 +3932,9 @@ export interface LogicalTopology {
 export interface TraceGraph extends TopologyGraph {
   origin: { type: string; id: string }
   complete: boolean
-  /** Device-level view (adaptive stencil cards) of the traced devices, with
-   * the traced cables flagged (edge.data.marked). Rendered as the trace map. */
+  /** Device-level map of the traced devices, with the traced cables
+   * flagged (edge.data.marked). Drawn as the trace map, in the Diagram's
+   * cards (trace-section.tsx). */
   device_graph?: TopologyGraph
 }
 
@@ -3081,7 +4037,9 @@ export interface MacDetail {
     interface: { id: string; name: string } | null
   }[]
   /** SNMP sightings - the ARP/FDB rows on polled devices that carry this MAC.
-   * A MAC clicked on a monitoring card may exist only here. */
+   * A MAC clicked on a monitoring card may exist only here. Present and gone
+   * rows (the history) since #284; a device polled before 0.17 still answers
+   * from its old tables with `first_seen` null. */
   seen: {
     /** The polled owner - a device OR a VM (#139), never both. */
     device?: { id: string; name: string } | null
@@ -3089,7 +4047,23 @@ export interface MacDetail {
     source: "arp" | "fdb"
     ip?: string | null
     port?: string | null
+    interface?: { id: string; name: string } | null
+    vlan?: number | null
+    first_seen?: string | null
+    last_seen?: string | null
+    gone_at?: string | null
+    present?: boolean
+    /** fdb rows: is the port an access port or an uplink. */
+    role?: "access" | "uplink" | null
   }[]
+  /** Where the MAC really sits; null when no viewable switch reports it. */
+  location?: MacLocation | null
+  /** IPs the MAC answers to, with where each was learned. */
+  ips_observed?: ObservedIp[]
+  /** Names in label priority: known object, then DNS, then DHCP. */
+  names?: ObservedName[]
+  name?: string | null
+  name_source?: ObservedName["source"] | null
 }
 
 /** Full first-class MAC object - the `/api/mac-addresses/` CRUD serializer.
@@ -3196,6 +4170,8 @@ export interface VLAN {
   zone: { id: string; name: string; color: string; text_color: string } | null
   /** The routing table the VLAN's SVI lives in, when documented. */
   vrf: { id: string; name: string; rd: string; color: string } | null
+  /** Active / Reserved / Deprecated, or the tenant's own (#172). */
+  status: StatusMini | null
   description: string
   tags: Tag[]
   prefix_count: number
@@ -3214,6 +4190,7 @@ export interface VLANWritePayload {
   group_id?: string | null
   zone_id?: string | null
   vrf_id?: string | null
+  status_id?: string | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -3488,6 +4465,8 @@ export interface ContactAssignmentWritePayload {
 export interface VLANBulkUpdateFields {
   site_id?: string | null
   zone_id?: string | null
+  vrf_id?: string | null
+  status_id?: string | null
   description?: string
   add_tag_ids?: number[]
   remove_tag_ids?: number[]
@@ -3593,7 +4572,10 @@ export interface Site {
   device_count: number
   /** VMs whose own site is this one (a cluster's site isn't inherited). */
   vm_count: number
+  /** Racks at the site (detail only; 0 on the list) - the Capacity tab
+   * shows when it is above 0. */
   rack_count: number
+  cabinet_count: number
   /** Locations in the site, every level of the tree. */
   location_count: number
   contact_count: number
@@ -3602,6 +4584,73 @@ export interface Site {
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+/** One rack on a site's Capacity tab (#247), with the figures its own page
+ * gives it. */
+export interface SiteCapacityRack {
+  id: string
+  name: string
+  role: { id: string; name: string; color: string } | null
+  status: StatusMini | null
+  u_height: number
+  u_used: number
+  /** Units in use, as a whole percentage; null for a 0U rack. */
+  u_pct: number | null
+  power: RackPower
+  ports: PortCountRow
+  panel_ports: PortCountRow
+  device_count: number
+}
+
+/** Racks' figures added up. `power.pdu_rating` / `power.no_supply`: how
+ * many of the racks have only their PDUs' rating, or no supply figure. */
+export interface SiteCapacityTotals {
+  racks: number
+  devices: number
+  u_height: number
+  u_used: number
+  u_pct: number | null
+  power: {
+    available_w: number
+    allocated_w: number
+    maximum_w: number
+    pdu_rating: number
+    no_supply: number
+  }
+  ports: PortCountRow
+  panel_ports: PortCountRow
+}
+
+/** One floor plan's card: the site's racks standing on it and a thumbnail -
+ * its rack tiles only, in grid cells. */
+export interface SiteCapacityPlan {
+  id: string
+  name: string
+  location: { id: string; name: string }
+  grid_width: number
+  grid_height: number
+  totals: SiteCapacityTotals
+  racks: SiteCapacityRack[]
+  tiles: {
+    rack_id: string
+    x: number
+    y: number
+    w: number
+    h: number
+    orientation: number
+  }[]
+}
+
+/** `GET /api/sites/{id}/capacity/`: the floor plans and racks you may view.
+ * `unplaced` is the racks on no floor plan at all; `totals` every rack of
+ * the site you may view. */
+export interface SiteCapacity {
+  site: { id: string; name: string }
+  count_virtual: boolean
+  totals: SiteCapacityTotals
+  floor_plans: SiteCapacityPlan[]
+  unplaced: { totals: SiteCapacityTotals; racks: SiteCapacityRack[] }
 }
 
 export interface SiteWritePayload {
@@ -3684,6 +4733,7 @@ export interface Location {
   child_count: number
   device_count: number
   rack_count: number
+  cabinet_count: number
   document_count: number
   created_at: string
   updated_at: string
@@ -3807,7 +4857,7 @@ export interface VirtualMachine {
   cluster: { id: string; name: string; status: StatusMini | null }
   group: { id: string; name: string; kind: string } | null
   device: { id: string; name: string } | null
-  site: { id: string; name: string } | null
+  site: SiteRegionMini | null
   role: {
     id: string
     name: string
@@ -3836,6 +4886,7 @@ export interface VirtualMachine {
   disk_count?: number
   service_count?: number
   certificate_count?: number
+  routing_count?: number
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
@@ -3866,13 +4917,24 @@ export interface VirtNetwork {
     name: string
     /** VLAN colour (own colour first, zone colour second, null = neither). */
     color: string | null
+    /** The VLAN's status, for its pill on the rail. */
+    status?: StatusMini | null
   } | null
   vswitch: string | null
   vswitch_name: string | null
   /** Routing context in force. `inherited` means it comes from the switch,
    * not from this network - the editor needs to tell those apart. */
   vrf: { id: string; name: string; inherited: boolean } | null
-  vms: { id: string; name: string; status: string | null; iface?: string }[]
+  vms: {
+    id: string
+    name: string
+    /** The status's display name; `status_mini` has its color. */
+    status: string | null
+    status_mini?: StatusMini | null
+    /** The role, whose color fills the VM's card. */
+    role?: { id: string; name: string; color: string } | null
+    iface?: string
+  }[]
   last_seen_at: string | null
 }
 
@@ -4486,10 +5548,18 @@ export interface BGPAddressFamily {
   extra: Record<string, unknown>
 }
 
+/** A VM in a routing row - the box a route or instance runs on (#217). */
+export interface VMMini {
+  id: string
+  name: string
+}
+
 export interface BGPInstance {
   id: string
   numid: number | null
-  device: DeviceMini
+  /** Exactly one of `device` / `virtual_machine` is set. */
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
   site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   asn: ASNMini
@@ -4524,7 +5594,8 @@ export interface BGPInstance {
 
 export interface BGPInstanceMini {
   id: string
-  device: DeviceMini
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   asn: ASNMini
 }
@@ -4588,13 +5659,19 @@ export interface BGPSession extends BGPPeerKnobs {
   /** The far end: an address, or an interface for unnumbered peering. */
   remote_address: string
   interface: { id: string; name: string; device: DeviceMini } | null
+  /** Unnumbered peering out of a VM's port. */
+  vm_interface: { id: string; name: string; vm: VMMini } | null
   remote_address_obj: {
     id: string
     ip_address: string
     dns_name: string
   } | null
   peer_device: DeviceMini | null
-  peer_session: { id: string; device: DeviceMini } | null
+  peer_session: {
+    id: string
+    device?: DeviceMini
+    virtual_machine?: VMMini
+  } | null
   effective: BGPSessionEffective
   status: StatusMini | null
   description: string
@@ -4620,7 +5697,9 @@ export interface OSPFAreaMini {
 
 export interface OSPFInterface {
   id: string
-  interface: { id: string; name: string; device: DeviceMini }
+  /** The device's port, or `vm_interface` on a VM-owned instance. */
+  interface: { id: string; name: string; device: DeviceMini } | null
+  vm_interface: { id: string; name: string; vm: VMMini } | null
   area: OSPFAreaMini
   cost: number | null
   network_type:
@@ -4645,7 +5724,8 @@ export interface OSPFInterface {
 interface IGPInstanceBase {
   id: string
   numid: number | null
-  device: DeviceMini
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
   site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   bfd: boolean
@@ -4673,7 +5753,9 @@ export interface OSPFInstance extends IGPInstanceBase {
 
 export interface ISISInterface {
   id: string
-  interface: { id: string; name: string; device: DeviceMini }
+  /** The device's port, or `vm_interface` on a VM-owned instance. */
+  interface: { id: string; name: string; device: DeviceMini } | null
+  vm_interface: { id: string; name: string; vm: VMMini } | null
   families: ("ipv4" | "ipv6")[]
   level: "" | "1" | "2" | "1-2"
   metric: number | null
@@ -4758,7 +5840,9 @@ export interface VTEP {
 
 export interface EIGRPInterface {
   id: string
-  interface: { id: string; name: string; device: DeviceMini }
+  /** The device's port, or `vm_interface` on a VM-owned instance. */
+  interface: { id: string; name: string; device: DeviceMini } | null
+  vm_interface: { id: string; name: string; vm: VMMini } | null
   /** Null = the instance's passive_by_default. */
   passive: boolean | null
   bfd: boolean
@@ -4791,7 +5875,9 @@ export interface EIGRPInstance extends IGPInstanceBase {
 export interface StaticRoute {
   id: string
   numid: number | null
-  device: DeviceMini
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
+  site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   prefix: string
   prefix_obj: PrefixMini | null
@@ -4799,6 +5885,7 @@ export interface StaticRoute {
   kind_display: string
   next_hop: string
   next_hop_interface: { id: string; name: string; device: DeviceMini } | null
+  next_hop_vm_interface: { id: string; name: string; vm: VMMini } | null
   next_hop_vrf: { id: string; name: string; rd: string; color: string } | null
   distance: number | null
   metric: number | null
@@ -4979,6 +6066,18 @@ export interface TenantGroupWritePayload {
 export interface SiteBulkUpdateFields {
   gateway_policy?: SiteGatewayPolicy
   location?: string
+  /** Map marker colour and icon (#183); "" clears. */
+  color?: string
+  icon?: string
+  add_tag_ids?: number[]
+  remove_tag_ids?: number[]
+}
+
+/** `POST /api/virtual-chassis/bulk-update/` - name and master stay
+ * single-edit (#252). */
+export interface VirtualChassisBulkUpdateFields {
+  domain?: string
+  description?: string
   add_tag_ids?: number[]
   remove_tag_ids?: number[]
 }
@@ -5115,6 +6214,9 @@ export interface SearchResponse {
   facets: { types: { type: string; label: string; count: number }[] }
   /** Offset for the next page, or null on the last one. */
   next_cursor: number | null
+  /** The canonical form of a MAC-shaped query (any notation), for the
+   * palette's "Look up MAC …" row (#284). */
+  mac?: string
 }
 
 // ─── Monitoring / check engine ─────────────────────────────────────────────
@@ -5263,6 +6365,23 @@ export interface IpChecksResponse extends ExternalRollup {
   checks: EffectiveCheck[]
   /** How many of the address's checks are flagged as flapping. */
   flapping?: number
+  /** Excluded from monitoring, and the availability reset - who and why. */
+  monitoring?: IpMonitoringInfo
+}
+
+/** An address's exclusion and availability reset, from its own columns. */
+export interface IpMonitoringInfo {
+  excluded: boolean
+  excluded_at: string | null
+  excluded_by: string | null
+  excluded_reason: string | null
+  /** Availability counts from here; null = all history counts. */
+  counts_from: string | null
+  reset_at: string | null
+  reset_by: string | null
+  reset_reason: string | null
+  /** The earliest day a reset may count from. */
+  created_at: string
 }
 
 export interface CheckNowResult {
@@ -5326,6 +6445,8 @@ export interface PrefixIpStatus extends ExternalRollup {
   status: CheckStatus | null
   checks: number
   counts?: Partial<Record<CheckStatus, number>>
+  /** Excluded from monitoring - shown, but not in the roll-up. */
+  excluded?: boolean
 }
 
 export interface PrefixChecksResponse {
@@ -5378,6 +6499,8 @@ export interface BulkStatusEntry extends ExternalRollup {
   checks?: number
   counts?: Partial<Record<CheckStatus, number>>
   monitored_ips?: number
+  /** An address excluded from monitoring (IP rows only). */
+  excluded?: boolean
 }
 
 /** An engine kind a driver registered - configured on its own page rather
@@ -5425,6 +6548,16 @@ export interface MonitoringSettings {
   /** Devices whose merged ARP tables feed switch-link suggestions. */
   arp_source_devices?: string[]
   arp_source_devices_detail?: { id: string; name: string }[]
+  /** MAC tracking (#284): learned MACs listed per port before "+N more";
+   * 0 = all (0-64). */
+  mac_port_display_limit: number
+  /** "Uplink above": more distinct learned MACs than this makes a port an
+   * uplink; 0 turns the count rule off (0-4096). */
+  mac_uplink_threshold: number
+  /** An LLDP switch neighbour (not a phone) marks a port an uplink. */
+  mac_uplink_lldp: boolean
+  /** "Forget MACs unseen for" N days (1-365). */
+  mac_retention_days: number
   global_enabled: boolean
   default_interval_seconds: number
   stale_after_scans: number
@@ -5442,6 +6575,8 @@ export interface MonitoringSettings {
   escalate_after_minutes: number
   flap_threshold: number
   flap_window_minutes: number
+  /** The list pages' Availability column window, unless a viewer picks. */
+  availability_frame: AvailabilityFrame
   /** Off: a flapping state stays until an operator confirms the host is
    * fine. On: it clears itself after the settle time of quiet. */
   auto_clear_flapping: boolean
@@ -5589,7 +6724,32 @@ export interface MonitoringEngineWritePayload {
   ssh_credential?: { private_key?: string; password?: string }
 }
 
-/** GET /api/system/upgrade/status - progress of an in-flight upgrade. */
+/** One phase of the upgrade stage (scripts/upgrade/stage.sh). */
+export interface UpgradeStep {
+  name: string
+  status: "ok" | "failed" | "skipped" | "running"
+  /** Unix seconds. */
+  started: number | null
+  ended: number | null
+  detail: string
+}
+
+/** How an upgrade ended. `code`: the new release runs ("new"), the previous
+ * one runs again after a rollback ("restored"), nothing was changed
+ * ("unchanged"), or the database could not be put back and Danbyte is
+ * stopped ("restore_failed"). */
+export interface UpgradeOutcome {
+  code: "new" | "restored" | "unchanged" | "restore_failed"
+  database: "migrated" | "unchanged" | "restored" | "restore_failed"
+  services: "running" | "stopped" | "unhealthy"
+  /** Id of the pre-upgrade backup, "" when it was skipped. */
+  backup: string
+}
+
+/** GET /api/system/upgrade/status - progress of an in-flight upgrade. The
+ * fields after `error` come from the upgrade stage (0.17 on); a status an
+ * older upgrader wrote has none of them, unless it finished the upgrade to
+ * 0.17 and the migrate bridge filled them in (`legacy`). */
 export interface SystemUpgradeStatus {
   state: "idle" | "running" | "done" | "failed"
   step?: string
@@ -5597,6 +6757,23 @@ export interface SystemUpgradeStatus {
   version_to?: string
   version_from?: string
   error?: string
+  stage_api?: number
+  /** Run by an upgrader from before 0.17; the bridge added the fields below. */
+  legacy?: boolean
+  kind?: "git" | "bundle"
+  trigger?: "button" | "upload" | "auto" | "admin" | "installer" | "manual"
+  attempt?: number
+  /** Unix seconds. */
+  started_at?: number | null
+  finished_at?: number | null
+  steps?: UpgradeStep[]
+  outcome?: UpgradeOutcome | null
+  warnings?: string[]
+  /** A failure before any service stopped: the timer tries again later. */
+  retryable?: boolean
+  /** The last lines the failing step printed. */
+  error_tail?: string
+  log?: string
 }
 
 /** GET /api/system/info - instant, network-free runtime + version facts. */
@@ -5632,6 +6809,9 @@ export interface UpgradeNote {
   snippet: string
   docs: string
   platforms: string[]
+  /** The combined root-steps card: the steps its one command covers, each
+   * with its by-hand snippet. */
+  parts?: UpgradeNote[]
 }
 
 export interface UpgradeNotes {
@@ -5731,12 +6911,110 @@ export interface CheckListRow {
   flap_count: number
   /** Set when the check runs on the fast lane. */
   interval_ms: number | null
+  /** Parked because its address is excluded from monitoring. */
+  excluded?: boolean
   device: { id: string; name: string } | null
   /** The address's own site, else its prefix's, else its device's. */
   site: { id: string; name: string } | null
   prefix: { id: string; cidr: string } | null
   /** Present when the list was asked for `?strip=<days>`. */
   segments?: StatusSegment[]
+  /** Present when the list was asked for `?with=figures`. */
+  figures?: CheckFigures
+  /** The check's usual latency: the median of its hourly p50 over a week. */
+  baseline_ms?: number | null
+}
+
+/** What a window of rollups says about one check or a group of them.
+ * Percentages are 0-100; `availability` is null when nothing was measured. */
+export interface CheckFigures {
+  availability: number | null
+  /** Measured time over all time in the window. */
+  coverage: number | null
+  up_s: number
+  down_s: number
+  unmeasured_s: number
+  incidents: number
+  mttr_s: number | null
+  samples: number
+  spikes: number
+  p50: number | null
+  p95: number | null
+  p99: number | null
+  max: number | null
+}
+
+export interface FiguresWindow {
+  since: string
+  until: string
+  /** Daily points (a days window) or hourly (an hours window). */
+  daily: boolean
+}
+
+export interface CheckDetail extends CheckListRow {
+  template_kind: string
+  window: FiguresWindow
+  figures: CheckFigures
+  series: (CheckFigures & { t: string })[]
+  baseline_ms: number | null
+  spike_threshold_ms: number | null
+}
+
+export type ExploreDimension =
+  | "site"
+  | "role"
+  | "device_type"
+  | "platform"
+  | "device"
+  | "prefix"
+  | "vrf"
+  | "template"
+  | "kind"
+
+export interface ExploreRow extends CheckFigures {
+  /** The group's id (or kind); null for checks with no value, e.g. no site. */
+  key: string | null
+  name: string | null
+  color: string | null
+  checks: number
+  /** Latency per check kind - never averaged across kinds. */
+  latency: {
+    kind: string
+    samples: number
+    p50: number | null
+    p95: number | null
+    spikes: number
+  }[]
+}
+
+export interface ExploreResponse {
+  group_by: ExploreDimension
+  window: FiguresWindow
+  rows: ExploreRow[]
+}
+
+export interface LatencyOffender extends CheckListRow {
+  figures: CheckFigures
+  baseline_ms: number | null
+  /** Window p95 over the baseline; 1.0 is normal. */
+  ratio: number | null
+}
+
+export interface LatencyPageResponse {
+  window: FiguresWindow
+  kinds: {
+    kind: string
+    samples: number
+    p50: number | null
+    p95: number | null
+    p99: number | null
+    max: number | null
+    spikes: number
+  }[]
+  kind: string | null
+  series: (CheckFigures & { t: string })[]
+  slowest: LatencyOffender[]
+  spikiest: LatencyOffender[]
 }
 
 export interface CheckListResponse {
@@ -5749,7 +7027,7 @@ export interface CheckListResponse {
   /** Checks flagged as flapping under every filter but `flapping` itself. */
   flapping_count: number
   facets: Partial<
-    Record<TransitionFacet | "status" | "flapping", FacetBucket[]>
+    Record<TransitionFacet | "status" | "flapping" | "excluded", FacetBucket[]>
   >
   /** The strip window, when `?strip=` was asked for. */
   since?: string
@@ -5768,6 +7046,13 @@ export interface MonitoringSeriesPoint {
  * result-retention ceiling - older rows are pruned. */
 export type StatsHours = 24 | 168 | 720
 
+/** One check kind's latency over a window, per bucket. */
+export interface LatencyByKind {
+  kind: string
+  samples: number
+  series: { t: string; p50: number | null; p95: number | null }[]
+}
+
 export interface MonitoringStats {
   by_status: Partial<Record<CheckStatus, number>>
   by_kind: Partial<Record<CheckKind, number>>
@@ -5782,6 +7067,8 @@ export interface MonitoringStats {
   availability_pct: number | null
   /** The estate's p50/p95 latency per bucket over the window. */
   latency_series: { t: string; p50: number | null; p95: number | null }[]
+  /** The same per check kind, the busiest kind first. */
+  latency_by_kind: LatencyByKind[]
   /** Alerts opened against resolved, per day. */
   alerts_series: { t: string; opened: number; resolved: number }[]
   /** Sub-minute checks in view, and the lane's own pulse. */
@@ -5847,6 +7134,9 @@ export interface StatusSegment {
   start: string
   end: string
   status: CheckStatus
+  /** Why it is not counted: before an availability reset, or while the
+   * address was excluded from monitoring. */
+  note?: "not_counted" | "excluded"
 }
 
 export interface TransitionRow {
@@ -6005,6 +7295,8 @@ export interface IpTimeline {
   checks: TimelineCheck[]
   summary: WindowSummary
   days: DayAvailability[]
+  /** Where an availability reset cuts the window, if it does. */
+  counts_from?: string | null
 }
 
 /** A bucket of latency for one check: sample-weighted average with the
@@ -6452,8 +7744,11 @@ export interface DashRecentIp {
 }
 export interface DashboardData {
   counts: Record<string, number>
-  /** Admin-set default widget layout for new users (empty = built-in). */
-  default_widgets?: string[]
+  /** The tenant's new-user layout: {v: 2, items} or a legacy id list. */
+  default_widgets?: unknown
+  /** The scope and frame a named dashboard asked for (echoed back). */
+  scope?: Partial<Record<DashboardScopeKey, string[]>>
+  frame_hours?: number
   recent_activity: DashActivity[]
   recent_prefixes: DashRecentPrefix[]
   recent_devices: DashRecentDevice[]
@@ -6477,6 +7772,7 @@ export interface DashboardData {
   availability_7d: number | null
   alerts_per_day: { t: string; opened: number; resolved: number }[]
   latency_series: { t: string; p50: number | null; p95: number | null }[]
+  latency_by_kind: LatencyByKind[]
 }
 
 export type ComplianceCheck =
@@ -6677,7 +7973,16 @@ export interface SnmpProfileOption {
   version: string
   is_default: boolean
   has_secrets: boolean
-  params?: Record<string, string>
+  params?: SnmpProfileParams
+}
+
+/** An SNMP profile's non-secret `params`. */
+export interface SnmpProfileParams extends SnmpMacParams {
+  username?: string
+  auth_proto?: string
+  priv_proto?: string
+  /** Anything else the API carries (a port, …) - kept as it is on save. */
+  [key: string]: unknown
 }
 
 export interface SnmpInterface {
@@ -6803,11 +8108,17 @@ export interface SnmpNeighbor {
   local_port: string
   remote_device: string
   remote_port: string
+  /** The local port as an ifIndex, from an agent that resolved it (#284). */
+  local_if_index?: string
+  /** The neighbour's announced LLDP capabilities, e.g. ["bridge"]. */
+  remote_caps?: string[] | string
 }
 export interface SnmpArpEntry {
   ip: string
   mac: string
   if_index: string
+  /** ipNetToMediaType from a current agent: dynamic, static, other. */
+  type?: string
 }
 
 export interface DeviceSnmp {
@@ -6825,6 +8136,304 @@ export interface DeviceSnmp {
   reachable: boolean | null
   error: string
   polled_at: string | null
+  /** The last complete MAC-table read (#284). */
+  fdb_polled_at?: string | null
+  /** How the last MAC-table read went; {} before the first read. */
+  fdb_meta?: MacTableMeta | Record<string, never>
+}
+
+// ─── MAC tracking (#284) ────────────────────────────────────────────────────
+
+/** SNMP profile `params` options for reading MAC tables. Absent keys take
+ * the collector's defaults (auto, 128 VLANs, 120 s). */
+export type MacVlanContexts = "auto" | "always" | "off"
+export interface SnmpMacParams {
+  mac_vlan_contexts?: MacVlanContexts
+  /** 1-1024 */
+  mac_max_vlans?: number
+  /** 5-600 seconds */
+  mac_budget_s?: number
+}
+
+/** `DeviceSnmp.fdb_meta` - how the last MAC-table read went. */
+export interface MacTableMeta {
+  /** qbridge | bridge | bridge-vlan | none, or legacy for an old agent. */
+  source: string
+  /** False = partial: the read stopped early and closed nothing. */
+  complete: boolean
+  truncated?: boolean
+  /** fdb-id | assumed | none - how FDB ids became VLANs. */
+  vlan_map?: string
+  port_map?: string
+  vlans?: { read: number[]; skipped: number[]; failed: number[] }
+  dropped?: Record<string, number>
+  rows?: number
+  elapsed_ms?: number
+  mode?: string
+  /** Why the read stopped early - names a VLAN, never a credential. */
+  error: string
+  /** An agent that predates MAC tracking (no VLANs). */
+  legacy: boolean
+  /** source "stack": a member's own poll - its stack owner records the
+   * table; this is the owner's id. */
+  owner?: string
+  /** What the core recorded: present MACs, opened/closed rows, ports. */
+  core?: {
+    present: number
+    opened?: number
+    closed?: number
+    ports?: number
+    dropped?: Record<string, number>
+  }
+  arp?: { complete: boolean; present: number; opened: number; closed: number }
+}
+
+export interface UplinkReason {
+  code: "always" | "lldp" | "lag" | "count"
+  /** Terse, ready to show: "LLDP neighbour sw-core-01", "6 MACs, above 4",
+   * "Set on the interface", "Aggregate", "LAG member". */
+  text: string
+  neighbor?: string
+  lag?: "aggregate" | "member"
+  count?: number
+  threshold?: number
+}
+
+/** A port's uplink state, evaluated on read. `mode` is the interface's
+ * Uplink setting; `reasons` are the rules that hold (kept under Never). */
+export interface UplinkState {
+  is: boolean
+  mode: "auto" | "always" | "never"
+  reasons: UplinkReason[]
+}
+
+/** Compact "where it really sits" for a table cell. */
+export interface MacLocationRef {
+  kind: "access" | "behind_uplink"
+  device: { id: string; name: string }
+  interface: { id: string; name: string } | null
+  port_name: string
+}
+
+export interface MacSightingRef {
+  device: { id: string; name: string }
+  interface: { id: string; name: string } | null
+  port_name: string
+  vlan: number | null
+  first_seen: string
+  last_seen: string
+  present: boolean
+  role: "access" | "uplink"
+  stale: boolean
+}
+
+/** The MAC page's Location. */
+export interface MacLocation extends MacLocationRef {
+  vlan: number | null
+  /** The Danbyte VLAN that VID means at the switch's site, when viewable. */
+  vlan_object: { id: string; name: string; vid: number } | null
+  since: string
+  last_seen: string
+  /** Last seen more than a day ago. */
+  stale: boolean
+  uplink: UplinkState
+  /** The MAC's other present sightings. */
+  others: MacSightingRef[]
+}
+
+export interface ObservedIpSource {
+  kind: "arp" | "dhcp_lease" | "dhcp_reservation" | "ipaddress"
+  /** arp: the device/VM whose table has it - null when not viewable. */
+  device?: { id: string; name: string } | null
+  vm?: { id: string; name: string } | null
+  hostname?: string
+  name?: string
+  /** ipaddress: the paired IP address's id. */
+  id?: string
+  last_seen?: string | null
+}
+
+export interface ObservedIp {
+  ip: string
+  /** A viewable IP address row with this address, when there is one. */
+  ip_id: string | null
+  last_seen: string | null
+  sources: ObservedIpSource[]
+}
+
+export interface ObservedName {
+  name: string
+  source:
+    | "interface"
+    | "vminterface"
+    | "macaddress"
+    | "dns"
+    | "dns_record"
+    | "dhcp_lease"
+    | "dhcp_reservation"
+  ip?: string
+}
+
+/** One MAC in a port's cell. */
+export interface LearnedMac {
+  mac: string
+  vendor: MacVendor | null
+  /** Every VLAN it was seen in on this port (a phone in voice + data VLAN
+   * is one line). */
+  vlans: number[]
+  ips: { ip: string; id: string | null }[]
+  name: string | null
+  name_source: ObservedName["source"] | null
+  first_seen: string
+  last_seen: string
+  /** Located on this port. */
+  here: boolean
+  /** Where it really sits, when not here. */
+  location: MacLocationRef | null
+}
+
+/** One port in `GET /api/monitoring/devices/<id>/macs/`. */
+export interface PortMacs {
+  interface_id: string | null
+  interface_name: string | null
+  /** The stack member that owns the port (null for an LLDP-only row). */
+  device_id: string | null
+  port_name: string
+  port_key: string
+  if_index: string
+  uplink: UplinkState
+  /** Distinct MACs learned on the port. */
+  count: number
+  /** How many of them are located here. */
+  located: number
+  /** Up to `limit` MACs; always empty on an uplink (show the count). */
+  macs: LearnedMac[]
+}
+
+export interface DeviceMacs {
+  device: { id: string; name: string }
+  /** A stack member reads its owner's observation. */
+  polled_via: { id: string; name: string } | null
+  view: "member" | "observed"
+  /** The last complete read. */
+  read_at: string | null
+  polled_at: string | null
+  stale: boolean
+  meta: MacTableMeta | Record<string, never>
+  /** The tenant's "MACs shown per port" unless overridden; 0 = all. */
+  limit: number
+  macs: number
+  ports: PortMacs[]
+}
+
+/** A row of `GET /api/monitoring/interfaces/<id>/macs/`. */
+export interface InterfaceMacRow {
+  id: string
+  mac: string
+  vendor: MacVendor | null
+  vlan: number | null
+  vlan_object: { id: string; name: string; vid: number } | null
+  ips: { ip: string; id: string | null }[]
+  name: string | null
+  name_source: ObservedName["source"] | null
+  first_seen: string
+  last_seen: string
+  gone_at: string | null
+  state: "present" | "gone"
+  stale: boolean
+  here: boolean
+  location: MacLocationRef | null
+}
+
+export interface InterfaceMacs {
+  interface: { id: string; name: string; device: { id: string; name: string } }
+  uplink: UplinkState
+  counts: { present: number; all: number }
+  read_at: string | null
+  stale: boolean
+  state: "present" | "all"
+  results: InterfaceMacRow[]
+  next_cursor: number | null
+}
+
+/** A row of the network-wide Learned list (`/api/monitoring/mac-sightings/`). */
+export interface MacSightingRow {
+  mac: string
+  vendor: MacVendor | null
+  state: "present" | "gone"
+  kind: "access" | "behind_uplink" | null
+  device: { id: string; name: string }
+  interface: { id: string; name: string } | null
+  port_name: string
+  vlan: number | null
+  vlan_object: { id: string; name: string; vid: number } | null
+  ips: { ip: string; id: string | null }[]
+  name: string | null
+  name_source: ObservedName["source"] | null
+  first_seen: string
+  last_seen: string
+  gone_at: string | null
+  stale: boolean
+}
+
+export interface MacSightingPage {
+  count: number
+  page: number
+  page_size: number
+  num_pages: number
+  results: MacSightingRow[]
+}
+
+/** `POST /api/monitoring/devices/<id>/mac-refresh/`. */
+export type MacRefreshStart =
+  | {
+      queued: true
+      run_id: string
+      /** A refresh was already running; this is its run. */
+      running: boolean
+      device: { id: string; name: string }
+    }
+  | {
+      queued: true
+      queued_on_outpost: true
+      engine: string
+      engine_stale: boolean
+      detail: string
+    }
+  | {
+      queued: false
+      inline: true
+      run_id: null
+      device: { id: string; name: string }
+      status: "done" | "unreachable"
+      macs: number
+      ports: number
+      complete: boolean
+      error: string
+    }
+
+/** `GET /api/monitoring/mac-refresh/<run_id>/`. */
+export interface MacRefreshRun {
+  run_id: string
+  found: boolean
+  done: boolean
+  status:
+    | "queued"
+    | "running"
+    | "done"
+    | "unreachable"
+    | "denied"
+    | "skipped"
+    | "error"
+    | "unknown"
+  device?: { id: string; name: string }
+  queued_at?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  macs?: number
+  ports?: number
+  complete?: boolean | null
+  error?: string
 }
 
 export interface DeploymentSettings {
@@ -6888,6 +8497,9 @@ export interface DeploymentSettings {
   faceplate_group_labels: boolean
   faceplate_port_labels: PortLabelSource
   faceplate_port_label_color: string
+  /** Port utilization counts virtual interfaces (SVIs, LAGs, loopbacks,
+   * tunnels) as ports. */
+  port_count_virtual: boolean
   date_format: DateFormat
   time_style: TimeStyle
   /** Raw stored value - blank inherits the server's TIME_ZONE. */
@@ -7710,10 +9322,19 @@ export type WirelessLANStatus =
 export type WirelessAuthType =
   | ""
   | "open"
+  | "owe"
   | "wep"
+  | "wpa2-personal"
+  | "wpa3-personal"
+  | "wpa2-wpa3-personal"
+  | "wpa2-enterprise"
+  | "wpa3-enterprise"
+  | "wpa2-wpa3-enterprise"
   | "wpa-personal"
   | "wpa-enterprise"
-export type WirelessAuthCipher = "" | "auto" | "tkip" | "aes"
+export type WirelessAuthCipher = "" | "auto" | "tkip" | "aes" | "gcmp-256"
+/** Protected Management Frames (#177). */
+export type WirelessPmf = "" | "disabled" | "optional" | "required"
 
 export interface WirelessLAN {
   id: string
@@ -7725,6 +9346,8 @@ export interface WirelessLAN {
   auth_type: WirelessAuthType
   auth_type_display: string
   auth_cipher: WirelessAuthCipher
+  auth_cipher_display: string
+  pmf: WirelessPmf
   /** Whether a PSK is stored (#68). The value itself is never serialised -
    * fetch it from `POST /api/wireless-lans/{id}/reveal-psk/`. */
   psk_set: boolean
@@ -7743,6 +9366,7 @@ export interface WirelessLANWritePayload {
   vlan_id?: string | null
   auth_type?: WirelessAuthType
   auth_cipher?: WirelessAuthCipher
+  pmf?: WirelessPmf
   /** Write-only. Send only when setting or rotating it; omit to keep the
    * stored key, or send null to clear it. */
   psk?: string | null
@@ -7880,6 +9504,9 @@ export interface Tunnel {
   group: TunnelGroupOption | null
   ipsec_profile: IPSecProfileOption | null
   terminations: TunnelTermination[]
+  /** How fast the tunnel's path is, in kbps; null when unknown. The site map
+   * shows it on the tunnel's line (#246) - nothing derives it. */
+  capacity_kbps: number | null
   description: string
   comments: string
   tags: Tag[]
@@ -7895,6 +9522,7 @@ export interface TunnelWritePayload {
   tunnel_id?: number | null
   group_id?: string | null
   ipsec_profile_id?: string | null
+  capacity_kbps?: number | null
   description?: string
   comments?: string
   tag_ids?: number[]
@@ -8116,7 +9744,8 @@ export interface IOFields {
 export type IOFormat = "csv" | "xlsx" | "json"
 
 /** Server round-trip export URL (downloadable anchor). `filter` narrows by
- * model field, e.g. `{ prefix: prefixId }` to export only a prefix's IPs. */
+ * model field, e.g. `{ prefix: prefixId }` to export only a prefix's IPs.
+ * A selection of rows goes through `ioExportFile` instead. */
 export function ioExportUrl(
   slug: string,
   opts: { fmt: IOFormat; ids?: string[]; filter?: Record<string, string> } = {
@@ -8129,6 +9758,31 @@ export function ioExportUrl(
     if (v) p.set(k, v)
   }
   return `/api/io/${slug}/export/?${p.toString()}`
+}
+
+/** Round-trip export of chosen rows, as a file to save. POSTed: a bulk bar's
+ * selection can run to more ids than a URL holds (a few hundred UUIDs pass
+ * the proxy's 8 KB request-line limit). */
+export async function ioExportFile(
+  slug: string,
+  opts: { fmt: IOFormat; ids: string[] }
+): Promise<{ blob: Blob; filename: string }> {
+  const path = `/api/io/${slug}/export/`
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrf() },
+    body: JSON.stringify({ fmt: opts.fmt, ids: opts.ids }),
+  })
+  if (res.status === 401) onUnauthorized?.()
+  if (!res.ok) throw await apiErrorOf(res, path)
+  const named = /filename="([^"]+)"/.exec(
+    res.headers.get("Content-Disposition") ?? ""
+  )
+  return {
+    blob: await res.blob(),
+    filename: named?.[1] ?? `${slug}.${opts.fmt}`,
+  }
 }
 
 export const ioFields = (slug: string) =>
@@ -8470,6 +10124,10 @@ export interface SystemJobStatus {
     version_from: string | null
     error: string | null
     active: boolean
+    trigger: string | null
+    outcome: UpgradeOutcome | null
+    /** Unix seconds. */
+    finished_at: number | null
   }
   auto_update: {
     enabled: boolean
@@ -8698,6 +10356,7 @@ export type FovAnchor = "" | "tl" | "tr" | "bl" | "br"
 
 export type FloorPlanLinkKind =
   | "rack"
+  | "cabinet"
   | "device"
   | "powerpanel"
   | "powerfeed"
@@ -8945,6 +10604,11 @@ export interface SiteMapCable {
   z: SiteMapCableEnd
   route_ids: string[]
   same_point: boolean
+  /** `?include=capacity` only - see `SiteMapLineCapacity`. The links its
+   * strands carry, `a` at its A end: a trunk lists one per patched strand. */
+  capacity?: SiteMapCapacity | null
+  links?: SiteMapLink[]
+  link_count?: number
 }
 
 export interface CableRouteWritePayload {
@@ -9015,10 +10679,19 @@ export interface FloorTileRackState {
   kind: "rack"
   used_units: number
   u_height: number
-  power: { available_w: number; allocated_w: number; maximum_w: number }
+  power: RackPower
   total_weight_kg: number
   max_weight_kg: number | null
   device_count: number
+  check: FloorTileCheck | null
+}
+
+/** A DIN-rail cabinet's tile: its devices and rails, and the worst check of
+ * its devices. */
+export interface FloorTileCabinetState {
+  kind: "cabinet"
+  device_count: number
+  rail_count: number
   check: FloorTileCheck | null
 }
 
@@ -9030,7 +10703,10 @@ export interface FloorTileDeviceState {
 
 export interface FloorPlanLiveState {
   as_of: string
-  tiles: Record<string, FloorTileRackState | FloorTileDeviceState>
+  tiles: Record<
+    string,
+    FloorTileRackState | FloorTileCabinetState | FloorTileDeviceState
+  >
 }
 
 /* ── External sync: Windows DHCP/DNS + virtualization ───────────────────── */
@@ -9663,4 +11339,487 @@ export interface ChatConnection {
   ai_verify_tls: boolean
   ai_api_key_set: boolean
   providers: ChatProviderOption[]
+}
+
+// ─── Service level agreements ───────────────────────────────────────────────
+
+export type SlaPeriod =
+  | "month"
+  | "quarter"
+  | "year"
+  | "rolling_7"
+  | "rolling_30"
+  | "rolling_90"
+
+export type SlaState = "ok" | "at_risk" | "breached" | "no_data" | "not_started"
+
+/** An agreement's headline for a period. Percentages are 0-100. */
+export interface SlaFigures {
+  availability: number | null
+  coverage: number | null
+  state: SlaState
+  target: number
+  warning: number | null
+  units: number
+  members: number
+  down_s: number
+  budget_s: number
+  budget_left_s: number
+  budget_spent_pct: number
+  elapsed_pct: number
+  burn_rate: number | null
+  incidents: number
+  since: string
+  until: string
+  period_end: string
+  /** The open period's end, if the rest goes like the trailing week. */
+  forecast?: SlaForecast | null
+  /** The service credit this figure earns; null without tiers, or for a
+   * caller without `view_credits`. */
+  credit?: SlaCredit | null
+  /** Each latency objective's figure; null for a limited view. */
+  objectives?: SlaObjectiveFigure[] | null
+  /** The state from availability alone, when objectives may change `state`. */
+  availability_state?: SlaState
+}
+
+export interface SlaObjective {
+  kind: string
+  threshold_ms: number
+  target_pct: number
+}
+
+export interface SlaObjectiveFigure extends SlaObjective {
+  /** Probes with a latency histogram, and how many answered within. */
+  probes: number
+  within: number
+  pct: number | null
+  budget_probes: number
+  slow: number
+  budget_spent_pct: number
+  state: SlaState
+}
+
+export interface SlaCredit {
+  pct: number
+  amount: number | null
+  currency: string
+}
+
+export interface SlaCreditTier {
+  below: number
+  credit_pct: number
+}
+
+export interface SlaForecast {
+  availability: number
+  /** The trailing seven days' figure the rest is assumed to repeat. */
+  trailing: number
+  state: SlaState
+}
+
+export interface SlaBurnRule {
+  name: string
+  long_min: number
+  short_min: number
+  burn: number
+  on: boolean
+}
+
+export interface SlaBurnState {
+  /** Burn over each window; null when nothing in it was measured. 1e9 = a
+   * 100 % target with any down time. */
+  long: number | null
+  short: number | null
+  long_min: number
+  short_min: number
+  threshold: number
+  firing: boolean
+  since: string | null
+  at: string
+}
+
+export interface SlaAgreement {
+  id: string
+  name: string
+  description: string
+  /** Who it is for; `for_label` says it in one line. */
+  provided_for: "tenant" | "sites" | "contact" | "name"
+  sites: string[]
+  sites_detail: { id: string; name: string }[]
+  for_label: string
+  customer: string | null
+  customer_detail: { id: string; name: string } | null
+  customer_name: string
+  target_pct: string
+  warning_pct: string | null
+  period: SlaPeriod
+  timezone: string
+  /** {"mon": [["08:00", "17:00"]], ...}; empty = around the clock. */
+  service_hours: Record<string, [string, string][]>
+  holiday_calendar: string | null
+  holiday_calendar_detail: { id: string; name: string } | null
+  count_degraded_as: "up" | "down"
+  count_stale_as: "unmeasured" | "down"
+  count_unknown_as: "unmeasured" | "down"
+  exclude_maintenance: boolean
+  min_outage_seconds: number
+  aggregation: "mean" | "worst" | "all"
+  latency_objectives: Record<string, number>
+  objectives: SlaObjective[]
+  /** The state is the worst of availability and the objectives. */
+  objectives_in_state: boolean
+  /** Channels that get this agreement's alerts. */
+  notify_channels: string[]
+  /** At risk once budget burns this many times faster than time passes. */
+  alert_burn_rate: number | null
+  /** Multi-window burn-rate alerts: fire while both windows burn >= burn. */
+  burn_alerts: SlaBurnRule[]
+  /** Money: absent for a caller without `view_credits`. */
+  credit_tiers?: SlaCreditTier[]
+  /** One period's fee, for the credit as an amount. */
+  period_fee?: string | null
+  currency?: string
+  /** Alert when less than this share of the time was measured. */
+  alert_coverage_pct: string | null
+  /** Emailed each period's report when it freezes. */
+  report_recipients: string[]
+  report_format: "pdf" | "csv" | "both"
+  status: "draft" | "active" | "archived"
+  effective_from: string | null
+  revision: number
+  group_count: number
+  member_count: number
+  current: {
+    period_key: string
+    computed_at: string
+    figures: SlaFigures
+    limited: { hidden_members: number } | null
+    /** Each burn rule as last evaluated; null for a limited viewer. */
+    burn: Record<string, SlaBurnState> | null
+    /** Of the last twelve finished periods, how many met the target. */
+    history: { met: number; of: number } | null
+  } | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SlaCheckItem {
+  id?: string
+  template: string
+  template_name?: string
+  template_kind?: string
+  counts: boolean
+  weight: number
+  required: boolean
+}
+
+export interface SlaCheckGroup {
+  id: string
+  agreement: string
+  name: string
+  position: number
+  target: "primary" | "all"
+  combine: "all" | "weighted"
+  weight: number
+  use_selector: boolean
+  match_sites: string[]
+  match_roles: string[]
+  match_device_types: string[]
+  match_platforms: string[]
+  match_tags: string[]
+  match_name: string
+  items: SlaCheckItem[]
+  member_count: number
+}
+
+export type SlaObjectType =
+  | "api.device"
+  | "api.virtualmachine"
+  | "api.ipaddress"
+  | "api.prefix"
+  | "api.circuit"
+  | "api.virtualchassis"
+
+/** A switch stack counted once: the devices folded into its row, and every
+ * member row behind it. Absent on a row that stands for one object. */
+export interface SlaStackFold {
+  via?: { id: string; name: string }[]
+  member_ids?: string[]
+}
+
+export interface SlaMember {
+  id: string
+  agreement: string
+  group: string
+  object_type: SlaObjectType
+  object_id: string
+  object: { id: string; name: string } | null
+  object_site: string | null
+  redundancy_group: string
+  /** A circuit's checks read from this address instead of its cabled ends. */
+  monitor_ip: string | null
+  monitor_ip_detail: { id: string; address: string } | null
+  excluded: boolean
+  joined_at: string
+  left_at: string | null
+}
+
+export interface SlaExclusion {
+  id: string
+  agreement: string
+  member: string | null
+  starts_at: string
+  ends_at: string
+  reason: string
+  created_by_name: string | null
+  created_at: string
+}
+
+/** One day of a holiday calendar. A yearly day repeats on its month and day
+ * in every year; `date` is where it was entered. */
+export interface HolidayDay {
+  date: string
+  name: string
+  yearly: boolean
+}
+
+export interface HolidayCalendar {
+  id: string
+  name: string
+  description: string
+  dates: HolidayDay[]
+  agreement_count: number
+}
+
+/** A member's figure in a period, with its checks. */
+export interface SlaMemberFigure extends SlaStackFold {
+  member: true
+  member_id: string | null
+  key: string
+  object_type: SlaObjectType
+  object_id: string
+  name: string
+  group_id: string
+  group: string
+  redundancy_group: string
+  /** Joined by the group's selector rather than added. */
+  selected: boolean
+  availability: number | null
+  coverage: number | null
+  up_s: number
+  down_s: number
+  service_s: number
+  incidents: number
+  worst_item: string | null
+  items: {
+    template_id: string
+    /** The CheckState behind it, for a link to the check's page. */
+    state_id: string | null
+    name: string
+    kind: string
+    ip_id: string
+    /** The address checked - a prefix member has several. */
+    address?: string
+    counts: boolean
+    availability: number | null
+    coverage: number | null
+    down_s: number
+    incidents: number
+  }[]
+}
+
+export interface SlaIncident {
+  unit: string
+  label: string
+  start: string
+  end: string
+  seconds: number
+  members: string[]
+}
+
+export interface SlaFiguresResponse {
+  period_key: string | null
+  computed: boolean
+  state?: "open" | "closed" | "frozen" | "rolling"
+  period_start?: string
+  period_end?: string
+  revision?: number
+  computed_at?: string
+  closed_at?: string | null
+  frozen_at?: string | null
+  figures?: SlaFigures
+  limited?: { hidden_members: number } | null
+  members?: SlaMemberFigure[]
+  incidents?: SlaIncident[]
+  days?: { date: string; availability: number | null; down_s: number }[]
+}
+
+export interface SlaPeriodSummary {
+  period_key: string
+  state: "open" | "closed" | "frozen" | "rolling"
+  revision: number
+  period_start: string
+  period_end: string
+  figures: SlaFigures
+  limited: { hidden_members: number } | null
+}
+
+export type AvailabilityFrame =
+  | "24h"
+  | "7d"
+  | "30d"
+  | "90d"
+  | "mtd"
+  | "qtd"
+  | "ytd"
+
+/** One object's figure in one agreement's current period. */
+export interface SlaStatusAgreement {
+  agreement: { id: string; name: string }
+  period_key: string
+  target: number
+  availability: number | null
+  coverage: number | null
+  state: SlaState
+  down_s: number
+  worst_item: string | null
+  budget_left_s: number
+  /** A device in a stack: the stack whose figure this is. */
+  via_stack?: { id: string; name: string }
+}
+
+export interface SlaStatusEntry {
+  sla: SlaStatusAgreement[]
+  /** The strictest of `sla`: furthest below its target. */
+  lowest: SlaStatusAgreement | null
+  /** Plain availability over the frame, SLA or not. */
+  availability: { availability: number | null; coverage: number | null } | null
+  /** A stack (kind vc): the member and address that stand for it. */
+  measured?: {
+    device: { id: string; name: string }
+    ip: { id: string; address: string } | null
+  } | null
+}
+
+export interface SlaStatusResponse {
+  frame: AvailabilityFrame
+  results: Record<string, SlaStatusEntry>
+}
+
+// ─── Named dashboards ───────────────────────────────────────────────────────
+
+export type DashboardScopeKey =
+  | "site"
+  | "region"
+  | "role"
+  | "device_type"
+  | "tag"
+  | "sla"
+
+export interface NamedDashboard {
+  id: string
+  name: string
+  description: string
+  owner_name: string
+  /** The caller owns it - only then can they change it. */
+  mine: boolean
+  visibility: "private" | "tenant" | "groups"
+  groups: number[]
+  layout:
+    | { v: 2; items: import("@/lib/dashboard-layout").DashItem[] }
+    | Record<string, never>
+  scope: Partial<Record<DashboardScopeKey, string[]>>
+  frame: "24h" | "7d" | "30d" | "90d"
+  refresh_seconds: number
+  created_at: string
+  updated_at: string
+}
+
+/** A slice of an agreement over a window - the analysis view. */
+export interface SlaBreakdownRow {
+  key: string | null
+  name: string
+  availability: number | null
+  down_s: number
+  incidents: number
+}
+
+export interface SlaAnalysisMember extends SlaBreakdownRow, SlaStackFold {
+  key: string
+  member_id: string | null
+  object_type: SlaObjectType
+  object_id: string
+  group: string
+  group_id: string
+  site_id: string | null
+  coverage: number | null
+  worst_item: string | null
+  items: SlaMemberFigure["items"]
+}
+
+export interface SlaAnalysis {
+  period_key: string | null
+  bucket: "day" | "hour"
+  since: string
+  until: string
+  period_end: string
+  limited: boolean
+  figures: SlaFigures
+  /** Set while the window is still running; `buckets` are the days to come. */
+  forecast: (SlaForecast & { buckets?: string[] }) | null
+  previous: {
+    since: string
+    until: string
+    availability: number | null
+    coverage: number | null
+    down_s: number | null
+    incidents: number | null
+    budget_spent_pct: number | null
+    state: SlaState | null
+  }
+  series: {
+    t: string
+    end: string
+    availability: number | null
+    down_s: number
+    measured_s: number
+    incidents: number
+  }[]
+  burn: { t: string; spent_s: number; pace_s: number; budget_s: number }[]
+  by_member: SlaAnalysisMember[]
+  by_group: SlaBreakdownRow[]
+  by_site: SlaBreakdownRow[]
+  by_kind: SlaBreakdownRow[]
+  strips: {
+    key: string
+    name: string
+    availability: number | null
+    segments: [string, string, "up" | "down" | "unmeasured"][]
+  }[]
+  heatmap: { dow: number; hour: number; down_s: number }[]
+  durations: { label: string; count: number }[]
+  incidents: SlaIncident[]
+  latency: {
+    kind: string
+    /** The p95 alert line, in ms. */
+    objective: number | null
+    /** Latency objectives on this kind; `points[].within` is keyed by threshold. */
+    objectives: { threshold_ms: number; target_pct: number }[]
+    points: {
+      t: string
+      p95: number | null
+      p50: number | null
+      within: Record<string, number | null>
+    }[]
+  }[]
+  /** Each latency objective over this window and slice. */
+  objectives: SlaObjectiveFigure[]
+  options: {
+    groups: { id: string; name: string; count: number }[]
+    sites: { id: string; name: string; count: number }[]
+    members: { id: string; object_type: SlaObjectType; name: string }[]
+    kinds: string[]
+    redundancy: { name: string; count: number }[]
+  }
 }

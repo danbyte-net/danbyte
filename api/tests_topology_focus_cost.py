@@ -369,3 +369,129 @@ class FocusedMapCostTests(_FabricBase):
         )
         g = tv._build_graph(self.tenant, focus_id=str(a.id), depth=2)
         self.assertEqual(g, {"nodes": [], "edges": []})
+
+
+class CollectSideChannelTests(_FabricBase):
+    """The enrichers' side channel (``collect``) holds the objects the
+    assembly already loaded: filling it costs no query and changes nothing
+    in the graph, and it describes exactly the graph returned."""
+
+    def _builds(self):
+        sw1 = str(self.devs["sw1"].id)
+        some = [self.devs[n].id for n in ("sw1", "p1", "srv2", "rtr")]
+        return (
+            ("full", {}),
+            ("raw", {"collapse": False}),
+            ("filtered", {"device_filter_q": Q(site=self.s1)}),
+            ("scoped", {"scope_q": Q(site=self.s1)}),
+            ("devices", {"device_filter_q": Q(id__in=some)}),
+            ("focus", {"focus_id": sw1, "depth": 2}),
+            ("focus raw", {"focus_id": sw1, "depth": 3, "collapse": False}),
+            ("focus scoped", {"focus_id": sw1, "depth": 6,
+                              "scope_q": Q(site=self.s1)}),
+        )
+
+    def _counted(self, **kw):
+        with CaptureQueriesContext(connection) as ctx:
+            g = tv._build_graph(self.tenant, **kw)
+        return len(ctx.captured_queries), g
+
+    def _touch(self, collect):
+        """Read what an enricher reads off the collected objects."""
+        read = []
+        for d in collect["devices"].values():
+            read += [d.name, d.device_type_id, d.role_id and d.role.slug,
+                     d.site_id and d.site.name,
+                     d.primary_ip_id and d.primary_ip.ip_address]
+        for ports in collect["ports"].values():
+            for (kind, _pid), obj in ports.items():
+                read += [obj.id, obj.name, obj.device_id]
+                if kind == "interface":
+                    read.append(obj.lag and obj.lag.name)
+                if kind == "front_port":
+                    read.append(obj.rear_port.name)
+        for rows in collect["pairs"].values():
+            for _pair, a, _ak, b, _bk in rows:
+                read += [a.id, a.name, b.id, b.name]
+        return read
+
+    def test_collecting_costs_no_query_and_changes_nothing(self):
+        self._unrelated_pairs(3)
+        for label, kw in self._builds():
+            with self.subTest(label):
+                plain_q, plain = self._counted(**kw)
+                collect = {}
+                q, g = self._counted(collect=collect, **kw)
+                self.assertEqual(q, plain_q)
+                self.assertEqual(g, plain)
+                with CaptureQueriesContext(connection) as ctx:
+                    self._touch(collect)
+                self.assertEqual(len(ctx.captured_queries), 0)
+
+    def test_collect_describes_the_returned_graph(self):
+        for label, kw in self._builds():
+            with self.subTest(label):
+                collect = {}
+                g = tv._build_graph(self.tenant, collect=collect, **kw)
+                node_ids = {n["data"]["device_id"] for n in g["nodes"]}
+                self.assertEqual(set(collect["devices"]), node_ids)
+                self.assertLessEqual(set(collect["ports"]), node_ids)
+                self.assertEqual(
+                    set(collect["pairs"]), {e["id"] for e in g["edges"]}
+                )
+                for e in g["edges"]:
+                    rows = collect["pairs"][e["id"]]
+                    self.assertEqual(len(rows), len(e["data"]["pairs"]))
+                    for (pair, a, ak, b, bk), p in zip(
+                        rows, e["data"]["pairs"], strict=True
+                    ):
+                        self.assertIs(pair, p)
+                        self.assertEqual(
+                            (str(a.id), ak, str(b.id), bk),
+                            (p["a_id"], p["a_kind"], p["b_id"], p["b_kind"]),
+                        )
+                for n in g["nodes"]:
+                    did = n["data"]["device_id"]
+                    self.assertIsInstance(collect["devices"][did], Device)
+                    ports = collect["ports"].get(did, {})
+                    for (_kind, pid), obj in ports.items():
+                        self.assertEqual(obj.id, pid)
+                        self.assertEqual(str(obj.device_id), did)
+                    names = {obj.name for obj in ports.values()}
+                    shown = {p["name"] for p in n["data"]["ports"]}
+                    shown |= {p["pair"] for p in n["data"]["ports"] if p.get("pair")}
+                    self.assertEqual(shown, names)
+
+    def test_the_view_builds_with_the_same_queries(self):
+        counted = []
+        real_build = tv._build_graph
+
+        def build(*args, **kwargs):
+            with CaptureQueriesContext(connection) as ctx:
+                out = real_build(*args, **kwargs)
+            counted.append(len(ctx.captured_queries))
+            return out
+
+        some = [str(self.devs[n].id) for n in ("sw1", "p1", "srv2", "rtr")]
+        everything = ["card", "link_ips", "photo"]
+        with mock.patch.object(tv, "_build_graph", side_effect=build):
+            got = self.client.get(f"/api/topology/?devices={','.join(some)}")
+            posted = self.client.post(
+                "/api/topology/", {"devices": some}, format="json"
+            )
+            enriched = self.client.post(
+                "/api/topology/", {"devices": some, "include": everything},
+                format="json",
+            )
+            full = self.client.get("/api/topology/")
+            full_enriched = self.client.get(
+                f"/api/topology/?include={','.join(everything)}"
+            )
+        self.assertEqual(posted.json(), got.json())
+        self.assertNotIn("meta", got.json())
+        self.assertIn("meta", enriched.json())
+        self.assertIn("meta", full_enriched.json())
+        self.assertEqual(counted[0], counted[1])
+        self.assertEqual(counted[1], counted[2])
+        self.assertEqual(counted[3], counted[4])
+        self.assertEqual(full.status_code, 200)

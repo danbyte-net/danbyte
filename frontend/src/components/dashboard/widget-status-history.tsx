@@ -11,6 +11,7 @@ import { IpPicker } from "@/components/ip-picker"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { HISTORY_WINDOWS } from "@/components/monitoring/history-panel"
 import { StatusStrip } from "@/components/monitoring/status-strip"
+import { TruncatedText } from "@/components/ui/truncated-text"
 
 /** One chosen thing on the widget: an address or a device, with the label
  * it was picked under so the row reads without another fetch. */
@@ -144,35 +145,44 @@ export function StatusHistoryWidget({
             : "Nothing chosen yet - edit the dashboard to pick addresses and devices."}
         </div>
       ) : (
-        <ul className="divide-y divide-border/60">
+        // One grid for every row (rows are subgrids), so the name column is as
+        // wide as the longest name, up to half the widget; only past that do
+        // names truncate, with the full name on hover.
+        <ul
+          className={`grid gap-x-3 divide-y divide-border/60 ${
+            editing && onChange
+              ? "grid-cols-[fit-content(50%)_minmax(6rem,1fr)_auto_auto]"
+              : "grid-cols-[fit-content(50%)_minmax(6rem,1fr)_auto]"
+          }`}
+        >
           {targets.map((t, i) => {
             const tl = rows[i].data
             const pct = tl?.summary.uptime_pct ?? null
             return (
               <li
                 key={`${t.kind}:${t.id}`}
-                className="flex items-center gap-3 py-1.5 text-[13px]"
+                className="col-span-full grid grid-cols-subgrid items-center py-1.5 text-[13px]"
               >
                 {t.kind === "ip" ? (
                   <Link
                     to="/ips/$id"
                     params={{ id: t.id }}
                     search={{ tab: "monitoring" }}
-                    className="link w-40 shrink-0 truncate font-mono"
+                    className="link min-w-0 font-mono"
                   >
-                    {t.label}
+                    <TruncatedText className="block">{t.label}</TruncatedText>
                   </Link>
                 ) : (
                   <Link
                     to="/devices/$id"
                     params={{ id: t.id }}
                     search={{ tab: "monitoring" }}
-                    className="link w-40 shrink-0 truncate font-medium"
+                    className="link min-w-0 font-medium"
                   >
-                    {t.label}
+                    <TruncatedText className="block">{t.label}</TruncatedText>
                   </Link>
                 )}
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0">
                   {tl ? (
                     <StatusStrip
                       segments={tl.rollup}
@@ -184,14 +194,14 @@ export function StatusHistoryWidget({
                     <div className="h-2 rounded-sm bg-muted/40" />
                   )}
                 </div>
-                <span className={`num w-14 shrink-0 text-right text-xs ${tier(pct)}`}>
+                <span className={`num min-w-14 text-right text-xs ${tier(pct)}`}>
                   {pct == null ? "-" : `${pct.toFixed(pct >= 99.9 ? 2 : 1)}%`}
                 </span>
                 {editing && onChange && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6 shrink-0"
+                    className="h-6 w-6"
                     aria-label={`Remove ${t.label}`}
                     onClick={() => remove(t)}
                   >

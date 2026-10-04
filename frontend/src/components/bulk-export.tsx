@@ -1,6 +1,9 @@
+import { useState } from "react"
 import { Download } from "lucide-react"
 
-import { ioExportUrl, type IOFormat } from "@/lib/api"
+import { ioExportFile, type IOFormat } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
+import { downloadBlob } from "@/lib/table-export"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,24 +20,36 @@ const FMTS: [IOFormat, string][] = [
 
 /**
  * "Export selected" for a bulk-action bar - round-trip export of just the
- * selected rows (`/api/io/<slug>/export/?ids=…`). Drop into any bulk bar with
- * the rows' object slug + ids.
+ * selected rows. The ids are POSTed, not put in a link: "Select all N" makes
+ * a selection of thousands one click away, far past what a URL can hold.
+ * Drop into any bulk bar with the rows' object slug + ids.
  */
 export function BulkExport({ ioType, ids }: { ioType: string; ids: string[] }) {
+  const [busy, setBusy] = useState(false)
   if (ids.length === 0) return null
+  const run = async (fmt: IOFormat) => {
+    setBusy(true)
+    try {
+      const { blob, filename } = await ioExportFile(ioType, { fmt, ids })
+      downloadBlob(filename, blob.type, blob)
+    } catch (e) {
+      apiErrorToast(e)
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-7 px-2">
-          <Download className="mr-1 h-3 w-3" /> Export
+        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={busy}>
+          <Download className="mr-1 h-3 w-3" />
+          {busy ? "Exporting…" : "Export"}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         {FMTS.map(([fmt, label]) => (
-          <DropdownMenuItem key={fmt} asChild>
-            <a href={ioExportUrl(ioType, { fmt, ids })} download>
-              {label}
-            </a>
+          <DropdownMenuItem key={fmt} onSelect={() => void run(fmt)}>
+            {label}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

@@ -5,6 +5,9 @@
 export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.aggregate": "/aggregates/$id",
   "api.asn": "/asns/$id",
+  "api.cabinet": "/cabinets/$id",
+  "api.cabinetrole": "/cabinet-roles/$id",
+  "api.cabinettype": "/cabinet-types/$id",
   "api.cable": "/cables/$id",
   "api.circuit": "/circuits/$id",
   "api.circuittype": "/circuit-types/$id",

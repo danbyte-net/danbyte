@@ -33,7 +33,8 @@ BUNDLE_KEY = "danbyte_device_type"
 TYPE_FIELDS = (
     "name", "model", "part_number", "u_height", "rack_width", "is_full_depth",
     "airflow", "weight", "weight_unit", "subdevice_role",
-    "exclude_from_utilization", "description",
+    "exclude_from_utilization", "width_mm", "height_mm", "depth_mm",
+    "din_profiles", "din_rail_mm", "description",
 )
 
 # Component templates: bundle key → (device-type relation, exported fields).
@@ -145,6 +146,18 @@ def _check_envelope(payload: Any) -> None:
         )
     if not str(payload.get("name") or "").strip():
         raise BundleError("A bundle needs a device-type name.")
+    if payload.get("image_ports") is not None:
+        # The same check the type form makes: markers, view and calibration.
+        from rest_framework.exceptions import ValidationError
+
+        from .face_ports import validate_image_ports_doc
+
+        try:
+            validate_image_ports_doc(payload["image_ports"])
+        except ValidationError as exc:
+            raise BundleError(
+                "The bundle's photo ports: " + " ".join(str(d) for d in exc.detail)
+            ) from None
 
 
 def import_bundle(
@@ -245,12 +258,31 @@ def import_bundle(
             for f in TYPE_FIELDS
             if f != "name" and payload.get(f) is not None
         }
+        # Each value as its field holds it: JSON carries a width as a float,
+        # which the rail checks add to Decimal offsets (#289), and a value
+        # that is no number is refused rather than saved.
+        for f, value in list(fields.items()):
+            fields[f] = DeviceType._meta.get_field(f).to_python(value)
         fields["manufacturer"] = manufacturer
+        if "din_profiles" in fields:
+            # Only the profiles there are, as the type form allows.
+            raw = fields["din_profiles"]
+            fields["din_profiles"] = [
+                p for p in ("ts35", "ts15", "g32") if isinstance(raw, list) and p in raw
+            ]
         if payload.get("faceplate"):
             fields["faceplate"] = payload["faceplate"]
         if payload.get("image_ports"):
             fields["image_ports"] = payload["image_ports"]
         if existing:
+            # Devices of the type already on DIN rails must survive it (#277).
+            from .din import check_type_change
+
+            check_type_change(
+                existing,
+                fields.get("width_mm", existing.width_mm),
+                fields.get("din_profiles", existing.din_profiles),
+            )
             for k, v in fields.items():
                 setattr(existing, k, v)
             existing.save()

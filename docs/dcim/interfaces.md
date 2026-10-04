@@ -62,7 +62,9 @@ into **sub-categories**:
   OSFP, … (the *cage*, when the medium depends on the inserted optic)
 - **Backplane Ethernet, Wireless, Cellular, SONET/SDH, Fibre Channel,
   InfiniBand, Serial/WAN, Broadband, PON, Stacking**
-- **Virtual** - for logical ports (see [Virtual interfaces](virtual-interfaces.md))
+- **Virtual** - for logical ports (see [Virtual interfaces](virtual-interfaces.md)).
+  Virtual, Bridge and LAG always make the interface virtual: it leaves the
+  faceplate and, by default, the [port count](devices.md#what-counts-as-a-port).
 
 Start typing (e.g. `sfp28`, `10gbase-lr`, `qsfp`) to filter across all groups.
 Type is optional - leave it blank if you don't care to record it. The full
@@ -96,22 +98,23 @@ The single **Add interface** form takes a `[a-b]` range too (`eth[0-3]`), which
 is handier for a few ports since you get the full field set - type, MTU, PoE,
 VLANs, VRF, LAG - applied to all of them. The form is grouped into sections:
 device/name/type up top, then **Switching** (802.1Q, VLANs, VRF), **State**
-(enabled, mark connected, reserved, uplink), and collapsible **Hardware**,
+(status, uplink, enabled, mark connected, reserved), and collapsible **Hardware**,
 **Nesting**, and **SNMP** groups for the rarely touched fields - a group with
 values set opens automatically and summarises its values while collapsed.
 Your open/closed choices are remembered per browser, and Ctrl/Cmd+Enter
 saves from any field.
 
-The State checkboxes:
+The State fields - **Status** and **Uplink** are selects side by side, the
+rest checkboxes:
 
-| Flag | Meaning |
+| Field | Meaning |
 |---|---|
 | **Enabled** | Administratively up. |
 | **Status** | Lifecycle: Active (default), Disabled, Planned, Not present, Decommissioning. Not present = hardware the agent reports as absent; it and Decommissioning don't count as capacity in port utilization. |
-| **Management only** | Out-of-band management port; excluded from data-plane views. |
+| **Management only** | Out-of-band management port; excluded from data-plane views. Still a port in [port utilization](devices.md#the-device-page), like a disabled one. |
 | **Mark connected** | A cable is physically in the port, just not documented yet - counts as connected in [port utilization](devices.md#the-device-page) and clears itself when a real cable is attached. |
 | **Reserved** | A [port reservation](cabling.md#port-reservations) - hold the port before the far end is known. Released automatically when a cable lands. |
-| **Uplink** | Faces other network gear - discovery never suggests hosts on this port, and topology treats it as an infrastructure link. |
+| **Uplink** | **Automatic** (default), **Always** or **Never**. Automatic leaves it to the [uplink rules](../features/snmp-discovery.md#uplinks) - an LLDP switch neighbour, a LAG, more learned MACs than *Uplink above*. **Always** marks the port as facing other network gear: discovery never suggests hosts on it, a MAC is located on it only as *behind uplink* when no access port reports it, and topology treats it as an infrastructure link. **Never** keeps a port an access port whatever the rules say - a server bond, a desk with a phone, PC and printer - so the MACs it learns are located there. |
 
 Bulk add is the one to use for a whole
 switch face: it does the work server-side, keeps zero-padding, and skips
@@ -125,6 +128,9 @@ dialog that applies your changes to every selected interface.
 
 Each field starts on **Keep current** and is left untouched unless you change it,
 so you can retype one field across 48 ports without disturbing the rest.
+**Uplink** takes Automatic, Always or Never the same way; over the API
+(`POST /api/interfaces/bulk-update/`) setting `is_uplink` clears `never_uplink`
+and the other way round, and asking for both is refused.
 Choice-backed fields - type, 802.1Q mode, duplex - are searchable dropdowns
 listing the real values, grouped the same way as the single-interface form; each
 also offers a **Clear** row to blank the field. Free-text fields (speed,
@@ -149,11 +155,59 @@ Two buttons on each interface row - **+ Add IP** and **Assign IP** - let you put
 an address on the port without leaving the page. See
 [Assigning IP addresses](ip-assignment.md).
 
+They sit with the cable controls (status, trace, connect, reserve) in a
+column at the end of the row. Only the edit pencil stays pinned to the table's
+right edge, so on a narrow window you scroll the table sideways to reach the
+rest while the interface names stay readable.
+
 ## The interface detail page
 
 Click an interface name to open its page. It shows the device, type, speed, MTU,
 VLAN, MAC, description, any parent/LAG/bridge relationships, the IPs assigned to
-it, and a cable trace. From here you can also add or assign IPs.
+it, and a cable trace.
+
+On the Overview, the **Switching** card has an **Uplink** row: the
+interface's setting and, for Automatic, what the
+[uplink rules](../features/snmp-discovery.md#uplinks) decided -
+`Automatic · yes, LLDP sw-core-01`, `Automatic · no`, `Always` or `Never`.
+
+### The MACs tab {#macs-tab}
+
+On a port of a device that reads a [MAC table](../features/snmp-discovery.md#mac-tables),
+the **MACs** tab (its count is the MACs there now) lists what the switch learned
+on the port: MAC, Vendor, VLAN, IP, Name, First seen, Last seen and State
+(**Present** or **Gone**; a present MAC whose switch has not finished a read
+for a day reads **Stale**). **Present** is the default; **All** adds the gone
+rows the tenant keeps for *Forget MACs unseen for*, which are the port's
+history - a MAC that moved away shows here as Gone. Long lists page 100 at a
+time.
+
+On an uplink, a line above the table says why it is one -
+`Uplink · LLDP neighbour sw-core-01` - and the table lists the MACs seen
+*through* the port, with a **Location** column: `here`, or where each one
+really sits (`→ sw-core-01 · Eth1/5`, with an `uplink` chip when even that
+is only the nearest uplink).
+
+**Refresh MACs** (with change on the device) re-reads the device's whole MAC
+table - there is no per-port read, SNMP walks the whole table either way. The
+tab reads `GET /api/monitoring/interfaces/<id>/macs/?state=present|all`.
+
+The **IP addresses** tab is the same IP table as the device's **IPs** tab, with
+only this interface's addresses: Address, Designation, Status, Monitoring,
+DHCP, Role, VLAN, Zone and Description by default, and Scope, DNS name, Switch,
+Switch port, Tags, Updated and the IP's other fields in the **Columns** menu.
+The tab keeps its own column layout, separate from the device tab's.
+
+- **Designation** marks the device's primary (★ Primary), secondary (2nd) and
+  management (Mgmt) address. With permission to change the device, each row's
+  **…** menu sets or clears these.
+- **Monitoring** is the address's check status from the device's checks, so it
+  shows `-` for a viewer who cannot see the device.
+- **+ Add IP** opens the IP form with the device and interface filled in; Save
+  and Cancel come back to this tab. **Assign IP** attaches an existing address.
+
+The tab count, the table and the Overview's **IP addresses** card list only the
+addresses you have permission to view.
 
 ## VM interfaces
 

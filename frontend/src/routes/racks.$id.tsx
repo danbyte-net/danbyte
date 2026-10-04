@@ -4,14 +4,32 @@ import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { RackSyncTypeButton } from "@/components/rack-sync-type-button"
 import { useQuery } from "@tanstack/react-query"
-import { Camera, Minus, Pencil, Plus, Trash2 } from "lucide-react"
-import { useCallback, useMemo, useRef, useState } from "react"
+import { Minus, Pencil, Plus, Trash2 } from "lucide-react"
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 
-import { api, type Device, type Paginated, type Rack } from "@/lib/api"
+import { api } from "@/lib/api"
+import type {
+  Device,
+  Paginated,
+  PortCountRow,
+  Rack,
+  RackPortState,
+} from "@/lib/api"
+import { WITH_PORTS } from "@/lib/port-utilization"
+import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { PowerFigure } from "@/components/cells/power-figure"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -19,22 +37,19 @@ import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
 import { QueryError } from "@/components/query-error"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
-import {
-  RackElevation,
-  type RackDisplayMode,
-} from "@/components/rack-elevation"
+import { RackElevation } from "@/components/rack-elevation"
+import type { RackDisplayMode, RackShow } from "@/components/rack-elevation"
 import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { FormCheckbox } from "@/components/forms"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { BarIconButton } from "@/components/map-toolbar"
+import { DrawingDisplayMenu } from "@/components/drawing-display-menu"
+import { setLivePortsShown, useLivePortsShown } from "@/lib/live-ports-pref"
+import { RackExportMenu } from "@/components/rack-export-menu"
+import { Loading } from "@/components/loading"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/racks/$id")({
@@ -47,8 +62,7 @@ function RackDetail() {
     queryKey: ["rack", id],
     queryFn: () => api<Rack>(`/api/racks/${id}/`),
   })
-  if (rack.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (rack.isLoading) return <Loading />
   if (rack.isError)
     return (
       <div className="p-6">
@@ -100,67 +114,15 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={r.name}
-            badges={<StatusBadge status={r.status} />}
-            subtitle={
-              r.facility_id && (
-                <span className="font-mono">{r.facility_id}</span>
-              )
-            }
-            tags={r.tags.length > 0 && <TagList tags={r.tags} />}
-            description={r.description}
-            stats={
-              <>
-                <DetailStat
-                  label="Site"
-                  value={
-                    <Link
-                      to="/sites/$id"
-                      params={{ id: r.site.id }}
-                      className="link text-xs"
-                    >
-                      {r.site.name}
-                    </Link>
-                  }
-                />
-                <DetailStat
-                  label="Height"
-                  value={<span className="num">{r.u_height}U</span>}
-                />
-                {(r.power.allocated_w > 0 ||
-                  r.power.maximum_w > 0 ||
-                  r.power.available_w > 0) && (
-                  <DetailStat
-                    label="Power"
-                    value={<PowerStat power={r.power} />}
-                  />
-                )}
-                {(r.total_weight_kg > 0 || r.max_weight_kg != null) && (
-                  <DetailStat
-                    label="Weight"
-                    value={
-                      <span
-                        className={
-                          r.max_weight_kg != null &&
-                          r.total_weight_kg > r.max_weight_kg
-                            ? "num font-medium text-destructive"
-                            : "num"
-                        }
-                      >
-                        {r.total_weight_kg} kg
-                        {r.max_weight_kg != null && ` / ${r.max_weight_kg} kg`}
-                      </span>
-                    }
-                  />
-                )}
-              </>
-            }
-          />
-
-          <CustomFieldValues model="rack" values={r.custom_fields} />
-        </>
+        <DetailHero
+          title={r.name}
+          badges={<StatusBadge status={r.status} />}
+          subtitle={
+            r.facility_id && <span className="font-mono">{r.facility_id}</span>
+          }
+          tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+          description={r.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -251,8 +213,7 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
       status,
     ]
   }, [])
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   if (rows.length === 0)
     return (
@@ -262,10 +223,42 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
 }
 
 /** The rack's attributes, grouped into labelled tables - the detail that used
- * to crowd the page header. Only name, status, and location stay up top. */
+ * to crowd the page header. Only name, status, facility ID, tags and
+ * description stay up top. */
 function RackOverview({ rack: r }: { rack: Rack }) {
   const { humanIds } = useMe()
+  // Every port in the rack, in one request while the Overview shows: the
+  // elevation's live faces read it.
+  const portState = useRackPortState(r.id)
+  // The Capacity card's Ports and Panel ports: the rack's counted ports
+  // split as the racks list, the floor plan and the site's Capacity tab
+  // split them (`?include=ports`), so the rack reads one way everywhere.
+  const split = useQuery({
+    queryKey: ["rack", r.id, WITH_PORTS],
+    queryFn: () => api<Rack>(`/api/racks/${r.id}/?include=ports`),
+  })
+  const portsRow = (row: PortCountRow | null | undefined): React.ReactNode =>
+    row ? (
+      row.total > 0 ? (
+        // The per-device breakdown is the Port utilization page's.
+        <Link
+          to="/port-utilization"
+          search={{ rack: r.id }}
+          className="link num"
+        >
+          {portsUsed(row)} / {row.total}
+        </Link>
+      ) : (
+        dash
+      )
+    ) : split.isError ? (
+      dash
+    ) : (
+      <span className="text-muted-foreground">…</span>
+    )
   const util = r.u_height ? Math.round((r.used_units / r.u_height) * 100) : 0
+  const overWeight =
+    r.max_weight_kg != null && r.total_weight_kg > r.max_weight_kg
   const rackRows: KvRow[] = [
     ...(humanIds && r.numid != null
       ? [
@@ -340,14 +333,48 @@ function RackOverview({ rack: r }: { rack: Rack }) {
         </span>
       ),
     },
+    {
+      label: "Free",
+      value: (
+        <span className="num">{Math.max(0, r.u_height - r.used_units)} U</span>
+      ),
+    },
+    { label: "Ports", value: portsRow(split.data?.ports) },
+    { label: "Panel ports", value: portsRow(split.data?.panel_ports) },
+    {
+      label: "Power",
+      value: <PowerFigure power={r.power} />,
+    },
+    {
+      label: "Weight",
+      value:
+        r.total_weight_kg > 0 || r.max_weight_kg != null ? (
+          <span
+            className={overWeight ? "num font-medium text-destructive" : "num"}
+          >
+            {r.total_weight_kg} kg
+            {r.max_weight_kg != null && ` / ${r.max_weight_kg} kg`}
+          </span>
+        ) : (
+          dash
+        ),
+    },
   ]
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <KvCard title="Rack" rows={rackRows} />
-        <KvCard title="Capacity" rows={capacityRows} />
+      {/* The rack gets the wider column, as the cabinet's plate does. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
+        <div className="grid content-start gap-6">
+          <KvCard title="Rack" rows={rackRows} />
+          <CustomFieldValues
+            model="rack"
+            values={r.custom_fields}
+            layout="cards"
+          />
+          <KvCard title="Capacity" rows={capacityRows} />
+        </div>
+        <RackFaces rack={r} ports={portState.data} />
       </div>
-      <RackFaces rack={r} />
       <ObjectImages apiBase={`/api/racks/${r.id}`} objectType="rack" />
     </div>
   )
@@ -358,141 +385,192 @@ function RackOverview({ rack: r }: { rack: Rack }) {
  * not mounted on. */
 // Zoom presets (px per mm). Names/Images default to a compact fit-on-screen
 // scale; Render defaults larger so ports stay legible. Users can zoom in/out.
-const ZOOM_STEPS = [0.45, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0]
+const ZOOM_STEPS = [0.35, 0.45, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0]
 const DEFAULT_ZOOM: Record<RackDisplayMode, number> = {
   names: 0.6,
   images: 0.6,
   render: 1.35,
 }
 
-function RackFaces({ rack }: { rack: Rack }) {
+// The rack in 3D - three.js and all, in its own chunk.
+const RackScene = lazy(() => import("@/components/floorplan3d/rack-scene"))
+
+const VIZ = ["2d", "3d"] as const
+type Viz = (typeof VIZ)[number]
+
+const SHOWS: readonly RackShow[] = ["all", "front", "rear"]
+const SHOW_OPTIONS: readonly { value: RackShow; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "front", label: "Front-mounted" },
+  { value: "rear", label: "Rear-mounted" },
+]
+
+function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
+  // The rack in 2D or in 3D, in the URL as the cabinet keeps its plate's.
+  const [viz, setViz] = useUrlTab<Viz>("2d", "viz", VIZ)
+  const vizSwitch = (
+    <SegmentedTabs<Viz>
+      value={viz}
+      onValueChange={setViz}
+      items={[
+        { value: "2d", label: "2D" },
+        { value: "3d", label: "3D" },
+      ]}
+    />
+  )
   const [mode, setMode] = useState<RackDisplayMode>("names")
   const [labels, setLabels] = useState(true)
+  // Which gear to show, in the URL like the 2D | 3D switch; the live ports,
+  // a choice this browser keeps (Ports, shared with the cabinet's plate).
+  const [show, setShow] = useUrlTab<RackShow>("all", "show", SHOWS)
+  const livePorts = useLivePortsShown()
   const [zoom, setZoom] = useState(DEFAULT_ZOOM.names)
   const facesRef = useRef<HTMLDivElement>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+  // Until someone zooms by hand, the zoom steps down until front and rear
+  // fit side by side in the frame, and starts over when the frame resizes.
+  const [manual, setManual] = useState(false)
+  const [frameWidth, setFrameWidth] = useState(0)
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    if (!frame) return
+    const ro = new ResizeObserver(() => setFrameWidth(frame.clientWidth))
+    ro.observe(frame)
+    return () => ro.disconnect()
+  }, [viz])
+  useLayoutEffect(() => {
+    if (!manual) setZoom(DEFAULT_ZOOM[mode])
+  }, [frameWidth, manual, mode])
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    const faces = facesRef.current
+    if (manual || !frame || !faces) return
+    if (faces.scrollWidth > frame.clientWidth) {
+      const smaller = [...ZOOM_STEPS].reverse().find((z) => z < zoom)
+      if (smaller) setZoom(smaller)
+    }
+  }, [zoom, manual, frameWidth])
 
   // Reset to the mode's sensible default zoom when switching modes.
   const changeMode = (m: RackDisplayMode) => {
     setMode(m)
+    setManual(false)
     setZoom(DEFAULT_ZOOM[m])
   }
   const stepZoom = (dir: -1 | 1) => {
+    setManual(true)
     const i = ZOOM_STEPS.findIndex((z) => z >= zoom)
     const cur = i < 0 ? ZOOM_STEPS.length - 1 : i
     const next = Math.min(ZOOM_STEPS.length - 1, Math.max(0, cur + dir))
     setZoom(ZOOM_STEPS[next])
   }
 
-  // Snapshot both faces to a PNG (html-to-image), theme-aware background.
-  const exportPng = async () => {
-    const el = facesRef.current
-    if (!el) return
-    const { toPng } = await import("html-to-image")
-    const dark = document.documentElement.classList.contains("dark")
-    const url = await toPng(el, {
-      backgroundColor: dark ? "#09090b" : "#ffffff",
-      pixelRatio: 2,
-    })
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${rack.name}-elevation.png`
-    a.click()
-  }
-
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-3">
-        <SegmentedTabs<RackDisplayMode>
-          value={mode}
-          onValueChange={changeMode}
-          items={[
-            { value: "names", label: "Names" },
-            { value: "images", label: "Images" },
-            { value: "render", label: "Render" },
-          ]}
-        />
-        {mode !== "names" && (
-          <FormCheckbox
-            label="Text"
-            checked={labels}
-            onChange={setLabels}
-            className="items-center gap-1 text-[11px] text-muted-foreground"
-          />
+    <section className="min-w-0">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-[11px] font-semibold tracking-wide text-foreground uppercase">
+          Elevation
+        </h2>
+      </div>
+      <div className="rounded-lg border border-border bg-card p-4">
+        {viz === "3d" ? (
+          <Suspense
+            fallback={
+              <>
+                <div className="mb-3 flex items-center">{vizSwitch}</div>
+                <Loading className="h-[40rem] max-h-[80vh]" />
+              </>
+            }
+          >
+            <RackScene rackId={rack.id} lead={vizSwitch} />
+          </Suspense>
+        ) : (
+          <>
+            <div
+              data-part="elevation-toolbar"
+              className="@container mb-3 flex items-center gap-3"
+            >
+              {vizSwitch}
+              <SegmentedTabs<RackDisplayMode>
+                value={mode}
+                onValueChange={changeMode}
+                items={[
+                  { value: "names", label: "Names" },
+                  { value: "images", label: "Images" },
+                  { value: "render", label: "Render" },
+                ]}
+              />
+              <DrawingDisplayMenu<RackShow>
+                ticks={[
+                  ...(mode !== "names"
+                    ? [{ label: "Text", checked: labels, onChange: setLabels }]
+                    : []),
+                  {
+                    label: "Ports",
+                    checked: livePorts,
+                    onChange: setLivePortsShown,
+                  },
+                ]}
+                choice={{
+                  label: "Show",
+                  value: show,
+                  options: SHOW_OPTIONS,
+                  onChange: setShow,
+                }}
+              />
+              <div className="flex items-center gap-1">
+                <BarIconButton
+                  label="Zoom out"
+                  disabled={zoom <= ZOOM_STEPS[0]}
+                  onClick={() => stepZoom(-1)}
+                >
+                  <Minus />
+                </BarIconButton>
+                <BarIconButton
+                  label="Zoom in"
+                  disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+                  onClick={() => stepZoom(1)}
+                >
+                  <Plus />
+                </BarIconButton>
+              </div>
+              <RackExportMenu
+                rack={rack}
+                mode={mode}
+                labels={labels}
+                show={show}
+                snapshot={facesRef}
+                className="ml-auto"
+              />
+            </div>
+            <div ref={frameRef} className="overflow-auto">
+              <div
+                ref={facesRef}
+                className="mx-auto flex w-max items-start gap-8"
+              >
+                {(["front", "rear"] as const).map((f) => (
+                  <div key={f}>
+                    <h3 className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                      {f}
+                    </h3>
+                    <RackElevation
+                      rack={rack}
+                      face={f}
+                      mode={mode}
+                      labels={labels}
+                      showHeader={false}
+                      scale={zoom}
+                      draggable
+                      ports={livePorts ? ports : undefined}
+                      show={show}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
         )}
-        {/* Zoom - shrink to fit the whole rack on screen, or zoom in for detail. */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => stepZoom(-1)}
-            disabled={zoom <= ZOOM_STEPS[0]}
-            aria-label="Zoom out"
-          >
-            <Minus className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => stepZoom(1)}
-            disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
-            aria-label="Zoom in"
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto h-7 text-xs"
-          onClick={exportPng}
-        >
-          <Camera className="h-3 w-3" /> PNG
-        </Button>
       </div>
-      <div
-        ref={facesRef}
-        className="flex flex-col gap-8 lg:flex-row lg:items-start"
-      >
-        {(["front", "rear"] as const).map((f) => (
-          <div key={f}>
-            <h3 className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-              {f}
-            </h3>
-            <RackElevation
-              rack={rack}
-              face={f}
-              mode={mode}
-              labels={labels}
-              showHeader={false}
-              scale={zoom}
-              draggable
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/** "demand / supply W" - demand prefers recorded allocated draw, falling
- * back to the nameplate sum; red when demand exceeds the feeds' capacity. */
-function PowerStat({
-  power,
-}: {
-  power: { available_w: number; allocated_w: number; maximum_w: number }
-}) {
-  const demand = power.allocated_w > 0 ? power.allocated_w : power.maximum_w
-  const over = power.available_w > 0 && demand > power.available_w
-  return (
-    <span className={over ? "num font-medium text-destructive" : "num"}>
-      {demand} W{power.available_w > 0 && ` / ${power.available_w} W`}
-      {power.allocated_w === 0 && power.maximum_w > 0 && (
-        <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-          nameplate
-        </span>
-      )}
-    </span>
+    </section>
   )
 }

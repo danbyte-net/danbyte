@@ -10,12 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DataTable, SortHeader } from "@/components/data-table"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import {
@@ -102,16 +97,6 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
               )}
             </>
           }
-          stats={
-            <DetailStat
-              label="Used by"
-              value={
-                <span className="num">
-                  {usage} object{usage === 1 ? "" : "s"}
-                </span>
-              }
-            />
-          }
         />
       }
       tabs={[
@@ -146,8 +131,9 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
 }
 
 /** Tag attributes that used to crowd the header, grouped into a table. Only the
- * colored name badge, locality and usage count stay up top. */
+ * colored name badge and locality stay up top. */
 function TagOverview({ tag: t }: { tag: Tag }) {
+  const usage = t.usage_count ?? 0
   const details: KvRow[] = [
     {
       label: "Slug",
@@ -181,6 +167,14 @@ function TagOverview({ tag: t }: { tag: Tag }) {
         </Link>
       ) : (
         <span className="text-muted-foreground">Whole tenant</span>
+      ),
+    },
+    {
+      label: "Used by",
+      value: (
+        <span className="num">
+          {usage} object{usage === 1 ? "" : "s"}
+        </span>
       ),
     },
   ]

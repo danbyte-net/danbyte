@@ -23,6 +23,7 @@ export const CONTACT_OBJECT_TYPES: Record<
   },
   "api.cluster": { label: "Cluster", route: "/clusters/$id" },
   "api.rack": { label: "Rack", route: "/racks/$id" },
+  "api.cabinet": { label: "Cabinet", route: "/cabinets/$id" },
   "api.prefix": { label: "Prefix", route: "/prefixes/$id" },
   "api.circuit": { label: "Circuit", route: "/circuits/$id" },
   "core.tenant": { label: "Tenant", route: "/tenants/$id" },

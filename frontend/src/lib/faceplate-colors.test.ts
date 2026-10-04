@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest"
 
 import {
   EMPTY_LEGEND,
+  SPEED_TIERS,
   feedTint,
   legendContent,
   legendIsEmpty,
   legendSignature,
   mergeLegend,
+  portCapabilityHex,
+  portHex,
+  speedTier,
 } from "./faceplate-colors"
+import { SPEED_TIERS as SHARED_TIERS, speedTier as sharedTier } from "./speed"
 
 const cabled = (speed: string, type = "") => ({
   enabled: true,
@@ -225,6 +230,35 @@ describe("legend airflow field", () => {
     expect([...merged.airflow].sort()).toEqual(["exhaust", "intake"])
     expect(legendIsEmpty(merged)).toBe(false)
     expect(legendIsEmpty({ ...EMPTY_LEGEND, airflow: new Set() })).toBe(true)
+  })
+})
+
+describe("the panel's speed scale", () => {
+  it("is the shared scale, not a copy", () => {
+    expect(SPEED_TIERS).toBe(SHARED_TIERS)
+    expect(speedTier).toBe(sharedTier)
+  })
+
+  it("keys 100M apart from slower links", () => {
+    const c = legendContent({
+      ports: [cabled("100M"), cabled("10M"), cabled("1G")],
+    })
+    expect([...c.tiers].sort()).toEqual(["100M", "1G", "<100M"])
+  })
+
+  it("reads a bare speed as kbps, as the server does", () => {
+    // "1000000" is 1G (api/speed.py), not unparsable and not 1T.
+    const p = { enabled: true, cable: { id: "c1" }, speed: "1000000" }
+    expect(portHex(p)).toBe(speedTier(1_000).hex)
+    // A free cage still shows what its type can do.
+    expect(
+      portCapabilityHex({
+        enabled: true,
+        cable: null,
+        speed: "",
+        type: "SFP+ (10GE)",
+      })
+    ).toBe(speedTier(10_000).hex)
   })
 })
 

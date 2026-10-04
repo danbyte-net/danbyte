@@ -43,9 +43,19 @@ def _pair(cn="site.example", *, days=90, key=None):
 class DropTests(APITestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.override = override_settings(SITE_TLS_DROP_DIR=self.tmp)
+        self.state = Path(tempfile.mkdtemp()) / "applied.json"
+        self.override = override_settings(SITE_TLS_DROP_DIR=self.tmp,
+                                          SITE_TLS_APPLIED_FILE=str(self.state))
         self.override.enable()
         self.addCleanup(self.override.disable)
+
+    def test_the_root_units_answer_is_read_from_its_own_folder_first(self):
+        d = Path(self.tmp)
+        (d / site_tls.APPLIED).write_text(json.dumps({"outcome": "failed"}))
+        self.assertEqual(site_tls.apply_state()["applied"]["outcome"], "failed")
+        # A unit from 0.17 on answers outside the app's folder; that wins.
+        self.state.write_text(json.dumps({"outcome": "applied"}))
+        self.assertEqual(site_tls.apply_state()["applied"]["outcome"], "applied")
 
     def test_pair_is_validated_before_anything_is_written(self):
         cert, key = _pair()

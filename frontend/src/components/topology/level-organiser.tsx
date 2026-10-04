@@ -13,60 +13,31 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { GripVertical, Layers, Link2, Unlink } from "lucide-react"
+import { GripVertical, Link2, Unlink } from "lucide-react"
 
+import { ColorBadge } from "@/components/cells/color-badge"
 import { Button } from "@/components/ui/button"
+import { InfoTip } from "@/components/ui/info-tip"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { resolveLevels } from "./levels-param"
 
-/** A device role present on the map, with its color for the swatch. */
+/** A device role present on the map, with its color for its badge. */
 export interface RoleTier {
   name: string
   color?: string
 }
 
-/**
- * Resolve the role order + bonds into levels: `[[role, …], …]`.
- *
- * A role listed in `bonds` shares the level of the role directly above it, so
- * several roles can occupy one level (core switches beside routers, say). The
- * first role can never be bonded - there's nothing above it.
- *
- * Shared with the canvas so the popover and the layout can't disagree.
- */
-export function resolveLevels(order: string[], bonds: string[]): string[][] {
-  const out: string[][] = []
-  order.forEach((name, i) => {
-    if (i > 0 && bonds.includes(name) && out.length)
-      out[out.length - 1].push(name)
-    else out.push([name])
-  })
-  return out
-}
+export { resolveLevels }
 
-/**
- * Drag device roles into the tier order you want them stacked in - top of the
- * list = first level (left in side-to-side, top in tree). Nodes then lay out
- * by their role's position here instead of by pure graph structure. Roles left
- * off, and devices with no role, fall to the last tier.
- *
- * Roles can be **bonded** to the row above with the link button between them,
- * putting both on one level - for when two roles belong side by side rather
- * than stacked.
- */
-export function LevelOrganiser({
-  roles,
-  order,
-  onChange,
-  bonds,
-  onBonds,
-  distance,
-  onDistance,
-}: {
+/** What the levels popover edits: the roles on the map and their order,
+ * bonds and gaps. */
+export interface LevelsProps {
   roles: RoleTier[]
   /** Current role order (names); may include roles no longer on the map. */
   order: string[]
@@ -74,9 +45,42 @@ export function LevelOrganiser({
   /** Roles that share the level of the role above them. */
   bonds: string[]
   onBonds: (bonds: string[]) => void
-  /** Role name → distance step (0–4) for the gap above its tier. */
+  /** Role name → distance step (0–4) for the gap above its level. */
   distance: Record<string, number>
   onDistance: (role: string, step: number) => void
+}
+
+/**
+ * Drag device roles into the level order you want them stacked in - top of
+ * the list = first level (left in Left to right, top in Top to bottom).
+ * Nodes then lay out by their role's position here instead of by pure graph
+ * structure. Roles left off, and devices with no role, fall to the last
+ * level.
+ *
+ * Roles can be **bonded** to the row above with the link button between them,
+ * putting both on one level - for when two roles belong side by side rather
+ * than stacked.
+ *
+ * A popover with no trigger of its own: `children` is what it hangs from
+ * (the Arrange menu's button, whose "Levels…" opens it), and the owner
+ * holds `open`.
+ */
+export function LevelOrganiser({
+  open,
+  onOpenChange,
+  children,
+  roles,
+  order,
+  onChange,
+  bonds,
+  onBonds,
+  distance,
+  onDistance,
+}: LevelsProps & {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** The element the popover is anchored to. */
+  children: React.ReactElement
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -114,25 +118,24 @@ export function LevelOrganiser({
     )
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 text-xs">
-          <Layers className="h-3.5 w-3.5" /> Levels
-        </Button>
-      </PopoverTrigger>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverAnchor asChild>{children}</PopoverAnchor>
       {/* Long role lists must scroll inside the popover, not overflow the
           viewport - cap to the available height. */}
       <PopoverContent
         align="end"
-        className="flex max-h-[min(70vh,32rem)] w-60 flex-col p-2"
+        aria-label="Levels"
+        className="flex max-h-[min(70vh,32rem)] w-64 flex-col gap-1.5 p-2"
       >
-        <div className="mb-1.5 shrink-0 px-1 text-[11px] text-muted-foreground">
-          Drag roles into tier order. Link two rows to put them on the{" "}
-          <span className="font-medium">same level</span>.
+        <div className="flex shrink-0 items-center gap-1 px-1">
+          <span className="text-[11px] font-medium tracking-[0.04em] text-muted-foreground uppercase">
+            Levels
+          </span>
+          <InfoTip>Drag to reorder. Link two rows to share a level.</InfoTip>
         </div>
         {ordered.length === 0 ? (
           <p className="px-1 py-2 text-xs text-muted-foreground">
-            No device roles on the map.
+            No roles on this map.
           </p>
         ) : (
           <DndContext
@@ -152,31 +155,19 @@ export function LevelOrganiser({
                       {/* Between-row link: bonds this row to the one above, so
                           both sit on one level. */}
                       {i > 0 && (
-                        <div className="flex items-center gap-1.5 py-0.5 pl-[7px]">
-                          <button
-                            type="button"
-                            onClick={() => toggleBond(name)}
-                            title={
+                        <div className="flex items-center gap-1.5 py-0.5 pl-0.5">
+                          <BondButton
+                            bonded={bonded}
+                            tip={
                               bonded
-                                ? `Split ${name} onto its own level`
-                                : `Put ${name} on the same level as ${ordered[i - 1]}`
+                                ? "Own level"
+                                : `Same level as ${ordered[i - 1]}`
                             }
-                            className={cn(
-                              "flex h-4 w-4 items-center justify-center rounded-full border transition-colors",
-                              bonded
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                            )}
-                          >
-                            {bonded ? (
-                              <Link2 className="h-2.5 w-2.5" />
-                            ) : (
-                              <Unlink className="h-2.5 w-2.5" />
-                            )}
-                          </button>
+                            onClick={() => toggleBond(name)}
+                          />
                           {bonded && (
                             <span className="text-[10px] text-muted-foreground">
-                              same level
+                              Same level
                             </span>
                           )}
                         </div>
@@ -200,19 +191,52 @@ export function LevelOrganiser({
           </DndContext>
         )}
         {order.length > 0 && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => {
               onChange([])
               onBonds([])
             }}
-            className="mt-2 w-full shrink-0 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground"
+            className="mt-1 shrink-0 self-start text-muted-foreground"
           >
-            Clear - lay out by structure
-          </button>
+            Reset levels
+          </Button>
         )}
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** The link between two rows: bonds this row to the level above, or splits
+ * it off again. Its tooltip says what a click does. */
+function BondButton({
+  bonded,
+  tip,
+  onClick,
+}: {
+  bonded: boolean
+  tip: string
+  onClick: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={bonded ? "default" : "outline"}
+          size="icon-xs"
+          onClick={onClick}
+          aria-label={tip}
+          aria-pressed={bonded}
+          className={cn(!bonded && "text-muted-foreground")}
+        >
+          {bonded ? <Link2 /> : <Unlink />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="right" variant="default">
+        {tip}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -226,7 +250,8 @@ function TierRow({
   bonded,
 }: {
   name: string
-  /** 1-based level this role lands on - shared with the row above when bonded. */
+  /** 1-based level this role lands on - shared with the row above when
+   * bonded. */
   level: number
   color?: string
   distance: number
@@ -253,8 +278,11 @@ function TierRow({
         bonded && "border-primary/40"
       )}
     >
+      {/* No tooltip: the popover opens with the focus here, and a tip
+          would pop up every time it does. */}
       <button
         type="button"
+        aria-label="Reorder"
         className="cursor-grab text-muted-foreground active:cursor-grabbing"
         {...attributes}
         {...listeners}
@@ -262,31 +290,37 @@ function TierRow({
         <GripVertical className="h-3.5 w-3.5" />
       </button>
       <span className="num w-4 text-[10px] text-muted-foreground">{level}</span>
-      <span
-        className="h-3 w-3 shrink-0 rounded-full"
-        style={{ background: color || "var(--border)" }}
-      />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="flex min-w-0 flex-1">
+        <ColorBadge
+          name={name}
+          color={color || undefined}
+          className="block max-w-full truncate"
+        />
+      </span>
       {showDistance && (
-        <span
-          className="flex shrink-0 items-center gap-0.5"
-          title="Gap above this tier"
-        >
-          {[0, 1, 2, 3, 4].map((step) => (
-            <button
-              key={step}
-              type="button"
-              aria-label={`Distance ${step + 1}`}
-              onClick={() => onDistance(step)}
-              className={
-                "h-2 w-2 rounded-full transition-colors " +
-                (step <= distance
-                  ? "bg-primary"
-                  : "bg-muted-foreground/25 hover:bg-muted-foreground/50")
-              }
-            />
-          ))}
-        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex shrink-0 items-center gap-0.5">
+              {[0, 1, 2, 3, 4].map((step) => (
+                <button
+                  key={step}
+                  type="button"
+                  aria-label={`Gap above ${step + 1}`}
+                  onClick={() => onDistance(step)}
+                  className={
+                    "h-2 w-2 rounded-full transition-colors " +
+                    (step <= distance
+                      ? "bg-primary"
+                      : "bg-muted-foreground/25 hover:bg-muted-foreground/50")
+                  }
+                />
+              ))}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right" variant="default">
+            Gap above
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   )

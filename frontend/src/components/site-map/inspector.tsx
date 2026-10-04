@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router"
 import { useQueries } from "@tanstack/react-query"
 import {
   Building2,
-  ExternalLink,
   MapPinOff,
   Plus,
   RotateCcw,
@@ -12,19 +11,19 @@ import {
   X,
 } from "lucide-react"
 
-import {
-  api,
-  type FrontPort,
-  type Interface,
-  type Paginated,
-  type RearPort,
-  type SiteMapConnection,
-  type SiteMapDevice,
-  type SiteMapMarker,
-  type SiteMapSite,
+import { api } from "@/lib/api"
+import type {
+  FrontPort,
+  Interface,
+  Paginated,
+  RearPort,
+  SiteMapCable,
+  SiteMapConnection,
+  SiteMapDevice,
+  SiteMapMarker,
+  SiteMapSite,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   Dialog,
@@ -33,7 +32,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { CheckDot } from "@/components/foldable-group"
+import { RowCheckBadge } from "@/components/foldable-group"
+import { Loading } from "@/components/loading"
+import { BarButton, BarTip } from "@/components/map-toolbar"
+import { OpenLink } from "@/components/open-link"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { Field } from "@/components/forms"
 import { CableForm } from "@/components/cable-form"
@@ -45,6 +47,7 @@ import {
   SITE_FIELD_OPTIONS,
   SiteDetailRows,
 } from "@/components/site-map/detail-rows"
+import { CableSummary, LinkFacts } from "@/components/site-map/link-facts"
 import { useCustomFieldDefs } from "@/components/custom-field-display"
 import {
   Popover,
@@ -53,7 +56,6 @@ import {
 } from "@/components/ui/popover"
 import { FormCheckbox } from "@/components/forms"
 import { cn } from "@/lib/utils"
-import { KIND_COLOR } from "@/components/site-map/connections-layer"
 
 // The site map's right inspector - a direct clone of the floor planner's
 // TileInspector: w-72, uppercase header with coordinates, identity row with
@@ -141,25 +143,28 @@ function InspectorShell({
           )}
           {actions}
           {w !== INSPECTOR_W_DEFAULT && (
-            <button
-              onClick={() => {
-                localStorage.removeItem(INSPECTOR_W_KEY)
-                setW(INSPECTOR_W_DEFAULT)
-              }}
-              className="text-muted-foreground hover:text-foreground"
-              title="Reset panel width"
-              aria-label="Reset panel width"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
+            <BarTip tip="Reset width">
+              <button
+                onClick={() => {
+                  localStorage.removeItem(INSPECTOR_W_KEY)
+                  setW(INSPECTOR_W_DEFAULT)
+                }}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Reset width"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            </BarTip>
           )}
-          <button
-            onClick={onClose}
-            className="text-muted-foreground hover:text-foreground"
-            aria-label="Close inspector"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <BarTip tip="Close">
+            <button
+              onClick={onClose}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </BarTip>
         </span>
       </div>
       {children}
@@ -208,15 +213,16 @@ function FieldsButton({
   }
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <button
-          className="text-muted-foreground hover:text-foreground"
-          title="Choose which details to show"
-          aria-label="Choose which details to show"
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-        </button>
-      </PopoverTrigger>
+      <BarTip tip="Details">
+        <PopoverTrigger asChild>
+          <button
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Details"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+      </BarTip>
       <PopoverContent align="end" className="w-56 gap-1 p-2">
         {options.map((o) => (
           <FormCheckbox
@@ -292,10 +298,12 @@ export function SiteInspector({
         <span className="min-w-0 truncate font-medium">{s.name}</span>
       </div>
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-        <CheckDot check={s.check} />
-        {s.device_count} device{s.device_count === 1 ? "" : "s"}
-        {s.floor_plan_count > 0 &&
-          ` · ${s.floor_plan_count} floor plan${s.floor_plan_count === 1 ? "" : "s"}`}
+        <span>
+          {s.device_count} device{s.device_count === 1 ? "" : "s"}
+          {s.floor_plan_count > 0 &&
+            ` · ${s.floor_plan_count} floor plan${s.floor_plan_count === 1 ? "" : "s"}`}
+        </span>
+        <RowCheckBadge check={s.check} />
       </div>
       <div className="grid gap-1.5">
         <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
@@ -323,11 +331,9 @@ export function SiteInspector({
         </div>
       )}
       <div className="mt-auto grid gap-2 border-t border-border pt-3">
-        <Button variant="outline" size="sm" asChild className="w-full">
-          <Link to="/sites/$id" params={{ id: s.id }}>
-            <ExternalLink className="h-3.5 w-3.5" /> Open site
-          </Link>
-        </Button>
+        <OpenLink to="/sites/$id" params={{ id: s.id }} className="w-full">
+          Open site
+        </OpenLink>
       </div>
     </InspectorShell>
   )
@@ -427,27 +433,22 @@ export function DeviceInspector({
           deviceId={d.id}
           onTraceCables={onTraceCables}
           max={4}
-          emptyText="Nothing cabled yet - connect a port below."
         />
       </div>
 
       <DevicePortsSection device={d} onConnected={onConnected} />
 
       <div className="mt-auto grid gap-2 border-t border-border pt-3">
-        <Button variant="outline" size="sm" asChild className="w-full">
-          <Link to="/devices/$id" params={{ id: d.id }}>
-            <ExternalLink className="h-3.5 w-3.5" /> Open device
-          </Link>
-        </Button>
+        <OpenLink to="/devices/$id" params={{ id: d.id }} className="w-full">
+          Open device
+        </OpenLink>
         {editing && d.can_edit && (
-          <Button
-            variant="outline"
-            size="sm"
+          <BarButton
             className="w-full text-destructive hover:text-destructive"
             onClick={onRemove}
           >
-            <MapPinOff className="h-3.5 w-3.5" /> Remove from map
-          </Button>
+            <MapPinOff /> Remove from map
+          </BarButton>
         )}
       </div>
     </InspectorShell>
@@ -536,27 +537,26 @@ export function MarkerInspector({
             deviceId={m.device.id}
             onTraceCables={onTraceCables}
             max={4}
-            emptyText="The linked device has nothing cabled yet."
           />
         </div>
       )}
       <div className="mt-auto grid gap-2 border-t border-border pt-3">
         {m.device && (
-          <Button variant="outline" size="sm" asChild className="w-full">
-            <Link to="/devices/$id" params={{ id: m.device.id }}>
-              <ExternalLink className="h-3.5 w-3.5" /> Open {m.device.name}
-            </Link>
-          </Button>
+          <OpenLink
+            to="/devices/$id"
+            params={{ id: m.device.id }}
+            className="w-full"
+          >
+            Open device
+          </OpenLink>
         )}
         {canEdit && editing && (
-          <Button
-            variant="outline"
-            size="sm"
+          <BarButton
             className="w-full text-destructive hover:text-destructive"
             onClick={onDelete}
           >
-            <Trash2 className="h-3.5 w-3.5" /> Remove marker
-          </Button>
+            <Trash2 /> Remove marker
+          </BarButton>
         )}
       </div>
     </InspectorShell>
@@ -613,20 +613,9 @@ export function ConnectionInspector({
   onClose: () => void
 }) {
   const rawId = e.id.split(":")[1]
-  const detail =
-    e.kind === "circuit"
-      ? `/circuits/${rawId}`
-      : e.kind === "tunnel"
-        ? `/tunnels/${rawId}`
-        : null
-  const meta = e.meta as Record<string, unknown>
   return (
     <InspectorShell kind="Link" onClose={onClose}>
       <div className="flex items-center gap-2 text-sm">
-        <span
-          className="h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ background: e.color || KIND_COLOR[e.kind] }}
-        />
         <span
           className={
             "min-w-0 truncate font-medium " +
@@ -656,42 +645,55 @@ export function ConnectionInspector({
           {e.site_z.name}
         </Link>
       </div>
-      {e.kind === "circuit" && (
-        <div className="grid gap-0.5 text-[12px] text-muted-foreground">
-          {meta.provider ? (
-            <span>Provider: {String(meta.provider)}</span>
-          ) : null}
-          {meta.type ? <span>Type: {String(meta.type)}</span> : null}
-          {meta.commit_rate_kbps ? (
-            <span className="num">
-              Commit: {Number(meta.commit_rate_kbps) / 1000} Mbps
-            </span>
-          ) : null}
-        </div>
-      )}
-      {e.kind === "tunnel" && (
-        <div className="grid gap-0.5 text-[12px] text-muted-foreground">
-          {meta.encapsulation ? (
-            <span className="font-mono">{String(meta.encapsulation)}</span>
-          ) : null}
-          {meta.group ? <span>Group: {String(meta.group)}</span> : null}
-        </div>
-      )}
-      {e.kind === "cable" && (
-        <div className="text-[12px] text-muted-foreground">
-          {String(meta.count)} cable{Number(meta.count) === 1 ? "" : "s"}
-        </div>
-      )}
-      {detail && (
+      <LinkFacts line={e} />
+      {(e.kind === "circuit" || e.kind === "tunnel") && (
         <div className="mt-auto grid gap-2 border-t border-border pt-3">
-          <Button variant="outline" size="sm" asChild className="w-full">
-            <Link to={detail}>
-              <ExternalLink className="h-3.5 w-3.5" /> Open{" "}
-              {e.kind === "circuit" ? "circuit" : "tunnel"}
-            </Link>
-          </Button>
+          {e.kind === "circuit" ? (
+            <OpenLink
+              to="/circuits/$id"
+              params={{ id: rawId }}
+              className="w-full"
+            >
+              Open circuit
+            </OpenLink>
+          ) : (
+            <OpenLink
+              to="/tunnels/$id"
+              params={{ id: rawId }}
+              className="w-full"
+            >
+              Open tunnel
+            </OpenLink>
+          )}
         </div>
       )}
+    </InspectorShell>
+  )
+}
+
+/** A cable picked on the map: what it is, how fast its links are, and the
+ * ports at their ends - the facts its popover shows, with every link. */
+export function CableInspector({
+  cable: c,
+  onClose,
+}: {
+  cable: SiteMapCable
+  onClose: () => void
+}) {
+  return (
+    <InspectorShell kind="Cable" onClose={onClose}>
+      <div className="flex items-center gap-2 text-sm">
+        <span className="min-w-0 truncate font-mono font-medium">
+          {c.label || "Cable"}
+        </span>
+      </div>
+      <CableSummary cable={c} />
+      <LinkFacts line={{ ...c, kind: "cable", name: c.label }} />
+      <div className="mt-auto grid gap-2 border-t border-border pt-3">
+        <OpenLink to="/cables/$id" params={{ id: c.id }} className="w-full">
+          Open cable
+        </OpenLink>
+      </div>
     </InspectorShell>
   )
 }
@@ -770,7 +772,7 @@ function DevicePortsSection({
   ]
 
   if (ifs.isLoading || fps.isLoading || rps.isLoading)
-    return <div className="h-10 w-full animate-pulse rounded bg-muted/30" />
+    return <Loading className="min-h-16" />
   if (rows.length === 0) return null
 
   return (
@@ -789,11 +791,12 @@ function DevicePortsSection({
             </span>
             <span className="min-w-0 flex-1 truncate font-mono">{r.name}</span>
             {r.cable ? (
-              <span
-                className="size-2.5 shrink-0 rounded-full"
-                title="Cabled"
-                style={{ backgroundColor: r.cable.color || "#0ea5e9" }}
-              />
+              <BarTip tip="Cabled">
+                <span
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: r.cable.color || "#0ea5e9" }}
+                />
+              </BarTip>
             ) : (
               <button
                 type="button"

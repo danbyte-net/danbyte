@@ -62,6 +62,14 @@ def _resolve_fk(field, value, tenant, user=None):
     qs = related._default_manager.all()
     if any(c.name == "tenant" for c in related._meta.concrete_fields):
         qs = qs.filter(tenant=tenant)
+    else:
+        # Rows tenant-scoped through a parent (an interface through its
+        # device) resolve inside the tenant too, as their API fields do.
+        from .serializers import _PARENT_TENANT_PATH
+
+        path = _PARENT_TENANT_PATH.get(related.__name__)
+        if path is not None:
+            qs = qs.filter(**{path: tenant})
     # Site scope: a Site-A importer must not be able to link a row to a Site-B
     # object by naming it. When a user is supplied, resolve the FK only among
     # rows they may view (constraints AND ObjectPermission.sites), same as the
@@ -74,7 +82,20 @@ def _resolve_fk(field, value, tenant, user=None):
             slug = slug_for_model(related)
         except Exception:  # noqa: BLE001
             slug = None
-        if slug and is_registered(slug):
+        if slug in ("user", "group") and not rbac.has_action(user, tenant, slug, "view"):
+            # People and groups are not user administration here: a created_by
+            # or assigned_group cell names someone in the tenant, the same
+            # accounts the tenant's pickers offer (deactivated ones too, so an
+            # old row still round-trips).
+            from auth_api.people_api import tenant_groups, tenant_members
+
+            members = (
+                tenant_members(tenant, user, active_only=False)
+                if slug == "user"
+                else tenant_groups(tenant, user)
+            )
+            qs = qs.filter(pk__in=members.values("pk"))
+        elif slug and is_registered(slug):
             qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
     for lookup in _FK_LOOKUPS:
         try:
@@ -86,6 +107,22 @@ def _resolve_fk(field, value, tenant, user=None):
     raise ValidationError(
         f"{field.name}: no {related._meta.verbose_name} matching '{value}'."
     )
+
+
+def check_status_offered(field, value, instance=None) -> None:
+    """Refuse a ``status`` the catalog doesn't offer the row's kind of object,
+    as the API's single and bulk edits do (#292). A row that already wears it
+    keeps it, so an exported sheet imports back unchanged."""
+    from .models import Status
+    from .status_registry import status_label, status_offered
+
+    if field.name != "status" or not isinstance(value, Status):
+        return
+    if status_offered(value, field.model):
+        return
+    if instance is not None and getattr(instance, "status_id", None) == value.id:
+        return
+    raise ValidationError(f"“{value.name}” isn't a status for {status_label(field.model)}.")
 
 
 def _coerce(field, value, tenant, user=None):
@@ -118,6 +155,7 @@ def _build(model, tenant, row, fields, user=None):
             continue  # unknown column - ignored
         val = _coerce(field, raw, tenant, user)
         if field.is_relation:
+            check_status_offered(field, val)
             fk_set[field.name] = val
         else:
             setattr(obj, field.attname, val)
@@ -165,4 +203,7 @@ def parse_rows(content: str, fmt: str) -> list[dict]:
     except csv.Error:
         delimiter = ","
     reader = csv.DictReader(io.StringIO(content.lstrip("\ufeff")), delimiter=delimiter)
-    return list(reader)
+    from .spreadsheet import csv_unescape
+
+    # Our own exports mark text that looks like a formula; take that off again.
+    return [{k: csv_unescape(v) for k, v in row.items()} for row in reader]

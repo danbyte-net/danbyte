@@ -34,6 +34,7 @@ import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 
 /**
  * Reconciliation inbox for a device (#84, Phase 3). Shows where the *observed*
@@ -77,6 +78,8 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
     // photo faceplate and the 3D rack all read that, so they must re-ask too.
     qc.invalidateQueries({ queryKey: ["device-inventory", deviceId] })
     qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
+    // Accepting a missing interface adds a port.
+    invalidatePortCounts(qc)
   }
 
   const accept = useMutation({

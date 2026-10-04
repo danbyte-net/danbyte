@@ -58,7 +58,7 @@ def set_workers(request):
     result = services.set_worker_count(request.data.get("count"))
     # A save that couldn't apply (unmanaged env / drop-in error) still persisted
     # the setting - surface it as 200 with ok=false so the UI can explain.
-    status = 200 if (result.get("ok") or result.get("saved")) else 400
+    status = 200 if (result.get("ok") or result.get("saved")) else 409 if result.get("busy") else 400
     return Response(result, status=status)
 
 
@@ -78,7 +78,7 @@ def service_restart(request, key: str):
     if not _require_superuser(request):
         return Response({"detail": "Superuser required."}, status=403)
     result = services.restart_services([key])
-    return Response(result, status=200 if result["ok"] else 400)
+    return Response(result, status=200 if result["ok"] else 409 if result.get("busy") else 400)
 
 
 @extend_schema(
@@ -97,4 +97,4 @@ def restart_danbyte(request):
     if not _require_superuser(request):
         return Response({"detail": "Superuser required."}, status=403)
     result = services.restart_danbyte()
-    return Response(result, status=200 if result["ok"] else 400)
+    return Response(result, status=200 if result["ok"] else 409 if result.get("busy") else 400)

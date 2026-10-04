@@ -82,3 +82,42 @@ class VmRenderTests(APITestCase):
         vm2 = VirtualMachine.objects.create(tenant=other, name="secret", cluster=cl)
         res = self.client.get(self._url(vm=vm2))
         self.assertEqual(res.status_code, 404)
+
+
+class VmRenderScopeTests(APITestCase):
+    """A template walking a relation sees only the rows the caller may view,
+    as the export path does (#255)."""
+
+    def test_cluster_neighbours_outside_scope_stay_out(self):
+        from api.models import Site
+        from auth_api.models import ObjectPermission
+
+        org = Organization.objects.create(name="O", slug="o")
+        tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        hq = Site.objects.create(tenant=tenant, name="HQ")
+        branch = Site.objects.create(tenant=tenant, name="Branch")
+        ct = ClusterType.objects.create(tenant=tenant, name="vSphere", slug="vsphere")
+        cluster = Cluster.objects.create(tenant=tenant, name="c1", type=ct)
+        vm_a = VirtualMachine.objects.create(tenant=tenant, name="vm-a", cluster=cluster, site=hq)
+        VirtualMachine.objects.create(tenant=tenant, name="SECRET-vm-b", cluster=cluster,
+                                      site=branch)
+        tmpl = ExportTemplate.objects.create(
+            tenant=tenant, name="peers", object_type="virtualmachine",
+            template_code="{% for v in vm.cluster.virtual_machines.all() %}{{ v.name }},"
+                          "{% endfor %}",
+        )
+        user = User.objects.create_user("scoped", password="x")
+        prof = UserProfile.objects.create(user=user, role="custom")
+        prof.tenants.add(tenant)
+        perm = ObjectPermission.objects.create(
+            name="vms", object_types=["virtualmachine", "cluster"], actions=["view"]
+        )
+        perm.users.add(user)
+        perm.tenants.add(tenant)
+        perm.sites.add(hq)
+        self.client.force_login(user)
+        self.client.post(f"/api/tenants/{tenant.id}/switch/")
+        res = self.client.get(f"/api/virtual-machines/{vm_a.id}/render/?template={tmpl.id}")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertNotIn("SECRET", res.json()["output"])
+        self.assertIn("vm-a", res.json()["output"])

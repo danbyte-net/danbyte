@@ -136,14 +136,28 @@ sticker - shown as a column in the front/rear port tables and editable in bulk.
 Every interface, cable, and panel port has a **Trace** tab. It walks the
 connection end to end - hopping across each cable and *through* each patch panel -
 and draws the whole path as a single chain, so you can see the real far end of a
-link even when it runs through three panels to get there.
+link even when it runs through three panels to get there. A run that stops
+before it reaches a far port is marked **Incomplete**; a port with no cable
+says *Not cabled.* See [the topology page](../features/topology.md#pass-through-tracing)
+for how a trace walks through panels and PDUs.
 
-## Topology map
+Under the chain, the **trace map** draws the same run as the topology
+Diagram does: each device a card in its role's color, in the order the
+run reaches them, a patch panel a dashed card between the two ends with a
+nub on each front and rear port the run uses (and no other), the port
+names and addresses on their own cable, and the traced cables thick in the
+accent color. It turns **Left to right** or **Top to bottom**, and
+**Export** saves it as PNG, SVG, PDF or draw.io
+([Trace maps](../features/topology.md#trace-maps)). The trace dialogs on
+the cable list and a device's ports show the chain, and the map when a
+run cannot be drawn as one chain (a breakout, a loop).
 
-The **Topology** page (sidebar, under DCIM) draws an interactive **device-to-
+## Topology {#topology-map}
+
+The **Topology** page (sidebar, under Maps) draws an interactive **device-to-
 device map** of your cabling. Filter it by **site** to focus on one location, or
 by **device** to pull in just that device's neighbours. Drag nodes around, use
-the minimap to navigate, and click **re-layout** to tidy it up. Cable colors
+the minimap to navigate, and use **Arrange ▸ Reset layout** to tidy it up. Cable colors
 carry through to the links. On very large networks, filter by site first - the
 map will prompt you.
 

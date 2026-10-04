@@ -17,12 +17,7 @@ import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ZoneDeleteDialog } from "@/components/zone-delete-dialog"
 import { ZoneAssignVlanDialog } from "@/components/zone-assign-vlan-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import {
   LocalityBadge,
   PromoteToGlobalButton,
@@ -94,39 +89,23 @@ function Body({ zone: z }: { zone: Zone }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={<ColorBadge name={z.name} color={z.color || undefined} />}
-            badges={
-              <>
-                <LocalityBadge owningSite={z.owning_site} />
-                {canPromote && (
-                  <PromoteToGlobalButton
-                    url={`/api/zones/${z.id}/promote/`}
-                    name={z.name}
-                    invalidate={[["zones"], ["zones-picker"], ["zone", z.id]]}
-                  />
-                )}
-              </>
-            }
-            tags={z.tags.length > 0 && <TagList tags={z.tags} />}
-            description={z.description}
-            stats={
-              <DetailStat
-                label="VLANs"
-                value={<span className="num">{z.usage_count}</span>}
-              />
-            }
-          />
-
-          <section className="shrink-0 border-b border-border px-6 py-4">
-            <p className="text-sm text-muted-foreground">
-              {z.usage_count > 0
-                ? `${z.usage_count} VLAN${z.usage_count === 1 ? "" : "s"} currently sit in this zone.`
-                : "No VLANs use this zone yet."}
-            </p>
-          </section>
-        </>
+        <DetailHero
+          title={<ColorBadge name={z.name} color={z.color || undefined} />}
+          badges={
+            <>
+              <LocalityBadge owningSite={z.owning_site} />
+              {canPromote && (
+                <PromoteToGlobalButton
+                  url={`/api/zones/${z.id}/promote/`}
+                  name={z.name}
+                  invalidate={[["zones"], ["zones-picker"], ["zone", z.id]]}
+                />
+              )}
+            </>
+          }
+          tags={z.tags.length > 0 && <TagList tags={z.tags} />}
+          description={z.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -160,7 +139,7 @@ function Body({ zone: z }: { zone: Zone }) {
 }
 
 /** Zone attributes that used to crowd the header, grouped into tables. Only the
- * colored name badge, locality, tags, description and VLAN count stay up top. */
+ * colored name badge, locality, tags and description stay up top. */
 function ZoneOverview({ zone: z }: { zone: Zone }) {
   const attributes: KvRow[] = [
     {
@@ -183,6 +162,7 @@ function ZoneOverview({ zone: z }: { zone: Zone }) {
       ),
     },
     { label: "Weight", value: <span className="num">{z.weight}</span> },
+    { label: "VLANs", value: <span className="num">{z.usage_count}</span> },
   ]
 
   const record: KvRow[] = [

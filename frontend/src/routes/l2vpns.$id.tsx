@@ -32,12 +32,7 @@ import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { L2vpnDeleteDialog } from "@/components/l2vpn-delete-dialog"
 import { L2vpnTerminationDialog } from "@/components/l2vpn-termination-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -107,45 +102,12 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={v.name}
-            badges={<StatusBadge status={v.status} />}
-            tags={v.tags.length > 0 && <TagList tags={v.tags} />}
-            description={v.description}
-            stats={
-              <>
-                <DetailStat label="Type" value={v.type_display} />
-                <DetailStat
-                  label="Identifier"
-                  value={
-                    v.identifier != null ? (
-                      <span className="num font-mono">{v.identifier}</span>
-                    ) : (
-                      dash
-                    )
-                  }
-                />
-                {v.vrf && (
-                  <DetailStat
-                    label="L3VNI for"
-                    value={
-                      <Link
-                        to="/vrfs/$id"
-                        params={{ id: v.vrf.id }}
-                        className="inline-flex"
-                      >
-                        <ColorBadge name={v.vrf.name} color={v.vrf.color} />
-                      </Link>
-                    }
-                  />
-                )}
-              </>
-            }
-          />
-
-          <CustomFieldValues model="l2vpn" values={v.custom_fields} />
-        </>
+        <DetailHero
+          title={v.name}
+          badges={<StatusBadge status={v.status} />}
+          tags={v.tags.length > 0 && <TagList tags={v.tags} />}
+          description={v.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -204,8 +166,7 @@ function RtList({ rts }: { rts: { id: string; name: string }[] }) {
 }
 
 /** The L2VPN's attributes, grouped into labelled tables. Only headline data
- * (name, status, type, identifier) stays up top; everything else reads
- * here. */
+ * (name, status) stays up top; everything else reads here. */
 function L2vpnOverview({ l2vpn: v }: { l2vpn: L2VPN }) {
   const { humanIds } = useMe()
 
@@ -262,6 +223,11 @@ function L2vpnOverview({ l2vpn: v }: { l2vpn: L2VPN }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="L2VPN" rows={attributes} />
+      <CustomFieldValues
+        model="l2vpn"
+        values={v.custom_fields}
+        layout="cards"
+      />
       <KvCard title="Notes" rows={notes} />
     </div>
   )

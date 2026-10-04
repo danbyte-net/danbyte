@@ -309,6 +309,7 @@ export function ZabbixChanges({
       ) : (
         <DataTable
           tableId={`zabbix-changes-${view}`}
+          autoColumns={{ api: "/api/zabbix/changes/" }}
           data={rows}
           total={changes.data?.count}
           columns={columns}

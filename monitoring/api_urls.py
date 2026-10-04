@@ -7,6 +7,7 @@ from __future__ import annotations
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .explore_views import check_detail_view, explore_view, latency_view
 from .history_views import (
     device_timeline_view,
     device_transitions_view,
@@ -18,7 +19,22 @@ from .history_views import (
     timeline_batch_view,
     transitions_view,
 )
+from .mac_api import (
+    device_mac_refresh_view,
+    device_macs_view,
+    interface_macs_view,
+    mac_refresh_run_view,
+    mac_sightings_view,
+)
 from .maintenance_api import EventImpactViewSet, MaintenanceEventViewSet
+from .sla_api import (
+    HolidayCalendarViewSet,
+    SlaAgreementViewSet,
+    SlaCheckGroupViewSet,
+    SlaExclusionViewSet,
+    SlaMemberViewSet,
+    sla_status_view,
+)
 from .viewsets import (
     AcmeOrderViewSet,
     AlertRuleViewSet,
@@ -63,6 +79,8 @@ from .views import (
     flapping_clear_view,
     flapping_view,
     ip_flapping_clear_view,
+    ip_exclude_view,
+    ip_reset_availability_view,
     bulk_status_view,
     check_now_view,
     check_run_view,
@@ -121,6 +139,11 @@ router.register(
     basename="port-utilization-rule",
 )
 router.register(r"silences", SilenceViewSet, basename="silence")
+router.register(r"sla-agreements", SlaAgreementViewSet, basename="sla-agreement")
+router.register(r"sla-check-groups", SlaCheckGroupViewSet, basename="sla-check-group")
+router.register(r"sla-members", SlaMemberViewSet, basename="sla-member")
+router.register(r"sla-exclusions", SlaExclusionViewSet, basename="sla-exclusion")
+router.register(r"holiday-calendars", HolidayCalendarViewSet, basename="holiday-calendar")
 router.register(
     r"maintenance-events", MaintenanceEventViewSet, basename="maintenance-event"
 )
@@ -191,6 +214,14 @@ urlpatterns = [
     path("devices/<uuid:device_id>/snmp/reconcile/", device_snmp_reconcile_view, name="monitoring-device-snmp-reconcile"),
     path("devices/<uuid:device_id>/snmp/sync/", device_snmp_sync_view, name="monitoring-device-snmp-sync"),
     path("devices/<uuid:device_id>/snmp-poll/", device_snmp_poll_view, name="monitoring-device-snmp-poll"),
+    # MAC tracking (#284).
+    path("devices/<uuid:device_id>/macs/", device_macs_view, name="monitoring-device-macs"),
+    path("devices/<uuid:device_id>/mac-refresh/", device_mac_refresh_view,
+         name="monitoring-device-mac-refresh"),
+    path("interfaces/<uuid:interface_id>/macs/", interface_macs_view,
+         name="monitoring-interface-macs"),
+    path("mac-sightings/", mac_sightings_view, name="monitoring-mac-sightings"),
+    path("mac-refresh/<str:run_id>/", mac_refresh_run_view, name="monitoring-mac-refresh-run"),
     path("virtual-chassis/<uuid:vc_id>/snmp-poll/", vc_snmp_poll_view, name="monitoring-vc-snmp-poll"),
     path("virtual-chassis/<uuid:vc_id>/snmp/drift/", vc_snmp_drift_view, name="monitoring-vc-snmp-drift"),
     path("virtual-chassis/<uuid:vc_id>/snmp/sync/", vc_snmp_sync_view, name="monitoring-vc-snmp-sync"),
@@ -213,12 +244,19 @@ urlpatterns = [
     path("check-runs/<str:run_id>/", check_run_view, name="monitoring-check-run"),
     path("status/", bulk_status_view, name="monitoring-bulk-status"),
     path("checks/", checks_list_view, name="monitoring-checks-list"),
+    path("checks/<uuid:state_id>/", check_detail_view, name="monitoring-check-detail"),
+    path("explore/", explore_view, name="monitoring-explore"),
+    path("latency/", latency_view, name="monitoring-latency"),
+    path("sla-status/", sla_status_view, name="monitoring-sla-status"),
     path("transitions/", transitions_view, name="monitoring-transitions"),
     path("timeline/", timeline_batch_view, name="monitoring-timeline-batch"),
     path("flapping/", flapping_view, name="monitoring-flapping"),
     path("flapping/clear/", flapping_clear_view, name="monitoring-flapping-clear"),
     path("ips/<uuid:ip_id>/flapping/clear/", ip_flapping_clear_view,
          name="monitoring-ip-flapping-clear"),
+    path("ips/<uuid:ip_id>/exclude/", ip_exclude_view, name="monitoring-ip-exclude"),
+    path("ips/<uuid:ip_id>/reset-availability/", ip_reset_availability_view,
+         name="monitoring-ip-reset-availability"),
     path("devices/<uuid:device_id>/flapping/clear/", device_flapping_clear_view,
          name="monitoring-device-flapping-clear"),
     path("alerts/", alerts_view, name="monitoring-alerts"),

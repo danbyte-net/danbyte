@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { toast } from "sonner"
 import {
   ChevronDown,
   Copy,
@@ -13,7 +12,7 @@ import {
 
 import { api } from "@/lib/api"
 import type { ConnectProtocol, Device, Paginated } from "@/lib/api"
-import { apiErrorToast } from "@/lib/api-toast"
+import { copyWithToast } from "@/lib/clipboard"
 import { useMe } from "@/lib/use-me"
 import { getLucideIcon } from "@/components/dynamic-icon"
 import { DeviceTerminalDialog } from "@/components/device-terminal-dialog"
@@ -107,15 +106,6 @@ function sshCommand(
 ): string {
   const target = username ? `${username}@${host}` : host
   return port != null ? `ssh -p ${port} ${target}` : `ssh ${target}`
-}
-
-async function copy(text: string, label: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(label)
-  } catch (e) {
-    apiErrorToast(e, "Couldn't copy to the clipboard")
-  }
 }
 
 /**
@@ -291,7 +281,10 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() =>
-                        copy(url, `Copied ${proto.name} URL to the clipboard`)
+                        void copyWithToast(
+                          url,
+                          `Copied ${proto.name} URL to the clipboard`
+                        )
                       }
                     >
                       <Copy className="h-3.5 w-3.5" /> Copy URL
@@ -299,7 +292,7 @@ export function DeviceConnectMenu({ device }: { device: Device }) {
                     {isSshTemplate(proto.url_template) && (
                       <DropdownMenuItem
                         onSelect={() =>
-                          copy(
+                          void copyWithToast(
                             sshCommand(host, proto.default_port, username),
                             "Copied SSH command to the clipboard"
                           )

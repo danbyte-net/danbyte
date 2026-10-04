@@ -17,6 +17,10 @@ import { useDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { useTableFilters } from "@/components/table-filters"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
 import { ListPageShell } from "@/components/list-page-shell"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceBulkBar } from "@/components/device-bulk-bar"
@@ -95,6 +99,7 @@ function DevicesPage() {
     enabled: deviceIds.length > 0,
   })
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
+  const sla = useSlaStatus("device", deviceIds)
 
   const handleDelete = useCallback((d: Device) => setDeleting(d), [])
   const driftMap = useDriftMap()
@@ -124,6 +129,7 @@ function DevicesPage() {
         drift: driftMap,
         planned: plannedMap,
         monitoring,
+        sla: { entries: sla.entries, frame: sla.frame },
         portUtil,
         actions: {
           editTo: "/devices/$id/edit",
@@ -133,7 +139,16 @@ function DevicesPage() {
           canDelete: (d) => objCan(d, "delete", canDelete),
         },
       }),
-    [handleDelete, canEdit, canDelete, monitoring, humanIds, portUtil]
+    [
+      handleDelete,
+      canEdit,
+      canDelete,
+      monitoring,
+      humanIds,
+      portUtil,
+      sla.entries,
+      sla.frame,
+    ]
   )
   const {
     type: typeFilter,
@@ -174,6 +189,7 @@ function DevicesPage() {
       }}
       actions={
         <>
+          <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="device" />
           {canAdd && (
             <Button size="sm" asChild>

@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { detailSummary } from "./check-history"
+import { ExcludedPill } from "./excluded-pill"
 import { SourceBadge } from "./source-badge"
 import { CheckStatusBadge } from "./status-badge"
 import { statusColor, useStatusLabels } from "./status-palette"
@@ -117,23 +118,35 @@ export function StatusStrip({
             setOpen(i)
           }}
         >
-          {blocks.map((b) => (
-            <div
-              key={b.i}
-              className="absolute inset-y-0"
-              style={{
-                left: `${b.left * 100}%`,
-                width: `max(1px, ${b.width * 100}%)`,
-                background: statusColor(b.s.status, labels),
-                opacity:
-                  b.s.status === "unknown" || b.s.status === "skipped"
-                    ? 0.45
-                    : current === b.i
-                      ? 0.75
-                      : 1,
-              }}
-            />
-          ))}
+          {blocks.map((b) =>
+            b.s.note === "not_counted" ? (
+              // Before an availability reset: the bare track, and a mark
+              // where counting starts.
+              b.b < t1 && (
+                <div
+                  key={b.i}
+                  className="absolute inset-y-0 w-px bg-foreground/60"
+                  style={{ left: `${(b.left + b.width) * 100}%` }}
+                />
+              )
+            ) : (
+              <div
+                key={b.i}
+                className="absolute inset-y-0"
+                style={{
+                  left: `${b.left * 100}%`,
+                  width: `max(1px, ${b.width * 100}%)`,
+                  background: statusColor(b.s.status, labels),
+                  opacity:
+                    b.s.status === "unknown" || b.s.status === "skipped"
+                      ? 0.45
+                      : current === b.i
+                        ? 0.75
+                        : 1,
+                }}
+              />
+            )
+          )}
           {/* One anchor for both the hover card and the click card, parked
               under the pointer - a card per block would be thousands. */}
           <TooltipTrigger asChild>
@@ -147,7 +160,7 @@ export function StatusStrip({
         </div>
         {seg && (
           <TooltipContent side="top" className="flex items-center gap-2">
-            <CheckStatusBadge status={seg.s.status} />
+            <SegmentBadge segment={seg.s} />
             <span className="num">{fmtSpan(seg.b - seg.a)}</span>
             <span className="text-muted-foreground">
               {formatDateTime(seg.s.start)} → {formatDateTime(seg.s.end)}
@@ -162,6 +175,15 @@ export function StatusStrip({
       )}
     </Popover>
   )
+}
+
+/** What a segment was - or why it is not counted: before an availability
+ * reset, or while the address was excluded from monitoring. */
+function SegmentBadge({ segment }: { segment: StatusSegment }) {
+  if (segment.note === "not_counted")
+    return <Badge variant="secondary">Not counted</Badge>
+  if (segment.note === "excluded") return <ExcludedPill />
+  return <CheckStatusBadge status={segment.status} />
 }
 
 /** The click card: the bounds, the change that opened the segment, and the
@@ -221,7 +243,7 @@ function SegmentCard({
   return (
     <div className="space-y-2 text-[13px]">
       <div className="flex items-center gap-2">
-        <CheckStatusBadge status={segment.status} />
+        <SegmentBadge segment={segment} />
         <span className="num font-medium">{fmtSpan(clippedMs)}</span>
         {clippedMs < new Date(segment.end).getTime() - new Date(segment.start).getTime() && (
           <span className="text-xs text-muted-foreground">in this window</span>

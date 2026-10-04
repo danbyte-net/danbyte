@@ -1,24 +1,73 @@
-"""Port-utilization counting, shared by the device API and the alert sweep.
+"""Port-utilization counting: one rule for every consumer.
 
-Connected = the port terminates a cable, or carries ``mark_connected`` (a
-cable is in the port, just not documented yet); reserved = its cable's
-status is "planned" (earmarked but not yet patched) OR the uncabled port
-holds a PortReservation; free = no cable, no hold. Interfaces whose status
-carries ``excludes_capacity`` (Not present, Decommissioning) leave the math
-entirely (#105) - a phantom stack port is not capacity, free or otherwise.
-Twelve GROUP BY aggregates total (three port kinds x four metrics) - never
-per-device queries, however many devices are in scope. ``marked`` is the
-undocumented subset of connected, kept separate so the number stays honest
-about documentation debt.
+The Port utilization page, the device and virtual-chassis cards, the Devices
+list Ports column, the cable picker's free-ports bar, spec sheets and the
+``PortUtilizationRule`` alert sweep all read their numbers from here, so no
+two of them can disagree about what a port is.
+
+States. Connected = the port terminates a cable, or carries
+``mark_connected`` (a cable is in the port, just not documented yet);
+reserved = its cable's status is "planned" (earmarked but not yet patched) OR
+the uncabled port holds a PortReservation; free = no cable, no hold.
+``marked`` is the undocumented subset of connected, kept separate so the
+number stays honest about documentation debt.
+
+What the headline total counts:
+
+- physical interfaces and front ports, including management-only and
+  disabled ones - they are real ports, free or not;
+- virtual interfaces (``virtual=True``, or a virtual / bridge / lag type:
+  SVIs, LAGs, loopbacks, tunnels, sub-interfaces) only when the deployment's
+  "Count virtual interfaces" setting is on
+  (``core.effective_settings.port_count_virtual``);
+- never rear ports: a panel's rear is the back of the ports its front already
+  counts, so a 24-port panel reads /24.
+
+``virtual`` and ``rear_ports`` are still reported, for information.
+Interfaces whose status carries ``excludes_capacity`` (Not present,
+Decommissioning) leave the math entirely (#105) - a phantom stack port is not
+capacity, free or otherwise.
+
+Twelve GROUP BY aggregates total (three port tables x four metrics, the
+interface rows grouped by virtual-ness too) - never per-device queries,
+however many devices are in scope.
 """
 from __future__ import annotations
 
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import BooleanField, Count, Exists, ExpressionWrapper, OuterRef, Q
+
+from .dcim_choices import VIRTUAL_INTERFACE_TYPES
+
+#: Every kind ``port_kinds`` reports. "interfaces" is the physical ones only.
+KINDS = ("interfaces", "virtual", "front_ports", "rear_ports")
+METRICS = ("total", "connected", "reserved", "marked")
 
 
-def device_port_counts(devices) -> dict:
-    """{device_id: {"total", "connected", "reserved", "marked"}} for every
-    device in ``devices`` (a queryset) that has at least one port."""
+def virtual_interface_q(prefix: str = "") -> Q:
+    """Interfaces with no physical port: flagged virtual, or of a virtual
+    type even where the flag was never set."""
+    return Q(**{f"{prefix}virtual": True}) | Q(
+        **{f"{prefix}type__in": VIRTUAL_INTERFACE_TYPES}
+    )
+
+
+def counted_kinds(count_virtual: bool) -> tuple[str, ...]:
+    """The kinds the headline total is made of."""
+    if count_virtual:
+        return ("interfaces", "virtual", "front_ports")
+    return ("interfaces", "front_ports")
+
+
+def _blank() -> dict:
+    return dict.fromkeys(METRICS, 0)
+
+
+def port_kinds(devices, *, rear_ports: bool = True) -> dict:
+    """``{device_id: {kind: {"total", "connected", "reserved", "marked"}}}``
+    for every device in ``devices`` (a queryset) with at least one port of
+    any kind, ``kind`` being each of :data:`KINDS`. ``connected`` includes
+    ``marked``. ``rear_ports=False`` leaves rear ports uncounted - they read
+    zero - for a caller that never shows them: four queries fewer."""
     from .models import (
         CableTermination,
         FrontPort,
@@ -27,107 +76,104 @@ def device_port_counts(devices) -> dict:
         RearPort,
     )
 
-    def kind_counts(model, term_field):
+    tables = [(Interface, "interface"), (FrontPort, "front_port")]
+    if rear_ports:
+        tables.append((RearPort, "rear_port"))
+    out: dict = {}
+    for model, term_field in tables:
         base = model.objects.filter(device__in=devices)
-        # Only Interface carries a lifecycle status today; front/rear ports
-        # have no status field, so the exclusion is a no-op for them.
+        keys = ["device_id"]
         if model is Interface:
-            base = base.exclude(status__excludes_capacity=True)
+            # Only Interface carries a lifecycle status today, and only it
+            # has virtual rows: the same queries group by both.
+            base = base.exclude(status__excludes_capacity=True).annotate(
+                _v=ExpressionWrapper(virtual_interface_q(), output_field=BooleanField())
+            )
+            keys.append("_v")
         term = CableTermination.objects.filter(**{term_field: OuterRef("pk")})
         planned = term.filter(cable__status__slug="planned")
         resv = PortReservation.objects.filter(**{term_field: OuterRef("pk")})
-        ann = base.annotate(
-            _c=Exists(term), _p=Exists(planned), _r=Exists(resv)
-        )
-        group = lambda qs: {  # noqa: E731 - tiny local shaping helper
-            r["device_id"]: r["n"]
-            for r in qs.values("device_id").annotate(n=Count("id"))
-        }
-        return (
-            group(base),
-            group(ann.filter(_c=True, _p=False)),
+        ann = base.annotate(_c=Exists(term), _p=Exists(planned), _r=Exists(resv))
+        for metric, qs in (
+            ("total", base),
+            ("connected", ann.filter(_c=True, _p=False)),
             # Planned cable, or an uncabled unmarked port held directly.
-            group(ann.filter(
+            ("reserved", ann.filter(
                 Q(_p=True) | Q(_c=False, mark_connected=False, _r=True)
             )),
-            group(ann.filter(_c=False, mark_connected=True)),
-        )
-
-    out: dict = {}
-    for model, term_field in (
-        (Interface, "interface"),
-        (FrontPort, "front_port"),
-        (RearPort, "rear_port"),
-    ):
-        totals, connected, reserved, marked = kind_counts(model, term_field)
-        for metric, counts in (
-            ("total", totals),
-            ("connected", connected),
-            ("reserved", reserved),
-            ("marked", marked),
+            ("marked", ann.filter(_c=False, mark_connected=True)),
         ):
-            for device_id, n in counts.items():
-                row = out.setdefault(
-                    device_id,
-                    {"total": 0, "connected": 0, "reserved": 0, "marked": 0},
-                )
-                row[metric] += n
+            for row in qs.values(*keys).annotate(n=Count("id")).order_by():
+                if model is Interface:
+                    kind = "virtual" if row["_v"] else "interfaces"
+                else:
+                    kind = "front_ports" if model is FrontPort else "rear_ports"
+                kinds = out.get(row["device_id"])
+                if kinds is None:
+                    kinds = out[row["device_id"]] = {k: _blank() for k in KINDS}
+                kinds[kind][metric] += row["n"]
     # Marked ports count as connected - the cable exists, only the row is
     # missing - while `marked` itself stays visible as the documentation gap.
-    for row in out.values():
-        row["connected"] += row["marked"]
+    for kinds in out.values():
+        for row in kinds.values():
+            row["connected"] += row["marked"]
     return out
 
 
-def used_pct(row: dict) -> int:
+def _with_free(row: dict) -> dict:
+    return {
+        "total": row["total"],
+        "connected": row["connected"],
+        "reserved": row["reserved"],
+        "free": row["total"] - row["connected"] - row["reserved"],
+        "marked": row["marked"],
+    }
+
+
+def headline(kinds: dict, *, count_virtual: bool) -> dict:
+    """One device's (or one stack's) counted row from its ``port_kinds``
+    entry: ``{"total", "connected", "reserved", "free", "marked"}`` over the
+    counted kinds, plus the uncounted-for-information ``virtual`` and
+    ``rear_ports`` totals."""
+    counted = counted_kinds(count_virtual)
+    row = _with_free({m: sum(kinds[k][m] for k in counted) for m in METRICS})
+    row["virtual"] = kinds["virtual"]["total"]
+    row["rear_ports"] = kinds["rear_ports"]["total"]
+    return row
+
+
+def device_port_counts(devices, *, count_virtual: bool) -> dict:
+    """``{device_id: headline row}`` for every device in ``devices`` (a
+    queryset) that has at least one port of any kind. A device whose ports
+    are all uncounted (virtual with the setting off, rear) has a row with a
+    ``total`` of 0; a device with no ports at all has none."""
+    return {
+        device_id: headline(kinds, count_virtual=count_virtual)
+        for device_id, kinds in port_kinds(devices).items()
+    }
+
+
+def used_pct(row: dict) -> int | None:
+    """Connected plus reserved, as a whole percentage of the counted total;
+    ``None`` when nothing is counted."""
+    if not row.get("total"):
+        return None
     return round((row["connected"] + row["reserved"]) / row["total"] * 100)
 
 
-def utilization_payload(devices) -> dict:
-    """Connected / reserved / free / marked per port kind, plus a combined
-    row, across ``devices`` (a queryset - one device, or a whole stack).
-
-    Connected = the port terminates a cable or carries mark_connected
-    (undocumented cable); reserved = its cable's status is "planned" or the
-    uncabled port holds a PortReservation; free = the rest. ``marked`` is the
-    undocumented subset of connected.
-    """
-    from .models import (
-        CableTermination,
-        FrontPort,
-        Interface,
-        PortReservation,
-        RearPort,
+def utilization_payload(devices, *, count_virtual: bool) -> dict:
+    """Connected / reserved / free / marked per port kind, plus the counted
+    ``combined`` row, across ``devices`` (a queryset - one device, or a whole
+    stack). ``count_virtual`` is echoed so a reader knows the basis."""
+    sums = {k: _blank() for k in KINDS}
+    for kinds in port_kinds(devices).values():
+        for k in KINDS:
+            for m in METRICS:
+                sums[k][m] += kinds[k][m]
+    out: dict = {k: _with_free(sums[k]) for k in KINDS}
+    counted = counted_kinds(count_virtual)
+    out["combined"] = _with_free(
+        {m: sum(sums[k][m] for k in counted) for m in METRICS}
     )
-
-    kinds = {
-        "interfaces": (Interface, "interface"),
-        "front_ports": (FrontPort, "front_port"),
-        "rear_ports": (RearPort, "rear_port"),
-    }
-    out: dict = {}
-    combined = {"total": 0, "connected": 0, "reserved": 0, "free": 0, "marked": 0}
-    for key, (model, term_field) in kinds.items():
-        rel = model.objects.filter(device__in=devices)
-        if model is Interface:
-            rel = rel.exclude(status__excludes_capacity=True)
-        cabled = CableTermination.objects.filter(**{term_field: OuterRef("pk")})
-        planned = cabled.filter(cable__status__slug="planned")
-        resv = PortReservation.objects.filter(**{term_field: OuterRef("pk")})
-        qs = rel.annotate(_cabled=Exists(cabled), _planned=Exists(planned), _resv=Exists(resv))
-        total = rel.count()
-        reserved = qs.filter(
-            Q(_planned=True) | Q(_cabled=False, mark_connected=False, _resv=True)
-        ).count()
-        marked = qs.filter(_cabled=False, mark_connected=True).count()
-        connected = qs.filter(_cabled=True, _planned=False).count() + marked
-        row = {
-            "total": total, "connected": connected, "reserved": reserved,
-            "free": total - connected - reserved, "marked": marked,
-        }
-        out[key] = row
-        for k in combined:
-            combined[k] += row[k]
-    out["combined"] = combined
+    out["count_virtual"] = count_virtual
     return out
-

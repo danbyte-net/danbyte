@@ -30,6 +30,11 @@ Any list in Danbyte can be exported to a file in a couple of clicks. The
     ticked any rows, **just those rows**. Set the table up the way you want
     first, then export.
 
+Columns you add from the **Columns** menu's *Fields*, *Related* and *Custom
+fields* sections export too, as text under their menu label: a linked object as
+its name, a choice as its label, a yes/no field as *Yes* / *No*, and an
+object-reference custom field as the referenced object's name.
+
 ## Related
 
 - [Table columns](table-preferences.md) - choose which columns appear.

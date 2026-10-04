@@ -255,7 +255,9 @@ for the tenant (500 by default; 0 turns it off) - the rest, and every fast
 check whenever the lane is not running, run on the minute beat at the
 check's ordinary interval, which is why a fast check still carries one. The
 Overview shows the lane's checks and probes per second, and the red strip
-at the top says when the lane is down while fast checks exist.
+at the top says when the lane is down while fast checks exist. After a
+database restart the lane drops its old connection at the first failed write
+and reconnects on the next one; it no longer needs a restart of its own.
 
 An Outpost runs the same loop for the fast checks bound to it: it pulls
 its set, probes it locally, and reports buffered probes every poll - or at
@@ -376,6 +378,8 @@ To avoid flapping on a single blip, status changes require a streak:
   chronic outage versus a fresh one.
 - **Skipped** - IPs whose status is on your skip list (for example *reserved*)
   are never dialled; their checks are marked *skipped* and no result is recorded.
+  An address [excluded from monitoring](#excluding-an-address) is *skipped* too,
+  but shows as **Excluded**.
 
 Every status change is logged so you get a history timeline and can drive
 notifications.
@@ -460,6 +464,83 @@ figure and table come from the same log, so they cannot disagree. *Open in
 Monitoring* carries the address into the tenant-wide History view with its
 filters set.
 
+### Excluding an address and resetting availability {#excluding-an-address}
+
+Two actions on the IP's **Monitoring** tab, for the editors of the address
+(`ipaddress.change` on it):
+
+**Exclude from monitoring** - the checkbox beside *Ignore flapping*. After a
+confirmation (with an optional reason), every check on the address stops:
+the ones it inherits from a prefix or a policy as well as its own, on the
+core, on an Outpost and in Zabbix. Its open alerts close, and the notice
+says *Closed - excluded from monitoring by alice* rather than *Resolved*;
+the status-change channels and digests leave it out. The address shows an
+**Excluded** pill here, on its Overview card, in the prefix's address list
+(an *Excluded* filter bucket too), on its check rows and in the Checks
+list's Status column. It is left out of
+every count: the dashboard's status chart and reachable share, the digest,
+the Monitoring stats, the prefix, device and VM roll-ups, and the flapping
+lists (a flapping flag clears at once). *Check now* is refused (`409`), and
+a bulk *Check now* leaves it out and says how many it skipped. Discovery's
+stale cleanup never deletes an excluded address - nothing checks it, so its
+*last seen* stops moving. An alert a check had already raised as the switch
+was thrown is closed too, by the next alert-maintenance run at the latest.
+Unticking it asks the same way, again with an optional reason, and includes
+it again: the checks are due immediately (one whose own schedule is *Off*
+stays off) and read *Skipped* until their first answer. The time it spent
+excluded is not measured - see [Uptime / SLA](#uptime-sla).
+
+**Reset availability…** - in the **⋯** menu. For an address reused for a new
+host: uptime, SLA and availability figures count from **now** or from **a
+date** (midnight in your timezone, no earlier than the day the address was
+created). A **reason is required**. The history before it is kept - the
+results, the status changes and the latency charts still show it - but no
+figure counts it; the strips draw that stretch as bare track with a mark
+where counting starts (hover: *Not counted*). The reset also clears a
+flapping flag. **Clear reset…** (in the same menu, reason required) counts
+all history again.
+
+Under the section title a line says who did it, when and why:
+*Excluded by alice on 12 Sep 2026 14:02: Host decommissioned*, and
+*Availability reset by bob on 12 Sep 2026 14:05: New host on the address*,
+with *· counts from 1 Sep 2026* when the reset was backdated. It is read
+from the address itself. Both actions also write the address's **Change
+log** (with the user and the reason) and a **Journal** entry, such as
+*Availability reset - counts from 12 Sep 2026 14:05 (Europe/Copenhagen).
+Reason: New host on the address. Affects 1 SLA agreement.* The address's
+journal gives only the number of agreements; a reset that changes an SLA
+agreement's figures writes a journal entry naming the address on that
+agreement, and needs `slaagreement.change` on it - see
+[SLA](sla.md#resetting-an-address).
+
+These are not the other exclusions:
+
+| | What it does |
+|---|---|
+| **Exclude from monitoring** (this) | One address: every check parked, nothing counted |
+| Prefix-check *exclusions* | Addresses a prefix's check does not inherit; other checks still run |
+| Monitoring *deny subnets* | Ranges no check or discovery may ever touch |
+| The IP status *skip list* | Every address in a status (for example *reserved*) is skipped |
+| [SLA exclusions](sla.md) | Time an agreement does not count, for everything in it |
+
+Only **checks** stop. Device SNMP polling through the address, Redfish,
+watched endpoints, subnet discovery sweeps and Zabbix's own polling of a host
+Danbyte provisioned are not checks and carry on.
+
+The API: `POST /api/monitoring/ips/<id>/exclude/` with
+`{"excluded": true, "reason": "…"}`, and
+`POST /api/monitoring/ips/<id>/reset-availability/` with
+`{"reason": "…"}` (from now), `{"since": "2026-09-01", "reason": "…"}` or
+`{"clear": true, "reason": "…"}`. A missing or blank reason, a future date or
+one before the address existed is a `400` field error; clearing when no reset
+is in force is a `409`. Including (`"excluded": false`) takes an optional
+`reason` too, which goes to the change log and journal. Both answer with the
+address's `monitoring` block, which `GET /api/monitoring/ips/<id>/checks/`
+also carries. The IP list filters on `?monitoring_excluded=true`; the fields
+themselves are read-only on `/api/ips/<id>/` - a write that changes one is a
+`400`, while sending back the value a `GET` returned (a form or a script
+echoing the record) saves.
+
 ### On a prefix
 
 The prefix Monitoring tab shows:
@@ -503,7 +584,7 @@ showing the row's worst-status badge with a tooltip breakdown (a device rolls
 up across its assigned IPs), so you can scan health across many subnets or
 devices at a glance.
 
-### Uptime / SLA
+### Uptime / SLA {#uptime-sla}
 
 The IP Monitoring tab includes an **Uptime (SLA)** card with a window selector
 (24h / 7d / 30d / 90d). Availability is **time-weighted** - measured from how long
@@ -513,9 +594,16 @@ calculation and reported separately, so a check that simply wasn't running can't
 read as 100% uptime. The card also shows the number of **incidents** in the window
 and the **mean time to recovery (MTTR)**.
 
+Time while the address was [excluded from monitoring](#excluding-an-address) is
+*skipped* - not measured - and so is everything before an
+[availability reset](#excluding-an-address): the figures count from the reset.
+A host that was already down at the reset is down from there, not a new
+incident.
+
 ### History
 
-Status changes are kept for a year, results for thirty days. The history API
+Status changes are kept for a year, results for thirty days. Both are also
+folded into [rollups](#rollups) that outlive them. The history API
 reads the changes back filtered by anything an address is - the same
 dimensions the list pages filter on - and returns facet counts and a bucketed
 series alongside the rows, so one call feeds a rail, a chart and a table:
@@ -553,6 +641,78 @@ series alongside the rows, so one call feeds a rail, a chart and a table:
   days the buckets are days. 720 hours is the ceiling because results are
   pruned after thirty days.
 
+### Rollups {#rollups}
+
+Every five minutes the `danbyte-rollups` timer (`manage.py rollup_checks`)
+writes one hourly record per check, and once a day has ended, one daily record.
+Each record holds:
+
+- the seconds spent up, down, degraded, stale and unknown;
+- the incidents that began in the bucket: going down counts; going stale (the
+  probe lost contact) counts only where stale is counted as down;
+- the probe count;
+- that check's own latency: min, average, p50, p95, p99 and max;
+- **spikes**, the probes slower than the check's usual latency;
+- a latency histogram: how many probes answered within 1, 2, 5, 10, 20, 50,
+  100, 200, 500, 1000, 2000 and 5000 ms. The
+  [SLA latency objectives](sla.md#latency-objectives) read it. Records from
+  before 0.17 have none; the timer rebuilds the last 27 days of them by
+  itself after an upgrade, three days per run.
+
+Hourly records are kept 30 days (`MONITORING_ROLLUP_HOURLY_RETENTION_DAYS`).
+Daily records are never pruned, so an availability figure for last year can
+still be read after the raw results and status changes behind it are gone.
+
+A spike is a probe slower than both *factor × baseline* and *baseline + floor*.
+The baseline is the median of the check's hourly p50 over the previous seven
+days. The factor defaults to 3 and the floor depends on the kind:
+
+| Kind | Floor |
+|---|---|
+| ICMP | 5 ms |
+| TCP, UDP | 20 ms |
+| HTTP, SSH, Telnet, SNMP, TLS | 50 ms |
+
+Both the factor (`spike_factor`) and the per-kind floors (`spike_floor_ms`)
+are monitoring settings. A new check has no baseline, so it records no spikes
+for its first hour. A daily record's spikes are the sum of its hourly
+records', each hour against its own baseline.
+
+Availability is read from the recorded seconds with one set of counting
+rules:
+
+- *degraded* counts as up;
+- *stale* counts as unmeasured, not down, so a blind probe is not charged as
+  an outage;
+- *unknown* is unmeasured.
+
+Availability is up ÷ (up + down). **Coverage** is the measured time ÷ all
+time. A 99.99 % figure measured over three days of a thirty-day month shows
+10 % coverage beside it.
+
+The records keep what actually happened: an
+[availability reset](#excluding-an-address) is applied when they are read,
+never written into them, so moving or clearing a reset needs no rebuild.
+Figures read from the records (the checks list, Explore, the SLA status
+columns and latency objectives) count an address from the first whole hour
+after its reset, and from the first whole UTC day for daily records - the
+rest of the reset day comes from its hourly records (a reset on UTC midnight
+counts that day's daily record whole). Hourly records are kept 30 days, so
+for a reset older than that its own day is not counted. The uptime, strips
+and SLA figures, which read status changes, are exact.
+
+A month, quarter or year to date frame starts at local midnight on the
+period's first day. Its partial UTC days at either end come from the hourly
+records and the whole UTC days between from the daily records, so no hour
+is counted twice. Once a period's first hourly records are past their 30
+days, the hours before its first UTC midnight are not counted.
+
+A new install starts recording from its first run. To build records from the
+history already on disk, run `manage.py rollup_checks --backfill 90`. Daily
+records go back as far as status changes do. Latency goes back only as far as
+raw results, which is thirty days by default, and spikes as far as the hourly
+records.
+
 Facet counts are computed with every filter applied *except* the facet's own,
 so ticking a second value in one facet never zeroes its neighbours. All of it
 is site-scoped: a viewer limited to one site gets that site's history, counts
@@ -573,6 +733,11 @@ A manual check rolls into the same state machine as a scheduled one - it advance
 the rise/fall counters, can move the status, logs the change, and fires alerts
 exactly like an automatic scan.
 
+An address [excluded from monitoring](#excluding-an-address) is not run: its
+**Check now** is disabled, on the Monitoring tab and in the page header (the
+API answers `409`), and a bulk run leaves it out. A run already under way when
+the address is excluded writes nothing and raises no alert.
+
 !!! tip "Large prefixes are fast"
     Sweeping a very large prefix (a `/16` is ~65,000 hosts) completes in seconds,
     not minutes - ICMP sweeps are batched and run with high concurrency, and big
@@ -587,9 +752,10 @@ exactly like an automatic scan.
   reachable - definitions, alert channels), charts (status distribution,
   checks by type, results over the last 24 hours, 7 days or 30 days - hourly
   up to three days, daily beyond; 30 days is the ceiling because results are
-  pruned after that), **Latency** (the estate's median and 95th percentile
-  per bucket - the median says how it feels, the 95th says who is
-  suffering), **Alerts** (opened against resolved per day - whether you are
+  pruned after that), **Latency** (median and 95th percentile per bucket,
+  one check kind at a time, since a ping and an HTTPS fetch do not share a
+  scale - the median says how it feels, the 95th says who is suffering;
+  `latency_by_kind` in the stats payload), **Alerts** (opened against resolved per day - whether you are
   keeping up), **Recent changes** (the latest status changes grouped by the
   hour they landed in, with who answered), a **Flapping now** count (see
   below), and the monitoring settings.
@@ -615,15 +781,78 @@ exactly like an automatic scan.
   status in one click; the rail's Status facet combines several. Columns -
   status, address with DNS name, device, site, check, type, source, latency,
   since, last checked - sort on the server, so a click reorders the whole
-  list, not the page in hand. **7 days** adds a status strip per row. Saved
-  views and export work as on History; the dashboard donut's slices land here
-  with the status set.
+  list, not the page in hand. Three more columns come from the
+  [rollups](#rollups) and cover the last seven days:
+    - availability, with the share measured beside it ("68% measured")
+      when part of the week went unmeasured;
+    - p95 latency;
+    - the check's baseline.
+
+  **7 days** adds a status strip per row. Saved views and export work as on
+  History; the dashboard donut's slices land here with the status set. A
+  check's name opens [its own page](#check-page).
+- **Explore** - the checks grouped by one dimension: site, role, device type,
+  platform, device, prefix, VRF, check or type. The window runs from 24 hours
+  to a year. Each row shows:
+    - the number of checks;
+    - availability, with coverage;
+    - incidents;
+    - time to recover (down time per incident);
+    - latency p50 / p95, separately for each check kind.
+
+  The worst availability comes first. A group's name opens the Checks list
+  filtered to that group.
+- **Latency** - one check kind at a time; the tabs show each kind's p95.
+  For the chosen window it shows:
+    - the median and 95th percentile, with the spikes per bucket as bars;
+    - the checks **furthest from their baseline** (window p95 ÷ baseline,
+      so 2.0x is twice as slow as usual);
+    - the checks with the **most spikes**.
+- **SLAs** - service level agreements, with each one's figure for this
+  period against its target. See [Service level agreements](sla.md).
 - **Flapping** - shown while anything is flagged: the Checks list pinned to
   flapping checks, with row selection and a bulk **Confirm not flapping**.
   Every row carries its **last 24 hours** to scale - the alternation itself
   is the picture, so you can see whether the bouncing is settling before you
   confirm; a block opens to its exact times and the alerts it raised.
 - **Templates** - your reusable check library.
+
+### The check page {#check-page}
+
+Each check has its own page at `/monitoring/checks/<id>`. The hero shows the
+status and the address, device and kind.
+
+The **Overview** tab holds:
+
+- the check's details;
+- the window's figures:
+    - availability and coverage;
+    - incidents and time to recover;
+    - p50 / p95 / p99;
+    - the baseline, the spike threshold and the spike count;
+- a bar chart of availability per day, or per hour for the 24-hour window;
+- latency against the check's baseline (dashed) and spike threshold
+  (dotted), with spikes as bars;
+- the raw-probe latency chart.
+
+The window runs from 24 hours to a year.
+
+**Status changes** pages every change the check made in the last year.
+**Results** shows its recent raw results.
+
+Percentiles over a window are the sample-weighted mean of each bucket's
+percentiles. That is close to, but not exactly, the percentile of every
+probe in the window.
+
+The same figures are available from the API:
+
+- `GET /api/monitoring/checks/<id>/?days=` - one check;
+- `GET /api/monitoring/explore/?group_by=&days=` - grouped figures;
+- `GET /api/monitoring/latency/?kind=&days=` - the Latency view;
+- `GET /api/monitoring/checks/?with=figures&days=` - the list with figures.
+
+`hours=` (up to 48) can replace `days=`. All four are site-scoped like the
+Checks list.
 
 ### The Settings tab
 
@@ -645,6 +874,23 @@ defaults**.
 | **Skip statuses** | IP statuses whose IPs should never be checked. |
 | **Reverse-DNS sync** | Keep IPs' DNS names current automatically (see below). |
 | **Discovery & cleanup** | Auto-discovery and stale-IP cleanup options (see below). |
+| **MAC tracking** | How learned MACs are shown, which ports count as uplinks, and how long they are kept (see below). |
+
+### MAC tracking {#mac-tracking}
+
+Settings for the learned MAC tables SNMP discovery keeps - see
+[MAC tables](snmp-discovery.md#mac-tables). They apply on the next read; no
+re-poll is needed.
+
+| Setting | Default | What it does |
+|---|---|---|
+| **MACs shown per port** | 4 | How many learned MACs a port lists before *+N more*. 0 lists them all. (`mac_port_display_limit`, 0-64) |
+| **Uplink above** | 4 | A port that learns more distinct MACs than this counts as an [uplink](snmp-discovery.md#uplinks). 0 turns the count rule off. (`mac_uplink_threshold`, 0-4096) |
+| **LLDP switch neighbours mark uplinks** | On | A port whose LLDP neighbour is a switch - not a phone - counts as an uplink. (`mac_uplink_lldp`) |
+| **Forget MACs unseen for** | 30 days | Learned MACs and ARP entries nobody has seen for this long are dropped by the daily prune. (`mac_retention_days`, 1-365) |
+
+"Uplink above" replaces the fixed limit of four MACs that switch-link
+suggestions used before 0.17, with the same default.
 
 ### Flapping {#flapping}
 
@@ -655,7 +901,9 @@ status badge wherever the status is: the prefix, device and VM lists, the
 address's summary and Monitoring tab (one pill per check), the device's
 Overview and Monitoring tab, every row of the Checks list and every change
 of a flagged check on the History tab - both of which have a **Flapping**
-facet on the rail to keep only those. The pill's hover says how many checks
+facet on the rail to keep only those. (The Checks list's rail also has an
+**Excluded** facet, for the checks of
+[excluded addresses](#excluding-an-address).) The pill's hover says how many checks
 under the target are flagged. A flapping alert stops sending reminders, so a bouncing
 host cannot page on a loop.
 
@@ -676,7 +924,9 @@ Two things keep expected churn out: exclude whole IP statuses (the
 DHCP-scope escape hatch, in settings) or tick **Ignore flapping** on one
 known-noisy address - neither is ever flagged, and either clears a flag
 already raised. That is different from confirming: confirming clears the
-flag once, ignoring stops it being raised at all.
+flag once, ignoring stops it being raised at all. An address
+[excluded from monitoring](#excluding-an-address) is never flagged either,
+and excluding it or resetting its availability clears its flag at once.
 
 **What gets mailed.** A flapping check is not mailed one change at a time.
 The moment the sweep flags it, every status-change channel in scope of the
@@ -762,10 +1012,24 @@ role (all set conditions AND together; nothing set = every device in the
 tenant). They ride the periodic utilization sweep and notify through the
 tenant's channels with hysteresis - a rule fires once per crossing and
 re-arms when the condition stops holding, exactly like prefix-utilization
-alerts. Counting matches the device page's Port utilization card: connected
+alerts. Counting matches the device page's
+[Port utilization card](../dcim/devices.md#what-counts-as-a-port): connected
 (including ports *marked connected* without a documented cable) or
-*Planned*-reserved ports over total interfaces, front ports and rear
-ports.
+*Planned*-reserved ports over the counted ports - physical interfaces and
+front ports, plus virtual interfaces when **Count virtual interfaces** is on
+(Settings → Component details). Rear ports never count. A device with no
+counted port has no fill level, so threshold rules skip it, while **no ports
+at all** still means no interface, front port or rear port of any kind. When
+virtual interfaces are left out and the device has some, the message says
+*Virtual interfaces not counted.*; the webhook payload carries `total`
+(counted ports), `virtual`, `rear_ports` and `count_virtual`.
+
+!!! note "Changed in 0.17"
+    `total` used to count every interface and rear port too. Under the new
+    count most devices read fuller, so a threshold rule can fire on the first
+    sweep after the upgrade; its message states the basis. A *no ports at
+    all* alert, or a *below* alert at 0%, also used to repeat on every sweep;
+    it now fires once per crossing like the rest.
 
 ### Acknowledge an alert
 
@@ -1013,6 +1277,10 @@ configurable number of days are deleted automatically.
     hand are **never** deleted by cleanup - the discovered flag is the safety
     boundary between "the tool made this" and "a person entered this".
 
+An address [excluded from monitoring](#excluding-an-address) is never
+cleaned up: nothing checks it, so it is never seen, and that is the
+exclusion rather than the host being gone.
+
 ## Settings
 
 Most day-to-day options live in the per-tenant settings on the Monitoring
@@ -1024,9 +1292,11 @@ and plugin directory, retention windows) are set by an administrator - see
 Check history is high-volume (hundreds of thousands of raw results per day on a
 busy install), so Danbyte automatically prunes old results (default **30 days**,
 `MONITORING_RESULT_RETENTION_DAYS`) and old status-change records (default 365
-days, kept longer as an audit timeline) on a schedule. The rolled-up per-check
-state and the status-change timeline carry the long-term story; raw results only
-need to cover the sparkline/history windows.
+days, kept longer as an audit timeline) on a schedule. The same daily prune
+ages learned MACs and ARP entries by each tenant's
+[Forget MACs unseen for](#mac-tracking) setting. The rolled-up per-check
+state, the status-change timeline and the [rollups](#rollups) carry the
+long-term story; raw results only need to cover the sparkline/history windows.
 
 ## Email digest
 

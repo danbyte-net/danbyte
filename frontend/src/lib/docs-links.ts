@@ -4,11 +4,12 @@
 //
 // Keys are app route prefixes ("/devices" also covers "/devices/<id>/edit");
 // values are docs paths as the static site serves them (".md" dropped,
-// "index.md" → its directory). Adding a page? Add its mapping here - the
+// "index.md" → its directory), optionally with a section's "#anchor". Adding a page? Add its mapping here - the
 // repo's docs-link hook reminds you when a new route ships without one.
 
 export const DOCS_LINKS: Record<string, string> = {
   "/": "features/dashboard/",
+  "/dashboards": "features/dashboard/",
   "/search": "features/search-and-macs/",
   "/jobs": "features/jobs/",
   "/audit-log": "features/change-log/",
@@ -57,6 +58,9 @@ export const DOCS_LINKS: Record<string, string> = {
   "/racks": "dcim/racks/",
   "/rack-types": "dcim/racks/",
   "/rack-roles": "dcim/racks/",
+  "/cabinets": "dcim/cabinets/",
+  "/cabinet-types": "dcim/cabinets/#cabinet-types",
+  "/cabinet-roles": "dcim/cabinets/#cabinet-roles",
   "/floorplans": "features/floor-plans/",
   "/floor-tile-types": "features/floor-plans/",
   "/site-map": "features/site-map/",
@@ -74,7 +78,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/cluster-groups": "features/clusters/",
   "/virtual-machines": "features/virtual-machines/",
   "/virtual-switches": "features/virtual-switches/",
-  "/virtual-topology": "features/virtual-switches/",
+  "/virtual-topology": "features/virtual-switches/#network-topology",
   "/circuits": "features/circuits/",
   "/circuit-types": "features/circuits/",
   "/providers": "features/circuits/",
@@ -104,6 +108,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/vteps": "features/routing/",
   "/ethernet-segments": "features/routing/",
   "/monitoring": "features/monitoring/",
+  "/monitoring/sla": "features/sla/",
   "/monitoring-engines": "features/monitoring/",
   "/watched-endpoints": "features/monitoring/",
   "/channels": "features/monitoring/",
@@ -152,6 +157,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/settings/tenant-ldap": "features/permissions/",
   "/settings/sites": "access/site-separation/",
   "/settings/floorplan": "features/floor-plans/",
+  "/settings/topology": "features/topology/",
   "/settings/components": "dcim/device-catalog/",
   "/settings/monitoring": "features/monitoring/",
   "/settings/monitoring-defaults": "features/monitoring/",

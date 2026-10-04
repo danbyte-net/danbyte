@@ -261,10 +261,12 @@ def _result(state, status, latency_ms, detail, at, engine_id) -> CheckResult:
 
 def fast_states(engine=None):
     """The states with a fast interval: the core's own (no engine, or the
-    local one) by default, or one remote engine's."""
-    qs = CheckState.objects.filter(interval_ms__isnull=False).select_related(
-        "target_ip", "template", "assignment", "engine"
-    )
+    local one) by default, or one remote engine's. Never an excluded
+    address's: this one filter keeps them off the local lane (within a
+    reload), off an Outpost's ``/fast-work``, and out of its samples."""
+    qs = CheckState.objects.filter(
+        interval_ms__isnull=False, target_ip__monitoring_excluded=False
+    ).select_related("target_ip", "template", "assignment", "engine")
     if engine is None:
         qs = qs.filter(Q(engine__isnull=True) | Q(engine__kind=MonitoringEngine.LOCAL))
     else:
@@ -571,6 +573,21 @@ class FastLane:
         samples, self.samples = self.samples, {}
         # The probes that became nothing still reach an open page - one
         # message a second per watched address, none for the rest.
+        # An address excluded since the last reload is still being probed
+        # until the next one; what it said goes nowhere - not onto a page,
+        # not into the database (_persist parks the row again).
+        excluded = set()
+        if samples or dirty:
+            from .exclusion import excluded_ids
+
+            excluded = excluded_ids(
+                {st.target_ip_id for st, _ in samples.values()}
+                | {d.target_ip_id for d in dirty}
+            )
+        if excluded:
+            samples = {
+                sid: v for sid, v in samples.items() if v[0].target_ip_id not in excluded
+            }
         dirty_ids = {str(d.id) for d in dirty}
         quiet = [st for sid, (st, _) in samples.items() if sid not in dirty_ids]
         if samples:
@@ -593,7 +610,7 @@ class FastLane:
             # so a stale-heartbeat takeover starts at the fallback interval
             # rather than finding every row overdue at once.
             s.next_run = now + timedelta(seconds=effective_interval(s) or 60)
-        _persist(results, transitions, dirty, now)
+        _persist(results, transitions, dirty, now, excluded=excluded)
 
     def _beat(self) -> None:
         now_m = time.monotonic()
@@ -608,10 +625,16 @@ class FastLane:
 
     async def run(self) -> None:
         from asgiref.sync import sync_to_async
+        from django.db import connections
 
         reload = sync_to_async(self.reload, thread_sensitive=True)
         flush = sync_to_async(self.flush, thread_sensitive=True)
         beat = sync_to_async(self._beat, thread_sensitive=True)
+        # A long-lived process gets no request signals, so Django never drops
+        # a dead connection for it: after a PostgreSQL restart every flush
+        # failed on the old one for good. Close the thread's connections after
+        # a database error; the next flush or reload opens a fresh one.
+        reset = sync_to_async(connections.close_all, thread_sensitive=True)
         await reload()
         await beat()
         next_reload = time.monotonic() + RELOAD_SECONDS
@@ -627,6 +650,7 @@ class FastLane:
                     await flush()
                 except Exception:  # noqa: BLE001
                     log.exception("fast lane flush failed")
+                    await reset()
             if now_m >= next_beat:
                 next_beat = now_m + 5
                 await beat()
@@ -636,6 +660,7 @@ class FastLane:
                     await reload()
                 except Exception:  # noqa: BLE001
                     log.exception("fast lane reload failed")
+                    await reset()
             await asyncio.sleep(TICK_SECONDS)
         await flush()
         await sync_to_async(self.release_all, thread_sensitive=True)()

@@ -17,6 +17,8 @@ import {
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
+import type { SlaColumnOpts } from "@/components/columns/sla-column"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
@@ -28,7 +30,7 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { vrfColumn } from "@/components/cells/vrf-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { formatCustomValue } from "@/components/custom-field-display"
+import { customFieldColumns } from "@/components/columns/auto-columns"
 import {
   actionsColumn,
   type ActionsColumnOpts,
@@ -50,6 +52,8 @@ export type PrefixColumnId =
   | "status"
   | "dhcp"
   | "monitoring"
+  | "sla"
+  | "availability"
   | "vrf"
   | "vlan"
   | "zone"
@@ -66,6 +70,8 @@ const CANONICAL_ORDER: PrefixColumnId[] = [
   "status",
   "dhcp",
   "monitoring",
+  "sla",
+  "availability",
   "vrf",
   "vlan",
   "zone",
@@ -94,6 +100,8 @@ export interface PrefixColumnOpts<T extends Prefix = Prefix> {
   violations?: Map<string, ComplianceViolation[]>
   /** Monitoring status per prefix id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
+  sla?: SlaColumnOpts
   /** One column per tenant custom field (hidden by default via Columns menu). */
   cfDefs?: CustomField[]
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
@@ -104,20 +112,16 @@ export interface PrefixColumnOpts<T extends Prefix = Prefix> {
   actions?: ActionsColumnOpts<T>
 }
 
-/** Stable facet bucket for a custom-field value (null = not counted). */
-function cfFacetKey(v: unknown): string | null {
-  if (v === null || v === undefined || v === "") return null
-  if (typeof v === "boolean") return v ? "Yes" : "No"
-  if (Array.isArray(v)) return v.map(String).join(", ")
-  return String(v)
-}
-
 export function buildPrefixColumns<T extends Prefix = Prefix>(
   opts: PrefixColumnOpts<T> = {}
 ): ColumnDef<T, unknown>[] {
   const omit = new Set(opts.omit ?? [])
   // The Monitoring column only exists when the page fetched bulk status.
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.sla) {
+    omit.add("sla")
+    omit.add("availability")
+  }
   const keep = (id: PrefixColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -217,6 +221,8 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
         },
       },
     }),
+    sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
+    availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     monitoring: () => ({
       id: "monitoring",
       accessorFn: (r) => monitoringBucket(opts.monitoring?.[r.id]),
@@ -275,6 +281,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
         )
       },
       meta: {
+        field: "vlan.zone",
         facet: {
           kind: "enum",
           label: "Zone",
@@ -356,23 +363,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
   // custom_fields blob; hide any you don't want via the Columns menu. Each
   // carries an enum facet over its observed values, so the filter rail
   // adapts to whatever custom fields the tenant defined.
-  for (const d of opts.cfDefs ?? []) {
-    cols.push({
-      id: `cf_${d.key}`,
-      header: d.label,
-      enableSorting: false,
-      accessorFn: (r) => r.custom_fields?.[d.key],
-      cell: ({ row }) =>
-        formatCustomValue(d, row.original.custom_fields?.[d.key]),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: d.label,
-          get: (r: T) => cfFacetKey(r.custom_fields?.[d.key]),
-        },
-      },
-    })
-  }
+  cols.push(...customFieldColumns<T>(opts.cfDefs ?? [], { facet: true }))
 
   if (opts.vrfGroupColumn) {
     cols.push({
@@ -385,6 +376,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
       header: "VRF",
       cell: ({ row }) => row.original.vrf?.name ?? "Global",
       meta: {
+        field: "vrf",
         facet: {
           kind: "enum",
           label: "VRF",

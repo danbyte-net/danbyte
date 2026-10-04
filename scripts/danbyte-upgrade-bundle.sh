@@ -1,201 +1,125 @@
 #!/bin/sh
-# Danbyte upgrade from an uploaded OFFLINE BUNDLE (danbyte-<ver>-linux-x86_64.tar.gz).
-# For tarball installs that have no git checkout to `git pull`. Launched DETACHED
-# by the app (systemd-run --user) so it survives the restart; writes progress to
-# the same status JSON the UI polls.
+# Danbyte upgrade launcher, offline bundle (danbyte-<ver>-linux-x86_64.tar.gz).
+# Started by the app (Settings -> Updates -> Upgrade from a bundle, the
+# auto-upgrade timer on a bundle install, manage.py start_upgrade) as the
+# transient unit danbyte-upgrade.service, as the service user - no root.
 #
-#   danbyte-upgrade-bundle.sh <path-to-bundle.tar.gz>
+#   danbyte-upgrade-bundle.sh <bundle.tar.gz> [--version <tag>]
 #
-# Runs entirely as the service user (no root): deploy code, reinstall deps from
-# the bundle's offline wheelhouse, migrate, collectstatic, restart user units,
-# healthcheck. On a failure BEFORE the migration the previous code is restored
-# from a backup; after the migration has run the new code stays, and the
-# pre-upgrade backup is the way back.
+# This file belongs to the RUNNING release and does as little as it can:
+# unpack the bundle beside the app, read which version it is (from the tree,
+# never the file name), check that it is newer, built for this machine and
+# carries an upgrade stage, take the pre-upgrade backup with the code that is
+# running now, and exec the TARGET's scripts/upgrade/stage.sh. The target
+# then upgrades itself with its own logic - see that file. With --version the
+# bundle must be that release (a download that does not match its tag stops).
 set -u
 
-TARBALL="${1:?usage: danbyte-upgrade-bundle.sh <bundle.tar.gz>}"
+TARBALL="${1:?usage: danbyte-upgrade-bundle.sh <bundle.tar.gz> [--version <tag>]}"
+EXPECT=""
+[ "${2:-}" = --version ] && EXPECT="${3:-}"
 CODE_DIR="${DANBYTE_DIR:-$HOME/danbyte}"
 STATUS_FILE="${DANBYTE_UPGRADE_STATUS:-$CODE_DIR/.upgrade-status.json}"
-BACKUP_DIR="${DANBYTE_BACKUP_DIR:-$CODE_DIR/../danbyte-backups}"
-MAINT="${DANBYTE_MAINTENANCE_FLAG:-$CODE_DIR/.maintenance}"
+TRIGGER="${DANBYTE_UPGRADE_TRIGGER:-manual}"
 PY="$CODE_DIR/.venv/bin/python"
+FROM=""
+TARGET="${EXPECT:-$(basename "$TARBALL")}"
+WORK=""
 ERR=""
-TMP=""
 
-cd "$CODE_DIR" 2>/dev/null || { echo "no code dir $CODE_DIR" >&2; exit 1; }
-FROM="$("$PY" -c 'import danbyte;print(danbyte.__version__)' 2>/dev/null || echo unknown)"
-VERSION="$(basename "$TARBALL" | sed -n 's/^danbyte-\(.*\)-linux.*/\1/p')"
-[ -n "$VERSION" ] || VERSION="uploaded"
-
-# Which Danbyte units this install actually has (dev vs prod).
-SERVICES=""
-for s in danbyte-web danbyte-backend danbyte-workers danbyte-fastlane danbyte-ws danbyte-frontend-prod danbyte-docs; do
-  systemctl --user cat "$s" >/dev/null 2>&1 && SERVICES="$SERVICES $s"
-done
-[ -n "$SERVICES" ] || SERVICES="danbyte-workers"
-
-status() {  # <state> <step> <pct>
-  esc=$(printf '%s' "$ERR" | sed 's/\\/\\\\/g; s/"/\\"/g')
-  printf '{"state":"%s","step":"%s","pct":%s,"version_to":"%s","version_from":"%s","error":"%s"}\n' \
-    "$1" "$2" "$3" "$VERSION" "$FROM" "$esc" > "$STATUS_FILE.tmp"
-  mv -f "$STATUS_FILE.tmp" "$STATUS_FILE"
+esc() { printf '%s' "$1" | tr '\n\r\t' '   ' | tr -d '\000-\010\013\014\016-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+status() {  # <state> <step> <pct> [retryable]
+  printf '{"state":"%s","step":"%s","pct":%s,"version_to":"%s","version_from":"%s","error":"%s","stage_api":1,"kind":"bundle","trigger":"%s","attempt":%s,"retryable":%s,"started_at":%s}\n' \
+    "$1" "$2" "$3" "$(esc "$TARGET")" "$(esc "$FROM")" "$(esc "$ERR")" "$(esc "$TRIGGER")" \
+    "$(printf '%s' "${DANBYTE_UPGRADE_ATTEMPT:-1}" | tr -cd 0-9)" "${4:-false}" \
+    "$(printf '%s' "${DANBYTE_UPGRADE_STARTED_AT:-$(date +%s)}" | tr -cd '0-9.')" >"$STATUS_FILE.tmp" \
+    && mv -f "$STATUS_FILE.tmp" "$STATUS_FILE"
 }
-restart_services() { systemctl --user restart $SERVICES 2>/dev/null; }
-BACKUP=""
-DEPLOYED=""
-MIGRATED=""
-rollback() {
-  if [ -n "$MIGRATED" ]; then
-    ERR="$ERR - the database is already migrated, so the new code is kept (the old code would not run on it); to go back, restore the pre-upgrade backup"
-    restart_services
-    return
-  fi
-  # Only a tree the overlay has touched needs restoring, and the status must
-  # say when that did not happen - a "rolled back" that left the new tree in
-  # place on the old dependencies is worse than the failure itself.
-  if [ -n "$DEPLOYED" ]; then
-    if [ -n "$BACKUP" ] && [ -f "$BACKUP" ] && tar -C "$CODE_DIR" -xzf "$BACKUP" 2>"$ERRF"; then
-      ERR="$ERR - the previous code was restored from $BACKUP"
-    else
-      ERR="$ERR - and the previous code could NOT be restored: $(tail -c 200 "$ERRF" 2>/dev/null | tr -c '[:print:]' ' ')"
-    fi
-  fi
-  restart_services
-}
-fail() {
-  ERR="$2"
-  status running rollback 0
-  rollback
-  rm -rf "$TMP" 2>/dev/null
-  rm -f "$MAINT"
-  status failed "$1" 0
+fail() {  # <step> <message> [retryable]
+  ERR="$2 - nothing was changed; the previous release keeps running."
+  [ -n "$WORK" ] && rm -rf "$WORK"
+  status failed "$1" 0 "${3:-false}"
+  echo "danbyte-upgrade-bundle: $2" >&2
   exit 1
 }
-
-# A step's stderr is kept and quoted in the failure, so the status JSON says
-# what actually broke (a truncated bundle, a missing wheel, the migration's
-# traceback) instead of one fixed sentence per step (#185).
-ERRF="$STATUS_FILE.err"
-step() {  # <step> <what went wrong> <command...>
-  s="$1"; what="$2"; shift 2
-  "$@" 2>"$ERRF" || fail "$s" "$what: $(tail -c 300 "$ERRF" 2>/dev/null | tr -c '[:print:]' ' ')"
+clean() { printf '%s' "$1" | sed -e 's/^[vV]//' -e 's/-dirty$//' -e 's/-[0-9][0-9]*-g[0-9a-f]*$//'; }
+vcmp() {
+  "$PY" -c 'import sys
+from packaging.version import Version
+a, b = Version(sys.argv[1]), Version(sys.argv[2])
+print((a > b) - (a < b))' "$1" "$2" 2>/dev/null && return 0
+  a=$(printf '%s' "$1" | sed 's/[^0-9.].*//'); b=$(printf '%s' "$2" | sed 's/[^0-9.].*//')
+  if [ "$a" = "$b" ]; then echo 0
+  elif [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -n 1)" = "$a" ]; then echo -1
+  else echo 1; fi
 }
 
-# The readiness probe must reach *this* app: on a box where Danbyte is not
-# nginx's default server a bare 127.0.0.1 request lands on another server
-# block, and the app port answers a nameless request with a redirect or a
-# 400. So the probe carries a host the install answers to (ALLOWED_HOSTS in
-# .env) and says it came over HTTPS.
-HOSTS="$(sed -n 's/^ALLOWED_HOSTS=//p' "$CODE_DIR/.env" 2>/dev/null | tr -d "'\"" | tr ',' ' ')"
-[ -n "$HOSTS" ] || HOSTS="127.0.0.1 localhost"
-healthy() {
-  for h in $HOSTS; do
-    [ "$h" = "*" ] && h=127.0.0.1
-    c=$(curl -ks -o /dev/null -w '%{http_code}' -H "Host: $h" -H "X-Forwarded-Proto: https" \
-        "http://127.0.0.1:8000/api/health/" 2>/dev/null || echo 000)
-    [ "$c" = "200" ] && return 0
-    c=$(curl -ks -o /dev/null -w '%{http_code}' --resolve "$h:443:127.0.0.1" \
-        "https://$h/api/health/" 2>/dev/null || echo 000)
-    [ "$c" = "200" ] && return 0
-  done
-  return 1
-}
+cd "$CODE_DIR" 2>/dev/null || { echo "no code dir $CODE_DIR" >&2; exit 1; }
+FROM=$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' danbyte/__init__.py 2>/dev/null)
+status running preflight 2
 
-status running preflight 5
+UPG_ROOT="$(dirname "$CODE_DIR")/.danbyte-upgrade"
+[ "$(stat -c %d "$(dirname "$CODE_DIR")")" = "$(stat -c %d "$CODE_DIR")" ] || UPG_ROOT="$CODE_DIR/.danbyte-upgrade"
+if [ -f "$UPG_ROOT/active" ]; then
+  [ -f "$UPG_ROOT/recover/recover.sh" ] && sh "$UPG_ROOT/recover/recover.sh"
+  [ -f "$UPG_ROOT/active" ] \
+    && fail preflight "an earlier upgrade is unfinished - run: danbyte-admin upgrade recover"
+  fail preflight "an interrupted upgrade was just recovered; start the upgrade again" true
+fi
 [ -f "$TARBALL" ] || fail preflight "bundle not found: $TARBALL"
-TMP="$(mktemp -d)"
-step extract "could not extract bundle" tar -xzf "$TARBALL" -C "$TMP"
-SRC="$(find "$TMP" -maxdepth 1 -type d -name 'danbyte-*' | head -1)"
-[ -d "$SRC" ] || SRC="$TMP"
-[ -f "$SRC/manage.py" ] || fail preflight "bundle missing manage.py - not a Danbyte release"
-[ -d "$SRC/vendor/wheels" ] || fail preflight "bundle has no vendor/wheels - not an OFFLINE bundle"
+mkdir -p "$UPG_ROOT" || fail preflight "cannot create $UPG_ROOT" true
+# Unpacked, a bundle is about three times its archive.
+_need=$(( $(du -k "$TARBALL" | cut -f1) * 3 ))
+_avail=$(df -Pk "$UPG_ROOT" | awk 'NR==2 {print $4}')
+[ "${_avail:-0}" -ge "$_need" ] \
+  || fail preflight "not enough free space to unpack the bundle: $((_avail / 1024)) MB free, $((_need / 1024)) MB needed" true
 
-status running backup 15
-mkdir -p "$BACKUP_DIR"
-# The engine makes the pre-upgrade backup (database, media, config) so it is
-# listed, restorable and pruned like every other backup. A missing pg_dump
-# is a hard stop unless DANBYTE_SKIP_BACKUP=1 says the operator has their own.
-if [ "${DANBYTE_SKIP_BACKUP:-0}" = "1" ]; then
-  echo "danbyte-upgrade: DANBYTE_SKIP_BACKUP=1 - skipping the pre-upgrade backup" >&2
-else
-  BACKUP_OUT="$("$PY" manage.py backup_now --kind pre_upgrade 2>"$BACKUP_DIR/.pre-upgrade.err")" \
-    || fail backup "pre-upgrade backup failed - aborting before any migration: $(tail -c 300 "$BACKUP_DIR/.pre-upgrade.err" 2>/dev/null | tr -c '[:print:]' ' ')"
-  echo "danbyte-upgrade: backup $BACKUP_OUT" >&2
+WORK="$UPG_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-bundle"
+mkdir -p "$WORK/extract" || fail preflight "cannot create $WORK" true
+tar -xf "$TARBALL" -C "$WORK/extract" 2>"$WORK/tar.err" \
+  || fail preflight "could not extract the bundle: $(tail -c 300 "$WORK/tar.err" | tr -c '[:print:]' ' ')"
+TOP=$(find "$WORK/extract" -mindepth 1 -maxdepth 1 -type d -name 'danbyte-*' | head -n 1)
+if [ -n "$TOP" ]; then mv "$TOP" "$WORK/src"; else mv "$WORK/extract" "$WORK/src"; fi
+rm -rf "$WORK/extract"
+[ -f "$WORK/src/manage.py" ] || fail preflight "the bundle has no manage.py - not a Danbyte release"
+[ -d "$WORK/src/vendor/wheels" ] || fail preflight "the bundle has no vendor/wheels - not an OFFLINE bundle"
+TARGET=$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$WORK/src/danbyte/__init__.py" 2>/dev/null)
+[ -n "$TARGET" ] || fail preflight "the bundle does not say which version it is"
+if [ -n "$EXPECT" ] && [ "$(clean "$EXPECT")" != "$(clean "$TARGET")" ]; then
+  fail preflight "the bundle for $EXPECT contains $TARGET"
+fi
+PLAT=$(sed -n 's/^platform: *//p' "$WORK/src/BUNDLE_INFO" 2>/dev/null)
+if [ -n "$PLAT" ] && [ "$PLAT" != "linux-$(uname -m)" ]; then
+  fail preflight "the bundle is built for $PLAT, this machine is linux-$(uname -m)"
+fi
+[ "$(vcmp "$TARGET" "${FROM:-0}")" -ge 0 ] || fail preflight "$TARGET is older than the running $FROM - downgrades are not supported"
+API=$(tr -cd 0-9 <"$WORK/src/scripts/upgrade/STAGE_API" 2>/dev/null)
+[ "${API:-0}" -ge 1 ] || fail preflight "$TARGET predates the upgrade stage"
+if [ -f "$WORK/src/scripts/upgrade/MIN_FROM" ]; then
+  MIN=$(tr -d ' \n' <"$WORK/src/scripts/upgrade/MIN_FROM")
+  [ "$(vcmp "${FROM:-0}" "$MIN")" -ge 0 ] || fail preflight "$TARGET upgrades from $MIN or newer; upgrade to $MIN first"
+fi
+_named="$UPG_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-$(clean "$TARGET")"
+mv "$WORK" "$_named" 2>/dev/null && WORK="$_named"
+
+# Below the stage's preflight (5): the bar never goes back at the hand-over.
+status running backup 4
+BACKUP="skipped"
+B0=""
+B1=""
+if [ "${DANBYTE_SKIP_BACKUP:-0}" != 1 ] || [ "$TRIGGER" = auto ]; then
+  OUTF="$WORK/backup.out"
+  B0=$(date +%s)
+  timeout 3600 "$PY" manage.py backup_now --kind pre_upgrade >"$OUTF" 2>&1 \
+    || fail backup "pre-upgrade backup failed: $(tail -c 300 "$OUTF" | tr -c '[:print:]' ' ')" true
+  B1=$(date +%s)
+  BACKUP=$(grep -Eo '^[0-9a-f-]{36}' "$OUTF" | tail -n 1)
+  [ -n "$BACKUP" ] || BACKUP=unknown
 fi
 
-# Code backup for rollback (skip the heavy, regenerable trees). Without it
-# nothing could be put back, so a failure to write it stops the upgrade
-# before the tree is touched - a full backup disk is the usual cause.
-BACKUP="$BACKUP_DIR/code-pre-$VERSION-$(date +%s).tgz"
-# media/ is not touched by an upgrade (and the pre-upgrade backup holds it),
-# and the bundle being applied sits in the code dir: both used to ride along
-# in every archive, which is how these grew to gigabytes.
-tar -C "$CODE_DIR" --exclude=./.venv --exclude=./vendor --exclude=./frontend/node_modules \
-  --exclude=./media --exclude=./.upgrade-bundle.tar.gz \
-  -czf "$BACKUP" . 2>"$ERRF" \
-  || { BACKUP=""; fail backup "could not write the rollback archive $BACKUP_DIR (disk full?): $(tail -c 300 "$ERRF" 2>/dev/null | tr -c '[:print:]' ' ')"; }
-
-status running deploy 40
-touch "$MAINT" 2>/dev/null || true   # nginx shows the "updating" page
-DEPLOYED=1
-# Overlay the new tree; keep .env/media (not in the bundle). Excludes the
-# installer entrypoint so it doesn't clutter the code dir. The trees the
-# bundle ships whole are replaced, not overlaid: an overlay never removes a
-# file, so every release added its own wheelhouse, build chunks and hashed
-# static files on top of the last one's.
-step deploy "copying new code failed" \
-  sh -c "for d in vendor/wheels frontend/dist staticfiles; do [ -d '$SRC/'\$d ] && rm -rf '$CODE_DIR/'\$d; done; tar -C '$SRC' --exclude=./install.sh -cf - . | tar -C '$CODE_DIR' -xf -"
-
-status running deps 60
-"$CODE_DIR/vendor/python/bin/python3" -m venv "$CODE_DIR/.venv" >/dev/null 2>&1 || true
-step deps "offline dependency install failed" \
-  "$PY" -m pip install --no-index --find-links "$CODE_DIR/vendor/wheels" \
-  -r "$CODE_DIR/requirements.txt" -q
-
-status running migrate 75
-step migrate "database migration failed" "$PY" manage.py migrate --noinput
-MIGRATED=1
-"$PY" manage.py rebuild_search_index >/dev/null 2>&1 || true
-# Private uploads are served only through Django since 0.16.12 (#227). Close
-# their folders to other users, so a web server still reading media/ straight
-# from disk - an nginx config rendered before this release - gets 403, not the
-# file. Best effort: a folder that does not exist yet is simply skipped.
-for d in documents image-attachments floor-plans oui-imports outpost-releases script-outputs; do
-  [ -d "$CODE_DIR/media/$d" ] && chmod -R o-rwx "$CODE_DIR/media/$d" 2>/dev/null || true
-done
-
-status running static 85
-"$PY" manage.py collectstatic --noinput >/dev/null 2>&1 || true
-
-status running restart 92
-# Refresh unit symlinks so services/timers added in this release get linked +
-# enabled on an in-app bundle upgrade. Best-effort.
-if command -v make >/dev/null 2>&1; then
-  make -C "$CODE_DIR" install-services >/dev/null 2>&1 || true
-fi
-# A service ADDED in this release is linked above but never started: the
-# fast lane (0.16) has to run or every sub-minute check silently falls back
-# to the minute beat. Best-effort, like the linking.
-systemctl --user enable --now danbyte-fastlane >/dev/null 2>&1 || true
-restart_services
-
-status running healthcheck 96
-ok=""
-i=0
-while [ "$i" -lt 12 ]; do
-  i=$((i + 1)); sleep 3
-  # Require the real readiness endpoint (200 = Django up AND DB reachable) - a
-  # 2xx/3xx from "/" would also pass on the nginx "updating" page or a login
-  # redirect while the app is actually broken.
-  healthy && { ok=1; break; }
-done
-[ -n "$ok" ] || fail healthcheck "app did not come back healthy after restart (/api/health/ never returned 200 for hosts: $HOSTS)"
-
-rm -f "$MAINT" "$TARBALL" "$ERRF"
-rm -rf "$TMP"
-# Old rollback archives, surplus before-upgrade backups, wheels from earlier
-# releases - kept to the numbers in Settings -> Backups. Best effort.
-"$PY" manage.py housekeeping >/dev/null 2>&1 || true
-status done done 100
-echo "upgrade: now on $VERSION (from bundle)"
-"$PY" manage.py upgrade_notes 2>/dev/null || true   # steps an admin still has to do
+exec env DANBYTE_DIR="$CODE_DIR" DANBYTE_UPGRADE_WORK="$WORK" DANBYTE_UPGRADE_SRC="$WORK/src" \
+  DANBYTE_UPGRADE_VERSION="$(clean "$TARGET")" DANBYTE_UPGRADE_FROM="$FROM" \
+  DANBYTE_UPGRADE_TARBALL="$TARBALL" DANBYTE_UPGRADE_TRIGGER="$TRIGGER" \
+  DANBYTE_UPGRADE_BACKUP="$BACKUP" DANBYTE_UPGRADE_STATUS="$STATUS_FILE" \
+  DANBYTE_UPGRADE_BACKUP_T0="$B0" DANBYTE_UPGRADE_BACKUP_T1="$B1" \
+  /bin/sh "$WORK/src/scripts/upgrade/stage.sh" --kind bundle

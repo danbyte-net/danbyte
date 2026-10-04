@@ -87,3 +87,38 @@ class PluginApplyApiTests(APITestCase):
     def test_pending_migrations_helper_returns_dict(self):
         # The test DB is fully migrated, so nothing is pending.
         self.assertEqual(pending_migrations_by_app(), {})
+
+
+class UpgradeHoldsServicesTests(APITestCase):
+    """An upgrade stops and starts the units itself: a restart or a plugin
+    migrate in the middle of it would run half-swapped code."""
+
+    def setUp(self):
+        from unittest import mock
+
+        self.superuser = User.objects.create_superuser("root", "r@acme.com", "pw")
+        self.client.force_login(self.superuser)
+        p = mock.patch("core.services._upgrade_running", return_value=True)
+        p.start()
+        self.addCleanup(p.stop)
+        q = mock.patch("core.services._launch_detached", return_value=True)
+        self.launch = q.start()
+        self.addCleanup(q.stop)
+
+    def test_restarts_and_apply_are_refused(self):
+        for path in ("/api/system/services/web/restart/",
+                     "/api/system/services/restart-all/",
+                     "/api/plugins/apply/"):
+            with self.subTest(path=path):
+                r = self.client.post(path)
+                self.assertEqual(r.status_code, 409, r.content)
+                self.assertTrue(r.json()["busy"])
+        self.launch.assert_not_called()
+
+    def test_a_lock_read_error_counts_as_busy(self):
+        from unittest import mock
+
+        from core import services
+
+        with mock.patch("core.services._upgrade_running", side_effect=OSError("denied")):
+            self.assertTrue(services.restart_services(["web"])["busy"])

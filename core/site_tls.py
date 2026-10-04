@@ -4,11 +4,14 @@ certificate, issue #126).
 The app never touches nginx and never holds root. It writes a pair into
 ``deploy/nginx/certs/`` - a folder it owns, the same one the installer
 stages the self-signed pair in - then a stamp file as its last write. The
-root ``danbyte-tls.path`` unit the installer sets up (``make
-install-tls-unit``) notices the stamp, and ``scripts/danbyte-tls-apply.sh``
-verifies the pair, keeps the live one aside, installs, runs ``nginx -t``,
-reloads, or rolls back - and writes ``danbyte.applied`` for this module to
-read back. Four ways in, one way out: an uploaded pair, a self-signed one
+root ``danbyte-tls.path`` unit the installer sets up (on an upgraded host,
+``install.sh --host-only`` from the bundle) notices the stamp, and a
+root-owned copy of ``scripts/danbyte-tls-apply.sh`` - never the one in this
+tree, which the service account owns - verifies the pair, keeps the live
+one aside, installs, runs ``nginx -t``,
+reloads, or rolls back - and writes ``/var/lib/danbyte-tls/applied.json``
+for this module to read back (a unit installed before 0.17 wrote
+``danbyte.applied`` into the drop folder; that is still read). Four ways in, one way out: an uploaded pair, a self-signed one
 (regenerated on the expiry beat when it runs short), an ACME order through
 the issuers the certificate inventory already has, and - later - a CSR.
 
@@ -40,6 +43,9 @@ DROP_DIR = Path(settings.BASE_DIR) / "deploy" / "nginx" / "certs"
 STAMP, APPLIED = "danbyte.apply", "danbyte.applied"
 CERT_NAME, KEY_NAME = "danbyte.crt", "danbyte.key"
 UNIT_FILE = Path("/etc/systemd/system/danbyte-tls.path")
+#: Where the root unit answers. Root-owned: it never writes into the drop
+#: folder, which belongs to the app's user.
+APPLIED_FILE = Path("/var/lib/danbyte-tls/applied.json")
 #: A self-signed pair is regenerated once it has fewer days than this.
 SELF_SIGNED_RENEW_DAYS = 30
 SELF_SIGNED_DAYS = 825
@@ -237,10 +243,12 @@ def apply_state() -> dict:
     umask can leave it root-only - then nothing can be dropped)."""
     d = drop_dir()
     applied: dict = {}
-    try:
-        applied = json.loads((d / APPLIED).read_text())
-    except (OSError, ValueError):
-        applied = {}
+    for path in (Path(getattr(settings, "SITE_TLS_APPLIED_FILE", "") or APPLIED_FILE), d / APPLIED):
+        try:
+            applied = json.loads(path.read_text())
+            break
+        except (OSError, ValueError):
+            applied = {}
     try:
         pending = (d / STAMP).exists()
     except OSError:

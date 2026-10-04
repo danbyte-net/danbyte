@@ -60,9 +60,10 @@ def _suggested_prefix(ip: str) -> str:
 _fmt_speed = fmt_speed
 
 
-#: A port learning more distinct MACs than this is treated as an uplink/trunk
-#: and never gets switch-link suggestions (issue #22). An access port with an
-#: IP phone, its PC, and a small hypervisor still fits under the limit.
+#: The default of the tenant's **Uplink above** setting
+#: (``MonitoringSettings.mac_uplink_threshold``, #284): a port learning more
+#: distinct MACs than this is an uplink and gets no switch-link suggestions
+#: (issue #22). Kept for callers that import it; the setting decides.
 UPLINK_MAC_LIMIT = 4
 
 
@@ -114,17 +115,32 @@ def _is_unrouted_vlan(o: dict) -> bool:
 
 
 def _fdb_single_macs(state) -> dict:
-    """if_index → the ONE MAC learned on that port, from the FDB. Ports with
-    several learners (trunks, uplinks) map to None so callers skip them."""
+    """if_index → the ONE MAC learned on that port. Ports with several
+    learners (trunks, uplinks) map to None so callers skip them.
+
+    Read from the polled device's present sightings (#284), which the MAC
+    pipeline has already filtered - the switch's own and group MACs never
+    count as a learner. A row polled before 0.17 still answers from its JSON
+    table until its next poll."""
+    from .mac_tables import legacy_state, polled_id_for
+
+    if legacy_state(state):
+        rows = ((row.get("if_index"), row.get("mac")) for row in state.fdb or [])
+    else:
+        from .models import MacSighting
+
+        rows = MacSighting.objects.filter(
+            polled_device_id=polled_id_for(state), gone_at__isnull=True
+        ).values_list("if_index", "mac")
     seen: dict = {}
-    for row in state.fdb or []:
-        idx = str(row.get("if_index") or "")
-        if not idx or not row.get("mac"):
+    for idx, mac in rows:
+        idx = str(idx or "")
+        if not idx or not mac:
             continue
-        if idx in seen and seen[idx] != row["mac"]:
+        if idx in seen and seen[idx] != mac:
             seen[idx] = None
         else:
-            seen.setdefault(idx, row["mac"])
+            seen.setdefault(idx, mac)
     return seen
 
 
@@ -152,8 +168,13 @@ def _norm(value) -> str:
 
 
 # Observed ifType name → the Danbyte interface type a discovered row is created
-# with. Only the aggregate is mapped: it must be typed "lag" to take members.
-_OBSERVED_TYPE = {"lag": "lag"}
+# with. The aggregate must be typed "lag" to take members; loopbacks, SVIs,
+# tunnels and VLAN interfaces have no physical port, so they arrive typed
+# "virtual" - which makes them virtual (Interface.save()), off the faceplate
+# and out of port utilization. Physical media types stay unmapped: ifType
+# says "ethernet", not which connector.
+VIRTUAL_IFTYPES = ("loopback", "virtual", "tunnel", "l3vlan", "l2vlan")
+_OBSERVED_TYPE = {"lag": "lag", **dict.fromkeys(VIRTUAL_IFTYPES, "virtual")}
 
 
 def _lag_membership_items(
@@ -578,10 +599,126 @@ def compute_device_drift(
     #     already written, so its intent matches and nothing appears here.)
     items.extend(_part_drift(device, tenant, state))
 
-    # 4. Switch-link suggestions - join this device's ARP (IP↔MAC) with its FDB
-    #    (MAC↔switch port) to propose which access port each already-known IP
-    #    sits behind. Only fires on bridging devices (empty fdb → nothing) and
-    #    only for IPs Danbyte already tracks (SoT: suggest, never invent).
+    # 4. Switch-link suggestions: which access port each already-tracked IP
+    #    hangs off (suggest, never invent). Since #284 that is where its MAC
+    #    is *located* - one answer for the whole network, so two switches
+    #    can't both claim a host - with uplinks judged by the tenant's rules.
+    from .mac_tables import legacy_state
+
+    if legacy_state(state):
+        items.extend(_legacy_switch_links(device, tenant, state, observed, int_by_name))
+    else:
+        items.extend(_located_switch_links(device, tenant, state, int_by_name))
+
+    items.extend(_indirect_items(device, tenant, items))
+    return items
+
+
+def _switch_link_item(device, iface, row) -> dict | None:
+    """One ``switch_link_suggested`` item - the shape the drift inbox and
+    ``apply_drift_action`` already speak - or None when there is nothing to
+    suggest."""
+    if iface is None or iface.snmp_ignore:
+        return None  # an excluded port produces no drift, either way
+    if row.switch_id == device.id and row.switch_interface_id == iface.id:
+        return None  # already linked to this exact port
+    cur = (
+        f"{row.switch.name} · {row.switch_interface.name}"
+        if row.switch_id and row.switch_interface_id else "-"
+    )
+    return {
+        "kind": "switch_link_suggested",
+        "ip_id": str(row.id), "ip": row.ip_address,
+        "interface_id": str(iface.id), "name": iface.name,
+        "intended": cur,
+        "observed": f"{device.name} · {iface.name}",
+    }
+
+
+def _mac_to_ip(tenant, polled_id, macs) -> dict:
+    """MAC → the one IP its ARP entry names, first answer wins: the polled
+    device's own table, then the others in device-name order - or, when the
+    tenant names ARP source devices, only those, in name order (#22, #39).
+    A source not polled since the upgrade answers from its JSON table."""
+    from .mac_location import arp_source_ids
+    from .mac_tables import canon_mac
+    from .models import ArpSighting
+
+    sources = arp_source_ids(tenant)
+    qs = ArpSighting.objects.filter(tenant=tenant, mac__in=macs, gone_at__isnull=True)
+    if sources:
+        qs = qs.filter(device_id__in=sources)
+    answers = [
+        ((not sources and dev_id != polled_id), dev_name or vm_name or "", ip, mac)
+        for mac, ip, dev_id, dev_name, vm_name in qs.values_list(
+            "mac", "ip", "device_id", "device__name", "vm__name"
+        )
+    ]
+    if sources:
+        for src in DeviceSnmp.objects.filter(
+            tenant=tenant, device_id__in=sources, fdb_meta={}
+        ).select_related("device"):
+            for entry in src.arp or []:
+                mac = canon_mac(entry.get("mac"))
+                if mac in macs and entry.get("ip"):
+                    answers.append((False, src.device.name, entry["ip"], mac))
+    out: dict = {}
+    for _own_last, _name, ip, mac in sorted(
+        answers, key=lambda a: (a[0], a[1], str(a[2]))
+    ):
+        out.setdefault(mac, str(ip))
+    return out
+
+
+def _located_switch_links(device, tenant, state, int_by_name) -> list[dict]:
+    """IPs whose MAC is located (access) on a port of ``device``."""
+    from .mac_location import locate_for_device
+    from .mac_tables import polled_id_for
+
+    polled_id = polled_id_for(state)
+    locs = locate_for_device(tenant, polled_id, member_id=device.id)
+    here = {
+        mac: loc for mac, loc in locs.items()
+        if loc is not None and loc.kind == "access"
+        and loc.at.device_id == device.id and loc.at.interface_id
+    }
+    if not here:
+        return []
+    mac_ip = _mac_to_ip(tenant, polled_id, set(here))
+    if not mac_ip:
+        return []
+    ifaces = {i.id: i for i in int_by_name.values()}
+    missing = {loc.at.interface_id for loc in here.values()} - set(ifaces)
+    if missing:
+        ifaces.update(
+            (i.id, i) for i in Interface.objects.filter(device=device, pk__in=missing)
+        )
+    rows = {
+        r.ip_address: r
+        for r in IPAddress.objects.filter(
+            tenant=tenant, ip_address__in=set(mac_ip.values())
+        ).select_related("switch", "switch_interface")
+    }
+    items = []
+    for mac, ip in sorted(mac_ip.items(), key=lambda kv: kv[1]):
+        row = rows.get(ip)
+        if row is None:
+            continue
+        item = _switch_link_item(device, ifaces.get(here[mac].at.interface_id), row)
+        if item:
+            items.append(item)
+    return items
+
+
+def _legacy_switch_links(device, tenant, state, observed, int_by_name) -> list[dict]:
+    """Switch-link suggestions for a row polled before 0.17, from its JSON
+    tables: this device's ARP (or the tenant's merged ARP sources) joined with
+    its own forwarding table. Uplinks are judged by the same rules as
+    everywhere else, fed from the JSON - until the next poll moves the device
+    onto its sightings."""
+    from .mac_location import UplinkContext
+    from .mac_tables import legacy_mac_ports, port_key_of
+
     arp = state.arp or []
     fdb = state.fdb or []
     # ARP source mode (issues #22, #39): on pure-L2 networks a switch's own
@@ -609,100 +746,51 @@ def compute_device_drift(
                     seen_macs.add(m)
                     merged.append(entry)
         arp = merged
-    if arp and fdb:
-        mac_to_ip: dict[str, str] = {}
-        for a in arp:
-            m = _norm_mac(a.get("mac", ""))
-            if m and a.get("ip"):
-                mac_to_ip.setdefault(m, a["ip"])
-        ifindex_to_name = {
-            str(o.get("if_index")): o.get("name")
-            for o in observed if o.get("if_index")
-        }
-        ip_to_ifindex: dict[str, str] = {}
-        for f in fdb:
-            m = _norm_mac(f.get("mac", ""))
-            idx = str(f.get("if_index") or "")
-            ip = mac_to_ip.get(m)
-            if ip and idx:
-                ip_to_ifindex.setdefault(ip, idx)
-        if ip_to_ifindex:
-            # Uplink guard (issue #22): trunk/aggregate ports learn every MAC
-            # behind them, so suggesting attachment there claims hosts that
-            # really hang off another switch - and each polled switch then
-            # re-claims them, a tug of war. Skip ports that look like
-            # infrastructure rather than host access:
-            #   - the port learns more MACs than an access port plausibly
-            #     carries (phone + PC + a hypervisor still fits the limit),
-            #   - the port is a LAG aggregate or a LAG member,
-            #   - LLDP shows another bridging device (a switch whose FDB we
-            #     have) on the far end.
-            macs_on_port: dict[str, set[str]] = {}
-            for f in fdb:
-                m = _norm_mac(f.get("mac", ""))
-                fidx = str(f.get("if_index") or "")
-                if m and fidx:
-                    macs_on_port.setdefault(fidx, set()).add(m)
-            lag_iface_ids: set = set()
-            for member_id, lag_id in Interface.objects.filter(
-                device=device, lag__isnull=False
-            ).values_list("id", "lag_id"):
-                lag_iface_ids.add(member_id)
-                lag_iface_ids.add(lag_id)
-            neighbor_names = {
-                (n.get("remote_device") or "").strip()
-                for n in (state.neighbors or [])
-            }
-            neighbor_names.discard("")
-            bridging_neighbors = set(
-                DeviceSnmp.objects.filter(
-                    tenant=tenant, device__name__in=neighbor_names
-                )
-                .exclude(fdb=[])
-                .values_list("device__name", flat=True)
-            )
-            switch_facing_ports = {
-                _norm(n.get("local_port") or "")
-                for n in (state.neighbors or [])
-                if (n.get("remote_device") or "").strip() in bridging_neighbors
-            }
-
-            rows = {
-                r.ip_address: r
-                for r in IPAddress.objects.filter(
-                    tenant=tenant, ip_address__in=list(ip_to_ifindex)
-                ).select_related("switch", "switch_interface")
-            }
-            for ip, idx in ip_to_ifindex.items():
-                row = rows.get(ip)
-                if row is None:
-                    continue
-                iface = int_by_name.get(_norm(ifindex_to_name.get(idx) or ""))
-                if iface is None:
-                    continue
-                if iface.is_uplink or iface.snmp_ignore:
-                    continue  # operator said so - beats every heuristic
-                if len(macs_on_port.get(idx, ())) > UPLINK_MAC_LIMIT:
-                    continue
-                if iface.id in lag_iface_ids:
-                    continue
-                if _norm(iface.name) in switch_facing_ports:
-                    continue
-                if row.switch_id == device.id and row.switch_interface_id == iface.id:
-                    continue  # already linked to this exact port
-                cur = (
-                    f"{row.switch.name} · {row.switch_interface.name}"
-                    if row.switch_id and row.switch_interface_id else "-"
-                )
-                items.append({
-                    "kind": "switch_link_suggested",
-                    "ip_id": str(row.id), "ip": ip,
-                    "interface_id": str(iface.id), "name": iface.name,
-                    "intended": cur,
-                    "observed": f"{device.name} · {iface.name}",
-                })
-
-    items.extend(_indirect_items(device, tenant, items))
+    if not (arp and fdb):
+        return []
+    mac_to_ip: dict[str, str] = {}
+    for a in arp:
+        m = _norm_mac(a.get("mac", ""))
+        if m and a.get("ip"):
+            mac_to_ip.setdefault(m, a["ip"])
+    obs_by_idx = {str(o.get("if_index")): o for o in observed if o.get("if_index")}
+    ip_to_ifindex: dict[str, str] = {}
+    for f in fdb:
+        ip = mac_to_ip.get(_norm_mac(f.get("mac", "")))
+        idx = str(f.get("if_index") or "")
+        if ip and idx:
+            ip_to_ifindex.setdefault(ip, idx)
+    if not ip_to_ifindex:
+        return []
+    candidates = {}
+    for ip, idx in ip_to_ifindex.items():
+        o = obs_by_idx.get(idx)
+        iface = int_by_name.get(_norm((o or {}).get("name") or ""))
+        if iface is not None:
+            candidates[ip] = (iface, port_key_of(o))
+    if not candidates:
+        return []
+    # Uplink guard (issue #22): a trunk learns every MAC behind it, so
+    # suggesting attachment there claims hosts that really hang off another
+    # switch - and each polled switch then re-claims them, a tug of war.
+    ctx = UplinkContext(tenant, ports={state.device_id: legacy_mac_ports(state)})
+    ctx.load(interface_ids={iface.id for iface, _key in candidates.values()})
+    rows = {
+        r.ip_address: r
+        for r in IPAddress.objects.filter(
+            tenant=tenant, ip_address__in=list(candidates)
+        ).select_related("switch", "switch_interface")
+    }
+    items = []
+    for ip, (iface, key) in candidates.items():
+        row = rows.get(ip)
+        if row is None:
+            continue
+        if ctx.classify(state.device_id, key, iface.id).is_uplink:
+            continue
+        item = _switch_link_item(device, iface, row)
+        if item:
+            items.append(item)
     return items
 
 

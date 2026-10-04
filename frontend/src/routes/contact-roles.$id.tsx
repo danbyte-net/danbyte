@@ -17,12 +17,7 @@ import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { ContactRoleDeleteDialog } from "@/components/contact-role-delete-dialog"
 import { buildContactAssignmentColumns } from "@/components/columns/contact-assignment-columns"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 
@@ -89,13 +84,6 @@ function Body({ role: r }: { role: ContactRole }) {
           title={r.name}
           subtitle={<span className="font-mono">{r.slug}</span>}
           description={r.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Assignments"
-              value={<span className="num">{r.assignment_count}</span>}
-            />
-          }
         />
       }
       tabs={[

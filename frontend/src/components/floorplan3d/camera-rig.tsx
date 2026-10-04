@@ -55,18 +55,31 @@ const _fwd = new THREE.Vector3()
  * Speed scales with the orbit distance (see `camera-math.ts`). A nav keypress
  * cancels an in-flight fly-to. Listeners live on `window` but the rig only
  * exists while the 3D view is mounted, so 2D editing never sees them.
+ *
+ * A view embedded in a page (one rack, one cabinet) turns `keyboard` and
+ * `dollyThrough` off: the page owns its keys, and there is no aisle to walk
+ * into past the object - the wheel stops at `minDistance` instead.
  */
 export function CameraRig({
   target,
   maxDistance,
   roomDiag,
   requestRef,
+  minDistance = MIN_DISTANCE_M,
+  keyboard = true,
+  dollyThrough = true,
 }: {
   target: [number, number, number]
   maxDistance: number
   /** Larger room side (m) - scales the wheel so hall size doesn't change feel. */
   roomDiag: number
   requestRef: React.MutableRefObject<FlyToRequest | null>
+  /** Closest the orbit arm may get (m). */
+  minDistance?: number
+  /** Arrows / WASD / Space / C move the camera (listeners on `window`). */
+  keyboard?: boolean
+  /** A wheel-in at `minDistance` walks the camera on through the object. */
+  dollyThrough?: boolean
 }) {
   const controls = useRef<OrbitControlsImpl>(null)
   const invalidate = useThree((s) => s.invalidate)
@@ -81,6 +94,7 @@ export function CameraRig({
   const pressed = useRef<Set<string>>(new Set())
 
   useEffect(() => {
+    if (!keyboard) return
     const onKeyDown = (e: KeyboardEvent) => {
       // Leave browser/app shortcuts (Alt+Left history, Ctrl+A…) alone.
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -133,7 +147,7 @@ export function CameraRig({
       window.removeEventListener("keyup", onKeyUp)
       window.removeEventListener("blur", onBlur)
     }
-  }, [invalidate, requestRef, camera])
+  }, [keyboard, invalidate, requestRef, camera])
 
   // Dolly-through: OrbitControls' multiplicative dolly collapses to nothing
   // at minDistance - the "zoom just stops" wall. At the wall, a wheel-in
@@ -145,7 +159,7 @@ export function CameraRig({
   // event, OrbitControls never sees it.
   useEffect(() => {
     const el = gl.domElement.parentElement
-    if (!el) return
+    if (!el || !dollyThrough) return
     const onWheel = (e: WheelEvent) => {
       const c = controls.current
       if (!c) return
@@ -175,7 +189,7 @@ export function CameraRig({
     }
     el.addEventListener("wheel", onWheel, { capture: true, passive: false })
     return () => el.removeEventListener("wheel", onWheel, { capture: true })
-  }, [gl, camera, invalidate, requestRef])
+  }, [dollyThrough, gl, camera, invalidate, requestRef])
 
   useFrame((state, delta) => {
     const c = controls.current
@@ -288,7 +302,7 @@ export function CameraRig({
       // plan you overshoot whatever you were trying to look at.
       enableDamping={false}
       maxPolarAngle={Math.PI - 0.05}
-      minDistance={MIN_DISTANCE_M}
+      minDistance={minDistance}
       maxDistance={maxDistance}
       zoomSpeed={zoomSpeedForRoom(roomDiag)}
     />

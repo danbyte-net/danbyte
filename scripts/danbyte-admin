@@ -398,9 +398,13 @@ def cmd_status(ctx: Ctx, _args) -> int:
         (ok if pg else bad)(f"postgres {pg or 'unreachable'}")
         (ok if rd else bad)(f"redis    {rd or 'unreachable'}")
         drift = info.get("migration_drift") or []
+        pending = info.get("pending_migrations") or []
         if drift:
             warn(f"migration drift: {len(drift)} unapplied - {', '.join(map(str, drift[:5]))}")
-        else:
+        if pending:
+            # also "(migration files cannot be loaded: ...)" - migrate fails too
+            warn(f"migrations not applied: {len(pending)} - {', '.join(map(str, pending[:5]))}")
+        if not drift and not pending:
             ok("migrations up to date")
     else:
         warn(f"could not read system info ({err[:160]})")
@@ -634,20 +638,100 @@ def stage_bundle(ctx: Ctx, bundle: Path) -> Path:
     return scratch
 
 
+DOCKER_UPGRADE = ("a container install is upgraded from the host - rebuild, stop what\n"
+                  "  depends on the backend, then start it all on the new image:\n"
+                  "  docker compose build && docker compose stop scheduler workers fastlane ws"
+                  " && docker compose up -d")
+
+
+def _upgrade_roots(ctx: Ctx) -> list[Path]:
+    """Where the upgrade stage keeps its journal (core/upgrade.py UPGRADE_ROOTS)."""
+    return [ctx.app.parent / ".danbyte-upgrade", ctx.app / ".danbyte-upgrade"]
+
+
+def _follow_upgrade(ctx: Ctx) -> int:
+    """Print each step the running upgrade reaches until it ends: 0 when it
+    is done. Ctrl-C stops following, not the upgrade."""
+    status_file = ctx.app / ".upgrade-status.json"
+    last = ""
+    st: dict = {}
+    try:
+        while True:
+            time.sleep(2)
+            try:
+                st = json.loads(status_file.read_text())
+            except (OSError, ValueError):
+                st = {}
+            step, state = st.get("step") or "", st.get("state") or ""
+            if step and step != last:
+                out(f"  {step}")
+                last = step
+            unit = systemctl(ctx, ["is-active", "danbyte-upgrade.service"], timeout=5,
+                             quiet=True).out.strip()
+            if unit in ("active", "activating"):
+                continue
+            if state in ("done", "failed"):
+                break
+            if any((r / "active").exists() for r in _upgrade_roots(ctx)):
+                warn("the upgrade stopped part-way; its recovery finishes or rolls it back within"
+                     " five minutes (or now: danbyte-admin upgrade recover)")
+                return 1
+    except KeyboardInterrupt:
+        out(f"\n{DIM}still running as danbyte-upgrade.service{OFF}")
+        return 0
+    if st.get("state") == "done":
+        ok(f"now on {st.get('version_to', '?')}")
+        for w in st.get("warnings") or []:
+            warn(w)
+        return 0
+    bad(f"upgrade failed in {st.get('step', '?')}: {st.get('error', '')}")
+    out(f"{DIM}log: {st.get('log') or ctx.app / '.upgrade.log'}{OFF}")
+    return 1
+
+
+def cmd_upgrade_recover(ctx: Ctx, args) -> int:
+    """Finish or roll back an upgrade whose stage died, and retry a database
+    restore that failed - what the recovery unit does, run now."""
+    root = next((r for r in _upgrade_roots(ctx) if (r / "active").exists()), None)
+    if root is None:
+        ok("no unfinished upgrade")
+        return 0
+    script = root / "recover" / "recover.sh"
+    argv = ["/bin/sh", str(script), "--retry"]
+    if ctx.as_service:
+        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+    r = sh(argv, cwd=str(ctx.app), capture=False)
+    if r.code == 0 and not (root / "active").exists():
+        ok("recovered")
+        try:
+            st = json.loads((ctx.app / ".upgrade-status.json").read_text())
+            out(st.get("error") or "")
+        except (OSError, ValueError):
+            pass
+        return 0
+    bad("not recovered - see the upgrade log; the pre-upgrade backup can be restored with "
+        "danbyte-admin backup restore <id> --yes")
+    return 1
+
+
 def cmd_upgrade(ctx: Ctx, args) -> int:
     if ctx.shape == "docker":
-        die("a container install is upgraded by pulling a new image, not from here.\n"
-            "  docker compose pull && docker compose up -d")
+        die(DOCKER_UPGRADE)
+    if args.action == "recover":
+        return cmd_upgrade_recover(ctx, args)
     busy = _upgrade_busy(ctx)
     if busy and not args.force:
         die(f"{busy}. Wait for it, or pass --force once you are sure nothing is running.")
+    if busy:
+        if systemctl(ctx, ["is-active", "danbyte-upgrade.service"], timeout=5).out.strip() == "active":
+            die("danbyte-upgrade.service is running - --force does not stop a live upgrade")
+        warn("--force: removing the held upgrade lock")
+        rm = ["rm", "-f", str(ctx.app / ".upgrade.lock")]
+        if ctx.as_service:
+            rm = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + rm
+        sh(rm)
 
-    script = ctx.app / "scripts" / (
-        "danbyte-upgrade.sh" if args.action == "online" else "danbyte-upgrade-bundle.sh")
-    if not script.exists():
-        die(f"{script} is missing")
-
-    argv: list[str] = ["bash", str(script)]
+    argv = ["start_upgrade"]
     if args.action == "online":
         if not (ctx.app / ".git").exists():
             die("this is a bundle install (no .git) - use: danbyte-admin upgrade bundle <file>")
@@ -659,25 +743,27 @@ def cmd_upgrade(ctx: Ctx, args) -> int:
             if git(ctx, "describe", "--tags", "--exact-match", "--match", "v[0-9]*") == tag \
                     and not args.force:
                 die(f"already on {tag} - pass --tag to deploy it again")
-        argv.append(tag)
+        argv += ["--tag", tag]
     else:
+        if not args.bundle:
+            die("upgrade bundle needs a path to the bundle")
         bundle = Path(args.bundle).expanduser().resolve()
         if not bundle.is_file():
             die(f"no such bundle: {bundle}")
         scratch = stage_bundle(ctx, bundle)
         out(f"{DIM}copied to {scratch} - the upgrader consumes the file it is given{OFF}")
-        argv.append(str(scratch))
-
-    env = {"DANBYTE_DIR": str(ctx.app)}     # else it resolves to $HOME/danbyte
+        argv += ["--bundle", str(scratch)]
     if args.skip_backup:
         warn("skipping the pre-upgrade backup - there is no net if this goes wrong")
-        env["DANBYTE_SKIP_BACKUP"] = "1"    # compared as the exact string "1"
-    if ctx.as_service:
-        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + \
-            [f"{k}={v}" for k, v in env.items()] + argv
-        env = {}
-    out(f"{BOLD}Upgrading{OFF} ({args.action}) - this restarts services when it succeeds.")
-    return sh(argv, cwd=str(ctx.app), env=env, capture=False).code
+        argv.append("--skip-backup")
+    r = manage(ctx, argv)
+    if not r.ok:
+        die((r.err or r.out).strip()[-600:] or "the upgrade did not start")
+    out(f"{BOLD}Upgrading{OFF} ({args.action}) as danbyte-upgrade.service - it carries on if this"
+        " session drops.")
+    if getattr(args, "no_follow", False):
+        return 0
+    return _follow_upgrade(ctx)
 
 
 # ── rebuild ─────────────────────────────────────────────────────────────────
@@ -698,14 +784,37 @@ def active_units(ctx: Ctx) -> list[str]:
     return [u for u in ctx.units if states.get(u, {}).get("ActiveState") == "active"]
 
 
+#: ``chmod -R u=rwX,go=rX`` on STATIC_ROOT, through the app so it reaches it
+#: in every shape. nginx reads static files from disk as another user, and
+#: collectstatic skips files that did not change: the copies 0.16.12 to
+#: 0.17.0-dev1 collected readable only by the service user stay that way.
+OPEN_STATIC = (
+    "import json\n"
+    "from django.conf import settings\n"
+    "from core.upgrade_migrate import open_static\n"
+    "print(json.dumps(open_static(settings.STATIC_ROOT)))"
+)
+
+
+def open_static(ctx: Ctx) -> str:
+    """Make the collected static files readable for the web server, as the
+    upgrade does after collectstatic. Returns what went wrong, or ""."""
+    failed, err = shell_json(ctx, OPEN_STATIC)
+    if failed == 0:
+        return ""
+    if isinstance(failed, int):
+        return f"{failed} could not be changed"
+    return err[-300:] or "no answer"
+
+
 def cmd_rebuild(ctx: Ctx, args) -> int:
     """The upgrader's build steps on the code already here - after a git
     pull, a hand edit, or a bundle unpacked by hand: dependencies, migrate,
-    the frontend build, collectstatic on a gunicorn host, then restart what
-    runs. Stops at the first failing step and says which."""
+    the frontend build, collectstatic (readable for nginx) on a gunicorn
+    host, then restart what runs. Stops at the first failing step and says
+    which."""
     if ctx.shape == "docker":
-        die("a container install is rebuilt by pulling a new image:\n"
-            "  docker compose pull && docker compose up -d")
+        die(DOCKER_UPGRADE)
     busy = _upgrade_busy(ctx)
     if busy and not getattr(args, "force", False):
         die(f"{busy}. Wait for it, or pass --force once you are sure nothing is running.")
@@ -762,6 +871,11 @@ def cmd_rebuild(ctx: Ctx, args) -> int:
              "npm run build")
     if "danbyte-web" in ctx.units:
         step("static", manage(ctx, ["collectstatic", "--noinput"]), "manage.py collectstatic")
+        why = open_static(ctx)
+        if why:
+            warn(f"{'static':<10} some files could not be made readable for the web server: {why}")
+        else:
+            ok(f"{'static':<10} readable for the web server")
     units = active_units(ctx)
     for unit in units:
         r = systemctl(ctx, ["restart", unit], timeout=120)
@@ -850,6 +964,26 @@ def cmd_backup(ctx: Ctx, args) -> int:
 
 # ── tls ─────────────────────────────────────────────────────────────────────
 
+#: Danbyte's own nginx site, as scripts/host-sync.sh renders it. The tls
+#: commands read paths and names from it alone: another site on the same
+#: nginx is never Danbyte's to read or write (#279).
+NGINX_SITE = "/etc/nginx/sites-available/danbyte.conf"
+
+
+def site_section(text: str) -> str:
+    """Danbyte's site as ``nginx -T`` prints it: the lines under the
+    ``# configuration file`` header whose path resolves to NGINX_SITE (nginx
+    names the sites-enabled link). Empty when nginx does not load it."""
+    want = os.path.realpath(NGINX_SITE)
+    keep, lines = False, []
+    for line in text.splitlines():
+        if line.startswith("# configuration file ") and line.endswith(":"):
+            keep = os.path.realpath(line[len("# configuration file "):-1]) == want
+        elif keep:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def _live_cert_pair() -> tuple[str, str]:
     """The cert **and key** paths nginx actually reads, or ("", "").
 
@@ -859,14 +993,12 @@ def _live_cert_pair() -> tuple[str, str]:
     does not read and left the live pair mismatched - the site stayed up only
     because nginx had not reloaded yet.
     """
-    r = sh(["sudo", "-n", "nginx", "-T"])
-    if not r.ok:
-        r = sh(["nginx", "-T"])
-    if not r.ok:
+    text = nginx_text()
+    if not text:
         # An unreadable or invalid config is not a licence to guess a path.
         return "", ""
     cert = key = ""
-    for line in (r.out or "").splitlines():
+    for line in text.splitlines():
         text = line.strip()
         if text.startswith("ssl_certificate_key") and not key:
             key = text.split()[1].rstrip(";")
@@ -876,12 +1008,9 @@ def _live_cert_pair() -> tuple[str, str]:
 
 
 def _live_cert_paths() -> list[str]:
-    """Every certificate the live config serves - for reporting only."""
-    r = sh(["sudo", "-n", "nginx", "-T"])
-    if not r.ok:
-        r = sh(["nginx", "-T"])
+    """Every certificate Danbyte's site serves - for reporting only."""
     found = []
-    for line in (r.out or "").splitlines():
+    for line in nginx_text().splitlines():
         text = line.strip()
         if text.startswith("ssl_certificate") and not text.startswith("ssl_certificate_key"):
             found.append(text.split()[1].rstrip(";"))
@@ -892,8 +1021,8 @@ def cmd_tls(ctx: Ctx, args) -> int:
     if args.action == "show":
         paths = _live_cert_paths()
         if not paths:
-            warn("could not read the live nginx config (needs root) - falling back to the "
-                 "canonical path")
+            warn(f"could not read {NGINX_SITE} from the live nginx config (needs root) - "
+                 "falling back to the canonical path")
             paths = ["/etc/ssl/danbyte/danbyte.crt"]
         _, key = _live_cert_pair()
         for p in paths:
@@ -1244,6 +1373,19 @@ def sudo_read(path: str | Path) -> str:
         return ""
 
 
+def svc_tail(ctx: Ctx, path: Path, size: int = 16384) -> str:
+    """The end of a file only the service account can read - the upgrade's
+    run folder is private to it (#281). Never prompts."""
+    if not ctx.as_service:
+        return ""
+    try:
+        p = subprocess.run(_user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user, nonint=True)
+                           + ["tail", "-c", str(size), str(path)], capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return p.stdout.decode(errors="replace") if p.returncode == 0 else ""
+
+
 def sudo_listdir(path: Path) -> list[str]:
     try:
         return sorted(os.listdir(path))
@@ -1284,9 +1426,14 @@ def _install_pair(ctx: Ctx, cert: Path, key: Path) -> int:
     """
     dest_crt, dest_key = _live_cert_pair()
     if not (dest_crt and dest_key):
-        bad("could not read ssl_certificate and ssl_certificate_key from the "
-            "live nginx config, so there is nowhere safe to write.")
+        bad(f"could not read ssl_certificate and ssl_certificate_key from {NGINX_SITE} "
+            "in the live nginx config, so there is nowhere safe to write.")
         out(f"{DIM}  Run as root, or fix `sudo nginx -t` first.{OFF}")
+        return 1
+    links = cert_links(dest_crt, dest_key, nonint=sudo_nonint())
+    if links:
+        bad(f"{' and '.join(links)}: a link a certificate tool such as certbot manages - "
+            "nothing written; renew it there, or point Danbyte's site at plain files")
         return 1
     if pair_matches(cert, key) is False:
         bad("that key does not match that certificate - nothing written")
@@ -1494,6 +1641,12 @@ def cmd_maintenance(ctx: Ctx, args) -> int:
     if not r.ok:
         die((r.err or r.out).strip()[:400])
     ok((r.out or "done").strip()[:400])
+    if args.action == "collectstatic":
+        why = open_static(ctx)
+        if why:
+            warn(f"some files could not be made readable for the web server: {why}")
+        else:
+            ok("readable for the web server")
     return 0
 
 
@@ -1689,12 +1842,13 @@ def _menu_tls(ctx: Ctx) -> int:
 
 def _menu_upgrade(ctx: Ctx) -> int:
     if ctx.shape == "docker":
-        out("a container install is upgraded by pulling a new image:")
-        out("  docker compose pull && docker compose up -d")
+        out(DOCKER_UPGRADE)
         return 0
-    action = _pick("Upgrade", ["online", "bundle"])
+    action = _pick("Upgrade", ["online", "bundle", "recover"])
     if not action:
         return 0
+    if action == "recover":
+        return cmd_upgrade_recover(ctx, None)
     tag = bundle = ""
     if action == "online":
         newest = newest_tag(ctx)
@@ -2105,8 +2259,7 @@ class Facts(threading.Thread):
             except (OSError, ValueError):
                 status = None
         r = systemctl(self.ctx, ["is-active", "danbyte-upgrade.service"], timeout=5, quiet=True)
-        return {"maintenance_file": (app / ".maintenance").exists(), "lock": lock,
-                "status": status, "upgrade_unit": r.out.strip() or "inactive"}
+        return {"lock": lock, "status": status, "upgrade_unit": r.out.strip() or "inactive"}
 
     def _health(self) -> dict:
         h, where = health(self.ctx)
@@ -3301,14 +3454,15 @@ class Home(Screen):
                 rows.append(("fast lane", [(f"{lane.get('checks', 0)} checks  "
                                             f"{lane.get('probes_per_s', 0)} probes/s", 0)]))
         fl = con.facts.get("flags") or {}
-        maint = (rd.get("maintenance") if rd else None) or fl.get("maintenance_file")
+        maint = rd.get("maintenance") if rd else None
         rows.append(("maintenance", [("on - site answers 503", A[WARN]) if maint else ("off", 0)]))
         lock = fl.get("lock")
         unit = fl.get("upgrade_unit", "inactive")
         if lock:
             rows.append(("upgrade", [(f"lock held, {lock.get('phase', '?')} {_span(lock.get('age'))}", A[WARN])]))
         elif unit == "active":
-            rows.append(("upgrade", [("running", A[WARN])]))
+            st = fl.get("status") or {}
+            rows.append(("upgrade", [(f"running, {st.get('step', '?')} {st.get('pct', 0)}%", A[WARN])]))
         else:
             rows.append(("upgrade", [("idle, lock free", 0)]))
         lb = con.django.get("last_backup") if con.django else None
@@ -3749,6 +3903,10 @@ class Backups(Screen):
 
 # -- upgrade -------------------------------------------------------------------
 
+#: The upgrade stage's phases (scripts/upgrade/stage.sh), git and bundle alike.
+STAGE_STEPS = ["preflight", "backup", "prepare", "quiesce", "swap", "deps", "check", "snapshot",
+               "migrate", "static", "verify", "start", "resume", "done"]
+#: What an upgrader from before the stage reported.
 ONLINE_STEPS = ["preflight", "backup", "checkout", "deps", "migrate", "frontend", "restart",
                 "healthcheck"]
 BUNDLE_STEPS = ["preflight", "backup", "deploy", "deps", "migrate", "static", "restart",
@@ -3788,13 +3946,18 @@ class Upgrade(Screen):
         if time.monotonic() - self.log_at < 1:
             return
         self.log_at = time.monotonic()
-        path = self.con.ctx.app / ".upgrade.log"
+        # The stage logs into its work folder while it runs and leaves the log
+        # in .upgrade.log when it ends; the status names the one to read.
+        st = (self.con.facts.get("flags") or {}).get("status") or {}
+        path = Path(st.get("log") or self.con.ctx.app / ".upgrade.log")
         try:
             with open(path, "rb") as f:
                 f.seek(0, 2)
                 size = f.tell()
                 f.seek(max(0, size - 16384))
                 self.log_lines = f.read().decode(errors="replace").splitlines()[-200:]
+        except PermissionError:
+            self.log_lines = svc_tail(self.con.ctx, path).splitlines()[-200:]
         except OSError:
             self.log_lines = []
 
@@ -3806,8 +3969,9 @@ class Upgrade(Screen):
         fl = con.facts.get("flags") or {}
         if ctx.shape == "docker":
             y = con.panel(y0, 0, con.cols, "upgrade  docker")
-            con.kv(y, 0, "how", "a container install is upgraded by pulling a new image:")
-            con.kv(y + 1, 0, "", "docker compose pull && docker compose up -d")
+            con.kv(y, 0, "how", "a container install is rebuilt from the host:")
+            con.kv(y + 1, 0, "", "docker compose build && docker compose stop scheduler workers "
+                                 "fastlane ws && docker compose up -d")
             return
         git_install = (ctx.app / ".git").exists()
         title = "version  " + ("git install" if git_install else "bundle install")
@@ -3877,7 +4041,8 @@ class Upgrade(Screen):
         cur = (st or {}).get("step", "")
         bundle_run = (not git_install) or self.kind == "bundle" or cur in {"deploy", "static"} \
             or (st or {}).get("version_to", "").endswith(".tar.gz")
-        steps = BUNDLE_STEPS if bundle_run else ONLINE_STEPS
+        steps = STAGE_STEPS if (st or {}).get("stage_api") or not st \
+            else BUNDLE_STEPS if bundle_run else ONLINE_STEPS
         state = (st or {}).get("state", "")
         x = 2
         for step in steps:
@@ -3898,7 +4063,7 @@ class Upgrade(Screen):
         con.put(y, 4 + width, f"{pct:3d}%")
         y += 2
         self._tail()
-        y = con.panel(y, 0, con.cols, "output  .upgrade.log")
+        y = con.panel(y, 0, con.cols, "output  upgrade log")
         for line in self.log_lines[-(y1 - y):]:
             con.put(y, 2, line)
             y += 1
@@ -3957,9 +4122,9 @@ class Upgrade(Screen):
         return True
 
     def _launch(self, version: str, bundle: Path | None) -> None:
-        """The same transient unit the web UI launches, so a dropped ssh
-        session cannot kill an upgrade between migrate and restart, and the
-        app's own busy check sees it. Output lands in .upgrade.log."""
+        """manage.py start_upgrade - the same lock and the same transient unit
+        the web UI uses, so a dropped ssh session cannot kill the upgrade and
+        nothing races it. The stage's log shows below as it runs."""
         con = self.con
         ctx = con.ctx
         busy = self._busy()
@@ -3967,35 +4132,23 @@ class Upgrade(Screen):
             self.note("warn", f"{busy} - F to force")
             return
         self._force = False
-        app = ctx.app
-        script = app / "scripts" / ("danbyte-upgrade-bundle.sh" if bundle else "danbyte-upgrade.sh")
-        if not script.exists():
-            self.note("bad", f"{script} is missing")
-            return
 
         def go():
-            arg = version
+            argv = ["start_upgrade"]
             if bundle:
                 try:
-                    arg = str(stage_bundle(ctx, bundle))
+                    argv += ["--bundle", str(stage_bundle(ctx, bundle))]
                 except SystemExit:
                     return
-            log = app / ".upgrade.log"
-            with contextlib.suppress(OSError):
-                log.write_text("")
-            argv = ["systemd-run", "--user", "--collect", "--unit", "danbyte-upgrade",
-                    "-p", f"StandardOutput=append:{log}", "-p", "StandardError=inherit",
-                    f"--setenv=DANBYTE_DIR={app}"]
+            else:
+                argv += ["--tag", version]
             if self.skip_backup:
-                argv.append("--setenv=DANBYTE_SKIP_BACKUP=1")
-            argv += ["bash", str(script), arg]
-            if ctx.as_service:
-                argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
-            r = sh(argv, cwd=str(app), timeout=20)
+                argv.append("--skip-backup")
+            r = manage(ctx, argv)
             if r.ok:
                 self.note("ok", f"launched danbyte-upgrade.service for {version}")
             else:
-                self.note("bad", (r.err or r.out).strip()[:200] or "systemd-run failed")
+                self.note("bad", (r.err or r.out).strip()[-200:] or "start_upgrade failed")
             con.facts.kick("flags")
         con.run("launch", go)
 
@@ -4142,7 +4295,7 @@ class Tls(Screen):
         applied = ap.get("applied") or {}
         row = []
         if not ap.get("unit_installed"):
-            row.append(("apply unit not installed - sudo make install-tls-unit", A[WARN]))
+            row.append(("apply unit not installed - sudo ./install.sh --host-only, in the bundle", A[WARN]))
         elif ap.get("pending"):
             row.append(("waiting for the host to apply the drop", A[WARN]))
         elif applied and st.get("dropped_sha256"):
@@ -4528,10 +4681,18 @@ def served_fingerprint(host: str, port: int = 443, sni: str = "") -> dict | None
 
 
 def nginx_text() -> str:
+    """Danbyte's site in the live config, or "" when that is unreadable."""
     r = sh(["sudo", "-n", "nginx", "-T"], timeout=10)
     if not r.ok:
         r = sh(["nginx", "-T"], timeout=10)
-    return r.out if r.ok else ""
+    return site_section(r.out) if r.ok else ""
+
+
+def cert_links(*paths: str, nonint: bool = True) -> list[str]:
+    """The paths that are links - a certificate tool's (certbot's live/).
+    Installing over one leaves a plain file, with the link's 777 mode."""
+    sudo = ["sudo", "-n"] if nonint else ["sudo"]
+    return [p for p in paths if p and sh([*sudo, "test", "-L", p], timeout=10).ok]
 
 
 def server_names(text: str) -> list[str]:
@@ -4655,8 +4816,12 @@ def tls_review(ctx: Ctx, live_facts: dict, *, cert, key, source, chain) -> dict:
         checks.append(("warn", "identical to the live certificate"))
     dest_cert, dest_key = _live_cert_pair()
     if not (dest_cert and dest_key):
-        checks.append(("blocks", "live nginx config unreadable - nowhere safe to write"))
+        checks.append(("blocks", "Danbyte's site not in the live nginx config - nowhere safe "
+                                 "to write"))
         blocked = blocked or "nginx config unreadable"
+    elif cert_links(dest_cert, dest_key):
+        checks.append(("blocks", "the live pair is a certificate tool's links - renew it there"))
+        blocked = blocked or "certificate managed by another tool"
     return {"blocked": blocked, "source": str(src), "source_kind": kind, "source_detail": detail,
             "live": live, "new": new, "live_key_kind": (live_facts or {}).get("key_kind", ""),
             "new_key_kind": nk, "checks": checks, "dest_cert": dest_cert, "dest_key": dest_key,
@@ -4939,13 +5104,15 @@ def build_parser() -> argparse.ArgumentParser:
     rb.add_argument("--skip-frontend", action="store_true", help="do not rebuild the frontend")
     rb.add_argument("--force", action="store_true", help="ignore a held upgrade lock")
 
-    u = sub.add_parser("upgrade", help="online, or from an uploaded bundle")
-    u.add_argument("action", choices=["online", "bundle"])
+    u = sub.add_parser("upgrade", help="online, from an uploaded bundle, or recover one")
+    u.add_argument("action", choices=["online", "bundle", "recover"])
     u.add_argument("bundle", nargs="?", help="path to a .tar.gz bundle")
     u.add_argument("--tag", help="release tag for an online upgrade")
     u.add_argument("--skip-backup", action="store_true",
                    help="skip the pre-upgrade backup (there is then no net)")
     u.add_argument("--force", action="store_true", help="ignore a held upgrade lock")
+    u.add_argument("--no-follow", action="store_true",
+                   help="return once the upgrade runs instead of following it")
 
     b = sub.add_parser("backup", help="run one now, list, restore")
     b.add_argument("action", choices=["run", "list", "restore", "path", "unstick"])

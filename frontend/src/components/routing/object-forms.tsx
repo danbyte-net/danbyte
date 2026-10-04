@@ -37,6 +37,15 @@ import {
   numText,
   useRoutingSave,
 } from "./form-bits"
+import {
+  firstError,
+  OwnerField,
+  ownerOf,
+  ownerPayload,
+  portPayload,
+  useOwnerPorts,
+} from "./owner"
+import type { OwnerKind, RoutingOwner } from "./owner"
 
 // ─── BFD profile ─────────────────────────────────────────────────────────────
 
@@ -617,20 +626,22 @@ const KINDS = [
 
 export function StaticRouteForm({
   item,
-  device,
+  owner,
   onSaved,
   onCancel,
 }: {
   item?: StaticRoute | null
-  /** Pre-set device when adding from a device's own Routing tab. */
-  device?: { id: string; name: string }
+  /** Pre-set box when adding from a device's or VM's own Routing tab. */
+  owner?: RoutingOwner
   onSaved: (v: StaticRoute) => void
   onCancel: () => void
 }) {
   const isEdit = !!item
-  const [deviceId, setDeviceId] = useState<string | null>(
-    item?.device.id ?? device?.id ?? null
-  )
+  const start = (item ? ownerOf(item) : null) ?? owner ?? null
+  const [on, setOn] = useState<{ kind: OwnerKind; id: string | null }>({
+    kind: start?.kind ?? "device",
+    id: start?.id ?? null,
+  })
   const [vrfId, setVrfId] = useState<string | null>(item?.vrf?.id ?? null)
   const [prefix, setPrefix] = useState(item?.prefix ?? "")
   const [prefixObjId, setPrefixObjId] = useState<string | null>(
@@ -639,7 +650,7 @@ export function StaticRouteForm({
   const [kind, setKind] = useState<string | null>(item?.kind ?? "nexthop")
   const [nextHop, setNextHop] = useState(item?.next_hop ?? "")
   const [nextHopIfaceId, setNextHopIfaceId] = useState<string | null>(
-    item?.next_hop_interface?.id ?? null
+    item?.next_hop_interface?.id ?? item?.next_hop_vm_interface?.id ?? null
   )
   const [nextHopVrfId, setNextHopVrfId] = useState<string | null>(
     item?.next_hop_vrf?.id ?? null
@@ -671,12 +682,9 @@ export function StaticRouteForm({
       ),
     staleTime: 5 * 60_000,
   })
-  const interfaces = useQuery({
-    queryKey: ["interfaces-picker", deviceId],
-    queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${deviceId}`),
-    enabled: !!deviceId,
-  })
+  const interfaces = useOwnerPorts(on.id ? { kind: on.kind, id: on.id } : null)
+  const boxPicked = !!on.id
+  const pickFirst = on.kind === "vm" ? "Pick a VM first" : "Pick a device first"
   // A new route starts on the catalog's default status (the one flagged
   // default for static routes), the way the box would show it as active.
   useEffect(() => {
@@ -712,13 +720,16 @@ export function StaticRouteForm({
       onSubmit={(e) => {
         e.preventDefault()
         mutation.mutate({
-          device_id: deviceId,
+          ...ownerPayload(on.id ? { ...on, id: on.id, name: "" } : null),
           vrf_id: vrfId,
           prefix: prefix.trim(),
           prefix_obj_id: prefixObjId,
           kind,
           next_hop: viaHop ? nextHop.trim() : "",
-          next_hop_interface_id: viaHop || viaIface ? nextHopIfaceId : null,
+          ...portPayload(on.kind, viaHop || viaIface ? nextHopIfaceId : null, [
+            "next_hop_interface_id",
+            "next_hop_vm_interface_id",
+          ]),
           next_hop_vrf_id: viaHop || viaIface ? nextHopVrfId : null,
           distance: numOrNull(distance),
           metric: numOrNull(metric),
@@ -733,18 +744,21 @@ export function StaticRouteForm({
       className="@container grid gap-4"
     >
       <FormSection title="Route" card>
+        <OwnerField
+          value={on}
+          onChange={(v) => {
+            setOn(v)
+            setNextHopIfaceId(null)
+          }}
+          locked={!!owner}
+          error={firstError(
+            fieldErrors,
+            "device_id",
+            "virtual_machine_id",
+            "device"
+          )}
+        />
         <div className="grid gap-3 @md:grid-cols-2">
-          <DevicePicker
-            label="Device"
-            required
-            value={deviceId}
-            onChange={(v) => {
-              setDeviceId(v)
-              setNextHopIfaceId(null)
-            }}
-            disabled={!!device}
-            error={fieldErrors.device_id}
-          />
           <FormCombobox
             label="VRF"
             value={vrfId}
@@ -812,11 +826,17 @@ export function StaticRouteForm({
               onChange={setNextHopIfaceId}
               options={ifaceOptions}
               noneLabel="None"
-              placeholder={deviceId ? "None" : "Pick a device first"}
-              disabled={!deviceId}
+              placeholder={boxPicked ? "None" : pickFirst}
+              disabled={!boxPicked}
               searchPlaceholder="Search interfaces…"
               emptyText="No interfaces."
-              error={fieldErrors.next_hop_interface_id}
+              error={firstError(
+                fieldErrors,
+                "next_hop_interface_id",
+                "next_hop_vm_interface_id",
+                "next_hop_interface",
+                "next_hop_vm_interface"
+              )}
             />
           </div>
         )}
@@ -827,12 +847,18 @@ export function StaticRouteForm({
             value={nextHopIfaceId}
             onChange={setNextHopIfaceId}
             options={ifaceOptions}
-            placeholder={deviceId ? "Pick an interface" : "Pick a device first"}
-            disabled={!deviceId}
+            placeholder={boxPicked ? "Pick an interface" : pickFirst}
+            disabled={!boxPicked}
             searchPlaceholder="Search interfaces…"
             emptyText="No interfaces."
             info="The route points out of this port with no next-hop address - the point-to-point shape some platforms write."
-            error={fieldErrors.next_hop_interface_id}
+            error={firstError(
+              fieldErrors,
+              "next_hop_interface_id",
+              "next_hop_vm_interface_id",
+              "next_hop_interface",
+              "next_hop_vm_interface"
+            )}
           />
         )}
         {(viaHop || viaIface) && (

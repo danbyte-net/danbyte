@@ -1,4 +1,5 @@
 import { BulkExport } from "@/components/bulk-export"
+import { AddToSlaButton } from "@/components/monitoring/sla-add"
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { Rocket, X } from "lucide-react"
@@ -59,6 +60,10 @@ export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
             variant="ghost"
           />
           <BulkExport ioType="device" ids={selected.map((d) => d.id)} />
+          <AddToSlaButton
+            objectType="api.device"
+            ids={selected.map((d) => d.id)}
+          />
           <Button
             size="sm"
             variant="ghost"

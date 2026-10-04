@@ -29,13 +29,18 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 
 ## The detail page
 
-**Overview** carries the attribute cards, the disk list and a per-VM network
-diagram. Then:
+**Overview** carries the attribute cards, the disk list and the VM's
+**Topology** card - its networks as rails, the same drawing as the
+[Virtual topology](virtual-switches.md#network-topology). With none mapped,
+the card says *No virtual networks yet.* and what to do: run a sync, turn on
+**Sync virtual switches & networks** on its source, or give one of its
+interfaces a VLAN. Then:
 
 | Tab | What's on it |
 | --- | --- |
 | **Components** | The VM's interfaces (and their IPs), with a count on the tab. |
 | **Services** | Services running on it, from your service templates. |
+| **Routing** | Static routes and BGP, OSPF, IS-IS and EIGRP instances on the VM - a virtual router's routing, the same as a device's. See [Routing on virtual machines](routing.md#routing-on-virtual-machines). |
 | **Monitoring** | Checks against its addresses, same engine as devices. |
 | **SNMP** | Facts, the interface table, LLDP neighbours and the ARP table, when the VM answers SNMP. Each SNMP interface is read against the VM's own NICs by name; when the guest names a NIC differently from the hypervisor (`ether1` for `nic0`), set **SNMP name** on the interface and the row maps. |
 | **Certificates** | TLS certificates seen on its endpoints. |
@@ -112,6 +117,10 @@ You can also set it from the address itself: the IP form has **Virtual
 machine** and **VM interface** pickers next to the device ones. Assigning to
 the VM without naming an interface is allowed when you only care that the
 address belongs to that VM.
+
+A VM interface's `ip_addresses` lists only the addresses the caller may view,
+as on a device interface: IP view permission in the active tenant, with its
+site scope and row constraints.
 
 The first private IPv4 becomes the VM's **primary IP** when it has none, and
 that is what monitoring checks. To choose a different one, tick **Make this

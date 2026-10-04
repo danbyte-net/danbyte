@@ -29,6 +29,7 @@ import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { CableEndpointPicker } from "@/components/cable-endpoint-picker"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useSaveObject } from "@/lib/save-object"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 
 const LENGTH_UNITS = [
   { value: "m", label: "m" },
@@ -173,8 +174,7 @@ export function CableForm({
       qc.invalidateQueries({ queryKey: ["device-rear-ports"] })
       qc.invalidateQueries({ queryKey: ["device-front-ports"] })
       qc.invalidateQueries({ queryKey: ["port-reservations"] })
-      qc.invalidateQueries({ queryKey: ["device-port-utilization"] })
-      qc.invalidateQueries({ queryKey: ["port-utilization-rollup"] })
+      invalidatePortCounts(qc)
       toast.success(isEdit ? "Cable updated" : "Cable created")
       onSaved(saved)
     },

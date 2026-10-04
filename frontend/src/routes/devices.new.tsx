@@ -10,8 +10,8 @@ import { planSearch, type PlanSearch } from "@/lib/save-object"
 
 export const Route = createFileRoute("/devices/new")({
   component: NewDevicePage,
-  // "+ Add here" on an empty rack unit arrives with placement pre-chosen;
-  // "Clone" arrives with ?clone=<source id>.
+  // "+ Add here" on an empty rack unit, or "Add device" on a cabinet's rail,
+  // arrives with placement pre-chosen; "Clone" arrives with ?clone=<source id>.
   validateSearch: (
     s: Record<string, unknown>
   ): {
@@ -21,6 +21,9 @@ export const Route = createFileRoute("/devices/new")({
     mount?: "side_left" | "side_right"
     device_type?: string
     site?: string
+    cabinet?: string
+    din_rail?: string
+    din_offset?: number
     clone?: string
   } & PlanSearch => ({
     ...(typeof s.rack === "string" ? { rack: s.rack } : {}),
@@ -31,6 +34,13 @@ export const Route = createFileRoute("/devices/new")({
       ? { device_type: s.device_type }
       : {}),
     ...(typeof s.site === "string" ? { site: s.site } : {}),
+    ...(typeof s.cabinet === "string" ? { cabinet: s.cabinet } : {}),
+    ...(typeof s.din_rail === "string" ? { din_rail: s.din_rail } : {}),
+    ...((typeof s.din_offset === "number" ||
+      typeof s.din_offset === "string") &&
+    Number.isFinite(Number(s.din_offset))
+      ? { din_offset: Number(s.din_offset) }
+      : {}),
     ...(typeof s.position === "number" || typeof s.position === "string"
       ? { position: Number(s.position) }
       : {}),
@@ -42,8 +52,18 @@ export const Route = createFileRoute("/devices/new")({
 
 function NewDevicePage() {
   const nav = useNavigate()
-  const { rack, position, face, mount, device_type, site, clone } =
-    Route.useSearch()
+  const {
+    rack,
+    position,
+    face,
+    mount,
+    device_type,
+    site,
+    cabinet,
+    din_rail,
+    din_offset,
+    clone,
+  } = Route.useSearch()
   const cloneQ = useCloneSeed<Partial<Device>>("devices", clone)
   const cloning = !!clone
 
@@ -68,7 +88,7 @@ function NewDevicePage() {
       ) : (
         <DeviceForm
           initial={
-            rack || device_type || site
+            rack || device_type || site || cabinet
               ? {
                   rackId: rack,
                   position,
@@ -76,6 +96,9 @@ function NewDevicePage() {
                   mount,
                   deviceTypeId: device_type,
                   siteId: site,
+                  cabinetId: cabinet,
+                  dinRailId: din_rail,
+                  dinOffset: din_offset,
                 }
               : undefined
           }

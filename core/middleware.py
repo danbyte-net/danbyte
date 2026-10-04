@@ -61,15 +61,19 @@ class SessionIdleTimeoutMiddleware:
         return self.get_response(request)
 
 
-# Requests that must keep working while a restore holds the site: the
-# health probe, the restore-run status the UI polls, and static assets.
-_MAINTENANCE_EXEMPT = ("/api/health/", "/api/backups/restore-runs/", "/static/", "/media/")
+# Requests that must keep working while a restore or an upgrade holds the
+# site: the health probe, the restore-run and upgrade status the UI polls,
+# and static assets.
+_MAINTENANCE_EXEMPT = ("/api/health/", "/api/backups/restore-runs/",
+                       "/api/system/upgrade/status/", "/static/", "/media/")
 
 
 class MaintenanceMiddleware:
-    """503 with ``Retry-After`` while a restore is replacing the database
-    (``backups.maintenance``). nginx turns the 503 into the maintenance page
-    for browsers; API callers get JSON they can act on."""
+    """503 with ``Retry-After`` while a restore is replacing the database or
+    an upgrade is starting the new code (``backups.maintenance``). Callers
+    get JSON they can act on; nginx passes the 503 through as it is. A
+    request carrying the upgrade's probe token (``X-Danbyte-Probe``) is let
+    through, so the upgrade can check a real page before users arrive."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -90,17 +94,20 @@ class MaintenanceMiddleware:
 
                     return JsonResponse(data)
         if not path.startswith(_MAINTENANCE_EXEMPT):
-            from backups.maintenance import active
+            from backups.maintenance import active, probe_matches
 
             state = active()
-            if state:
+            if state and not probe_matches(state, request.META.get("HTTP_X_DANBYTE_PROBE", "")):
                 from django.http import JsonResponse
 
                 resp = JsonResponse(
                     {"detail": f"Danbyte is in maintenance: {state.get('reason') or 'restore in progress'}.",
-                     "maintenance": state},
+                     "maintenance": {k: v for k, v in state.items() if k != "probe_sha256"}},
                     status=503,
                 )
                 resp["Retry-After"] = "30"
+                # A planned state, not a server error: django.request would
+                # log every one of these at ERROR while an upgrade runs.
+                resp._has_been_logged = True
                 return resp
         return self.get_response(request)

@@ -8,22 +8,34 @@ import { Badge } from "@/components/ui/badge"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
+import { rackColumn } from "@/components/cells/rack-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { useTableFilters } from "@/components/table-filters"
 
-// The capacity roll-up half of issue #64: every device with ports, fullest
-// first, so the patch panel about to run out is the first row you see.
-// Site / role / type facets narrow it; the per-device card on the device
-// page shows the same numbers up close.
+// The capacity roll-up half of issue #64: every device with counted ports,
+// fullest first, so the patch panel about to run out is the first row you
+// see. Site / rack / role / type facets narrow it; the per-device card on the
+// device page shows the same numbers up close.
 
 export const Route = createFileRoute("/port-utilization")({
   component: PortUtilizationPage,
+  // Deep links from a site or rack land on the pre-filtered table, e.g.
+  // /port-utilization?rack=<id>. Both keys optional.
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { site?: string; rack?: string } => {
+    const out: { site?: string; rack?: string } = {}
+    if (typeof s.site === "string") out.site = s.site
+    if (typeof s.rack === "string") out.rack = s.rack
+    return out
+  },
 })
 
 interface RollupRow {
   id: string
   name: string
   site: { id: string; name: string } | null
+  rack: { id: string; name: string } | null
   role: { name: string; color: string } | null
   device_type: string | null
   total: number
@@ -34,6 +46,7 @@ interface RollupRow {
 }
 
 function PortUtilizationPage() {
+  const { site, rack } = Route.useSearch()
   const [search, setSearch] = useState("")
   const q = useQuery({
     queryKey: ["port-utilization-rollup"],
@@ -67,6 +80,7 @@ function PortUtilizationPage() {
         ),
       },
       siteColumn<RollupRow>({ get: (r) => r.site }),
+      rackColumn<RollupRow>({ get: (r) => r.rack }),
       {
         id: "role",
         accessorFn: (r) => r.role?.name ?? "",
@@ -171,6 +185,15 @@ function PortUtilizationPage() {
     []
   )
 
+  // Seed the Site and Rack facets from the URL so the filter shows in the
+  // rail and can be cleared there. The roll-up itself stays whole: its query
+  // key is shared with the Devices list's Ports column.
+  const initialEnums = useMemo(() => {
+    const seed: Record<string, string[]> = {}
+    if (site) seed.site = [site]
+    if (rack) seed.rack = [rack]
+    return Object.keys(seed).length ? seed : undefined
+  }, [site, rack])
   const {
     rail,
     filteredRows,
@@ -178,7 +201,7 @@ function PortUtilizationPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, searched)
+  } = useTableFilters(columns, searched, initialEnums)
 
   return (
     <ListPageShell

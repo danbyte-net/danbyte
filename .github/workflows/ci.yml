@@ -74,6 +74,67 @@ jobs:
       - name: Ruff (advisory - not yet a gate)
         continue-on-error: true
         run: ruff check .
+      # The upgrade launchers and stage run under /bin/sh (dash on Debian and
+      # Ubuntu). core.tests_upgrade_scripts above runs them for real.
+      - name: ShellCheck upgrade scripts (advisory)
+        continue-on-error: true
+        run: shellcheck -x -s sh scripts/upgrade/*.sh scripts/danbyte-upgrade.sh scripts/danbyte-upgrade-bundle.sh
+
+  # The database of the last final release, upgraded the way the upgrade
+  # stage does it: every pending migration in one transaction, then the
+  # same verify the stage runs before any service starts.
+  upgrade-rehearsal:
+    name: Upgrade migration rehearsal
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: danbyte
+          POSTGRES_USER: danbyte
+          POSTGRES_PASSWORD: danbyte
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U danbyte"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_NAME: danbyte
+      DB_USER: danbyte
+      DB_PASSWORD: danbyte
+      REDIS_URL: redis://127.0.0.1:6379/0
+      DJANGO_SECRET_KEY: ci-not-a-real-secret
+      DEBUG: 'True'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: System deps (python-ldap build headers)
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* || true
+          sudo apt-get update || sudo apt-get update
+          sudo apt-get install -y build-essential libldap2-dev libsasl2-dev
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Migrate to the last final release, then upgrade
+        run: |
+          # the newest final release this one is built on
+          prev=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD^)
+          echo "rehearsing the upgrade from $prev"
+          python scripts/upgrade/rehearse_migrations.py "$prev"
+          python manage.py upgrade_migrate --plan
+          python manage.py upgrade_migrate
+          python manage.py upgrade_verify
 
   frontend:
     name: Frontend (typecheck + build)

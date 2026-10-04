@@ -130,6 +130,40 @@ describe("discoverFields", () => {
     expect(fields.find((f) => f.path === "weight")?.kind).toBe("number")
     expect(fields.find((f) => f.path === "enabled")?.kind).toBe("boolean")
   })
+
+  it("keeps fields named like ids and skips raw foreign-key ids", () => {
+    const paths = discoverFields([
+      {
+        vlan_id: 42,
+        facility_id: "R-12",
+        site_id: "9c9b9d52-5448-4b4d-ab0b-c0431f923852",
+        device_type: {
+          name: "C9300",
+          manufacturer_id: "3c9b9d52-5448-4b4d-ab0b-c0431f923852",
+        },
+      },
+    ]).map((f) => f.path)
+    expect(paths).toContain("vlan_id")
+    expect(paths).toContain("facility_id")
+    expect(paths).not.toContain("site_id")
+    expect(paths).not.toContain("device_type.manufacturer_id")
+  })
+
+  it("offers a named object one step out, like a device's site region", () => {
+    const devices = [
+      {
+        name: "sw1",
+        site: { name: "HQ", region: { id: "r1", name: "Nordics" } },
+      },
+      { name: "sw2", site: { name: "Lab", region: null } },
+    ]
+    const region = discoverFields(devices).find((f) => f.path === "site.region")
+    expect(region?.samples).toEqual(["Nordics"])
+    const e = parse("site.region = nordics")!
+    expect(devices.filter((d) => evaluate(e, d)).map((d) => d.name)).toEqual([
+      "sw1",
+    ])
+  })
 })
 
 describe("multi-line input", () => {

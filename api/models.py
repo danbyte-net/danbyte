@@ -20,7 +20,10 @@ from .dcim_choices import (
     POWER_OUTLET_TYPE_CHOICES,
     POWER_PORT_TYPE_CHOICES,
     RF_CONNECTOR_CHOICES,
+    VIRTUAL_INTERFACE_TYPES,
 )
+from .fields import HostAddressField, split_host_mask
+from .natural import natural
 from .speed import normalize_speed
 from core.models import (
     CustomFieldsMixin,
@@ -397,6 +400,14 @@ class LifecycleMixin(models.Model):
         return ""
 
 
+#: How the topology Diagram sizes a device's photo: as wide as a 19-inch
+#: device (half that for a half-width type), or at the photo's own size - the
+#: size its layout saved for every surface (Use this size everywhere), else its
+#: upload size. Blank inherits: the device, then its type, then its role;
+#: nothing set is rack width.
+TOPOLOGY_PHOTO_SIZE_CHOICES = [("rack", "Rack width"), ("own", "Own size")]
+
+
 class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
                  LifecycleMixin):
     """User-defined device type / template (e.g. ``Dell R650``, ``Cisco C9300``).
@@ -435,6 +446,12 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
         help_text=("Horizontal footprint in the rack. Half-width gear (e.g. a "
                    "half-U ToR switch like the Mellanox SN2010) mounts two "
                    "side-by-side in the same U."),
+    )
+    topology_photo_size = models.CharField(
+        max_length=4, choices=TOPOLOGY_PHOTO_SIZE_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How wide the topology Diagram draws photos of this type. "
+                  "Blank inherits.",
     )
     front_image = models.ImageField(
         upload_to="device-type-images/", blank=True, null=True,
@@ -486,6 +503,31 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
     )
     weight_unit = models.CharField(
         max_length=8, choices=WEIGHT_UNIT_CHOICES, blank=True, default="",
+    )
+    # The body's true size in tenths of a millimetre: what DIN-rail gear is
+    # placed by in a cabinet (#277), and what drawings scale it by.
+    width_mm = models.DecimalField(
+        "width (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    height_mm = models.DecimalField(
+        "height (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    depth_mm = models.DecimalField(
+        "depth (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    din_profiles = models.JSONField(
+        "DIN rail profiles", default=list, db_default=models.Value([], models.JSONField()),
+        blank=True,
+        help_text="The rail profiles the type mounts on (ts35, ts15, g32); "
+        "empty = not DIN-rail mounted.",
+    )
+    din_rail_mm = models.DecimalField(
+        "rail position (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(5000)],
+        help_text="The rail's centreline below the body's top edge; empty = the middle.",
     )
     description = models.TextField(blank=True)
     owning_site = models.ForeignKey(
@@ -566,7 +608,7 @@ class InterfaceTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class ConsolePortTemplate(_ComponentTemplate):
@@ -580,7 +622,7 @@ class ConsolePortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class ConsoleServerPortTemplate(_ComponentTemplate):
@@ -594,7 +636,7 @@ class ConsoleServerPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class AuxPortTemplate(_ComponentTemplate):
@@ -611,7 +653,7 @@ class AuxPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 def validate_antenna_bands(value):
@@ -658,7 +700,7 @@ class AntennaTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class PowerPortTemplate(_ComponentTemplate):
@@ -678,7 +720,7 @@ class PowerPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class PowerOutletTemplate(_ComponentTemplate):
@@ -703,7 +745,7 @@ class PowerOutletTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class RearPortTemplate(_ComponentTemplate):
@@ -723,7 +765,7 @@ class RearPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class FrontPortTemplate(_ComponentTemplate):
@@ -743,7 +785,7 @@ class FrontPortTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
         # A connector spans a range of positions; overlap isn't a DB constraint.
 
 
@@ -770,7 +812,7 @@ class ModuleBayTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 class DeviceBayTemplate(_ComponentTemplate):
@@ -785,7 +827,7 @@ class DeviceBayTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 # Hardware kind of an inventory item/template - what the part IS. "other"
@@ -844,7 +886,7 @@ class InventoryItemTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 # ─── Module types (pluggable line cards / network modules) ───────────────────
@@ -900,7 +942,7 @@ class ModuleInterfaceTemplate(_ComponentTemplate):
 
     class Meta:
         unique_together = ("module_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.module_type.name}:{self.name}"
@@ -1005,8 +1047,11 @@ def materialize_device_components(device) -> dict[str, int]:
     pos = device.vc_position
 
     have = _names(device.interfaces)
+    # bulk_create skips Interface.save(), so the virtual-type rule is
+    # applied here (and in install_module) by hand.
     made = [
         Interface(device=device, name=n, marker_key=n, type=t.type,
+                  virtual=t.type in VIRTUAL_INTERFACE_TYPES,
                   enabled=t.enabled,
                   mgmt_only=t.mgmt_only, combo_group=t.combo_group,
                   poe_mode=t.poe_mode, poe_type=t.poe_type,
@@ -1271,7 +1316,7 @@ def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
 
 # NOTE: no "front-port" entry on purpose - a bare front port can't be
 # stamped (it needs a rear-port mapping), so front-port markers are excluded
-# from the create/diff paths. They still RESOLVE (viewsets._FACE_PORT_KINDS)
+# from the create/diff paths. They still RESOLVE (face_ports.FACE_PORT_KINDS)
 # and template renames still follow (_TEMPLATE_MARKER_KIND).
 _MARKER_KIND_RELS = {
     "interface": "interfaces",
@@ -1635,6 +1680,7 @@ def install_module(module) -> int:
     have = set(module.device.interfaces.values_list("name", flat=True))
     made = [
         Interface(device=module.device, name=n, type=t.type,
+                  virtual=t.type in VIRTUAL_INTERFACE_TYPES,
                   enabled=t.enabled, mgmt_only=t.mgmt_only,
                   description=t.description)
         for n, t in types.items()
@@ -1754,6 +1800,20 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text=("Vertical extent of the side-mounted strip, in U. Blank "
                    "draws ~three quarters of the rack."),
     )
+    # A DIN-rail cabinet instead of a rack (#277): the device is in the
+    # cabinet, and on one of its rails at an offset from the rail's left end.
+    cabinet = models.ForeignKey(
+        "Cabinet", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="devices",
+    )
+    din_rail = models.ForeignKey(
+        "DinRail", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="devices",
+    )
+    din_offset_mm = models.DecimalField(
+        "offset on the rail (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(5000)],
+    )
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="devices",
@@ -1834,6 +1894,20 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="Port labels on faceplate renders: inherit the deployment "
                   "setting, or force them shown or hidden on this device.",
     )
+    # The lines this device's topology Diagram card shows under its name
+    # (core.deployment.TOPOLOGY_CARD_FIELDS). Null inherits the saved view,
+    # role, tenant or deployment list; a list replaces it; [] = name only.
+    topology_card = models.JSONField(
+        null=True, blank=True, default=None,
+        help_text="Topology card lines for this device. Null inherits; an "
+                  "empty list shows the name only.",
+    )
+    topology_photo_size = models.CharField(
+        max_length=4, choices=TOPOLOGY_PHOTO_SIZE_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How wide the topology Diagram draws this device's photo. "
+                  "Blank inherits.",
+    )
     # ── Geolocation ──────────────────────────────────────────────────────
     latitude = models.DecimalField(
         max_digits=9, decimal_places=6, null=True, blank=True,
@@ -1868,6 +1942,18 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                 condition=models.Q(virtual_chassis__isnull=False,
                                    vc_position__isnull=False),
                 name="uniq_device_vc_position",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(rack__isnull=True) | models.Q(cabinet__isnull=True),
+                name="device_rack_or_cabinet",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(din_rail__isnull=True, din_offset_mm__isnull=True)
+                    | models.Q(din_rail__isnull=False, din_offset_mm__isnull=False,
+                               cabinet__isnull=False)
+                ),
+                name="device_din_rail_offset",
             ),
         ]
 
@@ -2180,6 +2266,11 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     # The VLAN's own display colour (badges, topology rails). Optional - zones
     # stay firewall semantics, never a colour requirement.
+    # Active / Reserved / Deprecated, or the tenant's own (#172).
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="vlans",
+    )
     color = models.CharField(max_length=7, blank=True, default="")
     # The routing table the VLAN's SVI lives in - documentation of the L3
     # side, so a VLAN says which VRF it belongs to before any prefix does.
@@ -2509,7 +2600,9 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         blank=True,
         related_name="ip_addresses",
     )
-    ip_address = models.GenericIPAddressField()
+    # A bare host address, never ``address/length``: the length lives in
+    # mask_length (or the prefix). HostAddressField drops a mask on every write.
+    ip_address = HostAddressField()
     prefix = models.ForeignKey(
         Prefix, on_delete=models.CASCADE, related_name="ip_addresses"
     )
@@ -2626,6 +2719,34 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text=("Exclude this IP from the flapping monitor - for a known "
                    "noisy host you don't want flagged."),
     )
+    # Monitoring exclusion and the availability reset. Written only through
+    # their monitoring endpoints (monitoring.exclusion / monitoring.counting),
+    # which park the checks, write the change log and journal, and refresh
+    # SLA figures - a plain PATCH could do none of that. The *_by fields keep
+    # the username, like ChangeLogEntry.user_name: it survives the user.
+    # The NOT NULL columns also carry a database default (api 0184): a
+    # process still on the release before 0183 inserts addresses without
+    # naming them, and must not fail while an upgrade is in flight.
+    monitoring_excluded = models.BooleanField(
+        "excluded from monitoring", default=False, db_default=False,
+        help_text=("Every check on this address is parked: nothing runs, no "
+                   "alerts, and the time off is not counted as availability."),
+    )
+    monitoring_excluded_at = models.DateTimeField(null=True, blank=True)
+    monitoring_excluded_by = models.CharField(
+        max_length=150, blank=True, default="", db_default="")
+    monitoring_excluded_reason = models.CharField(
+        max_length=200, blank=True, default="", db_default="")
+    availability_since = models.DateTimeField(
+        "availability counts from", null=True, blank=True,
+        help_text=("Uptime, SLA and availability for this address count from "
+                   "here. Earlier history is kept but not counted."),
+    )
+    availability_reset_at = models.DateTimeField(null=True, blank=True)
+    availability_reset_by = models.CharField(
+        max_length=150, blank=True, default="", db_default="")
+    availability_reset_reason = models.CharField(
+        max_length=200, blank=True, default="", db_default="")
 
     class Meta:
         ordering = ["ip_address"]
@@ -2645,6 +2766,17 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             models.Index(fields=["tenant", "site"], name="ip_tenant_site_idx"),
             models.Index(
                 "tenant", Upper("dns_name"), name="ip_tenant_dns_upper_idx"
+            ),
+            # Both sets are tiny next to the table; the figures and counts
+            # that leave them out read them on every request.
+            models.Index(
+                fields=["tenant", "availability_since"],
+                condition=models.Q(availability_since__isnull=False),
+                name="ip_counted_from_idx",
+            ),
+            models.Index(
+                fields=["tenant"], condition=models.Q(monitoring_excluded=True),
+                name="ip_mon_excluded_idx",
             ),
         ]
 
@@ -2668,6 +2800,22 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return f"{self.ip_address}/{n}" if n is not None else None
 
     def save(self, *args, **kwargs):
+        # An address written as ``10.0.0.1/31`` (a shell, a trusted script, a
+        # sync) stores the bare host - the field drops the mask anyway - and
+        # its length becomes mask_length when it differs from the prefix's;
+        # one equal to the prefix's leaves it empty. A mask_length given on
+        # create wins. On an update the address's length replaces the stored
+        # one: a loaded value can't be told from one set for this save.
+        fields = kwargs.get("update_fields")
+        if fields is None or "ip_address" in fields:
+            host, length = split_host_mask(self.ip_address)
+            if length is not None:
+                self.ip_address = host
+                if not (self._state.adding and self.mask_length is not None):
+                    net = self.prefix.network if self.prefix_id else None
+                    same = net is not None and length == net.prefixlen
+                    self.mask_length = None if same else length
+                    _include_update_field(kwargs, "mask_length")
         # Always keep vrf in sync with the parent prefix - including on a
         # scoped save(update_fields=…), which would otherwise drop it.
         if self.prefix_id and self.vrf_id != self.prefix.vrf_id:
@@ -2951,6 +3099,15 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "behind it, not on it. The escape hatch when the automatic uplink "
         "detection misreads a topology.",
     )
+    # Uplink: Automatic (both off) / Always (is_uplink) / Never (this). Two
+    # booleans rather than one choice keep is_uplink's API meaning; the
+    # serializer refuses both at once (#284).
+    never_uplink = models.BooleanField(
+        default=False, db_default=False,
+        help_text="Never treat this port as an uplink, whatever the automatic "
+        "detection says - a server bond, or a phone that announces itself as "
+        "a bridge. Its learned MACs are located here.",
+    )
     #: ``evpn mh uplink``: a fabric-facing port on an EVPN multihomed leaf.
     #: FRR tracks these to decide whether the leaf is isolated from the
     #: fabric and should stop being a designated forwarder.
@@ -3098,13 +3255,14 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def save(self, *args, **kwargs):
-        # An aggregate has no physical port, and LACP knobs mean nothing
-        # without LACP. Normalised here (not only in the serializer) so bulk
-        # edits, imports and shell writes land in the same shape.
-        if self.type == "lag":
+        # A virtual, bridge or aggregate type has no physical port, and LACP
+        # knobs mean nothing without LACP. Normalised here (not only in the
+        # serializer) so bulk edits, imports and shell writes land in the
+        # same shape - and port utilization agrees with the faceplate.
+        if self.type in VIRTUAL_INTERFACE_TYPES:
             self.virtual = True
         if self.lag_protocol != "lacp":
             self.lacp_mode = ""
@@ -3284,7 +3442,7 @@ class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def clean(self):
         """A splitter broadcasts one input to all outputs - the front→rear
@@ -3340,7 +3498,7 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        ordering = ["name"]
+        ordering = [natural("name")]
         constraints = [
             models.UniqueConstraint(
                 fields=["device", "name"], name="uniq_frontport_device_name"
@@ -3406,7 +3564,7 @@ class ConsolePort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3431,7 +3589,7 @@ class ConsoleServerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3492,7 +3650,7 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3515,7 +3673,7 @@ class DeviceBay(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3539,7 +3697,7 @@ class ModuleBay(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3565,7 +3723,7 @@ class Module(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        ordering = ["module_bay__name"]
+        ordering = [natural("module_bay__name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.module_bay.name} ({self.module_type.name})"
@@ -3589,7 +3747,7 @@ class AuxPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3641,7 +3799,7 @@ class Antenna(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3672,7 +3830,7 @@ class PowerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -3707,7 +3865,7 @@ class PowerOutlet(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     class Meta:
         unique_together = ("device", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
@@ -4496,7 +4654,7 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.TextField(blank=True)
 
     class Meta:
-        ordering = ["name"]
+        ordering = [natural("name")]
         constraints = [
             models.UniqueConstraint(
                 fields=["vm", "name"], name="uniq_vminterface_vm_name"
@@ -4539,7 +4697,7 @@ class VirtualDisk(TimestampedModel):
     description = models.TextField(blank=True)
 
     class Meta:
-        ordering = ["key"]
+        ordering = [natural("key")]
         constraints = [
             models.UniqueConstraint(
                 fields=["vm", "key"], name="uniq_virtualdisk_vm_key"
@@ -4805,7 +4963,7 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     description = models.TextField(blank=True)
 
     class Meta:
-        ordering = ["site__name", "name"]
+        ordering = [natural("site__name"), natural("name")]
         constraints = [
             models.UniqueConstraint(
                 fields=["site", "name"], name="uniq_rack_site_name"
@@ -4932,6 +5090,222 @@ class RackTypeAccessory(TimestampedModel):
             return None
 
 
+# ─── Cabinets (DIN-rail enclosures, #277) ────────────────────────────────────
+class CabinetRole(NumIdMixin, TimestampedModel):
+    """What a cabinet is for (distribution, control, metering, …). Coloured."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cabinet_roles"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128)
+    color = models.CharField(max_length=7, blank=True, default="")
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_cabinetrole_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+# A cabinet's sizes in whole millimetres, as enclosure datasheets give them:
+# the mounting plate the rails sit on (inner) and the box around it (outer).
+CABINET_SIZE_FIELDS = (
+    "inner_width_mm", "inner_height_mm",
+    "outer_width_mm", "outer_height_mm", "outer_depth_mm",
+)
+_CABINET_MM = [MinValueValidator(50), MaxValueValidator(5000)]
+_CABINET_DEPTH_MM = [MinValueValidator(20), MaxValueValidator(3000)]
+
+
+class CabinetType(NumIdMixin, TimestampedModel, TaggableMixin):
+    """An enclosure model - manufacturer/model plus its plate and box sizes.
+    A cabinet created from it copies the sizes; the cabinet stays the source
+    of truth."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cabinet_types"
+    )
+    manufacturer = models.ForeignKey(
+        Manufacturer, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinet_types",
+    )
+    name = models.CharField(max_length=128)
+    inner_width_mm = models.PositiveSmallIntegerField(
+        "plate width (mm)", validators=_CABINET_MM,
+        help_text="Mounting plate width in millimetres.",
+    )
+    inner_height_mm = models.PositiveSmallIntegerField(
+        "plate height (mm)", validators=_CABINET_MM,
+        help_text="Mounting plate height in millimetres.",
+    )
+    outer_width_mm = models.PositiveSmallIntegerField(
+        "outer width (mm)", null=True, blank=True, validators=_CABINET_MM,
+        help_text="Enclosure outer width in millimetres.",
+    )
+    outer_height_mm = models.PositiveSmallIntegerField(
+        "outer height (mm)", null=True, blank=True, validators=_CABINET_MM,
+        help_text="Enclosure outer height in millimetres.",
+    )
+    outer_depth_mm = models.PositiveSmallIntegerField(
+        "outer depth (mm)", null=True, blank=True, validators=_CABINET_DEPTH_MM,
+        help_text="Enclosure outer depth in millimetres.",
+    )
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_cabinettype_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Cabinet(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """An enclosure at a site whose gear mounts on DIN rails, placed in
+    millimetres rather than rack units."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cabinets"
+    )
+    name = models.CharField(max_length=128)
+    facility_id = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="The cabinet's ID in the facility (e.g. a panel label).",
+    )
+    site = models.ForeignKey(
+        Site, on_delete=models.PROTECT, related_name="cabinets"
+    )
+    location = models.ForeignKey(
+        "Location", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinets",
+    )
+    role = models.ForeignKey(
+        CabinetRole, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinets",
+    )
+    cabinet_type = models.ForeignKey(
+        CabinetType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinets",
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="cabinets",
+    )
+    inner_width_mm = models.PositiveSmallIntegerField(
+        "plate width (mm)", validators=_CABINET_MM,
+        help_text="Mounting plate width in millimetres.",
+    )
+    inner_height_mm = models.PositiveSmallIntegerField(
+        "plate height (mm)", validators=_CABINET_MM,
+        help_text="Mounting plate height in millimetres.",
+    )
+    outer_width_mm = models.PositiveSmallIntegerField(
+        "outer width (mm)", null=True, blank=True, validators=_CABINET_MM,
+        help_text="Enclosure outer width in millimetres.",
+    )
+    outer_height_mm = models.PositiveSmallIntegerField(
+        "outer height (mm)", null=True, blank=True, validators=_CABINET_MM,
+        help_text="Enclosure outer height in millimetres.",
+    )
+    outer_depth_mm = models.PositiveSmallIntegerField(
+        "outer depth (mm)", null=True, blank=True, validators=_CABINET_DEPTH_MM,
+        help_text="Enclosure outer depth in millimetres.",
+    )
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = [natural("site__name"), natural("name")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["site", "name"], name="uniq_cabinet_site_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+DIN_PROFILE_CHOICES = [("ts35", "TS 35"), ("ts15", "TS 15"), ("g32", "G 32")]
+_RAIL_MM = [MinValueValidator(0), MaxValueValidator(5000)]
+
+
+class _DinRailFields(models.Model):
+    """A rail on a mounting plate: its left end and centreline, from the
+    plate's top-left corner, and its length - in tenths of a millimetre.
+    Written as a set through the parent and checked there (``api.din``)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    label = models.CharField(max_length=32)
+    profile = models.CharField(max_length=8, choices=DIN_PROFILE_CHOICES, default="ts35")
+    x_mm = models.DecimalField(
+        "left end (mm)", max_digits=6, decimal_places=1, validators=_RAIL_MM,
+    )
+    y_mm = models.DecimalField(
+        "centreline (mm)", max_digits=6, decimal_places=1, validators=_RAIL_MM,
+    )
+    length_mm = models.DecimalField(
+        "length (mm)", max_digits=6, decimal_places=1,
+        validators=[MinValueValidator(10), MaxValueValidator(5000)],
+    )
+
+    class Meta:
+        abstract = True
+
+    def __str__(self) -> str:
+        return self.label
+
+
+class DinRail(TimestampedModel, _DinRailFields):
+    cabinet = models.ForeignKey(Cabinet, on_delete=models.CASCADE, related_name="rails")
+
+    class Meta:
+        ordering = ["y_mm", "x_mm", "label"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cabinet", "label"], name="uniq_dinrail_cabinet_label"
+            )
+        ]
+
+    @property
+    def tenant_id(self):
+        """The cabinet's, for anything that stamps a row's tenant."""
+        return self.cabinet.tenant_id
+
+
+class DinRailTemplate(TimestampedModel, _DinRailFields):
+    """A rail every cabinet of the type starts with."""
+
+    cabinet_type = models.ForeignKey(
+        CabinetType, on_delete=models.CASCADE, related_name="rail_templates"
+    )
+
+    class Meta:
+        ordering = ["y_mm", "x_mm", "label"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cabinet_type", "label"], name="uniq_dinrailtemplate_type_label"
+            )
+        ]
+
+    @property
+    def tenant_id(self):
+        return self.cabinet_type.tenant_id
+
+
 # ─── Device roles + platforms (shared by Device + VirtualMachine) ────────────
 class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """Functional role of a device or VM (core switch, hypervisor, …). Coloured."""
@@ -4959,6 +5333,12 @@ class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
         default=False,
         help_text="Devices with this role are passive patch panels - hidden "
         "in topology by default and kept out of the level tiers.",
+    )
+    topology_photo_size = models.CharField(
+        max_length=4, choices=TOPOLOGY_PHOTO_SIZE_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How wide the topology Diagram draws the photos of this role's devices. "
+                  "Blank inherits.",
     )
     config_template = models.ForeignKey(
         "ExportTemplate", on_delete=models.SET_NULL, null=True, blank=True,
@@ -5291,7 +5671,7 @@ class DeviceTypeService(ProtocolPortsMixin, _ComponentTemplate):
 
     class Meta:
         unique_together = ("device_type", "name")
-        ordering = ["name"]
+        ordering = [natural("name")]
 
 
 # ─── IP ranges (a contiguous span of addresses, VRF-scoped) ──────────────────
@@ -5675,6 +6055,7 @@ CONTACTABLE_TYPES = {
     "api.virtualmachine": "Virtual machine",
     "api.cluster": "Cluster",
     "api.rack": "Rack",
+    "api.cabinet": "Cabinet",
     "api.prefix": "Prefix",
     "api.circuit": "Circuit",
     "core.tenant": "Tenant",
@@ -6241,16 +6622,31 @@ class SecretBackedPSK(models.Model):
 class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A wireless network (SSID), optionally grouped and bridged to a VLAN."""
 
+    # The security mode (#177). What each allows is in api/wifi_security.py;
+    # "WPA Personal/Enterprise" are the older, WPA-or-WPA2 values.
     AUTH_TYPE_CHOICES = [
         ("open", "Open"),
-        ("wep", "WEP"),
+        ("owe", "Enhanced Open (OWE)"),
+        ("wep", "WEP (legacy)"),
+        ("wpa2-personal", "WPA2-Personal"),
+        ("wpa3-personal", "WPA3-Personal (SAE)"),
+        ("wpa2-wpa3-personal", "WPA2/WPA3-Personal"),
+        ("wpa2-enterprise", "WPA2-Enterprise"),
+        ("wpa3-enterprise", "WPA3-Enterprise"),
+        ("wpa2-wpa3-enterprise", "WPA2/WPA3-Enterprise"),
         ("wpa-personal", "WPA Personal (PSK)"),
         ("wpa-enterprise", "WPA Enterprise"),
     ]
     AUTH_CIPHER_CHOICES = [
         ("auto", "Auto"),
-        ("tkip", "TKIP"),
-        ("aes", "AES"),
+        ("aes", "AES-CCMP"),
+        ("gcmp-256", "GCMP-256"),
+        ("tkip", "TKIP (legacy)"),
+    ]
+    PMF_CHOICES = [
+        ("disabled", "Disabled"),
+        ("optional", "Optional"),
+        ("required", "Required"),
     ]
 
     psk_secret_prefix = "wireless-lans"
@@ -6273,11 +6669,13 @@ class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMix
         related_name="wireless_lans",
     )
     auth_type = models.CharField(
-        max_length=16, choices=AUTH_TYPE_CHOICES, blank=True, default=""
+        max_length=24, choices=AUTH_TYPE_CHOICES, blank=True, default=""
     )
     auth_cipher = models.CharField(
         max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
     )
+    #: Protected Management Frames: required by WPA3 and OWE.
+    pmf = models.CharField(max_length=8, choices=PMF_CHOICES, blank=True, default="")
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
 
@@ -6408,6 +6806,12 @@ class Tunnel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
+    # The tunnel's own figure for the site map (#246): nothing derives it in
+    # 0.17, and a hub tunnel's spokes all show it.
+    capacity_kbps = models.PositiveBigIntegerField(
+        "capacity (kbps)", null=True, blank=True,
+        help_text="How fast the tunnel's path is; empty = unknown.",
+    )
 
     class Meta:
         ordering = ["name"]
@@ -6685,7 +7089,7 @@ class Location(NumIdMixin, TimestampedModel):
     description = models.TextField(blank=True, default="")
 
     class Meta:
-        ordering = ["site__name", "name"]
+        ordering = [natural("site__name"), natural("name")]
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "site", "slug"],
@@ -7080,6 +7484,7 @@ class FloorPlanTile(TimestampedModel):
     # topology map + CableSerializer use.
     LINK_FIELDS = {
         "rack": "rack",
+        "cabinet": "cabinet",
         "device": "device",
         "powerpanel": "power_panel",
         "powerfeed": "power_feed",
@@ -7123,6 +7528,13 @@ class FloorPlanTile(TimestampedModel):
     link_kind = models.CharField(max_length=16, blank=True, default="")
     rack = models.ForeignKey(
         Rack,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="floor_tiles",
+    )
+    cabinet = models.ForeignKey(
+        "Cabinet",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -7218,6 +7630,7 @@ class FloorPlanTile(TimestampedModel):
                                     f"{other}__isnull": True
                                     for other in [
                                         "rack",
+                                        "cabinet",
                                         "device",
                                         "power_panel",
                                         "power_feed",
@@ -7229,6 +7642,7 @@ class FloorPlanTile(TimestampedModel):
                         )
                         for set_field in [
                             "rack",
+                            "cabinet",
                             "device",
                             "power_panel",
                             "power_feed",
@@ -7485,8 +7899,9 @@ class SearchEntry(models.Model):
     query instead of a fan-out per type. Kept current by save/delete signals
     for every indexed model, a nightly rebuild for bulk paths that bypass
     signals, and ``manage.py rebuild_search_index`` after upgrades. Text is
-    matched through ``danbyte_fold()`` (lowercase, accents stripped) with
-    trigram indexes, so ``aarhus`` finds ``Århus DC`` and a typo still lands.
+    matched on its ``danbyte_fold()`` form (lowercase, accents stripped),
+    stored with trigram indexes, so ``aarhus`` finds ``Århus DC`` and a typo
+    still lands.
 
     ``facets`` holds lowercase name and slug lists per key (``site``, ``role``,
     ``status``, ``tag``, …) so ``site:esbjerg`` is a JSON containment test.
@@ -7524,9 +7939,13 @@ class SearchEntry(models.Model):
         indexes = [
             models.Index(fields=["tenant", "object_type"], name="searchentry_tenant_type"),
             models.Index(fields=["tenant", "numid"], name="searchentry_tenant_numid"),
-            # The trigram indexes on danbyte_fold(title) / danbyte_fold(body)
-            # are created by migration 0159 in SQL: Django renders an OpClass
-            # over a function call with doubled parentheses Postgres rejects.
+            # title_f / body_f, danbyte_fold() of title / body as stored
+            # generated columns, and their trigram indexes are created by
+            # migration 0195 in SQL and are not fields: only the search SQL
+            # reads them and PostgreSQL computes them on every write (#300).
+            # Changing the type of title or body means dropping them first;
+            # redefining danbyte_fold() means rewriting every row, which
+            # rebuild_search_index does.
             GinIndex(fields=["facets"], name="searchentry_facets_gin"),
         ]
 

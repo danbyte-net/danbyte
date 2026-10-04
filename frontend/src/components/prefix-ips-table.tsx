@@ -28,6 +28,7 @@ import { ipToBigInt, bigIntToIp, enumerableHostInts } from "@/lib/prefix-tree"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
+import { ExcludedPill } from "@/components/monitoring/excluded-pill"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { dash } from "@/components/cells/dash"
@@ -391,17 +392,17 @@ function PrefixIpsTableImpl({
     [onSelectedRowsChange]
   )
 
-  // Extras + custom fields ship hidden so the table stays lean; users reveal
-  // any of them from the Columns menu (the choice persists per-table).
+  // Extras ship hidden so the table stays lean (custom-field columns are
+  // hidden by default themselves); users reveal any of them from the Columns
+  // menu, and the choice persists per-table.
   const initialVisibility = useMemo(
     () => ({
       reservation_note: false,
       mac: false,
       dns: false,
       last_seen: false,
-      ...Object.fromEntries(cfDefs.map((d) => [`cf_${d.key}`, false])),
     }),
-    [cfDefs]
+    []
   )
 
   if (query.isLoading) {
@@ -416,24 +417,31 @@ function PrefixIpsTableImpl({
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
+    // min-w-0: this row sits in a flex row (the bare IPs tab); without it the
+    // pane grows to the table's full width and the page clips the right edge
+    // - Updated, the row actions and the Columns menu - instead of the table
+    // scrolling sideways in its own frame.
+    <div className="flex min-h-0 min-w-0 flex-1">
       {rail}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-          <span className="num text-[11px] text-muted-foreground">
+          <span className="num shrink-0 text-[11px] text-muted-foreground">
             {rows.length} row{rows.length === 1 ? "" : "s"}
           </span>
-          <div className="relative ml-auto">
+          <div className="relative ml-auto min-w-0">
             <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Filter IPs…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-64 pl-8 text-xs"
+              className="h-8 w-64 max-w-full pl-8 text-xs"
             />
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto p-3">
+        {/* A flex column that bounds the table's height: with stickyHeader
+            the table's own frame scrolls both ways, so the header stays in
+            view and the sideways scrollbar sits at the pane's bottom edge. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
           <DataTable
             data={rows}
             columns={wiredColumns}
@@ -442,6 +450,12 @@ function PrefixIpsTableImpl({
             onSelectedRowsChange={handleSelected}
             initialColumnVisibility={initialVisibility}
             tableId="prefix-ips"
+            // Registered rows carry the address list's row; the free
+            // addresses and range rows between them carry none.
+            autoColumns={{
+              api: "/api/ips/",
+              get: (r) => (r.kind === "registered" ? r.ip : undefined),
+            }}
           />
         </div>
       </div>
@@ -533,13 +547,20 @@ function buildColumns({
 
   const rollup = (r: IpRow) =>
     r.kind === "registered" ? monitoring[r.ip.id] : null
+  // An excluded address is its own bucket: its checks read "skipped", but
+  // that is not what it is.
+  const monFacet = monitoringFacet<IpRow>(rollup)
   insertAfter("status", {
     id: "monitoring",
-    accessorFn: (r) => monitoringBucket(rollup(r) ?? undefined),
+    accessorFn: (r) =>
+      rollup(r)?.excluded
+        ? "excluded"
+        : monitoringBucket(rollup(r) ?? undefined),
     header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
     cell: ({ row }) => {
       if (row.original.kind !== "registered") return null
       const e = monitoring[row.original.ip.id]
+      if (e?.excluded) return <ExcludedPill />
       if (!e || !e.status) return dash
       return (
         <ExternalStatusHover entry={e}>
@@ -548,7 +569,14 @@ function buildColumns({
         </ExternalStatusHover>
       )
     },
-    meta: { facet: monitoringFacet<IpRow>(rollup) },
+    meta: {
+      facet: {
+        ...monFacet,
+        get: (r: IpRow) => (rollup(r)?.excluded ? "excluded" : monFacet.get(r)),
+        formatValue: (v: string) =>
+          v === "excluded" ? { label: "Excluded" } : monFacet.formatValue(v),
+      },
+    },
   })
 
   if (hasRanges) {
@@ -609,6 +637,7 @@ function buildColumns({
       id: "mac",
       accessorFn: (r) => (r.kind === "registered" ? r.ip.mac_address : ""),
       header: "MAC",
+      meta: { field: "mac_address" },
       cell: ({ row }) => {
         if (row.original.kind !== "registered") return null
         const v = row.original.ip.mac_address

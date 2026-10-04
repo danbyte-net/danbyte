@@ -31,7 +31,7 @@ sorts.
 The menu then shows your views and the shared ones, with who owns each. Picking
 one applies its search and filters; **Clear** puts the list back to everything.
 
-If you change the filters after applying a view, the button says **edited** -
+If you change the filters after applying a view, the button says **Edited** -
 what you're looking at is no longer what the view describes. **Update** writes
 the current filters back to it (your own views only).
 
@@ -62,7 +62,8 @@ list, edited two ways over the same definition:
 - a **builder** - bordered groups of *field · operator · value* rows. Rows in
   a group must all match (**And** adds one); groups combine with **Or**, so
   `a or (b and c)` reads exactly as it looks. Fields come from the list's own
-  columns, and the
+  rows - every value a row carries, two levels deep, including ones named like
+  ids (`vlan_id`, `facility_id`); only raw object ids are left out - and the
   value box carries a picker (the chevron on its right) listing the values
   actually present in the loaded rows - pick one or type freely. The ⓘ next
   to the dialog title is the operator reference;

@@ -63,6 +63,13 @@ a lot of data fast - typography and spacing serve that, not decoration.
   text, semantic colour - uses `variant="panel"` instead, because those
   colours are chosen against the page background. Use the shared `Tooltip`
   or `InfoTip`, never a `title=` attribute.
+- **Canvas bands** (topology layers): rows neutral by default - `--muted`
+  toward `--border`, title centred on top unless a cable crosses there -
+  side bands on a pastel zone swatch; never a free colour picker, never the
+  role colour the cards already carry.
+- **Canvas notes** are text in `text-foreground/75` and Lucide icons in
+  `--muted-foreground`, no box unless outlined (`border-border` on
+  `bg-card`); never coloured.
 - **Shadows**: don't. Borders define edges. Exception: dropdowns/popovers get `shadow-sm`.
 
 See `/CLAUDE.md` for the canonical class snippets per component (button,
@@ -116,6 +123,43 @@ Radix controls report changes differently from DOM ones - `Checkbox` uses
 > with no definition behind it, delete the markup and use a primitive.** Grep
 > `styles.css` before trusting a bare class name.
 
+## Loading, and the shared Maps parts
+
+**One loader.** A page, section, panel or canvas that is fetching shows
+`<Loading />` (`components/loading.tsx`): the first-load splash spinner with a
+small muted *Loading…* under it, centred in the box it loads. The splash itself
+is the same component with its label kept for screen readers only. A table
+keeps its built-in loading row. A pending labelled button keeps its size and
+swaps the verb (*Saving…*); a spinner on its own is for icon-only buttons.
+The ellipsis is always the one `…` character.
+
+The Maps pages (Topology, Site map, Floor plans) build their chrome from shared
+parts, so a control reads the same on each:
+
+| Need | Use |
+|---|---|
+| Toolbar controls (h-7, `text-xs`, size-3 icons) | `components/map-toolbar.tsx`: `BarButton`, `BarIconButton` (its required `label` is the aria-label and the tooltip; `destructive` is ghost with destructive text; `tipSide` moves the tip off the bottom for a control that is not in a top bar), `BarToggle` (`aria-pressed`, muted when off), `BarMenuTrigger` (label plus chevron, no tooltip) and `BarTip` (the plain `default` tooltip, below the control) |
+| Undo and Redo on a bar | `HistoryButtons` (`components/topology/history-buttons.tsx`), each with its key in the tip; `HistoryMenuItems` for the same two in a More menu |
+| A map's Arrange ▾ | `ArrangeMenu` (`components/topology/arrange-menu.tsx`): Reset layout, the bands and the Layout group (direction, *Levels…*) |
+| Zoom buttons in a map's corner | `ZoomControls` (`components/topology/zoom-controls.tsx`): Zoom in, Zoom out and Fit view, the bar's icon buttons stacked, tips to the right |
+| A map embedded in another page (a device's Map tab, a trace, a tunnel) | `EmbeddedMap` (`components/topology/embedded-map.tsx`): the Diagram's Detailed cards and Elbow lines, no overview, a folded legend |
+| A rail map (VLANs, virtual networks) | `RailCanvas` (fills a page, scrolls) or `RailFrame` (a card on a detail page), from `components/topology/rail-diagram.tsx`, with `RailLegend` (`components/topology/rail-legend.tsx`) in the corner |
+| Leaving the map for an object's page | `OpenLink` (`components/open-link.tsx`): a router link drawn as a bar button with a leading ArrowUpRight, e.g. *Open device*. Drilling in on the same map is a plain button, no arrow |
+| Unsaved edits on the way out | `LeaveGuardDialog` (`components/leave-guard-dialog.tsx`), driven by `useBlocker({ withResolver: true })`: *Discard unsaved changes?* with *Keep editing* / *Discard and leave* |
+| A shortcut in a tooltip or menu | `Kbd` (`components/ui/kbd.tsx`), with `modKey()` (`lib/mod-key.ts`) for the modifier: `${modKey()}S` reads *⌘S* on a Mac, *Ctrl+S* elsewhere |
+| The Objects sidebar | `ObjectsPanel` (`components/objects-panel.tsx`): *Objects* and its count, the search box, `CheckFilterTabs`, the hidden row, then the page's `ObjectsSection`s. Each group inside is a `FoldableGroup` (`components/foldable-group.tsx`) with its count and, where it can be hidden, the `VisibilityToggle` eye |
+| How much is hidden, with the sidebar shut | `HiddenChip` (`components/hidden-chip.tsx`): *N hidden · Show all*, in the corner the page names with `position` (the one its MiniMap, legend and attribution leave free) |
+| A right-click menu on a canvas | `PointerMenu` (`components/pointer-menu.tsx`): the shared dropdown opened at the pointer. A key an item shows (++h++, ++delete++) is passed in `keys`, so it acts on what was right-clicked, not on the selection |
+| The detail panel over a canvas | `PanelShell` (`components/map-panel.tsx`): title and Close, `PanelRow` key/value rows, `PanelSection`s under a `SectionLabel`, and the actions at the foot (*Open …* first). `SectionLabel` also heads a legend |
+| A chip on a canvas (*Partial map*) | Bordered `bg-background/95`, no shadow and no blur: shadows are for overlays |
+| A legend on a canvas | `LegendFrame` (`components/map-legend.tsx`): bordered and opaque `bg-background`, no shadow and no blur, headed *Legend* with a *Hide legend* button, open or folded (remembered per browser under its `storageKey`, or held by the page), so a colored rail or card behind it never shows through; folded, an outline `xs` button with the List icon. `w-60` unless its rows need their own width (`w-fit`). A legend that is part of an exported picture - the floor plan's Color by key, inside its PNG area - is `hideable={false}`: always open, no Hide button to land in the export. The topology's `CanvasLegend`, the rail maps' `RailLegend`, the site map's legend and the 3D room's key are built on it. `TopologyCanvas` takes its box as `keepClear`, so a fit keeps the map beside or above it; `RailCanvas` keeps room for it under the drawing |
+| A legend's rows | From `components/map-legend.tsx`: `LegendRow` (swatch, then label), `LegendLine` (a line keys a line), `LegendTones` (a colour mode's keys as short lines, wrapping), and `LegendPills` / `LegendStatuses` for roles and statuses as their `ColorBadge` / `StatusBadge` pills - never a coloured dot beside a name. `LegendItems` draws a list of `LegendItem`s in that order |
+| Speeds | `lib/speed.ts`: `parseSpeedMbps` (a bare number is kbps, as on the server), `parseSpeedKbps` (a speed typed into a `*_kbps` form field: whole kbps, null when blank, undefined when it is not a speed), `fmtKbps` / `fmtMbps` (short `10G`, `100/20M`; long `10 Gbps`) and the one tier scale, `SPEED_TIERS`, that the faceplates, the 3D room and the topology's and the site map's *Speed* colouring share |
+| How full a rack is | `lib/rack-capacity.ts`: above 80 % amber, above 95 % red, in the status colours - never the accent - and `formatWatts`. `CapacityBar` (`components/cells/capacity-bar.tsx`) is its thin bar; `PowerFigure` (`components/cells/power-figure.tsx`) reads a rack's power as *demand / supply* and `PortsFigure` (`components/cells/ports-figure.tsx`) its ports as *in use / counted*. On a map the level goes on a rack's fill and monitoring keeps its outline (`components/floorplan/tile-paint.ts`). IPAM prefixes keep their own scale (`UtilCell`) |
+
+Anything that copies to the clipboard goes through `copyWithToast()`
+(`lib/clipboard.ts`), so a copy that fails always says *Couldn't copy*.
+
 ## Widths and truncation are the primitive's job
 
 A control must declare *one* width contract, and the shared primitives do:
@@ -158,9 +202,14 @@ can't drift page to page (source of truth:
 `frontend/src/components/list-page-shell.tsx`, reference implementation
 `routes/manufacturers.index.tsx`):
 
-- The shell owns the h-14 header (title · count chip · search · actions) and the
+- The shell owns the header (title · count chip · search · actions) and the
   scrolling body. Header order is fixed: **search first, then the action
   cluster** - `TableActions` (Import / Export) and then `Add X`.
+- The header is one h-14 row when everything fits. When it doesn't, the search
+  box narrows (18rem down to 10rem), then the controls move under the title and
+  wrap onto more rows. Nothing in a page header is ever scrolled out of sight
+  behind a hidden scrollbar - the same goes for `DetailShell`'s actions and tab
+  strip, which wrap too.
 - `Add X` is the copy for a create button, with **no icon**. Not "New X".
 - Filters live in the rail (`FilterRail` + `FacetGroup`, usually via
   `useTableFilters`), not in a second toolbar row under the header. A filter that
@@ -188,9 +237,45 @@ can't drift page to page (source of truth:
   prefixes showing exactly 500 and looking complete.
 - A list that is a view *of* another list (e.g. `/racks/elevations`) gets the
   shell's `backTo` / `backLabel` breadcrumb rather than its own nav.
+- A table that points at its rows' objects somewhere else on the page (a
+  rack on a floor plan) uses `DataTable`'s opt-in `onRowHover` (the row under
+  the pointer, `null` once it leaves) and `onRowClick`. A click on a link,
+  checkbox, button, input or other control in a cell stays that control's, as
+  does a text selection or a click in a menu a cell opened; a cell can mark
+  more with `data-row-click="ignore"`. Without the props a table is unchanged.
 
 Row actions always go through `RowActions` / `actionsColumn()`, and every
 list-page table names a `tableId` so it gets the persistent column picker.
+Every `tableId` is registered in `frontend/src/lib/tables.ts` with the `api`
+list path its rows come from (`null` when they are not one list's rows) -
+`routes/-table-registry.test.ts` fails on an unregistered id, and an id built
+at runtime passes `autoColumns` (an api path, or `false`) itself.
+
+A table wider than its pane scrolls sideways inside its own frame, with the
+row actions pinned to the right edge, and the Download / Columns bar wraps
+instead of running off. The pinned column holds only the compact row actions
+(edit, delete - an icon or two). Wider per-row controls go in an ordinary
+column that scrolls with the data: the interface tables keep cable status,
+trace, connect and the IP buttons in `port_actions` and pin only Edit. A
+pinned column as wide as the pane covers every data column on a narrow window.
+Its header cell, and a `stickyHeader` table's header row, are opaque, so the
+columns scrolling under them never show through. The page itself never
+scrolls or clips sideways. For that, every flex item between the table and the
+page carries `min-w-0`:
+`ListPageShell`, `DetailShell` and `DataTable` already do, and a `bare`
+`DetailTab` gives it to each direct child. A pane that nests its own
+rail-and-table row inside another flex row puts `min-w-0` on that row too.
+`components/table-overflow.test.tsx` checks this for the shared shells and
+the prefix IPs pane. The app's main column is `overflow-clip`, not
+`overflow-hidden`, so not even focusing a control past its edge can scroll the
+page sideways.
+
+`stickyHeader` makes the table's own frame the scroller in both directions,
+so it needs a parent that bounds its height - the pane is a
+`flex min-h-0 flex-1 flex-col` column (see `PrefixIpsTable`). Then the header
+row stays in view and the sideways scrollbar sits at the pane's bottom edge
+rather than after the last row. In a pane that grows with its content the
+header does not stick.
 
 ## Column factories
 
@@ -248,6 +333,29 @@ Each takes options - never per-caller branches inside the factory:
   list's trace-plus-row-actions pair) - see `routes/locations.$id.tsx`,
   `routes/racks.$id.tsx`, and `routes/cables.index.tsx`.
 
+### Catalog columns
+
+`DataTable` adds the rest by itself (#243): for a registered table it asks
+`/api/list-fields/` what the list's rows carry and offers every field no
+factory column covers - and every custom field (`cf_<key>`) - as a column that
+starts hidden, sorts, exports, and renders by its kind
+(`components/columns/auto-columns.tsx`). So a factory **hand-writes only the
+columns that need a look of their own** (a badge, a link, a facet), and:
+
+- a column whose id is not the row key it shows sets `meta.field` (the device
+  factory's `type` shows `device_type`, the cable factory's `a` shows
+  `a_terminations`), else the menu offers the field twice;
+- a page that leaves a field out on purpose passes `autoColumns={{ exclude }}`;
+- rows that wrap the list row (`{ kind, ip }`) pass `autoColumns={{ get }}`;
+- a new field worth a column goes into the **list serializer**, with the joins
+  that keep `api/tests_list_queries.py` flat - it then appears in the menu
+  with no frontend change. Detail-only getters use `@detail_only`.
+
+An object value reads as its name; a record with no name of its own reads as
+its parts (a link peer `sw1 · Gi1/0/1`, an unlabelled cable `#50`), the same
+in the cell, the sort and the export. A field whose values render no text on
+the rows seen so far is not offered.
+
 Object references inside a cell come from `components/cells/`: `siteColumn` /
 `SiteCell`, `deviceColumn` / `DeviceCell`, plus `locationColumn`,
 `rackColumn`, `platformColumn`, `manufacturerColumn`, `vrfColumn`, `tagsColumn`,
@@ -263,9 +371,9 @@ Every object detail page follows one tab convention (source of truth:
 `routes/devices.$id.tsx` and `routes/interfaces.$id.tsx`):
 
 - The breadcrumb header and the summary section carry **only the headline**:
-  the object's name/title, status/state badges, tags, description, and at most
-  one or two truly identifying stats (e.g. Site + Primary IP on a device).
-  Don't crowd the header with a long `<dl>` of attributes.
+  the object's name/title, status/state badges, one subtitle line, tags and
+  the description. No facts, counts or figures - not even one or two - and no
+  bands of text under it: every fact goes in the Overview cards.
 - All the remaining attributes live in an **Overview** tab - the first tab,
   and the default - rendered as `KvCard` tables (`<KvCard title rows>`) in a
   `grid gap-6 lg:grid-cols-2`, grouped into a few sensibly-titled cards. This
@@ -273,6 +381,10 @@ Every object detail page follows one tab convention (source of truth:
 - After Overview come the related-object tabs (with a count where the API
   provides one), then always **Journal** and **Change log** as the last two, in
   that order.
+- On a narrow window the tab strip wraps onto more rows instead of scrolling,
+  so Journal and Change log never sit out of sight past its edge. The header's
+  actions do the same beside the breadcrumb, moving under it when less than
+  18rem is left.
 
 Never render Change log (`ChangeLogPanel`) or Journal (`JournalPanel`) - or a
 wall of attribute fields - inline in the header. Attributes go in the Overview
@@ -282,8 +394,8 @@ tab's `KvCard`s; history and journal are always their own tabs.
 
 The summary section itself is `DetailHero`, passed to `DetailShell`'s `hero`
 prop (source of truth: `frontend/src/components/detail-shell.tsx`, reference
-implementation `routes/aggregates.$id.tsx`). It owns the section wrapper, the
-title element and its size, and the stat rail - a page only supplies content:
+implementation `routes/aggregates.$id.tsx`). It owns the section wrapper and
+the title element and its size - a page only supplies content:
 
 | slot | renders |
 |---|---|
@@ -293,7 +405,13 @@ title element and its size, and the stat rail - a page only supplies content:
 | `tags` | `<TagList tags={…} />` |
 | `description` | the object's description |
 | `children` | anything else in the left column, below the description |
-| `stats` + `statCols` | `<DetailStat/>`s in the right-hand rail (1, 2 or 3 columns) |
+| `stats` + `statCols` | the SLA page's figure rail - no other page uses it |
+
+Facts do not go in the header: a count, size or utilisation is a row in an
+Overview `KvCard` - custom fields included, as `CustomFieldValues
+layout="cards"` in the Overview grid. The one exception is the SLA page, whose
+`stats` rail keeps the agreement's live figures (this period, budget left,
+members); no other page passes `stats`.
 
 **Never pass a title size, and never hand-roll the section.** The hero was
 copied 42× before this primitive existed and had drifted to four title sizes

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import { NodeResizer, NodeToolbar, Position } from "@xyflow/react"
 import type { NodeProps } from "@xyflow/react"
-import { Trash2 } from "lucide-react"
+import { Pencil, Trash2 } from "lucide-react"
 
-import { ZONE_COLORS } from "./view-positions"
+import { MoreColors, ToolButton } from "./diagram/band-node"
+import { SWATCH_NAMES } from "./diagram/swatch-names"
+import { isZoneColor, ZONE_COLORS } from "./view-positions"
 
 /**
  * A labelled backdrop box, drawn behind the map so a reader can see at a
@@ -26,6 +28,9 @@ export interface ZoneData {
   /** Resizing settles inside React Flow, so the canvas is told to re-read
    * the geometry the same way a drag tells it. */
   onResizeEnd?: () => void
+  /** Set by the zone's menu (Rename): a new stamp opens the label's
+   * editor. */
+  renameAt?: number
   [key: string]: unknown
 }
 
@@ -37,14 +42,15 @@ export const ZONE_DRAG_HANDLE = "zone-grip"
 
 export function ZoneNode({ data, selected }: NodeProps) {
   const d = data as ZoneData
-  const color = ZONE_COLORS.includes(d.color as (typeof ZONE_COLORS)[number])
-    ? d.color
-    : ZONE_COLORS[0]
+  const color = isZoneColor(d.color) ? d.color.toLowerCase() : ZONE_COLORS[0]
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(d.label)
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => setDraft(d.label), [d.label])
+  useEffect(() => {
+    if (d.renameAt) setEditing(true)
+  }, [d.renameAt])
   useEffect(() => {
     if (editing) input.current?.select()
   }, [editing])
@@ -61,27 +67,34 @@ export function ZoneNode({ data, selected }: NodeProps) {
           no detail panel and nothing else on the canvas leads to it. */}
       <NodeToolbar isVisible={selected} position={Position.Top} offset={8}>
         <div className="flex items-center gap-1 rounded-md border border-border bg-popover p-1 shadow-md">
+          <ToolButton
+            label="Rename"
+            onClick={() => setEditing(true)}
+            icon={<Pencil className="size-3" />}
+          />
+          <span className="mx-0.5 h-4 w-px bg-border" />
           {ZONE_COLORS.map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => d.onRecolor?.(c)}
-              aria-label={`Recolour this zone`}
+              aria-label={SWATCH_NAMES[c] ?? c}
+              data-tip={SWATCH_NAMES[c] ?? c}
+              data-tip-plain=""
               className={`size-4 rounded-sm border ${
                 c === color ? "border-foreground" : "border-border"
               }`}
               style={{ background: c }}
             />
           ))}
+          <MoreColors value={color} onPick={(c) => d.onRecolor?.(c)} />
           <span className="mx-0.5 h-4 w-px bg-border" />
-          <button
-            type="button"
+          <ToolButton
+            label="Delete"
             onClick={() => d.onDelete?.()}
-            aria-label="Delete this zone"
-            className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 className="size-3" />
-          </button>
+            icon={<Trash2 className="size-3" />}
+            danger
+          />
         </div>
       </NodeToolbar>
 
@@ -111,13 +124,15 @@ export function ZoneNode({ data, selected }: NodeProps) {
         <div
           className={`${ZONE_DRAG_HANDLE} pointer-events-auto inline-flex max-w-full cursor-grab items-center gap-1 rounded-tl-[6px] rounded-br-md px-2 py-1 active:cursor-grabbing`}
           style={{ background: `color-mix(in srgb, ${color} 22%, transparent)` }}
-          title="Drag to move · double-click to rename · right-click for more"
+          data-tip="Move"
+          data-tip-plain=""
         >
           {editing ? (
             <input
               ref={input}
               value={draft}
               autoFocus
+              maxLength={80}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commit}
               onKeyDown={(e) => {

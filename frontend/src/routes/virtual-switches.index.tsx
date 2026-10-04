@@ -8,6 +8,7 @@ import { DataTable, SortHeader } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 export const Route = createFileRoute("/virtual-switches/")({
   component: VirtualSwitchesPage,
@@ -100,6 +101,11 @@ function VirtualSwitchesPage() {
       count={query.data ? rows.length : undefined}
       query={query}
       search={{ value: q, onChange: setQ, placeholder: "Filter switches…" }}
+      actions={
+        <Button size="sm" variant="outline" asChild>
+          <Link to="/virtual-topology">Virtual topology</Link>
+        </Button>
+      }
     >
       {rows.length === 0 && query.data && !q ? (
         <EmptyState title="No virtual switches.">

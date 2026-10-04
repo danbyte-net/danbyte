@@ -92,11 +92,12 @@ maintenance tab lists `rebuild` first, then the scheduled jobs; a restore
 runs the preconditions first and only then asks. **4 upgrade** shows the
 running version, the branch and tree state the upgrader will judge, the
 lock, the tags and the last run, then launches an online or bundle upgrade
-as `danbyte-upgrade.service` - the same transient unit the web UI uses, so a
-dropped ssh session cannot kill it half-way and reopening the console
-reattaches to a run someone started from the browser. Its output lands in
-`.upgrade.log`, tailed on the screen with the step ladder and the progress
-bar. **5 tls** shows what nginx serves and, beside it, what `:443` actually
+through `manage.py start_upgrade` - the same lock and the same transient unit,
+`danbyte-upgrade.service`, the web UI uses, so a dropped ssh session cannot
+kill it half-way and reopening the console reattaches to a run someone
+started from the browser. The upgrade's log is tailed on the screen (the
+stage writes it in its work folder while it runs and leaves it in
+`.upgrade.log`), with the stage's steps and the progress bar. **5 tls** shows what nginx serves and, beside it, what `:443` actually
 presents right now - so a reload that did not take is visible - and installs
 a certificate (below). **8 diagnostics** runs the checks and probes the
 ports - 443, 8000, 8002, 3000, the database and Redis, and 80, which is
@@ -133,7 +134,8 @@ it as `sudo -iu danbyte danbyte` to avoid that.
 
 ### status
 
-Units, timers, database, Redis, version, migration drift and disk in one
+Units, timers, database, Redis, version, migration drift, migrations not
+yet applied (or migration files that cannot be loaded) and disk in one
 screen.
 
 Long-running services are listed individually; the scheduled jobs are
@@ -175,6 +177,7 @@ second Postgres that fights for port 5432.
 danbyte-admin upgrade online                # newest release tag, after a fetch
 danbyte-admin upgrade online --tag v0.16.0
 danbyte-admin upgrade bundle ~/danbyte-0.16.0-linux-x86_64.tar.gz
+danbyte-admin upgrade recover               # finish or roll back a killed upgrade
 ```
 
 Without `--tag`, `online` fetches the tags and picks the newest **final**
@@ -183,18 +186,26 @@ and stops if that is the version already running - the upgrade script
 insists on a version, and git's own ordering would put `-rc` above the
 final.
 
-Wraps [the upgrade scripts](../getting-started/upgrading.md). Two things it
-adds: it refuses to start while an upgrade lock is held or
-`danbyte-upgrade.service` is running, because the shell scripts do not take
-that lock themselves and the auto-upgrade timer fires every twenty minutes;
-and it copies a bundle to a scratch path first, because the bundle upgrader
-deletes the tarball it is handed on success.
+Starts [the upgrade](../getting-started/upgrading.md#what-an-upgrade-does) the
+way the Updates page does: `manage.py start_upgrade` takes the app's upgrade
+lock and launches `danbyte-upgrade.service`, as the service account, then this
+command follows it step by step until it is done or rolled back (Ctrl-C stops
+following, not the upgrade; `--no-follow` returns at once). It copies a bundle
+to a scratch path first, because the upgrade deletes the tarball it is handed
+on success. `--force` removes a lock no running unit holds.
 
-`--skip-backup` skips the pre-upgrade backup. That backup is the only net if a
-migration goes wrong, so the script says so when you use it.
+`--skip-backup` skips the pre-upgrade backup. The database snapshot the
+upgrade takes before migrating still covers a failed migration, but the
+backup is the only net after that, so the script says so when you use it.
 
-Container installs are upgraded by pulling a new image, and the script says
-that rather than trying.
+`upgrade recover` finishes or rolls back an upgrade whose stage was killed -
+what its recovery unit does at the next boot or within five minutes - and
+retries a database restore that failed, which the unit leaves for a person.
+If that fails too, restore the pre-upgrade backup with `danbyte-admin backup
+restore <id> --yes`.
+
+Container installs are upgraded from the host (build, stop what depends on
+the backend, up), and the script says that rather than trying.
 
 ### rebuild
 
@@ -207,12 +218,13 @@ The upgrader's build steps on the code already here - after a `git pull`,
 a hand edit, or a bundle unpacked by hand: install the Python dependencies
 (`uv` where the upgrader finds it, else the venv's `pip`), `migrate`, `npm
 ci` when `package-lock.json` is newer than `node_modules` then `npm run
-build`, `collectstatic` on a host with `danbyte-web` (gunicorn), and a
-restart of every unit that is running. It stops at the first failing step
-and prints that step's output, and refuses to start while an upgrade lock
-is held (`--force` overrides). An offline bundle install installs from its
-`vendor/wheels` and keeps the frontend it shipped built; a container
-install is told to pull an image instead.
+build`, `collectstatic` on a host with `danbyte-web` (gunicorn), with the
+collected files made readable for nginx, and a restart of every unit that
+is running. It stops at the first failing step and prints that step's
+output, and refuses to start while an upgrade lock is held (`--force`
+overrides). An offline bundle install installs from its `vendor/wheels`
+and keeps the frontend it shipped built; a container install is told to
+pull an image instead.
 
 ### backup
 
@@ -281,7 +293,11 @@ the earlier modulus comparison only knew RSA and let an EC mismatch reach
 `nginx -t`.
 
 `show` reads the paths out of the **live** nginx configuration rather than
-assuming them, and so does everything that writes. Both the certificate *and*
+assuming them, and so does everything that writes - from Danbyte's own site
+(`/etc/nginx/sites-available/danbyte.conf`, as nginx loads it) only, so
+another site on the same nginx is never shown, regenerated from or written
+over. A live pair that is a certificate tool's links (certbot's `live/`) is
+not installed over: renew it with that tool. Both the certificate *and*
 the key path come from the config: this is not a detail, because a host that
 keeps its certificate in `/etc/ssl/certs` and its key in `/etc/ssl/private` is
 normal, and deriving one path from the other writes a key somewhere nginx does
@@ -342,7 +358,10 @@ danbyte-admin maintenance prune
 danbyte-admin maintenance collectstatic
 ```
 
-The same jobs the scheduled timers run, on demand.
+The same jobs the scheduled timers run, on demand. `collectstatic` also
+makes the static files readable for nginx, which reads them from disk as
+another user: collecting skips files that did not change, so copies an
+earlier release wrote readable only by the service user would stay closed.
 
 ### diagnostics
 

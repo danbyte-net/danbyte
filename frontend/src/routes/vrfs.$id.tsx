@@ -15,12 +15,7 @@ import {
 } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { DataTable } from "@/components/data-table"
@@ -136,18 +131,6 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
           }
           tags={v.tags.length > 0 && <TagList tags={v.tags} />}
           description={v.description}
-          stats={
-            <>
-              <DetailStat
-                label="Prefixes"
-                value={<span className="num">{v.prefix_count}</span>}
-              />
-              <DetailStat
-                label="IPs"
-                value={<span className="num">{v.ip_count}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -251,6 +234,7 @@ function VrfOverview({ vrf: v, humanIds }: { vrf: VRF; humanIds: boolean }) {
       ),
       copy: v.rd || undefined,
     },
+    { label: "Prefixes", value: <span className="num">{v.prefix_count}</span> },
     { label: "IPs", value: <span className="num">{v.ip_count}</span> },
     { label: "Enforce unique", value: v.enforce_unique ? "Yes" : "No" },
   ]

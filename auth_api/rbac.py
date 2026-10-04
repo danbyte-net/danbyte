@@ -8,6 +8,7 @@ groups that applies in the active tenant. ``constraints`` then limit which rows
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 
 from django.core.exceptions import FieldError
@@ -20,6 +21,43 @@ def _is_super(user) -> bool:
     return bool(getattr(user, "is_authenticated", False) and user.is_superuser)
 
 
+# Per-request memo for applicable_permissions(). Set by RequestCacheMiddleware
+# for the duration of one HTTP request only: background jobs, management
+# commands and WebSocket consumers (which keep one user object for the life of
+# the socket) never see a cache, so a revoked grant can't linger there.
+_request_cache: contextvars.ContextVar = contextvars.ContextVar(
+    "rbac_request_cache", default=None
+)
+
+
+class RequestCacheMiddleware:
+    """Scope the RBAC permission memo to a single request."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        token = _request_cache.set({})
+        try:
+            return self.get_response(request)
+        finally:
+            _request_cache.reset(token)
+
+
+def invalidate_request_cache(*args, **kwargs):
+    """Drop the memo when a grant or group membership changes mid-request."""
+    cache = _request_cache.get()
+    if cache is not None:
+        cache.clear()
+
+
+def request_memo() -> dict | None:
+    """This request's memo, or None outside one. Besides the grants keyed
+    ``(user pk, tenant pk)`` it holds the site-separation flags under
+    ``"separation"`` (``core.effective_settings.separation_enabled``)."""
+    return _request_cache.get()
+
+
 def applicable_permissions(user, tenant):
     """Enabled ObjectPermissions that apply to ``user`` in ``tenant``.
 
@@ -30,6 +68,13 @@ def applicable_permissions(user, tenant):
 
     if not getattr(user, "is_authenticated", False):
         return ObjectPermission.objects.none()
+    # has_action/row_filter/effective_actions each call this; without the memo
+    # one /api/me/ of a site-scoped user ran this query and its two prefetches
+    # 53 times.
+    cache = _request_cache.get()
+    key = (user.pk, tenant.pk if tenant is not None else None)
+    if cache is not None and key in cache:
+        return list(cache[key])
     qs = (
         ObjectPermission.objects.filter(enabled=True)
         .filter(Q(users=user) | Q(groups__in=user.groups.all()))
@@ -42,26 +87,34 @@ def applicable_permissions(user, tenant):
         if scoped and (tenant is None or tenant.pk not in {t.pk for t in scoped}):
             continue
         out.append(perm)
+    if cache is not None:
+        cache[key] = tuple(out)
     return out
 
 
 def effective_actions(user, tenant) -> dict[str, set[str]]:
     """``{object_type_slug: {actions}}`` granted to the user in this tenant.
 
-    ``object_types`` may contain the wildcard ``"*"`` meaning "every registered
-    type" - the built-in Administrator/Operator/Read-only groups use it so new
-    object types are covered automatically.
+    ``object_types`` may contain the wildcard ``"*"``: every registered type
+    except the access types (users, groups, permissions - see
+    ``object_types.ACCESS_TYPES``), which a grant reaches only by naming them.
+    The built-in groups use it so new object types are covered automatically;
+    the Administrator grant names the access types as well.
     """
-    from .object_types import ACTIONS, registry_payload
+    from .object_types import ACTIONS, WILDCARD_EXCLUDED, registry_payload
 
     all_slugs = [e["slug"] for e in registry_payload()]
     if _is_super(user):
         return {slug: set(ACTIONS) for slug in all_slugs}
+    known = set(all_slugs)
+    wildcard_slugs = [s for s in all_slugs if s not in WILDCARD_EXCLUDED]
     out: dict[str, set[str]] = {}
     for perm in applicable_permissions(user, tenant):
         acts = {a for a in (perm.actions or []) if a in ACTIONS}
         types = perm.object_types or []
-        slugs = all_slugs if "*" in types else [t for t in types if t in all_slugs]
+        slugs = {t for t in types if t in known}
+        if "*" in types:
+            slugs.update(wildcard_slugs)
         for slug in slugs:
             out.setdefault(slug, set()).update(acts)
     return out
@@ -83,11 +136,12 @@ def constraints_for(user, tenant, slug: str, action: str):
     """
     if _is_super(user):
         return []
+    from .object_types import grant_covers
+
     granted = False
     dicts: list[dict] = []
     for perm in applicable_permissions(user, tenant):
-        types = perm.object_types or []
-        if slug not in types and "*" not in types:
+        if not grant_covers(perm.object_types, slug):
             continue
         if action not in (perm.actions or []):
             continue
@@ -106,10 +160,11 @@ def constraints_for(user, tenant, slug: str, action: str):
 
 def _granting_perms(user, tenant, slug: str, action: str):
     """Applicable permissions that grant ``(slug, action)``."""
+    from .object_types import grant_covers
+
     out = []
     for perm in applicable_permissions(user, tenant):
-        types = perm.object_types or []
-        if slug not in types and "*" not in types:
+        if not grant_covers(perm.object_types, slug):
             continue
         if action not in (perm.actions or []):
             continue
@@ -143,11 +198,13 @@ def _perm_q(perm, site_path, action="view") -> Q:
         q = Q()
     # Site scope: only narrows types that have a site path; others ignore it.
     if site_path:
+        from .site_paths import site_in_q, site_null_q
+
         site_ids = [s.pk for s in perm.sites.all()]
         if site_ids:
-            scope_q = Q(**{f"{site_path}__in": site_ids})
+            scope_q = site_in_q(site_path, site_ids)
             if action == "view" and site_path != "id":
-                scope_q |= Q(**{f"{site_path}__isnull": True})
+                scope_q |= site_null_q(site_path)
             q = q & scope_q
     return q
 

@@ -44,6 +44,13 @@ as well; this is the same catalog, reachable without opening it first.
 - **Short id**: an all-digit query matches the number printed on labels and
   short links. Every type numbers from 1, so add a type token to pin it.
 - **VLAN id** matches the VLAN.
+- **MAC address**, in any notation - `3c:52:82:aa:10:44`, `3C-52-82-AA-10-44`,
+  `3c52.82aa.1044`, `3c5282-aa1044` or `3c5282aa1044` - finds every interface,
+  IP and MAC object carrying it, and the first hit is the port the MAC is
+  [located](#where-is-this-mac) on: `Gi1/0/5 · sw-acc-03 · learned here,
+  VLAN 10`. That hit follows your interface permissions like any other. The
+  palette also offers **Look up MAC 3c:52:82:aa:10:44**, which opens the MAC
+  page itself. Part of a MAC is matched as text for now.
 
 ### Narrowing with tokens
 
@@ -73,14 +80,20 @@ refuse.
 Search runs on one index table that every save and delete keeps current. A
 nightly job rebuilds it to catch bulk edits, and an upgrade rebuilds it
 after migrating. `manage.py rebuild_search_index` does it by hand (add
-`--type device` to limit it). Custom-field **values** are indexed too, so an
+`--type device` to limit it). Each row keeps its name and text in folded
+form (lowercase, accents stripped) next to the original, so matching never
+folds at query time. A one- or two-character query, which no index can
+serve, ranks names first and reads descriptions only when they could still
+reach the list - the results are the same as a full match. Custom-field
+**values** are indexed too, so an
 imported NetBox id or an asset number finds its object, hidden or not; each
 list's own filter box keeps matching them as well.
 
 ## MAC address tracking
 
-The **MAC list** (`/macs`) answers the question "where have I seen this MAC?" It
-gathers every MAC address known in your tenant from four places:
+The **MAC list** (`/macs`) has two tabs. **Recorded** answers the question
+"where have I recorded this MAC?" It gathers every MAC address known in your
+tenant from four places:
 
 - **Device interface ports** that recorded a MAC.
 - **Virtual machine interfaces** that recorded a MAC (linked to the VM's
@@ -93,11 +106,89 @@ that appears on both a switch port and an assigned IP shows up once, with both
 links. The row also shows the **description and tags** of any MAC object recorded
 for that address.
 
-The MAC detail page additionally lists **SNMP sightings** - the polled devices
-whose ARP or MAC tables observed the address, with the IP or port involved. A
-MAC clicked on a device's monitoring cards therefore always resolves, even
-when nothing in Danbyte carries it yet: the page says where it was seen
-instead of returning "not found".
+**Learned** is the network's own MAC table - see
+[the Learned list](#the-learned-list).
+
+The MAC detail page additionally shows what polling observed, on its
+**Observed** tab: a **Ports** table - every switch port that learned the
+address, with device, port, VLAN, role (Access or Uplink), first and last
+seen and Present / Gone - and an **ARP** table of the devices whose ARP
+tables paired it with an IP. A MAC that moved is two port rows, one gone and
+one present. A MAC clicked on a device's monitoring cards therefore always
+resolves, even when nothing in Danbyte carries it yet: the page says where it
+was seen instead of returning "not found". The page takes the address in any
+notation.
+
+Both pages need MAC address view permission, and each source is then cut to
+what you may view on its own: interfaces, VM interfaces, IP addresses and MAC
+objects each follow their view permission, with its site scope and row
+constraints. An IP's device and interface are named only when you may view
+them too, and SNMP sightings list only devices and VMs you may view. A viewer
+limited to one site never learns another site's addresses or ports through a
+shared MAC; a MAC that only such rows carry is not listed at all.
+
+### Where is this MAC? {#where-is-this-mac}
+
+Polled switches report which MACs they learned on which port, and Danbyte
+keeps each as a [sighting](snmp-discovery.md#mac-tables) with first and last
+seen. From those, a MAC page answers three questions - the **Location**,
+**IP** and **Name** rows of its overview card:
+
+- **Location** - the port the MAC really sits on: device, port, VLAN (with
+  the Danbyte VLAN that number means at the switch's site), since when, and
+  when it was last seen - `sw-acc-03 · Gi1/0/5 · 10 · Users`, `since … ·
+  seen 3m ago`. Uplinks never win while any switch reports the MAC
+  on an access port; when none does - an unmanaged desk switch, a switch
+  Danbyte doesn't poll - the Location is the nearest uplink, marked
+  **behind uplink**: `Behind sw-core-01 · Eth1/5` with an `uplink` chip whose
+  tooltip says why the port is one. A MAC no switch reports any more reads
+  **Gone**, with when it was last seen. How a port counts as an uplink, and
+  the overrides, are
+  under [Uplinks](snmp-discovery.md#uplinks); the exact tie-breaks under
+  [Location](snmp-discovery.md#mac-location).
+- **IP** - from the ARP table of any polled router, L3 switch, firewall or
+  virtual router (only the tenant's **ARP sources**, when it names some),
+  DHCP leases and reservations, and IP addresses paired with the MAC. Each IP
+  says where it came from: `ARP on sw-core-01`, `DHCP lease`, …
+- **Name** - a Danbyte interface, VM interface or MAC object carrying the
+  MAC (`srv-db-01 · eth0`) first, then reverse DNS, DNS records and DHCP
+  host names for its IPs, each with its source.
+
+A MAC that moved shows as two sightings, one gone and one present; gone
+sightings stay for the tenant's **Forget MACs unseen for** window (30 days by
+default) and are the MAC's history. Nothing here writes: learned MACs never
+become MAC objects or change an IP address on their own.
+
+`GET /api/macs/<mac>/` returns these as `location`, `ips_observed` (each IP
+with its sources) and `names` / `name`, next to the existing keys.
+
+#### The Learned list {#the-learned-list}
+
+The **Learned** tab of `/macs` is the network-wide learned table: one row per
+MAC at its Location - MAC, Vendor, Device, Port (an `uplink` chip when the MAC
+is only seen behind one), VLAN, IP, Name, First seen and Last seen - 50 to a
+page, ordered by MAC. The rail filters by **Site**, **Device**, **VLAN** (the
+VID) and **State** (Present, Gone or All; the State column shows when the
+list can mix them), and the search box takes a MAC in any notation, part of
+one, or a device or port name. Download takes every match, not just the page.
+A gone MAC shows the access port it was last seen on rather than an uplink
+that kept it a little longer, and under a filter, a row the filter matches.
+
+It reads `GET /api/monitoring/mac-sightings/`, paged on the server (`page`,
+`page_size`, at most 500). It filters by `site`, `device` and `vlan` (against
+where each MAC is located), `state` (`present`, `gone`, `all`), `kind`
+(`access` or `behind_uplink`), and `q`.
+
+#### Who sees what
+
+Everything follows the viewer's permissions, type by type. Sightings and
+Locations come only from devices you may view - a MAC whose access port sits
+on a switch you can't see is located behind the nearest uplink you can, never
+on the hidden switch. An IP read from a router's ARP table shows only when you
+may view that router or an IP address row with that address, and the router
+is named only when you may view it. DHCP leases and reservations follow their
+own view permissions, DNS records theirs, interfaces and VM interfaces
+theirs. The Learned list needs view on MAC addresses as well.
 
 ### Vendors
 
@@ -179,3 +270,44 @@ the detail page offers to **create one** so you can annotate it.
     discovery has seen it twice. Only one unassigned record per address is kept,
     so the assignment record goes away with the interface instead of creating a
     duplicate.
+
+### Removing MACs in bulk
+
+Tick rows on the MAC list - the header box ticks the page, and **Select all
+N** then takes every row the filters show (see
+[Selecting rows](table-preferences.md#selecting-rows)). **Remove** on the
+selection bar opens a confirmation that lists the first few selected
+addresses with the interfaces and IPs each one is attached to, then asks
+where to remove them from, with a count for each:
+
+- **Delete MAC objects** (on by default) - the first-class objects with their
+  description, tags and custom fields.
+- **Clear from interfaces** - blanks the MAC on the device and VM interfaces
+  that carry it.
+- **Unpair from IP addresses** - blanks the MAC paired with those IPs.
+
+Each choice needs its own permission: *delete* on MAC addresses, *change* on
+interfaces or VM interfaces, *change* on IP addresses. A site-scoped operator
+removes only what their grants reach; rows they can see but not change are
+left alone, and the dialog says how many. A choice they hold no grant for
+stays off. Every deletion and cleared field lands in the change log.
+
+MACs learned by an integration (DHCP lease sync, virtualization sync) come
+back on its next sync unless they are also gone at the source.
+
+The API behind it is `POST /api/macs/bulk-remove/` with
+`{values, remove_objects, clear_interfaces, unpair_ips, dry_run}`: `values`
+are the MAC addresses (at most 2000 per call), and `dry_run: true` returns
+the same per-source counts without writing anything. The list sends a bigger
+selection 2000 at a time and adds the counts up (see
+[Large selections](table-preferences.md#large-selections)).
+
+To delete MAC objects by id instead, `POST /api/mac-addresses/bulk-delete/`
+takes `{ids}` (at most 2000) and answers `{deleted}`, like the other bulk
+deletes. It needs *delete* on MAC addresses; ids in another tenant or outside
+the caller's site scope are left alone.
+
+Clearing and unpairing cost the same few queries whatever the batch size.
+Deleting objects writes one change-log entry per object and tells webhooks
+and the search index about each one, so a delete of 2000 objects runs
+several thousand short queries in one transaction.

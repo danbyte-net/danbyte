@@ -13,12 +13,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ConfigContextDeleteDialog } from "@/components/config-context-delete-dialog"
@@ -67,7 +62,6 @@ function Body({ context: c }: { context: ConfigContext }) {
   const { canDo } = useMe()
   const [deleting, setDeleting] = useState<ConfigContext | null>(null)
   const goBack = useCallback(() => nav({ to: "/config-contexts" }), [nav])
-  const dataKeys = Object.keys(c.data)
 
   return (
     <DetailShell
@@ -113,18 +107,6 @@ function Body({ context: c }: { context: ConfigContext }) {
               : undefined
           }
           description={c.description}
-          stats={
-            <>
-              <DetailStat
-                label="Weight"
-                value={<span className="num">{c.weight}</span>}
-              />
-              <DetailStat
-                label="Data keys"
-                value={<span className="num">{dataKeys.length}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -173,6 +155,7 @@ function scopeRow<T extends { id: string; name: string }>(
 
 function ContextOverview({ context: c }: { context: ConfigContext }) {
   const { humanIds } = useMe()
+  const keys = Object.keys(c.data)
 
   const details: KvRow[] = [
     ...(humanIds && c.numid != null
@@ -213,6 +196,7 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
         dash
       ),
     },
+    { label: "Data keys", value: <span className="num">{keys.length}</span> },
   ]
 
   const scope: KvRow[] = [
@@ -252,8 +236,6 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
     { label: "Created", value: <TimeCell iso={c.created_at} /> },
     { label: "Updated", value: <TimeCell iso={c.updated_at} /> },
   ]
-
-  const keys = Object.keys(c.data)
 
   return (
     <div className="space-y-6">

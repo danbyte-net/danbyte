@@ -28,12 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 
@@ -212,20 +207,6 @@ function Body({ req }: { req: CertificateRequest }) {
             <Badge variant={STATUS_VARIANT[req.status]}>
               {req.status_display}
             </Badge>
-          }
-          statCols={2}
-          stats={
-            <>
-              <DetailStat label="Key" value={req.key_spec_display} />
-              <DetailStat
-                label="SANs"
-                value={
-                  <span className="num">
-                    {req.san_dns.length + req.san_ip.length}
-                  </span>
-                }
-              />
-            </>
           }
         />
       }

@@ -74,6 +74,7 @@ def strands_of(kind, port, position=1):
         return [("rear_port", port.rear_port, rp_pos)]
     if kind == "rear_port":
         from .models import FrontPort
+        from .natural import natural
 
         if port.is_splitter:
             if position != 1:
@@ -85,7 +86,7 @@ def strands_of(kind, port, position=1):
                 ("front_port", fp, 1)
                 for fp in FrontPort.objects.filter(rear_port=port)
                 .select_related("device")
-                .order_by("name")
+                .order_by(natural("name"))
             ]
         # The front port whose range [start … start+positions−1] covers this
         # rear position; the local fibre index within it continues the run.

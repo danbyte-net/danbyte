@@ -14,12 +14,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { CircuitTypeDeleteDialog } from "@/components/circuit-type-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { EmbeddedCircuitTable } from "@/components/embedded-tables"
@@ -86,13 +81,6 @@ function Body({ type: t }: { type: CircuitType }) {
         <DetailHero
           title={<ColorBadge name={t.name} color={t.color || undefined} />}
           description={t.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Circuits"
-              value={<span className="num">{t.circuit_count}</span>}
-            />
-          }
         />
       }
       tabs={[
@@ -129,8 +117,8 @@ function Body({ type: t }: { type: CircuitType }) {
   )
 }
 
-/** Circuit-type attributes. The colored name badge, description and circuit
- * count stay in the hero; everything else lands here. */
+/** Circuit-type attributes. The colored name badge and description stay in the
+ * hero; everything else lands here. */
 function CircuitTypeOverview({ type: t }: { type: CircuitType }) {
   const { humanIds } = useMe()
 

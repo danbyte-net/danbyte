@@ -6,11 +6,14 @@ import {
   api,
   type DeviceType,
   type DeviceTypeWritePayload,
+  type DinProfile,
   type ManufacturerOption,
   type Paginated,
   type PlatformOption,
 } from "@/lib/api"
+import { DIN_PROFILES, PROFILE_LABELS } from "@/lib/din-geometry"
 import {
+  Field,
   FormCheckbox,
   FormColumn,
   FormColumns,
@@ -29,7 +32,24 @@ import {
   lifecycleFormValue,
   lifecyclePayload,
 } from "@/components/lifecycle-fields"
+import {
+  photoSizeOf,
+  TopologyPhotoSizeSelect,
+} from "@/components/topology-photo-size-select"
 import { useSaveObject } from "@/lib/save-object"
+
+/** A size as the form holds it: blank stays blank, not 0. */
+const mmText = (v: number | string | null | undefined) =>
+  v == null || v === "" ? "" : String(Number(v))
+/** Blank clears the size. */
+const mmOrNull = (v: string) => (v.trim() === "" ? null : Number(v))
+/** Tenths of a millimetre, as the API keeps sizes. */
+const MM = {
+  type: "number",
+  inputMode: "decimal",
+  step: 0.1,
+  max: 5000,
+} as const
 
 export interface DeviceTypeFormProps {
   deviceType?: DeviceType
@@ -70,6 +90,9 @@ export function DeviceTypeForm({
   const [rackWidth, setRackWidth] = useState<"full" | "half">(
     src?.rack_width ?? "full"
   )
+  const [photoSize, setPhotoSize] = useState(
+    photoSizeOf(src?.topology_photo_size)
+  )
   const [description, setDescription] = useState(src?.description ?? "")
   const [isFullDepth, setIsFullDepth] = useState(src?.is_full_depth ?? true)
   const [airflow, setAirflow] = useState<string | null>(src?.airflow || null)
@@ -81,6 +104,14 @@ export function DeviceTypeForm({
   const [excludeUtil, setExcludeUtil] = useState(
     src?.exclude_from_utilization ?? false
   )
+  // The body's size and the DIN rails it mounts on (#277).
+  const [widthMm, setWidthMm] = useState(mmText(src?.width_mm))
+  const [heightMm, setHeightMm] = useState(mmText(src?.height_mm))
+  const [depthMm, setDepthMm] = useState(mmText(src?.depth_mm))
+  const [dinProfiles, setDinProfiles] = useState<DinProfile[]>(
+    src?.din_profiles ?? []
+  )
+  const [dinRailMm, setDinRailMm] = useState(mmText(src?.din_rail_mm))
   const [tagIds, setTagIds] = useState<number[]>(
     src?.tags?.map((t) => t.id) ?? []
   )
@@ -98,6 +129,7 @@ export function DeviceTypeForm({
     setPlatformId(deviceType.platform?.id ?? null)
     setUHeight(String(deviceType.u_height))
     setRackWidth(deviceType.rack_width)
+    setPhotoSize(photoSizeOf(deviceType.topology_photo_size))
     setDescription(deviceType.description)
     setIsFullDepth(deviceType.is_full_depth)
     setAirflow(deviceType.airflow || null)
@@ -105,6 +137,11 @@ export function DeviceTypeForm({
     setWeightUnit(deviceType.weight_unit || "kg")
     setSubdeviceRole(deviceType.subdevice_role || null)
     setExcludeUtil(deviceType.exclude_from_utilization ?? false)
+    setWidthMm(mmText(deviceType.width_mm))
+    setHeightMm(mmText(deviceType.height_mm))
+    setDepthMm(mmText(deviceType.depth_mm))
+    setDinProfiles(deviceType.din_profiles)
+    setDinRailMm(mmText(deviceType.din_rail_mm))
     setTagIds(deviceType.tags.map((t) => t.id))
     setCustomFields(deviceType.custom_fields ?? {})
     setLifecycle(lifecycleFormValue(deviceType))
@@ -132,6 +169,7 @@ export function DeviceTypeForm({
         platform_id: platformId,
         u_height: uHeight.trim() === "" ? 0 : Number(uHeight),
         rack_width: rackWidth,
+        topology_photo_size: photoSize ?? "",
         description: description.trim(),
         is_full_depth: isFullDepth,
         airflow: airflow ?? "",
@@ -139,6 +177,11 @@ export function DeviceTypeForm({
         weight_unit: String(weight).trim() === "" ? "" : weightUnit,
         subdevice_role: subdeviceRole ?? "",
         exclude_from_utilization: excludeUtil,
+        width_mm: mmOrNull(widthMm),
+        height_mm: mmOrNull(heightMm),
+        depth_mm: mmOrNull(depthMm),
+        din_profiles: DIN_PROFILES.filter((p) => dinProfiles.includes(p)),
+        din_rail_mm: mmOrNull(dinRailMm),
         tag_ids: tagIds,
         custom_fields: customFields,
         ...lifecyclePayload(lifecycle),
@@ -154,6 +197,8 @@ export function DeviceTypeForm({
       qc.invalidateQueries({ queryKey: ["device-types"] })
       qc.invalidateQueries({ queryKey: ["device-types-picker"] })
       qc.invalidateQueries({ queryKey: ["device-type", saved.id] })
+      // Its devices are drawn by its size in the cabinets they sit in.
+      qc.invalidateQueries({ queryKey: ["cabinet-devices"] })
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
       onSaved(saved)
     },
@@ -226,6 +271,63 @@ export function DeviceTypeForm({
             />
           </FormSection>
 
+          <FormSection title="Size and DIN rail" card>
+            <div className="grid gap-3 @md:grid-cols-3">
+              <FormText
+                label="Width (mm)"
+                {...MM}
+                min={1}
+                value={widthMm}
+                onChange={setWidthMm}
+                error={fieldErrors.width_mm}
+              />
+              <FormText
+                label="Height (mm)"
+                {...MM}
+                min={1}
+                value={heightMm}
+                onChange={setHeightMm}
+                error={fieldErrors.height_mm}
+              />
+              <FormText
+                label="Depth (mm)"
+                {...MM}
+                min={1}
+                value={depthMm}
+                onChange={setDepthMm}
+                error={fieldErrors.depth_mm}
+              />
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <Field label="DIN rail profiles" error={fieldErrors.din_profiles}>
+                <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2">
+                  {DIN_PROFILES.map((p) => (
+                    <FormCheckbox
+                      key={p}
+                      label={PROFILE_LABELS[p]}
+                      checked={dinProfiles.includes(p)}
+                      onChange={(on) =>
+                        setDinProfiles((cur) =>
+                          on ? [...cur, p] : cur.filter((x) => x !== p)
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              </Field>
+              <FormText
+                label="Rail position (mm)"
+                info="Centreline below the top edge; empty = middle"
+                {...MM}
+                min={0}
+                value={dinRailMm}
+                onChange={setDinRailMm}
+                placeholder="Middle"
+                error={fieldErrors.din_rail_mm}
+              />
+            </div>
+          </FormSection>
+
           <FormSection title="Notes" card>
             <FormTextarea
               label="Description"
@@ -257,6 +359,13 @@ export function DeviceTypeForm({
                   { value: "half", label: "Half width (2 side-by-side)" },
                 ]}
                 error={fieldErrors.rack_width}
+              />
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <TopologyPhotoSizeSelect
+                value={photoSize}
+                onChange={setPhotoSize}
+                error={fieldErrors.topology_photo_size}
               />
             </div>
             <div className="grid gap-3 @md:grid-cols-2">

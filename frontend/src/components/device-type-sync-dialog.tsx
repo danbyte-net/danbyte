@@ -4,6 +4,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react"
 
 import { api } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -117,6 +118,7 @@ export function DeviceTypeSyncDialog({
   if (done && run.data && !run.isFetching) {
     // Components changed under the fleet - anything counting them is stale.
     qc.invalidateQueries({ queryKey: ["device-type", deviceTypeId] })
+    invalidatePortCounts(qc)
   }
 
   const close = () => {

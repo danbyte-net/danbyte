@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts"
 
+import { labelTicks } from "@/lib/chart-axis"
 import { api } from "@/lib/api"
 import type { LatencyResponse, StatsHours } from "@/lib/api"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -143,7 +144,8 @@ export function LatencyChart({
           >
             <CartesianGrid vertical={false} />
             <XAxis
-              dataKey="label"
+              dataKey="t"
+              tickFormatter={labelTicks(data, "t")}
               tickLine={false}
               axisLine={false}
               tickMargin={6}

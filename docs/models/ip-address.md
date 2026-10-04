@@ -14,7 +14,7 @@ A single IP address. Lives inside exactly one `Prefix`, inherits its VRF.
 | `tenant` | FK → `Tenant` | required | Denormalised from `prefix.tenant` |
 | `prefix` | FK → `Prefix` | required | The containing prefix |
 | `vrf` | FK → `VRF` | NULL | Mirrors `prefix.vrf`; denormalised for the unique constraint |
-| `ip_address` | inet | required | Bare address. The API accepts `10.0.0.1/31`; the length lands in `mask_length` |
+| `ip_address` | inet | required | Bare address, never `address/length`. The API accepts `10.0.0.1/31`: a length other than the prefix's lands in `mask_length`, the prefix's own leaves it empty, and a `mask_length` sent alongside wins. See [Stored form](#stored-form) |
 | `mask_length` | smallint | NULL | Length the address carries on its interface when it differs from the prefix's (a `/31` link inside an aggregate). `cidr` in the API and the render context is `address/length` with this, else the prefix's |
 | `status` | choice | `assigned` | `available` · `assigned` · `reserved` · `dhcp_pool` · `floating` |
 | `role` | choice | `""` | `""` · `gateway` · `loopback` · `vip` · `hsrp` · `vrrp` · `anycast` · `secondary` |
@@ -22,6 +22,10 @@ A single IP address. Lives inside exactly one `Prefix`, inherits its VRF.
 | `mac_address` | char(17) | `""` | Hardware address paired with this IP (e.g. a DHCP reservation) |
 | `dns_name` | char(255) | `""` | Hostname / DNS name (PTR). Auto-filled by reverse-DNS monitoring when enabled |
 | `last_seen` | datetime | NULL | Last time the check engine saw this IP reachable. Engine-set, read-only |
+| `monitoring_excluded` | bool | `false` | Every check on the address is parked: nothing runs, no alerts, the time off is not counted. Read-only here; set with `POST /api/monitoring/ips/<id>/exclude/`. The IP list filters on it: `?monitoring_excluded=true` |
+| `monitoring_excluded_at` / `_by` / `_reason` | datetime / char(150) / char(200) | NULL / `""` / `""` | When, who (username) and why it was excluded. Cleared when it is included again; the change log keeps the history. Not in the API row - the Monitoring tab reads them |
+| `availability_since` | datetime | NULL | Availability counts from here: uptime, SLA and availability figures leave out what came before. History is kept. Read-only here; set with `POST /api/monitoring/ips/<id>/reset-availability/` |
+| `availability_reset_at` / `_by` / `_reason` | datetime / char(150) / char(200) | NULL / `""` / `""` | When, who and why the availability was last reset. The reason is required. Not in the API row |
 | `custom_fields` | JSONB | `{}` | Anything org-specific lives here, not as a hardcoded column |
 | `tags` | M2M Tag | empty | |
 
@@ -40,6 +44,29 @@ Same IP in two VRFs is fine.
 `vrf` is never set directly - it always mirrors `prefix.vrf`. Saving the address
 re-derives it, and moving the **prefix** into another VRF carries its addresses
 with it. To move an address between VRFs, point it at a prefix in the target VRF.
+
+## Stored form
+
+The column is PostgreSQL `inet`, which keeps a mask it is given: `10.0.0.5/24`
+is stored and read back as `10.0.0.5/24`. Danbyte stores the host only. The
+field drops a mask on every ORM write, including `bulk_create()`, `update()` and
+writes from a shell or script, which skip the API's validation. `save()` moves a
+length that differs from the prefix's to `mask_length`; one equal to the
+prefix's leaves it empty. A `mask_length` passed to `create()` wins. On an
+update, the address's length replaces the stored one, so `10.0.0.1/30` on an
+address stored with `/31` saves `/30`. A value still stored with a mask reads
+back as the bare host.
+
+Migration `api 0185` stores rows that carry a mask as bare hosts. It leaves a
+row alone when the bare address is already taken in the same tenant and VRF
+(inet equality counts the mask, so the constraint let both in), and logs a
+warning on the `danbyte.migrations` logger naming both rows. Delete or renumber
+one of them. To list any that remain:
+
+```sql
+SELECT id, ip_address FROM api_ipaddress
+WHERE masklen(ip_address) < CASE family(ip_address) WHEN 4 THEN 32 ELSE 128 END;
+```
 
 ## Status vs role
 

@@ -1,0 +1,895 @@
+import { readableText } from "@/lib/color"
+
+import {
+  cardText,
+  fmt,
+  labelCorners,
+  layerBadge,
+  layerRules,
+  linkLabels,
+  linkPath,
+  noteLayout,
+  pillWidth,
+  NOTE,
+} from "./geometry"
+import type { LabelBlock } from "./geometry"
+import { NOTE_ICONS } from "./icons"
+import { attrs, el, esc, fontFaces, stamp, text } from "./markup"
+import type { EmbeddedFont } from "./markup"
+import { baselineAt, fit, measureText } from "./measure"
+import type { Measure, Weight } from "./measure"
+import {
+  BAND,
+  bandPaint,
+  CARD,
+  FONT_STACK,
+  groundAt,
+  hex6,
+  mix,
+  NUB,
+  PILL,
+  PRINT,
+} from "./theme"
+import type {
+  DiagramBand,
+  DiagramDocument,
+  DiagramEnd,
+  DiagramLink,
+  DiagramNode,
+  DiagramNote,
+  LegendRow,
+  Pt,
+  Rect,
+} from "./types"
+
+// The SVG writer: a DiagramDocument as clean vector markup that opens in a
+// browser, Inkscape or Illustrator and survives the PDF sanitizer - shapes,
+// paths and text only. No foreignObject, no CSS variables, no `style=`
+// attributes, no filters or opacity; every colour is solid hex. Text sits on
+// explicit baselines (no `dominant-baseline`, which WeasyPrint only
+// approximates), and an end label breaks its line with a box of the page's
+// colour rather than a `paint-order` stroke. The output is deterministic:
+// the same document gives the same string, byte for byte. Lines pass under
+// the nodes; a cable on a photo port has its lead - port to photo edge -
+// drawn again over the photo.
+
+export type { EmbeddedFont }
+
+export interface SvgOptions {
+  /** Space around the drawing, px (24). */
+  margin?: number
+  /** Page colour; null = transparent. */
+  background?: string | null
+  embedFont?: EmbeddedFont[]
+  /** Wrap cards and links that carry a link in `<a href>` - standalone SVG
+   * only; the PDF path must not (WeasyPrint draws `<a>` as text). */
+  links?: boolean
+  /** The view name, tenant, filters and date under the drawing. */
+  titleBlock?: boolean
+  /** The legend rows under the drawing. */
+  legend?: boolean
+  /** Text widths for fitting and label boxes: `measureText` by default,
+   * the same measure the canvas card uses. */
+  measure?: Measure
+  /** Prefix for the few ids the markup needs (photo symbols). */
+  idPrefix?: string
+}
+
+const col = (c: string | null | undefined, fallback: string) =>
+  hex6(c) ?? fallback
+
+/** Link targets: web URLs and site paths - never `javascript:` and kin. */
+const SAFE_LINK = /^(?:https?:\/\/|\/(?!\/))/i
+/** Photo sources: raster `data:` URIs, web URLs and site paths. */
+const SAFE_IMAGE =
+  /^(?:data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$|https?:\/\/|\/(?!\/))/i
+
+const dashOk = (d?: string) =>
+  d && /^[\d.]+(?:[ ,]+[\d.]+)*$/.test(d.trim()) ? d.trim() : undefined
+
+// ── Bands ────────────────────────────────────────────────────────────────
+
+function bandSvg(b: DiagramBand, measure: Measure): string {
+  const p = bandPaint(b)
+  const r = BAND.RADIUS
+  const out: string[] = []
+  const frame = { x: b.x, y: b.y, width: b.w, height: b.h, rx: r }
+  out.push(el("rect", { ...frame, fill: p.fill }))
+  const size = BAND.LABEL_SIZE
+  const weight = BAND.LABEL_WEIGHT
+  if (b.kind === "zone") {
+    // A tab in the top-left corner, like the canvas zone.
+    const label = fit(b.label, Math.max(0, b.w - 16), size, weight, measure)
+    const tw = Math.min(b.w, measure(label, size, weight) + 16)
+    const th = Math.min(b.h, BAND.ZONE_HEADER)
+    out.push(
+      el("path", {
+        d:
+          `M ${fmt(b.x + r)},${fmt(b.y)} H ${fmt(b.x + tw)} V ${fmt(b.y + th - 4)}` +
+          ` Q ${fmt(b.x + tw)},${fmt(b.y + th)} ${fmt(b.x + tw - 4)},${fmt(b.y + th)}` +
+          ` H ${fmt(b.x)} V ${fmt(b.y + r)}` +
+          ` A ${r} ${r} 0 0 1 ${fmt(b.x + r)},${fmt(b.y)} Z`,
+        fill: p.header,
+      }),
+      text(label, {
+        x: b.x + 8,
+        y: baselineAt(b.y, size, th),
+        "font-size": size,
+        "font-weight": weight,
+        fill: p.ink,
+      })
+    )
+  } else if (b.kind === "chassis") {
+    // A virtual chassis: its name on its strip - read bottom to top on a
+    // strip down a side, level on one across the top or bottom.
+    const s = b.strip ?? { x: b.x, y: b.y, w: b.w, h: 0 }
+    const cs = BAND.CHASSIS_SIZE
+    const v = b.side ? b.side === "L" || b.side === "R" : b.orient === "v"
+    const label = fit(
+      b.label,
+      Math.max(0, (v ? s.h : s.w) - 12),
+      cs,
+      weight,
+      measure
+    )
+    const cx = s.x + s.w / 2
+    const cy = s.y + s.h / 2
+    out.push(
+      text(label, {
+        x: cx,
+        y: v ? baselineAt(cy - cs, cs, 2 * cs) : baselineAt(s.y, cs, s.h),
+        "text-anchor": "middle",
+        ...(v ? { transform: `rotate(-90 ${fmt(cx)} ${fmt(cy)})` } : {}),
+        "font-size": cs,
+        "font-weight": weight,
+        fill: p.ink,
+      })
+    )
+  } else if (b.orient !== "h") {
+    // A side band: a big label up its middle, reading bottom to top.
+    const ss = BAND.SIDE_SIZE
+    const cx = b.x + b.w / 2
+    const cy = b.y + b.h / 2
+    const label = fit(b.label, Math.max(0, b.h - 16), ss, weight, measure)
+    out.push(
+      text(label, {
+        x: cx,
+        y: baselineAt(cy - ss, ss, 2 * ss),
+        "text-anchor": "middle",
+        transform: `rotate(-90 ${fmt(cx)} ${fmt(cy)})`,
+        "font-size": ss,
+        "font-weight": weight,
+        fill: p.ink,
+      })
+    )
+  }
+  // A stacked row: a faint rule between its sub-rows.
+  for (const y of layerRules(b.layers ?? []))
+    out.push(
+      el("path", {
+        d: `M ${fmt(b.x + BAND.SUB_EDGE)},${fmt(y)} H ${fmt(b.x + b.w - BAND.SUB_EDGE)}`,
+        stroke: p.edge,
+        "stroke-width": 1,
+        "stroke-dasharray": "4 4",
+      })
+    )
+  out.push(
+    el("rect", {
+      ...frame,
+      fill: "none",
+      stroke: p.edge,
+      "stroke-width": p.edgeWidth,
+    })
+  )
+  return `<g>${out.join("")}</g>`
+}
+
+/** A stacked row's sub-row badges: each layer's name on its role's
+ * colour (a device type on the neutral wash), at the row's left - the
+ * canvas's ColorBadge, with a role's darker edge as its cards have. */
+function layerBadgesSvg(b: DiagramBand, measure: Measure): string {
+  return (b.layers ?? [])
+    .filter((l) => l.label)
+    .map((l) => {
+      const r = layerBadge(b, l, measure)
+      const fill = col(l.fill, PRINT.wash)
+      const ink = l.fill
+        ? col(hex6(readableText(fill)), PRINT.text)
+        : PRINT.body
+      return (
+        el("rect", {
+          x: r.x,
+          y: r.y,
+          width: r.w,
+          height: r.h,
+          rx: BAND.SUB_RADIUS,
+          fill,
+          ...(l.fill
+            ? {
+                stroke: mix("#000000", fill, CARD.EDGE_DARKEN),
+                "stroke-width": 1,
+              }
+            : {}),
+        }) +
+        text(r.text, {
+          x: r.x + r.w / 2,
+          y: baselineAt(r.y, BAND.SUB_SIZE, r.h),
+          "text-anchor": "middle",
+          "font-size": BAND.SUB_SIZE,
+          "font-weight": BAND.SUB_WEIGHT,
+          fill: ink,
+        })
+      )
+    })
+    .join("")
+}
+
+/** A row's title in the strip across its top - centred, or where the plan
+ * found it clear of the lines (`titleX`): a chip of the row's own fill
+ * under the cards, the layers of a hand-drawn network diagram. */
+function bandTitleSvg(b: DiagramBand, measure: Measure): string {
+  const p = bandPaint(b)
+  const size = BAND.TITLE_SIZE
+  const weight = BAND.LABEL_WEIGHT
+  const label = fit(b.label, Math.max(0, b.w - 32), size, weight, measure)
+  if (!label) return ""
+  const strip = Math.min(b.h, BAND.ROW_TITLE)
+  const w = measure(label, size, weight) + 16
+  const h = Math.min(strip, 24)
+  const cx = b.titleX ?? b.x + b.w / 2
+  return (
+    `<g>` +
+    el("rect", {
+      x: cx - w / 2,
+      y: b.y + (strip - h) / 2,
+      width: w,
+      height: h,
+      rx: 6,
+      fill: p.fill,
+    }) +
+    text(label, {
+      x: cx,
+      y: baselineAt(b.y, size, strip),
+      "text-anchor": "middle",
+      "font-size": size,
+      "font-weight": weight,
+      fill: p.ink,
+    }) +
+    `</g>`
+  )
+}
+
+// ── Links ────────────────────────────────────────────────────────────────
+
+function linkSvg(l: DiagramLink): string {
+  const dash = dashOk(l.dash)
+  return el("path", {
+    d: linkPath(l),
+    fill: "none",
+    stroke: col(l.stroke, PRINT.subtle),
+    "stroke-width": Math.max(0.25, l.width || 1),
+    "stroke-dasharray": dash,
+    // Round caps stretch every dash; dashed lines keep butt caps.
+    "stroke-linecap": dash ? undefined : "round",
+    "stroke-linejoin": "round",
+  })
+}
+
+/** Where the run from `p` (inside `r`) towards `q` leaves `r`. */
+function leaving(p: Pt, q: Pt, r: Rect): Pt {
+  let t = 1
+  const dx = q.x - p.x
+  const dy = q.y - p.y
+  if (dx > 0) t = Math.min(t, (r.x + r.w - p.x) / dx)
+  if (dx < 0) t = Math.min(t, (r.x - p.x) / dx)
+  if (dy > 0) t = Math.min(t, (r.y + r.h - p.y) / dy)
+  if (dy < 0) t = Math.min(t, (r.y - p.y) / dy)
+  t = Math.max(0, t)
+  return { x: p.x + dx * t, y: p.y + dy * t }
+}
+
+/** The leads of a link's photo ports: the run from the port to the
+ * photo node's edge, drawn again over the photo (the line itself is
+ * drawn under the nodes). */
+function leadSvg(l: DiagramLink, boxes: ReadonlyMap<string, Rect>): string[] {
+  const pts = [l.source, ...l.points, l.target]
+  const n = pts.length
+  const runs: [Pt, Pt][] = []
+  const lead = (end: DiagramEnd, next: Pt) => {
+    const r = boxes.get(end.node)
+    if (!end.marker || !r) return
+    const to = leaving(end, next, r)
+    if (to.x !== end.x || to.y !== end.y) runs.push([end, to])
+  }
+  lead(l.source, pts[1])
+  lead(l.target, pts[n - 2])
+  const dash = dashOk(l.dash)
+  return runs.map(([p, q]) =>
+    el("path", {
+      d: `M ${fmt(p.x)},${fmt(p.y)} L ${fmt(q.x)},${fmt(q.y)}`,
+      fill: "none",
+      stroke: col(l.stroke, PRINT.subtle),
+      "stroke-width": Math.max(0.25, l.width || 1),
+      "stroke-dasharray": dash,
+      "stroke-linecap": dash ? undefined : "round",
+    })
+  )
+}
+
+/** A link label. A middle chip is a box with a hairline edge; an end
+ * label sits on its line over a box of the colour under it (the page, or
+ * the band it is on) - the gap the line breaks for. */
+function labelSvg(b: LabelBlock, page: string): string {
+  const out: string[] = []
+  const bg = b.chip
+    ? { fill: PRINT.paper, stroke: PRINT.border, "stroke-width": 0.75 }
+    : { fill: page }
+  out.push(
+    el("rect", {
+      x: b.box.x,
+      y: b.box.y,
+      width: b.box.w,
+      height: b.box.h,
+      rx: b.chip ? 3 : undefined,
+      ...bg,
+    })
+  )
+  b.lines.forEach((line, i) => {
+    out.push(
+      text(line.text, {
+        x: b.tx,
+        y: b.ty + i * b.lh,
+        "text-anchor": b.anchor === "start" ? undefined : b.anchor,
+        "font-size": b.size,
+        "font-weight": line.weight === 400 ? undefined : line.weight,
+        "font-style": line.italic ? "italic" : undefined,
+        fill: b.chip ? PRINT.body : PRINT.muted,
+        // Unhinted, as wide as measured: the gap round it stays even.
+        "text-rendering": b.chip ? undefined : "geometricPrecision",
+      })
+    )
+  })
+  const transform = b.rotate
+    ? ` transform="rotate(${fmt(b.rotate)} ${fmt(b.ox)} ${fmt(b.oy)})"`
+    : ""
+  return `<g${transform}>${out.join("")}</g>`
+}
+
+// ── Nodes ────────────────────────────────────────────────────────────────
+
+function nodeSvg(
+  node: DiagramNode,
+  measure: Measure,
+  photoId: (href: string) => string
+): string {
+  // A photo whose source was refused is drawn as its card.
+  const n: DiagramNode =
+    node.photo && !photoId(node.photo.href)
+      ? { ...node, kind: "card", photo: undefined }
+      : node
+  const out: string[] = []
+  const fill = col(n.fill, PRINT.wash)
+  const ink = col(n.ink, PRINT.text)
+  // Nubs first: the card's edge then closes over where they join.
+  for (const nub of n.nubs ?? [])
+    out.push(
+      el("rect", {
+        x: nub.x,
+        y: nub.y,
+        width: nub.w,
+        height: nub.h,
+        rx: NUB.RADIUS,
+        fill: PRINT.faint,
+      })
+    )
+  const t = cardText(n, measure)
+  if (n.kind === "photo" && n.photo) {
+    const ph = n.photo
+    out.push(
+      el("use", {
+        href: `#${photoId(ph.href)}`,
+        x: ph.x,
+        y: ph.y,
+        width: ph.w,
+        height: ph.h,
+      }),
+      el("rect", {
+        x: ph.x + 0.5,
+        y: ph.y + 0.5,
+        width: Math.max(0, ph.w - 1),
+        height: Math.max(0, ph.h - 1),
+        fill: "none",
+        stroke: PRINT.rule,
+        "stroke-width": 1,
+      })
+    )
+    for (const m of ph.markers)
+      out.push(
+        el("rect", {
+          x: m.x,
+          y: m.y,
+          width: m.w,
+          height: m.h,
+          rx: 1,
+          fill: "none",
+          stroke: PRINT.primary,
+          "stroke-width": 1.25,
+        })
+      )
+  } else {
+    // The card: solid role fill, a 1px edge of the same hue a step darker,
+    // drawn inside the box so the box is the card's true size.
+    out.push(
+      el("rect", {
+        x: n.x + 0.5,
+        y: n.y + 0.5,
+        width: Math.max(0, n.w - 1),
+        height: Math.max(0, n.h - 1),
+        rx: CARD.RADIUS - 0.5,
+        fill,
+        stroke: mix("#000000", fill, CARD.EDGE_DARKEN),
+        "stroke-width": 1,
+      })
+    )
+  }
+  if (t.pill && n.pill) {
+    const pf = col(n.pill.fill, PRINT.subtle)
+    out.push(
+      el("rect", {
+        x: t.pill.x,
+        y: t.pill.y,
+        width: t.pill.w,
+        height: t.pill.h,
+        rx: PILL.RADIUS,
+        fill: pf,
+        // Keeps a pill apart from a card of a similar colour.
+        stroke: PRINT.paper,
+        "stroke-width": 1,
+      }),
+      text(t.pill.text, {
+        x: t.pill.x + t.pill.w / 2,
+        y: baselineAt(t.pill.y, PILL.SIZE, t.pill.h),
+        "text-anchor": "middle",
+        "font-size": PILL.SIZE,
+        "font-weight": PILL.WEIGHT,
+        fill: col(n.pill.ink, PRINT.paper),
+      })
+    )
+  }
+  // On a photo the name is a caption on the page, not on a fill.
+  const titleInk = n.kind === "photo" ? PRINT.text : ink
+  const lineInk =
+    n.kind === "photo" ? PRINT.muted : mix(ink, fill, CARD.LINE_INK)
+  out.push(
+    text(t.title.text, {
+      x: t.title.x,
+      y: t.title.y,
+      "text-anchor": "middle",
+      "font-size": CARD.TITLE_SIZE,
+      "font-weight": CARD.TITLE_WEIGHT,
+      fill: titleInk,
+    })
+  )
+  for (const line of t.lines)
+    out.push(
+      text(line.text, {
+        x: line.x,
+        y: line.y,
+        "text-anchor": "middle",
+        "font-size": CARD.LINE_SIZE,
+        fill: lineInk,
+      })
+    )
+  // A photo's card lines, after its name on the caption line.
+  if (t.tail)
+    out.push(
+      text(t.tail.text, {
+        x: t.tail.x,
+        y: t.tail.y,
+        "font-size": CARD.LINE_SIZE,
+        fill: lineInk,
+      })
+    )
+  return `<g>${out.join("")}</g>`
+}
+
+// ── Notes ────────────────────────────────────────────────────────────────
+
+/** A note: its icon in the muted line colour with the caption centred
+ * under it, or its text - on a paper chip with a hairline edge when it is
+ * outlined, so it can sit on a line. */
+function noteSvg(n: DiagramNote, measure: Measure): string {
+  const out: string[] = []
+  const lay = noteLayout(n, measure)
+  const icon = n.icon ? NOTE_ICONS[n.icon] : undefined
+  if (icon && lay.icon) {
+    const k = lay.icon.w / 24
+    out.push(
+      `<g${attrs({
+        transform: `translate(${fmt(lay.icon.x)} ${fmt(lay.icon.y)}) scale(${k.toFixed(4)})`,
+        fill: "none",
+        stroke: PRINT.subtle,
+        "stroke-width": fmt(NOTE.STROKE / k),
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      })}>` +
+        icon.map(([tag, a]) => el(tag, a)).join("") +
+        `</g>`
+    )
+  }
+  if (lay.frame)
+    out.push(
+      el("rect", {
+        x: lay.frame.x + 0.5,
+        y: lay.frame.y + 0.5,
+        width: lay.frame.w - 1,
+        height: lay.frame.h - 1,
+        rx: NOTE.RADIUS - 0.5,
+        fill: PRINT.paper,
+        stroke: PRINT.border,
+      })
+    )
+  for (const line of lay.lines)
+    out.push(
+      text(line.text, {
+        x: line.x,
+        y: line.y,
+        "text-anchor": "middle",
+        "font-size": lay.size,
+        "font-weight": NOTE.WEIGHT,
+        fill: PRINT.body,
+      })
+    )
+  return `<g>${out.join("")}</g>`
+}
+
+// ── Footer: legend and title block ───────────────────────────────────────
+
+const FOOT = {
+  PAD: 12,
+  ROW: 18,
+  LINE_W: 22,
+  ITEM_GAP: 14,
+  LABEL: 10,
+  TITLE: 13,
+  SUB: 10,
+  SMALL: 9,
+  TITLE_GAP: 24,
+} as const
+
+interface Footer {
+  /** The narrowest page that fits the title block beside the widest
+   * legend entry. */
+  minWidth: number
+  heightFor: (width: number) => number
+  draw: (x0: number, top: number, width: number) => string
+}
+
+/** A pill's caption: its meaning, after it. */
+const captionWidth = (r: LegendRow, measure: Measure) =>
+  r.caption ? 5 + measure(r.caption, FOOT.LABEL) : 0
+
+function legendItemWidth(r: LegendRow, measure: Measure): number {
+  if (r.kind === "pill")
+    return pillWidth(r.label, measure) + captionWidth(r, measure)
+  // A role is its badge: the name on the role's colour, never a swatch
+  // beside it. Not cut short, as a card's pill is.
+  if (r.kind === "role")
+    return Math.ceil(measure(r.label, PILL.SIZE, PILL.WEIGHT)) + 2 * PILL.PAD_X
+  return FOOT.LINE_W + 5 + measure(r.label, FOOT.LABEL)
+}
+
+function legendItem(r: LegendRow, x: number, cy: number, measure: Measure) {
+  if (r.kind === "pill" || r.kind === "role") {
+    const w =
+      r.kind === "pill"
+        ? pillWidth(r.label, measure)
+        : legendItemWidth(r, measure)
+    const role = r.kind === "role"
+    const fill = col(r.fill, role ? PRINT.wash : PRINT.subtle)
+    // The role's ink as its cards read, when the row does not say.
+    const ink = col(
+      r.ink,
+      role ? (hex6(readableText(fill)) ?? PRINT.text) : PRINT.paper
+    )
+    return (
+      el("rect", {
+        x,
+        y: cy - PILL.H / 2,
+        width: w,
+        height: PILL.H,
+        rx: PILL.RADIUS,
+        fill,
+        // A role's edge, as its cards have: a pale role still reads on
+        // white paper.
+        ...(role
+          ? {
+              stroke: mix("#000000", fill, CARD.EDGE_DARKEN),
+              "stroke-width": 1,
+            }
+          : {}),
+      }) +
+      text(r.label, {
+        x: x + w / 2,
+        y: baselineAt(cy - PILL.H / 2, PILL.SIZE, PILL.H),
+        "text-anchor": "middle",
+        "font-size": PILL.SIZE,
+        "font-weight": PILL.WEIGHT,
+        fill: ink,
+      }) +
+      (r.kind === "pill" && r.caption
+        ? text(r.caption, {
+            x: x + w + 5,
+            y: baselineAt(cy - FOOT.ROW / 2, FOOT.LABEL, FOOT.ROW),
+            "font-size": FOOT.LABEL,
+            fill: PRINT.body,
+          })
+        : "")
+    )
+  }
+  const sw = FOOT.LINE_W
+  const dash = dashOk(r.dash)
+  const swatch = el("path", {
+    d: `M ${fmt(x + 1)},${fmt(cy)} H ${fmt(x + sw - 1)}`,
+    stroke: col(r.stroke, PRINT.subtle),
+    "stroke-width": r.width ?? 1.25,
+    "stroke-dasharray": dash,
+    "stroke-linecap": dash ? undefined : "round",
+  })
+  return (
+    swatch +
+    text(r.label, {
+      x: x + sw + 5,
+      y: baselineAt(cy - FOOT.ROW / 2, FOOT.LABEL, FOOT.ROW),
+      "font-size": FOOT.LABEL,
+      fill: PRINT.body,
+    })
+  )
+}
+
+/** The strip under the drawing: legend entries flowing from the left, the
+ * title block right-aligned. Null when neither is asked for or has content. */
+function footer(
+  doc: DiagramDocument,
+  o: { titleBlock: boolean; legend: boolean },
+  measure: Measure
+): Footer | null {
+  const m = doc.meta
+  const rows = o.legend ? (m.legend ?? []).filter((r) => r.label) : []
+  const block = o.titleBlock
+    ? [
+        {
+          s: m.title,
+          size: FOOT.TITLE,
+          weight: 700 as Weight,
+          fill: PRINT.text,
+        },
+        {
+          s: [m.tenant, m.filters].filter(Boolean).join(" · "),
+          size: FOOT.SUB,
+          weight: 400 as Weight,
+          fill: PRINT.muted,
+        },
+        {
+          s: [stamp(m.generated_at), m.danbyte_url].filter(Boolean).join(" · "),
+          size: FOOT.SMALL,
+          weight: 400 as Weight,
+          fill: PRINT.subtle,
+        },
+      ].filter((l) => l.s)
+    : []
+  if (!rows.length && !block.length) return null
+
+  const blockW = Math.max(
+    0,
+    ...block.map((l) => measure(l.s, l.size, l.weight))
+  )
+  const blockH = block.reduce((h, l) => h + l.size + 5, 0)
+  const widths = rows.map((r) => legendItemWidth(r, measure))
+  const widest = Math.max(0, ...widths)
+  const beside = block.length ? blockW + (rows.length ? FOOT.TITLE_GAP : 0) : 0
+
+  /** Legend entries flowed into the space left of the title block. */
+  const flow = (width: number) => {
+    const avail = Math.max(widest, width - 2 * FOOT.PAD - beside)
+    const at: { x: number; row: number }[] = []
+    let [x, row] = [0, 0]
+    for (const w of widths) {
+      if (x > 0 && x + w > avail) {
+        row++
+        x = 0
+      }
+      at.push({ x, row })
+      x += w + FOOT.ITEM_GAP
+    }
+    return { at, rows: rows.length ? row + 1 : 0 }
+  }
+
+  return {
+    minWidth: 2 * FOOT.PAD + beside + widest,
+    heightFor: (width) =>
+      2 * FOOT.PAD + Math.max(blockH, flow(width).rows * FOOT.ROW),
+    draw(x0, top, width) {
+      const out: string[] = [
+        el("path", {
+          d: `M ${fmt(x0 + FOOT.PAD)},${fmt(top)} H ${fmt(x0 + width - FOOT.PAD)}`,
+          stroke: PRINT.border,
+          "stroke-width": 0.75,
+        }),
+      ]
+      const lay = flow(width)
+      rows.forEach((r, i) => {
+        const p = lay.at[i]
+        out.push(
+          legendItem(
+            r,
+            x0 + FOOT.PAD + p.x,
+            top + FOOT.PAD + p.row * FOOT.ROW + FOOT.ROW / 2,
+            measure
+          )
+        )
+      })
+      let y = top + FOOT.PAD
+      for (const l of block) {
+        y += l.size
+        out.push(
+          text(l.s, {
+            x: x0 + width - FOOT.PAD,
+            y,
+            "text-anchor": "end",
+            "font-size": l.size,
+            "font-weight": l.weight === 400 ? undefined : l.weight,
+            fill: l.fill,
+          })
+        )
+        y += 5
+      }
+      return `<g id="footer">${out.join("")}</g>`
+    },
+  }
+}
+
+// ── Document ─────────────────────────────────────────────────────────────
+
+/** The document as an SVG string. */
+export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
+  const measure = opts.measure ?? measureText
+  const margin = opts.margin ?? 24
+  const prefix = (opts.idPrefix ?? "dg-").replace(/[^A-Za-z0-9_-]/g, "")
+  const b = doc.bounds
+
+  const foot = footer(
+    doc,
+    { titleBlock: !!opts.titleBlock, legend: !!opts.legend },
+    measure
+  )
+  const x0 = b.x - margin
+  const y0 = b.y - margin
+  const width = Math.max(b.w + 2 * margin, foot?.minWidth ?? 0)
+  const footH = foot ? foot.heightFor(width) : 0
+  const height = b.h + 2 * margin + footH
+
+  // Photos: one symbol per distinct image, drawn with <use>.
+  const photos = new Map<string, string>()
+  for (const n of doc.nodes)
+    if (
+      n.kind === "photo" &&
+      n.photo &&
+      SAFE_IMAGE.test(n.photo.href) &&
+      !photos.has(n.photo.href)
+    )
+      photos.set(n.photo.href, `${prefix}ph${photos.size}`)
+  const photoId = (href: string) => photos.get(href) ?? ""
+
+  const out: string[] = []
+  out.push(
+    `<svg xmlns="http://www.w3.org/2000/svg"${attrs({
+      width,
+      height,
+      viewBox: `${fmt(x0)} ${fmt(y0)} ${fmt(width)} ${fmt(height)}`,
+      role: "img",
+      "font-family": FONT_STACK,
+    })}>`
+  )
+  out.push(`<title>${esc(doc.meta.title)}</title>`)
+  const desc = [
+    doc.meta.tenant,
+    stamp(doc.meta.generated_at),
+    `${doc.nodes.length} devices`,
+    `${doc.links.length} links`,
+  ].filter(Boolean)
+  out.push(`<desc>${esc(desc.join(" · "))}</desc>`)
+
+  const faces = opts.embedFont?.length ? fontFaces(opts.embedFont) : ""
+  if (faces || photos.size) {
+    out.push("<defs>")
+    if (faces) out.push(`<style>${faces}</style>`)
+    for (const [href, id] of photos)
+      out.push(
+        `<symbol${attrs({ id, viewBox: "0 0 100 100", preserveAspectRatio: "none" })}>` +
+          el("image", {
+            width: 100,
+            height: 100,
+            preserveAspectRatio: "none",
+            href,
+          }) +
+          `</symbol>`
+      )
+    out.push("</defs>")
+  }
+
+  const bg = opts.background === undefined ? PRINT.paper : opts.background
+  if (bg !== null)
+    out.push(
+      el("rect", {
+        x: x0,
+        y: y0,
+        width,
+        height,
+        fill: col(bg, PRINT.paper),
+      })
+    )
+
+  const linked = (href: string | undefined, body: string) =>
+    opts.links && href && SAFE_LINK.test(href)
+      ? `<a${attrs({ href })}>${body}</a>`
+      : body
+
+  out.push(`<g id="bands">`)
+  for (const band of doc.bands)
+    out.push(linked(band.link, bandSvg(band, measure)))
+  out.push(`</g><g id="links">`)
+  for (const l of doc.links) out.push(linked(l.link, linkSvg(l)))
+  // Breakout split points sit on their lines.
+  for (const j of doc.junctions ?? [])
+    out.push(
+      linked(
+        j.link,
+        el("circle", {
+          cx: j.x,
+          cy: j.y,
+          r: j.r,
+          fill: col(j.fill, PRINT.subtle),
+        })
+      )
+    )
+  const titles = doc.bands.filter((k) => k.kind === "row")
+  if (titles.length) {
+    out.push(`</g><g id="band-titles">`)
+    for (const band of titles)
+      out.push(bandTitleSvg(band, measure) + layerBadgesSvg(band, measure))
+  }
+  out.push(`</g><g id="nodes">`)
+  for (const n of doc.nodes)
+    out.push(linked(n.link, nodeSvg(n, measure, photoId)))
+  // Photo ports: each cable's lead over its photo.
+  const photoBoxes = new Map<string, Rect>(
+    doc.nodes
+      .filter((n) => n.kind === "photo" && n.photo && photoId(n.photo.href))
+      .map((n) => [n.id, n])
+  )
+  const leads = photoBoxes.size
+    ? doc.links.flatMap((l) => leadSvg(l, photoBoxes))
+    : []
+  if (leads.length) out.push(`</g><g id="leads">`, ...leads)
+  out.push(`</g><g id="labels">`)
+  const page = col(bg ?? PRINT.paper, PRINT.paper)
+  for (const l of doc.links)
+    for (const block of linkLabels(l, measure)) {
+      const cs = labelCorners(block)
+      const c = {
+        x: (cs[0].x + cs[2].x) / 2,
+        y: (cs[0].y + cs[2].y) / 2,
+      }
+      out.push(labelSvg(block, groundAt(doc.bands, c, page)))
+    }
+  out.push(`</g>`)
+  if (doc.notes.length) {
+    out.push(`<g id="notes">`)
+    for (const n of doc.notes) out.push(noteSvg(n, measure))
+    out.push(`</g>`)
+  }
+  if (foot) out.push(foot.draw(x0, b.y + b.h + margin, width))
+  out.push(`</svg>`)
+  return out.join("\n")
+}

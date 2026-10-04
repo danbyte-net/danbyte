@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from unittest import mock
 
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
@@ -221,11 +222,68 @@ class DownscaleOnUploadTests(APITestCase):
 
     def test_small_upload_passes_through_untouched(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import ImageFile
 
         from api.images import downscale_image
 
-        up = SimpleUploadedFile("small.png", _png_bytes(), "image/png")
-        self.assertIs(downscale_image(up), up)
+        # A small image Pillow decodes, also with truncated loading on as
+        # WeasyPrint leaves it once a PDF export has run in the process.
+        for truncated in (False, True):
+            with self.subTest(truncated=truncated), \
+                    mock.patch.object(ImageFile, "LOAD_TRUNCATED_IMAGES", truncated):
+                up = SimpleUploadedFile("small.png", self._big_png(40, 10), "image/png")
+                self.assertIs(downscale_image(up), up)
+
+    def test_a_small_photo_loses_its_location_and_other_metadata(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import ExifTags, Image, ImageCms, PngImagePlugin
+
+        from api.images import carries_metadata, downscale_image
+
+        exif = Image.Exif()
+        exif[ExifTags.Base.Make] = "PhoneMaker"
+        exif[ExifTags.IFD.GPSInfo] = {
+            ExifTags.GPS.GPSLatitudeRef: "N", ExifTags.GPS.GPSLatitude: (52.0, 22.0, 12.5),
+        }
+        icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+        jpeg = io.BytesIO()
+        Image.new("RGB", (1200, 800), (30, 30, 30)).save(
+            jpeg, format="JPEG", exif=exif, comment=b"desk 4", icc_profile=icc
+        )
+        text = PngImagePlugin.PngInfo()
+        text.add_text("Comment", "desk 4")
+        text.add_itxt("XML:com.adobe.xmp", "<x:xmpmeta/>")
+        png = io.BytesIO()
+        Image.new("RGBA", (40, 10)).save(png, format="PNG", pnginfo=text, exif=exif)
+        for name, data, mime in (("panel.jpg", jpeg.getvalue(), "image/jpeg"),
+                                 ("panel.png", png.getvalue(), "image/png")):
+            with self.subTest(name=name):
+                up = SimpleUploadedFile(name, data, mime)
+                out = downscale_image(up)
+                self.assertIsNot(out, up)
+                img = Image.open(io.BytesIO(out.read()))
+                img.load()
+                self.assertFalse(carries_metadata(img), img.info.keys())
+                self.assertEqual(dict(img.getexif()), {})
+                self.assertEqual(img.size, (1200, 800) if name.endswith("jpg") else (40, 10))
+                if name.endswith("jpg"):
+                    # The colour profile is no metadata: it stays.
+                    self.assertEqual(img.info.get("icc_profile"), icc)
+
+    def test_a_small_rotated_photo_is_turned_upright(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import ExifTags, Image
+
+        from api.images import downscale_image
+
+        buf = io.BytesIO()
+        exif = Image.Exif()
+        exif[ExifTags.Base.Orientation] = 6
+        Image.new("RGB", (40, 10), (30, 30, 30)).save(buf, format="JPEG", exif=exif)
+        up = SimpleUploadedFile("turned.jpg", buf.getvalue(), "image/jpeg")
+        out = downscale_image(up)
+        self.assertIsNot(out, up)
+        self.assertEqual(Image.open(io.BytesIO(out.read())).size, (10, 40))
 
     def test_non_image_passes_through(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
@@ -273,3 +331,70 @@ class DownscaleOnUploadTests(APITestCase):
             f"/api/device-types/{dt.id}/images/", {"resize_rear": "800"}
         )
         self.assertEqual(r.status_code, 400)
+
+
+class StripPhotoMetadataCommandTests(APITestCase):
+    """``manage.py strip_photo_metadata`` (#291): photos stored with their
+    metadata are re-saved without it; the rest stay as they are."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        from django.test import override_settings
+
+        media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, media, True)
+        settings = override_settings(MEDIA_ROOT=media)
+        settings.enable()
+        self.addCleanup(settings.disable)
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+
+    def _jpeg(self, gps):
+        from PIL import ExifTags, Image
+
+        extra = {}
+        if gps:
+            exif = Image.Exif()
+            exif[ExifTags.IFD.GPSInfo] = {ExifTags.GPS.GPSLatitudeRef: "N"}
+            extra["exif"] = exif
+        buf = io.BytesIO()
+        Image.new("RGB", (60, 20), (40, 40, 40)).save(buf, format="JPEG", **extra)
+        return buf.getvalue()
+
+    def test_stored_photos_lose_their_metadata_once(self):
+        from django.core.files.base import ContentFile
+        from django.core.management import call_command
+        from PIL import Image
+
+        from api.images import carries_metadata
+        from api.models import DeviceType
+
+        dt = DeviceType.objects.create(tenant=self.tenant, name="Panel 1")
+        dt.front_image.save("front.jpg", ContentFile(self._jpeg(gps=True)), save=True)
+        dt.rear_image.save("rear.jpg", ContentFile(self._jpeg(gps=False)), save=True)
+        rear = dt.rear_image.name
+
+        def run(*args):
+            out = io.StringIO()
+            call_command("strip_photo_metadata", *args, stdout=out)
+            return out.getvalue()
+
+        def front():
+            dt.refresh_from_db()
+            with dt.front_image.open("rb") as fh:
+                img = Image.open(io.BytesIO(fh.read()))
+                img.load()
+            return dt.front_image.name, carries_metadata(img)
+
+        before, _ = front()
+        self.assertIn("1 photo(s) carry metadata", run("--dry-run"))
+        self.assertEqual(front(), (before, True))
+        self.assertIn("1 photo(s) carried metadata", run())
+        name, dirty = front()
+        self.assertFalse(dirty)
+        if name != before:
+            self.assertFalse(dt.front_image.storage.exists(before))
+        self.assertEqual(dt.rear_image.name, rear)
+        self.assertIn("0 photo(s)", run())

@@ -21,7 +21,7 @@ from pathlib import Path
 
 from django.conf import settings
 
-from .upgrade import _systemd_env
+from .upgrade import _systemd_env, _upgrade_running
 
 RESTART_SCRIPT = settings.BASE_DIR / "scripts" / "danbyte-restart.sh"
 APPLY_SCRIPT = settings.BASE_DIR / "scripts" / "danbyte-apply-plugins.sh"
@@ -128,8 +128,26 @@ def _launch_detached(script, unit_args: list[str], *, extra_setenv: dict | None 
     return result.returncode == 0
 
 
+#: What a service action answers while an upgrade holds the units: the
+#: upgrade stops and starts them itself, and a restart or a migrate in the
+#: middle of it would run half-swapped code.
+UPGRADE_BUSY = "An upgrade is running; it restarts the services itself when it is done."
+
+
+def _upgrade_busy() -> dict | None:
+    try:
+        running = _upgrade_running()
+    except Exception:  # noqa: BLE001 - an unreadable lock is not proof of idleness
+        running = True
+    if running:
+        return {"ok": False, "busy": True, "detail": UPGRADE_BUSY, "units": []}
+    return None
+
+
 def restart_services(keys: list[str]) -> dict:
     """Restart the named service keys (detached). Returns what was launched."""
+    if (busy := _upgrade_busy()) is not None:
+        return busy
     units = _resolve_units(keys)
     if not units:
         return {"ok": False, "detail": "No matching installed services.", "units": []}
@@ -230,6 +248,8 @@ def pending_migrations_by_app() -> dict[str, list[str]]:
 def apply_plugins() -> dict:
     """Run ``migrate --noinput`` then restart the core units - detached, so a
     long migration + the restart survive independent of this request."""
+    if (busy := _upgrade_busy()) is not None:
+        return busy
     ok = _launch_detached(
         APPLY_SCRIPT,
         [s["unit"] for s in list_services() if s["core"]],

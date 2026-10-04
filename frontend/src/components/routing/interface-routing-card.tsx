@@ -95,24 +95,25 @@ export function InterfaceRoutingCard({
   const es = segments.data?.results ?? []
   const o = (ospf.data?.results ?? []).flatMap((inst) =>
     inst.interfaces
-      .filter((row) => row.interface.id === interfaceId)
+      .filter((row) => row.interface?.id === interfaceId)
       .map((row) => ({ inst, row }))
   )
   const i = (isis.data?.results ?? []).flatMap((inst) =>
     inst.interfaces
-      .filter((row) => row.interface.id === interfaceId)
+      .filter((row) => row.interface?.id === interfaceId)
       .map((row) => ({ inst, row }))
   )
   const e = (eigrp.data?.results ?? []).flatMap((inst) =>
     inst.interfaces
-      .filter((row) => row.interface.id === interfaceId)
+      .filter((row) => row.interface?.id === interfaceId)
       .map((row) => ({ inst, row }))
   )
   const b = (bgp.data?.results ?? []).filter(
     (s) => s.interface?.id === interfaceId
   )
-  const notIn = (inst: { interfaces: { interface: { id: string } }[] }) =>
-    !inst.interfaces.some((row) => row.interface.id === interfaceId)
+  const notIn = (inst: {
+    interfaces: { interface: { id: string } | null }[]
+  }) => !inst.interfaces.some((row) => row.interface?.id === interfaceId)
   const joinable = [
     ...(canDo("ospfinterface", "add")
       ? (ospf.data?.results ?? []).filter(notIn).map((instance) => ({

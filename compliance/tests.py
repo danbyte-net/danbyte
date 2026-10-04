@@ -216,6 +216,50 @@ class ComplianceApiTests(APITestCase):
         r = self.client.get(f"/api/compliance/devices/{self.device.id}/")
         self.assertIn(r.status_code, (401, 403))
 
+    # ── affected-object rows ───────────────────────────────────────────────
+    def _login_as(self, name, object_types, sites=()):
+        user = User.objects.create_user(name, password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name=name, object_types=object_types, actions=["view"]
+        )
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        if sites:
+            perm.sites.set(sites)
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_affected_rows_follow_the_type_view_permission(self):
+        """A compliance grant names the failing rules; the rows behind them are
+        the type's own, cut to what the caller may view of it."""
+        from api.models import Site
+
+        hq = Site.objects.create(tenant=self.tenant, name="HQ")
+        branch = Site.objects.create(tenant=self.tenant, name="Branch")
+        self.device.site = hq
+        self.device.save()
+        away = _make_device(self.tenant, "sw2")
+        away.site = branch
+        away.save()
+        url = f"/api/compliance-rules/{self.rule.id}/violations/"
+
+        body = self.client.get(url).json()
+        self.assertEqual({o["name"] for o in body["objects"]}, {"sw1", "sw2"})
+        # List-shaped rows: the detail page's tab counts are not computed.
+        self.assertEqual(body["objects"][0]["hardware_count"], 0)
+
+        self._login_as("rules-only", ["compliancerule"])
+        body = self.client.get(url).json()
+        self.assertEqual(body["total"], 2)
+        self.assertEqual(body["objects"], [])
+
+        self._login_as("hq-only", ["compliancerule", "device"], sites=[hq])
+        body = self.client.get(url).json()
+        self.assertEqual([o["name"] for o in body["objects"]], ["sw1"])
+
     # ── evaluate URL filters ────────────────────────────────────────────────
     def test_evaluate_filters_narrow_violations(self):
         # A second (warning) rule so severity/rule filters have something to cut.

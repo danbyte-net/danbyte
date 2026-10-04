@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -17,15 +18,18 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { CalendarClock } from "lucide-react"
 
-import {
-  api,
-  type Device,
-  type Paginated,
-  type PlanningPlannedChange,
-  type Rack,
+import { api } from "@/lib/api"
+import type {
+  Device,
+  Paginated,
+  PlanningPlannedChange,
+  PortCountRow,
+  Rack,
+  RackPortState,
 } from "@/lib/api"
 import { readableText } from "@/components/cells/color-badge"
 import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
+import { unitRow } from "@/lib/rack-placement"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -37,7 +41,12 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { FormCheckbox } from "@/components/forms"
-import { TypeFaceplate } from "@/components/device-faceplate"
+import { TypeFaceplate, useSavedFaceplate } from "@/components/device-faceplate"
+import type { PortTrace } from "@/components/device-faceplate"
+import { CableTraceDialog } from "@/components/cable-trace-dialog"
+import { InterfaceTraceDialog } from "@/components/interface-trace-dialog"
+import { PortsBadge, RackLiveFace } from "@/components/rack-live-face"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
@@ -51,6 +60,28 @@ const RENDER_PX_PER_MM = 1.35
 
 export type RackFace = "front" | "rear"
 export type RackDisplayMode = "names" | "images" | "render"
+/** Which gear the elevation shows: all of it, or only what is mounted on
+ * one face - the rest still takes its units, hatched. */
+export type RackShow = "all" | "front" | "rear"
+
+/** How a device draws on a face: its front where it is mounted (`own`), its
+ * other side where it is full depth (`other`), or as hatched space the Show
+ * filter keeps it out of (`hidden`). */
+type BlockView = "own" | "other" | "hidden"
+
+/** The device form's unit picker: the elevation drawn for placing one
+ * device. Device blocks stop being links, the page's add, assign and drag
+ * affordances, side lanes and planned moves go, and a press on a unit - free
+ * or taken, a block lets it through - calls `onUnit`. */
+export interface RackUnitPicker {
+  /** Left out of the drawing: the device being placed. */
+  exclude?: string
+  onUnit: (unit: number) => void
+  /** The unit under the pointer; null once it leaves the units. */
+  onHover?: (unit: number | null) => void
+  /** Drawn over the units, as grid items: the device being placed. */
+  overlay?: ReactNode
+}
 
 export function RackElevation({
   rack,
@@ -61,6 +92,9 @@ export function RackElevation({
   showHeader = true,
   scale,
   draggable = false,
+  picker,
+  ports,
+  show = "all",
 }: {
   rack: Rack
   /** Controlled face - hides the internal Front/Rear toggle. */
@@ -77,6 +111,15 @@ export function RackElevation({
   scale?: number
   /** Rack page: drag device blocks between units to re-position them. */
   draggable?: boolean
+  /** The device form: pick a unit for the device being placed. */
+  picker?: RackUnitPicker
+  /** The rack page (#248): the rack's port state. Every block then shows
+   * its ports in use over its counted ports; Images and Render draw each
+   * device's ports live, as its device page does, and a press on a cabled
+   * port opens its trace. */
+  ports?: RackPortState
+  /** Only the gear mounted on one face; the rest is hatched space. */
+  show?: RackShow
 }) {
   const [faceState, setFace] = useState<RackFace>("front")
   const [modeState, setMode] = useState<RackDisplayMode>("names")
@@ -86,11 +129,13 @@ export function RackElevation({
     "side_left" | "side_right" | null
   >(null)
   const { canDo } = useMe()
-  const canAddDevice = canDo("device", "add")
-  const canMoveDevice = canDo("device", "change")
+  const canAddDevice = !picker && canDo("device", "add")
+  const canMoveDevice = !picker && canDo("device", "change")
   const canDrag = draggable && canMoveDevice
   const qc = useQueryClient()
   const [dragging, setDragging] = useState<Device | null>(null)
+  // A cabled port pressed on a live face: its run, in a dialog.
+  const [trace, setTrace] = useState<PortTrace | null>(null)
   const sensors = useSensors(
     // 6px activation distance keeps plain clicks navigating to the device.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -133,12 +178,14 @@ export function RackElevation({
   }, [rack.starting_unit, rack.u_height, rack.desc_units])
 
   // Map a unit number to its 1-based grid row (top = row 1).
-  const rowOf = (unit: number) =>
-    rack.desc_units
-      ? unit - rack.starting_unit + 1
-      : rack.starting_unit + rack.u_height - 1 - unit + 1
+  const rowOf = (unit: number) => unitRow(rack, unit)
 
-  const devices = q.data?.results ?? []
+  const exclude = picker?.exclude
+  const onHover = picker?.onHover
+  const devices = useMemo(() => {
+    const all = q.data?.results ?? []
+    return exclude ? all.filter((d) => d.id !== exclude) : all
+  }, [q.data, exclude])
   // Side-mounted 0U strips (vertical PDUs) - they live in the rail lanes
   // flanking the U grid, not in it. A strip's `face` says which CHANNEL it
   // bolts into, so it only shows on that elevation; blank means unspecified
@@ -152,21 +199,28 @@ export function RackElevation({
     (d) => d.mount === "side_right" && onThisFace(d)
   )
   // Mounting semantics: a device mounts on ONE face (face "" ≈ front); when its
-  // type is full-depth it *occupies* the opposite face too - drawn hatched
-  // there, so the rear view shows what's blocking the space.
+  // type is full-depth it *occupies* the opposite face too and shows its
+  // other side there - its rear plate, or hatching where the type has none.
+  // A shallow device leaves the other face free. A device the Show filter
+  // leaves out still takes its units, hatched, so used and free U stay true.
   const visible = useMemo(
     () =>
       devices
         .filter((d) => d.position != null)
         .map((d) => {
           const mounted: RackFace = d.face === "rear" ? "rear" : "front"
-          const fullDepth = d.device_type?.is_full_depth ?? true
-          if (mounted === face) return { d, hatched: false }
-          if (fullDepth) return { d, hatched: true }
-          return null
+          const own = mounted === face
+          if (!own && !(d.device_type?.is_full_depth ?? true)) return null
+          const view: BlockView =
+            show !== "all" && mounted !== show
+              ? "hidden"
+              : own
+                ? "own"
+                : "other"
+          return { d, view }
         })
-        .filter((x): x is { d: Device; hatched: boolean } => x !== null),
-    [devices, face]
+        .filter((x): x is { d: Device; view: BlockView } => x !== null),
+    [devices, face, show]
   )
 
   // Planned rack-elevation moves, drawn as ghosts: a device in THIS rack
@@ -180,6 +234,7 @@ export function RackElevation({
         "/api/planning/planned-changes/?state=planned&page_size=300"
       ),
     staleTime: 60_000,
+    enabled: !picker,
   })
   const ghosts = useMemo(() => {
     const out: {
@@ -331,7 +386,7 @@ export function RackElevation({
         >
           <div className="overflow-x-auto rounded-lg border border-border bg-card p-1.5">
             <div className="flex gap-1.5">
-              {(mountedLeft.length > 0 || canAddDevice) && (
+              {!picker && (mountedLeft.length > 0 || canAddDevice) && (
                 <SideLane
                   side="side_left"
                   devices={mountedLeft}
@@ -344,6 +399,7 @@ export function RackElevation({
               )}
               <div
                 className="relative grid flex-1"
+                onPointerLeave={onHover ? () => onHover(null) : undefined}
                 style={{
                   gridTemplateRows: `repeat(${rack.u_height}, ${rowHeight}px)`,
                   // Two columns so half-width devices (rack_width="half") can
@@ -360,6 +416,8 @@ export function RackElevation({
                     unit={unit}
                     row={i + 1}
                     droppable={canDrag}
+                    onPick={picker ? () => picker.onUnit(unit) : undefined}
+                    onEnter={onHover ? () => onHover(unit) : undefined}
                   >
                     <span className="w-6 shrink-0 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
                       {unit}
@@ -390,7 +448,7 @@ export function RackElevation({
                 ))}
 
                 {/* Device blocks spanning their u_height. */}
-                {visible.map(({ d, hatched }) => {
+                {visible.map(({ d, view }) => {
                   // When desc_units is false (highest at top), a device occupying
                   // positions p..p+h-1 starts visually at its *top-most* unit
                   // (p+h-1), so anchor on that row; ascending anchors on p.
@@ -406,26 +464,67 @@ export function RackElevation({
                         ? "2"
                         : "1"
                       : "1 / -1"
+                  const span = Math.max(1, d.u_height)
+                  const accent = rack.role?.color || undefined
+                  const own = view === "own"
+                  // The rack page's live face, over the block it belongs to:
+                  // in Render, and in Images where the side it shows has a
+                  // photo - without one the block draws itself.
+                  const photo = own
+                    ? d.device_type?.front_image
+                    : d.device_type?.rear_image
+                  const liveMode =
+                    view === "hidden" || mode === "names"
+                      ? null
+                      : mode === "images" && !photo
+                        ? null
+                        : mode
+                  const live = liveMode ? ports?.devices[d.id] : undefined
                   return (
-                    <DeviceBlock
-                      key={d.id}
-                      device={d}
-                      face={face}
-                      mode={mode}
-                      hatched={hatched}
-                      dragEnabled={canDrag && !hatched}
-                      highlight={d.id === highlightDeviceId}
-                      showText={labels}
-                      startRow={top}
-                      // span clamps to the visible grid in case of overflow
-                      span={Math.max(1, d.u_height)}
-                      column={column}
-                      accent={rack.role?.color || undefined}
-                    />
+                    <Fragment key={d.id}>
+                      <DeviceBlock
+                        device={d}
+                        face={face}
+                        mode={mode}
+                        view={view}
+                        dragEnabled={canDrag && own}
+                        highlight={d.id === highlightDeviceId}
+                        showText={labels}
+                        startRow={top}
+                        // span clamps to the visible grid in case of overflow
+                        span={span}
+                        column={column}
+                        accent={accent}
+                        inert={!!picker}
+                        live={!!live}
+                        ports={own ? ports?.devices[d.id]?.ports : undefined}
+                        countVirtual={ports?.rack.count_virtual}
+                      />
+                      {live && liveMode && (
+                        <RackLiveFace
+                          device={d}
+                          state={live}
+                          mode={liveMode}
+                          side={own ? "front" : "rear"}
+                          pxPerMm={pxPerMm}
+                          text={labels}
+                          countPorts={own}
+                          countVirtual={ports?.rack.count_virtual}
+                          onTrace={setTrace}
+                          className={cn(dragging?.id === d.id && "opacity-40")}
+                          style={{
+                            gridColumn: column,
+                            gridRow: `${Math.max(1, top)} / span ${span}`,
+                            // Clear of the block's accent rail.
+                            borderLeftWidth: accent ? 3 : undefined,
+                          }}
+                        />
+                      )}
+                    </Fragment>
                   )
                 })}
                 {ghosts
-                  .filter((g) => g.ghostFace === face)
+                  .filter((g) => !picker && g.ghostFace === face)
                   .map((g) => {
                     const h = Math.max(1, g.dev.u_height)
                     const topUnit = rack.desc_units
@@ -454,8 +553,9 @@ export function RackElevation({
                       </div>
                     )
                   })}
+                {picker?.overlay}
               </div>
-              {(mountedRight.length > 0 || canAddDevice) && (
+              {!picker && (mountedRight.length > 0 || canAddDevice) && (
                 <SideLane
                   side="side_right"
                   devices={mountedRight}
@@ -480,9 +580,7 @@ export function RackElevation({
         </DndContext>
       )}
 
-      {q.isLoading && (
-        <p className="mt-2 text-xs text-muted-foreground">Loading devices…</p>
-      )}
+      {q.isLoading && <Loading className="mt-2 min-h-16" />}
 
       <SideAssignDialog
         rack={rack}
@@ -495,8 +593,33 @@ export function RackElevation({
         face={face}
         onOpenChange={(o) => !o && setAssignUnit(null)}
       />
+      {ports && (
+        <>
+          <InterfaceTraceDialog
+            target={
+              trace?.kind === "interface"
+                ? { id: trace.id, name: traceName(trace) }
+                : null
+            }
+            onOpenChange={(o) => !o && setTrace(null)}
+          />
+          <CableTraceDialog
+            target={
+              trace?.kind === "cable"
+                ? { id: trace.id, label: traceName(trace) }
+                : null
+            }
+            onOpenChange={(o) => !o && setTrace(null)}
+          />
+        </>
+      )}
     </div>
   )
+}
+
+/** A traced port as the dialog's title names it: `device:port`. */
+function traceName(t: PortTrace): string {
+  return t.device ? `${t.device}:${t.name}` : t.name
 }
 
 /** One empty-unit band: hover Add/Assign affordances, and - when the
@@ -564,11 +687,17 @@ function UnitBand({
   unit,
   row,
   droppable,
+  onPick,
+  onEnter,
   children,
 }: {
   unit: number
   row: number
   droppable: boolean
+  /** The device form's picker: a press on the unit. */
+  onPick?: () => void
+  /** The device form's picker: the pointer comes onto the unit. */
+  onEnter?: () => void
   children: React.ReactNode
 }) {
   const { setNodeRef, isOver } = useDroppable({
@@ -578,8 +707,12 @@ function UnitBand({
   return (
     <div
       ref={droppable ? setNodeRef : undefined}
+      data-unit={unit}
+      onClick={onPick}
+      onPointerEnter={onEnter}
       className={cn(
         "group/unit flex items-center gap-2 border-b border-border/60 bg-muted/30 px-2 last:border-b-0",
+        onPick && "cursor-pointer",
         isOver && "bg-primary/15 outline-1 outline-primary/50"
       )}
       style={{ gridRow: row, gridColumn: "1 / -1" }}
@@ -754,7 +887,7 @@ function DeviceBlock({
   device,
   face,
   mode,
-  hatched,
+  view,
   highlight,
   showText,
   startRow,
@@ -762,14 +895,30 @@ function DeviceBlock({
   column,
   accent,
   dragEnabled = false,
+  inert = false,
+  live = false,
+  ports,
+  countVirtual = false,
 }: {
   device: Device
   face: RackFace
   mode: RackDisplayMode
+  /** Its front where it is mounted, its other side where it is full depth,
+   * or hatched space the Show filter leaves it out of. */
+  view: BlockView
+  /** A live face lies over this block (`RackLiveFace`). On the face it is
+   * mounted on the face draws the picture and the text; on its other side
+   * the block keeps its hatching under it, for a type with no plate there. */
+  live?: boolean
+  /** The device's counted ports - its block shows those in use over them. */
+  ports?: PortCountRow
+  /** The deployment counts virtual interfaces too (the badge says so). */
+  countVirtual?: boolean
   /** Rack page: this block can be dragged to another unit. */
   dragEnabled?: boolean
-  /** Occupied from the other face (full-depth) - striped, muted. */
-  hatched: boolean
+  /** The device form's picker: a picture, not a link - a press goes through
+   * to the unit under it. */
+  inert?: boolean
   highlight: boolean
   /** Overlay position + name on image/render blocks (names mode: always). */
   showText: boolean
@@ -780,66 +929,75 @@ function DeviceBlock({
   accent?: string
 }) {
   const mountedOn: RackFace = device.face === "rear" ? "rear" : "front"
+  const own = view === "own"
+  const hidden = view === "hidden"
+  const overlaid = own && live
+  // The other side's plate, where nothing live lies over it: Images, the
+  // type's rear photo; Render, the type's drawing of its rear. Names draws
+  // the other side as a plain block.
+  const rearDoc = useSavedFaceplate(
+    view === "other" && mode === "render" && !live
+      ? device.device_type?.id
+      : null
+  )
+  const otherPlate =
+    mode === "names" ||
+    (!live &&
+      (mode === "images"
+        ? !!device.device_type?.rear_image
+        : (rearDoc?.rear.length ?? 0) > 0))
+  // Hatched: hidden by the Show filter, or the other side of a type with no
+  // plate for it - never an empty plain block.
+  const hatched = hidden || (view === "other" && !otherPlate)
   // Images mode: paint the type's rack-face image across the block with a
   // legibility scrim. Render mode: draw the type's faceplate at rack scale.
-  // A non-hatched block is drawn on the device's OWN mounted face, so you're
-  // looking at its front - use front_image there, rear_image only on the
-  // opposite face. (Keying off the elevation `face` alone showed rear-mounted
-  // devices' rear image on the rear elevation.)
+  // The device's own face shows its front - front_image - and its other
+  // side its rear - rear_image. (Keying off the elevation `face` alone showed
+  // rear-mounted devices' rear image on the rear elevation.)
   const image =
-    mode === "images" && !hatched
+    mode === "images" && !hatched && !overlaid
       ? face === mountedOn
         ? device.device_type?.front_image
         : device.device_type?.rear_image
       : null
-  const renderPanel = mode === "render" && !hatched && device.device_type
-  const text = mode === "names" || hatched || showText
+  const renderPanel =
+    mode === "render" && !hatched && !overlaid && device.device_type
+  const text = !overlaid && !hidden && (mode === "names" || hatched || showText)
   // Occupied units fill edge-to-edge (square corners) and take
   // the DEVICE ROLE's color as the block background in names mode.
   const roleColor =
-    !hatched && !image && !renderPanel ? device.role?.color || null : null
+    !hatched && !image && !renderPanel && !overlaid
+      ? device.role?.color || null
+      : null
   const roleFg = roleColor ? readableText(roleColor) : undefined
 
   const drag = useDraggable({ id: device.id, disabled: !dragEnabled })
 
-  return (
-    <Link
-      ref={drag.setNodeRef}
-      {...drag.attributes}
-      {...drag.listeners}
-      to="/devices/$id"
-      params={{ id: device.id }}
-      className={cn(
-        "group/dev relative z-10 flex items-center gap-2 overflow-hidden border px-2",
-        dragEnabled && "touch-none",
-        drag.isDragging && "opacity-40",
-        hatched
-          ? "border-border/60 bg-transparent hover:bg-muted/40"
-          : "border-border hover:brightness-110",
-        image ? "bg-zinc-950" : hatched || roleColor ? "" : "bg-card",
-        highlight && "z-20 border-primary ring-2 ring-primary/50"
-      )}
-      style={{
-        gridColumn: column,
-        gridRow: `${Math.max(1, startRow)} / span ${span}`,
-        backgroundColor: roleColor ?? undefined,
-        color: roleFg,
-        borderLeft:
-          accent && !hatched && !roleColor ? `3px solid ${accent}` : undefined,
-        // Diagonal stripes: this face is blocked by a full-depth
-        // device mounted on the other face.
-        backgroundImage: hatched
-          ? "repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, currentColor 18%, transparent) 5px, color-mix(in srgb, currentColor 18%, transparent) 7px)"
-          : undefined,
-      }}
-      title={`${device.name} · U${device.position}${
-        device.u_height > 1
-          ? `–U${(device.position as number) + device.u_height - 1}`
-          : ""
-      }${device.rack_width === "half" ? ` · ${device.rack_side || "left"} half` : ""}${
-        hatched ? ` · mounted on ${mountedOn}` : ""
-      }`}
-    >
+  const className = cn(
+    "group/dev relative z-10 flex items-center gap-2 overflow-hidden border px-2",
+    dragEnabled && "touch-none",
+    drag.isDragging && "opacity-40",
+    hatched
+      ? "border-border/60 bg-transparent hover:bg-muted/40"
+      : "border-border hover:brightness-110",
+    image ? "bg-zinc-950" : hatched || roleColor ? "" : "bg-card",
+    highlight && "z-20 border-primary ring-2 ring-primary/50"
+  )
+  const style = {
+    gridColumn: column,
+    gridRow: `${Math.max(1, startRow)} / span ${span}`,
+    backgroundColor: roleColor ?? undefined,
+    color: roleFg,
+    borderLeft:
+      accent && !hatched && !roleColor ? `3px solid ${accent}` : undefined,
+    // Diagonal stripes: units this face can't use - a full-depth device's
+    // other side with no plate, or gear the Show filter leaves out.
+    backgroundImage: hatched
+      ? "repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, currentColor 18%, transparent) 5px, color-mix(in srgb, currentColor 18%, transparent) 7px)"
+      : undefined,
+  }
+  const content = (
+    <>
       {image && (
         <>
           <img
@@ -867,7 +1025,7 @@ function DeviceBlock({
           />
         </div>
       )}
-      {(text || (!image && !renderPanel)) && (
+      {!overlaid && !hidden && (text || (!image && !renderPanel)) && (
         <>
           <span
             className={cn(
@@ -902,10 +1060,19 @@ function DeviceBlock({
               {device.name}
             </span>
           )}
+          {own && (
+            <PortsBadge
+              ports={ports}
+              countVirtual={countVirtual}
+              className="relative ml-auto"
+            />
+          )}
           {device.u_height > 1 && !renderPanel && (
             <span
               className={cn(
-                "relative ml-auto shrink-0 text-[10px] tabular-nums",
+                "relative shrink-0 text-[10px] tabular-nums",
+                // After the ports badge when there is one.
+                !(own && ports?.total) && "ml-auto",
                 image
                   ? "text-zinc-300"
                   : roleColor
@@ -918,6 +1085,49 @@ function DeviceBlock({
           )}
         </>
       )}
+    </>
+  )
+  if (inert)
+    return (
+      <div
+        data-device={device.name}
+        className={cn(className, "pointer-events-none")}
+        style={style}
+      >
+        {content}
+      </div>
+    )
+  // Left out by the Show filter: the space it takes, and nothing to open.
+  if (hidden)
+    return (
+      <div
+        aria-hidden
+        data-device={device.name}
+        data-view="hidden"
+        className={className}
+        style={style}
+      />
+    )
+
+  return (
+    <Link
+      ref={drag.setNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
+      to="/devices/$id"
+      params={{ id: device.id }}
+      data-view={view}
+      className={className}
+      style={style}
+      title={`${device.name} · U${device.position}${
+        device.u_height > 1
+          ? `–U${(device.position as number) + device.u_height - 1}`
+          : ""
+      }${device.rack_width === "half" ? ` · ${device.rack_side || "left"} half` : ""}${
+        own ? "" : ` · mounted on ${mountedOn}`
+      }`}
+    >
+      {content}
     </Link>
   )
 }

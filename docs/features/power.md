@@ -106,6 +106,19 @@ are cable endpoints, so the whole power path is traceable end-to-end like any
 other cabling. Manage them on the device's **Power** tab; connector types
 (IEC C13/C14, NEMA, ...) come from the standard taxonomy.
 
+A rack's power supply is its primary feeds. Where a rack has none, the
+**maximum draw** of its PDUs' inlets stands in, marked as a PDU rating (half
+of it for two or more PDUs, taken as an A/B pair) - see
+[Racks](../dcim/racks.md) for how a rack rolls power up.
+
+To see where power runs short, colour a floor plan's racks by **Power**
+([Color by](floor-plans.md#color-by)): each rack's demand over its supply on
+the shared scale - green up to 80 %, amber above 80 %, red above 95 % - and
+grey with *No data* where a rack has no supply figure to measure against. The
+rack table under the plan sorts by the same share, and a site's
+[Capacity](../models/site.md#the-capacity-tab) tab adds the figures up per
+floor plan.
+
 ## Tags & custom fields
 
 Need to track something extra - a breaker number, a UPS reference, a circuit

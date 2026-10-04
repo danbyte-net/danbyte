@@ -16,6 +16,7 @@ import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { syncPortReservation } from "@/components/port-reservation-dialog"
 
 export interface RearPortFormProps {
@@ -132,6 +133,7 @@ export function RearPortForm({
       qc.invalidateQueries({ queryKey: ["port-reservations"] })
       qc.invalidateQueries({ queryKey: ["device-rear-ports", deviceId] })
       qc.invalidateQueries({ queryKey: ["rear-ports-picker", deviceId] })
+      invalidatePortCounts(qc)
       toast.success(
         isEdit
           ? `Updated ${saved.name}`

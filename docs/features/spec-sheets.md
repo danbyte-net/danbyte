@@ -23,14 +23,18 @@ A4, built to print in black and white as well as colour:
   page. A virtual chassis shows every member's front, in position order.
 - **Three stat boxes** - the numbers wanted at a glance. Device: interfaces,
   power draw (the sum of its power ports' allocated or maximum draw), rack
-  position. VM: vCPU, memory, total disk. Virtual chassis: members,
+  position. VM: vCPU, memory (in GB), total disk. Virtual chassis: members,
   interfaces, ports used.
 - **Details** - serial number, asset tag, type and part number, height,
-  platform, primary and OOB IP, tenant, site, location, rack, cluster,
-  virtual chassis, description, tags, and every custom field that has a value
-  and is not hidden in its definition.
+  size, platform, primary and OOB IP, tenant, site, location, rack, cabinet
+  (with rail and offset), cluster, virtual chassis, description, tags, and
+  every custom field that has a value and is not hidden in its definition.
 - **Port utilization** (device and virtual chassis) - the same bar as the
-  page: connected, reserved and free ports out of the total.
+  page: connected, reserved and free ports out of the counted total -
+  physical interfaces and front ports, plus virtual interfaces when the
+  deployment counts them (see
+  [What counts as a port](../dcim/devices.md#what-counts-as-a-port)). Left off
+  when nothing is counted.
 - **Modules and inventory** (device), **Storage** (VM), or the **member
   table** (virtual chassis: position, device, master or member, priority,
   type, serial, status) followed by every member's front elevation in
@@ -45,6 +49,13 @@ A4, built to print in black and white as well as colour:
 Every page carries the object name, its Danbyte URL and the page count in
 the footer.
 
+!!! note "Changed in 0.17"
+    The port figures - the Port utilization block and a virtual chassis's
+    *ports used* box - count physical interfaces and front ports, plus virtual
+    interfaces only when the deployment counts them. Until 0.17 they counted
+    every interface and rear port, so a switch with many SVIs printed a lower
+    fill.
+
 ## The hardware sheet
 
 A device has a second sheet, **Spec sheet → Hardware sheet**, for when the
@@ -58,6 +69,16 @@ one table per kind - Processors, Memory, Storage, Other parts - each with the
 cores or capacity, serial and status, followed by the modules. Rack position,
 power draw, port utilisation, interfaces and images are left off. The same
 totals sit above the parts table on the device's Hardware tab.
+
+Memory always reads in GB: 32 sticks of 32 GB total **1024 GB**, not "1.1 TB".
+A BMC sync (Redfish) records a DIMM in binary units and the part form in
+decimal ones; both show the same figure, "32 GB", whole when it is exact and
+to one decimal otherwise. Storage keeps the largest unit (1.92 TB).
+
+Each table lists its parts by slot, then name, in natural order - DIMM 2
+before DIMM 10, Bay 9 before Bay 10. Parts a BMC synced carry no slot, so
+their names order them. The modules and inventory list on the datasheet
+follow the same order.
 
 **All in one**, the third entry, is the datasheet with the hardware block
 inserted: the three datasheet boxes, details, port utilisation, then the

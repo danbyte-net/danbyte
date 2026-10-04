@@ -131,12 +131,19 @@ export function CableEndpointPicker({
   const deviceId = slots[slot] ?? null
   const setDeviceId = (v: string | null) =>
     setSlots((prev) => prev.map((d, i) => (i === slot ? v : d)))
-  const [kind, setKind] = useState<string>("interface")
+  // Open on the seeded port's own tab and face: a front port starts on
+  // Front, a rear port on Rear with the rear panel showing.
+  const seeded = value.at(0)?.kind
+  const [kind, setKind] = useState<string>(
+    seeded && KIND_TABS.some((t) => t.value === seeded) ? seeded : "interface"
+  )
   const [q, setQ] = useState("")
   const [names, setNames] = useState<Record<string, string>>({})
   const [slotNames, setSlotNames] = useState<Record<number, string>>({})
   // Front or rear panel - servers and many switches have ports on both.
-  const [side, setSide] = useState<"front" | "rear">("front")
+  const [side, setSide] = useState<"front" | "rear">(
+    seeded === "rear_port" ? "rear" : "front"
+  )
   // Hovering a row lights that port on the panel - the list and the picture
   // are two views of the same thing, so pointing at one should point at both.
   const [hoverId, setHoverId] = useState<string | null>(null)
@@ -286,12 +293,9 @@ export function CableEndpointPicker({
     const portKind = (el.dataset.portKind || "interface") as TerminationKind
     const state = el.dataset.cableState
     if (!id) return
-    toggle(
-      portKind,
-      id,
-      state === "connected" || state === "marked",
-      el.dataset.portName
-    )
+    // Only a real cable blocks a port: one marked connected is waiting for
+    // the cable being drawn, and the server clears the mark when it lands.
+    toggle(portKind, id, state === "connected", el.dataset.portName)
   }
 
   return (
@@ -543,7 +547,10 @@ export function CableEndpointPicker({
                 </p>
               ) : (
                 rows.map((r) => {
-                  const cabled = !!r.cable || !!r.mark_connected
+                  const cabled = !!r.cable
+                  // Marked connected, no cable on record: pickable - the
+                  // cable made here is the one the mark stood for.
+                  const marked = !cabled && !!r.mark_connected
                   const key = keyOf({ kind: kind as TerminationKind, id: r.id })
                   const on = selected.has(key)
                   return (
@@ -573,6 +580,11 @@ export function CableEndpointPicker({
                       <span className="truncate font-mono">{r.name}</span>
                       {cabled && (
                         <span className="text-[10px]">already cabled</span>
+                      )}
+                      {marked && (
+                        <span className="text-[10px] text-muted-foreground">
+                          marked connected
+                        </span>
                       )}
                     </button>
                   )

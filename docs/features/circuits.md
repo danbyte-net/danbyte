@@ -77,6 +77,15 @@ when it doesn't terminate at your own facility.
    rate** (in kbps).
 5. Save, then open the circuit and add its **terminations** (below).
 
+Rates are entered in kbps and read in the unit that suits them - `10 Gbps`,
+`500 Mbps`, `1.544 Mbps` - on the circuit page, its terminations and the
+list's **Commit** column.
+
+!!! note "Changed in 0.17"
+    Rates read in Mbps only until 0.17 (`10,000 Mbps`, `0.5 Mbps`); they now
+    take the unit that suits them (`10 Gbps`, `500 kbps`). The figures are
+    the same.
+
 ## Terminate a circuit
 
 Each end of a circuit is a **termination** - side **A** and side **Z**. A
@@ -116,6 +125,21 @@ lives on the side it belongs to.
     If a provider or circuit type still has circuits attached, Danbyte blocks
     the delete. Reassign or remove those circuits first.
 
+## Deleting several at once
+
+Tick rows in the Circuits, Providers, Provider networks or Circuit types list
+to delete several at once. Before anything is removed Danbyte shows what will
+happen: which rows go, what goes with them (a circuit's terminations), and which
+rows it keeps because something still uses them. Only the free rows are deleted.
+More than 1000 rows are asked about and deleted 1000 at a time, under one
+confirmation (see [Large selections](table-preferences.md#large-selections)).
+The bulk delete is `POST /api/<list>/bulk-delete/` with `{"ids": [...]}` (add
+`"dry_run": true` for the preview) and needs the *delete* permission on the
+type.
+
+A provider or circuit type with circuits is kept, as a single delete refuses
+it.
+
 ## Provider, provider-network & circuit-type pages
 
 Click a **provider**, **provider network**, or **circuit type** name in its
@@ -135,6 +159,47 @@ list to open its detail page - the pencil in the header edits it.
 All three circuit lists are the same table the main Circuits page draws. They
 are powered by `GET /api/circuits/?provider=<id>`, `?provider_network=<id>`,
 and `?type=<id>`.
+
+## Link speed on the site map
+
+The [site map](site-map.md#link-speed) works out how fast
+each line between two sites is from what you have already recorded. The
+first figure it finds wins, and it says which one it used:
+
+1. **Commit rate** - the circuit's committed rate, when it is set.
+2. **Port speed** - otherwise the terminations' port speeds, the slower side
+   winning. Where a side records an upstream speed (DSL, DOCSIS), the link
+   carries both directions: `100/20M`.
+3. **Cabled interfaces** - otherwise the speed of the interfaces its sides
+   are cabled to, through any patch panels; the slower one.
+
+Other lines between sites follow the same idea:
+
+- A **tunnel** has only its own **Capacity**, set on the tunnel - nothing is
+  worked out from its interfaces. Every spoke of a hub tunnel shows the
+  hub's figure.
+- A **cable** runs at the lower of its two end interfaces' speeds. A trunk
+  between two patch panels is followed through the panels to the ports its
+  strands reach, and carries one link per strand patched at both ends: four
+  10G links read `4×10G`.
+- Several **cables between the same two sites** add up the same way -
+  `2×10G` when they match, the sum when they don't - and the ones with no
+  known speed are counted separately.
+
+When nothing is known the line has no figure rather than a guess.
+
+## Circuit SLAs
+
+A circuit can be a member of a
+[service level agreement](sla.md#members). It is measured on the addresses
+of the interfaces its ends are cabled to, or on a monitor address you pick,
+such as the provider's far-end gateway. Carrier maintenance entered on the
+circuit is excluded like any planned maintenance.
+
+The Circuits list, and a provider's **Circuits** tab, have **SLA** and
+**Availability** columns. Sort a provider's circuits by SLA to see which ones
+miss their agreement. A circuit's **Overview** shows the agreements it is in,
+with **Add to SLA**.
 
 ## Tags & custom fields
 

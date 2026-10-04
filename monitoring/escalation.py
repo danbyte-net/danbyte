@@ -61,7 +61,11 @@ def run_alert_maintenance(now=None) -> dict:
     }
 
     flapping = escalated = renotified = 0
+    closed = _close_excluded([a for a in firing if a.target_ip is not None
+                              and a.target_ip.monitoring_excluded], now)
     for alert in firing:
+        if alert.pk in closed:
+            continue
         ms = settings_by_tenant.get(alert.tenant_id)
         if ms is None:
             continue
@@ -120,11 +124,44 @@ def run_alert_maintenance(now=None) -> dict:
             except Exception:  # noqa: BLE001
                 log.exception("renotify failed for %s", alert.dedup_key)
 
-    if escalated or renotified or flapping:
+    if escalated or renotified or flapping or closed:
         log.info(
-            "alert maintenance: %s flapping, %s escalated, %s renotified",
+            "alert maintenance: %s flapping, %s escalated, %s renotified, "
+            "%s closed on excluded addresses",
             flapping,
             escalated,
             renotified,
+            len(closed),
         )
-    return {"flapping": flapping, "escalated": escalated, "renotified": renotified}
+    return {"flapping": flapping, "escalated": escalated, "renotified": renotified,
+            "closed_excluded": len(closed)}
+
+
+def _close_excluded(alerts, now) -> set:
+    """Close the firing alerts on addresses excluded from monitoring, as
+    excluding them does - one that slipped past it (a verdict racing the
+    switch) must not escalate and remind for ever, since its parked check
+    never sends the clearing change. Returns their ids."""
+    from .exclusion import REASON
+    from .notify import notify_alert
+
+    for a in alerts:
+        a.status = AlertStatus.RESOLVED
+        a.resolved_at = now
+        a.last_notified_at = now
+        a.detail = {**(a.detail or {}), "closed_by": {
+            "reason": "excluded", "by": a.target_ip.monitoring_excluded_by or "",
+        }}
+    if alerts:
+        Alert.objects.bulk_update(
+            alerts, ["status", "resolved_at", "last_notified_at", "detail"], batch_size=500
+        )
+        log.info("closed %d alert(s) on addresses %s", len(alerts), REASON)
+    for a in alerts:
+        if a.flapping:
+            continue
+        try:
+            notify_alert(a, "resolved")
+        except Exception:  # noqa: BLE001 - a delivery error is not a write error
+            log.exception("closing notice for alert %s failed", a.pk)
+    return {a.pk for a in alerts}

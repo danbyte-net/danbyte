@@ -113,3 +113,107 @@ class ScopeAggregateTests(APITestCase):
             want[_classify_ip_scope(a)] += 1
         got = {row["name"]: row["count"] for row in _ip_by_scope(IPAddress.objects.filter(tenant=tenant))}
         self.assertEqual(got, want)
+
+
+class DashboardScopeParamTests(APITestCase):
+    """A named dashboard's scope narrows the payload; the new-user default
+    layout survives the trip."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        from api.models import Device, DeviceRole, DeviceType, Manufacturer, Site
+        from api.test_utils import status_for
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        mfr = Manufacturer.objects.create(tenant=self.tenant, name="M", slug="m")
+        dt = DeviceType.objects.create(tenant=self.tenant, manufacturer=mfr, model="X")
+        role = DeviceRole.objects.create(tenant=self.tenant, name="R", slug="r")
+        self.a = Site.objects.create(tenant=self.tenant, name="A")
+        b = Site.objects.create(tenant=self.tenant, name="B")
+        for n, site in (("a1", self.a), ("a2", self.a), ("b1", b)):
+            Device.objects.create(tenant=self.tenant, name=n, site=site, device_type=dt,
+                                  role=role, status=status_for(self.tenant))
+        admin = User.objects.create_superuser("admin", "a@b.c", "pw")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_site_scope_narrows_devices(self):
+        body = self.client.get(f"/api/dashboard/?site={self.a.id}&frame=30d").json()
+        self.assertEqual(body["counts"]["devices"], 2)
+        self.assertEqual(body["scope"], {"site": [str(self.a.id)]})
+        self.assertEqual(body["frame_hours"], 720)
+        self.assertEqual(self.client.get("/api/dashboard/").json()["counts"]["devices"], 3)
+
+    def test_a_scope_id_that_is_not_one_is_a_400(self):
+        """Not a 500 from the UUID filter (#273); tags are slugs."""
+        for key in ("site", "region", "role", "device_type", "sla"):
+            r = self.client.get(f"/api/dashboard/?{key}=nope")
+            self.assertEqual(r.status_code, 400, key)
+            self.assertEqual(r.json(), {key: "«nope» is not an id."})
+        r = self.client.get(f"/api/dashboard/?site={self.a.id},nope")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client.get("/api/dashboard/?tag=nope").status_code, 200)
+
+    def test_v2_default_layout_is_returned_whole(self):
+        from core.models import TenantSettings
+
+        layout = {"v": 2, "items": [{"id": "alerts-per-day", "x": 0, "y": 0, "w": 2, "h": 2}]}
+        TenantSettings.objects.update_or_create(
+            tenant=self.tenant, defaults={"default_dashboard_widgets": layout}
+        )
+        self.assertEqual(self.client.get("/api/dashboard/").json()["default_widgets"], layout)
+
+
+class DashboardCostTests(APITestCase):
+    """The dashboard's queries do not grow with the rows its widgets show
+    (#299): statuses and address counts come with the rows."""
+
+    def setUp(self):
+        from api.models import Device
+        from api.test_utils import status_for
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.status = status_for(self.tenant)
+        self.Device = Device
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        self.add(2)
+
+    def add(self, n):
+        start = Prefix.objects.filter(tenant=self.tenant).count()
+        for i in range(start, start + n):
+            prefix = Prefix.objects.create(
+                tenant=self.tenant, cidr=f"10.{i}.0.0/24", status=self.status
+            )
+            IPAddress.objects.create(tenant=self.tenant, prefix=prefix,
+                                     ip_address=f"10.{i}.0.5")
+            self.Device.objects.create(tenant=self.tenant, name=f"d{i}", status=self.status)
+
+    def queries(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.get("/api/dashboard/")
+        with CaptureQueriesContext(connection) as ctx:
+            body = self.client.get("/api/dashboard/").json()
+        return len(ctx.captured_queries), body
+
+    def test_flat_as_the_widgets_fill(self):
+        few, _ = self.queries()
+        self.add(6)
+        many, body = self.queries()
+        self.assertEqual(many, few)
+        top = body["top_prefixes"]
+        # Tied on one address each: by CIDR, with the same figure per row.
+        self.assertEqual([p["cidr"] for p in top], sorted(p["cidr"] for p in top))
+        prefix = Prefix.objects.get(tenant=self.tenant, cidr=top[0]["cidr"])
+        self.assertEqual(top[0]["utilisation_pct"], prefix.utilisation_pct)

@@ -16,6 +16,7 @@ STATUSABLE_MODELS = [
     ("prefix", "Prefixes"),
     ("iprange", "IP ranges"),
     ("rack", "Racks"),
+    ("cabinet", "Cabinets"),
     ("cluster", "Clusters"),
     ("virtualmachine", "Virtual machines"),
     ("cable", "Cables"),
@@ -34,8 +35,26 @@ STATUSABLE_MODELS = [
     # One scope shared by the BGP, OSPF and IS-IS instance models.
     ("routinginstance", "Routing instances"),
     ("vtep", "VTEPs"),
+    ("vlan", "VLANs"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
+
+
+def status_label(model) -> str:
+    """How a message names ``model``'s rows: "devices", "IP addresses",
+    "VLANs" - the registry's label, lower-cased unless it opens with an
+    acronym."""
+    label = dict(STATUSABLE_MODELS).get(model._meta.model_name) or str(
+        model._meta.verbose_name_plural
+    )
+    return label if label[:2].isupper() else label[0].lower() + label[1:]
+
+
+def status_offered(status, model) -> bool:
+    """Whether ``status`` may be put on a ``model`` row: its ``available_to``
+    lists the model's slug. A model the registry doesn't list passes."""
+    slug = model._meta.model_name
+    return slug not in STATUSABLE_MODEL_VALUES or slug in (status.available_to or [])
 
 # The states a monitoring check can end in - the machine's vocabulary, and the
 # names Danbyte ships for them. A tenant may relabel and recolour any one of
@@ -102,6 +121,7 @@ STATUS_MODEL_SEEDS = [
     ("prefix", "Prefix", "active"),
     ("iprange", "IPRange", "active"),
     ("rack", "Rack", "active"),
+    ("cabinet", "Cabinet", "active"),
     ("cluster", "Cluster", "active"),
     ("virtualmachine", "VirtualMachine", "active"),
     ("cable", "Cable", "connected"),
@@ -112,6 +132,7 @@ STATUS_MODEL_SEEDS = [
     ("tunnel", "Tunnel", "active"),
     ("location", "Location", "active"),
     ("inventoryitem", "InventoryItem", "active"),
+    ("vlan", "VLAN", "active"),
 ]
 
 # Built-in status values per object type, mirroring the historical per-model
@@ -125,6 +146,7 @@ STATUS_MODEL_VALUES = {
     "prefix": ["container", "active", "reserved", "deprecated"],
     "iprange": ["active", "reserved", "deprecated"],
     "rack": ["active", "planned", "reserved", "available", "deprecated"],
+    "cabinet": ["active", "planned", "reserved", "available", "deprecated"],
     "cluster": ["active", "planned", "staging", "offline", "decommissioning"],
     "virtualmachine": ["active", "offline", "planned", "staged", "decommissioning"],
     "cable": ["connected", "planned", "not_connected", "decommissioning"],
@@ -147,6 +169,8 @@ STATUS_MODEL_VALUES = {
     "bgpsession": ["active", "planned", "disabled"],
     "routinginstance": ["active", "planned", "disabled"],
     "vtep": ["active", "planned", "disabled"],
+    # VLANs (#172): in use, held for a rollout, or on the way out.
+    "vlan": ["active", "reserved", "deprecated"],
     "location": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.

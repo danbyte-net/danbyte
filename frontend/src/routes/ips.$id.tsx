@@ -21,7 +21,7 @@ import { api, type IPAddress, type IPRange, type Paginated } from "@/lib/api"
 import { parseCidr, bigIntToIp, ipToBigInt } from "@/lib/prefix-tree"
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { VlanBadge } from "@/components/cells/vlan-badge"
-import { copyText } from "@/lib/clipboard"
+import { copyWithToast } from "@/lib/clipboard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { KvCard, type KvRow } from "@/components/kv-card"
@@ -38,6 +38,7 @@ import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { IpMonitoringSummary } from "@/components/monitoring/ip-monitoring-summary"
 import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
 import {
   DnsRecordsTable,
   useDnsEnabled,
@@ -45,6 +46,7 @@ import {
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe, objCan } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 
 export const Route = createFileRoute("/ips/$id")({ component: IPDetail })
 
@@ -55,8 +57,7 @@ function IPDetail() {
     queryFn: () => api<IPAddress>(`/api/ips/${id}/`),
   })
 
-  if (query.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (query.isLoading) return <Loading />
   if (query.isError)
     return (
       <div className="p-6">
@@ -398,9 +399,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   // ─── Copy actions ─────────────────────────────────────────────────────
 
   async function copyIp() {
-    const ok = await copyText(ip.ip_address)
-    if (ok) toast.success(`Copied ${ip.ip_address}`)
-    else toast.error("Couldn't copy - clipboard blocked by the browser")
+    await copyWithToast(ip.ip_address, `Copied ${ip.ip_address}`)
   }
 
   async function copyAllAsTable() {
@@ -420,9 +419,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     if (subnetRows.length > 0) {
       blocks.push("", "# Subnet", fmt(subnetRows))
     }
-    const ok = await copyText(blocks.join("\n"))
-    if (ok) toast.success("Copied IP details to clipboard")
-    else toast.error("Couldn't copy - clipboard blocked by the browser")
+    await copyWithToast(blocks.join("\n"), "Copied IP details to clipboard")
   }
 
   return (
@@ -448,7 +445,8 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
             variant="outline"
             size="sm"
             onClick={() => checkNow.mutate()}
-            disabled={checkNow.isPending}
+            // An excluded address is not checked (the server answers 409).
+            disabled={checkNow.isPending || !!ip.monitoring_excluded}
           >
             <Play className="h-3.5 w-3.5" />
             {checkNow.isPending ? "Checking…" : "Check now"}
@@ -587,12 +585,16 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       </DetailTab>
 
       <DetailTab value="monitoring">
+        <div className="mb-6">
+          <ObjectSlaPanel objectType="api.ipaddress" objectId={ip.id} />
+        </div>
         <IpMonitoring
           ip={{
             id: ip.id,
             ip_address: ip.ip_address,
             flap_exclude: ip.flap_exclude,
           }}
+          canChange={objCan(ip, "change", canDo("ipaddress", "change"))}
         />
       </DetailTab>
 

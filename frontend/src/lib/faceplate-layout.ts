@@ -90,6 +90,21 @@ export interface FaceplateGroup {
 
 export type FaceplateSide = "front" | "rear"
 
+/**
+ * A device's resolved face ports by marker name, for the side drawn. Never
+ * both sides in one map: a patch panel names its front and rear markers
+ * alike ("Port 1"), and a merged map handed a front marker the rear port -
+ * its id, its kind's cable state - so a click cabled the wrong port.
+ */
+export function facePortsOnSide<TPort extends { marker: string }>(
+  ports: { front: readonly TPort[]; rear: readonly TPort[] } | undefined,
+  side: FaceplateSide
+): Map<string, TPort> {
+  const map = new Map<string, TPort>()
+  for (const p of ports?.[side] ?? []) map.set(p.marker, p)
+  return map
+}
+
 export interface FaceplateDoc {
   v: 1
   front: FaceplateGroup[]

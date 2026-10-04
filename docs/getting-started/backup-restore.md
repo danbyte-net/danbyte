@@ -154,9 +154,10 @@ Then, in the worker, in order:
 2. Make a **Before restore** backup of the current state and protect it.
 3. Raise the **maintenance flag**. Every request answers `503` with
    `Retry-After`, which nginx turns into the "Danbyte is updating" page;
-   only the health probe and the restore-status endpoint stay open. The
-   running restore's status is answered from Redis, so the dialog keeps
-   showing progress even while the database has no tables.
+   only the health probe (with `"maintenance": true`) and the
+   restore-status endpoint stay open, and the 503s are not logged as
+   errors. The running restore's status is answered from Redis, so the
+   dialog keeps showing progress even while the database has no tables.
 4. Terminate the other database sessions, drop and recreate the `public`
    schema, `pg_restore` the dump and run `migrate` forward.
 5. **Reconcile**: the restored database predates the restore, so the rows
@@ -207,7 +208,7 @@ manual run that succeeds notifies nobody.
 
 ## Reverse proxy
 
-Archives stream through `/api/backups/` and can be several gigabytes. The
+Archives pass through `/api/backups/` and can be several gigabytes. The
 nginx templates the installer writes carry a location for it; a hand-managed
 nginx config needs it added before the existing `/api/` location (with `^~`
 when that location is a regex):
@@ -225,6 +226,12 @@ location ^~ /api/backups/ {
     client_max_body_size 8g;
 }
 ```
+
+With buffering on, nginx takes a whole upload before it hands it to Danbyte,
+so a slow upload never holds a web worker; it needs free space for one archive
+in its temporary directory. A block added before 0.16.12 has
+`proxy_request_buffering off;` - change it to the block above (Settings →
+Updates lists that step until the site has it).
 
 `proxy_max_temp_file_size` takes `k` or `m`: nginx refuses `10g` there,
 although `client_max_body_size` accepts it.

@@ -25,6 +25,7 @@ import { TableActions } from "@/components/table-actions"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
 
 export const Route = createFileRoute("/module-types/")({
   component: ModuleTypesPage,
@@ -35,6 +36,9 @@ function ModuleTypesPage() {
   const [deleting, setDeleting] = useState<ModuleType | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("moduletype", "add")
+  // The import lives on the device-type catalog, which it needs to see.
+  const canImport = canDo("devicetype", "view")
+  const [importing, setImporting] = useState(false)
   const canEdit = canDo("moduletype", "change")
   const canDelete = canDo("moduletype", "delete")
 
@@ -67,9 +71,22 @@ function ModuleTypesPage() {
         <>
           <TableActions ioType="moduletype" />
           {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/module-types/new">Add module type</Link>
-            </Button>
+            <>
+              {/* The NetBox library's module-types folder, through the same
+                  import the device types use. */}
+              {canImport && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setImporting(true)}
+                >
+                  Import from library
+                </Button>
+              )}
+              <Button size="sm" asChild>
+                <Link to="/module-types/new">Add module type</Link>
+              </Button>
+            </>
           )}
         </>
       }
@@ -77,12 +94,8 @@ function ModuleTypesPage() {
     >
       {rows.length === 0 ? (
         <p className="max-w-xl text-sm text-muted-foreground">
-          No module types yet. Add one, or import them from the NetBox
-          devicetype-library on the{" "}
-          <Link to="/device-types" className="link">
-            Device types
-          </Link>{" "}
-          page - module-type files are auto-detected.
+          No module types yet. Add one, or use Import from library for the
+          NetBox devicetype-library's module-types folder.
         </p>
       ) : (
         <DataTable
@@ -96,6 +109,11 @@ function ModuleTypesPage() {
       <ModuleTypeDeleteDialog
         moduleType={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <DeviceTypeImportDialog
+        open={importing}
+        onOpenChange={setImporting}
+        kind="module-type"
       />
     </ListPageShell>
   )

@@ -38,6 +38,10 @@ export type BulkFieldSpec =
       kind: "options"
       options: { value: string; label: string }[]
       hint?: string
+      /** A choice that writes several real fields instead of `key` - an
+       * interface's Uplink (Automatic / Always / Never) is two booleans.
+       * The bulk dialog sends what this returns in place of `key`. */
+      expand?: (value: string) => Record<string, unknown>
     }
   | {
       key: string
@@ -53,6 +57,14 @@ export type BulkFieldSpec =
       label: string
       /** A byte quantity entered as value + KB…PB unit (stored as bytes). */
       kind: "bytes"
+      hint?: string
+    }
+  | {
+      key: string
+      label: string
+      /** A hex colour, or a Lucide icon name - with the pickers the
+       *  single-object forms use. "" clears. */
+      kind: "color" | "icon"
       hint?: string
     }
   | {

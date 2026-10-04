@@ -141,4 +141,7 @@ HTML sanitizer (`nh3`) that strips scripts, event handlers, and unsafe URLs from
 the template author's own markup. The editor preview additionally renders inside
 a scriptless `<iframe sandbox>` as defence in depth. Every object is re-checked
 for your view permission before its label renders, and all queries are
-tenant-scoped.
+tenant-scoped. The sandbox is the export templates' one, with the
+[same fence](export-templates.md): a relation hands out only your tenant's
+rows that you may view, and accounts, groups and the tenant show a name at
+most.

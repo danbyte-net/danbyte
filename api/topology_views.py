@@ -1,6 +1,8 @@
 """Network topology graph v2 for the React Flow map.
 
-``GET /api/topology/`` → ``{nodes, edges}``.
+``GET /api/topology/`` → ``{nodes, edges}``. ``POST`` takes the same query as
+a JSON body (a large device set overflows a URL). ``include=card,link_ips,
+photo`` opts into enrichment (``api/topology_enrich.py``) and adds ``meta``.
 
 Nodes are devices rendered as *stencil cards*: each carries its cabled ports
 (so edges anchor port-to-port, like a wiring diagram), role color, primary IP
@@ -18,11 +20,17 @@ Filters: ``site`` ``location`` ``role`` ``status`` ``tag`` narrow the device
 set. ``device=<id>&depth=N`` focuses the graph on one device's neighbourhood
 (BFS over the edge list, default depth 1, neighbours pulled in even when
 outside the filter scope).
+
+A device in a virtual chassis the caller may view carries ``vc`` (its
+chassis, member number and whether it is the master), and a hand-picked map
+(``devices=``) takes ``chassis=``: those chassis' members as they are now.
+``GET /api/topology/chassis/`` lists the chassis the Diagram can place.
 """
 from __future__ import annotations
 
 import uuid
 from collections import deque
+from collections.abc import Mapping
 
 from django.db.models import Count, Prefetch, Q
 from drf_spectacular.types import OpenApiTypes
@@ -34,14 +42,101 @@ from drf_spectacular.utils import (
 )
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import ParseError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Cable, CableTermination, Device
+from .models import Cable, CableTermination, Device, VirtualChassis
+from .natural import natural, natural_key
 from .views import _get_active_tenant
 from auth_api import rbac
 
 MAX_DEPTH = 6
+# Largest explicit device set (``devices=``) one request may name.
+MAX_DEVICE_SET = 10_000
+# Most virtual chassis (``chassis=``) one hand-picked map may place.
+MAX_CHASSIS_SET = 1_000
+
+
+# ─── Request parsing ────────────────────────────────────────────────────────
+#
+# Ids feed UUID filters; a malformed one raised Django's ValidationError from
+# the queryset, which the API exception handler doesn't map - a 500. Parse
+# them up front into a 400 instead.
+
+def _parse_uuid(raw, param):
+    try:
+        return str(uuid.UUID(str(raw).strip()))
+    except (TypeError, ValueError):
+        raise ParseError(f"{param}: not a valid id") from None
+
+
+def _uuid_param(params, param):
+    """The ``param`` id as a canonical UUID string, or None when absent."""
+    raw = params.get(param)
+    return _parse_uuid(raw, param) if raw else None
+
+
+def _uuid_list_param(params, param, limit=MAX_DEVICE_SET):
+    """The comma-separated ``param`` ids (or a list of them), de-duplicated
+    in order. More than ``limit`` ids is a 400."""
+    raw = params.get(param) or ""
+    items = raw if isinstance(raw, (list, tuple)) else str(raw).split(",")
+    items = [x for x in items if str(x).strip()]
+    if len(items) > limit:
+        raise ParseError(f"{param}: at most {limit:,} ids")
+    return list(dict.fromkeys(_parse_uuid(x, param) for x in items))
+
+
+def _query_params(request):
+    """The map's parameters: the query string on GET, the JSON body on POST.
+    A device set of a few hundred ids overflows gunicorn's 8190-byte request
+    line, so the page POSTs; the body mirrors the query, with lists where the
+    query takes comma-separated values."""
+    if request.method != "POST":
+        return request.query_params
+    data = request.data
+    if not isinstance(data, Mapping):
+        raise ParseError("The body must be a JSON object.")
+    return data
+
+
+def _flag_param(params, param, default=True):
+    """A switch: ``0`` (or JSON ``false``) is off, anything else on."""
+    raw = params.get(param)
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip() != "0"
+
+
+def _csv_param(params, param):
+    """The ``param`` values from a comma-separated string or a JSON list,
+    stripped, empties dropped; None when the parameter is absent."""
+    if param not in params:
+        return None
+    raw = params.get(param)
+    if raw is None:
+        return None
+    items = raw if isinstance(raw, (list, tuple)) else str(raw).split(",")
+    return [str(x).strip() for x in items if str(x).strip()]
+
+
+def _include_param(params):
+    """The opt-in enrichments ``include`` names; unknown tokens are ignored."""
+    from .topology_enrich import INCLUDE_TOKENS
+
+    return frozenset(_csv_param(params, "include") or ()) & INCLUDE_TOKENS
+
+
+def _card_fields_param(params):
+    """A saved view's own card lines (``card_fields``): None when absent
+    (inherit), ``[]`` for name only. Keys outside the vocabulary drop."""
+    from core.deployment import topology_card_list
+
+    fields = _csv_param(params, "card_fields")
+    return None if fields is None else topology_card_list(fields)
 
 
 # ─── Node payload ────────────────────────────────────────────────────────────
@@ -55,9 +150,25 @@ def _devices_qs(tenant):
     )
 
 
+def _status_mini(status, model):
+    """The ``StatusMini`` shape plus ``is_default``: whether ``status`` is
+    the one applied to a new ``model`` (its ``default_for`` slug)."""
+    if status is None:
+        return None
+    return {
+        "id": str(status.id),
+        "name": status.name,
+        "slug": status.slug,
+        "color": status.color,
+        "text_color": status.text_color,
+        "is_default": model in (status.default_for or []),
+    }
+
+
 def _device_node(d, ports, panel=False):
     """``ports`` = ordered [{name, kind, pair?}] of this device's cabled ends
-    - ``pair`` names the rear port sharing the row (front ⇄ rear strand)."""
+    - ``pair`` names the rear port sharing the row (front ⇄ rear strand).
+    Reads only the relations ``_devices_qs`` joins - no per-node queries."""
     return {
         "id": f"dev:{d.id}",
         "type": "device",
@@ -66,9 +177,15 @@ def _device_node(d, ports, panel=False):
             "name": d.name,
             "status": d.status.slug if d.status_id else None,
             "status_display": d.status.name if d.status_id else "",
+            "status_mini": _status_mini(
+                d.status if d.status_id else None, "device"
+            ),
             "device_type": d.device_type.name if d.device_type_id else None,
+            "device_type_id": str(d.device_type_id) if d.device_type_id else None,
             "role": (
-                {"name": d.role.name, "color": d.role.color,
+                {"id": str(d.role.id), "name": d.role.name,
+                 "slug": d.role.slug, "color": d.role.color,
+                 "icon": d.role.icon,
                  "is_patch_panel": d.role.is_patch_panel}
                 if d.role_id else None
             ),
@@ -296,9 +413,12 @@ def viewable_device_ids(user, tenant):
 
 
 def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
-                 collapse=True, scope_q=None):
+                 collapse=True, scope_q=None, collect=None):
+    """``collect``: an optional dict the assembly fills with the objects
+    behind the graph - see ``_graph_from_links``."""
     opts = {"device_filter_q": device_filter_q, "focus_id": focus_id,
-            "depth": depth, "collapse": collapse, "scope_q": scope_q}
+            "depth": depth, "collapse": collapse, "scope_q": scope_q,
+            "collect": collect}
     if _wants_narrowing(device_filter_q, focus_id, scope_q):
         return _narrowed_graph(tenant, **opts)
     graph, _ = _graph_from_links(tenant, _physical_links(tenant), **opts)
@@ -373,9 +493,12 @@ def _terminations_touching(tenant, devices, rear_ids, fronts_of_rear_ids):
 
 
 def _narrowed_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
-                    collapse=True, scope_q=None):
+                    collapse=True, scope_q=None, collect=None):
+    # ``collect`` rides into every assembly pass; each one replaces its keys
+    # wholesale, so what's left is the returned graph's.
     opts = {"device_filter_q": device_filter_q, "focus_id": focus_id,
-            "depth": depth, "collapse": collapse, "scope_q": scope_q}
+            "depth": depth, "collapse": collapse, "scope_q": scope_q,
+            "collect": collect}
     if focus_id:
         pending = {str(focus_id)}
     else:
@@ -428,9 +551,21 @@ def _narrowed_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
 
 
 def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
-                      depth=1, collapse=True, scope_q=None, narrowed=False):
+                      depth=1, collapse=True, scope_q=None, narrowed=False,
+                      collect=None):
     """Assemble ``{nodes, edges}`` from physical ``links``. Returns the graph
-    and, for a focus, the BFS neighbourhood (ids) it kept - else None."""
+    and, for a focus, the BFS neighbourhood (ids) it kept - else None.
+
+    ``collect`` (a dict, optional) is a side channel for the opt-in
+    enrichers (``api/topology_enrich.py``). It receives the objects the
+    assembly already loaded - no extra queries - for the returned graph only:
+
+    * ``devices`` - ``{device id: Device}`` for every device node;
+    * ``ports`` - ``{device id: {(termination kind, port id): port}}``, the
+      node's cabled components (``interface``, ``front_port``, …);
+    * ``pairs`` - ``{edge id: [(pair, a_obj, a_kind, b_obj, b_kind)]}``,
+      each ``pair`` being the payload dict itself, oriented like it.
+    """
     keep = None
     # Remove hidden devices before panel-collapse walks are assembled. Filtering
     # only final endpoints allowed an otherwise visible edge to retain a hidden
@@ -472,11 +607,32 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
     edges = {}
     # device id → ordered {port name: (kind, port object)}
     port_sets: dict[str, dict] = {}
+    # ``collect`` only: device id → {(termination kind, id): port object},
+    # and edge id → [(pair, a_obj, a_kind, b_obj, b_kind)].
+    port_objs: dict[str, dict] = {}
+    pair_objs: dict[str, list] = {}
+    # cable id → {(termination kind, port id): "A" | "B"}, read off the
+    # terminations the cable queryset prefetched (no queries).
+    cable_ends: dict = {}
+
+    def end_on(cab, kind, port):
+        """The end of ``cab`` a termination sits on, or None when it is not
+        one of the cable's own (a run's far end beyond a panel)."""
+        ends = cable_ends.get(cab.id)
+        if ends is None:
+            ends = cable_ends[cab.id] = {}
+            for t in cab.terminations.all():
+                k, obj = _term_point(t)
+                if obj is not None:
+                    ends[(k, obj.id)] = t.end
+        return ends.get((kind, port.id))
 
     def note_port(dev, port, kind):
         d = port_sets.setdefault(str(dev.id), {})
         if port.name not in d:
             d[port.name] = (_KIND_OF.get(kind, "interface"), port)
+        if collect is not None:
+            port_objs.setdefault(str(dev.id), {})[(kind, port.id)] = port
 
     for cab, da, pa, ka, db, pb, kb, vias in links:
         note_port(da, pa, ka)
@@ -497,6 +653,9 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
                     "cable_label": cab.label,
                     "color": cab.color,
                     "status": cab.status.slug if cab.status_id else None,
+                    "status_mini": _status_mini(
+                        cab.status if cab.status_id else None, "cable"
+                    ),
                     "length": str(cab.length) if cab.length is not None else None,
                     "length_unit": cab.length_unit,
                     "speed": None,
@@ -511,6 +670,9 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
         e = edges[key]
         src_is_a = e["source"] == f"dev:{da.id}"
         a_port, b_port = (pa.name, pb.name) if src_is_a else (pb.name, pa.name)
+        # The components themselves (termination kinds: interface,
+        # front_port, circuit_termination, …), oriented like a_port/b_port.
+        end_a, end_b = ((pa, ka), (pb, kb)) if src_is_a else ((pb, kb), (pa, ka))
         if not e["data"]["pairs"]:
             pa_lag = getattr(pa, "lag", None) if ka == "interface" else None
             pb_lag = getattr(pb, "lag", None) if kb == "interface" else None
@@ -519,12 +681,31 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
                 "a": {"id": str(lag_a.id), "name": lag_a.name} if lag_a else None,
                 "b": {"id": str(lag_b.id), "name": lag_b.name} if lag_b else None,
             }
-        e["data"]["pairs"].append({
+        # The cable end each termination sits on. A run collapsed through
+        # panels ends on another cable: its far end takes the end the run
+        # leaves this cable by.
+        ends = [end_on(cab, ka, pa), end_on(cab, kb, pb)]
+        for i in (0, 1):
+            if ends[i] is None and ends[1 - i] is not None:
+                ends[i] = "B" if ends[1 - i] == "A" else "A"
+        a_end, b_end = ends if src_is_a else ends[::-1]
+        pair = {
             "a": f"{da.name if src_is_a else db.name}:{a_port}",
             "b": f"{db.name if src_is_a else da.name}:{b_port}",
             "a_port": a_port,
             "b_port": b_port,
-        })
+            "a_id": str(end_a[0].id),
+            "a_kind": end_a[1],
+            "a_end": a_end,
+            "b_id": str(end_b[0].id),
+            "b_kind": end_b[1],
+            "b_end": b_end,
+        }
+        e["data"]["pairs"].append(pair)
+        if collect is not None:
+            pair_objs.setdefault(e["id"], []).append(
+                (pair, end_a[0], end_a[1], end_b[0], end_b[1])
+            )
         # Link speed from either endpoint interface (first non-empty wins) -
         # front/rear panel ports have no speed.
         if not e["data"].get("speed"):
@@ -611,6 +792,18 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
             ports.append({"name": name, "kind": kind})
         nodes.append(_device_node(d, ports, panel=panel))
 
+    if collect is not None:
+        node_ids = {n["data"]["device_id"] for n in nodes}
+        collect["devices"] = {
+            did: d for did, d in in_scope.items() if did in node_ids
+        }
+        collect["ports"] = {
+            did: objs for did, objs in port_objs.items() if did in node_ids
+        }
+        collect["pairs"] = {
+            e["id"]: pair_objs.get(e["id"], []) for e in edge_list
+        }
+
     return {"nodes": nodes, "edges": edge_list}, keep
 
 
@@ -636,10 +829,9 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
         response=OpenApiTypes.OBJECT,
         description=(
             "`{rails, nodes}` - VLANs as rails (id, vlan_id, name, effective "
-            "color, group) and attached devices/VMs with per-interface "
-            "attachments ({rail, iface, tagged, iface_id}). Hybrid physical + "
-            "virtual, "
-            "RBAC-scoped."
+            "color, group, status) and attached devices/VMs (status_mini, "
+            "role) with per-interface attachments ({rail, iface, tagged, "
+            "iface_id}). Hybrid physical + virtual, RBAC-scoped."
         ),
     ),
 )
@@ -649,7 +841,9 @@ def topology_logical_view(request):
     """The L2 picture: VLANs as rails, everything attached to them - physical
     devices via Interface.vlan/tagged_vlans, VMs via VMInterface -
     on one hybrid diagram. Rail color = the VLAN's own color, else its
-    zone's."""
+    zone's. Rails, devices and VMs carry their status (``StatusMini``) and
+    devices and VMs their role (id, name, color), so the diagram colors
+    them from data."""
     from .models import VLAN, Device, Interface, VirtualMachine, VMInterface
 
     tenant = _get_active_tenant(request)
@@ -671,13 +865,28 @@ def topology_logical_view(request):
     nodes: dict = {}
     rail_ids: set = set()
 
-    def add(kind, obj_id, name, status, sub, vlan_id, iface, tagged,
-            iface_id=None):
-        key = f"{kind}:{obj_id}"
-        n = nodes.setdefault(key, {
-            "kind": kind, "id": str(obj_id), "name": name,
-            "status": status, "sub": sub, "attachments": [],
-        })
+    def role_of(obj):
+        r = obj.role if obj.role_id else None
+        return (
+            {"id": str(r.id), "name": r.name, "color": r.color} if r else None
+        )
+
+    def add(kind, obj, sub, vlan_id, iface, tagged, iface_id=None):
+        key = f"{kind}:{obj.id}"
+        n = nodes.get(key)
+        if n is None:
+            status = obj.status if obj.status_id else None
+            n = nodes[key] = {
+                "kind": kind, "id": str(obj.id), "name": obj.name,
+                # ``status`` stays the display name for older readers;
+                # ``status_mini`` carries its color.
+                "status": status.name if status else None,
+                "status_mini": _status_mini(
+                    status, "device" if kind == "device" else "virtualmachine"
+                ),
+                "role": role_of(obj),
+                "sub": sub, "attachments": [],
+            }
         n["attachments"].append(
             # iface_id → the diagram's leg labels click through to the
             # interface page (device interfaces only; VM interfaces have no
@@ -696,14 +905,11 @@ def topology_logical_view(request):
     )
     for i in ifaces:
         d = i.device
-        status = d.status.name if d.status_id else None
         sub = d.role.name if d.role_id else None
         if i.vlan_id:
-            add("device", d.id, d.name, status, sub, i.vlan_id, i.name, False,
-                iface_id=i.id)
+            add("device", d, sub, i.vlan_id, i.name, False, iface_id=i.id)
         for v in i.tagged_vlans.all():
-            add("device", d.id, d.name, status, sub, v.id, i.name, True,
-                iface_id=i.id)
+            add("device", d, sub, v.id, i.name, True, iface_id=i.id)
 
     if p.get("include_vms", "1") != "0":
         vms = rbac.restrict_queryset(
@@ -717,22 +923,21 @@ def topology_logical_view(request):
         vifs = (
             VMInterface.objects.filter(vm__in=vms)
             .filter(Q(vlan__isnull=False) | Q(tagged_vlans__isnull=False))
-            .select_related("vm__status", "vm__cluster")
+            .select_related("vm__status", "vm__cluster", "vm__role")
             .prefetch_related("tagged_vlans")
             .distinct()
         )
         for i in vifs:
             vm = i.vm
-            status = vm.status.name if vm.status_id else None
             sub = vm.cluster.name if vm.cluster_id else None
             if i.vlan_id:
-                add("vm", vm.id, vm.name, status, sub, i.vlan_id, i.name, False)
+                add("vm", vm, sub, i.vlan_id, i.name, False)
             for v in i.tagged_vlans.all():
-                add("vm", vm.id, vm.name, status, sub, v.id, i.name, True)
+                add("vm", vm, sub, v.id, i.name, True)
 
     vlans = (
         VLAN.objects.filter(id__in=rail_ids)
-        .select_related("zone", "group")
+        .select_related("zone", "group", "status")
         .order_by("vlan_id")
     )
     if p.get("vlan_group"):
@@ -745,6 +950,7 @@ def topology_logical_view(request):
             "name": v.name,
             "color": v.color or (v.zone.color if v.zone_id else ""),
             "group": v.group.name if v.group_id else None,
+            "status": _status_mini(v.status if v.status_id else None, "vlan"),
         }
         for v in vlans
     ]
@@ -753,7 +959,7 @@ def topology_logical_view(request):
         n["attachments"] = [a for a in n["attachments"] if a["rail"] in kept]
         if n["attachments"]:
             out_nodes.append(n)
-    out_nodes.sort(key=lambda n: (n["kind"], n["name"].lower()))
+    out_nodes.sort(key=lambda n: (n["kind"], natural_key(n["name"])))
     return Response({"rails": rails, "nodes": out_nodes})
 
 
@@ -778,15 +984,18 @@ def topology_logical_view(request):
                          location=OpenApiParameter.QUERY,
                          description="Walk patch panels through (default '1')."),
     ],
-    responses=OpenApiResponse(
-        response=OpenApiTypes.OBJECT,
-        description=(
-            "`{device_count, cable_count, sites, inter_site_links, adjacency}` "
-            "- the cabling graph without port-level noise, sized for an LLM "
-            "context or scripted analysis. Same filters and RBAC scope as "
-            "`/api/topology/`."
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "`{device_count, cable_count, sites, inter_site_links, adjacency}` "
+                "- the cabling graph without port-level noise, sized for an LLM "
+                "context or scripted analysis. Same filters and RBAC scope as "
+                "`/api/topology/`."
+            ),
         ),
-    ),
+        400: OpenApiResponse(description="`{detail: \"<param>: not a valid id\"}`"),
+    },
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -849,11 +1058,11 @@ def topology_summary_view(request):
             "device": name_of[nid],
             "role": role_of[nid],
             "site": site_of[nid],
-            "neighbors": sorted(nbrs, key=lambda r: r["device"]),
+            "neighbors": sorted(nbrs, key=lambda r: natural_key(r["device"])),
         }
         for nid, nbrs in neighbors.items()
     ]
-    adjacency.sort(key=lambda r: r["device"])
+    adjacency.sort(key=lambda r: natural_key(r["device"]))
     return Response({
         "device_count": len(name_of),
         "cable_count": len(g["edges"]),
@@ -933,7 +1142,7 @@ def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
                 ),
             },
         }
-        for gid, v in sorted(groups.items(), key=lambda kv: kv[1]["name"])
+        for gid, v in sorted(groups.items(), key=lambda kv: natural_key(kv[1]["name"]))
     ]
     edges = [
         {
@@ -948,22 +1157,103 @@ def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
     return {"nodes": nodes, "edges": edges}
 
 
+# ─── Virtual chassis ────────────────────────────────────────────────────────
+#
+# A chassis is its own RBAC type: its name and membership reach the map only
+# for a caller who may view it, and only for the members they may view as
+# devices (the graph is already bounded to those).
+
+def _chassis_scope(user, tenant):
+    """The chassis the caller may view in ``tenant``: a queryset, or None
+    when they may view none."""
+    vc_q = rbac.row_filter(user, tenant, "virtualchassis", "view")
+    if vc_q is None:
+        return None
+    qs = VirtualChassis.objects.filter(tenant=tenant)
+    return qs if vc_q is True else qs.filter(vc_q)
+
+
+def _with_chassis(graph, user, tenant):
+    """Put ``vc: {id, name, position, master}`` on every device node whose
+    chassis the caller may view - one query, whatever the map's size."""
+    chassis = _chassis_scope(user, tenant)
+    ids = [
+        n["data"]["device_id"] for n in graph.get("nodes", ())
+        if n.get("type") == "device" and n["data"].get("device_id")
+    ]
+    if chassis is None or not ids:
+        return graph
+    rows = (
+        Device.objects.filter(
+            tenant=tenant, id__in=ids, virtual_chassis__in=chassis
+        )
+        .values_list("id", "vc_position", "virtual_chassis_id",
+                     "virtual_chassis__name", "virtual_chassis__master_id")
+    )
+    of = {
+        str(dev): {
+            "id": str(vc), "name": name, "position": pos,
+            "master": master == dev,
+        }
+        for dev, pos, vc, name, master in rows
+    }
+    for n in graph["nodes"]:
+        vc = of.get(n["data"].get("device_id")) if n.get("type") == "device" else None
+        if vc:
+            n["data"]["vc"] = vc
+    return graph
+
+
+def _placed_chassis_q(user, tenant, chassis_ids):
+    """The devices of the placed chassis (``chassis=``) the caller may view,
+    as a filter: members as they are now, so a member added since the map
+    was saved is on it and one removed is not. None when none count."""
+    if not chassis_ids:
+        return None
+    chassis = _chassis_scope(user, tenant)
+    if chassis is None:
+        return None
+    return Q(virtual_chassis__in=chassis.filter(id__in=chassis_ids))
+
+
 def _filter_q(params):
+    """The device filter from ``site location role status tag``; a malformed
+    id is a 400 (``ParseError``)."""
     q = Q()
-    if params.get("site"):
-        q &= Q(site_id=params["site"])
-    if params.get("location"):
-        q &= Q(location_id=params["location"])
-    if params.get("role"):
-        q &= Q(role_id=params["role"])
-    if params.get("status"):
-        q &= Q(status_id=params["status"])
-    if params.get("tag"):
-        q &= Q(tags__slug=params["tag"])
+    for param in ("site", "location", "role", "status"):
+        value = _uuid_param(params, param)
+        if value:
+            q &= Q(**{f"{param}_id": value})
+    tag = params.get("tag")
+    if tag:
+        if not isinstance(tag, str):
+            raise ParseError("tag: not a valid slug")
+        q &= Q(tags__slug=tag)
     return q
 
 
+_GRAPH_200 = OpenApiResponse(
+    response=OpenApiTypes.OBJECT,
+    description=(
+        "`{nodes, edges}` for the React Flow map - device stencil-card "
+        "nodes with cabled ports and cable edges (port-to-port pairs, via "
+        "panels), scoped to the caller's device.view grant. With `include`, "
+        "also `meta` and the enrichment each token names."
+    ),
+)
+_GRAPH_400 = OpenApiResponse(
+    description=(
+        "A malformed id in `device`, `devices`, `chassis`, `site`, "
+        "`location`, `role` or `status` "
+        "(`{detail: \"<param>: not a valid id\"}`), more than "
+        f"{MAX_DEVICE_SET:,} `devices` or {MAX_CHASSIS_SET:,} `chassis`, or "
+        "(POST) a body that is not a JSON object."
+    ),
+)
+
+
 @extend_schema(
+    methods=["GET"],
     summary="Network topology graph (devices as nodes, cables as edges)",
     tags=["topology"],
     request=None,
@@ -1026,7 +1316,7 @@ def _filter_q(params):
             description=(
                 "'site' or 'location': aggregate to one node per group "
                 "(device count + role breakdown) with cable-count edges "
-                "between groups. Ignores device/depth focus."
+                "between groups. Ignores device/depth focus and `include`."
             ),
         ),
         OpenApiParameter(
@@ -1035,22 +1325,89 @@ def _filter_q(params):
             location=OpenApiParameter.QUERY,
             description=(
                 "Comma-separated device ids: the induced subgraph on exactly "
-                "this set (the custom-map builder). Overrides focus/filters."
+                "this set (the custom-map builder). Overrides focus/filters. "
+                f"At most {MAX_DEVICE_SET:,} ids; POST the query for large sets."
+            ),
+        ),
+        OpenApiParameter(
+            name="chassis",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "With `devices`: comma-separated virtual chassis ids whose "
+                "members join the set, as they are now (the chassis the "
+                "caller may view; unknown ids are ignored). At most "
+                f"{MAX_CHASSIS_SET:,} ids."
+            ),
+        ),
+        OpenApiParameter(
+            name="include",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Comma-separated opt-in enrichment: `card`, `link_ips`, "
+                "`photo`. Unknown tokens are ignored. Adds `meta` to the "
+                "response."
+            ),
+        ),
+        OpenApiParameter(
+            name="card_fields",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Comma-separated card lines of a saved view, over the role "
+                "and global lists (`include=card`). Empty = name only."
             ),
         ),
     ],
-    responses=OpenApiResponse(
-        response=OpenApiTypes.OBJECT,
-        description=(
-            "`{nodes, edges}` for the React Flow map - device stencil-card nodes "
-            "with cabled ports and cable edges (port-to-port pairs, via panels), "
-            "scoped to the caller's device.view grant."
-        ),
-    ),
+    responses={200: _GRAPH_200, 400: _GRAPH_400},
 )
-@api_view(["GET"])
+@extend_schema(
+    methods=["POST"],
+    summary="Network topology graph, the query as a JSON body",
+    tags=["topology"],
+    request=inline_serializer(
+        name="TopologyQuery",
+        fields={
+            "devices": serializers.ListField(
+                child=serializers.UUIDField(), required=False,
+                max_length=MAX_DEVICE_SET,
+            ),
+            "chassis": serializers.ListField(
+                child=serializers.UUIDField(), required=False,
+                max_length=MAX_CHASSIS_SET,
+            ),
+            "device": serializers.UUIDField(required=False),
+            "depth": serializers.IntegerField(
+                required=False, min_value=1, max_value=MAX_DEPTH
+            ),
+            "site": serializers.UUIDField(required=False),
+            "location": serializers.UUIDField(required=False),
+            "role": serializers.UUIDField(required=False),
+            "status": serializers.UUIDField(required=False),
+            "tag": serializers.CharField(required=False),
+            "collapse_panels": serializers.BooleanField(required=False),
+            "group_by": serializers.ChoiceField(
+                choices=["site", "location"], required=False
+            ),
+            "include": serializers.ListField(
+                child=serializers.ChoiceField(
+                    choices=["card", "link_ips", "photo"]
+                ),
+                required=False,
+            ),
+            "card_fields": serializers.ListField(
+                child=serializers.CharField(), required=False
+            ),
+        },
+    ),
+    responses={200: _GRAPH_200, 400: _GRAPH_400},
+)
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def topology_view(request):
+    """The map. POST is a read too: it takes the same query as a JSON body,
+    for device sets too long for a URL."""
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"nodes": [], "edges": []})
@@ -1061,45 +1418,166 @@ def topology_view(request):
         return Response({"detail": "device.view required."}, status=403)
     scope_q = None if dev_q is True else dev_q
 
-    p = request.query_params
-    collapse = p.get("collapse_panels", "1") != "0"
-    focus = p.get("device") or None
+    p = _query_params(request)
+    collapse = _flag_param(p, "collapse_panels")
+    # Every id is parsed before any query: a malformed one is a 400, even in
+    # a mode that ignores it.
+    focus = _uuid_param(p, "device")
+    device_ids = _uuid_list_param(p, "devices")
+    chassis_ids = _uuid_list_param(p, "chassis", limit=MAX_CHASSIS_SET)
+    filter_q = _filter_q(p)
     try:
         depth = max(1, min(MAX_DEPTH, int(p.get("depth", 1))))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: a JSON body's 1e999 parses as infinity.
         depth = 1
 
     # Aggregated mode: one node per site/location. Focus is device-level and
-    # doesn't apply here.
+    # doesn't apply here, nor does enrichment (there are no device cards).
     group_by = p.get("group_by")
     if group_by in ("site", "location"):
         return Response(_grouped_graph(
             tenant, group_by,
-            device_filter_q=_filter_q(p),
+            device_filter_q=filter_q,
             collapse=collapse,
             scope_q=scope_q,
         ))
+    include = _include_param(p)
+    card_fields = _card_fields_param(p)
 
     # Explicit device set - the custom-map builder's induced subgraph. The
     # parameter's PRESENCE selects the mode: an empty value is an empty map
     # (a builder you just opened), never a fall-through to the full graph.
-    custom_set = "devices" in p
-    device_ids = [x for x in (p.get("devices") or "").split(",") if x]
+    custom_set = "devices" in p and p.get("devices") is not None
+    set_q = None
     if custom_set:
         focus = None
+        set_q = Q(id__in=device_ids)
+        placed = _placed_chassis_q(request.user, tenant, chassis_ids)
+        if placed is not None:
+            set_q |= placed
 
+    # The enrichers read the objects the assembly already loaded instead of
+    # querying them again; nobody else pays for the bookkeeping.
+    collect = {} if include else None
     graph = _build_graph(
         tenant,
         device_filter_q=(
-            Q(id__in=device_ids) if custom_set
-            else (_filter_q(p) if not focus else None)
+            set_q if custom_set
+            else (filter_q if not focus else None)
         ),
         focus_id=focus,
         depth=depth,
         collapse=collapse,
         scope_q=scope_q,
+        collect=collect,
     )
+    _with_chassis(graph, request.user, tenant)
+    if include:
+        from .topology_enrich import enrich
+
+        graph["meta"] = enrich(
+            graph, collect, include,
+            request=request, user=request.user, tenant=tenant,
+            card_fields=card_fields,
+        )
     return Response(graph)
+
+
+@extend_schema(
+    summary="Virtual chassis the Diagram can place",
+    tags=["topology"],
+    parameters=[
+        OpenApiParameter(
+            name="q",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Only chassis whose name contains this.",
+        ),
+    ],
+    responses={
+        200: inline_serializer(
+            name="TopologyChassisList",
+            fields={
+                "results": serializers.ListField(
+                    child=inline_serializer(
+                        name="TopologyChassis",
+                        fields={
+                            "id": serializers.UUIDField(),
+                            "name": serializers.CharField(),
+                            "master_id": serializers.UUIDField(allow_null=True),
+                            "members": serializers.ListField(
+                                child=inline_serializer(
+                                    name="TopologyChassisMember",
+                                    fields={
+                                        "id": serializers.UUIDField(),
+                                        "name": serializers.CharField(),
+                                        "vc_position": serializers.IntegerField(
+                                            allow_null=True
+                                        ),
+                                    },
+                                )
+                            ),
+                        },
+                    )
+                )
+            },
+        ),
+        403: OpenApiResponse(
+            description="No view on devices or on virtual chassis."
+        ),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def topology_chassis_view(request):
+    """The chassis a Diagram palette offers: those the caller may view, each
+    with the members they may view as devices (by member number, then
+    name). A chassis with no such member is left out; its master's id only
+    when that member is one of them."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"results": []})
+    dev_q = rbac.row_filter(request.user, tenant, "device", "view")
+    chassis = _chassis_scope(request.user, tenant)
+    if dev_q is None or chassis is None:
+        return Response(
+            {"detail": "device.view and virtualchassis.view required."},
+            status=403,
+        )
+    q = str(request.query_params.get("q") or "").strip()[:128]
+    if q:
+        chassis = chassis.filter(name__icontains=q)
+    members = Device.objects.filter(tenant=tenant)
+    if dev_q is not True:
+        members = members.filter(dev_q)
+    members = members.only("id", "name", "vc_position", "virtual_chassis")
+    chassis = (
+        chassis.only("id", "name", "master_id")
+        .prefetch_related(Prefetch("members", queryset=members, to_attr="seen"))
+        .order_by(natural("name"), "id")
+    )
+    results = []
+    for vc in chassis:
+        seen = sorted(
+            vc.seen,
+            key=lambda d: (
+                d.vc_position is None, d.vc_position or 0, natural_key(d.name)
+            ),
+        )
+        if not seen:
+            continue
+        ids = {d.id for d in seen}
+        results.append({
+            "id": str(vc.id),
+            "name": vc.name,
+            "master_id": str(vc.master_id) if vc.master_id in ids else None,
+            "members": [
+                {"id": str(d.id), "name": d.name, "vc_position": d.vc_position}
+                for d in seen
+            ],
+        })
+    return Response({"results": results})
 
 
 def device_paths(device, viewable_ids=None):
@@ -1314,7 +1792,7 @@ def device_paths(device, viewable_ids=None):
         first.setdefault("legs", [first["steps"][head:]])
         first["legs"].append(r["steps"][head:])
         first["complete"] = first["complete"] and r["complete"]
-    grouped.sort(key=lambda r: r["origin"]["name"])
+    grouped.sort(key=lambda r: natural_key(r["origin"]["name"]))
     return {"runs": grouped}
 
 
@@ -1448,11 +1926,26 @@ def cable_strand_path(cable, strand):
     }
 
 
-def trace_device_graph(tenant, trace_graph, scope_q=None):
-    """A device-level graph (the same adaptive stencil cards as the main map)
-    for the devices a trace passes through, with the traced cables marked.
-    Panels are shown (collapse off) so the full physical path renders.
-    ``scope_q`` bounds nodes to the caller's viewable devices (site scope)."""
+def _enriched(graph, collect, include, request, tenant):
+    """``graph`` with the ``include`` enrichments and their ``meta`` (the
+    map's ``include=card,link_ips``), as the caller may see them."""
+    if include:
+        from .topology_enrich import enrich
+
+        graph["meta"] = enrich(
+            graph, collect, include,
+            request=request, user=getattr(request, "user", None), tenant=tenant,
+        )
+    return graph
+
+
+def trace_device_graph(tenant, trace_graph, scope_q=None, include=frozenset(),
+                       request=None):
+    """A device-level graph (the map's device cards) for the devices a trace
+    passes through, with the traced cables marked. Panels are shown
+    (collapse off) so the full physical path renders. ``scope_q`` bounds
+    nodes to the caller's viewable devices (site scope); ``include`` adds the
+    map's enrichments (``card``, ``link_ips``) and ``meta``."""
     from django.db.models import Q
 
     dev_ids = {
@@ -1467,18 +1960,28 @@ def trace_device_graph(tenant, trace_graph, scope_q=None):
     }
     if not dev_ids:
         return {"nodes": [], "edges": []}
+    collect = {} if include else None
     g = _build_graph(tenant, device_filter_q=Q(id__in=dev_ids), collapse=False,
-                     scope_q=scope_q)
+                     scope_q=scope_q, collect=collect)
     for e in g["edges"]:
         e["data"]["marked"] = e["data"].get("cable_id") in cable_ids
-    return g
+    return _enriched(g, collect, include, request, tenant)
 
 
-def device_trace_map(device, scope_q=None):
+def device_trace_map(device, scope_q=None, include=frozenset(), request=None):
     """Device-page mini map: the device's 1-hop neighbourhood with panels
     collapsed. Kept as the DeviceViewSet ``map`` action's implementation.
-    ``scope_q`` bounds the graph to the caller's viewable devices (site scope)."""
-    return _build_graph(
+    ``scope_q`` bounds the graph to the caller's viewable devices (site
+    scope); ``include`` adds the map's enrichments and ``meta``."""
+    collect = {} if include else None
+    graph = _build_graph(
         device.tenant, focus_id=str(device.id), depth=1, collapse=True,
-        scope_q=scope_q,
+        scope_q=scope_q, collect=collect,
     )
+    return _enriched(graph, collect, include, request, device.tenant)
+
+
+def map_include(request):
+    """The ``include`` a device map or a trace asks for: ``card`` and
+    ``link_ips`` (a photo is the map's own). Unknown tokens are ignored."""
+    return _include_param(request.query_params) & {"card", "link_ips"}

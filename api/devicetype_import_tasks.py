@@ -24,7 +24,7 @@ def run_devicetype_import(run_id: str) -> None:
 
     from core.ssrf import safe_get
 
-    from .devicetype_import import expand_github_dir, import_yaml_auto
+    from .devicetype_import import allowed_kinds, expand_github_dir, import_yaml_auto
     from .models import DeviceTypeImportRun
 
     run = DeviceTypeImportRun.objects.filter(pk=run_id).first()
@@ -57,6 +57,10 @@ def run_devicetype_import(run_id: str) -> None:
         from .devicetype_import import _IMAGE_BASE, repo_image_inventory
 
         image_inventory = repo_image_inventory(_IMAGE_BASE)
+        # Re-checked here, not trusted from enqueue time: the importer may have
+        # lost a grant since. No recorded user (deleted) means nothing.
+        allowed = (allowed_kinds(run.created_by, run.tenant)
+                   if run.created_by_id else set())
         for url in files:
             try:
                 resp = safe_get(url, timeout=15)
@@ -65,7 +69,7 @@ def run_devicetype_import(run_id: str) -> None:
                     run.tenant, resp.text,
                     stack_positions=run.stack_positions,
                     owning_site=run.owning_site,
-                    image_inventory=image_inventory,
+                    image_inventory=image_inventory, allowed=allowed,
                 )
                 if report.get("ok"):
                     created += 1

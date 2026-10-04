@@ -42,11 +42,13 @@ import { EIGRPSection, ISISSection, OSPFSection } from "./device-igp-section"
 import { LDPSection } from "./device-ldp-section"
 import { VTEPSection } from "./device-vtep-section"
 import { StaticRouteForm } from "./object-forms"
+import { ownerDetailKey, ownerName, ownerNoun, ownerParam } from "./owner"
+import type { RoutingOwner } from "./owner"
 
-// A device's Routing tab: what the box routes with - static routes, the
-// BGP / OSPF / IS-IS instance cards and the VTEP. Rows are edited in place
-// through a dialog, the device pre-set, so the tab is where a router's
-// routing is written down.
+// A device's or VM's Routing tab: what the box routes with - static routes,
+// the BGP / OSPF / IS-IS / EIGRP instance cards, and on a device the VTEP and
+// LDP. Rows are edited in place through a dialog, the box pre-set, so the tab
+// is where a router's routing is written down.
 
 function Section({
   title,
@@ -73,11 +75,7 @@ function Section({
   )
 }
 
-export function DeviceRoutingPanel({
-  device,
-}: {
-  device: { id: string; name: string }
-}) {
+export function RoutingPanel({ owner }: { owner: RoutingOwner }) {
   const { canDo, humanIds } = useMe()
   const qc = useQueryClient()
   const [editing, setEditing] = useState<StaticRoute | null>(null)
@@ -85,15 +83,15 @@ export function DeviceRoutingPanel({
   const [deleting, setDeleting] = useState<StaticRoute | null>(null)
 
   const routes = useQuery({
-    queryKey: ["static-routes", "device", device.id],
+    queryKey: ["static-routes", owner.kind, owner.id],
     queryFn: () =>
       api<Paginated<StaticRoute>>(
-        `/api/routing/static-routes/?device=${device.id}&page_size=500`
+        `/api/routing/static-routes/?${ownerParam(owner)}&page_size=500`
       ),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["static-routes"] })
-    qc.invalidateQueries({ queryKey: ["device", device.id] })
+    qc.invalidateQueries({ queryKey: ownerDetailKey(owner) })
   }
   const canEdit = canDo("staticroute", "change")
   const canDelete = canDo("staticroute", "delete")
@@ -115,12 +113,16 @@ export function DeviceRoutingPanel({
 
   return (
     <div className="grid gap-8">
-      <BGPSection device={device} />
-      <OSPFSection device={device} />
-      <ISISSection device={device} />
-      <EIGRPSection device={device} />
-      <VTEPSection device={device} />
-      <LDPSection device={device} />
+      <BGPSection owner={owner} />
+      <OSPFSection owner={owner} />
+      <ISISSection owner={owner} />
+      <EIGRPSection owner={owner} />
+      {owner.kind === "device" && (
+        <>
+          <VTEPSection device={owner} />
+          <LDPSection device={owner} />
+        </>
+      )}
       <Section
         title="Static routes"
         count={rows.length}
@@ -138,7 +140,7 @@ export function DeviceRoutingPanel({
         )}
         {routes.data && rows.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            No static routes on this device.
+            No static routes on this {ownerNoun(owner)}.
           </p>
         )}
         {rows.length > 0 && (
@@ -165,13 +167,13 @@ export function DeviceRoutingPanel({
             <DialogTitle>
               {editing
                 ? `Edit ${editing.prefix}`
-                : `Add static route on ${device.name}`}
+                : `Add static route on ${owner.name}`}
             </DialogTitle>
           </DialogHeader>
           {(adding || editing) && (
             <StaticRouteForm
               item={editing}
-              device={device}
+              owner={owner}
               onSaved={() => {
                 refresh()
                 setAdding(false)
@@ -205,7 +207,7 @@ type Dialog =
   | { kind: "session"; instance: BGPInstance; item: BGPSession | null }
   | null
 
-function BGPSection({ device }: { device: { id: string; name: string } }) {
+function BGPSection({ owner }: { owner: RoutingOwner }) {
   const { canDo, humanIds } = useMe()
   const qc = useQueryClient()
   const [dialog, setDialog] = useState<Dialog>(null)
@@ -217,23 +219,23 @@ function BGPSection({ device }: { device: { id: string; name: string } }) {
   >(null)
 
   const instances = useQuery({
-    queryKey: ["bgp-instances", "device", device.id],
+    queryKey: ["bgp-instances", owner.kind, owner.id],
     queryFn: () =>
       api<Paginated<BGPInstance>>(
-        `/api/routing/bgp-instances/?device=${device.id}`
+        `/api/routing/bgp-instances/?${ownerParam(owner)}`
       ),
   })
   const sessions = useQuery({
-    queryKey: ["bgp-sessions", "device", device.id],
+    queryKey: ["bgp-sessions", owner.kind, owner.id],
     queryFn: () =>
       api<Paginated<BGPSession>>(
-        `/api/routing/bgp-sessions/?device=${device.id}&page_size=500`
+        `/api/routing/bgp-sessions/?${ownerParam(owner)}&page_size=500`
       ),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["bgp-instances"] })
     qc.invalidateQueries({ queryKey: ["bgp-sessions"] })
-    qc.invalidateQueries({ queryKey: ["device", device.id] })
+    qc.invalidateQueries({ queryKey: ownerDetailKey(owner) })
   }
   const canEditS = canDo("bgpsession", "change")
   const canDeleteS = canDo("bgpsession", "delete")
@@ -282,7 +284,9 @@ function BGPSection({ device }: { device: { id: string; name: string } }) {
         <p className="text-sm text-muted-foreground">Loading…</p>
       )}
       {instances.data && rows.length === 0 && (
-        <p className="text-sm text-muted-foreground">No BGP on this device.</p>
+        <p className="text-sm text-muted-foreground">
+          No BGP on this {ownerNoun(owner)}.
+        </p>
       )}
       {rows.map((inst) => {
         const mine = (sessions.data?.results ?? []).filter(
@@ -526,7 +530,7 @@ function BGPSection({ device }: { device: { id: string; name: string } }) {
               {dialog?.kind === "instance"
                 ? dialog.item
                   ? `Edit AS${dialog.item.asn.asn}`
-                  : `Add BGP instance on ${device.name}`
+                  : `Add BGP instance on ${owner.name}`
                 : dialog?.kind === "af"
                   ? dialog.item
                     ? `Edit ${dialog.item.afi_safi}`
@@ -541,7 +545,7 @@ function BGPSection({ device }: { device: { id: string; name: string } }) {
           {dialog?.kind === "instance" && (
             <BGPInstanceForm
               item={dialog.item}
-              device={device}
+              owner={owner}
               onSaved={() => {
                 refresh()
                 close()
@@ -577,7 +581,7 @@ function BGPSection({ device }: { device: { id: string; name: string } }) {
         item={deleting?.kind === "instance" ? deleting.item : null}
         endpoint="/api/routing/bgp-instances/"
         queryKey="bgp-instances"
-        label={(i) => `AS${i.asn.asn} on ${i.device.name}`}
+        label={(i) => `AS${i.asn.asn} on ${ownerName(i)}`}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={refresh}
       />

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { api, ApiError } from "@/lib/api"
 import type {
   Paginated,
+  Status,
   VLAN,
   VLANGroupOption,
   VLANWritePayload,
@@ -20,6 +21,7 @@ import {
   FormCombobox,
   FormFooter,
   FormSection,
+  FormStatusSelect,
   FormTags,
   FormText,
   FormTextarea,
@@ -64,6 +66,9 @@ export function VlanForm({
   const [groupId, setGroupId] = useState<string | null>(src?.group?.id ?? null)
   const [zoneId, setZoneId] = useState<string | null>(src?.zone?.id ?? null)
   const [vrfId, setVrfId] = useState<string | null>(src?.vrf?.id ?? null)
+  const [statusId, setStatusId] = useState<string | null>(
+    src?.status?.id ?? null
+  )
   const [color, setColor] = useState(src?.color ?? "")
   const [description, setDescription] = useState(src?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
@@ -111,6 +116,20 @@ export function VlanForm({
     queryFn: () => api<Paginated<ZoneOption>>("/api/zones/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  const statuses = useQuery({
+    queryKey: ["statuses", "vlan"],
+    queryFn: () =>
+      api<Paginated<Status>>("/api/statuses/?available_to=vlan&picker=1"),
+    staleTime: 5 * 60_000,
+  })
+  // A new VLAN starts in the tenant's default VLAN status (Active).
+  const defaulted = useRef(false)
+  useEffect(() => {
+    if (isEdit || defaulted.current || statusId || !statuses.data) return
+    defaulted.current = true
+    const d = statuses.data.results.find((s) => s.default_for.includes("vlan"))
+    if (d) setStatusId(d.id)
+  }, [isEdit, statusId, statuses.data])
 
   // "Save and add another": keep the form open with the shared context
   // (site, role, table…) and clear only what names this one.
@@ -132,6 +151,7 @@ export function VlanForm({
         group_id: groupId,
         zone_id: zoneId,
         vrf_id: vrfId,
+        status_id: statusId,
         color,
         description: description.trim(),
         tag_ids: tagIds,
@@ -200,6 +220,15 @@ export function VlanForm({
             error={fieldErrors.name}
           />
         </div>
+
+        <FormStatusSelect
+          value={statusId}
+          onChange={setStatusId}
+          options={statuses.data?.results ?? []}
+          noneLabel="No status"
+          placeholder="Select a status…"
+          error={fieldErrors.status_id}
+        />
 
         <FormColor
           label="Color"

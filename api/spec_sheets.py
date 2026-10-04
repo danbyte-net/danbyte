@@ -12,15 +12,17 @@ import base64
 import mimetypes
 import re
 from datetime import UTC, datetime
+from fractions import Fraction
 
 from django.contrib.contenttypes.models import ContentType
 from django.template.loader import render_to_string
 
+from core.tags import tags_of
+
+from .din import mm
+from .natural import natural, natural_key
+
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
-
-
-def _natural(name: str):
-    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name or "")]
 
 
 def _data_uri(field) -> str | None:
@@ -137,16 +139,20 @@ def _status(obj) -> dict | None:
 
 
 def _tags(obj) -> str:
-    return ", ".join(t.name for t in obj.tags.all())
+    return ", ".join(t.name for t in tags_of(obj))
 
 
-def _ports_used(devices) -> dict | None:
+def _ports_used(devices, tenant) -> dict | None:
     """The port-utilisation card's numbers for ``devices`` (a queryset):
-    ``{used, total, pct, connected, reserved, free}`` or ``None`` when there
-    are no ports."""
+    ``{used, total, pct, connected, reserved, free}`` or ``None`` when no
+    port is counted - the same rule as the card, ``tenant``'s setting
+    included."""
+    from core.effective_settings import port_count_virtual
+
     from .port_utilization import utilization_payload
 
-    comb = (utilization_payload(devices) or {}).get("combined") or {}
+    payload = utilization_payload(devices, count_virtual=port_count_virtual(tenant))
+    comb = payload.get("combined") or {}
     total = comb.get("total") or 0
     if not total:
         return None
@@ -181,7 +187,7 @@ def interface_rows(device) -> tuple[list[dict], list]:
         .select_related("vlan", "parent")
         .prefetch_related("tagged_vlans", "ip_addresses")
     )
-    ifaces.sort(key=lambda i: _natural(i.name))
+    ifaces.sort(key=lambda i: natural_key(i.name))
     vendors = _vendor_map({i.mac_address for i in ifaces if i.mac_address}, device.tenant)
     rows = []
     for i in ifaces:
@@ -238,6 +244,10 @@ def device_context(device, request=None) -> dict:
         )),
         ("Part number", dt.part_number if dt else ""),
         ("Height", f"{dt.u_height}U" if dt and dt.u_height else ""),
+        ("Size", (
+            "×".join(f"{mm(v)}" for v in (dt.width_mm, dt.height_mm, dt.depth_mm) if v)
+            + " mm" if dt and dt.width_mm and dt.height_mm else ""
+        )),
         ("Platform", device.platform.name if device.platform_id else ""),
         ("Primary IP", _ip(device.primary_ip)),
         ("OOB IP", _ip(device.oob_ip)),
@@ -248,6 +258,12 @@ def device_context(device, request=None) -> dict:
             x for x in (rack.name if rack else "",
                         f"U{device.position}" if rack and device.position else "",
                         device.face if rack and device.position else "")
+            if x
+        )),
+        ("Cabinet", " · ".join(
+            x for x in (device.cabinet.name if device.cabinet_id else "",
+                        device.din_rail.label if device.din_rail_id else "",
+                        f"{mm(device.din_offset_mm)} mm" if device.din_rail_id else "")
             if x
         )),
         ("Cluster", device.cluster.name if device.cluster_id else ""),
@@ -289,7 +305,8 @@ def device_context(device, request=None) -> dict:
                 "type": m.module_type.name,
                 "serial": m.serial_number,
             }
-            for m in device.modules.select_related("module_bay", "module_type").all()
+            for m in device.modules.select_related("module_bay", "module_type")
+            .order_by(natural("module_bay__name"))
         ],
         "inventory": [
             {
@@ -298,32 +315,32 @@ def device_context(device, request=None) -> dict:
                 "part": it.part_id,
                 "serial": it.serial_number,
             }
-            for it in device.inventory_items.select_related("manufacturer").all()
+            for it in device.inventory_items.select_related("manufacturer")
+            .order_by(natural("name"))
         ],
         "interfaces": rows,
         "comments": device.comments or "",
         "images": images,
         "elevation": elevation,
         "ip_count": IPAddress.objects.filter(assigned_device=device).count(),
-        "ports": _ports_used(type(device).objects.filter(pk=device.pk)),
+        "ports": _ports_used(type(device).objects.filter(pk=device.pk), device.tenant),
     }
 
 
 # ─── virtual machine ───────────────────────────────────────────────────────
 
 def _memory(mb) -> str:
-    if not mb:
-        return "—"
-    return f"{mb / 1024:g} GB" if mb % 1024 == 0 else f"{mb} MB"
+    """A VM's memory (MiB) in GB, like the hardware sheet's RAM."""
+    return format_gb(Fraction(mb, 1024)) if mb and mb > 0 else "—"
 
 
 def vm_context(vm, request=None) -> dict:
     from .models import IPAddress
 
-    disks = list(vm.disks.all())
+    disks = list(vm.disks.order_by(natural("key")))
     disk_total = vm.disk_gb or sum((d.size_gb or 0) for d in disks)
     ifaces = list(vm.interfaces.select_related("parent").all())
-    ifaces.sort(key=lambda i: _natural(i.name))
+    ifaces.sort(key=lambda i: natural_key(i.name))
     ips_by_iface: dict = {}
     for ip in IPAddress.objects.filter(assigned_vm_interface__in=ifaces):
         ips_by_iface.setdefault(ip.assigned_vm_interface_id, []).append(ip.ip_address)
@@ -423,7 +440,7 @@ def vc_context(vc, request=None) -> dict:
             "serial": m.serial_number,
             "status": m.status.name if m.status_id else "",
         })
-    ports = _ports_used(vc.members.all()) if members else None
+    ports = _ports_used(vc.members.all(), vc.tenant) if members else None
     details = [
         ("Domain", vc.domain),
         ("Master", master.name if master else ""),
@@ -481,11 +498,69 @@ def format_bytes(n) -> str:
     return f"{n} B"
 
 
+_MIB = 1 << 20
+
+
+def memory_gb(n) -> Fraction:
+    """A memory size in GB, exactly. The bytes come two ways: a BMC reports
+    MiB, so 32 GiB is stored as 34 359 738 368; the form writes decimal GB,
+    so 32 GB is 32 000 000 000. A whole number of MiB reads in GiB, anything
+    else in decimal GB - both are 32 GB."""
+    if not n or n <= 0:
+        return Fraction(0)
+    return Fraction(n, 1 << 30) if n % _MIB == 0 else Fraction(n, 10**9)
+
+
+def format_gb(gb: Fraction) -> str:
+    """GB with no unit switch - "1024 GB", not "1.1 TB" - whole when exact,
+    else to one decimal."""
+    if gb <= 0:
+        return ""
+    text = str(gb.numerator) if gb.denominator == 1 else f"{float(gb):.1f}"
+    return f"{text} GB"
+
+
+def format_memory(n) -> str:
+    """Memory bytes → "32 GB" (see ``memory_gb``)."""
+    return format_gb(memory_gb(n))
+
+
 def _most_common(values) -> str:
     vals = [v for v in values if v]
     if not vals:
         return ""
     return max(set(vals), key=vals.count)
+
+
+def size_mix(items, fmt, media_labels=None) -> str:
+    """"2 × 2 TB · 8 × 10 TB": one count per distinct size, smallest first.
+
+    A multiplier over the most common size would read "10 × 2 TB" for two
+    2 TB and eight 10 TB disks. With ``media_labels`` and more than one medium
+    among the parts, each group names its medium ("2 × 2 TB SSD"). Parts with
+    no size are counted at the end ("2 more")."""
+    sized = [i for i in items if i.capacity_bytes]
+    if not sized:
+        return ""
+    mixed = media_labels is not None and len({i.media for i in sized}) > 1
+    # Grouped by the size as printed, so two "960 GB" disks a few bytes
+    # apart count together; ordered by the smallest part in each group.
+    groups: dict[tuple, list] = {}
+    for i in sized:
+        key = (fmt(i.capacity_bytes), i.media if mixed else "")
+        g = groups.setdefault(key, [0, i.capacity_bytes])
+        g[0] += 1
+        g[1] = min(g[1], i.capacity_bytes)
+    bits = []
+    for (size, medium), (n, _) in sorted(groups.items(), key=lambda kv: (kv[1][1], kv[0][1])):
+        label = f"{n} × {size}"
+        if mixed and media_labels.get(medium):
+            label += f" {media_labels[medium]}"
+        bits.append(label)
+    unsized = len(items) - len(sized)
+    if unsized:
+        bits.append(f"{unsized} more")
+    return " · ".join(bits)
 
 
 _CORES_IN_TEXT = re.compile(r"^\s*(\d+)\s*[x×]\s")
@@ -515,6 +590,7 @@ def hardware_totals(items) -> dict:
     disks = [i for i in items if i.kind == "disk"]
     cores = sum(cores_of(i) for i in cpus)
     ram_bytes = sum(i.capacity_bytes or 0 for i in rams)
+    ram_gb = sum((memory_gb(i.capacity_bytes) for i in rams), Fraction(0))
     disk_bytes = sum(i.capacity_bytes or 0 for i in disks)
     from .models import INVENTORY_MEDIA_TYPES
 
@@ -528,9 +604,10 @@ def hardware_totals(items) -> dict:
         },
         "ram": {
             "bytes": ram_bytes,
-            "total": format_bytes(ram_bytes),
+            "total": format_gb(ram_gb),
             "sticks": len(rams),
-            "stick": _most_common(format_bytes(i.capacity_bytes) for i in rams),
+            "stick": _most_common(format_memory(i.capacity_bytes) for i in rams),
+            "mix": size_mix(rams, format_memory),
             "speed": _most_common(i.speed for i in rams),
         },
         "disk": {
@@ -538,7 +615,13 @@ def hardware_totals(items) -> dict:
             "total": format_bytes(disk_bytes),
             "count": len(disks),
             "each": _most_common(format_bytes(i.capacity_bytes) for i in disks),
-            "media": media_labels.get(_most_common(i.media for i in disks), ""),
+            "mix": size_mix(disks, format_bytes, media_labels),
+            # One medium for all: said once after the sizes. Mixed media are
+            # named per size in "mix" instead.
+            "media": (
+                media_labels.get(_most_common(i.media for i in disks), "")
+                if len({i.media for i in disks if i.capacity_bytes}) <= 1 else ""
+            ),
         },
     }
 
@@ -554,11 +637,11 @@ def _hardware_stats(totals: dict) -> list[dict]:
         cpu_value = f"{cpu['sockets']} CPU{'s' if cpu['sockets'] != 1 else ''}" if cpu["sockets"] else "—"
         cpu_hint = " · ".join(x for x in (cpu["clock"], cpu["model"]) if x)
     ram_hint = " · ".join(x for x in (
-        f"{ram['sticks']} × {ram['stick']}" if ram["sticks"] and ram["stick"] else
+        ram["mix"] if ram["mix"] else
         f"{ram['sticks']} module{'s' if ram['sticks'] != 1 else ''}" if ram["sticks"] else "",
         ram["speed"]) if x)
     disk_hint = " · ".join(x for x in (
-        f"{disk['count']} × {disk['each']}" if disk["count"] and disk["each"] else
+        disk["mix"] if disk["mix"] else
         f"{disk['count']} disk{'s' if disk['count'] != 1 else ''}" if disk["count"] else "",
         disk["media"]) if x)
     return [
@@ -573,15 +656,18 @@ def _hardware_parts(device) -> dict:
     sheet and the all-in-one sheet."""
     from .models import INVENTORY_ITEM_KINDS, INVENTORY_MEDIA_TYPES
 
+    # Slot then name, in natural order: "DIMM 2" before "DIMM 10". A part a
+    # BMC synced has no slot, so its name orders it.
     items = list(
         device.inventory_items.select_related("manufacturer", "status")
-        .order_by("kind", "slot", "name")
+        .order_by("kind", natural("slot"), natural("name"))
     )
     totals = hardware_totals(items)
     media = dict(INVENTORY_MEDIA_TYPES)
     kinds = dict(INVENTORY_ITEM_KINDS)
 
     def _row(it):
+        size = (format_memory if it.kind == "ram" else format_bytes)(it.capacity_bytes)
         return {
             "slot": it.slot,
             "name": it.name,
@@ -591,12 +677,12 @@ def _hardware_parts(device) -> dict:
             "serial": it.serial_number,
             "speed": it.speed,
             "cores": cores_of(it) or "",
-            "capacity": format_bytes(it.capacity_bytes),
+            "capacity": size,
             "media": media.get(it.media, ""),
             "status": it.status.name if it.status_id else "",
             "kind": kinds.get(it.kind, it.kind),
             "details": " · ".join(x for x in (
-                model_of(it), it.speed, format_bytes(it.capacity_bytes)
+                model_of(it), it.speed, size
             ) if x),
         }
 

@@ -43,6 +43,13 @@ status, a description, tags, and any custom fields. Interfaces reference a VLAN
 for access or trunk membership. The list filters by site, status, group and VRF,
 and supports **bulk edit** for changing many VLANs at once.
 
+The **status** says whether a VLAN is in use: *Active*, *Reserved* for a
+coming rollout, or *Deprecated* and due for removal - or any status of your own
+made available to VLANs under Statuses. A new VLAN starts in the default
+(*Active*). VLANs created before 0.17 have no status; tick them in the list and
+use **Edit** to set many at once. The status shows as a column on the list,
+filters it, and sits on the VLAN's page.
+
 A VLAN can also name the **VRF** its SVI lives in - the Layer 3 side of the
 VLAN, documented before any prefix exists on it (a reserved or planned VLAN
 has none yet). It is optional; a flat network leaves it empty. The VRF shows
@@ -52,10 +59,36 @@ different VRF gets a *VLAN is in another VRF* badge on its page, so a
 mismatch is seen rather than assumed.
 
 A VLAN also has an optional **colour** (set on its edit form) that paints its
-badge everywhere VLANs appear - tables, the IP/prefix panes, and the virtual
-network topology rails. Colour precedence: the VLAN's own colour, then its
+badge everywhere VLANs appear - tables, the IP/prefix panes, and the Virtual
+topology rails. Colour precedence: the VLAN's own colour, then its
 zone's colour (zones stay firewall semantics - inside/outside/prod - never a
 colour requirement), then a neutral badge / blue palette shade.
+
+### Changing many VLANs at once
+
+Tick VLANs in the list and a bar floats up at the bottom of the page. The
+header checkbox ticks the page you are on; when the list runs to more pages,
+**Select all N** appears above the table and ticks every VLAN the filters
+show (**Clear** undoes it). The bar offers:
+
+- **Edit** - set the status, site, group, zone, VRF or description of every
+  ticked VLAN, and add or remove tags. A field left on *keep* is not touched;
+  a description box only applies once its checkbox is ticked, so an empty one
+  clears the description. A move to another group or site is checked like
+  editing one VLAN: each VID has to fit the group's range and must not repeat
+  where it lands (see below), and the error names the VIDs to leave out.
+- **Export** - the ticked VLANs as CSV, Excel or JSON.
+- **Delete** - asks first, with the count and the first few VLANs, then
+  deletes them all.
+
+Each VLAN that changes gets its own [change-log](change-log.md) entry, and
+bulk edit and delete need the same *change* / *delete* permission as editing
+one VLAN. Under [enhanced site separation](../access/site-separation.md), bulk
+edit takes the same VRFs, zones and statuses as the edit form: global ones, or
+those local to your own sites. A tick belongs to the VLAN, not to its row
+position: filtering or a refresh never moves it onto another VLAN, and a VLAN
+that drops out of the list (filtered away or deleted) drops out of the
+selection.
 
 ### Prefixes on a VLAN
 
@@ -151,7 +184,7 @@ its allocatable space:
   ranges, and **Add pool** offers each range as a preset in place of *Whole
   prefix*; a pool straddling a range edge is cut to the range.
 - **Utilisation** counts used against the ranges' size, and the Addressing
-  card shows *Used 1 of 7 · Free 6*; Subnet details gain **Allocation**,
+  card shows it with *Used 1 of 7 · Free 6*; Subnet details gain **Allocation**,
   **Managed addresses**, **Used** and **Available** rows under the subnet's
   theoretical capacity.
 - The IP form requires a **Range** pick (a lone range is picked for you), and

@@ -144,6 +144,29 @@ class PanelCollapseTests(_Base):
         self.assertTrue(by_name["panel-a"]["panel"])
         self.assertFalse(by_name["server"]["panel"])
 
+    def test_pairs_name_their_components(self):
+        # Collapsed: the end-to-end pair names the two interfaces, oriented
+        # like a_port/b_port.
+        pair = self._graph("collapse_panels=1")["edges"][0]["data"]["pairs"][0]
+        ids = {"eth0": str(self.s_eth.id), "gi1": str(self.w_gi.id)}
+        self.assertEqual(pair["a_id"], ids[pair["a_port"]])
+        self.assertEqual(pair["b_id"], ids[pair["b_port"]])
+        self.assertEqual((pair["a_kind"], pair["b_kind"]), ("interface", "interface"))
+        # Raw: the server's hop lands on the panel's front port.
+        edges = self._graph("collapse_panels=0")["edges"]
+        pair = next(
+            p for e in edges for p in e["data"]["pairs"]
+            if {p["a_port"], p["b_port"]} == {"eth0", "front1"}
+        )
+        ends = {
+            (pair["a_port"], pair["a_id"], pair["a_kind"]),
+            (pair["b_port"], pair["b_id"], pair["b_kind"]),
+        }
+        self.assertEqual(ends, {
+            ("eth0", str(self.s_eth.id), "interface"),
+            ("front1", str(self.fa.id), "front_port"),
+        })
+
     def test_device_paths_strip(self):
         data = self.client.get(f"/api/devices/{self.server.id}/paths/").json()
         self.assertEqual(len(data["runs"]), 1)
@@ -383,6 +406,25 @@ class SavedViewTests(_Base):
         ).json()["state"]
         self.assertEqual(state["hidden"], hidden)
 
+    def test_single_hidden_lines_are_accepted(self):
+        """A line hidden from its right-click menu saves under ``edges``;
+        the rest of the rules still apply to it."""
+        hidden = {"devices": [], "edges": ["e:c1:a:b", "ghost:a:b"]}
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "lines", "state": {"hidden": hidden}}, format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        state = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]
+        self.assertEqual(state["hidden"], hidden)
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "bad", "state": {"hidden": {"edges": [1]}}}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
     def test_a_map_bigger_than_five_thousand_nodes_saves(self):
         positions = {f"dev:{i:08x}-0000-0000-0000-000000000000": [i, i * 2]
                      for i in range(12_000)}
@@ -410,6 +452,517 @@ class SavedViewTests(_Base):
             )
         self.assertEqual(resp.status_code, 400, resp.content)
         self.assertIn("Re-layout", str(resp.json()))
+
+
+class DiagramViewStateTests(_Base):
+    """The Diagram tab's saved-view keys (0.17): checked in depth, while the
+    older keys keep the lenient checks views were always saved under."""
+
+    A = "0a0a0a0a-0000-4000-8000-000000000001"
+    B = "0b0b0b0b-0000-4000-8000-000000000002"
+
+    def _save(self, state, name="v"):
+        return self.client.post(
+            "/api/topology-views/", {"name": name, "state": state}, format="json"
+        )
+
+    def _full_state(self):
+        return {
+            "filters": {
+                "viewStyle": "diagram",
+                "diagram": {
+                    "mode": "detailed", "face": "photo", "line": "cyclical",
+                    "photo_anchor": "edge",
+                    "labels": ["subnet", "ip", "port", "ip"],
+                    "fields": ["primary_ip", "loopback", "cf_owner", "loopback"],
+                },
+            },
+            "positions_by_style": {"diagram": {f"dev:{self.A}": [10, 20]}},
+            "zones_by_style": {"diagram": [
+                {"id": "z1", "label": "DMZ", "x": 0, "y": 0, "w": 400, "h": 200,
+                 "color": "#0EA5E9"},
+                {"id": "b1", "label": "Spine", "x": 0, "y": 300, "w": 900,
+                 "h": 180, "color": None, "kind": "band", "orient": "h",
+                 "rule": {"by": "role", "ids": [self.A]}},
+                {"id": "b2", "label": "OOB", "x": 950, "y": 0, "w": 200,
+                 "h": 900, "color": "", "kind": "band", "orient": "v"},
+            ]},
+            "links": {
+                f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1},
+            },
+            "nodes": {self.A: {"face": "card"}, self.B: {"anchor": "ports"}},
+            "notes": [
+                {"id": "n1", "kind": "text", "x": 5, "y": -5.5, "text": "WAN",
+                 "size": "l", "outline": True},
+                {"id": "n2", "kind": "icon", "x": 100, "y": 0, "icon": "cloud",
+                 "size": "s"},
+            ],
+        }
+
+    def test_the_diagram_keys_round_trip(self):
+        resp = self._save(self._full_state())
+        self.assertEqual(resp.status_code, 201, resp.content)
+        state = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]
+        diagram = state["filters"]["diagram"]
+        # Duplicates collapse; order is kept.
+        self.assertEqual(diagram["labels"], ["subnet", "ip", "port"])
+        self.assertEqual(diagram["fields"], ["primary_ip", "loopback", "cf_owner"])
+        zones = state["zones_by_style"]["diagram"]
+        self.assertEqual(zones[0]["color"], "#0ea5e9")
+        self.assertEqual(zones[1]["rule"], {"by": "role", "ids": [self.A]})
+        self.assertEqual(state["positions_by_style"]["diagram"], {f"dev:{self.A}": [10, 20]})
+        self.assertEqual(state["links"], {f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1}})
+        self.assertEqual(state["nodes"][self.A], {"face": "card"})
+        self.assertEqual(state["nodes"][self.B], {"anchor": "ports"})
+        self.assertEqual(diagram["photo_anchor"], "edge")
+        self.assertEqual([n["id"] for n in state["notes"]], ["n1", "n2"])
+        self.assertEqual(state["notes"][0]["size"], "l")
+        self.assertIs(state["notes"][0]["outline"], True)
+
+    def test_a_band_of_several_layers_round_trips(self):
+        a, b = self.A, self.B
+        many = [f"0c0c0c0c-0000-4000-8000-{i:012d}" for i in range(100)]
+        state = {"zones_by_style": {"diagram": [
+            {"id": "fab", "label": "Data Center fabric", "x": 0, "y": 0,
+             "w": 900, "h": 400, "color": None, "kind": "band", "orient": "h",
+             "layout": "stack", "rule": {"by": "role", "ids": [b, a, b]}},
+            {"id": "mix", "label": "Mixed", "x": 0, "y": 450, "w": 900,
+             "h": 200, "color": None, "kind": "band", "orient": "h",
+             "layout": "row", "rule": {"by": "device_type", "ids": many}},
+            # Saved before layouts: still fine.
+            {"id": "old", "label": "Spine + Border", "x": 0, "y": 700,
+             "w": 900, "h": 200, "color": None, "kind": "band",
+             "orient": "h", "rule": {"by": "role", "ids": [a, b]}},
+        ]}}
+        resp = self._save(state)
+        self.assertEqual(resp.status_code, 201, resp.content)
+        zones = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]["zones_by_style"]["diagram"]
+        self.assertEqual(zones[0]["layout"], "stack")
+        # Each layer once, in the order its sub-rows stack.
+        self.assertEqual(zones[0]["rule"], {"by": "role", "ids": [b, a]})
+        self.assertEqual(zones[1]["layout"], "row")
+        self.assertEqual(len(zones[1]["rule"]["ids"]), 100)
+        self.assertNotIn("layout", zones[2])
+
+    def test_diagram_colour_is_a_hex_or_neutral(self):
+        zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
+        resp = self._save({"zones_by_style": {"diagram": [
+            {**zone, "color": "#BE185D"}, {**zone, "id": "y", "color": "#10b981"},
+            {**zone, "id": "x", "color": "red"}, {**zone, "id": "w", "color": "#12345"},
+        ]}})
+        self.assertEqual(resp.status_code, 201, resp.content)
+        zones = resp.json()["state"]["zones_by_style"]["diagram"]
+        self.assertEqual(
+            [z["color"] for z in zones], ["#be185d", "#10b981", None, None]
+        )
+
+    def test_view_card_lines_may_be_empty_or_absent(self):
+        for fields in ([], None):
+            state = {"filters": {"diagram": {"mode": "simple", "fields": fields}}}
+            resp = self._save(state, name=f"f {fields}")
+            self.assertEqual(resp.status_code, 201, resp.content)
+        resp = self._save({"filters": {"diagram": {"mode": "simple"}}}, name="none")
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_bad_diagram_keys_rejected(self):
+        a, b = self.A, self.B
+        zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
+        bad = (
+            {"zones_by_style": {"diagram": ["nope"]}},
+            {"zones_by_style": {"diagram": [{**zone, "kind": "lane"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "orient": "x"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "color": 7}]}},
+            {"zones_by_style": {"diagram": [{**zone, "rule": "role"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "site", "ids": []}}]}},
+            {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "role", "ids": ["x"]}}]}},
+            {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "role", "ids": [a] * 101}}]}},
+            {"zones_by_style": {"diagram": [{**zone, "layout": "grid"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "layout": ["stack"]}]}},
+            {"filters": {"diagram": "detailed"}},
+            {"filters": {"diagram": {"mode": "photo"}}},
+            {"filters": {"diagram": {"face": "rear"}}},
+            {"filters": {"diagram": {"line": "curved"}}},
+            {"filters": {"diagram": {"photo_anchor": "border"}}},
+            {"filters": {"diagram": {"labels": "subnet"}}},
+            {"filters": {"diagram": {"labels": ["short"]}}},
+            {"filters": {"diagram": {"fields": ["bogus"]}}},
+            {"filters": {"diagram": {"fields": [
+                "serial", "primary_ip", "secondary_ip", "oob_ip", "loopback",
+                "asset_tag", "platform", "rack", "site"]}}},
+            {"links": []},
+            {"links": {f"{b}|{a}": {}}},
+            {"links": {f"{a}|{a}": {}}},
+            {"links": {a: {}}},
+            {"links": {f"{a.upper()}|{b.upper()}": {}}},
+            {"links": {f"{a}|{b}": "elbow"}},
+            {"links": {f"{a}|{b}": {"line": "curved"}}},
+            {"links": {f"{a}|{b}": {"flip": 2}}},
+            {"links": {f"{a}|{b}": {"flip": True}}},
+            {"nodes": []},
+            {"nodes": {f"dev:{a}": {}}},
+            {"nodes": {a: "photo"}},
+            {"nodes": {a: {"face": "rear"}}},
+            {"nodes": {a: {"anchor": "edges"}}},
+            {"notes": {}},
+            {"notes": ["x"]},
+            {"notes": [{"x": 0, "y": 0}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0}, {"id": "n", "x": 1, "y": 1}]},
+            {"notes": [{"id": "n", "x": "0", "y": 0}]},
+            {"notes": [{"id": "n", "x": True, "y": 0}]},
+            {"notes": [{"id": "n", "x": 1e12, "y": 0}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "text": "x" * 201}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "icon": "rocket"}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "kind": "line"}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "size": "xl"}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "outline": "yes"}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "outline": 1}]},
+        )
+        for i, state in enumerate(bad):
+            with self.subTest(state=state):
+                resp = self._save(state, name=f"bad {i}")
+                self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_the_caps(self):
+        from unittest import mock
+
+        from api.serializers import TopologyViewSerializer as S
+
+        a, b = self.A, self.B
+        c = "0c0c0c0c-0000-4000-8000-000000000003"
+        cases = (
+            ("MAX_LINKS", {"links": {f"{a}|{b}": {}, f"{a}|{c}": {}}}),
+            ("MAX_NODE_OVERRIDES", {"nodes": {a: {}, b: {}}}),
+            ("MAX_NOTES", {"notes": [{"id": "1", "x": 0, "y": 0},
+                                     {"id": "2", "x": 0, "y": 0}]}),
+        )
+        for attr, state in cases:
+            with self.subTest(attr):
+                with mock.patch.object(S, attr, 1):
+                    self.assertEqual(self._save(state, name=attr).status_code, 400)
+                with mock.patch.object(S, attr, 2):
+                    self.assertEqual(self._save(state, name=attr).status_code, 201)
+
+    def test_older_keys_stay_lenient(self):
+        """Views saved before the Diagram tab load and save unchanged: only
+        the new keys are checked in depth."""
+        state = {
+            "filters": {"viewStyle": "stencil", "diagram": {"mode": "simple"},
+                        "devices": "whatever", "color": 3},
+            "zones_by_style": {"stencil": [
+                {"id": "z1", "color": "#123456", "kind": "lane", "rule": "x"},
+                "not even an object",
+            ]},
+            "positions": {"dev:abc": [1, 2]},
+            "hidden": {"devices": ["dev:abc"]},
+            "some_future_key": {"anything": True},
+        }
+        resp = self._save(state)
+        self.assertEqual(resp.status_code, 201, resp.content)
+        got = self.client.get(f"/api/topology-views/{resp.json()['id']}/").json()
+        self.assertEqual(got["state"], state)
+        # A view with a non-object filters value still saves.
+        self.assertEqual(self._save({"filters": []}, name="odd").status_code, 201)
+
+
+class StaleSaveTests(_Base):
+    """``base_updated_at`` names the copy a save started from; a view saved
+    by somebody else since is refused with 409, never overwritten."""
+
+    def setUp(self):
+        super().setUp()
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "shared", "state": {"filters": {}}, "base_updated_at": None},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.view = resp.json()
+        self.url = f"/api/topology-views/{self.view['id']}/"
+
+    def _patch(self, body):
+        return self.client.patch(self.url, body, format="json")
+
+    def test_a_save_from_the_latest_copy_goes_through(self):
+        self.assertNotIn("base_updated_at", self.view)
+        resp = self._patch({
+            "state": {"filters": {"a": 1}},
+            "base_updated_at": self.view["updated_at"],
+        })
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertNotIn("base_updated_at", resp.json())
+        # The next save chains off the answer's updated_at.
+        resp = self._patch({
+            "state": {"filters": {"a": 2}},
+            "base_updated_at": resp.json()["updated_at"],
+        })
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_a_save_from_an_older_copy_is_refused(self):
+        theirs = self._patch({"state": {"filters": {"theirs": True}}})
+        self.assertEqual(theirs.status_code, 200, theirs.content)
+        resp = self._patch({
+            "state": {"filters": {"mine": True}},
+            "base_updated_at": self.view["updated_at"],
+        })
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json(), {
+            "detail": "This view was saved by someone else since you opened it."
+        })
+        state = self.client.get(self.url).json()["state"]
+        self.assertEqual(state["filters"], {"theirs": True})
+
+    def test_without_a_base_the_save_goes_through(self):
+        self._patch({"state": {"filters": {"theirs": True}}})
+        for body in ({"state": {"filters": {}}},
+                     {"state": {"filters": {}}, "base_updated_at": None}):
+            resp = self._patch(body)
+            self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_a_junk_base_is_a_400(self):
+        resp = self._patch({"state": {}, "base_updated_at": "yesterday"})
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+
+class ViewPickerTests(_Base):
+    """``?picker=1`` lists saved views without their state."""
+
+    def test_picker_rows_carry_no_state(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from .models import TopologyView
+
+        other_org = Organization.objects.create(name="Other", slug="other")
+        other = Tenant.objects.create(org=other_org, name="Other", slug="other")
+        TopologyView.objects.create(tenant=other, name="theirs")
+        for name in ("b view", "a view"):
+            self.client.post(
+                "/api/topology-views/",
+                {"name": name, "state": {"positions": {"dev:x": [1, 2]}}},
+                format="json",
+            )
+        with CaptureQueriesContext(connection) as ctx:
+            resp = self.client.get("/api/topology-views/?picker=1")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        rows = resp.json()["results"]
+        self.assertEqual([r["name"] for r in rows], ["a view", "b view"])
+        for row in rows:
+            self.assertEqual(set(row), {"id", "numid", "name", "updated_at"})
+        selects = [
+            q["sql"] for q in ctx.captured_queries
+            if 'FROM "api_topologyview"' in q["sql"] and q["sql"].startswith("SELECT")
+        ]
+        self.assertTrue(selects)
+        for sql in selects:
+            self.assertNotIn('"api_topologyview"."state"', sql)
+        # Without the flag the list still carries the state.
+        full = self.client.get("/api/topology-views/").json()["results"]
+        self.assertEqual(full[0]["state"], {"positions": {"dev:x": [1, 2]}})
+
+
+class DefaultViewTests(_Base):
+    """``/api/topology-views/default/``: the saved view a bare /topology
+    opens for the tenant. Tenant admins set it, and anyone granted
+    ``set_default`` on topology views - within that grant's row limits."""
+
+    URL = "/api/topology-views/default/"
+
+    def setUp(self):
+        super().setUp()
+        from .models import TopologyView
+
+        self.core = TopologyView.objects.create(
+            tenant=self.tenant, name="core", state={"filters": {}})
+        self.edge = TopologyView.objects.create(
+            tenant=self.tenant, name="edge", state={"filters": {}})
+
+    def _put(self, view):
+        vid = str(view.pk) if view is not None else None
+        return self.client.put(self.URL, {"id": vid}, format="json")
+
+    def _default(self):
+        return self.client.get(self.URL).json()["id"]
+
+    def _login(self, user, tenant=None):
+        self.client.force_login(user)
+        session = self.client.session
+        session["current_tenant_id"] = str((tenant or self.tenant).id)
+        session.save()
+
+    def _member(self, *grants):
+        """A tenant member holding ``grants``: ``(types, actions, constraints)``."""
+        from auth_api.models import ObjectPermission, UserProfile
+
+        n = User.objects.count()
+        user = User.objects.create_user(f"member{n}", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        for i, (types, actions, constraints) in enumerate(grants):
+            perm = ObjectPermission.objects.create(
+                name=f"g{n}-{i}", object_types=list(types), actions=list(actions),
+                constraints=constraints,
+            )
+            perm.users.add(user)
+            perm.tenants.add(self.tenant)
+        self._login(user)
+        return user
+
+    def _stored(self):
+        from core.models import TenantSettings
+
+        return (
+            TenantSettings.objects.filter(tenant=self.tenant)
+            .values_list("default_topology_view", flat=True).first()
+        )
+
+    def test_nothing_set_reads_null_and_writes_no_row(self):
+        from core.models import TenantSettings
+
+        resp = self.client.get(self.URL)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json(), {"id": None})
+        self.assertFalse(TenantSettings.objects.filter(tenant=self.tenant).exists())
+
+    def test_an_admin_sets_and_clears_it(self):
+        resp = self._put(self.core)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json(), {"id": str(self.core.pk)})
+        self.assertEqual(self._default(), str(self.core.pk))
+        resp = self._put(None)
+        self.assertEqual(resp.json(), {"id": None})
+        self.assertIsNone(self._default())
+
+    def test_a_tenant_admin_sets_it_without_the_verb(self):
+        self._member(
+            (["user"], ["view", "change"], None),
+            (["topologyview"], ["view"], None),
+        )
+        resp = self._put(self.edge)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(self._stored(), self.edge.pk)
+
+    def test_editing_views_is_not_enough(self):
+        self._member((["topologyview"], ["view", "add", "change", "delete"], None))
+        resp = self._put(self.core)
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertIsNone(self._stored())
+        # Reading it is fine.
+        self.assertEqual(self.client.get(self.URL).status_code, 200)
+
+    def test_the_built_in_operator_may_not(self):
+        from django.contrib.auth.models import Group
+
+        from auth_api.builtin_groups import ensure_builtin_groups
+        from auth_api.models import UserProfile
+
+        ensure_builtin_groups()
+        user = User.objects.create_user("op", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        user.groups.add(Group.objects.get(name="Operator"))
+        self._login(user)
+        self.assertEqual(self._put(self.core).status_code, 403)
+        self.assertIsNone(self._stored())
+
+    def test_the_set_default_grant_may(self):
+        self._member((["topologyview"], ["view", "set_default"], None))
+        resp = self._put(self.core)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(self._stored(), self.core.pk)
+        self.assertEqual(self._put(None).status_code, 200)
+        self.assertIsNone(self._stored())
+
+    def test_set_default_keeps_to_its_row_limits(self):
+        self._member(
+            (["topologyview"], ["view"], None),
+            (["topologyview"], ["set_default"], {"name": "core"}),
+        )
+        self.assertEqual(self._put(self.core).status_code, 200)
+        resp = self._put(self.edge)
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("id", resp.json())
+        self.assertEqual(self._stored(), self.core.pk)
+
+    def test_another_tenants_view_and_junk_ids_are_400(self):
+        from .models import TopologyView
+
+        other = Tenant.objects.create(org=self.org, name="B", slug="b")
+        theirs = TopologyView.objects.create(tenant=other, name="theirs")
+        for body in ({"id": str(theirs.pk)}, {"id": "nope"}, {"id": 7}, {}, []):
+            with self.subTest(body=body):
+                resp = self.client.put(self.URL, body, format="json")
+                self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIsNone(self._stored())
+
+    def test_it_is_per_tenant(self):
+        other = Tenant.objects.create(org=self.org, name="B", slug="b")
+        self._put(self.core)
+        self._login(User.objects.get(username="admin"), other)
+        self.assertIsNone(self._default())
+        self.assertEqual(self._put(self.core).status_code, 400)
+        self._login(User.objects.get(username="admin"))
+        self.assertEqual(self._default(), str(self.core.pk))
+
+    def test_deleting_the_view_clears_it(self):
+        self._put(self.core)
+        resp = self.client.delete(f"/api/topology-views/{self.core.pk}/")
+        self.assertEqual(resp.status_code, 204, resp.content)
+        self.assertIsNone(self._default())
+        self.assertIsNone(self._stored())
+
+    def test_a_default_the_caller_cannot_see_reads_null(self):
+        self._put(self.core)
+        self._member((["topologyview"], ["view"], {"name": "edge"}))
+        self.assertIsNone(self._default())
+        self._member((["device"], ["view"], None))
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+
+    def test_setting_it_leaves_the_view_as_saved(self):
+        url = f"/api/topology-views/{self.core.pk}/"
+        before = self.client.get(url).json()
+        self._put(self.core)
+        self.assertEqual(self.client.get(url).json()["updated_at"], before["updated_at"])
+        # So a save from the copy opened before is no stale save.
+        resp = self.client.patch(
+            url,
+            {"state": {"filters": {"a": 1}}, "base_updated_at": before["updated_at"]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_the_change_is_logged(self):
+        from audit.models import ChangeAction, ChangeLogEntry
+        from core.models import TenantSettings
+
+        TenantSettings.for_tenant(self.tenant)
+        self._put(self.core)
+        self._put(self.edge)
+        entries = ChangeLogEntry.objects.filter(
+            object_type="core.tenantsettings", action=ChangeAction.UPDATE,
+        ).order_by("timestamp")
+        self.assertEqual(
+            [e.changes for e in entries],
+            [
+                {"default_topology_view": {"old": None, "new": str(self.core.pk)}},
+                {"default_topology_view": {
+                    "old": str(self.core.pk), "new": str(self.edge.pk)}},
+            ],
+        )
+        self.assertEqual(entries[0].user.username, "admin")
+        # Putting the same view again changes nothing and logs nothing.
+        self._put(self.edge)
+        self.assertEqual(entries.count(), 2)
+
+    def test_the_verb_is_offered_on_topology_views_only(self):
+        from auth_api.object_types import ACTIONS, CAPABILITY_VERBS
+
+        self.assertIn("set_default", ACTIONS)
+        self.assertEqual(
+            [slug for slug, verbs in CAPABILITY_VERBS.items() if "set_default" in verbs],
+            ["topologyview"],
+        )
 
 
 class PassThroughAndCrashTests(_Base):
@@ -794,6 +1347,251 @@ class DeviceSetAndSpeedTests(_Base):
         self.assertEqual(ab["speed"], "10G")
         self.assertIsNone(bc["speed"])
 
+    def test_empty_devices_param_is_an_empty_map(self):
+        g = self._graph("devices=")
+        self.assertEqual(g, {"nodes": [], "edges": []})
+
+
+class MalformedIdTests(_Base):
+    """A malformed id is a 400 naming its parameter - it used to reach a UUID
+    filter and surface as a 500."""
+
+    ID_PARAMS = ("device", "devices", "site", "location", "role", "status")
+
+    def test_each_id_param_rejects_junk(self):
+        for param in self.ID_PARAMS:
+            with self.subTest(param=param):
+                r = self.client.get(f"/api/topology/?{param}=not-a-uuid")
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertEqual(r.json(), {"detail": f"{param}: not a valid id"})
+
+    def test_one_bad_id_in_a_device_set(self):
+        d = Device.objects.create(tenant=self.tenant, name="sw")
+        r = self.client.get(f"/api/topology/?devices={d.id},nope")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json(), {"detail": "devices: not a valid id"})
+
+    def test_junk_is_rejected_even_where_the_param_is_ignored(self):
+        for qs in ("group_by=site&site=nope", "devices=&device=nope"):
+            with self.subTest(qs=qs):
+                r = self.client.get(f"/api/topology/?{qs}")
+                self.assertEqual(r.status_code, 400, r.content)
+
+    def test_summary_shares_the_filter_parsing(self):
+        r = self.client.get("/api/topology/summary/?role=nope")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json(), {"detail": "role: not a valid id"})
+
+    def test_uppercase_ids_still_focus(self):
+        a = Device.objects.create(tenant=self.tenant, name="sw-a")
+        b = Device.objects.create(tenant=self.tenant, name="sw-b")
+        self._cable(
+            Interface.objects.create(device=a, name="e1"),
+            Interface.objects.create(device=b, name="e1"),
+        )
+        g = self._graph(f"device={str(a.id).upper()}")
+        self.assertEqual({n["data"]["name"] for n in g["nodes"]}, {"sw-a", "sw-b"})
+
+    def test_device_set_is_capped(self):
+        import uuid
+
+        from .topology_views import MAX_DEVICE_SET
+
+        ids = [str(uuid.uuid4()) for _ in range(MAX_DEVICE_SET + 1)]
+        r = self.client.get(f"/api/topology/?devices={','.join(ids)}")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json(), {"detail": "devices: at most 10,000 ids"})
+        r = self.client.get(f"/api/topology/?devices={','.join(ids[1:])}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json(), {"nodes": [], "edges": []})
+
+
+class AlwaysOnFieldTests(_Base):
+    """Role, status and component ids ride on every node, edge and pair -
+    read off relations the builder already joins."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import DeviceType, Status
+
+        both = ["device", "cable"]
+        self.active = Status.objects.create(
+            tenant=self.tenant, name="Active", slug="active", color="#22c55e",
+            available_to=both, default_for=both,
+        )
+        self.planned = Status.objects.create(
+            tenant=self.tenant, name="Planned", slug="planned", color="#f59e0b",
+            available_to=both,
+        )
+        self.role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Core", slug="core", color="#ff0000",
+            icon="router",
+        )
+        self.dt = DeviceType.objects.create(tenant=self.tenant, name="SW")
+        self.a = Device.objects.create(
+            tenant=self.tenant, name="sw-a", role=self.role, status=self.active,
+            device_type=self.dt,
+        )
+        self.b = Device.objects.create(
+            tenant=self.tenant, name="sw-b", status=self.planned
+        )
+        self.cab = self._cable(
+            Interface.objects.create(device=self.a, name="e1"),
+            Interface.objects.create(device=self.b, name="e1"),
+        )
+        Cable.objects.filter(pk=self.cab.pk).update(status=self.planned)
+
+    def _mini(self, s, is_default):
+        return {
+            "id": str(s.id), "name": s.name, "slug": s.slug, "color": s.color,
+            "text_color": s.text_color, "is_default": is_default,
+        }
+
+    def test_node_role_status_and_type(self):
+        g = self._graph()
+        by_name = {n["data"]["name"]: n["data"] for n in g["nodes"]}
+        a, b = by_name["sw-a"], by_name["sw-b"]
+        self.assertEqual(a["role"], {
+            "id": str(self.role.id), "name": "Core", "slug": "core",
+            "color": "#ff0000", "icon": "router", "is_patch_panel": False,
+        })
+        self.assertEqual(a["status_mini"], self._mini(self.active, True))
+        self.assertEqual(a["device_type_id"], str(self.dt.id))
+        # The legacy keys stay.
+        self.assertEqual((a["status"], a["status_display"]), ("active", "Active"))
+        self.assertEqual(a["device_type"], "SW")
+        self.assertIsNone(b["role"])
+        self.assertEqual(b["status_mini"], self._mini(self.planned, False))
+        self.assertIsNone(b["device_type_id"])
+
+    def test_node_without_status(self):
+        Device.objects.filter(pk=self.b.pk).update(status=None)
+        by_name = {n["data"]["name"]: n["data"] for n in self._graph()["nodes"]}
+        self.assertIsNone(by_name["sw-b"]["status_mini"])
+
+    def test_cable_edge_status(self):
+        edge = self._graph()["edges"][0]["data"]
+        self.assertEqual(edge["status"], "planned")
+        self.assertEqual(edge["status_mini"], self._mini(self.planned, False))
+        Cable.objects.filter(pk=self.cab.pk).update(status=self.active)
+        edge = self._graph()["edges"][0]["data"]
+        self.assertEqual(edge["status_mini"], self._mini(self.active, True))
+
+    def test_the_fields_cost_no_queries_per_node(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from .models import DeviceType, Status
+        from .topology_views import _build_graph
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                g = _build_graph(self.tenant)
+            return len(ctx.captured_queries), len(g["nodes"])
+
+        before, nodes_before = count()
+        for i in range(4):
+            role = DeviceRole.objects.create(
+                tenant=self.tenant, name=f"R{i}", slug=f"r{i}"
+            )
+            status = Status.objects.create(
+                tenant=self.tenant, name=f"S{i}", slug=f"s{i}",
+                available_to=["device", "cable"],
+            )
+            dt = DeviceType.objects.create(tenant=self.tenant, name=f"T{i}")
+            x, y = (
+                Device.objects.create(
+                    tenant=self.tenant, name=f"{n}{i}", role=role,
+                    status=status, device_type=dt,
+                )
+                for n in ("x", "y")
+            )
+            cab = self._cable(
+                Interface.objects.create(device=x, name="e1"),
+                Interface.objects.create(device=y, name="e1"),
+            )
+            Cable.objects.filter(pk=cab.pk).update(status=status)
+        after, nodes_after = count()
+        self.assertEqual(nodes_after, nodes_before + 8)
+        self.assertEqual(after, before)
+
+
+class CableEndTests(_Base):
+    """Each pair names the cable end (A/B) its two terminations sit on, so a
+    breakout with several ports at both ends can be split by side."""
+
+    def _dev(self, name):
+        dev = Device.objects.create(tenant=self.tenant, name=name)
+        return dev, Interface.objects.create(device=dev, name="e1")
+
+    def _ends(self, g):
+        """{(a_port device, b_port device): (a_end, b_end)} per pair."""
+        name = {n["id"]: n["data"]["name"] for n in g["nodes"]}
+        out = {}
+        for e in g["edges"]:
+            for p in e["data"]["pairs"]:
+                key = (name[e["source"]], name[e["target"]])
+                out[key] = (p["a_end"], p["b_end"])
+        return out
+
+    def test_direct_cable(self):
+        a, ia = self._dev("sw-a")
+        b, ib = self._dev("sw-b")
+        self._cable(ia, ib)
+        ends = self._ends(self._graph())
+        self.assertEqual(len(ends), 1)
+        (src, _), got = next(iter(ends.items()))
+        # Oriented like the pair: the source's end first.
+        self.assertEqual(got, ("A", "B") if src == "sw-a" else ("B", "A"))
+
+    def test_breakout_with_ports_at_both_ends(self):
+        # One cable, x1/x2 on its A end and y1/y2 on its B end: four pairs,
+        # each naming the side of the cable its ports are on.
+        xs = [self._dev(f"x{i}") for i in (1, 2)]
+        ys = [self._dev(f"y{i}") for i in (1, 2)]
+        cab = Cable.objects.create(tenant=self.tenant)
+        for end, devs in (("A", xs), ("B", ys)):
+            for _dev, port in devs:
+                CableTermination.objects.create(cable=cab, end=end, interface=port)
+        ends = self._ends(self._graph())
+        self.assertEqual(len(ends), 4)
+        for (src, tgt), (a_end, b_end) in ends.items():
+            side = {src: a_end, tgt: b_end}
+            for dev_name, end in side.items():
+                self.assertEqual(end, "A" if dev_name.startswith("x") else "B")
+
+    def test_collapsed_run_takes_the_far_side(self):
+        # server:eth0 -c1- panel-a -trunk- panel-b -c3- switch:gi1. The
+        # collapsed edge rides one of the outer cables: the end on it keeps
+        # its own side, the far end beyond the panels takes the other.
+        server, eth0 = self._dev("server")
+        switch, gi1 = self._dev("switch")
+        pa = Device.objects.create(tenant=self.tenant, name="panel-a")
+        pb = Device.objects.create(tenant=self.tenant, name="panel-b")
+        ra = RearPort.objects.create(device=pa, name="rear", positions=12)
+        fa = FrontPort.objects.create(
+            device=pa, name="front1", rear_port=ra, rear_port_position=1
+        )
+        rb = RearPort.objects.create(device=pb, name="rear", positions=12)
+        fb = FrontPort.objects.create(
+            device=pb, name="front1", rear_port=rb, rear_port_position=1
+        )
+        # Both outer cables end B at the panel: eth0 and gi1 are both A ends
+        # of their own cables.
+        self._cable(eth0, fa)
+        self._cable(ra, rb)
+        self._cable(gi1, fb)
+        g = self._graph("collapse_panels=1")
+        self.assertEqual(len(g["edges"]), 1)
+        edge = g["edges"][0]["data"]
+        pair = edge["pairs"][0]
+        own = CableTermination.objects.get(
+            cable_id=edge["cable_id"], interface__in=[eth0, gi1]
+        ).interface
+        self.assertEqual(pair["a_end"] if pair["a_id"] == str(own.id)
+                         else pair["b_end"], "A")
+        self.assertEqual({pair["a_end"], pair["b_end"]}, {"A", "B"})
+
 
 class LagEdgeTests(_Base):
     """Edges name the aggregate each end belongs to; a run's origin names its
@@ -837,3 +1635,202 @@ class LagEdgeTests(_Base):
         )
         self.assertNotIn("lag", by_origin["eth9"])
 
+
+
+class PostQueryTests(_Base):
+    """POST /api/topology/ takes the query as a JSON body - a device set of a
+    few hundred ids overflows gunicorn's request line - and answers exactly
+    what GET does."""
+
+    def setUp(self):
+        super().setUp()
+        from core.models import Tag
+
+        self.site = Site.objects.create(tenant=self.tenant, name="S1")
+        self.role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Core", slug="core"
+        )
+        self.a = Device.objects.create(
+            tenant=self.tenant, name="sw-a", site=self.site, role=self.role
+        )
+        self.b = Device.objects.create(tenant=self.tenant, name="sw-b", site=self.site)
+        self.c = Device.objects.create(tenant=self.tenant, name="sw-c")
+        self.tag = Tag.objects.create(tenant=self.tenant, name="Edge", slug="edge")
+        self.b.tags.add(self.tag)
+        pp = Device.objects.create(tenant=self.tenant, name="pp")
+        rear = RearPort.objects.create(device=pp, name="rear", positions=1)
+        front = FrontPort.objects.create(
+            device=pp, name="f1", rear_port=rear, rear_port_position=1
+        )
+        self._cable(
+            Interface.objects.create(device=self.a, name="e1"),
+            Interface.objects.create(device=self.b, name="e1"),
+        )
+        self._cable(Interface.objects.create(device=self.b, name="e2"), front)
+        self._cable(rear, Interface.objects.create(device=self.c, name="e1"))
+
+    def _post(self, body):
+        return self.client.post("/api/topology/", body, format="json")
+
+    def test_post_answers_what_get_does(self):
+        a, b = str(self.a.id), str(self.b.id)
+        cases = (
+            ("", {}),
+            (f"devices={a},{b}", {"devices": [a, b]}),
+            (f"devices={a},{b}", {"devices": f"{a},{b}"}),
+            ("devices=", {"devices": []}),
+            (f"device={a}&depth=2", {"device": a, "depth": 2}),
+            (f"site={self.site.id}", {"site": str(self.site.id)}),
+            (f"role={self.role.id}", {"role": str(self.role.id)}),
+            ("tag=edge", {"tag": "edge"}),
+            ("collapse_panels=0", {"collapse_panels": False}),
+            ("collapse_panels=0", {"collapse_panels": "0"}),
+            ("collapse_panels=1", {"collapse_panels": True}),
+            ("group_by=site", {"group_by": "site"}),
+        )
+        for qs, body in cases:
+            with self.subTest(qs=qs, body=body):
+                got = self.client.get(f"/api/topology/?{qs}")
+                posted = self._post(body)
+                self.assertEqual(posted.status_code, 200, posted.content)
+                self.assertEqual(posted.json(), got.json())
+
+    def test_null_devices_is_no_device_set(self):
+        self.assertEqual(
+            self._post({"devices": None}).json(), self._graph()
+        )
+
+    def test_a_device_set_too_long_for_a_url(self):
+        import uuid
+
+        ids = [str(uuid.uuid4()) for _ in range(400)] + [
+            str(self.a.id), str(self.b.id)
+        ]
+        r = self._post({"devices": ids})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            {n["data"]["name"] for n in r.json()["nodes"]}, {"sw-a", "sw-b"}
+        )
+
+    def test_junk_is_a_400(self):
+        for body, detail in (
+            ([str(self.a.id)], "The body must be a JSON object."),
+            ({"devices": ["nope"]}, "devices: not a valid id"),
+            ({"devices": {"a": 1}}, "devices: not a valid id"),
+            ({"device": 7}, "device: not a valid id"),
+            ({"site": "nope"}, "site: not a valid id"),
+            ({"tag": ["edge"]}, "tag: not a valid slug"),
+        ):
+            with self.subTest(body=body):
+                r = self._post(body)
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertEqual(r.json(), {"detail": detail})
+
+    def test_an_infinite_depth_is_not_a_500(self):
+        """A JSON 1e999 parses as infinity, which int() cannot take (#275):
+        it falls back like any unreadable depth."""
+        a = str(self.a.id)
+        want = self.client.get(f"/api/topology/?device={a}&depth=x").json()
+        for raw in ("1e999", "-1e999"):
+            with self.subTest(depth=raw):
+                r = self.client.post(
+                    "/api/topology/", f'{{"device": "{a}", "depth": {raw}}}',
+                    content_type="application/json",
+                )
+                self.assertEqual(r.status_code, 200, r.content)
+                self.assertEqual(r.json(), want)
+
+
+class IncludeTests(_Base):
+    """``include=`` opts into enrichment: ``meta`` appears only when asked,
+    unknown tokens are ignored and aggregated maps never enrich."""
+
+    def setUp(self):
+        super().setUp()
+        self.site = Site.objects.create(tenant=self.tenant, name="S1")
+        self.a = Device.objects.create(tenant=self.tenant, name="sw-a", site=self.site)
+        self.b = Device.objects.create(tenant=self.tenant, name="sw-b", site=self.site)
+        self._cable(
+            Interface.objects.create(device=self.a, name="e1"),
+            Interface.objects.create(device=self.b, name="e1"),
+        )
+
+    def test_meta_only_when_something_is_included(self):
+        self.assertNotIn("meta", self._graph())
+        self.assertNotIn("meta", self._graph("include="))
+        self.assertNotIn("meta", self._graph("include=bogus,,x"))
+        g = self._graph("include=card,link_ips,photo")
+        self.assertIsInstance(g["meta"], dict)
+        r = self.client.post(
+            "/api/topology/", {"include": ["photo", "nope"]}, format="json"
+        )
+        self.assertIsInstance(r.json()["meta"], dict)
+
+    def test_enrichers_get_what_was_asked(self):
+        from unittest import mock
+
+        from . import topology_enrich as te
+
+        with mock.patch.object(te, "enrich_card") as card, \
+                mock.patch.object(te, "enrich_link_ips") as link_ips, \
+                mock.patch.object(te, "enrich_photo") as photo:
+            self._graph("include=photo,card,bogus&card_fields=primary_ip,nope,serial")
+        link_ips.assert_not_called()
+        (ctx,), _ = card.call_args
+        self.assertIs(photo.call_args[0][0], ctx)
+        self.assertEqual(ctx.include, frozenset({"card", "photo"}))
+        self.assertEqual(ctx.card_fields, ["primary_ip", "serial"])
+        self.assertEqual(ctx.tenant, self.tenant)
+        self.assertEqual(
+            set(ctx.collect["devices"]), {str(self.a.id), str(self.b.id)}
+        )
+        self.assertEqual(ctx.graph["edges"][0]["id"], next(iter(ctx.collect["pairs"])))
+
+    def test_card_fields_absent_empty_or_listed(self):
+        from unittest import mock
+
+        from . import topology_enrich as te
+
+        seen = []
+        with mock.patch.object(
+            te, "enrich_card", side_effect=lambda ctx: seen.append(ctx.card_fields)
+        ):
+            self._graph("include=card")
+            self._graph("include=card&card_fields=")
+            self.client.post(
+                "/api/topology/",
+                {"include": ["card"], "card_fields": ["loopback", "cf_owner"]},
+                format="json",
+            )
+            self.client.post(
+                "/api/topology/",
+                {"include": ["card"], "card_fields": None},
+                format="json",
+            )
+        self.assertEqual(seen, [None, [], ["loopback", "cf_owner"], None])
+
+    def test_group_by_never_enriches(self):
+        from unittest import mock
+
+        from . import topology_enrich as te
+
+        with mock.patch.object(te, "enrich", side_effect=AssertionError):
+            g = self._graph("group_by=site&include=card,photo")
+            posted = self.client.post(
+                "/api/topology/",
+                {"group_by": "site", "include": ["card"]},
+                format="json",
+            ).json()
+        self.assertNotIn("meta", g)
+        self.assertEqual([n["type"] for n in g["nodes"]], ["group"])
+        self.assertEqual(posted, g)
+
+    def test_summary_ignores_include(self):
+        from unittest import mock
+
+        from . import topology_enrich as te
+
+        with mock.patch.object(te, "enrich", side_effect=AssertionError):
+            r = self.client.get("/api/topology/summary/?include=card")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertNotIn("meta", r.json())

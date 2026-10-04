@@ -24,12 +24,7 @@ import type { KvRow } from "@/components/kv-card"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { buildFloorTileColumns } from "@/components/columns/floor-tile-columns"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { FloorTileTypeDeleteDialog } from "@/routes/floor-tile-types.index"
@@ -120,22 +115,6 @@ function Body({ type: t }: { type: FloorTileType }) {
             </span>
           }
           description={t.description}
-          stats={
-            <>
-              <DetailStat
-                label="Placed"
-                value={<span className="num">{t.tile_count}</span>}
-              />
-              <DetailStat
-                label="Default size"
-                value={
-                  <span className="num">
-                    {t.default_width} × {t.default_height}
-                  </span>
-                }
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -221,6 +200,7 @@ function TypeOverview({ type: t }: { type: FloorTileType }) {
         </span>
       ),
     },
+    { label: "Placed", value: <span className="num">{t.tile_count}</span> },
   ]
 
   // A tile's *behaviour* comes from what it links to; these three ticks only

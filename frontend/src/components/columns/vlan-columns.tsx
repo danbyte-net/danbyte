@@ -8,6 +8,7 @@ import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { StatusBadge } from "@/components/status-badge"
 import { vrfColumn } from "@/components/cells/vrf-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -28,6 +29,7 @@ export type VlanColumnId =
   | "numid"
   | "vlan_id"
   | "name"
+  | "status"
   | "site"
   | "group"
   | "zone"
@@ -41,6 +43,7 @@ const CANONICAL_ORDER: VlanColumnId[] = [
   "numid",
   "vlan_id",
   "name",
+  "status",
   "site",
   "group",
   "zone",
@@ -82,6 +85,23 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
   const byId: Record<VlanColumnId, () => ColumnDef<T, unknown>> = {
+    status: () => ({
+      id: "status",
+      accessorFn: (r) => r.status?.name ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
+      cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Status",
+          get: (r: T) => r.status?.id ?? "__none__",
+          formatValue: (_v, r) => ({
+            label: r.status?.name ?? "No status",
+            color: r.status?.color,
+          }),
+        },
+      },
+    }),
     numid: () => numidColumn<T>({ get: (r) => r.numid }),
     vlan_id: () => ({
       id: "vlan_id",

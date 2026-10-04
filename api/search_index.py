@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from django.apps import apps
 from django.db import transaction
 
+from core.tags import tags_of
+
 logger = logging.getLogger(__name__)
 
 # Body text is capped so a wall of comments cannot swamp the trigram index.
@@ -57,8 +59,10 @@ class IndexSpec:
 SPECS: dict[str, IndexSpec] = {
     "device": IndexSpec("api.Device", "/devices/{id}", weight=10, subtitle="device_type.model",
                         body=("device_type.model", "device_type.manufacturer.name",
-                              "primary_ip.ip_address", "platform.name", "rack.name"),
-                        facets=("role", "status", "platform", "device_type", "cluster", "rack")),
+                              "primary_ip.ip_address", "platform.name", "rack.name",
+                              "cabinet.name"),
+                        facets=("role", "status", "platform", "device_type", "cluster", "rack",
+                                "cabinet")),
     "prefix": IndexSpec("api.Prefix", "/prefixes/{id}", weight=10, title="cidr",
                         subtitle="description", body=("vrf.name",), facets=("status", "role", "vrf")),
     "ipaddress": IndexSpec("api.IPAddress", "/ips/{id}", weight=9, title="ip_address",
@@ -73,6 +77,8 @@ SPECS: dict[str, IndexSpec] = {
                                 subtitle="cluster.name", body=("primary_ip.ip_address", "platform.name"),
                                 facets=("role", "status", "platform", "cluster")),
     "rack": IndexSpec("api.Rack", "/racks/{id}", weight=8, subtitle="site.name", facets=("status", "role")),
+    "cabinet": IndexSpec("api.Cabinet", "/cabinets/{id}", weight=8, subtitle="site.name",
+                         facets=("status", "role")),
     "location": IndexSpec("api.Location", "/locations/{id}", weight=7, subtitle="site.name"),
     "region": IndexSpec("api.Region", "/regions/{id}", weight=6, site=None),
     "tenant": IndexSpec("core.Tenant", "/tenants/{id}", tenant="", site=None, weight=6),
@@ -99,30 +105,30 @@ SPECS: dict[str, IndexSpec] = {
                                "internal_ip.ip_address"),
                          facets=("status", "device")),
     "staticroute": IndexSpec("routing.StaticRoute", "/static-routes/{id}", weight=6,
-                             site="device.site", subtitle="device.name",
+                             site="owner.site", subtitle="owner_name",
                              body=("prefix", "next_hop", "vrf.name", "description"),
-                             facets=("status", "device", "vrf")),
+                             facets=("status", "device", "virtual_machine", "vrf")),
     "bgpsession": IndexSpec("routing.BGPSession", "/bgp-sessions/{id}", weight=7,
-                            site="instance.device.site", subtitle="instance.device.name",
+                            site="instance.owner.site", subtitle="instance.owner_name",
                             body=("remote_address", "interface.name", "remote_asn",
                                   "peer_group.name", "description", "instance.asn.asn"),
                             facets=("status", "instance.device", "peer_group")),
     "bgppeergroup": IndexSpec("routing.BGPPeerGroup", "/bgp-peer-groups/{id}",
                               weight=5, site=None, subtitle="description",
                               body=("remote_asn",)),
-    "bgpinstance": IndexSpec("routing.BGPInstance", "/devices/{device_id}?tab=routing",
-                             weight=5, site="device.site", subtitle="device.name",
+    "bgpinstance": IndexSpec("routing.BGPInstance", "{owner_page}?tab=routing",
+                             weight=5, site="owner.site", subtitle="owner_name",
                              body=("asn.asn", "router_id", "vrf.name")),
     "ospfarea": IndexSpec("routing.OSPFArea", "/ospf-areas/{id}", weight=5, site=None,
                           subtitle="area_id", body=("area_id", "description")),
-    "ospfinstance": IndexSpec("routing.OSPFInstance", "/devices/{device_id}?tab=routing",
-                              weight=5, site="device.site", subtitle="device.name",
+    "ospfinstance": IndexSpec("routing.OSPFInstance", "{owner_page}?tab=routing",
+                              weight=5, site="owner.site", subtitle="owner_name",
                               body=("process_id", "router_id", "vrf.name")),
-    "isisinstance": IndexSpec("routing.ISISInstance", "/devices/{device_id}?tab=routing",
-                              weight=5, site="device.site", subtitle="device.name",
+    "isisinstance": IndexSpec("routing.ISISInstance", "{owner_page}?tab=routing",
+                              weight=5, site="owner.site", subtitle="owner_name",
                               body=("process", "net")),
-    "eigrpinstance": IndexSpec("routing.EIGRPInstance", "/devices/{device_id}?tab=routing",
-                               weight=5, site="device.site", subtitle="device.name",
+    "eigrpinstance": IndexSpec("routing.EIGRPInstance", "{owner_page}?tab=routing",
+                               weight=5, site="owner.site", subtitle="owner_name",
                                body=("asn", "name", "router_id", "vrf.name")),
     "vtep": IndexSpec("routing.VTEP", "/devices/{device_id}?tab=routing", weight=5,
                       site="device.site", subtitle="device.name",
@@ -180,6 +186,8 @@ SPECS: dict[str, IndexSpec] = {
     "platformgroup": IndexSpec("api.PlatformGroup", "/platform-groups/{id}", weight=4, site=None),
     "rackrole": IndexSpec("api.RackRole", "/rack-roles/{id}", weight=4, site=None),
     "racktype": IndexSpec("api.RackType", "/rack-types/{id}", weight=4, site=None),
+    "cabinetrole": IndexSpec("api.CabinetRole", "/cabinet-roles/{id}", weight=4, site=None),
+    "cabinettype": IndexSpec("api.CabinetType", "/cabinet-types/{id}", weight=4, site=None),
     "cable": IndexSpec("api.Cable", "/cables/{id}", weight=5, site=None, title="label",
                        facets=("status",)),
     "virtualchassis": IndexSpec("api.VirtualChassis", "/virtual-chassis/{id}", weight=8,
@@ -221,7 +229,8 @@ _BODY_CANDIDATES = ("description", "comments", "slug", "model", "part_number", "
                     "phone", "title")
 # Generic facet relations (key = attribute name; device_type is exposed as "type").
 _FACET_RELATIONS = ("site", "role", "status", "platform", "device_type", "vrf", "cluster",
-                    "provider", "manufacturer", "group", "type", "rir", "region", "rack", "vlan")
+                    "provider", "manufacturer", "group", "type", "rir", "region", "rack", "vlan",
+                    "cabinet")
 _FACET_KEYS = {"device_type": "type"}
 
 
@@ -332,7 +341,7 @@ def _facets(obj, spec: IndexSpec) -> dict:
             out[_FACET_KEYS.get(attr, attr)] = vals
     if hasattr(obj, "tags") and _has_field(obj, "tags"):
         try:
-            rows = list(obj.tags.all())
+            rows = list(tags_of(obj))
             tags = [fold(t.name) for t in rows] + [fold(t.slug) for t in rows]
         except Exception:  # noqa: BLE001
             tags = []
@@ -346,7 +355,8 @@ def _facets(obj, spec: IndexSpec) -> dict:
 # object's display name; status carries its colour so it renders as a pill.
 _CONTEXT_RELATIONS = (
     ("status", "status"), ("site", "site"), ("location", "location"),
-    ("region", "region"), ("rack", "rack"), ("role", "role"), ("device", "device"),
+    ("region", "region"), ("rack", "rack"), ("cabinet", "cabinet"), ("role", "role"),
+    ("device", "device"),
     ("vm", "vm"), ("device_type", "type"), ("platform", "platform"),
     ("cluster", "cluster"), ("vrf", "vrf"), ("vlan", "vlan"), ("provider", "provider"),
     ("manufacturer", "manufacturer"), ("group", "group"), ("rir", "rir"),
@@ -390,6 +400,13 @@ def _context(obj, spec: IndexSpec) -> dict:
             pos = getattr(obj, "position", None)
             out["rack"] = f"{rel.name} · U{pos}" if pos else rel.name
             continue
+        if key == "cabinet":
+            from .din import mm
+
+            rail = getattr(obj, "din_rail", None)
+            out["cabinet"] = (f"{rel.name} · {rail.label} @ {mm(obj.din_offset_mm)} mm"
+                              if rail is not None else rel.name)
+            continue
         out[key] = _display(rel)
     # Things worth reading off the row that aren't relations.
     for attr, key in (("dns_name", "dns"), ("serial_number", "serial"),
@@ -411,6 +428,13 @@ def _context(obj, spec: IndexSpec) -> dict:
                             else f"{mem} MB" if mem else "") if b
             )
     return out
+
+
+def _owner_page(obj) -> str:
+    """The page of the device or VM a routing row runs on (#217)."""
+    if getattr(obj, "virtual_machine_id", None):
+        return f"/virtual-machines/{obj.virtual_machine_id}"
+    return f"/devices/{getattr(obj, 'device_id', '')}"
 
 
 def entry_values(obj, spec: IndexSpec | None = None) -> dict | None:
@@ -445,6 +469,7 @@ def entry_values(obj, spec: IndexSpec | None = None) -> dict | None:
             # Rows that live on another object's page (a BGP instance on its
             # device's Routing tab) link there.
             device_id=getattr(obj, "device_id", ""),
+            owner_page=_owner_page(obj),
         ),
         "weight": spec.weight,
     }

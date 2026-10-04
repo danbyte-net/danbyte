@@ -65,6 +65,21 @@ class SnmpPhase1Tests(APITestCase):
         self.assertTrue(body["has_secrets"])
         self.assertEqual(body["slug"], "prod-v2c")
 
+    def test_editing_one_v3_key_keeps_the_other(self):
+        # #302: the form sends only the key it changed.
+        p = SnmpProfile.objects.create(
+            tenant=self.tenant, name="v3", slug="v3", version="v3",
+            params={"username": "u"}, secret_params={"auth_key": "a", "priv_key": "p"},
+        )
+        url = f"/api/monitoring/snmp-profiles/{p.id}/"
+        r = self.client.patch(url, {"secret_params": {"auth_key": "new"}}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        p.refresh_from_db()
+        self.assertEqual(p.secret_params, {"auth_key": "new", "priv_key": "p"})
+        self.client.patch(url, {"secret_params": {"priv_key": None}}, format="json")
+        p.refresh_from_db()
+        self.assertEqual(p.secret_params, {"auth_key": "new"})
+
     @patch("danbyte_checks.snmp_facts.fetch_interfaces_sync")
     @patch("danbyte_checks.snmp_facts.fetch_system_facts_sync")
     def test_poll_stores_observed_facts_and_interfaces(self, mock_facts, mock_ifaces):
@@ -246,6 +261,36 @@ class SnmpUtilizationTests(APITestCase):
         util = compute_device_utilization(self.device)
         self.assertEqual(util["1"][-1]["in_pct"], 100.0)
         self.assertEqual(util["1"][-1]["out_pct"], 0.0)
+
+    def test_old_samples_are_pruned_and_not_read(self):
+        # They grew without bound; now the prune keeps the retention window
+        # and the series reads only that.
+        from datetime import timedelta
+
+        from django.test import override_settings
+        from django.utils import timezone
+
+        from monitoring.models import SnmpInterfaceSample
+        from monitoring.retention import prune
+        from monitoring.snmp_util import compute_device_utilization
+
+        now = timezone.now()
+        for age, octets in ((timedelta(days=5), 0), (timedelta(days=5) - timedelta(seconds=10),
+                                                     1_250_000_000)):
+            SnmpInterfaceSample.objects.create(
+                tenant=self.tenant, device=self.device, if_index="1", in_octets=octets,
+                out_octets=0, speed_mbps=1000, sampled_at=now - age,
+            )
+        with override_settings(MONITORING_SNMP_SAMPLE_RETENTION_DAYS=7):
+            self.assertIn("1", compute_device_utilization(self.device))
+        self.assertEqual(compute_device_utilization(self.device), {})
+        SnmpInterfaceSample.objects.create(
+            tenant=self.tenant, device=self.device, if_index="1", in_octets=0,
+            out_octets=0, speed_mbps=1000, sampled_at=now,
+        )
+        out = prune(now)
+        self.assertEqual((out["snmp_samples_deleted"], out["snmp_sample_retention_days"]), (2, 3))
+        self.assertEqual(SnmpInterfaceSample.objects.count(), 1)
 
     def test_utilization_endpoint(self):
         r = self.client.get(
@@ -894,6 +939,26 @@ class SnmpTopologyGhostTests(APITestCase):
         names = {n["data"]["name"] for n in r["nodes"]}
         self.assertEqual(names, {"sw-a", "sw-b"})
         self.assertEqual(len(r["edges"]), 1)
+
+    def test_device_scoped_ghost_graph_nodes_carry_status_mini(self):
+        # The mini-map draws a status pill from status_mini, as on /api/topology/.
+        from api.models import Status
+        planned = Status.objects.create(
+            tenant=self.tenant, name="Planned", slug="planned", color="#f59e0b",
+            available_to=["device"], default_for=["device"],
+        )
+        Device.objects.filter(pk=self.b.pk).update(status=planned)
+        Device.objects.filter(pk=self.a.pk).update(status=None)
+        r = self.client.get(
+            f"/api/monitoring/topology/ghosts/?device={self.a.id}"
+        ).json()
+        by_name = {n["data"]["name"]: n["data"] for n in r["nodes"]}
+        self.assertIsNone(by_name["sw-a"]["status_mini"])
+        self.assertEqual(by_name["sw-b"]["status_mini"], {
+            "id": str(planned.id), "name": "Planned", "slug": "planned",
+            "color": "#f59e0b", "text_color": planned.text_color,
+            "is_default": True,
+        })
 
     def test_no_ghost_when_already_cabled(self):
         from api.models import Cable, CableTermination

@@ -1,34 +1,38 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronUp, ChevronDown, Plus, RotateCcw, X } from "lucide-react"
+import { RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type CustomField,
-  type DeviceRole,
-  type FloorTileTypeOption,
-  type FloorplanPopoverSettings,
-  type Paginated,
+import { api } from "@/lib/api"
+import type {
+  DeviceRole,
+  FloorTileTypeOption,
+  FloorplanPopoverSettings,
+  Paginated,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { QueryError } from "@/components/query-error"
+import {
+  FieldListEditor,
+  FieldScopeHeading,
+  FieldScopeRow,
+  useCustomFieldMeta,
+} from "@/components/settings/field-list-editor"
+import type { FieldMeta } from "@/components/settings/field-list-editor"
 import {
   SettingsCard,
   SettingsHeader,
 } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
-import { cn } from "@/lib/utils"
 
 /** Labels + hints for the server's built-in vocabulary. A key without an entry
  * still renders (falling back to the raw key), so a newly-added server field is
  * never invisible here. Custom fields are labelled from their own definitions. */
-const FIELD_META: Record<string, { label: string; hint: string }> = {
+const FIELD_META: Partial<Record<string, FieldMeta>> = {
   name: { label: "Name", hint: "Label, or the linked object's name" },
   type: { label: "Type", hint: "Tile type or device role" },
   status: { label: "Status", hint: "Planned / reserved / active / …" },
@@ -39,15 +43,23 @@ const FIELD_META: Record<string, { label: string; hint: string }> = {
   position: { label: "Position", hint: "Grid X, Y" },
   size: { label: "Size", hint: "Footprint in cells" },
   orientation: { label: "Orientation", hint: "Rotation in degrees" },
-  color: { label: "Colour", hint: "The tile's paint colour" },
+  color: { label: "Color", hint: "The tile's paint color" },
   fov: { label: "Coverage", hint: "Camera FOV / PTZ reach" },
   plan: { label: "Plan", hint: "Which floor plan it's on" },
   created: { label: "Created", hint: "When the tile was placed" },
   updated: { label: "Updated", hint: "When the tile last changed" },
-  utilization: { label: "Utilization", hint: "Racks: used U + a bar" },
-  power: { label: "Power", hint: "Racks: allocated vs maximum watts" },
+  utilization: {
+    label: "Utilization",
+    hint: "Racks: used U + a bar · cabinets: devices, rails",
+  },
+  power: { label: "Power", hint: "Racks: demand vs supply" },
+  ports: { label: "Ports", hint: "Racks: ports and panel ports in use" },
   weight: { label: "Weight", hint: "Racks: total vs maximum load" },
-  device_count: { label: "Device count", hint: "Racks: devices mounted" },
+  device_count: {
+    label: "Device count",
+    hint: "Racks and cabinets: devices in it",
+  },
+  rail_count: { label: "Rails", hint: "Cabinets: DIN rails on the plate" },
   check: { label: "Monitoring", hint: "Live up / degraded / down" },
   linked_status: {
     label: "Object status",
@@ -91,7 +103,15 @@ const GROUPS: { title: string; keys: string[] }[] = [
   },
   {
     title: "Live state",
-    keys: ["utilization", "power", "weight", "device_count", "check"],
+    keys: [
+      "utilization",
+      "power",
+      "ports",
+      "weight",
+      "device_count",
+      "rail_count",
+      "check",
+    ],
   },
   {
     title: "The linked rack / device",
@@ -111,6 +131,8 @@ const GROUPS: { title: string; keys: string[] }[] = [
 ]
 
 const GLOBAL = "__global__"
+
+const CF_MODELS = ["device", "rack", "cabinet"] as const
 
 export const Route = createFileRoute("/settings/floorplan")({
   component: FloorplanSettingsPage,
@@ -149,16 +171,7 @@ function FloorplanSettingsPage() {
   })
   // Custom fields are the tenant's own - never enumerated server-side, so the
   // options come from their definitions and ride the generic cf_<key> convention.
-  const deviceCfs = useQuery({
-    queryKey: ["custom-fields-for", "device"],
-    queryFn: () =>
-      api<Paginated<CustomField>>("/api/custom-fields/?model=device"),
-  })
-  const rackCfs = useQuery({
-    queryKey: ["custom-fields-for", "rack"],
-    queryFn: () =>
-      api<Paginated<CustomField>>("/api/custom-fields/?model=rack"),
-  })
+  const cfMeta = useCustomFieldMeta(CF_MODELS)
 
   // Local working copy of BOTH layers; saved together.
   const [fields, setFields] = useState<string[] | null>(null)
@@ -174,22 +187,6 @@ function FloorplanSettingsPage() {
       setOverride(q.data.override ?? null)
     }
   }, [q.data])
-
-  const cfMeta = useMemo(() => {
-    const out: Record<string, { label: string; hint: string }> = {}
-    for (const [defs, where] of [
-      [deviceCfs.data?.results, "device"],
-      [rackCfs.data?.results, "rack"],
-    ] as const) {
-      for (const d of defs ?? []) {
-        const key = `cf_${d.key}`
-        out[key] = out[key]
-          ? { label: d.label, hint: `${out[key].hint} · ${where}` }
-          : { label: d.label, hint: `Custom field · ${where}` }
-      }
-    }
-    return out
-  }, [deviceCfs.data, rackCfs.data])
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -230,7 +227,7 @@ function FloorplanSettingsPage() {
   // it's inheriting.
   const inheriting = editingTenant && override === false
 
-  const meta = (key: string) =>
+  const meta = (key: string): FieldMeta =>
     FIELD_META[key] ?? cfMeta[key] ?? { label: key, hint: "" }
 
   const allKeys = [...q.data.available, ...Object.keys(cfMeta)]
@@ -254,23 +251,6 @@ function FloorplanSettingsPage() {
     setOverrides(next)
   }
 
-  const toggle = (key: string) =>
-    setCurrent(
-      current.includes(key)
-        ? current.filter((k) => k !== key)
-        : // Insert in the vocabulary's canonical order, so ticking a field on
-          // doesn't scramble the layout you already arranged.
-          allKeys.filter((k) => current.includes(k) || k === key)
-    )
-  const move = (key: string, delta: number) => {
-    const next = [...current]
-    const i = next.indexOf(key)
-    const j = i + delta
-    if (i < 0 || j < 0 || j >= next.length) return
-    ;[next[i], next[j]] = [next[j], next[i]]
-    setCurrent(next)
-  }
-
   const dirty =
     JSON.stringify(fields) !== JSON.stringify(q.data.popover_fields) ||
     JSON.stringify(overrides) !== JSON.stringify(q.data.tile_overrides) ||
@@ -282,25 +262,16 @@ function FloorplanSettingsPage() {
     badge: { color?: string; icon?: string } | null,
     custom: boolean
   ) => (
-    <button
+    <FieldScopeRow
       key={key}
-      type="button"
-      onClick={() => setScope(key)}
-      className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px]",
-        scope === key ? "bg-muted font-medium" : "hover:bg-muted/60"
-      )}
-    >
-      {/* The same badge the palette and the objects sidebar draw, so a type is
-          recognisable wherever it appears. */}
-      {badge && <TileBadge color={badge.color} icon={badge.icon} />}
-      <span className="min-w-0 truncate">{label}</span>
-      {custom && (
-        <Badge variant="secondary" className="ml-auto h-4 px-1 text-[10px]">
-          Custom
-        </Badge>
-      )}
-    </button>
+      active={scope === key}
+      onSelect={() => setScope(key)}
+      // The same badge the palette and the objects sidebar draw, so a type is
+      // recognisable wherever it appears.
+      badge={badge && <TileBadge color={badge.color} icon={badge.icon} />}
+      label={label}
+      custom={custom}
+    />
   )
 
   return (
@@ -381,173 +352,88 @@ function FloorplanSettingsPage() {
         }
       >
         <div className="flex">
-        {/* Scopes. A type without its own list inherits the default, so you only
-            configure the ones that genuinely differ. */}
-        <aside className="w-56 shrink-0 border-r border-border p-3">
-          <p className="mb-1 px-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Applies to
-          </p>
-          {scopeRow(GLOBAL, "All tiles (default)", null, false)}
+          {/* Scopes. A type without its own list inherits the default, so you
+              only configure the ones that genuinely differ. */}
+          <aside className="w-56 shrink-0 border-r border-border p-3">
+            <FieldScopeHeading first>Applies to</FieldScopeHeading>
+            {scopeRow(GLOBAL, "All tiles (default)", null, false)}
 
-          {(tileTypes.data?.results.length ?? 0) > 0 && (
-            <p className="mt-3 mb-1 px-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-              Tile types
-            </p>
-          )}
-          {tileTypes.data?.results.map((t) =>
-            scopeRow(
-              `tt:${t.slug}`,
-              t.name,
-              { color: t.color, icon: t.icon },
-              `tt:${t.slug}` in overrides
-            )
-          )}
-
-          {(roles.data?.results.length ?? 0) > 0 && (
-            <p className="mt-3 mb-1 px-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-              Device roles
-            </p>
-          )}
-          {roles.data?.results.map((r) =>
-            // Roles carry no icon - the badge falls back to a colour chip.
-            scopeRow(
-              `role:${r.slug}`,
-              r.name,
-              { color: r.color },
-              `role:${r.slug}` in overrides
-            )
-          )}
-        </aside>
-
-        <div className="min-w-0 flex-1 p-4">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold">
-                {isGlobal
-                  ? "All tiles"
-                  : scopeLabel(
-                      scope,
-                      tileTypes.data?.results,
-                      roles.data?.results
-                    )}
-              </h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {isGlobal
-                  ? "Shown in this order. A field with nothing to say for a tile is skipped automatically."
-                  : overriding
-                    ? "This type shows its own fields instead of the default."
-                    : "Inherits the default. Override only if this type needs different fields."}
-              </p>
-            </div>
-            {!isGlobal &&
-              (overriding ? (
-                <Button variant="outline" size="sm" onClick={resetToInherit}>
-                  <RotateCcw className="h-3.5 w-3.5" /> Inherit
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" onClick={startOverride}>
-                  Override
-                </Button>
-              ))}
-          </div>
-
-          <ul
-            className={cn("flex flex-col gap-1", !overriding && "opacity-60")}
-          >
-            {current.map((key, i) => (
-              <li
-                key={key}
-                className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-[13px] font-medium">
-                    {meta(key).label}
-                  </span>
-                  {meta(key).hint && (
-                    <span className="ml-2 text-[11px] text-muted-foreground">
-                      {meta(key).hint}
-                    </span>
-                  )}
-                </span>
-                {overriding && (
-                  <span className="flex shrink-0 items-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0"
-                      disabled={i === 0}
-                      onClick={() => move(key, -1)}
-                      aria-label={`Move ${meta(key).label} up`}
-                    >
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0"
-                      disabled={i === current.length - 1}
-                      onClick={() => move(key, 1)}
-                      aria-label={`Move ${meta(key).label} down`}
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => toggle(key)}
-                      aria-label={`Remove ${meta(key).label}`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  </span>
-                )}
-              </li>
-            ))}
-            {current.length === 0 && (
-              <li className="rounded-md border border-dashed border-border px-2 py-3 text-center text-[13px] text-muted-foreground">
-                No fields - the popover shows just the tile's name.
-              </li>
+            {(tileTypes.data?.results.length ?? 0) > 0 && (
+              <FieldScopeHeading>Tile types</FieldScopeHeading>
             )}
-          </ul>
+            {tileTypes.data?.results.map((t) =>
+              scopeRow(
+                `tt:${t.slug}`,
+                t.name,
+                { color: t.color, icon: t.icon },
+                `tt:${t.slug}` in overrides
+              )
+            )}
 
-          {overriding && (
-            <div className="mt-4 space-y-3">
-              {[
+            {(roles.data?.results.length ?? 0) > 0 && (
+              <FieldScopeHeading>Device roles</FieldScopeHeading>
+            )}
+            {roles.data?.results.map((r) =>
+              // Roles carry no icon - the badge falls back to a colour chip.
+              scopeRow(
+                `role:${r.slug}`,
+                r.name,
+                { color: r.color },
+                `role:${r.slug}` in overrides
+              )
+            )}
+          </aside>
+
+          <div className="min-w-0 flex-1 p-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">
+                  {isGlobal
+                    ? "All tiles"
+                    : scopeLabel(
+                        scope,
+                        tileTypes.data?.results,
+                        roles.data?.results
+                      )}
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {isGlobal
+                    ? "Shown in this order. A field with nothing to say for a tile is skipped automatically."
+                    : overriding
+                      ? "This type shows its own fields instead of the default."
+                      : "Inherits the default. Override only if this type needs different fields."}
+                </p>
+              </div>
+              {!isGlobal &&
+                (overriding ? (
+                  <Button variant="outline" size="sm" onClick={resetToInherit}>
+                    <RotateCcw className="h-3.5 w-3.5" /> Inherit
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={startOverride}>
+                    Override
+                  </Button>
+                ))}
+            </div>
+
+            <FieldListEditor
+              value={current}
+              onChange={setCurrent}
+              editable={overriding}
+              meta={meta}
+              groups={[
                 ...GROUPS,
                 ...(cfKeys.length
                   ? [{ title: "Custom fields", keys: cfKeys }]
                   : []),
-              ].map((g) => {
-                const rest = g.keys.filter(
-                  (k) => !current.includes(k) && allKeys.includes(k)
-                )
-                if (!rest.length) return null
-                return (
-                  <div key={g.title}>
-                    <p className="mb-1.5 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                      {g.title}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {rest.map((key) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => toggle(key)}
-                          title={meta(key).hint}
-                          className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-[12px] text-muted-foreground hover:border-solid hover:text-foreground"
-                        >
-                          <Plus className="h-3 w-3" />
-                          {meta(key).label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+              ]}
+              available={allKeys}
+              // Insert in the vocabulary's canonical order, so ticking a field
+              // on doesn't scramble the layout you already arranged.
+              insert="canonical"
+              empty="No fields - the popover shows just the tile's name."
+            />
+          </div>
         </div>
       </SettingsCard>
     </div>

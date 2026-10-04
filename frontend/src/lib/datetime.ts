@@ -139,11 +139,24 @@ export function formatCustom(
   const d = toDate(value)
   if (!d) return ""
   const timeZone = zoneFor(value, s.timezone)
+  opts = withClock(opts, s.time_style)
   try {
     return new Intl.DateTimeFormat("en-US", { ...opts, timeZone }).format(d)
   } catch {
     return new Intl.DateTimeFormat("en-US", opts).format(d)
   }
+}
+
+/** An hour in a caller's options follows the effective clock unless the
+ * caller pinned one: "19:00" on 24-hour, "07 PM" on 12-hour. A bare 24-hour
+ * hour gets its minutes, or an axis would read "19". */
+function withClock(
+  opts: Intl.DateTimeFormatOptions,
+  style: TimeStyle
+): Intl.DateTimeFormatOptions {
+  if (!opts.hour || opts.hour12 !== undefined || opts.hourCycle) return opts
+  if (style === "12h") return { ...opts, hour12: true }
+  return { ...opts, hourCycle: "h23", minute: opts.minute ?? "2-digit" }
 }
 
 /** Today's calendar date as `YYYY-MM-DD` **in the given timezone** - the
@@ -162,6 +175,22 @@ export function daysBetween(from: string, to: string): number {
   const b = Date.parse(`${to}T00:00:00Z`)
   if (isNaN(a) || isNaN(b)) return 0
   return Math.round((b - a) / 86_400_000)
+}
+
+/** Whether `v` is a real `YYYY-MM-DD` calendar date. `Date.parse` alone is
+ * not enough: it rolls "2026-02-30" over into March. */
+export function isIsoDate(v: string): boolean {
+  if (!DATE_ONLY_RE.test(v)) return false
+  const t = Date.parse(`${v}T00:00:00Z`)
+  return !isNaN(t) && new Date(t).toISOString().slice(0, 10) === v
+}
+
+/** A bare `YYYY-MM-DD` date moved by `days` (negative goes back). Counted at
+ * UTC midnight, so no DST drift; "" for an invalid date. */
+export function addDays(iso: string, days: number): string {
+  if (!isIsoDate(iso)) return ""
+  const t = Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000
+  return new Date(t).toISOString().slice(0, 10)
 }
 
 /** The effective settings + bound formatters. Reads `me.datetime` (already

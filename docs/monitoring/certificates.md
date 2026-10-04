@@ -498,13 +498,20 @@ fingerprint - and offers the ways to replace it:
 
 The app never touches nginx and never holds root. It writes the pair into
 `deploy/nginx/certs/` - a folder it owns - then a stamp file. The root
-`danbyte-tls.path` unit the installer sets up (`make install-tls-unit` on
-an upgraded host, once) notices the stamp and runs
-`scripts/danbyte-tls-apply.sh`: verify the pair (key matches, in date), keep
-the live pair aside, install onto the paths the live nginx config names
-with their existing owner and mode, `nginx -t`, reload - or put the old
-pair back if nginx refuses. The outcome lands in `danbyte.applied` and the
-card shows it: *waiting for the host*, *applied*, or the failure. Without
+`danbyte-tls.path` unit the installer sets up (on an upgraded host, once:
+`sudo ./install.sh --host-only` from the release's bundle) notices the stamp
+and runs a root-owned copy of `scripts/danbyte-tls-apply.sh` in
+`/usr/local/libexec/danbyte/`, never the one in the app directory, which
+the service account owns. It verifies the pair (key matches, in date),
+keeps the live pair aside, installs onto the paths Danbyte's own site names
+in the live nginx config with their existing owner and mode, runs
+`nginx -t` and reloads - or puts the old pair back if nginx refuses. The
+paths come from `/etc/nginx/sites-available/danbyte.conf` as nginx loads it
+and from no other site on the same nginx; when nginx does not load that
+file, or its pair is a certificate tool's links (certbot's `live/`), nothing
+is written and the card says why - renew such a pair with that tool. The
+outcome lands in `/var/lib/danbyte-tls/applied.json` and the card shows it:
+*waiting for the host*, *applied*, or the failure. Without
 the unit the card says so; `danbyte tls install deploy/nginx/certs/` from
 the [host console](../reference/danbyte-admin.md#tls) does the same by hand.
 
@@ -612,7 +619,8 @@ users with the grant - an **Edit** button (the only writable fields, `name` and
 - **Overview** - the certificate's facts in grouped cards: *Identity* (subject,
   issuer, serial, SHA-256 fingerprint, SANs), *Validity* (not-before, not-after,
   the expiry tag, last seen), *Key* (algorithm, size, signature algorithm,
-  self-signed), and the *Record* card (origin, name, notes, timestamps). For an
+  self-signed), the *Record* card (origin, name, notes, timestamps), and
+  *Usage* (how many endpoints serve it and what it is assigned to). For an
   **uploaded** certificate the stored public **PEM** is shown below the cards in
   a scrolling block with **copy** and **download** actions.
 - **Bindings** - the endpoints that served this certificate: endpoint, IP, port,

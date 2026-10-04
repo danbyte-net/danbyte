@@ -23,7 +23,27 @@ from django.apps import apps
 # universe (used to validate a grant's actions); it is intentionally permissive
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
-ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust"]
+ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
+           "view_credits", "set_default"]
+
+# Types an "all object types" ("*") grant does NOT reach. Adding or changing
+# these IS administration - accounts, group membership and the grants
+# themselves - so a grant reaches them only by naming them, and change on
+# "user" is what makes someone an administrator. Keyed on fixed slugs, never on
+# the "Access" group label, so a plugin cannot join or leave the set by picking
+# a label. Migration auth_api 0024 keeps a frozen copy; a test pins the two.
+ACCESS_TYPES: tuple[str, ...] = ("user", "group", "objectpermission")
+WILDCARD_EXCLUDED: frozenset[str] = frozenset(ACCESS_TYPES)
+
+
+def grant_covers(object_types, slug: str) -> bool:
+    """Whether a grant's ``object_types`` reaches ``slug``: named outright, or
+    through the ``"*"`` wildcard when ``slug`` is not one of ACCESS_TYPES."""
+    types = object_types or []
+    if slug in types:
+        return True
+    return "*" in types and slug not in WILDCARD_EXCLUDED
+
 
 # Which capability verbs a *specific* type actually honours - only these are
 # advertised for that type in the permission form, so the UI never offers e.g.
@@ -44,6 +64,11 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     "device": ["connect"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
+    # An agreement's service credits are money; seeing them is its own grant.
+    "slaagreement": ["view_credits"],
+    # Choose the view a bare /topology opens for the whole tenant. Tenant
+    # admins may without it; its row limits say which views may be chosen.
+    "topologyview": ["set_default"],
     # Set or clear is_superuser on accounts. Superuser is global, so ONLY a
     # tenant-unscoped grant carrying this verb counts (checked with
     # tenant=None); a tenant-scoped one is ignored by construction.
@@ -149,6 +174,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.RackRole", "Rack roles", "DCIM"),
     ("api.RackType", "Rack types", "DCIM"),
     ("api.RackTypeAccessory", "Rack type accessories", "DCIM"),
+    ("api.Cabinet", "Cabinets", "DCIM"),
+    ("api.CabinetRole", "Cabinet roles", "DCIM"),
+    ("api.CabinetType", "Cabinet types", "DCIM"),
     ("api.Interface", "Interfaces", "DCIM"),
     ("api.MACAddress", "MAC addresses", "DCIM"),
     ("api.FrontPort", "Front ports", "DCIM"),
@@ -230,6 +258,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("monitoring.Silence", "Silences", "Monitoring"),
     ("monitoring.MaintenanceEvent", "Maintenance events", "Monitoring"),
     ("monitoring.EventImpact", "Event impacts", "Monitoring"),
+    # Covers the agreement's check groups, members and exclusions too.
+    ("monitoring.SlaAgreement", "SLA agreements", "Monitoring"),
+    ("monitoring.HolidayCalendar", "Holiday calendars", "Monitoring"),
     ("monitoring.MonitoringPolicy", "Monitoring policies", "Monitoring"),
     ("monitoring.MonitoringProfile", "Monitoring profiles", "Monitoring"),
     ("monitoring.MonitoringDenySubnet", "Monitoring deny subnets", "Monitoring"),

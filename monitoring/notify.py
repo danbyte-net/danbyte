@@ -326,6 +326,11 @@ def _pending_rows(ch, since, now):
     wanted = ch.on_statuses or []
     if wanted:
         qs = qs.filter(to_status__in=wanted)
+    # Parking a check on an excluded address is the operator's doing, not
+    # the host's; the alert it closes carries the notice instead.
+    from .exclusion import REASON
+
+    qs = qs.exclude(detail__contains={"reason": REASON})
     flapping = flapping_pairs(ch.tenant_id)
     return [
         t for t in qs
@@ -775,13 +780,27 @@ def _alert_specific(alert) -> str | None:
     return None
 
 
+def _closed_by(alert, event: str) -> str | None:
+    """"excluded from monitoring by alice" when a person closed the alert by
+    excluding the address - so a resolve notice cannot read as a recovery."""
+    closed = ((getattr(alert, "detail", None) or {}).get("closed_by") or {})
+    if event != "resolved" or closed.get("reason") != "excluded":
+        return None
+    who = closed.get("by")
+    return f"excluded from monitoring by {who}" if who else "excluded from monitoring"
+
+
 def _alert_summary(alert, event: str, ip: str) -> str:
     verb = _EVENT_VERB.get(event, "FIRING")
+    closed = _closed_by(alert, event)
+    if closed:
+        verb = "CLOSED"
     specific = _alert_specific(alert)
+    tail = f" - {closed}" if closed else ""
     if specific:
-        return f"[{verb}] {alert.severity.upper()}: {ip} - {specific}"
+        return f"[{verb}] {alert.severity.upper()}: {ip} - {specific}{tail}"
     name = alert.template.name if alert.template_id else alert.kind
-    return f"[{verb}] {alert.severity.upper()}: {ip} - {name} is {alert.check_status}"
+    return f"[{verb}] {alert.severity.upper()}: {ip} - {name} is {alert.check_status}{tail}"
 
 
 def _alert_payload(alert, event: str, ip: str) -> dict:
@@ -799,6 +818,8 @@ def _alert_payload(alert, event: str, ip: str) -> dict:
     for key in _RICH_DETAIL_KEYS:
         if key in detail:
             payload[key] = detail[key]
+    if _closed_by(alert, event):
+        payload["closed_by"] = detail["closed_by"]
     return payload
 
 
@@ -911,6 +932,9 @@ def _alert_lead(alert, event: str) -> str:
     specific = _alert_specific(alert)
     name = alert.template.name if getattr(alert, "template_id", None) else alert.kind
     desc = specific or f"{name} is {alert.check_status}"
+    closed = _closed_by(alert, event)
+    if closed:
+        return f"Closed - {closed}. It was: {desc}."
     if event == "resolved":
         return f"This alert has resolved - {desc}."
     if event in ("reminder", "escalated"):
@@ -927,7 +951,7 @@ def _alert_email_html(alert, event: str, ip: str, url: str | None) -> str:
     ]
     if url:
         parts.append(ek.email_button(url, "View in Danbyte"))
-    verb = _EVENT_VERB.get(event, "FIRING").title()
+    verb = "Closed" if _closed_by(alert, event) else _EVENT_VERB.get(event, "FIRING").title()
     return ek.render_layout(
         f"Alert {verb.lower()}: {ip}",
         "".join(parts),
@@ -1048,35 +1072,39 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
             )
 
 
+def silence_covers(silence, alert) -> bool:
+    """Whether one silence's matchers cover this alert. The one test, shared
+    by delivery and the alert list's "silenced" flag so they cannot disagree.
+    ``match_devices`` should be prefetched when checking many alerts."""
+    from .alerts import _ip_matches
+
+    s, ip = silence, alert.target_ip
+    if s.match_kinds and alert.kind not in s.match_kinds:
+        return False
+    if s.match_statuses and alert.check_status not in s.match_statuses:
+        return False
+    if s.match_ip_id and s.match_ip_id != alert.target_ip_id:
+        return False
+    device_ids = [d.id for d in s.match_devices.all()]
+    if device_ids and (
+        ip is None or getattr(ip, "assigned_device_id", None) not in device_ids
+    ):
+        return False
+    return _ip_matches(s, ip)
+
+
 def active_silence(alert, now=None):
     """The active Silence covering this alert, or None. A silence mutes
     notifications while its window is open and its matchers cover the alert."""
     from django.utils import timezone
 
-    from .alerts import _ip_matches
     from .models import Silence
 
     now = now or timezone.now()
     silences = Silence.objects.filter(
         tenant_id=alert.tenant_id, starts_at__lte=now, ends_at__gt=now
     ).select_related("match_prefix", "match_ip").prefetch_related("match_devices")
-    ip = alert.target_ip
-    for s in silences:
-        if s.match_kinds and alert.kind not in s.match_kinds:
-            continue
-        if s.match_statuses and alert.check_status not in s.match_statuses:
-            continue
-        if s.match_ip_id and s.match_ip_id != alert.target_ip_id:
-            continue
-        device_ids = [d.id for d in s.match_devices.all()]
-        if device_ids and (
-            ip is None or getattr(ip, "assigned_device_id", None) not in device_ids
-        ):
-            continue
-        if not _ip_matches(s, ip):
-            continue
-        return s
-    return None
+    return next((s for s in silences if silence_covers(s, alert)), None)
 
 
 def notify_alert(alert, event: str) -> None:

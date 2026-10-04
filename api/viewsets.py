@@ -5,11 +5,20 @@ the old Django UI used) so a user can never see another tenant's data.
 """
 from __future__ import annotations
 
+import re
+
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models.functions import Coalesce, Collate
-from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
+from django.db.models import Count, OuterRef, Prefetch, Q, Subquery
 from django.utils.text import slugify
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import permissions, status as drf_status, viewsets
 from rest_framework.decorators import (
     action,
@@ -24,9 +33,23 @@ from rest_framework.response import Response
 from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
 from auth_api.drf import RBACViewSetMixin, restrict_for_view
 from core.models import Organization, Tag, Tenant, TenantGroup
+from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
+from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .filters import apply_tag_filter
+from .natural import natural, natural_key
 from .cf_search import cf_text_q
+from . import capacity, elevation_pdf, scene_geo
+from .face_ports import FACE_PORT_KINDS
+from .port_state import (
+    FacePortLoader,
+    FaceplateParts,
+    PeerScope,
+    cable_state,
+    component_queryset,
+    interface_state,
+    snmp_observed,
+)
 from .models import (
     _TEMPLATE_MARKER_KIND,
     Antenna,
@@ -56,6 +79,7 @@ from .models import (
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
+    Cabinet, CabinetRole, CabinetType,
     DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VirtualSwitch, VMInterface, VLAN, VLANGroup, VRF, Zone,
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
@@ -68,7 +92,6 @@ from .models import (
 )
 from .serializers import (
     FAR_END_PREFETCH,
-    far_end,
     AntennaSerializer,
     AntennaTemplateSerializer,
     CableRouteSerializer,
@@ -106,7 +129,9 @@ from .serializers import (
     ModuleInterfaceTemplateSerializer,
     ModuleSerializer,
     ModuleTypeMiniSerializer,
+    TopologyDefaultViewSerializer,
     TopologyViewSerializer,
+    TopologyViewSummarySerializer,
     ModuleTypeSerializer,
     ConsolePortSerializer,
     ConsoleServerPortSerializer,
@@ -154,6 +179,12 @@ from .serializers import (
     VirtualMachineMiniSerializer,
     VMInterfaceSerializer,
     MACAddressSerializer,
+    CabinetMiniSerializer,
+    CabinetRoleMiniSerializer,
+    CabinetRoleSerializer,
+    CabinetSerializer,
+    CabinetTypeMiniSerializer,
+    CabinetTypeSerializer,
     RackSerializer,
     RackRoleSerializer,
     RackRoleMiniSerializer,
@@ -185,6 +216,7 @@ from .serializers import (
     ContactAssignmentSerializer,
     CustomFieldSerializer,
     CustomFieldGroupSerializer,
+    DevicePaletteSerializer,
     DevicePickerSerializer,
     DeviceVcPickerSerializer,
     DeviceSerializer,
@@ -217,6 +249,8 @@ from .serializers import (
     VRFPickerSerializer,
     VRFSerializer,
 )
+from .visible_ips import assigned_ips_prefetch, forget_visible, outside_ip_prefetch
+from .vlan_bulk import check_vlan_moves, resolve_fenced, resolve_group
 
 
 def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
@@ -230,6 +264,31 @@ def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
     if unknown:
         raise ValidationError({"fields": f"Unknown field(s): {', '.join(unknown)}."})
     return {k: fields[k] for k in allowed if k in fields}
+
+
+_ICON_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _marker_updates(fields: dict, keys: tuple[str, ...]) -> dict:
+    """``color`` / ``icon`` of a bulk update, checked as the edit forms check
+    them: a bulk write goes straight to the database (#183)."""
+    from core.models import validate_hex_color
+
+    out = {}
+    if "color" in keys and "color" in fields:
+        color = (fields["color"] or "").strip().lower()
+        if color:
+            try:
+                validate_hex_color(color)
+            except DjangoValidationError:
+                raise ValidationError({"color": "A colour like #10b981."}) from None
+        out["color"] = color
+    if "icon" in keys and "icon" in fields:
+        icon = (fields["icon"] or "").strip()
+        if icon and (len(icon) > 48 or not _ICON_NAME.match(icon)):
+            raise ValidationError({"icon": "An icon name like building-2."})
+        out["icon"] = icon
+    return out
 
 
 # Bulk rename patterns: longest accepted, and the per-name match deadline.
@@ -343,6 +402,7 @@ from .views import (
     _build_space_map,
     _get_active_tenant,
     _next_available_ips,
+    _space_map_next_row,
     _subnet_details,
     reparent_ips_out_of_batch,
 )
@@ -351,8 +411,20 @@ from .views import (
 
 # Human/natural name ordering ("disk2" before "disk10") - backed by the
 # `natural_sort` ICU collation (migration 0099). Used wherever a list orders
-# by a user-visible name.
-NATURAL_NAME = Collate("name", "natural_sort")
+# by a user-visible name; `natural()` does the same for any other field.
+NATURAL_NAME = natural("name")
+
+# A device's map and the traces: the topology map's opt-in enrichments.
+MAP_INCLUDE_PARAMETER = OpenApiParameter(
+    name="include",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    description=(
+        "Comma-separated opt-in enrichment of the device graph, as on "
+        "`/api/topology/`: `card`, `link_ips`. Unknown tokens are ignored. "
+        "Adds `meta` to the graph."
+    ),
+)
 
 class StandardPagination(PageNumberPagination):
     # The SPA loads the full result set and paginates/filters client-side (the
@@ -640,6 +712,21 @@ class FieldWriteAllowList:
         }
 
 
+def _bulk_status_offered(status_id, model, key="status_id") -> None:
+    """A bulk edit may only set a status the catalog offers ``model`` - as the
+    form and the API's single edit (``serializers.offered_status``). Run it
+    after the tenant check: the status is then known to be the tenant's."""
+    from .status_registry import status_label, status_offered
+
+    if not status_id:
+        return
+    status = Status.objects.filter(pk=status_id).first()
+    if status is not None and not status_offered(status, model):
+        raise ValidationError(
+            {key: f"“{status.name}” isn't a status for {status_label(model)}."}
+        )
+
+
 class ComponentBulkMixin(FieldWriteAllowList):
     """``bulk-update`` + ``bulk-delete`` for component viewsets (interfaces,
     ports, VM interfaces, device-type component templates).
@@ -667,12 +754,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
     }
 
     def _bulk_ids(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of ids."})
-        if len(ids) > 1000:
-            raise ValidationError({"ids": "At most 1000 ids per call."})
-        return ids
+        return bulk_ids(request, MAX_IDS)
 
     def normalize_bulk_updates(self, updates: dict) -> dict:
         """Hook for model-level invariants that ``Model.save()`` would enforce
@@ -735,6 +817,8 @@ class ComponentBulkMixin(FieldWriteAllowList):
                 v = fields[k]
                 if v and not model.objects.filter(pk=v, tenant=tenant).exists():
                     raise ValidationError({k: "Not found in this tenant."})
+                if model is Status:
+                    _bulk_status_offered(v, self.get_queryset().model, k)
                 updates[k] = v or None
 
         qs = self.get_queryset().filter(pk__in=ids)
@@ -767,7 +851,10 @@ class ComponentBulkMixin(FieldWriteAllowList):
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
@@ -1065,7 +1152,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     queryset = (
         Prefix.objects
         .select_related("site", "vlan__zone", "vrf", "location")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .all()
     )
     serializer_class = PrefixSerializer
@@ -1256,7 +1343,16 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # ── Space map (existing) ────────────────────────────────────────────
     @action(detail=True, methods=["get"], url_path="space-map")
     def space_map(self, request, pk=None):
+        """The prefix's space map, its subnet details and next free IPs.
+
+        ``within`` re-roots the map at a block inside the prefix (a zoom).
+        ``rows=0`` skips the map (the Overview only wants the details) and
+        ``details=0`` skips the details (the map tab only wants the rows).
+        """
         import ipaddress
+
+        from django.db.models import BooleanField
+        from django.db.models.expressions import RawSQL
 
         def _int_param(name):
             try:
@@ -1266,52 +1362,76 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
 
         max_v4 = _int_param("v4_max")
         max_v6 = _int_param("v6_max")
+        # Rows past the +8 window, as runs ("Show the next row").
+        deeper = min(max(_int_param("deeper") or 0, 0), 32)
+        want_rows = request.query_params.get("rows") != "0"
+        want_details = request.query_params.get("details") != "0"
 
         prefix = self.get_object()
         net = prefix.network
 
         # Optionally re-root the map at a sub-network of this prefix (the
-        # frontend "descend into a free cell" interaction). It must be a real
-        # network inside the prefix.
+        # frontend zoom). It must be a real network inside the prefix, of the
+        # same family (subnet_of raises across families).
         map_net = net
         within = request.query_params.get("within")
-        if within:
+        if within and want_rows:
             try:
                 wn = ipaddress.ip_network(within, strict=False)
             except (ValueError, TypeError):
                 wn = None
-            if wn is None or net is None or not (wn == net or wn.subnet_of(net)):
+            if (
+                wn is None or net is None or wn.version != net.version
+                or not (wn == net or wn.subnet_of(net))
+            ):
                 return Response(
                     {"detail": "within must be a network inside this prefix."},
                     status=400,
                 )
             map_net = wn
 
-        deepest = 31 if (map_net and map_net.version == 4) else 128
-        if map_net is None or map_net.prefixlen >= deepest:
-            return Response({
-                "supported": False,
-                "root": str(map_net) if map_net else None,
+        def _details():
+            if not want_details:
+                return {"subnet_details": None, "next_available": []}
+            return {
                 "subnet_details": _subnet_details(prefix),
                 "next_available": _next_available_ips(prefix, count=8),
+            }
+
+        deepest = 31 if (map_net and map_net.version == 4) else 128
+        if map_net is None or map_net.prefixlen >= deepest or not want_rows:
+            return Response({
+                "supported": map_net is not None and map_net.prefixlen < deepest,
+                "root": str(map_net) if map_net else None,
+                "context": None,
+                **_details(),
                 "rows": [],
             })
 
         # child_nets are ipaddress network instances; cidr_to_pk lets the
         # frontend deep-link a "used" cell to /prefixes/{id}/ without a second
-        # round trip.
+        # round trip. ``context`` is the most specific prefix holding a zoomed
+        # view - the prefix its free blocks belong to.
         from auth_api import rbac
 
         child_nets = []
         cidr_to_pk: dict[str, str] = {}
+        context = None
+        zoomed = map_net != net
         # Only sibling prefixes the caller may view feed the space map - a
         # site-scoped user must not learn another site's child prefixes.
+        # Postgres narrows them to the ones inside this prefix.
         for sib in (
             rbac.restrict_queryset(
                 Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf)
                 .exclude(pk=prefix.pk),
                 request.user, prefix.tenant, "prefix", "view",
             )
+            .annotate(_inside=RawSQL(
+                "cidr::inet <<= %s::inet", (str(net),),
+                output_field=BooleanField(),
+            ))
+            .filter(_inside=True)
             .only("id", "cidr")
         ):
             sn = sib.network
@@ -1321,12 +1441,24 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 if sn.subnet_of(map_net):
                     child_nets.append(sn)
                     cidr_to_pk[str(sn)] = str(sib.id)
+                if zoomed and map_net.subnet_of(sn) and (
+                    context is None or sn.prefixlen > context[0]
+                ):
+                    context = (sn.prefixlen, str(sib.id), str(sn))
             except (TypeError, ValueError):
                 continue
 
+        # The depth preference trims the overview. Once a zoom has gone past
+        # it, it has nothing left to trim, so the zoomed view draws its full
+        # window instead of a single row per click.
+        if zoomed:
+            cap = max_v4 if map_net.version == 4 else max_v6
+            if cap is not None and map_net.prefixlen >= cap:
+                max_v4 = max_v6 = None
+
         rows = _build_space_map(
             map_net, child_nets=child_nets, tenant=prefix.tenant,
-            vrf=prefix.vrf, max_v4=max_v4, max_v6=max_v6,
+            vrf=prefix.vrf, max_v4=max_v4, max_v6=max_v6, deeper=deeper,
         )
         # Stamp prefix_id onto every "used" cell so the React map can link
         # the right cell to the right detail page.
@@ -1337,9 +1469,18 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         return Response({
             "supported": True,
             "root": str(map_net),
-            "subnet_details": _subnet_details(prefix),
-            "next_available": _next_available_ips(prefix, count=8),
+            "context": (
+                {"id": context[1], "cidr": context[2]} if context else None
+            ),
+            **_details(),
             "rows": rows,
+            # The row a deeper=+1 request would add, or None.
+            "more": (
+                _space_map_next_row(
+                    map_net, rows[-1]["prefixlen"], max_v4=max_v4, max_v6=max_v6
+                )
+                if rows else None
+            ),
         })
 
     # ── Nested IPs ──────────────────────────────────────────────────────
@@ -1370,7 +1511,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                     "status", "role", "assigned_device", "assigned_vm",
                     "prefix__vlan__zone",
                 )
-                .prefetch_related("tags")
+                .prefetch_related(TAGS)
             ),
             request.user, prefix.tenant, "ipaddress", "view",
         )
@@ -1513,18 +1654,17 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         tenant are silently skipped. Addresses on the prefixes move up to
         the longest prefix that still contains them, exactly as a single
         delete does (#207); only addresses nothing else covers fall."""
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of prefix IDs."})
-        if len(ids) > 1000:
-            raise ValidationError({"ids": "At most 1000 ids per call."})
+        ids = bulk_ids(request, MAX_IDS)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
             # One pass over the whole selection: an address only lands on a
             # prefix that outlives this call (#215).
             out = reparent_ips_out_of_batch(_rows)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response(
             {
@@ -1545,10 +1685,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         accidentally wipe per-row tagging. ``status`` is a ``Status`` FK
         (post-0047): the field is ``status_id`` and carries a catalog row id.
         """
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of prefix IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -1562,6 +1700,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             val = fields.get(key)
             if val and not model.objects.filter(pk=val, tenant=tenant).exists():
                 raise ValidationError({key: "Not found in this tenant."})
+        _bulk_status_offered(fields.get("status_id"), Prefix)
 
         qs = self.get_queryset().filter(pk__in=ids)
         updates = _bulk_field_updates(
@@ -1605,8 +1744,9 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             # assigned_vm: is_primary_for_vm reads the VM's primary_ip_id, so
             # without the join every VM-assigned row lazy-loads its VM (#122).
             "assigned_vm", "prefix__vrf", "prefix__site", "site",
+            "assigned_interface__device",
         )
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .all()
     )
     serializer_class = IPAddressSerializer
@@ -1622,7 +1762,8 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         """Tenant/RBAC-scoped, with optional server-side narrowing so the
         IP-assign picker scales to very large address spaces (filter, don't
         ship millions of rows): ``?search=`` (address or DNS), ``?prefix=``,
-        ``?vrf=``, ``?site=``, ``?assigned_interface=``."""
+        ``?vrf=``, ``?site=``, ``?assigned_interface=``, ``?assigned_vm=``,
+        ``?monitoring_excluded=true|false``."""
         qs = annotate_dhcp(super().get_queryset())
         if not self.request:
             return qs
@@ -1671,10 +1812,15 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 qs = qs.filter(prefix__site_id=site)
         if iface := p.get("assigned_interface"):
             qs = qs.filter(assigned_interface_id=iface)
+        if vm := p.get("assigned_vm"):
+            qs = qs.filter(assigned_vm_id=vm)
         if role := p.get("role"):
             qs = qs.filter(role_id=role)
         if status := p.get("status"):
             qs = qs.filter(status_id=status)
+        excluded = (p.get("monitoring_excluded") or "").lower()
+        if excluded in ("true", "1", "false", "0"):
+            qs = qs.filter(monitoring_excluded=excluded in ("true", "1"))
         if scope := p.get("scope"):
             # Scope is derived from the address, not a DB column, so it can't be
             # a plain ``.filter()``. Classify only the already-narrowed set and
@@ -1692,23 +1838,22 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of IP IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         """POST {ids, fields:{status_id, role_id, add_tag_ids, remove_tag_ids}}."""
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of IP IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -1719,6 +1864,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             val = fields.get(key)
             if val and not model.objects.filter(pk=val, tenant=tenant).exists():
                 raise ValidationError({key: "Not found in this tenant."})
+        _bulk_status_offered(fields.get("status_id"), IPAddress)
 
         qs = self.get_queryset().filter(pk__in=ids)
         updates = _bulk_field_updates(fields, ("status_id", "role_id", "description"))
@@ -1753,7 +1899,7 @@ class _PickerPagination(PageNumberPagination):
 class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     queryset = (
         VRF.objects
-        .prefetch_related("import_targets", "export_targets", "tags")
+        .prefetch_related("import_targets", "export_targets", TAGS)
         .all()
         .order_by(NATURAL_NAME)
     )
@@ -1797,13 +1943,14 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of VRF IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
@@ -1811,7 +1958,7 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
 class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     queryset = (
         RouteTarget.objects
-        .prefetch_related("importing_vrfs", "exporting_vrfs", "tags")
+        .prefetch_related("importing_vrfs", "exporting_vrfs", TAGS)
         .all()
         .order_by(NATURAL_NAME)
     )
@@ -1835,19 +1982,20 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of RT IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
 
 class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
-    queryset = Site.objects.prefetch_related("tags", "vrfs").all().order_by(NATURAL_NAME)
+    queryset = Site.objects.prefetch_related(TAGS, "vrfs").all().order_by(NATURAL_NAME)
     serializer_class = SiteSerializer
     pagination_class = StandardPagination
     rbac_action_map = {"bulk_delete": "delete"}
@@ -1869,6 +2017,9 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 0,
             )
 
+        if self.action == "capacity_overview":
+            # The capacity reads the site's id and name; it loads the rest.
+            return super().get_queryset().prefetch_related(None)
         qs = super().get_queryset().annotate(
             prefix_n=_n(Prefix), vlan_n=_n(VLAN), device_n=_n(Device),
             vm_n=_n(VirtualMachine),
@@ -1887,6 +2038,34 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if region:
             qs = qs.filter(region_id=region)
         return qs
+
+    @extend_schema(
+        summary="The site's rack capacity, floor plan by floor plan",
+        request=None,
+        responses=OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "`totals` for the site's racks you may view; `floor_plans`: per "
+                "floor plan of the site you may view, the `totals` and `racks` of "
+                "the site's racks on it and `tiles` - its rack tiles only (`rack_id`, "
+                "`x`, `y`, `w`, `h`, `orientation`) with `grid_width` / "
+                "`grid_height`; `unplaced`: the racks on no floor plan. A rack "
+                "carries `u_height`, `u_used`, `u_pct`, `power` (with `supply`: "
+                "`feed`, `pdu_rating` or null), `ports`, `panel_ports` and "
+                "`device_count`; `totals` add them up, with `racks`, `devices` "
+                "and, under `power`, how many racks have only their PDUs' rating "
+                "(`pdu_rating`) or no supply figure (`no_supply`). `count_virtual` "
+                "says whether virtual interfaces were counted."
+            ),
+        ),
+    )
+    @action(detail=True, methods=["get"], url_path="capacity")
+    def capacity_overview(self, request, pk=None):
+        """The site page's Capacity tab (#247), in a fixed number of queries
+        (api.site_capacity)."""
+        from .site_capacity import site_capacity
+
+        return Response(site_capacity(request, self.get_object()))
 
     @action(detail=False, methods=["get"], url_path="geocode")
     def geocode(self, request):
@@ -1922,27 +2101,27 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of site IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of site IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = _bulk_field_updates(fields, ("gateway_policy", "location"))
+        updates = _bulk_field_updates(fields, ("gateway_policy", "location", "color", "icon"))
+        updates.update(_marker_updates(fields, ("color", "icon")))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -1961,8 +2140,11 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # Mirrors this viewset's own bulk_update action (see PrefixViewSet).
     editable_str_fields = ("description",)
-    editable_fk_fields = {"site_id": Site, "zone_id": Zone, "vrf_id": VRF}
-    queryset = VLAN.objects.select_related("site", "group", "zone", "vrf").prefetch_related("tags").all().order_by("vlan_id")
+    editable_fk_fields = {"site_id": Site, "zone_id": Zone, "vrf_id": VRF, "status_id": Status}
+    queryset = (
+        VLAN.objects.select_related("site", "group", "zone", "vrf", "status")
+        .prefetch_related(TAGS).all().order_by("vlan_id")
+    )
     serializer_class = VLANSerializer
     pagination_class = StandardPagination
     rbac_action_map = {"bulk_delete": "delete"}
@@ -2006,26 +2188,28 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         vrf = self.request.query_params.get("vrf")
         if vrf:
             qs = qs.filter(vrf_id=vrf)
+        status = self.request.query_params.get("status")
+        if status:
+            qs = qs.filter(status_id__in=[s for s in status.split(",") if s])
         return _apply_custom_field_scope(self.request, qs, "vlan")
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of VLAN IDs."})
+        ids = bulk_ids(request)
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            deleted, _ = _qs.delete()
+            # The selected rows only: delete() counts every row it took
+            # along (check results, history), which read as thousands.
+            _, by_model = _qs.delete()
+            deleted = by_model.get(_qs.model._meta.label, 0)
             log_bulk_delete(_rows)
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of VLAN IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -2034,18 +2218,23 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         val = fields.get("site_id")
         if val and not Site.objects.filter(pk=val, tenant=tenant).exists():
             raise ValidationError({"site_id": "Not found in this tenant."})
-        zval = fields.get("zone_id")
-        if zval and not Zone.objects.filter(pk=zval, tenant=tenant).exists():
-            raise ValidationError({"zone_id": "Not found in this tenant."})
-        vval = fields.get("vrf_id")
-        if vval and not VRF.objects.filter(pk=vval, tenant=tenant).exists():
-            raise ValidationError({"vrf_id": "Not found in this tenant."})
+        # Local catalogs sit behind the site fence too, as on the edit form.
+        for key, model in (("zone_id", Zone), ("vrf_id", VRF), ("status_id", Status)):
+            resolve_fenced(request, tenant, model, fields.get(key), key)
+        _bulk_status_offered(fields.get("status_id"), VLAN)
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = _bulk_field_updates(fields, ("site_id", "zone_id", "vrf_id", "description"))
+        updates = _bulk_field_updates(
+            fields, ("site_id", "group_id", "zone_id", "vrf_id", "status_id", "description"))
+        group = None
+        if "group_id" in updates:
+            group = resolve_group(request, tenant, updates["group_id"])
+            updates["group_id"] = group.pk if group else None
 
         with transaction.atomic():
             _rows = list(qs)
+            # The edit form's group range and VID namespace rules (#176).
+            check_vlan_moves(_rows, updates, group, tenant)
             updated_count = qs.update(**updates) if updates else qs.count()
             if updates:
                 log_bulk_update(_rows, updates)
@@ -2237,7 +2426,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     """Tenant-scoped CRUD for custom-field section headings. Deleting a group
     just un-groups its fields (FK is SET_NULL), so no destroy guard is needed."""
 
-    queryset = CustomFieldGroup.objects.all().order_by("weight", "name")
+    queryset = CustomFieldGroup.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = CustomFieldGroupSerializer
 
     def get_queryset(self):
@@ -2246,7 +2435,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-        return qs.order_by("weight", "name")
+        return qs.order_by("weight", NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -2425,9 +2614,7 @@ class TenantViewSet(viewsets.ModelViewSet):
         """POST {ids:[...]} → force-delete each tenant and everything it owns."""
         from core.tenant_delete import force_delete_tenant
 
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of tenant IDs."})
+        ids = bulk_ids(request)
         rows = list(self.get_queryset().filter(pk__in=ids))
         log_bulk_delete(rows)  # log intent before the rows (and their data) vanish
         deleted = 0
@@ -2444,10 +2631,8 @@ class TenantViewSet(viewsets.ModelViewSet):
         Only ``group`` and active status are bulk-editable - name/slug are the
         tenant's identity (unique per org) and never make sense to set en masse.
         """
-        ids = request.data.get("ids") or []
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list of tenant IDs."})
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
@@ -2529,8 +2714,28 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         pass
 
 
+def _status_usage_expr():
+    """Sum of every relation StatusSerializer counts, as correlated subqueries,
+    so a list of N statuses is one statement instead of 14 COUNT(*) per row."""
+    from django.db.models import Count, IntegerField, OuterRef, Subquery, Value
+    from django.db.models.functions import Coalesce
+
+    from .serializers import StatusSerializer
+
+    expr = Value(0)
+    for rn in StatusSerializer._USAGE_RELS:
+        rel = Status._meta.get_field(rn)
+        fk = rel.field.name
+        sub = (
+            rel.related_model._default_manager.filter(**{fk: OuterRef("pk")})
+            .order_by().values(fk).annotate(c=Count("pk")).values("c")
+        )
+        expr = expr + Coalesce(Subquery(sub, output_field=IntegerField()), Value(0))
+    return expr
+
+
 class StatusViewSet(_IpCatalogViewSet):
-    queryset = Status.objects.all().order_by("weight", "name")
+    queryset = Status.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = StatusSerializer
     picker_serializer_class = StatusPickerSerializer
     # usage spans 13 models - the serializer sums them (no single-relation count).
@@ -2543,7 +2748,7 @@ class StatusViewSet(_IpCatalogViewSet):
             avail = self.request.query_params.get("available_to")
             if avail:
                 qs = qs.filter(available_to__contains=[avail])
-        return qs
+        return qs.annotate(usage_count_annotated=_status_usage_expr())
 
     def _after_save(self, obj):
         # At most one default status per (tenant, object-type): strip each slug
@@ -2557,7 +2762,7 @@ class StatusViewSet(_IpCatalogViewSet):
 
 
 class IPRoleViewSet(_IpCatalogViewSet):
-    queryset = IPRole.objects.all().order_by("weight", "name")
+    queryset = IPRole.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = IPRoleSerializer
     picker_serializer_class = IPRolePickerSerializer
 
@@ -2573,7 +2778,7 @@ class ZoneViewSet(_IpCatalogViewSet):
     """Security zones (zone-based firewalling). Zero pre-filled - users
     define their own zone catalog; VLANs link to zones via ``VLAN.zone``."""
 
-    queryset = Zone.objects.all().order_by("weight", "name")
+    queryset = Zone.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = ZoneSerializer
     picker_serializer_class = ZonePickerSerializer
     usage_relation = "vlans"
@@ -2647,7 +2852,7 @@ def _check_unique_name(model, serializer, tenant, noun):
 
 class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     queryset = (
-        DeviceType.objects.select_related("manufacturer", "platform").prefetch_related("tags").all().order_by(NATURAL_NAME)
+        DeviceType.objects.select_related("manufacturer", "platform").prefetch_related(TAGS).all().order_by(NATURAL_NAME)
     )
     serializer_class = DeviceTypeSerializer
     pagination_class = StandardPagination
@@ -2656,6 +2861,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     clone_fields = (
         "manufacturer", "u_height", "rack_width", "is_full_depth", "airflow",
         "weight", "weight_unit", "subdevice_role", "exclude_from_utilization",
+        "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
         "description",
         "release_date", "end_of_sale", "end_of_security_updates",
         "end_of_support", "lifecycle_url",
@@ -2667,10 +2873,14 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     # read/write-but-not-delete editor empty the catalog. Reimporting images
     # rewrites existing rows' image fields - `change`, pinned explicitly so the
     # row restriction below scopes the batch the same way.
+    # The library import checks add on each kind it creates (device, module,
+    # rack type), so the endpoint itself only asks to see the catalog.
     rbac_action_map = {
         "import_bundle": "add",
         "bulk_delete": "delete",
         "reimport_images": "change",
+        "import_yaml": "view",
+        "import_folder": "view",
     }
 
     @action(detail=True, methods=["get"], url_path="library-export")
@@ -2808,10 +3018,12 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         Body: {"url": "<github /tree/ folder url>", "stack_positions": bool}.
         Returns the run so the client can poll ``import-runs/<id>/``. The
         synchronous ``import-yaml`` handles small pastes; this handles bulk."""
-        from .devicetype_import import is_github_dir
+        from .devicetype_import import allowed_kinds, is_github_dir
         from .devicetype_import_tasks import enqueue_devicetype_import
 
         tenant = self._tenant_or_403()
+        if not allowed_kinds(request.user, tenant):
+            raise PermissionDenied("You can't add device, module or rack types.")
         url = str((request.data or {}).get("url") or "").strip()
         if not is_github_dir(url):
             return Response(
@@ -2858,7 +3070,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         from core.ssrf import SSRFError, safe_get
 
         from .devicetype_import import (
-            expand_github_dir, import_yaml_auto, is_github_dir, to_raw_url,
+            allowed_kinds, expand_github_dir, import_yaml_auto, is_github_dir, to_raw_url,
         )
 
         # A GitHub /tree/ directory URL fetched as-is returns HTML, not YAML.
@@ -2868,6 +3080,11 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         SYNC_FILE_CAP = 200
 
         tenant = self._tenant_or_403()
+        # Each file needs add on what it creates (a rack-type file, rack
+        # types); nothing is fetched for a caller who may add none of them.
+        allowed = allowed_kinds(request.user, tenant)
+        if not allowed:
+            raise PermissionDenied("You can't add device, module or rack types.")
         body = request.data or {}
         items = body.get("items")
         if not isinstance(items, list) or not items or len(items) > 100:
@@ -2955,7 +3172,8 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                     continue
             results.append(
                 import_yaml_auto(
-                    tenant, text, stack_positions=stack, owning_site=owning_site
+                    tenant, text, stack_positions=stack, owning_site=owning_site,
+                    allowed=allowed,
                 )
             )
         return Response({"results": results})
@@ -3116,13 +3334,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         SET_NULL, so they keep running and lose their type reference; the UI
         warns about that before it calls this.
         """
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError(
-                {"ids": "Provide a non-empty list of device type IDs."}
-            )
-        if len(ids) > 1000:
-            raise ValidationError({"ids": "At most 1000 ids per call."})
+        ids = bulk_ids(request, MAX_IDS)
         from audit.bulk import log_device_type_deletes
         from audit.context import suspended
 
@@ -3157,6 +3369,13 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             dt.front_image = None
         if request.data.get("clear_rear"):
             dt.rear_image = None
+        # A new or cleared photo's guides no longer stand where the old one's
+        # did (#277); a resize below keeps them, being the same picture.
+        from .face_ports import drop_calibration
+
+        for face in ("front", "rear"):
+            if f"{face}_image" in request.FILES or request.data.get(f"clear_{face}"):
+                dt.image_ports = drop_calibration(dt.image_ports, face)
         # In-place shrink of a stored face: `resize_front=1200` re-encodes the
         # existing file to at most that many pixels on the longest edge,
         # aspect preserved - the visible knob behind the automatic upload cap.
@@ -3221,21 +3440,19 @@ def _region_and_descendant_ids(region_id):
     return ids
 
 
-def _cable_state(comp, term) -> str:
-    """free | connected | reserved | marked - the utilization card's
-    vocabulary, per port, for the face-panel glow. Reserved covers both a
-    planned cable and a direct PortReservation on an uncabled port; a real
-    cable (or mark_connected) outranks the hold."""
-    if term is not None:
-        status = term.cable.status if term.cable_id else None
-        if status is not None and status.slug == "planned":
-            return "reserved"
-        return "connected"
-    if getattr(comp, "mark_connected", False):
-        return "marked"
-    if any(True for _ in comp.reservations.all()):
-        return "reserved"
-    return "free"
+# Moved to api.port_state (#248); the old name stays for its importers.
+_cable_state = cable_state
+
+
+# Every relation an IPAddressSerializer row reads, for the device and
+# interface IP tabs - without them each row lazy-loads about ten objects.
+ASSIGNED_IP_RELATED = (
+    "status", "role", "site",
+    "assigned_device", "assigned_interface__device",
+    "assigned_vm__status", "assigned_vm_interface__vm",
+    "prefix__vlan__zone", "prefix__vrf", "prefix__site",
+    "switch", "switch_interface__device__virtual_chassis",
+)
 
 
 class DeviceViewSet(
@@ -3249,10 +3466,26 @@ class DeviceViewSet(
         # to a handful of queries.
         Device.objects.select_related(
             "device_type", "device_type__platform", "device_type__manufacturer",
-            "site", "primary_ip",
+            "site", "site__region", "primary_ip",
             "role", "rack", "status", "platform", "location", "cluster",
         )
-        .prefetch_related("tags")
+        # The secondary and OOB addresses, the DIN cabinet and rail and the
+        # config template (resolved device -> role -> platform) are
+        # prefetched, not joined: with them the query had 17 LEFT JOINs and
+        # Postgres took ~120 ms to plan what runs in 8 ms (#254, #288). A
+        # relation no row on the page uses costs no query. The templates come
+        # without their bodies - a page is up to 10,000 rows and the row only
+        # shows the name.
+        .prefetch_related(
+            TAGS, "secondary_ip", "oob_ip", "cabinet", "din_rail",
+            *(
+                Prefetch(
+                    f"{path}config_template",
+                    queryset=ExportTemplate.objects.defer("template_code", "description"),
+                )
+                for path in ("", "role__", "platform__")
+            ),
+        )
         # ip_count + interface_count are shown/served on the list, as
         # correlated subqueries. The joined COUNT(DISTINCT) they replaced
         # multiplied every device's addresses by its interfaces before
@@ -3263,6 +3496,31 @@ class DeviceViewSet(
             interface_count_annotated=_count_of(Interface, "device"),
         )
         .all().order_by(NATURAL_NAME)
+    )
+    # ``?picker=palette`` (the topology diagram builder) lists every device at
+    # once, so it starts from its own base: only the columns and joins its rows
+    # print, none of the list's per-row count subqueries or tag prefetch.
+    # Grouped by role, then natural name; role-less devices last.
+    palette_queryset = (
+        Device.objects.select_related(
+            "role", "device_type", "device_type__manufacturer",
+            "site", "location", "rack", "status",
+        )
+        .only(
+            "id", "numid", "name",
+            "role", "role__name", "role__slug", "role__color", "role__icon",
+            "role__is_patch_panel",
+            "device_type", "device_type__name", "device_type__model",
+            "device_type__front_image", "device_type__manufacturer",
+            "device_type__manufacturer__name",
+            "site", "site__name", "location", "location__name",
+            "rack", "rack__name",
+            "status", "status__name", "status__slug", "status__color",
+        )
+        .order_by(
+            natural("role__name").asc(nulls_last=True),
+            NATURAL_NAME,
+        )
     )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
@@ -3282,7 +3540,8 @@ class DeviceViewSet(
     # clone doesn't fight for the source's rack unit. Carry type/role/site/etc.
     clone_fields = (
         "device_type", "role", "platform", "status", "site", "location",
-        "cluster", "airflow", "description", "comments",
+        "cluster", "airflow", "description", "comments", "topology_card",
+        "topology_photo_size",
     )
 
     @action(detail=True, methods=["get"], url_path="spec-sheet")
@@ -3318,70 +3577,71 @@ class DeviceViewSet(
     @action(detail=True, methods=["get"], url_path="port-utilization")
     def port_utilization(self, request, pk=None):
         """Connected / reserved / free counts per port kind (issue #64) - see
-        ``port_utilization.utilization_payload`` for the rules."""
+        ``port_utilization`` for the rules."""
+        from core.effective_settings import port_count_virtual
+
         from .port_utilization import utilization_payload
 
         device = self.get_object()
-        return Response(utilization_payload(Device.objects.filter(pk=device.pk)))
+        return Response(utilization_payload(
+            Device.objects.filter(pk=device.pk),
+            count_virtual=port_count_virtual(_get_active_tenant(request)),
+        ))
 
     @action(detail=False, methods=["get"], url_path="port-utilization")
     def port_utilization_rollup(self, request):
-        """Every device with ports + its fill level, for the capacity
-        roll-up view (issue #64). Nine GROUP BY aggregates total - never
+        """Every device with counted ports + its fill level, for the capacity
+        roll-up view (issue #64). Twelve GROUP BY aggregates total - never
         per-device queries - and it rides the list queryset, so ?site= /
-        ?device_type= / ?role= narrow it like any device list.
+        ?device_type= / ?role= narrow it like any device list. A device whose
+        ports are all uncounted (virtual, rear) has no fill level to show.
         """
+        from core.effective_settings import port_count_virtual
+
         from .port_utilization import device_port_counts, used_pct
 
+        count_virtual = port_count_virtual(_get_active_tenant(request))
         devices = self.get_queryset()
-        counts = device_port_counts(devices)
+        counts = {
+            device_id: row
+            for device_id, row in device_port_counts(
+                devices, count_virtual=count_virtual
+            ).items()
+            if row["total"]
+        }
         # Only what the rows print - whole Device rows (custom fields, photo
         # markers, every joined catalog) for a hall of devices cost half a
         # second of transfer and decoding on their own.
         meta = devices.filter(id__in=counts).values(
-            "id", "name", "site_id", "site__name", "role_id", "role__name",
-            "role__color", "device_type__name",
+            "id", "name", "site_id", "site__name", "rack_id", "rack__name",
+            "role_id", "role__name", "role__color", "device_type__name",
         )
         rows = []
         for d in meta:
             row = counts[d["id"]]
-            total, conn, res = row["total"], row["connected"], row["reserved"]
             rows.append({
                 "id": str(d["id"]),
                 "name": d["name"],
                 "site": {"id": str(d["site_id"]), "name": d["site__name"]}
                 if d["site_id"] else None,
+                "rack": {"id": str(d["rack_id"]), "name": d["rack__name"]}
+                if d["rack_id"] else None,
                 "role": {"name": d["role__name"], "color": d["role__color"]}
                 if d["role_id"] else None,
                 "device_type": d["device_type__name"],
-                "total": total,
-                "connected": conn,
-                "reserved": res,
-                "free": total - conn - res,
+                "total": row["total"],
+                "connected": row["connected"],
+                "reserved": row["reserved"],
+                "free": row["free"],
                 "marked": row["marked"],
                 "pct": used_pct(row),
             })
         rows.sort(key=lambda r: (-r["pct"], r["name"]))
-        return Response({"results": rows})
+        return Response({"results": rows, "count_virtual": count_virtual})
 
-    # Photo-port marker kind (hyphenated, as saved in DeviceType.image_ports) →
-    # (device component relation, CableTermination kind). Drives face-ports.
-    # Inventory items (disk bays…) and module bays (line-card slots) are
-    # placeable but not cable-able, hence the None termination kind: a part
-    # answers "what health", a bay answers "occupied or free".
-    _FACE_PORT_KINDS = {
-        "interface": ("interfaces", "interface"),
-        "console-port": ("console_ports", "console_port"),
-        "console-server-port": ("console_server_ports", "console_server_port"),
-        "power-port": ("power_ports", "power_port"),
-        "power-outlet": ("power_outlets", "power_outlet"),
-        "front-port": ("front_ports", "front_port"),
-        "rear-port": ("rear_ports", "rear_port"),
-        "aux-port": ("aux_ports", "aux_port"),
-        "antenna": ("antennas", None),
-        "inventory-item": ("inventory_items", None),
-        "module-bay": ("module_bays", None),
-    }
+    # Marker kind → (component relation, CableTermination kind); kept as an
+    # alias of the shared table in ``face_ports``.
+    _FACE_PORT_KINDS = FACE_PORT_KINDS
 
     # Observed-vs-intent difference → the one-line label a marker wears. Keeps
     # the phrasing in one place so 2D hovercards and the 3D HUD agree.
@@ -3432,12 +3692,27 @@ class DeviceViewSet(
         device = self.get_object()
         return Response(self._face_ports_payload(device))
 
+    @extend_schema(parameters=[
+        OpenApiParameter(
+            name="ids", type=OpenApiTypes.STR, location=OpenApiParameter.QUERY,
+            description="Comma-separated device ids, up to 200.",
+        ),
+        OpenApiParameter(
+            name="drift", type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY,
+            description="Add each marker's SNMP drift - costs queries per device.",
+        ),
+    ])
     @action(detail=False, methods=["get"], url_path="face-ports")
     def face_ports_bulk(self, request):
         """``?ids=a,b,c`` → ``{device id: {front, rear}}`` for up to 200 devices
         the caller may view. The 3D room resolves a rack's worth of markers
         in one request instead of one per device - forty round trips for a
-        full cabinet was what made its photo ports take seconds to light up."""
+        full cabinet was what made its photo ports take seconds to light up.
+
+        Resolved together (``api.port_state.FacePortLoader``), so the request
+        costs the same number of queries for two devices or two hundred. SNMP
+        drift costs queries per device, so entries carry ``drift: null``
+        unless ``drift=1`` asks for it."""
         import uuid
 
         ids = []
@@ -3453,192 +3728,37 @@ class DeviceViewSet(
         if not ids:
             return Response({})
         devices = self.get_queryset().filter(pk__in=ids).select_related("device_type")
-        return Response({str(d.id): self._face_ports_payload(d) for d in devices})
+        loader = FacePortLoader(
+            devices, user=request.user, tenant=_get_active_tenant(request)
+        )
+        with_drift = (request.query_params.get("drift") or "").lower() in ("1", "true", "yes")
+        out = {}
+        for device in loader.devices:
+            payload = loader.payload(device)
+            if with_drift:
+                self._add_face_drift(device, payload)
+            out[str(device.id)] = payload
+        return Response(out)
 
     def _face_ports_payload(self, device) -> dict:
-        """The resolved markers of one device - see ``face_ports``."""
-        from .models import render_component_name
+        """The resolved markers of one device, with drift - see
+        ``face_ports``."""
+        payload = FacePortLoader(
+            [device], user=self.request.user, tenant=_get_active_tenant(self.request)
+        ).payload(device)
+        self._add_face_drift(device, payload)
+        return payload
 
-        dt = device.device_type
-        # A device-level override (special devices) replaces the type's
-        # layout wholesale; null inherits.
-        image_ports = (
-            device.image_ports
-            if device.image_ports is not None
-            else (dt.image_ports if dt else None)
-        ) or {}
-        pos = device.vc_position
+    def _add_face_drift(self, device, payload) -> None:
+        """Fill each resolved entry's ``drift`` from SNMP. The fields beside
+        it stay the SOURCE OF TRUTH - drift is drawn beside intent, never
+        over it."""
         drift = self._face_drift(device)
-
-        # Load each component relation we actually need exactly once, keyed by
-        # rendered name, with terminations prefetched for the cabled check.
-        name_maps: dict[str, dict[str, object]] = {}
-        norm_maps: dict[str, dict[str, object]] = {}
-
-        def name_map(relation, cabled: bool):
-            if relation not in name_maps:
-                comps = getattr(device, relation)
-                # Only cable-able kinds have terminations; inventory items
-                # carry a status instead, and a module bay's occupancy is the
-                # reverse Module relation (there is no field on the bay).
-                if cabled:
-                    comps = comps.prefetch_related(
-                        "terminations__cable__status", "reservations", *FAR_END_PREFETCH
-                    )
-                elif relation == "module_bays":
-                    comps = comps.select_related("module__module_type")
-                else:
-                    comps = comps.select_related("status")
-                comps = list(comps)
-                # marker_key first: the frozen marker identity survives a
-                # rename of the visible name (Interface/Front/RearPort carry
-                # one; other kinds fall through to name matching).
-                by_key = {}
-                for c in comps:
-                    mk = getattr(c, "marker_key", "") or ""
-                    if mk:
-                        by_key.setdefault(mk, c)
-                for c in comps:
-                    by_key.setdefault(c.name, c)
-                name_maps[relation] = by_key
-                # Case/whitespace-insensitive twin (first name wins) - the
-                # same normalization the frontend's normalizePortName applies.
-                norm = {}
-                for c in comps:
-                    mk = getattr(c, "marker_key", "") or ""
-                    if mk:
-                        norm.setdefault(mk.strip().lower(), c)
-                for c in comps:
-                    norm.setdefault(c.name.strip().lower(), c)
-                norm_maps[relation] = norm
-            return name_maps[relation]
-
-        def find_component(relation, cabled: bool, name: str):
-            """Exact rendered-name match first, then tolerant: imported photo
-            markers routinely disagree with the live component names by case
-            alone ("Psu 1" vs "PSU 1"), and an exact-only match silently left
-            those markers unresolved - grey, unclickable, uncable-able."""
-            comp = name_map(relation, cabled=cabled).get(name)
-            if comp is None:
-                comp = norm_maps[relation].get(name.strip().lower())
-            return comp
-
-        def resolve(markers):
-            out = []
-            for m in markers if isinstance(markers, list) else []:
-                raw = m.get("name", "") if isinstance(m, dict) else ""
-                kind = m.get("kind", "interface") if isinstance(m, dict) else ""
-                name = render_component_name(raw, pos)
-                entry = {
-                    "marker": raw, "name": name, "kind": None, "id": None,
-                    "connected": False, "cable_id": None,
-                    # Enough for the shared port-state colouring (portState):
-                    # interfaces carry enabled/speed/type; others default on.
-                    "enabled": True, "speed": "", "type": "",
-                    # Hardware markers (inventory items): lifecycle status.
-                    "status": None,
-                    # Module-bay markers: the installed module, or null for an
-                    # empty slot. Occupancy is the whole point of drawing a bay
-                    # on the photo, so it rides along rather than costing the
-                    # client a request per bay.
-                    "module": None,
-                    # What SNMP saw differently, or null when they agree. The
-                    # status/speed above stay the SOURCE OF TRUTH either way -
-                    # drift is drawn beside intent, never over it.
-                    "drift": None,
-                }
-                mapping = self._FACE_PORT_KINDS.get(kind)
-                if mapping:
-                    relation, term_kind = mapping
-                    comp = find_component(relation, term_kind is not None, name)
-                    if comp is not None:
-                        entry["drift"] = drift.get(str(comp.id))
-                    if comp is not None and kind == "module-bay":
-                        # Module bay - reads occupied/empty, never cable-able.
-                        # The reverse OneToOne raises (an AttributeError
-                        # subclass) when the bay is free, so getattr → None.
-                        mod = getattr(comp, "module", None)
-                        entry.update({
-                            "id": str(comp.id),
-                            "module": {
-                                "id": str(mod.id),
-                                "module_type": {
-                                    "id": str(mod.module_type_id),
-                                    "name": mod.module_type.name,
-                                },
-                                "serial_number": mod.serial_number,
-                            } if mod else None,
-                        })
-                    elif comp is not None and term_kind is None:
-                        # Inventory item - status-coloured, never cable-able.
-                        s = comp.status
-                        entry.update({
-                            "name": comp.name,
-                            "id": str(comp.id),
-                            "status": {"id": str(s.id), "name": s.name, "color": s.color}
-                            if s else None,
-                        })
-                    elif comp is not None:
-                        term = next(iter(comp.terminations.all()), None)
-                        # Only interfaces carry a network-speed string; other
-                        # kinds may have an int `speed` (power draw) - ignore it.
-                        speed = getattr(comp, "speed", "")
-                        ctype = getattr(comp, "type", "")
-                        entry.update({
-                            # The component's REAL name - after a rename the
-                            # marker still resolves via marker_key, and the
-                            # hover must say what the port is called NOW.
-                            "name": comp.name,
-                            "kind": term_kind,
-                            "id": str(comp.id),
-                            "connected": term is not None,
-                            "cable_state": _cable_state(comp, term),
-                            "cable_id": str(term.cable_id) if term else None,
-                            "enabled": bool(getattr(comp, "enabled", True)),
-                            "speed": speed if isinstance(speed, str) else "",
-                            "type": ctype if isinstance(ctype, str) else "",
-                            # Real-world name, when it differs from the
-                            # template-matching name ("X1-P1" on "Port 1").
-                            "label": getattr(comp, "label", "") or "",
-                            # What a port marker may print instead of the
-                            # label: the cable's label or the far end.
-                            "cable_label": (term.cable.label if term else "") or "",
-                            "peer": far_end(term),
-                            "label_hidden": bool(getattr(comp, "hide_label", False)),
-                            "label_color": getattr(comp, "label_color", "") or "",
-                        })
-                out.append(entry)
-            return out
-
-        front = resolve(image_ports.get("front"))
-        rear = resolve(image_ports.get("rear"))
-        # Power components no photo marker covers still have to be clickable
-        # and cable-able in the 3D room (a PDU strip has no photo at all, and
-        # many rear photos never got their inlets marked). Emit them as
-        # SYNTHETIC entries under "rear" - power lives on the back - keyed by
-        # the component's own name, which is exactly the name the room's
-        # synthetic quads carry. Component ids already claimed by a marker
-        # (exact or tolerant) are skipped, so nothing resolves twice.
-        claimed = {e["id"] for e in front + rear if e["id"]}
-        for marker_kind in ("power-port", "power-outlet"):
-            relation, term_kind = self._FACE_PORT_KINDS[marker_kind]
-            for comp in name_map(relation, cabled=True).values():
-                if str(comp.id) in claimed:
-                    continue
-                term = next(iter(comp.terminations.all()), None)
-                ctype = getattr(comp, "type", "")
-                rear.append({
-                    "marker": comp.name, "name": comp.name,
-                    "kind": term_kind, "id": str(comp.id),
-                    "connected": term is not None,
-                    "cable_state": _cable_state(comp, term),
-                    "cable_id": str(term.cable_id) if term else None,
-                    "enabled": True, "speed": "",
-                    "type": ctype if isinstance(ctype, str) else "",
-                    "status": None, "module": None,
-                    "drift": drift.get(str(comp.id)),
-                })
-        return {"front": front, "rear": rear}
+        if not drift:
+            return
+        for entry in payload["front"] + payload["rear"]:
+            if entry["id"]:
+                entry["drift"] = drift.get(entry["id"])
 
     def _render_target(self, request, device):
         """What ``?template=`` / ``?bundle=`` name for this device: a
@@ -3691,9 +3811,9 @@ class DeviceViewSet(
             return Response({"detail": error}, status=drf_status.HTTP_400_BAD_REQUEST)
         try:
             if bundle is not None:
-                files = attach_push_state(device, render_bundle(bundle, device))
+                files = attach_push_state(device, render_bundle(bundle, device, request.user))
             else:
-                row = render_file(tmpl, device)
+                row = render_file(tmpl, device, request.user)
                 files = attach_push_state(device, {row["path"]: row})
         except (TemplateError, ValueError) as exc:
             return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
@@ -3748,9 +3868,9 @@ class DeviceViewSet(
                 continue
             try:
                 if bundle is not None:
-                    files = render_bundle(bundle, device)
+                    files = render_bundle(bundle, device, request.user)
                 else:
-                    row = render_file(tmpl, device)
+                    row = render_file(tmpl, device, request.user)
                     files = {row["path"]: row}
             except (TemplateError, ValueError) as exc:
                 skipped[str(device.id)] = str(exc)
@@ -3920,7 +4040,7 @@ class DeviceViewSet(
             from jinja2 import TemplateError
             from .export_templates import render_device_config
             try:
-                intended = render_device_config(tmpl, device, tmpl.tenant)
+                intended = render_device_config(tmpl, device, tmpl.tenant, request.user)
             except (TemplateError, ValueError):
                 intended = ""
         status_val, diff = compute_drift(intended, actual)
@@ -3940,7 +4060,16 @@ class DeviceViewSet(
         return Response(DeviceConfigStateSerializer(state).data,
                         status=drf_status.HTTP_200_OK)
 
+    def _palette(self) -> bool:
+        """``?picker=palette`` on the list: the diagram builder's palette."""
+        return (
+            self.action == "list" and self.request is not None
+            and self.request.query_params.get("picker") == "palette"
+        )
+
     def get_serializer_class(self):
+        if self._palette():
+            return DevicePaletteSerializer
         if self.action == "list" and self.request and self.request.query_params.get("picker") == "1":
             if self.request.query_params.get("with_vc") == "1":
                 return DeviceVcPickerSerializer
@@ -3948,6 +4077,10 @@ class DeviceViewSet(
         return DeviceSerializer
 
     def get_queryset(self):
+        if self._palette():
+            # Swap the base only - tenant scoping, RBAC rows and every list
+            # filter below apply to the palette exactly as to the list.
+            self.queryset = self.palette_queryset
         qs = super().get_queryset()
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -3965,6 +4098,18 @@ class DeviceViewSet(
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{field: v})
+            from .topology_views import _uuid_param
+
+            for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id")):
+                v = _uuid_param(self.request.query_params, key)
+                if v:
+                    qs = qs.filter(**{field: v})
+            # Devices whose type mounts on a DIN rail of this profile (#277).
+            profile = self.request.query_params.get("din_profile")
+            if profile:
+                if profile not in {"ts35", "ts15", "g32"}:
+                    raise ValidationError({"din_profile": "One of ts35, ts15, g32."})
+                qs = qs.filter(device_type__din_profiles__contains=[profile])
             # The physical hosts behind a virtualization source. There is no
             # FK from Device to the source - the honest link is that the source
             # syncs VMs onto them, or into a cluster they belong to. Covers a
@@ -4074,9 +4219,9 @@ class DeviceViewSet(
 
         device = self.get_object()
         qs = annotate_dhcp(
-            IPAddress.objects.filter(assigned_device=device)
-            .select_related("status", "role", "prefix__vlan__zone")
-            .prefetch_related("tags")
+            IPAddress.objects.filter(assigned_device=device, tenant=device.tenant)
+            .select_related(*ASSIGNED_IP_RELATED)
+            .prefetch_related(TAGS)
         )
         qs = rbac.restrict_queryset(
             qs, request.user, device.tenant, "ipaddress", "view"
@@ -4095,15 +4240,17 @@ class DeviceViewSet(
         device = self.get_object()
         qs = (
             device.interfaces.select_related(
-                "device", "vlan", "parent", "lag", "bridge", "status"
+                "device", "vlan", "vrf", "status",
+                "parent__device", "lag__device", "bridge__device",
             )
             .prefetch_related(
-                "tags", "ip_addresses", "children", "lag_members",
+                TAGS, "children", "lag_members", "tagged_vlans", "mac_addresses",
+                assigned_ips_prefetch(request, device.tenant),
                 "tunnel_terminations__tunnel",
-                # The serializer reads both per row - without these the tab
-                # ran one extra query per interface (62 on a Nexus, 500 on a
-                # big chassis).
-                "terminations__cable__status", "reservations",
+                # The serializer reads these per row - without them the tab
+                # ran extra queries per interface (62 on a Nexus, 500 on a
+                # big chassis). Same relations as the interface list.
+                "terminations__cable__status", "reservations", *FAR_END_PREFETCH,
             )
             .order_by(NATURAL_NAME)
         )
@@ -4117,14 +4264,16 @@ class DeviceViewSet(
             ).data,
         })
 
+    @extend_schema(parameters=[MAP_INCLUDE_PARAMETER])
     @action(detail=True, methods=["get"], url_path="map")
     def map(self, request, pk=None):
         """Device-level topology: trace through any patch panels and show the
         chain of devices reached, collapsing front/rear ports away."""
-        from .topology_views import device_scope_q, device_trace_map
+        from .topology_views import device_scope_q, device_trace_map, map_include
         dev = self.get_object()
         return Response(device_trace_map(
-            dev, scope_q=device_scope_q(request.user, dev.tenant)
+            dev, scope_q=device_scope_q(request.user, dev.tenant),
+            include=map_include(request), request=request,
         ))
 
     @action(detail=True, methods=["get"], url_path="paths")
@@ -4192,15 +4341,29 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         "type", "mode", "speed", "duplex", "description",
         "lag_protocol", "lacp_mode", "lacp_rate",
     )
-    bulk_bool_fields = ("enabled", "mgmt_only", "mark_connected")
+    bulk_bool_fields = (
+        "enabled", "mgmt_only", "mark_connected", "is_uplink", "never_uplink",
+    )
     bulk_int_fields = ("mtu", "lag_min_links")
     bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
     bulk_name_scope_field = "device_id"
 
     def normalize_bulk_updates(self, updates):
-        # Mirrors Interface.save(): aggregates are virtual, and LACP knobs
-        # only mean something under LACP.
-        if updates.get("type") == "lag":
+        # Mirrors Interface.save(): virtual, bridge and aggregate types are
+        # virtual, and LACP knobs only mean something under LACP.
+        from .dcim_choices import VIRTUAL_INTERFACE_TYPES
+
+        # Uplink Always and Never exclude each other (#284): setting one
+        # clears the other; asking for both is refused, as the form does.
+        if updates.get("is_uplink") and updates.get("never_uplink"):
+            raise ValidationError(
+                {"never_uplink": "A port can't be both always and never an uplink."}
+            )
+        if updates.get("is_uplink"):
+            updates["never_uplink"] = False
+        elif updates.get("never_uplink"):
+            updates["is_uplink"] = False
+        if updates.get("type") in VIRTUAL_INTERFACE_TYPES:
             updates["virtual"] = True
         if "lag_protocol" in updates and updates["lag_protocol"] != "lacp":
             updates["lacp_mode"] = ""
@@ -4213,17 +4376,22 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
     bulk_tags = True
 
     queryset = (
-        Interface.objects.select_related(
-            "device", "vlan", "vrf", "status",
-            "parent__device", "lag__device", "bridge__device",
-        )
+        Interface.objects.select_related("device", "vlan", "vrf", "status")
+        # The parent, LAG and bridge (with their devices) are prefetched, not
+        # joined: joined, Postgres joined every interface in the tenant to
+        # them before it could sort and take one page (#298). Most rows have
+        # none of the three; a page that does pays one small query each.
         .prefetch_related(
-            "tags", "terminations__cable", "reservations", "ip_addresses", "children",
+            *(
+                Prefetch(rel, queryset=Interface.objects.select_related("device"))
+                for rel in ("parent", "lag", "bridge")
+            ),
+            TAGS, "terminations__cable__status", "reservations", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
             *FAR_END_PREFETCH,
         )
-        .order_by("device__name", NATURAL_NAME)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = InterfaceSerializer
     pagination_class = StandardPagination
@@ -4243,7 +4411,10 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         tenant = _get_active_tenant(self.request)
         if tenant is None:
             return self.queryset.none()
-        qs = self.queryset.filter(device__tenant=tenant)
+        # Each row's addresses, cut to the caller's IP view scope.
+        qs = self.queryset.filter(device__tenant=tenant).prefetch_related(
+            assigned_ips_prefetch(self.request, tenant)
+        )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -4289,6 +4460,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
     def perform_update(self, serializer):
         self._check(serializer)
         serializer.save()
+        forget_visible(serializer.instance)
 
     @action(detail=True, methods=["get"], url_path="ips")
     def ips(self, request, pk=None):
@@ -4299,8 +4471,8 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             IPAddress.objects.filter(
                 assigned_interface=iface, tenant=iface.device.tenant
             )
-            .select_related("status", "role", "prefix__vlan__zone")
-            .prefetch_related("tags")
+            .select_related(*ASSIGNED_IP_RELATED)
+            .prefetch_related(TAGS)
             .order_by("ip_address")
         )
         from auth_api import rbac
@@ -4372,7 +4544,10 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "degraded": (
                 iface.lag_min_links is not None and len(members) < iface.lag_min_links
             ),
-            "peers": sorted(peers.values(), key=lambda p: (p["device"]["name"], p["name"])),
+            "peers": sorted(
+                peers.values(),
+                key=lambda p: (natural_key(p["device"]["name"]), natural_key(p["name"])),
+            ),
             "unpaired": unpaired,
             "mixed_peers": len(peers) > 1,
         })
@@ -4453,10 +4628,11 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             status=drf_status.HTTP_200_OK,
         )
 
+    @extend_schema(parameters=[MAP_INCLUDE_PARAMETER])
     @action(detail=True, methods=["get"], url_path="trace")
     def trace(self, request, pk=None):
         from .trace import trace as run_trace
-        from .topology_views import device_scope_q, trace_device_graph
+        from .topology_views import device_scope_q, map_include, trace_device_graph
         iface = self.get_object()
         graph = run_trace([("interface", iface)])
         return Response({
@@ -4464,6 +4640,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "device_graph": trace_device_graph(
                 iface.device.tenant, graph,
                 scope_q=device_scope_q(request.user, iface.device.tenant),
+                include=map_include(request), request=request,
             ),
             **graph,
         })
@@ -4475,7 +4652,7 @@ class MACAddressViewSet(TenantScopedViewSet):
 
     queryset = (
         MACAddress.objects.select_related("assigned_interface__device")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .order_by("mac_address")
     )
     serializer_class = MACAddressSerializer
@@ -4545,7 +4722,7 @@ class MACAddressViewSet(TenantScopedViewSet):
 
 class CableViewSet(TenantScopedViewSet):
     queryset = (
-        Cable.objects.prefetch_related(
+        Cable.objects.select_related("status").prefetch_related(
             "terminations__interface__device",
             "terminations__front_port__device",
             "terminations__rear_port__device",
@@ -4554,7 +4731,7 @@ class CableViewSet(TenantScopedViewSet):
             "terminations__power_feed__power_panel",
             # Same for a circuit end: it names its circuit, not a device.
             "terminations__circuit_termination__circuit",
-            "tags",
+            TAGS,
         ).order_by("-created_at")
     )
     serializer_class = CableSerializer
@@ -4608,10 +4785,11 @@ class CableViewSet(TenantScopedViewSet):
                 "Your cable permission does not cover every termination site."
             )
 
+    @extend_schema(parameters=[MAP_INCLUDE_PARAMETER])
     @action(detail=True, methods=["get"], url_path="trace")
     def trace(self, request, pk=None):
         from .trace import trace as run_trace, point_from_termination
-        from .topology_views import device_scope_q, trace_device_graph
+        from .topology_views import device_scope_q, map_include, trace_device_graph
         cable = self.get_object()
         starts = [point_from_termination(t) for t in cable.terminations.all()]
         graph = run_trace(starts)
@@ -4620,6 +4798,7 @@ class CableViewSet(TenantScopedViewSet):
             "device_graph": trace_device_graph(
                 cable.tenant, graph,
                 scope_q=device_scope_q(request.user, cable.tenant),
+                include=map_include(request), request=request,
             ),
             **graph,
         })
@@ -4938,8 +5117,8 @@ class FiberSettingsViewSet(viewsets.ViewSet):
 class RearPortViewSet(_DevicePortViewSet):
     queryset = (
         RearPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations", "front_ports")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations", "front_ports")
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = RearPortSerializer
     bulk_int_fields = ("positions",)
@@ -4949,8 +5128,8 @@ class RearPortViewSet(_DevicePortViewSet):
 class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
         FrontPort.objects.select_related("device", "rear_port")
-        .prefetch_related("tags", "terminations__cable", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = FrontPortSerializer
     bulk_bool_fields = ("mark_connected",)
@@ -4959,8 +5138,8 @@ class FrontPortViewSet(_DevicePortViewSet):
 class ConsolePortViewSet(_DevicePortViewSet):
     queryset = (
         ConsolePort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ConsolePortSerializer
 
@@ -4968,8 +5147,8 @@ class ConsolePortViewSet(_DevicePortViewSet):
 class AuxPortViewSet(_DevicePortViewSet):
     queryset = (
         AuxPort.objects.select_related("device")
-        .prefetch_related("tags", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS, "reservations")
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = AuxPortSerializer
 
@@ -4980,8 +5159,8 @@ class AntennaViewSet(_DevicePortViewSet):
 
     queryset = (
         Antenna.objects.select_related("device")
-        .prefetch_related("tags")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = AntennaSerializer
     bulk_str_fields = ("antenna_type", "polarization", "connector",
@@ -4991,8 +5170,8 @@ class AntennaViewSet(_DevicePortViewSet):
 class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ConsoleServerPortSerializer
     bulk_int_fields = ("speed",)
@@ -5001,8 +5180,8 @@ class ConsoleServerPortViewSet(_DevicePortViewSet):
 class PowerPortViewSet(_DevicePortViewSet):
     queryset = (
         PowerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations", "outlets")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations", "outlets")
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = PowerPortSerializer
 
@@ -5010,8 +5189,8 @@ class PowerPortViewSet(_DevicePortViewSet):
 class PowerOutletViewSet(_DevicePortViewSet):
     queryset = (
         PowerOutlet.objects.select_related("device", "power_port")
-        .prefetch_related("tags", "terminations__cable", "reservations")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = PowerOutletSerializer
     bulk_str_fields = ("type", "description", "feed_leg")
@@ -5138,8 +5317,8 @@ class InventoryItemViewSet(_DevicePortViewSet):
     queryset = (
         InventoryItem.objects
         .select_related("device", "manufacturer", "parent")
-        .prefetch_related("tags")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = InventoryItemSerializer
     # InventoryItem has no `type` column - its own allowlist. kind/media are
@@ -5165,8 +5344,8 @@ class DeviceBayViewSet(_DevicePortViewSet):
     bulk_str_fields = ("description",)
     queryset = (
         DeviceBay.objects.select_related("device", "installed_device")
-        .prefetch_related("tags")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS)
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = DeviceBaySerializer
 
@@ -5182,15 +5361,87 @@ class TopologyViewViewSet(TenantScopedViewSet):
     queryset = TopologyView.objects.all().order_by(NATURAL_NAME)
     serializer_class = TopologyViewSerializer
     pagination_class = StandardPagination
+    # Reading the tenant's default takes view on topology views, like the
+    # views themselves; who may set it is decided in the action.
+    rbac_action_map = {"default": "view"}
+
+    def _picker(self) -> bool:
+        """``?picker=1`` on the list: names only, never the (large) state."""
+        return (
+            self.action == "list" and self.request is not None
+            and self.request.query_params.get("picker") == "1"
+        )
+
+    def get_serializer_class(self):
+        if self._picker():
+            return TopologyViewSummarySerializer
+        return TopologyViewSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.defer("state") if self._picker() else qs
 
     def perform_create(self, serializer):
         serializer.save(tenant=self._tenant_or_403())
+
+    @extend_schema(
+        methods=["GET"],
+        summary="The saved view a bare /topology opens in this tenant",
+        request=None,
+        responses=TopologyDefaultViewSerializer,
+    )
+    @extend_schema(
+        methods=["PUT"],
+        summary="Set or clear the tenant's default topology view",
+        request=TopologyDefaultViewSerializer,
+        responses=TopologyDefaultViewSerializer,
+    )
+    @action(detail=False, methods=["get", "put"])
+    def default(self, request):
+        """The view a bare ``/topology`` opens for everyone in the tenant;
+        ``{"id": null}`` is No view, and so is a default the caller can't
+        see. Tenant admins set it, and anyone granted ``set_default`` - on
+        the views that grant's row limits allow."""
+        from auth_api import rbac
+        from auth_api.permissions import can_manage_admin
+        from core.models import TenantSettings
+
+        tenant = self._tenant_or_403()
+        views = self.get_queryset()
+        if request.method == "GET":
+            want = (
+                TenantSettings.objects.filter(tenant=tenant)
+                .values_list("default_topology_view", flat=True).first()
+            )
+            seen = views.filter(pk=want).exists() if want else False
+            return Response({"id": str(want) if seen else None})
+
+        user = request.user
+        admin = can_manage_admin(user, tenant)
+        if not admin and not rbac.has_action(user, tenant, "topologyview", "set_default"):
+            raise PermissionDenied("Setting the default view needs set_default on topology views.")
+        body = TopologyDefaultViewSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        want = body.validated_data["id"]
+        view = None
+        if want is not None:
+            if not admin:
+                views = rbac.restrict_queryset(
+                    views, user, tenant, "topologyview", "set_default")
+            view = views.defer("state").filter(pk=want).first()
+            if view is None:
+                raise ValidationError({"id": "No such view."})
+        row = TenantSettings.for_tenant(tenant)
+        if row.default_topology_view_id != (view.pk if view else None):
+            row.default_topology_view = view
+            row.save(update_fields=["default_topology_view", "updated_at"])
+        return Response({"id": str(view.pk) if view else None})
 
 
 class ModuleTypeViewSet(TenantScopedViewSet):
     queryset = (
         ModuleType.objects.select_related("manufacturer")
-        .prefetch_related("tags").order_by(NATURAL_NAME)
+        .prefetch_related(TAGS).order_by(NATURAL_NAME)
     )
     serializer_class = ModuleTypeSerializer
     pagination_class = StandardPagination
@@ -5265,8 +5516,8 @@ class ModuleBayViewSet(_DevicePortViewSet):
     bulk_str_fields = ("description",)
     queryset = (
         ModuleBay.objects.select_related("device")
-        .prefetch_related("tags", "module__module_type")
-        .order_by("device__name", NATURAL_NAME)
+        .prefetch_related(TAGS, "module__module_type")
+        .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ModuleBaySerializer
 
@@ -5278,7 +5529,7 @@ class ModuleViewSet(TenantScopedViewSet):
     queryset = (
         Module.objects.select_related(
             "device", "module_bay", "module_type"
-        ).prefetch_related("tags").order_by("device__name", "module_bay__name")
+        ).prefetch_related(TAGS).order_by(natural("device__name"), natural("module_bay__name"))
     )
     serializer_class = ModuleSerializer
     pagination_class = StandardPagination
@@ -5462,7 +5713,7 @@ class ClusterViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("type", "group", "site")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             .annotate(vm_count_annotated=Count("virtual_machines"))
         )
         if self.request:
@@ -5535,7 +5786,7 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
 
 
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
-    queryset = VirtualMachine.objects.all().order_by(NATURAL_NAME)
+    queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
 
     def perform_create(self, serializer):
@@ -5601,13 +5852,13 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("cluster", "device", "site", "primary_ip",
+            .select_related("cluster", "device", "site", "site__region", "primary_ip",
                             # Serialised inline; a 2,000-row list would
                             # otherwise fire one query per VM for it.
                             "group")
             # `disks` is serialised inline, so without this the list endpoint
             # fires one query per VM.
-            .prefetch_related("tags", "disks")
+            .prefetch_related(TAGS, "disks")
             .annotate(
                 power_state=Subquery(latest.values("power_state")[:1]),
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
@@ -5682,12 +5933,22 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         # VM is supplied in the payload; tenant is implied by it. Just save.
         serializer.save()
 
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        forget_visible(serializer.instance)
+
     def get_queryset(self):
         qs = (
             super()
             .get_queryset()
-            .select_related("vm")
-            .prefetch_related("tags", "ip_addresses")
+            .select_related("vm__status", "vlan", "vrf")
+            .prefetch_related(
+                TAGS, "tagged_vlans",
+                assigned_ips_prefetch(
+                    self.request, _get_active_tenant(self.request),
+                    fk="assigned_vm_interface",
+                ),
+            )
         )
         if self.request:
             vm = self.request.query_params.get("vm")
@@ -5734,7 +5995,7 @@ class RackTypeViewSet(TenantScopedViewSet):
     the rack form and whose accessories can stamp 0U strips onto new racks."""
 
     queryset = RackType.objects.select_related("manufacturer").prefetch_related(
-        "tags", "accessories__device_type__manufacturer"
+        TAGS, "accessories__device_type__manufacturer"
     ).order_by(NATURAL_NAME)
     serializer_class = RackTypeSerializer
     pagination_class = StandardPagination
@@ -5807,10 +6068,268 @@ class RackTypeAccessoryViewSet(TenantScopedViewSet):
         serializer.save()
 
 
+class CabinetRoleViewSet(_SlugCatalogViewSet):
+    queryset = CabinetRole.objects.all().order_by(NATURAL_NAME)
+    serializer_class = CabinetRoleSerializer
+    model = CabinetRole
+    count_rel = "cabinets"
+
+    def get_queryset(self):
+        qs = TenantScopedViewSet.get_queryset(self)
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
+        return qs.annotate(cabinet_count_annotated=Count("cabinets")).order_by(NATURAL_NAME)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CabinetRoleMiniSerializer
+        return CabinetRoleSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        n = obj.cabinets.count()
+        if n:
+            return Response(
+                {"detail": f"{n} cabinet{'s use' if n != 1 else ' uses'} this role."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
+
+
+class CabinetTypeViewSet(TenantScopedViewSet):
+    """Enclosure models - the plate and box sizes a new cabinet copies."""
+
+    queryset = CabinetType.objects.select_related("manufacturer").prefetch_related(
+        TAGS, "rail_templates"
+    ).order_by(NATURAL_NAME)
+    serializer_class = CabinetTypeSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        from .topology_views import _uuid_param
+
+        qs = TenantScopedViewSet.get_queryset(self)
+        if self.request:
+            params = self.request.query_params
+            s = params.get("search", "").strip()
+            if s:
+                qs = qs.filter(
+                    Q(name__icontains=s) | Q(manufacturer__name__icontains=s)
+                    | Q(description__icontains=s)
+                )
+            manufacturer = _uuid_param(params, "manufacturer")
+            if manufacturer:
+                qs = qs.filter(manufacturer_id=manufacturer)
+        return qs.annotate(
+            cabinet_count_annotated=Count("cabinets", distinct=True)
+        ).order_by(NATURAL_NAME)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CabinetTypeMiniSerializer
+        return CabinetTypeSerializer
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        _check_unique_name(CabinetType, serializer, tenant, "cabinet type")
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        _check_unique_name(CabinetType, serializer, self._tenant_or_403(), "cabinet type")
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        n = obj.cabinets.count()
+        if n:
+            return Response(
+                {"detail": f"{n} cabinet{'s use' if n != 1 else ' uses'} this type."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
+
+
+class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
+    """DIN-rail enclosures at a site (#277)."""
+
+    queryset = Cabinet.objects.all().order_by(natural("site__name"), NATURAL_NAME)
+    serializer_class = CabinetSerializer
+    pagination_class = StandardPagination
+    # Arranging moves devices, not the cabinet: seeing the cabinet is enough
+    # here, and the action demands change on every device it moves. A PDF of
+    # the plate is a way of looking at the cabinet.
+    rbac_action_map = {"arrange": "view", "export_pdf": "view", "export_pdf_file": "view"}
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CabinetMiniSerializer
+        return CabinetSerializer
+
+    def get_queryset(self):
+        from .models import Document
+        from .topology_views import _uuid_param
+
+        documents = (
+            Document.objects.filter(object_type="api.cabinet", object_id=OuterRef("pk"))
+            .order_by()
+            .values("object_id")
+            .annotate(n=Count("pk"))
+            .values("n")
+        )
+        qs = (
+            super().get_queryset()
+            .select_related(
+                "site", "site__region", "location", "role", "status",
+                "cabinet_type__manufacturer",
+            )
+            .prefetch_related(TAGS, "rails")
+            .annotate(document_n=Coalesce(Subquery(documents), 0),
+                      device_n=Count("devices", distinct=True))
+        )
+        if self.request:
+            params = self.request.query_params
+            s = params.get("search", "").strip()
+            if s:
+                qs = qs.filter(
+                    Q(name__icontains=s) | Q(facility_id__icontains=s)
+                    | Q(description__icontains=s) | cf_text_q(qs.model, s)
+                )
+            for param, field in (("site", "site_id"), ("location", "location_id"),
+                                 ("role", "role_id"), ("status", "status_id"),
+                                 ("cabinet_type", "cabinet_type_id")):
+                value = _uuid_param(params, param)
+                if value:
+                    qs = qs.filter(**{field: value})
+        return qs
+
+    def destroy(self, request, *args, **kwargs):
+        cabinet = self.get_object()
+        n = Device.objects.filter(din_rail__cabinet=cabinet).count()
+        if n:
+            return Response(
+                {"detail": f"{n} device{'s are' if n != 1 else ' is'} on its rails"
+                           " - take them off first."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="arrange")
+    def arrange(self, request, pk=None):
+        """Move devices already in this cabinet onto its rails in one save:
+        ``{"placements": [{device_id, din_rail_id, din_offset_mm}]}``, checked
+        as a whole so devices can swap places (``api.din.arrange``). Needs
+        change on every device it moves."""
+        import uuid
+
+        from auth_api import rbac
+
+        from . import din
+
+        cabinet = self.get_object()
+        if not isinstance(request.data, dict):
+            return Response({"detail": "Expected a JSON object."}, status=400)
+        placements = request.data.get("placements")
+        ids = set()
+        for p in placements if isinstance(placements, list) else ():
+            try:
+                ids.add(uuid.UUID(str(p.get("device_id"))))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        if ids and not request.user.is_superuser:
+            mine = Device.objects.filter(cabinet=cabinet, pk__in=ids)
+            allowed = rbac.restrict_queryset(
+                mine, request.user, _get_active_tenant(request), "device", "change")
+            if allowed.count() != mine.count():
+                raise PermissionDenied("You may not move one of these devices.")
+        with transaction.atomic():
+            moved = din.arrange(cabinet, placements)
+        return Response({"devices": [
+            {"id": str(d.id), "din_rail_id": str(d.din_rail_id) if d.din_rail_id else None,
+             "din_offset_mm": d.din_offset_mm}
+            for d in moved
+        ]})
+
+    @action(detail=True, methods=["post"], url_path="sync-from-type")
+    def sync_from_type(self, request, pk=None):
+        """Re-align this cabinet with its type - the twin of the rack action.
+
+        ``apply`` false (default) answers the difference only; true copies the
+        type's sizes and adds or moves the rails its templates name (``sizes``
+        and ``rails``, both true by default, narrow it). Never removes a rail:
+        an extra one is somebody's real rail. Refused as a whole when the
+        result would not fit the plate."""
+        from auth_api import rbac
+
+        from . import din
+
+        cabinet = self.get_object()
+        if not rbac.can_act_on(request.user, _get_active_tenant(request), "cabinet",
+                               "change", cabinet):
+            raise PermissionDenied("cabinet.change required.")
+        if cabinet.cabinet_type_id is None:
+            return Response({"detail": "This cabinet has no type to sync from."},
+                            status=drf_status.HTTP_400_BAD_REQUEST)
+        if not request.data.get("apply"):
+            return Response({"applied": False, "diff": din.diff_cabinet_from_type(cabinet)})
+        with transaction.atomic():
+            din.sync_cabinet_from_type(
+                cabinet,
+                sizes=bool(request.data.get("sizes", True)),
+                rails=bool(request.data.get("rails", True)),
+            )
+        return Response({"applied": True, "diff": din.diff_cabinet_from_type(cabinet)})
+
+    @elevation_pdf.pdf_schema("cabinet")
+    @action(detail=True, methods=["post"], url_path="export/pdf")
+    def export_pdf(self, request, pk=None):
+        """The cabinet's plate, as the page drew it, on one sheet of paper
+        with a title block written from the cabinet (api.elevation_pdf)."""
+        return elevation_pdf.export_pdf(request, self.get_object(), "cabinet")
+
+    @elevation_pdf.pdf_file_schema("cabinet")
+    @action(detail=True, methods=["get"], url_path=r"export/pdf/(?P<token>[A-Za-z0-9_-]+)")
+    def export_pdf_file(self, request, pk=None, token=None):
+        """The PDF an ``export/pdf/?print=1`` kept, behind its print link."""
+        return elevation_pdf.export_pdf_file(request, self.get_object(), "cabinet", token)
+
+
+RACK_INCLUDE_PARAMETER = OpenApiParameter(
+    name="include",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    description=(
+        "`ports`: each rack carries `ports` and `panel_ports`, its counted ports "
+        "split as the capacity figures split them. Without it both are null."
+    ),
+)
+
+
+@extend_schema_view(
+    list=extend_schema(parameters=[
+        OpenApiParameter(
+            name="floor_plan",
+            type=OpenApiTypes.UUID,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Only the racks the tiles of this floor plan stand for; none unless "
+                "you may view the plan."
+            ),
+        ),
+        RACK_INCLUDE_PARAMETER,
+    ]),
+    retrieve=extend_schema(parameters=[RACK_INCLUDE_PARAMETER]),
+)
 class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
-    queryset = Rack.objects.all().order_by("site__name", "name")
+    queryset = Rack.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = RackSerializer
     pagination_class = StandardPagination
+    # A PDF of the elevation is a way of looking at the rack.
+    rbac_action_map = {"export_pdf": "view", "export_pdf_file": "view"}
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -5821,18 +6340,17 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         # Everything the serializer's figures read (units, weight, power,
-        # documents) is fetched per page here: the racked devices with their
-        # type, port draws and an outlet count, plus a document count per
-        # rack - a page of racks costs the same whatever sits in them (#188).
-        from django.db.models import Prefetch
-
+        # ports, documents) is fetched per page here: the racked devices with
+        # their type, role, port draws and an outlet count, plus a document
+        # count per rack - a page of racks costs the same whatever sits in
+        # them (#188).
         from .models import Document
 
-        racked = (
-            Device.objects.select_related("device_type")
-            .annotate(outlet_n=Count("power_outlets", distinct=True))
-            .prefetch_related("power_ports")
-        )
+        if self.action in ("scene", "export_pdf_file"):
+            # The scene loads its own geometry (api.scene_geo), and a print
+            # link only checks the rack is still in view; the figures below
+            # would only be thrown away.
+            return super().get_queryset()
         documents = (
             Document.objects.filter(object_type="api.rack", object_id=OuterRef("pk"))
             .order_by()
@@ -5842,8 +6360,10 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         )
         qs = (
             super().get_queryset()
-            .select_related("site", "role", "location", "rack_type__manufacturer")
-            .prefetch_related("tags", Prefetch("devices", queryset=racked), "power_feeds")
+            .select_related(
+                "site", "site__region", "role", "location", "rack_type__manufacturer"
+            )
+            .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
         )
         if self.request:
@@ -5868,7 +6388,51 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             rack_type = self.request.query_params.get("rack_type")
             if rack_type:
                 qs = qs.filter(rack_type_id=rack_type)
+            floor_plan = self.request.query_params.get("floor_plan")
+            if floor_plan:
+                qs = self._on_floor_plan(qs, floor_plan)
         return qs
+
+    def _on_floor_plan(self, qs, raw):
+        """The racks the tiles of one floor plan stand for (#247) - none
+        unless the caller may view that plan in the active tenant."""
+        from auth_api import rbac
+
+        from .topology_views import _parse_uuid
+        from .views import _get_active_tenant
+
+        tenant = _get_active_tenant(self.request)
+        plans = rbac.restrict_queryset(
+            FloorPlan.objects.filter(tenant=tenant, pk=_parse_uuid(raw, "floor_plan")),
+            self.request.user, tenant, "floorplan", "view",
+        )
+        tiles = FloorPlanTile.objects.filter(floor_plan__in=plans, rack__isnull=False)
+        return qs.filter(pk__in=tiles.values("rack_id"))
+
+    def _include_ports(self) -> bool:
+        """``?include=ports``: each rack carries its ``ports`` and
+        ``panel_ports`` (#247)."""
+        if not self.request or self.action not in ("list", "retrieve"):
+            return False
+        raw = self.request.query_params.get("include") or ""
+        return "ports" in {token.strip() for token in raw.split(",")}
+
+    def get_serializer(self, *args, **kwargs):
+        # The port figures of every rack on the page in one go - eight
+        # grouped queries for the page, never a round per rack.
+        if args and args[0] is not None and self._include_ports():
+            from core.effective_settings import port_count_virtual
+
+            from .views import _get_active_tenant
+
+            data = args[0]
+            racks = [data] if isinstance(data, Rack) else list(data)
+            kwargs.setdefault("context", self.get_serializer_context())
+            kwargs["context"]["rack_ports"] = capacity.rack_port_split(
+                racks, count_virtual=port_count_virtual(_get_active_tenant(self.request))
+            )
+            args = (data if isinstance(data, Rack) else racks, *args[1:])
+        return super().get_serializer(*args, **kwargs)
 
     @action(detail=True, methods=["post"], url_path="sync-from-type")
     def sync_from_type(self, request, pk=None):
@@ -5917,6 +6481,154 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 )
         result = sync_rack_from_type(rack, dims=dims, accessories=accessories)
         return Response({"applied": True, "diff": diff, "result": result})
+
+    def _viewable_devices(self, rack):
+        """The rack's devices the caller may view (device view, row scope)."""
+        from auth_api import rbac
+
+        from .views import _get_active_tenant
+
+        tenant = _get_active_tenant(self.request)
+        return rbac.restrict_queryset(
+            Device.objects.filter(tenant=tenant, rack=rack),
+            self.request.user, tenant, "device", "view",
+        )
+
+    @extend_schema(
+        summary="The ports of a rack's devices: state, photo markers and totals",
+        request=None,
+        responses=OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "`rack`: `u_height`, `u_used`, `u_free`, `power`, `ports` and "
+                "`count_virtual`. `devices`: per device the caller may view, its "
+                "`ports` counts, its `face` (the face-ports payload, `drift` null), "
+                "its physical `interfaces` as the faceplate draws them, its "
+                "installed `modules`, the `components` its faceplate layout "
+                "places, by kind, and whether SNMP may have `observed` its "
+                "ports."
+            ),
+        ),
+    )
+    @action(detail=True, methods=["get"], url_path="port-state")
+    def port_state(self, request, pk=None):
+        """Every port in the rack in a fixed number of queries, for the rack
+        page's Rack view (#248): per device, the counted ports, the photo
+        markers resolved to real components (``face``, as
+        ``/api/devices/face-ports/`` gives them), the physical interfaces
+        with what the drawn faceplate colours and hovers them by, and what
+        else that faceplate composes - the installed ``modules`` and the
+        ``components`` a saved layout places (``api.port_state.
+        FaceplateParts``) - so the page draws every device without a
+        request of its own.
+
+        The rack's totals count every device in it, as its U and power do;
+        the per-device detail lists only the devices the caller may view and,
+        as on the device page, only the interfaces they may view. A far end
+        (``peer``) is blanked unless its device is one they may view."""
+        from auth_api import rbac
+        from core.effective_settings import port_count_virtual
+
+        from .views import _get_active_tenant
+        from .visible_ips import assigned_ips_prefetch
+
+        rack = self.get_object()
+        tenant = _get_active_tenant(request)
+        count_virtual = port_count_virtual(tenant)
+        ports = capacity.rack_ports(
+            Device.objects.filter(tenant=tenant, rack=rack), count_virtual=count_virtual
+        )
+        devices = list(self._viewable_devices(rack).select_related("device_type"))
+        tagged_n = (
+            Interface.tagged_vlans.through.objects.filter(interface_id=OuterRef("pk"))
+            .order_by()
+            .values("interface_id")
+            .annotate(n=Count("pk"))
+            .values("n")
+        )
+        interfaces = list(rbac.restrict_queryset(
+            component_queryset("interfaces", [d.id for d in devices])
+            .select_related("vlan__zone", "lag")
+            .prefetch_related(assigned_ips_prefetch(request, tenant), TAGS)
+            .annotate(tagged_vlan_n=Coalesce(Subquery(tagged_n), 0)),
+            request.user, tenant, "interface", "view",
+        )) if devices else []
+        # The same rows resolve the interface markers, so a port the caller
+        # may not view stays an unresolved marker there too.
+        loader = FacePortLoader(
+            devices, rows={"interfaces": interfaces}, user=request.user, tenant=tenant
+        )
+        peers = PeerScope(request.user, tenant, loader.far_components())
+        parts = FaceplateParts(devices, request.user, tenant)
+        observed = snmp_observed(devices, tenant)
+        listed: dict = {}
+        for iface in interfaces:
+            # The physical ports: what the device page's faceplate draws.
+            if not iface.virtual:
+                listed.setdefault(iface.device_id, []).append(
+                    interface_state(iface, peer=peers.far_end)
+                )
+        space = capacity.rack_space(rack)
+        return Response({
+            "rack": {
+                "id": str(rack.id),
+                "u_height": space["u_height"],
+                "u_used": space["u_used"],
+                "u_free": space["u_free"],
+                "power": capacity.rack_power(rack),
+                "ports": ports["total"],
+                "count_virtual": count_virtual,
+            },
+            "devices": {
+                str(d.id): {
+                    "ports": ports["devices"].get(d.id)
+                    or dict.fromkeys(capacity.PORT_FIELDS, 0),
+                    "face": loader.payload(d, peer=peers.far_end),
+                    "interfaces": listed.get(d.id, []),
+                    "modules": parts.modules(d),
+                    "components": parts.components(d),
+                    "observed": d.id in observed,
+                }
+                for d in devices
+            },
+        })
+
+    @extend_schema(
+        summary="One rack's 3D geometry, as the floor plan's 3D room draws it",
+        request=None,
+        responses=OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "The rack as a floor-plan scene tile carries it (`tile.rack`): its "
+                "size and the positioned or side-mounted devices the caller may view."
+            ),
+        ),
+    )
+    @action(detail=True, methods=["get"], url_path="scene")
+    def scene(self, request, pk=None):
+        """This rack alone for a 3D view (#248): the same ``rack`` object a
+        floor-plan scene tile carries (api.scene_geo), its devices limited to
+        the ones the caller may view."""
+        rack = self.get_object()
+        loaded = scene_geo.load_racks(
+            Rack.objects.filter(pk=rack.pk), devices=self._viewable_devices(rack)
+        )[rack.pk]
+        return Response(scene_geo.rack_geo(
+            loaded, scene_geo.image_url(request), scene_geo.power_feed_types([loaded])
+        ))
+
+    @elevation_pdf.pdf_schema("rack")
+    @action(detail=True, methods=["post"], url_path="export/pdf")
+    def export_pdf(self, request, pk=None):
+        """The rack's elevation, as the page drew it, on one sheet of paper
+        with a title block written from the rack (api.elevation_pdf)."""
+        return elevation_pdf.export_pdf(request, self.get_object(), "rack")
+
+    @elevation_pdf.pdf_file_schema("rack")
+    @action(detail=True, methods=["get"], url_path=r"export/pdf/(?P<token>[A-Za-z0-9_-]+)")
+    def export_pdf_file(self, request, pk=None, token=None):
+        """The PDF an ``export/pdf/?print=1`` kept, behind its print link."""
+        return elevation_pdf.export_pdf_file(request, self.get_object(), "rack", token)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -6104,7 +6816,7 @@ class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             super().get_queryset()
             .select_related("device", "status", "external_ip", "internal_ip",
                             "source_ip", "source_prefix")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         if not self.request:
             return qs
@@ -6146,7 +6858,7 @@ class ServiceViewSet(TenantScopedViewSet):
         qs = (
             super().get_queryset()
             .select_related("device", "virtual_machine", "ip_address")
-            .prefetch_related("tags", "check_assignments")
+            .prefetch_related(TAGS, "check_assignments")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6250,7 +6962,7 @@ class IPRangeViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("vrf", "role", "prefix")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             # Backs a DHCP exclusion? → serializer `dhcp` flag ("exclusion").
             # Reverse accessor - no integrations import.
             .annotate(dhcp_excl_n=Count("dhcp_exclusions", distinct=True))
@@ -6390,7 +7102,7 @@ class AggregateViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("rir")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             .annotate(
                 covered_n=RawSQL(
                     "(SELECT COALESCE(SUM(power(2, 32 - masklen(p.cidr::inet))), 0)::bigint"
@@ -6425,7 +7137,7 @@ class ASNViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("rir")
-            .prefetch_related("tags", "sites")
+            .prefetch_related(TAGS, "sites")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6522,7 +7234,7 @@ class FHRPGroupViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("virtual_ip")
             .prefetch_related(
-                "tags",
+                TAGS,
                 "assignments__interface__device",
                 "assignments__vm_interface__vm",
             )
@@ -6673,7 +7385,7 @@ class ContactViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("group")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6757,7 +7469,8 @@ class ContactAssignmentViewSet(TenantScopedViewSet):
 
 
 # ─── Circuits ────────────────────────────────────────────────────────────────
-class ProviderViewSet(TenantScopedViewSet):
+class ProviderViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = Provider.objects.all().order_by(NATURAL_NAME)
     serializer_class = ProviderSerializer
     pagination_class = StandardPagination
@@ -6771,7 +7484,7 @@ class ProviderViewSet(TenantScopedViewSet):
     def get_queryset(self):
         # Two reverse joins in one query - distinct on each, or every circuit
         # would be counted once per network and vice versa.
-        qs = super().get_queryset().prefetch_related("tags").annotate(
+        qs = super().get_queryset().prefetch_related(TAGS).annotate(
             circuit_count_annotated=Count("circuits", distinct=True),
             network_count_annotated=Count("networks", distinct=True),
         )
@@ -6796,8 +7509,13 @@ class ProviderViewSet(TenantScopedViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+    def bulk_blocker(self, obj):
+        n = obj.circuits.count()
+        return f"In use: {n} circuit{'s' if n != 1 else ''}." if n else None
 
-class CircuitTypeViewSet(TenantScopedViewSet):
+
+class CircuitTypeViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = CircuitType.objects.all().order_by(NATURAL_NAME)
     serializer_class = CircuitTypeSerializer
     pagination_class = StandardPagination
@@ -6829,9 +7547,14 @@ class CircuitTypeViewSet(TenantScopedViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+    def bulk_blocker(self, obj):
+        n = obj.circuits.count()
+        return f"In use: {n} circuit{'s' if n != 1 else ''}." if n else None
 
-class CircuitViewSet(TenantScopedViewSet):
-    queryset = Circuit.objects.all().order_by("cid")
+
+class CircuitViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
+    queryset = Circuit.objects.all().order_by(natural("cid"))
     serializer_class = CircuitSerializer
     pagination_class = StandardPagination
 
@@ -6841,7 +7564,7 @@ class CircuitViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("provider", "type")
             .prefetch_related(
-                "tags", "terminations__site", "terminations__provider_network",
+                TAGS, "terminations__site", "terminations__provider_network",
                 # Each end reports the cable landing on it (#118).
                 "terminations__circuit", "terminations__terminations__cable__status",
             )
@@ -6871,10 +7594,11 @@ class CircuitViewSet(TenantScopedViewSet):
         return qs
 
 
-class ProviderNetworkViewSet(TenantScopedViewSet):
+class ProviderNetworkViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = (
         ProviderNetwork.objects.select_related("provider")
-        .prefetch_related("tags").order_by(NATURAL_NAME)
+        .prefetch_related(TAGS).order_by(NATURAL_NAME)
     )
     serializer_class = ProviderNetworkSerializer
     pagination_class = StandardPagination
@@ -6959,7 +7683,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("site").prefetch_related(
-            "tags"
+            TAGS
         ).annotate(feed_count_annotated=Count("power_feeds"))
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6998,7 +7722,7 @@ class PowerFeedViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("power_panel", "rack")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             # The Terminations tab's count: distinct cables among the feed's
             # terminations, annotated so the list stays one query.
             .annotate(
@@ -7021,7 +7745,8 @@ class PowerFeedViewSet(TenantScopedViewSet):
 
 
 # ─── Wireless ────────────────────────────────────────────────────────────────
-class WirelessLANGroupViewSet(TenantScopedViewSet):
+class WirelessLANGroupViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = WirelessLANGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = WirelessLANGroupSerializer
     pagination_class = StandardPagination
@@ -7053,6 +7778,10 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+    def bulk_blocker(self, obj):
+        n = obj.wireless_lans.count()
+        return f"In use: {n} wireless LAN{'s' if n != 1 else ''}." if n else None
+
 
 class SecretPSKViewSetMixin:
     """Moves a :class:`api.models.SecretBackedPSK` key in and out of the secret
@@ -7061,7 +7790,7 @@ class SecretPSKViewSetMixin:
     what the change log calls the object."""
 
     psk_object_label = ""
-    rbac_action_map = {"reveal_psk": "reveal"}
+    rbac_action_map = {"reveal_psk": "reveal", "bulk_delete": "delete"}
 
     def _pop_psk(self, serializer):
         """Take the PSK out of the validated data before the row is saved -
@@ -7144,13 +7873,13 @@ class SecretPSKViewSetMixin:
         )
 
 
-class WirelessLANViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
+class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScopedViewSet):
     """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
     store - the mixin moves it in and out, never through a read."""
 
     psk_object_label = "Wireless LAN"
 
-    queryset = WirelessLAN.objects.all().order_by("ssid")
+    queryset = WirelessLAN.objects.all().order_by(natural("ssid"))
     serializer_class = WirelessLANSerializer
     pagination_class = StandardPagination
 
@@ -7159,7 +7888,7 @@ class WirelessLANViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("group", "vlan")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7174,6 +7903,12 @@ class WirelessLANViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
                 if val:
                     qs = qs.filter(**{field: val})
         return qs
+
+    def bulk_destroy(self, rows):
+        # As perform_destroy: each key leaves the secret store with its record.
+        for obj in rows:
+            obj.clear_psk()
+        self.delete_together(rows)
 
 
 # ─── VPN ─────────────────────────────────────────────────────────────────────
@@ -7253,11 +7988,26 @@ class TunnelViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
+        # Every end with what it serializes, its outside address cut to the
+        # caller's IP view scope - a flat page, not one query per tunnel.
+        ends = TunnelTermination.objects.select_related(
+            "interface__device", "vm_interface__vm"
+        )
         qs = (
             super()
             .get_queryset()
             .select_related("group", "ipsec_profile")
-            .prefetch_related("tags")
+            .prefetch_related(
+                TAGS,
+                Prefetch("terminations", queryset=ends),
+                # A lookup of its own, not one nested in `ends`: Django walks
+                # a nested single-row to_attr prefetch twice, and the second
+                # walk loads every end's address one by one.
+                outside_ip_prefetch(
+                    self.request, _get_active_tenant(self.request),
+                    lookup="terminations__outside_ip",
+                ),
+            )
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7289,9 +8039,7 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
 
     queryset = (
         TunnelTermination.objects
-        .select_related(
-            "tunnel", "interface__device", "vm_interface__vm", "outside_ip"
-        )
+        .select_related("tunnel", "interface__device", "vm_interface__vm")
         .order_by("created_at")
     )
     serializer_class = TunnelTerminationSerializer
@@ -7302,7 +8050,9 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
         tenant = _get_active_tenant(self.request)
         if tenant is None:
             return self.queryset.none()
-        qs = self.queryset.filter(tunnel__tenant=tenant)
+        qs = self.queryset.filter(tunnel__tenant=tenant).prefetch_related(
+            outside_ip_prefetch(self.request, tenant)
+        )
         if self.request:
             tunnel = self.request.query_params.get("tunnel")
             if tunnel:
@@ -7333,6 +8083,8 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
     def perform_update(self, serializer):
         self._check(serializer)
         serializer.save()
+        # The prefetched outside IP predates the save.
+        forget_visible(serializer.instance)
 
 
 class L2VPNViewSet(TenantScopedViewSet):
@@ -7340,7 +8092,7 @@ class L2VPNViewSet(TenantScopedViewSet):
         L2VPN.objects
         .select_related("status", "vrf")
         .prefetch_related(
-            "import_targets", "export_targets", "tags",
+            "import_targets", "export_targets", TAGS,
             "terminations__vlan", "terminations__interface__device",
             "terminations__vm_interface__vm",
         )
@@ -7421,11 +8173,12 @@ class L2VPNTerminationViewSet(TenantScopedViewSet):
         serializer.save()
 
 
-class VirtualChassisViewSet(TenantScopedViewSet):
+class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
+    rbac_action_map = {"bulk_delete": "delete"}
     queryset = (
         VirtualChassis.objects
         .select_related("master", "master__primary_ip", "master__oob_ip")
-        .prefetch_related("members__status", "tags")
+        .prefetch_related("members__status", TAGS)
         .order_by(NATURAL_NAME)
     )
     serializer_class = VirtualChassisSerializer
@@ -7460,16 +8213,64 @@ class VirtualChassisViewSet(TenantScopedViewSet):
     def port_utilization(self, request, pk=None):
         """The device card's numbers, summed across every member of the
         stack - the same rules as ``/api/devices/<id>/port-utilization/``."""
+        from core.effective_settings import port_count_virtual
+
         from .port_utilization import utilization_payload
 
         vc = self.get_object()
-        return Response(utilization_payload(Device.objects.filter(virtual_chassis=vc)))
+        return Response(utilization_payload(
+            Device.objects.filter(virtual_chassis=vc),
+            count_virtual=port_count_virtual(_get_active_tenant(request)),
+        ))
+
+    def bulk_released(self, obj):
+        n = obj.members.count()
+        return {"member devices": n} if n else {}
+
+    @action(detail=False, methods=["post"], url_path="bulk-update")
+    def bulk_update(self, request):
+        """Domain, description and tags of several stacks at once (#252);
+        name and master stay single-edit."""
+        ids = bulk_ids(request)
+        fields = request.data.get("fields") or {}
+        if not isinstance(fields, dict) or not fields:
+            raise ValidationError({"fields": "Provide at least one field to update."})
+        updates = _bulk_field_updates(fields, ("domain", "description"))
+        for key, value in updates.items():
+            limit = VirtualChassis._meta.get_field(key).max_length
+            if not isinstance(value, str) or len(value) > limit:
+                raise ValidationError({key: f"Text of at most {limit} characters."})
+
+        qs = self.get_queryset().filter(pk__in=ids)
+        with transaction.atomic():
+            rows = list(qs)
+            updated = qs.update(**updates) if updates else qs.count()
+            if updates:
+                log_bulk_update(rows, updates)
+            apply_and_log_bulk_tags(
+                qs,
+                fields.get("add_tag_ids") or [],
+                fields.get("remove_tag_ids") or [],
+                tenant=_get_active_tenant(self.request),
+            )
+        return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
 
     def perform_destroy(self, instance):
-        # Deleting a stack releases its members (SET_NULL on the FK) - also
-        # clear their stale position/priority so they read as standalone.
-        instance.members.update(vc_position=None, vc_priority=None)
+        # Deleting a stack releases its members: they carry on standalone,
+        # position and priority cleared, and each release is in that
+        # device's change log (a queryset update sends no signals).
+        released = {"virtual_chassis_id": None, "vc_position": None, "vc_priority": None}
+        log_bulk_update(list(instance.members.all()), released)
+        instance.members.update(**released)
         super().perform_destroy(instance)
+
+    def bulk_destroy(self, rows):
+        # As perform_destroy, for every stack's members in one update.
+        released = {"virtual_chassis_id": None, "vc_position": None, "vc_priority": None}
+        members = Device.objects.filter(virtual_chassis__in=rows)
+        log_bulk_update(list(members), released)
+        members.update(**released)
+        self.delete_together(rows)
 
 
 # ─── Regions & Locations ─────────────────────────────────────────────────────
@@ -7557,16 +8358,20 @@ class RegionViewSet(TenantScopedViewSet):
         edit forms). {ids: [...], fields: {parent_id: <id|null>}} - the one
         field bulk makes sense for here. Cycle-guarded: the new parent may
         not be one of the selected rows nor sit beneath any of them."""
-        ids = request.data.get("ids") or []
-        if not isinstance(ids, list) or not ids:
-            raise ValidationError({"ids": "Provide a non-empty list."})
+        ids = bulk_ids(request)
         fields = request.data.get("fields") or {}
-        unknown = set(fields) - {"parent_id"}
-        if unknown or "parent_id" not in fields:
+        unknown = set(fields) - {"parent_id", "color"}
+        if unknown or not fields:
             raise ValidationError(
-                {"fields": "Only parent_id is bulk-editable here."}
+                {"fields": "Only parent_id and color are bulk-editable here."}
             )
         rows = list(self.get_queryset().filter(id__in=ids))
+        marker = _marker_updates(fields, ("color",))
+        if "parent_id" not in fields:
+            with transaction.atomic():
+                self.get_queryset().filter(pk__in=[r.pk for r in rows]).update(**marker)
+                log_bulk_update(rows, marker)
+            return Response({"updated": len(rows)})
         parent = None
         if fields["parent_id"] is not None:
             parent = self.get_queryset().filter(pk=fields["parent_id"]).first()
@@ -7583,7 +8388,9 @@ class RegionViewSet(TenantScopedViewSet):
                 node = node.parent
         for r in rows:
             r.parent = parent
-            r.save(update_fields=["parent"])
+            for k, v in marker.items():
+                setattr(r, k, v)
+            r.save(update_fields=["parent", *marker])
         return Response({"updated": len(rows)})
 
     def get_serializer_class(self):
@@ -7616,9 +8423,29 @@ class RegionViewSet(TenantScopedViewSet):
 
 
 class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
-    queryset = Location.objects.all().order_by("site__name", "name")
+    queryset = Location.objects.all().order_by(natural("site__name"), NATURAL_NAME)
     serializer_class = LocationSerializer
     pagination_class = StandardPagination
+
+    @action(detail=False, methods=["post"], url_path="bulk-update")
+    def bulk_update(self, request):
+        """Colour and icon for many locations at once (#183):
+        ``{ids: [...], fields: {color?, icon?}}``."""
+        ids = bulk_ids(request)
+        fields = request.data.get("fields") or {}
+        if not isinstance(fields, dict) or not fields:
+            raise ValidationError({"fields": "Provide at least one field to update."})
+        unknown = sorted(set(fields) - {"color", "icon"})
+        if unknown:
+            raise ValidationError({"fields": f"Unknown field(s): {', '.join(unknown)}."})
+        updates = _marker_updates(fields, ("color", "icon"))
+        qs = self.get_queryset().filter(pk__in=ids)
+        with transaction.atomic():
+            rows = list(qs)
+            updated = qs.update(**updates)
+            log_bulk_update(rows, updates)
+            self._assert_bulk_write_in_site_scope(rows)
+        return Response({"updated": updated})
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -7630,9 +8457,15 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         qs = super().get_queryset().select_related("site", "parent")
         # Detail tabs show Devices/Racks counts; annotate (distinct) so the
         # serializer serves them without an N+1 per row.
+        # Cabinets by subquery: a third joined count would multiply the rows.
+        cabinets = (
+            Cabinet.objects.filter(location=OuterRef("pk")).order_by()
+            .values("location").annotate(n=Count("pk")).values("n")
+        )
         qs = qs.annotate(
             device_count_annotated=Count("devices", distinct=True),
             rack_count_annotated=Count("racks", distinct=True),
+            cabinet_count_annotated=Coalesce(Subquery(cabinets), 0),
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7657,7 +8490,7 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
 # ─── Config Contexts ─────────────────────────────────────────────────────────
 class ConfigContextViewSet(TenantScopedViewSet):
-    queryset = ConfigContext.objects.all().order_by("weight", "name")
+    queryset = ConfigContext.objects.all().order_by("weight", NATURAL_NAME)
     serializer_class = ConfigContextSerializer
     pagination_class = StandardPagination
 
@@ -7669,7 +8502,7 @@ class ConfigContextViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-        return qs.order_by("weight", "name")
+        return qs.order_by("weight", NATURAL_NAME)
 
 
 # ─── Export templates ────────────────────────────────────────────────────────
@@ -7877,7 +8710,10 @@ class LabelTemplateViewSet(TenantScopedViewSet):
             qr_content=d.get("qr_content") or "",
         )
         try:
-            out = render_label(draft, objs[0], base_url=self._base_url(request))
+            out = render_label(
+                draft, objs[0], base_url=self._base_url(request),
+                tenant=_get_active_tenant(request), user=request.user,
+            )
         except TemplateError as exc:
             return Response(
                 {"detail": f"Template error: {exc}"},
@@ -7896,10 +8732,13 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
         objs = self._objects(tmpl.object_type, ids) or []
         base = self._base_url(request)
+        tenant = _get_active_tenant(request)
         out = []
         for obj in objs:
             try:
-                rendered = render_label(tmpl, obj, base_url=base)
+                rendered = render_label(
+                    tmpl, obj, base_url=base, tenant=tenant, user=request.user
+                )
             except TemplateError as exc:
                 rendered = {"html": f"<pre>{exc}</pre>", "qr": ""}
             out.append({"id": str(obj.pk), **rendered})
@@ -7917,10 +8756,13 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
         objs = self._objects(tmpl.object_type, ids) or []
         base = self._base_url(request)
+        tenant = _get_active_tenant(request)
         out = []
         for obj in objs:
             try:
-                text = render_label_text(tmpl, obj, base_url=base)
+                text = render_label_text(
+                    tmpl, obj, base_url=base, tenant=tenant, user=request.user
+                )
             except TemplateError as exc:
                 text = f"Template error: {exc}"
             out.append({"id": str(obj.pk), "name": str(obj), "text": text})
@@ -7938,6 +8780,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         from openpyxl import Workbook
 
         from .label_templates import render_label_text
+        from .spreadsheet import xlsx_text_row
 
         tmpl = self.get_object()
         ids = [i for i in (request.query_params.get("ids") or "").split(",") if i]
@@ -7948,11 +8791,14 @@ class LabelTemplateViewSet(TenantScopedViewSet):
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
         base = self._base_url(request)
+        tenant = _get_active_tenant(request)
         rows = []
         max_lines = 0
         for obj in objs:
             try:
-                text = render_label_text(tmpl, obj, base_url=base)
+                text = render_label_text(
+                    tmpl, obj, base_url=base, tenant=tenant, user=request.user
+                )
             except TemplateError as exc:
                 text = f"Template error: {exc}"
             lines = text.split("\n") if text else []
@@ -7966,6 +8812,7 @@ class LabelTemplateViewSet(TenantScopedViewSet):
         for name, text, lines in rows:
             padded = lines + [""] * (max_lines - len(lines))
             ws.append([name, text, *padded])
+            xlsx_text_row(ws)
         buf = io.BytesIO()
         wb.save(buf)
         resp = HttpResponse(
@@ -8006,7 +8853,8 @@ class LabelTemplateViewSet(TenantScopedViewSet):
             )
         try:
             pdf = render_sheet_pdf(
-                tmpl, objs, base_url=self._base_url(request), paper=paper
+                tmpl, objs, base_url=self._base_url(request), paper=paper,
+                tenant=_get_active_tenant(request), user=request.user,
             )
         except TemplateError as exc:
             return Response(
@@ -8277,10 +9125,11 @@ class FloorTileTypeViewSet(TenantScopedViewSet):
 def _resolve_route_endpoints(plan, body):
     """Resolve a route request's two endpoints to tile-centre coordinates.
 
-    Each endpoint is ``{"kind": "device"|"rack", "id": …}``; a device resolves
-    to its own tile, else its rack's tile - the same fallback ``cable_paths``
-    uses. Returns ``((a, b, rack_a, rack_b), None)`` on success - the racks (or
-    None) feed the vertical-drop estimate - or ``(None, error_message)``."""
+    Each endpoint is ``{"kind": "device"|"rack"|"cabinet", "id": …}``; a
+    device resolves to its own tile, else its rack's or cabinet's tile - the
+    same fallback ``cable_paths`` uses. Returns ``((a, b, rack_a, rack_b),
+    None)`` on success - the racks (or None) feed the vertical-drop estimate -
+    or ``(None, error_message)``."""
     from .models import Device
 
     tiles = list(plan.tiles.select_related("rack"))
@@ -8289,24 +9138,39 @@ def _resolve_route_endpoints(plan, body):
         return (t.x + t.width / 2, t.y + t.height / 2)
 
     def resolve(spec):
-        if not isinstance(spec, dict) or spec.get("kind") not in ("device", "rack"):
-            return None, None, "Each endpoint needs kind device|rack and id."
+        if not isinstance(spec, dict) or spec.get("kind") not in ("device", "rack", "cabinet"):
+            return None, None, "Each endpoint needs kind device|rack|cabinet and id."
         oid = str(spec.get("id") or "")
         if spec["kind"] == "rack":
             t = next((t for t in tiles if str(t.rack_id) == oid), None)
             return (centre(t), t.rack, None) if t else (
                 None, None, "That rack isn't placed on this plan.")
+        if spec["kind"] == "cabinet":
+            t = next((t for t in tiles if str(t.cabinet_id) == oid), None)
+            return (centre(t), None, None) if t else (
+                None, None, "That cabinet isn't placed on this plan.")
         t = next((t for t in tiles if str(t.device_id) == oid), None)
         if t:
             return centre(t), None, None
-        dev = Device.objects.filter(
-            id=oid, tenant=plan.tenant
-        ).only("rack_id").first()
+        try:
+            dev = Device.objects.filter(
+                id=oid, tenant=plan.tenant
+            ).only("rack_id", "cabinet_id").first()
+        except DjangoValidationError:
+            dev = None
         if dev is None:
             return None, None, "Unknown device."
-        t = next((t for t in tiles if t.rack_id == dev.rack_id), None)
-        return (centre(t), t.rack, None) if t else (
-            None, None, "That device (or its rack) isn't placed on this plan.")
+        # Its rack's tile, else its cabinet's - never a tile that merely has
+        # no rack either.
+        if dev.rack_id:
+            t = next((t for t in tiles if t.rack_id == dev.rack_id), None)
+            if t:
+                return centre(t), t.rack, None
+        if dev.cabinet_id:
+            t = next((t for t in tiles if t.cabinet_id == dev.cabinet_id), None)
+            if t:
+                return centre(t), None, None
+        return None, None, "That device (or its rack or cabinet) isn't placed on this plan."
 
     a, rack_a, err_a = resolve(body.get("from"))
     if err_a:
@@ -8320,7 +9184,7 @@ def _resolve_route_endpoints(plan, body):
 class FloorPlanViewSet(TenantScopedViewSet):
     queryset = (
         FloorPlan.objects.select_related("location", "location__site")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
     )
     serializer_class = FloorPlanSerializer
@@ -8390,7 +9254,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     save=False,
                 )
             dst.save()
-            dst.tags.set(src.tags.all())
+            dst.tags.set(tags_of(src))
             for rel in ("tiles", "trays", "raised_floor_areas", "walls"):
                 for obj in getattr(src, rel).all():
                     obj.pk = None
@@ -8417,25 +9281,36 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         plan = self.get_object()
         tiles = list(
-            plan.tiles.exclude(rack=None, device=None).select_related(
+            plan.tiles.exclude(rack=None, device=None, cabinet=None).select_related(
                 "rack", "device__status"
             )
         )
         rack_ids = {t.rack_id for t in tiles if t.rack_id}
+        # The racks with what their figures read (api.capacity): the poll
+        # costs the same however many devices the plan holds.
         racks = {
             r.id: r
             for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
-                "devices__device_type", "power_feeds"
+                capacity.racked_devices_prefetch(), "power_feeds"
             )
+        }
+        cabinets = {
+            c.id: c
+            for c in Cabinet.objects.filter(
+                id__in={t.cabinet_id for t in tiles if t.cabinet_id}
+            ).prefetch_related("devices", "rails")
         }
 
         # Monitoring rollup: device → its IPs' check states, worst wins;
-        # a rack rolls up the worst across its racked devices.
+        # a rack or cabinet rolls up the worst across its devices.
         device_ids = {t.device_id for t in tiles if t.device_id}
         rack_devices: dict = {}
         for r in racks.values():
             rack_devices[r.id] = [d.id for d in r.devices.all()]
             device_ids.update(rack_devices[r.id])
+        cabinet_devices = {c.id: [d.id for d in c.devices.all()] for c in cabinets.values()}
+        for ids in cabinet_devices.values():
+            device_ids.update(ids)
         ip_to_device = dict(
             IPAddress.objects.filter(
                 assigned_device_id__in=device_ids
@@ -8464,6 +9339,14 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     "total_weight_kg": rs.get_total_weight_kg(rack),
                     "max_weight_kg": rs.get_max_weight_kg(rack),
                     "device_count": len(rack_devices[rack.id]),
+                    "check": worst_status(s for s in checks if s),
+                }
+            elif t.cabinet_id and t.cabinet_id in cabinets:
+                checks = [device_check(d) for d in cabinet_devices[t.cabinet_id]]
+                out[str(t.id)] = {
+                    "kind": "cabinet",
+                    "device_count": len(cabinet_devices[t.cabinet_id]),
+                    "rail_count": len(cabinets[t.cabinet_id].rails.all()),
                     "check": worst_status(s for s in checks if s),
                 }
             elif t.device_id and t.device is not None:
@@ -8541,141 +9424,28 @@ class FloorPlanViewSet(TenantScopedViewSet):
         view polls exactly what the 2D canvas polls."""
         from django.utils import timezone
 
-        from .models import CableTermination
-
         plan = self.get_object()
         tiles_qs = plan.tiles.select_related(
-            "tile_type", "role_type", "rack", "device__role",
+            "tile_type", "role_type", "rack", "cabinet", "device__role",
             "device__device_type",
         )
         rack_ids = {t.rack_id for t in tiles_qs if t.rack_id}
-        racks = {
-            r.id: r
-            for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
-                "devices__device_type", "devices__role",
-                "devices__status", "devices__primary_ip",
-                "devices__power_ports", "devices__power_outlets",
-            )
-        }
-
-        # Which redundant feed powers each PDU - the data-driven A/B signal the
-        # 3D room tints vertical strips by (primary vs redundant), instead of
-        # guessing from a name. One query: every inlet power-port in these racks
-        # → the feed on the far end of its cable. `""` when the inlet isn't
-        # cabled to a feed.
-        inlet_ids = [
-            p.id
-            for r in racks.values()
-            for d in r.devices.all()
-            for p in d.power_ports.all()
-        ]
-        feed_type_by_port: dict = {}
-        if inlet_ids:
-            # Two queries for the whole plan: the inlets' cables, then the
-            # feed on the far end of each of those cables - not one query per
-            # inlet (a 2,400-device hall paid 600 of them per scene load).
-            inlet_terms = list(
-                CableTermination.objects.filter(
-                    power_port_id__in=inlet_ids, cable__isnull=False
-                ).values_list("power_port_id", "cable_id")
-            )
-            feed_by_cable = dict(
-                CableTermination.objects.filter(
-                    cable_id__in={c for _, c in inlet_terms}, power_feed__isnull=False
-                ).values_list("cable_id", "power_feed__type")
-            )
-            for port_id, cable_id in inlet_terms:
-                if cable_id in feed_by_cable:
-                    feed_type_by_port[port_id] = feed_by_cable[cable_id]
-
-        def img(f):
-            return request.build_absolute_uri(f.url) if f else None
-
-        def device_geo(d):
-            dt = d.device_type
-            return {
-                "id": str(d.id),
-                "name": d.name,
-                "position": d.position,
-                # Stack member number: `{position}` in a photo marker's name
-                # renders to it, so member 2's ports anchor on their markers.
-                "vc_position": d.vc_position,
-                "face": d.face or "",
-                "rack_side": d.rack_side or "",
-                # Zero-U side mounting - position is None for these; the 3D
-                # room draws them as vertical strips on the named rail.
-                "mount": d.mount or "",
-                "mount_offset_mm": d.mount_offset_mm,
-                "mount_span_u": d.mount_span_u,
-                "u_height": dt.u_height if dt else 1,
-                "rack_width": (dt.rack_width if dt else "full") or "full",
-                "is_full_depth": dt.is_full_depth if dt else True,
-                # Port labels on this device's quads: inherit / on / off.
-                "port_labels": d.port_labels,
-                # Effective airflow (device override, else type default) so the
-                # 3D room can draw intake/exhaust glyphs. "" = unknown/passive.
-                "airflow": d.effective_airflow,
-                "role_color": d.role.color if d.role_id else "",
-                "role_name": d.role.name if d.role_id else "",
-                "device_type": dt.name if dt else "",
-                "status": {"name": d.status.name, "color": d.status.color}
-                if d.status_id else None,
-                "primary_ip": d.primary_ip.ip_address
-                if d.primary_ip_id else None,
-                "serial_number": d.serial_number or "",
-                "front_image": img(dt.front_image if dt else None),
-                "rear_image": img(dt.rear_image if dt else None),
-                "has_faceplate": bool(dt and dt.faceplate),
-                # Photo-anchored port markers (per device type; denormalized
-                # here like front_image so the 3D face can overlay them).
-                "image_ports": (
-                    d.image_ports
-                    if d.image_ports is not None
-                    else (dt.image_ports if dt else None)
-                ) or None,
-                # The device's REAL power component names - the room lays out
-                # deterministic clickable quads (and cable anchors) for any of
-                # these that no photo marker covers, incl. PDU strip outlets.
-                "power_ports": [p.name for p in d.power_ports.all()],
-                "power_outlets": [o.name for o in d.power_outlets.all()],
-                # Per-outlet/-port phase leg (A/B/C, "" if unset) - the vertical
-                # PDU strip colours its cells by this. Keyed by name so the
-                # existing name-list consumers are untouched.
-                # feed_leg lives on outlets (which leg of the feed each socket
-                # carries); inlets have no leg, so only outlets contribute.
-                "power_legs": {
-                    o.name: o.feed_leg for o in d.power_outlets.all()
-                },
-                # "primary" | "redundant" | "" - which redundant feed powers
-                # this PDU (its whole strip tints by it: the A/B story).
-                "power_feed_type": next(
-                    (
-                        feed_type_by_port[p.id]
-                        for p in d.power_ports.all()
-                        if p.id in feed_type_by_port
-                    ),
-                    "",
-                ),
-            }
+        cabinet_counts = dict(
+            Device.objects.filter(cabinet_id__in={t.cabinet_id for t in tiles_qs if t.cabinet_id})
+            .order_by().values("cabinet_id").annotate(n=Count("id"))
+            .values_list("cabinet_id", "n")
+        )
+        # Racks, their devices and the feed each PDU hangs off: the geometry
+        # a rack page's 3D view draws too (api.scene_geo).
+        racks = scene_geo.load_racks(Rack.objects.filter(id__in=rack_ids))
+        feed_types = scene_geo.power_feed_types(racks.values())
+        img = scene_geo.image_url(request)
 
         def rack_geo(r):
-            return {
-                "id": str(r.id),
-                "name": r.name,
-                "u_height": r.u_height,
-                "starting_unit": r.starting_unit,
-                "desc_units": r.desc_units,
-                "width": r.width,
-                "outer_width_mm": r.outer_width_mm,
-                "outer_depth_mm": r.outer_depth_mm,
-                "devices": [
-                    device_geo(d)
-                    for d in r.devices.all()
-                    # Positioned gear AND side-mounted 0U strips - a mounted
-                    # PDU has no U position but very much exists in the room.
-                    if d.position is not None or d.mount
-                ],
-            }
+            return scene_geo.rack_geo(r, img, feed_types)
+
+        def cabinet_geo(c):
+            return scene_geo.cabinet_geo(c, cabinet_counts.get(c.id, 0))
 
         tiles = [
             {
@@ -8686,6 +9456,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "status": t.status,
                 "label": t.label or "",
                 "kind": "rack" if t.rack_id else
+                        "cabinet" if t.cabinet_id else
                         "device" if t.device_id else "other",
                 # The linked device's name - the 2D canvas labels device tiles
                 # with it (tileName: label || linked.name) and the 3D room's
@@ -8710,6 +9481,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 ),
                 "rack": rack_geo(racks[t.rack_id])
                 if t.rack_id and t.rack_id in racks else None,
+                "cabinet": cabinet_geo(t.cabinet) if t.cabinet_id else None,
             }
             for t in tiles_qs
         ]
@@ -8767,29 +9539,33 @@ class FloorPlanViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"], url_path="cable-paths")
     def cable_paths(self, request, pk=None):
         """Resolve each cable on this plan to its two endpoint tiles - a
-        device-linked tile, else the device's rack tile - so the canvas can
+        device-linked tile, else the device's rack or cabinet tile - so the canvas can
         draw the physical A↔B run. Includes cables routed through a tray here,
         AND any cable whose ends are both placed on the plan (drawn straight
         when it has no tray)."""
         from .models import Cable, CableTermination, Device
 
         plan = self.get_object()
-        # tile lookups: device → tile, rack → tile (first placed wins).
+        # tile lookups: device / rack / cabinet → tile (first placed wins).
         device_tile: dict = {}
         rack_tile: dict = {}
+        cabinet_tile: dict = {}
         for t in plan.tiles.all():
             if t.device_id:
                 device_tile.setdefault(t.device_id, str(t.id))
             if t.rack_id:
                 rack_tile.setdefault(t.rack_id, str(t.id))
+            if t.cabinet_id:
+                cabinet_tile.setdefault(t.cabinet_id, str(t.id))
 
-        # Devices reachable on this plan: directly tiled, or in a tiled rack.
+        # Devices reachable on this plan: directly tiled, or in a tiled rack
+        # or cabinet.
         placed_device_ids = set(device_tile)
-        if rack_tile:
+        if rack_tile or cabinet_tile:
             placed_device_ids.update(
-                Device.objects.filter(rack_id__in=rack_tile).values_list(
-                    "id", flat=True
-                )
+                Device.objects.filter(
+                    Q(rack_id__in=rack_tile) | Q(cabinet_id__in=cabinet_tile)
+                ).values_list("id", flat=True)
             )
         # Cables to show: routed through a tray here, OR touching a placed
         # device (so a device↔device run shows even with no tray).
@@ -8817,19 +9593,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # the exact photo-port quad on the device face.
                 terms.append((term.end, dev_id, getattr(point, "name", "")))
             term_cache[cable.id] = terms
-        device_rack = dict(
-            Device.objects.filter(id__in=wanted_devices).values_list(
-                "id", "rack_id"
-            )
-        )
+        device_home = {
+            d: (rack_id, cabinet_id)
+            for d, rack_id, cabinet_id in Device.objects.filter(
+                id__in=wanted_devices
+            ).values_list("id", "rack_id", "cabinet_id")
+        }
 
         def tile_for(dev_id):
             if dev_id is None:
                 return None
             if dev_id in device_tile:
                 return device_tile[dev_id]
-            rack_id = device_rack.get(dev_id)
-            return rack_tile.get(rack_id) if rack_id else None
+            rack_id, cabinet_id = device_home.get(dev_id, (None, None))
+            if rack_id and rack_id in rack_tile:
+                return rack_tile[rack_id]
+            return cabinet_tile.get(cabinet_id) if cabinet_id else None
 
         result = []
         for cable in cables:
@@ -8931,7 +9710,7 @@ class SiteMarkerViewSet(TenantScopedViewSet):
 
     queryset = SiteMarker.objects.select_related(
         "tile_type", "role_type"
-    ).order_by("label")
+    ).order_by(natural("label"))
     serializer_class = SiteMarkerSerializer
     pagination_class = StandardPagination
 
@@ -8952,7 +9731,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
     queryset = FloorPlanTile.objects.select_related(
-        "floor_plan", "tile_type", "role_type", "rack", "device",
+        "floor_plan", "tile_type", "role_type", "rack", "cabinet", "device",
         "power_panel", "power_feed", "linked_floor_plan",
     ).order_by("y", "x")
     serializer_class = FloorPlanTileSerializer
@@ -8968,6 +9747,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
             for param, field in (
                 ("floor_plan", "floor_plan_id"),
                 ("rack", "rack_id"),
+                ("cabinet", "cabinet_id"),
                 ("device", "device_id"),
                 # "Where is this tile type placed" - the floor-tile-type
                 # detail page's Tiles tab.

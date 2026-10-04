@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import {
   type DevicePortLabels,
   api,
+  type Cabinet,
   DEFAULT_DEVICE_FIELD_VISIBILITY,
   type Device,
   type DeviceFieldVisibility,
@@ -36,12 +37,28 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import {
+  photoSizeOf,
+  TopologyPhotoSizeSelect,
+} from "@/components/topology-photo-size-select"
 import { useSaveObject } from "@/lib/save-object"
+import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceTypePicker } from "@/components/device-type-picker"
+import { DeviceCabinetFields } from "@/components/device-cabinet-fields"
 import { RackPicker } from "@/components/rack-picker"
+import { RackPlacement } from "@/components/rack-placement"
+import { fmtUnits, unitBlocker } from "@/lib/rack-placement"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
+import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  CardLinesEditor,
+  useCardLineConfig,
+} from "@/components/topology/diagram/card-lines-dialog"
+import { inheritedCardLines } from "@/components/topology/diagram/card-lines"
 import { useMe } from "@/lib/use-me"
 
 const PORT_LABEL_OPTIONS = [
@@ -82,6 +99,11 @@ export interface DeviceFormProps {
     siteId?: string
     /** Pre-pick a 0U side mount - "+ side device" from a rack's side lane. */
     mount?: "" | "side_left" | "side_right"
+    /** Pre-pick a cabinet and one of its rails - "Add device" on a rail -
+     * and a spot on it: "Add device here" on the cabinet's plate. */
+    cabinetId?: string
+    dinRailId?: string
+    dinOffset?: number
   }
   /** Clone seed (create only): the source's carried-over fields from
    * GET /api/devices/<id>/clone/. Identity/placement (name, serial, rack) are
@@ -155,6 +177,33 @@ export function DeviceForm({
   const [mountSpan, setMountSpan] = useState(
     device?.mount_span_u != null ? String(device.mount_span_u) : ""
   )
+  // A cabinet's DIN rail instead of a rack (#277): picking either clears
+  // the other. The tabs only choose which one the section shows.
+  const [mountIn, setMountIn] = useState<"rack" | "cabinet">(
+    device?.cabinet || initial?.cabinetId ? "cabinet" : "rack"
+  )
+  const [cabinetId, setCabinetId] = useState<string | null>(
+    device?.cabinet?.id ?? initial?.cabinetId ?? null
+  )
+  const [railId, setRailId] = useState<string | null>(
+    device?.din_rail?.id ?? initial?.dinRailId ?? null
+  )
+  const [dinOffset, setDinOffset] = useState(
+    device?.din_offset_mm != null
+      ? String(device.din_offset_mm)
+      : initial?.dinOffset != null
+        ? String(initial.dinOffset)
+        : ""
+  )
+  // A refusal about the hidden tab's fields brings that tab up, so the
+  // field it highlights is on screen.
+  useEffect(() => {
+    const on = (keys: string[]) => keys.some((k) => fieldErrors[k])
+    if (on(["cabinet_id", "din_rail_id", "din_offset_mm"]))
+      setMountIn("cabinet")
+    else if (on(["rack_id", "position", "face", "rack_side", "mount"]))
+      setMountIn("rack")
+  }, [fieldErrors])
   const [tagIds, setTagIds] = useState<number[]>(
     seed?.tags?.map((t) => t.id) ?? []
   )
@@ -185,6 +234,14 @@ export function DeviceForm({
   const [vcPriority, setVcPriority] = useState(
     device?.vc_priority != null ? String(device.vc_priority) : ""
   )
+  // The device's own topology card lines; null inherits (view, role, All
+  // devices), [] is name only.
+  const [topologyCard, setTopologyCard] = useState<string[] | null>(
+    seed?.topology_card ?? null
+  )
+  const [photoSize, setPhotoSize] = useState(
+    photoSizeOf(seed?.topology_photo_size)
+  )
 
   useEffect(() => {
     if (!device) return
@@ -207,6 +264,12 @@ export function DeviceForm({
       device.mount_offset_mm != null ? String(device.mount_offset_mm) : ""
     )
     setMountSpan(device.mount_span_u != null ? String(device.mount_span_u) : "")
+    setMountIn(device.cabinet ? "cabinet" : "rack")
+    setCabinetId(device.cabinet?.id ?? null)
+    setRailId(device.din_rail?.id ?? null)
+    setDinOffset(
+      device.din_offset_mm != null ? String(device.din_offset_mm) : ""
+    )
     setTagIds(device.tags.map((t) => t.id))
     setCustomFields(device.custom_fields ?? {})
     setComments(device.comments ?? "")
@@ -219,6 +282,8 @@ export function DeviceForm({
     setVcId(device.virtual_chassis?.id ?? null)
     setVcPosition(device.vc_position != null ? String(device.vc_position) : "")
     setVcPriority(device.vc_priority != null ? String(device.vc_priority) : "")
+    setTopologyCard(device.topology_card ?? null)
+    setPhotoSize(photoSizeOf(device.topology_photo_size))
     reset()
   }, [device, reset])
 
@@ -259,6 +324,23 @@ export function DeviceForm({
     queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rackId}`),
     enabled: !!rackId,
   })
+  // The picked cabinet: its rails, and its site - a device in a cabinet is
+  // at the cabinet's site. Same key as the cabinet page and the picker.
+  const cabinet = useQuery({
+    queryKey: ["cabinet", cabinetId],
+    queryFn: () => api<Cabinet>(`/api/cabinets/${cabinetId}/`),
+    enabled: !!cabinetId,
+  })
+  // Picking a cabinet fills the site (a new device's preset cabinet too),
+  // once the cabinet's own site is known.
+  const fillSite = useRef(!device && !!initial?.cabinetId)
+  const cabinetSite =
+    cabinet.data?.id === cabinetId ? cabinet.data?.site.id : undefined
+  useEffect(() => {
+    if (!fillSite.current || !cabinetSite) return
+    fillSite.current = false
+    if (cabinetSite !== siteId) setSiteId(cabinetSite)
+  }, [cabinetSite, siteId])
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
     queryFn: () =>
@@ -303,6 +385,48 @@ export function DeviceForm({
     retry: false,
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
+  // What the topology card shows while this device inherits: its role's
+  // lines, else All devices. A saved view's own lines come first on its map.
+  const cardConfig = useCardLineConfig()
+  const role = (roles.data?.results ?? []).find((r) => r.id === roleId)
+  const cardInherited = cardConfig.data
+    ? inheritedCardLines(cardConfig.data, role?.slug)
+    : null
+
+  const clearRack = () => {
+    setRackId(null)
+    setPosition("")
+    setFace("")
+    setSide("")
+    setMount("")
+    setMountOffset("")
+    setMountSpan("")
+  }
+  const clearCabinet = () => {
+    setCabinetId(null)
+    setRailId(null)
+    setDinOffset("")
+  }
+  const pickRack = (v: string | null) => {
+    setRackId(v)
+    setPosition("") // stale unit numbers don't carry across racks
+    if (v) clearCabinet()
+  }
+  const pickCabinet = (v: string | null) => {
+    setCabinetId(v)
+    // A rail and an offset belong to the cabinet they were picked in.
+    setRailId(null)
+    setDinOffset("")
+    if (v) {
+      clearRack()
+      fillSite.current = true
+    }
+  }
+  const pickSite = (v: string | null) => {
+    setSiteId(v)
+    // A cabinet at another site can't hold the device any more.
+    if (v && cabinetSite && v !== cabinetSite) clearCabinet()
+  }
 
   // ─── Rack placement derived state ────────────────────────────────────────
   const selectedRack = (racks.data?.results ?? []).find((r) => r.id === rackId)
@@ -322,13 +446,16 @@ export function DeviceForm({
   // Side mounting is a 0U-only concept, and it replaces U placement - the
   // backend enforces both; the form just keeps the fields from fighting.
   const isZeroU = selectedType != null && selectedType.u_height === 0
+  // Only a type known to take units clears it: before the types load,
+  // selectedType is undefined, and a side-mounted strip must keep its mount.
+  const takesUnits = selectedType != null && selectedType.u_height !== 0
   useEffect(() => {
-    if (!isZeroU && mount !== "") {
+    if (takesUnits && mount !== "") {
       setMount("")
       setMountOffset("")
       setMountSpan("")
     }
-  }, [isZeroU, mount])
+  }, [takesUnits, mount])
   useEffect(() => {
     if (mount === "") return
     // A side-mounted strip has no U position and no half-width side. `face`
@@ -340,30 +467,21 @@ export function DeviceForm({
 
   // One option per possible *lowest* unit, in the rack's visual order (top
   // first). Units where the device would collide render disabled with the
-  // blocking device as hint - mirrors the backend overlap validation.
+  // blocking device as hint - the backend's overlap rules, which the
+  // elevation under the fields draws by too (lib/rack-placement).
   const unitOptions = useMemo(() => {
     if (!selectedRack) return []
     const first = selectedRack.starting_unit
     const last = selectedRack.starting_unit + selectedRack.u_height - 1
-    const others = (rackDevices.data?.results ?? []).filter(
-      (d) => d.id !== device?.id && d.position != null
-    )
-    const blockerAt = (p: number): Device | undefined =>
-      others.find((d) => {
-        // Different explicit faces never collide.
-        if (face && d.face && d.face !== face) return false
-        // Two half-width devices coexist on opposite sides of the same U.
-        if (
-          rackWidth === "half" &&
-          d.rack_width === "half" &&
-          side &&
-          d.rack_side &&
-          d.rack_side !== side
-        )
-          return false
-        const dTop = (d.position as number) + Math.max(1, d.u_height) - 1
-        return p <= dTop && p + deviceHeight - 1 >= (d.position as number)
-      })
+    const occupants = rackDevices.data?.results ?? []
+    const mounted = { face, width: rackWidth, side }
+    const blockerAt = (p: number) => {
+      for (let u = p; u < p + deviceHeight; u++) {
+        const b = unitBlocker(occupants, mounted, u, device?.id)
+        if (b) return b
+      }
+      return undefined
+    }
     const opts: {
       value: string
       label: string
@@ -375,7 +493,7 @@ export function DeviceForm({
       const blocker = blockerAt(p)
       opts.push({
         value: String(p),
-        label: deviceHeight > 1 ? `U${p}–U${p + deviceHeight - 1}` : `U${p}`,
+        label: fmtUnits(p, deviceHeight),
         disabled: !!blocker,
         hint: blocker ? blocker.name : undefined,
       })
@@ -431,6 +549,13 @@ export function DeviceForm({
           rackId && mount !== "" && mountSpan.trim() !== ""
             ? Number(mountSpan)
             : null,
+        // No offset with a rail: the server takes the first gap that fits.
+        cabinet_id: cabinetId,
+        din_rail_id: cabinetId ? railId : null,
+        din_offset_mm:
+          cabinetId && railId && dinOffset.trim() !== ""
+            ? Number(dinOffset)
+            : null,
         comments: comments.trim(),
         airflow,
         port_labels: portLabels,
@@ -444,6 +569,8 @@ export function DeviceForm({
           vcId && vcPosition.trim() !== "" ? Number(vcPosition) : null,
         vc_priority:
           vcId && vcPriority.trim() !== "" ? Number(vcPriority) : null,
+        topology_card: topologyCard,
+        topology_photo_size: photoSize ?? "",
       }
       return saveObject<Device>({
         objectType: "api.device",
@@ -456,6 +583,9 @@ export function DeviceForm({
       qc.invalidateQueries({ queryKey: ["devices"] })
       qc.invalidateQueries({ queryKey: ["devices-picker"] })
       qc.invalidateQueries({ queryKey: ["device", saved.id] })
+      // A new device brings its type's ports; a stack move moves them.
+      invalidatePortCounts(qc)
+      if (saved.cabinet || device?.cabinet) invalidateCabinetDeviceViews(qc)
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
       if (againRef.current) {
         againRef.current = false
@@ -512,7 +642,7 @@ export function DeviceForm({
               required
               hint={siteLocked ? "locked to your site" : undefined}
               value={siteId}
-              onChange={setSiteId}
+              onChange={pickSite}
               noneLabel="No site"
               disabled={siteLocked}
               options={sites.options.map((s) => ({
@@ -618,6 +748,33 @@ export function DeviceForm({
                 error={fieldErrors.comments}
               />
             )}
+          </FormSection>
+          <FormSection title="Topology card" card>
+            <Field
+              label="Card lines"
+              info="Device, then view, then role, then All devices."
+              error={fieldErrors.topology_card}
+            >
+              <CardLinesEditor
+                value={topologyCard}
+                onChange={setTopologyCard}
+                config={cardConfig.data}
+                inherited={cardInherited?.fields ?? []}
+                from={
+                  cardInherited?.from.level === "role" && role ? (
+                    <ColorBadge name={role.name} color={role.color} />
+                  ) : (
+                    "All devices"
+                  )
+                }
+              />
+            </Field>
+            <TopologyPhotoSizeSelect
+              label="Photo size"
+              value={photoSize}
+              onChange={setPhotoSize}
+              error={fieldErrors.topology_photo_size}
+            />
           </FormSection>
         </FormColumn>
 
@@ -731,133 +888,179 @@ export function DeviceForm({
             )}
           </FormSection>
 
-          <FormSection title="Rack" card>
-            <RackPicker
-              hint="optional"
-              value={rackId}
-              onChange={(v) => {
-                setRackId(v)
-                setPosition("") // stale unit numbers don't carry across racks
-              }}
-              noneLabel="No rack"
-              placeholder="Select a rack…"
-              error={fieldErrors.rack_id}
-              quickAdd={
-                <QuickAddDialog
-                  title="New rack"
-                  endpoint="/api/racks/"
-                  fields={[
-                    { name: "name", label: "Name", required: true },
-                    {
-                      name: "site_id",
-                      label: "Site",
-                      type: "combobox",
-                      endpoint: "/api/sites/?picker=1",
-                      queryKey: "sites-picker",
-                      required: true,
-                    },
-                  ]}
-                  onCreated={(r) => {
-                    qc.invalidateQueries({ queryKey: ["racks-picker"] })
-                    setRackId(r.id)
-                  }}
-                />
-              }
+          <FormSection title="Mounting" card>
+            <SegmentedTabs
+              items={[
+                { value: "rack", label: "Rack" },
+                { value: "cabinet", label: "Cabinet" },
+              ]}
+              value={mountIn}
+              onValueChange={setMountIn}
             />
-            <div className="grid gap-3 @md:grid-cols-2">
-              <FormCombobox
-                label="Position (U)"
-                value={position === "" ? null : position}
-                onChange={(v) => setPosition(v ?? "")}
-                options={unitOptions}
-                noneLabel="Not racked"
-                placeholder={rackId ? "Pick a unit…" : "Select a rack first"}
-                searchPlaceholder="Search units…"
-                emptyText={
-                  rackId
-                    ? rackDevices.isLoading
-                      ? "Loading units…"
-                      : "No free units."
-                    : "Select a rack first."
-                }
-                disabled={!rackId}
-                error={fieldErrors.position}
+            {mountIn === "cabinet" ? (
+              <DeviceCabinetFields
+                name={name}
+                siteId={siteId}
+                cabinetId={cabinetId}
+                onCabinetChange={pickCabinet}
+                cabinet={cabinet.data}
+                railId={railId}
+                onRailChange={setRailId}
+                offset={dinOffset}
+                onOffsetChange={setDinOffset}
+                deviceId={device?.id}
+                deviceType={selectedType}
+                errors={fieldErrors}
               />
-              <FormSelect
-                label="Face"
-                value={face === "" ? null : face}
-                onChange={(v) => setFace((v as "front" | "rear") ?? "")}
-                noneLabel="-"
-                options={[
-                  { value: "front", label: "Front" },
-                  { value: "rear", label: "Rear" },
-                ]}
-                error={fieldErrors.face}
-              />
-              {rackWidth === "half" && (
-                <FormSelect
-                  label="Side (half-width)"
-                  value={side === "" ? null : side}
-                  onChange={(v) => setSide(v === "right" ? "right" : "left")}
-                  options={[
-                    { value: "left", label: "Left half" },
-                    { value: "right", label: "Right half" },
-                  ]}
-                  error={fieldErrors.rack_side}
-                />
-              )}
-            </div>
-            {isZeroU && rackId && (
-              <div className="grid gap-3">
-                <FormSelect
-                  label="Side mount (0U)"
-                  hint="Vertical strips (PDUs) bolt to a rail instead of taking units"
-                  value={mount === "" ? null : mount}
-                  onChange={(v) =>
-                    setMount(v === "side_left" || v === "side_right" ? v : "")
-                  }
-                  noneLabel="Not side-mounted"
-                  options={[
-                    { value: "side_left", label: "Left rail" },
-                    { value: "side_right", label: "Right rail" },
-                  ]}
-                  error={fieldErrors.mount}
-                />
-                {mount !== "" && (
-                  <>
-                    <FormSelect
-                      label="Channel"
-                      hint="Which face the strip is reachable from - blank shows it on both elevations"
-                      value={face === "" ? null : face}
-                      onChange={(v) =>
-                        setFace(v === "front" || v === "rear" ? v : "")
-                      }
-                      noneLabel="Unspecified (both)"
-                      options={[
-                        { value: "front", label: "Front channel" },
-                        { value: "rear", label: "Rear channel" },
+            ) : (
+              <>
+                <RackPicker
+                  hint="optional"
+                  value={rackId}
+                  onChange={pickRack}
+                  noneLabel="No rack"
+                  placeholder="Select a rack…"
+                  error={fieldErrors.rack_id}
+                  quickAdd={
+                    <QuickAddDialog
+                      title="New rack"
+                      endpoint="/api/racks/"
+                      fields={[
+                        { name: "name", label: "Name", required: true },
+                        {
+                          name: "site_id",
+                          label: "Site",
+                          type: "combobox",
+                          endpoint: "/api/sites/?picker=1",
+                          queryKey: "sites-picker",
+                          required: true,
+                        },
                       ]}
-                      error={fieldErrors.face}
+                      onCreated={(r) => {
+                        qc.invalidateQueries({ queryKey: ["racks-picker"] })
+                        pickRack(r.id)
+                      }}
                     />
-                    <div className="grid gap-3 @md:grid-cols-2">
-                      <FormText
-                        label="Offset from base (mm)"
-                        value={mountOffset}
-                        onChange={setMountOffset}
-                        placeholder="0"
-                        error={fieldErrors.mount_offset_mm}
-                      />
-                      <FormText
-                        label="Span (U)"
-                        value={mountSpan}
-                        onChange={setMountSpan}
-                        placeholder="auto (~¾ rack)"
-                        error={fieldErrors.mount_span_u}
-                      />
-                    </div>
-                  </>
+                  }
+                />
+                <div className="grid gap-3 @md:grid-cols-2">
+                  <FormCombobox
+                    label="Position (U)"
+                    info="The device's lowest unit. Or click a free unit in the elevation below - the face you click sets Face."
+                    value={position === "" ? null : position}
+                    onChange={(v) => setPosition(v ?? "")}
+                    options={unitOptions}
+                    noneLabel="Not racked"
+                    placeholder={
+                      rackId ? "Pick a unit…" : "Select a rack first"
+                    }
+                    searchPlaceholder="Search units…"
+                    emptyText={
+                      rackId
+                        ? rackDevices.isLoading
+                          ? "Loading units…"
+                          : "No free units."
+                        : "Select a rack first."
+                    }
+                    disabled={!rackId}
+                    error={fieldErrors.position}
+                  />
+                  <FormSelect
+                    label="Face"
+                    value={face === "" ? null : face}
+                    onChange={(v) => setFace((v as "front" | "rear") ?? "")}
+                    noneLabel="-"
+                    options={[
+                      { value: "front", label: "Front" },
+                      { value: "rear", label: "Rear" },
+                    ]}
+                    error={fieldErrors.face}
+                  />
+                  {rackWidth === "half" && (
+                    <FormSelect
+                      label="Side (half-width)"
+                      value={side === "" ? null : side}
+                      onChange={(v) =>
+                        setSide(v === "right" ? "right" : "left")
+                      }
+                      options={[
+                        { value: "left", label: "Left half" },
+                        { value: "right", label: "Right half" },
+                      ]}
+                      error={fieldErrors.rack_side}
+                    />
+                  )}
+                </div>
+                {isZeroU && rackId && (
+                  <div className="grid gap-3">
+                    <FormSelect
+                      label="Side mount (0U)"
+                      hint="Vertical strips (PDUs) bolt to a rail instead of taking units"
+                      value={mount === "" ? null : mount}
+                      onChange={(v) =>
+                        setMount(
+                          v === "side_left" || v === "side_right" ? v : ""
+                        )
+                      }
+                      noneLabel="Not side-mounted"
+                      options={[
+                        { value: "side_left", label: "Left rail" },
+                        { value: "side_right", label: "Right rail" },
+                      ]}
+                      error={fieldErrors.mount}
+                    />
+                    {mount !== "" && (
+                      <>
+                        <FormSelect
+                          label="Channel"
+                          hint="Which face the strip is reachable from - blank shows it on both elevations"
+                          value={face === "" ? null : face}
+                          onChange={(v) =>
+                            setFace(v === "front" || v === "rear" ? v : "")
+                          }
+                          noneLabel="Unspecified (both)"
+                          options={[
+                            { value: "front", label: "Front channel" },
+                            { value: "rear", label: "Rear channel" },
+                          ]}
+                          error={fieldErrors.face}
+                        />
+                        <div className="grid gap-3 @md:grid-cols-2">
+                          <FormText
+                            label="Offset from base (mm)"
+                            value={mountOffset}
+                            onChange={setMountOffset}
+                            placeholder="0"
+                            error={fieldErrors.mount_offset_mm}
+                          />
+                          <FormText
+                            label="Span (U)"
+                            value={mountSpan}
+                            onChange={setMountSpan}
+                            placeholder="auto (~¾ rack)"
+                            error={fieldErrors.mount_span_u}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
-              </div>
+                {rackId && mount === "" && (
+                  <RackPlacement
+                    rackId={rackId}
+                    devices={rackDevices.data?.results}
+                    deviceId={device?.id}
+                    name={name}
+                    position={position}
+                    face={face}
+                    mount={{ width: rackWidth, side, height: deviceHeight }}
+                    onPlace={(p, f) => {
+                      setPosition(String(p))
+                      setFace(f)
+                    }}
+                  />
+                )}
+              </>
             )}
           </FormSection>
 

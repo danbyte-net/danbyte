@@ -43,9 +43,11 @@ def _deployment_name() -> str:
 
 def build_digest(tenant, since) -> dict:
     """Gather the digest data for one tenant over the window [since, now]."""
+    from monitoring.exclusion import monitored
     from monitoring.models import Alert, CheckState, StateTransition
 
-    states = CheckState.objects.filter(tenant=tenant)
+    # Excluded addresses are not monitored, so not counted.
+    states = monitored(CheckState.objects.filter(tenant=tenant), tenant.id)
     by_status = {
         r["status"]: r["n"]
         for r in states.values("status").annotate(n=Count("id"))

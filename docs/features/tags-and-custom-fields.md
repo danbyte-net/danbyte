@@ -60,7 +60,17 @@ filter-modal pickers; every other model - including users and groups - gets
 a searchable picker automatically). Values are validated against live rows
 (tenant-scoped where the model is), and detail pages render the object's
 name as a link, resolved through the registry - a deleted target degrades
-to its raw id, never an error.
+to its raw id, never an error. So does a target you may not view: the name is
+resolved with your own access (the object type's *view* permission and the
+sites it covers), and with no active tenant nothing resolves.
+
+**Users and groups** are the exception, because listing accounts is user
+administration. A user field's picker lists the active members of the
+tenant, and a group field's picker the groups they are in, for anyone who
+may add or change one of the types the field applies to. Without a
+permission on users, the address is left out. On detail pages the value
+still reads as a name when it is one of the tenant's members or their
+groups.
 
 ### Which objects can have custom fields
 
@@ -70,6 +80,11 @@ Every model that carries the `custom_fields` mixin - the list is
 **device types** and **device roles** lets you annotate the catalog itself -
 for example a warranty date on a device type or a service tier on a device
 role.
+
+Each of those models also carries `custom_fields` on its API rows - device
+components included (console, power, front and rear ports, bays, modules and
+inventory items), so a field defined for them can be read and set through
+the API like any other.
 
 !!! note "For plugin developers"
     Two registration hooks in `customization/object_registry.py`:
@@ -114,7 +129,13 @@ role.
 6. Save.
 
 The field now appears on every matching object's form, with the right kind of
-input for its type, and on the object's overview.
+input for its type, and on the object's overview. It is also a column on every
+list of those objects: open the list's **Columns** menu and tick it under
+**Custom fields** (it starts hidden). The column sorts - numbers by value,
+dates by date - and exports with its value as text (an object reference
+exports its name). Anyone who can view the list sees the column; a field local
+to one site is offered only to people who work at that site. See
+[Table columns](table-preferences.md).
 
 !!! note "Required and choice fields are enforced"
     When you save an object, Danbyte checks its custom fields: required fields

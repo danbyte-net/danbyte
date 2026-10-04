@@ -579,6 +579,7 @@ function GroupMappings({
         total={mappings.data?.count}
         columns={columns}
         tableId={`${endpoints.cacheKey}-mappings`}
+        autoColumns={false}
         flexColumn="directoryGroup"
         enableExport={false}
       />

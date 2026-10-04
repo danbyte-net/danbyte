@@ -58,6 +58,45 @@ def stack_owner(device):
     return members[0] if members else device
 
 
+def stacks(vc_ids, tenant_id) -> dict:
+    """``{chassis id: [Device, ...]}`` for many stacks at once, owner first -
+    the same rule as :func:`stack_owner`: the designated master while it is
+    still a member, else the lowest-positioned member - then the rest in
+    position order. Two queries whatever the count. Only the tenant's
+    chassis and the tenant's devices count, so a membership written across
+    tenants behind the API's back is ignored. SLAs read a stack through
+    this, so the stack an agreement measures is the one SNMP polls."""
+    from api.models import VirtualChassis
+
+    ids = {i for i in vc_ids if i}
+    if not ids:
+        return {}
+    masters = dict(
+        VirtualChassis.objects.filter(tenant_id=tenant_id, pk__in=ids)
+        .values_list("pk", "master_id")
+    )
+    out: dict = {vc: [] for vc in masters}
+    for d in (
+        Device.objects.filter(tenant_id=tenant_id, virtual_chassis_id__in=list(masters))
+        .only("id", "name", "site_id", "primary_ip_id", "virtual_chassis_id", "vc_position")
+        .order_by("vc_position", "name")
+    ):
+        out[d.virtual_chassis_id].append(d)
+    for vc, members in out.items():
+        for i, d in enumerate(members):
+            if d.id == masters[vc]:
+                members.insert(0, members.pop(i))
+                break
+    return out
+
+
+def measured_member(members):
+    """The member whose primary address stands for the stack: the owner when
+    it has one, else the first member by position that does. ``members`` is
+    one value of :func:`stacks`."""
+    return next((d for d in members if d.primary_ip_id), None)
+
+
 def stack_state(device, tenant):
     """The observed SNMP state that describes ``device``: its own row when it
     has been polled, else the stack owner's."""

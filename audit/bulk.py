@@ -1,8 +1,10 @@
 """Explicit change-log writes for bulk operations.
 
-Bulk endpoints use ``queryset.update()`` / ``queryset.delete()`` for one
-round-trip, which **bypass** model signals - so they'd otherwise be invisible.
-Call these helpers around the bulk op to record one entry per affected object.
+Bulk endpoints use ``queryset.update()`` for one round-trip, which
+**bypasses** model signals - so it would otherwise be invisible. A
+``queryset.delete()`` does send ``post_delete`` for every row, so an audited
+model logs its own deletes; :func:`log_bulk_delete` writes only the rows that
+are not in the log yet. Call these helpers around the bulk op.
 
 Usage:
     qs = self.get_queryset().filter(pk__in=ids)
@@ -18,7 +20,7 @@ from __future__ import annotations
 
 from .context import current_request_id, current_user
 from .models import ChangeAction, ChangeLogEntry
-from .signals import _ser
+from .signals import _diff, _ser
 
 
 def _entry(instance, action, changes, user, rid):
@@ -51,7 +53,7 @@ def log_bulk_update(rows, updates: dict) -> None:
             old = _ser(getattr(r, k, None))
             new = _ser(v)
             if old != new:
-                changes[k] = {"old": old, "new": new}
+                changes[k] = _diff(r, k, old, new)
         if changes:
             entries.append(_entry(r, ChangeAction.UPDATE, changes, user, rid))
     if entries:
@@ -59,10 +61,28 @@ def log_bulk_update(rows, updates: dict) -> None:
 
 
 def log_bulk_delete(rows) -> None:
-    """One DELETE entry per removed row."""
+    """One DELETE entry per removed row - unless the audit signals already
+    wrote it: a queryset ``delete()`` sends ``post_delete`` for every row of
+    an audited model, so those are in the log once already."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    rows = list(rows)
+    if not rows:
+        return
     user = current_user()
     rid = current_request_id()
-    entries = [_entry(r, ChangeAction.DELETE, {}, user, rid) for r in rows]
+    logged = ChangeLogEntry.objects.filter(
+        action=ChangeAction.DELETE, object_id__in=[str(r.pk) for r in rows]
+    )
+    logged = (logged.filter(request_id=rid) if rid
+              else logged.filter(timestamp__gte=timezone.now() - timedelta(minutes=1)))
+    done = set(logged.values_list("object_type", "object_id"))
+    entries = [
+        _entry(r, ChangeAction.DELETE, {}, user, rid)
+        for r in rows if (r._meta.label_lower, str(r.pk)) not in done
+    ]
     if entries:
         ChangeLogEntry.objects.bulk_create(entries)
 
@@ -121,6 +141,16 @@ def log_tag_change(instance, added=(), removed=()) -> None:
     _entry(instance, ChangeAction.UPDATE, changes, user, current_request_id()).save()
 
 
+def log_rail_change(instance, old, new) -> None:
+    """Record a change to a cabinet's or cabinet type's DIN rails. They are
+    written as a set through their parent, so the change lands on its entry;
+    ``old`` / ``new`` are one line per rail (``api.din.summaries``)."""
+    if old == new:
+        return
+    changes = {"rails": {"old": list(old) or None, "new": list(new) or None}}
+    _entry(instance, ChangeAction.UPDATE, changes, current_user(), current_request_id()).save()
+
+
 def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> None:
     """Resolve tag ids → Tag rows, apply add/remove across ``qs``, and record
     one changelog entry per object whose tag set actually changed.
@@ -138,6 +168,7 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
     from django.db.models import Q
 
     from core.models import Tag
+    from core.tags import TAGS, tags_of
 
     tag_qs = Tag.objects.filter(id__in={*add_tag_ids, *remove_tag_ids})
     if tenant is not None:
@@ -145,8 +176,8 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
     tags = {t.id: t for t in tag_qs}
     add = [tags[i] for i in add_tag_ids if i in tags]
     remove = [tags[i] for i in remove_tag_ids if i in tags]
-    for obj in qs.prefetch_related("tags"):
-        current = {t.id for t in obj.tags.all()}
+    for obj in qs.prefetch_related(TAGS):
+        current = {t.id for t in tags_of(obj)}
         added = [t.name for t in add if t.id not in current]
         removed = [t.name for t in remove if t.id in current]
         if add:

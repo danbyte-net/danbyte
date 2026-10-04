@@ -2,7 +2,7 @@
 # Danbyte one-shot installer - turns a fully-offline release bundle into a
 # running production install. Run as root from inside the unpacked bundle:
 #
-#   tar xzf danbyte-<version>-linux-x86_64.tar.gz
+#   sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz
 #   cd danbyte-<version>-linux-x86_64
 #   sudo ./install.sh --host danbyte.example.com
 #
@@ -15,6 +15,21 @@
 # Offline scope: no PyPI/npm/python.org access needed (all bundled). OS packages
 # (postgresql, redis-server, nginx) still come from your distro - on an airgapped
 # box, point apt at your local mirror first, or pre-install them.
+#
+# Re-run on a box that already runs Danbyte, it UPGRADES: the root steps as
+# above, then the bundle's own upgrade stage (scripts/upgrade/stage.sh) as the
+# service user's transient unit danbyte-upgrade.service - the same stage the
+# in-app upgrade runs: services stopped first, a snapshot, one-transaction
+# migrations, a verify before anything serves, and everything put back if a
+# step fails. Once it is done, the root unit danbyte-install-host.service
+# (scripts/install-host.sh) applies nginx, logrotate and the certificate unit
+# from a root-only copy of this bundle's files (scripts/host-sync.sh). A
+# dropped SSH session stops neither; this script only follows them.
+# --host-only does those root steps alone, for the release that runs - on a
+# git checkout too, since it changes no code. Root only ever runs files from
+# this bundle, never from the app directory, and writes into that directory
+# only as the service user: the account owns it, and a link it put there
+# would take root's write somewhere else (#287).
 set -euo pipefail
 
 # ── Config (env or flags) ────────────────────────────────────────────────────
@@ -27,6 +42,13 @@ LOG_DIR="${DANBYTE_LOG_DIR:-/var/log/danbyte}"
 HOST="${DANBYTE_HOST:-}"
 UNATTENDED=0
 DO_NGINX=1
+FORCE=0
+SKIP_BACKUP=0
+HOST_ONLY=0
+ADOPT=0
+# Root-only: the copy of this bundle's files the root steps of an upgrade
+# run from, and their summaries.
+HS_BASE=/var/lib/danbyte/installer
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) HOST="$2"; shift 2 ;;
@@ -34,6 +56,10 @@ while [ $# -gt 0 ]; do
     --service-home) SERVICE_HOME="$2"; shift 2 ;;
     --no-nginx) DO_NGINX=0; shift ;;
     --unattended|-y) UNATTENDED=1; shift ;;
+    --force) FORCE=1; shift ;;
+    --skip-backup) SKIP_BACKUP=1; shift ;;
+    --host-only) HOST_ONLY=1; shift ;;
+    --adopt) ADOPT=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -61,13 +87,55 @@ BUNDLE="$(cd "$(dirname "$0")" && pwd)"
 step() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m! %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+tree_version() { sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' "$1/danbyte/__init__.py" 2>/dev/null; }
+# Where the upgrade stage keeps its journal and recovery marker.
+upgrade_root() {
+  if [ "$(stat -c %d "$(dirname "$APP")")" = "$(stat -c %d "$APP")" ]; then
+    echo "$(dirname "$APP")/.danbyte-upgrade"
+  else
+    echo "$APP/.danbyte-upgrade"
+  fi
+}
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo ./install.sh)"
 [ -d "$BUNDLE/vendor/wheels" ] && [ -x "$BUNDLE/vendor/python/bin/python3" ] \
   || die "this doesn't look like an offline bundle (missing vendor/)."
+[ "$(stat -c %u "$BUNDLE/install.sh")" -eq 0 ] \
+  || warn "the bundle's files are not owned by root; whoever owns them could change what root runs next - extract it with sudo tar xzf, or sudo chown -R root: it"
+EXISTING=0
+if [ -f "$APP/manage.py" ] && [ -f "$APP/.env" ]; then
+  EXISTING=1
+  # --host-only changes no code, so a git checkout takes it as well.
+  [ ! -d "$APP/.git" ] || [ "$FORCE" -eq 1 ] || [ "$HOST_ONLY" -eq 1 ] \
+    || die "$APP is a git checkout - upgrade it from Settings -> Updates or with danbyte-admin upgrade, not with a bundle (--force to overlay it anyway)."
+  if [ -z "$HOST" ] && [ -f /etc/nginx/sites-available/danbyte.conf ]; then
+    # Keep the name the site already answers to.
+    HOST="$(sed -n 's/^[[:space:]]*server_name[[:space:]]\+\([^;]*\);.*/\1/p' /etc/nginx/sites-available/danbyte.conf | head -n 1)"
+  fi
+fi
 [ -n "$HOST" ] || HOST="$(hostname -I 2>/dev/null | awk '{print $1}')"
 [ -n "$HOST" ] || die "could not determine a host; pass --host <name-or-ip>"
 ADMIN_LOGIN="$(logname 2>/dev/null || echo "${SUDO_USER:-}")"
+
+# ── --host-only: the root steps alone, for the release that runs ────────────
+# What an upgrade ends with - logrotate, the certificate unit, the nginx site -
+# without a second upgrade stage, e.g. when they failed or were skipped.
+if [ "$HOST_ONLY" -eq 1 ]; then
+  [ "$EXISTING" -eq 1 ] || die "--host-only needs an install to apply them to, and $APP has none"
+  ver="$(tree_version "$BUNDLE")"
+  from="$(tree_version "$APP")"
+  /bin/sh -c '. "$1" && [ "$(ver_cmp "$2" "$3")" = 0 ]' _ "$BUNDLE/scripts/upgrade/lib.sh" "$ver" "$from" \
+    || die "--host-only takes the bundle of the release that runs: $APP runs $from, this bundle is $ver"
+  [ ! -f "$(upgrade_root)/active" ] || die "an earlier upgrade is unfinished - run: danbyte-admin upgrade recover"
+  if [ -e "$APP/.upgrade.lock" ] \
+      && [ "$(sed -n 's/.*"state": *"\([a-z]*\)".*/\1/p' "$APP/.upgrade-status.json" 2>/dev/null)" = running ]; then
+    die "an upgrade is running - wait for it"
+  fi
+  set -- --app "$APP" --user "$SERVICE_USER" --host "$HOST" --log-dir "$LOG_DIR" --version "$ver"
+  [ "$DO_NGINX" -eq 1 ] || set -- "$@" --no-nginx
+  [ "$ADOPT" -eq 0 ] || set -- "$@" --adopt
+  exec /bin/sh "$BUNDLE/scripts/install-host.sh" "$@"
+fi
 
 # ── 1. OS services ───────────────────────────────────────────────────────────
 # nginx is only needed when this installer manages the TLS front end; --no-nginx
@@ -90,8 +158,10 @@ if [ "$need_pkg" -eq 1 ]; then
   if command -v apt-get >/dev/null 2>&1; then
     # A fresh image's package lists are usually older than the archive;
     # without a refresh the install fails on 404s for packages that moved.
-    DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
-    DEBIAN_FRONTEND=noninteractive apt-get install -y $PKGS \
+    # A host that just booted is often still installing its own updates and
+    # holds the dpkg lock: wait for it rather than fail.
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 update -qq >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y $PKGS \
       || die "apt could not install $PKGS - install them, then re-run."
   else
     die "$PKGS missing and apt-get not found - pre-install them."
@@ -104,7 +174,7 @@ systemctl enable --now postgresql redis-server >/dev/null 2>&1 || true
 # label printing works on fresh installs and existing upgrades alike.
 if command -v apt-get >/dev/null 2>&1; then
   step "PDF rendering libraries (WeasyPrint: pango/cairo/gdk-pixbuf)"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y \
     libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
     libffi8 fonts-dejavu-core \
     || warn "Could not install WeasyPrint libraries - label PDF printing may fail until they're present."
@@ -173,6 +243,20 @@ as_user() {
     DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$SVC_UID/bus" \
     "$@"
 }
+# The app's .env is read and written as the service user, never by root:
+# the file and its folder are that account's, and root following a link
+# put in its place would append to whatever the link names (#287). Values
+# go through a pipe, never onto a command line another user can read.
+env_get() {  # <key>: its value; fails when .env has none
+  as_user grep -E "^$1=" "$APP/.env" | cut -d= -f2-
+}
+env_backfill() {  # <key> <value>: appends KEY=VALUE when .env has no KEY
+  # shellcheck disable=SC2016  # $1 and $2 are the inner shell's
+  printf '%s' "$2" | as_user sh -c \
+    'v=$(cat); grep -qE "^$2=" "$1" && exit 0; printf "\n%s=%s\n" "$2" "$v" >>"$1"' \
+    _ "$APP/.env" "$1" \
+    || warn "could not add $1 to $APP/.env as $SERVICE_USER - add it yourself"
+}
 # Wait for the user manager (linger spins it up) so systemctl --user works.
 for _ in $(seq 1 20); do [ -S "/run/user/$SVC_UID/bus" ] && break; sleep 0.5; done
 
@@ -184,13 +268,162 @@ echo "net.ipv4.ping_group_range = $SVC_GID $SVC_GID" \
   > /etc/sysctl.d/99-danbyte-icmp.conf
 sysctl -q -w "net.ipv4.ping_group_range=$SVC_GID $SVC_GID" || true
 
+# ── Existing install: the bundle's upgrade stage does steps 4-9 ─────────────
+# Then the root steps, as their own unit: this script only follows both, so
+# a dropped session (sudo hands its SIGHUP on) skips nothing.
+upgrade_existing() {
+  local root work ver from now lock unit_state mark state step last hs told hpid rc
+  local -a hargs
+  step "Upgrading the existing install in $APP"
+  root="$(upgrade_root)"
+  mark="$root/active"
+  [ ! -f "$mark" ] || die "an earlier upgrade is unfinished - run: danbyte-admin upgrade recover"
+  unit_state="$(as_user systemctl --user is-active danbyte-upgrade.service 2>/dev/null || true)"
+  if [ "$unit_state" = active ] || [ "$unit_state" = activating ]; then
+    [ "$FORCE" -eq 1 ] || die "danbyte-upgrade.service is running - wait for it, or pass --force"
+  fi
+  if systemctl is-active --quiet danbyte-install-host.service; then
+    [ "$FORCE" -eq 1 ] \
+      || die "an earlier install.sh is still finishing (journalctl -u danbyte-install-host) - wait for it, or pass --force"
+    systemctl stop danbyte-install-host.service || true
+  fi
+  lock="$APP/.upgrade.lock"
+  if [ -e "$lock" ]; then
+    # The app's rule: a lock whose unit is gone and that is older than five
+    # minutes is stale.
+    if [ $(( $(date +%s) - $(stat -c %Y "$lock") )) -lt 300 ] && [ "$FORCE" -eq 0 ]; then
+      die "an upgrade holds $lock - wait for it, or pass --force"
+    fi
+    as_user rm -f "$lock"
+  fi
+  ver="$(tree_version "$BUNDLE")"
+  from="$(tree_version "$APP")"
+  [ -f "$BUNDLE/scripts/upgrade/stage.sh" ] || die "this bundle has no upgrade stage"
+  # The stage's own order (a pre-release is older than its final), from this
+  # bundle. --force does not cover it: older code on a newer schema.
+  if /bin/sh -c '. "$1" && downgrade_refused "$2" "$3" >/dev/null' _ \
+      "$BUNDLE/scripts/upgrade/lib.sh" "$ver" "$from"; then
+    die "this bundle is $ver and $APP runs $from - downgrades are not supported"
+  fi
+  now="$(date +%s)"
+  # What the root steps run, copied now into a folder only root can read:
+  # host-sync.sh and what it renders from, and the previous release's nginx
+  # template, which tells a site edited by hand from one Danbyte rendered
+  # once the stage has replaced it.
+  hs="$HS_BASE/$(date -u +%Y%m%dT%H%M%SZ)"
+  install -d -m 755 "$(dirname "$HS_BASE")"
+  install -d -m 700 "$HS_BASE"
+  rm -rf "$hs"
+  install -d -m 700 "$hs"
+  # shellcheck disable=SC2046  # one path per word
+  (cd "$BUNDLE" && cp --parents $(bash scripts/host-sync.sh --print-sources) \
+    scripts/install-host.sh danbyte/__init__.py "$hs/") || die "could not copy the root steps to $hs"
+  # Read by the service user too: root opens nothing in the app directory.
+  as_user cat "$APP/deploy/nginx/danbyte.prod.conf.template" >"$hs/old.template" 2>/dev/null \
+    || : >"$hs/old.template"
+  work="$root/$(date -u +%Y%m%dT%H%M%SZ)-$ver"
+  as_user mkdir -p "$work/src"
+  # Copied by the service user through a pipe: the admin's home is often
+  # closed to it, and nothing it will run is left owned by root.
+  tar -C "$BUNDLE" -cf - . | as_user tar -C "$work/src" -xf -
+  # The same lock the app takes, so the Updates page and the auto-upgrade
+  # timer see this upgrade as busy - written by the service user.
+  as_user flock "$APP/.upgrade.lock.guard" sh -c \
+    'umask 077; printf "%s" "$1" >"$2.tmp" && mv -f "$2.tmp" "$2"' _ \
+    "{\"owner\":\"installer-$now\",\"phase\":\"launched\",\"via\":\"systemd-run\",\"launch_confirmed\":true,\"acquired_at\":$now,\"launched_at\":$now}" \
+    "$lock"
+  as_user sh -c 'printf "%s\n" "$1" >"$2"' _ \
+    "{\"state\":\"running\",\"step\":\"launching\",\"pct\":0,\"version_to\":\"$ver\",\"version_from\":\"$from\",\"stage_api\":1,\"trigger\":\"installer\",\"started_at\":$now}" \
+    "$APP/.upgrade-status.json"
+  set -- systemd-run --user --collect --unit danbyte-upgrade \
+    -p KillMode=mixed -p TimeoutStopSec=300 \
+    --setenv=DANBYTE_DIR="$APP" --setenv=DANBYTE_UPGRADE_WORK="$work" \
+    --setenv=DANBYTE_UPGRADE_SRC="$work/src" --setenv=DANBYTE_UPGRADE_VERSION="$ver" \
+    --setenv=DANBYTE_UPGRADE_FROM="$from" --setenv=DANBYTE_UPGRADE_TRIGGER=installer \
+    --setenv=DANBYTE_UPGRADE_STARTED_AT="$now"
+  [ "$SKIP_BACKUP" -eq 1 ] && set -- "$@" --setenv=DANBYTE_SKIP_BACKUP=1
+  hargs=(--app "$APP" --user "$SERVICE_USER" --host "$HOST" --log-dir "$LOG_DIR"
+         --version "$ver" --from "$from" --wait-stage --lock-owner "installer-$now"
+         --old-template "$hs/old.template" --log "$hs.log" --cleanup "$hs")
+  [ "$DO_NGINX" -eq 1 ] || hargs+=(--no-nginx)
+  [ "$ADOPT" -eq 0 ] || hargs+=(--adopt)
+  # From the stage's start to the root unit's, a hang-up must not land.
+  trap '' HUP INT TERM
+  if ! as_user "$@" -p OnFailure=danbyte-upgrade-recover.service \
+      /bin/sh "$work/src/scripts/upgrade/stage.sh" --kind bundle >/dev/null 2>&1; then
+    unit_state="$(as_user systemctl --user is-active danbyte-upgrade.service 2>/dev/null || true)"
+    if [ "$unit_state" != active ] && [ "$unit_state" != activating ]; then
+      # An older systemd without OnFailure= on transient units: the stage's
+      # recovery timer covers it.
+      as_user "$@" /bin/sh "$work/src/scripts/upgrade/stage.sh" --kind bundle >/dev/null \
+        || { as_user rm -f "$lock"; rm -rf "$hs"; die "could not start danbyte-upgrade.service"; }
+    fi
+  fi
+  hpid=""
+  if ! systemd-run --unit danbyte-install-host --collect --quiet \
+      -p "Description=Danbyte installer: the root steps after the upgrade" \
+      /bin/sh "$hs/scripts/install-host.sh" "${hargs[@]}" >/dev/null 2>&1; then
+    # Not as a unit, then, but out of this session all the same.
+    setsid /bin/sh "$hs/scripts/install-host.sh" "${hargs[@]}" </dev/null >/dev/null 2>&1 &
+    hpid=$!
+  fi
+  trap - HUP INT TERM
+  echo "  running as danbyte-upgrade.service, then the root steps as danbyte-install-host.service;"
+  echo "  both carry on if this session drops. Follow them:"
+  echo "    sudo -u $SERVICE_USER XDG_RUNTIME_DIR=/run/user/$SVC_UID journalctl --user -fu danbyte-upgrade"
+  echo "    sudo journalctl -fu danbyte-install-host     (what it says at the end: $hs.log)"
+  [ -z "$hpid" ] || warn "danbyte-install-host.service did not start; the root steps run detached (pid $hpid)"
+  trap 'printf "\n  still running - what it says at the end: %s.log\n" "$hs"; exit 130' INT
+  last=""
+  told=0
+  while [ ! -f "$hs.log.rc" ]; do
+    sleep 2
+    state="$(sed -n 's/.*"state": *"\([a-z]*\)".*/\1/p' "$APP/.upgrade-status.json" 2>/dev/null || true)"
+    step="$(sed -n 's/.*"step": *"\([a-z_]*\)".*/\1/p' "$APP/.upgrade-status.json" 2>/dev/null || true)"
+    if [ -n "$step" ] && [ "$step" != "$last" ]; then echo "  - $step"; last="$step"; fi
+    if [ "$told" -eq 0 ] && [ "$state" = running ] && [ -f "$mark" ]; then
+      unit_state="$(as_user systemctl --user is-active danbyte-upgrade.service 2>/dev/null || true)"
+      if [ "$unit_state" != active ] && [ "$unit_state" != activating ]; then
+        warn "the upgrade stopped part-way; its recovery finishes or rolls it back within five minutes"
+        told=1
+      fi
+    fi
+    if ! systemctl is-active --quiet danbyte-install-host.service \
+        && { [ -z "$hpid" ] || ! kill -0 "$hpid" 2>/dev/null; }; then
+      sleep 1
+      break
+    fi
+  done
+  trap - INT
+  cat "$hs.log" 2>/dev/null || true
+  rc="$(cat "$hs.log.rc" 2>/dev/null || true)"
+  if [ -z "$rc" ]; then
+    warn "the root steps ended without saying how - see: journalctl -u danbyte-install-host"
+    rc=1
+  fi
+  echo
+  exit "$rc"
+}
+
+if [ "$EXISTING" -eq 1 ]; then
+  # Settings releases from before 0.17 did not backfill themselves.
+  env_backfill DANBYTE_HTTPS "$HTTPS_VAL"
+  upgrade_existing
+fi
+
+if [ "$EXISTING" -eq 0 ]; then
 # ── 4. Deploy the app to $APP ────────────────────────────────────────────────
 step "Deploying app → $APP"
-install -d "$APP"
-# Everything except the outer installer copy; keep vendor/ (python+wheels+node).
-tar -C "$BUNDLE" --exclude=./install.sh -cf - . | tar -C "$APP" -xf -
+# The home, with anything an earlier run left in it, is the service user's,
+# and that user unpacks the app into it through a pipe: root writes nothing
+# into the app directory (#287). -p keeps the bundle's modes, as root's tar
+# did: nginx reads the static files and the maintenance page as another user.
 chown -R "$SERVICE_USER:$SERVICE_USER" "$SERVICE_HOME"
-chmod o+x "$SERVICE_HOME" "$APP"   # let nginx traverse to staticfiles
+as_user mkdir -p "$APP"
+# Everything except the outer installer copy; keep vendor/ (python+wheels+node).
+tar -C "$BUNDLE" --exclude=./install.sh -cf - . | as_user tar -C "$APP" -xpf -
+chmod o+x "$SERVICE_HOME"
+as_user chmod o+x "$APP"   # let nginx traverse to staticfiles
 
 # ── 5. Python venv from the bundled wheelhouse ───────────────────────────────
 step "Python venv (offline wheelhouse)"
@@ -199,33 +432,33 @@ as_user bash -lc "cd '$APP' && vendor/python/bin/python3 -m venv .venv \
 
 # ── 6. Secrets + .env (reuse existing on re-run) ─────────────────────────────
 step "Configuring .env"
-PYGEN="$APP/vendor/python/bin/python3"
+# The bundle's interpreter: root runs nothing from the app directory.
+PYGEN="$BUNDLE/vendor/python/bin/python3"
 if [ -f "$APP/.env" ]; then
   echo "  keeping existing $APP/.env"
-  DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$APP/.env" | cut -d= -f2-)"
-  ADMIN_PASSWORD="$(grep -E '^DJANGO_SUPERUSER_PASSWORD=' "$APP/.env" | cut -d= -f2- || true)"
+  DB_PASSWORD="$(env_get DB_PASSWORD)"
+  ADMIN_PASSWORD="$(env_get DJANGO_SUPERUSER_PASSWORD || true)"
   # Backfill DANBYTE_LOG_DIR for installs that predate file logging.
-  grep -qE '^DANBYTE_LOG_DIR=' "$APP/.env" \
-    || printf '\nDANBYTE_LOG_DIR=%s\n' "$LOG_DIR" >> "$APP/.env"
+  env_backfill DANBYTE_LOG_DIR "$LOG_DIR"
   # Backfill MONITORING_SECRET_KEY (now required when DEBUG=False) for installs
   # that predate it - a fresh random key; existing secrets were encrypted under
   # the SECRET_KEY-derived key, so preserve behaviour by seeding it FROM the
   # current SECRET_KEY (keeps existing SNMP/SMTP/LDAP secrets decryptable).
-  grep -qE '^MONITORING_SECRET_KEY=' "$APP/.env" \
-    || printf '\nMONITORING_SECRET_KEY=%s\n' \
-       "$(grep -E '^DJANGO_SECRET_KEY=' "$APP/.env" | cut -d= -f2-)" >> "$APP/.env"
+  env_backfill MONITORING_SECRET_KEY "$(env_get DJANGO_SECRET_KEY)"
   # Backfill DANBYTE_HTTPS to match this install's front end: True when nginx +
   # TLS is managed here, False for --no-nginx (no terminator → Secure cookies
   # would break login). Defaults off in settings so plain-http is never locked out.
-  grep -qE '^DANBYTE_HTTPS=' "$APP/.env" \
-    || printf '\nDANBYTE_HTTPS=%s\n' "$HTTPS_VAL" >> "$APP/.env"
+  env_backfill DANBYTE_HTTPS "$HTTPS_VAL"
 else
   SECRET_KEY="$("$PYGEN" -c 'import secrets;print(secrets.token_urlsafe(50))')"
   MONITORING_SECRET_KEY="$("$PYGEN" -c 'import secrets;print(secrets.token_urlsafe(50))')"
   DB_PASSWORD="$("$PYGEN" -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(24)))')"
   ADMIN_PASSWORD="$("$PYGEN" -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(20)))')"
   umask 077
-  cat > "$APP/.env" <<EOF
+  # Written by the service user, its own and private from the first byte;
+  # the secrets reach it on stdin.
+  # shellcheck disable=SC2016  # $1 is the inner shell's
+  as_user sh -c 'umask 077 && cat >"$1"' _ "$APP/.env" <<EOF
 DJANGO_SECRET_KEY=$SECRET_KEY
 DEBUG=False
 ALLOWED_HOSTS=$HOST,127.0.0.1,localhost
@@ -253,14 +486,16 @@ DJANGO_SUPERUSER_USERNAME=admin
 DJANGO_SUPERUSER_EMAIL=admin@$HOST
 DJANGO_SUPERUSER_PASSWORD=$ADMIN_PASSWORD
 EOF
-  chown "$SERVICE_USER:$SERVICE_USER" "$APP/.env"
-  chmod 600 "$APP/.env"
+  as_user chmod 600 "$APP/.env"
 fi
 
 # ── 7. PostgreSQL role + database (idempotent) ───────────────────────────────
 step "PostgreSQL role + database"
+# The password may come from a .env the service account wrote: psql quotes it
+# (:'pw'), so no value can end the string and run SQL as postgres.
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='danbyte'" | grep -q 1 \
-  || sudo -u postgres psql -qc "CREATE ROLE danbyte LOGIN PASSWORD '$DB_PASSWORD'"
+  || printf '%s\n' "CREATE ROLE danbyte LOGIN PASSWORD :'pw';" \
+     | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -v pw="$DB_PASSWORD"
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='danbyte'" | grep -q 1 \
   || sudo -u postgres psql -qc "CREATE DATABASE danbyte OWNER danbyte"
 
@@ -268,7 +503,8 @@ sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='danbyte'" |
 step "Migrate + bootstrap"
 as_user bash -lc "cd '$APP' && .venv/bin/python manage.py migrate --noinput \
   && .venv/bin/python manage.py bootstrap \
-  && .venv/bin/python manage.py collectstatic --noinput >/dev/null"
+  && .venv/bin/python manage.py collectstatic --noinput >/dev/null \
+  && chmod -R u=rwX,go=rX staticfiles"   # nginx reads them from disk
 
 # ── 9. systemd units ─────────────────────────────────────────────────────────
 step "Installing + (re)starting services"
@@ -292,31 +528,21 @@ DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danb
 # would keep serving the OLD code - restart is what makes the update take).
 as_user systemctl --user enable $DANBYTE_UNITS >/dev/null 2>&1 || true
 as_user systemctl --user restart $DANBYTE_UNITS
-
-# Rotation for the log files. The app writes them from many processes and
-# rotates nothing itself when this exists; without it, it falls back to a
-# size-capped handler and gunicorn keeps its logs in the journal (#231).
-if [ -d /etc/logrotate.d ]; then
-  sed -e "s#@@LOG_DIR@@#$LOG_DIR#g" -e "s#@@USER@@#$SERVICE_USER#g" \
-    "$APP/deploy/logrotate/danbyte" > /etc/logrotate.d/danbyte
-  chmod 644 /etc/logrotate.d/danbyte
+# What this bundle installed, so the first upgrade can remove the files the
+# next release no longer ships.
+as_user sh -c 'cd "$1" && find . \( -path ./vendor -o -path ./frontend/dist -o -path ./frontend/node_modules -o -path ./staticfiles -o -path ./.git -o -path ./.venv -o -path ./media -o -path ./plugins_local -o -name __pycache__ \) -prune -o \( -type f -o -type l \) -print | grep -v "^\./install\.sh$\|^\./\.env$\|^\./\.release-files" | LC_ALL=C sort >.release-files.tmp && mv -f .release-files.tmp .release-files' _ "$APP" || true
 fi
 
-# ── 10. nginx + TLS ──────────────────────────────────────────────────────────
-if [ "$DO_NGINX" -eq 1 ]; then
-  step "nginx + TLS (self-signed) for $HOST"
-  ( cd "$APP" && make proxy-install \
-      NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
-      PROXY_HOST="$HOST" >/dev/null )
-  # proxy-install ran as root and left the staging folder root-only under
-  # root's umask; the app has to write its certificate drops there.
-  chown -R "$SERVICE_USER:$SERVICE_USER" "$APP/deploy/nginx/certs"
-  chmod 750 "$APP/deploy/nginx/certs"
-  chmod 600 "$APP/deploy/nginx/certs/danbyte.key" 2>/dev/null || true
-  # The root half of Settings → Updates → Site certificate: the app drops a
-  # pair in a folder it owns, this unit puts it in front of nginx.
-  ( cd "$APP" && make install-tls-unit >/dev/null )
-fi
+# ── 10. logrotate, nginx + TLS, the certificate unit (from this bundle) ──────
+# Rotation for the log files: the app rotates nothing itself when this
+# exists (#231). The nginx site and the root unit that applies a certificate
+# the app drops (Settings → Updates → Site certificate). Rendered from this
+# bundle as root; nothing from the app directory runs as root. (An upgrade
+# never gets here: its root unit does this once the stage is done.)
+step "Host: logrotate$( [ "$DO_NGINX" -eq 1 ] && echo ", nginx + TLS for $HOST, certificate unit")"
+set -- --app "$APP" --user "$SERVICE_USER" --host "$HOST" --log-dir "$LOG_DIR" --fresh
+[ "$DO_NGINX" -eq 1 ] || set -- "$@" --no-nginx
+bash "$BUNDLE/scripts/host-sync.sh" "$@"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 if [ "$DO_NGINX" -eq 1 ]; then
@@ -324,6 +550,13 @@ if [ "$DO_NGINX" -eq 1 ]; then
 else
   # No managed terminator - the app serves plain HTTP on the frontend port.
   URL="http://$HOST:3000/  (no nginx; put your own TLS in front, then set DANBYTE_HTTPS=True)"
+fi
+# host-sync says whether the certificate the site serves is self-signed.
+CERT_NEXT=""
+if grep -q '"certificate":"self-signed"' /etc/danbyte/host-sync.json 2>/dev/null; then
+  CERT_NEXT="
+  • The certificate is self-signed. Settings → Updates → Site certificate
+    gets a real one (Let's Encrypt in one click) or takes an uploaded pair."
 fi
 cat <<EOF
 
@@ -335,9 +568,7 @@ $(printf '\033[1;32m✓ Danbyte is installed.\033[0m')
 
 Next:
   • Sign in, then change the admin password (User → Preferences) and remove
-    DJANGO_SUPERUSER_PASSWORD from $APP/.env.
-  • The certificate is self-signed. Settings → Updates → Site certificate
-    gets a real one (Let's Encrypt in one click) or takes an uploaded pair.
+    DJANGO_SUPERUSER_PASSWORD from $APP/.env.${CERT_NEXT}
   • Manage services as the service user:  sudo machinectl shell $SERVICE_USER@
 
 EOF

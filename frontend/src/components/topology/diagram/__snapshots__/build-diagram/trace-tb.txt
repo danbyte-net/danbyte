@@ -1,0 +1,45 @@
+# buildDiagram(graph, {"mode":"detailed","line":"elbow","colorMode":"cable","direction":"TB"})
+
+nodes 4
+dev:@leaf-03  card @44,14 88x28
+  fill #0ea5e9 ink #fff
+  title "leaf-03" top 6
+  nubs B36:Ethernet1/47 B52:Ethernet1/48
+dev:@pp-a01  card @125,224.2 88x28
+  fill #71717a ink #fff
+  title "pp-a01" top 6
+  nubs T44:1 B44:R1
+dev:@pp-b01  card @125,434.4 88x28
+  fill #71717a ink #fff
+  title "pp-b01" top 6
+  nubs T44:R1 B44:1
+dev:@srv-db-01  card @44,644.6 88x28
+  fill #10b981 ink #fff
+  title "srv-db-01" top 6
+  nubs T36:eno2 T52:eno1
+
+edges 4
+e:@c13:@leaf-03:@pp-a01  link cable elbow
+  style {"strokeWidth":2.5,"stroke":"var(--map-accent)"}
+  a B52:Ethernet1/48
+  b T44:1
+  path M 52,34 L 52,113.10546875 Q 52,119.10546875 58,119.10546875 L 119,119.10546875 Q 125,119.10546875 125,125.10546875 L 125,204.2109375
+    ports a 52,70.1@-90 b 125,193.4@-90
+e:@c15:@pp-a01:@pp-b01  link cable elbow
+  style {"strokeWidth":2.5,"stroke":"var(--map-accent)"}
+  a B44:R1
+  b T44:R1
+  path M 125,244.2109375 L 125,414.421875
+    ports a 125,257.9@-90 b 125,400.7@-90
+e:@c16:@pp-b01:@srv-db-01  link cable elbow
+  style {"strokeWidth":2.5,"stroke":"var(--map-accent)"}
+  a B44:1
+  b T52:eno1
+  path M 125,454.421875 L 125,533.52734375 Q 125,539.52734375 119,539.52734375 L 58,539.52734375 Q 52,539.52734375 52,545.52734375 L 52,624.6328125
+    ports a 125,465.3@-90 b 52,605.8@-90
+e:@c17:@leaf-03:@srv-db-01  link cable elbow
+  style {"strokeWidth":1.25}
+  a B36:Ethernet1/47
+  b T36:eno2
+  path M 36,34 L 36,624.6328125
+    ports a 36,69.8@-90 b 36,604.9@-90

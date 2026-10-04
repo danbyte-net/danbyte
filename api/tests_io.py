@@ -1,6 +1,8 @@
 """Round-trip export/import: registry, export scoping, upsert, RBAC, dry-run."""
 from __future__ import annotations
 
+import json
+
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
@@ -36,7 +38,7 @@ class IORegistryTests(APITestCase):
         self.assertEqual(_infer_natural_key(Device), ["name"])  # (tenant,name)
 
 
-class IORoundTripTests(APITestCase):
+class _IOCase(APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
@@ -60,6 +62,8 @@ class IORoundTripTests(APITestCase):
             format="json",
         )
 
+
+class IORoundTripTests(_IOCase):
     def test_export_header_and_rows(self):
         resp = self._export()
         self.assertEqual(resp.status_code, 200)
@@ -418,6 +422,90 @@ class IOExportFilterTests(APITestCase):
         self.assertIn("10.1.0.5", text)
 
 
+class IOExportPostTests(APITestCase):
+    """A bulk bar exports its selection by POSTing the ids: a few hundred
+    UUIDs in a GET's query string pass the proxy's 8 KB line limit."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.other = Tenant.objects.create(org=org, name="Other", slug="other")
+        self.ams = Site.objects.create(tenant=self.tenant, name="AMS")
+        self.lon = Site.objects.create(tenant=self.tenant, name="LON")
+        self.pa = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.0.0.0/24", status=status_for(self.tenant), site=self.ams)
+        self.pb = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.1.0.0/24", status=status_for(self.tenant), site=self.lon)
+        self.theirs = Prefix.objects.create(
+            tenant=self.other, cidr="10.2.0.0/24", status=status_for(self.other))
+        self.admin = User.objects.create_user("a", password="x", is_superuser=True)
+        UserProfile.objects.create(user=self.admin).tenants.add(self.tenant)
+        self._login(self.admin)
+
+    def _login(self, user):
+        self.client.force_login(user)
+        self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
+
+    def _post(self, ids, fmt="csv"):
+        return self.client.post(
+            "/api/io/prefix/export/", {"fmt": fmt, "ids": [str(i) for i in ids]},
+            format="json",
+        )
+
+    def test_exports_only_the_posted_ids(self):
+        resp = self._post([self.pa.id])
+        self.assertEqual(resp.status_code, 200)
+        text = _csv(resp)
+        self.assertIn("10.0.0.0/24", text)
+        self.assertNotIn("10.1.0.0/24", text)
+
+    def test_a_selection_too_long_for_a_url(self):
+        import uuid
+
+        ids = [uuid.uuid4() for _ in range(400)] + [self.pa.id, self.pb.id]
+        resp = self._post(ids, fmt="json")
+        self.assertEqual(resp.status_code, 200)
+        rows = json.loads(b"".join(resp.streaming_content))
+        self.assertEqual({r["cidr"] for r in rows}, {"10.0.0.0/24", "10.1.0.0/24"})
+
+    def test_another_tenants_id_is_left_out(self):
+        text = _csv(self._post([self.pa.id, self.theirs.id]))
+        self.assertIn("10.0.0.0/24", text)
+        self.assertNotIn("10.2.0.0/24", text)
+
+    def test_site_scope_still_applies(self):
+        u = User.objects.create_user("ams", password="x")
+        UserProfile.objects.create(user=u).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="ams", object_types=["prefix"], actions=["view"])
+        perm.users.add(u)
+        perm.sites.set([self.ams])
+        self._login(u)
+        text = _csv(self._post([self.pa.id, self.pb.id]))
+        self.assertIn("10.0.0.0/24", text)
+        self.assertNotIn("10.1.0.0/24", text)
+
+    def test_needs_view_permission(self):
+        u = User.objects.create_user("none", password="x")
+        UserProfile.objects.create(user=u).tenants.add(self.tenant)
+        self._login(u)
+        self.assertEqual(self._post([self.pa.id]).status_code, 403)
+
+    def test_malformed_and_oversized_lists_are_refused(self):
+        from api.io_views import MAX_EXPORT_IDS
+
+        self.assertEqual(self._post(["not-a-uuid"]).status_code, 400)
+        resp = self.client.post(
+            "/api/io/prefix/export/", {"ids": "x" * 10}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        resp = self._post([self.pa.id] * (MAX_EXPORT_IDS + 1))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("ids", resp.json())
+        # The GET path answers a bad id the same way, not with a 500.
+        resp = self.client.get("/api/io/prefix/export/?ids=nope")
+        self.assertEqual(resp.status_code, 400)
+
+
 class CsvDialectTests(APITestCase):
     """A CSV the way Excel writes it in a Dutch or German locale, and the
     errors a row gets when a required column is empty."""
@@ -452,3 +540,35 @@ class CsvDialectTests(APITestCase):
         res = self._import("name,time_zone\n,Asia/Kolkata\n")
         self.assertEqual(res["created"], 0)
         self.assertEqual(res["errors"][0]["error"], "name: This field cannot be blank.")
+
+
+class IOImportStatusTests(_IOCase):
+    """A status goes only on the kinds of object its catalog entry offers it
+    to - through either import, as through the API (#292)."""
+
+    def setUp(self):
+        super().setUp()
+        from api.models import Status
+
+        self.cable_only = Status.objects.create(
+            tenant=self.tenant, name="Cable only", slug="cable-only", available_to=["cable"]
+        )
+
+    def test_a_status_not_offered_to_the_kind_is_refused(self):
+        body = self._import("id,cidr,status,description\n,10.7.7.0/24,cable-only,x\n").json()
+        self.assertEqual(body["created"], 0)
+        self.assertIn("“Cable only” isn't a status for prefixes.",
+                      json.dumps(body["errors"], ensure_ascii=False))
+        from api.bulk_import import import_rows
+
+        result = import_rows(Prefix, self.tenant, [{"cidr": "10.6.6.0/24", "status": "cable-only"}],
+                             user=self.admin)
+        self.assertEqual(result["created"], 0)
+        self.assertIn("isn't a status for prefixes", result["errors"][0]["error"])
+
+    def test_a_row_already_wearing_it_imports_back_unchanged(self):
+        Prefix.objects.filter(pk=self.p1.pk).update(status=self.cable_only)
+        body = self._import(_csv(self._export())).json()
+        self.assertEqual((body["updated"], body["errors"]), (1, []))
+        self.p1.refresh_from_db()
+        self.assertEqual(self.p1.status_id, self.cable_only.id)

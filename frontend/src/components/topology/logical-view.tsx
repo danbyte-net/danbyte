@@ -1,19 +1,30 @@
 import { useMemo } from "react"
-import { useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
+import { Filter, Link as LinkIcon, SlidersHorizontal } from "lucide-react"
 
-import { LogicalLegend } from "@/components/topology/legend"
-
-import { api, type LogicalTopology, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { LogicalTopology, Paginated } from "@/lib/api"
+import { copyWithToast } from "@/lib/clipboard"
+import { railRoles, railsDocument, layoutRails } from "@/lib/diagram/rails"
+import type { RailModel, RailSectionSpec } from "@/lib/diagram/rails"
+import { useMe } from "@/lib/use-me"
 import { FormCheckbox } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { EmptyState } from "@/components/empty-state"
-import {
-  RailDiagram,
-  type BoxInput,
-  type SectionInput,
-} from "@/components/topology/rail-diagram"
+import { Loading } from "@/components/loading"
+import { BarButton, BarMenuTrigger } from "@/components/map-toolbar"
+import { ExportMenu } from "@/components/topology/export/export-menu"
+import { PopoverField } from "@/components/topology/filters-popover"
+import { RailCanvas } from "@/components/topology/rail-diagram"
+import type { RailCanvasHandle } from "@/components/topology/rail-diagram"
+import { RailLegend, railLegendRows } from "@/components/topology/rail-legend"
+import { Badge } from "@/components/ui/badge"
 import { Combobox } from "@/components/ui/combobox"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { useUrlFlag, useUrlText } from "@/lib/use-url-state"
 
 // Sentinel key for devices with no group. A printable constant, not an
@@ -23,34 +34,32 @@ const UNGROUPED = "\u0000ungrouped"
 
 // The topology page's Logical tab: VLANs as rails (grouped into their VLAN
 // groups), physical devices AND virtual machines attached to the rails their
-// interfaces carry - the hybrid L2 picture. VMs draw dashed; tagged (trunk)
-// attachments draw dashed legs.
+// interfaces carry - the hybrid L2 picture, drawn by the shared rail diagram.
+// Cards take their role's color and wear their status; VMs draw dashed;
+// tagged (trunk) attachments draw dashed legs.
+//
+// Its controls live in the page's own bars, like the other tabs': the header
+// renders <LogicalFilters /> (Site, VLAN group) and <LogicalDisplay /> (VMs),
+// the second bar is <LogicalBar /> (Copy link, Export), and the canvas area
+// is <LogicalTopologyView />. Each reads and writes the URL itself, so the
+// page only places them.
 
-export function LogicalTopologyView() {
-  const nav = useNavigate()
-  // URL-backed, like the rest of the topology page: this view is linkable and
-  // its site filter is the SAME `?site=` the wiring views use, so switching
-  // tabs keeps the scope you were looking at.
+/** The Logical tab's URL state. `site` is the SAME `?site=` the Diagram and
+ * Hierarchy filter on, so switching tabs keeps the scope you were looking at;
+ * "all" is the Any row. */
+function useLogicalParams() {
   const [site, setSite] = useUrlText("site", "all")
   const [vlanGroup, setVlanGroup] = useUrlText("vlangroup", "all")
-  const [showVms, setShowVmsParam] = useUrlFlag("vms", true)
-  const setShowVms = (v: boolean) => setShowVmsParam(v)
+  const [showVms, setShowVms] = useUrlFlag("vms", true)
+  return { site, setSite, vlanGroup, setVlanGroup, showVms, setShowVms }
+}
 
-  const sites = useQuery({
-    queryKey: ["sites-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
-    staleTime: 10 * 60_000,
-  })
-  const groups = useQuery({
-    queryKey: ["vlan-groups-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/vlan-groups/?picker=1"
-      ),
-    staleTime: 10 * 60_000,
-  })
+type Row = { id: string; name: string }
 
+/** The Logical tab's payload, for the view and the bar alike (one cache
+ * entry: the bar's Export reads what the view draws). */
+function useLogicalData() {
+  const { site, vlanGroup, showVms } = useLogicalParams()
   const qs = useMemo(() => {
     const p = new URLSearchParams()
     if (site !== "all") p.set("site", site)
@@ -58,117 +67,273 @@ export function LogicalTopologyView() {
     if (!showVms) p.set("include_vms", "0")
     return p.toString()
   }, [site, vlanGroup, showVms])
-
-  const q = useQuery({
+  return useQuery({
     queryKey: ["topology-logical", qs],
     queryFn: () => api<LogicalTopology>(`/api/topology/logical/?${qs}`),
   })
+}
 
-  const { sections, boxes } = useMemo(() => {
-    const data = q.data
-    if (!data) return { sections: [], boxes: [] }
-    // Sections = VLAN groups, in order of first appearance (rails come
-    // vlan_id-sorted from the API); ungrouped VLANs collect at the end.
-    const bySection = new Map<string, SectionInput>()
-    for (const r of data.rails) {
-      const key = r.group ?? UNGROUPED
-      let sec = bySection.get(key)
-      if (!sec) {
-        sec = {
-          id: key,
-          title: r.group ?? "VLANs",
-          subtitle: r.group ? "VLAN group" : "",
-          rails: [],
-        }
-        bySection.set(key, sec)
+/** The payload as a rail model: sections are VLAN groups, in order of
+ * first appearance (rails come vlan_id-sorted from the API), ungrouped
+ * VLANs last; cards are devices and VMs, each drawn once. */
+function logicalModel(data: LogicalTopology): RailModel {
+  const bySection = new Map<string, RailSectionSpec>()
+  for (const r of data.rails) {
+    const key = r.group ?? UNGROUPED
+    let sec = bySection.get(key)
+    if (!sec) {
+      sec = {
+        id: key,
+        title: r.group ?? "VLANs",
+        subtitle: r.group ? "VLAN group" : "",
+        rails: [],
       }
-      sec.rails.push({
-        id: r.id,
-        label: `${r.name}  ·  VLAN ${r.vlan_id}`,
-        color: r.color,
-        onClick: () => nav({ to: "/vlans/$id", params: { id: r.id } }),
-      })
+      bySection.set(key, sec)
     }
-    const sections = [...bySection.values()].sort((a, b) =>
-      a.id === UNGROUPED ? 1 : b.id === UNGROUPED ? -1 : 0
-    )
-    const boxes: BoxInput[] = data.nodes.map((n) => ({
+    sec.rails.push({
+      id: r.id,
+      label: `${r.name} · VLAN ${r.vlan_id}`,
+      color: r.color,
+      status: r.status ?? null,
+      target: { kind: "vlan", id: r.id },
+    })
+  }
+  const sections = [...bySection.values()].sort((a, b) =>
+    a.id === UNGROUPED ? 1 : b.id === UNGROUPED ? -1 : 0
+  )
+  return {
+    sections,
+    boxes: data.nodes.map((n) => ({
       id: `${n.kind}:${n.id}`,
       name: n.name,
-      status: n.status,
-      dashed: n.kind === "vm",
-      onClick: () =>
-        nav(
-          n.kind === "vm"
-            ? { to: "/virtual-machines/$id", params: { id: n.id } }
-            : { to: "/devices/$id", params: { id: n.id } }
-        ),
+      vm: n.kind === "vm",
+      role: n.role ?? null,
+      status: n.status_mini ?? null,
+      target: { kind: n.kind === "vm" ? "vm" : "device", id: n.id },
       legs: n.attachments.map((a) => ({
-        railId: a.rail,
+        rail: a.rail,
         label: a.iface,
         dashed: a.tagged,
-        // The leg's interface name clicks through to the interface page
-        // (device interfaces only - VM interfaces have no page of their own).
+        // The interface name opens the interface (device interfaces only -
+        // VM interfaces have no page of their own).
         ...(a.iface_id
-          ? {
-              onClick: () =>
-                nav({ to: "/interfaces/$id", params: { id: a.iface_id! } }),
-            }
+          ? { target: { kind: "interface" as const, id: a.iface_id } }
           : {}),
       })),
-    }))
-    return { sections, boxes }
-  }, [q.data, nav])
+    })),
+  }
+}
 
-  const isEmpty = q.data && q.data.rails.length === 0
+/** The Logical canvas on screen, for the bar's "Visible area" export. One
+ * Logical tab is mounted at a time. */
+const logicalCanvas: { current: RailCanvasHandle | null } = { current: null }
 
+const options = (rows: readonly Row[] | undefined) =>
+  (rows ?? []).map((r) => ({ value: r.id, label: r.name }))
+
+/** A searchable select with an Any row ("all" ↔ the combobox's none). */
+function AnySelect({
+  value,
+  onChange,
+  anyLabel,
+  rows,
+}: {
+  value: string
+  onChange: (v: string) => void
+  anyLabel: string
+  rows: readonly Row[] | undefined
+}) {
   return (
-    <div className="flex h-full flex-col gap-3 overflow-auto p-4 lg:p-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <Combobox
-          value={site === "all" ? null : site}
-          onChange={(v) => setSite(v ?? "all")}
-          options={(sites.data?.results ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="All sites"
-          placeholder="All sites"
-          className="h-8 w-44 text-xs"
-        />
-        <Combobox
-          value={vlanGroup === "all" ? null : vlanGroup}
-          onChange={(v) => setVlanGroup(v ?? "all")}
-          options={(groups.data?.results ?? []).map((g) => ({
-            value: g.id,
-            label: g.name,
-          }))}
-          noneLabel="All VLAN groups"
-          placeholder="All VLAN groups"
-          className="h-8 w-44 text-xs"
-        />
+    <Combobox
+      value={value === "all" ? null : value}
+      onChange={(v) => onChange(v ?? "all")}
+      options={options(rows)}
+      noneLabel={anyLabel}
+      placeholder={anyLabel}
+      className="h-8 w-full text-xs"
+    />
+  )
+}
+
+/**
+ * The Logical tab's header Filters: Site and VLAN group, each with an Any
+ * row. Same trigger as the Diagram's Filters, counting the filters in force.
+ */
+export function LogicalFilters() {
+  const { site, setSite, vlanGroup, setVlanGroup } = useLogicalParams()
+  // Same cache keys as the page's own pickers.
+  const sites = useQuery({
+    queryKey: ["sites-picker"],
+    queryFn: () => api<Paginated<Row>>("/api/sites/?picker=1"),
+    staleTime: 10 * 60_000,
+  })
+  const groups = useQuery({
+    queryKey: ["vlan-groups-picker"],
+    queryFn: () => api<Paginated<Row>>("/api/vlan-groups/?picker=1"),
+    staleTime: 10 * 60_000,
+  })
+  const active = [site, vlanGroup].filter((v) => v !== "all").length
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <BarMenuTrigger>
+          <Filter /> Filters
+          {active > 0 && (
+            <Badge variant="secondary" className="num h-4 px-1 text-[10px]">
+              {active}
+            </Badge>
+          )}
+        </BarMenuTrigger>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 space-y-3 p-3">
+        <PopoverField label="Site">
+          <AnySelect
+            value={site}
+            onChange={setSite}
+            anyLabel="Any site"
+            rows={sites.data?.results}
+          />
+        </PopoverField>
+        <PopoverField label="VLAN group">
+          <AnySelect
+            value={vlanGroup}
+            onChange={setVlanGroup}
+            anyLabel="Any VLAN group"
+            rows={groups.data?.results}
+          />
+        </PopoverField>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** The Logical tab's header Display: whether VMs are drawn. */
+export function LogicalDisplay() {
+  const { showVms, setShowVms } = useLogicalParams()
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <BarMenuTrigger>
+          <SlidersHorizontal /> Display
+        </BarMenuTrigger>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-48 p-3">
         <FormCheckbox
-          label="Virtual machines"
+          label="VMs"
           checked={showVms}
           onChange={setShowVms}
           className="items-center"
         />
-      </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
-      {q.isError && <QueryError error={q.error} />}
-      {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {isEmpty && (
-        <EmptyState title="No VLAN attachments to draw yet.">
-          Assign VLANs to device interfaces (untagged or tagged) or to VM
-          interfaces and they appear here as rails with everything attached.
-        </EmptyState>
-      )}
-      {q.data && !isEmpty && (
-        <div className="overflow-x-auto rounded-lg border border-border bg-muted/10 p-2">
-          <RailDiagram sections={sections} boxes={boxes} />
-        </div>
-      )}
-      <LogicalLegend />
+/** The Logical tab's second bar: Copy link and Export. The bar stays so
+ * the canvas doesn't jump between tabs. */
+export function LogicalBar() {
+  const { site, vlanGroup, showVms } = useLogicalParams()
+  const q = useLogicalData()
+  const { me } = useMe()
+  const sites = useQuery({
+    queryKey: ["sites-picker"],
+    queryFn: () => api<Paginated<Row>>("/api/sites/?picker=1"),
+    staleTime: 10 * 60_000,
+  })
+  const groups = useQuery({
+    queryKey: ["vlan-groups-picker"],
+    queryFn: () => api<Paginated<Row>>("/api/vlan-groups/?picker=1"),
+    staleTime: 10 * 60_000,
+  })
+  const model = useMemo(() => (q.data ? logicalModel(q.data) : null), [q.data])
+  const named = (rows: readonly Row[] | undefined, id: string) =>
+    id === "all" ? undefined : rows?.find((r) => r.id === id)?.name
+  const siteName = named(sites.data?.results, site)
+  const groupName = named(groups.data?.results, vlanGroup)
+  const filters = [
+    siteName && `Site ${siteName}`,
+    groupName && `VLAN group ${groupName}`,
+    !showVms && "No VMs",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const name = "Logical topology"
+  return (
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <BarButton
+          onClick={() =>
+            void copyWithToast(window.location.href, "Link copied")
+          }
+        >
+          <LinkIcon /> Copy link
+        </BarButton>
+        <ExportMenu
+          name={name}
+          disabled={!model || model.sections.length === 0}
+          legend={
+            model
+              ? railLegendRows("logical", { roles: railRoles(model) })
+              : undefined
+          }
+          document={(req) => {
+            if (!model) return null
+            const canvas = logicalCanvas.current
+            const area = req.area === "visible" ? canvas?.visible() : null
+            return railsDocument(
+              // The visible area is cut from the drawing as it is on screen;
+              // the whole map is drawn at its own width.
+              layoutRails(model, { width: area ? canvas?.width() : 0 }),
+              {
+                meta: {
+                  title: name,
+                  ...(me.active_tenant
+                    ? { tenant: me.active_tenant.name }
+                    : {}),
+                  generated_at: new Date().toISOString(),
+                  ...(filters ? { filters } : {}),
+                  danbyte_url: window.location.href,
+                },
+                origin: window.location.origin,
+                area,
+                // Only a draw.io file asks for a mode.
+                drawio: req.mode !== undefined,
+              }
+            )
+          }}
+        />
+      </div>
     </div>
+  )
+}
+
+export function LogicalTopologyView() {
+  const q = useLogicalData()
+  const model = useMemo(() => (q.data ? logicalModel(q.data) : null), [q.data])
+  const legend = useMemo(
+    () => (model ? railLegendRows("logical", { roles: railRoles(model) }) : []),
+    [model]
+  )
+
+  if (q.isLoading) return <Loading className="absolute inset-0" />
+  if (q.isError)
+    return (
+      <div className="absolute inset-0 flex items-center justify-center p-6">
+        <QueryError error={q.error} />
+      </div>
+    )
+  if (!model || model.sections.length === 0)
+    return (
+      <div className="absolute inset-0 flex items-center justify-center p-6">
+        <EmptyState title="No VLAN attachments yet." />
+      </div>
+    )
+  return (
+    <RailCanvas
+      ref={logicalCanvas}
+      model={model}
+      label="Logical topology"
+      legend={<RailLegend rows={legend} />}
+    />
   )
 }

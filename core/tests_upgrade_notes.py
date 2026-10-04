@@ -2,6 +2,7 @@
 the endpoints and command that surface and acknowledge them."""
 from __future__ import annotations
 
+import tempfile
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -119,11 +120,169 @@ class RealNotesTests(APITestCase):
             self.assertTrue(set(n.platforms) <= set(un.PLATFORMS), n.id)
             self.assertTrue(n.title and n.body, n.id)
         self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="docker")], [])
-        # The tls-unit note checks the host for the unit file.
-        with patch("core.site_tls.UNIT_FILE", Path("/nonexistent/danbyte-tls.path")):
+        # The tls-unit note checks the host for the unit file; the nginx ones
+        # read the site config (unreadable here, so they stay up).
+        with patch("core.site_tls.UNIT_FILE", Path("/nonexistent/danbyte-tls.path")), \
+                patch("core.upgrade_notes._site_config", return_value=None):
             self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="systemd")],
                              ["0.16.0-tls-unit", "0.16.0-nginx-acme", "0.16.0-nginx-backups"])
-        with patch("core.site_tls.UNIT_FILE", Path("/")):
+        with patch("core.site_tls.UNIT_FILE", Path("/")), \
+                patch("core.upgrade_notes._site_config", return_value=None):
             self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="systemd")],
                              ["0.16.0-nginx-acme", "0.16.0-nginx-backups"])
         self.assertEqual(un.applicable(version="0.15.1", platform="systemd"), [])
+
+    def test_the_nginx_notes_hide_once_the_site_has_the_locations(self):
+        site = (
+            "server { listen 80;\n"
+            "  location /.well-known/acme-challenge/ { proxy_pass http://127.0.0.1:8000; }\n}\n"
+            "server { listen 443 ssl;\n"
+            "  location ^~ /api/backups/ { proxy_pass http://127.0.0.1:8000; }\n}\n"
+        )
+        with patch("core.upgrade_notes._site_config", return_value=site):
+            self.assertTrue(un._acme_proxied())
+            self.assertTrue(un._backups_location())
+        with patch("core.upgrade_notes._site_config", return_value="server { listen 443; }"):
+            self.assertFalse(un._acme_proxied())
+            self.assertFalse(un._backups_location())
+
+    def test_the_backup_notes_agree_on_buffering(self):
+        # A host that never had the block sees both notes when Danbyte can't
+        # read its nginx site; they must not tell it opposite things (#242).
+        notes = {n.id: n for n in un.NOTES}
+        add = notes["0.16.0-nginx-backups"].snippet
+        self.assertIn("proxy_request_buffering on;", add)
+        self.assertNotIn("proxy_request_buffering off;", add)
+        self.assertIn("proxy_max_temp_file_size 10240m;", add)
+        self.assertIn("before 0.16.12", notes["0.16.12-nginx-backups-buffer"].body)
+        with patch("core.upgrade_notes._site_config", return_value=add):
+            self.assertTrue(un._backups_location())
+
+    def test_the_certificate_unit_must_not_run_the_apps_own_script(self):
+        from django.conf import settings
+
+        with tempfile.TemporaryDirectory() as d:
+            unit = Path(d) / "danbyte-tls.service"
+            with patch.object(un, "TLS_SERVICE_FILE", str(unit)):
+                self.assertTrue(un._tls_unit_runs_root_owned_script())   # none: 0.16.0 note
+                unit.write_text(f"[Service]\nExecStart=/usr/bin/env bash "
+                                f"{settings.BASE_DIR}/scripts/danbyte-tls-apply.sh\n")
+                self.assertFalse(un._tls_unit_runs_root_owned_script())
+                unit.write_text("[Service]\nExecStart=/usr/local/libexec/danbyte/danbyte-tls-apply.sh\n")
+                self.assertTrue(un._tls_unit_runs_root_owned_script())
+
+    def test_the_host_files_step_compares_the_stamp_with_this_tree(self):
+        import json
+
+        want = un.host_sources_digest()
+        self.assertIsNotNone(want)
+        with tempfile.TemporaryDirectory() as d:
+            stamp = Path(d) / "host-sync.json"
+            with patch.object(un, "HOST_SYNC_STAMP", str(stamp)):
+                self.assertFalse(un._host_files_applied())         # host-sync never ran here
+                stamp.write_text(json.dumps({"sources": want, "ok": True}))
+                self.assertTrue(un._host_files_applied())
+                stamp.write_text(json.dumps({"sources": "0" * 64, "ok": True}))
+                self.assertFalse(un._host_files_applied())         # an earlier release's files
+                stamp.write_text(json.dumps({"sources": want, "ok": False}))
+                self.assertFalse(un._host_files_applied())         # nginx refused the new site
+                stamp.write_text("{")
+                self.assertFalse(un._host_files_applied())
+            self.assertIsNone(un.host_sources_digest(Path(d)))     # a tree without them
+        note = next(n for n in un.NOTES if n.id == "0.17.0-host-files")
+        self.assertEqual(note.platforms, ("systemd",))
+        self.assertEqual(note.as_dict()["snippet"], un.host_sync_command())
+        self.assertIn("never from the app directory", note.body)
+
+    def test_host_steps_lead_with_the_one_command(self):
+        from danbyte import __version__
+
+        command = un.host_sync_command()
+        # the root steps of the release that runs, from its bundle
+        self.assertEqual(command.splitlines()[-1], "sudo ./install.sh --host-only")
+        self.assertIn(f"in the unpacked bundle of {__version__}", command)
+        note = next(n for n in un.NOTES if n.id == "0.16.12-logrotate")
+        self.assertTrue(note.as_dict()["snippet"].startswith(f"{command}\n# or by hand:\n"))
+        wildcard = next(n for n in un.NOTES if n.id == "0.17.0-wildcard-access")
+        self.assertNotIn("install.sh", wildcard.as_dict()["snippet"])
+
+    def test_no_step_has_root_run_a_file_from_the_app_directory(self):
+        # The app directory belongs to the service account: a script or a
+        # template changed there must never be what root runs or installs
+        # (#287). The root steps run from the bundle, and a step by hand
+        # spells out what root writes.
+        import re
+
+        for n in un.NOTES:
+            snippet = n.as_dict()["snippet"]
+            with self.subTest(n.id):
+                if n.host:
+                    self.assertTrue(snippet.startswith(un.host_sync_command()), snippet)
+                self.assertNotRegex(snippet, r"make -C|host-sync|from the (app|Danbyte) directory")
+                for line in snippet.splitlines():
+                    if not re.match(r"\s*sudo ", line):
+                        continue
+                    self.assertNotRegex(line, r"(?<![\w/.-])(deploy|scripts)/", line)
+                    if re.search(r"\bmake\b", line):     # in the bundle, for the install
+                        self.assertIn(" APP=", line)
+
+    def test_the_certificate_unit_alone_comes_from_the_bundle_too(self):
+        # The root steps leave the unit out on an install without nginx;
+        # make in the same bundle installs it for this install's directory.
+        from django.conf import settings
+
+        for nid in ("0.16.0-tls-unit", "0.17.0-tls-unit-root-script"):
+            snippet = next(n for n in un.NOTES if n.id == nid).as_dict()["snippet"]
+            self.assertIn(f"sudo make install-tls-unit APP={settings.BASE_DIR}", snippet)
+            self.assertNotIn("@@", snippet)
+
+    def test_the_logrotate_step_spells_out_the_shipped_config(self):
+        # Root writes what the snippet shows; it must be what the installer
+        # renders from deploy/logrotate/danbyte, with the default user and
+        # log directory.
+        from django.conf import settings
+
+        rendered = [line for line in (Path(settings.BASE_DIR) / "deploy/logrotate/danbyte").read_text()
+                    .replace("@@LOG_DIR@@", "/var/log/danbyte").replace("@@USER@@", "danbyte").splitlines()
+                    if line and not line.startswith("#")]
+        shown = un._LOGROTATE.split("<<'EOF'\n", 1)[1].split("\nEOF\n", 1)[0].splitlines()
+        self.assertEqual(shown, rendered)
+
+
+class HostCardTests(APITestCase):
+    """Root steps show as one card with one command; each keeps its by-hand
+    form as a part, and acknowledging the card covers them all."""
+
+    def setUp(self):
+        notes = (
+            un.UpgradeNote(id="1.1.0-nginx", version="1.1.0", title="Nginx", body="b",
+                           snippet="sudo nginx -t", platforms=("systemd",), host=True),
+            un.UpgradeNote(id="1.1.0-plain", version="1.1.0", title="Plain", body="b"),
+            un.UpgradeNote(id="1.0.0-unit", version="1.0.0", title="Unit", body="b",
+                           platforms=("systemd",), host=True),
+        )
+        p = patch.object(un, "NOTES", notes)
+        p.start()
+        self.addCleanup(p.stop)
+        for target, value in (("core.upgrade_notes.system_version",
+                               {"version": "1.1.0", "commit": "x", "tag": ""}),
+                              ("core.upgrade_notes.deployment_method", "systemd")):
+            q = patch(target, return_value=value)
+            q.start()
+            self.addCleanup(q.stop)
+        dep = DeploymentSettings.load()
+        dep.upgrade_notes_done = []
+        dep.save()
+        self.client.force_login(get_user_model().objects.create_superuser("admin", "a@e.com", "x"))
+
+    def test_one_card_for_every_root_step(self):
+        pending = self.client.get("/api/system/upgrade-notes/").json()["pending"]
+        self.assertEqual([n["id"] for n in pending], [un.HOST_STEPS_ID, "1.1.0-plain"])
+        card = pending[0]
+        self.assertEqual(card["snippet"].splitlines()[-1], "sudo ./install.sh --host-only")
+        self.assertEqual([p["id"] for p in card["parts"]], ["1.1.0-nginx", "1.0.0-unit"])
+        self.assertEqual(card["parts"][0]["snippet"], "sudo nginx -t")
+        r = self.client.post("/api/system/upgrade-notes/ack/", {"ids": [un.HOST_STEPS_ID]},
+                             format="json")
+        self.assertEqual([n["id"] for n in r.json()["pending"]], ["1.1.0-plain"])
+        self.assertEqual(sorted(r.json()["done"]), ["1.0.0-unit", "1.1.0-nginx"])

@@ -38,6 +38,16 @@ export const Route = createFileRoute("/compliance-rules/$id")({
   component: RuleDetailPage,
 })
 
+// The list endpoint whose rows each object type's affected table shows.
+const AFFECTED_LIST_API: Record<string, string> = {
+  prefix: "/api/prefixes/",
+  ipaddress: "/api/ips/",
+  device: "/api/devices/",
+  vlan: "/api/vlans/",
+  vrf: "/api/vrfs/",
+  site: "/api/sites/",
+}
+
 function RuleDetailPage() {
   const { id } = Route.useParams()
   const q = useQuery({
@@ -311,6 +321,9 @@ function AffectedObjects({
           columns={realColumns}
           flexColumn={AFFECTED_FLEX_COLUMN}
           tableId={`compliance-affected-${objectType}`}
+          // The rows are the type's own list rows (served from its list
+          // queryset, cut to what you may view), so its catalog applies.
+          autoColumns={{ api: AFFECTED_LIST_API[objectType] ?? null }}
           exportName={`affected-${objectType}`}
           exportTitle={ruleName}
         />

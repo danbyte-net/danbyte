@@ -7,11 +7,27 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.models import VRF, Location, Site
-from api.serializers import TenantScopedPrimaryKeyRelatedField
+from api.serializers import (
+    StatusMiniSerializer,
+    TenantScopedPrimaryKeyRelatedField,
+)
 from api.viewsets import TenantScopedViewSet
 
 from .models import VirtChange, VirtNetwork, VirtPlacementRule
 from .toggles import IntegrationToggleMixin
+
+
+def _status(obj, model):
+    """``obj``'s status as ``StatusMini`` (id, name, slug, color,
+    text_color) plus ``is_default``: whether it is the status a new
+    ``model`` gets (its ``default_for``) - the diagrams pill only the
+    others. None without a status."""
+    if not obj.status_id:
+        return None
+    return {
+        **StatusMiniSerializer(obj.status).data,
+        "is_default": model in (obj.status.default_for or []),
+    }
 
 
 class VirtNetworkSerializer(serializers.ModelSerializer):
@@ -58,23 +74,61 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
             return None
         # Rail colour: the VLAN's own colour first, its zone's second (zones
         # carry firewall semantics but their colour is still meaningful),
-        # frontend palette fallback when neither is set.
-        zone = obj.vlan.zone
-        return {"id": str(obj.vlan_id), "vlan_id": obj.vlan.vlan_id,
-                "name": obj.vlan.name,
-                "color": obj.vlan.color or (zone.color if zone else None)}
+        # frontend palette fallback when neither is set. The status rides
+        # along so the rail can wear it as a pill.
+        vlan = obj.vlan
+        zone = vlan.zone
+        return {"id": str(obj.vlan_id), "vlan_id": vlan.vlan_id,
+                "name": vlan.name,
+                "color": vlan.color or (zone.color if zone else None),
+                "status": _status(vlan, "vlan")}
+
+    def _visible_vms(self, source):
+        """The VMs of ``source``'s tenant this request may view, as a
+        queryset - worked out once per response, not per network. None
+        without a request (nothing to scope by): no VMs."""
+        from api.models import VirtualMachine
+        from auth_api import rbac
+
+        cache = self.context.setdefault("_visible_vms", {})
+        if source.tenant_id not in cache:
+            request = self.context.get("request")
+            tenant = source.tenant
+            cache[source.tenant_id] = (
+                rbac.restrict_queryset(
+                    VirtualMachine.objects.filter(tenant=tenant),
+                    request.user, tenant, "virtualmachine", "view",
+                ).values("pk")
+                if request is not None
+                else None
+            )
+        return cache[source.tenant_id]
 
     def get_vms(self, obj):
         from api.models import VMInterface
 
+        # Only the VMs the caller may view: a network is listable with its
+        # own grant, and a VM grant can be narrower (or site scoped).
+        visible = self._visible_vms(obj.source)
+        if visible is None:
+            return []
         seen: dict = {}
 
         def _add(iface):
             vm = iface.vm
             if vm.id not in seen:
+                role = vm.role if vm.role_id else None
                 seen[vm.id] = {
                     "id": str(vm.id), "name": vm.name,
                     "status": vm.status.name if vm.status_id else None,
+                    # The status with its color, and the role's, so the
+                    # topology colors the VM's card from data.
+                    "status_mini": _status(vm, "virtualmachine"),
+                    "role": (
+                        {"id": str(role.id), "name": role.name,
+                         "color": role.color}
+                        if role else None
+                    ),
                     # Which VM interface rides this network - the topology
                     # labels the connector leg with it.
                     "iface": iface.name,
@@ -83,16 +137,19 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
         # The direct links the sync records are the truth - vCenter never
         # states a VLAN on the NIC, so link-less inference misses every
         # vCenter VM (#46).
-        for link in obj.links.select_related(
-            "vm_interface__vm", "vm_interface__vm__status"
+        for link in obj.links.filter(
+            vm_interface__vm__in=visible
+        ).select_related(
+            "vm_interface__vm", "vm_interface__vm__status",
+            "vm_interface__vm__role",
         ):
             _add(link.vm_interface)
         # VLAN inference kept as a union: operator-modelled interfaces with a
         # matching VLAN but no sync link still belong on the rail.
         if obj.vlan_id:
             for i in (
-                VMInterface.objects.filter(vlan_id=obj.vlan_id)
-                .select_related("vm", "vm__status")
+                VMInterface.objects.filter(vlan_id=obj.vlan_id, vm__in=visible)
+                .select_related("vm", "vm__status", "vm__role")
             ):
                 _add(i)
         return list(seen.values())
@@ -110,7 +167,8 @@ class VirtNetworkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     tenant_field = "source__tenant"
     http_method_names = ["get", "patch"]
     queryset = VirtNetwork.objects.select_related(
-        "source", "vlan", "vlan__zone", "vswitch", "vrf", "vswitch__vrf"
+        "source", "vlan", "vlan__zone", "vlan__status", "vswitch", "vrf",
+        "vswitch__vrf",
     ).order_by("name", "ext_key")
     serializer_class = VirtNetworkSerializer
 

@@ -4,6 +4,7 @@ import type { BusinessHours } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { TimePicker } from "@/components/ui/time-picker"
 import { Field, FormCombobox } from "@/components/forms"
 import { useTimezoneOptions } from "@/lib/use-timezones"
 
@@ -24,7 +25,7 @@ const preset = (days: number[], spans: Span[]): BusinessHours =>
  * instead of `[["08:00","17:00"]]`). The API still accepts that shape on write,
  * so a row authored that way must render as a span here rather than as an
  * empty clock - reading `span[0]` on a flat pair yields a whole string, which
- * `<input type="time">` shows as "--:--". */
+ * the time picker cannot parse. */
 function spansOf(raw: unknown): Span[] {
   if (!Array.isArray(raw) || raw.length === 0) return []
   if (typeof raw[0] === "string") return [raw as Span]
@@ -132,21 +133,19 @@ export function BusinessHoursField({
                   <div className="grid gap-1">
                     {spans.map((span, i) => (
                       <div key={i} className="flex items-center gap-1.5">
-                        <input
-                          type="time"
+                        <TimePicker
                           value={span[0]}
-                          onChange={(e) => editSpan(day, i, 0, e.target.value)}
-                          className="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          onChange={(v) => v && editSpan(day, i, 0, v)}
+                          className="h-7 w-24 px-2 text-xs"
                         />
                         <span className="text-xs text-muted-foreground">
                           to
                         </span>
-                        <input
-                          type="time"
+                        <TimePicker
                           // The API's end-of-day sentinel has no clock face.
                           value={span[1] === "24:00" ? "23:59" : span[1]}
-                          onChange={(e) => editSpan(day, i, 1, e.target.value)}
-                          className="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          onChange={(v) => v && editSpan(day, i, 1, v)}
+                          className="h-7 w-24 px-2 text-xs"
                         />
                         {spans.length > 1 ? (
                           <Button

@@ -135,6 +135,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "faceplate_group_labels",
             "faceplate_port_labels",
             "faceplate_port_label_color",
+            "port_count_virtual",
             "date_format",
             "time_style",
             "display_timezone",
@@ -529,7 +530,11 @@ FLOORPLAN_POPOVER_FIELDS = [
     "power",
     "weight",
     "device_count",
+    "rail_count",
     "check",
+    # ── rack capacity, from the plan's racks (/api/racks/?floor_plan=…&include=
+    # ports) - fetched once for the plan when on, never part of the 30 s poll ──
+    "ports",
     # ── the linked rack/device (lazily fetched when one of these is on) ──
     "linked_status",
     "linked_role",
@@ -565,6 +570,38 @@ FLOORPLAN_POPOVER_FIELD_DEFAULTS = [
     "size",
     "faceplate",
 ]
+
+# ─── topology card lines ──────────────────────────────────────────────────
+# What a device card on the topology Diagram shows under its bold name, one
+# line per key in order. `status` and `monitor` are not lines: they draw the
+# pill in the card's top-left corner. Custom fields ride `cf_<key>`.
+TOPOLOGY_CARD_FIELDS = [
+    "status",  # lifecycle status pill
+    "monitor",  # monitoring pill, only while down or degraded
+    "primary_ip",
+    "secondary_ip",
+    "oob_ip",
+    "loopback",  # addresses whose IP role is `loopback`
+    "serial",
+    "asset_tag",
+    "device_type",
+    "manufacturer",
+    "platform",
+    "role",
+    "site",
+    "location",
+    "rack",
+    "tags",
+]
+TOPOLOGY_CARD_PILLS = ("status", "monitor")
+# Shown when nothing is configured: the monitoring pill, IP, Loopback, Serial.
+TOPOLOGY_CARD_FIELD_DEFAULTS = ["monitor", "primary_ip", "loopback", "serial"]
+TOPOLOGY_CARD_MAX_FIELDS = 8
+# Per-role lists are keyed "role:<slug>". DeviceRole.slug is a
+# SlugField(max_length=128), so underscores and capitals are legal - the
+# floor-plan SCOPE_KEY_RE would silently drop those roles.
+TOPOLOGY_CARD_SCOPE_RE = re.compile(r"^role:[-a-zA-Z0-9_]{1,128}$")
+TOPOLOGY_CARD_MAX_SCOPES = 500
 
 
 class DeviceFieldVisibilitySerializer(serializers.Serializer):
@@ -631,42 +668,71 @@ def device_field_visibility(request):
     return Response(DeviceFieldVisibilitySerializer(obj).data)
 
 
-def clean_popover_fields(value) -> list:
+def clean_field_list(value, known, *, limit=None) -> list:
     """Keep only usable field keys, in the given order, deduped.
 
-    A key is usable if it's in the built-in vocabulary OR is a `cf_<key>` custom
-    field. Custom fields are matched by shape, not by an enumerated list - the
-    tenant defines them, so anything else would mean shipping their data.
+    A key is usable if it's in the ``known`` vocabulary OR is a `cf_<key>`
+    custom field. Custom fields are matched by shape, not by an enumerated list
+    - the tenant defines them, so anything else would mean shipping their data.
+    ``limit`` caps the length, keeping the first keys.
     """
     if not isinstance(value, list):
         return []
-    known = set(FLOORPLAN_POPOVER_FIELDS)
-    return list(
+    known = set(known)
+    out = list(
         dict.fromkeys(
             k
             for k in value
             if isinstance(k, str) and (k in known or CF_FIELD_RE.match(k))
         )
     )
+    return out if limit is None else out[:limit]
 
 
-def clean_popover_overrides(value) -> dict:
-    """Per-scope field lists, keyed "tt:<slug>" / "role:<slug>".
+def clean_scope_overrides(
+    value,
+    known,
+    *,
+    scope_re=SCOPE_KEY_RE,
+    allow_empty=False,
+    limit=None,
+    max_scopes=None,
+) -> dict:
+    """Per-scope field lists, keyed by whatever ``scope_re`` accepts.
 
-    Drops unknown scope shapes and empty lists - an absent scope inherits the
-    global list, so storing an empty one would be a silent "show nothing".
+    Drops scope keys that don't match and lists that clean to nothing - an
+    absent scope inherits the global list. With ``allow_empty`` a list that was
+    stored empty on purpose survives as "name only"; a list whose keys were all
+    unknown still inherits, so a key leaving the vocabulary never silently
+    turns into "show nothing".
     """
     if not isinstance(value, dict):
         return {}
     out = {}
     for scope, fields in value.items():
+        if max_scopes is not None and len(out) >= max_scopes:
+            break
         scope = str(scope)
-        if not SCOPE_KEY_RE.match(scope):
+        if not scope_re.match(scope):
             continue
-        cleaned = clean_popover_fields(fields)
-        if cleaned:
+        cleaned = clean_field_list(fields, known, limit=limit)
+        if cleaned or (allow_empty and isinstance(fields, list) and not fields):
             out[scope] = cleaned
     return out
+
+
+def clean_popover_fields(value) -> list:
+    """The floor-plan popover vocabulary through :func:`clean_field_list`."""
+    return clean_field_list(value, FLOORPLAN_POPOVER_FIELDS)
+
+
+def clean_popover_overrides(value) -> dict:
+    """Per-scope popover lists, keyed "tt:<slug>" / "role:<slug>".
+
+    Drops unknown scope shapes and empty lists - an absent scope inherits the
+    global list, so storing an empty one would be a silent "show nothing".
+    """
+    return clean_scope_overrides(value, FLOORPLAN_POPOVER_FIELDS)
 
 
 class FloorplanPopoverSerializer(serializers.Serializer):
@@ -754,6 +820,185 @@ def floorplan_popover(request):
     return Response(FloorplanPopoverSerializer(obj).data)
 
 
+def clean_topology_card_fields(value) -> list:
+    """The topology card vocabulary through :func:`clean_field_list`."""
+    return clean_field_list(
+        value, TOPOLOGY_CARD_FIELDS, limit=TOPOLOGY_CARD_MAX_FIELDS
+    )
+
+
+def clean_topology_card_overrides(value) -> dict:
+    """Per-role card-line lists keyed "role:<slug>"; ``[]`` = name only."""
+    return clean_scope_overrides(
+        value,
+        TOPOLOGY_CARD_FIELDS,
+        scope_re=TOPOLOGY_CARD_SCOPE_RE,
+        allow_empty=True,
+        limit=TOPOLOGY_CARD_MAX_FIELDS,
+        max_scopes=TOPOLOGY_CARD_MAX_SCOPES,
+    )
+
+
+def topology_card_list(value) -> list | None:
+    """A stored card-line list on the read path, or None to inherit.
+
+    None (or anything that isn't a list) inherits; ``[]`` is "name only"; a
+    list is cleaned. A non-empty list that cleans to nothing - every key left
+    the vocabulary - inherits rather than turning into "name only".
+    """
+    if not isinstance(value, list):
+        return None
+    cleaned = clean_topology_card_fields(value)
+    if cleaned or not value:
+        return cleaned
+    return None
+
+
+def validate_topology_card_list(value) -> list:
+    """Write-side check of one card-line list. Unlike the read path it
+    refuses rather than drops: an unknown key or a list longer than
+    TOPOLOGY_CARD_MAX_FIELDS is a 400. Duplicates collapse, order is kept."""
+    if not isinstance(value, list) or not all(isinstance(k, str) for k in value):
+        raise serializers.ValidationError("Expected a list of field keys.")
+    known = set(TOPOLOGY_CARD_FIELDS)
+    unknown = [k for k in value if k not in known and not CF_FIELD_RE.match(k)]
+    if unknown:
+        raise serializers.ValidationError(
+            f"Unknown card field: {', '.join(unknown)}."
+        )
+    cleaned = list(dict.fromkeys(value))
+    if len(cleaned) > TOPOLOGY_CARD_MAX_FIELDS:
+        raise serializers.ValidationError(
+            f"At most {TOPOLOGY_CARD_MAX_FIELDS} card lines."
+        )
+    return cleaned
+
+
+def validate_topology_card_overrides(value) -> dict:
+    """Write-side check of the per-role lists: keys must be "role:<slug>",
+    each list passes :func:`validate_topology_card_list`, at most
+    TOPOLOGY_CARD_MAX_SCOPES scopes. ``[]`` is kept (name only)."""
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("Expected an object of role scopes.")
+    if len(value) > TOPOLOGY_CARD_MAX_SCOPES:
+        raise serializers.ValidationError(
+            f"At most {TOPOLOGY_CARD_MAX_SCOPES} role scopes."
+        )
+    out, errors = {}, {}
+    for scope, fields in value.items():
+        scope = str(scope)
+        if not TOPOLOGY_CARD_SCOPE_RE.match(scope):
+            errors[scope] = ["Scope keys are role:<slug>."]
+            continue
+        try:
+            out[scope] = validate_topology_card_list(fields)
+        except serializers.ValidationError as exc:
+            errors[scope] = exc.detail
+    if errors:
+        raise serializers.ValidationError(errors)
+    return out
+
+
+class TopologyCardSerializer(serializers.Serializer):
+    """The topology card-line config, on DeploymentSettings or TenantSettings.
+
+    ``card_fields`` is the global ordered list: null resets it to the built-in
+    default, ``[]`` shows the name only. ``role_overrides`` maps
+    "role:<slug>" to that role's own list; an absent role inherits
+    ``card_fields`` and ``[]`` is name only. Reads also carry the vocabulary so
+    the settings UI and the device form build their pickers from one place.
+    """
+
+    card_fields = serializers.ListField(
+        child=serializers.CharField(), required=False, allow_null=True
+    )
+    role_overrides = serializers.DictField(
+        child=serializers.ListField(child=serializers.CharField()), required=False
+    )
+
+    def validate_card_fields(self, value):
+        return None if value is None else validate_topology_card_list(value)
+
+    def validate_role_overrides(self, value):
+        return validate_topology_card_overrides(value)
+
+    def to_representation(self, instance):
+        stored = topology_card_list(instance.topology_card_fields)
+        return {
+            "card_fields": (
+                stored if stored is not None else list(TOPOLOGY_CARD_FIELD_DEFAULTS)
+            ),
+            "is_default": stored is None,
+            "role_overrides": clean_topology_card_overrides(
+                instance.topology_card_role_overrides
+            ),
+            **topology_card_vocabulary(),
+        }
+
+    def update(self, instance, validated_data):
+        update_fields = ["updated_at"]
+        # `override` is passed by the tenant endpoint only (save(override=...)).
+        if "override" in validated_data:
+            instance.override_topology_card = validated_data["override"]
+            update_fields.append("override_topology_card")
+        if "card_fields" in validated_data:
+            instance.topology_card_fields = validated_data["card_fields"]
+            update_fields.append("topology_card_fields")
+        if "role_overrides" in validated_data:
+            instance.topology_card_role_overrides = validated_data["role_overrides"]
+            update_fields.append("topology_card_role_overrides")
+        instance.save(update_fields=update_fields)
+        return instance
+
+
+def topology_card_vocabulary() -> dict:
+    """What a card-line picker renders from. `cf_*` keys aren't listed - the
+    UI adds those from the tenant's own device custom fields."""
+    return {
+        "available": list(TOPOLOGY_CARD_FIELDS),
+        "pills": list(TOPOLOGY_CARD_PILLS),
+        "defaults": list(TOPOLOGY_CARD_FIELD_DEFAULTS),
+        "max_fields": TOPOLOGY_CARD_MAX_FIELDS,
+    }
+
+
+@extend_schema(
+    methods=["GET"],
+    summary="Read deployment-wide topology card lines",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "`{card_fields, is_default, role_overrides, available, pills, "
+            "defaults, max_fields}`."
+        ),
+    ),
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update deployment-wide topology card lines",
+    tags=["deployment"],
+    request=TopologyCardSerializer,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Updated card-line config (same shape as GET).",
+    ),
+)
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def topology_card(request):
+    """Deployment-wide topology card lines - the default every tenant inherits."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    obj = DeploymentSettings.load()
+    if request.method == "PUT":
+        ser = TopologyCardSerializer(obj, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+    return Response(TopologyCardSerializer(obj).data)
+
+
 # The faceplate component-popover vocabulary - what a port's hover card can
 # show. Same idea as the tile popover: an ordered, curated key list; unknown
 # keys are dropped on read AND write so removed fields never linger in config.
@@ -761,6 +1006,7 @@ COMPONENT_POPOVER_FIELDS = [
     "name",        # interface name, linked
     "type",        # connector/interface type
     "state",       # disabled / enabled·no cable / up · speed · cable type
+    "peer",        # "Far end": the device and port at the cable's other end
     "vlan",        # access VLAN or trunk summary
     "live",        # observed oper status + speed (SNMP), when present
     "ips",         # up to three assigned addresses, linked
@@ -771,7 +1017,7 @@ COMPONENT_POPOVER_FIELDS = [
     "tags",
 ]
 
-COMPONENT_POPOVER_FIELD_DEFAULTS = ["name", "type", "state", "vlan", "live", "ips"]
+COMPONENT_POPOVER_FIELD_DEFAULTS = ["name", "type", "state", "peer", "vlan", "live", "ips"]
 
 
 def clean_component_popover_fields(value) -> list:
@@ -835,6 +1081,7 @@ def component_popover_effective(request):
         fields={
             "status": serializers.CharField(),
             "database": serializers.BooleanField(),
+            "maintenance": serializers.BooleanField(),
             "version": serializers.CharField(),
         },
     ),
@@ -856,6 +1103,8 @@ def health(request):
         db_ok = True
     except Exception:  # noqa: BLE001 - any DB error → not ready
         db_ok = False
+    from backups.maintenance import active
+
     from .version import migration_drift, pending_migrations
 
     code_behind_db = bool(db_ok and migration_drift())
@@ -870,6 +1119,9 @@ def health(request):
          # The mirror: migrations this code ships that were never run - new
          # code on an old schema, which fails on the first missing column.
          "db_behind_code": db_behind_code,
+         # A restore or an upgrade holds the site: everything but this probe
+         # and the status endpoints answers 503 (core.middleware).
+         "maintenance": active() is not None,
          "version": system_version()["version"]},
         status=200 if db_ok else 503,
     )
@@ -947,7 +1199,7 @@ def system_updates(request):
         return Response({"detail": "users.manage required."}, status=403)
 
     from .github import list_releases
-    from .version import DEFAULT_RELEASE_REPO, is_newer, system_version
+    from .version import DEFAULT_RELEASE_REPO, compare_versions, is_newer, system_version
 
     cur = system_version()
     dep = DeploymentSettings.load()
@@ -971,7 +1223,8 @@ def system_updates(request):
     if dep.update_channel == "stable":
         releases = [r for r in releases if not r["prerelease"]]
     for r in releases:
-        r["is_current"] = r["tag"].lstrip("vV") == cur["version"].lstrip("vV")
+        # Same release, pre-release suffix included: 0.17.0-dev1 is not 0.17.0.
+        r["is_current"] = compare_versions(r["tag"], cur["version"]) == 0
     update_available = any(is_newer(r["tag"], cur["version"]) for r in releases)
     return Response({
         "current": cur,

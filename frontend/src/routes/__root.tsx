@@ -28,7 +28,7 @@ import { ErrorBoundary } from "@/components/error-boundary"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
-import { Spinner } from "@/components/ui/spinner"
+import { Loading } from "@/components/loading"
 import { useEffect } from "react"
 import { useMe } from "@/lib/use-me"
 import { useLoadStatusLabels } from "@/components/monitoring/status-palette"
@@ -213,11 +213,15 @@ function AppLayout() {
       <AppSidebar variant="inset" />
       <PresenceProvider>
         <ChatDockProvider>
-          <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+          {/* overflow-clip, not -hidden: a hidden box is still a scroll
+              container, so focusing (or scrolling to) anything past its edge
+              shifted the whole page sideways with no way back. A clip box
+              can't be scrolled at all. */}
+          <SidebarInset className="min-h-0 min-w-0 overflow-clip">
             <SiteHeader />
             {/* min-w-0 is load-bearing on mobile: without it a wide table/tab
               strip forces this column past the viewport and SidebarInset's
-              overflow-hidden clips it (unreachable). With it, the width is
+              overflow-clip cuts it off (unreachable). With it, the width is
               capped and the page's own overflow-x-auto containers scroll. */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {/* Keyed on the pathname: a crashed view (often a browser
@@ -243,12 +247,11 @@ function AppLayout() {
 // Neutral full-screen splash shown while auth is being resolved or while a
 // signed-out visitor is being bounced to /login. Deliberately content-free -
 // no nav, no data - so a page is never flashed to someone not signed in.
+// The shared loader with its text kept for screen readers: the first paint
+// stays the bare spinner, and every in-app loader is this same spinner.
 function AuthSplash() {
   return (
-    <div className="flex min-h-svh items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-      <span className="sr-only">Loading…</span>
-      <Spinner className="size-5 text-zinc-400 dark:text-zinc-500" />
-    </div>
+    <Loading label={false} className="min-h-svh bg-zinc-50 dark:bg-zinc-950" />
   )
 }
 

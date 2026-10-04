@@ -4,10 +4,13 @@
  * and the speed-scale legend, so a port lights the same way everywhere.
  *
  * Cabled ports wear a SPEED TIER from a cold→hot perceptual ramp (amber for
- * legacy FE up through fuchsia for 400G+), instead of a flat "connected"
- * green - at a glance the colour answers "how fast", not just "is it plugged
- * in". Free / disabled / unknown stay neutral. Live SNMP overrides with the
- * OBSERVED speed's tier when the link is up, red when it's down.
+ * legacy and sub-1G up through fuchsia for 400G+), instead of a flat
+ * "connected" green - at a glance the colour answers "how fast", not just "is
+ * it plugged in". Free / disabled / unknown stay neutral. Live SNMP overrides
+ * with the OBSERVED speed's tier when the link is up, red when it's down.
+ *
+ * The ramp itself and the speed parser live in `lib/speed.ts`, shared with
+ * the topology and the site map; they are re-exported here for the panels.
  *
  * The non-port things a photo panel can carry answer different questions and
  * so get their own (still neutral) treatment: a hardware part wears its own
@@ -16,31 +19,11 @@
 
 import type { CSSProperties } from "react"
 
+import { parseSpeedMbps, speedTier } from "@/lib/speed"
+
+export { SPEED_TIERS, speedTier, type SpeedTier } from "@/lib/speed"
+
 export type PortState = "fast" | "gig" | "slow" | "cabled" | "free" | "disabled"
-
-// ─── Speed tiers ─────────────────────────────────────────────────────────────
-
-export interface SpeedTier {
-  /** Lower bound (Mbps) - a speed belongs to the highest tier it reaches. */
-  minMbps: number
-  label: string
-  hex: string
-}
-
-/** The ramp, slow → fast. Tailwind -500 tints, hue-ordered so speed reads as
- * temperature: amber (legacy) → emerald/teal (access) → sky/blue/indigo
- * (aggregation) → violet/purple/fuchsia (core, 100G–1.6T). */
-export const SPEED_TIERS: SpeedTier[] = [
-  { minMbps: 0, label: "FE", hex: "#f59e0b" }, // ≤100M
-  { minMbps: 1_000, label: "1G", hex: "#10b981" },
-  { minMbps: 2_500, label: "2.5G", hex: "#14b8a6" }, // 2.5/5G multigig
-  { minMbps: 10_000, label: "10G", hex: "#0ea5e9" },
-  { minMbps: 25_000, label: "25G", hex: "#3b82f6" },
-  { minMbps: 40_000, label: "40G", hex: "#6366f1" }, // 40/50G
-  { minMbps: 100_000, label: "100G", hex: "#8b5cf6" },
-  { minMbps: 200_000, label: "200G", hex: "#a855f7" }, // 200/300G
-  { minMbps: 400_000, label: "400G+", hex: "#d946ef" }, // 400G…1.6T
-]
 
 /** Neutral tints for the non-speed states. */
 export const PORT_NEUTRAL = {
@@ -52,22 +35,6 @@ export const PORT_NEUTRAL = {
   down: "#ef4444", // red-500
   /** Live SNMP: admin-shutdown. */
   adminDown: "#52525b", // zinc-600
-}
-
-/** Parse Danbyte's short speed strings ("100M", "1G", "25G", "1.6T") → Mbps. */
-export function speedMbps(speed: string): number | null {
-  const m = speed.trim().match(/^([\d.]+)\s*([MGT])/i)
-  if (!m) return null
-  const n = Number(m[1])
-  const unit = m[2].toUpperCase()
-  return unit === "T" ? n * 1_000_000 : unit === "G" ? n * 1_000 : n
-}
-
-/** The tier a speed (Mbps) falls in - the highest bound it reaches. */
-export function speedTier(mbps: number): SpeedTier {
-  let tier = SPEED_TIERS[0]
-  for (const t of SPEED_TIERS) if (mbps >= t.minMbps) tier = t
-  return tier
 }
 
 /**
@@ -105,7 +72,7 @@ export function portState(p: {
 }): PortState {
   if (!p.enabled) return "disabled"
   if (!p.cable) return "free"
-  const mbps = speedMbps(p.speed)
+  const mbps = parseSpeedMbps(p.speed)
   if (mbps == null) return "cabled"
   if (mbps >= 10_000) return "fast"
   if (mbps >= 1_000) return "gig"
@@ -126,7 +93,7 @@ export function portHex(p: {
 }): string {
   if (!p.enabled) return PORT_NEUTRAL.disabled
   if (!p.cable) return PORT_NEUTRAL.free
-  const mbps = speedMbps(p.speed) ?? typeMaxMbps(p.type)
+  const mbps = parseSpeedMbps(p.speed) ?? typeMaxMbps(p.type)
   return mbps == null ? PORT_NEUTRAL.cabled : speedTier(mbps).hex
 }
 
@@ -139,7 +106,7 @@ export function portCapabilityHex(p: {
   type?: string | null
 }): string | null {
   if (!p.enabled || p.cable) return null
-  const mbps = speedMbps(p.speed) ?? typeMaxMbps(p.type)
+  const mbps = parseSpeedMbps(p.speed) ?? typeMaxMbps(p.type)
   return mbps == null ? null : speedTier(mbps).hex
 }
 
@@ -315,7 +282,7 @@ export function legendContent(input: {
     if (p.cable) {
       // Same resolution order the colours use: explicit speed, else what the
       // cage type is capable of.
-      const mbps = speedMbps(p.speed ?? "") ?? typeMaxMbps(p.type) ?? 0
+      const mbps = parseSpeedMbps(p.speed) ?? typeMaxMbps(p.type) ?? 0
       tiers.add(speedTier(mbps).label)
     } else states.add("idle")
   }

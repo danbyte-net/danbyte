@@ -10,7 +10,8 @@ import { useMe } from "@/lib/use-me"
 import { nestByParent } from "@/lib/nest"
 import { numidColumn } from "@/components/cells/numid"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
@@ -30,6 +31,8 @@ export const Route = createFileRoute("/locations/")({
 function LocationsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("location", "add")
+  const canEdit = canDo("location", "change")
+  const [sel, setSel] = useState<Location[]>([])
   const { humanIds } = useMe()
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Location | null>(null)
@@ -46,6 +49,7 @@ function LocationsPage() {
   const onDelete = useCallback((l: Location) => setDeleting(l), [])
   const columns = useMemo<ColumnDef<Location>[]>(
     () => [
+      ...(canEdit ? [selectionColumn<Location>()] : []),
       ...(humanIds ? [numidColumn<Location>({ get: (r) => r.numid })] : []),
       {
         id: "name",
@@ -130,7 +134,7 @@ function LocationsPage() {
         ),
       },
     ],
-    [onDelete, humanIds]
+    [onDelete, humanIds, canEdit]
   )
 
   // Rail derives from the columns' facet metadata (Status, Site) - filter
@@ -173,6 +177,21 @@ function LocationsPage() {
         columns={wiredColumns}
         flexColumn="name"
         tableId="locations"
+        onSelectedRowsChange={setSel}
+      />
+      <ComponentBulkBar
+        endpoint="/api/locations/"
+        kindLabel="location"
+        selected={sel}
+        onCleared={() => setSel([])}
+        invalidate={[["locations"]]}
+        canDelete={false}
+        rename={false}
+        clone={false}
+        fields={[
+          { key: "color", label: "Marker colour", kind: "color" },
+          { key: "icon", label: "Marker icon", kind: "icon" },
+        ]}
       />
       <LocationDeleteDialog
         item={deleting}

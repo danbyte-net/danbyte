@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
-import { copyText } from "@/lib/clipboard"
+import { copyWithToast } from "@/lib/clipboard"
 import { RowActions } from "@/components/row-actions"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
@@ -29,12 +29,7 @@ import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
 import { SyncStatusBadge } from "@/components/integrations/sync-status-badge"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { VirtChangesPanel } from "@/components/integrations/virt-changes-dialog"
 import { SourceDialog } from "./virtualization-sources.index"
@@ -349,19 +344,6 @@ function SourceDetailPage() {
               skipped={skipped}
             />
           }
-          statCols={2}
-          stats={
-            <>
-              <DetailStat
-                label="Platform"
-                value={<span className="text-xs">{source.kind_display}</span>}
-              />
-              <DetailStat
-                label="Skipped last run"
-                value={<span className="num">{skipped.length}</span>}
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -607,8 +589,7 @@ const LOG_COLUMNS: ColumnDef<LogRow>[] = [
         variant="ghost"
         title="Copy line"
         onClick={() => {
-          void copyText(row.original.raw)
-          toast.success("Line copied")
+          void copyWithToast(row.original.raw, "Line copied")
         }}
       >
         <Copy className="h-3.5 w-3.5" />

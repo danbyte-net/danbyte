@@ -16,6 +16,8 @@ import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
+import type { SlaColumnOpts } from "@/components/columns/sla-column"
 
 // The one source of truth for "a table of clusters". Every surface that lists
 // clusters - /clusters and the embedded cluster pane on a cluster-type /
@@ -34,6 +36,8 @@ export type ClusterColumnId =
   | "site"
   | "status"
   | "vms"
+  | "sla"
+  | "availability"
   | "tags"
   | "description"
   | "updated"
@@ -47,11 +51,15 @@ const CANONICAL_ORDER: ClusterColumnId[] = [
   "status",
   "vms",
   "tags",
+  "sla",
+  "availability",
   "description",
   "updated",
 ]
 
 export interface ClusterColumnOpts<T extends Cluster = Cluster> {
+  /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
+  sla?: SlaColumnOpts
   /** Drop columns (e.g. the cluster-type page omits "type"). */
   omit?: ClusterColumnId[]
   /** Keep only these columns (canonical order still applies). */
@@ -80,10 +88,16 @@ export function buildClusterColumns<T extends Cluster = Cluster>(
   const omit = new Set(opts.omit ?? [])
   // The "#" column only exists where the deployment enables human ids.
   if (!opts.humanIds) omit.add("numid")
+  if (!opts.sla) {
+    omit.add("sla")
+    omit.add("availability")
+  }
   const keep = (id: ClusterColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
   const byId: Record<ClusterColumnId, () => ColumnDef<T, unknown>> = {
+    sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
+    availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     numid: () => numidColumn<T>({ get: (r) => r.numid }),
     name: () => ({
       id: "name",

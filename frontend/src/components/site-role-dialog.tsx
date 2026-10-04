@@ -25,6 +25,7 @@ import {
   type CheckOption,
 } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
+import { usePeople } from "@/lib/people"
 
 type SiteRole = "editor" | "viewer"
 
@@ -69,22 +70,25 @@ export function SiteRoleDialog({
     queryFn: () => api<Paginated<{ id: string; name: string }>>("/api/sites/"),
     enabled: open && !lockedSiteId,
   })
+  // A delegated site editor is not a user administrator: they pick from the
+  // tenant's members, and the server takes no groups from them.
   const usersQuery = useQuery({
     queryKey: ["users", ""],
     queryFn: () => api<Paginated<RBACUser>>("/api/users/"),
-    enabled: open,
+    enabled: open && !viewerOnly,
   })
+  const peopleQuery = usePeople(open && !!viewerOnly)
   const groupsQuery = useQuery({
     queryKey: ["groups"],
     queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
-    enabled: open,
+    enabled: open && !viewerOnly,
   })
 
   const siteOptions: CheckOption<string>[] = (
     sitesQuery.data?.results ?? []
   ).map((s) => ({ value: s.id, label: s.name }))
   const userOptions: CheckOption<number>[] = (
-    usersQuery.data?.results ?? []
+    (viewerOnly ? peopleQuery.data?.results : usersQuery.data?.results) ?? []
   ).map((u) => ({ value: u.id, label: u.username }))
   const groupOptions: CheckOption<number>[] = (
     groupsQuery.data?.results ?? []
@@ -140,7 +144,7 @@ export function SiteRoleDialog({
           </DialogTitle>
           <DialogDescription>
             {viewerOnly
-              ? "Give a user or group read-only access to this site."
+              ? "Give a member of this tenant read-only access to this site."
               : "Grant a user or group scoped access to one or more sites without hand-building permissions."}
           </DialogDescription>
         </DialogHeader>
@@ -206,7 +210,7 @@ export function SiteRoleDialog({
             </Field>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className={viewerOnly ? "grid gap-4" : "grid grid-cols-2 gap-4"}>
             <Field label="Users" hint="Direct grants">
               <CheckList
                 options={userOptions}
@@ -215,14 +219,16 @@ export function SiteRoleDialog({
                 empty="No users yet."
               />
             </Field>
-            <Field label="Groups" hint="Members get this role">
-              <CheckList
-                options={groupOptions}
-                value={groupIds}
-                onChange={setGroupIds}
-                empty="No groups yet."
-              />
-            </Field>
+            {!viewerOnly && (
+              <Field label="Groups" hint="Members get this role">
+                <CheckList
+                  options={groupOptions}
+                  value={groupIds}
+                  onChange={setGroupIds}
+                  empty="No groups yet."
+                />
+              </Field>
+            )}
           </div>
 
           <DialogFooter>

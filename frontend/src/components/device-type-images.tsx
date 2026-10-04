@@ -66,6 +66,7 @@ function FaceCard({
     qc.invalidateQueries({ queryKey: ["device-type", deviceType.id] })
     // Elevations read the image off the device's nested device_type.
     qc.invalidateQueries({ queryKey: ["rack-devices"] })
+    qc.invalidateQueries({ queryKey: ["cabinet-devices"] })
   }
 
   const upload = useMutation({

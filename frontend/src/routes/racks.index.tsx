@@ -11,7 +11,9 @@ import { buildRackColumns } from "@/components/columns/rack-columns"
 import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
+import { WITH_PORTS } from "@/lib/port-utilization"
 import { useMe } from "@/lib/use-me"
+import { layoutShows, useTablePreference } from "@/lib/use-table-preference"
 
 export const Route = createFileRoute("/racks/")({ component: RacksPage })
 
@@ -23,12 +25,23 @@ function RacksPage() {
   const canEdit = canDo("rack", "change")
   const canDelete = canDo("rack", "delete")
 
+  // The Ports and Panel ports columns read `?include=ports`: asked for only
+  // while the layout shows one of them, as counting costs a few queries.
+  const layout = useTablePreference("racks")
+  const withPorts =
+    layoutShows(layout, "ports") || layoutShows(layout, "panel_ports")
   const query = useQuery({
-    queryKey: ["racks", q],
+    queryKey: withPorts ? ["racks", q, WITH_PORTS] : ["racks", q],
     queryFn: () =>
       api<Paginated<Rack>>(
-        `/api/racks/?${new URLSearchParams({ search: q }).toString()}`
+        `/api/racks/?${new URLSearchParams({
+          search: q,
+          ...(withPorts ? { include: "ports" } : {}),
+        }).toString()}`
       ),
+    // Ticking Ports keeps the rows on screen while they come back with it.
+    placeholderData: (prev, prevQuery) =>
+      prevQuery?.queryKey[1] === q ? prev : undefined,
   })
 
   const handleDelete = useCallback((r: Rack) => setDeleting(r), [])

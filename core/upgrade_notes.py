@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .version import deployment_method, is_newer, system_version
+from .version import deployment_method, is_newer, release_core, system_version
 
 PLATFORMS = ("systemd", "docker")
 
@@ -31,19 +31,48 @@ class UpgradeNote:
     platforms: tuple[str, ...] = PLATFORMS
     # Returns True when the step is already done; such a note is never shown.
     check: Callable[[], bool] | None = None
+    # A step on the host as root (nginx, logrotate, the certificate unit):
+    # the snippet starts with the one command that does all of those.
+    host: bool = False
 
-    def as_dict(self) -> dict:
+    def as_dict(self, by_hand: bool = False) -> dict:
+        """``by_hand``: a root step's own snippet alone, without the command
+        that does every root step (the combined card shows that once)."""
+        from django.conf import settings
+
+        # @@APP@@: this install's app directory, as the templates spell it.
+        snippet = self.snippet.replace("@@APP@@", str(settings.BASE_DIR))
+        if self.host and not by_hand:
+            snippet = f"{host_sync_command()}\n# or by hand:\n{snippet}" if snippet \
+                else host_sync_command()
         return {
             "id": self.id,
             "version": self.version,
             "title": self.title,
             "body": self.body,
-            "snippet": self.snippet,
+            "snippet": snippet,
             "docs": self.docs,
             "platforms": list(self.platforms),
         }
 
 
+def host_sync_command() -> str:
+    """What does the root steps of every release at once: logrotate, the
+    certificate unit, and the nginx site - re-rendered only while it is still
+    what Danbyte rendered (a changed one gets danbyte.conf.new beside it).
+
+    From the unpacked bundle of the release that runs, which root owns, and
+    never from the app directory: the service account owns that, and a
+    script changed there would run as root (#287). A git install takes the
+    same bundle - ``--host-only`` changes no code."""
+    from danbyte import __version__
+
+    return (f"# as root, in the unpacked bundle of {__version__}, not in the app directory:\n"
+            "sudo ./install.sh --host-only")
+
+
+# The block as the installer renders it today - with buffering on (0.16.12),
+# so a host that adds it now needs no second step (#242).
 _NGINX_BACKUPS = """\
 location ^~ /api/backups/ {
     proxy_pass http://127.0.0.1:8000;
@@ -51,7 +80,8 @@ location ^~ /api/backups/ {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_request_buffering off;
+    proxy_request_buffering on;
+    proxy_max_temp_file_size 10240m;
     proxy_read_timeout 600s;
     client_max_body_size 8g;
 }
@@ -63,12 +93,29 @@ _NGINX_BACKUPS_BUFFER = """\
     proxy_max_temp_file_size 10240m;
 # then: sudo nginx -t && sudo systemctl reload nginx"""
 
+# deploy/logrotate/danbyte as the installer fills it in, spelled out: root
+# installs what the snippet shows, never a file from the app directory,
+# which the service account could have changed (#287).
 _LOGROTATE = """\
-# as root, from the app directory (adjust the user and log dir to yours):
-sudo sed -e 's#@@LOG_DIR@@#/var/log/danbyte#g' -e 's#@@USER@@#danbyte#g' \\
-    deploy/logrotate/danbyte | sudo tee /etc/logrotate.d/danbyte >/dev/null
+# as root (adjust the log dir and the user to yours):
+sudo tee /etc/logrotate.d/danbyte >/dev/null <<'EOF'
+/var/log/danbyte/*.log {
+    su danbyte danbyte
+    size 10M
+    rotate 5
+    compress
+    delaycompress
+    copytruncate
+    missingok
+    notifempty
+}
+EOF
 # then, as the service user:
 systemctl --user restart danbyte-web danbyte-workers danbyte-ws danbyte-fastlane"""
+
+# The certificate unit alone - which the installer's root steps leave out on
+# an install without nginx - from the same root-owned bundle.
+_TLS_UNIT = "sudo make install-tls-unit APP=@@APP@@   # the unit alone, in the same bundle"
 
 _NGINX_ACME = """\
 # in the :80 server, before the redirect:
@@ -140,6 +187,79 @@ def _tls_unit_installed() -> bool:
     return UNIT_FILE.exists()
 
 
+TLS_SERVICE_FILE = "/etc/systemd/system/danbyte-tls.service"
+
+
+def _tls_unit_runs_root_owned_script() -> bool:
+    """Done when the certificate unit runs a script outside the app's tree
+    (or there is no unit to fix: the 0.16.0 note installs one)."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    try:
+        text = Path(TLS_SERVICE_FILE).read_text()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    app = str(Path(settings.BASE_DIR).resolve())
+    for line in text.splitlines():
+        if line.strip().startswith("ExecStart="):
+            return app not in line and str(settings.BASE_DIR) not in line
+    return False
+
+
+#: What scripts/host-sync.sh last applied - install.sh runs it after its
+#: upgrade and with ``--host-only``.
+HOST_SYNC_STAMP = "/etc/danbyte/host-sync.json"
+#: The files it renders the host from, in the order it hashes them (its
+#: ``--print-sources``).
+HOST_SYNC_SOURCES = (
+    "scripts/host-sync.sh",
+    "scripts/danbyte-tls-apply.sh",
+    "deploy/logrotate/danbyte",
+    "deploy/systemd/danbyte-tls.path.template",
+    "deploy/systemd/danbyte-tls.service.template",
+    "deploy/nginx/danbyte.prod.conf.template",
+)
+
+
+def host_sources_digest(base=None) -> str | None:
+    """sha256 of those files in ``base`` (default: this tree), the way
+    host-sync stamps them; None when one is missing."""
+    import hashlib
+    from pathlib import Path
+
+    from django.conf import settings
+
+    root = Path(base or settings.BASE_DIR)
+    digest = hashlib.sha256()
+    for rel in HOST_SYNC_SOURCES:
+        try:
+            digest.update((root / rel).read_bytes())
+        except OSError:
+            return None
+    return digest.hexdigest()
+
+
+def _host_files_applied() -> bool:
+    """Done when host-sync last ran with this tree's host files and nginx
+    took the site (one it left alone because it was edited by hand counts).
+    A stamp it cannot read says nothing, so the note stays up."""
+    import json
+    from pathlib import Path
+
+    want = host_sources_digest()
+    if want is None:
+        return True  # this tree carries no host files to apply
+    try:
+        stamp = json.loads(Path(HOST_SYNC_STAMP).read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(stamp, dict) and stamp.get("sources") == want and stamp.get("ok") is not False
+
+
 _NGINX_TEMP_SIZE = """\
 # nginx takes k or m for this size, never g:
 sudo sed -i 's/proxy_max_temp_file_size 10g;/proxy_max_temp_file_size 10240m;/' \\
@@ -166,6 +286,27 @@ def _site_config() -> str | None:
     return None
 
 
+def _acme_proxied() -> bool:
+    """Done when the site's nginx hands ACME challenges to Danbyte."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    block = re.search(r"location\s+(?:\^~\s+)?/\.well-known/acme-challenge/\s*\{([^}]*)\}", text)
+    return bool(block and "proxy_pass" in block.group(1))
+
+
+def _backups_location() -> bool:
+    """Done when the site's nginx has its own location for backup uploads."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    return bool(re.search(r"location\s+(?:\^~\s+)?/api/backups/\s*\{", text))
+
+
 def _temp_size_valid() -> bool:
     """Done when no size in the config carries a g suffix nginx refuses."""
     import re
@@ -190,8 +331,95 @@ def _proxied_blocks_forward_proto() -> bool:
     return True
 
 
+#: The grant auth_api 0025 makes when trimming all-object grants would have
+#: left nobody able to manage users. The migration keeps a frozen copy; a
+#: test pins the two.
+KEPT_ACCESS_GRANT = "Kept user management (0.17 upgrade)"
+
+
+def _no_kept_access_grant() -> bool:
+    """Done once the grant the 0.17 upgrade made to keep user management no
+    longer reaches an active account with users, groups or permissions:
+    deleted, renamed, disabled, trimmed or emptied.
+
+    Only that grant counts. An all-object grant an admin names the access
+    types on after the upgrade (view on users for auditors, say) is a
+    deliberate choice, not something the upgrade left behind.
+    """
+    from django.contrib.auth import get_user_model
+
+    from auth_api.models import ObjectPermission
+    from auth_api.object_types import ACCESS_TYPES
+
+    User = get_user_model()
+    # 0026 splits it by verbs: "<name>: view, change" counts too.
+    for perm in ObjectPermission.objects.filter(
+        name__startswith=KEPT_ACCESS_GRANT, enabled=True
+    ):
+        if not any(t in (perm.object_types or []) for t in ACCESS_TYPES):
+            continue
+        if perm.users.filter(is_active=True).exists() or User.objects.filter(
+            is_active=True, groups__in=perm.groups.all()
+        ).exists():
+            return False
+    return True
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.17.0-host-files",
+        version="0.17.0",
+        title="Apply this release's nginx, logrotate and certificate-unit files",
+        body=(
+            "They come with the release and need root. install.sh applies them "
+            "after its upgrade; an upgrade from the app cannot, and this host "
+            "has not had this release's files yet. The nginx site is replaced "
+            "only while it is still what Danbyte rendered. Root runs them from "
+            "the bundle of this release, on a git install too, and never from "
+            "the app directory: the service account owns it."
+        ),
+        docs="getting-started/upgrading/#after-an-upgrade",
+        platforms=("systemd",),
+        check=_host_files_applied,
+        host=True,
+    ),
+    UpgradeNote(
+        id="0.17.0-tls-unit-root-script",
+        version="0.17.0",
+        title="Let the certificate unit run a script root owns",
+        body=(
+            "The root unit that puts a dropped certificate in front of nginx ran "
+            "its script from the Danbyte directory, which the service account "
+            "owns - so that account could have changed what root runs. It now "
+            "runs a copy in /usr/local/libexec/danbyte/ and answers outside "
+            "the Danbyte directory. The installer's root steps install it, "
+            "from the bundle."
+        ),
+        snippet=_TLS_UNIT,
+        docs="getting-started/upgrading/#after-an-upgrade",
+        platforms=("systemd",),
+        check=_tls_unit_runs_root_owned_script,
+        host=True,
+    ),
+    UpgradeNote(
+        id="0.17.0-wildcard-access",
+        version="0.17.0",
+        title="Name an administrator, then delete the grant that kept access",
+        body=(
+            "All object types no longer covers users, groups and permissions, "
+            "so only the Administrator group and grants that name those types "
+            "manage access. This install had no other account that could "
+            "manage users, so the upgrade gave the accounts that did grants "
+            f"of their own, named \"{KEPT_ACCESS_GRANT}\" (one per set of "
+            "verbs). Put your administrators in the Administrator group, then "
+            "delete those grants. Locked out? "
+            "Create an administrator on the server."
+        ),
+        snippet="scripts/danbyte-admin users create",
+        docs="features/permissions/#all-object-types-leaves-out-access-management",
+        check=_no_kept_access_grant,
+    ),
     UpgradeNote(
         id="0.16.13-nginx-temp-size",
         version="0.16.13",
@@ -205,6 +433,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/backup-restore/",
         platforms=("systemd",),
         check=_temp_size_valid,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.13-nginx-media-proto",
@@ -219,6 +448,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/upgrading/",
         platforms=("systemd",),
         check=_proxied_blocks_forward_proto,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.12-logrotate",
@@ -235,22 +465,25 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/upgrading/",
         platforms=("systemd",),
         check=_logrotate_installed,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.12-nginx-backups-buffer",
         version="0.16.12",
         title="Let nginx buffer backup uploads and downloads",
         body=(
-            "A backup upload streamed to Danbyte at the browser's speed, and "
-            "the web worker was stopped after a minute, so any archive that "
-            "took longer to upload failed with a 500. nginx now takes the "
-            "whole file first. It needs free space for one archive in its "
-            "temporary directory."
+            "Only for a /api/backups/ block added before 0.16.12, which has "
+            "proxy_request_buffering off: an upload streamed to Danbyte at the "
+            "browser's speed, and the web worker was stopped after a minute, so "
+            "any archive that took longer to upload failed with a 500. With "
+            "buffering on, nginx takes the whole file first. It needs free "
+            "space for one archive in its temporary directory."
         ),
         snippet=_NGINX_BACKUPS_BUFFER,
         docs="getting-started/backup-restore/",
         platforms=("systemd",),
         check=_backups_buffered,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.12-nginx-media",
@@ -268,6 +501,7 @@ NOTES: tuple[UpgradeNote, ...] = (
         docs="getting-started/upgrading/",
         platforms=("systemd",),
         check=_media_proxied,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.0-tls-unit",
@@ -277,13 +511,14 @@ NOTES: tuple[UpgradeNote, ...] = (
             "Settings → Updates → Site certificate drops a certificate pair "
             "in a folder Danbyte owns; a root systemd path unit puts it in "
             "front of nginx. Fresh installs get the unit from the installer; "
-            "an upgraded host installs it once, as a user with sudo, from the "
-            "Danbyte directory."
+            "an upgraded host gets it from the installer's root steps, run "
+            "from the bundle."
         ),
-        snippet="sudo make install-tls-unit",
+        snippet=_TLS_UNIT,
         docs="monitoring/certificates/#the-sites-own-certificate",
         platforms=("systemd",),
         check=_tls_unit_installed,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.0-nginx-acme",
@@ -298,6 +533,8 @@ NOTES: tuple[UpgradeNote, ...] = (
         snippet=_NGINX_ACME,
         docs="monitoring/certificates/#the-sites-own-certificate",
         platforms=("systemd",),
+        check=_acme_proxied,
+        host=True,
     ),
     UpgradeNote(
         id="0.16.0-nginx-backups",
@@ -312,6 +549,8 @@ NOTES: tuple[UpgradeNote, ...] = (
         snippet=_NGINX_BACKUPS,
         docs="getting-started/backup-restore/#reverse-proxy",
         platforms=("systemd",),
+        check=_backups_location,
+        host=True,
     ),
 )
 
@@ -325,6 +564,12 @@ def _done(note: UpgradeNote) -> bool:
         return False
 
 
+def _reached(note: UpgradeNote, version: str) -> bool:
+    """Has ``version`` got to the note's release? Pre-releases count as the
+    release they lead to, so a 0.17.0 note applies on 0.17.0-dev1 too."""
+    return not is_newer(release_core(note.version), release_core(version))
+
+
 def applicable(version: str | None = None, platform: str | None = None) -> list[UpgradeNote]:
     """Notes that apply to this install: not newer than the running
     version, for this platform, and not already satisfied."""
@@ -332,13 +577,13 @@ def applicable(version: str | None = None, platform: str | None = None) -> list[
     platform = platform or deployment_method()
     return [
         n for n in NOTES
-        if not is_newer(n.version, version) and platform in n.platforms and not _done(n)
+        if _reached(n, version) and platform in n.platforms and not _done(n)
     ]
 
 
 def ids_up_to(version: str) -> list[str]:
     """Every note id a fresh install at ``version`` starts with as done."""
-    return [n.id for n in NOTES if not is_newer(n.version, version)]
+    return [n.id for n in NOTES if _reached(n, version)]
 
 
 def pending(dep, version: str | None = None, platform: str | None = None) -> list[UpgradeNote]:
@@ -346,10 +591,17 @@ def pending(dep, version: str | None = None, platform: str | None = None) -> lis
     return [n for n in applicable(version, platform) if n.id not in done]
 
 
+# The card that stands for every pending root step (``payload``).
+HOST_STEPS_ID = "host-steps"
+
+
 def acknowledge(dep, ids: list[str] | None = None) -> list[str]:
     """Mark notes done; ``None`` means every pending one. Unknown ids are
-    ignored. Returns the ids that were added."""
+    ignored; ``HOST_STEPS_ID`` means every pending root step. Returns the ids
+    that were added."""
     known = {n.id for n in NOTES}
+    if ids is not None and HOST_STEPS_ID in ids:
+        ids = [i for i in ids if i != HOST_STEPS_ID] + [n.id for n in pending(dep) if n.host]
     wanted = [n.id for n in pending(dep)] if ids is None else [i for i in ids if i in known]
     current = list(dep.upgrade_notes_done or [])
     added = [i for i in wanted if i not in current]
@@ -359,10 +611,32 @@ def acknowledge(dep, ids: list[str] | None = None) -> list[str]:
     return added
 
 
+def _host_card(notes: list[UpgradeNote]) -> dict:
+    """Every pending root step as one card. They all end in the same command,
+    so it shows once, with the steps it covers as ``parts`` - each with its
+    by-hand form, for a host that would rather not run it."""
+    return {
+        "id": HOST_STEPS_ID,
+        "version": notes[0].version,
+        "title": "Run this release's root steps",
+        "body": (
+            "These need root, so an upgrade from the app cannot run them. One "
+            "command applies them all from this release's bundle."
+        ),
+        "snippet": host_sync_command(),
+        "docs": "getting-started/upgrading/#after-an-upgrade",
+        "platforms": ["systemd"],
+        "parts": [n.as_dict(by_hand=True) for n in notes],
+    }
+
+
 def payload(dep) -> dict:
+    notes = pending(dep)
+    host = [n for n in notes if n.host]
+    cards = ([_host_card(host)] if host else []) + [n.as_dict() for n in notes if not n.host]
     return {
         "version": system_version()["version"],
         "deployment": deployment_method(),
-        "pending": [n.as_dict() for n in pending(dep)],
+        "pending": cards,
         "done": list(dep.upgrade_notes_done or []),
     }

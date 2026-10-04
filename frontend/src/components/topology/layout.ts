@@ -1,15 +1,17 @@
 import dagre from "@dagrejs/dagre"
 import type { Edge, Node } from "@xyflow/react"
 
-import { stencilSize } from "./stencil-node"
-import type { StencilData } from "./stencil-node"
-import { flatHeight, flatWidth } from "./flat-node"
-import { GROUP_H, GROUP_W } from "./group-node"
+import { CARD } from "./diagram/card-layout"
+import { Grid } from "./diagram/spatial"
+import { HIER_MIN_W, hierBox } from "./hier-card"
+import type { HierCardData } from "./hier-card"
+import { networkSimplex } from "./network-simplex"
 
 // Lay nodes out left-to-right with dagre and write positions back. Node
-// height follows the stencil card (header + one row per cabled port) so
-// port-anchored edges land on their rows without overlap. `positions`
-// (from a saved view or a user drag) win over the computed layout.
+// sizes come from the caller (a stencil card is a header + one row per
+// cabled port) so port-anchored edges land on their rows without overlap.
+// `positions` (from a saved view or a user drag) win over the computed
+// layout.
 // Fixed tier spacing when the Level organiser forces a role order.
 const LEVEL_GAP_LR = 340
 const LEVEL_GAP_TB = 210
@@ -17,9 +19,87 @@ const CROSS_GAP = 64 // intra-tier peer spacing - wide enough that a
 // vertical cable’s label between tiers isn’t hidden behind the next node, and
 // that fanned-out cable bundles have room between neighbouring cards.
 
+// dagre's own network-simplex ranking, on arrays (network-simplex.ts): the
+// same ranks, and so the same layout, in a fraction of the time on a big
+// site. dagre's types name only its built-in rankers.
+const NETWORK_SIMPLEX = networkSimplex as unknown as "network-simplex"
+
 // Natural order so fw-01 precedes fw-02 precedes fw-10.
 const natural = (a: string, b: string) =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+
+/** A node's rendered box. Callers pass the node registry's `sizeOf` (or a
+ * view's own fixed-size chips) - the layout knows no node kinds itself. */
+export type SizeOf = (n: Node) => { width: number; height: number }
+
+export interface NodeSizing {
+  sizeOf: SizeOf
+  /** Small fixed chips (the Flat view, grouped cards): tighten the gaps so
+   * hundreds of nodes stay compact. Wiring cards keep the roomy spacing
+   * their port-anchored cables need. */
+  compact: boolean
+  /** Stack a hub's single-cable neighbours in a grid beside it (default).
+   * Off for views whose cables run straight: a line from the hub would
+   * cross every card in front of the one it serves. */
+  leafGrids?: boolean
+  /** The least gap between ranks (px): room for what a view draws at both
+   * ends of a cable crossing it - the Diagram's port names. */
+  rankGap?: number
+  /** Reuse the ranks dagre found for the same graph before (`dagreRanks`):
+   * ranking ignores node sizes, so a layout re-run for new sizes - or
+   * another mode of the same map - skips it. */
+  reuseRanks?: boolean
+  /** Route the cables round the cards (`LayoutResult.waypoints`); a view
+   * that routes its own lines skips it. Default true. */
+  waypoints?: boolean
+}
+
+/** Ranks dagre found, by graph: its nodes and edges in the order given,
+ * with their weights and lengths. A few graphs are kept. */
+const dagreRanks = new Map<string, Map<string, number>>()
+const RANK_GRAPHS = 8
+
+type DagreGraph = Parameters<typeof dagre.layout>[0]
+
+function rankKey(g: DagreGraph): string {
+  const edges = g
+    .edges()
+    .map((e: { v: string; w: string }) => {
+      const l = g.edge(e) as { weight?: number; minlen?: number }
+      return `${e.v}\u0001${e.w}\u0001${l.weight}\u0001${l.minlen}`
+    })
+    .join("\u0002")
+  return `${g.nodes().join("\u0001")}\u0003${edges}`
+}
+
+/** Lay `g` out, ranking it only when its graph was not ranked before.
+ * The ranks read back are dagre's own (network simplex), so replaying them
+ * gives the layout the ranking would. */
+function layoutReusingRanks(g: DagreGraph): void {
+  const key = rankKey(g)
+  const known = dagreRanks.get(key)
+  if (known) {
+    const low = Math.min(...known.values())
+    // The nesting root dagre adds sits a rank above every node.
+    g.graph().ranker = ((lg: DagreGraph) => {
+      for (const v of lg.nodes())
+        (lg.node(v) as { rank?: number }).rank = known.get(v) ?? low - 1
+    }) as unknown as "network-simplex"
+    dagre.layout(g)
+    dagreRanks.delete(key)
+    dagreRanks.set(key, known)
+    return
+  }
+  dagre.layout(g)
+  const ranks = new Map<string, number>()
+  for (const v of g.nodes()) {
+    const r = (g.node(v) as { rank?: number }).rank
+    if (typeof r === "number") ranks.set(v, r)
+  }
+  dagreRanks.set(key, ranks)
+  while (dagreRanks.size > RANK_GRAPHS)
+    dagreRanks.delete(dagreRanks.keys().next().value!)
+}
 
 export interface LayoutResult {
   nodes: Node[]
@@ -167,7 +247,8 @@ function respaceBands(
   edges: Edge[],
   sizeOf: (id: string) => { width: number; height: number },
   tb: boolean,
-  pinned?: Set<string>
+  pinned?: Set<string>,
+  headroom = GAP_HEADROOM
 ): Node[] {
   const rect = new Map<string, Rect>()
   for (const n of laid) {
@@ -201,7 +282,7 @@ function respaceBands(
   const shift = new Array(list.length).fill(0)
   for (let g = 0; g < list.length - 1; g++) {
     const current = list[g + 1].lo + shift[g + 1] - (list[g].hi + shift[g])
-    const required = GAP_HEADROOM + lanes[g] * LANE_PITCH
+    const required = headroom + lanes[g] * LANE_PITCH
     const extra = Math.max(0, required - current)
     for (let b = g + 1; b < list.length; b++) shift[b] += extra
   }
@@ -483,32 +564,23 @@ function sideDetour(
 }
 
 /** Recompute node-avoiding routes for live (e.g. just-dragged) node positions.
- * Sizes come from each node's stencil data, so no dagre pass is needed. */
+ * Sizes come from `sizeOf`, so no dagre pass is needed. */
 export function edgeWaypoints(
   nodes: Node[],
   edges: Edge[],
+  sizeOf: SizeOf,
   direction: "LR" | "TB",
   /** false = obstacle avoidance only, no parallel-run lanes (hierarchy:
    * aligned parallel cables are already separated by their chips). */
   lanes = true
 ): Map<string, [number, number][]> {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
   return computeWaypoints(
     nodes,
     edges,
     (id) => {
-      const n = nodes.find((x) => x.id === id)
-      if (!n) return { width: 0, height: 0 }
-      // Fixed-size card types size themselves; stencil cards by their ports.
-      if (n.type === "flat") {
-        const d = n.data as Parameters<typeof flatHeight>[0] & { name?: string }
-        return { width: flatWidth(d), height: flatHeight(d) }
-      }
-      if (n.type === "sitegroup") return { width: GROUP_W, height: GROUP_H }
-      if (n.type === "hier") {
-        const d = n.data as { name?: string; portSpan?: number }
-        return { width: hierarchyWidth(d), height: hierHeight(d.portSpan ?? 0) }
-      }
-      return stencilSize(n.data as StencilData)
+      const n = byId.get(id)
+      return n ? sizeOf(n) : { width: 0, height: 0 }
     },
     direction === "TB",
     lanes
@@ -543,7 +615,7 @@ export function hierarchyWaypoints(
       x: n.position.x,
       y: n.position.y,
       w: hierarchyWidth(d),
-      h: hierHeight(d.portSpan ?? 0),
+      h: hierHeight(d.portSpan ?? 0, hierHead(d)),
     })
   }
   /** Where a port's cable actually leaves its card. */
@@ -718,26 +790,85 @@ export function hierarchyWaypoints(
 }
 
 // ── Hierarchy (port-aligned) layout ─────────────────────────────────────────
-// The NetBox-style renderer: tall cards whose port chips sit at the height
-// of their PEER's port, so cables run near-straight. dagre gives ranks;
-// relaxation sweeps pull ports (and their cards) toward their peers.
+// Tall cards whose port chips sit at the height of their PEER's port, so
+// cables run near-straight. dagre gives ranks; relaxation sweeps pull ports
+// (and their cards) toward their peers. A card's header is the Diagram's
+// Simple card (hier-card.ts), as tall as its card lines: the chips start
+// under it.
 export const HIER_PORT_PITCH = 18
+/** A plain header - the name alone. The chips' spread and cards laid out
+ * without a header box (a grouped map's site cards) use it. */
 export const HIER_HEADER = 30
 export const HIER_PAD = 12
 export const HIER_MIN_SPAN = 60
 const HIER_NODE_GAP = 36
+/** How far a card's port chips may spread: one plain card and the gap
+ * under it per port, so a hub's chips can still face a column of leaves
+ * one to one. Past that the chips close up and stop facing their peers.
+ * Without a bound a card spanned the distance between its farthest peers,
+ * and on a big multi-homed map that fed on itself: a stretched card pushed
+ * the rest of its rank down, their peers followed, and the next sweep
+ * stretched it further (the 2,475-device demo map came out 3e11 px tall
+ * and drew nothing). */
+function hierMaxSpan(ports: number): number {
+  return Math.max(
+    HIER_MIN_SPAN,
+    ports * (HIER_HEADER + 2 * HIER_PAD + HIER_MIN_SPAN + HIER_NODE_GAP)
+  )
+}
 
 export interface HierPortPos {
   side: "L" | "R"
   off: number
 }
 
-export function hierHeight(span: number): number {
-  return HIER_HEADER + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
+/** A Hierarchy card's height: its header, then its port chips' span
+ * padded above and below. */
+export function hierHeight(span: number, head = HIER_HEADER): number {
+  return head + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
 }
 
-export function hierarchyWidth(d: { name?: string }): number {
-  return Math.max(190, Math.min(300, 70 + (d.name?.length ?? 0) * 6.6))
+/** A Hierarchy card's box before the map has fetched it - a header with
+ * one card line over the least body: what a device dropped on the tab is
+ * placed and drawn at meanwhile. */
+export const HIER_NEW_CARD = {
+  w: HIER_MIN_W,
+  h: hierHeight(
+    0,
+    2 * CARD.PAD_Y + CARD.TITLE_LH + CARD.LINES_GAP + CARD.LINE_LH
+  ),
+} as const
+
+/** How tall a card's header is: its card box, laid out by the build. */
+export function hierHead(d: unknown): number {
+  return hierBox(d)?.h ?? HIER_HEADER
+}
+
+/** As wide as its header card, and never narrower than `HIER_MIN_W`. A
+ * card without a header box (a grouped map's site card) is sized to its
+ * name. */
+export function hierarchyWidth(d: { name?: string } & HierCardData): number {
+  const box = hierBox(d)
+  if (box) return Math.max(HIER_MIN_W, box.w)
+  return Math.max(HIER_MIN_W, 40 + Math.min(180, (d.name?.length ?? 0) * 6.6))
+}
+
+/** Past this a layout is broken, not big: a saved view refuses coordinates
+ * further out (the API's MAX_COORD), and the browser can no longer place
+ * a card that far. */
+export const LAYOUT_LIMIT = 10_000_000
+
+/** A layout the canvas cannot draw: a card at a non-finite or runaway
+ * coordinate. The camera would fit the map from so far out that nothing
+ * shows, so the page says so instead. */
+export function layoutOutOfBounds(nodes: readonly Node[]): boolean {
+  return nodes.some(
+    (n) =>
+      !Number.isFinite(n.position.x) ||
+      !Number.isFinite(n.position.y) ||
+      Math.abs(n.position.x) > LAYOUT_LIMIT ||
+      Math.abs(n.position.y) > LAYOUT_LIMIT
+  )
 }
 
 export interface HierResult {
@@ -754,6 +885,88 @@ export function layoutHierarchy(
   positions?: Record<string, [number, number]>
 ): HierResult {
   const pinned = positions ? new Set(Object.keys(positions)) : undefined
+  // Each island of cabled cards is laid out on its own, then the islands
+  // are packed. Laid out as one, the sweeps' collision pass took every card
+  // in a column for a neighbour, whatever island it was in: islands pushed
+  // each other down and interleaved, and a big map came out a hundred
+  // thousand px tall. A map with cards pinned by hand stays one layout -
+  // the packing leaves it alone, so separate islands would overlap.
+  const parts =
+    pinned && nodes.some((n) => pinned.has(n.id))
+      ? [{ nodes, edges }]
+      : hierIslands(nodes, edges)
+  const at = new Map<string, { x: number; y: number }>()
+  const portPos = new Map<string, Record<string, HierPortPos>>()
+  const span = new Map<string, number>()
+  const sides = new Map<string, Record<string, "L" | "R">>()
+  for (const part of parts) {
+    if (!part.edges.length && part.nodes.length === 1) {
+      // A card with no cables: nothing to rank or align.
+      const pin = positions?.[part.nodes[0].id]
+      at.set(part.nodes[0].id, pin ? { x: pin[0], y: pin[1] } : { x: 0, y: 0 })
+      continue
+    }
+    const res = layoutHierarchyPart(part.nodes, part.edges, widthOf, positions)
+    for (const n of res.nodes) at.set(n.id, n.position)
+    for (const [k, v] of res.portPos) portPos.set(k, v)
+    for (const [k, v] of res.span) span.set(k, v)
+    for (const [k, v] of res.sides) sides.set(k, v)
+  }
+  const laid = packComponents(
+    nodes.map((n) => ({ ...n, position: at.get(n.id) ?? { x: 0, y: 0 } })),
+    edges,
+    (n) => ({
+      width: widthOf(n),
+      height: hierHeight(span.get(n.id) ?? 0, hierHead(n.data)),
+    }),
+    pinned
+  )
+  return { nodes: laid, portPos, span, sides }
+}
+
+/** The map's islands - cards joined by cables, directly or through each
+ * other - each with its own edges, in the order the map lists them. */
+function hierIslands(
+  nodes: Node[],
+  edges: Edge[]
+): { nodes: Node[]; edges: Edge[] }[] {
+  const parent = new Map<string, string>()
+  const find = (x: string): string => {
+    let r = x
+    while (parent.get(r) !== r) r = parent.get(r)!
+    parent.set(x, r)
+    return r
+  }
+  for (const n of nodes) parent.set(n.id, n.id)
+  for (const e of edges) {
+    if (!parent.has(e.source) || !parent.has(e.target)) continue
+    parent.set(find(e.source), find(e.target))
+  }
+  const parts = new Map<string, { nodes: Node[]; edges: Edge[] }>()
+  const partOf = (id: string) => {
+    const r = find(id)
+    return parts.get(r) ?? parts.set(r, { nodes: [], edges: [] }).get(r)!
+  }
+  for (const n of nodes) partOf(n.id).nodes.push(n)
+  for (const e of edges)
+    if (parent.has(e.source) && parent.has(e.target))
+      partOf(e.source).edges.push(e)
+  return [...parts.values()]
+}
+
+/** One island of the Hierarchy layout (or the whole map, when cards are
+ * pinned), before the islands are packed. */
+function layoutHierarchyPart(
+  nodes: Node[],
+  edges: Edge[],
+  widthOf: (n: Node) => number,
+  positions?: Record<string, [number, number]>
+): HierResult {
+  const pinned = positions ? new Set(Object.keys(positions)) : undefined
+  // Each card's header height: its chips start under it.
+  const heads = new Map(nodes.map((n) => [n.id, hierHead(n.data)]))
+  const head = (id: string) => heads.get(id) ?? HIER_HEADER
+  const heightOf = (id: string, sp: number) => hierHeight(sp, head(id))
   // Port lists per node from the cable edges (base port names ride on the
   // edge handles at this stage).
   type P = { name: string; peer: string; peerPort: string }
@@ -778,11 +991,11 @@ export function layoutHierarchy(
     nodesep: 40,
     edgesep: 12,
     ranksep: 170,
-    ranker: "network-simplex",
+    ranker: NETWORK_SIMPLEX,
     align: "UL",
   })
   const provH = (id: string) =>
-    hierHeight((ports.get(id)?.length ?? 0) * HIER_PORT_PITCH)
+    heightOf(id, (ports.get(id)?.length ?? 0) * HIER_PORT_PITCH)
   for (const n of nodes) g.setNode(n.id, { width: widthOf(n), height: provH(n.id) })
   for (const e of edges) g.setEdge(e.source, e.target, { weight: 1, minlen: 1 })
   dagre.layout(g)
@@ -814,7 +1027,7 @@ export function layoutHierarchy(
       (a, b) => (top.get(a.peer) ?? 0) - (top.get(b.peer) ?? 0)
     )
     list.forEach((pt, i) =>
-      portY.set(`${id}:${pt.name}`, (top.get(id) ?? 0) + HIER_HEADER + HIER_PAD + i * HIER_PORT_PITCH)
+      portY.set(`${id}:${pt.name}`, (top.get(id) ?? 0) + head(id) + HIER_PAD + i * HIER_PORT_PITCH)
     )
   }
 
@@ -837,12 +1050,32 @@ export function layoutHierarchy(
       abs.push({ pt, y })
       prev = y
     }
+    const most = hierMaxSpan(abs.length)
+    const ideal = prev - abs[0].y
+    if (ideal > most) {
+      // Too far apart to face them all: close the gaps up in proportion,
+      // keeping the pitch, and centre the stack on the peers so the chips
+      // fall short both ways rather than all on one side.
+      const floor = (abs.length - 1) * HIER_PORT_PITCH
+      const k = (most - floor) / (ideal - floor)
+      const y0 = abs[0].y
+      let y = y0
+      for (let i = 0; i < abs.length; i++) {
+        if (i > 0)
+          y += HIER_PORT_PITCH + (abs[i].y - abs[i - 1].y - HIER_PORT_PITCH) * k
+        abs[i].y = y
+      }
+      const shift =
+        targets.reduce((s2, x2) => s2 + x2.t, 0) / targets.length -
+        abs.reduce((s2, a2) => s2 + a2.y, 0) / abs.length
+      for (const a2 of abs) a2.y += shift
+    }
     const first = abs[0].y
     const last = abs[abs.length - 1].y
-    if (!pinned?.has(id)) top.set(id, first - HIER_HEADER - HIER_PAD)
+    if (!pinned?.has(id)) top.set(id, first - head(id) - HIER_PAD)
     const base = top.get(id)!
     // Pinned cards keep their position - ports re-stack inside from the top.
-    let off = base + HIER_HEADER + HIER_PAD
+    let off = base + head(id) + HIER_PAD
     for (const { pt, y } of abs) {
       const yy = pinned?.has(id) ? off : y
       portY.set(`${id}:${pt.name}`, yy)
@@ -866,7 +1099,7 @@ export function layoutHierarchy(
       let bottom = -Infinity
       for (const n of group) {
         if (pinned?.has(n.id)) {
-          bottom = Math.max(bottom, (top.get(n.id) ?? 0) + hierHeight(span.get(n.id) ?? 0))
+          bottom = Math.max(bottom, (top.get(n.id) ?? 0) + heightOf(n.id, span.get(n.id) ?? 0))
           continue
         }
         let t = top.get(n.id) ?? 0
@@ -877,7 +1110,7 @@ export function layoutHierarchy(
           for (const pt of ports.get(n.id) ?? [])
             portY.set(`${n.id}:${pt.name}`, (portY.get(`${n.id}:${pt.name}`) ?? 0) + delta)
         }
-        bottom = t + hierHeight(span.get(n.id) ?? 0)
+        bottom = t + heightOf(n.id, span.get(n.id) ?? 0)
       }
     }
   }
@@ -890,7 +1123,7 @@ export function layoutHierarchy(
     for (const n of seq) {
       const list = ports.get(n.id)
       if (!list?.length) continue
-      const base = (top.get(n.id) ?? 0) + HIER_HEADER + HIER_PAD
+      const base = (top.get(n.id) ?? 0) + head(n.id) + HIER_PAD
       const targets = list
         .map((pt) => ({
           pt,
@@ -900,12 +1133,16 @@ export function layoutHierarchy(
             0,
         }))
         .sort((a2, b2) => a2.t - b2.t)
+      // The card stays; its chips chase their peers only as far as the
+      // card may grow, leaving room for the chips still to come.
+      const most = base + hierMaxSpan(list.length)
       let prev = base - HIER_PORT_PITCH
-      for (const { pt, t } of targets) {
-        const y = Math.max(base, t, prev + HIER_PORT_PITCH)
+      targets.forEach(({ pt, t }, i) => {
+        const room = most - (targets.length - 1 - i) * HIER_PORT_PITCH
+        const y = Math.min(Math.max(base, t, prev + HIER_PORT_PITCH), room)
         portY.set(`${n.id}:${pt.name}`, y)
         prev = y
-      }
+      })
       span.set(n.id, prev - base)
     }
   }
@@ -921,7 +1158,7 @@ export function layoutHierarchy(
       x: x.get(id) ?? 0,
       w: widthOf(byId2.get(id)!),
       t: top.get(id) ?? 0,
-      h: hierHeight(span.get(id) ?? 0),
+      h: heightOf(id, span.get(id) ?? 0),
     })
     const byId2 = new Map(nodes.map((n) => [n.id, n]))
     const order2 = [...nodes].sort(
@@ -964,16 +1201,10 @@ export function layoutHierarchy(
       }
     portPos.set(id, rec)
   }
-  let laid = nodes.map((n) => ({
+  const laid = nodes.map((n) => ({
     ...n,
     position: { x: x.get(n.id) ?? 0, y: top.get(n.id) ?? 0 },
   }))
-  laid = packComponents(
-    laid,
-    edges,
-    (n) => ({ width: widthOf(n), height: hierHeight(span.get(n.id) ?? 0) }),
-    pinned
-  )
   return { nodes: laid, portPos, span, sides }
 }
 
@@ -1001,6 +1232,8 @@ export function realignHierPorts(
     add(e.target, d.baseT, e.source, d.baseS)
   }
   const pos = new Map(nodes.map((n) => [n.id, n.position]))
+  const heads = new Map(nodes.map((n) => [n.id, hierHead(n.data)]))
+  const head = (id: string) => heads.get(id) ?? HIER_HEADER
   const sides = new Map<string, Record<string, "L" | "R">>()
   const portY = new Map<string, number>()
   for (const [id, list] of ports) {
@@ -1012,14 +1245,14 @@ export function realignHierPorts(
     list.forEach((pt, i) =>
       portY.set(
         `${id}:${pt.name}`,
-        (pos.get(id)?.y ?? 0) + HIER_HEADER + HIER_PAD + i * HIER_PORT_PITCH
+        (pos.get(id)?.y ?? 0) + head(id) + HIER_PAD + i * HIER_PORT_PITCH
       )
     )
   }
   const span = new Map<string, number>()
   for (let sweep = 0; sweep < 2; sweep++) {
     for (const [id, list] of ports) {
-      const base = (pos.get(id)?.y ?? 0) + HIER_HEADER + HIER_PAD
+      const base = (pos.get(id)?.y ?? 0) + head(id) + HIER_PAD
       const targets = list
         .map((pt) => ({
           pt,
@@ -1075,13 +1308,18 @@ function segSlice(
   const dy = b[1] - a[1]
   let t0 = 0
   let t1 = 1
-  const sides: [number, number][] = [
-    [-dx, a[0] - (r.x - pad)],
-    [dx, r.x + r.w + pad - a[0]],
-    [-dy, a[1] - (r.y - pad)],
-    [dy, r.y + r.h + pad - a[1]],
-  ]
-  for (const [p, q] of sides) {
+  // The four sides in turn, without building them (this runs for every
+  // card against every cable).
+  for (let i = 0; i < 4; i++) {
+    const p = i === 0 ? -dx : i === 1 ? dx : i === 2 ? -dy : dy
+    const q =
+      i === 0
+        ? a[0] - (r.x - pad)
+        : i === 1
+          ? r.x + r.w + pad - a[0]
+          : i === 2
+            ? a[1] - (r.y - pad)
+            : r.y + r.h + pad - a[1]
     if (p === 0) {
       if (q < 0) return null
       continue
@@ -1117,38 +1355,52 @@ export function nudgeOffEdges(
     const r = rectOf(n)
     return r ? [r.x + r.w / 2, r.y + r.h / 2] : null
   }
-  // The straight line each cable would draw, endpoint centres.
+  // The straight line each cable would draw, endpoint centres - filed by
+  // the cells they pass through, so a card looks only at the lines near it.
   const segs: { s: string; t: string; a: [number, number]; b: [number, number] }[] = []
+  let filed = new Grid<number>(256)
   const segsFor = () => {
     segs.length = 0
+    filed = new Grid<number>(256)
     for (const e of edges) {
       const s = byId.get(e.source)
       const t = byId.get(e.target)
       if (!s || !t) continue
       const a = centre(s)
       const b = centre(t)
-      if (a && b) segs.push({ s: e.source, t: e.target, a, b })
+      if (!a || !b) continue
+      const at = segs.length
+      filed.addSegment({ x: a[0], y: a[1] }, { x: b[0], y: b[1] }, 2, at)
+      segs.push({ s: e.source, t: e.target, a, b })
     }
   }
+  /** The lines that may pass within 2px of `r`. */
+  const nearSegs = (r: NRect) =>
+    filed
+      .near({ x: r.x - 2, y: r.y - 2, w: r.w + 4, h: r.h + 4 })
+      .map((i) => segs[i])
   /** Cables crossing card `id` that don't terminate on it. */
   const crossings = (id: string, r: NRect) => {
     let n = 0
-    for (const sg of segs) {
+    for (const sg of nearSegs(r)) {
       if (sg.s === id || sg.t === id) continue
       if (segSlice(sg.a, sg.b, r, 2)) n++
     }
     return n
   }
+  // Every other card, without making a box for each (this runs for every
+  // card that might move).
   const overlaps = (id: string, r: NRect) => {
     for (const o of out) {
       if (o.id === id) continue
-      const or = rectOf(o)
-      if (!or) continue
+      const s = sizeOf(o)
+      if (!s) continue
+      const { x, y } = o.position
       if (
-        r.x < or.x + or.w + NUDGE_GAP &&
-        r.x + r.w + NUDGE_GAP > or.x &&
-        r.y < or.y + or.h + NUDGE_GAP &&
-        r.y + r.h + NUDGE_GAP > or.y
+        r.x < x + s.width + NUDGE_GAP &&
+        r.x + r.w + NUDGE_GAP > x &&
+        r.y < y + s.height + NUDGE_GAP &&
+        r.y + r.h + NUDGE_GAP > y
       )
         return true
     }
@@ -1167,7 +1419,7 @@ export function nudgeOffEdges(
       // card must move to clear it. Take the worst over every crossing run.
       let lo = Infinity
       let hi = -Infinity
-      for (const sg of segs) {
+      for (const sg of nearSegs(r)) {
         if (sg.s === n.id || sg.t === n.id) continue
         const sl = segSlice(sg.a, sg.b, r, 2)
         if (!sl) continue
@@ -1357,6 +1609,7 @@ function findLeafClusters(
 export function layoutNodes(
   nodes: Node[],
   edges: Edge[],
+  sizing: NodeSizing,
   positions?: Record<string, [number, number]>,
   direction: "LR" | "TB" = "LR",
   /** node id → role tier; when present, overrides the main-axis so nodes
@@ -1364,30 +1617,30 @@ export function layoutNodes(
   levels?: Map<string, number>,
   /** main-axis coordinate per tier index (from the Level distances); when
    * absent, tiers use a uniform gap. */
-  mainOffsets?: number[],
-  /** Node dimensions; defaults to the stencil card. The Flat view passes a
-   * fixed-size function so its chips lay out tight. */
-  sizeOfNode?: (n: Node) => { width: number; height: number }
+  mainOffsets?: number[]
 ): LayoutResult {
-  const sizer =
-    sizeOfNode ?? ((n: Node) => stencilSize(n.data as StencilData))
-  // A custom sizer means small fixed chips (the Flat view) - tighten the
-  // gaps so hundreds of nodes stay compact; stencil cards keep the roomy
-  // spacing their port-anchored cables need.
-  const compact = !!sizeOfNode
+  const {
+    sizeOf: sizer,
+    compact,
+    leafGrids = true,
+    rankGap = 0,
+    reuseRanks = false,
+    waypoints = true,
+  } = sizing
   const tbDir = direction === "TB"
   const pinnedIds = positions
     ? new Set(Object.keys(positions))
     : undefined
   // Leaf grids (structural mode only - Levels owns every tier placement).
-  const clusters: LeafClusters = levels
-    ? {
-        byHub: new Map(),
-        leafSet: new Set(),
-        leafEdgeIds: new Set(),
-        edgeOf: new Map(),
-      }
-    : findLeafClusters(edges, pinnedIds)
+  const clusters: LeafClusters =
+    levels || !leafGrids
+      ? {
+          byHub: new Map(),
+          leafSet: new Set(),
+          leafEdgeIds: new Set(),
+          edgeOf: new Map(),
+        }
+      : findLeafClusters(edges, pinnedIds)
   const byId = new Map(nodes.map((n) => [n.id, n]))
   // Grid geometry per hub, shared by size inflation and placement.
   const gridMeta = new Map<
@@ -1530,8 +1783,8 @@ export function layoutNodes(
     // route under a neighbouring card.
     nodesep: compact ? 28 : Math.min(56 + Math.max(0, maxFan - 8) * 3, 240),
     edgesep: compact ? 10 : 18,
-    ranksep: compact ? 90 : 130,
-    ranker: "network-simplex",
+    ranksep: compact ? Math.max(90, rankGap) : Math.max(130, rankGap),
+    ranker: NETWORK_SIMPLEX,
     align: "UL",
   })
   for (const n of nodes) {
@@ -1543,9 +1796,13 @@ export function layoutNodes(
     g.setNode(n.id, { width, height })
   }
   for (const e of mainEdges) {
+    // A peer link (the Diagram marks links between twins of one role) does
+    // not rank its ends, so the twins can share a tier.
+    if ((e.data as { peer?: boolean } | undefined)?.peer) continue
     g.setEdge(e.source, e.target, { weight: 1, minlen: 1 })
   }
-  dagre.layout(g)
+  if (reuseRanks) layoutReusingRanks(g)
+  else dagre.layout(g)
   const tb = direction === "TB"
   const sizeOf = (id: string) => g.node(id)
 
@@ -1766,13 +2023,22 @@ export function layoutNodes(
       }
     })
     const pinnedIds = positions ? new Set(Object.keys(positions)) : undefined
-    const spaced = respaceBands(laid, edges, sizeOf, tb, pinnedIds)
+    const spaced = respaceBands(
+      laid,
+      edges,
+      sizeOf,
+      tb,
+      pinnedIds,
+      Math.max(GAP_HEADROOM, rankGap)
+    )
     // Tiers fix the main axis; the cross axis is free, so a card sitting on
     // another pair's cable run slides off it.
     const clear = nudgeOffEdges(spaced, edges, (n) => sizeOf(n.id), tb, pinnedIds)
     return {
       nodes: clear,
-      waypoints: computeWaypoints(clear, edges, sizeOf, tb),
+      waypoints: waypoints
+        ? computeWaypoints(clear, edges, sizeOf, tb)
+        : new Map(),
     }
   }
 
@@ -1788,7 +2054,14 @@ export function layoutNodes(
     ...(pinnedIds ?? []),
     ...clusters.leafSet,
   ])
-  const spaced = respaceBands(laid, mainEdges, sizeOf, tb, exempt)
+  const spaced = respaceBands(
+    laid,
+    mainEdges,
+    sizeOf,
+    tb,
+    exempt,
+    Math.max(GAP_HEADROOM, rankGap)
+  )
   // Pack disconnected islands into a viewport-shaped arrangement; grid
   // leaves ride with their hub (its inflated box covers them, and they are
   // placed relative to it afterwards).
@@ -1809,12 +2082,14 @@ export function layoutNodes(
     exempt
   )
   const { out, streets } = placeLeafGrids(cleared)
-  const wp = computeWaypoints(
-    out.filter((n) => !clusters.leafSet.has(n.id)),
-    mainEdges,
-    sizeOf,
-    tb
-  )
+  const wp = waypoints
+    ? computeWaypoints(
+        out.filter((n) => !clusters.leafSet.has(n.id)),
+        mainEdges,
+        sizeOf,
+        tb
+      )
+    : new Map<string, [number, number][]>()
   for (const [k, v] of streets) wp.set(k, v)
   return { nodes: out, waypoints: wp }
 }

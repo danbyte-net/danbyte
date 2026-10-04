@@ -16,6 +16,7 @@ import {
   deviceBoxM,
   deviceViewpoint,
   deviceYM,
+  FACE_STANDOFF_M,
   filletPath,
   freeAirRideY,
   offsetPolyline,
@@ -923,6 +924,23 @@ describe("deviceViewpoint - double-click frames one device, not its rack", () =>
     const dist = (v: ReturnType<typeof deviceViewpoint>) =>
       Math.hypot(v.position[0] - v.target[0], v.position[2] - v.target[2])
     expect(dist(one)).toBeLessThan(dist(ten))
+  })
+
+  it("keeps its 1 m-rack framing, and stands off a deep rack's faceplate", () => {
+    const standoff = (depth: number) => {
+      const box = deviceBoxM(rack(), dev(10, 1), 0.6, depth)
+      const vp = deviceViewpoint(plan, tile, box)
+      const [cx, cz] = cellToWorld(plan, tile.x + 0.5, tile.y + 0.5)
+      // The face's z, in front of the rack's centre line.
+      const face = cz + box.dz - box.dd / 2
+      expect(vp.position[0]).toBeCloseTo(cx, 6)
+      return face - vp.position[2]
+    }
+    // On a 1 m rack the 1U face stands 0.45 m out, the eye 0.55 m.
+    expect(standoff(1.0)).toBeCloseTo(FACE_STANDOFF_M, 6)
+    // A 1.2 m rack used to put the eye a centimetre off the faceplate.
+    expect(standoff(1.2)).toBeCloseTo(FACE_STANDOFF_M, 6)
+    expect(standoff(1.4)).toBeCloseTo(FACE_STANDOFF_M, 6)
   })
 
   it("frames rear-mounted gear from the rear aisle", () => {

@@ -5,6 +5,8 @@
 // accessor, with a `meta.export` escape hatch for rich cells.
 import { type Table } from "@tanstack/react-table"
 
+import { htmlEscape, xmlEscape } from "@/lib/xml"
+
 export type ExportFormat = "csv" | "xlsx" | "html" | "print"
 
 interface ExportColumn {
@@ -82,22 +84,19 @@ export interface ExportOptions {
   generatedAt: string
 }
 
+// A cell that starts like a formula runs in the spreadsheet of whoever opens
+// the file; a leading apostrophe makes it text (the import takes it off).
+const FORMULA_START = /^[=+\-@\t\r]/
+
 function csvEscape(s: string): string {
-  return `"${s.replace(/"/g, '""')}"`
+  const text = FORMULA_START.test(s) ? `'${s}` : s
+  return `"${text.replace(/"/g, '""')}"`
 }
 
 export function toCsv(columns: ExportColumn[], rows: string[][]): string {
   const lines = [columns.map((c) => csvEscape(c.header)).join(",")]
   for (const r of rows) lines.push(r.map(csvEscape).join(","))
   return lines.join("\r\n")
-}
-
-function htmlEscape(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
 }
 
 // Self-contained document - inline CSS only, so it can be saved and shared as a
@@ -265,19 +264,6 @@ function colLetter(i: number): string {
     n = Math.floor((n - 1) / 26)
   }
   return s
-}
-
-function xmlEscape(s: string): string {
-  return (
-    s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;")
-      // strip control chars Excel rejects (keep tab/newline/return)
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
-  )
 }
 
 function sheetName(title: string): string {

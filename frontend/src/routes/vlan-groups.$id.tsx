@@ -13,7 +13,7 @@ import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { QueryError } from "@/components/query-error"
 import { VlanGroupDeleteDialog } from "@/components/vlan-group-delete-dialog"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
-import { DetailHero, DetailStat } from "@/components/detail-shell"
+import { DetailHero } from "@/components/detail-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -91,20 +91,7 @@ function Body({ group: g }: { group: VLANGroup }) {
         </div>
       </header>
 
-      <DetailHero
-        title={g.name}
-        description={g.description}
-        stats={
-          <DetailStat
-            label="VID range"
-            value={
-              <span className="num font-mono">
-                {g.min_vid}–{g.max_vid}
-              </span>
-            }
-          />
-        }
-      />
+      <DetailHero title={g.name} description={g.description} />
 
       <Tabs
         value={tab}

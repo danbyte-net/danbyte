@@ -289,4 +289,4 @@ def plugins_apply(request):
     from core.services import apply_plugins
 
     result = apply_plugins()
-    return Response(result, status=200 if result["ok"] else 400)
+    return Response(result, status=200 if result["ok"] else 409 if result.get("busy") else 400)

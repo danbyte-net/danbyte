@@ -12,6 +12,7 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DetailShell, DetailTab } from "@/components/detail-shell"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -82,8 +83,7 @@ function ScriptDetailPage() {
   })
 
   if (query.error) return <QueryError error={query.error} />
-  if (!script)
-    return <p className="text-sm text-muted-foreground">Loading...</p>
+  if (!script) return <Loading />
 
   const canEdit = objCan(script, "change", canDo("script", "change"))
   const canRun = script.permissions?.run ?? canDo("script", "run")
@@ -145,7 +145,7 @@ function ScriptDetailPage() {
                 disabled={!dirty || save.isPending}
                 onClick={() => save.mutate({ source })}
               >
-                {save.isPending ? "Saving..." : "Save"}
+                {save.isPending ? "Saving…" : "Save"}
               </Button>
               {dirty && (
                 <Button

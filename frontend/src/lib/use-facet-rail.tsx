@@ -6,6 +6,7 @@ import {
   type FacetOption,
   toggleInSet,
 } from "@/components/filter-rail"
+import { naturalCompare } from "@/lib/natural-sort"
 
 /** One facet: a labelled group whose options are derived from the rows. `get`
  * returns the row's value(s) for this facet (null = excluded from the facet). */
@@ -40,7 +41,7 @@ export function useFacetRail<T>(
       }
       out[spec.key] = [...counts.entries()]
         .map(([value, e]) => ({ value, label: e.label, count: e.count }))
-        .sort((a, b) => a.label.localeCompare(b.label))
+        .sort((a, b) => naturalCompare(a.label, b.label))
     }
     return out
   }, [rows, specs])

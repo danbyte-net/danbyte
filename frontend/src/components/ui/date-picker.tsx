@@ -45,15 +45,30 @@ function sameDay(a: Date, b: Date): boolean {
 }
 
 // Monday-first weekday header.
-const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+export const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+
+/** The 42 days (six Monday-first weeks) a month grid shows for month `m`
+ * (0-11) of year `y`, spilling into the months either side. Local dates. */
+export function monthCells(y: number, m: number): Date[] {
+  const first = new Date(y, m, 1)
+  const lead = (first.getDay() + 6) % 7 // days shown from the previous month
+  const cells: Date[] = []
+  for (let i = 0; i < 42; i++) cells.push(new Date(y, m, 1 - lead + i))
+  return cells
+}
 
 function MonthGrid({
   selected,
   onPick,
   today,
+  min,
+  max,
 }: {
   selected: Date | null
   onPick: (d: Date) => void
+  /** Days before `min` or after `max` cannot be picked. */
+  min?: Date | null
+  max?: Date | null
   /** Today in the *effective display timezone*, not the browser's. Passed in
    *  because the picker already resolves that zone for formatting, and a grid
    *  that highlights the browser's today contradicts the value beside it. */
@@ -72,10 +87,7 @@ function MonthGrid({
 
   // 6 fixed rows keep the popover height stable while paging months.
   const first = new Date(view.y, view.m, 1)
-  const lead = (first.getDay() + 6) % 7 // days shown from the previous month
-  const cells: Date[] = []
-  for (let i = 0; i < 42; i++)
-    cells.push(new Date(view.y, view.m, 1 - lead + i))
+  const cells = monthCells(view.y, view.m)
 
   const monthLabel = new Intl.DateTimeFormat("en-GB", {
     month: "long",
@@ -118,10 +130,12 @@ function MonthGrid({
           const outside = d.getMonth() !== view.m
           const isSelected = selected !== null && sameDay(d, selected)
           const isToday = sameDay(d, today)
+          const out = (min != null && d < min) || (max != null && d > max)
           return (
             <button
               key={d.toDateString()}
               type="button"
+              disabled={out}
               onClick={() => onPick(d)}
               className={cn(
                 "num mx-auto flex size-7 items-center justify-center rounded-md text-xs",
@@ -129,7 +143,8 @@ function MonthGrid({
                 isSelected
                   ? "bg-primary text-primary-foreground"
                   : "hover:bg-accent hover:text-accent-foreground",
-                isToday && !isSelected && "font-semibold text-primary"
+                isToday && !isSelected && "font-semibold text-primary",
+                out && "pointer-events-none opacity-30"
               )}
             >
               {d.getDate()}
@@ -150,6 +165,10 @@ export interface DatePickerProps {
   disabled?: boolean
   className?: string
   id?: string
+  /** Earliest pickable day, ISO `YYYY-MM-DD`. */
+  min?: string
+  /** Latest pickable day, ISO `YYYY-MM-DD`. */
+  max?: string
 }
 
 export function DatePicker({
@@ -159,6 +178,8 @@ export function DatePicker({
   disabled,
   className,
   id,
+  min,
+  max,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
   const { formatDate, today: todayIso } = useDateFormat()
@@ -194,6 +215,8 @@ export function DatePicker({
         <MonthGrid
           selected={selected}
           today={today}
+          min={parseIso(min)}
+          max={parseIso(max)}
           onPick={(d) => {
             onChange(toIso(d))
             setOpen(false)

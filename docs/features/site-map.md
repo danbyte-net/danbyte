@@ -4,7 +4,7 @@ icon: lucide/map
 
 # Site map
 
-**Organization → Site map** shows your estate on a real world map - the
+**Maps → Site map** shows your estate on a real world map - the
 geographic analog of a [floor plan](floor-plans.md). Every site with
 coordinates gets a labelled marker (with its device count); devices that carry
 their own GPS coordinates appear as small dots colored by role. Click a marker
@@ -34,20 +34,25 @@ for a popup with counts and a jump-off to the site or device page.
       sites make an edge, a hub termination makes a star to its spokes;
     - *cross-site cables* (dark fiber), aggregated per site pair - a bundle
       is one arc with a count.
-  Hover thickens an arc; click opens its popover (provider, rates,
-  encapsulation, member cables) with jump-offs to both sites and the object.
-  Each kind respects its own view permission.
+  Hover thickens an arc and names it with its speed; click opens its popover
+  and the inspector, both showing its [link facts](#link-facts) - speed,
+  provider, encapsulation, the ports at each end - with jump-offs to both
+  sites and the object. Each kind respects its own view permission.
 
 ## The layout - the floor planner, on a map
 
 The page is a clone of the floor-plan editor's shell:
 
-- **Header** - View / Edit tabs, a *Find on map…* search (sites, devices,
+- **Header** - View / Layout / Cables tabs, a *Find on map…* search (sites, devices,
   markers - jump + select), **Fit to view**, the **Satellite** toggle, the
-  **Objects** sidebar toggle, and a **View** menu (Sites / Devices / Links /
-  Cables / Cable routes / Region boundaries layers + camera FOV cones).
-  Links are circuits and tunnels; **Cables** toggles the plain cable lines
-  separately, so a map can show just the carrier picture.
+  **Objects** sidebar toggle, and a **Display** menu in three parts:
+    - **Layers** - Sites, Devices, Links, Cables, Cable routes, Region
+      boundaries, Camera FOV cones, and Stack nearby markers. Links are
+      circuits and tunnels; **Cables** toggles the plain cable lines
+      separately, so a map can show just the carrier picture.
+    - **Labels** - **Names** (the site and device name chips) and **Speed**
+      (each line's speed on the line, see [Link speed](#link-speed-on-the-map)).
+    - **Color by** - **Type**, **Status** or **Speed**, for the lines.
 - **Left palette rail** (Edit mode) - tabbed **Sites / Markers**, exactly
   like the plan's palette: click to arm, then click the map. Marker types
   stay armed so you can stamp several; Esc disarms. Stamping a marker opens
@@ -61,21 +66,24 @@ The page is a clone of the floor-plan editor's shell:
   device inspectors carry a **Details** section with the same detail-page
   rows (and copy buttons) as the popovers - serial, DNS, rack, location,
   cluster, counts, coordinates, and **custom fields** - so the answer is on
-  the map either way. The panel is **resizable**: drag its left edge (the
+  the map either way. A link or a cable shows its [link facts](#link-facts),
+  with every link of a bundle. The panel is **resizable**: drag its left edge (the
   width is remembered per browser; a small reset button restores the
   default), and the sliders button in its header picks exactly **which
   detail rows to show** - also remembered per browser.
-- **"On this map"** (Objects) - the far-right objects sidebar: one search
-  box over foldable groups - sites by region (a flat list until regions are
-  in use), devices by role, markers, links grouped by kind, and a
-  **Regions** list (regions with a stored boundary; click one to fit the
-  map to it). Click a row to fly to it; Enter in the search box jumps
-  to the first hit. Every site/device row carries its status as a small
-  tinted badge, a **Problems** section at the top collects everything down
-  or degraded (worst first), and the `all · down · degraded · up` chips
-  under the search box filter the whole list. Group headers show
-  down/degraded counts even when folded, and fold state is remembered per
-  browser.
+- **Objects** - the far-right Objects sidebar, the same one the
+  [floor plans](floor-plans.md) and the [topology map](topology.md) open:
+  one *Search…* box over foldable groups - sites by region (a flat list
+  until regions are in use), devices by role (each role headed by its color
+  badge), markers, links grouped by kind, and a **Regions** list (regions
+  with a stored boundary; click one to fit the map to it). Click a row to
+  fly to it; Enter in the search box jumps to the first hit. Every
+  site/device row carries its monitoring status pill, a **Problems** section
+  at the top collects everything down or degraded (worst first), and the
+  **All · Down · Degraded · Up** tabs under the search box (each with its
+  count, named as your status catalog names the states) filter the whole
+  list. Group headers show down/degraded counts even when folded, and fold
+  state is remembered per browser.
 - **Hiding part of the map** - the eye on a group header takes that group
   off the map: a device role, or a region's sites. Individual sites have
   their own eye, since sites are the map's top-level objects and there are
@@ -92,8 +100,9 @@ The page is a clone of the floor-plan editor's shell:
     out of Problems, the triage pill, **Find on map**, Fit-to-all, the Links
     and Cable routes lists, and a device's cable count. A **"n hidden · Show
     all"** line appears at the top of the sidebar whenever anything is off,
-    and the choice is remembered per browser. This is finer-grained than
-    **View**, which switches whole kinds on and off. The
+    and a chip in the map's top-right corner says the same while the sidebar
+    is closed. The choice is remembered per browser. This is finer-grained than
+    **Display**, which switches whole kinds on and off. The
     [floor plans](floor-plans.md) and the [topology map](topology.md) have
     the same eyes. Keyboard: ++h++ hides the selected site, or the selected
     device's role; ++shift+h++ shows all.
@@ -118,8 +127,8 @@ arcs) is reused as a compact **MiniMap** wherever a map helps:
 Markers are clickable everywhere (site → site page, device → device page).
 
 Devices and free markers render as the floor-planner's **badge squares**
-(the role/type colour, icon or centred dot) rather than plain pins; the
-**selected** one gets a primary-coloured ring so it's obvious what you
+(the role/type color, icon or centred dot) rather than plain pins; the
+**selected** one gets a primary-colored ring so it's obvious what you
 clicked.
 
 ## Deferred (documented, not forgotten)
@@ -167,16 +176,21 @@ against an external service. You place things yourself.
 ## Chrome and memory
 
 - **Problems pill** - when anything on the map is down or degraded, a pill in
-  the top-left corner counts it; each click flies to the next problem, worst
+  the top-left corner counts it, one chip per state named as your status
+  catalog names it; each click flies to the next problem, worst
   first, and opens its popover.
-- **Legend** - bottom-left, collapsed to a pill by default; explains pins,
-  badges, cluster chips, health dots and the line colors.
+- **Legend** - bottom-left, folded to a **Legend** chip by default; explains
+  pins, badges, cluster chips, the health ring's states (named as your
+  status catalog names them) and the line colors, as **Color by** draws
+  them: the kinds, the statuses on the lines as their pills, or the speed
+  tiers on the lines. Its ✕ (*Hide legend*) folds it again.
 - **Fullscreen** - the expand button in the toolbar puts just the map
   fullscreen; every control keeps working.
 - A metric **scale bar** sits bottom-left.
 - The map **remembers where you were**: the last view (center + zoom) and the
-  layer toggles persist per browser, like the satellite/labels/FOV choices.
-  *Fit to view* is always one click to see everything again.
+  layer toggles persist per browser, like the satellite, labels, FOV and
+  Color by choices. *Fit to view* is always one click to see everything
+  again.
 
 ## Site colors and icons
 
@@ -186,6 +200,11 @@ takes the color and shows the icon inside it; with nothing set, the pin is the
 theme color with a standard building glyph. The same pair exists on locations - there they color the location's badge
 on list and detail pages (locations have no coordinates, so nothing changes on
 the map), and give the upcoming topology views a grouping color to work with.
+
+To color many at once, tick them in the **Sites**, **Regions** or
+**Locations** list and choose **Edit** in the bar that appears: sites and
+locations take a marker color and icon, regions a color. Leave a field
+unticked to keep each one's own; tick it with nothing picked to clear it.
 
 ## Close markers cluster
 
@@ -197,7 +216,7 @@ hide a problem. Click a chip to zoom into it - at maximum zoom, markers on the
 clustered object from the sidebar, search, or a `?focus=` link zooms and fans
 automatically until that marker is visible.
 
-Stacking is a preference: **View settings → Stack nearby markers** (default
+Stacking is a preference: **Display → Stack nearby markers** (default
 on). Turned off, nothing collapses - crowded markers **shrink** instead, down
 to about half size, so every site stays individually visible and clickable.
 The choice applies to the mini maps too.
@@ -209,9 +228,9 @@ smaller chip.
 
 Name chips declutter with zoom as well: site names appear once you're
 reasonably close, device names closer still, and hovering or selecting a
-marker always shows its name at any zoom. The **Labels** toggle in the View
-menu (remembered per browser) switches to hover/selection-only if you prefer
-a bare map.
+marker always shows its name at any zoom. **Display → Labels → Names**
+(remembered per browser) switches to hover/selection-only if you prefer a
+bare map.
 
 ## What draws a line between two sites
 
@@ -229,6 +248,77 @@ A site is **placed** once it has a latitude and longitude - an unplaced site
 drops every line that would touch it. If a link you expect is missing, check
 that end's site first.
 
+## Link speed on the map
+
+A line shows how fast it is whenever Danbyte can work that out from what you
+have recorded: a circuit's commit rate or its terminations' port speeds, a
+tunnel's own **Capacity** (set on the [tunnel](vpn.md#add-a-tunnel)), the
+speed of the interfaces at a cable's ends.
+[Circuits → Link speed on the site map](circuits.md#link-speed-on-the-site-map)
+has the rules and which one wins. When nothing is known a line has no
+figure - never a guess.
+
+### Color by
+
+**Display → Color by** picks what a line's color means:
+
+| Color by | A line's color |
+|---|---|
+| **Type** (default) | Its kind: circuits sky, tunnels violet, cables amber - unless the object brings its own color (a circuit type's, a cable's). |
+| **Status** | Its status's color, from your status catalog. A line with no status is grey. |
+| **Speed** | The speed tier of its figure, on the scale the [topology](topology.md) and the port faceplates use. A line of unknown speed is grey. |
+
+The legend follows: the kinds under Type, the statuses on the map's lines as
+their pills under Status, the speed tiers on its lines under Speed. The
+choice is remembered per browser.
+
+!!! note "Changed in 0.17"
+    A cable with no color of its own was drawn in the circuits' sky blue
+    while the legend called cables amber. It is amber now, on this map and
+    in the Map widget and the locators.
+
+### Speed labels
+
+**Display → Labels → Speed** (on by default) writes each line's figure on
+the line: `10G`, `100/20M` (down/up), `2×10G` for a bundle. To keep the map
+readable:
+
+- only lines in view are labelled, at most 300 at a time;
+- nothing is labelled from far out (the world, a continent);
+- a line gets its label once it is long enough on screen to carry one, so
+  zooming in brings the shorter lines' labels in;
+- labels never overlap - the longer line keeps its label;
+- cables drawn on top of one another (between devices with no coordinates
+  of their own, every cable of a site pair runs from one site's point to the
+  other's) share one label, added up the way a bundle is;
+- while a trace lights some cables, only those keep their labels.
+
+A line of unknown speed carries no label. The choice is remembered per
+browser.
+
+### Link facts
+
+A line's popover and its inspector show the same facts:
+
+- **Speed** - the figure and where it came from: `100G · commit rate`,
+  `500/100M · port speed`, `10G · interfaces`, `1G · set on tunnel`,
+  `10G · cable`; *Unknown* when nothing is known.
+- **Bundle** - for a line of several links, how many there are and how many
+  have no known speed: `4 links · 3 unknown`.
+- **Provider**, **Circuit ID** (with a copy button) and **Type** for a
+  circuit; **Encapsulation** and **Group** for a tunnel; **Cables** for a
+  site pair's cables.
+- **Ends** - for a single link, the device and port at each end with the
+  port's speed. A circuit side that is not cabled shows its termination's
+  port speed.
+- **Links** - for a bundle, each link's speed and its two ends. The popover
+  lists the first three and the inspector every link the map has (the first
+  50); both count the rest as *+N more*.
+
+An end on a device you may not view reads **Restricted** and says nothing
+more. Clicking a cable opens its popover and the inspector too; a cable into
+patch panels shows its own ends above the ports its strands come out on.
+
 ## Cabling on the map
 
 Every cable whose two ends land on the map draws as a line - you don't need
@@ -242,7 +332,7 @@ Click a device to open its inspector:
   splitters crossed). The **⤳ trace** button on a run lights that whole path
   on the map and fits the view; clicking any cable line toggles its highlight.
 - **Ports** lists the device's interfaces and front/rear ports, each showing
-  a coloured dot when cabled or a **＋ Connect** when empty. Connect opens the
+  a colored dot when cabled or a **＋ Connect** when empty. Connect opens the
   cable form seeded with that port as the A-side - the fastest way to wire
   fibre straight from the map; the new cable appears the instant you save.
 
@@ -259,7 +349,7 @@ prefill from it) or later from the route inspector. Reshape
 any time: drag a vertex, click a segment's **＋** to add a bend, right-click a
 vertex to remove it.
 
-Routes render in every mode as faint channels (toggle under **View → Cable
+Routes render in every mode as faint channels (toggle under **Display → Cable
 routes**); their assigned cables draw as thin colored lines *inside* the
 channel, routed through the route graph between their endpoint sites. A cable
 bundle whose members all follow real routes drops its abstract arc. Cable
@@ -286,7 +376,7 @@ Regions that carry an [OpenStreetMap boundary](regions-locations.md#map-boundary
 shade their outline under the markers, tinted by the region's map color
 (muted zinc when no color is set). The polygons are decoration, not
 controls - clicks pass straight through to pins and the map. Toggle them
-under **View → Region boundaries** (remembered per browser, like the other
+under **Display → Region boundaries** (remembered per browser, like the other
 layers). Boundary data © OpenStreetMap contributors, ODbL.
 
 ## Satellite view
@@ -294,7 +384,7 @@ layers). Boundary data © OpenStreetMap contributors, ODbL.
 The header's **Satellite** button swaps the basemap to imagery -
 **Esri World Imagery** by default (their attribution shown as required).
 The choice is remembered per browser. A deployment can point the satellite
-basemap elsewhere in **Settings → Maps → Map tiles** (satellite URL +
+basemap elsewhere in **Settings → Site map → Map tiles** (satellite URL +
 attribution), same rules as the street tiles: https-only, `{z}`/`{x}`/`{y}`
 placeholders, and the tile host must be allowed in the nginx CSP `img-src`
 (the shipped config already allows `server.arcgisonline.com`).
@@ -317,7 +407,7 @@ Danbyte follows it:
 
 The default is fine for **light internal use** - a handful of operators
 looking at a map. If your deployment is large, busy, or public-facing, the
-policy expects you to use your own tile source: set **Settings → Maps →
+policy expects you to use your own tile source: set **Settings → Site map →
 Map tiles** to any raster tile server (an `https://…/{z}/{x}/{y}.png`
 template) - a commercial provider, or self-hosted tiles. Set the matching
 attribution string; nearly every provider requires one.
@@ -366,3 +456,58 @@ they're scriptable like everything else.
 end carries the point it draws at, its `device_id` and its `site_id` - a
 device with no coordinates of its own is drawn at its site's point, and that
 device is not in the payload above, so the site is what identifies it.
+
+`GET /api/site-map/connections/` returns the lines between sites - circuits,
+tunnels and each site pair's cables, as
+[What draws a line between two sites](#what-draws-a-line-between-two-sites)
+describes. Each kind needs its own view permission, and both sites must be
+ones you can view.
+
+### Link speed: `?include=capacity` {#link-speed}
+
+Both line endpoints take `?include=capacity`, and each line then also
+carries:
+
+| Field | What it holds |
+|---|---|
+| `capacity` | The line's speed: `kbps`, `up_kbps` (only when the other direction differs), `label` (`10G`, `100/20M`, `2×10G`), `source`, and `count` / `unknown` - how many of its links have a known speed and how many do not. `null` when no speed is known: never a guess. |
+| `links` | The end-to-end links the figure is made of, the first 50: each with its `a` and `z` end, its own `capacity` and the `cable_id` that carries it (null for a circuit or tunnel). |
+| `link_count` | How many links there are in all. |
+
+Without it the payloads are as before. The map widget and the site and
+device locators share these endpoints and don't ask, so they pay nothing
+for it.
+
+`source` names where the figure came from - the rules, and which one wins,
+are under [Circuits → Link speed on the site map](circuits.md#link-speed-on-the-site-map):
+
+| `source` | Line | The figure |
+|---|---|---|
+| `commit` | circuit | its commit rate |
+| `port` | circuit | the slower termination's port speed, with the upstream speed where it differs |
+| `interface` | circuit | the slower of the interfaces its sides are cabled to |
+| `override` | tunnel | the tunnel's own capacity |
+| `cable` | cable | per link, the lower of its two end interfaces' speeds; a line with several links adds them up |
+
+A cable into a patch panel is followed through the panels to where its
+strands come out. A trunk between two panels carries one link per strand
+patched at both ends - a duplex connector's two strands are one link - and a
+strand that stops dark inside a panel carries none. A site pair's line adds
+up every link its cables carry, each once; a cable that carries no link at
+all counts as one of unknown speed.
+
+An end names its `site_id`, the `device` - or for a tunnel the
+`virtual_machine` - and the `port` it lands on, with the port's `kind` and,
+for an interface, its `speed_kbps`. A circuit's ends carry their
+`termination` too: its side, port speed and upstream speed. What you see
+follows your permissions:
+
+- a device or virtual machine is named only when you can view it; otherwise
+  the end reads `restricted: true` and carries nothing else;
+- a circuit's ends are traced to what they are cabled to only when you can
+  view cables;
+- a speed read off interfaces makes a link's figure only when you can view
+  the devices at both of its ends - otherwise the link counts as unknown.
+
+The figures cost the same number of queries however many links the map
+draws.

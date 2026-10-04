@@ -12,6 +12,10 @@ import { TableActions } from "@/components/table-actions"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
 import { buildIpColumns } from "@/components/columns/ip-columns"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
 import { IpBulkBar } from "@/components/ip-bulk-bar"
 import { useTableFilters } from "@/components/table-filters"
 
@@ -54,9 +58,16 @@ function IpsPage() {
   })
   const allRows = useMemo(() => query.data?.results ?? [], [query.data])
 
+  const ipIds = useMemo(() => allRows.map((r) => r.id), [allRows])
+  const sla = useSlaStatus("ip", ipIds)
   const columns = useMemo<ColumnDef<IPAddress>[]>(
-    () => buildIpColumns<IPAddress>({ copyButton: true, selection: true }),
-    []
+    () =>
+      buildIpColumns<IPAddress>({
+        copyButton: true,
+        selection: true,
+        sla: { entries: sla.entries, frame: sla.frame },
+      }),
+    [sla.entries, sla.frame]
   )
   // Seed the status / role / scope facets from the URL so the active filter is
   // visible in the rail (the server already applied it - see the query above).
@@ -88,6 +99,10 @@ function IpsPage() {
         }}
         actions={
           <>
+            <AvailabilityFramePicker
+              value={sla.frame}
+              onChange={sla.setFrame}
+            />
             <TableActions ioType="ipaddress" />
             {canAdd && (
               <Button size="sm" asChild>

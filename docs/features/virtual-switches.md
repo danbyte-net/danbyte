@@ -90,25 +90,49 @@ by hand is never re-pointed. The now-unused minted VLAN stays in the source's
 group for you to delete - the sync never removes a VLAN something might still
 reference.
 
-## Network topology
+## Virtual topology {#network-topology}
 
-**Virtualization → Network topology** draws the whole picture in one diagram:
+**Maps → Virtual topology** (also the **Virtual topology** button on the
+Virtual switches list) draws the whole picture in one diagram:
 
     external network → physical adapters (host NICs) → switches
-        → networks (VLANs, as coloured rails) → the VMs on each
+        → networks (VLANs, as colored rails) → the VMs on each
 
 Each VM is drawn **once**, with one connector per network it attaches to, so a
-multi-homed firewall reads as a single box with several cables rather than
-appearing on every rail. Rail colour follows the [VLAN's own
-colour](ipam-objects.md#vlans), falling back to its zone's colour and then to a
-palette shade. Every node clicks through to its object, and a VM's own page
-shows the same diagram scoped to that VM.
+multi-homed firewall reads as a single card with several cables rather than
+appearing on every rail. Rail color follows the [VLAN's own
+color](ipam-objects.md#vlans), falling back to its zone's color and then to a
+palette shade, and a rail wears its VLAN's status as a pill after its name.
+Each switch heads its networks, with its host NICs at the right end. VMs are
+the topology Diagram's cards, dashed: their role's color, the name bold, the
+status pill in the top-left corner. As on the
+[Logical](topology.md) tab, a pill shows only a status other than the
+one a new VM or VLAN gets. Every switch, network, VM and host NIC
+is a link to its page that you can reach with Tab, and a name cut short
+shows whole on hover or focus. A **Legend** in the corner keys the roles,
+the rails, VMs and host NICs. A VM's own page shows the same diagram scoped
+to that VM, as its **Topology** card, with the switch at each rail's right
+end. The ⓘ beside the title sums this up.
+
+The second bar has **Copy link** and **Export** - PNG, SVG, PDF, Print and
+draw.io, drawn the way the topology page's [Logical
+export](topology.md#export) is.
 
 Switches, networks and the topology are populated when **Sync virtual switches
 & networks** is enabled on a source; you can also create switches by hand.
+Until then the page says *No virtual networks yet.* and names that setting.
 
-Scoping the diagram to one source is on the address (`?source=<id>`), so a
-single cluster's picture is a link.
+Pick a source in the header (**Any source** shows them all) to scope the
+diagram to it. The choice is on the address (`?source=<id>`), so a single
+cluster's picture is a link, and an export names it among its filters.
+
+`GET /api/virt-networks/` feeds the diagram: each network's `vlan` carries
+its `status`, and each of its `vms` its `status_mini` and `role`
+(`{id, name, color}`) beside the status name and the `iface` that rides the
+network. Each status carries `is_default`: whether it is the one a new VLAN
+or VM gets. `vms` lists only the VMs you may view - a grant on virtual
+networks does not open the VMs on them, and a site-scoped VM grant lists
+that site's VMs.
 
 The same rail diagram drives the [topology page's **Logical**
 view](topology.md), which widens the picture to the whole L2 domain -

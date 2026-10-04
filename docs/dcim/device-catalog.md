@@ -48,6 +48,12 @@ Fields:
   this and frees the opposite face in [rack elevations](racks.md#rack-elevations)
 - **Airflow**, **weight** - hardware facts (airflow also exists per device as
   an override)
+- **Size (mm)** - the body's width, height and depth, in tenths of a
+  millimetre. Drawings scale the hardware by it.
+- **DIN rail** - the rail profiles the type mounts on (*TS 35*, *TS 15*,
+  *G 32*) and the rail's position: its centreline below the body's top edge,
+  the middle when left empty. A type with a profile needs its width and
+  height. See [mounting devices](cabinets.md#mounting-devices).
 - **Description**, **tags**, **custom fields**
 
 Device types accept [custom fields](../features/tags-and-custom-fields.md)
@@ -61,7 +67,7 @@ You rarely have to type a hardware model in by hand. The community
 [devicetype-library](https://github.com/netbox-community/devicetype-library)
 (public domain) holds thousands of ready-made definitions, and Danbyte's
 component templates use the same taxonomy - so they import 1:1. Click
-**Import** on the Device types page and either:
+**Import from library** on the Device types page and either:
 
 - paste **GitHub links** to `.yaml` files in the library (one per line -
   regular `blob` links work, they're converted automatically),
@@ -80,10 +86,18 @@ console/console-server ports, power ports/outlets, front/rear ports,
 **module bays**, **device bays** (+ subdevice role, exclude-from-utilisation),
 **inventory items**, plus **full-depth, airflow, and weight** - comes across, and
 the library's **elevation images** are downloaded automatically when the file
-declares them. **Module-type files** (`module-types/…`) import through the
-same dialog - auto-detected. **Every construct in the library schema now
-maps** - anything unrecognised in a file would still be reported, never
-silently dropped.
+declares them. **Module-type files** (`module-types/…`) and **rack-type
+files** (`rack-types/…`) import through the same dialog - auto-detected, so a
+mixed paste works. The Module types and Rack types pages open the same
+dialog from the same **Import from library** button, right after
+**Import / Export** on all three pages (CSV round-trips live in that menu).
+**Every construct in the library schema now maps** - anything unrecognised in
+a file would still be reported, never silently dropped.
+
+Each file needs **add** on what it creates: a device-type file needs add on
+device types, a module-type file on module types, a rack-type file on rack
+types. A file you can't add is reported as refused and the rest of the batch
+goes on. A folder import checks the same when it runs in the background.
 
 **Stackable switches:** the upstream library has no stack-position concept, so
 its port names are literal (`GigabitEthernet1/0/1`).
@@ -150,7 +164,12 @@ markers.
 
 Deletion runs through `POST /api/device-types/bulk-delete/` (`{ids}`) and
 returns `{"deleted": n}` - a count of **types**, not of the templates that
-cascaded with them. The submitted ids are re-checked server-side against your
+cascaded with them. The bar sends 100 types per call, one call after another -
+a library's worth of templates in one request outruns the request timeout -
+and the button counts the calls (*Deleting… 3 / 8*). A call that fails stops
+the run and the message says how many types went; the rest stay selected (see
+[Large selections](../features/table-preferences.md#large-selections)). The
+submitted ids are re-checked server-side against your
 tenant and, where the deployment scopes catalogs per site, your site scope: an
 id you can see but not write (a tenant-wide entry, or one local to another
 site) is skipped rather than deleted, so `n` can be smaller than the number you
@@ -168,7 +187,14 @@ so you can see the hardware without opening the type.
 Uploads are downscaled server-side to at most 2000 px on the longest edge -
 aspect ratio preserved, EXIF rotation applied - so a raw phone photo doesn't
 ship megabytes to every rack view. Library-fetched images get the same
-treatment.
+treatment, and so do image attachments.
+
+Every upload also loses its metadata - the GPS position, the camera and its
+serial, XMP and IPTC data, comments - because device type photos are served
+without a login. A photo that carries none is stored exactly as uploaded.
+0.17.0-dev3 kept the metadata of photos under 2000 px; `manage.py
+strip_photo_metadata` (with `--dry-run` to list them first) re-saves the
+photos stored since without it.
 
 ### Recovering lost images {#reimport-images}
 
@@ -296,7 +322,8 @@ Tick rows to reveal a bulk bar with **Edit**, **Rename**, **Clone**, and
 - **Rename** - find/replace across the selected templates' names (optional
   regex), with a live before→after preview. Ideal for renumbering a bank of
   ports (`Gi` → `GigabitEthernet`, `1/0/` → `2/0/`). It refuses names that would
-  collide. Photo-port markers, faceplate slots, and the placed ports on
+  collide, and takes at most 1000 rows at a time, as **Clone** does.
+  Photo-port markers, faceplate slots, and the placed ports on
   existing devices follow the rename, exactly as a single rename does - a
   marker left on an old name would otherwise read as a port the type still
   has, and syncing a device would stamp it a second time as a bare
@@ -478,11 +505,16 @@ Bulk place on a fully placed side seeds the grid from where the run sits now,
 and the header counts how many markers a placement would overwrite.
 
 What the **port hover card** shows is configurable deployment-wide under
-**Settings → Component popover**: an ordered field list (name, type, state,
-VLAN, live SNMP facts, IPs, description, MAC, MTU, LAG, tags - defaults to the
-first six). A field with no value on that port simply doesn't render, so a
-rich list costs nothing on sparse interfaces. The same list applies to the
-schematic and the photo faceplate alike.
+**Settings → Component details**: an ordered field list (name, type, state,
+far end, VLAN, live SNMP facts, IPs, description, MAC, MTU, LAG, tags -
+defaults to the first seven). **Far end** names the device and port at the
+other end of the port's cable (`→ sw-2:Gi1/0/1`); on a rack's elevation it
+shows only when that device is one you can view. A field with no value on
+that port simply doesn't render, so a rich list costs nothing on sparse
+interfaces. The same list applies to the schematic and the photo faceplate
+alike, on the device page and on the
+[rack's elevation](racks.md#live-ports-on-the-elevation). A list an admin
+saved before Far end existed keeps its own fields; add Far end to it there.
 
 Once a type has an image **and** at least one placed marker, its devices show
 the **photo faceplate** in place of the schematic one - each marker matched to
@@ -490,14 +522,40 @@ the device's real interface by name (so it carries the same state colour, live
 SNMP dot, hover card and link), and the markers also render **on the device's
 face in the [3D room view](../features/floor-plans.md#the-3d-room-view)**.
 **Hover.** A photo port's hover card shows the same rows as the drawn
-faceplate's - name and printed label, type, state, VLAN (native / trunk),
-live SNMP state, IPs - in the order set under **Settings → Components**.
+faceplate's - name and printed label, type, state, far end, VLAN (native /
+trunk), live SNMP state, IPs - in the order set under **Settings → Component
+details**. A power, console, aux or panel-port marker shows its kind and
+type, whether it is cabled, and - when that list includes Far end - what its
+cable reaches.
 
 **Size.** By default the photo draws at its upload size (its own pixels,
 never wider than the pane). Tick **Use this size everywhere** in the editor
 and its **Fit** / **−** / **+** zoom is saved with the layout for that side:
 Fit keeps the photo inside the pane, a percentage draws it at that fraction of
-its natural pixels - and the device page's photo panel follows.
+its natural pixels - and the device page's photo panel follows. The topology
+Diagram draws photos at rack width unless the device, its type or its role
+sets **Topology photo size** to *Own size*; then it uses this saved size, else
+the upload size (see [Photo nodes](../features/topology.md#photo-nodes)).
+
+**Calibration.** A photo can also say how big it really is: two guides at
+known points across it - its edges, or any two features a known distance
+apart - with the real distance between them, and where the DIN rail runs
+across it. That gives the photo's true width in millimetres, which
+[cabinet](cabinets.md) drawings and the Diagram's *Own size* draw it at.
+**Calibrate** in the photo editor shows the two guides (on the photo's edges
+to start) and the dashed rail line: drag them, or nudge the focused one with
+the arrow keys (Shift for bigger steps), and type the **Distance (mm)**
+between the guides - the type's width to start. The rail band is drawn at
+the true height of the type's first DIN profile, and the editor reads out the
+photo's size (*Photo 60.0 × 146.5 mm*). **Clear calibration** removes it;
+zooming while calibrating only magnifies. A device can carry a calibration of
+its own - its photo editor shows the type's, marked *From type*, until the
+device changes it; without one it uses its type's.
+Replacing or clearing a photo drops that side's calibration; resizing it keeps
+it. In the API it is `image_ports.view.<side>.cal = {left, right, span_mm,
+rail}`: the guides as fractions of the photo's width, the distance between
+them in mm, and the rail's centreline as a fraction of the photo's height (or
+null). A device's own `image_ports` is checked the same way as its type's.
 
 Types without photo ports keep using the schematic faceplate builder above.
 
@@ -506,7 +564,8 @@ templates** under *Hardware* - place disk bays, PSUs and other parts on the
 photo the same way. Hardware markers resolve to the device's real parts by
 name and are coloured by the **part's status** (a *Failed* disk reads red on
 the faceplate and in 3D); hovering shows the part's media, capacity, speed,
-status and serial. Hardware markers are informational - they never join the
+status and serial. The status can be set right there - see
+[part status](devices.md#part-status). Hardware markers never join the
 cable-connect flow.
 
 **[Module bay](#module-types) templates** are placeable too, under *Module bays
@@ -650,8 +709,11 @@ interfaces' state). Editing a module type's faceplate refreshes every device
 that has one of its modules installed.
 
 Module-type YAMLs from the devicetype-library import through the same
-**Import** dialog - they're auto-detected (no `u_height`), so you can paste
-`module-types/...` links right next to device types.
+**Import from library** dialog - they're auto-detected (no `u_height`), so
+you can paste `module-types/...` links right next to device types. The Module
+types page opens it too, from its own **Import from library**; a `/tree/` link to
+`module-types/<Manufacturer>` imports that manufacturer's module types in the
+background.
 
 ## Device roles
 

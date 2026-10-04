@@ -15,6 +15,26 @@ physical connector. Use this for loopbacks, tunnels, VLAN interfaces, and the
 aggregate interfaces below. Virtual interfaces are tagged with a small
 *virtual* badge in the list.
 
+An interface of type **Virtual**, **Bridge** or **LAG** is always virtual:
+the form ticks the box and greys it out, and every other way in - bulk edit,
+imports, device-type and module templates, the API - sets it too. SNMP
+discovery creates loopbacks, SVIs, tunnels and VLAN interfaces as type
+Virtual.
+
+A virtual interface stays off the faceplate, offers no **Connect** or
+**Reserve**, and is not counted in
+[port utilization](devices.md#what-counts-as-a-port) unless the deployment turns
+on **Count virtual interfaces** (Settings → Component details → Port
+counting). The Port utilization card names how many it left out.
+
+!!! note "Changed in 0.17"
+    Only LAGs were made virtual automatically before 0.17, and port
+    utilization counted every interface. Interfaces of type Virtual or Bridge
+    are now virtual too, so they leave the faceplate and lose Connect and
+    Reserve. The upgrade flags the existing ones, and the SVIs, loopbacks and
+    tunnels SNMP discovery created without a type, from the type their last
+    poll reported.
+
 ## Sub-interfaces (nesting)
 
 A **sub-interface** sits underneath a parent interface - think `ae1.100` under
@@ -81,7 +101,7 @@ bridge must be on the same device or virtual chassis.
 
 | Field on the form | Use it for | Points at |
 |---|---|---|
-| **Virtual** (checkbox) | loopbacks, tunnels, VLAN interfaces (aggregates are virtual by type) | - |
+| **Virtual** (checkbox) | loopbacks, tunnels, VLAN interfaces (types Virtual, Bridge and LAG are virtual by type) | - |
 | **Type = LAG** + **Bundle** | the aggregate itself: protocol, LACP mode / rate, min links | - |
 | **Parent interface** | sub-interfaces (`ae1.100` → `ae1`) | the parent port |
 | **LAG / aggregate** | bundle membership (a port → its aggregate) | the aggregate |

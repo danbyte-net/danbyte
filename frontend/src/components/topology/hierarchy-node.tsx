@@ -1,50 +1,54 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
-import { handleId, type StencilData } from "./stencil-node"
-import {
-  HIER_HEADER,
-  hierHeight,
-  hierarchyWidth,
-  type HierPortPos,
-} from "./layout"
+import type { CheckStatus, TopoNode } from "@/lib/api"
+import { CARD as INK, mix } from "@/lib/diagram/theme"
+import { cn } from "@/lib/utils"
+import { cardContent, withCardLines } from "./diagram/card-fields"
+import { CARD, PILL, pillTop } from "./diagram/card-layout"
+import { CardPillBadge } from "./diagram/card-node"
+import { hierCardBox } from "./hier-card"
+import type { HierCardData } from "./hier-card"
+import { hierHeight, hierarchyWidth, type HierPortPos } from "./layout"
+import { handleId } from "./port-handles"
 
 export { hierarchyWidth } from "./layout"
 
-// The Hierarchy view's card: a tall rounded container with the device name
-// on a header row and port chips floating at the exact heights the layout
-// aligned with their peers - cables run near-straight between them.
+// The Hierarchy view's card: the Diagram's Simple card as its header - the
+// role's colour, the name bold, the card lines under it, the status pill in
+// the top-left corner - over a neutral body whose port chips float at the
+// exact heights the layout aligned with their peers, so cables run
+// near-straight between them. The header box comes from the build
+// (hier-card.ts); the layout sized the card from the same numbers.
 
-export type HierData = StencilData & {
-  portPos?: Record<string, HierPortPos>
-  portSpan?: number
-}
-
-const STATUS_DOT: Record<string, string> = {
-  active: "bg-emerald-500",
-  planned: "bg-amber-500",
-  staged: "bg-amber-500",
-  failed: "bg-red-500",
-  offline: "bg-red-500",
-  decommissioning: "bg-zinc-400",
-}
+export type HierData = TopoNode["data"] &
+  HierCardData & {
+    /** Search miss or out of the spotlight: drawn faded. */
+    dimmed?: boolean
+    portPos?: Record<string, HierPortPos>
+    portSpan?: number
+    /** The device's monitoring state, merged in by the canvas. */
+    monitor?: CheckStatus | null
+  }
 
 const HANDLE = "topo-conn"
 
 export function HierarchyNode({ data, selected }: NodeProps) {
   const d = data as HierData
-  const width = hierarchyWidth(d)
-  const height = hierHeight(d.portSpan ?? 0)
-  const ring = selected
-    ? "border-primary ring-2 ring-primary/30"
-    : d.panel
-      ? "border-dashed border-border"
-      : "border-border"
+  const box = d.hierCard ?? hierCardBox(d)
+  const width = hierarchyWidth({ ...d, hierCard: box })
+  const height = hierHeight(d.portSpan ?? 0, box.h)
+  const { pill } = cardContent(withCardLines(d), { monitor: d.monitor })
+  const fill = box.fill
   return (
     <div
-      className={`relative rounded-xl border bg-card transition-opacity ${ring} ${
-        d.dimmed ? "opacity-30" : ""
-      }`}
+      className={cn(
+        "relative rounded-lg border border-border bg-card transition-opacity",
+        d.panel && "border-dashed",
+        selected && "outline-2 outline-offset-2 outline-map-accent",
+        d.dimmed && "opacity-30"
+      )}
       style={{ width, height }}
+      data-hier={d.device_id}
     >
       {/* Whole-card fallbacks (LLDP ghost edges). */}
       <Handle
@@ -57,33 +61,73 @@ export function HierarchyNode({ data, selected }: NodeProps) {
         position={Position.Right}
         className="!h-1.5 !w-1.5 !border-0 !bg-border opacity-0"
       />
-      {/* Header: the identity row the reference puts above the ports. */}
+      {/* The header: a Diagram card over the top of the body, its edge
+          included, so the card's own border runs on only below it. */}
       <div
-        className="flex items-center gap-1.5 border-b border-border/60 px-2.5"
-        style={{ height: HIER_HEADER }}
-        // The header truncates on narrow cards - hovering reveals the full
-        // identity.
-        title={[d.name, d.primary_ip, d.site].filter(Boolean).join(" · ")}
-      >
-        <span
-          className="h-3.5 w-1 shrink-0 rounded-full"
-          style={{ background: d.role?.color || "var(--border)" }}
-          title={d.role?.name}
-        />
-        {d.status && (
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              STATUS_DOT[d.status] ?? "bg-zinc-400"
-            }`}
-            title={d.status_display || d.status}
-          />
+        className={cn(
+          "absolute -inset-x-px -top-px rounded-t-lg",
+          !fill && "bg-muted text-foreground"
         )}
-        <span className="min-w-0 truncate font-mono text-[11px] font-medium">
-          {d.name}
-        </span>
-        <span className="ml-auto min-w-0 truncate text-[9px] text-muted-foreground">
-          {[d.primary_ip, d.site].filter(Boolean).join(" · ")}
-        </span>
+        style={{
+          height: box.h,
+          ...(fill
+            ? { backgroundColor: fill, color: box.ink ?? undefined }
+            : {}),
+        }}
+      >
+        {/* The fill a step darker, as on the Diagram card, so a pale role
+            still reads on white paper; the border colour on a neutral
+            card. */}
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-0 rounded-t-lg border",
+            !fill && "border-border",
+            d.panel && "border-dashed"
+          )}
+          style={
+            fill
+              ? { borderColor: mix("#000000", fill, INK.EDGE_DARKEN) }
+              : undefined
+          }
+        />
+        {pill && (
+          <span
+            className="absolute flex"
+            style={{ left: PILL.X, top: pillTop(box.stacked) }}
+          >
+            <CardPillBadge pill={pill} onFill={!!fill} />
+          </span>
+        )}
+        <div
+          className="absolute inset-x-0 truncate text-center font-bold"
+          style={{
+            top: box.title.top,
+            height: box.title.lh,
+            lineHeight: `${box.title.lh}px`,
+            fontSize: CARD.TITLE_SIZE,
+            paddingInline: CARD.PAD_X,
+          }}
+          data-tip={box.title.text !== d.name ? d.name : undefined}
+        >
+          {box.title.text}
+        </div>
+        {box.lines.map((l) => (
+          <div
+            key={l.key}
+            className="topo-cardline absolute inset-x-0 truncate text-center"
+            style={{
+              top: l.top,
+              height: l.lh,
+              lineHeight: `${l.lh}px`,
+              fontSize: CARD.LINE_SIZE,
+              paddingInline: CARD.PAD_X,
+              opacity: INK.LINE_INK,
+            }}
+          >
+            {l.text}
+          </div>
+        ))}
       </div>
       {/* Port chips at their aligned offsets, riding the card's edges. */}
       {Object.entries(d.portPos ?? {}).map(([name, pos]) => {
@@ -98,7 +142,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
               top: pos.off - 8,
               ...(pos.side === "L" ? { left: 5 } : { right: 5 }),
             }}
-            title={name}
+            data-tip={name}
           >
             <Handle
               type="target"

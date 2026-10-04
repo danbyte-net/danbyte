@@ -23,6 +23,16 @@ export interface TablePreference {
   reset: () => void
 }
 
+/** Whether a saved layout shows a column the table offers hidden until
+ * ticked - what the Columns menu shows, for a page that asks for that
+ * column's data only while it is on (the racks list's Ports). */
+export function layoutShows(
+  pref: Pick<TablePreference, "order" | "hidden">,
+  id: string
+): boolean {
+  return pref.order.includes(id) && !pref.hidden.includes(id)
+}
+
 const INERT: TablePreference = {
   order: [],
   hidden: [],

@@ -46,11 +46,20 @@ def _pct(delta_octets: int, dt_seconds: float, speed_mbps: int):
 def compute_device_utilization(device=None, points: int = 30, *, vm=None) -> dict:
     """``{if_index: [{at, in_pct, out_pct}, ...]}`` from stored samples, for a
     Device (positional, as before) or a VM (``vm=``)."""
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.utils import timezone
+
     by_index: dict[str, list] = defaultdict(list)
     flt = {"vm": vm} if vm is not None else {"device": device}
+    # Only the window the prune keeps: older rows are on their way out.
+    since = timezone.now() - timedelta(
+        days=int(getattr(settings, "MONITORING_SNMP_SAMPLE_RETENTION_DAYS", 3))
+    )
     samples = (
         SnmpInterfaceSample.objects
-        .filter(**flt)
+        .filter(**flt, sampled_at__gte=since)
         .order_by("if_index", "sampled_at")
     )
     for s in samples:

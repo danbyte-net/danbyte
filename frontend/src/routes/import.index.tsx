@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useMemo, useRef, useState } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { CheckCircle2, Upload } from "lucide-react"
 
@@ -12,6 +12,7 @@ import {
   type ImportResult,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Badge } from "@/components/ui/badge"
@@ -51,6 +52,7 @@ const errorColumns: ColumnDef<ImportError, unknown>[] = [
 
 function ImportPage() {
   const { isLoading } = useMe()
+  const qc = useQueryClient()
   const [objectType, setObjectType] = useState<string | null>(null)
   const [format, setFormat] = useState<Format>("csv")
   const [content, setContent] = useState("")
@@ -83,7 +85,11 @@ function ImportPage() {
   const run = useMutation({
     mutationFn: (dryRun: boolean) =>
       ioImport(objectType!, { format, content, dry_run: dryRun }),
-    onSuccess: (r) => setResult(r),
+    onSuccess: (r, dryRun) => {
+      setResult(r)
+      // Imported ports, cables and devices move the port counts.
+      if (!dryRun) invalidatePortCounts(qc)
+    },
     onError: () => setResult(null),
   })
 

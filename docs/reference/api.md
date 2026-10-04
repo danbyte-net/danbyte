@@ -49,7 +49,7 @@ summaries, request bodies, and responses.
 
 ## Asking the API what it accepts
 
-Two endpoints describe the API's own vocabulary so a client never has to
+These endpoints describe the API's own vocabulary so a client never has to
 hard-code a list that can go stale:
 
 - **`GET /api/dcim/choices/`** - the option lists behind the long taxonomy
@@ -77,6 +77,58 @@ hard-code a list that can go stale:
   declaration `bulk-update` enforces); everything else - label, editor kind,
   option list, nullability - is derived from the model definition, so this
   endpoint cannot drift from what a write will actually accept.
+
+- **`GET /api/list-fields/?path=/api/devices/`** - which fields a list's rows
+  carry that can be shown as table columns. `path` is the list endpoint the
+  table fetches - any routed list, including `/api/routing/…`,
+  `/api/monitoring/…` and plugin lists. The answer:
+
+  ```json
+  {"path": "/api/devices/", "model": "api.device", "slug": "device", "cf_model": "device",
+   "fields": [
+     {"key": "asset_tag",   "label": "Asset tag", "kind": "text",   "group": "fields"},
+     {"key": "airflow",     "label": "Airflow",   "kind": "choice", "group": "fields",
+      "options": [{"value": "front-to-rear", "label": "Front to rear"}], "setting": "airflow"},
+     {"key": "site.region", "label": "Region",    "kind": "object", "group": "related",
+      "related": "api.region", "via": "Site"},
+     {"key": "config_template", "path": "config_template.resolved", "label": "Config template",
+      "kind": "object", "group": "related", "related": "api.exporttemplate"}],
+   "custom_fields": [{"key": "owner", "label": "Owner", "type": "text", "choices": [], …}]}
+  ```
+
+  `key` is a dotted path into a row (`path` when the value sits deeper);
+  `kind` is one of `text`, `longtext`, `ip`, `number`, `bool`, `choice`,
+  `date`, `datetime`, `color`, `object`, `objects`, `tags` or `auto` (render
+  by the value's shape). A long choice list names its `/api/dcim/choices/`
+  key in `choices` instead of inlining `options`. `related` is the
+  `app.model` an object points at. `setting` names the device-field switch
+  (Settings → Device fields) that hides the field. `custom_fields` are the
+  model's visible custom-field definitions.
+
+  Everything is derived from the list's own serializer: the catalog never
+  adds data, it describes what the list already returns. Left out are ids and
+  plumbing (`id`, `numid`, `permissions`, raw foreign-key ids), structures
+  (JSON, lists), nested lists of records that have no name, `get_<x>_display`
+  twins, `@detail_only` getters and names in the serializer's
+  `list_columns_exclude`. The request is **gated exactly like
+  the list** - 403 without view permission on it, 404 for a path that is not
+  a list or a list that is not enabled.
+
+## Bulk calls
+
+Every `bulk-delete/` and `bulk-update/` takes a JSON object whose `ids` is a
+non-empty list of object ids (some lists take at most 1000 per call). An id
+that is not one, or a body that is not an object, answers `400` with
+`{"ids": "«nope» is not an id."}` and touches nothing. Ids outside the active
+tenant or the caller's permissions are left out, as in a list.
+
+More ids than a call takes answer `400` (`{"ids": "At most 1000 ids per
+call."}`) and touch nothing. Send them in consecutive calls of at most that
+many, as the web UI does with a big selection (see
+[Large selections](../features/table-preferences.md#large-selections)).
+
+A value a field cannot take answers `400` too - `{"non_field_errors":
+[...]}` when no serializer named the field - never a server error.
 
 ## Generating the schema offline
 

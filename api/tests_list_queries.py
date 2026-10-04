@@ -126,9 +126,10 @@ class RackListTests(_Base):
     comes from the page's prefetches (#188)."""
 
     def test_page_cost_is_flat_and_figures_match(self):
-        from .models import Rack
+        from .models import Rack, Region
 
-        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        region = Region.objects.create(tenant=self.tenant, name="Nordics")
+        site = Site.objects.create(tenant=self.tenant, name="HQ", region=region)
         for i in range(6):
             r = Rack.objects.create(tenant=self.tenant, site=site, name=f"r{i}")
             for k in range(8):
@@ -139,6 +140,7 @@ class RackListTests(_Base):
         big, body = self._queries("/api/racks/?page_size=6")
         self.assertEqual(small, big, "a bigger page must not cost more queries")
         row = body["results"][0]
+        self.assertEqual(row["site"]["region"]["name"], "Nordics")
         self.assertEqual(row["device_count"], 8)
         self.assertEqual(row["used_units"], 8)
         self.assertEqual(row["document_count"], 0)
@@ -216,8 +218,12 @@ class VirtualMachineListTests(_Base):
         from .models import (
             Cluster,
             ClusterType,
+            Region,
             VirtualMachineGroup,
         )
+
+        region = Region.objects.create(tenant=self.tenant, name="Nordics")
+        site = Site.objects.create(tenant=self.tenant, name="HQ", region=region)
 
         ctype = ClusterType.objects.create(
             tenant=self.tenant, name="Cloud Director", slug="cd"
@@ -235,7 +241,7 @@ class VirtualMachineListTests(_Base):
         for i in range(20):
             VirtualMachine.objects.create(
                 tenant=self.tenant, name=f"vm-{i:02d}", cluster=cluster,
-                group=groups[i % 5],
+                group=groups[i % 5], site=site if i % 2 else None,
             )
 
     def test_page_cost_is_flat_with_groups_on_every_row(self):
@@ -246,6 +252,8 @@ class VirtualMachineListTests(_Base):
         rows = {r["name"]: r for r in body["results"]}
         self.assertEqual(rows["vm-03"]["group"]["name"], "vapp-3")
         self.assertEqual(rows["vm-07"]["group"]["name"], "vapp-2")
+        self.assertEqual(rows["vm-07"]["site"]["region"]["name"], "Nordics")
+        self.assertIsNone(rows["vm-08"]["site"])
 
 
 class DeviceListTests(_Base):
@@ -253,18 +261,44 @@ class DeviceListTests(_Base):
     tenant is resolved once per request - not once per row's permissions."""
 
     def _seed(self):
-        site = Site.objects.create(tenant=self.tenant, name="HQ")
-        from .models import Interface
+        from .models import DeviceRole, ExportTemplate, Interface, Platform, Region
 
+        region = Region.objects.create(tenant=self.tenant, name="Nordics")
+        site = Site.objects.create(tenant=self.tenant, name="HQ", region=region)
+        # Templates bound at all three levels the row resolves through.
+        tpl = {
+            k: ExportTemplate.objects.create(
+                tenant=self.tenant, name=f"{k}-tpl", object_type="api.device",
+                template_code="x" * 2000,
+            )
+            for k in ("own", "role", "platform")
+        }
+        role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Access", slug="access", config_template=tpl["role"]
+        )
+        platform = Platform.objects.create(
+            tenant=self.tenant, name="EOS", slug="eos", config_template=tpl["platform"]
+        )
         for i in range(20):
-            d = Device.objects.create(tenant=self.tenant, name=f"sw-{i:02d}", site=site)
+            d = Device.objects.create(
+                tenant=self.tenant, name=f"sw-{i:02d}", site=site,
+                role=role if i % 3 == 1 else None,
+                platform=platform if i % 3 == 2 else None,
+                config_template=tpl["own"] if i % 3 == 0 else None,
+            )
             for k in range(i % 4):
                 Interface.objects.create(device=d, name=f"eth{k}")
             if i % 2:
                 p = Prefix.objects.create(tenant=self.tenant, cidr=f"10.{i}.0.0/24")
-                IPAddress.objects.create(
-                    tenant=self.tenant, ip_address=f"10.{i}.0.1", prefix=p, assigned_device=d
-                )
+                ips = [
+                    IPAddress.objects.create(
+                        tenant=self.tenant, ip_address=f"10.{i}.0.{h}", prefix=p,
+                        assigned_device=d,
+                    )
+                    for h in (1, 2, 3)
+                ]
+                d.primary_ip, d.secondary_ip, d.oob_ip = ips
+                d.save()
 
     def test_page_cost_is_flat_and_counts_match(self):
         self._seed()
@@ -273,9 +307,62 @@ class DeviceListTests(_Base):
         self.assertEqual(small, big, "a bigger page must not cost more queries")
         rows = {r["name"]: r for r in body["results"]}
         self.assertEqual(rows["sw-03"]["interface_count"], 3)
-        self.assertEqual(rows["sw-03"]["ip_count"], 1)
+        self.assertEqual(rows["sw-03"]["ip_count"], 3)
+        self.assertEqual(rows["sw-03"]["site"]["region"]["name"], "Nordics")
+        self.assertEqual(rows["sw-03"]["secondary_ip"]["ip_address"], "10.3.0.2")
+        self.assertEqual(rows["sw-03"]["oob_ip"]["ip_address"], "10.3.0.3")
+        resolved = {
+            name: rows[name]["config_template"]["resolved"]["name"]
+            for name in ("sw-03", "sw-04", "sw-05")
+        }
+        self.assertEqual(
+            resolved, {"sw-03": "own-tpl", "sw-04": "role-tpl", "sw-05": "platform-tpl"}
+        )
+        # The template bodies stay in the database.
+        with CaptureQueriesContext(connection) as ctx:
+            self.client.get("/api/devices/?page_size=20")
+        self.assertFalse(
+            any("template_code" in q["sql"] for q in ctx.captured_queries)
+        )
         self.assertEqual(rows["sw-04"]["interface_count"], 0)
         self.assertEqual(rows["sw-04"]["ip_count"], 0)
+
+    def test_cabinet_and_rail_are_prefetched_not_joined(self):
+        """Joined, the DIN cabinet and rail brought the list query back to 14
+        LEFT JOINs and Postgres spent most of the request planning it (#288)."""
+        from .models import Cabinet, DinRail
+
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        cab = Cabinet.objects.create(
+            tenant=self.tenant, site=site, name="K1", inner_width_mm=600, inner_height_mm=800
+        )
+        rail = DinRail.objects.create(cabinet=cab, label="R1", x_mm=10, y_mm=100, length_mm=500)
+        for i in range(12):
+            mounted = i % 3 == 0
+            Device.objects.create(
+                tenant=self.tenant, name=f"d-{i:02d}", site=site,
+                cabinet=cab if mounted else None, din_rail=rail if mounted else None,
+                din_offset_mm=10 * i if mounted else None,
+            )
+        small, _ = self._queries("/api/devices/?page_size=4")
+        big, body = self._queries("/api/devices/?page_size=12")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {r["name"]: r for r in body["results"]}
+        self.assertEqual(rows["d-03"]["cabinet"], {"id": str(cab.id), "name": "K1"})
+        self.assertEqual(
+            rows["d-03"]["din_rail"], {"id": str(rail.id), "label": "R1", "profile": "ts35"}
+        )
+        self.assertIsNone(rows["d-04"]["cabinet"])
+        self.assertIsNone(rows["d-04"]["din_rail"])
+        with CaptureQueriesContext(connection) as ctx:
+            self.client.get("/api/devices/?page_size=12")
+        page = [
+            q["sql"] for q in ctx.captured_queries
+            if q["sql"].startswith('SELECT "api_device"') and " LIMIT " in q["sql"]
+        ]
+        self.assertEqual(len(page), 1)
+        self.assertNotIn('JOIN "api_cabinet"', page[0])
+        self.assertNotIn('JOIN "api_dinrail"', page[0])
 
     def test_a_site_scoped_user_pays_one_permission_query_per_page(self):
         """A site-scoped grant always yields a Q, so the per-row lookup was
@@ -349,3 +436,51 @@ class DeviceListTests(_Base):
             lookups[size] = sum(1 for q in ctx.captured_queries if "core_tenant" in q["sql"])
         self.assertEqual(lookups[5], lookups[20])
         self.assertLess(lookups[20], 20)
+
+
+class InterfaceListTests(_Base):
+    """A port's parent, LAG and bridge come with the page, not joined to every
+    interface in the tenant before the page is taken (#298)."""
+
+    def test_page_cost_is_flat_and_relations_are_prefetched(self):
+        from .models import Interface
+
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        for i in range(6):
+            d = Device.objects.create(tenant=self.tenant, name=f"sw-{i}", site=site)
+            ports = [Interface.objects.create(device=d, name=f"eth{k}") for k in range(4)]
+            ae = Interface.objects.create(
+                device=d, name="ae0", type="lag", lag_protocol="lacp", lacp_mode="active"
+            )
+            br = Interface.objects.create(device=d, name="br0", type="bridge")
+            ports[0].lag = ae
+            ports[1].bridge = br
+            ports[3].parent = ports[2]
+            for p in (ports[0], ports[1], ports[3]):
+                p.save()
+        # The first page is sw-0's six ports, so it already uses all three.
+        small, _ = self._queries("/api/interfaces/?page_size=6")
+        big, body = self._queries("/api/interfaces/?page_size=36")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {(r["device"]["name"], r["name"]): r for r in body["results"]}
+        sw3 = Device.objects.get(name="sw-3")
+        ae = Interface.objects.get(device=sw3, name="ae0")
+        self.assertEqual(rows[("sw-3", "eth0")]["lag"], {
+            "id": str(ae.id), "name": "ae0",
+            "device": {"id": str(sw3.id), "name": "sw-3"},
+            "lag_protocol": "lacp", "lacp_mode": "active",
+        })
+        self.assertEqual(rows[("sw-3", "eth1")]["bridge"]["name"], "br0")
+        self.assertEqual(rows[("sw-3", "eth3")]["parent"]["name"], "eth2")
+        self.assertEqual(rows[("sw-3", "eth3")]["parent"]["device"]["name"], "sw-3")
+        self.assertIsNone(rows[("sw-3", "eth2")]["parent"])
+        self.assertIsNone(rows[("sw-3", "eth2")]["lag"])
+        self.assertEqual(rows[("sw-3", "ae0")]["lag_member_count"], 1)
+        with CaptureQueriesContext(connection) as ctx:
+            self.client.get("/api/interfaces/?page_size=36")
+        page = [
+            q["sql"] for q in ctx.captured_queries
+            if q["sql"].startswith('SELECT "api_interface"') and " LIMIT " in q["sql"]
+        ]
+        self.assertEqual(len(page), 1)
+        self.assertNotIn('JOIN "api_interface"', page[0])

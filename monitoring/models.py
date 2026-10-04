@@ -30,6 +30,7 @@ import hashlib
 import uuid
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -912,6 +913,27 @@ class MonitoringSettings(TimestampedModel):
         help_text="How many sub-minute checks the fast lane runs for this tenant "
         "(0 = none; the rest run at their fallback interval).",
     )
+    # ── Latency spikes (rollups) ──────────────────────────────────────────
+    #: A probe is a spike when it is slower than max(factor × the check's own
+    #: 7-day median, median + floor). Per check, never against the estate: an
+    #: SSH login is slow next to a ping and that is not a spike.
+    spike_factor = models.FloatField(
+        default=3.0,
+        help_text="A probe slower than this many times its check's 7-day "
+        "median latency counts as a spike.",
+    )
+    #: Per kind, the least a probe must exceed its median by before it can be
+    #: a spike - so a 1 ms ping going to 3 ms is not news. {"icmp": 5, ...};
+    #: kinds left out use the built-in floors in monitoring.rollups.
+    spike_floor_ms = models.JSONField(default=dict, blank=True)
+    #: The window list pages' Availability column covers unless a viewer
+    #: picks another: 24h, 7d, 30d, 90d, or month/quarter/year to date.
+    availability_frame = models.CharField(
+        max_length=4, default="30d",
+        choices=[("24h", "24 hours"), ("7d", "7 days"), ("30d", "30 days"),
+                 ("90d", "90 days"), ("mtd", "Month to date"),
+                 ("qtd", "Quarter to date"), ("ytd", "Year to date")],
+    )
     # Grouping: when one batch opens many alerts (e.g. a switch dies), send one
     # digest per channel instead of a storm of individual messages.
     group_notifications = models.BooleanField(
@@ -996,6 +1018,31 @@ class MonitoringSettings(TimestampedModel):
         related_name="+",
         help_text="Merge these devices' ARP tables (e.g. the gateway "
         "firewalls) for switch-link suggestions instead of each switch's own.",
+    )
+
+    # ─── MAC tracking (#284) ─────────────────────────────────────────────
+    # db_default on each so a rolling upgrade's old code can still insert a
+    # settings row while the new columns exist.
+    mac_port_display_limit = models.PositiveSmallIntegerField(
+        default=4, db_default=4,
+        validators=[MinValueValidator(0), MaxValueValidator(64)],
+        help_text="Learned MACs listed per port before '+N more'. 0 = all.",
+    )
+    mac_uplink_threshold = models.PositiveIntegerField(
+        default=4, db_default=4,
+        validators=[MinValueValidator(0), MaxValueValidator(4096)],
+        help_text="A port that learns more distinct MACs than this counts as "
+        "an uplink. 0 turns the count rule off.",
+    )
+    mac_uplink_lldp = models.BooleanField(
+        default=True, db_default=True,
+        help_text="A port whose LLDP neighbour is a switch counts as an uplink.",
+    )
+    mac_retention_days = models.PositiveSmallIntegerField(
+        default=30, db_default=30,
+        validators=[MinValueValidator(1), MaxValueValidator(365)],
+        help_text="Learned MACs and ARP entries unseen for longer than this "
+        "are forgotten.",
     )
 
     # ─── flapping monitor (M22) ──────────────────────────────────────────
@@ -1783,6 +1830,117 @@ class Silence(TimestampedModel):
         return self.starts_at <= now < self.ends_at
 
 
+#: The histogram edges, in ms: a latency objective's threshold is one of them.
+LATENCY_EDGES = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000)
+
+
+class _CheckRollup(models.Model):
+    """What one check did over one bucket of time, kept after the raw rows go.
+
+    Seconds are stored per status, not as an up/down verdict: whether
+    degraded counts as up, or stale as unmeasured, is a reading of these
+    numbers (monitoring.rollups.classify), so a rule can change without
+    rewriting history. Latency is this check's own - never mixed with other
+    kinds - with the spikes counted against its own baseline.
+
+    Keyed on the address and template rather than the CheckState row, which
+    is recreated when a policy rematerialises; both are SET_NULL so the
+    history outlives a deleted address or template.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="+", db_index=False
+    )
+    target_ip = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, related_name="+",
+        db_index=False,
+    )
+    template = models.ForeignKey(
+        CheckTemplate, on_delete=models.SET_NULL, null=True, related_name="+",
+        db_index=False,
+    )
+    kind = models.CharField(max_length=32)
+    bucket = models.DateTimeField()
+    up_s = models.FloatField(default=0)
+    down_s = models.FloatField(default=0)
+    degraded_s = models.FloatField(default=0)
+    stale_s = models.FloatField(default=0)
+    #: Unknown and skipped: time nobody measured.
+    unknown_s = models.FloatField(default=0)
+    #: Entries into down from anything else. Stale - the probe went blind -
+    #: is not an outage under the default counting rules.
+    incidents = models.PositiveIntegerField(default=0)
+    #: Entries into down or stale from anything else: the incidents when the
+    #: counting rules take stale as down.
+    blind_incidents = models.PositiveIntegerField(default=0, db_default=0)
+    samples = models.PositiveIntegerField(default=0)
+    lat_min = models.FloatField(null=True)
+    lat_avg = models.FloatField(null=True)
+    lat_p50 = models.FloatField(null=True)
+    lat_p95 = models.FloatField(null=True)
+    lat_p99 = models.FloatField(null=True)
+    lat_max = models.FloatField(null=True)
+    spikes = models.PositiveIntegerField(default=0)
+    #: A cumulative latency histogram: probes answered within each edge of
+    #: LATENCY_EDGES, out of ``lat_hist_n``. Cumulative counts add across
+    #: rows, so "the share under 20 ms" is lat_le_20 / lat_hist_n over any
+    #: window. Rows written before the histogram existed have lat_hist_n = 0
+    #: and drop out of that share instead of counting as slow.
+    lat_hist_n = models.PositiveIntegerField(default=0)
+    lat_le_1 = models.PositiveIntegerField(default=0)
+    lat_le_2 = models.PositiveIntegerField(default=0)
+    lat_le_5 = models.PositiveIntegerField(default=0)
+    lat_le_10 = models.PositiveIntegerField(default=0)
+    lat_le_20 = models.PositiveIntegerField(default=0)
+    lat_le_50 = models.PositiveIntegerField(default=0)
+    lat_le_100 = models.PositiveIntegerField(default=0)
+    lat_le_200 = models.PositiveIntegerField(default=0)
+    lat_le_500 = models.PositiveIntegerField(default=0)
+    lat_le_1000 = models.PositiveIntegerField(default=0)
+    lat_le_2000 = models.PositiveIntegerField(default=0)
+    lat_le_5000 = models.PositiveIntegerField(default=0)
+    #: The bucket is over and was computed after it ended. An open bucket is
+    #: refreshed on every run.
+    closed = models.BooleanField(default=False)
+
+    class Meta:
+        abstract = True
+
+
+class CheckRollupHourly(_CheckRollup):
+    """One check, one hour. Kept MONITORING_ROLLUP_HOURLY_RETENTION_DAYS."""
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target_ip", "template", "bucket"],
+                name="uniq_rolluphourly_ip_template_bucket",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "bucket"]),
+            models.Index(fields=["target_ip", "template", "-bucket"]),
+        ]
+
+
+class CheckRollupDaily(_CheckRollup):
+    """One check, one UTC day. Never pruned - one row per check per day is
+    the durable record an SLA period is computed from."""
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target_ip", "template", "bucket"],
+                name="uniq_rollupdaily_ip_template_bucket",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "bucket"]),
+            models.Index(fields=["target_ip", "template", "-bucket"]),
+        ]
+
+
 class StateTransition(models.Model):
     """Append-only log of status changes - drives the history timeline and
     transition notifications (Up→Down etc.)."""
@@ -1939,6 +2097,25 @@ class DeviceSnmp(TimestampedModel):
     reachable = models.BooleanField(null=True, blank=True)
     error = models.TextField(blank=True, default="")
     polled_at = models.DateTimeField(null=True, blank=True)
+    # ─── MAC tracking (#284) ─────────────────────────────────────────────
+    # The forwarding table itself lives in MacSighting rows; these say how
+    # the last read went. An empty ``fdb_meta`` means the MAC pipeline has
+    # never processed this row (polled before 0.17), so the JSON ``fdb`` /
+    # ``arp`` above are still its only MAC data.
+    fdb_polled_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="The last complete MAC-table read.",
+    )
+    fdb_meta = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+        help_text="How the last MAC-table read went: source, complete, "
+        "truncated, VLAN and port mapping, drop counts, error.",
+    )
+    mac_ports = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+        help_text="Per-port summary of the last read: {port_key: {if_index, "
+        "name, count, lldp, lag}}. Uplinks are classified from it on read.",
+    )
 
     class Meta:
         ordering = ["-polled_at"]
@@ -1958,6 +2135,143 @@ class DeviceSnmp(TimestampedModel):
 
     def __str__(self) -> str:
         return f"SNMP({self.device_id or self.vm_id})"
+
+
+class MacSighting(models.Model):
+    """One MAC on one switch port in one VLAN, for as long as it stays there
+    (#284).
+
+    Written only by ``monitoring.mac_tables.record_mac_tables`` from a
+    reachable poll. A row opens when the MAC first appears on the port,
+    ``last_seen`` follows every poll that still reports it, and ``gone_at``
+    closes it once a complete read no longer does - so a move is one closed
+    row and one open one, and that pair is the history. Observed data:
+    high churn, never audited, never search-indexed, pruned after the
+    tenant's retention window.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Every read filters on tenant first; the composite indexes below lead
+    # with it, so the FK's own single-column index would only cost writes.
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="+", db_index=False
+    )
+    # Whose poll reported it - the stack owner for a virtual chassis.
+    polled_device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="mac_sightings_polled"
+    )
+    # The member that owns the port (the polled device when standalone).
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="mac_sightings"
+    )
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="mac_sightings",
+    )
+    # Normalised observed ifName (ifDescr fallback): survives ifIndex
+    # renumbering, which the agent is free to do on a reboot.
+    port_key = models.CharField(max_length=128)
+    port_name = models.CharField(max_length=128, blank=True, default="")
+    if_index = models.CharField(max_length=16, blank=True, default="")
+    # Null = unknown: a shared FDB, or an agent too old to say.
+    vlan_vid = models.PositiveSmallIntegerField(null=True, blank=True)
+    fdb_id = models.PositiveIntegerField(null=True, blank=True)
+    mac = models.CharField(max_length=17)  # canonical lowercase colon form
+    status = models.CharField(max_length=8, blank=True, default="")
+    first_seen = models.DateTimeField()
+    # Not indexed on purpose: the per-poll bump then stays a HOT update.
+    last_seen = models.DateTimeField()
+    gone_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["polled_device", "port_key", "vlan_vid", "mac"],
+                condition=models.Q(gone_at__isnull=True),
+                nulls_distinct=False,
+                name="uniq_macsighting_present",
+            ),
+        ]
+        indexes = [
+            # Location (present rows) and the MAC page's history (gone rows
+            # too) both look a MAC up by address.
+            models.Index(fields=["tenant", "mac"], name="macsighting_tenant_mac"),
+            # The daily prune.
+            models.Index(
+                fields=["tenant", "gone_at"],
+                condition=models.Q(gone_at__isnull=False),
+                name="macsighting_gone",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.mac} on {self.port_name or self.port_key}"
+
+
+class ArpSighting(models.Model):
+    """One IP↔MAC pair in one device's (or VM's) ARP table (#284). Same
+    life cycle as :class:`MacSighting`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="+", db_index=False
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="arp_sightings",
+    )
+    vm = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="arp_sightings",
+    )
+    # The L3 port / SVI the entry was learned on, when Danbyte has it.
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="arp_sightings",
+    )
+    if_index = models.CharField(max_length=16, blank=True, default="")
+    ip = models.GenericIPAddressField()
+    mac = models.CharField(max_length=17)
+    first_seen = models.DateTimeField()
+    last_seen = models.DateTimeField()
+    gone_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                name="arpsighting_device_xor_vm",
+                condition=(
+                    models.Q(device__isnull=False, vm__isnull=True)
+                    | models.Q(device__isnull=True, vm__isnull=False)
+                ),
+            ),
+            models.UniqueConstraint(
+                fields=["device", "ip", "mac"],
+                condition=models.Q(gone_at__isnull=True, device__isnull=False),
+                name="uniq_arpsighting_device_present",
+            ),
+            models.UniqueConstraint(
+                fields=["vm", "ip", "mac"],
+                condition=models.Q(gone_at__isnull=True, vm__isnull=False),
+                name="uniq_arpsighting_vm_present",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "mac"], name="arpsighting_tenant_mac"),
+            models.Index(
+                fields=["tenant", "ip"],
+                condition=models.Q(gone_at__isnull=True),
+                name="arpsighting_present_ip",
+            ),
+            models.Index(
+                fields=["tenant", "gone_at"],
+                condition=models.Q(gone_at__isnull=False),
+                name="arpsighting_gone",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.ip} is {self.mac}"
 
 
 class SnmpSensor(TimestampedModel):
@@ -2244,6 +2558,8 @@ class SnmpInterfaceSample(TimestampedModel):
         indexes = [
             models.Index(fields=["device", "if_index", "sampled_at"]),
             models.Index(fields=["vm", "if_index", "sampled_at"]),
+            # The retention prune walks the oldest rows.
+            models.Index(fields=["sampled_at"]),
         ]
 
     def __str__(self) -> str:
@@ -3432,3 +3748,393 @@ class EventImpact(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.event_id} → {self.object_type}:{self.object_id} ({self.level})"
+
+
+# ─── Service level agreements ───────────────────────────────────────────────
+#
+# An agreement says what availability is promised, over what period, in which
+# hours, and how each status counts. Check groups say what is measured on a
+# class of equipment; members say which objects are in it. Figures are
+# computed from status changes by monitoring/sla.py and kept per period in
+# SlaPeriodResult, frozen once the grace window after the period has passed -
+# so March reads the same in December. docs/features/sla.md.
+
+
+class HolidayCalendar(TimestampedModel):
+    """Dates no agreement that uses it measures - one per tenant or a few
+    (per country, per customer). Shared so a bank holiday is entered once."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="holiday_calendars"
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, default="")
+    #: [{"date": "2026-12-25", "name": "Christmas Day", "yearly": true}, ...]; early
+    #: rows hold plain ISO strings (sla_time.holiday reads both).
+    dates = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_holiday_calendar_name"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SlaPeriod(models.TextChoices):
+    MONTH = "month", "Calendar month"
+    QUARTER = "quarter", "Calendar quarter"
+    YEAR = "year", "Calendar year"
+    ROLLING_7 = "rolling_7", "Last 7 days"
+    ROLLING_30 = "rolling_30", "Last 30 days"
+    ROLLING_90 = "rolling_90", "Last 90 days"
+
+
+def default_burn_alerts() -> list[dict]:
+    """The SRE workbook's page and ticket rules for a 30-day budget: 2 % of it
+    in an hour, and 5 % in six hours."""
+    return [
+        {"name": "fast", "long_min": 60, "short_min": 5, "burn": 14.4, "on": True},
+        {"name": "slow", "long_min": 360, "short_min": 30, "burn": 6.0, "on": True},
+    ]
+
+
+class SlaAgreement(TimestampedModel):
+    """The contract: a target over a period, and how the time is counted."""
+
+    STATUS_CHOICES = [("draft", "Draft"), ("active", "Active"), ("archived", "Archived")]
+    AGGREGATION_CHOICES = [
+        ("mean", "Average of members"), ("worst", "Worst member"),
+        # A service built from parts in series: down while any unit is down.
+        ("all", "All must be up"),
+    ]
+    #: The fields a revision snapshots: change one mid-period and the closed
+    #: periods keep the rules they ran under.
+    RULE_FIELDS = (
+        "target_pct", "warning_pct", "period", "timezone", "service_hours",
+        "holiday_calendar_id", "count_degraded_as", "count_stale_as",
+        "count_unknown_as", "exclude_maintenance", "min_outage_seconds",
+        "aggregation", "effective_from",
+        # Money is part of the contract: a frozen period keeps the credit it
+        # was worked out under.
+        "credit_tiers", "period_fee", "currency",
+        "objectives", "objectives_in_state",
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="sla_agreements")
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True, default="")
+    #: Who the agreement is for: the tenant itself (the default - often the
+    #: customer *is* the tenant), some of its sites, a contact, or a name.
+    provided_for = models.CharField(
+        max_length=8, default="tenant",
+        choices=[("tenant", "This tenant"), ("sites", "Sites"),
+                 ("contact", "A contact"), ("name", "A name")],
+    )
+    sites = models.ManyToManyField("api.Site", blank=True, related_name="sla_agreements")
+    customer = models.ForeignKey(
+        "api.Contact", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sla_agreements",
+    )
+    #: Free text when ``provided_for`` is "name".
+    customer_name = models.CharField(max_length=150, blank=True, default="")
+    target_pct = models.DecimalField(max_digits=6, decimal_places=3)
+    #: "At risk" below this; null means at risk once 75 % of the budget is spent.
+    warning_pct = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    period = models.CharField(max_length=12, choices=SlaPeriod.choices, default=SlaPeriod.MONTH)
+    #: Period boundaries and service hours are read in this zone; blank = the
+    #: tenant's display timezone.
+    timezone = models.CharField(max_length=64, blank=True, default="")
+    #: {"mon": [["08:00", "17:00"]], ...}; empty = around the clock.
+    service_hours = models.JSONField(default=dict, blank=True)
+    holiday_calendar = models.ForeignKey(
+        HolidayCalendar, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="agreements",
+    )
+    count_degraded_as = models.CharField(
+        max_length=10, default="up", choices=[("up", "Up"), ("down", "Down")]
+    )
+    count_stale_as = models.CharField(
+        max_length=10, default="unmeasured",
+        choices=[("unmeasured", "Not measured"), ("down", "Down")],
+    )
+    count_unknown_as = models.CharField(
+        max_length=10, default="unmeasured",
+        choices=[("unmeasured", "Not measured"), ("down", "Down")],
+    )
+    exclude_maintenance = models.BooleanField(default=True)
+    #: Outages shorter than this count as up.
+    min_outage_seconds = models.PositiveIntegerField(default=0)
+    aggregation = models.CharField(max_length=10, choices=AGGREGATION_CHOICES, default="mean")
+    #: {"icmp": 5, "ssh": 300} - p95 targets per check kind, reported beside
+    #: availability, never folded into it.
+    latency_objectives = models.JSONField(default=dict, blank=True)
+    #: ``[{"kind": "icmp", "threshold_ms": 20, "target_pct": 99}, ...]`` -
+    #: each its own figure and budget, counted in probes (sla_objectives).
+    objectives = models.JSONField(default=list, blank=True)
+    #: The agreement's state is the worst of availability and the objectives;
+    #: off, objectives are reported and alerted on but never change it.
+    objectives_in_state = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="active")
+    #: Nothing before this date is computed.
+    effective_from = models.DateField(null=True, blank=True)
+    #: The revision now in force; bumped when a RULE_FIELDS value changes.
+    revision = models.PositiveIntegerField(default=1)
+
+    # ── Alerts and reports ──
+    #: Where the agreement's alerts go: at risk, breached, coverage low, a
+    #: latency objective missed - each at most once per period.
+    notify_channels = models.ManyToManyField(
+        "monitoring.NotificationChannel", blank=True, related_name="sla_agreements"
+    )
+    #: At risk once budget burns faster than this (1.0 = on pace to spend it
+    #: exactly); null = only the warning line / budget share decides.
+    alert_burn_rate = models.FloatField(null=True, blank=True)
+    #: Burn-rate alerts over a long and a short window together (SRE
+    #: multi-window): fires while both burn at or above ``burn``, resolves as
+    #: soon as either drops below. See monitoring.sla_burn.
+    burn_alerts = models.JSONField(default=default_burn_alerts, blank=True)
+    #: What sla_burn last saw per rule - burn per window, firing, notified.
+    #: Written with .update() every minute, so never audited or revisioned.
+    burn_state = models.JSONField(default=dict, blank=True, editable=False)
+    #: Alert when less than this share of the time was measured.
+    alert_coverage_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    # ── Service credits ──
+    #: ``[{"below": 99.9, "credit_pct": 10}, ...]`` - a period below a tier's
+    #: availability earns its credit; the lowest tier met wins.
+    credit_tiers = models.JSONField(default=list, blank=True)
+    #: What one period of the service costs, for the credit as an amount.
+    period_fee = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=3, blank=True, default="")
+    #: Emailed the period's report when it freezes.
+    report_recipients = models.JSONField(default=list, blank=True)
+    report_format = models.CharField(
+        max_length=4, default="pdf",
+        choices=[("pdf", "PDF"), ("csv", "CSV"), ("both", "PDF and CSV")],
+    )
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="uniq_sla_agreement_name"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def for_label(self) -> str:
+        """Who the agreement is for, as one line."""
+        if self.provided_for == "sites":
+            return ", ".join(self.sites.order_by("name").values_list("name", flat=True))
+        if self.provided_for == "contact" and self.customer_id:
+            return self.customer.name
+        if self.provided_for == "name" and self.customer_name:
+            return self.customer_name
+        return self.tenant.name
+
+    def rules(self) -> dict:
+        out = {}
+        for f in self.RULE_FIELDS:
+            v = getattr(self, f)
+            out[f] = (str(v) if v is not None and not isinstance(v, (bool, int, dict, list, str))
+                      else v)
+        return out
+
+
+class SlaAgreementRevision(models.Model):
+    """The rules an agreement ran under from a moment on."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agreement = models.ForeignKey(
+        SlaAgreement, on_delete=models.CASCADE, related_name="revisions"
+    )
+    number = models.PositiveIntegerField()
+    rules = models.JSONField(default=dict)
+    created_at = models.DateTimeField(default=timezone.now)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["agreement", "-number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "number"], name="uniq_sla_revision_number"
+            ),
+        ]
+
+
+class SlaCheckGroup(TimestampedModel):
+    """What is measured on one class of equipment in an agreement: which
+    checks count, and (optionally) which devices join by selector."""
+
+    TARGET_CHOICES = [("primary", "Primary address"), ("all", "Every address")]
+    COMBINE_CHOICES = [("all", "All must pass"), ("weighted", "Weighted")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(
+        SlaAgreement, on_delete=models.CASCADE, related_name="check_groups"
+    )
+    name = models.CharField(max_length=150)
+    position = models.PositiveIntegerField(default=0)
+    #: Which of a device's addresses its checks are read from.
+    target = models.CharField(max_length=10, choices=TARGET_CHOICES, default="primary")
+    combine = models.CharField(max_length=10, choices=COMBINE_CHOICES, default="all")
+    weight = models.FloatField(default=1.0)
+    #: Devices matching the selector join the agreement without being added.
+    #: Off: only explicit members.
+    use_selector = models.BooleanField(default=False)
+    match_sites = models.ManyToManyField("api.Site", blank=True, related_name="+")
+    match_roles = models.ManyToManyField("api.DeviceRole", blank=True, related_name="+")
+    match_device_types = models.ManyToManyField("api.DeviceType", blank=True, related_name="+")
+    match_platforms = models.ManyToManyField("api.Platform", blank=True, related_name="+")
+    #: Tag slugs; a device must carry all of them.
+    match_tags = models.JSONField(default=list, blank=True)
+    #: Glob on the device name, case-insensitive.
+    match_name = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        ordering = ["agreement", "position", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "name"], name="uniq_sla_group_name"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SlaCheckItem(models.Model):
+    """One check template in a group. Informational items are computed and
+    shown beside the counted ones, never in the figure."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(SlaCheckGroup, on_delete=models.CASCADE, related_name="items")
+    template = models.ForeignKey(CheckTemplate, on_delete=models.CASCADE, related_name="+")
+    counts = models.BooleanField(default=True)
+    weight = models.FloatField(default=1.0)
+    #: Under weighted combining, a required item down still downs the object.
+    required = models.BooleanField(default=False)
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["group", "position"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "template"], name="uniq_sla_item_template"
+            ),
+        ]
+
+
+class SlaMember(TimestampedModel):
+    """An object in an agreement. Removing one sets ``left_at`` so a closed
+    period still counts it; ``excluded`` keeps a selector match out."""
+
+    #: A virtual chassis stands for a switch stack as one member (not a
+    #: choices list: adding a type needs no migration).
+    OBJECT_TYPES = ("api.device", "api.virtualmachine", "api.ipaddress", "api.prefix",
+                    "api.circuit", "api.virtualchassis")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(SlaAgreement, on_delete=models.CASCADE, related_name="members")
+    group = models.ForeignKey(SlaCheckGroup, on_delete=models.CASCADE, related_name="members")
+    object_type = models.CharField(max_length=40)
+    object_id = models.UUIDField()
+    #: Denormalised for site-scoped reads and writes.
+    object_site = models.ForeignKey(
+        "api.Site", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    #: Members sharing a label count as down only when all of them are down.
+    redundancy_group = models.CharField(max_length=100, blank=True, default="")
+    #: A circuit's checks are read from this address when set - typically the
+    #: provider's far-end gateway - instead of the addresses cabled to its ends.
+    monitor_ip = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    excluded = models.BooleanField(default=False)
+    joined_at = models.DateTimeField(default=timezone.now)
+    left_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["agreement", "group", "object_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "group", "object_type", "object_id"],
+                name="uniq_sla_member",
+            ),
+        ]
+        indexes = [models.Index(fields=["tenant", "object_type", "object_id"])]
+
+
+class SlaExclusion(TimestampedModel):
+    """Time an agreement (or one member) does not count - a noted reason,
+    written by someone, audit-logged. Allowed until the period freezes."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(SlaAgreement, on_delete=models.CASCADE, related_name="exclusions")
+    member = models.ForeignKey(
+        SlaMember, on_delete=models.CASCADE, null=True, blank=True, related_name="exclusions"
+    )
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    reason = models.TextField()
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["-starts_at"]
+
+
+class SlaPeriodResult(models.Model):
+    """An agreement's figure for one period.
+
+    ``open`` while the period runs, ``closed`` once it ends (still recomputed
+    while exclusions can be added), ``frozen`` after the grace window - never
+    touched again. A rolling agreement keeps one ``rolling`` row."""
+
+    STATES = [("open", "Open"), ("closed", "Closed"), ("frozen", "Frozen"), ("rolling", "Rolling")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(SlaAgreement, on_delete=models.CASCADE, related_name="results")
+    #: "2026-09", "2026-Q3", "2026", or "rolling".
+    period_key = models.CharField(max_length=16)
+    period_start = models.DateTimeField()
+    period_end = models.DateTimeField()
+    state = models.CharField(max_length=8, choices=STATES, default="open")
+    revision = models.PositiveIntegerField(default=1)
+    #: The headline: availability, coverage, budget, state vs target.
+    figures = models.JSONField(default=dict)
+    #: Per unit (a member, or a redundancy group) and per member, with the
+    #: seconds needed to recompute a partial figure for a scoped viewer.
+    units = models.JSONField(default=list)
+    incidents = models.JSONField(default=list)
+    days = models.JSONField(default=list)
+    computed_at = models.DateTimeField(default=timezone.now)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    frozen_at = models.DateTimeField(null=True, blank=True)
+    #: {event key: when it was sent} - so each alert goes once per period.
+    alerts_sent = models.JSONField(default=dict, blank=True)
+    report_sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["agreement", "-period_start"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "period_key"], name="uniq_sla_period_result"
+            ),
+        ]

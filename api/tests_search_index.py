@@ -2,16 +2,22 @@
 special forms, and the signals that keep the table current."""
 from __future__ import annotations
 
+import uuid
+from unittest import mock
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from auth_api.models import ObjectPermission, UserProfile
 from core.models import Organization, Tag, Tenant
 
+from . import search_views
 from .models import VLAN, Device, DeviceRole, Prefix, SearchEntry, Site
 from .search_index import fold, rebuild
-from .search_views import parse_query
+from .search_views import CANDIDATES, parse_query, ranked_candidates
 from .test_utils import status_for
 
 User = get_user_model()
@@ -185,3 +191,73 @@ class QueryTests(_Base):
         session.save()
         d = self._hits("fw1")
         self.assertEqual([h["title"] for h in d["hits"] if h["type"] == "device"], ["esbjerg-fw1"])
+
+
+class ShortTermTests(_Base):
+    """A term of one or two characters ranks names first (#300) and returns
+    exactly what the full match returns."""
+
+    def _entries(self, n, title, body="", weight=10, object_type="device"):
+        SearchEntry.objects.bulk_create([
+            SearchEntry(tenant=self.tenant, object_type=object_type, object_id=uuid.uuid4(),
+                        title=title.format(i=i), body=body.format(i=i), url="/x", weight=weight)
+            for i in range(n)
+        ])
+
+    @staticmethod
+    def _rows(rows):
+        return [(r["object_type"], r["object_id"], round(float(r["score"]), 6)) for r in rows]
+
+    def _ranked(self, q):
+        """The candidates for ``q`` and how many statements found them."""
+        words, tokens = parse_query(q)
+        with CaptureQueriesContext(connection) as ctx:
+            rows = ranked_candidates(words, tokens, self.tenant)
+        return self._rows(rows), len(ctx.captured_queries)
+
+    def _full(self, q):
+        """The candidates the full match (names, bodies, near-misses) finds."""
+        words, tokens = parse_query(q)
+        with mock.patch.object(search_views, "_SHORT_TERM", 0):
+            return self._rows(ranked_candidates(words, tokens, self.tenant))
+
+    def test_names_that_fill_the_list_answer_alone(self):
+        self._entries(CANDIDATES + 20, "aar-sw-{i:03}")
+        # Rows that only mention it in the body can never rank among them.
+        self._entries(50, "port {i}", body="sw uplink", weight=6, object_type="interface")
+        rows, statements = self._ranked("sw")
+        self.assertEqual(statements, 1)
+        self.assertEqual(len(rows), CANDIDATES)
+        self.assertEqual({t for t, _, _ in rows}, {"device"})
+        self.assertEqual(rows, self._full("sw"))
+
+    def test_body_rows_that_could_rank_run_the_full_match(self):
+        # The names are weak: a light type with the term inside a word...
+        self._entries(CANDIDATES + 20, "role {i:03} xswx", weight=3, object_type="contactrole")
+        # ...so a heavy row whose whole body is the term outranks them.
+        self._entries(5, "router {i}", body="sw")
+        routers = set(SearchEntry.objects.filter(title__startswith="router ")
+                      .values_list("object_id", flat=True))
+        rows, statements = self._ranked("sw")
+        self.assertEqual(statements, 2)
+        ids = [i for _, i, _ in rows]
+        first_role = next(n for n, (t, _, _) in enumerate(rows) if t == "contactrole")
+        self.assertEqual(len(routers), 5)
+        self.assertTrue(all(i in ids[:first_role] for i in routers))
+        self.assertEqual(rows, self._full("sw"))
+
+    def test_few_names_still_match_bodies(self):
+        # "pe" is only in aarhus-fw1's description ("Perimeter firewall").
+        rows, statements = self._ranked("pe")
+        self.assertEqual(statements, 2)
+        self.assertIn(("device", self.fw.id), [(t, i) for t, i, _ in rows])
+        self.assertEqual(rows, self._full("pe"))
+
+    def test_same_candidates_as_the_full_match(self):
+        self._entries(CANDIDATES, "esb-fw-{i:03}", body="Ærø firewall")
+        self._entries(CANDIDATES, "10.9.{i}.1", weight=9, object_type="ipaddress")
+        for q in ("fw", "10", "1", "a", "æ", "ø", "pe", "s-", "#1", "fw site:esbjerg",
+                  "10 type:ipaddress"):
+            with self.subTest(q=q):
+                self.assertEqual(self._ranked(q)[0], self._full(q))
+

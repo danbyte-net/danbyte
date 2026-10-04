@@ -66,7 +66,27 @@ class TemplateMiniSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "kind"]
 
 
-class SnmpProfileSerializer(serializers.ModelSerializer):
+class SecretParamsMergeMixin:
+    """``secret_params`` on an edit adds to the stored keys rather than
+    replacing them, so a form that sends only the key it changed keeps the
+    others (#302); a key sent as ``null`` is removed. Write-only, so a client
+    never has the stored keys to send back."""
+
+    def validate_secret_params(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Expected an object.")
+        return value
+
+    def update(self, instance, validated_data):
+        if "secret_params" in validated_data:
+            merged = {**(instance.secret_params or {}), **validated_data["secret_params"]}
+            validated_data["secret_params"] = {k: v for k, v in merged.items() if v is not None}
+        return super().update(instance, validated_data)
+
+
+class SnmpProfileSerializer(SecretParamsMergeMixin, serializers.ModelSerializer):
     """Reusable SNMP credentials. ``secret_params`` is write-only (encrypted at
     rest); reads expose only ``has_secrets``."""
 
@@ -88,12 +108,47 @@ class SnmpProfileSerializer(serializers.ModelSerializer):
             attrs["slug"] = slugify(attrs["name"])[:120] or "snmp"
         return attrs
 
+    #: MAC-table options riding in ``params`` (#284) - the collector's
+    #: defaults apply when a key is absent.
+    MAC_PARAM_RANGES = {"mac_max_vlans": (1, 1024), "mac_budget_s": (5, 600)}
+    MAC_VLAN_CONTEXTS = ("auto", "always", "off")
+
+    def validate_params(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Expected an object.")
+        mode = value.get("mac_vlan_contexts")
+        if mode is not None and mode not in self.MAC_VLAN_CONTEXTS:
+            raise serializers.ValidationError(
+                {"mac_vlan_contexts": "Must be auto, always or off."}
+            )
+        for key, (low, high) in self.MAC_PARAM_RANGES.items():
+            if key not in value or value[key] is None:
+                continue
+            raw = value[key]
+            if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+                raise serializers.ValidationError({key: f"{low} to {high}."})
+            try:
+                n = int(raw)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({key: f"{low} to {high}."}) from None
+            if not low <= n <= high:
+                raise serializers.ValidationError({key: f"{low} to {high}."})
+            value = {**value, key: n}
+        return value
+
     def get_has_secrets(self, obj) -> bool:
         return bool(obj.secret_params)
 
 
 class DeviceSnmpSerializer(serializers.ModelSerializer):
-    """Read-only observed SNMP state for a device."""
+    """Read-only observed SNMP state for a device.
+
+    The raw forwarding table (``fdb``) is not returned: learned MACs are
+    served per port by ``/devices/<id>/macs/`` (#284). ``fdb_polled_at`` is
+    the last complete MAC-table read and ``fdb_meta`` how the last read went,
+    which is what the SNMP card's MAC-table line and *partial* badge need."""
 
     profile_name = serializers.CharField(source="profile.name", read_only=True, default=None)
 
@@ -102,7 +157,7 @@ class DeviceSnmpSerializer(serializers.ModelSerializer):
         fields = [
             "id", "device", "vm", "profile", "profile_name", "data",
             "interfaces", "neighbors", "arp", "sensors", "reachable", "error",
-            "polled_at",
+            "polled_at", "fdb_polled_at", "fdb_meta",
         ]
         read_only_fields = fields
 
@@ -575,7 +630,7 @@ class SnmpSensorSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class CheckTemplateSerializer(serializers.ModelSerializer):
+class CheckTemplateSerializer(SecretParamsMergeMixin, serializers.ModelSerializer):
     has_secrets = serializers.SerializerMethodField()
     usage_count = serializers.SerializerMethodField()
     secret_params = serializers.JSONField(write_only=True, required=False)
@@ -887,6 +942,31 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             )
         return cleaned
 
+    def validate_spike_factor(self, value):
+        if not 1.0 < value <= 100.0:
+            raise serializers.ValidationError("Must be above 1 and at most 100.")
+        return value
+
+    def validate_spike_floor_ms(self, value):
+        """{kind: ms}: known check kinds, non-negative numbers."""
+        from .models import CheckKind
+
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Expected {kind: milliseconds}.")
+        kinds = set(CheckKind.values)
+        cleaned = {}
+        for kind, ms in value.items():
+            if kind not in kinds:
+                raise serializers.ValidationError(f"«{kind}» is not a check kind.")
+            try:
+                ms = float(ms)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(f"«{kind}»: expected a number.") from None
+            if not 0 <= ms <= 60_000:
+                raise serializers.ValidationError(f"«{kind}»: 0 to 60000 ms.")
+            cleaned[kind] = ms
+        return cleaned
+
     class Meta:
         model = MonitoringSettings
         fields = [
@@ -912,6 +992,9 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "default_engine", "outpost_repo_url", "outpost_repo_token",
             "outpost_repo_token_set", "updated_at",
             "arp_source_devices", "arp_source_devices_detail",
+            "spike_factor", "spike_floor_ms", "availability_frame",
+            "mac_port_display_limit", "mac_uplink_threshold", "mac_uplink_lldp",
+            "mac_retention_days",
         ]
         read_only_fields = ["updated_at"]
 

@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 
 type Kind = "rear" | "front"
 
@@ -42,6 +43,7 @@ export function PortDeleteDialog({
       // Deleting a rear port cascades its front ports; refresh both lists.
       qc.invalidateQueries({ queryKey: ["device-front-ports", deviceId] })
       qc.invalidateQueries({ queryKey: ["rear-ports-picker", deviceId] })
+      invalidatePortCounts(qc)
       onOpenChange(false)
       onDeleted?.()
     },

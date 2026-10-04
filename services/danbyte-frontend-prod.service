@@ -11,9 +11,14 @@ StartLimitIntervalSec=0
 Type=simple
 WorkingDirectory=%h/danbyte/frontend
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node node_modules/vite/bin/vite.js preview --port 3000 --host 127.0.0.1
+# A bundle install runs the Node it ships (vendor/node, the one its
+# node_modules was built with), so an in-app upgrade to a release on a newer
+# Node needs no root; a git install has no vendor/ and uses the host's.
+ExecStart=/bin/sh -c 'n=%h/danbyte/vendor/node/bin/node; [ -x "$$n" ] || n=/usr/bin/node; exec "$$n" node_modules/vite/bin/vite.js preview --port 3000 --host 127.0.0.1'
 Restart=always
 RestartSec=2
+# Node exits with 143 on SIGTERM: a stop is not a failure.
+SuccessExitStatus=143
 
 # Logs: journalctl --user -fu danbyte-frontend-prod
 

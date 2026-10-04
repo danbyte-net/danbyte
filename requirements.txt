@@ -12,6 +12,7 @@ gunicorn>=22                 # production WSGI HTTP server (daphne handles WS on
 psycopg2-binary>=2.9.10
 regex>=2024.4                    # user-supplied patterns run under a timeout (bulk rename, compliance)
 python-dotenv>=1.0.1
+packaging>=23             # release version ordering (0.17.0-dev1 < 0.17.0-dev2 < 0.17.0)
 redis>=5.0.0
 rq>=1.16
 djangorestframework-simplejwt>=5.3.1

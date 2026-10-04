@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api, type Device } from "@/lib/api"
+import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +35,10 @@ export function DeviceDeleteDialog({
       toast.success(`Deleted ${device!.name}`)
       qc.invalidateQueries({ queryKey: ["devices"] })
       qc.invalidateQueries({ queryKey: ["devices-picker"] })
+      // Its cables go with it, freeing the ports at their far ends.
+      invalidatePortCounts(qc)
+      // A device on a rail leaves a gap in its cabinet's drawing.
+      if (device!.cabinet) invalidateCabinetDeviceViews(qc)
       onOpenChange(false)
       onDeleted?.()
     },

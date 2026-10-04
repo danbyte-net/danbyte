@@ -1,5 +1,20 @@
 import { useMemo, useState } from "react"
-import { EyeOff, Search } from "lucide-react"
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import type { DragEndEvent } from "@dnd-kit/core"
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import { GripVertical, Layers } from "lucide-react"
 
 import type {
   BulkStatusEntry,
@@ -8,35 +23,59 @@ import type {
   TopologyGraph,
 } from "@/lib/api"
 import { Input } from "@/components/ui/input"
-import { cn } from "@/lib/utils"
 import {
-  CheckChip,
-  CheckCountChip,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { useCableTypeLabel } from "@/lib/use-dcim-choices"
+import { cn } from "@/lib/utils"
+import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  CheckCountBadge,
   FoldableGroup,
+  RowCheckBadge,
   VisibilityToggle,
 } from "@/components/foldable-group"
 import { hiddenCount, setHidden } from "@/components/hidden-objects"
+import {
+  ObjectsEmpty,
+  ObjectsPanel,
+  ObjectsSection,
+  checkCounts,
+} from "@/components/objects-panel"
+import type { CheckFilter } from "@/components/objects-panel"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import type { TopoGroupData } from "./group-node"
 import {
+  BGP_SESSIONS,
   DISCOVERED,
   NO_LOCATION,
   NO_ROLE,
   NO_SITE,
   NO_TOPO_HIDDEN,
+  UNTYPED,
   edgeHidden,
+  familyLabel,
   linkFamily,
   nodeHidden,
 } from "./hidden"
 import type { TopoHidden } from "./hidden"
+import { LazyRows } from "./lazy-rows"
 import { typeColor } from "./topology-canvas"
+import { ZONE_COLORS } from "./view-positions"
 import type { Zone } from "./view-positions"
+import { isRow, isSide } from "./diagram/bands"
+import { bandLook } from "./diagram/band-node"
+import { naturalCompare } from "@/lib/natural-sort"
 
-// "On this map" for the topology page - the site map's sidebar with the
-// graph's own objects: device cards grouped by role, site or location, the
+// The topology page's Objects sidebar - the site map's, with the graph's own
+// objects: device cards grouped by role, site or location, the
 // site/location aggregates when the map is grouped, the links by media
-// type, and the zones drawn behind the cards. Click flies to and selects,
-// like clicking the card; a zone row pans to the box and renames it on
-// double-click, like the box itself. The eyes are the site map's: a group
+// type, and the bands and zones drawn behind the cards. Click flies to and
+// selects, like clicking the card; a band or zone row pans to the box and
+// renames it on double-click, like the box itself, and the layer bands
+// reorder by dragging (cards and all). The eyes are the site map's: a group
 // header hides its key (the role, the site, the media type), a row hides
 // that one card. Hidden objects stay listed, dimmed, so "where did my core
 // switch go" answers itself.
@@ -59,7 +98,11 @@ export function readGroupMode(): GroupMode {
   }
 }
 
-type StatusFilter = "down" | "degraded" | "up" | null
+// A row's height (px) before it is drawn - see LazyRows: a device or
+// problem row, a site/location row, a link row with its cable's label.
+const ROW_H = 26
+const GROUP_ROW_H = 27.5
+const LINK_ROW_H = 42.5
 
 /** down < degraded < everything else - the sidebar's triage order. */
 function checkRank(check: string | null | undefined): number {
@@ -67,7 +110,7 @@ function checkRank(check: string | null | undefined): number {
 }
 
 const byName = <T extends { name: string }>(a: T, b: T) =>
-  a.name.localeCompare(b.name, undefined, { numeric: true })
+  naturalCompare(a.name, b.name)
 
 interface DeviceRow {
   id: string
@@ -105,6 +148,7 @@ export function TopologyObjectsSidebar({
   onPickEdge,
   onFocusZone,
   onRenameZone,
+  onReorderBands,
 }: {
   /** The whole graph, hidden objects included - they are listed dimmed. */
   graph: TopologyGraph
@@ -122,9 +166,12 @@ export function TopologyObjectsSidebar({
   onPickEdge: (edge: TopoEdge) => void
   onFocusZone: (zone: Zone) => void
   onRenameZone: (id: string, label: string) => void
+  /** The layer bands (rows) in a new top-to-bottom order. */
+  onReorderBands?: (ids: string[]) => void
 }) {
+  const typeLabel = useCableTypeLabel()
   const [q, setQ] = useState("")
-  const [status, setStatus] = useState<StatusFilter>(null)
+  const [status, setStatus] = useState<CheckFilter>(null)
   const [mode, setModeState] = useState<GroupMode>(readGroupMode)
   const setMode = (m: GroupMode) => {
     try {
@@ -135,6 +182,11 @@ export function TopologyObjectsSidebar({
     setModeState(m)
   }
   const [editingZone, setEditingZone] = useState<string | null>(null)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
+  )
+  // The panel the long lists scroll in: they draw only what is near view.
+  const [scroller, setScroller] = useState<HTMLElement | null>(null)
 
   const filter = q.trim().toLowerCase()
   const matchNode = (d: TopoNode["data"]) =>
@@ -196,13 +248,25 @@ export function TopologyObjectsSidebar({
           ? 1
           : b.title.startsWith("No ")
             ? -1
-            : a.title.localeCompare(b.title)
+            : naturalCompare(a.title, b.title)
       )
   })()
 
   const nodeById = useMemo(
     () => new Map(graph.nodes.map((n) => [n.id, n])),
     [graph]
+  )
+
+  // The filter's counts: every device the search matches, before the status
+  // filter narrows the list - so each tab says what picking it would show.
+  const statusCounts = checkCounts(
+    graph.nodes
+      .filter((n) => n.type === "device" && n.data.device_id)
+      .filter((n) => matchNode(n.data))
+      .map(
+        (n) =>
+          (checks[n.data.device_id!] as BulkStatusEntry | undefined)?.status
+      )
   )
 
   // Everything unhealthy, worst-first - the sidebar's own triage list.
@@ -216,6 +280,11 @@ export function TopologyObjectsSidebar({
         .filter((d) => d.check === "down" || d.check === "degraded")
         .sort((a, b) => checkRank(a.check) - checkRank(b.check) || byName(a, b))
 
+  /** A link family's name: "LLDP", "No type", or a cable type's label. */
+  const famName = (fam: string) => {
+    const name = familyLabel(fam)
+    return name === fam ? typeLabel(fam) : name
+  }
   const linkGroups = (() => {
     const map = new Map<string, TopoEdge[]>()
     for (const e of graph.edges) {
@@ -233,13 +302,84 @@ export function TopologyObjectsSidebar({
       map.set(fam, [...(map.get(fam) ?? []), e])
     }
     return [...map.entries()].sort(([a], [b]) =>
-      a === DISCOVERED ? 1 : b === DISCOVERED ? -1 : a.localeCompare(b)
+      a === DISCOVERED ? 1 : b === DISCOVERED ? -1 : naturalCompare(a, b)
     )
   })()
 
   const shownZones = (zones ?? []).filter(
     (z) => !filter || z.label.toLowerCase().includes(filter)
   )
+  // Layer bands top to bottom, then side bands left to right, then zones.
+  const bandRows = shownZones.filter(isRow).sort((a, b) => a.y - b.y)
+  const sideRows = shownZones.filter(isSide).sort((a, b) => a.x - b.x)
+  const zoneRows = shownZones.filter((z) => z.kind !== "band")
+  // Reordering needs every row in the list: not while a search hides some.
+  const sortable = !!onReorderBands && !filter && bandRows.length > 1
+  const onBandDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const ids = bandRows.map((r) => r.id)
+    const from = ids.indexOf(String(active.id))
+    const to = ids.indexOf(String(over.id))
+    if (from < 0 || to < 0) return
+    onReorderBands?.(arrayMove(ids, from, to))
+  }
+  const regionRow = (z: Zone, grip?: React.ReactNode) =>
+    editingZone === z.id ? (
+      <ZoneLabelInput
+        key={z.id}
+        zone={z}
+        onDone={(label) => {
+          if (label && label !== z.label) onRenameZone(z.id, label)
+          setEditingZone(null)
+        }}
+      />
+    ) : (
+      <div key={z.id} className="flex items-center">
+        {grip ?? (sortable && <span className="w-[18px] shrink-0" />)}
+        <button
+          type="button"
+          onClick={() => onFocusZone(z)}
+          onDoubleClick={() => setEditingZone(z.id)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-muted/60"
+        >
+          {/* The name on the box's own fill, as the canvas titles it. */}
+          <span
+            className={cn(
+              "min-w-0 truncate rounded-[5px] border px-1.5 leading-5 whitespace-nowrap",
+              z.kind === "band" && bandLook(z.color).className
+            )}
+            style={
+              z.kind === "band"
+                ? {
+                    ...bandLook(z.color).style,
+                    borderColor: bandLook(z.color).edge,
+                  }
+                : {
+                    background: `color-mix(in srgb, ${z.color ?? ZONE_COLORS[0]} 22%, var(--card))`,
+                    borderColor: `color-mix(in srgb, ${z.color ?? ZONE_COLORS[0]} 45%, var(--card))`,
+                  }
+            }
+          >
+            {z.label ||
+              (isSide(z) ? "Side band" : z.kind === "band" ? "Band" : "Zone")}
+          </span>
+          {isRow(z) && (z.rule?.ids.length ?? 0) > 1 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="num ml-auto flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                  <Layers className="size-3" />
+                  {z.rule!.ids.length}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="left" variant="default">
+                {z.rule!.ids.length} layers
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </button>
+      </div>
+    )
 
   const deviceCount = deviceGroups.reduce((n, g) => n + g.rows.length, 0)
   const total =
@@ -263,177 +403,128 @@ export function TopologyObjectsSidebar({
     }`
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-[11px] font-semibold tracking-wide uppercase">
-          On this map
-        </p>
-        <span className="num text-[11px] text-muted-foreground">{total}</span>
-      </div>
-      <div className="relative mb-2">
-        <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter jumps straight to the first hit.
-            if (e.key !== "Enter") return
-            const g = groupRows.at(0)
-            const d = deviceGroups.at(0)?.rows.at(0)
-            if (g) onPickGroup(g)
-            else if (d) onPickNode(nodeById.get(d.id)!)
-          }}
-          placeholder="Search the map…"
-          className="h-8 pl-7 text-[13px]"
-        />
-      </div>
-
-      <div className="mb-3 flex items-center gap-1">
-        {(
-          [
-            [null, "All"],
-            ["down", "down"],
-            ["degraded", "degraded"],
-            ["up", "up"],
-          ] as [StatusFilter, string][]
-        ).map(([value, label]) => (
-          <button
-            key={label}
-            type="button"
-            onClick={() => setStatus(value)}
-            className={cn(
-              "rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium",
-              status === value
-                ? "bg-foreground text-background"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {hiddenCount(hidden) > 0 && (
-        <button
-          type="button"
-          onClick={() => onHiddenChange(NO_TOPO_HIDDEN)}
-          className="mb-3 flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-        >
-          <EyeOff className="size-3 shrink-0" />
-          <span className="num">{hiddenCount(hidden)}</span> hidden
-          <span className="ml-auto underline underline-offset-2">Show all</span>
-        </button>
-      )}
-
-      {total === 0 && (
-        <p className="px-1 text-[13px] text-muted-foreground">
-          {filter || status ? "No matches." : "Nothing on the map."}
-        </p>
-      )}
+    <ObjectsPanel
+      ref={setScroller}
+      total={total}
+      query={q}
+      onQueryChange={setQ}
+      onSearchEnter={() => {
+        // Enter jumps straight to the first hit.
+        const g = groupRows.at(0)
+        const d = deviceGroups.at(0)?.rows.at(0)
+        if (g) onPickGroup(g)
+        else if (d) onPickNode(nodeById.get(d.id)!)
+      }}
+      status={status}
+      onStatusChange={setStatus}
+      statusCounts={statusCounts}
+      hiddenCount={hiddenCount(hidden)}
+      onShowAll={() => onHiddenChange(NO_TOPO_HIDDEN)}
+    >
+      {total === 0 && <ObjectsEmpty filtered={!!filter || !!status} />}
 
       {problems.length > 0 && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Problems
-          </p>
-          {problems.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => onPickNode(nodeById.get(p.id)!)}
-              className={cn(
-                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono text-[12px]",
-                selectedDeviceId === p.device_id
-                  ? "bg-muted font-medium"
-                  : "hover:bg-muted/60"
-              )}
-            >
-              <span className="min-w-0 truncate">{p.name}</span>
-              <span className="ml-auto shrink-0">
-                <CheckChip check={p.check} />
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {groupRows.length > 0 && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            {(groupRows[0].data as unknown as TopoGroupData).kind === "site"
-              ? "Sites"
-              : "Locations"}
-          </p>
-          {groupRows.map((n) => {
-            const g = n.data as unknown as TopoGroupData
-            const key = g.kind === "site" ? "sites" : "locations"
-            return (
+        <ObjectsSection heading="Problems">
+          <LazyRows
+            root={scroller}
+            rows={problems}
+            estimate={ROW_H}
+            row={(p) => (
               <button
-                key={n.id}
+                key={p.id}
                 type="button"
-                onClick={() => onPickGroup(n)}
-                onDoubleClick={() => onDrillGroup(g)}
+                onClick={() => onPickNode(nodeById.get(p.id)!)}
                 className={cn(
                   "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
-                  !shown(n) && "text-muted-foreground/60",
-                  selectedGroupId === g.group_id
+                  selectedDeviceId === p.device_id
                     ? "bg-muted font-medium"
                     : "hover:bg-muted/60"
                 )}
               >
-                <span className="min-w-0 truncate">{g.name}</span>
-                <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                  <VisibilityToggle
-                    vis={{
-                      shown: shown(n),
-                      onChange: (v) => toggle(key, g.name, v),
-                      what: g.name,
-                    }}
-                  />
-                  <span className="num text-[11px] text-muted-foreground/70">
-                    {g.device_count}
-                  </span>
+                <span className="min-w-0 truncate">{p.name}</span>
+                <span className="ml-auto shrink-0">
+                  <RowCheckBadge check={p.check} />
                 </span>
               </button>
-            )
-          })}
-        </div>
+            )}
+          />
+        </ObjectsSection>
+      )}
+
+      {groupRows.length > 0 && (
+        <ObjectsSection
+          heading={
+            (groupRows[0].data as unknown as TopoGroupData).kind === "site"
+              ? "Sites"
+              : "Locations"
+          }
+        >
+          <LazyRows
+            root={scroller}
+            rows={groupRows}
+            estimate={GROUP_ROW_H}
+            row={(n) => {
+              const g = n.data as unknown as TopoGroupData
+              const key = g.kind === "site" ? "sites" : "locations"
+              return (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => onPickGroup(n)}
+                  onDoubleClick={() => onDrillGroup(g)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
+                    !shown(n) && "text-muted-foreground/60",
+                    selectedGroupId === g.group_id
+                      ? "bg-muted font-medium"
+                      : "hover:bg-muted/60"
+                  )}
+                >
+                  <span className="min-w-0 truncate">{g.name}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    <VisibilityToggle
+                      vis={{
+                        shown: shown(n),
+                        onChange: (v) => toggle(key, g.name, v),
+                        what: g.name,
+                      }}
+                    />
+                    <span className="num text-[11px] text-muted-foreground/70">
+                      {g.device_count}
+                    </span>
+                  </span>
+                </button>
+              )
+            }}
+          />
+        </ObjectsSection>
       )}
 
       {!grouped && deviceCount > 0 && (
-        <div className="mb-3">
-          <div className="mb-1 flex items-center px-1">
-            <p className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-              Devices
-            </p>
-            <span className="ml-auto flex items-center gap-0.5">
-              {GROUP_MODES.map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setMode(value)}
-                  className={cn(
-                    "rounded-[4px] px-1 py-0.5 text-[10px]",
-                    mode === value
-                      ? "bg-muted font-medium text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </span>
-          </div>
+        <ObjectsSection
+          heading="Devices"
+          action={
+            <SegmentedTabs<GroupMode>
+              className="[&>button]:h-6 [&>button]:px-2 [&>button]:text-[12px]"
+              value={mode}
+              onValueChange={setMode}
+              items={GROUP_MODES.map(([value, label]) => ({ value, label }))}
+            />
+          }
+        >
           {deviceGroups.map((g) => (
             <FoldableGroup
               key={`${mode}:${g.title}`}
-              title={g.title}
+              name={g.title}
               count={g.rows.length}
-              badge={
-                g.role ? (
-                  <span
-                    className="size-2.5 shrink-0 rounded-sm"
-                    style={{ background: g.role.color || "#71717a" }}
+              label={
+                // A role is a colored catalog object - its badge, and
+                // "No role" as the plain one. Sites and locations are names.
+                mode === "role" ? (
+                  <ColorBadge
+                    name={g.title}
+                    color={g.role?.color || undefined}
+                    className="max-w-44"
                   />
                 ) : undefined
               }
@@ -441,150 +532,214 @@ export function TopologyObjectsSidebar({
               visibility={{
                 shown: !hidden[GROUP_KEY[mode]].includes(g.title),
                 onChange: (v) => toggle(GROUP_KEY[mode], g.title, v),
-                what: `${g.title} devices`,
+                what: g.title,
               }}
               extra={
                 <>
-                  <CheckCountChip check="down" n={g.down} />
-                  <CheckCountChip check="degraded" n={g.degraded} />
+                  <CheckCountBadge check="down" n={g.down} />
+                  <CheckCountBadge check="degraded" n={g.degraded} />
                 </>
               }
             >
-              {g.rows.map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => onPickNode(d.node)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left font-mono text-[12px]",
-                    !shown(d.node) && "text-muted-foreground/60",
-                    selectedDeviceId === d.device_id
-                      ? "bg-muted font-medium"
-                      : "hover:bg-muted/60"
-                  )}
-                >
-                  <span className="min-w-0 truncate">{d.name}</span>
-                  {mode !== "role" && d.data.role && (
-                    <span className="flex min-w-0 items-center gap-1 font-sans text-[10px] text-muted-foreground/70">
-                      <span
-                        className="size-2 shrink-0 rounded-sm"
-                        style={{ background: d.data.role.color || "#71717a" }}
+              <LazyRows
+                root={scroller}
+                rows={g.rows}
+                estimate={ROW_H}
+                row={(d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => onPickNode(d.node)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[13px]",
+                      !shown(d.node) && "text-muted-foreground/60",
+                      selectedDeviceId === d.device_id
+                        ? "bg-muted font-medium"
+                        : "hover:bg-muted/60"
+                    )}
+                  >
+                    <span className="min-w-0 truncate">{d.name}</span>
+                    {mode !== "role" && d.data.role && (
+                      <ColorBadge
+                        name={d.data.role.name}
+                        color={d.data.role.color || undefined}
+                        className="h-4 max-w-28 min-w-0 truncate px-1.5 text-[10px]"
                       />
-                      <span className="truncate">{d.data.role.name}</span>
+                    )}
+                    {filter && d.data.device_type && (
+                      <span className="min-w-0 truncate text-[10px] text-muted-foreground/70">
+                        {d.data.device_type}
+                      </span>
+                    )}
+                    <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                      <VisibilityToggle
+                        vis={{
+                          shown: !hidden.devices.includes(d.id),
+                          onChange: (v) => toggle("devices", d.id, v),
+                          what: d.name,
+                        }}
+                      />
+                      <RowCheckBadge check={d.check} />
                     </span>
-                  )}
-                  {filter && d.data.device_type && (
-                    <span className="min-w-0 truncate font-sans text-[10px] text-muted-foreground/70">
-                      {d.data.device_type}
-                    </span>
-                  )}
-                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                    <VisibilityToggle
-                      vis={{
-                        shown: !hidden.devices.includes(d.id),
-                        onChange: (v) => toggle("devices", d.id, v),
-                        what: d.name,
-                      }}
-                    />
-                    <CheckChip check={d.check} />
-                  </span>
-                </button>
-              ))}
+                  </button>
+                )}
+              />
             </FoldableGroup>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {linkGroups.length > 0 && !status && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Links
-          </p>
+        <ObjectsSection heading="Cables">
           {linkGroups.map(([fam, rows]) => (
             <FoldableGroup
               key={fam}
-              title={fam}
+              // The stored family key: the fold state and the hidden set
+              // keep it, while the badge shows the family's display name.
+              name={fam}
               count={rows.length}
               defaultOpen={false}
               storageId={FOLDS}
-              badge={
-                <span
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{
-                    background: fam === DISCOVERED ? "#71717a" : typeColor(fam),
-                  }}
+              label={
+                <ColorBadge
+                  name={famName(fam)}
+                  color={
+                    // Colored as a cable of its type is on the map; the
+                    // families that are not a media type stay neutral.
+                    fam === DISCOVERED ||
+                    fam === BGP_SESSIONS ||
+                    fam === UNTYPED
+                      ? undefined
+                      : typeColor(fam)
+                  }
+                  className="max-w-44"
                 />
               }
               visibility={{
                 shown: !hidden.kinds.includes(fam),
                 onChange: (v) => toggle("kinds", fam, v),
-                what: `${fam} links`,
+                what: famName(fam),
               }}
             >
-              {rows.map((e) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => onPickEdge(e)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[12px]",
-                    edgeDim(e) && "text-muted-foreground/60",
-                    selectedEdgeId === e.id
-                      ? "bg-muted font-medium"
-                      : "hover:bg-muted/60"
-                  )}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-mono">
-                      {edgeEnds(e)}
-                    </span>
-                    {(e.data?.cable_label || e.data?.cable_numid) && (
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {e.data.cable_label || `#${e.data.cable_numid}`}
-                      </span>
+              <LazyRows
+                root={scroller}
+                rows={rows}
+                estimate={(e) =>
+                  e.data?.cable_label || e.data?.cable_numid
+                    ? LINK_ROW_H
+                    : ROW_H
+                }
+                row={(e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => onPickEdge(e)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[12px]",
+                      edgeDim(e) && "text-muted-foreground/60",
+                      selectedEdgeId === e.id
+                        ? "bg-muted font-medium"
+                        : "hover:bg-muted/60"
                     )}
-                  </span>
-                </button>
-              ))}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{edgeEnds(e)}</span>
+                      {(e.data?.cable_label || e.data?.cable_numid) && (
+                        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                          {e.data.cable_label || `#${e.data.cable_numid}`}
+                        </span>
+                      )}
+                    </span>
+                    {/* A line hidden on its own (its right-click menu's
+                        Hide) comes back here. */}
+                    <span className="flex shrink-0 items-center">
+                      <VisibilityToggle
+                        vis={{
+                          shown: !hidden.edges.includes(e.id),
+                          onChange: (v) => toggle("edges", e.id, v),
+                          what: edgeEnds(e),
+                        }}
+                      />
+                    </span>
+                  </button>
+                )}
+              />
             </FoldableGroup>
           ))}
-        </div>
+        </ObjectsSection>
       )}
 
       {shownZones.length > 0 && !status && (
-        <div className="mb-3">
-          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            Zones
-          </p>
-          {shownZones.map((z) =>
-            editingZone === z.id ? (
-              <ZoneLabelInput
-                key={z.id}
-                zone={z}
-                onDone={(label) => {
-                  if (label && label !== z.label) onRenameZone(z.id, label)
-                  setEditingZone(null)
-                }}
-              />
-            ) : (
-              <button
-                key={z.id}
-                type="button"
-                onClick={() => onFocusZone(z)}
-                onDoubleClick={() => setEditingZone(z.id)}
-                className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-muted/60"
+        <ObjectsSection heading="Bands and zones">
+          {sortable ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={onBandDragEnd}
+            >
+              <SortableContext
+                items={bandRows.map((r) => r.id)}
+                strategy={verticalListSortingStrategy}
               >
-                <span
-                  className="size-2.5 shrink-0 rounded-sm"
-                  style={{ background: z.color }}
-                />
-                <span className="min-w-0 truncate">{z.label}</span>
-              </button>
-            )
+                {bandRows.map((z) => (
+                  <SortableBand key={z.id} id={z.id}>
+                    {(grip) => regionRow(z, grip)}
+                  </SortableBand>
+                ))}
+              </SortableContext>
+            </DndContext>
+          ) : (
+            bandRows.map((z) => regionRow(z))
           )}
-        </div>
+          {sideRows.map((z) => regionRow(z))}
+          {zoneRows.map((z) => regionRow(z))}
+        </ObjectsSection>
       )}
-    </aside>
+    </ObjectsPanel>
+  )
+}
+
+/** A layer band's sidebar row, draggable by its grip to restack. */
+function SortableBand({
+  id,
+  children,
+}: {
+  id: string
+  children: (grip: React.ReactNode) => React.ReactNode
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(isDragging && "opacity-60")}
+    >
+      {children(
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label="Reorder"
+              className="cursor-grab px-0.5 text-muted-foreground active:cursor-grabbing"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left" variant="default">
+            Reorder
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </div>
   )
 }
 
@@ -606,6 +761,7 @@ function ZoneLabelInput({
         if (e.key === "Enter") onDone(value.trim())
         if (e.key === "Escape") onDone(zone.label)
       }}
+      aria-label="Rename"
       className="mb-0.5 h-7 text-[13px]"
     />
   )

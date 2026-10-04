@@ -253,7 +253,7 @@ class RoutingContextTests(_Base):
         r = self.client.get(f"/api/devices/{self.dev.id}/inventory/").json()
         self.assertEqual(len(r["hostvars"]["danbyte"]["routing"]["static_routes"]), 2)
 
-    def test_vm_render_gets_an_empty_block(self):
+    def test_vm_render_gets_its_own_block(self):
         from api.models import Cluster, ClusterType, VirtualMachine
 
         ct = ClusterType.objects.create(tenant=self.tenant, name="kvm", slug="kvm")
@@ -261,11 +261,14 @@ class RoutingContextTests(_Base):
         vm = VirtualMachine.objects.create(tenant=self.tenant, name="vm1", cluster=cluster)
         t = ExportTemplate.objects.create(
             tenant=self.tenant, name="vm", object_type="virtualmachine",
-            template_code="{{ routing | length }}",
+            template_code="{{ routing.static_routes | length }}/{{ routing.vtep }}",
         )
+        StaticRoute.objects.create(tenant=self.tenant, virtual_machine=vm,
+                                   prefix="0.0.0.0/0", next_hop="10.0.0.1")
         r = self.client.get(f"/api/virtual-machines/{vm.id}/render/?template={t.id}")
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.json()["output"].strip(), "0")
+        # A VM routes (#217); the fabric parts stay empty for it.
+        self.assertEqual(r.json()["output"].strip(), "1/None")
 
 
 class FabricTemplateTests(APITestCase):

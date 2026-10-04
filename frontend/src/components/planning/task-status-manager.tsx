@@ -36,6 +36,7 @@ import { FormColor, FormSelect } from "@/components/forms"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { apiErrorToast } from "@/lib/api-toast"
+import { naturalCompare } from "@/lib/natural-sort"
 
 const GROUPS: { value: PlanningSemanticGroup; label: string }[] = [
   { value: "backlog", label: "Backlog" },
@@ -153,7 +154,7 @@ export function TaskStatusManager() {
         label: boardName.get(value) ?? value,
         count,
       }))
-      .sort((a, b) => a.label.localeCompare(b.label)) as FacetOption[]
+      .sort((a, b) => naturalCompare(a.label, b.label)) as FacetOption[]
   }, [allRows, boardName])
 
   const groupFacets = useMemo(() => {
@@ -214,7 +215,7 @@ export function TaskStatusManager() {
             return "All boards"
           return g.members
             .map((m) => boardName.get(m.board) ?? "?")
-            .sort()
+            .sort(naturalCompare)
             .join(", ")
         },
       },

@@ -73,7 +73,8 @@ Decommissioning ports are excluded from port-utilization capacity entirely.
 
 ### Management only
 
-Out-of-band management port; excluded from data-plane views.
+Out-of-band management port; excluded from data-plane views. Still counted
+in port utilization: it is a real port.
 
 ### Mark connected
 
@@ -89,8 +90,17 @@ the reserve actions or `/api/port-reservations/`.
 
 ### Uplink
 
-Faces other network gear: discovery never suggests hosts on this port, and
-topology treats it as an infrastructure link.
+**Automatic**, **Always** or **Never** - two fields on the API:
+
+- `is_uplink` (Always) - faces other network gear: discovery never suggests
+  hosts on this port, a learned MAC is located on it only as *behind uplink*
+  when no access port reports it, and topology treats it as an infrastructure
+  link.
+- `never_uplink` (Never) - never an uplink, whatever the automatic
+  [uplink rules](../features/snmp-discovery.md#uplinks) say (an LLDP switch
+  neighbour, a LAG, more learned MACs than *Uplink above*).
+
+Both off is Automatic. Both on is refused (400).
 
 ## Hardware
 
@@ -131,7 +141,20 @@ device.
 ### Virtual interface
 
 Marks a sub-interface, LAG, or loopback - no physical attributes, cannot be
-cabled.
+cabled. Always set for types `virtual`, `bridge` and `lag`: `save()`, bulk
+edit and the device-type and module installs set it, and SNMP discovery
+creates loopbacks, SVIs, tunnels and VLAN interfaces as type `virtual`.
+[Port utilization](../dcim/devices.md#what-counts-as-a-port) counts an interface
+as virtual when this is set or its type is one of those three, and leaves
+virtual interfaces out of the total unless the deployment's
+`port_count_virtual` setting is on.
+
+!!! note "Changed in 0.17"
+    Only type `lag` set the flag before 0.17. Migrations `api.0193` and
+    `monitoring.0107` set it on existing rows: every `virtual`, `bridge` and
+    `lag` interface, and every blank-type interface whose name matches a port
+    its device's last SNMP poll reported as loopback, virtual, tunnel, l3vlan,
+    l2vlan or LAG.
 
 ### Parent interface
 
@@ -186,6 +209,13 @@ The agent can never report this port - it is skipped by drift comparison.
 `tunnel_terminations` (VPN ends on this port), `child_count`,
 `lag_member_count`, `lag_protocol_display`. A member's `lag` relation carries
 the aggregate's `lag_protocol` and `lacp_mode`.
+
+`ip_addresses` lists only the addresses the caller may view: IP view
+permission in the active tenant, with its site scope and row constraints. A
+viewer limited to Site A sees the Site A address on a port, not the Site B
+address bound to the same port, and the port shows as L2 when none are
+visible. The device's Interfaces tab and `GET /api/interfaces/<id>/ips/`
+follow the same rule.
 
 `GET /api/interfaces/<id>/lag/` returns an aggregate's members as full rows
 plus `capacity` (sum of parseable member speeds), `unparsed_speeds`,

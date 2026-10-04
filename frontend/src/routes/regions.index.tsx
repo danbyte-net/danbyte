@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type Region, type Paginated } from "@/lib/api"
 import { nestByParent } from "@/lib/nest"
+import { SITE_VIEW_KEYS } from "@/lib/site-cache"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
@@ -93,8 +94,10 @@ function RegionsPage() {
         kindLabel="region"
         selected={sel}
         onCleared={() => setSel([])}
-        invalidate={[["regions"]]}
+        invalidate={[["regions"], ...SITE_VIEW_KEYS]}
         canDelete={false}
+        rename={false}
+        clone={false}
         fields={[
           {
             key: "parent_id",
@@ -102,6 +105,7 @@ function RegionsPage() {
             kind: "object",
             object_model: "region",
           },
+          { key: "color", label: "Marker colour", kind: "color" },
         ]}
       />
       <RegionDeleteDialog

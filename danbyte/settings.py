@@ -155,6 +155,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "auth_api.rbac.RequestCacheMiddleware",
     # Rolling idle-session timeout (admin-configurable; no-op when unset). After
     # auth so request.user is resolved.
     "core.middleware.SessionIdleTimeoutMiddleware",
@@ -570,6 +571,15 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 FILE_UPLOAD_PERMISSIONS = 0o640
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o750
+# Static files are public and nginx reads them from disk as another user, so
+# collectstatic must not inherit the private media modes above.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        "OPTIONS": {"file_permissions_mode": 0o644, "directory_permissions_mode": 0o755},
+    },
+}
 # Where the default backup target writes - the same sibling directory the
 # upgrade scripts used for their pre-upgrade dumps (#27).
 DANBYTE_BACKUP_DIR = Path(os.getenv("DANBYTE_BACKUP_DIR", str(BASE_DIR.parent / "danbyte-backups")))
@@ -644,6 +654,16 @@ MONITORING_RESULT_RETENTION_DAYS = int(
 )
 MONITORING_TRANSITION_RETENTION_DAYS = int(
     os.getenv("MONITORING_TRANSITION_RETENTION_DAYS", "365")
+)
+# SNMP interface counter samples (the utilisation sparklines) are kept this
+# long; one row per interface per poll grew without bound before.
+MONITORING_SNMP_SAMPLE_RETENTION_DAYS = int(
+    os.getenv("MONITORING_SNMP_SAMPLE_RETENTION_DAYS", "3")
+)
+# Hourly check rollups (monitoring/rollups.py) are kept this long; daily
+# rollups are kept for good - they are what an SLA period is read from.
+MONITORING_ROLLUP_HOURLY_RETENTION_DAYS = int(
+    os.getenv("MONITORING_ROLLUP_HOURLY_RETENTION_DAYS", "30")
 )
 # Change-log (audit) retention - kept long by default; 0 disables pruning.
 CHANGELOG_RETENTION_DAYS = int(os.getenv("CHANGELOG_RETENTION_DAYS", "730"))

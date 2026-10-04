@@ -1,0 +1,11 @@
+[Unit]
+Description=Recompute Danbyte SLA figures every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+OnBootSec=120
+Persistent=true
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

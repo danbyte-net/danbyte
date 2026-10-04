@@ -17,12 +17,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ConfigBundleDeleteDialog } from "@/components/config-bundle-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 
@@ -90,24 +85,7 @@ function Body({ bundle: b }: { bundle: ConfigBundle }) {
           )}
         </>
       }
-      hero={
-        <DetailHero
-          title={b.name}
-          description={b.description}
-          stats={
-            <>
-              <DetailStat
-                label="Files"
-                value={<span className="num">{b.templates.length}</span>}
-              />
-              <DetailStat
-                label="Roles"
-                value={<span className="num">{b.roles.length}</span>}
-              />
-            </>
-          }
-        />
-      }
+      hero={<DetailHero title={b.name} description={b.description} />}
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "journal", label: "Journal" },

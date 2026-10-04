@@ -8,7 +8,6 @@ retargeting is rejected outright.
 """
 from __future__ import annotations
 
-from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, ProtectedError, Q
 from rest_framework import permissions
@@ -20,7 +19,7 @@ from rest_framework.response import Response
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
-from auth_api.permissions import can_manage_deployment
+from core.tags import TAGS
 
 from .models import (
     Board,
@@ -53,7 +52,7 @@ class BoardViewSet(TenantScopedViewSet):
         return (
             super()
             .get_queryset()
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             .annotate(task_count=Count("tasks"))
         )
 
@@ -490,12 +489,12 @@ def assignable_users(request):
     ):
         raise PermissionDenied("task:change required.")
 
-    User = get_user_model()
-    qs = User.objects.filter(is_active=True)
+    from auth_api.people_api import tenant_members
+
     # Superusers and deployment admins operate across tenants; everyone else
-    # sees only users who are members of this tenant.
-    if not (request.user.is_superuser or can_manage_deployment(request.user)):
-        qs = qs.filter(profile__tenants=tenant).distinct()
+    # sees the accounts that may work in this tenant - the same list as the
+    # other people pickers.
+    qs = tenant_members(tenant, request.user)
     search = (request.query_params.get("search") or "").strip()
     if search:
         qs = qs.filter(

@@ -39,6 +39,12 @@ def _validate_layout(raw_body: bytes) -> dict:
         data = json.loads(raw_body or b"{}")
     except json.JSONDecodeError as e:
         raise ValueError(f"invalid JSON: {e}")
+    return clean_layout(data)
+
+
+def clean_layout(data) -> dict:
+    """A v2 layout, validated and stripped to known keys - also what a named
+    dashboard (core.Dashboard) stores."""
     if not isinstance(data, dict) or data.get("v") != 2:
         raise ValueError("body must be a {v: 2, items: [...]} layout")
     items = data.get("items")

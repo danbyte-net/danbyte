@@ -100,8 +100,9 @@ export function useStoredHidden<TKey extends string>(
 
 /** `H` hides what is selected, `Shift+H` shows everything - the same two
  * keys on every map. `hide` is null while nothing hideable is selected.
- * Skipped while typing in a field, and left alone with a modifier held so
- * browser shortcuts keep working. */
+ * Skipped while typing in a field or working in an open menu or dialog
+ * (a right-click menu answers H for its own card), and left alone with a
+ * modifier held so browser shortcuts keep working. */
 export function useHideKeys(hide: (() => void) | null, showAll: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -113,7 +114,8 @@ export function useHideKeys(hide: (() => void) | null, showAll: () => void) {
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
         tag === "SELECT" ||
-        el?.isContentEditable
+        el?.isContentEditable ||
+        el?.closest("[role=menu],[role=dialog],[role=alertdialog]")
       )
         return
       if (e.shiftKey) {

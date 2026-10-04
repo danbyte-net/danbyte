@@ -36,6 +36,15 @@ rating. Define them on **DCIM → Rack types**; picking one on the rack form
 **pre-fills all of those fields** (each stays editable - the rack remains the
 source of truth, so a one-off odd cabinet just overrides a value).
 
+**Import from library** on the Rack types page reads the NetBox
+devicetype-library's `rack-types/` folder - single files, pasted YAML, uploads,
+or a `/tree/` link to a manufacturer - through the same import the device types
+use. The model, width, height, starting unit, top-down numbering, outer width
+and depth (converted from inches when the file uses them) and load budget come
+across; the form factor, outer height, the rack's own weight and mounting depth
+aren't held on a rack type, and the import report lists them as skipped. A
+model that already exists is left alone.
+
 A rack type can also carry **accessories**: the factory-fitted 0U gear the
 model ships with - typically a pair of vertical PDU strips. Each accessory
 names a **0U device type**, a **label** (`PDU-A`), a **rail** (left/right),
@@ -94,6 +103,11 @@ On a device (or in the rack), set:
 - **Face** - front or rear (leave blank for full-depth gear that occupies both).
 - **Side** - only for half-width device types: which half of the U (left/right).
 
+The form draws the rack's front and rear beside these fields: click a free unit
+to put the device there - that unit becomes its lowest - and its outline turns
+red where it would collide. Typing a position or choosing a face moves the
+outline.
+
 The device's **height** comes from its [device type](device-catalog.md), so the
 elevation knows how many units to fill. Danbyte checks the device actually fits -
 it won't let you mount a 2U device where only 1U is free, or overlap two devices
@@ -142,8 +156,12 @@ parked at a U position, which previously (and wrongly) charged a full unit.
 
 ## Rack elevations
 
-The rack's **Overview** draws paired elevations - **front and
-rear side by side** - and the Devices tab keeps a single toggleable one. Three
+The rack's **Overview** puts the rack's facts on the left - the **Rack** and
+**Capacity** cards, with custom fields between them - and the rack itself on
+the right, under **Elevation**: paired elevations, **front and rear side by
+side**. Until you zoom by hand the zoom steps down until both faces fit the
+column, so a whole rack reads without scrolling; **−** and **+** take over
+from there. The Devices tab keeps a single toggleable elevation. Three
 **display modes**:
 
 | Mode | Shows |
@@ -152,15 +170,27 @@ rear side by side** - and the Devices tab keeps a single toggleable one. Three
 | **Images** | The device type's [rack-face image](device-catalog.md#rack-face-images) stretched across the block, name overlaid. |
 | **Render** | The type's **faceplate drawn as hardware** (the same mm-true port rendering as the device page), whole rack at true proportions. |
 
-In Images and Render modes a **Text** tick toggles the name overlay, so a
-photo-real rack stays clean when you want it to.
+**Display ▾**, after the modes, holds the drawing's ticks: **Text** (Images
+and Render) writes the names over the photos and drawings, so a photo-real
+rack stays clean when you want it to; **Ports** draws each device's live
+ports - see [below](#live-ports-on-the-elevation); and **Show** picks the
+gear to show. On a narrow screen the button is its icon.
 
 **Depth-aware faces:** a device mounts on one face, but if its device type is
-**full depth** (the default) it occupies the other face too - the opposite
-view draws it **hatched** (diagonal stripes), so the rear elevation shows
-exactly what's blocking the space. Mark shallow gear (patch
+**full depth** (the default) it fills the other face too, and shows its
+**other side** there: in Names a block like its own; in Images its type's
+rear photo; in Render its rear photo with the ports marked on it, or the
+drawing of its rear. Where the type has no rear photo or drawing, the block
+is **hatched** (diagonal stripes) with its name, so the face still shows
+what's blocking the space - never an empty block. Mark shallow gear (patch
 panels, half-depth switches) as *not* full depth on the device type and it
 frees the other face.
+
+**Show** keeps the gear mounted on one face - **Front-mounted** or
+**Rear-mounted** - or **All**. The gear it leaves out stays in its units as
+nameless hatched space, on both faces, so the used and free units still read
+true; the 0U strips on the rails always show. The choice is in the URL
+(`?show=rear`), like the 2D | 3D switch, so a link opens the same view.
 
 Elevations follow the rack's **width** (10″ / 19″ / 21″ / 23″) - a 10″
 lab rack draws narrower than a 23″ telco rack, and Images/Render modes use
@@ -170,14 +200,158 @@ edge-to-edge and take the **device role's color** in Names mode.
 On a rack's own page you can **drag device blocks between units** - drop a
 block on an empty band and the device re-mounts with that band as its top U
 (occupied space, rack edges and half-width columns are respected; a plain
-click still opens the device). The **PNG** button snapshots the front + rear
-pair for a change ticket or wiki page.
+click still opens the device). **Export** saves the front + rear pair for a
+change ticket, a wiki page or the rack door (see [Export](#export)).
+
+### Export
+
+**Export**, at the end of the Elevation toolbar, saves the rack as a file
+(on a narrow screen the button is its icon). The file is drawn from the
+rack's data, not captured from the screen, and is light-themed whatever
+theme the app is in: the front and rear side by side under their names,
+the units numbered beside each frame in the rack's own numbering, every
+device in its units in the mode on screen - Names, or Images with **Text**
+on or off - half-width devices in their half, the 0U strips in their rail
+lanes, and full-depth gear's other side on the face it isn't mounted on: a
+block like its own in Names, its rear photo in Images, hatched with its name
+where it has none. **Show** applies too: the gear it leaves out is drawn as
+nameless hatched space.
+
+| Format | What you get |
+|---|---|
+| **PNG** | The drawing at twice screen resolution |
+| **SVG** | The same drawing as vectors, with its font and every photo inside the file, so it opens anywhere without Danbyte |
+| **PDF…** | The drawing on one sheet of A4, A3, Letter or Tabloid, portrait or landscape - A4 portrait until you choose - fitted, under a title block |
+| **Print** | The same PDF on the paper last chosen, in a new tab to print |
+
+The PNG and SVG carry the rack's name over the drawing, with its site,
+location, width, units used and the time. On a PDF the title block sits in
+the sheet's bottom-right corner and is written by the server from the rack:
+its name; its site, location, type and the units used and free; the date,
+the Danbyte version and the page. Print it at **Actual size**; if the
+browser blocks the new tab, the PDF is downloaded instead. The paper is
+remembered in your browser, and Print shows which it will use.
+
+Every file is named after the rack and the day:
+`r12-elevation-2026-10-02.pdf`. A photo that will not load is drawn as its
+device's Names block - on a device's other side, hatched - and the menu says
+how many. **Render** has no vector
+drawing yet: in Render the PNG is a picture of the screen, and the SVG and
+PDF draw the Images look - the menu and the PDF dialog say so. The 3D view
+keeps its own **PNG**.
+
+### Live ports on the elevation
+
+On the rack's own page, with **Ports** ticked in Display ▾ (the default),
+the elevation carries every device's port state, read for the whole rack in
+one request while the Overview is open (the
+[port state](#api-port-state-and-3d-geometry) below):
+
+- **Render** draws each device as its device page's Panel does. A type with
+  [photo ports](device-catalog.md#photo-ports) shows its photo with the
+  ports marked on it; any other draws its faceplate as hardware - its type's
+  saved layout with the installed modules composed in, or the automatic one.
+  **Images** marks the ports on the photo the same way; a type without photo
+  ports keeps its plain photo. On the face a full-depth device isn't mounted
+  on, its rear plate is live the same way: a server's NICs and power inlets
+  on its rear photo.
+- Ports wear the device page's colours: cabled ports in their speed tier,
+  free ones outlined, reserved amber, disabled dashed, trunks notched; a
+  hardware marker wears its part's status and a module bay its occupancy.
+  Where the device is polled over SNMP, a port also wears its **live dot**.
+- **Hover** a port for the device page's hover card - the fields set under
+  **Settings → Component details**, including **Far end**: the device and
+  port its cable reaches, named only when you can view that device.
+- **Click** a cabled port to open the trace of its run in a dialog; a free
+  port opens its own page, and a click between ports opens the device, as
+  before. A disk bay or another hardware marker shows its part, and its
+  card - or a right-click on it - sets the part's
+  [status](devices.md#part-status); the rest of the part is edited on the
+  device.
+- Every block shows its **ports in use** over its counted ports - `38 / 48`,
+  in all three modes, on the face the device is mounted on only - by the
+  [port counting rule](devices.md#what-counts-as-a-port): ports cabled or
+  reserved, out of its physical interfaces and front ports, plus its virtual
+  interfaces where **Count virtual interfaces** is on. Hover the count for
+  that in words. A device with no counted ports shows none. In Images and
+  Render the count goes with the name, so **Text** off clears both.
+
+**Ports** off draws the elevation as it was before: the bare photos in
+Images, each type's plain drawing in Render, and no counts. The tick is kept
+in your browser, and it is the same one as on a
+[cabinet's plate](cabinets.md).
+
+The elevation asks nothing per device for its ports: each device type loads
+once, and the live SNMP state once per device that draws interface ports in
+Images or Render and that SNMP may have seen - polled with interfaces, or a
+stack member. It is shared with the device page and the 3D room, and fresh
+for a minute. Names mode asks for no SNMP state at all.
+
+The **Capacity** card gives the rack's **Free** units (those no device
+occupies) and its ports in use over counted ports, in two rows: **Ports**,
+the counted interfaces of its devices that are not patch panels, and
+**Panel ports**, its front ports and every port of a patch-panel device -
+the split the racks list, the floor plan and the site's
+[Capacity](../models/site.md#the-capacity-tab) tab show, so a rack reads the
+same everywhere. Each links to **DCIM → Connections → Port utilization**
+filtered to this rack (`/port-utilization?rack=<id>`), for the per-device
+breakdown. Like the rack's used units and power, the rack's port figures
+count every device in it, while the blocks and the breakdown list the
+devices you can view.
+
+!!! note "Changed in 0.17"
+    The Capacity card's **Ports** row counted a rack's patch-panel ports
+    together with its devices' interfaces. They are now two rows, **Ports**
+    and **Panel ports**, which add up to the old figure.
+
+### The rack in 3D
+
+**2D | 3D**, first on the Elevation toolbar, swaps the drawing for the rack in
+3D (`?viz=3d` keeps it in the URL) - the same cabinet, devices and photo
+faceplates as the floor plan's [3D room](../features/floor-plans.md#the-3d-room-view),
+this rack alone. Drag to turn it and scroll to zoom; **Front** and **Rear**
+look straight at either face, and a double-click on a device frames it.
+Ports on the photos are coloured as the room colours them - cabled by
+speed, free faint, disabled grey, live SNMP where it is polled - and a port
+held for a cable shows amber. Click a device or a port for its card;
+**PNG** saves the view. The view draws at the quality picked in a floor
+plan's 3D View menu on this device. Cables are not drawn in this view yet.
 
 Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,
-three-phase × √3), demand is the racked devices' power-port draws -
-allocated where you've recorded it, otherwise the nameplate sum (labelled as
-such). The rack page shows **demand / supply W** and turns red when over.
+three-phase × √3) - or, where no primary feed with a voltage and amperage
+reaches the rack, the rated (maximum) draw of the inlets of the rack's PDUs,
+marked as a **PDU rating** - half of it when the rack has two or more PDUs,
+taken as an A/B pair whose either side must carry the rack alone. Demand is the racked devices' power-port draws -
+allocated where you've recorded it, otherwise the nameplate sum (labelled
+*nameplate*). The rack page shows **demand / supply** (`1.2 kW / 3.6 kW`,
+in W below 1 kW) and turns red when over; a rack drawing power with neither
+a feed nor a PDU rating says *No feed*. The floor plan's tile popover and
+rack panel read the same figure, and so does the racks list's **Power**
+column, with a bar in front: it is offered in the list's **Columns** menu,
+hidden until you tick it, and sorts by how much of the supply the demand
+takes.
+
+The racks list offers **Ports** and **Panel ports** the same way - hidden
+until ticked, each a bar and *in use / counted* (`46 / 48`), sorting by the
+share in use and opening the Port utilization page on the rack. Counting
+ports costs the list a few queries, so it asks for them
+(`?include=ports`) only while one of the two is shown.
+
+A rack's space, power and ports share one scale wherever they are drawn as a
+bar or a colour: green up to 80 % full, amber above 80 %, red above 95 %.
+The racks list's **Used**, **Power** and **Ports** bars, the floor plan's
+tiles and its [Color by](../features/floor-plans.md#color-by), the tile
+popover and the site's Capacity tab all use it.
+
+!!! note "Changed in 0.17"
+    Power figures of 1 kW and up read in kW (`3.6 kW` where the page showed
+    `3600 W`). A rack with no primary feed had no supply figure at all; it now
+    falls back to its PDUs' inlet ratings, halved for two or more PDUs as an
+    A/B pair - model the feeds (a primary and a redundant one) for the exact
+    figure. The
+    racks list's **Used** bar measures the exact share: a 42U rack with 40U
+    used (95.2 %) is red there now, as it already was on the floor plan.
 
 !!! note "Power numbers changed with the PDU fix"
     Devices that **have power outlets** (PDUs - distributors) no longer
@@ -207,3 +381,111 @@ photos (front/rear shots, cabling, labels). Uploading and removing require
 **change** permission on racks; viewers see it read-only. It's the same shared
 attachment system used on [devices](devices.md#images), sites, and locations -
 including the grid/list toggle and the file details the list shows.
+
+## API: a floor plan's racks and their ports
+
+`GET /api/racks/?floor_plan=<id>` lists the racks the tiles of one
+[floor plan](../features/floor-plans.md) stand for, each once - none unless you
+can view that plan. Add `include=ports`, on the list or on one rack's
+`GET /api/racks/{id}/`, and each rack also carries its port figures, split in
+two:
+
+- `ports`: the counted interfaces - physical, plus virtual ones where
+  **Count virtual interfaces** is on - of its devices that are not patch
+  panels;
+- `panel_ports`: its front ports, and every counted port of a device whose
+  role is a patch-panel role.
+
+Each holds `total`, `connected`, `reserved`, `free` and `marked` under the
+[port counting rule](devices.md#what-counts-as-a-port); added together they
+are the rack's `ports` in the [port state](#api-port-state-and-3d-geometry)
+below. Without `include=ports` both are null. Like the rack's units and
+power, they count every device in the rack. A page of racks costs the same
+number of queries whatever stands in them, ports or not.
+
+A rack's `power` holds `available_w`, `allocated_w`, `maximum_w` and
+`supply`: `feed` when the supply is its primary feeds, `pdu_rating` when it is
+its PDUs' inlet ratings (halved for two or more PDUs), null when there is
+neither. A site adds its racks up
+floor plan by floor plan on its [Capacity](../models/site.md#capacity) API.
+
+## API: port state and 3D geometry
+
+Two read-only endpoints serve a single rack's views. Both need **view** on
+racks, and each costs the same number of queries whatever the rack holds.
+
+`GET /api/racks/{id}/port-state/` returns every port in the rack:
+
+- `rack`: `u_height`, `u_used` and `u_free` (the units its devices occupy,
+  as the Overview's *Used* counts them), `power` (the same roll-up as the
+  rack page), `ports` and `count_virtual`. `ports` holds `total`,
+  `connected`, `reserved`, `free` and `marked`, counted by the
+  [port counting rule](devices.md#what-counts-as-a-port); `count_virtual`
+  says whether virtual interfaces were counted.
+- `devices`, keyed by device id, each with:
+    - `ports`: the device's counts, the same numbers as its Port utilization
+      card. A device with no counted ports reads zero.
+    - `face`: its photo-port markers resolved to its real components, as
+      `GET /api/devices/face-ports/?ids=` returns them, with `drift` always
+      null.
+    - `interfaces`: its physical interfaces, with what the drawn faceplate
+      colours and hovers them by: name, label, type, speed, enabled, VLAN
+      mode, VLAN and tagged count, LAG, IPs, MAC, MTU, description and tags.
+      The cable comes as its state (`free`, `connected`, `reserved` or
+      `marked`) with its id, label and type, and `peer` names the far end.
+    - `modules`: its installed modules as the drawn faceplate composes them -
+      `id`, `module_bay`, `module_type_faceplate` and `module_interfaces`,
+      as `GET /api/modules/?device=` gives them.
+    - `components`: by kind (`console-port`, `power-port`, `front-port`…),
+      the `id`, `name` and `type` of each component of a kind its type's
+      saved faceplate layout (or a module type's) places - only those kinds.
+    - `observed`: whether SNMP may have seen its ports - it was polled with
+      interfaces, or it is a stack member, whose stack's poll may describe
+      it. The page asks for live port state only for these.
+
+The rack's figures count every device in the rack, as its used units and
+power do. The `devices` entries list only the devices you can view, and in
+them only the interfaces, IP addresses, modules and components you can view.
+A photo marker for a port you can't view - a front port, a power port - stays
+unresolved, without its id, cable or far end; `GET /api/devices/face-ports/`
+follows the same rule. A far end is named only when its device (or, for a
+PDU inlet, its power feed) is one you can view.
+
+`GET /api/racks/{id}/scene/` returns the rack alone for a 3D view. It is the
+same object a [floor plan's](../features/floor-plans.md#the-3d-room-view) 3D
+scene carries for a rack tile: size, numbering and outer dimensions, plus the
+positioned and side-mounted devices with their photos, port markers, power
+component names and the feed type of each PDU. The devices are limited to the
+ones you can view.
+
+## API: the elevation as a PDF
+
+`POST /api/racks/{id}/export/pdf/` lays the elevation out on one sheet of
+paper and returns the PDF as a download. The body:
+
+| Field | Shape |
+|---|---|
+| `svg` | the drawing, as the Export menu's SVG draws it (required) |
+| `paper` | `{size: a4\|a3\|letter\|tabloid, orientation: portrait\|landscape}`; A4 portrait when absent, and either key alone keeps the other's default |
+| `title_block` | `false` leaves the title block off; `true` by default |
+
+The title block is written by the server from the rack - its name; its
+site, location, type and the units used and free, counted as the rack's
+*Used* figure counts them; the date, the Danbyte version and `Page 1 / 1` -
+and nothing in the request changes it. The drawing is the one your browser
+made from the devices you can view.
+
+It needs **view** on racks (a 403 without), and the rack must be one you can
+see: another tenant's, or one outside the sites you are limited to, is a
+404. The SVG is checked and limited exactly as the topology's is - the same
+sanitizer and size, text and render limits (see
+[PDF export API](../features/topology.md#pdf-export-api)) - and the same
+one PDF at a time per user and two at a time across the server count every
+drawing's PDFs together.
+
+`?print=1` answers `{"url": "/api/racks/{id}/export/pdf/<token>/"}` instead
+of the file: the PDF for five minutes, to you alone and in the same tenant,
+while you can still view the rack. `GET` it to open the PDF in the browser,
+or add `?download=1` to save it. You keep one such rack PDF per tenant: a
+newer one replaces it, and the older link is a 404. Without a cache to keep
+it the answer is a 503.

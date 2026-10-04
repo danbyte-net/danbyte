@@ -3,11 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { MonitoringSettings, Paginated, VRFOption } from "@/lib/api"
+import type {
+  AvailabilityFrame,
+  MonitoringSettings,
+  Paginated,
+  VRFOption,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormText } from "@/components/forms/text"
 import { FormSelect } from "@/components/forms/select"
+import { FRAME_LABEL } from "@/components/monitoring/sla-status"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import {
@@ -18,6 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DevicePicker } from "@/components/device-picker"
+import { InfoTip } from "@/components/ui/info-tip"
+import { cardAnchor } from "@/components/settings/settings-card"
 import { INTERVALS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
@@ -71,6 +79,14 @@ export function MonitoringSettingsForm() {
     onSuccess: (data) => {
       qc.setQueryData(["monitoring-settings"], data)
       qc.invalidateQueries({ queryKey: ["monitoring-stats"] })
+      // The MAC lists apply the MAC tracking settings when served (#305).
+      for (const queryKey of [
+        ["device-macs"],
+        ["interface-macs"],
+        ["mac"],
+        ["mac-sightings"],
+      ])
+        void qc.invalidateQueries({ queryKey })
       toast.success("Monitoring settings saved")
     },
     onError: (err) => apiErrorToast(err),
@@ -131,6 +147,7 @@ export function MonitoringSettingsForm() {
           escalate_after_minutes: Number(draft.escalate_after_minutes),
           flap_threshold: Number(draft.flap_threshold),
           flap_window_minutes: Number(draft.flap_window_minutes),
+          availability_frame: draft.availability_frame,
           fast_lane_max_checks: Number(draft.fast_lane_max_checks),
           auto_clear_flapping: draft.auto_clear_flapping,
           auto_clear_flapping_after_minutes: Number(
@@ -151,6 +168,10 @@ export function MonitoringSettingsForm() {
           engine_offline_after_minutes: Number(
             draft.engine_offline_after_minutes
           ),
+          mac_port_display_limit: Number(draft.mac_port_display_limit),
+          mac_uplink_threshold: Number(draft.mac_uplink_threshold),
+          mac_uplink_lldp: draft.mac_uplink_lldp,
+          mac_retention_days: Number(draft.mac_retention_days),
         })
       }}
     >
@@ -198,6 +219,18 @@ export function MonitoringSettingsForm() {
               hint="No contact this long → offline alert (0 = 3× its poll interval)"
               value={draft.engine_offline_after_minutes}
               onChange={(v) => set("engine_offline_after_minutes", v)}
+            />
+            <FormSelect
+              label="Availability window"
+              hint="What list pages' Availability column covers"
+              value={draft.availability_frame}
+              onChange={(v: string | null) =>
+                v && set("availability_frame", v as AvailabilityFrame)
+              }
+              options={Object.entries(FRAME_LABEL).map(([value, label]) => ({
+                value,
+                label,
+              }))}
             />
           </div>
         </Section>
@@ -313,6 +346,49 @@ export function MonitoringSettingsForm() {
               </span>
             </span>
           </label>
+        </Section>
+
+        <Section title="MAC tracking">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <NumberField
+              label="MACs shown per port"
+              info="0 = all"
+              value={draft.mac_port_display_limit}
+              onChange={(v) => set("mac_port_display_limit", v)}
+            />
+            <NumberField
+              label="Uplink above"
+              unit="MACs"
+              info="A port that learns more MACs than this counts as an uplink; 0 turns the count rule off."
+              value={draft.mac_uplink_threshold}
+              onChange={(v) => set("mac_uplink_threshold", v)}
+            />
+          </div>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.mac_uplink_lldp}
+              onCheckedChange={(v) => set("mac_uplink_lldp", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                LLDP switch neighbours mark uplinks
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                An IP phone stays an access port.
+              </span>
+            </span>
+          </label>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <NumberField
+              label="Forget MACs unseen for"
+              unit="days"
+              info="Gone MACs stay this long as each port's history."
+              min={1}
+              value={draft.mac_retention_days}
+              onChange={(v) => set("mac_retention_days", v)}
+            />
+          </div>
         </Section>
 
         <Section title="Reverse DNS">
@@ -719,9 +795,10 @@ export function MonitoringSettingsForm() {
             the device(s) that actually route (gateways, firewalls); their
             merged tables feed every switch's suggestions. More than one matters
             when several firewalls each route part of the network. Leave empty
-            to use each switch's own table. Mark individual ports as{" "}
-            <span className="font-medium">Uplink</span> on the interface form to
-            exclude them.
+            to use each switch's own table.{" "}
+            <span className="font-medium">Uplink: Always</span> on the interface
+            form leaves a port out; <span className="font-medium">Never</span>{" "}
+            keeps a busy one in.
           </p>
         </Section>
       </div>
@@ -754,7 +831,11 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card">
+    // The anchor lets a settings search result scroll to the group.
+    <section
+      id={cardAnchor(title)}
+      className="scroll-mt-6 rounded-lg border border-border bg-card"
+    >
       <header className="border-b border-border px-4 py-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
@@ -767,24 +848,45 @@ function Section({
 function NumberField({
   label,
   hint,
+  info,
+  unit,
+  min = 0,
   value,
   onChange,
 }: {
   label: string
   hint?: string
+  /** The why, behind an (i) beside the label. */
+  info?: ReactNode
+  /** A unit after the input ("MACs", "days") - the label reads into it. */
+  unit?: string
+  min?: number
   value: number
   onChange: (v: number) => void
 }) {
+  const input = (
+    <Input
+      type="number"
+      min={min}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className={cn("h-8 text-sm", unit && "w-24")}
+    />
+  )
   return (
     <div className="space-y-1">
-      <Label className="text-xs">{label}</Label>
-      <Input
-        type="number"
-        min={0}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="h-8 text-sm"
-      />
+      <Label className="flex items-center gap-1 text-xs whitespace-nowrap">
+        {label}
+        {info && <InfoTip>{info}</InfoTip>}
+      </Label>
+      {unit ? (
+        <div className="flex items-center gap-2">
+          {input}
+          <span className="text-xs text-muted-foreground">{unit}</span>
+        </div>
+      ) : (
+        input
+      )}
       {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
     </div>
   )

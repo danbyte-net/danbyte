@@ -14,12 +14,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { buildDeployRunColumns } from "@/components/columns/deploy-run-columns"
@@ -61,8 +56,9 @@ function Body({ target: t }: { target: AutomationTarget }) {
   const [deleting, setDeleting] = useState<AutomationTarget | null>(null)
   const goBack = useCallback(() => nav({ to: "/automation-targets" }), [nav])
 
-  // Hoisted so the hero + tab strip carry the run count. `TargetRuns` reads the
-  // same query key, so react-query serves it from cache - one request, not two.
+  // Hoisted so the Overview + tab strip carry the run count. `TargetRuns` reads
+  // the same query key, so react-query serves it from cache - one request, not
+  // two.
   const runs = useTargetRuns(t.id)
 
   return (
@@ -115,15 +111,6 @@ function Body({ target: t }: { target: AutomationTarget }) {
             </>
           }
           subtitle={<span className="font-mono text-[12px]">{t.base_url}</span>}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Runs"
-              value={
-                <span className="num">{runs.data ? runs.data.count : "-"}</span>
-              }
-            />
-          }
         />
       }
       tabs={[
@@ -136,7 +123,7 @@ function Body({ target: t }: { target: AutomationTarget }) {
       onTabChange={setTab}
     >
       <DetailTab value="overview">
-        <TargetOverview target={t} />
+        <TargetOverview target={t} runCount={runs.data?.count} />
       </DetailTab>
       <DetailTab value="runs">
         <TargetRuns targetId={t.id} />
@@ -165,7 +152,14 @@ function yesNo(v: boolean) {
   )
 }
 
-function TargetOverview({ target: t }: { target: AutomationTarget }) {
+function TargetOverview({
+  target: t,
+  runCount,
+}: {
+  target: AutomationTarget
+  /** Undefined until the runs query lands. */
+  runCount: number | undefined
+}) {
   const extraVarKeys = Object.keys(t.extra_vars)
 
   // The stored token/signing secret is write-only on the API (the serializer
@@ -223,6 +217,7 @@ function TargetOverview({ target: t }: { target: AutomationTarget }) {
         <span className="text-muted-foreground">not set</span>
       ),
     },
+    { label: "Runs", value: <span className="num">{runCount ?? "-"}</span> },
   ]
 
   const scope: KvRow[] = [

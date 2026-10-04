@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { api, type CustomField, type CustomFieldType } from "@/lib/api"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // ─── Registry meta (served by the backend, plugin-extensible) ───────────────
 
@@ -63,7 +64,7 @@ export function groupCustomFields(defs: CustomField[]): CustomFieldSection[] {
     s.fields.push(d)
   }
   const groups = [...byGroup.values()].sort(
-    (a, b) => a.weight - b.weight || a.title.localeCompare(b.title)
+    (a, b) => a.weight - b.weight || naturalCompare(a.title, b.title)
   )
   const sections: CustomFieldSection[] = []
   if (ungrouped.length)
@@ -112,6 +113,7 @@ export const CUSTOMIZABLE_MODELS: { value: string; label: string }[] = [
   { value: "device", label: "Devices" },
   { value: "devicetype", label: "Device types" },
   { value: "devicerole", label: "Device roles" },
+  { value: "cabinet", label: "Cabinets" },
   { value: "routetarget", label: "Route targets" },
   { value: "cable", label: "Cables" },
   { value: "macaddress", label: "MAC addresses" },

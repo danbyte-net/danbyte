@@ -73,7 +73,7 @@ def system_version() -> dict:
     ``__version__`` when git isn't available."""
     # Only real release tags (vX.Y.Z), so a stray tag on a dev branch is ignored.
     tag = _git("describe", "--tags", "--match", "v[0-9]*")
-    version = tag.lstrip("vV").split("-")[0] if tag else __version__
+    version = clean_version(tag) if tag else __version__
     return {"version": version, "commit": git_commit(), "tag": tag}
 
 
@@ -156,6 +156,30 @@ def migration_drift() -> list[str]:
 
 _pending_cache: tuple[float, list[str]] | None = None
 _pending_logged = False
+_unreadable_logged = False
+
+
+def _unreadable_migrations() -> list[str]:
+    """``[]`` when this code's migration files load without the database
+    (it was the database that failed), else one entry saying they do not.
+    Not cached, so a repaired tree reads clean on the next probe."""
+    global _unreadable_logged
+    try:
+        from django.db.migrations.loader import MigrationLoader
+
+        MigrationLoader(None, ignore_no_migrations=True)
+    except Exception as exc:  # noqa: BLE001 - a probe must never take the app down
+        text = " ".join(f"{type(exc).__name__}: {exc}".split())[:200]
+        if not _unreadable_logged:
+            _unreadable_logged = True
+            import logging
+
+            logging.getLogger("core.version").error(
+                "The migration files of the running code cannot be loaded (%s); "
+                "migrate fails the same way until they can.", text,
+            )
+        return [f"(migration files cannot be loaded: {text})"]
+    return []
 
 
 def pending_migrations() -> list[str]:
@@ -163,7 +187,8 @@ def pending_migrations() -> list[str]:
     the mirror of :func:`migration_drift`: new code started against an old
     schema (a restart without the migrate step, a hand-pulled checkout, a
     container image without ``MIGRATE_ON_START``). Reads then fail on a
-    column that does not exist. Cached a minute like the drift check."""
+    column that does not exist. Cached a minute like the drift check.
+    Migration files that do not load are one entry saying so, never ``[]``."""
     global _pending_cache, _pending_logged
     import time
 
@@ -181,7 +206,10 @@ def pending_migrations() -> list[str]:
             if (app, name) not in applied
         )
     except Exception:  # noqa: BLE001 - a probe must never take the app down
-        return []
+        # A database that does not answer is the health probe's own finding.
+        # Migration files that do not load (a stray one from another release)
+        # must not read as "nothing pending": migrate would fail the same way.
+        return _unreadable_migrations()
     _pending_cache = (time.monotonic(), pending)
     if pending and not _pending_logged:
         _pending_logged = True
@@ -225,6 +253,20 @@ def system_info() -> dict:
     }
 
 
+def clean_version(tag: str) -> str:
+    """A release version from a tag or ``git describe`` output.
+
+    Drops the leading ``v``, the ``-N-g<hash>`` a describe adds for commits
+    past the tag and a ``-dirty`` mark, and keeps a pre-release suffix:
+    ``v0.17.0-dev1-5-gabc1234`` is ``0.17.0-dev1``, not ``0.17.0``.
+    """
+    import re
+
+    text = (tag or "").strip().lstrip("vV")
+    text = re.sub(r"-dirty$", "", text)
+    return re.sub(r"-\d+-g[0-9a-f]+$", "", text)
+
+
 def _norm(tag: str) -> tuple:
     """A comparable tuple for `vX.Y.Z` / `X.Y.Z` (non-numeric parts ignored)."""
     parts = (tag or "").lstrip("vV").split("-")[0].split(".")
@@ -237,7 +279,42 @@ def _norm(tag: str) -> tuple:
     return tuple(nums)
 
 
+def parse_version(tag: str):
+    """``packaging`` Version of a tag - ``-dev2`` is a dev release and
+    ``-rc1`` a release candidate, both below their final - or the numeric
+    tuple when the tag does not parse. Never raises."""
+    from packaging.version import InvalidVersion, Version
+
+    try:
+        return Version(clean_version(tag))
+    except (InvalidVersion, TypeError):
+        return _norm(tag)
+
+
+def compare_versions(a: str, b: str) -> int:
+    """-1, 0 or 1. A pre-release sorts below its final (``0.17.0-dev1`` <
+    ``0.17.0-dev2`` < ``0.17.0``). When either side does not parse, both are
+    compared as numeric tuples, pre-release suffix ignored."""
+    pa, pb = parse_version(a), parse_version(b)
+    if isinstance(pa, tuple) or isinstance(pb, tuple):
+        pa, pb = _norm(a), _norm(b)
+    return (pa > pb) - (pa < pb)
+
+
 def is_newer(candidate: str, current: str) -> bool:
-    """Is release ``candidate`` newer than ``current`` (semver-ish)?"""
-    c, cur = _norm(candidate), _norm(current)
-    return bool(c) and c > cur
+    """Is release ``candidate`` newer than ``current``? Pre-releases count:
+    ``0.17.0-dev2`` is newer than ``0.17.0-dev1``, and ``0.17.0`` than both."""
+    return bool(_norm(candidate)) and compare_versions(candidate, current) > 0
+
+
+def is_prerelease(tag: str) -> bool:
+    parsed = parse_version(tag)
+    return not isinstance(parsed, tuple) and parsed.is_prerelease
+
+
+def release_core(tag: str) -> str:
+    """The final release a version leads to: ``0.17.0`` for ``0.17.0-dev1``."""
+    parsed = parse_version(tag)
+    if isinstance(parsed, tuple):
+        return ".".join(str(n) for n in parsed)
+    return parsed.base_version

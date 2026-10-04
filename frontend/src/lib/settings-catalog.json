@@ -77,9 +77,9 @@
     {
       "key": "monitoring",
       "label": "Monitoring",
-      "description": "Schedules, alerting, drift and digests",
+      "description": "Schedules, discovery, MAC tracking and alerting",
       "to": "/settings/monitoring",
-      "group": "notifications",
+      "group": "devices",
       "scopes": ["deployment", "tenant"],
       "defaultScope": "tenant",
       "keywords": [
@@ -137,11 +137,28 @@
     {
       "key": "component-details",
       "label": "Component details",
-      "description": "What a device component's popover shows",
+      "description": "Port popovers and how ports are counted",
       "to": "/settings/components",
       "group": "data",
       "scopes": ["deployment"],
-      "keywords": ["popover", "interface", "port", "hover", "component"]
+      "keywords": [
+        "popover",
+        "interface",
+        "port",
+        "hover",
+        "component",
+        "utilization",
+        "virtual"
+      ]
+    },
+    {
+      "key": "maps",
+      "label": "Site map",
+      "description": "Tile servers behind the site map",
+      "to": "/settings/maps",
+      "group": "data",
+      "scopes": ["deployment"],
+      "keywords": ["tiles", "openstreetmap", "osm", "satellite", "basemaps"]
     },
     {
       "key": "floorplans",
@@ -154,13 +171,14 @@
       "keywords": ["floor", "plan", "tile", "rack", "popover"]
     },
     {
-      "key": "maps",
-      "label": "Maps",
-      "description": "Tile servers behind the site map",
-      "to": "/settings/maps",
+      "key": "topology",
+      "label": "Topology",
+      "description": "What a Diagram card shows",
+      "to": "/settings/topology",
       "group": "data",
-      "scopes": ["deployment"],
-      "keywords": ["tiles", "openstreetmap", "osm", "satellite", "basemap"]
+      "scopes": ["tenant", "deployment"],
+      "defaultScope": "tenant",
+      "keywords": ["topology", "diagram", "card", "lines", "map", "role"]
     },
     {
       "key": "snmp-profiles",
@@ -400,6 +418,21 @@
       "keywords": ["digest", "summary", "weekly", "recipients"]
     },
     {
+      "key": "monitoring.mac-tracking",
+      "label": "MAC tracking",
+      "description": "MACs shown per port, uplinks and how long learned MACs are kept",
+      "page": "monitoring",
+      "keywords": [
+        "mac table",
+        "learned mac",
+        "fdb",
+        "uplink",
+        "lldp",
+        "retention",
+        "switch port"
+      ]
+    },
+    {
       "key": "sso.providers",
       "label": "Providers",
       "description": "Each identity provider offered on the login page",
@@ -442,6 +475,21 @@
       "keywords": ["popover", "hover", "interface", "port"]
     },
     {
+      "key": "data.port-counting",
+      "label": "Port counting",
+      "description": "Whether virtual interfaces count toward port utilization",
+      "page": "component-details",
+      "keywords": [
+        "port utilization",
+        "virtual",
+        "svi",
+        "lag",
+        "loopback",
+        "tunnel",
+        "capacity"
+      ]
+    },
+    {
       "key": "data.maps",
       "label": "Map tiles",
       "description": "Tile server URLs and attribution",
@@ -453,7 +501,16 @@
       "label": "Profiles",
       "description": "Reusable SNMP credentials for polling",
       "page": "snmp-profiles",
-      "keywords": ["snmp", "v2c", "v3", "community", "credential"]
+      "keywords": [
+        "snmp",
+        "v2c",
+        "v3",
+        "community",
+        "credential",
+        "per-vlan",
+        "mac table",
+        "vlan context"
+      ]
     },
     {
       "key": "devices.snmp-sensors",
@@ -644,6 +701,22 @@
       "description": "Fields shown when you hover a floor-plan tile",
       "page": "floorplans",
       "keywords": ["popover", "tile", "hover", "fields", "floor plan"]
+    },
+    {
+      "key": "data.topology-card-lines",
+      "label": "Card lines",
+      "description": "What a Diagram card shows",
+      "page": "topology",
+      "keywords": [
+        "card",
+        "lines",
+        "ip",
+        "loopback",
+        "serial",
+        "pill",
+        "name only",
+        "role"
+      ]
     },
     {
       "key": "integrations.proxmox",

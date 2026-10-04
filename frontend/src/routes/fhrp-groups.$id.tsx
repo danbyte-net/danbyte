@@ -14,12 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox"
 import { QueryError } from "@/components/query-error"
 import { FhrpGroupDeleteDialog } from "@/components/fhrp-group-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -100,12 +95,6 @@ function Body({ group: g }: { group: FHRPGroup }) {
           }
           tags={g.tags.length > 0 && <TagList tags={g.tags} />}
           description={g.description}
-          stats={
-            <DetailStat
-              label="Members"
-              value={<span className="num">{g.assignment_count}</span>}
-            />
-          }
         />
       }
       tabs={[
@@ -183,6 +172,10 @@ function FhrpGroupOverview({
         dash
       ),
       copy: g.virtual_ip?.ip_address || undefined,
+    },
+    {
+      label: "Members",
+      value: <span className="num">{g.assignment_count}</span>,
     },
   ]
   return (

@@ -7,6 +7,7 @@ import { MixedStatusBadge } from "./mixed-status-badge"
 import { ExternalChips } from "./external-chips"
 import { ExternalStatusHover } from "./external-status"
 import { ObjectCertExpiryBadge } from "./cert-expiry-badge"
+import { ExcludedPill } from "./excluded-pill"
 
 /**
  * Compact monitoring status card for the IP detail Overview tab - the headline
@@ -57,7 +58,9 @@ export function IpMonitoringSummary({
         <Activity className="h-3.5 w-3.5" />
         Monitoring
       </span>
-      {checks.length > 0 ? (
+      {q.data?.monitoring?.excluded ? (
+        <ExcludedPill />
+      ) : checks.length > 0 ? (
         <>
           <ExternalStatusHover entry={entry}>
             <span className="inline-flex items-center gap-1.5">

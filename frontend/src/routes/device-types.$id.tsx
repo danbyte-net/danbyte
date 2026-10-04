@@ -5,8 +5,10 @@ import { CopyPlus, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type DeviceType } from "@/lib/api"
+import { PROFILE_LABELS, fmtMm } from "@/lib/din-geometry"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImages } from "@/components/device-type-images"
@@ -76,8 +78,7 @@ function DeviceTypeDetail() {
     queryKey: ["device-type", id],
     queryFn: () => api<DeviceType>(`/api/device-types/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -148,28 +149,24 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={d.name}
-            badges={
-              <>
-                <LifecycleBadge state={d.lifecycle_state} />
-                <LocalityBadge owningSite={d.owning_site} />
-                {canPromote && (
-                  <PromoteToGlobalButton
-                    url={`/api/device-types/${d.id}/promote/`}
-                    name={d.name}
-                    invalidate={[["device-types"], ["device-type", d.id]]}
-                  />
-                )}
-              </>
-            }
-            tags={d.tags.length > 0 && <TagList tags={d.tags} />}
-            description={d.description}
-          />
-
-          <CustomFieldValues model="devicetype" values={d.custom_fields} />
-        </>
+        <DetailHero
+          title={d.name}
+          badges={
+            <>
+              <LifecycleBadge state={d.lifecycle_state} />
+              <LocalityBadge owningSite={d.owning_site} />
+              {canPromote && (
+                <PromoteToGlobalButton
+                  url={`/api/device-types/${d.id}/promote/`}
+                  name={d.name}
+                  invalidate={[["device-types"], ["device-type", d.id]]}
+                />
+              )}
+            </>
+          }
+          tags={d.tags.length > 0 && <TagList tags={d.tags} />}
+          description={d.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -301,6 +298,29 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     },
   ]
 
+  // The body's size and the DIN rails it mounts on (#277).
+  const mmOrDash = (v: number | null) => (v != null ? `${fmtMm(v)} mm` : dash)
+  const sizeRows: KvRow[] = [
+    { label: "Width", value: mmOrDash(d.width_mm) },
+    { label: "Height", value: mmOrDash(d.height_mm) },
+    { label: "Depth", value: mmOrDash(d.depth_mm) },
+    {
+      label: "DIN rail profiles",
+      value: d.din_profiles.length
+        ? d.din_profiles.map((p) => PROFILE_LABELS[p]).join(", ")
+        : dash,
+    },
+    ...(d.din_profiles.length
+      ? [
+          {
+            label: "Rail position",
+            value:
+              d.din_rail_mm != null ? `${fmtMm(d.din_rail_mm)} mm` : "Middle",
+          } satisfies KvRow,
+        ]
+      : []),
+  ]
+
   const usage: KvRow[] = [
     {
       label: "Devices",
@@ -361,6 +381,12 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="grid gap-6">
         <KvCard title="Hardware" rows={hardware} />
+        <CustomFieldValues
+          model="devicetype"
+          values={d.custom_fields}
+          layout="cards"
+        />
+        <KvCard title="Size and DIN rail" rows={sizeRows} />
         {componentRows.length > 0 && (
           <KvCard title="Components" rows={componentRows} />
         )}

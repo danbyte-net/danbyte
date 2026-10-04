@@ -12,12 +12,14 @@ non-zero, and the numbers answer "how many if I also tick this" rather than
 """
 from __future__ import annotations
 
+import uuid
 from datetime import timedelta
 
 from django.db.models import Count, F, Q, UUIDField
 from django.db.models.functions import Coalesce, TruncDay, TruncHour
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from rest_framework.exceptions import ValidationError
 
 from .engines import STAMPED_SOURCE_EXPR
 from .models import CheckStatus
@@ -64,6 +66,18 @@ def _csv(params, key) -> list[str]:
     return [v.strip() for v in raw.split(",") if v.strip()]
 
 
+def _ids(params, key) -> list[str]:
+    """``_csv`` for a dimension of ids: one that is not an id is a 400, not a
+    database error."""
+    values = _csv(params, key)
+    for v in values:
+        try:
+            uuid.UUID(v)
+        except ValueError:
+            raise ValidationError({key: f"«{v}» is not an id."}) from None
+    return values
+
+
 def _many(params, key) -> list[str]:
     """A repeatable param (``?tag=a&tag=b``) or a CSV, whichever was sent."""
     values = []
@@ -85,13 +99,13 @@ def apply_target_filters(qs, params):
     kinds = _csv(params, "kind")
     if kinds:
         qs = qs.filter(kind__in=kinds)
-    templates = _csv(params, "template")
+    templates = _ids(params, "template")
     if templates:
         qs = qs.filter(template_id__in=templates)
-    ip = (params.get("ip") or "").strip()
-    if ip:
-        qs = qs.filter(target_ip_id=ip)
-    sites = _csv(params, "site")
+    ips = _ids(params, "ip")
+    if ips:
+        qs = qs.filter(target_ip_id__in=ips)
+    sites = _ids(params, "site")
     if sites:
         # An address may carry its own site, inherit its prefix's, or sit on
         # a device that has one. Any of the three is "at that site".
@@ -100,7 +114,7 @@ def apply_target_filters(qs, params):
             | Q(target_ip__prefix__site_id__in=sites)
             | Q(target_ip__assigned_device__site_id__in=sites)
         )
-    regions = _csv(params, "region")
+    regions = _ids(params, "region")
     if regions:
         from api.viewsets import _region_and_descendant_ids
 
@@ -112,7 +126,7 @@ def apply_target_filters(qs, params):
             | Q(target_ip__prefix__site__region_id__in=ids)
             | Q(target_ip__assigned_device__site__region_id__in=ids)
         )
-    devices = _csv(params, "device")
+    devices = _ids(params, "device")
     if devices:
         qs = qs.filter(target_ip__assigned_device_id__in=devices)
     for key, path in (
@@ -122,10 +136,10 @@ def apply_target_filters(qs, params):
         ("prefix", "target_ip__prefix_id__in"),
         ("vrf", "target_ip__vrf_id__in"),
     ):
-        values = _csv(params, key)
+        values = _ids(params, key)
         if values:
             qs = qs.filter(**{path: values})
-    vlans = _csv(params, "vlan")
+    vlans = _ids(params, "vlan")
     if vlans:
         qs = qs.filter(
             Q(target_ip__prefix__vlan_id__in=vlans)
@@ -146,6 +160,14 @@ def apply_target_filters(qs, params):
         )
     if tags:
         qs = qs.distinct()
+    agreements = _ids(params, "sla")
+    if agreements:
+        # The addresses standing for an agreement's current members. The
+        # queryset is already the caller's tenant, so a foreign agreement id
+        # matches nothing.
+        from .sla import member_ip_ids
+
+        qs = qs.filter(target_ip_id__in=member_ip_ids(agreements))
     search = (params.get("search") or params.get("q") or "").strip()
     if search:
         qs = qs.filter(

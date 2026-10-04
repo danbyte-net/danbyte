@@ -6,10 +6,11 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type ProviderNetwork } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
 import { RowActions } from "@/components/row-actions"
@@ -27,6 +28,7 @@ function ProviderNetworksPage() {
   const canDelete = canDo("providernetwork", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<ProviderNetwork | null>(null)
+  const [selectedRows, setSelectedRows] = useState<ProviderNetwork[]>([])
 
   const query = useQuery({
     queryKey: ["provider-networks", q],
@@ -40,6 +42,7 @@ function ProviderNetworksPage() {
   const onDelete = useCallback((n: ProviderNetwork) => setDeleting(n), [])
   const columns = useMemo<ColumnDef<ProviderNetwork>[]>(
     () => [
+      ...(canDelete ? [selectionColumn<ProviderNetwork>()] : []),
       ...(humanIds
         ? [numidColumn<ProviderNetwork>({ get: (r) => r.numid })]
         : []),
@@ -151,12 +154,21 @@ function ProviderNetworksPage() {
       <DataTable
         data={filteredRows}
         columns={facetColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="description"
         tableId="provider-networks"
       />
       <ProviderNetworkDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <SafeBulkDeleteBar
+        selected={selectedRows}
+        endpoint="/api/provider-networks/"
+        noun={["provider network", "provider networks"]}
+        invalidate={[["provider-networks"]]}
+        onCleared={() => setSelectedRows([])}
       />
     </ListPageShell>
   )

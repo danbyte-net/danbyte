@@ -16,6 +16,7 @@ different layers).
 | `vlan_id` | int | required | 1–4094 |
 | `name` | char(255) | required | Free-form label |
 | `site` | FK → `Site` | NULL | Optional |
+| `status` | FK → `Status` | NULL | Active, Reserved, Deprecated or the tenant's own; new VLANs get the default |
 | `description` | text | `""` | |
 
 ## Constraints

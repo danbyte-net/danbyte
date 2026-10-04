@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api, type Paginated, type TagOption, type VLANOption } from "@/lib/api"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 import { EditPageShell } from "@/components/edit-page-shell"
 import {
   Field,
@@ -88,6 +89,7 @@ function BulkInterfacesPage() {
       ),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["interfaces"] })
+      invalidatePortCounts(qc)
       qc.invalidateQueries({ queryKey: ["device-interfaces"] })
       const skipped = r.skipped?.length
         ? `, skipped ${r.skipped.length} existing`

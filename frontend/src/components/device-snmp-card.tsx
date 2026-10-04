@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { DeviceSnmp, IPAddress, Interface } from "@/lib/api"
+import type { DeviceMacs, DeviceSnmp, IPAddress, Interface } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { KvCard, mono } from "@/components/kv-card"
@@ -15,13 +15,30 @@ import { Section } from "@/components/ui/section"
 import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   SnmpBindingControl,
   SnmpBindingHint,
 } from "@/components/snmp-binding-control"
 import { SnmpVrfControl } from "@/components/snmp-vrf-control"
+import {
+  LearnedMacsCell,
+  RefreshMacsButton,
+} from "@/components/learned-macs-cell"
+import { timeAgo } from "@/components/cells/time-ago"
 import { useMe } from "@/lib/use-me"
 import { useDateFormat } from "@/lib/datetime"
 import { apiErrorToast } from "@/lib/api-toast"
+import {
+  isPartialRead,
+  reportsMacTable,
+  useDeviceMacs,
+} from "@/lib/mac-tracking"
+import type { MacSource } from "@/lib/mac-tracking"
+import { fmtMbps } from "@/lib/speed"
 
 // Friendly labels for the system-group OIDs we poll. Anything unmapped falls
 // back to the raw key.
@@ -125,6 +142,13 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
 
   const { ipIdByAddr, ifaceIdByName, vlanIdByVid } = useObservedLinks(deviceId)
 
+  // MAC tracking (#284): on a device that reports a MAC table, the learned
+  // MACs replace the column of the ports' own hardware addresses. The card
+  // shows the stack owner's observation, so it reads the observed view.
+  const macsQ = useDeviceMacs(deviceId, "observed")
+  const macSource: MacSource = { deviceId, view: "observed" }
+  const portMacs = useMemo(() => indexPorts(macsQ.data), [macsQ.data])
+
   const poll = useMutation({
     // No profile_id - the backend resolves it along the hierarchy
     // (device → role → type → tenant default).
@@ -149,6 +173,9 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
       qc.setQueryData(["device-snmp", deviceId], data)
       qc.invalidateQueries({ queryKey: ["device-snmp-util", deviceId] })
       qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })
+      // A poll reads the MAC table too (the quick read).
+      qc.invalidateQueries({ queryKey: ["device-macs"] })
+      qc.invalidateQueries({ queryKey: ["interface-macs"] })
       if (data.reachable) toast.success("Polled device over SNMP")
       else toast.error(data.error || "Device did not respond to SNMP")
     },
@@ -156,6 +183,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
   })
 
   const state = snmp.data
+  const macTable = reportsMacTable(state?.fdb_meta, state?.fdb_polled_at)
   const facts = state?.data ?? {}
   const factKeys = [
     ...FACT_ORDER.filter((k) => facts[k]),
@@ -200,7 +228,11 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
     {
       id: "speed",
       header: "Speed",
-      cell: (i) => <span className="font-mono">{fmtSpeed(i.speed_mbps)}</span>,
+      cell: (i) => (
+        <span className="font-mono">
+          {fmtMbps(Number(i.speed_mbps), { long: true }) || "-"}
+        </span>
+      ),
     },
     {
       id: "util",
@@ -212,7 +244,21 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
         return <UtilCell series={series} />
       },
     },
-    { id: "mac", header: "MAC", cell: (i) => <MacLink mac={i.mac} /> },
+    macTable
+      ? {
+          id: "learned",
+          header: "Learned MACs",
+          cell: (i) => (
+            <LearnedMacsCell
+              port={
+                portMacs.byIndex.get(i.if_index) ??
+                portMacs.byKey.get(portKeyOf(i))
+              }
+              source={macSource}
+            />
+          ),
+        }
+      : { id: "mac", header: "MAC", cell: (i) => <MacLink mac={i.mac} /> },
     {
       id: "ips",
       header: "IP addresses",
@@ -275,6 +321,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
                 Poll now
               </Button>
             )}
+            {canPoll && macTable && <RefreshMacsButton deviceId={deviceId} />}
           </>
         }
       >
@@ -315,6 +362,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
             data={state.interfaces}
             getRowKey={(i) => i.if_index}
           />
+          {macTable && macsQ.data && <MacTableLine macs={macsQ.data} />}
         </Section>
       )}
 
@@ -430,12 +478,6 @@ function Muted() {
   return <span className="text-muted-foreground">-</span>
 }
 
-function fmtSpeed(mbps: string): string {
-  const n = Number(mbps)
-  if (!n) return "-"
-  return n >= 1000 ? `${n / 1000} Gbps` : `${n} Mbps`
-}
-
 /** An interface name that links to its detail page when Danbyte records it. */
 function IfaceLink({ name, id }: { name: string; id?: string }) {
   if (!name) return <Muted />
@@ -508,6 +550,58 @@ export function MacLink({ mac }: { mac: string }) {
     </Link>
   )
 }
+
+/** The device's learned-MAC ports by ifIndex and by observed name - the two
+ * ways an interface row of the observation names its port. */
+function indexPorts(macs: DeviceMacs | undefined) {
+  const byIndex = new Map<string, DeviceMacs["ports"][number]>()
+  const byKey = new Map<string, DeviceMacs["ports"][number]>()
+  for (const p of macs?.ports ?? []) {
+    if (p.if_index) byIndex.set(p.if_index, p)
+    byKey.set(p.port_key, p)
+  }
+  return { byIndex, byKey }
+}
+
+/** The key the MAC table files a port under: its ifName, else ifDescr. */
+function portKeyOf(i: { name: string; descr: string }): string {
+  return (i.name || i.descr).trim().toLowerCase()
+}
+
+/** `MAC table · 412 MACs on 37 ports · read 3m ago`, and a `partial` badge
+ * when the last read stopped early. */
+function MacTableLine({ macs }: { macs: DeviceMacs }) {
+  const ports = macs.ports.filter((p) => p.count > 0).length
+  const partial = isPartialRead(macs.meta) ? macs.meta : null
+  const why = partial?.error
+    ? capitalise(partial.error)
+    : "The read stopped early"
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
+      <span>
+        MAC table · <span className="num">{macs.macs.toLocaleString()}</span>{" "}
+        {macs.macs === 1 ? "MAC" : "MACs"} on{" "}
+        <span className="num">{ports.toLocaleString()}</span>{" "}
+        {ports === 1 ? "port" : "ports"}
+        {macs.read_at && <> · read {timeAgo(macs.read_at)}</>}
+      </span>
+      {partial && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="warning" className="h-4 cursor-default px-1.5">
+              partial
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent variant="panel" className="max-w-sm">
+            {why}. Refresh MACs reads the whole table.
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </p>
+  )
+}
+
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** A tiny inbound-utilisation sparkline + latest %, from the counter series. */
 function UtilCell({

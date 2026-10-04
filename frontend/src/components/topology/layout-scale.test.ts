@@ -4,16 +4,21 @@ import type { Edge, Node } from "@xyflow/react"
 import {
   edgeWaypoints,
   hierarchyWaypoints,
+  LAYOUT_LIMIT,
   layoutHierarchy,
   layoutNodes,
+  layoutOutOfBounds,
   nudgeOffEdges,
   type HierPortPos,
 } from "./layout"
-import { stencilSize } from "./stencil-node"
+import { sizeOf } from "./node-registry"
 
 // Scale guard: the layout pipeline must stay interactive on a ~150-device
 // fabric (3 sites × core pair + 4 dist + 12 access + 24 servers). A
 // regression here is what a user experiences as "the topology froze".
+
+/** Cards at their registered size (a plain box here), roomy spacing. */
+const CARDS = { sizeOf, compact: false }
 
 function fabric(): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = []
@@ -78,7 +83,7 @@ describe("aligned-card detour", () => {
       { id: "bc", source: "b", target: "c", data: { sem: "cable" } } as Edge,
       { id: "ac", source: "a", target: "c", data: { sem: "cable" } } as Edge,
     ]
-    const wp = edgeWaypoints(nodes, edges, "TB")
+    const wp = edgeWaypoints(nodes, edges, sizeOf, "TB")
     const detour = wp.get("ac")
     expect(detour).toBeDefined()
     // Both waypoints share an X clear of the cards' 100..~256 span.
@@ -93,8 +98,8 @@ describe("topology layout at scale", () => {
     const { nodes, edges } = fabric()
     expect(nodes.length).toBeGreaterThan(120)
     const t0 = performance.now()
-    const { nodes: laid } = layoutNodes(nodes, edges)
-    const wp = edgeWaypoints(laid, edges, "LR")
+    const { nodes: laid } = layoutNodes(nodes, edges, CARDS)
+    const wp = edgeWaypoints(laid, edges, sizeOf, "LR")
     const ms = performance.now() - t0
     expect(laid).toHaveLength(nodes.length)
     expect(wp).toBeInstanceOf(Map)
@@ -117,7 +122,14 @@ describe("topology layout at scale", () => {
       levels.set(n.id, tier)
     }
     const t0 = performance.now()
-    const { nodes: laid } = layoutNodes(nodes, edges, undefined, "TB", levels)
+    const { nodes: laid } = layoutNodes(
+      nodes,
+      edges,
+      CARDS,
+      undefined,
+      "TB",
+      levels
+    )
     const ms = performance.now() - t0
     expect(laid).toHaveLength(nodes.length)
     expect(ms).toBeLessThan(1000)
@@ -154,7 +166,13 @@ describe("density-adaptive gaps and lanes", () => {
           data: { sem: "cable", baseS: pn, baseT: "eno1" },
         }) as Edge
     )
-    const { nodes: laid, waypoints } = layoutNodes(nodes, edges, undefined, "LR")
+    const { nodes: laid, waypoints } = layoutNodes(
+      nodes,
+      edges,
+      CARDS,
+      undefined,
+      "LR"
+    )
     // Leaves stack in a compact grid beside the hub (NetBox/visio style),
     // never strung out along one endless rank...
     const leaves = laid.filter((n) => n.id !== "hub")
@@ -189,27 +207,13 @@ describe("density-adaptive gaps and lanes", () => {
           data: { sem: "cable", baseS: pn, baseT: pn },
         }) as Edge
     )
-    const { waypoints } = layoutNodes(nodes, edges, undefined, "LR")
+    const { waypoints } = layoutNodes(nodes, edges, CARDS, undefined, "LR")
     // Every parallel cable rides its own distinct lane (keyed by edge id).
     const lanes = edges
       .map((e) => waypoints.get(e.id)?.[0][0])
       .filter((x): x is number => x !== undefined)
     expect(lanes.length).toBe(12)
     expect(new Set(lanes).size).toBe(12)
-  })
-})
-
-describe("dense cards render as a faceplate bar", () => {
-  it("a 100-port card is long on the port axis, slim on the other", () => {
-    const ports = Array.from({ length: 100 }, (_, i) => ({
-      name: `Gi1/${i}`,
-      kind: "interface" as const,
-    }))
-    const { width, height } = stencilSize({ name: "big", ports } as never)
-    // One 16px slot per port along the bar; the perpendicular stays a slim
-    // label band + identity row.
-    expect(Math.max(width, height)).toBeGreaterThanOrEqual(100 * 14)
-    expect(Math.min(width, height)).toBeLessThanOrEqual(320)
   })
 })
 
@@ -474,5 +478,134 @@ describe("hierarchy cards never overlap", () => {
           r1.y < r2.y + r2.h - 4 && r1.y + r1.h - 4 > r2.y
         expect(overlap, `${r1.id} overlaps ${r2.id}`).toBe(false)
       }
+  })
+})
+
+describe("hierarchy on a big multi-homed map", () => {
+  // Islands of two cores, access switches cabled to both, and servers
+  // cabled to their access switch, the next one and a management switch -
+  // each card's peers far apart. Before the cards' spread was capped and
+  // the islands laid out one by one, this came out billions of px tall.
+  function islands(count: number) {
+    const nodes: Node[] = []
+    const edges: Edge[] = []
+    const node = (id: string) =>
+      nodes.push({
+        id,
+        type: "hier",
+        position: { x: 0, y: 0 },
+        data: { name: id },
+      })
+    let k = 0
+    const cable = (s: string, sp: string, t: string, tp: string) =>
+      edges.push({
+        id: `e${k++}`,
+        source: s,
+        target: t,
+        sourceHandle: sp,
+        targetHandle: tp,
+        data: { sem: "cable" },
+      })
+    for (let i = 0; i < count; i++) {
+      const cores = [`i${i}-core1`, `i${i}-core2`]
+      const mgmt = `i${i}-mgmt`
+      cores.forEach(node)
+      node(mgmt)
+      let m = 0
+      for (let a = 0; a < 4; a++) {
+        const acc = `i${i}-acc${a}`
+        node(acc)
+        cores.forEach((c, ci) => cable(acc, `up${ci}`, c, `p${a}`))
+        for (let s = 0; s < 8; s++) {
+          const srv = `i${i}-a${a}-s${s}`
+          node(srv)
+          cable(srv, "eth0", acc, `d${s}`)
+          cable(srv, "eth1", `i${i}-acc${(a + 1) % 4}`, `x${a}-${s}`)
+          cable(srv, "mgmt", mgmt, `m${m++}`)
+        }
+      }
+    }
+    for (let j = 0; j < 20; j++) node(`lone${j}`)
+    return { nodes, edges }
+  }
+
+  it("stays on the canvas", () => {
+    const { nodes, edges } = islands(6)
+    const res = layoutHierarchy(nodes, edges, () => 200)
+    expect(layoutOutOfBounds(res.nodes)).toBe(false)
+    const bottom = Math.max(
+      ...res.nodes.map((n) => n.position.y + 60 + (res.span.get(n.id) ?? 0))
+    )
+    // 254 cards: tall, but tens of thousands of px, not billions.
+    expect(bottom).toBeLessThan(150_000)
+    // A card spreads its chips one plain card and gap per port at most.
+    for (const n of res.nodes) {
+      const ports = Object.keys(res.portPos.get(n.id) ?? {}).length
+      expect(res.span.get(n.id) ?? 0).toBeLessThanOrEqual(
+        Math.max(60, ports * 150) + 1e-6
+      )
+    }
+  })
+
+  it("lays each island out as it would alone", () => {
+    // Laid out as one, the islands shared the collision pass and pushed
+    // into each other; now an island's shape is its own.
+    const all = islands(3)
+    const one = islands(1)
+    const lone = new Set(
+      one.nodes.filter((n) => n.id.startsWith("lone")).map((n) => n.id)
+    )
+    const shape = (res: ReturnType<typeof layoutHierarchy>) => {
+      const own = res.nodes.filter((n) => n.id.startsWith("i0-"))
+      const x0 = Math.min(...own.map((n) => n.position.x))
+      const y0 = Math.min(...own.map((n) => n.position.y))
+      return Object.fromEntries(
+        own.map((n) => [n.id, [n.position.x - x0, n.position.y - y0]])
+      )
+    }
+    const alone = layoutHierarchy(
+      one.nodes.filter((n) => !lone.has(n.id)),
+      one.edges,
+      () => 200
+    )
+    expect(shape(layoutHierarchy(all.nodes, all.edges, () => 200))).toEqual(
+      shape(alone)
+    )
+  })
+
+  it("flags a layout that runs off the canvas", () => {
+    const at = (x: number, y: number): Node => ({
+      id: "a",
+      position: { x, y },
+      data: {},
+    })
+    expect(layoutOutOfBounds([at(0, 0), at(5_000, 90_000)])).toBe(false)
+    expect(layoutOutOfBounds([at(0, LAYOUT_LIMIT * 2)])).toBe(true)
+    expect(layoutOutOfBounds([at(Number.NaN, 0)])).toBe(true)
+    expect(layoutOutOfBounds([at(0, -Infinity)])).toBe(true)
+  })
+})
+
+describe("layoutNodes reusing ranks", () => {
+  it("lays a graph out for new sizes as a fresh ranking would", () => {
+    const { nodes, edges } = fabric()
+    const grown = {
+      sizeOf: (n: Node) => {
+        const s = sizeOf(n)
+        return { width: s.width + 40, height: s.height + 12 }
+      },
+      compact: false,
+    }
+    // Ranks the graph once; the second layout replays them.
+    layoutNodes(nodes, edges, { ...CARDS, reuseRanks: true })
+    const again = layoutNodes(nodes, edges, { ...grown, reuseRanks: true })
+    const fresh = layoutNodes(nodes, edges, grown)
+    expect(again.nodes.map((n) => n.position)).toEqual(
+      fresh.nodes.map((n) => n.position)
+    )
+    expect(again.waypoints).toEqual(fresh.waypoints)
+    // A view that routes its own lines gets none.
+    const own = { ...grown, leafGrids: false, waypoints: false }
+    expect(layoutNodes(nodes, edges, own).waypoints.size).toBe(0)
   })
 })

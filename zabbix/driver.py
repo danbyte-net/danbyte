@@ -80,7 +80,8 @@ class ZabbixDriver:
 
         due = list(
             CheckState.objects.filter(
-                engine=engine, kind=KIND, next_run__lte=now, in_flight=False
+                engine=engine, kind=KIND, next_run__lte=now, in_flight=False,
+                target_ip__monitoring_excluded=False,
             ).select_related("target_ip", "template", "assignment")[:CLAIM_BATCH]
         )
         if not due:

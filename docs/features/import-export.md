@@ -21,12 +21,19 @@ pair:
 
 - **Export** → **CSV**, **Excel (.xlsx)**, or **JSON**. The file carries each
   row's `id` plus stable, human-readable keys for its links, tags, and custom
-  fields - so it can be re-imported.
+  fields - so it can be re-imported. Text is always text: a value that starts
+  with `=`, `+`, `-` or `@` is never run as a spreadsheet formula. Excel files
+  store it as text; CSV files put an apostrophe in front, which the import
+  takes off again. The SLA report CSV does the same.
 - **Import…** → upload an edited file. Danbyte first shows a **preview** (how many
   rows would be created vs updated, and any errors) before you **Apply**.
 
 **Export only the rows you select:** tick rows in any table and the **bulk bar**
-at the bottom gains an **Export** button that exports just the selection.
+at the bottom gains an **Export** button that exports just the selection. The
+selection travels in the request body, not the link, so a large one - **Select
+all N** on a long list - exports like a few rows, up to 50,000 at a time.
+Scripts do the same with `POST /api/io/<type>/export/` and a JSON body of
+`{"fmt": "csv", "ids": [...]}`; a `GET` takes `?ids=` for a short list.
 
 On a **prefix** page the Import / Export acts on the **IP addresses inside that
 prefix** (the workflow that replaced the old "IPs" dropdown).
@@ -130,7 +137,7 @@ errors.
 | Detail | Behavior |
 |---|---|
 | Columns | Match object fields by name; unknown columns are ignored. |
-| Links to other objects | Resolved by name, slug, or id within your active tenant. An unresolved link is a clean per-row error. |
+| Links to other objects | Resolved by name, slug, or id within your active tenant, among the objects you may view. A person or group cell (`created_by`, `owner`, `assigned_group`, …) resolves among the tenant's people when you have no permission on users or groups. An unresolved link is a clean per-row error. |
 | Validation | Each row is checked and saved on its own, so one bad row doesn't stop the rest. |
 | **Validate** | A dry run - checks everything, writes nothing. |
 | Limit | Up to 5000 rows per import. |

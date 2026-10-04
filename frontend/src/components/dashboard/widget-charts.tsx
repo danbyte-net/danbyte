@@ -24,6 +24,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
+import { cn } from "@/lib/utils"
 
 // A shadcn ChartConfig keyed by each category name so tooltips/legends resolve.
 function configFor(data: DashDist[]): ChartConfig {
@@ -50,9 +51,15 @@ export function DistDonut({
   unit?: string
   link?: DistLink
 }) {
+  const navigate = useNavigate()
   if (!data.length) return <Empty />
   const sum = data.reduce((n, d) => n + d.count, 0)
   const chartData = data.map((d) => ({ ...d, fill: d.color }))
+  // A slice opens the same list its legend row does.
+  const open = (index: number) => {
+    const target = link?.(data[index])
+    if (target) void navigate({ to: target.to, search: target.search })
+  }
   return (
     // A container query, not a viewport one (#156). A dashboard widget can be
     // narrow while the screen is wide, so `sm:flex-row` put the legend beside
@@ -86,6 +93,8 @@ export function DistDonut({
               innerRadius="64%"
               outerRadius="96%"
               strokeWidth={4}
+              onClick={(_slice, index) => open(index)}
+              className={link ? "cursor-pointer" : undefined}
             >
               <Label
                 content={({ viewBox }) => {
@@ -228,11 +237,15 @@ export function RadialGauge({
   value,
   label,
   color = "var(--primary)",
+  link,
 }: {
   value: number | null
   label: string
   color?: string
+  /** Where a click on the ring goes. */
+  link?: { to: string; search?: Record<string, string | undefined> }
 }) {
+  const navigate = useNavigate()
   if (value == null) return <Empty hint="No checks yet." />
   const data = [
     { name: label, value, fill: color },
@@ -242,7 +255,17 @@ export function RadialGauge({
     // The same box as DistDonut's ring: without max-w-full a square that
     // follows the tile's height overflows a tile narrower than it is tall
     // and the ring is clipped at the edges.
-    <div className="flex h-full items-center justify-center">
+    <div
+      className={cn(
+        "flex h-full items-center justify-center",
+        link && "cursor-pointer"
+      )}
+      onClick={
+        link
+          ? () => void navigate({ to: link.to, search: link.search })
+          : undefined
+      }
+    >
       <ChartContainer
         config={{ value: { label } }}
         className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px] w-auto max-w-full shrink-0"

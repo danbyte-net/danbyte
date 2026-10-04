@@ -156,6 +156,9 @@ export function CustomFieldForm({
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["custom-fields"] })
       qc.invalidateQueries({ queryKey: ["custom-field", saved.id] })
+      // Forms, detail strips and list columns read the definitions too.
+      qc.invalidateQueries({ queryKey: ["custom-fields-for"] })
+      qc.invalidateQueries({ queryKey: ["list-fields"] })
       toast.success(
         isEdit ? `Updated ${saved.label}` : `Created ${saved.label}`
       )

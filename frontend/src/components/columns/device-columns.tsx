@@ -10,6 +10,8 @@ import {
 } from "@/components/columns/monitoring-facet"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
+import type { SlaColumnOpts } from "@/components/columns/sla-column"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
@@ -26,6 +28,8 @@ import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { LifecycleFlag } from "@/components/cells/lifecycle-cell"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import { cabinetColumn } from "@/components/cells/cabinet-cell"
+import { rackColumn } from "@/components/cells/rack-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -52,10 +56,14 @@ export type DeviceColumnId =
   | "type"
   | "manufacturer"
   | "site"
+  | "rack"
+  | "cabinet"
   | "serial"
   | "ips"
   | "ports"
   | "monitoring"
+  | "sla"
+  | "availability"
   | "primary_ip"
   | "secondary_ip"
   | "oob_ip"
@@ -72,10 +80,14 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "type",
   "manufacturer",
   "site",
+  "rack",
+  "cabinet",
   "serial",
   "ips",
   "ports",
   "monitoring",
+  "sla",
+  "availability",
   "primary_ip",
   "secondary_ip",
   "oob_ip",
@@ -105,6 +117,8 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   planned?: Map<string, PlannedTargetRow>
   /** Monitoring status per device id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
+  sla?: SlaColumnOpts
   /** Port utilization % per device id (null = has ports table entry but no
    * ports) - enables the "Ports" bar column. One roll-up request per table. */
   portUtil?: Map<string, number>
@@ -142,9 +156,24 @@ export function buildDeviceColumns<T extends Device = Device>(
   // Monitoring column only where the page fetched bulk status.
   if (!opts.humanIds) omit.add("numid")
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.sla) {
+    omit.add("sla")
+    omit.add("availability")
+  }
   if (!opts.portUtil) omit.add("ports")
   const keep = (id: DeviceColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
+
+  // Where a device sits - a rack or a cabinet, never both - side by side,
+  // offered hidden in the Columns menu as the catalog's Rack column was. No
+  // facets: the rail keeps to what a fleet is narrowed by.
+  const placement = (
+    col: ColumnDef<T, unknown>,
+    label: string
+  ): ColumnDef<T, unknown> => ({
+    ...col,
+    meta: { label, defaultHidden: true },
+  })
 
   const ipDesignation = (
     id: "primary_ip" | "secondary_ip" | "oob_ip",
@@ -286,6 +315,7 @@ export function buildDeviceColumns<T extends Device = Device>(
           dash
         ),
       meta: {
+        field: "device_type",
         facet: {
           kind: "enum",
           label: "Type",
@@ -318,6 +348,7 @@ export function buildDeviceColumns<T extends Device = Device>(
         )
       },
       meta: {
+        field: "device_type.manufacturer",
         facet: {
           kind: "enum",
           label: "Manufacturer",
@@ -329,6 +360,9 @@ export function buildDeviceColumns<T extends Device = Device>(
       },
     }),
     site: () => siteColumn<T>({ get: (r) => r.site }),
+    rack: () => placement(rackColumn<T>({ get: (r) => r.rack }), "Rack"),
+    cabinet: () =>
+      placement(cabinetColumn<T>({ get: (r) => r.cabinet }), "Cabinet"),
     serial: () => ({
       id: "serial",
       accessorKey: "serial_number",
@@ -396,6 +430,8 @@ export function buildDeviceColumns<T extends Device = Device>(
         facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]),
       },
     }),
+    sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
+    availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     primary_ip: () =>
       ipDesignation("primary_ip", "Primary IP", (r) => r.primary_ip),
     secondary_ip: () =>

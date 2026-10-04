@@ -225,7 +225,7 @@ class MonitoringApiTests(APITestCase):
             "/api/monitoring/bulk-check-now/", {"ip_ids": []}, format="json"
         )
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json(), {"targets": 0, "checks": 0})
+        self.assertEqual(r.json(), {"targets": 0, "checks": 0, "excluded": 0})
 
     def test_cross_tenant_ip_rejected_on_assignment(self):
         other_org = Organization.objects.create(name="Other", slug="other")

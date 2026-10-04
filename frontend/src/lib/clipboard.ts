@@ -1,3 +1,5 @@
+import { toast } from "sonner"
+
 // Clipboard with a synchronous textarea fallback.
 //
 // `navigator.clipboard.writeText` only works in secure contexts (HTTPS
@@ -36,4 +38,22 @@ export async function copyText(value: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/** The one failure toast for a copy, wherever it was asked for. */
+export const COPY_FAILED = "Couldn't copy"
+
+/**
+ * Copy, and say how it went: `done` as a success toast when given, or the
+ * shared failure toast. Resolves to whether the copy landed, for a caller
+ * that also flips a "Copied" state.
+ */
+export async function copyWithToast(
+  value: string,
+  done?: string
+): Promise<boolean> {
+  const ok = await copyText(value)
+  if (!ok) toast.error(COPY_FAILED)
+  else if (done) toast.success(done)
+  return ok
 }

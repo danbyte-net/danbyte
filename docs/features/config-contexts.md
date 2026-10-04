@@ -66,7 +66,7 @@ Click a context's name in the list to open it. It has three tabs:
 
 | Tab | What's on it |
 |---|---|
-| **Overview** | Weight, active flag, description, the assignment criteria - regions, sites, device roles, and platforms, each linking to the object it names - and the context's **Data** block, rendered as formatted JSON. A dimension with no entries reads **Any**, which is exactly how the merge treats it. |
+| **Overview** | Weight, active flag, description, the number of top-level data keys, the assignment criteria - regions, sites, device roles, and platforms, each linking to the object it names - and the context's **Data** block, rendered as formatted JSON. A dimension with no entries reads **Any**, which is exactly how the merge treats it. |
 | **Journal** | Your notes on this context. |
 | **Change log** | Every create, edit, and delete of the context - see [Change log](change-log.md). |
 

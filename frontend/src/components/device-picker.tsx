@@ -2,10 +2,11 @@ import { useMemo } from "react"
 
 import type { Device } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
-import {
-  ObjectPicker,
-  type ObjectPickerProps,
-  type ObjectPickerSpec,
+import { ObjectPicker } from "@/components/object-picker"
+import type {
+  ObjectPickerProps,
+  ObjectPickerSpec,
+  PickerFilter,
 } from "@/components/object-picker"
 import { StatusBadge } from "@/components/status-badge"
 
@@ -15,6 +16,11 @@ export interface DevicePickerProps extends Omit<ObjectPickerProps, "label"> {
   /** Ghost (show disabled, with an "in <stack>" hint) any device that already
    * belongs to a virtual chassis - a switch can only be in one stack. */
   ghostAssignedVc?: boolean
+  /** Only devices at this site - in the list, and as the search's starting
+   * filter. */
+  siteId?: string | null
+  /** Only devices whose type mounts on a DIN rail of this profile. */
+  dinProfile?: string | null
 }
 
 /** ?picker=1&with_vc=1 shape - the compact option plus its current stack. */
@@ -26,6 +32,61 @@ interface DeviceVcOption {
 
 const DASH = <span className="text-muted-foreground">-</span>
 
+/** The device list's filters, as its advanced search offers them - the
+ * topology diagram's device palette offers the same, from the same shared
+ * picker caches. */
+export const DEVICE_PICKER_FILTERS: PickerFilter[] = [
+  {
+    key: "tag",
+    label: "Tag",
+    endpoint: "/api/tags/",
+    queryKey: "tags-picker",
+    paramOf: (t: { slug: string }) => t.slug,
+  },
+  {
+    key: "manufacturer",
+    label: "Manufacturer",
+    endpoint: "/api/manufacturers/?picker=1",
+    queryKey: "manufacturers-picker",
+  },
+  {
+    key: "device_type",
+    label: "Type",
+    endpoint: "/api/device-types/?picker=1",
+    queryKey: "device-types-picker",
+  },
+  {
+    key: "role",
+    label: "Role",
+    endpoint: "/api/device-roles/?picker=1",
+    queryKey: "device-roles-picker",
+  },
+  {
+    key: "status",
+    label: "Status",
+    endpoint: "/api/statuses/?available_to=device&picker=1",
+    queryKey: "device-statuses-picker",
+  },
+  {
+    key: "site",
+    label: "Site",
+    endpoint: "/api/sites/?picker=1",
+    queryKey: "sites-picker",
+  },
+  {
+    key: "location",
+    label: "Location",
+    endpoint: "/api/locations/?picker=1",
+    queryKey: "locations-picker",
+  },
+  {
+    key: "region",
+    label: "Region",
+    endpoint: "/api/regions/?picker=1",
+    queryKey: "regions-picker",
+  },
+]
+
 /**
  * The device preset of ObjectPicker - searchable combobox + advanced-search
  * modal (tag / manufacturer / type / role / status / site / location /
@@ -34,6 +95,8 @@ const DASH = <span className="text-muted-foreground">-</span>
 export function DevicePicker({
   label = "Device",
   ghostAssignedVc,
+  siteId,
+  dinProfile,
   ...rest
 }: DevicePickerProps) {
   const spec = useMemo<ObjectPickerSpec<Device, DeviceVcOption>>(
@@ -41,13 +104,20 @@ export function DevicePicker({
       noun: "device",
       // With ghosting on we need each device's stack, so fetch the with_vc
       // picker shape under its own cache key (no collision with the plain
-      // list every other form shares).
-      pickerEndpoint: ghostAssignedVc
-        ? "/api/devices/?picker=1&with_vc=1"
-        : "/api/devices/?picker=1",
-      pickerQueryKey: ghostAssignedVc
-        ? ["devices-picker", "with-vc"]
-        : ["devices-picker"],
+      // list every other form shares). A site narrows either, under a key of
+      // its own that still starts with "devices-picker".
+      pickerEndpoint:
+        (ghostAssignedVc
+          ? "/api/devices/?picker=1&with_vc=1"
+          : "/api/devices/?picker=1") +
+        (siteId ? `&site=${siteId}` : "") +
+        (dinProfile ? `&din_profile=${dinProfile}` : ""),
+      pickerQueryKey: [
+        "devices-picker",
+        ...(ghostAssignedVc ? ["with-vc"] : []),
+        ...(siteId ? ["site", siteId] : []),
+        ...(dinProfile ? ["din", dinProfile] : []),
+      ],
       optionState: ghostAssignedVc
         ? (o) =>
             o.virtual_chassis
@@ -58,57 +128,7 @@ export function DevicePicker({
       detailQueryKey: (id) => ["device", id],
       listEndpoint: "/api/devices/",
       searchHint: "Search name, serial, asset tag, description…",
-      filters: [
-        {
-          key: "tag",
-          label: "Tag",
-          endpoint: "/api/tags/",
-          queryKey: "tags-picker",
-          paramOf: (t: { slug: string }) => t.slug,
-        },
-        {
-          key: "manufacturer",
-          label: "Manufacturer",
-          endpoint: "/api/manufacturers/?picker=1",
-          queryKey: "manufacturers-picker",
-        },
-        {
-          key: "device_type",
-          label: "Type",
-          endpoint: "/api/device-types/?picker=1",
-          queryKey: "device-types-picker",
-        },
-        {
-          key: "role",
-          label: "Role",
-          endpoint: "/api/device-roles/?picker=1",
-          queryKey: "device-roles-picker",
-        },
-        {
-          key: "status",
-          label: "Status",
-          endpoint: "/api/statuses/?available_to=device&picker=1",
-          queryKey: "device-statuses-picker",
-        },
-        {
-          key: "site",
-          label: "Site",
-          endpoint: "/api/sites/?picker=1",
-          queryKey: "sites-picker",
-        },
-        {
-          key: "location",
-          label: "Location",
-          endpoint: "/api/locations/?picker=1",
-          queryKey: "locations-picker",
-        },
-        {
-          key: "region",
-          label: "Region",
-          endpoint: "/api/regions/?picker=1",
-          queryKey: "regions-picker",
-        },
-      ],
+      filters: DEVICE_PICKER_FILTERS,
       columns: [
         { header: "Name", cell: (d) => d.name },
         {
@@ -146,10 +166,15 @@ export function DevicePicker({
               : {}
         : undefined,
     }),
-    [ghostAssignedVc]
+    [ghostAssignedVc, siteId, dinProfile]
   )
 
   return (
-    <ObjectPicker<Device, DeviceVcOption> spec={spec} label={label} {...rest} />
+    <ObjectPicker<Device, DeviceVcOption>
+      spec={spec}
+      label={label}
+      initialFilters={siteId ? { site: siteId } : undefined}
+      {...rest}
+    />
   )
 }

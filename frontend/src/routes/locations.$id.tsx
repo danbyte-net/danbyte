@@ -20,13 +20,17 @@ import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
 import { LocationDeleteDialog } from "@/components/location-delete-dialog"
+import { Loading } from "@/components/loading"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { MiniMap } from "@/components/site-map/mini-map"
 import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
-import { EmbeddedRackTable } from "@/components/embedded-tables"
+import {
+  EmbeddedCabinetTable,
+  EmbeddedRackTable,
+} from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -41,8 +45,7 @@ function LocationDetail() {
     queryKey: ["location", id],
     queryFn: () => api<Location>(`/api/locations/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -74,6 +77,7 @@ function Body({ location: l }: { location: Location }) {
     | "overview"
     | "devices"
     | "racks"
+    | "cabinets"
     | "prefixes"
     | "documents"
     | "journal"
@@ -155,6 +159,7 @@ function Body({ location: l }: { location: Location }) {
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: l.device_count },
         { value: "racks", label: "Racks", count: l.rack_count },
+        { value: "cabinets", label: "Cabinets", count: l.cabinet_count },
         { value: "prefixes", label: "Prefix ranges", count: rows.length },
         { value: "documents", label: "Documents", count: l.document_count },
         { value: "journal", label: "Journal" },
@@ -176,6 +181,13 @@ function Body({ location: l }: { location: Location }) {
         <EmbeddedRackTable
           filter={{ location: l.id }}
           emptyText="No racks in this location yet."
+        />
+      </DetailTab>
+      <DetailTab value="cabinets">
+        <EmbeddedCabinetTable
+          filter={{ location: l.id }}
+          omit={["site", "location"]}
+          emptyText="No cabinets in this location yet."
         />
       </DetailTab>
       <DetailTab value="prefixes">
@@ -200,7 +212,7 @@ function Body({ location: l }: { location: Location }) {
             )}
           </div>
           {prefixes.isLoading ? (
-            <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+            <Loading />
           ) : rows.length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
               No prefix ranges in this location yet.

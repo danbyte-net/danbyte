@@ -23,6 +23,9 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
     token = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
+    # Three adoption defaults by name, for the form - not one value a column
+    # can show (see api.list_fields).
+    list_columns_exclude = ("adopt_names",)
     token_set = serializers.BooleanField(read_only=True)
     supported = serializers.BooleanField(read_only=True)
     api_url = serializers.CharField(read_only=True)

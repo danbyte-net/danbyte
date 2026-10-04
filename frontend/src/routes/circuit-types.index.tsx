@@ -7,9 +7,10 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type CircuitType, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { numidColumn } from "@/components/cells/numid"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
@@ -26,6 +27,7 @@ function CircuitTypesPage() {
   const canDelete = canDo("circuittype", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<CircuitType | null>(null)
+  const [selectedRows, setSelectedRows] = useState<CircuitType[]>([])
 
   const query = useQuery({
     queryKey: ["circuit-types"],
@@ -46,6 +48,7 @@ function CircuitTypesPage() {
   const onDelete = useCallback((t: CircuitType) => setDeleting(t), [])
   const columns = useMemo<ColumnDef<CircuitType>[]>(
     () => [
+      ...(canDelete ? [selectionColumn<CircuitType>()] : []),
       ...(humanIds ? [numidColumn<CircuitType>({ get: (r) => r.numid })] : []),
       {
         id: "name",
@@ -140,12 +143,21 @@ function CircuitTypesPage() {
       <DataTable
         data={filteredRows}
         columns={wiredColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="description"
         tableId="circuit-types"
       />
       <CircuitTypeDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <SafeBulkDeleteBar
+        selected={selectedRows}
+        endpoint="/api/circuit-types/"
+        noun={["circuit type", "circuit types"]}
+        invalidate={[["circuit-types"]]}
+        onCleared={() => setSelectedRows([])}
       />
     </ListPageShell>
   )

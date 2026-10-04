@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowRight, Search } from "lucide-react"
+import { ArrowRight, ScanSearch, Search } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
+import { macQuery } from "@/lib/mac-tracking"
 import type { SearchHit, SearchResponse } from "@/lib/api"
 import {
   recentHits,
@@ -143,18 +144,31 @@ export function SearchPalette() {
   const recents = recentHits()
   const queries = recentQueries()
   const settings = useSettingsHits(debounced)
+  // A whole MAC in any notation (#284): the server puts the port it sits on
+  // first, and this offers the MAC page itself.
+  const mac =
+    (!q.isPlaceholderData ? q.data?.mac : undefined) ?? macQuery(debounced)
+  const lookUpMac = () => {
+    if (!mac) return
+    rememberQuery(debounced)
+    close()
+    nav({ to: "/macs/$mac", params: { mac } })
+  }
 
   return (
     <>
       <Button
         variant="outline"
         size="sm"
-        className="h-8 w-40 min-w-0 shrink justify-start gap-2 text-xs text-muted-foreground sm:w-56"
+        // Its icon's width, grown into whatever room the site header has
+        // spare (up to 14rem) - so it narrows before anything else there does.
+        // The words and the shortcut clip, never wrap.
+        className="h-8 max-w-40 min-w-9 flex-[1_0_2.25rem] justify-start gap-2 overflow-hidden text-xs text-muted-foreground sm:max-w-56"
         onClick={() => setOpen(true)}
         aria-label="Search"
       >
         <Search className="h-3.5 w-3.5" />
-        <span className="flex-1 text-left">Search…</span>
+        <span className="min-w-0 flex-1 truncate text-left">Search…</span>
         <CommandShortcut className="font-mono text-[10px]">⌘K</CommandShortcut>
       </Button>
       <CommandDialog
@@ -171,7 +185,13 @@ export function SearchPalette() {
             onValueChange={setRaw}
             placeholder="Search - or narrow with type:device site:aarhus role:core tag:dc"
             onKeyDown={(e) => {
-              if (e.key === "Enter" && hits.length === 0 && raw.trim()) {
+              // A MAC query keeps its "Look up MAC" row for Enter.
+              if (
+                e.key === "Enter" &&
+                hits.length === 0 &&
+                !mac &&
+                raw.trim()
+              ) {
                 e.preventDefault()
                 seeAll()
               }
@@ -224,6 +244,7 @@ export function SearchPalette() {
             {debounced.length > 0 &&
               !q.isLoading &&
               hits.length === 0 &&
+              !mac &&
               settings.length === 0 && <CommandEmpty>No matches.</CommandEmpty>}
             {hits.length > 0 && (
               <CommandGroup heading="Results" className={GROUP_CLS}>
@@ -238,6 +259,21 @@ export function SearchPalette() {
                     <HitRow hit={h} />
                   </CommandItem>
                 ))}
+              </CommandGroup>
+            )}
+            {mac && (
+              <CommandGroup className={GROUP_CLS}>
+                <CommandItem
+                  value="mac-lookup"
+                  onSelect={lookUpMac}
+                  className={rowCls(0)}
+                  data-row=""
+                >
+                  <ScanSearch className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs">
+                    Look up MAC <span className="font-mono">{mac}</span>
+                  </span>
+                </CommandItem>
               </CommandGroup>
             )}
             {settings.length > 0 && (
@@ -340,6 +376,7 @@ function HitRow({
   }
 }) {
   const ctx = { context: hit.context ?? {}, subtitle: hit.subtitle }
+  const learned = learnedNote(hit)
   // Fixed columns so the eye scans down: type · name · status · details.
   return (
     <div className="grid min-w-0 flex-1 grid-cols-[6.5rem_1fr_auto] items-center gap-x-3 gap-y-0.5">
@@ -351,12 +388,37 @@ function HitRow({
         <SearchHitStatus hit={ctx} />
       </span>
       {/* Details wrap on their own line under the name - nothing is cut. */}
-      <SearchHitContext
-        hit={ctx}
-        max={4}
-        withStatus={false}
-        className="col-span-2 col-start-2"
-      />
+      {learned ? (
+        <span className="col-span-2 col-start-2 inline-flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+          <SearchHitContext hit={ctx} max={4} withStatus={false} />
+          <span className="text-[11px] whitespace-nowrap">
+            <span className="text-muted-foreground">MAC </span>
+            <span className="text-foreground/80">{learned}</span>
+          </span>
+        </span>
+      ) : (
+        <SearchHitContext
+          hit={ctx}
+          max={4}
+          withStatus={false}
+          className="col-span-2 col-start-2"
+        />
+      )}
     </div>
   )
+}
+
+/** The port a pasted MAC sits on (#284) says how: "learned here, VLAN 10"
+ * or "behind uplink" - its subtitle after the device name. */
+function learnedNote(hit: {
+  subtitle: string
+  context?: SearchHit["context"]
+}): string | null {
+  const ctx = hit.context ?? {}
+  if (typeof ctx.mac !== "string") return null
+  const device = typeof ctx.device === "string" ? ctx.device : ""
+  const prefix = `${device} · `
+  return device && hit.subtitle.startsWith(prefix)
+    ? hit.subtitle.slice(prefix.length)
+    : hit.subtitle
 }

@@ -256,11 +256,15 @@ def _location_subtree_ids(tenant, location_ids):
     return ids
 
 
-def devices_for_engine(engine):
+def devices_for_engine(engine, ids=None):
     """The tenant's devices whose resolved engine is ``engine`` - the candidates
     an Outpost should SNMP-poll. Narrowed to the engine's bound sites +
     location-subtrees, then each confirmed with ``engine_for_device`` (a nested,
-    more-specific binding could steal a device back to another engine)."""
+    more-specific binding could steal a device back to another engine).
+
+    ``ids`` (device UUIDs) narrows the candidates first, so a check of the few
+    devices an Outpost posted results for costs what they cost, not what every
+    device in its sites does (#293)."""
     from django.db.models import Q
 
     from api.models import Device
@@ -276,7 +280,9 @@ def devices_for_engine(engine):
     all_loc_ids = _location_subtree_ids(tenant, loc_ids) if loc_ids else set()
     candidates = Device.objects.filter(tenant=tenant).filter(
         Q(site_id__in=site_ids) | Q(location_id__in=all_loc_ids)
-    ).select_related("primary_ip")
+    ).select_related("primary_ip", "tenant")
+    if ids is not None:
+        candidates = candidates.filter(id__in=ids)
     return [d for d in candidates if engine_for_device(d).id == engine.id]
 
 

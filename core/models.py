@@ -461,6 +461,21 @@ class DeploymentSettings(TimestampedModel):
         "list for types that genuinely differ.",
     )
 
+    # ─── topology card lines ──────────────────────────────────────────────
+    topology_card_fields = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Ordered field keys a topology Diagram card shows under the "
+        "device name. Null = the built-in default; an empty list = name only.",
+    )
+    topology_card_role_overrides = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Per-role card-line lists keyed role:<slug>. A role that is "
+        "ABSENT inherits topology_card_fields; an empty list = name only.",
+    )
+
     # ─── outbound-connection allowlist (SSRF guard exceptions) ────────────
     # CIDRs/hosts the SSRF guard permits despite resolving to private space -
     # e.g. an internal NetBox for the importer, or an internal SMTP relay.
@@ -734,6 +749,16 @@ class DeploymentSettings(TimestampedModel):
         max_length=7, blank=True, default="#ffffff",
         help_text="Text colour of the port labels (#rrggbb).",
     )
+    # Port utilization counts physical interfaces and front ports. On, it
+    # counts virtual interfaces (SVIs, LAGs, loopbacks, tunnels) too - the
+    # device and stack cards, the Port utilization page, the Devices list,
+    # spec sheets and port-utilization alerts alike. Read it through
+    # core.effective_settings.port_count_virtual, never directly.
+    port_count_virtual = models.BooleanField(
+        default=False, db_default=False,
+        help_text="Port utilization counts virtual interfaces (SVIs, LAGs, "
+                  "loopbacks, tunnels) as ports.",
+    )
 
     # ─── in-app updates ──────────────────────────────────────────────────
     # Release repo Danbyte checks for updates. Blank = the official repo. The
@@ -785,6 +810,54 @@ class DeploymentSettings(TimestampedModel):
             obj.upgrade_notes_done = ids_up_to(system_version()["version"])
             obj.save(update_fields=["upgrade_notes_done"])
         return obj
+
+
+class Dashboard(TimestampedModel):
+    """A named dashboard: a widget layout with a scope and a time frame.
+
+    The home dashboard (``/``) stays each user's own layout; these are the
+    extra boards - "Aarhus DC", "Core SLA", the NOC wall. Private by default;
+    ``visibility`` shares it with the tenant or with named groups. Only the
+    owner edits it, and every widget loads its data with the *viewer's*
+    permissions, so a shared board never shows more than its viewer could
+    see anyway.
+
+    ``scope`` narrows every widget that reads the dashboard payload or the
+    monitoring figures: ``{"site": [ids], "region": [...], "role": [...],
+    "device_type": [...], "tag": [slugs], "sla": [agreement ids]}``.
+    """
+
+    from django.conf import settings as _settings
+
+    VISIBILITY = [("private", "Only me"), ("tenant", "Everyone in the tenant"),
+                  ("groups", "Chosen groups")]
+    FRAMES = [("24h", "24 hours"), ("7d", "7 days"), ("30d", "30 days"),
+              ("90d", "90 days")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="dashboards"
+    )
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=255, blank=True, default="")
+    owner = models.ForeignKey(
+        _settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="dashboards"
+    )
+    visibility = models.CharField(max_length=8, choices=VISIBILITY, default="private")
+    groups = models.ManyToManyField("auth.Group", blank=True, related_name="dashboards")
+    #: The same {v: 2, items: [...]} layout the home dashboard stores.
+    layout = models.JSONField(default=dict, blank=True)
+    scope = models.JSONField(default=dict, blank=True)
+    frame = models.CharField(max_length=4, choices=FRAMES, default="7d")
+    #: Seconds between refreshes; 0 = only when opened.
+    refresh_seconds = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [models.Index(fields=["tenant", "owner"])]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class SavedFilter(TimestampedModel):
@@ -1038,6 +1111,25 @@ class TenantSettings(TimestampedModel):
     override_floorplan_popover = models.BooleanField(default=False)
     floorplan_popover_fields = models.JSONField(default=list, blank=True)
     floorplan_popover_tile_overrides = models.JSONField(default=dict, blank=True)
+
+    # ─── topology card lines (its OWN override group) ──────────────────────
+    # Same reasoning as the popover group. Null fields = the built-in default.
+    override_topology_card = models.BooleanField(default=False)
+    topology_card_fields = models.JSONField(null=True, blank=True, default=None)
+    topology_card_role_overrides = models.JSONField(default=dict, blank=True)
+
+    # The saved view a bare /topology opens for everyone in the tenant; null =
+    # No view. Not an override group: there is no deployment-wide view to
+    # inherit. A pointer here rather than a flag on the view, so setting it
+    # never bumps the view's updated_at (its stale-save check); deleting the
+    # view clears it. Written through /api/topology-views/default/.
+    default_topology_view = models.ForeignKey(
+        "api.TopologyView",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
 
     # ─── site separation (its OWN override group, mirrors DeploymentSettings)
     # Same reasoning as the popover group: a tenant flipping separation must

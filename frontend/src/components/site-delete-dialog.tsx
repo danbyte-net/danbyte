@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidateSiteViews } from "@/lib/site-cache"
 
 export interface SiteDeleteDialogProps {
   site: Site | null
@@ -31,8 +32,7 @@ export function SiteDeleteDialog({
       api<void>(`/api/sites/${site!.id}/`, { method: "DELETE" }),
     onSuccess: () => {
       toast.success(`Deleted ${site!.name}`)
-      qc.invalidateQueries({ queryKey: ["sites"] })
-      qc.invalidateQueries({ queryKey: ["sites-picker"] })
+      invalidateSiteViews(qc)
       onOpenChange(false)
       onDeleted?.()
     },

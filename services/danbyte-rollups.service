@@ -1,0 +1,13 @@
+[Unit]
+Description=Danbyte monitoring rollups (hourly and daily check history)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py rollup_checks
+
+# Triggered every 5 minutes by danbyte-rollups.timer.
+# Logs: journalctl --user -fu danbyte-rollups

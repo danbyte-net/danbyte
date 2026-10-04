@@ -18,12 +18,7 @@ import type { KvRow } from "@/components/kv-card"
 import { LocalityBadge } from "@/components/locality-badge"
 import { QueryError } from "@/components/query-error"
 import { ManufacturerDeleteDialog } from "@/components/manufacturer-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { EmbeddedDeviceTypeTable } from "@/components/embedded-device-type-table"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -87,19 +82,7 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
           )}
         </>
       }
-      hero={
-        <DetailHero
-          title={m.name}
-          description={m.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Device types"
-              value={<span className="num">{m.device_type_count}</span>}
-            />
-          }
-        />
-      }
+      hero={<DetailHero title={m.name} description={m.description} />}
       tabs={[
         { value: "overview", label: "Overview" },
         {
@@ -147,7 +130,7 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
 }
 
 /** Manufacturer attributes that used to crowd the header, grouped into tables.
- * Only the name, description and device-type count stay up top. */
+ * Only the name and description stay up top. */
 function ManufacturerOverview({
   manufacturer: m,
 }: {
@@ -185,6 +168,10 @@ function ManufacturerOverview({
         dash
       ),
       copy: m.url || undefined,
+    },
+    {
+      label: "Device types",
+      value: <span className="num">{m.device_type_count}</span>,
     },
   ]
 

@@ -132,6 +132,11 @@ def state_payload(state, *, transition=None, sample=None) -> dict:
         "flapping_since": state.flapping_since.isoformat() if state.flapping_since else None,
         "last_detail": state.last_detail or {},
     }
+    # Set by an exclusion or an inclusion: other open pages re-read the
+    # address, since including it writes no transition to notice.
+    excluded = getattr(state, "_live_excluded", None)
+    if excluded is not None:
+        out["excluded"] = excluded
     if transition is not None:
         out["transition"] = {
             "from_status": transition.from_status,

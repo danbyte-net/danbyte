@@ -23,6 +23,7 @@ import {
   type MonitoringStats,
   type StatsHours,
 } from "@/lib/api"
+import { labelTicks } from "@/lib/chart-axis"
 import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -64,13 +65,19 @@ import {
 import type { ConfigTab } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 import { SourceBadge } from "@/components/monitoring/source-badge"
-import { SeriesLegend } from "@/components/monitoring/series-legend"
+import { ExploreView } from "@/components/monitoring/explore-view"
+import { LatencyByKindChart } from "@/components/monitoring/latency-by-kind"
+import { LatencyView } from "@/components/monitoring/latency-view"
+import { SlaList } from "@/components/monitoring/sla-list"
 import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
   | "overview"
   | "history"
   | "checks"
+  | "explore"
+  | "latency"
+  | "sla"
   | "flapping"
   | "templates"
   | "configuration"
@@ -107,8 +114,10 @@ const FILTER_KEYS = [
   "until",
   "strip",
   "flapping",
+  "excluded",
   "dow",
   "hour",
+  "group_by",
 ] as const
 type FilterKey = (typeof FILTER_KEYS)[number]
 
@@ -123,6 +132,9 @@ const VIEWS: MonitoringView[] = [
   "overview",
   "history",
   "checks",
+  "explore",
+  "latency",
+  "sla",
   "flapping",
   "templates",
   "configuration",
@@ -156,16 +168,6 @@ const STATUS_ORDER: CheckStatus[] = [
   "skipped",
   "unknown",
 ]
-
-const LATENCY_CONFIG = {
-  p50: { label: "Median", color: "var(--chart-1)" },
-  p95: { label: "95th percentile", color: "var(--chart-3)" },
-} satisfies ChartConfig
-const LATENCY_SERIES = (["p50", "p95"] as const).map((k) => ({
-  key: k,
-  label: LATENCY_CONFIG[k].label,
-  color: LATENCY_CONFIG[k].color,
-}))
 
 const ALERTS_CONFIG = {
   opened: { label: "Opened", color: "var(--color-red-500)" },
@@ -213,9 +215,6 @@ function MonitoringPage() {
   useEffect(() => setMounted(true), [])
 
   const [hours, setHours] = useState<StatsHours>(24)
-  const [hiddenLatency, setHiddenLatency] = useState<Set<string>>(
-    () => new Set()
-  )
   const stats = useQuery({
     queryKey: ["monitoring-stats", hours],
     queryFn: () =>
@@ -294,15 +293,12 @@ function MonitoringPage() {
   }))
   const windowLabel =
     hours === 24 ? "24 hours" : hours === 168 ? "7 days" : "30 days"
-  const latencyData = (d?.latency_series ?? []).map((p) => ({
-    ...p,
-    label:
-      d?.series_bucket === "day"
-        ? formatCustom(p.t, { month: "short", day: "numeric" })
-        : hours > 24
-          ? formatCustom(p.t, { weekday: "short", hour: "2-digit" })
-          : formatCustom(p.t, { hour: "2-digit" }),
-  }))
+  const latencyLabel = (t: string) =>
+    d?.series_bucket === "day"
+      ? formatCustom(t, { month: "short", day: "numeric" })
+      : hours > 24
+        ? formatCustom(t, { weekday: "short", hour: "2-digit" })
+        : formatCustom(t, { hour: "2-digit" })
   const alertsData = (d?.alerts_series ?? []).map((p) => ({
     ...p,
     label: formatCustom(p.t, { month: "short", day: "numeric" }),
@@ -313,19 +309,25 @@ function MonitoringPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/30">
-      <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border bg-background px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="flex items-center gap-2 text-base font-semibold">
+      {/* The view tabs take the room beside the title and wrap onto more
+          rows when they need them - never scrolled out of sight. */}
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2 lg:px-6">
+        <h1 className="flex shrink-0 items-center gap-2 text-base font-semibold">
           <Activity className="h-4 w-4 text-muted-foreground" />
           Monitoring
         </h1>
         <SegmentedTabs
-          className="ml-2"
+          className="ml-2 min-w-[min(100%,18rem)] flex-1"
+          wrap
           value={view}
           onValueChange={(v) => go({ view: v as MonitoringView })}
           items={[
             { value: "overview", label: "Overview" },
             { value: "history", label: "History" },
             { value: "checks", label: "Checks" },
+            { value: "explore", label: "Explore" },
+            { value: "latency", label: "Latency" },
+            { value: "sla", label: "SLAs" },
             ...(flaps.length > 0
               ? [{ value: "flapping", label: "Flapping", count: flaps.length }]
               : []),
@@ -351,6 +353,8 @@ function MonitoringPage() {
           view === "configuration" ||
           view === "history" ||
           view === "checks" ||
+          view === "explore" ||
+          view === "sla" ||
           view === "flapping"
             ? "flex min-h-0 flex-1 flex-col"
             : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
@@ -361,6 +365,9 @@ function MonitoringPage() {
         {view === "history" && <HistoryView />}
 
         {view === "checks" && <ChecksList />}
+        {view === "explore" && <ExploreView />}
+        {view === "latency" && <LatencyView />}
+        {view === "sla" && <SlaList />}
         {view === "flapping" && <ChecksList flappingOnly />}
 
         {view === "templates" && (
@@ -509,7 +516,8 @@ function MonitoringPage() {
                     >
                       <CartesianGrid vertical={false} />
                       <XAxis
-                        dataKey="label"
+                        dataKey="t"
+                        tickFormatter={labelTicks(seriesData, "t")}
                         tickLine={false}
                         axisLine={false}
                         tickMargin={8}
@@ -552,71 +560,24 @@ function MonitoringPage() {
                 <CardHeader>
                   <CardTitle>Latency</CardTitle>
                   <CardDescription>
-                    Median and 95th percentile across every check, per{" "}
+                    Median and 95th percentile per check kind, per{" "}
                     {d.series_bucket === "day" ? "day" : "bucket"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {!mounted || latencyData.length === 0 ? (
-                    <Placeholder
-                      h="h-[200px]"
-                      hint={`No latency recorded in the last ${windowLabel}.`}
-                    />
+                  {!mounted ? (
+                    <Placeholder h="h-[200px]" hint="" />
                   ) : (
-                    <ChartContainer
-                      config={LATENCY_CONFIG}
-                      className="aspect-auto h-[200px] w-full"
-                    >
-                      <LineChart
-                        accessibilityLayer
-                        data={latencyData}
-                        margin={{ left: 0, right: 12 }}
-                      >
-                        <CartesianGrid vertical={false} />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                          tickMargin={8}
-                          minTickGap={32}
+                    <LatencyByKindChart
+                      kinds={d.latency_by_kind ?? []}
+                      formatLabel={latencyLabel}
+                      empty={
+                        <Placeholder
+                          h="h-[200px]"
+                          hint={`No latency recorded in the last ${windowLabel}.`}
                         />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          width={56}
-                          tickFormatter={(v: number) => `${v} ms`}
-                        />
-                        <ChartTooltip
-                          cursor={false}
-                          content={<ChartTooltipContent indicator="line" />}
-                        />
-                        <Line
-                          dataKey="p95"
-                          type="monotone"
-                          stroke="var(--color-p95)"
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
-                          hide={hiddenLatency.has("p95")}
-                        />
-                        <Line
-                          dataKey="p50"
-                          type="monotone"
-                          stroke="var(--color-p50)"
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
-                          hide={hiddenLatency.has("p50")}
-                        />
-                      </LineChart>
-                    </ChartContainer>
-                  )}
-                  {latencyData.length > 0 && (
-                    <SeriesLegend
-                      items={LATENCY_SERIES}
-                      hidden={hiddenLatency}
-                      onChange={setHiddenLatency}
-                      className="mt-2"
+                      }
+                      chartClassName="h-[200px]"
                     />
                   )}
                 </CardContent>
@@ -647,7 +608,8 @@ function MonitoringPage() {
                       >
                         <CartesianGrid vertical={false} />
                         <XAxis
-                          dataKey="label"
+                          dataKey="t"
+                          tickFormatter={labelTicks(alertsData, "t")}
                           tickLine={false}
                           axisLine={false}
                           tickMargin={8}

@@ -36,6 +36,22 @@ class StaleValue(Exception):
         self.live_display = live_display
 
 
+ACCESS_NOT_PLANNED = "Users, groups and permissions are changed directly, not planned."
+
+
+def is_access_type(object_type: str) -> bool:
+    """Users, groups and permissions (``object_types.ACCESS_TYPES``).
+
+    They are never planned: applying writes through the target's serializer,
+    and for these that skips the deployment-admin gate their own endpoints
+    enforce - and staging needs no right on the target, so an Operator could
+    queue "make me an administrator" for an admin to click Apply.
+    """
+    from auth_api.object_types import WILDCARD_EXCLUDED
+
+    return (object_type or "").rsplit(".", 1)[-1].lower() in WILDCARD_EXCLUDED
+
+
 def model_for_label(object_type: str):
     try:
         return apps.get_model(object_type)
@@ -85,6 +101,9 @@ def apply_change(pc, request, *, force=False):
             if pc.state == PlannedChangeState.APPLIED
             else "This change was cancelled."
         )
+    # Also refuses a row staged before planning turned these types away.
+    if is_access_type(pc.object_type):
+        raise ValidationError(ACCESS_NOT_PLANNED)
     if pc.kind == PlannedChangeKind.CREATE:
         return _apply_create(pc, request)
     return _apply_update(pc, request, force=force)
@@ -246,8 +265,10 @@ def _journal(pc, request, obj, *, created=False):
 
 
 __all__ = [
+    "ACCESS_NOT_PLANNED",
     "StaleValue",
     "apply_change",
+    "is_access_type",
     "is_stale",
     "model_for_label",
     "resolve_target",

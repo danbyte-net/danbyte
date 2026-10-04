@@ -40,11 +40,15 @@ export class PlanStaged extends Error {
  *
  *  Deliberate absences: `api.cable`, whose payload carries `a`/`b` termination
  *  arrays rather than plain writable fields; anything whose "form" is a
- *  multi-step wizard; and users, groups and tags, whose integer primary keys a
- *  planned change cannot reference (`object_id` is a UUID column). */
+ *  multi-step wizard; tags, whose integer primary keys a planned change cannot
+ *  reference (`object_id` is a UUID column); and users, groups and
+ *  permissions, which the server refuses to plan - they are changed directly. */
 export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.aggregate",
   "api.asn",
+  "api.cabinet",
+  "api.cabinetrole",
+  "api.cabinettype",
   "api.circuit",
   "api.circuittermination",
   "api.circuittype",
@@ -133,7 +137,6 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "routing.isisinterface",
   "routing.eigrpinstance",
   "routing.eigrpinterface",
-  "auth_api.objectpermission",
   "core.tenant",
   "core.tenantgroup",
   "customization.customfield",

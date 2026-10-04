@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidateSiteViews } from "@/lib/site-cache"
 
 export function RegionDeleteDialog({
   item,
@@ -30,6 +31,7 @@ export function RegionDeleteDialog({
     onSuccess: () => {
       toast.success(`Deleted ${item!.name}`)
       qc.invalidateQueries({ queryKey: ["regions"] })
+      invalidateSiteViews(qc)
       onOpenChange(false)
       onDeleted?.()
     },

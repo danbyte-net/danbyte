@@ -13,12 +13,7 @@ import { DataTable } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
@@ -38,6 +33,8 @@ import { ConfigContextPanel } from "@/components/config-context-panel"
 import { ServicesPane } from "@/components/services-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
+import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { RoutingPanel } from "@/components/routing/device-routing-panel"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -79,6 +76,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "overview"
     | "components"
     | "services"
+    | "routing"
     | "monitoring"
     | "snmp"
     | "certificates"
@@ -150,39 +148,6 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           }
           tags={vm.tags.length > 0 && <TagList tags={vm.tags} />}
           description={vm.description}
-          statCols={3}
-          stats={
-            <>
-              <DetailStat
-                label="Cluster"
-                value={
-                  <Link
-                    to="/clusters/$id"
-                    params={{ id: vm.cluster.id }}
-                    className="link text-xs"
-                  >
-                    {vm.cluster.name}
-                  </Link>
-                }
-              />
-              <DetailStat
-                label="Primary IP"
-                value={
-                  vm.primary_ip ? (
-                    <Link
-                      to="/ips/$id"
-                      params={{ id: vm.primary_ip.id }}
-                      className="link font-mono text-[13px]"
-                    >
-                      {vm.primary_ip.ip_address}
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground">-</span>
-                  )
-                }
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -201,6 +166,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           count: vm.interface_count,
         },
         { value: "services", label: "Services", count: vm.service_count },
+        {
+          value: "routing",
+          label: "Routing",
+          count: vm.routing_count || undefined,
+        },
         { value: "monitoring", label: "Monitoring" },
         { value: "snmp", label: "SNMP" },
         {
@@ -221,6 +191,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       <DetailTab value="components">
         <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
       </DetailTab>
+      <DetailTab value="routing">
+        <RoutingPanel owner={{ kind: "vm", id: vm.id, name: vm.name }} />
+      </DetailTab>
       <DetailTab value="config">
         <ConfigContextPanel endpoint="virtual-machines" id={vm.id} />
       </DetailTab>
@@ -228,6 +201,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         <ServicesPane parent={{ kind: "vm", id: vm.id }} />
       </DetailTab>
       <DetailTab value="monitoring">
+        <div className="mb-6">
+          <ObjectSlaPanel objectType="api.virtualmachine" objectId={vm.id} />
+        </div>
         {vm.primary_ip ? (
           <IpMonitoring
             ip={{

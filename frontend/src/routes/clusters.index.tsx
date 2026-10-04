@@ -8,6 +8,10 @@ import { api, type Cluster, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildClusterColumns } from "@/components/columns/cluster-columns"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
@@ -33,11 +37,18 @@ function ClustersPage() {
 
   const handleDelete = useCallback((c: Cluster) => setDeleting(c), [])
 
+  const ids = useMemo(
+    () => (query.data?.results ?? []).map((r) => r.id),
+    [query.data]
+  )
+  const sla = useSlaStatus("cluster", ids)
+
   const columns = useMemo<ColumnDef<Cluster>[]>(
     () =>
       buildClusterColumns({
         selection: true,
         humanIds,
+        sla: { entries: sla.entries, frame: sla.frame },
         actions: {
           editTo: "/clusters/$id/edit",
           editParams: (c) => ({ id: c.id }),
@@ -46,7 +57,7 @@ function ClustersPage() {
           canDelete: () => canDelete,
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds]
+    [handleDelete, canEdit, canDelete, humanIds, sla.entries, sla.frame]
   )
 
   const allRows = query.data?.results ?? []
@@ -75,6 +86,7 @@ function ClustersPage() {
       }}
       actions={
         <>
+          <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="cluster" />
           {canAdd && (
             <Button size="sm" asChild>

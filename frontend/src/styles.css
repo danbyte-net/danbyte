@@ -34,6 +34,7 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-map-accent: var(--map-accent);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -60,6 +61,10 @@
   --popover-foreground: oklch(0.141 0.005 285.823);
   --primary: oklch(0.5 0.134 242.749);
   --primary-foreground: oklch(0.977 0.013 236.62);
+  /* The maps' accent: a trace's run, a selected line, the card a map is
+     about. The primary in light; lifted in dark (below), where the dark
+     primary all but vanishes on the canvas. */
+  --map-accent: var(--primary);
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
@@ -104,6 +109,8 @@
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.443 0.11 240.79);
   --primary-foreground: oklch(0.977 0.013 236.62);
+  /* sky-400: well past 3:1 on the dark map canvas. */
+  --map-accent: oklch(0.746 0.16 232.661);
   --secondary: oklch(0.274 0.006 286.033);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.274 0.006 286.033);
@@ -366,6 +373,30 @@
   color: var(--muted-foreground);
   font-size: 11px;
   font-family: var(--font-mono, monospace);
+}
+
+/* Speed labels on the site map's lines (#246): a chip centred on the line,
+   in a pane of its own above the lines and under the pins, taking no
+   clicks (speed-labels.ts picks which lines get one). */
+.sm-speed-anchor {
+  background: transparent;
+  border: none;
+}
+.sm-speed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Label declutter (full map only - the container carries .sm-zl). Name chips
@@ -663,6 +694,54 @@
 }
 [data-lod="2"] .topo-portname {
   visibility: hidden;
+}
+
+/* A map's lines in dark mode: React Flow's dark default (#3e3e3e) is
+   about 1.6:1 on its canvas; zinc-500 clears the 3:1 a line needs. A line
+   with a color of its own keeps it. */
+[data-lod] .react-flow.dark {
+  --xy-edge-stroke-default: #71717b;
+}
+
+/* Diagram links. End labels - a port name just past its nub, then the
+   end's addresses - sit ON their line, which breaks for them: a box in the
+   canvas's own colour behind the text (React Flow's dark canvas, the page
+   in light). They go first as the map zooms out (data-ports="off", below
+   0.55), taking the break with them. The mid-line chip (a bundle's count,
+   the link's subnet) is portalled out of the edge, so it carries its own
+   hover flag; one with no free spot on its line (crowded) shows on hover
+   only. Far out, the card lines hide too - the card keeps its size, so
+   nothing moves. */
+.topo-endlabel {
+  pointer-events: none;
+}
+.topo-endlabel text {
+  font-size: 9px;
+  fill: var(--muted-foreground);
+  /* Unhinted, so the text is as wide as it was measured at every zoom and
+     the break round it stays even. */
+  text-rendering: geometricPrecision;
+}
+.topo-endlabel rect {
+  fill: var(--background);
+}
+.react-flow.dark .topo-endlabel rect {
+  fill: var(--xy-background-color, var(--xy-background-color-default));
+}
+[data-ports="off"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
+[data-lod="1"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
+[data-lod="2"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
+[data-lod="2"] .topo-midlabel:not([data-hot]),
+.topo-midlabel[data-crowded]:not([data-hot]) {
+  display: none;
+}
+[data-lod="2"] .topo-cardline {
+  visibility: hidden;
+}
+/* A hovered or selected link is raised over the others; its chip rises
+   with it, or the raised line would strike through it. */
+.topo-midlabel[data-hot] {
+  z-index: 1001;
 }
 
 /* Cable connector dot. Sits fully outside its port cell so the circle is

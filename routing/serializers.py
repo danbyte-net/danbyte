@@ -12,7 +12,18 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from api.models import ASN, L2VPN, VLAN, VRF, Device, Interface, IPAddress, Prefix
+from api.models import (
+    ASN,
+    L2VPN,
+    VLAN,
+    VRF,
+    Device,
+    Interface,
+    IPAddress,
+    Prefix,
+    VirtualMachine,
+    VMInterface,
+)
 from api.serializers import (
     CustomFieldsSerializerMixin,
     DeviceMiniSerializer,
@@ -28,6 +39,7 @@ from api.serializers import (
     TenantScopedPrimaryKeyRelatedField,
     VLANMiniSerializer,
     VRFMiniSerializer,
+    detail_only,
 )
 from core.models import Tag
 
@@ -90,6 +102,54 @@ def _rule_error(i: int, detail) -> serializers.ValidationError:
         for m in (detail if isinstance(detail, list) else [detail]):
             lines.append(f"Rule {i + 1}: {m}")
     return serializers.ValidationError({"rules": lines})
+
+
+class VMMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = VirtualMachine
+        fields = ["id", "name"]
+
+
+class VMInterfaceMiniSerializer(NumIdModelSerializer):
+    """A VM's port with its VM - the ``InterfaceMiniSerializer`` shape."""
+
+    vm = VMMiniSerializer(read_only=True)
+
+    class Meta:
+        model = VMInterface
+        fields = ["id", "name", "vm"]
+
+
+class _OwnerFields(serializers.Serializer):
+    """The device or VM a routing row runs on (#217). Exactly one is set;
+    the model's ``clean()`` says so when a write gives both or neither."""
+
+    device = DeviceMiniSerializer(read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    virtual_machine = VMMiniSerializer(read_only=True)
+    virtual_machine_id = TenantScopedPrimaryKeyRelatedField(
+        source="virtual_machine", queryset=VirtualMachine.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    site = SiteMiniSerializer(source="owner.site", read_only=True)
+
+
+_OWNER_FIELDS = ["device", "device_id", "virtual_machine", "virtual_machine_id", "site"]
+
+
+def _owner_ref(obj) -> dict | None:
+    """``{"id", "name", "kind"}`` for the box a routing row runs on."""
+    if obj is None:
+        return None
+    if obj.device_id:
+        return {"id": str(obj.device_id), "name": obj.device.name, "kind": "device"}
+    vm_id = getattr(obj, "virtual_machine_id", None)
+    if vm_id:
+        return {"id": str(vm_id), "name": obj.virtual_machine.name, "kind": "vm"}
+    return None
 
 
 class _TagsMixin(TaggableSerializerMixin, serializers.Serializer):
@@ -332,12 +392,10 @@ class _ListSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSeriali
     rules = serializers.SerializerMethodField()
     rule_count = serializers.SerializerMethodField()
 
+    @detail_only([])
     def get_rules(self, obj) -> list:
         # The list page does not draw rules; the detail does. Cheap either
         # way, but a 300-list page should not carry 3,000 rule rows.
-        view = self.context.get("view")
-        if view is not None and getattr(view, "action", None) == "list":
-            return []
         return self.rule_serializer(obj.rules.all(), many=True, context=self.context).data
 
     def get_rule_count(self, obj) -> int:
@@ -494,15 +552,12 @@ class RoutingKeychainSerializer(
 # ─── Static routes ───────────────────────────────────────────────────────────
 
 class StaticRouteSerializer(
-    CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin, NumIdModelSerializer
+    _OwnerFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    NumIdModelSerializer,
 ):
     cf_model = "staticroute"
 
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
-    device = DeviceMiniSerializer(read_only=True)
-    device_id = TenantScopedPrimaryKeyRelatedField(
-        source="device", queryset=Device.objects.all(), write_only=True,
-    )
     vrf = VRFMiniSerializer(read_only=True)
     vrf_id = TenantScopedPrimaryKeyRelatedField(
         source="vrf", queryset=VRF.objects.all(),
@@ -516,6 +571,11 @@ class StaticRouteSerializer(
     next_hop_interface = InterfaceMiniSerializer(read_only=True)
     next_hop_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="next_hop_interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    next_hop_vm_interface = VMInterfaceMiniSerializer(read_only=True)
+    next_hop_vm_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="next_hop_vm_interface", queryset=VMInterface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
     next_hop_vrf = VRFMiniSerializer(read_only=True)
@@ -545,9 +605,10 @@ class StaticRouteSerializer(
         # The path constraint spans nullable columns; DRF's validator would
         # make them all required. The DB answers a duplicate with a 409.
         validators = []
-        fields = ["id", "numid", "device", "device_id", "vrf", "vrf_id",
+        fields = ["id", "numid", *_OWNER_FIELDS, "vrf", "vrf_id",
                   "prefix", "prefix_obj", "prefix_obj_id", "kind", "kind_display",
                   "next_hop", "next_hop_interface", "next_hop_interface_id",
+                  "next_hop_vm_interface", "next_hop_vm_interface_id",
                   "next_hop_vrf", "next_hop_vrf_id",
                   "distance", "metric", "tag", "bfd",
                   "status", "status_id", "description",
@@ -602,9 +663,11 @@ class _ParentRefMixin:
     def _parent_ref(self, obj):
         parent = getattr(obj, self.parent_field)
         ref = {"id": str(parent.id)}
-        dev = getattr(parent, "device", None)
-        if dev is not None:
-            ref["device"] = {"id": str(dev.id), "name": dev.name}
+        owner = _owner_ref(parent)
+        if owner is not None and owner["kind"] == "device":
+            ref["device"] = {"id": owner["id"], "name": owner["name"]}
+        elif owner is not None:
+            ref["virtual_machine"] = {"id": owner["id"], "name": owner["name"]}
         for attr in ("process_id", "process", "asn"):
             if hasattr(parent, attr):
                 ref["name"] = str(getattr(parent, attr))
@@ -726,16 +789,11 @@ class BGPAddressFamilySerializer(_ParentRefMixin, _ChildRowSerializer):
 
 
 class BGPInstanceSerializer(
-    _BFDProfileFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
-    NumIdModelSerializer,
+    _OwnerFields, _BFDProfileFields, CustomFieldsSerializerMixin, StatusSerializerMixin,
+    _TagsMixin, NumIdModelSerializer,
 ):
     cf_model = "bgpinstance"
 
-    device = DeviceMiniSerializer(read_only=True)
-    site = SiteMiniSerializer(source="device.site", read_only=True)
-    device_id = TenantScopedPrimaryKeyRelatedField(
-        source="device", queryset=Device.objects.all(), write_only=True,
-    )
     vrf = VRFMiniSerializer(read_only=True)
     vrf_id = TenantScopedPrimaryKeyRelatedField(
         source="vrf", queryset=VRF.objects.all(),
@@ -778,7 +836,7 @@ class BGPInstanceSerializer(
 
     class Meta:
         model = BGPInstance
-        fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id", "asn", "asn_id",
+        fields = ["id", "numid", *_OWNER_FIELDS, "vrf", "vrf_id", "asn", "asn_id",
                   "router_id", "cluster_id", "graceful_restart",
                   "distance_ebgp", "distance_ibgp", "distance_local",
                   "bestpath_multipath_relax",
@@ -793,12 +851,13 @@ class BGPInstanceSerializer(
 
 class BGPInstanceMiniSerializer(NumIdModelSerializer):
     device = DeviceMiniSerializer(read_only=True)
+    virtual_machine = VMMiniSerializer(read_only=True)
     vrf = VRFMiniSerializer(read_only=True)
     asn = ASNMiniSerializer(read_only=True)
 
     class Meta:
         model = BGPInstance
-        fields = ["id", "device", "vrf", "asn"]
+        fields = ["id", "device", "virtual_machine", "vrf", "asn"]
 
 
 class _PeerKnobFields(serializers.Serializer):
@@ -888,6 +947,9 @@ class BGPSessionSerializer(
     NumIdModelSerializer,
 ):
     cf_model = "bgpsession"
+    # The resolved knob set the session page draws, not one value a column
+    # can show (see api.list_fields).
+    list_columns_exclude = ("effective",)
 
     instance = BGPInstanceMiniSerializer(read_only=True)
     instance_id = TenantScopedPrimaryKeyRelatedField(
@@ -913,6 +975,11 @@ class BGPSessionSerializer(
         source="interface", queryset=Interface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    vm_interface = VMInterfaceMiniSerializer(read_only=True)
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_interface", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     remote_address_obj = IPMiniSerializer(read_only=True)
     peer_device = DeviceMiniSerializer(read_only=True)
     peer_device_id = TenantScopedPrimaryKeyRelatedField(
@@ -927,8 +994,12 @@ class BGPSessionSerializer(
         p = obj.peer_session if obj.peer_session_id else None
         if p is None:
             return None
-        return {"id": str(p.id), "device": {"id": str(p.instance.device_id),
-                                            "name": p.instance.device.name}}
+        owner = _owner_ref(p.instance)
+        ref = {"id": str(p.id)}
+        if owner is not None:
+            key = "device" if owner["kind"] == "device" else "virtual_machine"
+            ref[key] = {"id": owner["id"], "name": owner["name"]}
+        return ref
 
     def get_effective(self, obj) -> dict:
         eff = obj.effective()
@@ -980,7 +1051,8 @@ class BGPSessionSerializer(
                   "peer_group", "peer_group_id",
                   "remote_asn", "remote_asn_mode", "local_asn", "local_asn_id",
                   "local_address", "local_address_id",
-                  "remote_address", "interface", "interface_id", "remote_address_obj",
+                  "remote_address", "interface", "interface_id",
+                  "vm_interface", "vm_interface_id", "remote_address_obj",
                   "peer_device", "peer_device_id", "peer_session",
                   *_KNOB_FIELDS, "effective",
                   "status", "status_id", "description",
@@ -1023,7 +1095,7 @@ class OSPFAreaMiniSerializer(NumIdModelSerializer):
 
 
 class _RedistributingInstanceSerializer(
-    _BFDProfileFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    _OwnerFields, _BFDProfileFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
     NumIdModelSerializer,
 ):
     """An IGP instance: nested read of its interfaces and redistributions,
@@ -1031,11 +1103,6 @@ class _RedistributingInstanceSerializer(
 
     parent_key = ""
 
-    device = DeviceMiniSerializer(read_only=True)
-    site = SiteMiniSerializer(source="device.site", read_only=True)
-    device_id = TenantScopedPrimaryKeyRelatedField(
-        source="device", queryset=Device.objects.all(), write_only=True,
-    )
     vrf = VRFMiniSerializer(read_only=True)
     vrf_id = TenantScopedPrimaryKeyRelatedField(
         source="vrf", queryset=VRF.objects.all(),
@@ -1120,7 +1187,13 @@ class OSPFInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSeria
     )
     interface = InterfaceMiniSerializer(read_only=True)
     interface_id = TenantScopedPrimaryKeyRelatedField(
-        source="interface", queryset=Interface.objects.all(), write_only=True,
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vm_interface = VMInterfaceMiniSerializer(read_only=True)
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_interface", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
     )
     area = OSPFAreaMiniSerializer(read_only=True)
     area_id = TenantScopedPrimaryKeyRelatedField(
@@ -1134,7 +1207,8 @@ class OSPFInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSeria
 
     class Meta:
         model = OSPFInterface
-        fields = ["id", "instance", "instance_id", "interface", "interface_id", "area", "area_id",
+        fields = ["id", "instance", "instance_id", "interface", "interface_id",
+                  "vm_interface", "vm_interface_id", "area", "area_id",
                   "cost", "network_type", "passive", "priority", "hello", "dead",
                   "bfd", "bfd_profile", "bfd_profile_id", "mtu_ignore",
                   "authentication", "keychain", "keychain_id", "extra"]
@@ -1149,7 +1223,7 @@ class OSPFInstanceSerializer(_RedistributingInstanceSerializer):
 
     class Meta:
         model = OSPFInstance
-        fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
+        fields = ["id", "numid", *_OWNER_FIELDS, "vrf", "vrf_id",
                   "process_id", "version", "router_id", "reference_bandwidth",
                   "passive_by_default", "default_originate", "bfd",
                   "bfd_profile", "bfd_profile_id",
@@ -1174,7 +1248,13 @@ class ISISInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSeria
     )
     interface = InterfaceMiniSerializer(read_only=True)
     interface_id = TenantScopedPrimaryKeyRelatedField(
-        source="interface", queryset=Interface.objects.all(), write_only=True,
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vm_interface = VMInterfaceMiniSerializer(read_only=True)
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_interface", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
     )
     keychain = RoutingKeychainMiniSerializer(read_only=True)
     keychain_id = TenantScopedPrimaryKeyRelatedField(
@@ -1197,7 +1277,8 @@ class ISISInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSeria
 
     class Meta:
         model = ISISInterface
-        fields = ["id", "instance", "instance_id", "interface", "interface_id", "families",
+        fields = ["id", "instance", "instance_id", "interface", "interface_id",
+                  "vm_interface", "vm_interface_id", "families",
                   "level", "metric", "metric_l2", "network_type", "passive",
                   "hello_interval", "hello_multiplier", "bfd", "bfd_profile", "bfd_profile_id",
                   "authentication", "keychain", "keychain_id", "extra"]
@@ -1236,7 +1317,7 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
 
     class Meta:
         model = ISISInstance
-        fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
+        fields = ["id", "numid", *_OWNER_FIELDS, "vrf", "vrf_id",
                   "process", "net", "router_id", "level", "metric_style", "bfd",
                   "bfd_profile", "bfd_profile_id", "authentication", "keychain", "keychain_id",
                   "lsp_gen_interval", "spf_interval", "lsp_mtu",
@@ -1266,7 +1347,13 @@ class EIGRPInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSeri
     )
     interface = InterfaceMiniSerializer(read_only=True)
     interface_id = TenantScopedPrimaryKeyRelatedField(
-        source="interface", queryset=Interface.objects.all(), write_only=True,
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vm_interface = VMInterfaceMiniSerializer(read_only=True)
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_interface", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
     )
     keychain = RoutingKeychainMiniSerializer(read_only=True)
     keychain_id = TenantScopedPrimaryKeyRelatedField(
@@ -1279,7 +1366,8 @@ class EIGRPInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSeri
 
     class Meta:
         model = EIGRPInterface
-        fields = ["id", "instance", "instance_id", "interface", "interface_id", "passive", "bfd",
+        fields = ["id", "instance", "instance_id", "interface", "interface_id",
+                  "vm_interface", "vm_interface_id", "passive", "bfd",
                   "bfd_profile", "bfd_profile_id",
                   "hello_interval", "hold_time", "bandwidth_percent", "split_horizon",
                   "summary_addresses", "authentication", "keychain", "keychain_id", "extra"]
@@ -1294,7 +1382,7 @@ class EIGRPInstanceSerializer(_RedistributingInstanceSerializer):
 
     class Meta:
         model = EIGRPInstance
-        fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
+        fields = ["id", "numid", *_OWNER_FIELDS, "vrf", "vrf_id",
                   "asn", "name", "router_id", "k_values", "variance", "maximum_paths",
                   "passive_by_default", "stub", "bfd", "bfd_profile", "bfd_profile_id",
                   "redistributions", "interfaces", "interface_count",

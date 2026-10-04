@@ -16,12 +16,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ExportTemplateDeleteDialog } from "@/components/export-template-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 
@@ -103,7 +98,6 @@ function Body({ template: t }: { template: ExportTemplate }) {
   const { canDo } = useMe()
   const [deleting, setDeleting] = useState<ExportTemplate | null>(null)
   const goBack = useCallback(() => nav({ to: "/export-templates" }), [nav])
-  const lines = t.template_code ? t.template_code.split("\n").length : 0
 
   return (
     <DetailShell
@@ -147,18 +141,6 @@ function Body({ template: t }: { template: ExportTemplate }) {
             </span>
           }
           description={t.description}
-          stats={
-            <>
-              <DetailStat
-                label="Lines"
-                value={<span className="num">{lines}</span>}
-              />
-              <DetailStat
-                label="Delivery"
-                value={t.as_attachment ? "Attachment" : "Inline"}
-              />
-            </>
-          }
         />
       }
       tabs={[
@@ -190,6 +172,7 @@ function Body({ template: t }: { template: ExportTemplate }) {
 
 function TemplateOverview({ template: t }: { template: ExportTemplate }) {
   const { humanIds } = useMe()
+  const lines = t.template_code ? t.template_code.split("\n").length : 0
 
   const details: KvRow[] = [
     ...(humanIds && t.numid != null
@@ -221,6 +204,7 @@ function TemplateOverview({ template: t }: { template: ExportTemplate }) {
         dash
       ),
     },
+    { label: "Lines", value: <span className="num">{lines}</span> },
   ]
 
   const output: KvRow[] = [

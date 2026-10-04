@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { invalidatePortCounts } from "@/lib/port-utilization"
 
 export interface InterfaceDeleteDialogProps {
   iface: Interface | null
@@ -32,6 +33,7 @@ export function InterfaceDeleteDialog({
     onSuccess: () => {
       toast.success(`Deleted ${iface!.name}`)
       qc.invalidateQueries({ queryKey: ["interfaces"] })
+      invalidatePortCounts(qc)
       onOpenChange(false)
       onDeleted?.()
     },

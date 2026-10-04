@@ -21,6 +21,7 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { RevealPskButton } from "@/components/reveal-psk-button"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
+import { PMF_LABEL } from "@/lib/wifi-security"
 
 const OBJECT_TYPE = "api.wirelesslan"
 
@@ -88,27 +89,24 @@ function Body({ wlan: w }: { wlan: WirelessLAN }) {
         </>
       }
       hero={
-        <>
-          <DetailHero
-            title={w.ssid}
-            mono
-            badges={<StatusBadge status={w.status} />}
-            subtitle={
-              w.group ? (
-                <Link
-                  to="/wireless-lan-groups/$id"
-                  params={{ id: w.group.id }}
-                  className="link"
-                >
-                  {w.group.name}
-                </Link>
-              ) : undefined
-            }
-            tags={w.tags.length > 0 && <TagList tags={w.tags} />}
-            description={w.description}
-          />
-          <CustomFieldValues model="wirelesslan" values={w.custom_fields} />
-        </>
+        <DetailHero
+          title={w.ssid}
+          mono
+          badges={<StatusBadge status={w.status} />}
+          subtitle={
+            w.group ? (
+              <Link
+                to="/wireless-lan-groups/$id"
+                params={{ id: w.group.id }}
+                className="link"
+              >
+                {w.group.name}
+              </Link>
+            ) : undefined
+          }
+          tags={w.tags.length > 0 && <TagList tags={w.tags} />}
+          description={w.description}
+        />
       }
       tabs={[
         { value: "overview", label: "Overview" },
@@ -211,18 +209,16 @@ function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
       ),
     },
     {
-      label: "Authentication",
+      label: "Security mode",
       value: w.auth_type ? w.auth_type_display : dash,
     },
     {
       label: "Cipher",
-      value: w.auth_cipher ? (
-        <span className="font-mono text-[13px]">
-          {w.auth_cipher.toUpperCase()}
-        </span>
-      ) : (
-        dash
-      ),
+      value: w.auth_cipher ? w.auth_cipher_display : dash,
+    },
+    {
+      label: "PMF",
+      value: w.pmf ? PMF_LABEL[w.pmf] : dash,
     },
     {
       label: "Pre-shared key",
@@ -239,6 +235,11 @@ function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard title="Wireless LAN" rows={details} />
+        <CustomFieldValues
+          model="wirelesslan"
+          values={w.custom_fields}
+          layout="cards"
+        />
         <KvCard title="Network" rows={network} />
         <KvCard title="Record" rows={record} />
       </div>

@@ -180,7 +180,35 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"visibility": ["You cannot publish a script to everyone."]}
                 )
+        if request is not None:
+            self._check_share_targets(attrs, request)
         return attrs
+
+    def _check_share_targets(self, attrs, request):
+        """Sharing names people and groups of the script's tenant - the ones
+        its pickers list. Someone already on the list stays even if they have
+        since left; nobody new comes from outside."""
+        from api.views import _get_active_tenant
+        from auth_api.people_api import tenant_groups, tenant_members
+
+        tenant = getattr(self.instance, "tenant", None) or _get_active_tenant(request)
+        if tenant is None:
+            return
+        user = request.user
+        errors = {}
+        for field, allowed in (
+            ("shared_users", lambda ids: tenant_members(tenant, user).filter(pk__in=ids)),
+            ("shared_groups", lambda ids: tenant_groups(tenant, user).filter(pk__in=ids)),
+        ):
+            if field not in attrs:
+                continue
+            wanted = {o.pk for o in attrs[field]}
+            if self.instance is not None:
+                wanted -= set(getattr(self.instance, field).values_list("pk", flat=True))
+            if wanted and wanted - set(allowed(wanted).values_list("pk", flat=True)):
+                errors[field] = ["Share only with people and groups of this tenant."]
+        if errors:
+            raise serializers.ValidationError(errors)
 
 
 class ScriptOutputSerializer(serializers.ModelSerializer):

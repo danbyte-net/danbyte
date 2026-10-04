@@ -40,15 +40,45 @@ def resolve_vid(
     )
     if exclude_group_prefix:
         rows = rows.exclude(group__slug__startswith=exclude_group_prefix)
-    rows = list(rows)
+    return _pick(
+        list(rows),
+        site.id if site is not None else None,
+        cluster.id if cluster is not None else None,
+    )
+
+
+def resolve_vids(tenant, pairs, *, exclude_group_prefix: str = "") -> dict:
+    """:func:`resolve_vid` for many ``(site_id, vid)`` pairs in one query -
+    ``{(site_id, vid): VLAN | None}``, ``None`` wherever the single form would
+    say ``"none"`` or ``"ambiguous"``. Read-only: a table of learned MACs
+    names the VLAN a VID means at each switch's site, and never mints one."""
+    pairs = {(s, v) for s, v in pairs if v}
+    if not pairs:
+        return {}
+    rows = VLAN.objects.filter(
+        tenant=tenant, vlan_id__in={vid for _s, vid in pairs}
+    ).select_related("group")
+    if exclude_group_prefix:
+        rows = rows.exclude(group__slug__startswith=exclude_group_prefix)
+    by_vid: dict = {}
+    for v in rows:
+        by_vid.setdefault(v.vlan_id, []).append(v)
+    return {
+        (site_id, vid): _pick(by_vid.get(vid, []), site_id, None)[0]
+        for site_id, vid in pairs
+    }
+
+
+def _pick(rows, site_id, cluster_id) -> tuple[VLAN | None, str]:
+    """The resolution rule over one VID's candidate rows."""
     if not rows:
         return None, "none"
 
     # 1. The site's own ungrouped VLAN - the common case, and unambiguous by
     #    construction: the constraint allows exactly one per site.
-    if site is not None:
+    if site_id is not None:
         for v in rows:
-            if v.group_id is None and v.site_id == site.id:
+            if v.group_id is None and v.site_id == site_id:
                 return v, "site"
 
     # 2. A group scoped to this site (or this cluster). A group spans sites
@@ -58,8 +88,8 @@ def resolve_vid(
         for v in rows
         if v.group_id is not None
         and (
-            (site is not None and v.group.site_id == site.id)
-            or (cluster is not None and v.group.cluster_id == cluster.id)
+            (site_id is not None and v.group.site_id == site_id)
+            or (cluster_id is not None and v.group.cluster_id == cluster_id)
         )
     ]
     if len(scoped) == 1:

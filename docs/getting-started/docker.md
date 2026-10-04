@@ -263,13 +263,18 @@ layers apart.
 ```bash
 git -C /opt/danbyte fetch --tags
 git -C /opt/danbyte checkout <version>   # e.g. v0.12.0
-docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env build
+docker compose -f docker-compose.prod.yml --env-file .env stop scheduler workers fastlane ws
+docker compose -f docker-compose.prod.yml --env-file .env up -d
 ```
 
-`--build` is what makes this a real upgrade: it **rebuilds the images** from the
-checked-out source, so the recreated containers actually run the new code. A
-plain `up -d` without `--build` would relaunch the *old* image. The backend
-re-runs migrations on start; the named volumes keep your data.
+`build` is what makes this a real upgrade: it **rebuilds the images** from the
+checked-out source, so the recreated containers actually run the new code. The
+backend migrates on start, before it serves; stopping the scheduler, workers,
+fast lane and websockets first keeps the previous release's processes from
+running against the database while it does (a plain `up -d --build` recreates
+them one by one, some after the migration has started). `up -d` then starts
+them all on the new image. The named volumes keep your data.
 
 Take a backup first: **Settings → Backups → Back up now** writes an encrypted
 archive to the `backups` volume (`/app/backups` in `backend` and `workers`).

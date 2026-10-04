@@ -35,6 +35,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.field_labels import label_for_field as _label_for_field
 from auth_api import rbac
 
 # Long taxonomies already published by /api/dcim/choices/ - the frontend fetches
@@ -75,28 +76,6 @@ SUGGESTION_SOURCES: dict[tuple[str, str], callable] = {
     ("api.interface", "speed"): _speed_suggestions,
     ("api.vminterface", "speed"): _speed_suggestions,
 }
-
-# verbose_name is right almost everywhere; these read badly capitalised, and
-# acronyms lose their case through `verbose_name.capitalize()`.
-LABEL_OVERRIDES: dict[tuple[str, str], str] = {
-    ("api.interface", "mode"): "802.1Q mode",
-    ("api.vminterface", "mode"): "802.1Q mode",
-    ("api.interface", "mtu"): "MTU",
-    ("api.vminterface", "mtu"): "MTU",
-    ("api.interface", "mgmt_only"): "Management only",
-    ("api.interface", "combo_group"): "Combo group",
-    ("api.interface", "poe_mode"): "PoE mode",
-    ("api.interface", "poe_type"): "PoE type",
-    ("api.interface", "vlan"): "Untagged VLAN",
-    ("api.vminterface", "vlan"): "Untagged VLAN",
-}
-
-# Field names whose verbose_name is an acronym, on every model.
-ACRONYM_LABELS: dict[str, str] = {
-    "vlan": "VLAN", "vrf": "VRF", "mtu": "MTU", "asn": "ASN", "rir": "RIR",
-    "ip": "IP", "vm": "VM",
-}
-
 
 @dataclass(frozen=True)
 class EditableField:
@@ -160,17 +139,6 @@ def _routed_viewsets():
         if queryset is None:
             continue
         yield queryset.model, viewset
-
-
-def _label_for_field(label: str, f) -> str:
-    override = LABEL_OVERRIDES.get((label, f.name))
-    if override:
-        return override
-    acronym = ACRONYM_LABELS.get(f.name)
-    if acronym:
-        return acronym
-    verbose = str(getattr(f, "verbose_name", "") or f.name.replace("_", " "))
-    return verbose[:1].upper() + verbose[1:]
 
 
 def _endpoint_map() -> dict[str, str]:

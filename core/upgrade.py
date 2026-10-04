@@ -1,9 +1,14 @@
-"""In-app upgrade - launch the detached upgrader and report its progress.
+"""In-app upgrade - launch the upgrader and report its progress.
 
-The web process can't update itself and restart itself, so the button launches
-``scripts/danbyte-upgrade.sh`` as a **transient systemd user unit**
-(``systemd-run --user``) that outlives the restart. It writes progress to a JSON
-file the UI polls (tolerating the brief window where the backend is down).
+The web process can't update itself and restart itself, so the button (and the
+auto-upgrade timer, and ``manage.py start_upgrade``) launches
+``scripts/danbyte-upgrade.sh`` or ``scripts/danbyte-upgrade-bundle.sh`` as the
+**transient systemd user unit** ``danbyte-upgrade.service``, which outlives the
+restart of every service. That launcher belongs to the running release; it
+fetches the target and hands over to the target's own
+``scripts/upgrade/stage.sh``, which stops the services, swaps, migrates,
+verifies and starts them again - or puts everything back. Progress lands in a
+JSON file the UI polls (tolerating the window where the backend is down).
 """
 from __future__ import annotations
 
@@ -37,6 +42,14 @@ BUNDLE_SCRIPT = settings.BASE_DIR / "scripts" / "danbyte-upgrade-bundle.sh"
 BUNDLE_UPLOAD = settings.BASE_DIR / ".upgrade-bundle.tar.gz"
 LOCK_FILE = settings.BASE_DIR / ".upgrade.lock"
 LOCK_GUARD_FILE = settings.BASE_DIR / ".upgrade.lock.guard"
+#: Where the stage keeps its journal: beside the app on the same filesystem,
+#: or inside it when the app directory is a mount of its own.
+UPGRADE_ROOTS = (
+    settings.BASE_DIR.parent / ".danbyte-upgrade",
+    settings.BASE_DIR / ".danbyte-upgrade",
+)
+#: The stage contract this release's launchers speak (scripts/upgrade/STAGE_API).
+STAGE_API = 1
 
 # A just-launched unit can take a moment to become visible to systemd. Likewise,
 # a worker can die between creating the lock and recording the launch details.
@@ -283,6 +296,8 @@ def _acquire_upgrade_lock() -> str | None:
         "phase": "preparing",
         "acquired_at": time.time(),
     }
+    if _upgrade_unfinished():
+        return None
     with _upgrade_lock_guard():
         current = _read_lock_unlocked()
         if current is not None:
@@ -350,8 +365,18 @@ def _systemd_env() -> dict:
     return env
 
 
+def _upgrade_unfinished() -> bool:
+    """A stage died part-way and its recovery has not finished yet: the
+    journal's marker is still there. Until it is gone nothing may start an
+    upgrade, restart a service or clear the lock - the recovery unit (or
+    ``danbyte-admin upgrade recover``) owns the install."""
+    return any((root / "active").exists() for root in UPGRADE_ROOTS)
+
+
 def _upgrade_running() -> bool:
     """Report lock-backed launch state, with legacy status fallback."""
+    if _upgrade_unfinished():
+        return True
     with _upgrade_lock_guard():
         lock = _read_lock_unlocked()
         if lock is not None:
@@ -391,6 +416,10 @@ def system_status() -> dict:
             "version_from": st.get("version_from"),
             "error": st.get("error") or None,
             "active": _upgrade_running(),
+            # How it ended (the upgrade stage writes these; older upgraders did not).
+            "trigger": st.get("trigger"),
+            "outcome": st.get("outcome"),
+            "finished_at": st.get("finished_at"),
         },
         "auto_update": {
             "enabled": dep.auto_update_enabled,
@@ -488,7 +517,9 @@ def _download_release_bundle(version: str):
 def _write_status_fields(**values: object) -> None:
     status = _read_status()
     status.update(values)
-    STATUS_FILE.write_text(json.dumps(status))
+    tmp = STATUS_FILE.with_name(f"{STATUS_FILE.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(status))
+    os.replace(tmp, STATUS_FILE)
 
 
 def _record_launch_failure(exc: Exception) -> None:
@@ -547,53 +578,36 @@ def _confirm_systemd_launch(lock_owner: str, launched_at: float) -> str:
     return "systemd-run"
 
 
-def _launch_detached(
-    cmd: list[str],
-    env: dict[str, str],
-    lock_owner: str,
-) -> str:
-    launched_at = time.time()
-    # Record the possibility of a child before Popen. A worker crash after Popen
-    # returns but before the PID write must not leave a reclaimable owner phase.
-    _set_upgrade_lock_phase(
-        lock_owner,
-        "launched",
-        via="detached",
-        launch_confirmed=False,
-        child_pid=None,
-        child_pid_start=None,
-        launched_at=launched_at,
-    )
-    child = subprocess.Popen(
-        cmd,
-        env=env,
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    _, child_start = _process_identity(child.pid)
-    try:
-        _set_upgrade_lock_phase(
-            lock_owner,
-            "launched",
-            via="detached",
-            launch_confirmed=True,
-            child_pid=child.pid,
-            child_pid_start=child_start,
-            launched_at=launched_at,
-        )
-    except Exception as exc:
-        _raise_launch_uncertain(
-            lock_owner,
-            f"the detached upgrader started, but its lock metadata could not be finalized: {exc}",
-            via="detached",
-            launched_at=launched_at,
-        )
-    return "detached"
+#: The upgrade unit: SIGTERM reaches only the stage (KillMode=mixed), which
+#: stops its current command and puts files back within five minutes; if it
+#: dies anyway, OnFailure= starts the recovery unit the stage installed.
+UNIT_PROPERTIES = ("KillMode=mixed", "TimeoutStopSec=300")
+ON_FAILURE = "OnFailure=danbyte-upgrade-recover.service"
 
 
-def _launch_command(cmd: list[str], lock_owner: str) -> str:
-    """Launch once and attach the surviving process identity to the lock."""
+def _systemd_run(cmd: list[str], env: dict, extra_env: dict | None, *, on_failure: bool = True):
+    argv = ["systemd-run", "--user", "--collect", "--unit", "danbyte-upgrade"]
+    for prop in (*UNIT_PROPERTIES, *((ON_FAILURE,) if on_failure else ())):
+        argv += ["-p", prop]
+    argv.append(f"--setenv=DANBYTE_DIR={settings.BASE_DIR}")
+    for key, value in (extra_env or {}).items():
+        argv.append(f"--setenv={key}={value}")
+    return subprocess.run([*argv, *cmd], capture_output=True, text=True, timeout=15, env=env)
+
+
+def _property_refused(result) -> bool:
+    """An older systemd that does not take OnFailure= on a transient unit
+    refuses the whole call; the recovery timer covers those hosts."""
+    text = f"{result.stderr or ''} {result.stdout or ''}".lower()
+    return "onfailure" in text or "unknown assignment" in text or "unknown property" in text
+
+
+def _launch_command(cmd: list[str], lock_owner: str, extra_env: dict | None = None) -> str:
+    """Launch once as danbyte-upgrade.service and attach it to the lock.
+
+    There is no fallback to a plain child process any more: it would run in
+    the web unit's (or the auto-upgrade oneshot's) cgroup, and the stage
+    stops that unit. Without the user systemd an upgrade fails visibly."""
     env = {**_systemd_env(), "DANBYTE_DIR": str(settings.BASE_DIR)}
     launched_at = time.time()
     # Record the external launcher before invoking it. If this web worker dies
@@ -608,21 +622,10 @@ def _launch_command(cmd: list[str], lock_owner: str) -> str:
     )
     _write_status_fields(launch_attempted=True)
     try:
-        result = subprocess.run(
-            [
-                "systemd-run",
-                "--user",
-                "--collect",
-                "--unit",
-                "danbyte-upgrade",
-                f"--setenv=DANBYTE_DIR={settings.BASE_DIR}",
-                *cmd,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            env=env,
-        )
+        result = _systemd_run(cmd, env, extra_env)
+        if result.returncode != 0 and _property_refused(result) \
+                and _systemd_unit_active() is False:
+            result = _systemd_run(cmd, env, extra_env, on_failure=False)
     except subprocess.TimeoutExpired:
         active = _systemd_unit_active()
         if active is True:
@@ -635,10 +638,13 @@ def _launch_command(cmd: list[str], lock_owner: str) -> str:
                 via="systemd-run",
                 launched_at=launched_at,
             )
-        return _launch_detached(cmd, env, lock_owner)
-    except OSError:
-        # Popen failed before systemd-run itself could exist.
-        return _launch_detached(cmd, env, lock_owner)
+        raise RuntimeError("systemd-run timed out and no upgrade unit started.") from None
+    except OSError as exc:
+        # Nothing was started: systemd-run itself is missing.
+        raise RuntimeError(
+            f"systemd-run is not available ({exc}); the upgrade runs as a user "
+            "systemd unit - see Getting started, Upgrading."
+        ) from exc
     except Exception as exc:  # noqa: BLE001 - an unknown handoff is not retryable
         _raise_launch_uncertain(
             lock_owner,
@@ -652,8 +658,8 @@ def _launch_command(cmd: list[str], lock_owner: str) -> str:
     active = _systemd_unit_active()
     if active is True:
         return _confirm_systemd_launch(lock_owner, launched_at)
+    detail = (result.stderr or "").strip() or (result.stdout or "").strip() or "unknown error"
     if active is None:
-        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
         _raise_launch_uncertain(
             lock_owner,
             f"systemd-run failed ({detail}) and the unit state cannot be determined; "
@@ -661,21 +667,44 @@ def _launch_command(cmd: list[str], lock_owner: str) -> str:
             via="systemd-run",
             launched_at=launched_at,
         )
-    return _launch_detached(cmd, env, lock_owner)
+    raise RuntimeError(f"systemd-run could not start the upgrade: {detail}")
 
 
-def _launch(version: str, lock_owner: str) -> str:
-    """Start the git upgrader in a process that outlives the web restart."""
-    return _launch_command(["/bin/sh", str(UPGRADE_SCRIPT), version], lock_owner)
+def _stage_env(*, trigger: str, skip_backup: bool = False, attempt: int = 1,
+               fault: str = "") -> dict[str, str]:
+    """What the launcher and the target's stage are told (stage API 1)."""
+    env = {
+        "DANBYTE_UPGRADE_TRIGGER": trigger,
+        "DANBYTE_UPGRADE_ATTEMPT": str(int(attempt or 1)),
+    }
+    started = _read_status().get("started_at")
+    if isinstance(started, (int, float)):
+        env["DANBYTE_UPGRADE_STARTED_AT"] = str(int(started))
+    if skip_backup and trigger != "auto":
+        env["DANBYTE_SKIP_BACKUP"] = "1"
+    if fault:
+        env["DANBYTE_UPGRADE_TEST"] = "1"
+        env["DANBYTE_UPGRADE_FAULT"] = fault
+    return env
 
 
-def _launch_bundle(path: str, lock_owner: str) -> str:
-    """Same detached-launch as `_launch`, but runs the offline-bundle upgrader
-    against an uploaded tarball (for installs with no git checkout to pull)."""
-    return _launch_command(["/bin/sh", str(BUNDLE_SCRIPT), path], lock_owner)
+def _launch(version: str, lock_owner: str, extra_env: dict | None = None) -> str:
+    """Start the git launcher in a unit that outlives every restart."""
+    return _launch_command(["/bin/sh", str(UPGRADE_SCRIPT), version], lock_owner, extra_env)
 
 
-def _write_start_status(version: str, lock_owner: str) -> None:
+def _launch_bundle(path: str, lock_owner: str, version: str | None = None,
+                   extra_env: dict | None = None) -> str:
+    """The same launch for the offline-bundle launcher, against a downloaded
+    or uploaded tarball. With ``version`` the bundle must be that release."""
+    cmd = ["/bin/sh", str(BUNDLE_SCRIPT), path]
+    if version:
+        cmd += ["--version", version]
+    return _launch_command(cmd, lock_owner, extra_env)
+
+
+def _write_start_status(version: str, lock_owner: str, *, trigger: str = "button",
+                        attempt: int = 1) -> None:
     started_at = time.time()
     _set_upgrade_lock_phase(
         lock_owner, "launching", status_started_at=started_at
@@ -683,20 +712,24 @@ def _write_start_status(version: str, lock_owner: str) -> None:
     STATUS_FILE.write_text(json.dumps({
         "state": "running", "step": "launching", "pct": 0,
         "version_to": version, "started_at": started_at,
-        "launch_attempted": False,
+        "launch_attempted": False, "stage_api": STAGE_API,
+        "trigger": trigger, "attempt": int(attempt or 1),
     }))
 
 
-def start_upgrade(version: str, lock_owner: str) -> str:
-    """Seed the status + launch the upgrader. Shared by the button and the
-    scheduled auto-upgrade. Caller must have checked _upgrade_running()/validity.
+def start_upgrade(version: str, lock_owner: str, *, trigger: str = "button",
+                  skip_backup: bool = False, attempt: int = 1, fault: str = "") -> str:
+    """Seed the status + launch the upgrader. Shared by the button, the
+    scheduled auto-upgrade and ``manage.py start_upgrade``. Caller must hold
+    the lock and have checked the target.
 
-    A git checkout upgrades in place (``git pull``). A bundle install has no
-    ``.git``, so we download the release's verified offline bundle and run the
-    bundle upgrader - otherwise the git script would just fail on it."""
-    _write_start_status(version, lock_owner)
+    A git checkout upgrades from the tag. A bundle install has no ``.git``,
+    so we download the release's verified offline bundle and run the bundle
+    launcher - otherwise the git script would just fail on it."""
+    _write_start_status(version, lock_owner, trigger=trigger, attempt=attempt)
+    env = _stage_env(trigger=trigger, skip_backup=skip_backup, attempt=attempt, fault=fault)
     if _is_git_install():
-        return _launch(version, lock_owner)
+        return _launch(version, lock_owner, env)
     # Bundle install: fetch + verify the bundle for this version, then apply it.
     try:
         path = _download_release_bundle(version)
@@ -704,10 +737,13 @@ def start_upgrade(version: str, lock_owner: str) -> str:
         STATUS_FILE.write_text(json.dumps({
             "state": "failed", "step": "download", "pct": 0,
             "version_to": version, "error": str(exc),
-            "launch_attempted": False,
+            "launch_attempted": False, "stage_api": STAGE_API,
+            "trigger": trigger, "attempt": int(attempt or 1),
+            # a network or repo hiccup: the timer may try again later
+            "retryable": True,
         }))
         raise
-    return _launch_bundle(str(path), lock_owner)
+    return _launch_bundle(str(path), lock_owner, version=version, extra_env=env)
 
 
 def _store_uploaded_bundle(upload) -> None:
@@ -725,7 +761,9 @@ _CONTAINER_UPGRADE_MSG = (
     "process inside a container can't rebuild its image or recreate itself. "
     "Upgrade from the host instead: `git -C /opt/danbyte fetch --tags && "
     "git -C /opt/danbyte checkout <version>`, then `docker compose -f "
-    "docker-compose.prod.yml build && docker compose -f docker-compose.prod.yml "
+    "docker-compose.prod.yml build`, `docker compose -f docker-compose.prod.yml "
+    "stop scheduler workers fastlane ws` (so the old release is not running "
+    "while the backend migrates) and `docker compose -f docker-compose.prod.yml "
     "up -d`. See the docs: Deploying with Docker."
 )
 
@@ -861,8 +899,11 @@ def system_upgrade_upload(request):
         return Response({"detail": "An upgrade is already running."}, status=409)
     try:
         _store_uploaded_bundle(f)
-        _write_start_status(f.name, lock_owner)
-        how = _launch_bundle(str(BUNDLE_UPLOAD), lock_owner)
+        # The launcher reads the real version from the bundle and replaces
+        # the file name shown until then.
+        _write_start_status(f.name, lock_owner, trigger="upload")
+        how = _launch_bundle(str(BUNDLE_UPLOAD), lock_owner,
+                             extra_env=_stage_env(trigger="upload"))
     except UpgradeLaunchUncertain as exc:
         return Response({"detail": str(exc)}, status=502)
     except Exception as exc:  # noqa: BLE001
@@ -961,6 +1002,13 @@ def system_upgrade_cancel(request):
     un-expirable by a missing status file, is the case this fixes.)"""
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
+    if _upgrade_unfinished():
+        return Response(
+            {"detail": "An interrupted upgrade has not been recovered yet. It recovers "
+                       "by itself within five minutes; if it cannot (a failed database "
+                       "restore), run `danbyte-admin upgrade recover` on the host."},
+            status=409,
+        )
     if _upgrade_process_alive():
         return Response(
             {"detail": "An upgrade is genuinely still running - wait for it to "

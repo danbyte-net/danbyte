@@ -1,9 +1,13 @@
 # The root half of the site-certificate flow: verify, keep the old pair
 # aside, install, nginx -t, reload, or roll back. The app never runs this.
+# It runs a root-owned copy of scripts/danbyte-tls-apply.sh - never the one
+# in the app's tree, which the app's user can change - and answers in
+# /var/lib/danbyte-tls/applied.json.
 [Unit]
 Description=Danbyte site certificate: apply the dropped pair to nginx
 
 [Service]
 Type=oneshot
 Environment=DANBYTE_DIR=@@APP@@
-ExecStart=/usr/bin/env bash @@APP@@/scripts/danbyte-tls-apply.sh
+Environment=DANBYTE_USER=@@USER@@
+ExecStart=/usr/local/libexec/danbyte/danbyte-tls-apply.sh

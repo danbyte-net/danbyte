@@ -9,11 +9,16 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { MiniMap } from "@/components/site-map/mini-map"
 import { useState as useStripState } from "react"
 import { useMe } from "@/lib/use-me"
 import { CircuitDeleteDialog } from "@/components/circuit-delete-dialog"
 import { buildCircuitColumns } from "@/components/columns/circuit-columns"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
 
 export const Route = createFileRoute("/circuits/")({ component: CircuitsPage })
 
@@ -24,6 +29,7 @@ function CircuitsPage() {
   const canDelete = canDo("circuit", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Circuit | null>(null)
+  const [selectedRows, setSelectedRows] = useState<Circuit[]>([])
 
   const query = useQuery({
     queryKey: ["circuits", q],
@@ -35,10 +41,18 @@ function CircuitsPage() {
 
   const rows = query.data?.results ?? []
   const onDelete = useCallback((c: Circuit) => setDeleting(c), [])
+  const ids = useMemo(
+    () => (query.data?.results ?? []).map((r) => r.id),
+    [query.data]
+  )
+  const sla = useSlaStatus("circuit", ids)
+
   const columns = useMemo<ColumnDef<Circuit>[]>(
     () =>
       buildCircuitColumns({
         humanIds,
+        selection: canDelete,
+        sla: { entries: sla.entries, frame: sla.frame },
         omit: ["description"],
         actions: {
           editTo: "/circuits/$id/edit",
@@ -48,7 +62,7 @@ function CircuitsPage() {
           canDelete: () => canDelete,
         },
       }),
-    [onDelete, canEdit, canDelete, humanIds]
+    [onDelete, canEdit, canDelete, humanIds, sla.entries, sla.frame]
   )
   const {
     rail,
@@ -75,6 +89,7 @@ function CircuitsPage() {
       }}
       actions={
         <>
+          <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="circuit" />
           {canAdd && (
             <Button size="sm" asChild>
@@ -89,12 +104,21 @@ function CircuitsPage() {
       <DataTable
         data={filteredRows}
         columns={wiredColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="endpoints"
         tableId="circuits"
       />
       <CircuitDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <SafeBulkDeleteBar
+        selected={selectedRows}
+        endpoint="/api/circuits/"
+        noun={["circuit", "circuits"]}
+        invalidate={[["circuits"]]}
+        onCleared={() => setSelectedRows([])}
       />
     </ListPageShell>
   )

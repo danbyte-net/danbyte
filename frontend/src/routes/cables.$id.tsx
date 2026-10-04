@@ -21,7 +21,7 @@ import { QueryError } from "@/components/query-error"
 import { CableDeleteDialog } from "@/components/cable-delete-dialog"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { CableRoutingCard } from "@/components/cable-routing-card"
-import { CableTracePath } from "@/components/cable-trace-path"
+import { CableTracePath, traceUrl } from "@/components/cable-trace-path"
 import { TraceSection } from "@/components/topology/trace-section"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -117,7 +117,7 @@ function Body({ cable: c }: { cable: Cable }) {
   // collapsed run pointing at a device outside the set.
   const runTrace = useQuery({
     queryKey: ["trace", "cable", c.id],
-    queryFn: () => api<TraceGraph>(`/api/cables/${c.id}/trace/`),
+    queryFn: () => api<TraceGraph>(traceUrl("cable", c.id)),
   })
   const { topoDevices, topoPanels } = (() => {
     const runNodes = runTrace.data?.device_graph?.nodes
@@ -244,9 +244,10 @@ function Body({ cable: c }: { cable: Cable }) {
       </DetailTab>
       <DetailTab value="trace">
         <TraceSection
-          url={`/api/cables/${c.id}/trace/`}
+          url={traceUrl("cable", c.id)}
           queryKey={["trace", "cable", c.id]}
           urlKey="dir"
+          name={`Trace · ${c.label || (c.numid != null ? `#${c.numid}` : "Cable")}`}
         />
       </DetailTab>
       <DetailTab value="journal">

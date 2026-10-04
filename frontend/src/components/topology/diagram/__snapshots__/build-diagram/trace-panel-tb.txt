@@ -1,0 +1,29 @@
+# buildDiagram(graph, {"mode":"detailed","line":"elbow","colorMode":"cable","direction":"TB","run":{"dev:@pp-01":1,"dev:@srv-01":0,"dev:@dist-01":2}})
+
+nodes 3
+dev:@dist-01  card @44,330 88x28
+  fill #f59e0b ink #0a0a0a
+  title "dist-01" top 6
+  nubs T44:Gi1/20
+dev:@srv-01  card @44,14 88x28
+  fill #10b981 ink #fff
+  title "srv-01" top 6
+  nubs B44:eno2
+dev:@pp-01  card @44,172 88x28
+  fill #71717a ink #fff
+  title "pp-01" top 6
+  nubs T44:front1 B44:rear1
+
+edges 2
+e:@c149:@dist-01:@pp-01  link cable elbow
+  style {"strokeWidth":2.5,"stroke":"var(--map-accent)"}
+  a B44:rear1
+  b T44:Gi1/20
+  path M 44,192 L 44,310
+    ports a 44,211.4@-90 b 44,287.5@-90
+e:@c148:@srv-01:@pp-01  link cable elbow
+  style {"strokeWidth":2.5,"stroke":"var(--map-accent)"}
+  a B44:eno2
+  b T44:front1
+  path M 44,34 L 44,152
+    ports a 44,53.7@-90 b 44,131@-90

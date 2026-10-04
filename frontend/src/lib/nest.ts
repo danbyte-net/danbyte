@@ -1,3 +1,5 @@
+import { naturalCompare } from "@/lib/natural-sort"
+
 // Parent/child tree flattening for hierarchy tables (locations, regions):
 // depth-first order (children grouped under their parent, siblings by name)
 // with a `_depth` for the name cell's indent markers. A row whose parent is
@@ -21,7 +23,7 @@ export function nestByParent<
     else byParent.set(key, [r])
   }
   for (const bucket of byParent.values())
-    bucket.sort((a, b) => a.name.localeCompare(b.name))
+    bucket.sort((a, b) => naturalCompare(a.name, b.name))
 
   const out: Nested<T>[] = []
   const walk = (parentId: string | null, depth: number) => {

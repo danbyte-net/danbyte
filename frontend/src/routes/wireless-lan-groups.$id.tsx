@@ -13,12 +13,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { WlanGroupDeleteDialog } from "@/components/wlan-group-delete-dialog"
-import {
-  DetailHero,
-  DetailShell,
-  DetailStat,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { EmbeddedWirelessLANTable } from "@/components/embedded-tables"
@@ -81,19 +76,7 @@ function Body({ group: g }: { group: WirelessLANGroup }) {
           )}
         </>
       }
-      hero={
-        <DetailHero
-          title={g.name}
-          description={g.description}
-          statCols={1}
-          stats={
-            <DetailStat
-              label="Wireless LANs"
-              value={<span className="num">{g.wlan_count}</span>}
-            />
-          }
-        />
-      }
+      hero={<DetailHero title={g.name} description={g.description} />}
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "wlans", label: "Wireless LANs", count: g.wlan_count },
@@ -129,8 +112,8 @@ function Body({ group: g }: { group: WirelessLANGroup }) {
   )
 }
 
-/** Wireless-LAN-group attributes. The name, description and WLAN count stay in
- * the hero; everything else lands here. */
+/** Wireless-LAN-group attributes. The name and description stay in the hero;
+ * everything else lands here. */
 function WlanGroupOverview({ group: g }: { group: WirelessLANGroup }) {
   const { humanIds } = useMe()
 

@@ -13,14 +13,20 @@ actually failed, so we don't call a not-null (or FK, or check) violation a
 through to DRF's default handler unchanged. Serializers that validate the
 conflict up front (see `PrefixSerializer.validate`) still return the nicer
 field-level 400 first; this is the safety net for the ones that don't.
+
+Django's own ``ValidationError`` - a value a model field cannot take, such as
+an id that is not a UUID reaching a filter - is the caller's input too, so it
+answers 400 with the field's message instead of a 500 (#280).
 """
 from __future__ import annotations
 
 import logging
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.serializers import as_serializer_error
 from rest_framework.views import exception_handler as drf_default
 
 log = logging.getLogger(__name__)
@@ -56,6 +62,8 @@ def exception_handler(exc, context):
     response = drf_default(exc, context)
     if response is not None:
         return response
+    if isinstance(exc, DjangoValidationError):
+        return Response(as_serializer_error(exc), status=status.HTTP_400_BAD_REQUEST)
     if isinstance(exc, IntegrityError):
         view = context.get("view")
         log.warning(

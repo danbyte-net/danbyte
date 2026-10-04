@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="868" height="464" viewBox="-24 -24 868 464" role="img" font-family="Inter, Inter Variable, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+<title>DC1 fabric layers</title>
+<desc>2026-09-28 09:00 UTC · 5 devices · 4 links</desc>
+<rect x="-24" y="-24" width="868" height="464" fill="#ffffff"/>
+<g id="bands">
+<g><rect x="0" y="0" width="820" height="131" rx="8" fill="#efeff1"/><rect x="0" y="0" width="820" height="131" rx="8" fill="none" stroke="#e4e4e7" stroke-width="1"/></g>
+<g><rect x="0" y="170" width="820" height="246" rx="8" fill="#f1ebfe"/><path d="M 12,305 H 808" stroke="#d1befb" stroke-width="1" stroke-dasharray="4 4"/><rect x="0" y="170" width="820" height="246" rx="8" fill="none" stroke="#d1befb" stroke-width="1"/></g>
+</g><g id="links">
+<path d="M 410,99 L 255,226" fill="none" stroke="#71717b" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 410,99 L 565,226" fill="none" stroke="#71717b" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 255,269 L 255,341" fill="none" stroke="#71717b" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 565,269 L 565,341" fill="none" stroke="#71717b" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+</g><g id="band-titles">
+<g><rect x="386.83" y="4" width="46.34" height="24" rx="6" fill="#efeff1"/><text x="410" y="20.73" text-anchor="middle" font-size="13" font-weight="600" fill="#3f3f46">Core</text></g>
+<g><rect x="344.56" y="174" width="130.88" height="24" rx="6" fill="#f1ebfe"/><text x="410" y="190.73" text-anchor="middle" font-size="13" font-weight="600" fill="#3f3f46">Data Center fabric</text></g><rect x="12" y="237.5" width="61" height="20" rx="5" fill="#0ea5e9" stroke="#0c8ec8" stroke-width="1"/><text x="42.5" y="251.87" text-anchor="middle" font-size="12" font-weight="500" fill="#ffffff">Access</text><rect x="12" y="352.5" width="57" height="20" rx="5" fill="#10b981" stroke="#0e9f6f" stroke-width="1"/><text x="40.5" y="366.87" text-anchor="middle" font-size="12" font-weight="500" fill="#ffffff">Server</text>
+</g><g id="nodes">
+<g><rect x="335.5" y="56.5" width="149" height="42" rx="9.5" fill="#6366f1" stroke="#5558cf" stroke-width="1"/><text x="410" y="74.37" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">core-01</text><text x="410" y="89.64" text-anchor="middle" font-size="10" fill="#e3e3fc">10.0.0.1</text></g>
+<g><rect x="180.5" y="226.5" width="149" height="42" rx="9.5" fill="#0ea5e9" stroke="#0c8ec8" stroke-width="1"/><text x="255" y="244.37" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">access-01</text><text x="255" y="259.64" text-anchor="middle" font-size="10" fill="#d4effb">10.0.1.1</text></g>
+<g><rect x="490.5" y="226.5" width="149" height="42" rx="9.5" fill="#0ea5e9" stroke="#0c8ec8" stroke-width="1"/><text x="565" y="244.37" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">access-02</text><text x="565" y="259.64" text-anchor="middle" font-size="10" fill="#d4effb">10.0.1.2</text></g>
+<g><rect x="180.5" y="341.5" width="149" height="42" rx="9.5" fill="#10b981" stroke="#0e9f6f" stroke-width="1"/><text x="255" y="359.37" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">srv-01</text><text x="255" y="374.64" text-anchor="middle" font-size="10" fill="#d4f2e8">10.0.2.1</text></g>
+<g><rect x="490.5" y="341.5" width="149" height="42" rx="9.5" fill="#10b981" stroke="#0e9f6f" stroke-width="1"/><text x="565" y="359.37" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">srv-02</text><text x="565" y="374.64" text-anchor="middle" font-size="10" fill="#d4f2e8">10.0.2.2</text></g>
+</g><g id="labels">
+<g><rect x="226.17" y="297" width="57.66" height="16" rx="3" fill="#ffffff" stroke="#e4e4e7" stroke-width="0.75"/><text x="255" y="308.64" text-anchor="middle" font-size="10" fill="#3f3f46">10.0.3.0/31</text></g>
+<g><rect x="536.03" y="297" width="57.94" height="16" rx="3" fill="#ffffff" stroke="#e4e4e7" stroke-width="0.75"/><text x="565" y="308.64" text-anchor="middle" font-size="10" fill="#3f3f46">10.0.4.0/31</text></g>
+</g>
+</svg>

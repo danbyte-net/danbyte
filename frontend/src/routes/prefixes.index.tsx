@@ -23,6 +23,11 @@ import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { useViolationMap } from "@/components/compliance/violation-badge"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
 import { useMe, objCan } from "@/lib/use-me"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
+import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/prefixes/")({
   component: PrefixesPage,
@@ -82,6 +87,7 @@ function PrefixesPage() {
     enabled: prefixIds.length > 0,
   })
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
+  const sla = useSlaStatus("prefix", prefixIds)
 
   // The filter rail derives from the factory's facet metadata (status, VLAN,
   // site, VRF, utilisation, tags + one facet per tenant custom field), so a
@@ -128,7 +134,7 @@ function PrefixesPage() {
       if (av !== bv) return av - bv // Global first
       const an = a.vrf?.name ?? ""
       const bn = b.vrf?.name ?? ""
-      if (an !== bn) return an.localeCompare(bn) // then VRF alpha
+      if (an !== bn) return naturalCompare(an, bn) // then VRF name
       // Don't re-sort by CIDR - annotateNesting already laid out a stable
       // depth-first parent→child order within each VRF.
       return 0
@@ -148,6 +154,7 @@ function PrefixesPage() {
           nested: true,
           violations,
           monitoring,
+          sla: { entries: sla.entries, frame: sla.frame },
           cfDefs,
           tagFilter: {
             activeSlugs: tagSelection,
@@ -174,6 +181,8 @@ function PrefixesPage() {
       violations,
       canEdit,
       canDelete,
+      sla.entries,
+      sla.frame,
     ]
   )
 
@@ -197,6 +206,10 @@ function PrefixesPage() {
         }}
         actions={
           <>
+            <AvailabilityFramePicker
+              value={sla.frame}
+              onChange={sla.setFrame}
+            />
             <TableActions ioType="prefix" />
             {canAdd && (
               <Button size="sm" asChild>

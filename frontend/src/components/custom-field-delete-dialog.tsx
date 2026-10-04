@@ -32,6 +32,8 @@ export function CustomFieldDeleteDialog({
     onSuccess: () => {
       toast.success(`Deleted ${field!.label}`)
       qc.invalidateQueries({ queryKey: ["custom-fields"] })
+      qc.invalidateQueries({ queryKey: ["custom-fields-for"] })
+      qc.invalidateQueries({ queryKey: ["list-fields"] })
       onOpenChange(false)
       onDeleted?.()
     },

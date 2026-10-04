@@ -211,6 +211,8 @@ class BulkAgreementTests(_Base):
             "enabled": False,
             "mgmt_only": True,
             "mark_connected": True,
+            "is_uplink": True,
+            "never_uplink": True,
             "mtu": 9000,
             "description": "planned",
             "speed": "10000",
@@ -245,7 +247,7 @@ class BulkAgreementTests(_Base):
         expected = {
             "prefix": {"status_id", "vrf_id", "site_id", "vlan_id", "description"},
             "ipaddress": {"status_id", "role_id", "description"},
-            "vlan": {"site_id", "zone_id", "vrf_id", "description"},
+            "vlan": {"status_id", "site_id", "zone_id", "vrf_id", "description"},
         }
         for slug, accepted in expected.items():
             model = apps.get_model("api", slug)

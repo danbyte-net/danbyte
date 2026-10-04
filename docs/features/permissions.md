@@ -9,8 +9,10 @@ Permissions control who can see and change what in Danbyte. Access is
 rules. A person's access is the sum of everything granted to them directly and
 through the groups they belong to.
 
-!!! note "Administrators see everything"
-    A full administrator account bypasses all permission checks. Use the
+!!! note "Superusers see everything"
+    A **superuser** account bypasses all permission checks. The built-in
+    **Administrator** group is the everyday admin role: full access through
+    ordinary grants, including users, groups and permissions. Use the
     built-in roles and groups below to give everyone else exactly the access
     they need.
 
@@ -31,7 +33,12 @@ A few extra **capability** verbs apply to specific types and are never implied
 by *change*: **connect** (on devices - open a [Connect launcher or the SSH
 terminal](device-access.md)), **reveal** (on device credentials, wireless
 LANs and IPSec profiles - read the referenced secret), **subscribe** (on notification channels -
-self-service opt-in/out), and **grant superuser** (on users - see below). The
+self-service opt-in/out), **view credits** (on SLA agreements - see the
+[service credits](sla.md#service-credits) an agreement owes), **set default**
+(on topology views - choose the [view Topology opens
+with](topology.md#default-view) for the tenant; tenant admins can without it,
+and its row limits say which views), and **grant
+superuser** (on users - see below). The
 permission form only offers these on the types that use them.
 
 ### Granting superuser without being one
@@ -60,19 +67,52 @@ hand. They can't be deleted.
 
 | Group | What members can do |
 |---|---|
-| **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions. |
-| **Operator** | View, add, and change every object - but not delete. |
-| **Read-only** | View everything; change nothing. |
+| **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions (its grant names those types). |
+| **Operator** | View, add, and change every object except users, groups and permissions - but not delete. No Admin pages or tenant settings. |
+| **Read-only** | View every object except users, groups and permissions; change nothing. |
 
 !!! tip "Upgrades don't lock anyone out"
     When permissions were introduced, every existing user was placed into a
     sensible role automatically (admins → Administrator, read-only accounts →
     Read-only, everyone else → Operator). Tighten access from there as needed.
 
+### All object types leaves out access management
+
+**All object types** covers every kind of object except **Users**,
+**Groups** and **Permissions**. A grant reaches those only by naming them,
+because adding or changing them *is* administration: whoever may change
+users, group membership or grants can give themselves anything. Holding
+*change* on **Users** is what makes someone an administrator - it opens the
+Admin pages and the tenant settings, and the deployment settings too when
+the grant is not limited to tenants. The Administrator group's grant names
+the three types; Operator and Read-only do not.
+
+Upgrading to 0.17, where this rule arrived, names the three types on every
+all-object grant that was an administrator grant:
+
+- one with view, add, change *and* delete that is limited neither to
+  sites nor by row constraints (a tenant limit is fine - it stays a tenant
+  admin), and is not the built-in Operator or Read-only grant,
+- one carrying *grant superuser*,
+- one held only by the Administrator group.
+
+Every other all-object grant loses them: Operator-style, view-only, a site
+editor's "read all", and a "full control" grant limited to sites or rows -
+neither limit ever narrowed users, groups and permissions, so its holders
+would have managed every account. If that would have left nobody able to
+manage users, the accounts that could get a grant of their own, **Kept user
+management (0.17 upgrade)**, with the three types and only the verbs each of
+them had - accounts with different verbs get one grant per set, named with
+its verbs (`Kept user management (0.17 upgrade): view, change`). People a
+custom grant reached come first, the Operator group's members only when
+nobody else could, and an upgrade note asks you to put your administrators
+in the Administrator group, then delete those grants. The shared grants stay
+trimmed, so nobody who joins those groups later inherits user management.
+
 ## Managing access
 
 These pages live under **Admin → Access** in the sidebar and are only visible to
-people who can manage users.
+Administrators and anyone else granted *change* on **Users**.
 
 ### Users
 
@@ -100,7 +140,9 @@ rows*.
 1. Go to **Admin → Access → Permissions** and click **Add permission**.
 2. Give it a clear **name** (e.g. "Edit production prefixes").
 3. Choose the **object types** it applies to - pick specific ones, or **All
-   object types**.
+   object types**. All object types leaves out Users, Groups and
+   Permissions; with it ticked, those three are offered on their own, and
+   ticking them makes the grant an administrator grant.
 4. Tick the **actions** you're granting: view, add, change, delete.
 5. (Optional) Limit it to certain **tenants**. A tenant named here also
    **grants access to that tenant**: members of the group can switch to it
@@ -120,6 +162,10 @@ rows*.
 7. (Optional) Add **row constraints** to narrow it to matching rows only - for
    example, only prefixes whose status is active. Without a constraint, the
    permission covers every row of the chosen types.
+
+    A grant that names Users, Groups or Permissions takes neither a site
+    limit nor row constraints: neither narrows those types, so the save is
+    refused rather than looking narrower than it is. Grant them on their own.
 8. Assign the permission to **groups** and/or **users**.
 9. Save.
 
@@ -130,8 +176,9 @@ Rather than hand-build the grants, open **Admin → Access → Permissions** and
 click **Site role**:
 
 - **Site editor** - can add, edit, and delete everything **in the chosen
-  site(s)**, and can **read everything elsewhere**. This is the local-IT recipe:
-  full control of their own site, look-but-don't-touch everywhere else.
+  site(s)**, and can **read everything elsewhere** except users, groups and
+  permissions. This is the local-IT recipe: full control of their own site,
+  look-but-don't-touch everywhere else.
 - **Site viewer** - read-only access to the chosen site(s), and **nothing
   outside them**. Use this when someone should only see their own site.
 
@@ -174,7 +221,9 @@ they edit. They can grant **read-only** access to **their own site only** -
 nothing wider:
 
 - they can't create new *editors* (that stays an admin job),
-- they can't reach any site they don't already edit.
+- they can't reach any site they don't already edit,
+- they pick from the **members of the tenant**, and grant to people, not
+  groups.
 
 This is enforced on the server, not just hidden in the UI, so it's safe to hand
 to local IT in a big multi-site deployment. The toggle is off by default.
@@ -211,6 +260,19 @@ fail:
     Hidden buttons are a convenience. Even if someone reaches a restricted action
     another way (an old browser tab, a saved link), the server still refuses it.
 
+### Picking people outside Admin
+
+Some features name people without being user administration: notification
+subscriptions, script sharing, a site editor's viewer invite, and user or
+group [custom fields](tags-and-custom-fields.md). Their pickers list the
+**active accounts that can work in the tenant** - the tenant is on their
+user page, a permission limited to the tenant names them or their group,
+or they are a superuser - and the groups those accounts are in, for anyone
+who works with the feature - no permission on users needed. Superusers and
+deployment admins see every account. The address is shown only to people
+who may view users. A spreadsheet import resolves person and group cells
+against the same list for people without a permission on users.
+
 ## Inviting people
 
 When you create a user, choose how they get their password:
@@ -226,6 +288,14 @@ link**.
     Inviting requires an email address on the account and working email settings
     for your deployment. People who sign in through your company directory don't
     need a Danbyte password at all.
+
+Invite and reset links, and emailed sign-in codes, go through a tenant's own
+mail server only for accounts that work in that tenant alone. Those for
+administrators, and for people in more than one tenant, go through the
+deployment's mail settings, so a tenant's admin doesn't see them in their
+relay. If the deployment has no mail server of its own, they use the
+tenant's instead so they still arrive - set up deployment email to keep
+them out of tenant relays.
 
 ## Two-factor sign-in (MFA)
 

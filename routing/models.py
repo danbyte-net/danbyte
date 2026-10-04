@@ -371,8 +371,40 @@ class RoutingKeychain(SecretBackedPSK, _Catalog):
 
 # ─── Static routes ───────────────────────────────────────────────────────────
 
-class StaticRoute(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """``ip route vrf X 10.0.0.0/8 10.1.1.1`` on one device."""
+def _owner_check(name: str) -> models.CheckConstraint:
+    """A routing row belongs to a device or to a virtual machine (#217)."""
+    return models.CheckConstraint(
+        condition=(
+            models.Q(device__isnull=False, virtual_machine__isnull=True)
+            | models.Q(device__isnull=True, virtual_machine__isnull=False)
+        ),
+        name=name,
+    )
+
+
+def _on_device(**kw) -> models.Q:
+    return models.Q(device__isnull=False, **kw)
+
+
+def _on_vm(**kw) -> models.Q:
+    return models.Q(virtual_machine__isnull=False, **kw)
+
+
+class _Owned:
+    """The device or virtual machine a routing row belongs to."""
+
+    @property
+    def owner(self):
+        return self.device if self.device_id else getattr(self, "virtual_machine", None)
+
+    @property
+    def owner_name(self) -> str:
+        o = self.owner
+        return o.name if o is not None else "?"
+
+
+class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """``ip route vrf X 10.0.0.0/8 10.1.1.1`` on one device or VM."""
 
     KIND_CHOICES = [
         ("nexthop", "Next hop"),
@@ -386,7 +418,13 @@ class StaticRoute(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
         Tenant, on_delete=models.CASCADE, related_name="static_routes"
     )
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="static_routes"
+        "api.Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="static_routes",
+    )
+    #: A virtual router or a routing VM (#217); exactly one of the two is set.
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="static_routes",
     )
     #: NULL = the global table.
     vrf = models.ForeignKey(
@@ -402,6 +440,11 @@ class StaticRoute(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
     next_hop = models.CharField(max_length=64, blank=True, default="")
     next_hop_interface = models.ForeignKey(
         "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="static_routes",
+    )
+    #: The same, on a VM.
+    next_hop_vm_interface = models.ForeignKey(
+        "api.VMInterface", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="static_routes",
     )
     #: Route leaking: the table the next hop is looked up in.
@@ -425,28 +468,47 @@ class StaticRoute(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
             models.UniqueConstraint(
                 fields=["device", "vrf", "prefix", "next_hop", "next_hop_interface"],
                 name="uniq_staticroute_path",
-                nulls_distinct=False,
-            )
+                nulls_distinct=False, condition=_on_device(),
+            ),
+            models.UniqueConstraint(
+                fields=["virtual_machine", "vrf", "prefix", "next_hop",
+                        "next_hop_vm_interface"],
+                name="uniq_staticroute_vm_path",
+                nulls_distinct=False, condition=_on_vm(),
+            ),
+            _owner_check("staticroute_device_xor_vm"),
         ]
 
+    @property
+    def via_interface(self):
+        return self.next_hop_interface if self.next_hop_interface_id else (
+            self.next_hop_vm_interface if self.next_hop_vm_interface_id else None)
+
     def __str__(self) -> str:
-        via = self.next_hop or (
-            self.next_hop_interface.name if self.next_hop_interface_id else self.kind
-        )
+        iface = self.via_interface
+        via = self.next_hop or (iface.name if iface is not None else self.kind)
         return f"{self.prefix} via {via}"
 
     def clean(self):
         self.prefix = normalize_network(self.prefix)
         if self.next_hop:
             self.next_hop = normalize_address(self.next_hop)
-        if self.kind == "nexthop" and not self.next_hop and not self.next_hop_interface_id:
+        if bool(self.device_id) == bool(self.virtual_machine_id):
+            raise ValidationError({"device": "A route belongs to a device or to a VM."})
+        if self.next_hop_interface_id and self.virtual_machine_id:
+            raise ValidationError({"next_hop_interface": "Pick one of the VM's interfaces."})
+        if self.next_hop_vm_interface_id and self.device_id:
+            raise ValidationError({"next_hop_vm_interface": "Pick one of the device's "
+                                                            "interfaces."})
+        has_iface = self.via_interface is not None
+        if self.kind == "nexthop" and not self.next_hop and not has_iface:
             raise ValidationError(
                 {"next_hop": "A next-hop route needs an address or an interface."}
             )
         # An interface route points out of a port with no address - the
         # point-to-point and dial-up shape some platforms want written that way.
         if self.kind == "interface":
-            if not self.next_hop_interface_id:
+            if not has_iface:
                 raise ValidationError(
                     {"next_hop_interface": "An interface route needs an interface."}
                 )
@@ -454,7 +516,7 @@ class StaticRoute(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
                 raise ValidationError(
                     {"next_hop": "An interface route has no next-hop address."}
                 )
-        if self.kind in ("blackhole", "reject") and (self.next_hop or self.next_hop_interface_id):
+        if self.kind in ("blackhole", "reject") and (self.next_hop or has_iface):
             raise ValidationError(
                 {"kind": f"A {self.kind} route has no next hop."}
             )
@@ -464,6 +526,13 @@ class StaticRoute(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
         ):
             raise ValidationError(
                 {"next_hop_interface": "That interface is on another device."}
+            )
+        if (
+            self.next_hop_vm_interface_id and self.virtual_machine_id
+            and self.next_hop_vm_interface.vm_id != self.virtual_machine_id
+        ):
+            raise ValidationError(
+                {"next_hop_vm_interface": "That interface is on another VM."}
             )
 
 
@@ -520,15 +589,21 @@ def normalize_address_or_blank(value, field):
     return normalize_address(value, field) if value else ""
 
 
-class _DeviceInstance(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A routing process on one device, in one table."""
+class _DeviceInstance(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A routing process on one device or VM, in one table."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="routing_%(class)ss"
     )
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="%(class)ss"
+        "api.Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="%(class)ss",
+    )
+    #: A virtual router or a routing VM (#217); exactly one of the two is set.
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="%(class)ss",
     )
     #: NULL = the global table.
     vrf = models.ForeignKey(
@@ -552,7 +627,18 @@ class _DeviceInstance(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableM
         abstract = True
 
     def clean(self):
+        if bool(self.device_id) == bool(getattr(self, "virtual_machine_id", None)):
+            raise ValidationError({"device": "An instance runs on a device or on a VM."})
         self.router_id = normalize_address_or_blank(self.router_id, "router_id")
+
+    def owns_interface(self, interface=None, vm_interface=None) -> bool:
+        """Is this port on the same box as the instance?"""
+        if interface is not None:
+            return self.device_id is not None and interface.device_id == self.device_id
+        if vm_interface is not None:
+            return (self.virtual_machine_id is not None
+                    and vm_interface.vm_id == self.virtual_machine_id)
+        return True
 
 
 class BGPInstance(_DeviceInstance):
@@ -585,13 +671,18 @@ class BGPInstance(_DeviceInstance):
         constraints = [
             models.UniqueConstraint(
                 fields=["device", "vrf"], name="uniq_bgpinstance_device_vrf",
-                nulls_distinct=False,
-            )
+                nulls_distinct=False, condition=_on_device(),
+            ),
+            models.UniqueConstraint(
+                fields=["virtual_machine", "vrf"], name="uniq_bgpinstance_vm_vrf",
+                nulls_distinct=False, condition=_on_vm(),
+            ),
+            _owner_check("bgpinstance_device_xor_vm"),
         ]
 
     def __str__(self) -> str:
         table = self.vrf.name if self.vrf_id else "global"
-        return f"{self.device.name} · AS{self.asn.asn} · {table}"
+        return f"{self.owner_name} · AS{self.asn.asn} · {table}"
 
     def clean(self):
         super().clean()
@@ -836,6 +927,11 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
         "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="bgp_sessions",
     )
+    #: Unnumbered peering out of a VM's port (#217).
+    vm_interface = models.ForeignKey(
+        "api.VMInterface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="bgp_sessions",
+    )
     #: The IPAM row for the far address, when Danbyte has it.
     remote_address_obj = models.ForeignKey(
         "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
@@ -856,12 +952,17 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
     description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
-        ordering = ["instance__device__name", "remote_address", "interface__name"]
+        ordering = ["instance__device__name", "instance__virtual_machine__name",
+                    "remote_address", "interface__name"]
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    models.Q(remote_address="", interface__isnull=False)
-                    | ~models.Q(remote_address="") & models.Q(interface__isnull=True)
+                    models.Q(remote_address="", interface__isnull=False,
+                             vm_interface__isnull=True)
+                    | models.Q(remote_address="", interface__isnull=True,
+                               vm_interface__isnull=False)
+                    | ~models.Q(remote_address="") & models.Q(interface__isnull=True,
+                                                              vm_interface__isnull=True)
                 ),
                 name="bgpsession_address_xor_interface",
             ),
@@ -875,10 +976,23 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
                 condition=models.Q(interface__isnull=False),
                 name="uniq_bgpsession_instance_interface",
             ),
+            models.UniqueConstraint(
+                fields=["instance", "vm_interface"],
+                condition=models.Q(vm_interface__isnull=False),
+                name="uniq_bgpsession_instance_vm_interface",
+            ),
         ]
 
+    @property
+    def port(self):
+        """The unnumbered port, on a device or a VM."""
+        if self.interface_id:
+            return self.interface
+        return self.vm_interface if self.vm_interface_id else None
+
     def __str__(self) -> str:
-        far = self.remote_address or (self.interface.name if self.interface_id else "?")
+        port = self.port
+        far = self.remote_address or (port.name if port is not None else "?")
         return self.name or far
 
     @property
@@ -888,20 +1002,30 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
     def clean(self):
         _PeerKnobs.clean(self)
         self.remote_address = normalize_address_or_blank(self.remote_address, "remote_address")
-        if bool(self.remote_address) == bool(self.interface_id):
+        if self.interface_id and self.vm_interface_id:
+            raise ValidationError({"interface": "One interface, not two."})
+        if bool(self.remote_address) == (self.port is not None):
             raise ValidationError(
                 {"remote_address": "Give the far end as an address or as an "
                                    "interface (unnumbered), not both and not neither."}
             )
         inst = self.instance if self.instance_id else None
         if inst is not None:
-            if self.interface_id and self.interface.device_id != inst.device_id:
+            if self.interface_id and not inst.owns_interface(interface=self.interface):
                 raise ValidationError({"interface": "That interface is on another device."})
+            if self.vm_interface_id and not inst.owns_interface(
+                vm_interface=self.vm_interface
+            ):
+                raise ValidationError({"vm_interface": "That interface is on another VM."})
             if self.local_address_id:
                 la = self.local_address
-                if la.assigned_device_id != inst.device_id:
+                on_box = (la.assigned_vm_id == inst.virtual_machine_id
+                          if inst.virtual_machine_id
+                          else la.assigned_device_id == inst.device_id)
+                if not on_box:
                     raise ValidationError(
-                        {"local_address": "That address is not on this device."}
+                        {"local_address": "That address is not on this "
+                                          + ("VM." if inst.virtual_machine_id else "device.")}
                     )
                 if la.vrf_id != inst.vrf_id:
                     raise ValidationError(
@@ -1026,11 +1150,18 @@ class OSPFInstance(_DeviceInstance):
             models.UniqueConstraint(
                 fields=["device", "vrf", "version", "process_id"],
                 name="uniq_ospfinstance_process", nulls_distinct=False,
-            )
+                condition=_on_device(),
+            ),
+            models.UniqueConstraint(
+                fields=["virtual_machine", "vrf", "version", "process_id"],
+                name="uniq_ospfinstance_vm_process", nulls_distinct=False,
+                condition=_on_vm(),
+            ),
+            _owner_check("ospfinstance_device_xor_vm"),
         ]
 
     def __str__(self) -> str:
-        return f"{self.device.name} · OSPF{'v3' if self.version == 3 else ''} {self.process_id}".rstrip()
+        return f"{self.owner_name} · OSPF{'v3' if self.version == 3 else ''} {self.process_id}".rstrip()
 
 
 class _IGPInterface(models.Model):
@@ -1038,7 +1169,13 @@ class _IGPInterface(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     interface = models.ForeignKey(
-        "api.Interface", on_delete=models.CASCADE, related_name="%(class)ss"
+        "api.Interface", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="%(class)ss",
+    )
+    #: The port on a VM-owned instance (#217); exactly one of the two is set.
+    vm_interface = models.ForeignKey(
+        "api.VMInterface", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="%(class)ss",
     )
     #: Null = the instance's ``passive_by_default``.
     passive = models.BooleanField(null=True, blank=True)
@@ -1054,15 +1191,44 @@ class _IGPInterface(models.Model):
     class Meta:
         abstract = True
 
+    @property
+    def port(self):
+        return self.interface if self.interface_id else self.vm_interface
+
     def __str__(self) -> str:
-        return self.interface.name
+        port = self.port
+        return port.name if port is not None else "?"
 
     def _check_device(self):
-        if (
-            self.interface_id and self.instance_id
-            and self.interface.device_id != self.instance.device_id
-        ):
+        if bool(self.interface_id) == bool(self.vm_interface_id):
+            raise ValidationError({"interface": "Pick one interface."})
+        if not self.instance_id:
+            return
+        inst = self.instance
+        if self.interface_id and not inst.owns_interface(interface=self.interface):
             raise ValidationError({"interface": "That interface is on another device."})
+        if self.vm_interface_id and not inst.owns_interface(vm_interface=self.vm_interface):
+            raise ValidationError({"vm_interface": "That interface is on another VM."})
+
+
+def _igp_port_constraints(prefix: str) -> list:
+    return [
+        models.UniqueConstraint(
+            fields=["instance", "interface"], name=f"uniq_{prefix}_instance_iface",
+            condition=models.Q(interface__isnull=False),
+        ),
+        models.UniqueConstraint(
+            fields=["instance", "vm_interface"], name=f"uniq_{prefix}_instance_vm_iface",
+            condition=models.Q(vm_interface__isnull=False),
+        ),
+        models.CheckConstraint(
+            condition=(
+                models.Q(interface__isnull=False, vm_interface__isnull=True)
+                | models.Q(interface__isnull=True, vm_interface__isnull=False)
+            ),
+            name=f"{prefix}_iface_xor_vm_iface",
+        ),
+    ]
 
 
 class OSPFInterface(_IGPInterface):
@@ -1094,12 +1260,8 @@ class OSPFInterface(_IGPInterface):
     authentication = models.CharField(max_length=6, choices=AUTH_CHOICES, default="none")
 
     class Meta:
-        ordering = ["interface__name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["instance", "interface"], name="uniq_ospfinterface_instance_iface"
-            )
-        ]
+        ordering = ["interface__name", "vm_interface__name"]
+        constraints = _igp_port_constraints("ospfinterface")
 
     def clean(self):
         self._check_device()
@@ -1164,12 +1326,18 @@ class ISISInstance(_DeviceInstance):
         ordering = ["device__name", "process"]
         constraints = [
             models.UniqueConstraint(
-                fields=["device", "process"], name="uniq_isisinstance_device_process"
-            )
+                fields=["device", "process"], name="uniq_isisinstance_device_process",
+                condition=_on_device(),
+            ),
+            models.UniqueConstraint(
+                fields=["virtual_machine", "process"], name="uniq_isisinstance_vm_process",
+                condition=_on_vm(),
+            ),
+            _owner_check("isisinstance_device_xor_vm"),
         ]
 
     def __str__(self) -> str:
-        return f"{self.device.name} · IS-IS {self.process}".rstrip()
+        return f"{self.owner_name} · IS-IS {self.process}".rstrip()
 
     def clean(self):
         super().clean()
@@ -1208,12 +1376,8 @@ class ISISInterface(_IGPInterface):
     authentication = models.CharField(max_length=4, choices=AUTH_CHOICES, default="none")
 
     class Meta:
-        ordering = ["interface__name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["instance", "interface"], name="uniq_isisinterface_instance_iface"
-            )
-        ]
+        ordering = ["interface__name", "vm_interface__name"]
+        constraints = _igp_port_constraints("isisinterface")
 
     def clean(self):
         self._check_device()
@@ -1247,11 +1411,18 @@ class EIGRPInstance(_DeviceInstance):
             models.UniqueConstraint(
                 fields=["device", "vrf", "asn"],
                 name="uniq_eigrpinstance_asn", nulls_distinct=False,
-            )
+                condition=_on_device(),
+            ),
+            models.UniqueConstraint(
+                fields=["virtual_machine", "vrf", "asn"],
+                name="uniq_eigrpinstance_vm_asn", nulls_distinct=False,
+                condition=_on_vm(),
+            ),
+            _owner_check("eigrpinstance_device_xor_vm"),
         ]
 
     def __str__(self) -> str:
-        return f"{self.device.name} · EIGRP {self.asn}"
+        return f"{self.owner_name} · EIGRP {self.asn}"
 
     def clean(self):
         super().clean()
@@ -1286,12 +1457,8 @@ class EIGRPInterface(_IGPInterface):
     authentication = models.CharField(max_length=12, choices=AUTH_CHOICES, default="none")
 
     class Meta:
-        ordering = ["interface__name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["instance", "interface"], name="uniq_eigrpinterface_instance_iface"
-            )
-        ]
+        ordering = ["interface__name", "vm_interface__name"]
+        constraints = _igp_port_constraints("eigrpinterface")
 
     def clean(self):
         self._check_device()
@@ -1525,6 +1692,13 @@ class LDPInstance(_DeviceInstance):
     interfaces = models.ManyToManyField(
         "api.Interface", blank=True, related_name="ldp_instances"
     )
+    #: LDP stays on devices: label switching is a provider-router job.
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="ldpinstances"
+    )
+    virtual_machine = None
+    #: The abstract parent's descriptor would otherwise answer, and fail.
+    virtual_machine_id = None
 
     class Meta:
         ordering = ["device__name"]

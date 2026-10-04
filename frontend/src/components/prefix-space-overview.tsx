@@ -7,6 +7,7 @@ import { UtilCell } from "@/components/cells/util-cell"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { parseCidr } from "@/lib/prefix-tree"
 import { QueryError } from "@/components/query-error"
+import { naturalCompare } from "@/lib/natural-sort"
 
 // Tenant-wide space map: every prefix, grouped by VRF and sorted by network, as
 // a utilisation list you can scan top-to-bottom. Click a row to drill into that
@@ -45,7 +46,7 @@ function group(prefixes: Prefix[]): Group[] {
   groups.sort((a, b) => {
     if (!a.vrf) return -1
     if (!b.vrf) return 1
-    return a.vrf.name.localeCompare(b.vrf.name)
+    return naturalCompare(a.vrf.name, b.vrf.name)
   })
   return groups
 }

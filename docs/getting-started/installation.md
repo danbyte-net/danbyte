@@ -54,7 +54,7 @@ The other tabs cover building from source and a local dev checkout.
         curl -fsSLO $base/danbyte-<version>-linux-x86_64.tar.gz
         curl -fsSLO $base/danbyte-<version>-linux-x86_64.tar.gz.sha256
         sha256sum -c danbyte-<version>-linux-x86_64.tar.gz.sha256
-        tar xzf danbyte-<version>-linux-x86_64.tar.gz
+        sudo tar xzf danbyte-<version>-linux-x86_64.tar.gz    # as root, so root owns what it runs
         cd danbyte-<version>-linux-x86_64
         sudo ./install.sh --host danbyte.example.com
         ```
@@ -85,6 +85,10 @@ The other tabs cover building from source and a local dev checkout.
         | `--host=<name>` | Same, `=` form. | - |
         | `--service-home <path>` | Install location (app lands in `<path>/danbyte`). On a re-run it **auto-detects** the existing install, so you rarely set this. | `/opt/danbyte` |
         | `--no-nginx` | Don't install/configure nginx or TLS - for running your own reverse proxy. Also sets `DANBYTE_HTTPS=False` so Secure cookies/HSTS don't break login without a TLS terminator. | nginx **on** |
+        | `--force` | On a re-run: upgrade over a git checkout, or past an upgrade lock nothing holds any more. Never a downgrade. | off |
+        | `--skip-backup` | On a re-run: no pre-upgrade backup. | off |
+        | `--host-only` | On a host that runs Danbyte: only the root steps an upgrade ends with (logrotate, nginx + TLS, the certificate unit), from the bundle of the release that runs, with no upgrade stage. It changes no code, so a git checkout takes it too. | off |
+        | `--adopt` | On a re-run or with `--host-only`: replace a Danbyte nginx site edited by hand with the new render, keeping a backup. Without it the new render lands beside the site as `danbyte.conf.new`. | off |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
         **Environment variables** (set before the command; alternative to flags)
@@ -99,13 +103,20 @@ The other tabs cover building from source and a local dev checkout.
 
         **What the installer does**, in order:
 
-        1. Installs OS services from your distro - `postgresql`, `redis-server`, and (unless `--no-nginx`) `nginx`.
+        1. Installs OS services from your distro - `postgresql`, `redis-server`, and (unless `--no-nginx`) `nginx`. On a host that just booted and is still installing its own updates, it waits up to 15 minutes for the package lock instead of failing.
         2. Creates the dedicated **`danbyte`** service user (rootless), home = the install path.
         3. Deploys the app to `<service-home>/danbyte` and builds the venv from the bundle's vendored CPython 3.13 + wheelhouse (no internet needed).
         4. **Generates secrets** with Python's CSPRNG and writes a `chmod 600`, service-user-owned `.env` - `DJANGO_SECRET_KEY` + `MONITORING_SECRET_KEY` (~400-bit), a 24-char DB password, and a 20-char admin password.
         5. Creates the PostgreSQL role + database, runs migrations, and bootstraps the `admin` superuser.
-        6. Installs the systemd units (web, workers, websocket, docs, timers), writes logs to `/var/log/danbyte`, and - unless `--no-nginx` - puts nginx + TLS in front.
+        6. Installs the systemd units (web, workers, websocket, docs, timers), writes logs to `/var/log/danbyte`, and - unless `--no-nginx` - puts nginx + TLS in front, with the root unit that applies a certificate the app drops (Settings → Updates → Site certificate). That unit runs a root-owned copy of its script from `/usr/local/libexec/danbyte/`, never the one in the app directory, and answers in `/var/lib/danbyte-tls/`.
         7. Prints the generated **admin password** at the end.
+
+        Run again on a box that already has Danbyte, the installer **upgrades**
+        it with the release's own upgrade stage instead of steps 3-6 - see
+        [Upgrading → Offline bundle](upgrading.md). Everything it runs as root
+        comes from the unpacked bundle, never from the app directory the
+        service account owns, and what it puts in that directory - the code,
+        `.env` - the service account writes; unpack the bundle as root.
 
         !!! note "PostgreSQL and Redis are native, not containers"
 
@@ -236,13 +247,23 @@ The other tabs cover building from source and a local dev checkout.
     systemctl --user enable --now danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane
     ```
 
-    **7 · nginx + TLS:**
+    **7 · nginx + TLS.** These steps run as root, so not from
+    `~danbyte/danbyte`: the service account owns it, and a file changed there
+    would run as root. From your own login, with a copy of the same code that
+    root owns:
 
     ```bash
-    make proxy-install NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
-      PROXY_HOST=danbyte.example.com
-    make install-tls-unit      # the root unit that applies a certificate dropped from the app
+    sudo apt install -y nginx
+    sudo git clone …/danbyte /root/danbyte-src      # what ~danbyte/danbyte runs
+    sudo make -C /root/danbyte-src host-sync APP=/opt/danbyte/danbyte HOST=danbyte.example.com
     ```
+
+    That is what the bundle installer does as root: the nginx site with a
+    self-signed certificate, logrotate for `/var/log/danbyte`, and the root
+    unit that applies a certificate dropped from the app, which runs a
+    root-owned copy of its script in `/usr/local/libexec/danbyte`. After an
+    upgrade, run it again from a copy of the new release (see
+    [After an upgrade](upgrading.md#after-an-upgrade)).
 
     Open `https://danbyte.example.com/` and sign in as `admin`. The
     certificate is self-signed; for a public host get a real one from

@@ -9,6 +9,7 @@ const ROUTE_TYPES: Record<string, string> = {
   sites: "site",
   locations: "location",
   racks: "rack",
+  cabinets: "cabinet",
   prefixes: "prefix",
   ips: "IP address",
   "ip-ranges": "IP range",
