@@ -20,6 +20,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from core.models import Tag, Tenant, TenantGroup
+from core.tags import tags_of
 from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
@@ -634,6 +635,17 @@ class TenantPickerSerializer(NumIdModelSerializer):
         fields = ["id", "name", "slug", "color", "is_active"]
 
 
+class TagListSerializer(serializers.ListSerializer):
+    """``TagSerializer(many=True)`` on a ``tags`` field: reads the list a
+    ``core.tags.TAGS`` prefetch left on the row instead of a per-row taggit
+    queryset (#296); an object loaded without it still queries."""
+
+    def get_attribute(self, instance):
+        if self.source == "tags":
+            return tags_of(instance)
+        return super().get_attribute(instance)
+
+
 class TagSerializer(NumIdModelSerializer):
     # Kept minimal on purpose: this is embedded read-only in every taggable
     # object's serializer (Prefix, IP, VRF, …). Do NOT add a usage count here
@@ -641,6 +653,7 @@ class TagSerializer(NumIdModelSerializer):
     class Meta:
         model = Tag
         fields = ["id", "name", "slug", "color", "text_color"]
+        list_serializer_class = TagListSerializer
 
 
 class TagManageSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, NumIdModelSerializer):

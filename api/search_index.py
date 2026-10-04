@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from django.apps import apps
 from django.db import transaction
 
+from core.tags import tags_of
+
 logger = logging.getLogger(__name__)
 
 # Body text is capped so a wall of comments cannot swamp the trigram index.
@@ -339,7 +341,7 @@ def _facets(obj, spec: IndexSpec) -> dict:
             out[_FACET_KEYS.get(attr, attr)] = vals
     if hasattr(obj, "tags") and _has_field(obj, "tags"):
         try:
-            rows = list(obj.tags.all())
+            rows = list(tags_of(obj))
             tags = [fold(t.name) for t in rows] + [fold(t.slug) for t in rows]
         except Exception:  # noqa: BLE001
             tags = []

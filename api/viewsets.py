@@ -33,6 +33,7 @@ from rest_framework.response import Response
 from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
 from auth_api.drf import RBACViewSetMixin, restrict_for_view
 from core.models import Organization, Tag, Tenant, TenantGroup
+from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .filters import apply_tag_filter
@@ -1151,7 +1152,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     queryset = (
         Prefix.objects
         .select_related("site", "vlan__zone", "vrf", "location")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .all()
     )
     serializer_class = PrefixSerializer
@@ -1510,7 +1511,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                     "status", "role", "assigned_device", "assigned_vm",
                     "prefix__vlan__zone",
                 )
-                .prefetch_related("tags")
+                .prefetch_related(TAGS)
             ),
             request.user, prefix.tenant, "ipaddress", "view",
         )
@@ -1745,7 +1746,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             "assigned_vm", "prefix__vrf", "prefix__site", "site",
             "assigned_interface__device",
         )
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .all()
     )
     serializer_class = IPAddressSerializer
@@ -1898,7 +1899,7 @@ class _PickerPagination(PageNumberPagination):
 class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     queryset = (
         VRF.objects
-        .prefetch_related("import_targets", "export_targets", "tags")
+        .prefetch_related("import_targets", "export_targets", TAGS)
         .all()
         .order_by(NATURAL_NAME)
     )
@@ -1957,7 +1958,7 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
 class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     queryset = (
         RouteTarget.objects
-        .prefetch_related("importing_vrfs", "exporting_vrfs", "tags")
+        .prefetch_related("importing_vrfs", "exporting_vrfs", TAGS)
         .all()
         .order_by(NATURAL_NAME)
     )
@@ -1994,7 +1995,7 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
 
 
 class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
-    queryset = Site.objects.prefetch_related("tags", "vrfs").all().order_by(NATURAL_NAME)
+    queryset = Site.objects.prefetch_related(TAGS, "vrfs").all().order_by(NATURAL_NAME)
     serializer_class = SiteSerializer
     pagination_class = StandardPagination
     rbac_action_map = {"bulk_delete": "delete"}
@@ -2142,7 +2143,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     editable_fk_fields = {"site_id": Site, "zone_id": Zone, "vrf_id": VRF, "status_id": Status}
     queryset = (
         VLAN.objects.select_related("site", "group", "zone", "vrf", "status")
-        .prefetch_related("tags").all().order_by("vlan_id")
+        .prefetch_related(TAGS).all().order_by("vlan_id")
     )
     serializer_class = VLANSerializer
     pagination_class = StandardPagination
@@ -2851,7 +2852,7 @@ def _check_unique_name(model, serializer, tenant, noun):
 
 class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     queryset = (
-        DeviceType.objects.select_related("manufacturer", "platform").prefetch_related("tags").all().order_by(NATURAL_NAME)
+        DeviceType.objects.select_related("manufacturer", "platform").prefetch_related(TAGS).all().order_by(NATURAL_NAME)
     )
     serializer_class = DeviceTypeSerializer
     pagination_class = StandardPagination
@@ -3476,7 +3477,7 @@ class DeviceViewSet(
         # without their bodies - a page is up to 10,000 rows and the row only
         # shows the name.
         .prefetch_related(
-            "tags", "secondary_ip", "oob_ip", "cabinet", "din_rail",
+            TAGS, "secondary_ip", "oob_ip", "cabinet", "din_rail",
             *(
                 Prefetch(
                     f"{path}config_template",
@@ -4220,7 +4221,7 @@ class DeviceViewSet(
         qs = annotate_dhcp(
             IPAddress.objects.filter(assigned_device=device, tenant=device.tenant)
             .select_related(*ASSIGNED_IP_RELATED)
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         qs = rbac.restrict_queryset(
             qs, request.user, device.tenant, "ipaddress", "view"
@@ -4243,7 +4244,7 @@ class DeviceViewSet(
                 "parent__device", "lag__device", "bridge__device",
             )
             .prefetch_related(
-                "tags", "children", "lag_members", "tagged_vlans", "mac_addresses",
+                TAGS, "children", "lag_members", "tagged_vlans", "mac_addresses",
                 assigned_ips_prefetch(request, device.tenant),
                 "tunnel_terminations__tunnel",
                 # The serializer reads these per row - without them the tab
@@ -4385,7 +4386,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
                 Prefetch(rel, queryset=Interface.objects.select_related("device"))
                 for rel in ("parent", "lag", "bridge")
             ),
-            "tags", "terminations__cable__status", "reservations", "children",
+            TAGS, "terminations__cable__status", "reservations", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
             *FAR_END_PREFETCH,
@@ -4471,7 +4472,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
                 assigned_interface=iface, tenant=iface.device.tenant
             )
             .select_related(*ASSIGNED_IP_RELATED)
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             .order_by("ip_address")
         )
         from auth_api import rbac
@@ -4651,7 +4652,7 @@ class MACAddressViewSet(TenantScopedViewSet):
 
     queryset = (
         MACAddress.objects.select_related("assigned_interface__device")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .order_by("mac_address")
     )
     serializer_class = MACAddressSerializer
@@ -4730,7 +4731,7 @@ class CableViewSet(TenantScopedViewSet):
             "terminations__power_feed__power_panel",
             # Same for a circuit end: it names its circuit, not a device.
             "terminations__circuit_termination__circuit",
-            "tags",
+            TAGS,
         ).order_by("-created_at")
     )
     serializer_class = CableSerializer
@@ -5116,7 +5117,7 @@ class FiberSettingsViewSet(viewsets.ViewSet):
 class RearPortViewSet(_DevicePortViewSet):
     queryset = (
         RearPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable__status", "reservations", "front_ports")
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations", "front_ports")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = RearPortSerializer
@@ -5127,7 +5128,7 @@ class RearPortViewSet(_DevicePortViewSet):
 class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
         FrontPort.objects.select_related("device", "rear_port")
-        .prefetch_related("tags", "terminations__cable__status", "reservations")
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = FrontPortSerializer
@@ -5137,7 +5138,7 @@ class FrontPortViewSet(_DevicePortViewSet):
 class ConsolePortViewSet(_DevicePortViewSet):
     queryset = (
         ConsolePort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable__status", "reservations")
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ConsolePortSerializer
@@ -5146,7 +5147,7 @@ class ConsolePortViewSet(_DevicePortViewSet):
 class AuxPortViewSet(_DevicePortViewSet):
     queryset = (
         AuxPort.objects.select_related("device")
-        .prefetch_related("tags", "reservations")
+        .prefetch_related(TAGS, "reservations")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = AuxPortSerializer
@@ -5158,7 +5159,7 @@ class AntennaViewSet(_DevicePortViewSet):
 
     queryset = (
         Antenna.objects.select_related("device")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = AntennaSerializer
@@ -5169,7 +5170,7 @@ class AntennaViewSet(_DevicePortViewSet):
 class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable__status", "reservations")
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ConsoleServerPortSerializer
@@ -5179,7 +5180,7 @@ class ConsoleServerPortViewSet(_DevicePortViewSet):
 class PowerPortViewSet(_DevicePortViewSet):
     queryset = (
         PowerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable__status", "reservations", "outlets")
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations", "outlets")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = PowerPortSerializer
@@ -5188,7 +5189,7 @@ class PowerPortViewSet(_DevicePortViewSet):
 class PowerOutletViewSet(_DevicePortViewSet):
     queryset = (
         PowerOutlet.objects.select_related("device", "power_port")
-        .prefetch_related("tags", "terminations__cable__status", "reservations")
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = PowerOutletSerializer
@@ -5316,7 +5317,7 @@ class InventoryItemViewSet(_DevicePortViewSet):
     queryset = (
         InventoryItem.objects
         .select_related("device", "manufacturer", "parent")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = InventoryItemSerializer
@@ -5343,7 +5344,7 @@ class DeviceBayViewSet(_DevicePortViewSet):
     bulk_str_fields = ("description",)
     queryset = (
         DeviceBay.objects.select_related("device", "installed_device")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = DeviceBaySerializer
@@ -5440,7 +5441,7 @@ class TopologyViewViewSet(TenantScopedViewSet):
 class ModuleTypeViewSet(TenantScopedViewSet):
     queryset = (
         ModuleType.objects.select_related("manufacturer")
-        .prefetch_related("tags").order_by(NATURAL_NAME)
+        .prefetch_related(TAGS).order_by(NATURAL_NAME)
     )
     serializer_class = ModuleTypeSerializer
     pagination_class = StandardPagination
@@ -5515,7 +5516,7 @@ class ModuleBayViewSet(_DevicePortViewSet):
     bulk_str_fields = ("description",)
     queryset = (
         ModuleBay.objects.select_related("device")
-        .prefetch_related("tags", "module__module_type")
+        .prefetch_related(TAGS, "module__module_type")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = ModuleBaySerializer
@@ -5528,7 +5529,7 @@ class ModuleViewSet(TenantScopedViewSet):
     queryset = (
         Module.objects.select_related(
             "device", "module_bay", "module_type"
-        ).prefetch_related("tags").order_by(natural("device__name"), natural("module_bay__name"))
+        ).prefetch_related(TAGS).order_by(natural("device__name"), natural("module_bay__name"))
     )
     serializer_class = ModuleSerializer
     pagination_class = StandardPagination
@@ -5712,7 +5713,7 @@ class ClusterViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("type", "group", "site")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             .annotate(vm_count_annotated=Count("virtual_machines"))
         )
         if self.request:
@@ -5857,7 +5858,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                             "group")
             # `disks` is serialised inline, so without this the list endpoint
             # fires one query per VM.
-            .prefetch_related("tags", "disks")
+            .prefetch_related(TAGS, "disks")
             .annotate(
                 power_state=Subquery(latest.values("power_state")[:1]),
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
@@ -5942,7 +5943,7 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
             .get_queryset()
             .select_related("vm__status", "vlan", "vrf")
             .prefetch_related(
-                "tags", "tagged_vlans",
+                TAGS, "tagged_vlans",
                 assigned_ips_prefetch(
                     self.request, _get_active_tenant(self.request),
                     fk="assigned_vm_interface",
@@ -5994,7 +5995,7 @@ class RackTypeViewSet(TenantScopedViewSet):
     the rack form and whose accessories can stamp 0U strips onto new racks."""
 
     queryset = RackType.objects.select_related("manufacturer").prefetch_related(
-        "tags", "accessories__device_type__manufacturer"
+        TAGS, "accessories__device_type__manufacturer"
     ).order_by(NATURAL_NAME)
     serializer_class = RackTypeSerializer
     pagination_class = StandardPagination
@@ -6102,7 +6103,7 @@ class CabinetTypeViewSet(TenantScopedViewSet):
     """Enclosure models - the plate and box sizes a new cabinet copies."""
 
     queryset = CabinetType.objects.select_related("manufacturer").prefetch_related(
-        "tags", "rail_templates"
+        TAGS, "rail_templates"
     ).order_by(NATURAL_NAME)
     serializer_class = CabinetTypeSerializer
     pagination_class = StandardPagination
@@ -6186,7 +6187,7 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 "site", "site__region", "location", "role", "status",
                 "cabinet_type__manufacturer",
             )
-            .prefetch_related("tags", "rails")
+            .prefetch_related(TAGS, "rails")
             .annotate(document_n=Coalesce(Subquery(documents), 0),
                       device_n=Count("devices", distinct=True))
         )
@@ -6362,7 +6363,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             .select_related(
                 "site", "site__region", "role", "location", "rack_type__manufacturer"
             )
-            .prefetch_related("tags", capacity.racked_devices_prefetch(), "power_feeds")
+            .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
         )
         if self.request:
@@ -6548,7 +6549,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         interfaces = list(rbac.restrict_queryset(
             component_queryset("interfaces", [d.id for d in devices])
             .select_related("vlan__zone", "lag")
-            .prefetch_related(assigned_ips_prefetch(request, tenant), "tags")
+            .prefetch_related(assigned_ips_prefetch(request, tenant), TAGS)
             .annotate(tagged_vlan_n=Coalesce(Subquery(tagged_n), 0)),
             request.user, tenant, "interface", "view",
         )) if devices else []
@@ -6815,7 +6816,7 @@ class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             super().get_queryset()
             .select_related("device", "status", "external_ip", "internal_ip",
                             "source_ip", "source_prefix")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         if not self.request:
             return qs
@@ -6857,7 +6858,7 @@ class ServiceViewSet(TenantScopedViewSet):
         qs = (
             super().get_queryset()
             .select_related("device", "virtual_machine", "ip_address")
-            .prefetch_related("tags", "check_assignments")
+            .prefetch_related(TAGS, "check_assignments")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6961,7 +6962,7 @@ class IPRangeViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("vrf", "role", "prefix")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             # Backs a DHCP exclusion? → serializer `dhcp` flag ("exclusion").
             # Reverse accessor - no integrations import.
             .annotate(dhcp_excl_n=Count("dhcp_exclusions", distinct=True))
@@ -7101,7 +7102,7 @@ class AggregateViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("rir")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             .annotate(
                 covered_n=RawSQL(
                     "(SELECT COALESCE(SUM(power(2, 32 - masklen(p.cidr::inet))), 0)::bigint"
@@ -7136,7 +7137,7 @@ class ASNViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("rir")
-            .prefetch_related("tags", "sites")
+            .prefetch_related(TAGS, "sites")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7233,7 +7234,7 @@ class FHRPGroupViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("virtual_ip")
             .prefetch_related(
-                "tags",
+                TAGS,
                 "assignments__interface__device",
                 "assignments__vm_interface__vm",
             )
@@ -7384,7 +7385,7 @@ class ContactViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("group")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7483,7 +7484,7 @@ class ProviderViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     def get_queryset(self):
         # Two reverse joins in one query - distinct on each, or every circuit
         # would be counted once per network and vice versa.
-        qs = super().get_queryset().prefetch_related("tags").annotate(
+        qs = super().get_queryset().prefetch_related(TAGS).annotate(
             circuit_count_annotated=Count("circuits", distinct=True),
             network_count_annotated=Count("networks", distinct=True),
         )
@@ -7563,7 +7564,7 @@ class CircuitViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             .get_queryset()
             .select_related("provider", "type")
             .prefetch_related(
-                "tags", "terminations__site", "terminations__provider_network",
+                TAGS, "terminations__site", "terminations__provider_network",
                 # Each end reports the cable landing on it (#118).
                 "terminations__circuit", "terminations__terminations__cable__status",
             )
@@ -7597,7 +7598,7 @@ class ProviderNetworkViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     rbac_action_map = {"bulk_delete": "delete"}
     queryset = (
         ProviderNetwork.objects.select_related("provider")
-        .prefetch_related("tags").order_by(NATURAL_NAME)
+        .prefetch_related(TAGS).order_by(NATURAL_NAME)
     )
     serializer_class = ProviderNetworkSerializer
     pagination_class = StandardPagination
@@ -7682,7 +7683,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("site").prefetch_related(
-            "tags"
+            TAGS
         ).annotate(feed_count_annotated=Count("power_feeds"))
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7721,7 +7722,7 @@ class PowerFeedViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("power_panel", "rack")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             # The Terminations tab's count: distinct cables among the feed's
             # terminations, annotated so the list stays one query.
             .annotate(
@@ -7887,7 +7888,7 @@ class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScope
             super()
             .get_queryset()
             .select_related("group", "vlan")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7997,7 +7998,7 @@ class TunnelViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("group", "ipsec_profile")
             .prefetch_related(
-                "tags",
+                TAGS,
                 Prefetch("terminations", queryset=ends),
                 # A lookup of its own, not one nested in `ends`: Django walks
                 # a nested single-row to_attr prefetch twice, and the second
@@ -8091,7 +8092,7 @@ class L2VPNViewSet(TenantScopedViewSet):
         L2VPN.objects
         .select_related("status", "vrf")
         .prefetch_related(
-            "import_targets", "export_targets", "tags",
+            "import_targets", "export_targets", TAGS,
             "terminations__vlan", "terminations__interface__device",
             "terminations__vm_interface__vm",
         )
@@ -8177,7 +8178,7 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     queryset = (
         VirtualChassis.objects
         .select_related("master", "master__primary_ip", "master__oob_ip")
-        .prefetch_related("members__status", "tags")
+        .prefetch_related("members__status", TAGS)
         .order_by(NATURAL_NAME)
     )
     serializer_class = VirtualChassisSerializer
@@ -9183,7 +9184,7 @@ def _resolve_route_endpoints(plan, body):
 class FloorPlanViewSet(TenantScopedViewSet):
     queryset = (
         FloorPlan.objects.select_related("location", "location__site")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
     )
     serializer_class = FloorPlanSerializer
@@ -9253,7 +9254,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     save=False,
                 )
             dst.save()
-            dst.tags.set(src.tags.all())
+            dst.tags.set(tags_of(src))
             for rel in ("tiles", "trays", "raised_floor_areas", "walls"):
                 for obj in getattr(src, rel).all():
                     obj.pk = None

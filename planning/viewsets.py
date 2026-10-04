@@ -19,6 +19,7 @@ from rest_framework.response import Response
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
+from core.tags import TAGS
 
 from .models import (
     Board,
@@ -51,7 +52,7 @@ class BoardViewSet(TenantScopedViewSet):
         return (
             super()
             .get_queryset()
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
             .annotate(task_count=Count("tasks"))
         )
 

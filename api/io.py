@@ -28,6 +28,7 @@ from django.utils.text import slugify
 
 from auth_api.object_types import model_for, registry_payload, slug_for_model
 from core.models import CustomFieldsMixin, TaggableMixin, Tag
+from core.tags import TAGS, tags_of
 
 from .bulk_import import (
     _SKIP,
@@ -126,7 +127,7 @@ class ModelIOHandler:
     # ── export ────────────────────────────────────────────────────────────
     def export_queryset(self, qs):
         if _is_taggable(self.model):
-            qs = qs.prefetch_related("tags")
+            qs = qs.prefetch_related(TAGS)
         return qs
 
     def _export_value(self, obj, f) -> str:
@@ -164,7 +165,7 @@ class ModelIOHandler:
                 continue
             row[f.name] = self._export_value(obj, f)
         if _is_taggable(self.model):
-            row["tags"] = ";".join(t.name for t in obj.tags.all())
+            row["tags"] = ";".join(t.name for t in tags_of(obj))
         if _has_custom_fields(self.model):
             cf = obj.custom_fields or {}
             row["custom_fields"] = json.dumps(cf) if cf else ""

@@ -168,6 +168,7 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
     from django.db.models import Q
 
     from core.models import Tag
+    from core.tags import TAGS, tags_of
 
     tag_qs = Tag.objects.filter(id__in={*add_tag_ids, *remove_tag_ids})
     if tenant is not None:
@@ -175,8 +176,8 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
     tags = {t.id: t for t in tag_qs}
     add = [tags[i] for i in add_tag_ids if i in tags]
     remove = [tags[i] for i in remove_tag_ids if i in tags]
-    for obj in qs.prefetch_related("tags"):
-        current = {t.id for t in obj.tags.all()}
+    for obj in qs.prefetch_related(TAGS):
+        current = {t.id for t in tags_of(obj)}
         added = [t.name for t in add if t.id not in current]
         removed = [t.name for t in remove if t.id in current]
         if add:

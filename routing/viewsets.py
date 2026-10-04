@@ -23,6 +23,7 @@ from api.viewsets import (
 )
 from audit.bulk import log_bulk_delete
 from auth_api.site_paths import SITE_PATHS, site_in_q
+from core.tags import TAGS
 
 from .models import (
     VTEP,
@@ -133,7 +134,7 @@ class _CatalogViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, Ten
         )
 
     def get_queryset(self):
-        qs = super().get_queryset().prefetch_related("tags")
+        qs = super().get_queryset().prefetch_related(TAGS)
         if hasattr(qs.model, "rules"):
             qs = qs.annotate(rule_count_annotated=Count("rules", distinct=True))
         if not self.request:
@@ -309,7 +310,7 @@ class StaticRouteViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
             .select_related("device__site", "virtual_machine__site", "vrf", "prefix_obj",
                             "next_hop_interface__device", "next_hop_vm_interface__vm",
                             "next_hop_vrf", "status")
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         if not self.request:
             return qs
@@ -365,7 +366,7 @@ class BGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
             super().get_queryset()
             .select_related("device__site", "virtual_machine__site", "vrf", "asn", "status")
             .prefetch_related(
-                "tags", "address_families__import_policy",
+                TAGS, "address_families__import_policy",
                 "address_families__export_policy",
                 "address_families__redistributions__policy",
             )
@@ -516,7 +517,7 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
                 "peer_session__instance__virtual_machine",
                 "import_policy", "export_policy", "keychain", "status",
             )
-            .prefetch_related("tags")
+            .prefetch_related(TAGS)
         )
         if not self.request:
             return qs
@@ -645,7 +646,7 @@ class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin,
         qs = (
             super().get_queryset()
             .select_related("device__site", "virtual_machine__site", "vrf", "status")
-            .prefetch_related("tags", "redistributions__policy")
+            .prefetch_related(TAGS, "redistributions__policy")
             .annotate(interface_count_annotated=Count("interfaces", distinct=True))
         )
         if not self.request:
@@ -795,7 +796,7 @@ class VTEPViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantS
             .select_related("device__site", "source_interface__device", "source_ip",
                             "anycast_ip", "status")
             .prefetch_related(
-                "tags", "memberships__l2vpn__vrf", "memberships__vlan",
+                TAGS, "memberships__l2vpn__vrf", "memberships__vlan",
                 "memberships__l2vpn__terminations__vlan",
             )
         )
@@ -879,7 +880,7 @@ class LDPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
         qs = (
             super().get_queryset()
             .select_related("device__site", "status", "bfd_profile")
-            .prefetch_related("tags", "interfaces__device")
+            .prefetch_related(TAGS, "interfaces__device")
         )
         if not self.request:
             return qs

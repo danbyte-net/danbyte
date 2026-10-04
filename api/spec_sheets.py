@@ -17,6 +17,8 @@ from fractions import Fraction
 from django.contrib.contenttypes.models import ContentType
 from django.template.loader import render_to_string
 
+from core.tags import tags_of
+
 from .din import mm
 from .natural import natural, natural_key
 
@@ -137,7 +139,7 @@ def _status(obj) -> dict | None:
 
 
 def _tags(obj) -> str:
-    return ", ".join(t.name for t in obj.tags.all())
+    return ", ".join(t.name for t in tags_of(obj))
 
 
 def _ports_used(devices, tenant) -> dict | None:

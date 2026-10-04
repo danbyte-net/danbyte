@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from core.tags import tags_of
+
 from .face_ports import (
     FACE_PORT_KINDS,
     ComponentIndex,
@@ -459,7 +461,7 @@ def interface_state(iface, peer=far_end) -> dict:
         "tags": [
             {"id": t.id, "name": t.name, "slug": t.slug, "color": t.color,
              "text_color": t.text_color}
-            for t in iface.tags.all()
+            for t in tags_of(iface)
         ],
     }
 
