@@ -167,3 +167,53 @@ class DashboardScopeParamTests(APITestCase):
             tenant=self.tenant, defaults={"default_dashboard_widgets": layout}
         )
         self.assertEqual(self.client.get("/api/dashboard/").json()["default_widgets"], layout)
+
+
+class DashboardCostTests(APITestCase):
+    """The dashboard's queries do not grow with the rows its widgets show
+    (#299): statuses and address counts come with the rows."""
+
+    def setUp(self):
+        from api.models import Device
+        from api.test_utils import status_for
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.status = status_for(self.tenant)
+        self.Device = Device
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        self.add(2)
+
+    def add(self, n):
+        start = Prefix.objects.filter(tenant=self.tenant).count()
+        for i in range(start, start + n):
+            prefix = Prefix.objects.create(
+                tenant=self.tenant, cidr=f"10.{i}.0.0/24", status=self.status
+            )
+            IPAddress.objects.create(tenant=self.tenant, prefix=prefix,
+                                     ip_address=f"10.{i}.0.5")
+            self.Device.objects.create(tenant=self.tenant, name=f"d{i}", status=self.status)
+
+    def queries(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.get("/api/dashboard/")
+        with CaptureQueriesContext(connection) as ctx:
+            body = self.client.get("/api/dashboard/").json()
+        return len(ctx.captured_queries), body
+
+    def test_flat_as_the_widgets_fill(self):
+        few, _ = self.queries()
+        self.add(6)
+        many, body = self.queries()
+        self.assertEqual(many, few)
+        top = body["top_prefixes"]
+        # Tied on one address each: by CIDR, with the same figure per row.
+        self.assertEqual([p["cidr"] for p in top], sorted(p["cidr"] for p in top))
+        prefix = Prefix.objects.get(tenant=self.tenant, cidr=top[0]["cidr"])
+        self.assertEqual(top[0]["utilisation_pct"], prefix.utilisation_pct)

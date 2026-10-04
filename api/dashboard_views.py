@@ -343,16 +343,20 @@ def dashboard_view(request):
 
     prefix_by_status = _by(prefixes, "status_id", "status__name", "status__color")
 
-    # Top prefixes by utilisation (per-instance, but only the busiest 8).
+    # Top prefixes by utilisation: the busiest 8, their address counts and
+    # statuses read with them (#299), the CIDR breaking ties so the widget
+    # keeps its order.
     busiest = list(
-        prefixes.annotate(ipc=Count("ip_addresses")).order_by("-ipc")[:8]
+        prefixes.select_related("status")
+        .annotate(ipc=Count("ip_addresses"))
+        .order_by("-ipc", "cidr")[:8]
     )
     top_prefixes = [
         {
             "id": str(p.id),
             "cidr": p.cidr,
             "ip_count": p.ipc,
-            "utilisation_pct": p.utilisation_pct,
+            "utilisation_pct": p.utilisation_with(p.ipc),
         }
         for p in busiest
         if p.ipc
@@ -432,7 +436,7 @@ def _default_widgets(tenant):
 
 def _recent_prefixes(prefixes, limit: int = 8) -> list:
     rows = (
-        prefixes.select_related("site")
+        prefixes.select_related("site", "status")
         .annotate(ipc=Count("ip_addresses"))
         .order_by("-created_at")[:limit]
     )
@@ -450,7 +454,7 @@ def _recent_prefixes(prefixes, limit: int = 8) -> list:
 
 def _recent_devices(devices, limit: int = 8) -> list:
     rows = (
-        devices.select_related("device_type", "site").order_by("-created_at")[:limit]
+        devices.select_related("device_type", "site", "status").order_by("-created_at")[:limit]
     )
     return [
         {
