@@ -3467,15 +3467,16 @@ class DeviceViewSet(
             "device_type", "device_type__platform", "device_type__manufacturer",
             "site", "site__region", "primary_ip",
             "role", "rack", "status", "platform", "location", "cluster",
-            "cabinet", "din_rail",
         )
-        # The secondary and OOB addresses and the config template (resolved
-        # device -> role -> platform) are prefetched, not joined: with them
-        # the query had 17 LEFT JOINs and Postgres took ~120 ms to plan what
-        # runs in 8 ms (#254). The templates come without their bodies - a
-        # page is up to 10,000 rows and the row only shows the name.
+        # The secondary and OOB addresses, the DIN cabinet and rail and the
+        # config template (resolved device -> role -> platform) are
+        # prefetched, not joined: with them the query had 17 LEFT JOINs and
+        # Postgres took ~120 ms to plan what runs in 8 ms (#254, #288). A
+        # relation no row on the page uses costs no query. The templates come
+        # without their bodies - a page is up to 10,000 rows and the row only
+        # shows the name.
         .prefetch_related(
-            "tags", "secondary_ip", "oob_ip",
+            "tags", "secondary_ip", "oob_ip", "cabinet", "din_rail",
             *(
                 Prefetch(
                     f"{path}config_template",

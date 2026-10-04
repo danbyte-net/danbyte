@@ -327,6 +327,43 @@ class DeviceListTests(_Base):
         self.assertEqual(rows["sw-04"]["interface_count"], 0)
         self.assertEqual(rows["sw-04"]["ip_count"], 0)
 
+    def test_cabinet_and_rail_are_prefetched_not_joined(self):
+        """Joined, the DIN cabinet and rail brought the list query back to 14
+        LEFT JOINs and Postgres spent most of the request planning it (#288)."""
+        from .models import Cabinet, DinRail
+
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        cab = Cabinet.objects.create(
+            tenant=self.tenant, site=site, name="K1", inner_width_mm=600, inner_height_mm=800
+        )
+        rail = DinRail.objects.create(cabinet=cab, label="R1", x_mm=10, y_mm=100, length_mm=500)
+        for i in range(12):
+            mounted = i % 3 == 0
+            Device.objects.create(
+                tenant=self.tenant, name=f"d-{i:02d}", site=site,
+                cabinet=cab if mounted else None, din_rail=rail if mounted else None,
+                din_offset_mm=10 * i if mounted else None,
+            )
+        small, _ = self._queries("/api/devices/?page_size=4")
+        big, body = self._queries("/api/devices/?page_size=12")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {r["name"]: r for r in body["results"]}
+        self.assertEqual(rows["d-03"]["cabinet"], {"id": str(cab.id), "name": "K1"})
+        self.assertEqual(
+            rows["d-03"]["din_rail"], {"id": str(rail.id), "label": "R1", "profile": "ts35"}
+        )
+        self.assertIsNone(rows["d-04"]["cabinet"])
+        self.assertIsNone(rows["d-04"]["din_rail"])
+        with CaptureQueriesContext(connection) as ctx:
+            self.client.get("/api/devices/?page_size=12")
+        page = [
+            q["sql"] for q in ctx.captured_queries
+            if q["sql"].startswith('SELECT "api_device"') and " LIMIT " in q["sql"]
+        ]
+        self.assertEqual(len(page), 1)
+        self.assertNotIn('JOIN "api_cabinet"', page[0])
+        self.assertNotIn('JOIN "api_dinrail"', page[0])
+
     def test_a_site_scoped_user_pays_one_permission_query_per_page(self):
         """A site-scoped grant always yields a Q, so the per-row lookup was
         the normal case for exactly those users: 2 queries per row (#218)."""
