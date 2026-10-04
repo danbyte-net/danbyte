@@ -76,8 +76,36 @@ def effective_separation(tenant):
 
 
 def separation_enabled(tenant) -> bool:
-    """Whether enhanced site separation is ON for this tenant."""
-    return bool(effective_separation(tenant).enhanced_site_separation)
+    """Whether enhanced site separation is ON for this tenant.
+
+    Every RBAC check on a catalog type asks (``auth_api.site_paths``) - 23
+    times, two queries each, for a site-limited user's journal page (#297) -
+    so the answer is kept in the per-request RBAC memo. Saving either
+    settings row forgets it (:func:`forget_separation`); outside a request
+    nothing is kept.
+    """
+    from auth_api.rbac import request_memo
+
+    memo = request_memo()
+    key = getattr(tenant, "pk", tenant)
+    if memo is not None and key in memo.get("separation", ()):
+        return memo["separation"][key]
+    on = bool(effective_separation(tenant).enhanced_site_separation)
+    if memo is not None:
+        # Looked up again: creating the deployment row on first use is
+        # itself a save that forgets the flags.
+        memo.setdefault("separation", {})[key] = on
+    return on
+
+
+def forget_separation(*args, **kwargs) -> None:
+    """Drop this request's memoised separation flags - a TenantSettings or
+    DeploymentSettings save mid-request is seen by the next check."""
+    from auth_api.rbac import request_memo
+
+    memo = request_memo()
+    if memo is not None:
+        memo.pop("separation", None)
 
 
 def effective_ui(tenant):

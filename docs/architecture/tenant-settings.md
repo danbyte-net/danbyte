@@ -24,7 +24,9 @@ Resolution lives in `core/effective_settings.py`:
 `effective_datetime(tenant)` return the most specific row whose toggle is on,
 else `DeploymentSettings.load()`.
 (`separation_enabled(tenant)` is the bool shortcut the RBAC fencing reads -
-see [Enhanced site separation](../access/site-separation.md).)
+see [Enhanced site separation](../access/site-separation.md). Within one HTTP
+request it is read once and kept in the per-request RBAC memo; saving either
+settings row drops it, so a change made mid-request is seen by the next check.)
 `port_count_virtual(tenant)` - whether
 [port utilization](../dcim/devices.md#what-counts-as-a-port) counts virtual
 interfaces - returns the deployment value: it has no tenant override yet, but

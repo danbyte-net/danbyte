@@ -51,6 +51,13 @@ def invalidate_request_cache(*args, **kwargs):
         cache.clear()
 
 
+def request_memo() -> dict | None:
+    """This request's memo, or None outside one. Besides the grants keyed
+    ``(user pk, tenant pk)`` it holds the site-separation flags under
+    ``"separation"`` (``core.effective_settings.separation_enabled``)."""
+    return _request_cache.get()
+
+
 def applicable_permissions(user, tenant):
     """Enabled ObjectPermissions that apply to ``user`` in ``tenant``.
 
