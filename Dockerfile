@@ -81,7 +81,7 @@ COPY . .
 # Non-root: run as an unprivileged user owning the app + the static/media dirs
 # collectstatic and uploads write to (shared volumes in compose).
 RUN useradd -m -u 10001 danbyte \
-    && mkdir -p /app/staticfiles /app/media \
+    && mkdir -p /app/staticfiles /app/media /app/backup-archives \
     && chown -R danbyte:danbyte /app
 USER danbyte
 

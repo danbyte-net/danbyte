@@ -268,6 +268,18 @@ docker compose -f docker-compose.prod.yml --env-file .env stop scheduler workers
 docker compose -f docker-compose.prod.yml --env-file .env up -d
 ```
 
+!!! warning "Docker installs upgraded to 0.17.0: upgrade to 0.17.1"
+    Up to 0.17.0 the `backups` volume was mounted at `/app/backups`, which is
+    also the folder of Danbyte's own backups code. Docker fills a named volume
+    from the image only when the volume is created, so the containers kept
+    the backups code of the release that first made the volume. 0.17.0
+    changed that code, and every request answered 500 - `/api/me` first, so
+    nobody could sign in. 0.17.1 mounts the volume at
+    `/app/backup-archives` and moves the Local backup target with it; your
+    archives are the same files on the same volume. Upgrade with the commands
+    above. Going back to 0.16.13 does not help: the database is already
+    migrated to 0.17.
+
 `build` is what makes this a real upgrade: it **rebuilds the images** from the
 checked-out source, so the recreated containers actually run the new code. The
 backend migrates on start, before it serves; stopping the scheduler, workers,
@@ -277,7 +289,7 @@ them one by one, some after the migration has started). `up -d` then starts
 them all on the new image. The named volumes keep your data.
 
 Take a backup first: **Settings → Backups → Back up now** writes an encrypted
-archive to the `backups` volume (`/app/backups` in `backend` and `workers`).
+archive to the `backups` volume (`/app/backup-archives` in `backend` and `workers`).
 A restore later runs inside `workers` without restarting any container - see
 [Backup and restore](backup-restore.md).
 
