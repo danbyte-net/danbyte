@@ -18,7 +18,10 @@ x-app-env: &app-env
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
   DANBYTE_HTTPS: ${DANBYTE_HTTPS:-False}
   DANBYTE_TRUSTED_PROXY_DEPTH: ${DANBYTE_TRUSTED_PROXY_DEPTH:-1}
-  DANBYTE_BACKUP_DIR: /app/backups
+  # Backup archives live on the backups volume, outside the code: a volume
+  # mounted over /app/backups hid the backups app's own code behind the
+  # copy Docker took when the volume was made (#332).
+  DANBYTE_BACKUP_DIR: /app/backup-archives
   DB_NAME: ${DB_NAME:-danbyte}
   DB_USER: ${DB_USER:-danbyte}
   DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
@@ -82,7 +85,7 @@ services:
     volumes:
       - staticfiles:/app/staticfiles
       - media:/app/media
-      - backups:/app/backups
+      - backups:/app/backup-archives
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health/"]
       interval: 15s
@@ -117,7 +120,7 @@ services:
     # database over the network and swaps the media tree in place.
     volumes:
       - media:/app/media
-      - backups:/app/backups
+      - backups:/app/backup-archives
     sysctls:
       - net.ipv4.ping_group_range=0 2147483647
     depends_on:
