@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_DB: danbyte
           POSTGRES_USER: danbyte
@@ -32,7 +32,7 @@ jobs:
           --health-cmd "pg_isready -U danbyte"
           --health-interval 10s --health-timeout 5s --health-retries 5
       redis:
-        image: redis:7
+        image: public.ecr.aws/docker/library/redis:7
         ports: ['6379:6379']
         options: >-
           --health-cmd "redis-cli ping"
@@ -113,7 +113,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: public.ecr.aws/docker/library/postgres:17
         env:
           POSTGRES_DB: danbyte
           POSTGRES_USER: danbyte

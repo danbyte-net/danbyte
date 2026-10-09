@@ -11,7 +11,7 @@
 # `runtime` stage and just overrides the command to `runserver`.
 
 # ─── 1. Build the SPA ────────────────────────────────────────────────────────
-FROM docker.io/library/node:22-slim AS frontend
+FROM public.ecr.aws/docker/library/node:22-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -23,7 +23,7 @@ RUN npm run build
 # `/` to the `frontend` service (vite preview) rather than serving files. A
 # self-signed cert is baked in so browsers that force HTTPS still connect (they
 # show a one-time warning); terminate real TLS in front for production.
-FROM docker.io/library/nginx:1.27-alpine AS web
+FROM public.ecr.aws/docker/library/nginx:1.27.5-alpine AS web
 RUN apk add --no-cache openssl \
     && mkdir -p /etc/nginx/tls \
     && openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
@@ -33,7 +33,7 @@ COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/maintenance.html /usr/share/nginx/maintenance/maintenance.html
 
 # ─── 3. Python application runtime ───────────────────────────────────────────
-FROM docker.io/library/python:3.13-slim AS runtime
+FROM public.ecr.aws/docker/library/python:3.13-slim AS runtime
 # Marks this as the container deployment: in-app self-upgrade is refused here
 # (a process in a container can't rebuild its image or recreate itself), and
 # the Updates page points to `docker compose build` instead. See core/version.
