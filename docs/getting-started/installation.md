@@ -13,6 +13,9 @@ The other tabs cover building from source and a local dev checkout.
     - **PostgreSQL 15+** (17 or 18 recommended) and **Redis**.
     - Everything else - Python 3.13, Node, all dependencies - is **bundled** with
       the quick installer, so a fresh box needs nothing else.
+    - **Minimum:** 2 CPU cores, 4 GB RAM, 10 GB free disk. Disk grows with the
+      database; upgrades need room on top - see
+      [Disk space for upgrades](#disk-space-for-upgrades).
 
 ## Install
 
@@ -328,6 +331,34 @@ The other tabs cover building from source and a local dev checkout.
 ## Advanced
 
 Reference material - you don't need any of this for a first install.
+
+### Disk space for upgrades
+
+Before an upgrade stops anything it checks the free space where it works
+(`.danbyte-upgrade` beside the install folder). It needs room for a copy of
+the virtualenv and a backup of the database, so the figure follows your
+install rather than a fixed number:
+
+```text
+need = ( size of .venv
+       + size of the database
+       + 200 MB headroom
+       + size of frontend/node_modules    (git installs only)
+       ) × 1.2
+```
+
+The ×1.2 covers growth while the upgrade runs. A refused upgrade says what
+the figure is made of:
+
+```text
+not enough free space in /opt/.danbyte-upgrade: 4200 MB free, 10920 MB needed
+= (venv 900 + database backup 8000 + headroom 200) MB x 1.2
+```
+
+The database is usually the large part. Free space on that filesystem; older
+upgrade backups go with a lower **Settings → Backups → Housekeeping →
+Upgrade backups kept**. An uploaded bundle also needs about three times its
+archive size to unpack.
 
 ### Logs
 

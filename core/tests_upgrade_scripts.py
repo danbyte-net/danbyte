@@ -164,7 +164,7 @@ case "$1" in
     case "$1" in
       probe)
         echo "python=${FAKE_PYVER:-$("$REAL_PY" -c 'import sys;print("%d.%d" % sys.version_info[:2])')}"
-        echo db_size=1000; echo "db_rollback=${FAKE_DB_ROLLBACK:-1}"; echo redis=1
+        echo "db_size=${FAKE_DB_SIZE:-1000}"; echo "db_rollback=${FAKE_DB_ROLLBACK:-1}"; echo redis=1
         echo "pip_plugins=${FAKE_PLUGINS:-}"; echo superuser=1; echo mail=0 ;;
       wait-db)
         if [ -n "${FAKE_KILL_RECOVERY:-}" ]; then
@@ -851,6 +851,20 @@ class BundleStageTests(StageTestCase):
         self.assertIn("acme_plugin", h.status()["error"])
         self.assertFalse(h.called(r"^systemctl --user stop"))
 
+    def test_too_little_space_says_what_the_figure_is_made_of(self):
+        # #346: a database far bigger than any disk.
+        h = self.host()
+        r = h.upgrade(env={"FAKE_DB_SIZE": str(2**60)})
+        self.assertEqual(r.returncode, 1)
+        err = h.status()["error"]
+        self.assertRegex(
+            err,
+            r"MB free, \d+ MB needed = \(venv \d+ \+ database backup \d+ \+ headroom 200\) "
+            r"MB x 1\.2",
+        )
+        self.assertNotIn("node_modules", err)
+        self.assertFalse(h.called(r"^systemctl --user stop"))
+
     def test_a_stray_dev_server_on_a_production_host_is_disabled(self):
         h = self.host(extra_units={"danbyte-backend.service": (True, True)})
         r = h.upgrade()
@@ -1030,6 +1044,16 @@ class GitStageTests(StageTestCase):
         r = h.upgrade()
         self.assertEqual(r.returncode, 1)
         self.assertIn("working branch 'feature'", h.status()["error"])
+
+    def test_too_little_space_counts_node_modules_on_git(self):
+        h = self.host()
+        r = h.upgrade(env={"FAKE_DB_SIZE": str(2**60)})
+        self.assertEqual(r.returncode, 1)
+        self.assertRegex(
+            h.status()["error"],
+            r"MB needed = \(venv \d+ \+ database backup \d+ \+ node_modules \d+ "
+            r"\+ headroom 200\) MB x 1\.2",
+        )
 
 
 class LauncherBackupTests(StageTestCase):

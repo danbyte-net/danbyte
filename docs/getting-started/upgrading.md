@@ -359,7 +359,7 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 
 | Step | What happens | The site |
 |---|---|---|
-| preflight | refuses an older release than the one running, inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk; installs the recovery unit | up |
+| preflight | refuses an older release than the one running, inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk ([how much](installation.md#disk-space-for-upgrades)); installs the recovery unit | up |
 | backup | the pre-upgrade backup, with the running code; when the launcher took it before handing over, the step shows that run and its duration | up |
 | prepare | git: `npm ci` and the frontend build in a scratch copy; dependencies resolved (bundle: checked offline); a copy of the virtualenv | up |
 | quiesce | first, while the system is still installing its own package updates (`apt-daily`, unattended-upgrades - a host that just booted), it waits for them, up to 20 minutes, with everything still up, since a package update can restart PostgreSQL; past that it stops, retryable, with nothing stopped. Then timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |
