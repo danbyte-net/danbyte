@@ -11,12 +11,15 @@ runner or SMTP relay) are allow-listed via ``DANBYTE_SSRF_ALLOWLIST`` - a
 comma-separated list of CIDRs/IPs whose resolved addresses are permitted.
 Empty by default.
 
-Two entry points:
+Three entry points:
 - URL callers use ``safe_request`` / ``safe_post`` / ``safe_get`` instead of
   ``requests.*`` - they validate the host, force ``allow_redirects=False`` (a
   redirect could bounce to an internal address), AND **pin the connection to
   the validated IP** so a DNS-rebinding flip between the check and the connect
   can't reach an internal address (TOCTOU).
+- Clients that keep a session across calls (login once, reuse a token) use
+  ``SafeSession`` - a ``requests.Session`` that applies the same checks and
+  pinning to every request it makes.
 - Bare host:port callers (SMTP, LDAP) use ``assert_public_host(host, port)``
   before opening their own socket.
 """
@@ -30,6 +33,7 @@ from urllib.parse import urlparse, urlunparse
 
 import requests
 from requests.adapters import HTTPAdapter
+from requests.utils import should_bypass_proxies
 
 
 class SSRFError(ValueError):
@@ -150,29 +154,70 @@ class _PinnedSNIAdapter(HTTPAdapter):
         kw["assert_hostname"] = self._sni
         super().init_poolmanager(connections, maxsize, block=block, **kw)
 
+    def proxy_manager_for(self, proxy, **proxy_kwargs):
+        # Through an outbound proxy the tunnel still ends at the pinned IP, so
+        # the target's TLS must be checked against the hostname here as well.
+        proxy_kwargs.setdefault("server_hostname", self._sni)
+        proxy_kwargs.setdefault("assert_hostname", self._sni)
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+
+class SafeSession(requests.Session):
+    """A ``requests.Session`` hardened against SSRF on every request it makes:
+    the host must resolve to a public (or allow-listed) IP, the connection is
+    **pinned to that IP** (closing the DNS-rebinding TOCTOU) with the Host
+    header and TLS SNI/cert verification kept on the original hostname, and
+    redirects are never followed - not even when a caller or ``Session.get``'s
+    default asks for them (#321).
+
+    Use it where a client logs in once and reuses the session's headers,
+    cookies or ``verify`` for a whole pass (vCenter, Cloud Director); one-shot
+    callers use :func:`safe_request` / :func:`safe_get` / :func:`safe_post`.
+    """
+
+    def request(self, method, url, **kwargs):
+        scheme, host, port = _split(url)
+        ip = _resolve_public(host, port)[0]
+        kwargs["allow_redirects"] = False
+
+        parsed = urlparse(url)
+        netloc_ip = f"[{ip}]" if ":" in ip else ip
+        if parsed.port:
+            netloc_ip += f":{parsed.port}"
+        pinned_url = urlunparse(parsed._replace(netloc=netloc_ip))
+
+        headers = dict(kwargs.pop("headers", None) or {})
+        default_port = 443 if scheme == "https" else 80
+        headers.setdefault(
+            "Host", host if parsed.port in (None, default_port) else f"{host}:{parsed.port}"
+        )
+
+        if self.trust_env and should_bypass_proxies(url, no_proxy=None):
+            # NO_PROXY names hosts; decide on the hostname, not the pinned IP
+            # the URL now carries, so an exempted host stays direct.
+            proxies = dict(kwargs.pop("proxies", None) or {})
+            proxies.setdefault("no_proxy", ip)
+            kwargs["proxies"] = proxies
+
+        if scheme == "https":
+            # One pinned adapter per origin, reused across the session's calls
+            # so keep-alive works; remounted only if the hostname behind the
+            # same address changes (a different SNI). The trailing slash keeps
+            # 1.2.3.4 from also matching 1.2.3.45 or another port.
+            prefix = f"{scheme}://{netloc_ip}/"
+            adapter = self.adapters.get(prefix)
+            if not isinstance(adapter, _PinnedSNIAdapter) or adapter._sni != host:
+                self.mount(prefix, _PinnedSNIAdapter(host))
+        return super().request(method, pinned_url, headers=headers, **kwargs)
+
 
 def safe_request(method: str, url: str, **kwargs):
     """``requests.request`` hardened against SSRF: validates the host resolves
     to a public IP, forces ``allow_redirects=False``, and **pins the connection
     to the validated IP** (closing the DNS-rebinding TOCTOU) while preserving
     the Host header and TLS SNI/cert verification against the original host."""
-    scheme, host, port = _split(url)
-    ip = _resolve_public(host, port)[0]
-    kwargs.setdefault("allow_redirects", False)
-
-    parsed = urlparse(url)
-    netloc_ip = f"[{ip}]" if ":" in ip else ip
-    if parsed.port:
-        netloc_ip += f":{parsed.port}"
-    pinned_url = urlunparse(parsed._replace(netloc=netloc_ip))
-
-    headers = dict(kwargs.pop("headers", None) or {})
-    headers.setdefault("Host", host if not parsed.port else f"{host}:{parsed.port}")
-
-    with requests.Session() as sess:
-        if scheme == "https":
-            sess.mount(pinned_url, _PinnedSNIAdapter(host))
-        return sess.request(method, pinned_url, headers=headers, **kwargs)
+    with SafeSession() as sess:
+        return sess.request(method, url, **kwargs)
 
 
 def safe_post(url: str, **kwargs):

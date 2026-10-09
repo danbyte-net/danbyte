@@ -130,7 +130,9 @@ Trusted scripts are never confined.
 ## Outbound requests (SSRF guard)
 
 User-configured outbound URLs - webhooks, notification channels, automation
-targets, device-type import URLs, and **per-tenant** SMTP/LDAP hosts - are
+targets, device-type import URLs, virtualization sources (Proxmox, vCenter,
+Cloud Director), Windows server connections, a public assistant provider, and
+**per-tenant** SMTP/LDAP hosts - are
 validated before each request: the host is resolved and rejected if it points at
 a loopback / RFC1918 / link-local / `169.254.0.0/16` (cloud metadata) / ULA /
 reserved address. This stops a tenant admin pointing a webhook (or a tenant SMTP
@@ -140,7 +142,11 @@ cloud-hosted, multi-tenant deployments.
 The guard is **DNS-rebinding safe**: the resolved public IP is pinned for the
 actual connection (with SNI/`Host` preserved for TLS), so a hostname that
 resolves public on the first lookup can't be swapped to `169.254.169.254` on the
-connect. Operator-configured *deployment*-wide SMTP/LDAP hosts are trusted and
+connect. Redirects are never followed: a `3xx` answer is an error, so a host
+that passes the check cannot bounce the request to an internal address. When an
+outbound proxy is set, `NO_PROXY` is matched against the configured hostname,
+not the pinned IP. WinRM and the vCenter SOAP connection (host hardware) are
+checked before they connect but not pinned. Operator-configured *deployment*-wide SMTP/LDAP hosts are trusted and
 not guarded (an operator may legitimately point them at an internal relay); only
 tenant-supplied hosts are checked.
 
