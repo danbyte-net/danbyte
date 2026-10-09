@@ -556,7 +556,14 @@ These keep a large map legible:
   for the cable types). **Double-click a group** (or its panel's *Open group*) to
   drill into that group's device view; the header chip pops back out.
   Levels and focus pause while grouped. Devices without a site collect
-  under *Unassigned*.
+  under *Unassigned*. A grouped map costs about as much as its number of
+  groups, however large the tenant.
+- **Large tenants open grouped** - with more than 500 devices you may see,
+  *No view* opened bare (no view, focus, device set, site, location or
+  grouping in the address) opens **grouped by site** instead of loading
+  every device; the map waits for the count first. Pick *None* under
+  **Group by** to open ungrouped from then on: a grouping chosen there is
+  remembered per browser, and a saved view keeps its own.
 - **The Diagram is built in the background** - its layout and line
   planning run in a web worker, so a big site never freezes the page: the
   map shows the loading spinner while the first build runs, and keeps the
@@ -1680,7 +1687,10 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
 neighbourhood, `devices=<id,id,…>` for the induced subgraph on an explicit
 device set (the custom-map builder), and `group_by=site|location` for the
 aggregated group graph
-(one node per group with device count + role breakdown, cable-count edges).
+(one node per group with device count + role breakdown, cable-count edges),
+counted in the database without building the device graph: a fixed number
+of queries whatever the tenant's size, and the same counts the device graph
+gives.
 Nodes carry the cabled ports, role and IP the cards are drawn from; edges
 carry the cable id/type/label/length, every port pair, and the `via` panel
 list when collapsed.
