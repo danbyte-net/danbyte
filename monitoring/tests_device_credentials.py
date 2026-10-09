@@ -57,11 +57,14 @@ class DeviceCredentialCrudTests(_Mixin, APITestCase):
         self._login(self.su)
 
     def _make(self, **over):
+        # An external reference to a seeded local secret. The superuser is a
+        # deployment admin, which is who may name an external path (#315).
         data = {
             "device": str(self.device.id),
             "name": "admin login",
             "kind": "ssh_password",
             "username": "netadmin",
+            "secret_managed": False,
             "secret_provider": "local",
             "secret_path": "creds/sw1/admin",
         }

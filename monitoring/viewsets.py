@@ -543,6 +543,31 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         if device is not None and device.tenant_id != tenant.id:
             raise ValidationError({"device": "Not found in this tenant."})
 
+    def _validate_external_path(self, serializer):
+        """Pointing a credential at an external path is a deployment-admin act.
+
+        An external path is read with the deployment's one store token, which
+        every tenant shares, so a tenant operator naming one could name any
+        path that token can reach (#315). Creating an external credential,
+        turning a managed one external, or re-pointing an external one
+        therefore needs deployment-admin rights; editing the login details of
+        an existing external credential does not."""
+        from auth_api.permissions import can_manage_deployment
+
+        vd = serializer.validated_data
+        inst = serializer.instance
+        managed = vd.get("secret_managed", getattr(inst, "secret_managed", True))
+        if managed:
+            return
+        path = vd.get("secret_path", getattr(inst, "secret_path", ""))
+        if inst is not None and not inst.secret_managed and path == inst.secret_path:
+            return
+        if not can_manage_deployment(self.request.user):
+            raise PermissionDenied(
+                "Only a deployment administrator can point a credential at an "
+                "external secret path."
+            )
+
     def _pop_secret(self, serializer):
         """Pull the write-only secret material out of validated_data (it is not
         model fields) and return the assembled value dict, or None if nothing was
@@ -579,6 +604,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         from django.db import transaction
 
         self._validate_device(serializer)
+        self._validate_external_path(serializer)
         value = self._pop_secret(serializer)
         # Atomic: if writing the managed secret fails (e.g. no store enabled),
         # roll back the row so no orphaned credential is left behind - otherwise
@@ -591,6 +617,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         from django.db import transaction
 
         self._validate_device(serializer)
+        self._validate_external_path(serializer)
         value = self._pop_secret(serializer)
         with transaction.atomic():
             super().perform_update(serializer)

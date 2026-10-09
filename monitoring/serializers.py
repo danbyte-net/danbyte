@@ -311,8 +311,11 @@ class DeviceCredentialSerializer(serializers.ModelSerializer):
     * **Managed** (default): the operator types the secret once via the
       write-only ``password`` / ``private_key`` / ``passphrase`` fields, and the
       viewset stores it in the active secret store under a Danbyte-owned ref.
+      ``secret_path`` is derived server-side and ignored on input (#315).
     * **External**: ``secret_managed=false`` + ``secret_path`` points at a path
-      the operator manages themselves (e.g. an existing Vault path).
+      the operator manages themselves (e.g. an existing Vault path). The path
+      is checked for traversal and against every tenant's managed namespace
+      here; who may set one is the viewset's call (a deployment admin).
     """
 
     device_name = serializers.CharField(
@@ -347,17 +350,46 @@ class DeviceCredentialSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        # External credentials must name a path; managed ones auto-assign it.
         managed = attrs.get(
             "secret_managed",
             getattr(self.instance, "secret_managed", True),
         )
-        if not managed:
-            path = attrs.get("secret_path", getattr(self.instance, "secret_path", ""))
-            if not path:
-                raise serializers.ValidationError(
-                    {"secret_path": "Required for an external-reference credential."}
-                )
+        if managed:
+            # The ref is derived from the row when the secret is written; a
+            # client-supplied path is ignored, on create and on update. A
+            # credential turned from external to managed drops its old path
+            # until a secret is typed.
+            attrs.pop("secret_path", None)
+            if self.instance is not None and not self.instance.secret_managed:
+                attrs["secret_path"] = ""
+            return attrs
+        path = attrs.get("secret_path", getattr(self.instance, "secret_path", ""))
+        if not path:
+            raise serializers.ValidationError(
+                {"secret_path": "Required for an external-reference credential."}
+            )
+        # A new or changed external path is checked here: hygiene always, the
+        # active store's own layout rule when there is one. An unchanged path
+        # is left to read time, which checks every path on every store, so a
+        # row saved before these rules can still have its login details edited
+        # and is refused where it matters - at reveal and connect.
+        unchanged = (
+            self.instance is not None
+            and not self.instance.secret_managed
+            and path == self.instance.secret_path
+        )
+        if unchanged:
+            return attrs
+        from .secret_store import (
+            SecretPathError,
+            active_secret_store,
+            validate_external_path,
+        )
+
+        try:
+            validate_external_path(active_secret_store(), path)
+        except SecretPathError as exc:
+            raise serializers.ValidationError({"secret_path": str(exc)}) from exc
         return attrs
 
 

@@ -228,6 +228,12 @@ function CredentialForm({
   const isEdit = !!credential
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  // An external path is read with the deployment's one store token, so only a
+  // deployment admin may set or change one; the server enforces it. Others
+  // still see an existing external credential's path, read-only, and may turn
+  // it into a managed one.
+  const { canManageDeployment: canExternal } = useMe()
+  const showSourceToggle = canExternal || (isEdit && !credential.secret_managed)
 
   const [name, setName] = useState("")
   const [kind, setKind] = useState<DeviceCredential["kind"]>("ssh_password")
@@ -355,12 +361,14 @@ function CredentialForm({
             <div />
           </FormRow>
 
-          <FormCheckbox
-            label="Let Danbyte store the secret for me (recommended)"
-            hint="Keep this checked: type the password or key below and Danbyte saves it in the configured secret store for you (right now that's Vault) - you don't deal with Vault paths at all. Only uncheck it if you want to point at a secret you already manage in Vault yourself."
-            checked={managed}
-            onChange={setManaged}
-          />
+          {showSourceToggle && (
+            <FormCheckbox
+              label="Let Danbyte store the secret for me (recommended)"
+              hint="Keep this checked: type the password or key below and Danbyte saves it in the configured secret store for you (right now that's Vault) - you don't deal with Vault paths at all. Only uncheck it if you want to point at a secret you already manage in Vault yourself."
+              checked={managed}
+              onChange={setManaged}
+            />
+          )}
 
           {managed ? (
             kind === "ssh_key" ? (
@@ -407,6 +415,7 @@ function CredentialForm({
                   { value: "local", label: "Local" },
                   { value: "vault", label: "Vault" },
                 ]}
+                disabled={!canExternal}
               />
               <FormText
                 label="Path"
@@ -414,6 +423,7 @@ function CredentialForm({
                 value={path}
                 onChange={setPath}
                 placeholder="kv/data/team/ssh"
+                disabled={!canExternal}
                 error={fieldErrors.secret_path}
               />
             </FormRow>

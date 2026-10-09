@@ -20,9 +20,11 @@ key-bearing feature (CSR, ACME) must stay **fail-closed** - call
 """
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
+from urllib.parse import unquote
 
 
 class SecretStoreError(RuntimeError):
@@ -31,6 +33,95 @@ class SecretStoreError(RuntimeError):
 
 class SecretStoreDisabled(SecretStoreError):
     """No secret store is enabled - a key-bearing feature refused to proceed."""
+
+
+class SecretPathError(SecretStoreError):
+    """A ref or external path was refused before it reached the backend: it is
+    malformed, could escape the tenant's folder, or names a managed secret."""
+
+
+# ─── path hygiene ────────────────────────────────────────────────────────────
+# Every ref and every operator path goes through here before a store builds a
+# URL or a name from it. The Vault client (urllib3) collapses ``..`` before
+# sending, so a ref like ``../<other tenant>/…`` under tenant B's folder lands
+# in tenant A's (#315). Checked at the store boundary rather than only in the
+# serializer, so a row whose path was written before the check, or by hand, is
+# refused on read instead of resolving somewhere else.
+
+#: Folders Danbyte files its own secrets under (``<prefix><row id>``), per
+#: tenant. An external path may never name one of these on the local store,
+#: where tenant folders are a database column rather than part of the path.
+MANAGED_REF_PREFIXES = (
+    "device-credentials/",
+    "wireless-lans/",
+    "ipsec-profiles/",
+    "routing-keychains/",
+    "csr/",
+    "issuer/",
+)
+
+
+def _decoded(path: str) -> str:
+    """``path`` with percent-escapes removed, repeatedly, so a doubly-encoded
+    ``..`` is seen for what it is."""
+    for _ in range(4):
+        out = unquote(path)
+        if out == path:
+            return out
+        path = out
+    return path
+
+
+def clean_secret_path(path: str, *, label: str = "Secret path") -> str:
+    """Refuse a ref or path that could change where a store looks.
+
+    Returns ``path`` unchanged when it is clean - relative, slash-separated,
+    no ``.``/``..``/empty segments, no backslashes, control characters,
+    ``?`` or ``#``, checked after percent-decoding. Raises
+    :class:`SecretPathError` with a message a user can act on.
+    """
+    if not isinstance(path, str) or not path:
+        raise SecretPathError(f"{label} is required.")
+    decoded = _decoded(path)
+    if any(ord(c) < 32 or ord(c) == 127 for c in decoded):
+        raise SecretPathError(f"{label} must not contain control characters.")
+    if "\\" in decoded:
+        raise SecretPathError(f"{label} must use forward slashes.")
+    if "?" in decoded or "#" in decoded:
+        raise SecretPathError(f"{label} must not contain '?' or '#'.")
+    if decoded.startswith("/"):
+        raise SecretPathError(f"{label} must be relative, not start with '/'.")
+    segments = decoded.split("/")
+    if any(not seg.strip() for seg in segments):
+        raise SecretPathError(f"{label} must not contain empty segments.")
+    if any(seg in (".", "..") for seg in segments):
+        raise SecretPathError(f"{label} must not contain '.' or '..' segments.")
+    return path
+
+
+def secret_path_segments(path: str) -> list[str]:
+    """The decoded ``/``-split form a store compares against its own layout."""
+    return _decoded(path).split("/")
+
+
+def looks_like_tenant_id(segment: str) -> bool:
+    """Tenant folders are UUIDs, so a UUID-shaped segment under the store's
+    mount is a tenant's managed namespace - whichever tenant, past or present."""
+    try:
+        uuid.UUID(segment)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
+def validate_external_path(store: SecretStore | None, path: str) -> None:
+    """The full check for an operator-chosen external path: generic hygiene,
+    then the store's own layout rule when a store is active (a plugin store
+    without one gets the generic check only)."""
+    clean_secret_path(path)
+    check = getattr(store, "validate_external_path", None)
+    if check is not None:
+        check(path)
 
 
 class SecretStore(Protocol):
@@ -50,7 +141,16 @@ class SecretStore(Protocol):
         external stores (Vault) address the operator's path directly. Used by
         device credentials,
         which store only the reference to a secret an operator manages
-        elsewhere. Returns the value dict, or ``None`` if nothing is there."""
+        elsewhere. Returns the value dict, or ``None`` if nothing is there.
+        Must call :meth:`validate_external_path` first."""
+        ...
+
+    def validate_external_path(self, path: str) -> None:
+        """Raise :class:`SecretPathError` when ``path`` is malformed or lies
+        inside the store's own managed namespace - of **any** tenant, compared
+        after normalisation. External paths are read with the deployment's
+        one token, so this, not the backend's policy, is what keeps one
+        tenant's reference out of another tenant's folder."""
         ...
 
 
@@ -65,6 +165,7 @@ class LocalFernetSecretStore:
     def put(self, tenant_id, ref: str, value: dict) -> None:
         from .models import StoredSecret
 
+        clean_secret_path(ref)
         StoredSecret.objects.update_or_create(
             tenant_id=tenant_id, ref=ref, defaults={"value": value or {}}
         )
@@ -72,21 +173,34 @@ class LocalFernetSecretStore:
     def get(self, tenant_id, ref: str) -> dict | None:
         from .models import StoredSecret
 
+        clean_secret_path(ref)
         row = StoredSecret.objects.filter(tenant_id=tenant_id, ref=ref).first()
         return row.value if row is not None else None
 
     def delete(self, tenant_id, ref: str) -> None:
         from .models import StoredSecret
 
+        clean_secret_path(ref)
         StoredSecret.objects.filter(tenant_id=tenant_id, ref=ref).delete()
+
+    def validate_external_path(self, path: str) -> None:
+        clean_secret_path(path)
+        if path.startswith(MANAGED_REF_PREFIXES):
+            raise SecretPathError(
+                f"'{path}' is inside Danbyte's managed namespace; an external "
+                "credential cannot reference a secret Danbyte manages."
+            )
 
     def get_at_path(self, tenant_id, path: str) -> dict | None:
         """A ``StoredSecret`` whose ``ref`` equals ``path`` **within this
         tenant** - for the local provider an operator seeds a secret by creating
         a ``StoredSecret`` with that ref. Tenant-scoped so one tenant's path can
-        never resolve another tenant's secret. ``None`` when nothing matches."""
+        never resolve another tenant's secret, and never a managed ref, so it
+        cannot read a credential filed by Danbyte either. ``None`` when nothing
+        matches."""
         from .models import StoredSecret
 
+        self.validate_external_path(path)
         row = StoredSecret.objects.filter(tenant_id=tenant_id, ref=path).first()
         return row.value if row is not None else None
 

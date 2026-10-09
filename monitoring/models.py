@@ -3084,24 +3084,42 @@ class DeviceCredential(TimestampedModel):
         ]
         indexes = [models.Index(fields=["tenant", "device"])]
 
+    #: The folder a managed credential's secret is filed under, per tenant.
+    MANAGED_REF_PREFIX = "device-credentials"
+
     def __str__(self) -> str:
         return self.name
+
+    def managed_secret_ref(self) -> str:
+        """The ref a managed credential's secret lives at - derived from the
+        row, never taken from a client (#315)."""
+        return f"{self.MANAGED_REF_PREFIX}/{self.id}"
 
     def resolve_secret(self) -> dict:
         """Fetch the referenced secret from the active store at use-time.
 
         Fail-closed: raises :class:`SecretStoreDisabled` when no store is
-        enabled, and :class:`SecretStoreError` when the store is reachable but
-        nothing lives at ``secret_path``. Only the ``reveal`` action (and, later,
-        Connect) call this - never list/detail serialization."""
-        from .secret_store import SecretStoreError, require_secret_store
+        enabled, :class:`SecretPathError` when ``secret_path`` is malformed or
+        an external path reaches into a managed namespace, and
+        :class:`SecretStoreError` when the store is reachable but nothing lives
+        at ``secret_path``. Only the ``reveal`` action (and, later, Connect)
+        call this - never list/detail serialization."""
+        from .secret_store import (
+            SecretStoreError,
+            require_secret_store,
+            validate_external_path,
+        )
 
         store = require_secret_store()
-        # Managed: our own {tenant}/{ref} namespace (get). External: the
-        # operator's own path (get_at_path). Both are tenant-scoped.
+        if not self.secret_path:
+            raise SecretStoreError("No secret has been stored for this credential.")
+        # Managed: our own {tenant}/{ref} namespace (get), the store refusing a
+        # ref that could leave it. External: the operator's own path
+        # (get_at_path), checked against every tenant's managed namespace.
         if self.secret_managed:
             value = store.get(self.tenant_id, self.secret_path)
         else:
+            validate_external_path(store, self.secret_path)
             value = store.get_at_path(self.tenant_id, self.secret_path)
         if value is None:
             raise SecretStoreError(
@@ -3110,16 +3128,17 @@ class DeviceCredential(TimestampedModel):
         return value
 
     def store_managed_secret(self, value: dict) -> None:
-        """Write a managed credential's secret into the active store under an
-        auto-assigned ref (``device-credentials/<id>``), stamping the provider.
-        Only for managed credentials; external ones reference a path instead."""
+        """Write a managed credential's secret into the active store under its
+        derived ref (``device-credentials/<id>``), stamping the provider. The
+        ref is always re-derived here: a path on the row, however it got
+        there, never decides where a managed secret is written (#315). Only
+        for managed credentials; external ones reference a path instead."""
         from core.models import DeploymentSettings
 
         from .secret_store import require_secret_store
 
         store = require_secret_store()
-        if not self.secret_path:
-            self.secret_path = f"device-credentials/{self.id}"
+        self.secret_path = self.managed_secret_ref()
         self.secret_provider = (
             DeploymentSettings.load().secrets_provider or ""
         ).strip()

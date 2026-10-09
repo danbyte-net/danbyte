@@ -6575,8 +6575,9 @@ class SecretBackedPSK(models.Model):
         from monitoring.secret_store import require_secret_store
 
         store = require_secret_store()
-        if not self.psk_secret_path:
-            self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
+        # Always re-derived: a path on the row, however it got there, never
+        # decides where the key is written (#315).
+        self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
         self.psk_secret_provider = (
             DeploymentSettings.load().secrets_provider or ""
         ).strip()
