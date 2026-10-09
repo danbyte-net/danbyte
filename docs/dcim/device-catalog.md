@@ -191,10 +191,14 @@ treatment, and so do image attachments.
 
 Every upload also loses its metadata - the GPS position, the camera and its
 serial, XMP and IPTC data, comments - because device type photos are served
-without a login. A photo that carries none is stored exactly as uploaded.
+without a login. A photo that carries none is stored exactly as uploaded,
+whatever its format. A re-saved animated GIF, WebP or APNG keeps every frame
+with its timing, loop count and disposal, and a lossless WebP stays lossless.
 0.17.0-dev3 kept the metadata of photos under 2000 px; `manage.py
 strip_photo_metadata` (with `--dry-run` to list them first) re-saves the
-photos stored since without it.
+photos stored since without it. It removes an old file only once the new one
+has been read back clean with all its frames, and reports any photo it
+kept instead.
 
 ### Recovering lost images {#reimport-images}
 
