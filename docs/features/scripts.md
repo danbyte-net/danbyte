@@ -67,7 +67,9 @@ Two settings shape it:
   everyone. Because that lends the owner's identity to the code, only the
   owner or someone with `trust` can choose it, and only they can change
   what such a script executes: its source, its parameters and its schedule
-  parameters. Anyone with `change` can still switch it back to the caller.
+  parameters, and only they can widen its API access from read only to
+  read and write. Anyone with `change` can still switch it back to the
+  caller, or to read only.
 
 A run is stopped when it exceeds its **timeout** (five minutes by default,
 an hour at most), uses too much memory, or writes more log or files than
@@ -95,8 +97,8 @@ as any other object.
 
 The **Schedule** tab runs a script hourly, daily, weekly or monthly. A
 scheduled run belongs to the owner and uses the owner's access, so turning
-a schedule on, and changing what a scheduled script executes, follows the
-same rule as running as the owner: the owner or someone with `trust`. The
+a schedule on, changing what a scheduled script executes and widening its
+API access follow the same rule as running as the owner: the owner or someone with `trust`. The
 `danbyte-scripts` timer checks every minute, and a schedule fires once per
 occurrence even if the machine was asleep.
 

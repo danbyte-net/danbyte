@@ -19,6 +19,8 @@ PARAM_TYPES = ("string", "text", "integer", "decimal", "boolean", "choice", "obj
 # What a run executes: the code, and the inputs it gets by default. Changing
 # any of them un-approves a trusted script (#317).
 EXECUTED_FIELDS = ("source", "language", "params_schema", "schedule_params")
+# How much a run's token may do; a higher rank is wider access.
+_SCOPE_RANK = {"read": 0, "full": 1}
 
 
 def validate_params_schema(value):
@@ -220,7 +222,8 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
         - Choosing ``run_as=owner`` or switching a schedule on needs the
           owner or a holder of ``trust``.
         - While the script runs as its owner, only they may change what it
-          executes. Stepping down to the caller stays open to any editor.
+          executes or widen its ``token_scope``. Stepping down to the caller,
+          or to read only, stays open to any editor.
         """
         from auth_api import rbac
 
@@ -251,6 +254,14 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
         lends_owner = attrs.get("run_as", instance.run_as) == "owner" or attrs.get(
             "schedule_enabled", instance.schedule_enabled
         )
+        widens = _SCOPE_RANK.get(attrs.get("token_scope"), -1) > _SCOPE_RANK.get(
+            instance.token_scope, 0
+        )
+        if widens and lends_owner and not privileged():
+            errors["token_scope"] = [
+                "This script runs as its owner. Only the owner or someone with trust "
+                "can widen its API access."
+            ]
         if changed and lends_owner and not privileged():
             for field in changed:
                 errors[field] = [

@@ -368,6 +368,46 @@ class ExecutionRightsTests(_Base):
         r = self._patch(self.editor, {"source": "print('scheduled')"})
         self.assertEqual(r.status_code, 200, r.content)
 
+    def test_others_cannot_widen_the_token_of_an_owner_run_script(self):
+        Script.objects.filter(pk=self.script.pk).update(run_as="owner", token_scope="read")
+        r = self._patch(self.editor, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(set(r.json()), {"token_scope"})
+        self.assertEqual(Script.objects.get(pk=self.script.pk).token_scope, "read")
+        # resending the same value is not a widening
+        r = self._patch(self.editor, {"token_scope": "read", "timeout_seconds": 60})
+        self.assertEqual(r.status_code, 200, r.content)
+        # the owner and a holder of trust may
+        r = self._patch(self.author, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 200, r.content)
+        Script.objects.filter(pk=self.script.pk).update(token_scope="read")
+        r = self._patch(self.approver, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_narrowing_the_token_stays_open(self):
+        Script.objects.filter(pk=self.script.pk).update(run_as="owner", token_scope="full")
+        r = self._patch(self.editor, {"token_scope": "read"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["token_scope"], "read")
+
+    def test_a_scheduled_scripts_token_follows_the_same_rule(self):
+        Script.objects.filter(pk=self.script.pk).update(
+            schedule_enabled=True, cadence={"frequency": "daily", "at": "02:00"},
+            token_scope="read",
+        )
+        r = self._patch(self.editor, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("token_scope", r.json())
+        # switching the schedule off in the same write makes it the caller's own
+        r = self._patch(self.editor, {"token_scope": "full", "schedule_enabled": False})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_widening_a_caller_run_script_stays_open(self):
+        Script.objects.filter(pk=self.script.pk).update(token_scope="read")
+        r = self._patch(self.editor, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["token_scope"], "full")
+
     def test_the_trust_action_is_audited(self):
         self.client.force_login(self.approver)
         r = self.client.post(f"/api/scripts/{self.script.id}/trust/", {"trusted": False},

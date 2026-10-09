@@ -47,6 +47,11 @@ export function ScriptSettingsPanel({
   const [scope, setScope] = useState(script.token_scope)
   const [timeout, setTimeoutValue] = useState(String(script.timeout_seconds))
   const [runAs, setRunAs] = useState(script.run_as)
+  // The same goes for widening the token of a script that runs as its owner
+  // (a schedule always does): read only stays the ceiling for anyone else.
+  const lendsOwner = runAs === "owner" || script.schedule_enabled
+  const mayWiden =
+    holdsTrust || isOwner || script.token_scope === "full" || !lendsOwner
   const [enabled, setEnabled] = useState(script.enabled)
   const [params, setParams] = useState<ScriptParam[]>(script.params_schema)
 
@@ -102,7 +107,7 @@ export function ScriptSettingsPanel({
           value={scope}
           onChange={(v) => setScope((v ?? "full") as Script["token_scope"])}
           options={[
-            { value: "full", label: "Read and write" },
+            ...(mayWiden ? [{ value: "full", label: "Read and write" }] : []),
             { value: "read", label: "Read only" },
           ]}
           disabled={!canEdit}
