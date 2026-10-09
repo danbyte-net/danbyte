@@ -60,6 +60,18 @@ Assign an engine on the **Device**, **Site** or **Location** edit form (the
 location) can override it, one device can override that, and anything left on
 *Inherit* rolls up to the site, then the tenant default.
 
+The form's Monitoring section shows *Loading…* until the stored engine and the
+engines on offer are both known, and a pick there is written by the form's
+**Save** with the rest of its changes. Opening the form never writes; Cancel
+drops the pick. The same goes for the SNMP credentials and discovered-IP VRF
+selects beside it.
+
+Over the API, `PUT /api/monitoring/engine-binding/<scope>/<id>/` takes
+`{"engine_id": "<uuid>"}` to bind and `{"engine_id": null}` to inherit. A body
+without `engine_id`, or with `""`, is refused with a 400 rather than read as
+*Inherit*. The SNMP profile and VRF binding endpoints follow the same rule for
+`profile_id` and `vrf_id`.
+
 A driver-backed engine - a [Zabbix](zabbix.md) one - answers only **its own
 check kind**. A device bound to Zabbix keeps its ICMP ping, and Danbyte's own
 workers still run it. Binding a target somewhere else changes who answers what
@@ -349,12 +361,18 @@ device is picked up on the next poll with no re-enrollment.
   (the core can't reach the remote subnet): it flags the prefix + pokes the
   engine (`sweep_requested_at`), the agent sees `sweep_pending` on its next
   `/work` poll (~15 s) and sweeps immediately, and the button spinner clears when
-  the prefix's `last_discovered_at` advances. **Poll now** on a device follows
-  the same route (#128): a device whose site/location resolves to an Outpost
-  queues there (`snmp_requested_at` → `snmp_pending`) and answers *Queued on
-  Outpost …* - the agent runs its SNMP cycle on the next poll and the results
-  land through the normal ingest. Central polling would report outpost-only
-  networks as SNMP unavailable.
+  the prefix's `last_discovered_at` advances. **Poll now** and **Refresh MACs**
+  on a device follow the same route (#128): a device whose engine - its own
+  binding, its location's (or a parent's), its site's, or the tenant default -
+  is an Outpost queues there (`snmp_requested_at` → `snmp_pending`) and answers
+  *Queued on Outpost …* - the agent runs its SNMP cycle on the next poll and
+  the results land through the normal ingest. The Outpost's work list carries
+  every device that resolves to it by those same levels, a device placed in a
+  room of a bound site included. Central polling would report outpost-only
+  networks as SNMP unavailable, so the scheduled `poll_snmp` command skips an
+  Outpost's devices. Only an Outpost runs SNMP for the core: a device bound to
+  a driver engine such as Zabbix, and every virtual machine, polls from the
+  core.
 - **SSH host-key pinning (shipped)** - pin `ssh_host_key` on the engine and
   Danbyte verifies the server on every SSH connection.
 - **Single-binary packaging (shipped)** - the agent repo's release CI builds a

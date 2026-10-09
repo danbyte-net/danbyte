@@ -8134,6 +8134,8 @@ export interface DeviceSnmp {
   vm?: string | null
   /** A stack member reads the stack owner's observation (#148). */
   polled_via?: { id: string; name: string } | null
+  /** The Outpost Poll now runs on; null when it runs from the core (#325). */
+  poll_outpost?: string | null
   profile: string | null
   profile_name: string | null
   data: Record<string, string>

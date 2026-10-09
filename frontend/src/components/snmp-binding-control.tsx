@@ -10,7 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Loading } from "@/components/loading"
+import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useBindingPick } from "@/lib/binding-drafts"
 import { isUserInitiated } from "@/lib/user-activation"
 
 const INHERIT = "__inherit__"
@@ -48,7 +51,8 @@ function useBinding(scope: SnmpBinding["scope"], objectId: string) {
 /**
  * Assign the SNMP profile at one level of the hierarchy (device / device role /
  * device type). Most-specific wins: device → role → type → tenant default
- * (issue #84).
+ * (issue #84). Inside an edit form wrapped in a `BindingDraftsProvider` the
+ * pick is written by the form's Save; elsewhere it saves on pick.
  *
  * By default it renders the Select plus a resolved-profile hint stacked below -
  * fine inside a form column. Pass `inline` to render only the Select (for a
@@ -69,36 +73,55 @@ export function SnmpBindingControl({
   const qc = useQueryClient()
   const { binding, profiles } = useBinding(scope, objectId)
 
+  const write = async (profileId: string | null) => {
+    const b = await api<SnmpBinding>(
+      `/api/monitoring/snmp-binding/${scope}/${objectId}/`,
+      { method: "PUT", body: JSON.stringify({ profile_id: profileId }) }
+    )
+    qc.setQueryData(["snmp-binding", scope, objectId], b)
+    // A device's effective profile may have changed → refresh its SNMP card.
+    void qc.invalidateQueries({ queryKey: ["device-snmp", objectId] })
+    return b
+  }
   const set = useMutation({
-    mutationFn: (profileId: string | null) =>
-      api<SnmpBinding>(`/api/monitoring/snmp-binding/${scope}/${objectId}/`, {
-        method: "PUT",
-        body: JSON.stringify({ profile_id: profileId }),
-      }),
-    onSuccess: (b) => {
-      qc.setQueryData(["snmp-binding", scope, objectId], b)
-      // A device's effective profile may have changed → refresh its SNMP card.
-      qc.invalidateQueries({ queryKey: ["device-snmp", objectId] })
-      toast.success("SNMP profile updated")
-    },
+    mutationFn: write,
+    onSuccess: () => toast.success("SNMP profile updated"),
     onError: (e) => apiErrorToast(e),
   })
+  const picked = useBindingPick(
+    `snmp:${scope}:${objectId}`,
+    binding.data?.profile_id ?? null,
+    write,
+    set.mutate
+  )
 
-  const value = binding.data?.profile_id ?? INHERIT
-  const profileList = profiles.data?.results ?? []
+  // Nothing renders until both the stored binding and the profiles on offer
+  // are known: a select whose value has no option yet makes the form's hidden
+  // native select settle on "" and report a change, which read as the user
+  // clearing the binding merely by opening the form (#324).
+  if (binding.isPending || profiles.isPending) {
+    const loading = <Loading className="h-8 min-h-0 w-60 flex-row" />
+    return inline ? loading : <div className="space-y-1">{loading}</div>
+  }
+  if (binding.isError || profiles.isError) {
+    return <QueryError error={binding.error ?? profiles.error} />
+  }
+
+  const profileList = profiles.data.results
+  const offered = new Set([INHERIT, ...profileList.map((p) => p.id)])
 
   const select = (
     <Select
-      value={value}
+      value={picked.value ?? INHERIT}
       onValueChange={(v) => {
-        const next = v === INHERIT ? null : v
-        // Autofill fires a change on the form's hidden native select with no
-        // gesture behind it; saving that would wipe the stored binding (#125).
-        if (!isUserInitiated() || next === (binding.data?.profile_id ?? null))
-          return
-        set.mutate(next)
+        // Only a pick of an offered row, under a real gesture, is a change
+        // worth keeping. The hidden native select reports its own changes -
+        // autofill on load (#125), or "" when the stored profile is no longer
+        // offered (#324) - and neither is a user clearing the binding.
+        if (!v || !offered.has(v) || !isUserInitiated()) return
+        picked.pick(v === INHERIT ? null : v)
       }}
-      disabled={!canEdit || set.isPending || binding.isPending}
+      disabled={!canEdit || set.isPending}
     >
       <SelectTrigger className="h-8 w-60 text-xs">
         <SelectValue placeholder="-" />

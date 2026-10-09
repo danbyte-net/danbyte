@@ -339,6 +339,18 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
             .
           </p>
         )}
+        {state && state.poll_outpost !== undefined && (
+          <p className="text-[13px] text-muted-foreground">
+            {state.poll_outpost ? (
+              <>
+                Polls from Outpost{" "}
+                <span className="font-mono">{state.poll_outpost}</span>
+              </>
+            ) : (
+              "Polls from the core"
+            )}
+          </p>
+        )}
         {factRows.length === 0 ? (
           <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
             {state?.error ? state.error : "Not polled yet."}

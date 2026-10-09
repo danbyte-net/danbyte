@@ -109,6 +109,15 @@ timestamp.
 A poll **never** touches the device's source-of-truth fields - it only refreshes
 this card.
 
+Where the poll runs follows the device's [monitoring
+engine](../monitoring/outposts.md#how-an-engine-is-chosen-for-a-target) - device
+→ location → site → tenant default - and the card says which: *Polls from
+Outpost …* or *Polls from the core*. On an Outpost the request is queued there
+and the button answers *Queued on Outpost …*; the facts land when the agent's
+next pass reports. Everything else - an unbound device, one bound to a Zabbix
+engine or a disabled Outpost, and every VM - polls from the core. **Poll
+sensors** and **Explore OIDs** always run from the core.
+
 Poll now also reads the device's [MAC table](#mac-tables), but quickly: it
 has to answer before the web server gives up on the request, so it stops
 after a short time budget and skips per-VLAN tables. A big switch can come
@@ -172,7 +181,9 @@ octet counters (`ifHCInOctets` / `ifHCOutOctets`) as a time-stamped sample. Util
 between consecutive samples - `Δoctets · 8 / Δt`, as a percentage of the
 interface speed. A counter that goes backwards (reset/reboot/wrap) yields a `0`
 delta rather than a negative spike. Schedule `poll_snmp` from cron or a systemd
-timer at whatever interval you want the sparklines sampled.
+timer at whatever interval you want the sparklines sampled. It polls from the
+core and leaves devices an [Outpost](../monitoring/outposts.md) polls to that
+Outpost's own SNMP cycle.
 
 Samples are kept for `MONITORING_SNMP_SAMPLE_RETENTION_DAYS` (3 by default);
 the daily monitoring prune deletes older ones, and the sparklines read only

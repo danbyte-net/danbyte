@@ -1096,7 +1096,9 @@ def engine_binding_view(request, scope, object_id):
         return Response({"detail": "Not allowed."}, status=403)
     if not _in_scope("change"):
         return Response({"detail": "Not found."}, status=404)
-    eid = request.data.get("engine_id")
+    eid, bad = _binding_id(request, "engine_id")
+    if bad is not None:
+        return bad
     engine = None
     if eid:
         engine = MonitoringEngine.objects.filter(id=eid, tenant=tenant).first()
@@ -1104,6 +1106,31 @@ def engine_binding_view(request, scope, object_id):
             return Response({"engine_id": "Not found."}, status=400)
     set_binding(tenant, scope, object_id, engine)
     return Response({"engine_id": str(engine.id) if engine else None})
+
+
+def _binding_id(request, field):
+    """The id a binding PUT names in ``field``: a UUID string, or ``None`` to
+    clear. ``(value, None)``, or ``(None, response)`` with the 400 to return.
+
+    A body that leaves the field out, or sends ``""``, is refused rather than
+    read as "clear": a partial or half-built payload must not reset a binding
+    to inherit (#324). Only an explicit ``null`` clears.
+    """
+    import uuid
+
+    data = request.data
+    if not isinstance(data, dict) or field not in data:
+        return None, Response(
+            {field: "This field is required. Send null to clear the binding."},
+            status=400,
+        )
+    value = data.get(field)
+    if value is None:
+        return None, None
+    try:
+        return str(uuid.UUID(str(value))), None
+    except ValueError:
+        return None, Response({field: "Expected an id, or null to clear."}, status=400)
 
 
 @extend_schema(
@@ -2596,12 +2623,13 @@ def device_snmp_view(request, device_id):
         return err
     device, tenant = resolved
     state = stack_state(device, tenant)
-    if state is None:
-        return Response(_empty_snmp(device))
-    data = DeviceSnmpSerializer(state).data
+    data = _empty_snmp(device) if state is None else DeviceSnmpSerializer(state).data
     # A stack member reads the stack owner's observation (#148).
-    if state.device_id and state.device_id != device.id:
+    if state is not None and state.device_id and state.device_id != device.id:
         data["polled_via"] = {"id": str(state.device_id), "name": state.device.name}
+    # Where Poll now runs: the Outpost's name, or null for the core (#325).
+    outpost = _snmp_outpost(device)
+    data["poll_outpost"] = outpost.name if outpost else None
     return Response(data)
 
 
@@ -2629,6 +2657,20 @@ def device_snmp_poll_view(request, device_id):
     return _snmp_poll(request, device, tenant)
 
 
+def _snmp_outpost(device):
+    """The Outpost that runs ``device``'s SNMP poll, or ``None`` for the core.
+
+    Only an Outpost runs an SNMP poll on the core's behalf. A driver engine
+    (Zabbix) answers its own check kind and nothing else, so a device bound to
+    one polls from the core like a local device (#325)."""
+    from .engines import engine_for_device
+
+    engine = engine_for_device(device)
+    if engine.kind != MonitoringEngine.REMOTE or not engine.enabled:
+        return None
+    return engine
+
+
 def _queue_on_outpost(device, tenant, profile=None):
     """``None`` when ``device`` polls from the core; otherwise the 202 (or a
     400 setup error) for a device whose site or location an Outpost polls.
@@ -2637,10 +2679,8 @@ def _queue_on_outpost(device, tenant, profile=None):
     answer 202. The same profile/target validation applies, so the caller
     gets an actionable error instead of a queue that never delivers. Shared
     by Poll now and Refresh MACs."""
-    from .engines import engine_for_device
-
-    engine = engine_for_device(device)
-    if engine.kind == MonitoringEngine.LOCAL or not engine.enabled:
+    engine = _snmp_outpost(device)
+    if engine is None:
         return None
     from .snmp_poll import _device_target
     from .snmp_resolve import resolve_device_profile
@@ -2705,7 +2745,7 @@ def _snmp_poll(request, device, tenant):
         return Response(
             {"detail": "Device has no primary IP or name to poll."}, status=400
         )
-    return Response(DeviceSnmpSerializer(state).data)
+    return Response({**DeviceSnmpSerializer(state).data, "poll_outpost": None})
 
 
 @extend_schema(
@@ -3538,10 +3578,10 @@ def snmp_binding_view(request, scope, object_id):
         return Response({"detail": "Not found."}, status=404)
 
     if request.method == "PUT":
-        pid = request.data.get("profile_id")
-        # Optional per-device poll-address override (blank = auto-resolve).
-        addr = (request.data.get("target") or "").strip()[:255]
-        if pid in (None, ""):
+        pid, bad = _binding_id(request, "profile_id")
+        if bad is not None:
+            return bad
+        if pid is None:
             SnmpProfileBinding.objects.filter(
                 tenant=tenant, scope=scope, object_id=object_id
             ).delete()
@@ -3549,9 +3589,15 @@ def snmp_binding_view(request, scope, object_id):
             profile = SnmpProfile.objects.filter(pk=pid, tenant=tenant).first()
             if profile is None:
                 return Response({"detail": "SNMP profile not found."}, status=400)
+            defaults = {"profile": profile}
+            # Optional per-device poll-address override (blank = auto-resolve).
+            # Left out of the body, the stored one stays: a profile change from
+            # the picker sends only ``profile_id`` and must not clear it (#324).
+            if "target" in request.data:
+                defaults["target"] = (request.data.get("target") or "").strip()[:255]
             SnmpProfileBinding.objects.update_or_create(
                 tenant=tenant, scope=scope, object_id=object_id,
-                defaults={"profile": profile, "target": addr},
+                defaults=defaults,
             )
     elif request.method == "DELETE":
         SnmpProfileBinding.objects.filter(
@@ -3944,7 +3990,9 @@ def snmp_vrf_binding_view(request, scope, object_id):
         return out
 
     if request.method == "PUT":
-        vid = request.data.get("vrf_id")
+        vid, bad = _binding_id(request, "vrf_id")
+        if bad is not None:
+            return bad
         if vid:
             vrf = VRF.objects.filter(pk=vid, tenant=tenant).first()
             if vrf is None:

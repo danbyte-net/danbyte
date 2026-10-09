@@ -50,6 +50,10 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import {
+  BindingDraftsProvider,
+  useBindingDraftsRoot,
+} from "@/lib/binding-drafts"
 import { useSaveObject } from "@/lib/save-object"
 import { invalidateSiteViews } from "@/lib/site-cache"
 import { useMe } from "@/lib/use-me"
@@ -82,6 +86,8 @@ export function SiteForm({
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const timezoneOptions = useTimezoneOptions()
   const saveObject = useSaveObject()
+  // The Monitoring section stages its picks; Save writes them (#324).
+  const bindingDrafts = useBindingDraftsRoot()
 
   const [name, setName] = useState(site?.name ?? "")
   const [regionId, setRegionId] = useState<string | null>(
@@ -201,12 +207,14 @@ export function SiteForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      return saveObject<Site>({
+      const saved = await saveObject<Site>({
         objectType: "api.site",
         endpoint: "/api/sites/",
         id: isEdit ? site.id : undefined,
         payload,
       })
+      await bindingDrafts.commit()
+      return saved
     },
     onSuccess: (saved) => {
       invalidateSiteViews(qc, [saved.id])
@@ -409,33 +417,35 @@ export function SiteForm({
           </FormSection>
 
           {site?.id && (
-            <FormSection title="Monitoring" card>
-              <MonitoringEngineField
-                scope="site"
-                objectId={site.id}
-                disabled={!canDo("site", "change")}
-              />
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
-                  SNMP credentials
-                </span>
-                <SnmpBindingControl
+            <BindingDraftsProvider value={bindingDrafts}>
+              <FormSection title="Monitoring" card>
+                <MonitoringEngineField
                   scope="site"
                   objectId={site.id}
-                  canEdit={canDo("site", "change")}
+                  disabled={!canDo("site", "change")}
                 />
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
-                  Discovered-IP VRF
-                </span>
-                <SnmpVrfControl
-                  scope="site"
-                  objectId={site.id}
-                  canEdit={canDo("site", "change")}
-                />
-              </div>
-            </FormSection>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
+                    SNMP credentials
+                  </span>
+                  <SnmpBindingControl
+                    scope="site"
+                    objectId={site.id}
+                    canEdit={canDo("site", "change")}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
+                    Discovered-IP VRF
+                  </span>
+                  <SnmpVrfControl
+                    scope="site"
+                    objectId={site.id}
+                    canEdit={canDo("site", "change")}
+                  />
+                </div>
+              </FormSection>
+            </BindingDraftsProvider>
           )}
 
           {scopePanel}
