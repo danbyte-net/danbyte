@@ -45,6 +45,23 @@ The built-in statuses your tenant had in use (Active, Reserved, …) are seeded
 on upgrade and merged - so the *Active* you used on IPs becomes the *Active*
 your devices and prefixes use too. Manage them all under **Statuses**.
 
+After that the scopes are yours. `bootstrap` (every start and upgrade) only
+creates a built-in status the tenant is missing, and gives an object type its
+built-in statuses and default only the first time the type appears, as VLANs
+did in 0.17. It never puts back a default or an availability you removed.
+
+??? note "Two defaults for one object type after 0.17.0 or 0.17.1"
+    Before 0.17.2, `bootstrap` and the 0.17 upgrade put the built-in default
+    back beside the one you chose. The 0.17.2 upgrade repairs it: where an
+    object type has exactly two defaults and one is the built-in (*Active*;
+    *Connected* for cables; *Tentative* for events), the built-in loses the
+    default and your choice stands. Anything else is left alone - open
+    **Statuses** and set the default you want; saving it clears the other.
+
+    Availability it put back (a *Decommissioning* you had taken off devices,
+    say) cannot be told from your own, so it is not repaired. Edit the status
+    and untick the object type again.
+
 !!! tip "Statuses can opt out of monitoring"
     The monitoring **skip** policy can name statuses whose addresses aren't
     checked - point it at *Reserved*, say, and reserved IPs won't be polled.
