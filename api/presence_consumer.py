@@ -47,6 +47,13 @@ class PresenceConsumer(JsonWebsocketConsumer):
         if not (self.tenant_id and self.object_type and self.object_id):
             self.close(code=4400)
             return
+        from .presence_views import may_see_presence
+
+        # The same gate as GET /api/presence/: view on the type and on this
+        # object in this tenant. Presence carries colleagues' names (#323).
+        if not may_see_presence(user, tenant, self.object_type, self.object_id):
+            self.close(code=4403)
+            return
         self.user = user
         # Hash to a fixed-length group name (Channels caps group names ~100).
         self.group = "presence_" + hashlib.md5(

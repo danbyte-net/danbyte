@@ -149,8 +149,10 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             return {"error": "No active tenant."}
         conversation = None
         if conversation_id:
+            # Scoped like GET /api/assistant/conversations/<id>/: the caller's
+            # own conversation in the socket's tenant, never one from another.
             conversation = Conversation.objects.filter(
-                pk=conversation_id, user=self.user
+                pk=conversation_id, user=self.user, tenant=tenant
             ).first()
         if conversation is None:
             conversation = Conversation.objects.create(

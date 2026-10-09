@@ -49,12 +49,51 @@ def _may_view(user, tenant, object_type: str) -> bool:
     layer's legacy "any authenticated tenant member" behaviour for unregistered
     models.
     """
-    slug = object_type.rsplit(".", 1)[-1].strip().lower()
+    slug = _slug(object_type)
     if not slug:
         return False
     if not ot_registry.is_registered(slug):
         return True
     return rbac.has_action(user, tenant, slug, "view")
+
+
+def _slug(object_type: str) -> str:
+    return object_type.rsplit(".", 1)[-1].strip().lower()
+
+
+def may_see_presence(user, tenant, object_type: str, object_id: str) -> bool:
+    """Whether ``user`` may see (and announce) presence on one object.
+
+    :func:`_may_view` on the type, then the object itself: it must belong to
+    ``tenant`` and pass the caller's row-level ``view`` filter (site scope and
+    constraints), so a grant on some devices doesn't open presence on every
+    device id a caller can guess. Shared by the HTTP endpoints and the
+    ``/ws/presence/`` socket (#323). Unregistered types keep the type-level
+    behaviour of :func:`_may_view`.
+    """
+    if tenant is None or not object_id or not _may_view(user, tenant, object_type):
+        return False
+    slug = _slug(object_type)
+    model = ot_registry.model_for(slug)
+    if model is None:
+        return True
+    from django.core.exceptions import ValidationError
+    from django.db.models import Q
+
+    from .export_templates import _tenant_path
+
+    qs = model._default_manager.all()
+    path = _tenant_path(model)
+    if path == "tenant" and model._meta.get_field("tenant").null:
+        # Deployment-global rows (tenant NULL) are visible to every tenant.
+        qs = qs.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
+    elif path is not None:
+        qs = qs.filter(**{path: tenant})
+    try:
+        qs = qs.filter(pk=object_id)
+        return rbac.restrict_queryset(qs, user, tenant, slug, "view").exists()
+    except (ValidationError, ValueError, TypeError):
+        return False  # not a valid primary key for this model
 
 
 @extend_schema(
@@ -97,7 +136,7 @@ def presence_heartbeat(request):
             {"detail": "object_type and object_id are required."},
             status=drf_status.HTTP_400_BAD_REQUEST,
         )
-    if not _may_view(request.user, tenant, ot):
+    if not may_see_presence(request.user, tenant, ot, oid):
         return Response({"present": []})
     mode = data.get("mode") if data.get("mode") in VALID_MODES else "viewing"
     presence.heartbeat(
@@ -145,7 +184,7 @@ def presence_list(request):
     ot, oid = _args(request.query_params)
     if not ot or not oid:
         return Response({"present": []})
-    if not _may_view(request.user, tenant, ot):
+    if not may_see_presence(request.user, tenant, ot, oid):
         return Response({"present": []})
     return Response(
         {"present": presence.present(tenant.id, ot, oid,
