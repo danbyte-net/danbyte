@@ -204,6 +204,8 @@ def sync_cabinet_from_type(cabinet, *, sizes: bool = True, rails: bool = True) -
     if sizes:
         for f in CABINET_SIZE_FIELDS:
             setattr(cabinet, f, getattr(ct, f))
+    # Locked before the diff checks them against their devices (#310).
+    lock_rails(cabinet)
     current = [{"id": r.id, **as_dict(r)} for r in cabinet.rails.all()]
     result = [dict(r) for r in current]
     if rails:
@@ -267,26 +269,78 @@ def free_gaps(length, taken) -> list[tuple]:
     return gaps
 
 
+# ── locks ────────────────────────────────────────────────────────────────────
+# Whatever changes where devices sit on rails, or how long the rails are and
+# how wide the devices, holds row locks for its transaction so the checks
+# here read what is committed and nothing changes under them (#310):
+#
+# * a placement takes a share lock on its device type, then its rail;
+# * a cabinet save or sync locks all the cabinet's rails, in id order;
+# * a device type width or profile change locks the type, then the rails its
+#   devices are on, in id order.
+#
+# Types before rails, and rails in id order, so no two of them wait on each
+# other in a circle.
+
+def lock_rails(cabinet) -> list:
+    """The cabinet's rails, locked until the transaction ends and read fresh:
+    a device being placed on one of them is either committed and seen, or
+    waits for this save. Needs the caller's transaction. Locked in id order,
+    returned in the rails' own order."""
+    rails = list(cabinet.rails.select_for_update().order_by("pk"))
+    cache = getattr(cabinet, "_prefetched_objects_cache", None)
+    if cache:
+        cache.pop("rails", None)
+    return sorted(rails, key=lambda r: (r.y_mm, r.x_mm, r.label))
+
+
 def _lock(rail) -> None:
-    """Placements on one rail queue up: two can't both take the same gap."""
+    """Placements on one rail queue up: two can't both take the same gap,
+    and a rail shortened while this one waited is read at its new length."""
     from django.db import connection
 
-    if connection.in_atomic_block:
-        type(rail).objects.select_for_update().filter(pk=rail.pk).exists()
+    if not connection.in_atomic_block:
+        return
+    fresh = (
+        type(rail).objects.select_for_update().filter(pk=rail.pk)
+        .values("length_mm", "profile").first()
+    )
+    if fresh is None:
+        raise ValidationError({"din_rail_id": "That rail is gone."})
+    rail.length_mm, rail.profile = fresh["length_mm"], fresh["profile"]
+
+
+def _share_type(device_type):
+    """``(width_mm, din_profiles)`` of ``device_type`` as committed, under a
+    share lock: placements of one type run side by side, while a change to
+    its width waits for them (and they for it)."""
+    from django.db import connection
+
+    if not connection.in_atomic_block:
+        return device_type.width_mm, device_type.din_profiles
+    table = connection.ops.quote_name(type(device_type)._meta.db_table)
+    with connection.cursor() as cur:
+        cur.execute(f"SELECT 1 FROM {table} WHERE id = %s FOR SHARE", [device_type.pk])
+    fresh = (
+        type(device_type).objects.filter(pk=device_type.pk)
+        .values("width_mm", "din_profiles").first()
+    ) or {"width_mm": None, "din_profiles": []}
+    return fresh["width_mm"], fresh["din_profiles"]
 
 
 def place(rail, device_type, offset, *, exclude=None) -> Decimal:
     """The offset a device of ``device_type`` takes on ``rail``: ``offset``
     when it fits there, refused when it does not; with no offset, the left
     end of the first gap it fits in."""
-    profiles = (device_type.din_profiles or []) if device_type is not None else []
-    if not profiles or device_type.width_mm is None:
+    if device_type is None:
         raise ValidationError({"din_rail_id": "Give the device a type that mounts on DIN rails."})
+    width, profiles = _share_type(device_type)
+    if not profiles or width is None:
+        raise ValidationError({"din_rail_id": "Give the device a type that mounts on DIN rails."})
+    _lock(rail)
     if rail.profile not in profiles:
         raise ValidationError({"din_rail_id": f"{device_type.name} does not mount on a "
                                               f"{PROFILE_LABELS[rail.profile]} rail."})
-    _lock(rail)
-    width = device_type.width_mm
     taken = spans(rail, exclude=exclude)
     if offset is None:
         for start, end in free_gaps(rail.length_mm, [(s, e) for _, s, e in taken]):
@@ -341,15 +395,30 @@ def check_rail_devices(items: list[dict], stored) -> None:
 
 def check_type_change(device_type, width, profiles) -> None:
     """Refuse a change to a type's width or rail profiles that its devices
-    on rails would not survive."""
-    from .models import Device
+    on rails would not survive. In a transaction it locks the type, then the
+    rails its devices are on, so a device of it being placed meanwhile is
+    seen (#310)."""
+    from django.db import connection
 
-    mounted = list(
-        Device.objects.filter(device_type=device_type, din_rail__isnull=False)
-        .select_related("din_rail__cabinet")
-    )
+    from .models import Device, DinRail
+
+    locking = connection.in_atomic_block and device_type.pk is not None
+    if locking:
+        type(device_type).objects.select_for_update().filter(pk=device_type.pk).exists()
+
+    def load():
+        return list(
+            Device.objects.filter(device_type=device_type, din_rail__isnull=False)
+            .select_related("din_rail__cabinet")
+        )
+
+    mounted = load()
     if not mounted:
         return
+    if locking:
+        list(DinRail.objects.select_for_update()
+             .filter(pk__in={d.din_rail_id for d in mounted}).order_by("pk"))
+        mounted = load()  # the rails as their locks found them
     wrong = [d for d in mounted if d.din_rail.profile not in (profiles or [])]
     if wrong:
         raise ValidationError({"din_profiles": [
@@ -399,7 +468,7 @@ def arrange(cabinet, placements) -> list:
     if len(placements) > MAX_PLACEMENTS:
         raise ValidationError({"placements": [f"At most {MAX_PLACEMENTS} at a time."]})
     errors = [{} for _ in placements]
-    rails = {r.id: r for r in cabinet.rails.select_for_update()}
+    rails = {r.id: r for r in lock_rails(cabinet)}
     wanted, seen = [], set()
     for i, p in enumerate(placements):
         p = p if isinstance(p, dict) else {}
