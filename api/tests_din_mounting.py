@@ -296,6 +296,92 @@ class DinDeviceTypeTests(DinMountingTestCase):
         self.assertEqual(self.relay.width_mm, Decimal("18.5"))
 
 
+class BundleRangeTests(DinMountingTestCase):
+    """A bundle's fields pass the device type API's rules (#311)."""
+
+    url = "/api/device-types/import-bundle/"
+
+    def setUp(self):
+        super().setUp()
+        from .device_library import export_bundle
+
+        self.bundle = {**export_bundle(self.relay), "name": "Relay X"}
+
+    def post(self, query="", **changes):
+        return self.client.post(self.url + query, {**self.bundle, **changes}, format="json")
+
+    def test_out_of_range_sizes_are_a_400_and_write_nothing(self):
+        cases = {
+            "width_mm": (-10, 0, 1e7, 5000.1),
+            "height_mm": (-1, 1e7),
+            "depth_mm": (0, 1e7),
+            "din_rail_mm": (-1, 1e7),
+        }
+        for field, values in cases.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    r = self.post(**{field: value})
+                    self.assertEqual(r.status_code, 400, r.content)
+                    self.assertIn(field, r.json())
+                    # A dry run refuses the same file.
+                    r = self.post("?dry_run=1", **{field: value})
+                    self.assertEqual(r.status_code, 400, r.content)
+        self.assertFalse(DeviceType.objects.filter(tenant=self.tenant, name="Relay X").exists())
+
+    def test_a_negative_width_cannot_overlap_a_mounted_device(self):
+        # The report's case: a -10 mm type mounted inside an 18 mm device.
+        self.mount("a", self.r1, 0, dtype=self.relay)
+        self.assertEqual(self.post(width_mm=-10).status_code, 400)
+        r = self.client.post(f"{self.url}?replace=1", {**self.bundle, "name": "Relay",
+                                                         "width_mm": -10}, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.relay.refresh_from_db()
+        self.assertEqual(self.relay.width_mm, 18)
+
+    def test_the_rail_sits_on_the_body_and_din_types_need_a_size(self):
+        r = self.post(height_mm=50, din_rail_mm=60)
+        self.assertEqual(r.json(), {"din_rail_mm": ["Below the body (50 mm tall)."]})
+        r = self.post(width_mm=None, height_mm=None)
+        self.assertEqual(set(r.json()), {"width_mm", "height_mm"})
+        # Replacing a type: the size it already has counts, as on a PATCH.
+        r = self.client.post(f"{self.url}?replace=1",
+                             {**self.bundle, "name": "Relay", "din_rail_mm": 90}, format="json")
+        self.assertEqual(r.json(), {"din_rail_mm": ["Below the body (80 mm tall)."]})
+
+    def test_in_range_values_import(self):
+        r = self.post(width_mm=1, height_mm=5000, depth_mm=17.5, din_rail_mm=0)
+        self.assertEqual(r.status_code, 200, r.content)
+        dt = DeviceType.objects.get(tenant=self.tenant, name="Relay X")
+        self.assertEqual((dt.width_mm, dt.height_mm), (1, 5000))
+
+    def test_other_type_fields_follow_the_api(self):
+        for field, value in (("u_height", -1), ("airflow", "sideways"),
+                             ("faceplate", {"v": 2})):
+            with self.subTest(field=field):
+                r = self.post(**{field: value})
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertIn(field, r.json())
+
+    def test_bad_component_and_sensor_rows_are_a_400(self):
+        rows = (
+            ("power_ports", {"name": "PSU", "maximum_draw": -5}),
+            ("power_ports", {"name": "PSU", "maximum_draw": 10**12}),
+            ("rear_ports", {"name": "R", "positions": 100000}),
+            ("interfaces", {"name": "x" * 200}),
+            ("interfaces", {"name": "eth0", "type": "warp-drive"}),
+        )
+        for key, row in rows:
+            with self.subTest(key=key, row=row):
+                r = self.post(components={key: [row]})
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertIn(f"components.{key}", r.json())
+        r = self.post(sensors=[{"slug": "s", "name": "S", "oid": "1.3.6", "item_kind": "warp"}])
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("sensors", r.json())
+        # Nothing of the refused files was kept.
+        self.assertFalse(DeviceType.objects.filter(tenant=self.tenant, name="Relay X").exists())
+
+
 class DinRoundTripTests(DinMountingTestCase):
     def test_a_mounted_device_exports_and_imports_unchanged(self):
         self.mount("plc-1", self.r1, 120)
