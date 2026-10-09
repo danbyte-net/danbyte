@@ -3677,6 +3677,73 @@ class RearPortMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "device", "positions"]
 
 
+def _refuse_unmapping(fronts, positions) -> None:
+    """A rear port (or template) can't shrink below the highest position a
+    front port still maps onto (#334) - the strands would point nowhere."""
+    used = max(
+        ((f.rear_port_position or 1) + (f.positions or 1) - 1 for f in fronts),
+        default=0,
+    )
+    if (positions or 1) < used:
+        raise serializers.ValidationError(
+            {"positions": f"Front ports use positions up to {used}. "
+             "Remap or remove them first."}
+        )
+
+
+def check_front_port_mapping(device, rear_port, start, positions, pk=None) -> None:
+    """A front port maps onto a rear port of its OWN device, and its range
+    [start … start+positions−1] must fit and not overlap a sibling (#334).
+    Shared by the serializer and each row of a ranged create."""
+    from django.core.exceptions import ValidationError as DjangoError
+
+    if rear_port is not None and device is not None and rear_port.device_id != device.id:
+        raise serializers.ValidationError(
+            {"rear_port_id": "Pick a rear port on the same device."}
+        )
+    inst = FrontPort(
+        rear_port=rear_port, rear_port_position=start, positions=positions,
+    )
+    if pk is not None:
+        inst.pk = pk
+    try:
+        inst.clean()
+    except DjangoError as e:
+        raise serializers.ValidationError(e.message_dict)
+
+
+def check_front_port_template_mapping(rear_template, start, positions, pk=None) -> None:
+    """Template twin of :func:`check_front_port_mapping`: the range must fit
+    the rear-port template and not overlap a sibling template unless the rear
+    is a splitter. Templates become real ports, so they follow the same rule."""
+    if rear_template is None:
+        return
+    lo = start or 1
+    hi = lo + (positions or 1) - 1
+    if lo < 1:
+        raise serializers.ValidationError(
+            {"rear_port_position": "Start position must be ≥ 1."}
+        )
+    if hi > rear_template.positions:
+        raise serializers.ValidationError(
+            {"positions": f"Positions {lo}–{hi} exceed the rear port's "
+             f"{rear_template.positions} positions."}
+        )
+    if rear_template.is_splitter:
+        return
+    siblings = FrontPortTemplate.objects.filter(rear_port_template=rear_template)
+    if pk is not None:
+        siblings = siblings.exclude(pk=pk)
+    for sib in siblings:
+        slo = sib.rear_port_position or 1
+        shi = slo + (sib.positions or 1) - 1
+        if lo <= shi and slo <= hi:
+            raise serializers.ValidationError(
+                {"rear_port_position": f"Positions {lo}–{hi} overlap "
+                 f"{sib.name} (positions {slo}–{shi})."}
+            )
+
+
 class RearPortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     def update(self, instance, validated_data):
         obj = super().update(instance, validated_data)
@@ -3737,6 +3804,8 @@ class RearPortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, N
                 {"is_splitter": "Remove the extra front ports first - a "
                  "non-splitter rear port allows one front port per position."}
             )
+        if self.instance is not None and "positions" in attrs:
+            _refuse_unmapping(self.instance.front_ports.all(), positions)
         return attrs
 
     cf_model = "rearport"
@@ -3788,24 +3857,17 @@ class FrontPortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         # Run the model's range/overlap check (DRF doesn't call clean()).
-        from django.core.exceptions import ValidationError as DjangoError
 
         def val(field, default=None):
             if field in attrs:
                 return attrs[field]
             return getattr(self.instance, field, default) if self.instance else default
 
-        inst = FrontPort(
-            rear_port=val("rear_port"),
-            rear_port_position=val("rear_port_position", 1),
-            positions=val("positions", 1),
+        check_front_port_mapping(
+            val("device"), val("rear_port"),
+            val("rear_port_position", 1), val("positions", 1),
+            pk=self.instance.pk if self.instance is not None else None,
         )
-        if self.instance is not None:
-            inst.pk = self.instance.pk
-        try:
-            inst.clean()
-        except DjangoError as e:
-            raise serializers.ValidationError(e.message_dict)
         return attrs
 
     cf_model = "frontport"
@@ -4762,6 +4824,8 @@ class RearPortTemplateSerializer(_ComponentTemplateSerializer):
                 {"positions": "A splitter has exactly 1 input position - "
                  "its front ports are the outputs."}
             )
+        if self.instance is not None and "positions" in attrs:
+            _refuse_unmapping(self.instance.front_port_templates.all(), positions)
         return attrs
 
     class Meta(_ComponentTemplateSerializer.Meta):
@@ -4795,6 +4859,16 @@ class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
             raise serializers.ValidationError(
                 {"rear_port_template_id": "Pick a rear-port template on the same device type."}
             )
+
+        def val(field, default):
+            if field in attrs:
+                return attrs[field]
+            return getattr(self.instance, field, default) if self.instance else default
+
+        check_front_port_template_mapping(
+            rpt, val("rear_port_position", 1), val("positions", 1),
+            pk=self.instance.pk if self.instance is not None else None,
+        )
         return attrs
 
     class Meta(_ComponentTemplateSerializer.Meta):

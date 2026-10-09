@@ -156,8 +156,9 @@ export function FrontPortForm({
       // field, because two of them may not share a strand. "Front[1-24]" from
       // strand 1 wires a 24-strand trunk straight through, which is how a
       // patch panel is actually built.
+      // Splitter outputs all share position 1, so they don't advance.
       const names = expandNameRange(payload.name)
-      const width = payload.positions ?? 1
+      const width = selectedRear?.is_splitter ? 0 : (payload.positions ?? 1)
       const start = payload.rear_port_position ?? 1
       const bodyFor = (n: string, i: number) => ({
         ...payload,

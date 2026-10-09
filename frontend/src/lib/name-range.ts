@@ -14,20 +14,25 @@ export const NAME_RANGE_RE = /\[(\d+)-(\d+)\]/
 export const RANGE_CAP = 128
 
 /**
- * "Disk[1-5]" → ["Disk1", …, "Disk5"]. Returns `[name]` unchanged when there
- * is no range, the bounds are reversed or unparseable, or the span exceeds
- * {@link RANGE_CAP} - callers can then treat it as a plain single name.
+ * "Disk[1-5]" → ["Disk1", …, "Disk5"]; "Eth[01-04]" keeps the start bound's
+ * zero padding (Eth01 … Eth04); "Eth[5-5]" is a range of one (["Eth5"]).
+ * Returns `[name]` unchanged when there is no range, the bounds are reversed
+ * or unparseable, or the span exceeds {@link RANGE_CAP}; the server refuses
+ * such a name rather than storing its brackets. Mirrors `api/name_range.py`.
  */
 export function expandNameRange(name: string): string[] {
   const m = name.match(NAME_RANGE_RE)
-  if (!m) return [name]
+  if (!m || m.index === undefined) return [name]
   const lo = Number(m[1])
   const hi = Number(m[2])
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return [name]
   if (hi - lo + 1 > RANGE_CAP) return [name]
+  const width = m[1].length > 1 && m[1].startsWith("0") ? m[1].length : 0
+  const head = name.slice(0, m.index)
+  const tail = name.slice(m.index + m[0].length)
   const out: string[] = []
   for (let i = lo; i <= hi; i++)
-    out.push(name.replace(NAME_RANGE_RE, String(i)))
+    out.push(head + String(i).padStart(width, "0") + tail)
   return out
 }
 

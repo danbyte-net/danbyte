@@ -188,17 +188,18 @@ class AntennaTests(APITestCase):
         # Nothing partial was written.
         self.assertEqual(device.aux_ports.count(), 1)
 
-    def test_an_oversized_range_stays_literal(self):
-        # Mirrors the frontend cap: a typo must not fan out 99k rows.
+    def test_an_oversized_range_is_refused(self):
+        # Mirrors the frontend cap: a typo must not fan out 99k rows, and is
+        # not stored with its brackets either (#335).
         device = self._device("ap11")
         r = self.client.post(
             "/api/aux-ports/",
             {"device_id": str(device.id), "name": "p[1-9999]"},
             format="json",
         )
-        self.assertEqual(r.status_code, 201, r.content)
-        self.assertEqual(device.aux_ports.count(), 1)
-        self.assertEqual(device.aux_ports.get().name, "p[1-9999]")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("name", r.json())
+        self.assertEqual(device.aux_ports.count(), 0)
 
     def test_bundle_round_trips_antenna_templates(self):
         AntennaTemplate.objects.create(

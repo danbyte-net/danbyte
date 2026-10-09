@@ -6,7 +6,10 @@ seeding surfaced it). The server is the right place for a naming contract:
 now every create path - dialog, script, import - means the same thing.
 
 Mirrors ``frontend/src/lib/name-range.ts`` exactly: one range per name, bounds
-must be ordered, spans over the cap fall back to a plain single name.
+must be ordered, a zero-padded start bound pads every name to its width
+("Eth[01-04]" → Eth01 … Eth04), and "[5-5]" is a range of one (#335). A range
+that can't be honoured is refused by :func:`range_error`, never stored with
+its brackets.
 """
 from __future__ import annotations
 
@@ -19,25 +22,38 @@ NAME_RANGE_RE = re.compile(r"\[(\d+)-(\d+)\]")
 RANGE_CAP = 128
 
 
-def expand_name_range(name: str) -> list[str]:
-    """"Disk[1-5]" → ["Disk1", …, "Disk5"]; anything else → [name]."""
-    m = NAME_RANGE_RE.search(name or "")
-    if not m:
-        return [name]
+def _usable(m: re.Match) -> bool:
     lo, hi = int(m.group(1)), int(m.group(2))
-    if hi < lo or hi - lo + 1 > RANGE_CAP:
+    return lo <= hi and hi - lo + 1 <= RANGE_CAP
+
+
+def expand_name_range(name: str) -> list[str]:
+    """"Disk[1-5]" → ["Disk1", …, "Disk5"]; "Disk[5-5]" → ["Disk5"];
+    anything else → [name]. Callers refuse a leftover range via
+    :func:`range_error` before creating anything."""
+    m = NAME_RANGE_RE.search(name or "")
+    if not m or not _usable(m):
         return [name]
-    return [NAME_RANGE_RE.sub(str(i), name, count=1) for i in range(lo, hi + 1)]
+    start = m.group(1)
+    # A leading zero on the start bound fixes the width: [01-12] → 01 … 12.
+    width = len(start) if len(start) > 1 and start.startswith("0") else 0
+    lo, hi = int(start), int(m.group(2))
+    return [
+        name[: m.start()] + str(i).zfill(width) + name[m.end():]
+        for i in range(lo, hi + 1)
+    ]
 
 
 def range_error(name: str) -> str | None:
     """Why a name's range shorthand can't be honoured, or ``None`` when the
-    name is a plain name or a usable ``[a-b]`` range. Serializers surface this
-    so a typo is refused instead of stored literally."""
+    name is a plain name or a usable ``[a-b]`` range. Create paths surface
+    this so a typo is refused instead of stored literally."""
+    name = name or ""
     if re.search(r"\{\d+-\d+\}", name):
         return "Ranges use square brackets: [1-24]."
-    if len(NAME_RANGE_RE.findall(name)) > 1:
+    found = list(NAME_RANGE_RE.finditer(name))
+    if len(found) > 1:
         return "Only one [a-b] range per name."
-    if NAME_RANGE_RE.search(name) and len(expand_name_range(name)) == 1:
+    if found and not _usable(found[0]):
         return f"A range must count up and cover at most {RANGE_CAP} names."
     return None

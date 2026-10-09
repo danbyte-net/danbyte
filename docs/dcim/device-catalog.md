@@ -317,7 +317,8 @@ slots, RJ11, audio jacks, grounding lugs, and **RF connectors** (RP-SMA, SMA,
 N-type, MMCX, U.FL, QMA, 4.3-10) - so a device type can model *everything* on
 its panel, including the coax run from an AP to its external antenna. Template names support
 two shorthands: a **`[1-24]` range** creates one template per port in a single
-add, and a **`{position}` token** resolves to the device's stack member number
+add (`[01-24]` keeps the zero padding; front-port templates take consecutive
+rear positions), and a **`{position}` token** resolves to the device's stack member number
 when components are stamped (and renames ports when a device changes stack
 position) - see [virtual chassis](virtual-chassis.md#position-aware-interface-names).
 Tick rows to reveal a bulk bar with **Edit**, **Rename**, **Clone**, and

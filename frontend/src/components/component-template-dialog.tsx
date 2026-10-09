@@ -361,13 +361,28 @@ export function ComponentTemplateDialog({
         }).then((saved) => ({ saved, count: 1 }))
       }
       // Create: a [a-b] range in the name fans out into one POST per port.
+      // A front-port range takes consecutive rear positions, like the
+      // device-level form; splitter outputs all share position 1.
       const names = expandNameRange(payload.name)
+      const rear = rearPorts.data?.results.find(
+        (r) => r.id === rearPortTemplateId
+      )
+      const step = kind === "front-port" && !rear?.is_splitter ? 1 : 0
+      const start = Number(rearPortPosition || 1)
       const posts = names.reduce<Promise<AnyTemplate>>(
-        (chain, n) =>
+        (chain, n, i) =>
           chain.then(() =>
             api<AnyTemplate>(base, {
               method: "POST",
-              body: JSON.stringify({ ...payload, name: n }),
+              body: JSON.stringify(
+                step
+                  ? {
+                      ...payload,
+                      name: n,
+                      rear_port_position: start + i * step,
+                    }
+                  : { ...payload, name: n }
+              ),
             })
           ),
         Promise.resolve(null as unknown as AnyTemplate)
