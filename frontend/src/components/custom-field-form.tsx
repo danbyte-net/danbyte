@@ -32,6 +32,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { asArray, asRecord } from "@/lib/utils"
 
 // Sentinel thrown to abort the mutation on client-side validation failure so
 // onError can skip the generic toast (the field error is already surfaced).
@@ -56,9 +57,11 @@ export function CustomFieldForm({
   const [key, setKey] = useState(field?.key ?? "")
   const [label, setLabel] = useState(field?.label ?? "")
   const [type, setType] = useState<CustomFieldType>(field?.type ?? "text")
-  const [appliesTo, setAppliesTo] = useState<string[]>(field?.applies_to ?? [])
+  const [appliesTo, setAppliesTo] = useState<string[]>(
+    asArray(field?.applies_to)
+  )
   const [choicesText, setChoicesText] = useState(
-    (field?.choices ?? []).join("\n")
+    asArray(field?.choices).join("\n")
   )
   const [required, setRequired] = useState(field?.required ?? false)
   const [hidden, setHidden] = useState(field?.hidden ?? false)
@@ -71,7 +74,7 @@ export function CustomFieldForm({
     field?.related_model || null
   )
   const [scopeRules, setScopeRules] = useState<CustomFieldScopeRules>(
-    field?.scope_rules ?? {}
+    asRecord(field?.scope_rules)
   )
   // Registry-served lists: applies_to auto-derives from CustomFieldsMixin
   // (plugins included); reference models drive the object-type target.
@@ -94,8 +97,8 @@ export function CustomFieldForm({
     setKey(field.key)
     setLabel(field.label)
     setType(field.type)
-    setAppliesTo(field.applies_to)
-    setChoicesText(field.choices.join("\n"))
+    setAppliesTo(asArray(field.applies_to))
+    setChoicesText(asArray(field.choices).join("\n"))
     setRequired(field.required)
     setHidden(field.hidden)
     setDefVal(field.default)
@@ -104,7 +107,7 @@ export function CustomFieldForm({
     setWeightError(null)
     setGroup(field.group ?? null)
     setRelatedModel(field.related_model || null)
-    setScopeRules(field.scope_rules ?? {})
+    setScopeRules(asRecord(field.scope_rules))
     reset()
   }, [field, reset])
 

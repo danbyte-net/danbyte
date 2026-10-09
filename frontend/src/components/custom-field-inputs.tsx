@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api, type CustomField, type Paginated } from "@/lib/api"
 import { groupCustomFields, useCustomizationMeta } from "@/lib/custom-fields"
+import { asArray } from "@/lib/utils"
 import { CfObjectPicker } from "@/components/cf-object-picker"
 import {
   Field,
@@ -157,7 +158,7 @@ function OneField({
           value={value == null || value === "" ? null : String(value)}
           onChange={(v) => onChange(v)}
           noneLabel="-"
-          options={d.choices.map((c) => ({ value: c, label: c }))}
+          options={asArray(d.choices).map((c) => ({ value: c, label: c }))}
         />
       )
     case "object":
@@ -175,7 +176,7 @@ function OneField({
       return (
         <Field label={label} hint={hint}>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-            {d.choices.map((c) => (
+            {asArray(d.choices).map((c) => (
               <FormCheckbox
                 key={c}
                 label={c}

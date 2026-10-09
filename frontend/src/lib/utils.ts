@@ -14,3 +14,18 @@ export function cssColor(color?: string | null): string | undefined {
   const s = color.trim()
   return /^[0-9a-f]{3}([0-9a-f]{3})?$/i.test(s) ? `#${s}` : s
 }
+
+// A JSON list or object column as its shape, or empty. Spreadsheet imports
+// before 0.17.2 could store "" in such columns (#354); a page reading one
+// must not crash on it.
+export function asArray<T>(value: readonly T[] | null | undefined): T[] {
+  return Array.isArray(value) ? (value as T[]) : []
+}
+
+export function asRecord<T extends object>(value: T | null | undefined): T {
+  return (
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {}
+  ) as T
+}

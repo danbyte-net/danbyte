@@ -174,7 +174,9 @@ errors.
   on a site, say) takes the default; an empty required column with no
   default is refused, and the error names the column.
 - List and JSON columns hold JSON. An empty list exports as `[]`, and an empty
-  cell in such a column is read as its empty value, never as text.
+  cell in such a column is read as its empty value, never as text. Earlier
+  releases stored such a cell as `""` (or `{}` in a list column); the
+  upgrade to 0.17.2 puts those rows back to their empty list or object.
 - Excel files are read on the server, so no spreadsheet plugin is needed.
 
 ## Extending it (for developers / plugins)

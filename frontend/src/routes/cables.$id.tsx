@@ -27,6 +27,7 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
+import { asRecord } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { FiberMap } from "@/components/fiber/fiber-map"
 import type { StrandAnno } from "@/components/fiber/fiber-map"
@@ -351,7 +352,7 @@ function CableFibers({ cable: c }: { cable: Cable }) {
   })
 
   const setStrand = (position: number, anno: StrandAnno) => {
-    const next = { ...c.strands }
+    const next = { ...asRecord(c.strands) }
     if (anno.label || anno.status) next[String(position)] = anno
     else delete next[String(position)]
     save.mutate({ strands: next })
@@ -386,7 +387,7 @@ function CableFibers({ cable: c }: { cable: Cable }) {
       {count > 0 ? (
         <FiberMap
           count={count}
-          strands={c.strands}
+          strands={asRecord(c.strands)}
           palette={palette}
           editable
           onChange={setStrand}

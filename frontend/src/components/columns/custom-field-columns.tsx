@@ -4,6 +4,7 @@ import { Check } from "lucide-react"
 
 import type { CustomField } from "@/lib/api"
 import { fieldTypeLabel, modelLabel } from "@/lib/custom-fields"
+import { asArray } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { dash } from "@/components/cells/dash"
@@ -110,9 +111,9 @@ export function buildCustomFieldColumns<T extends CustomField = CustomField>(
       header: "Applies to",
       enableSorting: false,
       cell: ({ row }) =>
-        row.original.applies_to.length ? (
+        asArray(row.original.applies_to).length ? (
           <span className="text-xs text-muted-foreground">
-            {row.original.applies_to.map(modelLabel).join(" · ")}
+            {asArray(row.original.applies_to).map(modelLabel).join(" · ")}
           </span>
         ) : (
           dash

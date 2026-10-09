@@ -6,6 +6,7 @@ import { useCallback, useState } from "react"
 
 import { api, type CustomField } from "@/lib/api"
 import { fieldTypeLabel, modelLabel } from "@/lib/custom-fields"
+import { asArray } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
@@ -47,6 +48,8 @@ function CustomFieldDetailBody({ field: f }: { field: CustomField }) {
   const canDelete = canDo("customfield", "delete")
   const [deleting, setDeleting] = useState<CustomField | null>(null)
   const goBack = useCallback(() => nav({ to: "/custom-fields" }), [nav])
+  const appliesTo = asArray(f.applies_to)
+  const choices = asArray(f.choices)
 
   return (
     <DetailShell
@@ -99,9 +102,9 @@ function CustomFieldDetailBody({ field: f }: { field: CustomField }) {
       <DetailTab value="overview">
         <dl className="max-w-2xl divide-y divide-border text-sm">
           <Row label="Applies to">
-            {f.applies_to.length ? (
+            {appliesTo.length ? (
               <div className="flex flex-wrap gap-1">
-                {f.applies_to.map((m) => (
+                {appliesTo.map((m) => (
                   <span
                     key={m}
                     className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px]"
@@ -114,10 +117,10 @@ function CustomFieldDetailBody({ field: f }: { field: CustomField }) {
               <span className="text-muted-foreground">No objects yet</span>
             )}
           </Row>
-          {f.choices.length > 0 && (
+          {choices.length > 0 && (
             <Row label="Choices">
               <div className="flex flex-wrap gap-1">
-                {f.choices.map((c) => (
+                {choices.map((c) => (
                   <span
                     key={c}
                     className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px]"

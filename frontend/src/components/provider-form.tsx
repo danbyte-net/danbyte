@@ -24,6 +24,7 @@ import {
 import { BusinessHoursField } from "@/components/business-hours-field"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
+import { asRecord } from "@/lib/utils"
 
 export interface ProviderFormProps {
   provider?: Provider
@@ -68,7 +69,7 @@ export function ProviderForm({
     provider?.account_manager_name ?? ""
   )
   const [hours, setHours] = useState<BusinessHours>(
-    provider?.business_hours ?? {}
+    asRecord(provider?.business_hours)
   )
   const [hoursTz, setHoursTz] = useState(provider?.business_hours_tz ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
@@ -91,7 +92,7 @@ export function ProviderForm({
     setSupportPhone(provider.support_phone)
     setManagerId(provider.account_manager?.id ?? null)
     setManagerName(provider.account_manager_name)
-    setHours(provider.business_hours ?? {})
+    setHours(asRecord(provider.business_hours))
     setHoursTz(provider.business_hours_tz ?? "")
     setComments(provider.comments)
     setTagIds(provider.tags.map((t) => t.id))
