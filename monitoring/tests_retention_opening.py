@@ -115,3 +115,120 @@ class PruneKeepsOpeningTests(_Base):
         self.assertEqual(prune(now=NOW)["transitions_deleted"], 1)
         self.assertEqual(prune(now=NOW)["transitions_deleted"], 0)
         self.assertEqual(StateTransition.objects.count(), 1)
+
+
+class RestoreOpeningMigrationTests(_Base):
+    """monitoring 0110 gives back the opening status an earlier prune deleted,
+    and repairs the closed rollups written while it was missing (#356)."""
+
+    def restore(self):
+        import importlib
+
+        from django.apps import apps
+        from django.db import connection
+
+        mod = importlib.import_module("monitoring.migrations.0110_restore_opening_transitions")
+        with connection.schema_editor() as editor:
+            mod.restore_openings(apps, editor, now=NOW)
+
+    def closed_hour(self, bucket=H11):
+        """A rollup row written by the timer, closed, as it is stored."""
+        rollups.roll(self.tenant.id, rollups.HOUR, bucket, bucket + rollups.HOUR, now=NOW)
+        return CheckRollupHourly.objects.get(bucket=bucket)
+
+    def test_pruned_stable_check_counts_up_again(self):
+        # Up since 400 days ago; the prune deleted the change that said so.
+        st = self.state(since=NOW - timedelta(days=400))
+        row = self.closed_hour()
+        self.assertEqual((row.up_s, row.unknown_s), (0, 3600))
+        day = datetime(2026, 9, 9, tzinfo=UTC)
+        rollups.roll(self.tenant.id, rollups.DAY, day, day + rollups.DAY, now=NOW)
+        self.assertEqual(rollups.CheckRollupDaily.objects.get(bucket=day).unknown_s, 86400)
+        self.assertIsNone(check_uptime(st, H11, H11 + timedelta(hours=1))["uptime_pct"])
+
+        self.restore()
+
+        opening = StateTransition.objects.get()
+        self.assertEqual((opening.from_status, opening.to_status), ("unknown", "up"))
+        self.assertEqual(opening.at, NOW - timedelta(days=400))
+        row.refresh_from_db()
+        self.assertEqual((row.up_s, row.unknown_s, row.incidents), (3600, 0, 0))
+        daily = rollups.CheckRollupDaily.objects.get(bucket=day)
+        self.assertEqual((daily.up_s, daily.unknown_s), (86400, 0))
+        self.assertEqual(check_uptime(st, H11, H11 + timedelta(hours=1))["uptime_pct"], 100.0)
+        self.assertEqual(self.hour().up_s, 3600)
+
+    def test_opening_comes_from_the_earliest_remaining_change(self):
+        # Up for years, then down at 11:20 today; everything before is gone.
+        self.state(status="down", since=H11 + timedelta(minutes=20))
+        self.tr(H11 + timedelta(minutes=20), "down", frm="up")
+        before = self.closed_hour(H11 - rollups.HOUR)
+        edge = self.closed_hour()
+        self.assertEqual(before.unknown_s, 3600)
+        self.assertEqual((edge.unknown_s, edge.down_s), (1200, 2400))
+
+        self.restore()
+
+        opening = StateTransition.objects.order_by("at").first()
+        self.assertEqual((opening.from_status, opening.to_status), ("unknown", "up"))
+        self.assertEqual(opening.at, NOW - timedelta(days=365))
+        before.refresh_from_db()
+        edge.refresh_from_db()
+        self.assertEqual((before.up_s, before.unknown_s), (3600, 0))
+        self.assertEqual((edge.up_s, edge.down_s, edge.unknown_s), (1200, 2400, 0))
+        self.assertEqual(edge.incidents, 1)
+
+    def test_down_into_stale_is_not_a_new_blind_incident(self):
+        self.state(status="stale", since=H11 + timedelta(minutes=30))
+        self.tr(H11 + timedelta(minutes=30), "stale", frm="down")
+        edge = self.closed_hour()
+        self.assertEqual(edge.blind_incidents, 1)
+
+        self.restore()
+
+        edge.refresh_from_db()
+        self.assertEqual((edge.down_s, edge.stale_s, edge.blind_incidents), (1800, 1800, 0))
+
+    def test_checks_with_their_opening_are_left_alone(self):
+        # Kept by the fixed prune: newest change before the cutoff.
+        self.state(since=NOW - timedelta(days=400))
+        self.tr(NOW - timedelta(days=400), "up", frm="down")
+        # A young check: its history starts from unknown.
+        self.state(ip=self.ip2, since=NOW - timedelta(days=3))
+        self.tr(NOW - timedelta(days=3), "up", ip=self.ip2)
+        # Never answered.
+        self.state(template=self.http, status="unknown")
+        rows = set(StateTransition.objects.values_list("pk", flat=True))
+
+        self.restore()
+
+        self.assertEqual(set(StateTransition.objects.values_list("pk", flat=True)), rows)
+
+    def test_is_idempotent(self):
+        self.state(since=NOW - timedelta(days=400))
+        self.state(ip=self.ip2, status="down", since=NOW - timedelta(days=2))
+        self.tr(NOW - timedelta(days=2), "down", frm="up", ip=self.ip2)
+        self.restore()
+        self.assertEqual(StateTransition.objects.count(), 3)
+        self.restore()
+        self.assertEqual(StateTransition.objects.count(), 3)
+
+    def test_open_rows_and_rows_before_the_opening_are_untouched(self):
+        self.state(since=H11 + timedelta(minutes=30))
+        rollups.roll(self.tenant.id, rollups.HOUR, H11 - rollups.HOUR, NOW + rollups.HOUR,
+                     now=NOW)
+        open_row = CheckRollupHourly.objects.get(bucket=H11 + rollups.HOUR)
+        self.assertFalse(open_row.closed)
+
+        self.restore()
+
+        earlier = CheckRollupHourly.objects.get(bucket=H11 - rollups.HOUR)
+        self.assertEqual((earlier.up_s, earlier.unknown_s), (0, 3600))
+        straddle = CheckRollupHourly.objects.get(bucket=H11)
+        self.assertEqual((straddle.up_s, straddle.unknown_s), (1800, 1800))
+        open_row.refresh_from_db()
+        self.assertEqual(open_row.up_s, 0)
+
+    def test_fresh_install_is_a_no_op(self):
+        self.restore()
+        self.assertFalse(StateTransition.objects.exists())

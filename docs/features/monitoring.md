@@ -604,7 +604,10 @@ incident.
 
 Status changes are kept for a year, results for thirty days. Each check keeps
 its newest change however old it is, so a check that has been up for longer
-than a year still counts as up. Both are also folded into [rollups](#rollups)
+than a year still counts as up. 0.17.0 and 0.17.1 pruned that change too;
+the upgrade to 0.17.2 puts it back from what is left (the earliest remaining
+change, or the check's current status) and recomputes the closed rollups
+that counted the time as unknown. Both are also folded into [rollups](#rollups)
 that outlive them. The history API
 reads the changes back filtered by anything an address is - the same
 dimensions the list pages filter on - and returns facet counts and a bucketed
