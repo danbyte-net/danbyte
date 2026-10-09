@@ -282,7 +282,7 @@ When you create a user, choose how they get their password:
 - **Set a password** - you type an initial password yourself.
 
 Editing an existing user, the same option lets you **email a password-reset
-link**.
+link**. It starts unticked, so saving an edit sends nothing unless you tick it.
 
 A link is refused once the account is disabled, and setting a password never
 re-enables an account. Enable the account before sending an invite or reset
