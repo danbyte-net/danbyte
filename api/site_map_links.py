@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from .cable_points import term_point
 from .link_capacity import (
     cable_capacity,
     circuit_capacity,
@@ -56,6 +57,29 @@ def _positions(kind, port) -> int:
     return 1
 
 
+def _cable_pairs(cab):
+    """The ``frozenset({(kind, port id), (kind, port id)})`` port pairs a
+    cable with two or more ports on both ends carries: its A and B ports
+    matched by position - the order they were added in - so 2+2 ports are
+    two links, not four (#312). None for a cable with a single port on
+    either end: that end fans out (a breakout), and every hop is a link.
+
+    Reads the cable's terminations as ``_cables_qs`` prefetched them, in
+    their position order, skipping the ends a hop skips."""
+    ends: dict = {"A": [], "B": []}
+    for t in cab.terminations.all():
+        kind, obj = term_point(t)
+        if obj is None:
+            continue
+        if kind != "circuit_termination" and getattr(obj, "device_id", None) is None:
+            continue
+        ends.setdefault(t.end, []).append((kind, obj.id))
+    a_ends, b_ends = ends["A"], ends["B"]
+    if len(a_ends) < 2 or len(b_ends) < 2:
+        return None
+    return {frozenset(pair) for pair in zip(a_ends, b_ends, strict=False)}
+
+
 class StrandWalker:
     """Follows each strand of a cable out through patch panels to the port it
     ends on, over ``links`` - every cable hop of the tenant, as
@@ -66,11 +90,18 @@ class StrandWalker:
 
         self.by_port: dict = defaultdict(list)
         self.by_cable: dict = defaultdict(list)
+        # The port pairs each multi-port cable carries (#312); a cable not
+        # here carries every hop it makes.
+        self.pairs: dict = {}
         rear_ids = set()
         for link in links:
             cab, da, pa, ka, db, pb, kb = link
             self.by_port[(ka, pa.id)].append((cab, db, pb, kb))
             self.by_port[(kb, pb.id)].append((cab, da, pa, ka))
+            if cab.id not in self.by_cable:
+                pairs = _cable_pairs(cab)
+                if pairs is not None:
+                    self.pairs[cab.id] = pairs
             self.by_cable[cab.id].append(link)
             rear_ids.update(p.id for k, p in ((ka, pa), (kb, pb)) if k == "rear_port")
         # Which front port each rear position comes out of: the one query the
@@ -111,20 +142,32 @@ class StrandWalker:
             if partner is None:
                 return None
             pkind, pport, ppos = partner
-            hops = [h for h in self.by_port.get((pkind, pport.id), ()) if h[0].id != cable_id]
+            hops = [
+                h for h in self.by_port.get((pkind, pport.id), ())
+                if h[0].id != cable_id and self._carries(h[0], (pkind, pport.id), (h[3], h[2].id))
+            ]
             if not hops:
                 return None
             cab, device, port, kind = hops[0]
             position, cable_id = ppos, cab.id
         return device, port, kind
 
+    def _carries(self, cab, end_a, end_b) -> bool:
+        """Whether cable ``cab`` links the ``(kind, port id)`` ends given."""
+        pairs = self.pairs.get(cab.id)
+        return pairs is None or frozenset((end_a, end_b)) in pairs
+
     def cable_links(self, hops) -> list:
         """The end-to-end links the strands of ``hops`` carry - one cable's
         hops, each ``(cable, dev_a, port_a, kind_a, dev_b, port_b, kind_b)``
         - each once, as ``(a end, z end)``. A strand dark on either side
-        carries none; two strands of one duplex connector are one link."""
+        carries none; two strands of one duplex connector are one link. A
+        cable with several ports on both ends carries one link per position
+        (:func:`_cable_pairs`), not one per pair of ports."""
         out: dict = {}
         for cab, da, pa, ka, db, pb, kb in hops:
+            if not self._carries(cab, (ka, pa.id), (kb, pb.id)):
+                continue
             for strand in range(1, min(_positions(ka, pa), _positions(kb, pb)) + 1):
                 a = self.end(ka, pa, da, strand, cab.id)
                 z = self.end(kb, pb, db, strand, cab.id)
@@ -137,7 +180,10 @@ class StrandWalker:
         """What a circuit termination's cable reaches, through any panels:
         ``(device, port, kind)``, or None when it is not cabled or stops
         dark."""
-        hops = self.by_port.get(("circuit_termination", termination_id), ())
+        start = ("circuit_termination", termination_id)
+        hops = [
+            h for h in self.by_port.get(start, ()) if self._carries(h[0], start, (h[3], h[2].id))
+        ]
         if not hops:
             return None
         cab, device, port, kind = hops[0]
