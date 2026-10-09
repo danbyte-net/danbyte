@@ -67,16 +67,41 @@ def _types(ctx, **_kw) -> dict:
 
 
 def _search(ctx, q: str = "", type: str = "", limit: int = 20, **_kw) -> dict:
-    """The product's own ranked search, so results match the palette."""
+    """The product's own ranked search, so results match the palette.
+
+    The tenant's allowed types hold here as they do for `list` and `get`
+    (#327): a type outside them is refused whether it came as `type` or as
+    a `type:` token, the index query is narrowed to the allowed types, any
+    hit of another type is dropped, and `total` counts allowed types only.
+    """
     from rest_framework.test import APIRequestFactory, force_authenticate
 
+    from api.search_views import _resolve_type, parse_query
     from api.search_views import search as search_view
 
     if not q.strip():
         raise ToolError("Pass something to search for.")
+    allowed = _allowed_search_types(ctx.settings)
+    asked = ([type] if type else []) + parse_query(q)[1].get("type", [])
+    if allowed:
+        for wanted in asked:
+            # Read the way the search reads it, so an alias such as `ip`
+            # is judged as the type it actually narrows to.
+            slug = _resolve_type(wanted)
+            if slug is None:
+                # Not a type the search knows: let `resolve` say whether
+                # it is unknown or only outside the list.
+                slug, _prefix, _viewset = dispatch.resolve(wanted, ctx.settings)
+            if slug not in allowed:
+                raise ToolError(
+                    "Agent access here is limited to: "
+                    f"{', '.join(sorted(_allowed_labels(ctx.settings)))}."
+                )
     params = {"q": q, "limit": min(int(limit or 20), ctx.max_rows)}
     if type:
         params["type"] = dispatch._normalise(type)
+    elif allowed and not asked:
+        params["q"] = " ".join([q, *(f"type:{t}" for t in sorted(allowed))])
     request = APIRequestFactory().get("/api/search/", params)
     force_authenticate(request, user=ctx.user, token=ctx.token)
     response = search_view(request)
@@ -88,8 +113,34 @@ def _search(ctx, q: str = "", type: str = "", limit: int = 20, **_kw) -> dict:
     hits = [
         {k: h.get(k) for k in ("type", "type_label", "id", "title", "subtitle", "context")}
         for h in data.get("hits", [])
+        if not allowed or h.get("type") in allowed
     ]
-    return {"query": q, "total": data.get("total", len(hits)), "hits": hits}
+    total = data.get("total", len(hits))
+    if allowed:
+        # The per-type facets cover every row the search ranked, so summing
+        # the allowed ones is the true total without the others in it.
+        total = sum(
+            int(f.get("count") or 0)
+            for f in (data.get("facets") or {}).get("types", [])
+            if f.get("type") in allowed
+        )
+    return {"query": q, "total": total, "hits": hits}
+
+
+def _allowed_labels(settings_row) -> list[str]:
+    return [dispatch._normalise(t) for t in (getattr(settings_row, "allowed_types", None) or [])]
+
+
+def _allowed_search_types(settings_row) -> set[str]:
+    """The allowed types as the search index names them: the routed slug and
+    the model name, which is what an index entry carries as its type."""
+    out: set[str] = set()
+    for slug in _allowed_labels(settings_row):
+        out.add(slug)
+        model = dispatch.model_of(slug)
+        if model is not None:
+            out.add(model._meta.model_name)
+    return out
 
 
 def _get(ctx, type: str = "", id: str = "", **_kw) -> dict:

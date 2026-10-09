@@ -152,8 +152,14 @@ has no port name of its own.
   everything.
 - **Everything is logged.** Recent calls shows the tool, the object type,
   the account and token, the row count and any error, 25 at a time and
-  newest first. That is how you answer "what has it actually read".
-- **Rate limited** to 120 calls a minute per token.
+  newest first. That is how you answer "what has it actually read". The
+  arguments are kept too, with anything that looks like a credential - a
+  password, token, key or secret at any depth of a payload, and the
+  fields the secret classifier marks for that type - stored as `•••`.
+  Upgrading to 0.17.2 masks calls logged before it the same way.
+- **Rate limited** to 120 calls a minute per token. Every message in a
+  JSON-RPC batch counts, a batch carries at most 20 messages, and a
+  request body is at most 256 KB.
 - Writes land in the **change log** under the token's account, with the
   same before-and-after detail as any other change.
 
@@ -168,7 +174,9 @@ On the Agent access page:
 
 - **Rows per answer** - the cap for every list and search. Default 50.
 - **Object types** - restrict agents to a subset (say devices, IPs and
-  prefixes). Empty means every type the token already allows.
+  prefixes). Empty means every type the token already allows. It holds
+  for every tool, `search` included: hits of other types are dropped, its
+  total counts only listed types, and a `type` outside the list is refused.
 
 ## Troubleshooting
 
@@ -178,7 +186,9 @@ On the Agent access page:
 | "This Danbyte allows agents to read only" | Writes are off. |
 | "This API token is read-only" | The token's scope is read; make a full-scope one, or leave it and read only. |
 | Empty results everywhere | The token's account has no permissions for that type. |
-| "More than 120 calls a minute" | The rate limit; it clears within a minute. |
+| "More than 120 calls a minute" | The rate limit; every message in a batch counts. It clears within a minute. |
+| "A batch may carry at most 20 messages" | One JSON-RPC batch held more; split it. |
+| "Request body larger than 256 KB" | One request was too big; send less at a time. |
 | `DEPTH_ZERO_SELF_SIGNED_CERT`, or the client says the certificate is not trusted | Your Danbyte serves a self-signed certificate and the client refuses it. See below. |
 
 Calls and their errors are on the Agent access page, which is the first
