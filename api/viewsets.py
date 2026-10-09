@@ -7562,7 +7562,7 @@ class CircuitViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("provider", "type")
+            .select_related("provider", "type", "status")
             .prefetch_related(
                 TAGS, "terminations__site", "terminations__provider_network",
                 # Each end reports the cable landing on it (#118).

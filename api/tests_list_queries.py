@@ -484,3 +484,43 @@ class InterfaceListTests(_Base):
         ]
         self.assertEqual(len(page), 1)
         self.assertNotIn('JOIN "api_interface"', page[0])
+
+
+class CircuitListTests(_Base):
+    def test_page_cost_is_flat(self):
+        from .models import Circuit, CircuitType, Provider, Status
+
+        prov = Provider.objects.create(tenant=self.tenant, name="Prov", slug="prov")
+        ctype = CircuitType.objects.create(tenant=self.tenant, name="Fibre", slug="fibre")
+        status = Status.objects.create(tenant=self.tenant, name="Live", slug="live")
+        for i in range(30):
+            Circuit.objects.create(
+                tenant=self.tenant, cid=f"C-{i:02}", provider=prov, type=ctype, status=status
+            )
+        small, _ = self._queries("/api/circuits/?page_size=5")
+        big, body = self._queries("/api/circuits/?page_size=30")
+        self.assertEqual(small, big, "a bigger page must not cost more queries (#341)")
+        self.assertEqual(body["results"][0]["status"]["name"], "Live")
+
+
+class MacListTests(_Base):
+    def test_page_cost_is_flat_and_vendors_match(self):
+        from .models import MACAddress, OuiPrefix
+        from .oui import vendor_of_object
+
+        OuiPrefix.objects.create(prefix="001b44", vendor="SanDisk", source="ieee")
+        OuiPrefix.objects.create(tenant=self.tenant, prefix="0200aa", vendor="Lab", source="custom")
+        for i in range(30):
+            MACAddress.objects.create(
+                tenant=self.tenant,
+                mac_address=f"{('00:1b:44', '02:00:aa', '0c:00:00')[i % 3]}:00:00:{i:02x}",
+                vendor_override="Hand-built" if i == 7 else "",
+            )
+        small, _ = self._queries("/api/mac-addresses/?page_size=5")
+        big, body = self._queries("/api/mac-addresses/?page_size=30")
+        self.assertEqual(small, big, "a bigger page must not cost more queries (#340)")
+        for row in body["results"]:
+            obj = MACAddress.objects.get(pk=row["id"])
+            self.assertEqual(row["vendor"], vendor_of_object(obj), row["mac_address"])
+        names = {(r["vendor"] or {}).get("name") for r in body["results"]}
+        self.assertEqual(names, {"SanDisk", "Lab", "Hand-built", None})

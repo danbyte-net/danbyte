@@ -3618,8 +3618,16 @@ class MACAddressSerializer(
     vendor = serializers.SerializerMethodField()
 
     def get_vendor(self, obj) -> dict | None:
-        from .oui import vendor_of_object
+        from .oui import vendor_of_object, vendors_of_objects
 
+        # Resolved once for the whole page, not one OUI query per row (#340).
+        cache = getattr(self.root, "_vendor_cache", None)
+        if cache is None:
+            inst = self.root.instance
+            cache = vendors_of_objects(inst) if isinstance(inst, (list, tuple)) else {}
+            self.root._vendor_cache = cache
+        if obj.pk in cache:
+            return cache[obj.pk]
         return vendor_of_object(obj)
 
     assigned_interface_id = TenantScopedPrimaryKeyRelatedField(

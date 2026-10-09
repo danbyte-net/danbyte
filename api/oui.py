@@ -91,7 +91,22 @@ def vendor_of_object(obj) -> dict | None:
     else the resolved one."""
     if obj.vendor_override:
         return {"name": obj.vendor_override, "source": "override"}
-    return vendor_for(obj.mac_address, obj.tenant_id and obj.tenant)
+    return vendor_for(obj.mac_address, obj.tenant_id)
+
+
+def vendors_of_objects(objs) -> dict:
+    """``{pk: vendor}`` for a page of :class:`~api.models.MACAddress` rows, in
+    one query per tenant instead of one per row (#340)."""
+    by_tenant: dict = {}
+    for obj in objs:
+        if not obj.vendor_override:
+            by_tenant.setdefault(obj.tenant_id, []).append(obj.mac_address)
+    resolved = {t: vendors_for(macs, t) for t, macs in by_tenant.items()}
+    return {
+        obj.pk: {"name": obj.vendor_override, "source": "override"} if obj.vendor_override
+        else resolved[obj.tenant_id].get(hexkey(obj.mac_address))
+        for obj in objs
+    }
 
 
 # ─── registry import ─────────────────────────────────────────────────────────
