@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 #
 # Production image for Danbyte, built in stages:
 #   frontend  - Node builds the React SPA (frontend/dist)
