@@ -159,6 +159,70 @@ class RackPowerTests(_Base):
             "supply": "pdu_rating",
         })
 
+    def _pdu(self, rack, *inlets, banks=False):
+        """A PDU in ``rack`` with an inlet per rating in ``inlets``; with
+        ``banks`` each inlet feeds an outlet of its own."""
+        pdu = Device.objects.create(
+            tenant=self.tenant, site=self.site, rack=rack, name=self._name("pdu"),
+            device_type=self.dt_strip, mount="side_right",
+        )
+        for i, w in enumerate(inlets):
+            port = PowerPort.objects.create(device=pdu, name=f"inlet{i}", maximum_draw=w)
+            PowerOutlet.objects.create(
+                device=pdu, name=f"out{i}", power_port=port if banks else None
+            )
+        return pdu
+
+    def _bare_rack(self):
+        return Rack.objects.create(tenant=self.tenant, site=self.site, name=self._name("R"))
+
+    def test_one_pdu_with_two_inlets_is_its_smallest_inlet(self):
+        # Two inlets of one PDU are its redundant feeds (#329): 3680, not 7360.
+        rack = self._bare_rack()
+        self._pdu(rack, 3680, 3680)
+        self.assertEqual(self._power(rack)["available_w"], 3680)
+        rack2 = self._bare_rack()
+        self._pdu(rack2, 3680, 7360)
+        self.assertEqual(self._power(rack2)["available_w"], 3680)
+
+    def test_an_unequal_pair_is_its_smaller_side(self):
+        # 3680 W + 7360 W PDUs: side A alone carries 3680, not the 5520 average.
+        rack = self._bare_rack()
+        self._pdu(rack, 3680)
+        self._pdu(rack, 7360)
+        self.assertEqual(self._power(rack), {
+            "available_w": 3680, "allocated_w": 0, "maximum_w": 0, "supply": "pdu_rating",
+        })
+
+    def test_more_pdus_split_into_two_sides(self):
+        rack = self._bare_rack()
+        for _ in range(4):
+            self._pdu(rack, 3680)
+        self.assertEqual(self._power(rack)["available_w"], 7360)
+        # Three equal PDUs: one side has one of them.
+        rack3 = self._bare_rack()
+        for _ in range(3):
+            self._pdu(rack3, 3680)
+        self.assertEqual(self._power(rack3)["available_w"], 3680)
+
+    def test_inlets_feeding_their_own_outlets_add_up(self):
+        # Outlets that name different inlets make separate banks, not
+        # redundant feeds: one such PDU delivers both inlets.
+        rack = self._bare_rack()
+        self._pdu(rack, 3680, 3680, banks=True)
+        self.assertEqual(self._power(rack)["available_w"], 7360)
+        # The floor plan's state poll reads the same figure.
+        plan = self._plan("banks", [rack])
+        tile = FloorPlanTile.objects.get(floor_plan=plan)
+        state = self.client.get(f"/api/floor-plans/{plan.id}/state/").json()
+        self.assertEqual(state["tiles"][str(tile.id)]["power"]["available_w"], 7360)
+
+    def test_unrated_inlets_and_pdus_are_ignored(self):
+        rack = self._bare_rack()
+        self._pdu(rack, 3680, None)
+        self._pdu(rack, None)
+        self.assertEqual(self._power(rack)["available_w"], 3680)
+
     def test_with_neither_there_is_no_supply(self):
         rack = self._rack(pdu_w=None)
         self.assertEqual(self._power(rack)["available_w"], 0)
