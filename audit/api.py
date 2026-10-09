@@ -182,8 +182,13 @@ def _visibility_q(request):
 
     acts = rbac.effective_actions(user, tenant)
     applicable = list(rbac.applicable_permissions(user, tenant))
+    site_ids_of = {}
     q = Q()
     matched = False
+    # Types some grant shows in full: one ``object_type IN (...)`` for all of
+    # them. Any other grant's branch for such a type selects a subset of it,
+    # so it is left out instead of growing the OR per type and grant (#342).
+    full_types = []
     for slug, actions in acts.items():
         if "view" not in actions:
             continue
@@ -198,6 +203,21 @@ def _visibility_q(request):
             if "view" in (permission.actions or [])
             and grant_covers(permission.object_types, slug)
         ]
+        for permission in granting:
+            if permission.pk not in site_ids_of:
+                site_ids_of[permission.pk] = {site.pk for site in permission.sites.all()}
+
+        if any(
+            not permission.constraints and not (site_path and site_ids_of[permission.pk])
+            for permission in granting
+        ):
+            # Tenant rows stay clamped to the active tenant.
+            if label == "core.tenant":
+                q |= Q(object_type=label, object_id=str(tenant.pk))
+            else:
+                full_types.append(label)
+            matched = True
+            continue
 
         for permission in granting:
             if permission.constraints:
@@ -222,7 +242,7 @@ def _visibility_q(request):
                     continue
                 part = Q(object_type=label, object_id__in=live_ids)
             else:
-                site_ids = {site.pk for site in permission.sites.all()}
+                site_ids = site_ids_of[permission.pk]
                 if site_path and site_ids:
                     scope_q = Q(object_site_id__in=site_ids)
                     if site_path != "id":
@@ -235,6 +255,8 @@ def _visibility_q(request):
                 part &= Q(object_id=str(tenant.pk))
             q |= part
             matched = True
+    if full_types:
+        q |= Q(object_type__in=full_types)
     return q if matched else Q(pk__in=[])
 
 
