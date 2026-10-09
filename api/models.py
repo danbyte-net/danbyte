@@ -2828,6 +2828,9 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             models.Index(fields=["tenant", "status"], name="ip_tenant_status_idx"),
             models.Index(fields=["tenant", "role"], name="ip_tenant_role_idx"),
             models.Index(fields=["tenant", "site"], name="ip_tenant_site_idx"),
+            # The list's default order within a tenant: a page reads 50 rows
+            # in index order instead of sorting the whole tenant (#339).
+            models.Index(fields=["tenant", "ip_address"], name="ip_tenant_addr_idx"),
             models.Index(
                 "tenant", Upper("dns_name"), name="ip_tenant_dns_upper_idx"
             ),
