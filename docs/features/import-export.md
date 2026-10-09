@@ -45,19 +45,34 @@ prefix** (the workflow that replaced the old "IPs" dropdown).
     re-importable. See [Exporting tables](exporting-tables.md).
 
 Rows are matched by **`id`** first; if the `id` is blank or gone, by the type's
-**natural key** (a prefix by its `cidr`, an IP by its address, a VLAN by its
-number, a device by name + site); otherwise a new row is **created**. You need
-**add** permission to create rows and **change** to update them, and you can only
-touch rows inside your own [scope](permissions.md) - importing a row outside it is
-a clean per-row error, never a silent escalation.
+**natural key** - everything that makes the object unique: a prefix by `cidr` +
+`vrf`, an IP by address + `vrf`, a VLAN by number + `site` + `group`, a device by
+name + site, a rack by site + name, a location by site + slug. Otherwise a new row
+is **created**, so a keyless row for another site makes a new rack there instead
+of moving the one you already have. A key column left out of the file is not
+matched on; one present but blank matches an empty value (no VRF, no site).
 
-!!! tip "Everything is human-readable"
-    Links are written as the **name you'd recognise**, never an internal id - a
-    prefix as `10.0.10.0/24`, a VLAN as its number, a VRF/site/device by name. So
-    a spreadsheet is editable by hand. A **blank VRF cell means the global table**
+You need **add** permission to create rows and **change** to update them, and you
+can only touch rows inside your own [scope](permissions.md) - importing a row
+outside it is a clean per-row error, never a silent escalation.
+
+**An unchanged export imports back as a no-op.** Re-uploading a file you didn't
+edit changes nothing, for every type.
+
+!!! tip "Links are human-readable"
+    Links are written as the **name you'd recognise** - a prefix as
+    `10.0.10.0/24`, a VLAN as its number, a VRF/site/device by name. So a
+    spreadsheet is editable by hand. A **blank VRF cell means the global table**
     (you can also type `Global`); fill it in to place the row in a named VRF.
-    The `id` column is the only opaque value - leave it as-is to update a row, or
-    blank to create one.
+    The `id` column is opaque - leave it as-is to update a row, or blank to
+    create one.
+
+A name is looked up **where the row sits**: an interface on the row's device,
+a prefix in the row's VRF, a rack, location or VLAN in the row's site. When a
+name still fits more than one object, the row is refused with an error rather
+than guessed at - put the object's id in the cell to say which. The export does
+that for you: a link whose name alone wouldn't read back to the same object is
+written as its id.
 
 Single objects are exportable too: a detail page (an IP, for example) has the
 same **Import / Export** button, scoped to just that object.
@@ -78,11 +93,11 @@ round-trip works for **every** table via its **Data** menu.
 | `id` | No | Leave empty to create a new prefix. Filled in (from an export) to update that exact row. |
 | `cidr` | **Yes** | The network, e.g. `10.0.10.0/24` or `2001:db8:1::/64`. |
 | `status` | No | `active` (default), `reserved`, `container`, or `deprecated`. |
-| `site` | No | Site name. Created automatically if it doesn't exist yet. |
-| `vlan` | No | A VLAN number. Created automatically if it doesn't exist yet. |
+| `site` | No | Site name. It must already exist. |
+| `vlan` | No | A VLAN number, looked up in the prefix's site. It must already exist. |
 | `gateway` | No | A gateway IP address. |
 | `description` | No | Free text. |
-| `tags` | No | Tag names separated by semicolons. Missing tags are created automatically. |
+| `tags` | No | Tag names separated by semicolons. Missing tags are created automatically. A name that holds a `;` is written in double quotes, e.g. `"a;b";core`. |
 | `custom_fields` | No | Your [custom field](tags-and-custom-fields.md) values, as a small JSON object, e.g. `{"owner":"infra"}`. |
 
 ## Importing prefixes
@@ -95,9 +110,10 @@ round-trip works for **every** table via its **Data** menu.
 For each row, Danbyte:
 
 1. Checks the `cidr` is valid (an invalid one is skipped and reported).
-2. Finds an existing prefix - by `id` if present, otherwise by `cidr`.
+2. Finds an existing prefix - by `id` if present, otherwise by `cidr` and `vrf`.
 3. **Updates** it if found, or **creates** a new one if not.
-4. Auto-creates any referenced site, VLAN, or tag that doesn't exist yet.
+4. Auto-creates any tag that doesn't exist yet. A site or VLAN must already
+   exist.
 
 If a single row fails - a bad network, malformed custom-field JSON - the rows
 around it still import, and the summary lists exactly which rows had problems.
@@ -136,10 +152,12 @@ errors.
 
 | Detail | Behavior |
 |---|---|
-| Columns | Match object fields by name; unknown columns are ignored. |
-| Links to other objects | Resolved by name, slug, or id within your active tenant, among the objects you may view. A person or group cell (`created_by`, `owner`, `assigned_group`, …) resolves among the tenant's people when you have no permission on users or groups. An unresolved link is a clean per-row error. |
-| Validation | Each row is checked and saved on its own, so one bad row doesn't stop the rest. |
-| **Validate** | A dry run - checks everything, writes nothing. |
+| Columns | Match object fields by name; unknown columns are ignored. Read-only columns such as `numid` are exported but never imported. |
+| Links to other objects | Resolved by name, slug, or id within your active tenant, among the objects you may view, and within the row's own device, VRF or site. A person or group cell (`created_by`, `owner`, `assigned_group`, …) resolves among the tenant's people when you have no permission on users or groups. An unknown or ambiguous link is a clean per-row error. |
+| Validation | The same rules as the API: uniqueness within the tenant, the type's own checks (a VLAN within its group's range, a rack's location in its site, a device's rack position free), and [custom fields](tags-and-custom-fields.md) against their definitions. Custom fields are checked when a row sets or changes them. Each row is checked and saved on its own, so one bad row doesn't stop the rest. |
+| Devices | A new device gets its type's interfaces and other components, as one added in the UI does. |
+| Cables | Updated only: a row can't carry a cable's ends, and a cable needs both. |
+| **Validate** | A dry run - the same checks as the import, with the same errors, writing nothing. |
 | Limit | Up to 5000 rows per import. |
 
 !!! note
@@ -155,6 +173,8 @@ errors.
 - An empty cell in a required column that has a default (`gateway_policy`
   on a site, say) takes the default; an empty required column with no
   default is refused, and the error names the column.
+- List and JSON columns hold JSON. An empty list exports as `[]`, and an empty
+  cell in such a column is read as its empty value, never as text.
 - Excel files are read on the server, so no spreadsheet plugin is needed.
 
 ## Extending it (for developers / plugins)

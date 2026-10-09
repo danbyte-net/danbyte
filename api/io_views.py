@@ -18,7 +18,7 @@ import io as _io
 import json
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.http import HttpResponse, StreamingHttpResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
@@ -35,6 +35,7 @@ from rest_framework.response import Response
 from auth_api import rbac
 from auth_api.object_types import is_registered, model_for
 
+from .bulk_import import plain_db_error
 from .io import io_for, io_types
 from .views import _get_active_tenant
 
@@ -236,8 +237,13 @@ def io_export_view(request, slug):
             qs = qs.filter(**{key: val})
         except (ValueError, TypeError, DjangoValidationError):
             continue
-    qs = qs.order_by("created_at")
+    # Not every type has a created_at (tags don't, #355).
+    has_created = any(f.name == "created_at" for f in model._meta.concrete_fields)
+    qs = qs.order_by("created_at" if has_created else "pk")
     cols = handler.column_names()
+    # One reference cache per export: a site or VRF named on a thousand rows
+    # is checked for ambiguity once.
+    refs: dict = {}
     fname = f"{slug}.{fmt if fmt != 'xlsx' else 'xlsx'}"
 
     if fmt == "json":
@@ -245,7 +251,7 @@ def io_export_view(request, slug):
             yield "["
             first = True
             for obj in qs.iterator(chunk_size=500):
-                yield ("" if first else ",") + json.dumps(handler.to_row(obj))
+                yield ("" if first else ",") + json.dumps(handler.to_row(obj, refs=refs))
                 first = False
             yield "]"
         resp = StreamingHttpResponse(gen(), content_type="application/json")
@@ -253,7 +259,7 @@ def io_export_view(request, slug):
         return resp
 
     if fmt == "xlsx":
-        return _export_xlsx(qs, handler, cols, slug)
+        return _export_xlsx(qs, handler, cols, slug, refs)
 
     # CSV (default), streamed.
     class _Echo:
@@ -267,7 +273,9 @@ def io_export_view(request, slug):
     def gen():
         yield writer.writerow(dict(zip(cols, cols)))  # header
         for obj in qs.iterator(chunk_size=500):
-            yield writer.writerow({k: csv_cell(v) for k, v in handler.to_row(obj).items()})
+            yield writer.writerow(
+                {k: csv_cell(v) for k, v in handler.to_row(obj, refs=refs).items()}
+            )
 
     resp = StreamingHttpResponse(gen(), content_type="text/csv; charset=utf-8")
     resp["Content-Disposition"] = f'attachment; filename="{fname}"'
@@ -296,7 +304,7 @@ def _export_ids(raw, model):
         raise ValueError("One of the ids is not valid.") from None
 
 
-def _export_xlsx(qs, handler, cols, slug):
+def _export_xlsx(qs, handler, cols, slug, refs=None):
     from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
 
@@ -312,7 +320,7 @@ def _export_xlsx(qs, handler, cols, slug):
     for obj in qs.iterator(chunk_size=500):
         if n >= MAX_XLSX_EXPORT_ROWS:
             break
-        row = handler.to_row(obj)
+        row = handler.to_row(obj, refs=refs)
         ws.append([row.get(c, "") for c in cols])
         xlsx_text_row(ws)
         n += 1
@@ -475,7 +483,7 @@ def _import_rows(rows, handler, tenant, request, change_qs, add_qs, can_add,
                 ).exists():
                     raise PermissionRow("not permitted to update this row")
                 obj, action, changes, tag_names = handler.apply(
-                    existing, row, tenant, request.user
+                    existing, row, tenant, request.user, request=request
                 )
                 if action == "create" and not can_add:
                     raise PermissionRow("creating new rows needs 'add' permission")
@@ -502,6 +510,10 @@ def _import_rows(rows, handler, tenant, request, change_qs, add_qs, can_add,
                     })
         except PermissionRow as exc:
             errors.append({"row": i, "error": str(exc), "action": "permission"})
+        except DatabaseError as exc:
+            # Validation catches what it can; the database's own refusal is
+            # worded plainly, never its text with constraint names and ids.
+            errors.append({"row": i, "error": plain_db_error(exc)})
         except Exception as exc:  # noqa: BLE001
             # Name the field: "name: This field cannot be blank." beats a bare
             # "This field cannot be blank." with five columns to guess from.

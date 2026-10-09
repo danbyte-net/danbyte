@@ -9,6 +9,8 @@ validates without writing.
 
 Trade-off (documented): this bypasses DRF serializer logic (e.g. gateway
 autospawn, IP-in-prefix checks). It's a bulk-load tool, not the per-object API.
+The round-trip import in :mod:`api.io` adds the type's serializer validation on
+top; the field helpers here are shared by both.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import io
 import json
 
 from django.core.exceptions import FieldError, ValidationError
-from django.db import transaction
+from django.db import DatabaseError, transaction
 
 # Field names never set from import input (managed by the system).
 _SKIP = {"id", "created_at", "updated_at", "tenant"}
@@ -28,9 +30,18 @@ _FK_LOOKUPS = [
     "pk", "slug", "name", "model", "cidr", "rd", "vlan_id", "ip_address",
     "address", "asn",
 ]
+# Cell values that mean "no link" on a nullable foreign key (a VRF cell left
+# empty is the global table).
+NONE_WORDS = ("", "global", "none", "-")
+# Related models never used to narrow a reference to the row's scope: they
+# describe an object rather than contain it, so sharing one says nothing about
+# which same-named object a cell means.
+_NON_SCOPE_MODELS = {"api.status", "auth.user", "auth.group", "contenttypes.contenttype"}
 
 
-def _importable_fields(model):
+def _exportable_fields(model):
+    """Concrete fields a round-trip file carries: everything but the system
+    columns and secrets. Includes read-only columns such as ``numid``."""
     from core.secret_fields import is_secret_field
 
     out = []
@@ -46,6 +57,19 @@ def _importable_fields(model):
     return out
 
 
+def _importable_fields(model):
+    """The exportable fields an import may set. A column the model marks
+    ``editable=False`` (``numid``) is export-only, as it is read-only in the
+    API (#349). So is a stored file: a cell could otherwise point the object
+    at any file in media storage."""
+    from django.db.models import FileField
+
+    return [
+        f for f in _exportable_fields(model)
+        if f.editable and not isinstance(f, FileField)
+    ]
+
+
 def importable_field_names(model) -> list[dict]:
     info = []
     for f in _importable_fields(model):
@@ -57,7 +81,9 @@ def importable_field_names(model) -> list[dict]:
     return info
 
 
-def _resolve_fk(field, value, tenant, user=None):
+def fk_base_queryset(field, tenant, user=None):
+    """The objects a foreign-key cell may name: the related model's rows in
+    the tenant, narrowed to what ``user`` may view."""
     related = field.related_model
     qs = related._default_manager.all()
     if any(c.name == "tenant" for c in related._meta.concrete_fields):
@@ -97,16 +123,103 @@ def _resolve_fk(field, value, tenant, user=None):
             qs = qs.filter(pk__in=members.values("pk"))
         elif slug and is_registered(slug):
             qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
+    return qs
+
+
+def scope_fields(field) -> list:
+    """Fields on ``field``'s related model that may narrow a reference to the
+    row's scope - the containers (site, VRF, device, …), never descriptive
+    catalogs such as status."""
+    related = field.related_model
+    out = []
+    for g in related._meta.concrete_fields:
+        if not g.is_relation or g.name == "tenant" or g.related_model is related:
+            continue
+        if g.related_model._meta.label_lower in _NON_SCOPE_MODELS:
+            continue
+        out.append(g)
+    return out
+
+
+def _candidates(field, value, tenant, user=None):
+    """The objects ``value`` names, by the first lookup that matches any."""
+    base = fk_base_queryset(field, tenant, user)
     for lookup in _FK_LOOKUPS:
         try:
-            obj = qs.filter(**{lookup: value}).first()
+            qs = base.filter(**{lookup: value})
+            if qs.exists():
+                return qs
         except (ValueError, TypeError, ValidationError, FieldError):
             continue
-        if obj is not None:
-            return obj
+    return None
+
+
+# More same-named objects than this are not ranked in Python; the reference
+# must then match the row's scope exactly, or name the object by id.
+_MAX_RANKED = 100
+
+
+def _resolve_fk(field, value, tenant, user=None, scope=None):
+    """The related object a cell names, or a ``ValidationError`` in plain
+    words.
+
+    A cell can name more than one object - ``eth0`` on every device, rack
+    ``R1`` in every site. ``scope`` is ``{related_field_name: value}`` taken
+    from the row itself (its device, site, VRF); the object that agrees with
+    the row on the most of them wins, and a nullable one left empty counts as
+    a near match, so a global VLAN still fits a site's prefix. A tie is an
+    error, never a guess (#330).
+    """
+    related = field.related_model
+    noun = related._meta.verbose_name
+    qs = _candidates(field, value, tenant, user)
+    if qs is None:
+        raise ValidationError(f"{field.name}: no {noun} matching '{value}'.")
+    scope = scope or {}
+    rows = list(qs[:2])
+    if len(rows) == 1:
+        return rows[0]
+    if scope:
+        exact = {}
+        for name, val in scope.items():
+            exact[name if val is not None else f"{name}__isnull"] = (
+                val if val is not None else True
+            )
+        rows = list(qs.filter(**exact)[:2])
+        if len(rows) == 1:
+            return rows[0]
+        if not rows:
+            ranked = _rank(qs, related, scope)
+            if ranked is not None:
+                return ranked
     raise ValidationError(
-        f"{field.name}: no {related._meta.verbose_name} matching '{value}'."
+        f"{field.name}: '{value}' matches more than one {noun} here; "
+        "use its id to say which."
     )
+
+
+def _rank(qs, related, scope):
+    """The single best match for ``scope`` among ``qs``, else ``None``."""
+    attnames = {n: related._meta.get_field(n).attname for n in scope}
+    cands = list(qs.only("pk", *attnames.values())[: _MAX_RANKED + 1])
+    if len(cands) > _MAX_RANKED:
+        return None
+    nullable = {n: related._meta.get_field(n).null for n in scope}
+
+    def score(obj):
+        total = 0
+        for name, val in scope.items():
+            have = getattr(obj, attnames[name])
+            want = getattr(val, "pk", val)
+            if have == want:
+                continue
+            total += 1 if (have is None and nullable[name]) else 2
+        return total
+
+    scored = sorted(((score(c), c) for c in cands), key=lambda t: t[0])
+    if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        return None
+    return related._default_manager.get(pk=scored[0][1].pk)
 
 
 def check_status_offered(field, value, instance=None) -> None:
@@ -125,20 +238,59 @@ def check_status_offered(field, value, instance=None) -> None:
     raise ValidationError(f"“{value.name}” isn't a status for {status_label(field.model)}.")
 
 
-def _coerce(field, value, tenant, user=None):
+def parse_json_cell(field, value):
+    """A JSON column's cell as a Python value. An empty cell is the field's
+    default (``[]`` / ``{}``), never an empty string (#354)."""
+    if isinstance(value, (dict, list)):
+        return value
+    if value is None or (isinstance(value, str) and value.strip() == ""):
+        if field.null:
+            return None
+        return field.get_default() if field.has_default() else {}
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        raise ValidationError(f"{field.name}: not valid JSON.") from None
+
+
+def _coerce(field, value, tenant, user=None, scope=None):
     if value is None:
         return None
     if isinstance(value, str):
         value = value.strip()
+    if field.get_internal_type() == "JSONField":
+        return parse_json_cell(field, value)
     if value == "" and (field.null or field.blank):
         return None if field.null else ""
     if field.is_relation:
-        return _resolve_fk(field, value, tenant, user)
-    if field.get_internal_type() == "JSONField":
-        if isinstance(value, (dict, list)):
-            return value
-        return json.loads(value) if value else {}
+        return _resolve_fk(field, value, tenant, user, scope=scope)
     return field.to_python(value)
+
+
+def plain_db_error(exc: BaseException) -> str:
+    """A database error as a sentence for the row's error column - never the
+    driver's text, which names constraints and internal ids (#353)."""
+    from .exception_handler import (
+        _CHECK_VIOLATION,
+        _FOREIGN_KEY_VIOLATION,
+        _NOT_NULL_VIOLATION,
+        _UNIQUE_VIOLATION,
+        _column,
+        _sqlstate,
+    )
+
+    code = _sqlstate(exc)
+    col = _column(exc)
+    where = f" ({col})" if col else ""
+    if code == _UNIQUE_VIOLATION:
+        return "This row conflicts with existing data (a duplicate value for a unique field)."
+    if code == _NOT_NULL_VIOLATION:
+        return f"A required field was left empty{where}."
+    if code == _FOREIGN_KEY_VIOLATION:
+        return f"A referenced object doesn't exist or can't be used{where}."
+    if code == _CHECK_VIOLATION:
+        return "A value isn't allowed by a database rule."
+    return "The database refused this row."
 
 
 def _build(model, tenant, row, fields, user=None):
@@ -171,13 +323,17 @@ def import_rows(model, tenant, rows, *, dry_run=False, user=None) -> dict:
         try:
             with transaction.atomic():
                 obj = _build(model, tenant, row, fields, user)
-                obj.full_clean(exclude=["tenant"])
+                # The tenant is set, so uniqueness that includes it is checked
+                # here rather than surfacing as a database error (#353).
+                obj.full_clean()
                 if not dry_run:
                     obj.save()
                 created += 1
         except ValidationError as exc:
             msgs = exc.messages if hasattr(exc, "messages") else [str(exc)]
             errors.append({"row": i + 1, "error": "; ".join(msgs)})
+        except DatabaseError as exc:
+            errors.append({"row": i + 1, "error": plain_db_error(exc)})
         except Exception as exc:  # noqa: BLE001
             errors.append({"row": i + 1, "error": str(exc)})
     return {"total": len(rows), "created": created, "errors": errors,
