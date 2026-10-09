@@ -6,6 +6,7 @@ from io import StringIO
 from unittest import mock
 
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
 
@@ -62,6 +63,102 @@ class ScheduleTests(TestCase):
         with mock.patch("backups.schedules.enqueue_backup"):
             call_command("run_backups", stdout=out)
         self.assertIn("nothing due", out.getvalue())
+
+
+class QueueDownTests(TestCase):
+    """A schedule whose backup cannot be queued stays due (#360)."""
+
+    def setUp(self):
+        self.target = BackupTarget.objects.create(name="Local", kind="local", config={"path": "/tmp/x"},
+                                                  is_default=True)
+        self.created = timezone.make_aware(datetime(2026, 9, 8, 10, 0))
+        self.a = self._schedule("a-nightly")
+        self.b = self._schedule("b-nightly")
+
+    def _schedule(self, name):
+        s = BackupSchedule.objects.create(
+            name=name, components=["db"], target=self.target,
+            cadence={"frequency": "daily", "at": "02:00"},
+        )
+        BackupSchedule.objects.filter(pk=s.pk).update(created_at=self.created)
+        s.refresh_from_db()
+        return s
+
+    def _at(self, hh, mm, day=9):
+        return timezone.make_aware(datetime(2026, 9, day, hh, mm))
+
+    def _clock(self, now):
+        return mock.patch("backups.management.commands.run_backups.timezone",
+                          mock.Mock(localtime=mock.Mock(return_value=now)))
+
+    def _redis_down(self):
+        return mock.patch("django_rq.get_queue", side_effect=ConnectionError("redis down"))
+
+    def test_queue_down_leaves_the_schedule_due_and_unstamped(self):
+        from api.devicetype_import_tasks import QueueUnavailable
+
+        with self._redis_down(), self.assertRaises(QueueUnavailable):
+            fire_schedule(self.a, self._at(2, 5))
+        self.a.refresh_from_db()
+        self.assertIsNone(self.a.last_run_at)
+        self.assertFalse(Backup.objects.filter(schedule=self.a).exists())
+        self.assertTrue(is_due(self.a, self._at(2, 10)))
+
+    def test_next_tick_retries_once_the_queue_is_back(self):
+        from api.devicetype_import_tasks import QueueUnavailable
+
+        with self._redis_down(), self.assertRaises(QueueUnavailable):
+            fire_schedule(self.a, self._at(2, 5))
+        with mock.patch("backups.schedules.enqueue_backup") as enq:
+            fire_schedule(self.a, self._at(2, 10))
+        enq.assert_called_once()
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.last_run_at, self._at(2, 10))
+        self.assertFalse(is_due(self.a, self._at(2, 15)))
+        self.assertEqual(Backup.objects.filter(schedule=self.a).count(), 1)
+
+    def test_manual_run_never_stamps(self):
+        with mock.patch("backups.schedules.enqueue_backup"):
+            fire_schedule(self.a, self._at(2, 5), kind="manual")
+        self.a.refresh_from_db()
+        self.assertIsNone(self.a.last_run_at)
+
+    def test_tick_isolates_a_failing_schedule(self):
+        from api.devicetype_import_tasks import QueueUnavailable
+
+        def enqueue(backup):
+            if backup.schedule_id == self.a.id:
+                backup.delete()
+                raise QueueUnavailable("redis down")
+            return None
+
+        now = self._at(2, 5)
+        out, err = StringIO(), StringIO()
+        with mock.patch("backups.schedules.enqueue_backup", side_effect=enqueue), \
+                self._clock(now), \
+                self.assertRaises(CommandError):
+            call_command("run_backups", stdout=out, stderr=err)
+        self.a.refresh_from_db()
+        self.b.refresh_from_db()
+        self.assertIsNone(self.a.last_run_at)
+        self.assertEqual(self.b.last_run_at, now)
+        self.assertEqual(Backup.objects.filter(schedule=self.b).count(), 1)
+        self.assertIn("a-nightly", err.getvalue())
+
+        from core.models import ScheduledRun
+
+        run = ScheduledRun.objects.filter(name="backups").latest("started_at")
+        self.assertEqual(run.status, ScheduledRun.FAILED)
+        self.assertIn("a-nightly", run.summary)
+
+        # Queue back: the next tick starts only the one that was missed.
+        with mock.patch("backups.schedules.enqueue_backup"), \
+                self._clock(self._at(2, 10)):
+            call_command("run_backups", stdout=StringIO())
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.last_run_at, self._at(2, 10))
+        self.assertEqual(Backup.objects.filter(schedule=self.a).count(), 1)
+        self.assertEqual(Backup.objects.filter(schedule=self.b).count(), 1)
 
 
 class ReapTests(TestCase):

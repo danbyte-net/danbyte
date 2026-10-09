@@ -76,6 +76,10 @@ notification channels that hear about its runs.
   occurrence.
 - The tick is the `danbyte-backups` timer (every 5 minutes on systemd, the
   `scheduler` container in Docker). A schedule fires once per occurrence.
+- A schedule whose backup cannot be queued, for example while Redis is down,
+  stays due and is tried again on the next tick. The other schedules due in
+  that tick still start, and the tick is logged as failed under
+  **Jobs → Scheduled tasks**.
 
 ## Backups
 
