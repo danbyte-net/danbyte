@@ -214,9 +214,14 @@ class ApiTests(_Base):
 
         UserProfile.objects.get_or_create(user=self.admin, defaults={"role": "admin"})
         set_user(self.admin, "timezone", "Europe/Copenhagen")
-        # Monday 12:00 and Tuesday 12:00, Copenhagen.
-        self.transition(self.t0, "down")
-        self.transition(self.t0 + timedelta(days=1), "down", ip=self.ip2)
+        # Monday 12:00 and Tuesday 12:00, Copenhagen, a week or two back so
+        # both stay inside the 30-day window whatever day the suite runs.
+        cph = ZoneInfo("Europe/Copenhagen")
+        today = timezone.now().astimezone(cph).date()
+        monday = today - timedelta(days=today.weekday() + 7)
+        t0 = datetime(monday.year, monday.month, monday.day, 12, 0, tzinfo=cph)
+        self.transition(t0, "down")
+        self.transition(t0 + timedelta(days=1), "down", ip=self.ip2)
         r = self.client.get("/api/monitoring/transitions/?days=30&dow=0&hour=12").json()
         self.assertEqual(r["count"], 1)
         self.assertEqual(r["results"][0]["target_ip"]["ip_address"], "10.8.0.1")
