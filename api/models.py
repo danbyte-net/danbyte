@@ -1890,7 +1890,7 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # a 48-port access switch may not).
     PORT_LABEL_CHOICES = [("", "Inherit"), ("on", "Shown"), ("off", "Hidden")]
     port_labels = models.CharField(
-        max_length=8, choices=PORT_LABEL_CHOICES, blank=True, default="",
+        max_length=8, choices=PORT_LABEL_CHOICES, blank=True, default="", db_default="",
         help_text="Port labels on faceplate renders: inherit the deployment "
                   "setting, or force them shown or hidden on this device.",
     )
@@ -3111,7 +3111,7 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     #: ``evpn mh uplink``: a fabric-facing port on an EVPN multihomed leaf.
     #: FRR tracks these to decide whether the leaf is isolated from the
     #: fabric and should stop being a designated forwarder.
-    evpn_mh_uplink = models.BooleanField(default=False)
+    evpn_mh_uplink = models.BooleanField(default=False, db_default=False)
     type = models.CharField(
         max_length=64, blank=True, default="", choices=INTERFACE_TYPE_CHOICES,
         help_text="Physical/logical media type, e.g. 10gbase-x-sfpp.",
@@ -3139,12 +3139,12 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
                   "automatically when a real cable is attached.",
     )
     hide_label = models.BooleanField(
-        default=False,
+        default=False, db_default=False,
         help_text="Leave this port's marker blank on faceplate renders even "
                   "when port labels are on.",
     )
     label_color = models.CharField(
-        max_length=7, blank=True, default="",
+        max_length=7, blank=True, default="", db_default="",
         help_text="Text colour of this port's label on faceplate renders "
                   "(#rrggbb); blank uses the deployment's colour.",
     )
@@ -3637,7 +3637,7 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text='Free-form: "7.2K RPM", "PCIe 4.0 x4", "3200 MT/s".',
     )
     slot = models.CharField(
-        max_length=32, blank=True, default="",
+        max_length=32, blank=True, default="", db_default="",
         help_text='Where it sits: "Socket 1", "DIMM A1", "Bay 3".',
     )
     cores = models.PositiveSmallIntegerField(
@@ -4611,7 +4611,7 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     #: What the guest calls this NIC over SNMP (``ether1``) when it differs
     #: from the hypervisor's name (``nic0``), so the SNMP interfaces a
     #: virtual router reports can be read against the NICs Danbyte holds.
-    snmp_name = models.CharField(max_length=128, blank=True, default="")
+    snmp_name = models.CharField(max_length=128, blank=True, default="", db_default="")
     mac_address = models.CharField(max_length=17, blank=True)
     mtu = models.IntegerField(null=True, blank=True)
     # Virtual NICs have a real link speed: a VMXNET3 negotiates 10G where an
@@ -5988,7 +5988,7 @@ class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # An anycast gateway's IPv6 neighbour discovery: whether the SVI sends
     # router advertisements (FRR: ``no ipv6 nd suppress-ra``) and how often.
     nd_ra = models.BooleanField(
-        default=False, help_text="Send IPv6 router advertisements from the gateway SVI."
+        default=False, db_default=False, help_text="Send IPv6 router advertisements from the gateway SVI."
     )
     nd_ra_interval = models.PositiveSmallIntegerField(
         null=True, blank=True, help_text="Router advertisement interval, seconds."
@@ -6676,7 +6676,9 @@ class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMix
         max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
     )
     #: Protected Management Frames: required by WPA3 and OWE.
-    pmf = models.CharField(max_length=8, choices=PMF_CHOICES, blank=True, default="")
+    pmf = models.CharField(
+        max_length=8, choices=PMF_CHOICES, blank=True, default="", db_default=""
+    )
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
 
@@ -7186,7 +7188,7 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     #: Where the rendered file lands on the device (``/etc/frr/frr.conf``).
     #: What a bundle keys its files by; blank falls back to the template's
     #: name and extension.
-    target_path = models.CharField(max_length=255, blank=True, default="")
+    target_path = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
         ordering = ["name"]

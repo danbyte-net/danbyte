@@ -919,17 +919,18 @@ class MonitoringSettings(TimestampedModel):
     #: SSH login is slow next to a ping and that is not a spike.
     spike_factor = models.FloatField(
         default=3.0,
+        db_default=3.0,
         help_text="A probe slower than this many times its check's 7-day "
         "median latency counts as a spike.",
     )
     #: Per kind, the least a probe must exceed its median by before it can be
     #: a spike - so a 1 ms ping going to 3 ms is not news. {"icmp": 5, ...};
     #: kinds left out use the built-in floors in monitoring.rollups.
-    spike_floor_ms = models.JSONField(default=dict, blank=True)
+    spike_floor_ms = models.JSONField(default=dict, blank=True, db_default=models.Value({}, models.JSONField()))
     #: The window list pages' Availability column covers unless a viewer
     #: picks another: 24h, 7d, 30d, 90d, or month/quarter/year to date.
     availability_frame = models.CharField(
-        max_length=4, default="30d",
+        max_length=4, default="30d", db_default="30d",
         choices=[("24h", "24 hours"), ("7d", "7 days"), ("30d", "30 days"),
                  ("90d", "90 days"), ("mtd", "Month to date"),
                  ("qtd", "Quarter to date"), ("ytd", "Year to date")],

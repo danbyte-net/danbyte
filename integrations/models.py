@@ -395,7 +395,7 @@ class IntegrationSettings(TimestampedModel):
     # combined switch on, so nothing changes for them.
     virt_proxmox_enabled = models.BooleanField(default=False)
     virt_vcenter_enabled = models.BooleanField(default=False)
-    virt_vcloud_enabled = models.BooleanField(default=False)
+    virt_vcloud_enabled = models.BooleanField(default=False, db_default=False)
     # Agent access (MCP): an assistant reaching this tenant's data with the
     # permissions of the API token it authenticates with. Writes need the
     # second switch as well, so reading can be on with nothing changeable.
@@ -612,23 +612,25 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     #: The API version to ask for. Blank negotiates: Danbyte reads what the
     #: appliance advertises and speaks the newest one it has been tested
     #: against. Pin it only to work around a specific version's behaviour.
-    api_version = models.CharField(max_length=16, blank=True, default="")
+    api_version = models.CharField(max_length=16, blank=True, default="", db_default="")
     #: What the last pass actually spoke, so the source page can say whether
     #: this appliance is inside the tested window without another API call.
-    api_version_used = models.CharField(max_length=16, blank=True, default="")
+    api_version_used = models.CharField(
+        max_length=16, blank=True, default="", db_default=""
+    )
     #: Record a guest's external address as a NAT rule. Off by default: a NAT
     #: rule is operator-facing policy, not inventory, and an estate that
     #: models its edge by hand does not want the sync inventing rules.
-    sync_nat = models.BooleanField(default=False)
+    sync_nat = models.BooleanField(default=False, db_default=False)
     #: Mirror the hypervisor's own VM grouping (a vApp) as a
     #: :class:`api.VirtualMachineGroup`. On by default - it writes into a
     #: catalog only the sync owns, and Cloud Director has no structure at all
     #: without it.
-    sync_vm_groups = models.BooleanField(default=True)
+    sync_vm_groups = models.BooleanField(default=True, db_default=True)
     #: Import vApp templates as if they were VMs. Off: a template is a golden
     #: image, not a running machine, and an estate with many of them would
     #: double its inventory.
-    sync_templates = models.BooleanField(default=False)
+    sync_templates = models.BooleanField(default=False, db_default=False)
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
@@ -998,7 +1000,7 @@ class VirtGuest(TimestampedModel):
     #: has only a UUID URN, and hashing one into ``vmid`` would not fit: the
     #: field is 31 bits, so a few thousand guests is a real collision risk.
     #: Blank on Proxmox and vCenter, which keep using ``vmid``.
-    ext_id = models.CharField(max_length=128, blank=True, default="")
+    ext_id = models.CharField(max_length=128, blank=True, default="", db_default="")
     node = models.CharField(max_length=128, blank=True, default="")
     kind = models.CharField(max_length=8, choices=KIND_CHOICES, default="qemu")
     vm = models.ForeignKey(
