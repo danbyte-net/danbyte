@@ -247,6 +247,6 @@ have working defaults, so the feature runs with none of them set.
 | `MONITORING_PLUGIN_DIR` | empty | Directory of trusted Nagios-style plugins. An `exec` check may only run a plugin (by bare name, no path traversal) inside this dir; args are passed without a shell. |
 | `MONITORING_WEBHOOK_TIMEOUT` | `5` | Per-channel webhook POST timeout (seconds). |
 | `MONITORING_RESULT_RETENTION_DAYS` | `30` | Delete `CheckResult` rows older than this (daily prune). Raw results run ~600k rows/day on a busy install (~2.4 GB heap at 17 days) - raise only with the disk to match; the rolled-up state + transitions carry the long-term story. |
-| `MONITORING_TRANSITION_RETENTION_DAYS` | `365` | Delete `StateTransition` rows older than this. |
+| `MONITORING_TRANSITION_RETENTION_DAYS` | `365` | Delete `StateTransition` rows older than this. Each check's newest change before the cutoff is kept, so a check that has not changed for longer still has its status. |
 | `MONITORING_SNMP_SAMPLE_RETENTION_DAYS` | `3` | Delete SNMP interface counter samples (the utilisation sparklines) older than this; the sparklines read only this window. |
 | `MONITORING_ROLLUP_HOURLY_RETENTION_DAYS` | `30` | Delete hourly check rollups older than this. Daily rollups are never pruned. See [Rollups](../features/monitoring.md#rollups). |

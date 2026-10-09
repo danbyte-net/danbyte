@@ -37,6 +37,7 @@ class NotifyTests(TestCase):
 
     def test_success_reaches_the_schedule_channels_only(self):
         with mock.patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify_backup(self._backup())
         post.assert_called_once()
         self.assertIn("Backup completed: x.dbk", post.call_args.kwargs["json"]["text"])
@@ -46,6 +47,7 @@ class NotifyTests(TestCase):
         b = self._backup(status="failed", error="pg_dump: boom",
                          steps=[{"name": "database", "status": "failed"}])
         with mock.patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify_backup(b)
         self.assertIn("Step database: pg_dump: boom", post.call_args.kwargs["json"]["text"])
         self.assertEqual(len(mail.outbox), 1)
@@ -54,6 +56,7 @@ class NotifyTests(TestCase):
 
     def test_manual_success_is_silent(self):
         with mock.patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify_backup(self._backup(kind="manual", schedule=None))
         post.assert_not_called()
 
@@ -63,6 +66,7 @@ class NotifyTests(TestCase):
         run = RestoreRun.objects.create(backup=b, components=["db"], status="failed",
                                         error="boom", safety_backup=safety)
         with mock.patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify_restore(run)
         text = post.call_args.kwargs["json"]["text"]
         self.assertIn("Restore failed: x.dbk", text)
@@ -79,5 +83,6 @@ class NotifyTests(TestCase):
             self.slack.kind, self.slack.config = kind, cfg
             self.slack.save()
             with mock.patch("monitoring.notify.safe_post") as post:
+                post.return_value.status_code = 200
                 notify_backup(b)
             self.assertIn(key, post.call_args.kwargs["json"], kind)
