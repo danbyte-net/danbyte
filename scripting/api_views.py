@@ -77,8 +77,11 @@ class ScriptViewSet(TenantScopedViewSet):
         directly, so this is deliberately a separate grant."""
         script = self.get_object()
         wanted = bool(request.data.get("trusted", True))
-        Script.objects.filter(pk=script.pk).update(trusted=wanted)
-        script.refresh_from_db()
+        if script.trusted != wanted:
+            # A model save, not a queryset update, so the change log records
+            # who approved or withdrew the code (#317).
+            script.trusted = wanted
+            script.save(update_fields=["trusted", "updated_at"])
         return Response(self.get_serializer(script).data)
 
     @action(detail=True, methods=["get"])

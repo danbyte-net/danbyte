@@ -29,12 +29,21 @@ const PARAM_TYPES: { value: ScriptParamType; label: string }[] = [
 export function ScriptSettingsPanel({
   script,
   canEdit,
+  canEditCode,
 }: {
   script: Script
   canEdit: boolean
+  /** Parameters are part of what runs; see the detail page. */
+  canEditCode: boolean
 }) {
   const qc = useQueryClient()
-  const { canDo } = useMe()
+  const { canDo, me } = useMe()
+  // Running as the owner lends the owner's identity to the code, so only
+  // the owner or a holder of trust may choose it. Someone else still sees
+  // the choice when it is already set, so they can step it back down.
+  const holdsTrust = script.permissions?.trust ?? canDo("script", "trust")
+  const isOwner = !!me.username && me.username === script.owner_name
+  const mayRunAsOwner = holdsTrust || isOwner || script.run_as === "owner"
   const [scope, setScope] = useState(script.token_scope)
   const [timeout, setTimeoutValue] = useState(String(script.timeout_seconds))
   const [runAs, setRunAs] = useState(script.run_as)
@@ -57,8 +66,10 @@ export function ScriptSettingsPanel({
           params_schema: params,
         }),
       }),
-    onSuccess: () => {
-      toast.success("Saved")
+    onSuccess: (saved) => {
+      toast.success(
+        script.trusted && !saved.trusted ? "Saved; trusted cleared" : "Saved"
+      )
       invalidate()
     },
     onError: (e) => apiErrorToast(e),
@@ -113,10 +124,14 @@ export function ScriptSettingsPanel({
           onChange={(v) => setRunAs((v ?? "caller") as Script["run_as"])}
           options={[
             { value: "caller", label: "The person who runs it" },
-            {
-              value: "owner",
-              label: `The owner (${script.owner_name ?? "-"})`,
-            },
+            ...(mayRunAsOwner
+              ? [
+                  {
+                    value: "owner",
+                    label: `The owner (${script.owner_name ?? "-"})`,
+                  },
+                ]
+              : []),
           ]}
           disabled={!canEdit}
         />
@@ -128,7 +143,7 @@ export function ScriptSettingsPanel({
         disabled={!canEdit}
       />
 
-      {canDo("script", "trust") && (
+      {holdsTrust && (
         <Field
           label="Trusted"
           info="A trusted script reaches the database directly instead of going through the API. It runs with the worker's own privileges."
@@ -165,7 +180,7 @@ export function ScriptSettingsPanel({
                 label="Name"
                 value={p.name}
                 onChange={(v) => setParam(i, { name: v })}
-                disabled={!canEdit}
+                disabled={!canEditCode}
                 mono
               />
               <FormSelect
@@ -175,15 +190,15 @@ export function ScriptSettingsPanel({
                   setParam(i, { type: (v ?? "string") as ScriptParamType })
                 }
                 options={PARAM_TYPES}
-                disabled={!canEdit}
+                disabled={!canEditCode}
               />
               <FormCheckbox
                 label="Required"
                 checked={p.required}
                 onChange={(v) => setParam(i, { required: v })}
-                disabled={!canEdit}
+                disabled={!canEditCode}
               />
-              {canEdit && (
+              {canEditCode && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -214,11 +229,11 @@ export function ScriptSettingsPanel({
                       .filter(Boolean),
                   })
                 }
-                disabled={!canEdit}
+                disabled={!canEditCode}
               />
             ) : null
           )}
-          {canEdit && (
+          {canEditCode && (
             <Button
               size="sm"
               variant="outline"
