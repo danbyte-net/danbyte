@@ -48,6 +48,9 @@ Every delivery also carries:
     or blocked by a webhook. If the destination is unreachable, the delivery
     simply fails and is logged - it can never break the change that triggered it.
 
+A delivery is queued only once the change is committed. A change that is rolled
+back, such as a failed request or a failed import row, sends nothing.
+
 ## Verify the payload with a secret
 
 If you set a **secret**, Danbyte signs each request body and sends the signature
