@@ -12,6 +12,7 @@ import os
 import re
 
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils.text import slugify
 from rest_framework.exceptions import APIException
 from rest_framework.fields import empty
@@ -1184,6 +1185,64 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+def prefix_descendant_counts(prefixes) -> dict:
+    """``{prefix id: number of other prefixes inside it}`` for ``prefixes``,
+    counted within the same tenant and VRF - what Postgres ``cidr::inet <<=``
+    gives, ids other than the prefix's own.
+
+    One query over the tenants' prefixes and a sorted pass per (tenant, VRF,
+    family), instead of a correlated scan per row: the scan made a page cost
+    one comparison per pair of prefixes in the tenant (#337). Unparseable
+    CIDRs count as nothing and contain nothing."""
+    import bisect
+    from collections import defaultdict
+
+    from django.db.models import Q
+
+    rows = list(prefixes)
+    keys = {(p.tenant_id, p.vrf_id) for p in rows}
+    if not keys:
+        return {}
+    vrf_ids = {v for _, v in keys if v is not None}
+    vrf_q = Q(vrf_id__in=vrf_ids)
+    if any(v is None for _, v in keys):
+        vrf_q |= Q(vrf_id__isnull=True)
+    buckets = defaultdict(list)
+    for pid, tenant_id, vrf_id, cidr in (
+        Prefix.objects.filter(vrf_q, tenant_id__in={t for t, _ in keys})
+        .order_by()
+        .values_list("id", "tenant_id", "vrf_id", "cidr")
+    ):
+        if (tenant_id, vrf_id) not in keys:
+            continue
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except (ValueError, TypeError):
+            continue
+        buckets[(tenant_id, vrf_id, net.version)].append(
+            (int(net.network_address), net.prefixlen, pid)
+        )
+    starts = {}
+    for key, members in buckets.items():
+        members.sort()
+        starts[key] = [m[0] for m in members]
+    out = {}
+    for p in rows:
+        n = 0
+        net = p.network
+        key = (p.tenant_id, p.vrf_id, net.version) if net is not None else None
+        if key in buckets:
+            members = buckets[key]
+            lo = bisect.bisect_left(starts[key], int(net.network_address))
+            hi = bisect.bisect_right(starts[key], int(net.broadcast_address))
+            n = sum(
+                1 for _, length, pid in members[lo:hi]
+                if length >= net.prefixlen and pid != p.id
+            )
+        out[p.id] = n
+    return out
+
+
 class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     """Read+write shape for the /prefixes list page in v2.
 
@@ -1327,35 +1386,20 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return DnsRecord.objects.filter(ip_address__prefix=obj).count()
 
     def _descendant_count(self, obj) -> int:
-        # The list annotates it in SQL (#179); a detail or a bare instance
-        # falls back to the scan, cached per instance so child_count and
-        # has_descendants share the work.
-        annotated = getattr(obj, "descendant_n", None)
-        if annotated is not None:
-            return annotated
-        cached = getattr(obj, "_descendant_count_cache", None)
-        if cached is not None:
-            return cached
-        net = obj.network
-        if net is None:
-            obj._descendant_count_cache = 0
-            return 0
-        n = 0
-        for sib in (
-            Prefix.objects.filter(tenant_id=obj.tenant_id, vrf_id=obj.vrf_id)
-            .exclude(pk=obj.pk)
-            .only("cidr")
-        ):
-            sn = sib.network
-            if sn is None:
-                continue
-            try:
-                if sn.subnet_of(net):
-                    n += 1
-            except (TypeError, ValueError):
-                continue
-        obj._descendant_count_cache = n
-        return n
+        # Counted once for every row the serializer renders - the list's page
+        # or a single detail - so child_count and has_descendants share the
+        # work and a page costs one query (#179, #337).
+        cache = getattr(self.root, "_descendant_cache", None)
+        if cache is None or obj.id not in cache:
+            inst = self.root.instance
+            rows = (
+                list(inst) if isinstance(inst, (list, tuple, QuerySet)) else []
+            )
+            if not any(r is obj for r in rows):
+                rows = [obj]
+            cache = {**(cache or {}), **prefix_descendant_counts(rows)}
+            self.root._descendant_cache = cache
+        return cache.get(obj.id, 0)
 
     # ── write-only id pointers ──────────────────────────────────────────
     # The frontend posts ``{vrf_id, site_id, vlan_id, tag_ids: [...]}``.

@@ -1283,9 +1283,6 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # it was stamped to the user's own site on create.
 
     def get_queryset(self):
-        from django.db.models import IntegerField
-        from django.db.models.expressions import RawSQL
-
         ip_n = Coalesce(
             Subquery(
                 IPAddress.objects.filter(prefix_id=OuterRef("pk")).order_by()
@@ -1294,23 +1291,27 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             0,
         )
 
+        # The DHCP scope count is a correlated subquery like ``ip_n``, not a
+        # joined ``Count``: an aggregate turns the list into a GROUP BY over
+        # every prefix in the tenant before LIMIT and the paginator's COUNT
+        # wraps the same grouping (#337).
+        scope_model = Prefix._meta.get_field("dhcp_scopes").related_model
+        dhcp_scope_n = Coalesce(
+            Subquery(
+                scope_model.objects.filter(prefix_id=OuterRef("pk")).order_by()
+                .values("prefix_id").annotate(c=Count("*")).values("c")[:1]
+            ),
+            0,
+        )
+
         # Everything the list renders per row, once per page (#179): the
-        # address count, the descendant count (Postgres ``<<`` on the stored
-        # cidr, scoped to the same table), the scope flag; ``status`` joined
-        # for the container check in utilisation.
+        # address count and the scope flag; ``status`` joined for the
+        # container check in utilisation. The descendant count is batched
+        # over the page's rows by the serializer (#337).
         qs = (
             super().get_queryset()
             .select_related("status")
-            .annotate(
-                dhcp_scope_n=Count("dhcp_scopes", distinct=True),
-                ip_n=ip_n,
-                descendant_n=RawSQL(
-                    "(SELECT COUNT(*) FROM api_prefix c WHERE c.tenant_id = api_prefix.tenant_id"
-                    " AND c.vrf_id IS NOT DISTINCT FROM api_prefix.vrf_id AND c.id <> api_prefix.id"
-                    " AND c.cidr::inet <<= api_prefix.cidr::inet)",
-                    (), output_field=IntegerField(),
-                ),
-            )
+            .annotate(dhcp_scope_n=dhcp_scope_n, ip_n=ip_n)
         )
         if not self.request:
             return qs
