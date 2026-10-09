@@ -122,6 +122,8 @@ card refreshes after a cable, port or reservation change anywhere.
 
 A stack is polled once, through its master (or lowest member), and the
 observation is split per member so drift and sync stay member-accurate. The
+stack answers with one `sysName`, so only the owner is checked for name drift.
+The
 stack page's **SNMP** tab polls and syncs the whole stack; details in
 [SNMP discovery → Polling a stack](../features/snmp-discovery.md#polling-a-stack).
 An interface can be moved between members from its edit form.

@@ -153,6 +153,10 @@ member's drift and **Sync from SNMP** only ever see its own slice:
 3. everything else - `Port-channel1`, `Bridge-Aggregation1`, `Vlan1`,
    `Loopback0`, the management port - belongs to the owner.
 
+The stack reports one `sysName` for every member, so **Device name** drift is
+raised on the owner only. Members at position 2, 3, … have no name of their own
+on the wire and never show name drift.
+
 A port is never proposed as *new* on one member while another member already
 has it, and a logical interface that lives on the master is never *stale* on
 a member. Where a vendor's naming defeats rule 2, the port lands on the owner:
@@ -299,7 +303,8 @@ Click **Accept** on an item to write that observed value into intent. This is th
 
 Drift kinds:
 
-- **Device name** - `sysName` vs the device name.
+- **Device name** - `sysName` vs the device name. On a stack, the owner only
+  (see [Polling a stack](#polling-a-stack)).
 - **Serial** - what an integration's inventory reports vs the device's serial.
   Danbyte's own SNMP poll does not read a serial, so this one only ever comes
   from a source that does.
@@ -932,3 +937,7 @@ where it fits: the *Discovered-IP VRF* select on the device's SNMP card, the
 device type's Monitoring card, or the site form's Monitoring section. With a
 policy bound, only prefixes in that VRF are candidates - no containing prefix
 there means the address is skipped rather than dropped into the wrong table.
+An existing IP is bound to the port only when it is in that same VRF; the same
+address in another VRF is left alone and does not count as a conflict. With no
+VRF and no policy, an address held in several VRFs resolves to the one its
+longest containing prefix is in.

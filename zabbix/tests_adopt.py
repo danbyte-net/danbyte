@@ -252,6 +252,25 @@ class ApplyTests(_Base):
         self.assertEqual(row.assigned_device.name, "edge-9")
         self.assertEqual(IPAddress.objects.filter(tenant=self.tenant).count(), 1)
 
+    def test_an_address_in_two_vrfs_takes_the_one_it_places_into(self):
+        # The same address in Global and in VRF X; X's /28 is the longest
+        # match, so X's row is the device's and Global's is left alone (#331).
+        from api.models import VRF
+
+        vrf_x = VRF.objects.create(tenant=self.tenant, name="X")
+        global_row = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.7.0.90", prefix=self.prefix
+        )
+        narrow = Prefix.objects.create(tenant=self.tenant, cidr="10.7.0.80/28", vrf=vrf_x)
+        x_row = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.7.0.90", prefix=narrow
+        )
+        provision.apply_change(self.change())
+        global_row.refresh_from_db()
+        x_row.refresh_from_db()
+        self.assertIsNone(global_row.assigned_device_id)
+        self.assertEqual(x_row.assigned_device.name, "edge-9")
+
     def test_a_proposal_missing_a_default_cannot_be_applied(self):
         change = self.change(role_id=None, reason="No role to adopt into.")
         with self.assertRaises(ValueError):

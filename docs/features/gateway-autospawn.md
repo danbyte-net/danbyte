@@ -37,7 +37,14 @@ When you create a prefix and leave the gateway blank, Danbyte:
 4. Sets the prefix's **gateway** to that address.
 
 The new gateway is scoped to the prefix's **VRF**, so the same block in two
-different VRFs gets its own gateway, one per VRF.
+different VRFs gets its own gateway, one per VRF. Only an IP in the same VRF is
+reused: one at that address in another VRF is a different host and is never
+touched. A reused IP moves onto the new prefix only when it sat on a broader
+one; an IP on an equal or narrower prefix stays where it is, keeps its role,
+and the new prefix just records the gateway address.
+
+If creating the gateway fails, the prefix is still saved and the error is
+logged.
 
 ## When autospawn is skipped
 
