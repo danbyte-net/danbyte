@@ -130,3 +130,94 @@ class ApiTokenTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(r.json()["kind"], "user")
+
+
+class ApiTokenSessionOnlyTests(TestCase):
+    """Tokens are managed from a signed-in session only (#318). A token used
+    to authenticate must not create, list or revoke tokens - otherwise a
+    short-lived or read-only token, or a script's run token, could mint a
+    permanent full-scope one for any tenant its owner can reach."""
+
+    def setUp(self):
+        from auth_api.models import ApiToken, generate_api_key, hash_api_key
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        org2 = Organization.objects.create(name="O2", slug="o2")
+        self.tenant2 = Tenant.objects.create(org=org2, name="T2", slug="t2")
+        self.user = User.objects.create_user("u", password="x", is_superuser=True)
+        prof = UserProfile.objects.create(user=self.user)
+        prof.tenants.add(self.tenant, self.tenant2)
+        prof.current_tenant = self.tenant
+        prof.save()
+        self.key = generate_api_key()
+        self.token = ApiToken.objects.create(
+            user=self.user, tenant=self.tenant, name="t", kind="user",
+            key_hash=hash_api_key(self.key), prefix=self.key[:11],
+        )
+        self.anon = Client()
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {self.key}"}
+
+    def _create_with_token(self, key, **body):
+        body.setdefault("name", "minted")
+        body.setdefault("tenant_id", str(self.tenant2.id))
+        return self.anon.post(
+            "/api/api-tokens/",
+            data=json.dumps(body),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Token {key}",
+        )
+
+    def test_token_cannot_create_token(self):
+        from auth_api.models import ApiToken
+
+        before = ApiToken.objects.count()
+        r = self._create_with_token(self.key, scope="full")
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertNotIn("key", r.json())
+        self.assertEqual(ApiToken.objects.count(), before)
+
+    def test_run_token_cannot_create_token(self):
+        from django.utils import timezone
+
+        from auth_api.models import ApiToken, generate_api_key, hash_api_key
+
+        key = generate_api_key()
+        ApiToken.objects.create(
+            user=self.user, tenant=self.tenant, name="run", kind="run",
+            key_hash=hash_api_key(key), prefix=key[:11],
+            expires_at=timezone.now() + timezone.timedelta(seconds=90),
+        )
+        before = ApiToken.objects.count()
+        r = self._create_with_token(key)
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(ApiToken.objects.count(), before)
+        # The run token itself still works against the ordinary API.
+        self.assertEqual(
+            self.anon.get("/api/sites/", HTTP_AUTHORIZATION=f"Token {key}").status_code,
+            200,
+        )
+
+    def test_token_cannot_list_or_revoke_tokens(self):
+        from auth_api.models import ApiToken
+
+        self.assertEqual(self.anon.get("/api/api-tokens/", **self.auth).status_code, 403)
+        self.assertEqual(
+            self.anon.get(f"/api/api-tokens/{self.token.id}/", **self.auth).status_code,
+            403,
+        )
+        r = self.anon.delete(f"/api/api-tokens/{self.token.id}/", **self.auth)
+        self.assertEqual(r.status_code, 403)
+        self.assertTrue(ApiToken.objects.filter(pk=self.token.pk).exists())
+
+    def test_session_still_manages_tokens(self):
+        c = Client()
+        c.force_login(self.user)
+        r = c.post(
+            "/api/api-tokens/",
+            data=json.dumps({"name": "ok", "tenant_id": str(self.tenant2.id)}),
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(c.get("/api/api-tokens/").status_code, 200)
+        self.assertEqual(c.delete(f"/api/api-tokens/{r.json()['id']}/").status_code, 204)

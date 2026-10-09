@@ -31,7 +31,9 @@ so the interactive docs work on **airgapped** installs with no CDN access.
   **Authorize** and paste the token. Tokens are scoped to a tenant. Tick
   **Read only** when creating one and every write is refused with 403 no
   matter what the owning user may do - the right choice for reporting,
-  inventory pulls, and AI assistants.
+  inventory pulls, and AI assistants. Tokens are created and revoked from a
+  signed-in session only: a request authenticated with a token can't create,
+  list or revoke tokens.
 - **Session** - when you are logged into the SPA, the same session cookie
   authorizes API calls from the browser.
 

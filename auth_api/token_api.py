@@ -1,12 +1,29 @@
 """API-token self-service - a user manages their own tokens. The full key is
-returned exactly once, at creation."""
+returned exactly once, at creation. Only a signed-in session may manage tokens:
+a token can't mint, list or revoke tokens."""
 from __future__ import annotations
 
 from rest_framework import serializers, viewsets
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import ApiToken, generate_api_key, hash_api_key
+
+
+class SessionOnly(BasePermission):
+    """Refuse a request that authenticated with an API token (#318).
+
+    Nothing legitimately manages tokens with a token: the SPA creates and
+    revokes them from the session, and scripts, agents and runners only use
+    the one they were given. Letting a token through would let a short-lived,
+    read-only or run token mint a permanent full-scope one for any tenant its
+    owner can reach, so the check applies to every action on the viewset.
+    """
+
+    message = "API tokens are managed from a signed-in session, not with a token."
+
+    def has_permission(self, request, view):
+        return not isinstance(getattr(request, "auth", None), ApiToken)
 
 
 class ApiTokenSerializer(serializers.ModelSerializer):
@@ -27,7 +44,7 @@ class ApiTokenSerializer(serializers.ModelSerializer):
 
 class ApiTokenViewSet(viewsets.ModelViewSet):
     serializer_class = ApiTokenSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SessionOnly]
     http_method_names = ["get", "post", "delete"]
 
     def get_queryset(self):
