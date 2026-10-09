@@ -1442,6 +1442,14 @@ def diff_device_components(device) -> dict[str, dict[str, list[str]]]:
         return {}
     pos = device.vc_position
     markers = marker_referenced_names(dt)
+    # Installed modules' interfaces belong to the modules, not the type: they
+    # are never extras (#333). Owned ones are matched by FK; the rendered
+    # names also cover module interfaces from before ownership was recorded.
+    module_names: set[str] = set()
+    for module in device.modules.select_related(
+        "device", "module_bay", "module_type"
+    ):
+        module_names.update(_module_interface_names(module))
     out: dict[str, dict[str, list[str]]] = {}
     for dev_rel, tmpl_rel, positional in _SYNC_KINDS:
         expected = {
@@ -1452,9 +1460,16 @@ def diff_device_components(device) -> dict[str, dict[str, list[str]]]:
         # template still means "this device has that port".
         for raw in markers.get(dev_rel, ()):
             expected.add(render_component_name(raw, pos) if positional else raw)
-        actual = set(getattr(device, dev_rel).values_list("name", flat=True))
+        manager = getattr(device, dev_rel)
+        actual = set(manager.values_list("name", flat=True))
         add = sorted(expected - actual)
-        extra = sorted(actual - expected)
+        if dev_rel == "interfaces":
+            own = set(
+                manager.filter(module__isnull=True).values_list("name", flat=True)
+            )
+            extra = sorted(own - expected - module_names)
+        else:
+            extra = sorted(actual - expected)
         if add or extra:
             out[dev_rel] = {"add": add, "extra": extra}
     return out
@@ -1485,7 +1500,10 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
         for dev_rel in order:
             names = diff.get(dev_rel, {}).get("extra", [])
             if names:
-                getattr(device, dev_rel).filter(name__in=names).delete()
+                qs = getattr(device, dev_rel).filter(name__in=names)
+                if dev_rel == "interfaces":
+                    qs = qs.filter(module__isnull=True)
+                qs.delete()
                 removed[dev_rel] = len(names)
     return {"added": {k: v for k, v in added.items() if v}, "removed": removed}
 
@@ -1669,17 +1687,48 @@ def _module_interface_names(module) -> list[str]:
     ]
 
 
+class ModuleInstallConflict(Exception):
+    """Installing a module would create interfaces whose names the host
+    device already uses for another component (#333). ``names`` lists them."""
+
+    def __init__(self, names):
+        self.names = sorted(names)
+        super().__init__(
+            "The device already has "
+            + ", ".join(self.names)
+            + " - rename or remove "
+            + ("it" if len(self.names) == 1 else "them")
+            + " first."
+        )
+
+
+def module_install_conflicts(module) -> list[str]:
+    """Rendered names this module would create that the device already uses
+    for an interface the module does not own."""
+    names = set(_module_interface_names(module))
+    qs = module.device.interfaces.filter(name__in=names)
+    if module.pk:
+        qs = qs.exclude(module_id=module.pk)
+    return sorted(qs.values_list("name", flat=True))
+
+
 def install_module(module) -> int:
-    """Stamp the module type's interfaces onto the host device. Idempotent -
-    names the device already has are skipped. Returns the created count."""
+    """Stamp the module type's interfaces onto the host device, owned by the
+    module (``Interface.module``). Interfaces this module already owns are
+    skipped; a name the device uses for any other interface - its own, or
+    another module's - raises :class:`ModuleInstallConflict` rather than
+    adopting it (#333). Returns the created count."""
+    clash = module_install_conflicts(module)
+    if clash:
+        raise ModuleInstallConflict(clash)
     names = _module_interface_names(module)
     types = {  # rendered name → template, for type/enabled/mgmt flags
         n: t
         for n, t in zip(names, module.module_type.interface_templates.all())
     }
-    have = set(module.device.interfaces.values_list("name", flat=True))
+    have = set(module.interfaces.values_list("name", flat=True))
     made = [
-        Interface(device=module.device, name=n, type=t.type,
+        Interface(device=module.device, module=module, name=n, type=t.type,
                   virtual=t.type in VIRTUAL_INTERFACE_TYPES,
                   enabled=t.enabled, mgmt_only=t.mgmt_only,
                   description=t.description)
@@ -1691,11 +1740,21 @@ def install_module(module) -> int:
 
 
 def uninstall_module(module) -> int:
-    """Remove the interfaces this module contributed (matched by rendered
-    name). Returns the deleted count."""
-    names = _module_interface_names(module)
-    deleted, _ = module.device.interfaces.filter(name__in=names).delete()
-    return deleted
+    """Remove the interfaces this module created (``Interface.module``), and
+    nothing else - a device interface that merely shares a rendered name is
+    never touched. Cables and IP assignments follow the interface delete
+    rules. Returns the deleted interface count."""
+    _, per_model = Interface.objects.filter(module=module).delete()
+    return per_model.get(Interface._meta.label, 0)
+
+
+@transaction.atomic
+def reinstall_module(module) -> int:
+    """Re-stamp a module after its type, bay or device changed: remove what
+    it created, then install the current type. Atomic - a name clash raises
+    :class:`ModuleInstallConflict` and leaves the old interfaces in place."""
+    uninstall_module(module)
+    return install_module(module)
 
 
 def _seat_default_modules(device, pos) -> int:
@@ -1719,9 +1778,14 @@ def _seat_default_modules(device, pos) -> int:
     for bay in bays:
         if hasattr(bay, "module"):  # occupied - leave it be
             continue
-        module = Module.objects.create(
+        module = Module(
             device=device, module_bay=bay, module_type_id=wanted[bay.name],
         )
+        # A default whose ports would collide with interfaces the device
+        # already has is left out rather than adopting them (#333).
+        if module_install_conflicts(module):
+            continue
+        module.save()
         install_module(module)
         count += 1
     return count
@@ -3068,6 +3132,15 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     device = models.ForeignKey(
         Device, on_delete=models.CASCADE, related_name="interfaces"
+    )
+    # The installed module that created this interface (#333). Null for the
+    # device's own interfaces. Removing the module - directly, through its
+    # bay, or by changing its type - removes exactly these.
+    module = models.ForeignKey(
+        "Module", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="interfaces",
+        help_text="Installed module that created this interface; null for "
+                  "the device's own interfaces.",
     )
     name = models.CharField(max_length=64)
     # The real-world name when it differs from the (template-matching) name -

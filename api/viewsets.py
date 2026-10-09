@@ -75,7 +75,7 @@ from .models import (
     Module,
     ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
     NATRule,
-    install_module, uninstall_module,
+    ModuleInstallConflict, install_module, reinstall_module, uninstall_module,
     CableTermination, PortReservation,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
@@ -5613,7 +5613,8 @@ class ModuleBayViewSet(_DevicePortViewSet):
 
 class ModuleViewSet(TenantScopedViewSet):
     """Installed modules. Creating one stamps the module type's interfaces
-    onto the host device; deleting removes them again (by rendered name)."""
+    onto the host device, owned by the module; changing its type, bay or
+    device re-stamps them; deleting it (or its bay) removes exactly those."""
 
     queryset = (
         Module.objects.select_related(
@@ -5642,9 +5643,18 @@ class ModuleViewSet(TenantScopedViewSet):
             raise ValidationError(
                 {"device_id": "Pick a device in the current tenant."}
             )
+        # create() runs in a transaction: a refused install rolls the module
+        # row back with it.
         serializer.save()
         # Stamp the module's interfaces onto the host device.
-        self._created_interfaces = install_module(serializer.instance)
+        self._created_interfaces = self._install(install_module, serializer.instance)
+
+    @staticmethod
+    def _install(fn, module) -> int:
+        try:
+            return fn(module)
+        except ModuleInstallConflict as exc:
+            raise ValidationError({"module_type_id": str(exc)}) from exc
 
     def create(self, request, *args, **kwargs):
         resp = super().create(request, *args, **kwargs)
@@ -5654,7 +5664,30 @@ class ModuleViewSet(TenantScopedViewSet):
             )
         return resp
 
+    def perform_update(self, serializer):
+        tenant = self._tenant_or_403()
+        device = serializer.validated_data.get("device")
+        if device is not None and device.tenant_id != tenant.id:
+            raise ValidationError(
+                {"device_id": "Pick a device in the current tenant."}
+            )
+        before = Module.objects.values(
+            "module_type_id", "module_bay_id", "device_id"
+        ).get(pk=serializer.instance.pk)
+        module = serializer.save()
+        # A new type, bay or device changes which interfaces the module
+        # contributes: remove what it created, install the new set (#333).
+        # update() runs in a transaction, so a refused install rolls back.
+        if (
+            module.module_type_id != before["module_type_id"]
+            or module.module_bay_id != before["module_bay_id"]
+            or module.device_id != before["device_id"]
+        ):
+            self._install(reinstall_module, module)
+
     def perform_destroy(self, instance):
+        # Interface.module cascades: the module's own interfaces go with it,
+        # whichever path deletes it (this, its bay, its device).
         uninstall_module(instance)
         instance.delete()
 

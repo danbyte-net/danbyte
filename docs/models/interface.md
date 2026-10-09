@@ -17,6 +17,12 @@ reason about.
 The device this interface belongs to. An interface's name must be unique on
 its device.
 
+### Module
+
+Read-only. The installed [module](../dcim/device-catalog.md#module-types)
+that created this interface (`module_id`), or empty for the device's own
+ports. Removing the module removes the interfaces it owns.
+
 ### Name
 
 The port's name (`GigabitEthernet0/1`, `eth0`). On create, a `[a-b]` range in

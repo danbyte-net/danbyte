@@ -3309,6 +3309,9 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         return obj
 
     device = DeviceMiniSerializer(read_only=True)
+    # The installed module that created this interface; null for the
+    # device's own (#333). Set by module install only.
+    module_id = serializers.UUIDField(read_only=True, allow_null=True)
     vlan = VLANMiniSerializer(read_only=True)
     tagged_vlans = VLANMiniSerializer(many=True, read_only=True)
     vrf = VRFMiniSerializer(read_only=True)
@@ -3572,7 +3575,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     class Meta:
         model = Interface
-        fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink",
+        fields = ["id", "device", "device_id", "module_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink",
                   "never_uplink",
                   "evpn_mh_uplink", "type",
                   "type_display",
@@ -4745,7 +4748,10 @@ class ModuleSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, Num
             raise serializers.ValidationError(
                 {"module_bay_id": "Pick a bay on the same device."}
             )
-        if bay is not None and self.instance is None and hasattr(bay, "module"):
+        moving = self.instance is None or (
+            bay is not None and bay.pk != self.instance.module_bay_id
+        )
+        if bay is not None and moving and hasattr(bay, "module"):
             raise serializers.ValidationError(
                 {"module_bay_id": f"Bay “{bay.name}” already has a module - "
                                   "remove it first."}
@@ -6343,7 +6349,9 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
             from . import din
 
             if "rails" in attrs:
-                din.check_rail_devices(attrs["rails"], list(self.instance.rails.all()))
+                # Locked in the request's transaction, which saves the rails:
+                # a device placed on one meanwhile is seen, or waits (#310).
+                din.check_rail_devices(attrs["rails"], din.lock_rails(self.instance))
             # Its devices are at its site (#277): they move out before it moves.
             site = attrs.get("site")
             if site is not None and site.pk != self.instance.site_id:
