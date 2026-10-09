@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 
+from requests.exceptions import TooManyRedirects
+
 from core.ssrf import SSRFError, assert_public_host
 
 
@@ -37,7 +39,7 @@ def _session(conn):
     scheme = "https" if conn.use_tls else "http"
     endpoint = f"{scheme}://{conn.host}:{conn.port}/wsman"
     password = (conn.credentials or {}).get("password", "")
-    return winrm.Session(
+    session = winrm.Session(
         endpoint,
         auth=(conn.username, password),
         transport=conn.auth_mode,
@@ -45,6 +47,19 @@ def _session(conn):
         operation_timeout_sec=60,
         read_timeout_sec=70,
     )
+    # pywinrm sends through a plain requests.Session, which follows redirects:
+    # a host that passes the SSRF check could answer 307 and have the SOAP
+    # request (and the error body that comes back) land on an internal
+    # address. Refuse every redirect before the next hop is sent (#321).
+    transport = session.protocol.transport
+    send = transport._send_message_request
+
+    def _send_without_redirects(http, prepared_request):
+        http.max_redirects = 0
+        return send(http, prepared_request)
+
+    transport._send_message_request = _send_without_redirects
+    return session
 
 
 def run_ps(conn, script: str) -> str:
@@ -62,6 +77,11 @@ def run_ps(conn, script: str) -> str:
         raise WinRMError(str(exc)) from exc
     try:
         result = _session(conn).run_ps(script)
+    except TooManyRedirects as exc:
+        raise WinRMError(
+            f"WinRM at {conn.host}:{conn.port} answered with a redirect. Danbyte does "
+            "not follow redirects; point the connection at the WinRM endpoint itself."
+        ) from exc
     except Exception as exc:  # winrm raises requests + protocol errors alike
         raise WinRMError(f"WinRM connection to {conn.host}:{conn.port} failed: {exc}") from exc
     if result.status_code != 0:

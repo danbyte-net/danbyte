@@ -887,6 +887,119 @@ class SnmpVrfScopedIpTests(APITestCase):
         self.assertEqual(ip.vrf_id, vrf_a.id)
 
 
+class SnmpObservedIpVrfTests(APITestCase):
+    """An observed address binds only the row in the interface's VRF (#331)."""
+
+    def setUp(self):
+        from api.models import VRF, Prefix
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.vrf_a = VRF.objects.create(tenant=self.tenant, name="A")
+        self.vrf_b = VRF.objects.create(tenant=self.tenant, name="B")
+        self.prefix_a = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.0.0.0/24", vrf=self.vrf_a
+        )
+        self.prefix_b = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.0.0.0/24", vrf=self.vrf_b
+        )
+        self.device = Device.objects.create(tenant=self.tenant, name="r")
+        self.iface_b = Interface.objects.create(
+            device=self.device, name="Gi0/0", vrf=self.vrf_b
+        )
+
+    def _row(self, prefix, **kw):
+        from api.models import IPAddress
+
+        return IPAddress.objects.create(
+            tenant=self.tenant, prefix=prefix, ip_address="10.0.0.5", **kw
+        )
+
+    def test_another_vrfs_unassigned_row_is_not_bound(self):
+        from monitoring.snmp_drift import _attach_observed_ip
+
+        row_a = self._row(self.prefix_a)
+        self.assertEqual(_attach_observed_ip(self.tenant, self.iface_b, "10.0.0.5"), "created")
+        row_a.refresh_from_db()
+        self.assertIsNone(row_a.assigned_interface_id)
+        self.assertEqual(row_a.vrf_id, self.vrf_a.id)
+        new = self.prefix_b.ip_addresses.get(ip_address="10.0.0.5")
+        self.assertEqual(new.assigned_interface_id, self.iface_b.id)
+
+    def test_own_vrfs_unassigned_row_is_bound(self):
+        from monitoring.snmp_drift import _attach_observed_ip
+
+        self._row(self.prefix_a)
+        row_b = self._row(self.prefix_b)
+        self.assertEqual(
+            _attach_observed_ip(self.tenant, self.iface_b, "10.0.0.5"), "assigned"
+        )
+        row_b.refresh_from_db()
+        self.assertEqual(row_b.assigned_interface_id, self.iface_b.id)
+
+    def test_another_vrfs_assignment_is_no_conflict(self):
+        from monitoring.snmp_drift import _attach_observed_ip
+
+        other = Interface.objects.create(device=self.device, name="Gi0/1", vrf=self.vrf_a)
+        self._row(self.prefix_a, assigned_interface=other)
+        self.assertEqual(_attach_observed_ip(self.tenant, self.iface_b, "10.0.0.5"), "created")
+
+    def test_no_prefix_in_the_interfaces_vrf_skips(self):
+        from api.models import VRF
+        from monitoring.snmp_drift import _attach_observed_ip
+
+        vrf_c = VRF.objects.create(tenant=self.tenant, name="C")
+        iface_c = Interface.objects.create(device=self.device, name="Gi0/2", vrf=vrf_c)
+        row_a = self._row(self.prefix_a)
+        self.assertEqual(_attach_observed_ip(self.tenant, iface_c, "10.0.0.5"), "skipped")
+        row_a.refresh_from_db()
+        self.assertIsNone(row_a.assigned_interface_id)
+
+    def test_vrf_policy_scopes_an_interface_without_a_vrf(self):
+        from monitoring.models import SnmpVrfBinding
+        from monitoring.snmp_drift import _attach_observed_ip
+
+        SnmpVrfBinding.objects.create(
+            tenant=self.tenant, scope=SnmpVrfBinding.SCOPE_DEVICE,
+            object_id=self.device.pk, vrf=self.vrf_b,
+        )
+        plain = Interface.objects.create(device=self.device, name="Gi0/3")
+        row_a = self._row(self.prefix_a)
+        self.assertEqual(_attach_observed_ip(self.tenant, plain, "10.0.0.5"), "created")
+        row_a.refresh_from_db()
+        self.assertIsNone(row_a.assigned_interface_id)
+
+    def test_sync_and_drift_use_the_interfaces_vrf(self):
+        from api.models import IPAddress
+        from monitoring.snmp_drift import compute_device_drift, sync_device_from_snmp
+
+        other = Interface.objects.create(device=self.device, name="Gi0/1", vrf=self.vrf_a)
+        row_a = self._row(self.prefix_a, assigned_interface=other)
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.device, reachable=True,
+            polled_at=timezone.now(), data={"sys_name": "r"},
+            interfaces=[{"if_index": "1", "name": "Gi0/0", "admin_status": "up",
+                         "ip_addresses": ["10.0.0.5"]}],
+        )
+        drift = compute_device_drift(self.device, self.tenant)
+        self.assertTrue(any(
+            d["kind"] == "ip_missing" and d["interface_id"] == str(self.iface_b.id)
+            for d in drift
+        ))
+        summary = sync_device_from_snmp(self.device, self.tenant)
+        self.assertEqual(summary["ips_assigned"], 1)
+        row_a.refresh_from_db()
+        self.assertEqual(row_a.assigned_interface_id, other.id)
+        self.assertEqual(
+            IPAddress.objects.get(vrf=self.vrf_b, ip_address="10.0.0.5").assigned_interface_id,
+            self.iface_b.id,
+        )
+        # Settled: a second look offers nothing more.
+        self.assertFalse(any(
+            d["kind"] == "ip_missing" for d in compute_device_drift(self.device, self.tenant)
+        ))
+
+
 class SnmpSpecialIpTests(APITestCase):
     """Loopback / link-local / unspecified / multicast are never imported."""
 

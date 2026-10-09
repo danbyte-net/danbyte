@@ -23,6 +23,9 @@ export function TwoFactorSection() {
 
   const [setup, setSetup] = useState<TotpSetup | null>(null)
   const [code, setCode] = useState("")
+  // Removing the authenticator asks for the password or a current code.
+  const [removing, setRemoving] = useState(false)
+  const [proof, setProof] = useState("")
 
   const begin = useMutation({
     mutationFn: () => auth.totpSetup(),
@@ -45,9 +48,17 @@ export function TwoFactorSection() {
   })
 
   const disable = useMutation({
-    mutationFn: () => auth.totpDisable(),
+    mutationFn: () => {
+      const v = proof.trim()
+      // Six digits may be a code or a numeric password - the server tries both.
+      return auth.totpDisable(
+        /^\d{6}$/.test(v) ? { code: v, password: proof } : { password: proof }
+      )
+    },
     onSuccess: async () => {
       toast.success("Authenticator removed")
+      setRemoving(false)
+      setProof("")
       await qc.invalidateQueries({ queryKey: ["me"] })
     },
     onError: (err) => apiErrorToast(err),
@@ -72,7 +83,47 @@ export function TwoFactorSection() {
       }
     >
       <div className="rounded-lg border border-border p-4">
-        {confirmed ? (
+        {confirmed && removing ? (
+          <form
+            className="grid gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault()
+              disable.mutate()
+            }}
+          >
+            <Label htmlFor="totp-remove" className="text-xs whitespace-nowrap">
+              Password or authenticator code
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="totp-remove"
+                type="password"
+                autoFocus
+                autoComplete="current-password"
+                value={proof}
+                onChange={(e) => setProof(e.target.value)}
+                className="w-64"
+              />
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={!proof || disable.isPending}
+              >
+                {disable.isPending ? "Removing…" : "Remove"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setRemoving(false)
+                  setProof("")
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : confirmed ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
@@ -81,8 +132,7 @@ export function TwoFactorSection() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => disable.mutate()}
-              disabled={disable.isPending}
+              onClick={() => setRemoving(true)}
             >
               <ShieldOff className="size-4" /> Remove
             </Button>

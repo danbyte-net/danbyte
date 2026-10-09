@@ -602,8 +602,13 @@ incident.
 
 ### History
 
-Status changes are kept for a year, results for thirty days. Both are also
-folded into [rollups](#rollups) that outlive them. The history API
+Status changes are kept for a year, results for thirty days. Each check keeps
+its newest change however old it is, so a check that has been up for longer
+than a year still counts as up. 0.17.0 and 0.17.1 pruned that change too;
+the upgrade to 0.17.2 puts it back from what is left (the earliest remaining
+change, or the check's current status) and recomputes the closed rollups
+that counted the time as unknown. Both are also folded into [rollups](#rollups)
+that outlive them. The history API
 reads the changes back filtered by anything an address is - the same
 dimensions the list pages filter on - and returns facet counts and a bucketed
 series alongside the rows, so one call feeds a rail, a chart and a table:
@@ -1166,8 +1171,9 @@ device - for both status changes and alerts. Manually-created channels can be
 scoped the same way in the channel form (Everything / a subnet / a device).
 
 Channel **Send test** now surfaces delivery errors instead of always reporting
-success - for an email channel that means the actual SMTP error, so a silent
-channel can be diagnosed from the UI.
+success - for an email channel that means the actual SMTP error, and for a
+webhook, Slack, Teams, Discord or PagerDuty channel any answer that is not a
+2xx status, so a silent channel can be diagnosed from the UI.
 
 Self-service opt-in/opt-out is gated by the **`subscribe`** capability on
 notification channels; grant it to the users/groups who should manage their own
@@ -1192,6 +1198,11 @@ pick a delivery mode:
 - **Batched** - a periodic **mini-digest** every *N* minutes (default 30),
   summarising the window's changes as the same per-prefix status-badge chains the
   monitoring digest uses. Nothing is sent for an empty window.
+
+A message counts as sent only when the receiver accepts it: a webhook that
+answers with anything but a 2xx status, a connection that fails or a mail
+server that refuses leaves the changes pending, and the next run sends them
+again. Each change goes out once, however many workers pick it up.
 
 Scope it with the channel's existing **On statuses** filter (e.g. only `down`)
 and an optional **subnet** - only IPs inside that prefix notify. Changes on a

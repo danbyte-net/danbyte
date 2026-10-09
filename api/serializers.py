@@ -12,6 +12,7 @@ import os
 import re
 
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils.text import slugify
 from rest_framework.exceptions import APIException
 from rest_framework.fields import empty
@@ -1184,6 +1185,64 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+def prefix_descendant_counts(prefixes) -> dict:
+    """``{prefix id: number of other prefixes inside it}`` for ``prefixes``,
+    counted within the same tenant and VRF - what Postgres ``cidr::inet <<=``
+    gives, ids other than the prefix's own.
+
+    One query over the tenants' prefixes and a sorted pass per (tenant, VRF,
+    family), instead of a correlated scan per row: the scan made a page cost
+    one comparison per pair of prefixes in the tenant (#337). Unparseable
+    CIDRs count as nothing and contain nothing."""
+    import bisect
+    from collections import defaultdict
+
+    from django.db.models import Q
+
+    rows = list(prefixes)
+    keys = {(p.tenant_id, p.vrf_id) for p in rows}
+    if not keys:
+        return {}
+    vrf_ids = {v for _, v in keys if v is not None}
+    vrf_q = Q(vrf_id__in=vrf_ids)
+    if any(v is None for _, v in keys):
+        vrf_q |= Q(vrf_id__isnull=True)
+    buckets = defaultdict(list)
+    for pid, tenant_id, vrf_id, cidr in (
+        Prefix.objects.filter(vrf_q, tenant_id__in={t for t, _ in keys})
+        .order_by()
+        .values_list("id", "tenant_id", "vrf_id", "cidr")
+    ):
+        if (tenant_id, vrf_id) not in keys:
+            continue
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except (ValueError, TypeError):
+            continue
+        buckets[(tenant_id, vrf_id, net.version)].append(
+            (int(net.network_address), net.prefixlen, pid)
+        )
+    starts = {}
+    for key, members in buckets.items():
+        members.sort()
+        starts[key] = [m[0] for m in members]
+    out = {}
+    for p in rows:
+        n = 0
+        net = p.network
+        key = (p.tenant_id, p.vrf_id, net.version) if net is not None else None
+        if key in buckets:
+            members = buckets[key]
+            lo = bisect.bisect_left(starts[key], int(net.network_address))
+            hi = bisect.bisect_right(starts[key], int(net.broadcast_address))
+            n = sum(
+                1 for _, length, pid in members[lo:hi]
+                if length >= net.prefixlen and pid != p.id
+            )
+        out[p.id] = n
+    return out
+
+
 class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     """Read+write shape for the /prefixes list page in v2.
 
@@ -1327,35 +1386,20 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return DnsRecord.objects.filter(ip_address__prefix=obj).count()
 
     def _descendant_count(self, obj) -> int:
-        # The list annotates it in SQL (#179); a detail or a bare instance
-        # falls back to the scan, cached per instance so child_count and
-        # has_descendants share the work.
-        annotated = getattr(obj, "descendant_n", None)
-        if annotated is not None:
-            return annotated
-        cached = getattr(obj, "_descendant_count_cache", None)
-        if cached is not None:
-            return cached
-        net = obj.network
-        if net is None:
-            obj._descendant_count_cache = 0
-            return 0
-        n = 0
-        for sib in (
-            Prefix.objects.filter(tenant_id=obj.tenant_id, vrf_id=obj.vrf_id)
-            .exclude(pk=obj.pk)
-            .only("cidr")
-        ):
-            sn = sib.network
-            if sn is None:
-                continue
-            try:
-                if sn.subnet_of(net):
-                    n += 1
-            except (TypeError, ValueError):
-                continue
-        obj._descendant_count_cache = n
-        return n
+        # Counted once for every row the serializer renders - the list's page
+        # or a single detail - so child_count and has_descendants share the
+        # work and a page costs one query (#179, #337).
+        cache = getattr(self.root, "_descendant_cache", None)
+        if cache is None or obj.id not in cache:
+            inst = self.root.instance
+            rows = (
+                list(inst) if isinstance(inst, (list, tuple, QuerySet)) else []
+            )
+            if not any(r is obj for r in rows):
+                rows = [obj]
+            cache = {**(cache or {}), **prefix_descendant_counts(rows)}
+            self.root._descendant_cache = cache
+        return cache.get(obj.id, 0)
 
     # ── write-only id pointers ──────────────────────────────────────────
     # The frontend posts ``{vrf_id, site_id, vlan_id, tag_ids: [...]}``.
@@ -3309,6 +3353,9 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         return obj
 
     device = DeviceMiniSerializer(read_only=True)
+    # The installed module that created this interface; null for the
+    # device's own (#333). Set by module install only.
+    module_id = serializers.UUIDField(read_only=True, allow_null=True)
     vlan = VLANMiniSerializer(read_only=True)
     tagged_vlans = VLANMiniSerializer(many=True, read_only=True)
     vrf = VRFMiniSerializer(read_only=True)
@@ -3572,7 +3619,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     class Meta:
         model = Interface
-        fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink",
+        fields = ["id", "device", "device_id", "module_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink",
                   "never_uplink",
                   "evpn_mh_uplink", "type",
                   "type_display",
@@ -3618,8 +3665,16 @@ class MACAddressSerializer(
     vendor = serializers.SerializerMethodField()
 
     def get_vendor(self, obj) -> dict | None:
-        from .oui import vendor_of_object
+        from .oui import vendor_of_object, vendors_of_objects
 
+        # Resolved once for the whole page, not one OUI query per row (#340).
+        cache = getattr(self.root, "_vendor_cache", None)
+        if cache is None:
+            inst = self.root.instance
+            cache = vendors_of_objects(inst) if isinstance(inst, (list, tuple)) else {}
+            self.root._vendor_cache = cache
+        if obj.pk in cache:
+            return cache[obj.pk]
         return vendor_of_object(obj)
 
     assigned_interface_id = TenantScopedPrimaryKeyRelatedField(
@@ -3667,6 +3722,73 @@ class RearPortMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = RearPort
         fields = ["id", "name", "device", "positions"]
+
+
+def _refuse_unmapping(fronts, positions) -> None:
+    """A rear port (or template) can't shrink below the highest position a
+    front port still maps onto (#334) - the strands would point nowhere."""
+    used = max(
+        ((f.rear_port_position or 1) + (f.positions or 1) - 1 for f in fronts),
+        default=0,
+    )
+    if (positions or 1) < used:
+        raise serializers.ValidationError(
+            {"positions": f"Front ports use positions up to {used}. "
+             "Remap or remove them first."}
+        )
+
+
+def check_front_port_mapping(device, rear_port, start, positions, pk=None) -> None:
+    """A front port maps onto a rear port of its OWN device, and its range
+    [start … start+positions−1] must fit and not overlap a sibling (#334).
+    Shared by the serializer and each row of a ranged create."""
+    from django.core.exceptions import ValidationError as DjangoError
+
+    if rear_port is not None and device is not None and rear_port.device_id != device.id:
+        raise serializers.ValidationError(
+            {"rear_port_id": "Pick a rear port on the same device."}
+        )
+    inst = FrontPort(
+        rear_port=rear_port, rear_port_position=start, positions=positions,
+    )
+    if pk is not None:
+        inst.pk = pk
+    try:
+        inst.clean()
+    except DjangoError as e:
+        raise serializers.ValidationError(e.message_dict)
+
+
+def check_front_port_template_mapping(rear_template, start, positions, pk=None) -> None:
+    """Template twin of :func:`check_front_port_mapping`: the range must fit
+    the rear-port template and not overlap a sibling template unless the rear
+    is a splitter. Templates become real ports, so they follow the same rule."""
+    if rear_template is None:
+        return
+    lo = start or 1
+    hi = lo + (positions or 1) - 1
+    if lo < 1:
+        raise serializers.ValidationError(
+            {"rear_port_position": "Start position must be ≥ 1."}
+        )
+    if hi > rear_template.positions:
+        raise serializers.ValidationError(
+            {"positions": f"Positions {lo}–{hi} exceed the rear port's "
+             f"{rear_template.positions} positions."}
+        )
+    if rear_template.is_splitter:
+        return
+    siblings = FrontPortTemplate.objects.filter(rear_port_template=rear_template)
+    if pk is not None:
+        siblings = siblings.exclude(pk=pk)
+    for sib in siblings:
+        slo = sib.rear_port_position or 1
+        shi = slo + (sib.positions or 1) - 1
+        if lo <= shi and slo <= hi:
+            raise serializers.ValidationError(
+                {"rear_port_position": f"Positions {lo}–{hi} overlap "
+                 f"{sib.name} (positions {slo}–{shi})."}
+            )
 
 
 class RearPortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
@@ -3729,6 +3851,8 @@ class RearPortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, N
                 {"is_splitter": "Remove the extra front ports first - a "
                  "non-splitter rear port allows one front port per position."}
             )
+        if self.instance is not None and "positions" in attrs:
+            _refuse_unmapping(self.instance.front_ports.all(), positions)
         return attrs
 
     cf_model = "rearport"
@@ -3780,24 +3904,17 @@ class FrontPortSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         # Run the model's range/overlap check (DRF doesn't call clean()).
-        from django.core.exceptions import ValidationError as DjangoError
 
         def val(field, default=None):
             if field in attrs:
                 return attrs[field]
             return getattr(self.instance, field, default) if self.instance else default
 
-        inst = FrontPort(
-            rear_port=val("rear_port"),
-            rear_port_position=val("rear_port_position", 1),
-            positions=val("positions", 1),
+        check_front_port_mapping(
+            val("device"), val("rear_port"),
+            val("rear_port_position", 1), val("positions", 1),
+            pk=self.instance.pk if self.instance is not None else None,
         )
-        if self.instance is not None:
-            inst.pk = self.instance.pk
-        try:
-            inst.clean()
-        except DjangoError as e:
-            raise serializers.ValidationError(e.message_dict)
         return attrs
 
     cf_model = "frontport"
@@ -4675,7 +4792,10 @@ class ModuleSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, Num
             raise serializers.ValidationError(
                 {"module_bay_id": "Pick a bay on the same device."}
             )
-        if bay is not None and self.instance is None and hasattr(bay, "module"):
+        moving = self.instance is None or (
+            bay is not None and bay.pk != self.instance.module_bay_id
+        )
+        if bay is not None and moving and hasattr(bay, "module"):
             raise serializers.ValidationError(
                 {"module_bay_id": f"Bay “{bay.name}” already has a module - "
                                   "remove it first."}
@@ -4754,6 +4874,8 @@ class RearPortTemplateSerializer(_ComponentTemplateSerializer):
                 {"positions": "A splitter has exactly 1 input position - "
                  "its front ports are the outputs."}
             )
+        if self.instance is not None and "positions" in attrs:
+            _refuse_unmapping(self.instance.front_port_templates.all(), positions)
         return attrs
 
     class Meta(_ComponentTemplateSerializer.Meta):
@@ -4787,6 +4909,16 @@ class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
             raise serializers.ValidationError(
                 {"rear_port_template_id": "Pick a rear-port template on the same device type."}
             )
+
+        def val(field, default):
+            if field in attrs:
+                return attrs[field]
+            return getattr(self.instance, field, default) if self.instance else default
+
+        check_front_port_template_mapping(
+            rpt, val("rear_port_position", 1), val("positions", 1),
+            pk=self.instance.pk if self.instance is not None else None,
+        )
         return attrs
 
     class Meta(_ComponentTemplateSerializer.Meta):
@@ -6261,7 +6393,9 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
             from . import din
 
             if "rails" in attrs:
-                din.check_rail_devices(attrs["rails"], list(self.instance.rails.all()))
+                # Locked in the request's transaction, which saves the rails:
+                # a device placed on one meanwhile is seen, or waits (#310).
+                din.check_rail_devices(attrs["rails"], din.lock_rails(self.instance))
             # Its devices are at its site (#277): they move out before it moves.
             site = attrs.get("site")
             if site is not None and site.pk != self.instance.site_id:

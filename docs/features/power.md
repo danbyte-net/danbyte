@@ -107,8 +107,9 @@ other cabling. Manage them on the device's **Power** tab; connector types
 (IEC C13/C14, NEMA, ...) come from the standard taxonomy.
 
 A rack's power supply is its primary feeds. Where a rack has none, the
-**maximum draw** of its PDUs' inlets stands in, marked as a PDU rating (half
-of it for two or more PDUs, taken as an A/B pair) - see
+**maximum draw** of its PDUs' inlets stands in, marked as a PDU rating: a
+PDU's inlets count as redundant feeds, and two or more PDUs as A and B sides
+of which the smaller one is the supply - see
 [Racks](../dcim/racks.md) for how a rack rolls power up.
 
 To see where power runs short, colour a floor plan's racks by **Power**

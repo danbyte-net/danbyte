@@ -191,10 +191,14 @@ treatment, and so do image attachments.
 
 Every upload also loses its metadata - the GPS position, the camera and its
 serial, XMP and IPTC data, comments - because device type photos are served
-without a login. A photo that carries none is stored exactly as uploaded.
+without a login. A photo that carries none is stored exactly as uploaded,
+whatever its format. A re-saved animated GIF, WebP or APNG keeps every frame
+with its timing, loop count and disposal, and a lossless WebP stays lossless.
 0.17.0-dev3 kept the metadata of photos under 2000 px; `manage.py
 strip_photo_metadata` (with `--dry-run` to list them first) re-saves the
-photos stored since without it.
+photos stored since without it. It removes an old file only once the new one
+has been read back clean with all its frames, and reports any photo it
+kept instead.
 
 ### Recovering lost images {#reimport-images}
 
@@ -280,6 +284,12 @@ Three rules make a bundle safe to accept from anyone:
 - **Nothing is overwritten silently.** A device type you already have is skipped
   unless you tick *Update the device type if it already exists* (which needs
   change access, not just add).
+- **The same rules as the form.** The type's fields - sizes between 1 and
+  5000 mm, a DIN rail on the body, a body size for DIN-rail types, choices,
+  the faceplate - and every component template and sensor are checked as the
+  API checks them, and on a replace the type's devices on DIN rails must still
+  fit. A file that breaks one is refused whole with the field at fault, and
+  nothing of it is saved. The preview checks the type's own fields already.
 
 Ids never travel - manufacturers, an outlet's inlet, a front port's rear port all
 move as **names** and are re-resolved locally. Anything that can't be resolved is
@@ -313,7 +323,8 @@ slots, RJ11, audio jacks, grounding lugs, and **RF connectors** (RP-SMA, SMA,
 N-type, MMCX, U.FL, QMA, 4.3-10) - so a device type can model *everything* on
 its panel, including the coax run from an AP to its external antenna. Template names support
 two shorthands: a **`[1-24]` range** creates one template per port in a single
-add, and a **`{position}` token** resolves to the device's stack member number
+add (`[01-24]` keeps the zero padding; front-port templates take consecutive
+rear positions), and a **`{position}` token** resolves to the device's stack member number
 when components are stamped (and renames ports when a device changes stack
 position) - see [virtual chassis](virtual-chassis.md#position-aware-interface-names).
 Tick rows to reveal a bulk bar with **Edit**, **Rename**, **Clone**, and
@@ -365,6 +376,8 @@ confirm:
   assignments - so the dialog turns the affected chips red and warns when any
   interface being removed carries IPs. The button becomes a red *Sync & remove
   extras*.
+- Interfaces of an installed [module](#module-types) belong to the module, not
+  the type: they are never listed as extras and never removed by a sync.
 
 Faceplate slots and photo markers count as expectations too: a port drawn on
 the layout that no template defines still shows under **Add**, and confirming
@@ -693,6 +706,32 @@ The workflow:
 3. On the device page's **Hardware** tab, **Install…** a module type into an
    empty bay - its interfaces appear on the device (and its faceplate)
    instantly. **Remove** takes exactly those interfaces away again.
+
+A module **owns** the interfaces it creates (`module_id` on each interface in
+the API; null for the device's own ports). Ownership survives renaming the
+interface, and decides what goes when the module does:
+
+- **Install** refuses a module whose interface names the device already uses -
+  its own ports or another module's. Rename or remove the clashing interface
+  first; nothing is adopted.
+- **Remove** deletes the module's own interfaces and nothing else, with the
+  usual interface delete rules: cable ends on them are dropped and IP
+  addresses stay, unassigned.
+- **Deleting a module bay** removes its module the same way, as does deleting
+  the device.
+- **Changing an installed module's type** (or moving it to another bay)
+  removes its interfaces and installs the new set in one step; a name clash
+  refuses the change and leaves the module as it was.
+- A **default module** whose interface names clash with the device's is not
+  seated.
+
+Modules installed before 0.17.2 had no recorded owner. The upgrade marks an
+existing interface as the module's only when that is unambiguous: its name is
+one the module's templates render to, no other module on the device renders
+it, the device type does not define it (as a template or a faceplate or photo
+marker), and it was created no earlier than the module. Anything else stays
+the device's own - it survives removing the module, and you delete it by hand
+if it was the module's.
 
 A **default module** only decides what's *pre-seated* - it never locks a bay.
 Sync-from-type fills empty matching bays with the default but **never

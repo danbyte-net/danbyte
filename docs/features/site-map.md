@@ -492,7 +492,12 @@ are under [Circuits → Link speed on the site map](circuits.md#link-speed-on-th
 A cable into a patch panel is followed through the panels to where its
 strands come out. A trunk between two panels carries one link per strand
 patched at both ends - a duplex connector's two strands are one link - and a
-strand that stops dark inside a panel carries none. A site pair's line adds
+strand that stops dark inside a panel carries none. A cable with several
+ports on each end carries one link per position: its first A port with its
+first B port, the second with the second, in the order they were added - so
+two ports to two ports are two links, and extra ports on the longer end carry
+none. A cable with one port on an end is a breakout: that port links to every
+port on the other end. A site pair's line adds
 up every link its cables carry, each once; a cable that carries no link at
 all counts as one of unknown speed.
 

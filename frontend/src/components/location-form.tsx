@@ -24,6 +24,10 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import {
+  BindingDraftsProvider,
+  useBindingDraftsRoot,
+} from "@/lib/binding-drafts"
 import { useSaveObject } from "@/lib/save-object"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
@@ -49,6 +53,8 @@ export function LocationForm({
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  // The Monitoring section stages its picks; Save writes them (#324).
+  const bindingDrafts = useBindingDraftsRoot()
 
   const [name, setName] = useState(location?.name ?? "")
   const [siteId, setSiteId] = useState<string | null>(
@@ -116,12 +122,14 @@ export function LocationForm({
         icon: icon || "",
         description: description.trim(),
       }
-      return saveObject<Location>({
+      const saved = await saveObject<Location>({
         objectType: "api.location",
         endpoint: "/api/locations/",
         id: isEdit ? location.id : undefined,
         payload,
       })
+      await bindingDrafts.commit()
+      return saved
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["locations"] })
@@ -229,19 +237,24 @@ export function LocationForm({
           </FormSection>
 
           {location?.id && (
-            <FormSection title="Monitoring" card>
-              <MonitoringEngineField scope="location" objectId={location.id} />
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
-                  SNMP credentials
-                </span>
-                <SnmpBindingControl
+            <BindingDraftsProvider value={bindingDrafts}>
+              <FormSection title="Monitoring" card>
+                <MonitoringEngineField
                   scope="location"
                   objectId={location.id}
-                  canEdit
                 />
-              </div>
-            </FormSection>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
+                    SNMP credentials
+                  </span>
+                  <SnmpBindingControl
+                    scope="location"
+                    objectId={location.id}
+                    canEdit
+                  />
+                </div>
+              </FormSection>
+            </BindingDraftsProvider>
           )}
         </FormColumn>
       </FormColumns>

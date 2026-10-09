@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import os
 import tempfile
+import unittest
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
 from auth_api.models import ApiToken
 from core.models import Organization, Tenant
-from scripting import tokens
+from scripting import sandbox, tokens
 from scripting.models import Script, ScriptRun
 from scripting.runner import base_env, create_run, run_script, trusted_env
 
@@ -111,6 +113,9 @@ class ExecutionTests(_Base):
         self.assertEqual(run.status, "success", run.log)
         self.assertIn("SITE aarhus 5", run.log)
 
+    # Unconfined, so the grandchild could write the marker if it survived:
+    # this checks the process-tree kill, not the sandbox.
+    @override_settings(SCRIPT_SANDBOX="none")
     def test_timeout_kills_the_whole_process_tree(self):
         marker = os.path.join(self.tmp.name, "child-survived")
         source = (
@@ -234,3 +239,120 @@ class RunAsTests(_Base):
         done = run_script(str(run.id))
         self.assertIn("v1", done.log)
         self.assertNotIn("v2", done.log)
+
+
+_PROBE = """
+import os, socket
+
+
+def probe(label, fn):
+    try:
+        fn()
+        print(label, "OPEN")
+    except OSError as exc:
+        print(label, "DENIED", exc.errno)
+
+
+probe("environ", lambda: open(f"/proc/{{os.getppid()}}/environ").read())
+probe("dotenv", lambda: open({dotenv!r}).read())
+probe("secret", lambda: open({secret!r}).read())
+probe("checkout", lambda: os.listdir({base!r}))
+probe("sdk-dotenv", lambda: open(os.path.join(os.environ["DANBYTE_SDK_PATH"], ".env")).read())
+probe("work", lambda: open("mine.txt", "w").write("x"))
+probe("redis", lambda: socket.create_connection(("127.0.0.1", {redis}), 2).close())
+probe("unix", lambda: socket.socket(socket.AF_UNIX).close())
+probe("signal", lambda: os.kill(os.getppid(), 0))
+socket.socketpair()
+from danbyte_sdk import run
+run.log("sdk ok")
+"""
+
+
+@unittest.skipUnless(sandbox.abi_version() >= 1, "the kernel has no Landlock")
+class ConfinementTests(_Base):
+    """A sandboxed run cannot reach the worker's secrets (#316)."""
+
+    def setUp(self):
+        super().setUp()
+        self.secret = os.path.join(self.tmp.name, "worker.env")
+        with open(self.secret, "w") as fh:
+            fh.write("DB_PASSWORD=fake-secret-316\n")
+
+    def _probe(self, **kw):
+        from django.conf import settings
+
+        base = str(settings.BASE_DIR)
+        return self._run(_PROBE.format(
+            dotenv=os.path.join(base, ".env"), secret=self.secret, base=base,
+            redis=sorted(sandbox.blocked_ports() - {5432})[0],
+        ), **kw)
+
+    def _lines(self, run):
+        return dict(line.split(" ", 1) for line in run.log.splitlines() if " " in line)
+
+    def test_a_sandboxed_run_reads_nothing_of_the_worker(self):
+        run = self._probe()
+        self.assertEqual(run.status, "success", run.log)
+        seen = self._lines(run)
+        for label in ("environ", "dotenv", "secret", "checkout", "sdk-dotenv"):
+            self.assertTrue(seen[label].startswith("DENIED"), (label, run.log))
+        self.assertEqual(seen["work"], "OPEN")
+        self.assertIn("sdk ok", run.log)
+        self.assertNotIn("fake-secret-316", run.log)
+
+    @unittest.skipUnless(sandbox.abi_version() >= 6, "needs Landlock ABI 6")
+    def test_a_sandboxed_run_reaches_neither_redis_unix_sockets_nor_the_worker(self):
+        seen = self._lines(self._probe())
+        self.assertTrue(seen["redis"].startswith("DENIED"), seen)
+        self.assertTrue(seen["unix"].startswith("DENIED"), seen)
+        self.assertTrue(seen["signal"].startswith("DENIED"), seen)
+
+    def test_the_sdk_is_a_copy_outside_the_checkout(self):
+        from django.conf import settings
+
+        run = self._run("import os\nprint('SDK', os.environ['DANBYTE_SDK_PATH'])\n")
+        self.assertEqual(run.status, "success", run.log)
+        path = run.log.split("SDK ", 1)[1].split()[0]
+        self.assertFalse(path.startswith(str(settings.BASE_DIR)), path)
+
+    def test_a_trusted_run_is_not_confined(self):
+        from django.conf import settings
+
+        run = self._run(
+            f"import os\nprint('LISTED', len(os.listdir({str(settings.BASE_DIR)!r})) > 0)\n"
+            f"print('SECRET', open({self.secret!r}).read().strip())\n",
+            trusted=True,
+        )
+        self.assertEqual(run.status, "success", run.log)
+        self.assertIn("LISTED True", run.log)
+        self.assertIn("SECRET DB_PASSWORD=fake-secret-316", run.log)
+
+    def test_a_host_that_cannot_confine_refuses_the_run(self):
+        with mock.patch.object(sandbox, "abi_version", return_value=0):
+            run = self._run("print('ran')\n")
+        self.assertEqual(run.status, "failed")
+        self.assertIn("cannot confine", run.error)
+        self.assertNotIn("ran", run.log)
+        self.assertFalse(ApiToken.objects.filter(kind="run").exists())
+
+    def test_a_confinement_the_child_cannot_apply_stops_the_launch(self):
+        def refuse(self):
+            raise OSError(1, "refused")
+
+        with mock.patch.object(sandbox.Confinement, "restrict_child", refuse):
+            run = self._run("print('ran')\n")
+        self.assertEqual(run.status, "failed")
+        self.assertNotIn("ran", run.log)
+
+    @override_settings(SCRIPT_SANDBOX="none")
+    def test_turning_the_sandbox_off_is_said_in_the_log(self):
+        with mock.patch.object(sandbox, "abi_version", return_value=0):
+            run = self._run("print('ran')\n")
+        self.assertEqual(run.status, "success", run.log)
+        self.assertIn("Sandbox: off", run.log)
+        self.assertIn("ran", run.log)
+
+    def test_a_checkout_inside_a_granted_directory_is_refused(self):
+        with override_settings(BASE_DIR="/usr/share/danbyte"):
+            with self.assertRaises(sandbox.SandboxUnavailable):
+                sandbox.prepare(self.tmp.name)

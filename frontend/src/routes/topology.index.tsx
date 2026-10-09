@@ -330,7 +330,8 @@ export interface TopologySearch {
   tag?: string
   /** Show patch panels, i.e. don't collapse them away. */
   panels?: boolean
-  group?: "site" | "location"
+  /** `none` is spelled out: a large tenant opens grouped by site. */
+  group?: GroupBy
   dir?: "lr" | "tb"
   color?: EdgeColorMode
   cables?: "routed" | "straight" | "curved"
@@ -401,7 +402,7 @@ export const Route = createFileRoute("/topology/")({
     if (panels !== undefined) out.panels = panels
     const vms = flag(s.vms)
     if (vms !== undefined) out.vms = vms
-    const group = oneOf(s.group, ["site", "location"] as const)
+    const group = oneOf(s.group, ["none", "site", "location"] as const)
     if (group) out.group = group
     const dir = oneOf(s.dir, ["lr", "tb"] as const)
     if (dir) out.dir = dir
@@ -561,7 +562,14 @@ interface StoredDisplay {
   edgeRouting?: "routed" | "straight" | "curved"
   viewStyle?: ViewStyle
   groupBy?: GroupBy
+  /** `groupBy` was chosen here. Older copies wrote the default `none` back
+   * on every visit, so their `none` is not a choice. */
+  groupChosen?: boolean
 }
+
+/** No view opens grouped by site above this many devices (#343): the
+ * ungrouped map loads the whole tenant. */
+const LARGE_TENANT = 500
 
 type GroupBy = "none" | "site" | "location"
 /** The page's views: the canvas styles + the VLAN-rail diagram. */
@@ -769,6 +777,40 @@ function TopologyPage() {
   // This browser's No view settings from its last session there (this read
   // is unchanged from before the URL work - same hydration behaviour).
   const stored = useRef(readStoredDisplay()).current
+  /** The grouping this browser chose for No view, if it chose one. */
+  const storedGroup =
+    stored.groupBy === "none" && !stored.groupChosen
+      ? undefined
+      : stored.groupBy
+  /** Opened bare - no view, focus, set, site or grouping asked for - with
+   * no grouping chosen here: a large tenant opens grouped by site instead
+   * of loading every device. Decided once, on arrival. */
+  const [bareVisit] = useState(
+    () =>
+      !urlSearch.view &&
+      !urlSearch.group &&
+      !urlSearch.device &&
+      urlSearch.devices === undefined &&
+      !urlSearch.site &&
+      !urlSearch.location &&
+      storedGroup === undefined
+  )
+  const autoGroupable = bareVisit && viewId === "none"
+  const deviceCount = useQuery({
+    queryKey: ["topology-device-count"],
+    queryFn: () => api<Paginated<{ id: string }>>("/api/devices/?page_size=1"),
+    enabled: autoGroupable && !resolving,
+    staleTime: Infinity,
+  })
+  const autoGroup: GroupBy =
+    autoGroupable && (deviceCount.data?.count ?? 0) > LARGE_TENANT
+      ? "site"
+      : "none"
+  /** The map waits for the count rather than fetch the whole tenant first;
+   * a failed count opens ungrouped. */
+  const mapSettled =
+    viewSettled &&
+    (!autoGroupable || deviceCount.isFetched || deviceCount.isError)
   /** The style this browser's older, single arrangement was made on. */
   const legacyStyle = sanitizeViewStyle(stored.viewStyle)
   // No view's Diagram display, as this browser last saved it with
@@ -823,7 +865,7 @@ function TopologyPage() {
         ? "tb"
         : "lr",
     cables: vf.edgeRouting ?? stored.edgeRouting ?? "routed",
-    group: vf.groupBy ?? stored.groupBy ?? "none",
+    group: vf.groupBy ?? storedGroup ?? autoGroup,
     panels: vf.collapse === undefined ? false : !vf.collapse,
     site: vf.site ?? "all",
     location: vf.location ?? "all",
@@ -1503,6 +1545,9 @@ function TopologyPage() {
 
   // Persist No view's display settings across reloads. Only while no saved
   // view is selected - a saved view's settings belong to that view.
+  // A grouping the size of the tenant picked is not this browser's choice:
+  // it is not kept, so the next visit decides again.
+  const groupPicked = urlSearch.group !== undefined || storedGroup !== undefined
   useEffect(() => {
     if (viewId !== "none" || resolving) return
     writeStoredDisplay({
@@ -1514,11 +1559,12 @@ function TopologyPage() {
       roleDistance,
       edgeRouting,
       viewStyle,
-      groupBy,
+      ...(groupPicked ? { groupBy, groupChosen: true } : {}),
     })
   }, [
     viewId,
     resolving,
+    groupPicked,
     colorMode,
     direction,
     dirImplied,
@@ -1658,7 +1704,7 @@ function TopologyPage() {
   const q = useQuery({
     queryKey: ["topology", graphQuery, setKey],
     queryFn: ({ signal }) => fetchTopology(graphQuery, { signal }),
-    enabled: !logical && viewSettled,
+    enabled: !logical && mapSettled,
     // The same map asked for with other labels or card lines - or a hand-
     // built map with a device more or less - keeps the one on screen until
     // the new one arrives, instead of blanking it.
@@ -1746,7 +1792,7 @@ function TopologyPage() {
 
   const ghosts = useQuery({
     queryKey: ["topology-ghosts", filters.site],
-    enabled: !logical && viewSettled,
+    enabled: !logical && mapSettled,
     queryFn: ({ signal }) =>
       api<{ edges: TopoEdge[] }>(
         `/api/monitoring/topology/ghosts/${
@@ -1758,7 +1804,7 @@ function TopologyPage() {
 
   const bgp = useQuery({
     queryKey: ["topology-bgp", filters.site],
-    enabled: !logical && viewSettled,
+    enabled: !logical && mapSettled,
     queryFn: ({ signal }) =>
       api<{ edges: TopoEdge[] }>(
         `/api/routing/topology/bgp/${
@@ -3598,7 +3644,7 @@ function TopologyPage() {
         )}
         <div className="relative min-h-0 flex-1">
           {logical && <LogicalTopologyView />}
-          {!logical && (q.isLoading || (!viewSettled && !graph)) && (
+          {!logical && (q.isLoading || (!mapSettled && !graph)) && (
             <Loading className="absolute inset-0" />
           )}
           {!logical && q.isError && (

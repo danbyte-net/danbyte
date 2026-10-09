@@ -200,7 +200,9 @@ class UserSerializer(serializers.ModelSerializer):
         self._apply_profile(user, profile_writes)
         _apply_site_role(self.context.get("request"), site_role, user_ids=[user.id])
 
-        if not pwd and invite and user.email:
+        # A set-password link is refused for a disabled account (#322), so
+        # none is sent to one.
+        if not pwd and invite and user.email and user.is_active:
             from .login_api import send_invite_email
 
             request = self.context.get("request")
@@ -232,7 +234,8 @@ class UserSerializer(serializers.ModelSerializer):
         self._apply_profile(user, profile_writes)
 
         # On edit, `send_invite` doubles as "email a password-reset link".
-        if invite and user.email:
+        # Not to a disabled account: the link would be refused (#322).
+        if invite and user.email and user.is_active:
             from .login_api import send_invite_email
 
             request = self.context.get("request")
@@ -333,6 +336,12 @@ class UserViewSet(viewsets.ModelViewSet):
         if not user.email:
             return Response(
                 {"detail": "This user has no email address to send a link to."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not user.is_active:
+            return Response(
+                {"detail": "This account is disabled - enable it before sending "
+                           "a link."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         from .login_api import send_invite_email

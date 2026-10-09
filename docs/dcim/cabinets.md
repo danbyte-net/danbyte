@@ -239,6 +239,10 @@ Rails, cabinets and types keep their devices:
 - a type's width or profiles cannot change in a way devices of it on rails
   would not survive.
 
+These hold when two edits land at the same moment, too: a device being
+placed and a save that shortens its rail, syncs the cabinet or widens its
+type wait for each other, and the second is checked against the first.
+
 Sync from type skips a rail update that its devices would not survive and
 lists it as *blocked*, with the reason. Search shows where a device sits -
 *K1 · R2 @ 120 mm* - and finds it by its cabinet's name.

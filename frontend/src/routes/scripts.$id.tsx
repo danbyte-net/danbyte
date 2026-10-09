@@ -42,7 +42,7 @@ export const Route = createFileRoute("/scripts/$id")({
 
 function ScriptDetailPage() {
   const { id } = Route.useParams()
-  const { canDo } = useMe()
+  const { canDo, me } = useMe()
   const qc = useQueryClient()
   const [tab, setTab] = useUrlTab<Tab>("overview", "tab", TABS)
   const [running, setRunning] = useState(false)
@@ -74,8 +74,10 @@ function ScriptDetailPage() {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
-      toast.success("Saved")
+    onSuccess: (saved) => {
+      toast.success(
+        script?.trusted && !saved.trusted ? "Saved; trusted cleared" : "Saved"
+      )
       void qc.invalidateQueries({ queryKey: ["script", id] })
       void qc.invalidateQueries({ queryKey: ["scripts"] })
     },
@@ -87,6 +89,13 @@ function ScriptDetailPage() {
 
   const canEdit = objCan(script, "change", canDo("script", "change"))
   const canRun = script.permissions?.run ?? canDo("script", "run")
+  const holdsTrust = script.permissions?.trust ?? canDo("script", "trust")
+  // A script that runs as its owner (a schedule always does) lends the
+  // owner's identity to its code, so only the owner or a holder of trust
+  // may change that code. The server enforces it either way.
+  const isOwner = !!me.username && me.username === script.owner_name
+  const lendsOwner = script.run_as === "owner" || script.schedule_enabled
+  const canEditCode = canEdit && (!lendsOwner || isOwner || holdsTrust)
   const dirty = source !== script.source
 
   return (
@@ -133,12 +142,12 @@ function ScriptDetailPage() {
           </div>
           <CodeEditor
             value={source}
-            onChange={canEdit ? setSource : undefined}
+            onChange={canEditCode ? setSource : undefined}
             language="python"
-            readOnly={!canEdit}
+            readOnly={!canEditCode}
             height="30rem"
           />
-          {canEdit && (
+          {canEditCode && (
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
@@ -156,9 +165,18 @@ function ScriptDetailPage() {
                   Discard
                 </Button>
               )}
+              {dirty && script.trusted && !holdsTrust && (
+                <span className="text-xs text-muted-foreground">
+                  Saving clears Trusted
+                </span>
+              )}
             </div>
           )}
-          <ScriptSettingsPanel script={script} canEdit={canEdit} />
+          <ScriptSettingsPanel
+            script={script}
+            canEdit={canEdit}
+            canEditCode={canEditCode}
+          />
         </div>
       </DetailTab>
 
@@ -215,7 +233,11 @@ function ScriptDetailPage() {
       </DetailTab>
 
       <DetailTab value="schedule">
-        <ScriptSchedulePanel script={script} canEdit={canEdit} />
+        <ScriptSchedulePanel
+          script={script}
+          canEdit={canEdit}
+          canTurnOn={isOwner || holdsTrust}
+        />
       </DetailTab>
 
       <DetailTab value="sharing">

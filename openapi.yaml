@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.17.1
+  version: 0.17.2
   description: 'REST API for Danbyte - IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -24612,7 +24612,8 @@ paths:
       operationId: modules_list
       description: |-
         Installed modules. Creating one stamps the module type's interfaces
-        onto the host device; deleting removes them again (by rendered name).
+        onto the host device, owned by the module; changing its type, bay or
+        device re-stamps them; deleting it (or its bay) removes exactly those.
       parameters:
       - name: page
         required: false
@@ -24648,7 +24649,8 @@ paths:
       operationId: modules_create
       description: |-
         Installed modules. Creating one stamps the module type's interfaces
-        onto the host device; deleting removes them again (by rendered name).
+        onto the host device, owned by the module; changing its type, bay or
+        device re-stamps them; deleting it (or its bay) removes exactly those.
       tags:
       - modules
       requestBody:
@@ -24678,7 +24680,8 @@ paths:
       operationId: modules_retrieve
       description: |-
         Installed modules. Creating one stamps the module type's interfaces
-        onto the host device; deleting removes them again (by rendered name).
+        onto the host device, owned by the module; changing its type, bay or
+        device re-stamps them; deleting it (or its bay) removes exactly those.
       parameters:
       - in: path
         name: id
@@ -24703,7 +24706,8 @@ paths:
       operationId: modules_update
       description: |-
         Installed modules. Creating one stamps the module type's interfaces
-        onto the host device; deleting removes them again (by rendered name).
+        onto the host device, owned by the module; changing its type, bay or
+        device re-stamps them; deleting it (or its bay) removes exactly those.
       parameters:
       - in: path
         name: id
@@ -24740,7 +24744,8 @@ paths:
       operationId: modules_partial_update
       description: |-
         Installed modules. Creating one stamps the module type's interfaces
-        onto the host device; deleting removes them again (by rendered name).
+        onto the host device, owned by the module; changing its type, bay or
+        device re-stamps them; deleting it (or its bay) removes exactly those.
       parameters:
       - in: path
         name: id
@@ -24776,7 +24781,8 @@ paths:
       operationId: modules_destroy
       description: |-
         Installed modules. Creating one stamps the module type's interfaces
-        onto the host device; deleting removes them again (by rendered name).
+        onto the host device, owned by the module; changing its type, bay or
+        device re-stamps them; deleting it (or its bay) removes exactly those.
       parameters:
       - in: path
         name: id
@@ -71639,8 +71645,11 @@ components:
         * **Managed** (default): the operator types the secret once via the
           write-only ``password`` / ``private_key`` / ``passphrase`` fields, and the
           viewset stores it in the active secret store under a Danbyte-owned ref.
+          ``secret_path`` is derived server-side and ignored on input (#315).
         * **External**: ``secret_managed=false`` + ``secret_path`` points at a path
-          the operator manages themselves (e.g. an existing Vault path).
+          the operator manages themselves (e.g. an existing Vault path). The path
+          is checked for traversal and against every tenant's managed namespace
+          here; who may set one is the viewset's call (a deployment admin).
       properties:
         id:
           type: string
@@ -71732,8 +71741,11 @@ components:
         * **Managed** (default): the operator types the secret once via the
           write-only ``password`` / ``private_key`` / ``passphrase`` fields, and the
           viewset stores it in the active secret store under a Danbyte-owned ref.
+          ``secret_path`` is derived server-side and ignored on input (#315).
         * **External**: ``secret_managed=false`` + ``secret_path`` points at a path
-          the operator manages themselves (e.g. an existing Vault path).
+          the operator manages themselves (e.g. an existing Vault path). The path
+          is checked for traversal and against every tenant's managed namespace
+          here; who may set one is the viewset's call (a deployment admin).
       properties:
         device:
           type: string
@@ -78305,6 +78317,11 @@ components:
           allOf:
           - $ref: '#/components/schemas/DeviceMini'
           readOnly: true
+        module_id:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
         name:
           type: string
           maxLength: 64
@@ -78533,6 +78550,7 @@ components:
       - link_peer
       - mac_addresses
       - mode_display
+      - module_id
       - name
       - parent
       - reservation
@@ -91301,8 +91319,11 @@ components:
         * **Managed** (default): the operator types the secret once via the
           write-only ``password`` / ``private_key`` / ``passphrase`` fields, and the
           viewset stores it in the active secret store under a Danbyte-owned ref.
+          ``secret_path`` is derived server-side and ignored on input (#315).
         * **External**: ``secret_managed=false`` + ``secret_path`` points at a path
-          the operator manages themselves (e.g. an existing Vault path).
+          the operator manages themselves (e.g. an existing Vault path). The path
+          is checked for traversal and against every tenant's managed namespace
+          here; who may set one is the viewset's call (a deployment admin).
       properties:
         device:
           type: string

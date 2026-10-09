@@ -55,6 +55,11 @@ servers and hypervisors are) must be allow-listed under **Settings →
 Deployment → General** (or `DANBYTE_SSRF_ALLOWLIST`) before Danbyte will
 connect. Test connection tells you exactly that when the target isn't listed.
 
+None of these clients follows a redirect: a `3xx` answer fails Test connection
+and sync with the address it pointed at, so point the source there instead. The
+Proxmox, vCenter and Cloud Director REST clients also pin the connection to the
+address that passed the check.
+
 ## Vendor names and logos
 
 Danbyte names other people's products the way their owners ask, and ships a

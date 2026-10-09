@@ -295,7 +295,7 @@ def apply_adoption(change) -> str:
     """
     from api.models import Device, DeviceRole, DeviceType, IPAddress, Site
     from api.status_registry import resolve_status
-    from api.vrf_placement import containing_prefix
+    from api.vrf_placement import containing_prefix, row_in_vrf
 
     conn = change.connection
     detail = change.detail or {}
@@ -319,7 +319,9 @@ def apply_adoption(change) -> str:
         note = ""
         address = (detail.get("address") or "").strip()
         if address:
-            row = IPAddress.objects.filter(tenant=tenant, ip_address=address).first()
+            # Zabbix names no VRF: an address held in several VRFs resolves to
+            # the one it places into, never an arbitrary one (#331).
+            row = row_in_vrf(tenant, address)
             if row is None:
                 prefix = containing_prefix(tenant, address)
                 if prefix is not None:

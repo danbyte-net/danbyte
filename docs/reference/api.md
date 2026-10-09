@@ -31,7 +31,9 @@ so the interactive docs work on **airgapped** installs with no CDN access.
   **Authorize** and paste the token. Tokens are scoped to a tenant. Tick
   **Read only** when creating one and every write is refused with 403 no
   matter what the owning user may do - the right choice for reporting,
-  inventory pulls, and AI assistants.
+  inventory pulls, and AI assistants. Tokens are created and revoked from a
+  signed-in session only: a request authenticated with a token can't create,
+  list or revoke tokens.
 - **Session** - when you are logged into the SPA, the same session cookie
   authorizes API calls from the browser.
 
@@ -129,6 +131,16 @@ many, as the web UI does with a big selection (see
 
 A value a field cannot take answers `400` too - `{"non_field_errors":
 [...]}` when no serializer named the field - never a server error.
+
+`bulk-update/` checks each value in `fields` exactly as a `PATCH` of that
+type checks it: choices, text length, number range, and that a related id
+is in the active tenant (and behind the site fence). Where the type has
+rules that tie a field to the rest of the object - an interface's bundle
+settings need a LAG, a splitter rear port has one position - each selected
+row is checked as its own `PATCH` would be, and the error names the row
+(`{"lag_protocol": ["eth0: Only an interface of type LAG has bundle
+settings."]}`). Text is trimmed and booleans read as a `PATCH` reads them.
+One bad value refuses the whole call: nothing is written.
 
 ## Generating the schema offline
 

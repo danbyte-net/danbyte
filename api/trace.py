@@ -14,23 +14,37 @@ deterministic. The result is a React-Flow-ready ``{nodes, edges, complete}``
 graph that the same canvas renders as the topology map.
 
 A "point" is a tuple ``(kind, obj[, position])`` where ``kind`` is one of
-``cable_points.POINT_ATTRS`` and ``position`` matters only for rear ports.
+``cable_points.POINT_ATTRS``. ``position`` is the strand: carried for rear
+ports and for multi-position front ports (MPO, LC-duplex), where the strand
+picks which rear position the connector continues on (#334). A simplex
+front port has one strand, so it carries none.
 """
 from __future__ import annotations
 
 from .cable_points import NODE_PREFIX, POINT_ATTRS, strands_of, term_point
 
 
-def point_from_termination(t, *, position: int = 1):
-    kind, obj = term_point(t)
+def _point(kind, obj, position: int = 1):
+    """Build a point, keeping the strand only where it selects a path."""
     if kind == "rear_port":
         return ("rear_port", obj, position)
+    if kind == "front_port" and obj is not None and (obj.positions or 1) > 1:
+        return ("front_port", obj, position)
     return (kind, obj)
 
 
+def point_from_termination(t, *, position: int = 1):
+    kind, obj = term_point(t)
+    return _point(kind, obj, position)
+
+
+def _position(p) -> int:
+    return p[2] if len(p) > 2 else 1
+
+
 def _key(p) -> str:
-    if p[0] == "rear_port":
-        return f"rp:{p[1].id}:{p[2]}"
+    if len(p) > 2:
+        return f"{NODE_PREFIX[p[0]]}:{p[1].id}:{p[2]}"
     return f"{NODE_PREFIX[p[0]]}:{p[1].id}"
 
 
@@ -48,7 +62,7 @@ def _cable_step(p):
     if t is None:
         return None, []
     cable = t.cable
-    pos = p[2] if p[0] == "rear_port" else 1
+    pos = _position(p)
     others = []
     for ot in cable.terminations.all():
         if ot.id == t.id or ot.end == t.end:
@@ -63,12 +77,16 @@ def _through_steps(p):
     """Every internal pass-through partner - empty for leaves / unmapped
     strands, one for 1:1 pass-throughs, N for a splitter rear port (the PON
     fan-out). Delegates to the shared strand walker."""
-    position = p[2] if p[0] == "rear_port" else 1
+    position = _position(p)
+    if p[0] == "front_port" and position > (p[1].positions or 1):
+        # A trunk strand beyond the connector's fibres has no rear position
+        # of its own - unmapped, never folded onto a neighbour's strand.
+        return []
     out = []
     for kind, obj, pos in strands_of(p[0], p[1], position):
         if obj is None:
             continue  # structural mapping but the far port is missing
-        out.append((kind, obj, pos) if kind == "rear_port" else (kind, obj))
+        out.append(_point(kind, obj, pos))
     return out
 
 

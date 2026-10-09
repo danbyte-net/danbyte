@@ -19,9 +19,12 @@ import { TimeCell } from "@/components/cells/time-ago"
 export function ScriptSchedulePanel({
   script,
   canEdit,
+  canTurnOn,
 }: {
   script: Script
   canEdit: boolean
+  /** A schedule runs as the owner: only they or a holder of trust start one. */
+  canTurnOn: boolean
 }) {
   const qc = useQueryClient()
   const [enabled, setEnabled] = useState(script.schedule_enabled)
@@ -60,7 +63,7 @@ export function ScriptSchedulePanel({
         label="Run on a schedule"
         checked={enabled}
         onChange={setEnabled}
-        disabled={!canEdit}
+        disabled={!canEdit || (!script.schedule_enabled && !canTurnOn)}
       />
       {enabled && (
         <>

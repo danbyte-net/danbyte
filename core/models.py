@@ -394,6 +394,7 @@ class DeploymentSettings(TimestampedModel):
     #: Before-upgrade database backups and code rollback archives kept each.
     upgrade_backups_keep = models.PositiveSmallIntegerField(
         default=3,
+        db_default=3,
         help_text="Before-upgrade backups and code rollback archives to keep. "
         "Older ones are deleted after each upgrade and daily.",
     )
@@ -401,6 +402,7 @@ class DeploymentSettings(TimestampedModel):
     #: than this are deleted. The live files are logrotate's to size.
     log_retention_days = models.PositiveSmallIntegerField(
         default=30,
+        db_default=30,
         help_text="Days to keep rotated log files in the log directory. "
         "0 = keep forever.",
     )
@@ -471,6 +473,7 @@ class DeploymentSettings(TimestampedModel):
     )
     topology_card_role_overrides = models.JSONField(
         default=dict,
+        db_default=models.Value({}, models.JSONField()),
         blank=True,
         help_text="Per-role card-line lists keyed role:<slug>. A role that is "
         "ABSENT inherits topology_card_fields; an empty list = name only.",
@@ -741,12 +744,12 @@ class DeploymentSettings(TimestampedModel):
         ("peer_port", "Far-end port label"),
     ]
     faceplate_port_labels = models.CharField(
-        max_length=16, choices=PORT_LABEL_SOURCES, blank=True, default="",
+        max_length=16, choices=PORT_LABEL_SOURCES, blank=True, default="", db_default="",
         help_text="What faceplates, photo panels and the 3D room print inside "
                   "each port marker; blank prints nothing.",
     )
     faceplate_port_label_color = models.CharField(
-        max_length=7, blank=True, default="#ffffff",
+        max_length=7, blank=True, default="#ffffff", db_default="#ffffff",
         help_text="Text colour of the port labels (#rrggbb).",
     )
     # Port utilization counts physical interfaces and front ports. On, it
@@ -1114,9 +1117,11 @@ class TenantSettings(TimestampedModel):
 
     # ─── topology card lines (its OWN override group) ──────────────────────
     # Same reasoning as the popover group. Null fields = the built-in default.
-    override_topology_card = models.BooleanField(default=False)
+    override_topology_card = models.BooleanField(default=False, db_default=False)
     topology_card_fields = models.JSONField(null=True, blank=True, default=None)
-    topology_card_role_overrides = models.JSONField(default=dict, blank=True)
+    topology_card_role_overrides = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField())
+    )
 
     # The saved view a bare /topology opens for everyone in the tenant; null =
     # No view. Not an override group: there is no deployment-wide view to

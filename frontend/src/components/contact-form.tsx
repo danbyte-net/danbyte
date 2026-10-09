@@ -25,6 +25,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { asRecord } from "@/lib/utils"
 
 export interface ContactFormProps {
   contact?: Contact
@@ -46,7 +47,7 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
   const [address, setAddress] = useState(contact?.address ?? "")
   const [comments, setComments] = useState(contact?.comments ?? "")
   const [hours, setHours] = useState<BusinessHours>(
-    contact?.business_hours ?? {}
+    asRecord(contact?.business_hours)
   )
   const [hoursTz, setHoursTz] = useState(contact?.business_hours_tz ?? "")
   const [groupId, setGroupId] = useState<string | null>(
@@ -68,7 +69,7 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
     setLink(contact.link)
     setAddress(contact.address)
     setComments(contact.comments)
-    setHours(contact.business_hours ?? {})
+    setHours(asRecord(contact.business_hours))
     setHoursTz(contact.business_hours_tz ?? "")
     setGroupId(contact.group?.id ?? null)
     setTagIds(contact.tags.map((t) => t.id))

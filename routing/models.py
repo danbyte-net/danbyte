@@ -655,16 +655,18 @@ class BGPInstance(_DeviceInstance):
     distance_local = models.PositiveSmallIntegerField(null=True, blank=True)
     #: ``bgp bestpath as-path multipath-relax`` - ECMP across differing paths
     #: of equal length, which every leaf-spine fabric turns on.
-    bestpath_multipath_relax = models.BooleanField(default=False)
+    bestpath_multipath_relax = models.BooleanField(default=False, db_default=False)
     # ── MPLS L3VPN, on a per-VRF instance. The VRF carries the RD and route
     # targets; these say whether and how this table is leaked into the VPN
     # family (``rd vpn export``, ``rt vpn import/export`` come from the VRF).
-    vpn_export = models.BooleanField(default=False)
-    vpn_import = models.BooleanField(default=False)
+    vpn_export = models.BooleanField(default=False, db_default=False)
+    vpn_import = models.BooleanField(default=False, db_default=False)
     #: ``label vpn export auto`` or a fixed label number. Blank = not set.
-    vpn_label_export = models.CharField(max_length=8, blank=True, default="")
+    vpn_label_export = models.CharField(max_length=8, blank=True, default="", db_default="")
     #: ``nexthop vpn export <address>``. Blank = not set.
-    vpn_nexthop_export = models.CharField(max_length=45, blank=True, default="")
+    vpn_nexthop_export = models.CharField(
+        max_length=45, blank=True, default="", db_default=""
+    )
 
     class Meta:
         ordering = ["device__name", "vrf__name"]
@@ -711,8 +713,8 @@ class BGPAddressFamily(models.Model):
     maximum_paths = models.PositiveSmallIntegerField(null=True, blank=True)
     maximum_paths_ibgp = models.PositiveSmallIntegerField(null=True, blank=True)
     # EVPN only: leak the VRF's unicast routes into EVPN as type-5.
-    advertise_ipv4_unicast = models.BooleanField(default=False)
-    advertise_ipv6_unicast = models.BooleanField(default=False)
+    advertise_ipv4_unicast = models.BooleanField(default=False, db_default=False)
+    advertise_ipv6_unicast = models.BooleanField(default=False, db_default=False)
     import_policy = models.ForeignKey(
         RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="bgp_af_imports",
@@ -770,9 +772,9 @@ class Redistribution(models.Model):
     metric = models.PositiveIntegerField(null=True, blank=True)
     #: IS-IS only: ``redistribute <family> <source> level-<n>``. Blank = the
     #: instance's own level and IPv4.
-    level = models.CharField(max_length=3, blank=True, default="")
+    level = models.CharField(max_length=3, blank=True, default="", db_default="")
     family = models.CharField(
-        max_length=4, choices=FAMILY_CHOICES, blank=True, default=""
+        max_length=4, choices=FAMILY_CHOICES, blank=True, default="", db_default=""
     )
     extra = models.JSONField(default=dict, blank=True)
 
@@ -1305,7 +1307,7 @@ class ISISInstance(_DeviceInstance):
     spf_long_delay = models.PositiveIntegerField(null=True, blank=True)
     spf_holddown = models.PositiveIntegerField(null=True, blank=True)
     spf_time_to_learn = models.PositiveIntegerField(null=True, blank=True)
-    log_adjacency_changes = models.BooleanField(default=False)
+    log_adjacency_changes = models.BooleanField(default=False, db_default=False)
     #: ``default-information originate <family> <level> [always]``.
     DEFAULT_ORIGINATE_CHOICES = [
         ("", "No"),
@@ -1313,10 +1315,12 @@ class ISISInstance(_DeviceInstance):
         ("always", "Always"),
     ]
     default_originate_ipv4 = models.CharField(
-        max_length=6, choices=DEFAULT_ORIGINATE_CHOICES, blank=True, default=""
+        max_length=6, choices=DEFAULT_ORIGINATE_CHOICES, blank=True, default="",
+        db_default="",
     )
     default_originate_ipv6 = models.CharField(
-        max_length=6, choices=DEFAULT_ORIGINATE_CHOICES, blank=True, default=""
+        max_length=6, choices=DEFAULT_ORIGINATE_CHOICES, blank=True, default="",
+        db_default="",
     )
 
     #: The words FRR uses for each level, for a template that prints them.

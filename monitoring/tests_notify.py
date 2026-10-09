@@ -83,12 +83,14 @@ class StatusChangeInstantTests(Base):
     def test_not_opted_in_channel_is_skipped(self):
         self._channel(send_status_changes=False)
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify.dispatch_status_changes([self._transition(to_status="down")])
             post.assert_not_called()
 
     def test_batched_channel_not_sent_instantly(self):
         self._channel(status_change_mode="batched")
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify.dispatch_status_changes([self._transition(to_status="down")])
             post.assert_not_called()
 
@@ -96,6 +98,7 @@ class StatusChangeInstantTests(Base):
         self._channel(on_statuses=["down"])
         tr = self._transition(to_status="up")  # not in [down]
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify.dispatch_status_changes([tr])
             post.assert_not_called()
 
@@ -106,12 +109,14 @@ class StatusChangeInstantTests(Base):
         )
         self._channel(match_prefix=other)  # our IP is 127.0.0.1, not in 10.9/16
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify.dispatch_status_changes([self._transition(to_status="down")])
             post.assert_not_called()
 
     def test_disabled_channel_skipped(self):
         self._channel(enabled=False)
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify.dispatch_status_changes([self._transition()])
             post.assert_not_called()
 
@@ -485,6 +490,7 @@ class TeamsAdaptiveCardTests(Base):
 
     def test_plain_teams_sends_card_without_actions(self):
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify.notify_plain(self._channel("teams"), "Backup done", "all good")
             card = self._card(post.call_args.kwargs["json"])
         self.assertEqual(card["body"][0]["text"], "Backup done\nall good")
@@ -492,6 +498,7 @@ class TeamsAdaptiveCardTests(Base):
 
     def test_plain_slack_and_discord_payloads_unchanged(self):
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify.notify_plain(self._channel("slack"), "Backup done", "all good")
             self.assertEqual(
                 post.call_args.kwargs["json"], {"text": "Backup done\nall good"}
@@ -506,6 +513,7 @@ class TeamsAdaptiveCardTests(Base):
     def test_alert_teams_card_carries_open_url_action(self):
         self._base_url("https://danbyte.test/")
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify._dispatch_to_channel(
                 self._channel("teams"), self._alert(), "firing", "127.0.0.1"
             )
@@ -522,6 +530,7 @@ class TeamsAdaptiveCardTests(Base):
     def test_alert_teams_card_omits_actions_without_base_url(self):
         self._base_url("")
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify._dispatch_to_channel(
                 self._channel("teams"), self._alert(), "firing", "127.0.0.1"
             )
@@ -532,6 +541,7 @@ class TeamsAdaptiveCardTests(Base):
         self._base_url("https://danbyte.test/")
         alert = self._alert()
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify._dispatch_to_channel(
                 self._channel("slack"), alert, "firing", "127.0.0.1"
             )
@@ -552,6 +562,7 @@ class TeamsAdaptiveCardTests(Base):
         self._base_url("https://danbyte.test/")
         dep = DeploymentSettings.load()
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify._dispatch_group_to_channel(
                 self._channel("teams"), [self._alert()], "firing", dep
             )
@@ -571,6 +582,7 @@ class TeamsAdaptiveCardTests(Base):
         dep = DeploymentSettings.load()
         alerts = [self._alert()]
         with patch("monitoring.notify.safe_post") as post:
+            post.return_value.status_code = 200
             notify._dispatch_group_to_channel(
                 self._channel("slack"), alerts, "firing", dep
             )

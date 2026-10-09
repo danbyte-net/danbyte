@@ -4,6 +4,7 @@ from __future__ import annotations
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient, APITestCase
 
+from api.models import VLAN, Device, Site
 from auth_api.models import ObjectPermission, UserProfile
 from core import presence
 from core.models import Organization, Tenant
@@ -17,7 +18,8 @@ class PresenceTests(APITestCase):
         self.bob = self._user("bob", "Bob Brown")
         self.ca = self._client(self.alice)
         self.cb = self._client(self.bob)
-        self.ot, self.oid = "device", "11111111-1111-1111-1111-111111111111"
+        self.device = Device.objects.create(tenant=self.tenant, name="sw-01")
+        self.ot, self.oid = "device", str(self.device.id)
 
     def tearDown(self):
         # Real Redis is shared with dev - drop this object's key so we don't leak.
@@ -121,12 +123,15 @@ class PresencePermissionGateTests(APITestCase):
         perm.users.add(self.member)
         self.co = self._client(self.owner)
         self.cm = self._client(self.member)
-        self.oid = "22222222-2222-2222-2222-222222222222"
+        self.ids = {
+            "device": str(Device.objects.create(tenant=self.tenant, name="d").id),
+            "vlan": str(VLAN.objects.create(tenant=self.tenant, vlan_id=10, name="v").id),
+        }
 
     def tearDown(self):
-        for ot in ("device", "vlan"):
-            presence.leave(self.tenant.id, ot, self.oid, user_id=self.owner.id)
-            presence.leave(self.tenant.id, ot, self.oid, user_id=self.member.id)
+        for ot, oid in self.ids.items():
+            presence.leave(self.tenant.id, ot, oid, user_id=self.owner.id)
+            presence.leave(self.tenant.id, ot, oid, user_id=self.member.id)
 
     def _user(self, username, superuser):
         u = User.objects.create_user(
@@ -146,10 +151,10 @@ class PresencePermissionGateTests(APITestCase):
         c.post(f"/api/tenants/{self.tenant.id}/switch/")
         return c
 
-    def _beat(self, client, ot):
+    def _beat(self, client, ot, oid=None):
         return client.post(
             "/api/presence/heartbeat/",
-            {"object_type": ot, "object_id": self.oid, "mode": "viewing"},
+            {"object_type": ot, "object_id": oid or self.ids[ot], "mode": "viewing"},
             format="json",
         )
 
@@ -163,7 +168,7 @@ class PresencePermissionGateTests(APITestCase):
     def test_member_without_view_gated_on_list_endpoint(self):
         self._beat(self.co, "device")
         res = self.cm.get(
-            f"/api/presence/?object_type=device&object_id={self.oid}"
+            f"/api/presence/?object_type=device&object_id={self.ids['device']}"
         )
         self.assertEqual(res.json()["present"], [])
 
@@ -172,3 +177,57 @@ class PresencePermissionGateTests(APITestCase):
         present = self._beat(self.cm, "vlan").json()["present"]
         self.assertEqual(len(present), 1)
         self.assertEqual(present[0]["name"], "owner")
+
+    # ─── the object itself (#323) ───────────────────────────────────────
+    def _seed(self, ot, oid):
+        """Someone already present on ``oid`` (written straight to the store,
+        past the gate) so a refused caller has something to leak."""
+        presence.heartbeat(self.tenant.id, ot, oid, user_id=self.member.id,
+                           name="Seeded", mode="editing")
+        self.addCleanup(presence.leave, self.tenant.id, ot, oid, user_id=self.member.id)
+        self.addCleanup(presence.leave, self.tenant.id, ot, oid, user_id=self.owner.id)
+
+    def test_object_in_another_tenant_is_gated(self):
+        """Even a superuser only sees presence on objects of the active
+        tenant; a foreign id is refused and the caller is not registered."""
+        other = Tenant.objects.create(org=self.tenant.org, name="T2", slug="t2")
+        foreign = str(VLAN.objects.create(tenant=other, vlan_id=20, name="x").id)
+        self._seed("vlan", foreign)
+        self.assertEqual(self._beat(self.co, "vlan", foreign).json()["present"], [])
+        res = self.co.get(f"/api/presence/?object_type=vlan&object_id={foreign}")
+        self.assertEqual(res.json()["present"], [])
+        names = [p["name"] for p in presence.present(self.tenant.id, "vlan", foreign)]
+        self.assertEqual(names, ["Seeded"])  # the owner was never announced
+
+    def test_unknown_or_malformed_id_is_gated(self):
+        for oid in ("33333333-3333-3333-3333-333333333333", "not-a-uuid"):
+            self._seed("vlan", oid)
+            self.assertEqual(self._beat(self.co, "vlan", oid).json()["present"], [])
+            res = self.co.get(f"/api/presence/?object_type=vlan&object_id={oid}")
+            self.assertEqual(res.json()["present"], [])
+
+    def test_site_scoped_grant_only_opens_its_own_sites(self):
+        """A view grant scoped to one site opens presence there, not on a
+        same-type object at another site."""
+        from auth_api.models import ObjectPermission
+
+        mine = Site.objects.create(tenant=self.tenant, name="AMS")
+        theirs = Site.objects.create(tenant=self.tenant, name="CPH")
+        scoped = self._user("scoped", superuser=False)
+        perm = ObjectPermission.objects.create(
+            name="vlan view ams", object_types=["vlan"], actions=["view"],
+        )
+        perm.users.add(scoped)
+        perm.sites.add(mine)
+        cs = self._client(scoped)
+        here = str(VLAN.objects.create(tenant=self.tenant, vlan_id=30, name="a", site=mine).id)
+        there = str(VLAN.objects.create(tenant=self.tenant, vlan_id=31, name="c", site=theirs).id)
+        try:
+            self._beat(self.co, "vlan", here)
+            self._beat(self.co, "vlan", there)
+            self.assertEqual(len(self._beat(cs, "vlan", here).json()["present"]), 1)
+            self.assertEqual(self._beat(cs, "vlan", there).json()["present"], [])
+        finally:
+            for oid in (here, there):
+                for u in (self.owner, scoped):
+                    presence.leave(self.tenant.id, "vlan", oid, user_id=u.id)

@@ -145,7 +145,7 @@ class ProviderStreamTests(_Base):
             ]}, "finish_reason": "tool_calls"}]},
             {"usage": {"prompt_tokens": 11, "completion_tokens": 5}},
         ])
-        with mock.patch("assistant.providers.requests.post", return_value=FakeResponse(stream)):
+        with mock.patch("assistant.providers.safe_post", return_value=FakeResponse(stream)):
             events = list(providers.stream(conn, "s", [{"role": "user", "content": "x"}], []))
         self.assertEqual("".join(e.text for e in events if e.kind == "text"), "Looking")
         call = next(e for e in events if e.kind == "tool")
@@ -168,7 +168,7 @@ class ProviderStreamTests(_Base):
             {"type": "content_block_stop"},
             {"type": "message_delta", "usage": {"output_tokens": 4}},
         ])
-        with mock.patch("assistant.providers.requests.post", return_value=FakeResponse(stream)):
+        with mock.patch("assistant.providers.safe_post", return_value=FakeResponse(stream)):
             events = list(providers.stream(conn, "s", [{"role": "user", "content": "x"}], []))
         self.assertEqual("".join(e.text for e in events if e.kind == "text"), "Two sites.")
         call = next(e for e in events if e.kind == "tool")
@@ -186,8 +186,9 @@ class ProviderStreamTests(_Base):
     def test_provider_errors_are_readable(self):
         conn = providers.Connection("openai", "gpt", "https://api.openai.com", "bad")
         for status, expected in ((401, "refused the API key"), (429, "rate-limiting"),
-                                 (500, "answered 500")):
-            with mock.patch("assistant.providers.requests.post",
+                                 (500, "answered 500"), (302, "redirect")):
+            # A public provider goes out through the guarded transport (#321).
+            with mock.patch("assistant.providers.safe_post",
                             return_value=FakeResponse([], status_code=status, text="nope")):
                 with self.assertRaises(providers.ProviderError) as caught:
                     list(providers.stream(conn, "s", [{"role": "user", "content": "x"}], []))
@@ -374,6 +375,26 @@ class SocketTenantTests(TransactionTestCase):
         connected, code = async_to_sync(run)()
         self.assertFalse(connected)
         self.assertEqual(code, 4401)
+
+
+    def test_a_conversation_from_another_tenant_is_not_continued(self):
+        """A socket on tenant T starts a fresh conversation rather than
+        appending to the caller's own conversation from another tenant (#323)."""
+        from asgiref.sync import async_to_sync
+
+        from .consumers import ChatConsumer
+
+        other = Tenant.objects.create(org=self.tenant.org, name="Second", slug="second")
+        old = Conversation.objects.create(tenant=other, user=self.user, title="old")
+        consumer = ChatConsumer()
+        consumer.user, consumer.tenant_id = self.user, str(self.tenant.id)
+        out = async_to_sync(consumer._begin)("hello", str(old.id))
+        self.assertNotEqual(out["conversation"], str(old.id))
+        self.assertFalse(old.messages.exists())
+        mine = Conversation.objects.get(pk=out["conversation"])
+        self.assertEqual(mine.tenant_id, self.tenant.id)
+        out = async_to_sync(consumer._begin)("again", str(mine.id))
+        self.assertEqual(out["conversation"], str(mine.id))
 
 
 class ApiTests(_Base):

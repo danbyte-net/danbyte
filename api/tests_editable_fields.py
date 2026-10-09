@@ -206,7 +206,9 @@ class BulkAgreementTests(_Base):
 
     def test_bulk_update_accepts_everything_the_registry_advertises(self):
         dev = self._device()
-        iface = Interface.objects.create(device=dev, name="Gi1/1")
+        # A LAG: bundle settings on anything else are refused, by PATCH and
+        # bulk update alike (#350).
+        iface = Interface.objects.create(device=dev, name="Po1", type="lag")
         samples = {
             "enabled": False,
             "mgmt_only": True,

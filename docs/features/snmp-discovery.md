@@ -109,6 +109,15 @@ timestamp.
 A poll **never** touches the device's source-of-truth fields - it only refreshes
 this card.
 
+Where the poll runs follows the device's [monitoring
+engine](../monitoring/outposts.md#how-an-engine-is-chosen-for-a-target) - device
+→ location → site → tenant default - and the card says which: *Polls from
+Outpost …* or *Polls from the core*. On an Outpost the request is queued there
+and the button answers *Queued on Outpost …*; the facts land when the agent's
+next pass reports. Everything else - an unbound device, one bound to a Zabbix
+engine or a disabled Outpost, and every VM - polls from the core. **Poll
+sensors** and **Explore OIDs** always run from the core.
+
 Poll now also reads the device's [MAC table](#mac-tables), but quickly: it
 has to answer before the web server gives up on the request, so it stops
 after a short time budget and skips per-VLAN tables. A big switch can come
@@ -144,6 +153,10 @@ member's drift and **Sync from SNMP** only ever see its own slice:
 3. everything else - `Port-channel1`, `Bridge-Aggregation1`, `Vlan1`,
    `Loopback0`, the management port - belongs to the owner.
 
+The stack reports one `sysName` for every member, so **Device name** drift is
+raised on the owner only. Members at position 2, 3, … have no name of their own
+on the wire and never show name drift.
+
 A port is never proposed as *new* on one member while another member already
 has it, and a logical interface that lives on the master is never *stale* on
 a member. Where a vendor's naming defeats rule 2, the port lands on the owner:
@@ -172,7 +185,9 @@ octet counters (`ifHCInOctets` / `ifHCOutOctets`) as a time-stamped sample. Util
 between consecutive samples - `Δoctets · 8 / Δt`, as a percentage of the
 interface speed. A counter that goes backwards (reset/reboot/wrap) yields a `0`
 delta rather than a negative spike. Schedule `poll_snmp` from cron or a systemd
-timer at whatever interval you want the sparklines sampled.
+timer at whatever interval you want the sparklines sampled. It polls from the
+core and leaves devices an [Outpost](../monitoring/outposts.md) polls to that
+Outpost's own SNMP cycle.
 
 Samples are kept for `MONITORING_SNMP_SAMPLE_RETENTION_DAYS` (3 by default);
 the daily monitoring prune deletes older ones, and the sparklines read only
@@ -288,7 +303,8 @@ Click **Accept** on an item to write that observed value into intent. This is th
 
 Drift kinds:
 
-- **Device name** - `sysName` vs the device name.
+- **Device name** - `sysName` vs the device name. On a stack, the owner only
+  (see [Polling a stack](#polling-a-stack)).
 - **Serial** - what an integration's inventory reports vs the device's serial.
   Danbyte's own SNMP poll does not read a serial, so this one only ever comes
   from a source that does.
@@ -921,3 +937,7 @@ where it fits: the *Discovered-IP VRF* select on the device's SNMP card, the
 device type's Monitoring card, or the site form's Monitoring section. With a
 policy bound, only prefixes in that VRF are candidates - no containing prefix
 there means the address is skipped rather than dropped into the wrong table.
+An existing IP is bound to the port only when it is in that same VRF; the same
+address in another VRF is left alone and does not count as a conflict. With no
+VRF and no policy, an address held in several VRFs resolves to the one its
+longest containing prefix is in.

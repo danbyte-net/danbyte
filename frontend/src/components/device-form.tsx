@@ -41,6 +41,10 @@ import {
   photoSizeOf,
   TopologyPhotoSizeSelect,
 } from "@/components/topology-photo-size-select"
+import {
+  BindingDraftsProvider,
+  useBindingDraftsRoot,
+} from "@/lib/binding-drafts"
 import { useSaveObject } from "@/lib/save-object"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
 import { invalidatePortCounts } from "@/lib/port-utilization"
@@ -130,6 +134,8 @@ export function DeviceForm({
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  // The Monitoring section stages its picks; Save writes them (#324).
+  const bindingDrafts = useBindingDraftsRoot()
 
   const [name, setName] = useState(device?.name ?? "")
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(
@@ -572,12 +578,14 @@ export function DeviceForm({
         topology_card: topologyCard,
         topology_photo_size: photoSize ?? "",
       }
-      return saveObject<Device>({
+      const saved = await saveObject<Device>({
         objectType: "api.device",
         endpoint: "/api/devices/",
         id: isEdit ? device!.id : undefined,
         payload,
       })
+      await bindingDrafts.commit()
+      return saved
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["devices"] })
@@ -1103,13 +1111,15 @@ export function DeviceForm({
           </FormSection>
 
           {device?.id && (
-            <FormSection title="Monitoring" card>
-              <MonitoringEngineField
-                scope="device"
-                objectId={device.id}
-                disabled={!canDo("device", "change")}
-              />
-            </FormSection>
+            <BindingDraftsProvider value={bindingDrafts}>
+              <FormSection title="Monitoring" card>
+                <MonitoringEngineField
+                  scope="device"
+                  objectId={device.id}
+                  disabled={!canDo("device", "change")}
+                />
+              </FormSection>
+            </BindingDraftsProvider>
           )}
         </FormColumn>
       </FormColumns>

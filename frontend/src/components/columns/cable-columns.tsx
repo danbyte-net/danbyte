@@ -7,6 +7,7 @@ import { api } from "@/lib/api"
 import type { Cable, Paginated, Status, Termination } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { fiberColor } from "@/lib/fiber"
+import { asRecord } from "@/lib/utils"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
@@ -115,7 +116,8 @@ function countBucket(n: number | null): string {
 }
 
 function labelledCount(c: Cable): number {
-  return Object.values(c.strands).filter((s) => s.label || s.status).length
+  return Object.values(asRecord(c.strands)).filter((s) => s.label || s.status)
+    .length
 }
 
 /** A compact colour strip previewing the first few strands. */

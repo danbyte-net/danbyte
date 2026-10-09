@@ -12,7 +12,13 @@ from __future__ import annotations
 
 import requests
 
-from .secret_store import SecretStoreError
+from .secret_store import (
+    SecretPathError,
+    SecretStoreError,
+    clean_secret_path,
+    looks_like_tenant_id,
+    secret_path_segments,
+)
 
 
 class VaultSecretStore:
@@ -44,8 +50,12 @@ class VaultSecretStore:
         )
 
     def _url(self, kind: str, tenant_id, ref: str) -> str:
-        # kind is "data" (values) or "metadata" (for a permanent delete).
-        return f"{self.addr}/v1/{self.mount}/{kind}/{tenant_id}/{ref.strip('/')}"
+        # kind is "data" (values) or "metadata" (for a permanent delete). The
+        # ref is checked first: urllib3 collapses ``..`` before sending, so an
+        # unchecked ``../<other tenant>/…`` would leave this tenant's folder
+        # (#315).
+        clean_secret_path(ref, label="Secret ref")
+        return f"{self.addr}/v1/{self.mount}/{kind}/{tenant_id}/{ref}"
 
     def _req(self, method: str, url: str, **kw):
         try:
@@ -77,16 +87,37 @@ class VaultSecretStore:
         # KV v2 nests the value under data.data.
         return (r.json().get("data") or {}).get("data")
 
+    def validate_external_path(self, path: str) -> None:
+        """An external path may not be a tenant folder on Danbyte's mount -
+        ``{mount}/<kind>/<tenant uuid>/…`` in any KV v2 form (``data``,
+        ``metadata``, ``subkeys``, …) or a bare ``{mount}/<tenant uuid>/…``.
+        Every tenant shares the deployment's token, so Vault policy cannot
+        tell them apart; this check is what does (#315). Any other path on
+        the same mount, or any other mount, is the operator's to point at."""
+        clean_secret_path(path)
+        mount = self.mount.split("/")
+        segments = secret_path_segments(path)
+        if segments[: len(mount)] != mount:
+            return
+        rest = segments[len(mount):]
+        if any(looks_like_tenant_id(seg) for seg in rest[:2]):
+            raise SecretPathError(
+                f"'{path}' is inside Danbyte's managed namespace "
+                f"({self.mount}/data/<tenant>/…); an external credential cannot "
+                "reference a secret Danbyte manages."
+            )
+
     def get_at_path(self, tenant_id, path: str) -> dict | None:
         """Read an operator-chosen KV path directly, outside Danbyte's
         ``{mount}/{tenant}/{ref}`` namespace - the caller supplies the full
         logical path after ``/v1/`` (e.g. ``kv/data/team/ssh`` for a KV-v2
         mount). ``tenant_id`` is unused here: Vault addresses the operator's
-        external path directly, and cross-tenant isolation is the operator's to
-        enforce via Vault policy on that path. KV v2 nests the value under
+        external path directly; :meth:`validate_external_path` keeps it out of
+        every tenant's managed folder. KV v2 nests the value under
         ``data.data``; KV v1 returns it flat under ``data`` - both are
         unwrapped. Missing path → ``None``."""
-        r = self._req("GET", f"{self.addr}/v1/{path.strip('/')}")
+        self.validate_external_path(path)
+        r = self._req("GET", f"{self.addr}/v1/{path}")
         if r.status_code == 404:
             return None
         if r.status_code != 200:

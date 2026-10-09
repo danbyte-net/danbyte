@@ -23,9 +23,9 @@ def _csv(resp) -> str:
 
 class IORegistryTests(APITestCase):
     def test_builtin_overrides_and_inference(self):
-        self.assertEqual(io_for("prefix").natural_key, ["cidr"])
-        self.assertEqual(io_for("ipaddress").natural_key, ["ip_address"])
-        self.assertEqual(io_for("vlan").natural_key, ["vlan_id"])
+        self.assertEqual(io_for("prefix").natural_key, ["cidr", "vrf"])
+        self.assertEqual(io_for("ipaddress").natural_key, ["ip_address", "vrf"])
+        self.assertEqual(io_for("vlan").natural_key, ["vlan_id", "site", "group"])
         self.assertEqual(io_for("device").natural_key, ["name", "site"])
         # Auto handler for an un-overridden model picks a sensible key.
         self.assertEqual(io_for("manufacturer").natural_key, ["slug"])
@@ -34,8 +34,13 @@ class IORegistryTests(APITestCase):
         self.assertIsNone(io_for("does-not-exist"))
 
     def test_infer_prefers_unique_then_slug_then_name(self):
+        from api.models import Location, Rack
+
         self.assertEqual(_infer_natural_key(Manufacturer), ["slug"])
         self.assertEqual(_infer_natural_key(Device), ["name"])  # (tenant,name)
+        # A name unique only per site is matched with its site (#352).
+        self.assertEqual(_infer_natural_key(Rack), ["site", "name"])
+        self.assertEqual(_infer_natural_key(Location), ["site", "slug"])
 
 
 class _IOCase(APITestCase):
@@ -207,7 +212,7 @@ class IOEndpointTests(APITestCase):
         self.assertIn("prefix", by_slug)
         self.assertTrue(by_slug["prefix"]["can_export"])
         self.assertTrue(by_slug["prefix"]["can_import"])
-        self.assertEqual(by_slug["prefix"]["natural_key"], ["cidr"])
+        self.assertEqual(by_slug["prefix"]["natural_key"], ["cidr", "vrf"])
         self.assertNotIn("group", by_slug)  # non-tenant model excluded
 
     def test_fields_returns_columns_and_key(self):
@@ -216,7 +221,7 @@ class IOEndpointTests(APITestCase):
         body = res.json()
         self.assertIn("id", body["columns"])
         self.assertIn("cidr", body["columns"])
-        self.assertEqual(body["natural_key"], ["cidr"])
+        self.assertEqual(body["natural_key"], ["cidr", "vrf"])
 
     def test_xlsx_export_then_reimport_via_multipart(self):
         import io as _io

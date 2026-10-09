@@ -1,6 +1,8 @@
 """Script API shapes, and the parameter schema a Run dialog is built from."""
 from __future__ import annotations
 
+import logging
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from rest_framework import serializers
@@ -10,7 +12,15 @@ from core.cadence import Cadence, CadenceError, Retention
 
 from .models import MAX_TIMEOUT, Script, ScriptOutput, ScriptRun
 
+logger = logging.getLogger(__name__)
+
 PARAM_TYPES = ("string", "text", "integer", "decimal", "boolean", "choice", "object")
+
+# What a run executes: the code, and the inputs it gets by default. Changing
+# any of them un-approves a trusted script (#317).
+EXECUTED_FIELDS = ("source", "language", "params_schema", "schedule_params")
+# How much a run's token may do; a higher rank is wider access.
+_SCOPE_RANK = {"read": 0, "full": 1}
 
 
 def validate_params_schema(value):
@@ -182,7 +192,94 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
                 )
         if request is not None:
             self._check_share_targets(attrs, request)
+            if instance is not None:
+                self._check_execution_rights(attrs, request)
         return attrs
+
+    def _changed_code_fields(self, attrs) -> list[str]:
+        """The fields of this write that change what the script executes."""
+        instance = self.instance
+        changed = []
+        for field in EXECUTED_FIELDS:
+            if field not in attrs:
+                continue
+            current = getattr(instance, field)
+            if field == "params_schema":
+                try:
+                    current = validate_params_schema(current or [])
+                except serializers.ValidationError:
+                    pass
+            if attrs[field] != current:
+                changed.append(field)
+        return changed
+
+    def _check_execution_rights(self, attrs, request):
+        """Trust approves specific code, and running as the owner (which a
+        schedule always does) lends the owner's identity to it (#317).
+
+        - Changing what runs clears ``trusted`` unless the editor holds
+          ``trust`` on this script.
+        - Choosing ``run_as=owner`` or switching a schedule on needs the
+          owner or a holder of ``trust``.
+        - While the script runs as its owner, only they may change what it
+          executes or widen its ``token_scope``. Stepping down to the caller,
+          or to read only, stays open to any editor.
+        """
+        from auth_api import rbac
+
+        instance = self.instance
+        user = request.user
+        holds_trust = None
+
+        def trust_holder() -> bool:
+            nonlocal holds_trust
+            if holds_trust is None:
+                holds_trust = rbac.can_act_on(user, instance.tenant, "script", "trust", instance)
+            return holds_trust
+
+        def privileged() -> bool:
+            return (instance.owner_id is not None and instance.owner_id == user.pk) or (
+                trust_holder()
+            )
+
+        errors: dict[str, list[str]] = {}
+        if attrs.get("run_as") == "owner" and instance.run_as != "owner" and not privileged():
+            errors["run_as"] = ["Only the owner or someone with trust can run it as the owner."]
+        if attrs.get("schedule_enabled") and not instance.schedule_enabled and not privileged():
+            errors["schedule_enabled"] = [
+                "A schedule runs as the owner. Only the owner or someone with trust can turn "
+                "it on."
+            ]
+        changed = self._changed_code_fields(attrs)
+        lends_owner = attrs.get("run_as", instance.run_as) == "owner" or attrs.get(
+            "schedule_enabled", instance.schedule_enabled
+        )
+        widens = _SCOPE_RANK.get(attrs.get("token_scope"), -1) > _SCOPE_RANK.get(
+            instance.token_scope, 0
+        )
+        if widens and lends_owner and not privileged():
+            errors["token_scope"] = [
+                "This script runs as its owner. Only the owner or someone with trust "
+                "can widen its API access."
+            ]
+        if changed and lends_owner and not privileged():
+            for field in changed:
+                errors[field] = [
+                    "This script runs as its owner. Only the owner or someone with trust "
+                    "can change what it runs."
+                ]
+        if errors:
+            raise serializers.ValidationError(errors)
+        self._clears_trust = bool(changed) and instance.trusted and not trust_holder()
+
+    def update(self, instance, validated_data):
+        if getattr(self, "_clears_trust", False):
+            validated_data["trusted"] = False
+            logger.info(
+                "script %s: trusted cleared by an edit from %s", instance.pk,
+                getattr(self.context.get("request"), "user", None),
+            )
+        return super().update(instance, validated_data)
 
     def _check_share_targets(self, attrs, request):
         """Sharing names people and groups of the script's tenant - the ones

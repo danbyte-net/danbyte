@@ -109,6 +109,7 @@ permission; without either, it shows you the code to paste in.
 | "The model provider refused the API key" | Wrong or expired key. |
 | "Could not reach …" | The endpoint is wrong, or a local model server is not running. |
 | "… is not a public address" | A public provider was pointed at an internal host. Use the local provider for a model on your own network. |
+| "… answered with a redirect" | The base URL redirects somewhere else. Danbyte does not follow redirects to a public provider; set the base URL to the final address. |
 | "Not connected" under the composer | The WebSocket did not open. Check that the `danbyte-ws` service is running and that your reverse proxy passes `/ws/`. |
 
 The chat streams over the WebSocket service rather than the API, because a

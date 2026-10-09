@@ -31,8 +31,10 @@ from __future__ import annotations
 import uuid
 from collections import deque
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
-from django.db.models import Count, Prefetch, Q
+from django.db import connection
+from django.db.models import Count, Min, Prefetch, Q
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -46,7 +48,14 @@ from rest_framework.exceptions import ParseError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Cable, CableTermination, Device, VirtualChassis
+from .models import (
+    Cable,
+    CableTermination,
+    Device,
+    FrontPort,
+    RearPort,
+    VirtualChassis,
+)
 from .natural import natural, natural_key
 from .views import _get_active_tenant
 from auth_api import rbac
@@ -322,10 +331,46 @@ def _is_splitter_side(kind, port):
     return False
 
 
-def _collapse(links):
+def _preloaded_strand(links):
+    """``_strand_of`` for the collapse walk over ``links``, with the front
+    ports of every rear port it can cross loaded in one query - the walk
+    asked the database once per rear port crossed (#343). Same front port
+    chosen, same objects: ``select_related`` covers what the walk and the
+    node rows read off it."""
+    rears = {
+        link[i].id for link in links for i, k in ((2, 3), (5, 6))
+        if link[k] == "rear_port" and not link[i].is_splitter
+    }
+    if not rears:
+        return _strand_of
+    fronts: dict = {}
+    for fp in (
+        FrontPort.objects.filter(rear_port_id__in=rears)
+        .select_related("device", "rear_port")
+        .order_by("-rear_port_position")
+    ):
+        fronts.setdefault(fp.rear_port_id, []).append(fp)
+
+    def strand(port, kind, position=1):
+        if kind != "rear_port" or port.is_splitter or port.id not in rears:
+            return _strand_of(port, kind, position)
+        # The front port whose range covers this rear position (as
+        # ``cable_points.strands_of`` picks it).
+        for fp in fronts.get(port.id, ()):
+            if fp.rear_port_position <= position:
+                if fp.rear_port_position + (fp.positions or 1) - 1 >= position:
+                    return ("front_port", fp, position - fp.rear_port_position + 1)
+                return None
+        return None
+
+    return strand
+
+
+def _collapse(links, strand_of=_strand_of):
     """Walk each link that lands on a panel port through the panel until it
     reaches a non-pass-through endpoint. Emits end-to-end links + the set of
-    panel device ids that were consumed."""
+    panel device ids that were consumed. ``strand_of`` resolves a panel
+    port's pass-through partner (the grouped map passes a preloaded one)."""
     # Index cables by (port kind, port id) for the walk.
     by_port = {}
     for link in links:
@@ -347,7 +392,7 @@ def _collapse(links):
                 return None  # loop guard
             seen.add(port.id)
             vias.append(device.name)
-            strand = _strand_of(port, kind, position)
+            strand = strand_of(port, kind, position)
             if strand is None:
                 return (device, port, kind, vias[:-1])  # dangling panel port
             skind, sport, spos = strand
@@ -571,7 +616,8 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
     # only final endpoints allowed an otherwise visible edge to retain a hidden
     # patch panel's name in via.
     if scope_q is not None:
-        allowed = _devices_qs(tenant).filter(scope_q)
+        # Ids only: no joins, no interface count to group by.
+        allowed = Device.objects.filter(tenant=tenant).filter(scope_q)
         if narrowed:
             allowed = allowed.filter(
                 id__in={link[i].id for link in links for i in (1, 4)}
@@ -599,7 +645,7 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
     if focus_id and collapse and focus_id in passthrough_ids:
         collapse = False
     if collapse:
-        links, _ = _collapse(links)
+        links, _ = _collapse(links, strand_of=_preloaded_strand(links))
     else:
         links = [link + ([],) for link in links]
 
@@ -1078,62 +1124,376 @@ def topology_summary_view(request):
     })
 
 
+# ─── Grouped map (#343) ─────────────────────────────────────────────────────
+#
+# One node per site/location, one edge per group pair - computed without the
+# device graph, so its cost follows the number of groups, not the tenant. The
+# result is exactly what grouping the device graph gives:
+#
+# * a node counts the graph's device nodes in its group: every device in the
+#   filter and RBAC scope (an aggregate query), less the pure pass-through
+#   panels the collapse walks through and drops;
+# * an edge counts the graph's cable edges between two groups, in the order
+#   the graph lists them.
+#
+# Only cables with an end on a device that has a cabled front/rear port can be
+# walked through a panel or decide whether a panel drops. Those are loaded as
+# plain rows and run through the same ``_collapse`` walk; every other cable is
+# a plain device-to-device hop, counted in SQL.
+
+_GROUP_ATTRS = ("site", "location")
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+class _Pt:
+    """A cable end (or a device) for the grouped map's panel walk: the
+    attributes ``_collapse`` reads, nothing else."""
+
+    __slots__ = ("id", "name", "device_id", "device", "is_splitter",
+                 "rear_port", "rear_port_position")
+
+    def __init__(self, id, device=None, is_splitter=False, rear_port=None,
+                 rear_port_position=1):
+        self.id = id
+        self.name = id  # a via label only, never read here
+        self.device = device
+        self.device_id = device.id if device is not None else None
+        self.is_splitter = is_splitter
+        self.rear_port = rear_port
+        self.rear_port_position = rear_port_position
+
+
+def _scoped_devices(tenant, device_filter_q, scope_q):
+    qs = Device.objects.filter(tenant=tenant)
+    if device_filter_q is not None:
+        qs = qs.filter(device_filter_q)
+    if scope_q is not None:
+        qs = qs.filter(scope_q)
+    return qs
+
+
+def _order_key(created_at, cable_id, rank):
+    """Where an edge sits in the device graph's edge order: newest cable
+    first, then cable id, then its place among the cable's hops."""
+    return (_EPOCH - created_at, uuid.UUID(str(cable_id)).int, rank)
+
+
+def _panel_cable_ids(tenant):
+    """Ids of this tenant's cables with an end on a device that has a cabled
+    front or rear port."""
+    # Ids first, then one indexable lookup per point kind: nested as
+    # subqueries, the planner may re-run them per termination.
+    ends = CableTermination.objects.filter(cable__tenant=tenant).order_by()
+    found = ends.filter(front_port__isnull=False).values_list(
+        "front_port__device_id", flat=True
+    ).union(
+        ends.filter(rear_port__isnull=False).values_list(
+            "rear_port__device_id", flat=True
+        )
+    )
+    panels = list(found)
+    if not panels:
+        return set()
+    parts = [
+        ends.filter(**{f"{attr}__device_id__in": panels})
+        .values_list("cable_id", flat=True)
+        for attr in _DEVICE_POINT_ATTRS
+    ]
+    return set(parts[0].union(*parts[1:]))
+
+
+def _panel_cable_edges(tenant, cable_ids, scope_q):
+    """The device graph's edges on ``cable_ids`` and the panels it drops,
+    from rows rather than model objects.
+
+    Returns ``({(device id, device id, cable id): (order key, cable type)},
+    dropped device ids)``."""
+    attrs = [a for a in _POINT_ATTRS if a != "power_feed"]
+    cols = ["cable_id", "cable__created_at", "cable__type", "end"]
+    for attr in attrs:
+        cols.append(f"{attr}_id")
+        cols.append("circuit_termination__circuit_id"
+                    if attr == "circuit_termination" else f"{attr}__device_id")
+    cols += ["front_port__rear_port_id", "front_port__rear_port_position",
+             "front_port__rear_port__is_splitter", "rear_port__is_splitter"]
+    fr_rear, fr_pos, fr_split, rp_split = range(len(cols) - 4, len(cols))
+    rows = (
+        CableTermination.objects.filter(cable_id__in=cable_ids)
+        .order_by("-cable__created_at", "cable_id", "end", "created_at", "id")
+        .values_list(*cols)
+    )
+
+    devices: dict = {}
+    rears: dict = {}
+
+    def device(did):
+        d = devices.get(did)
+        if d is None:
+            d = devices[did] = _Pt(did)
+        return d
+
+    # Hops in the device graph's order (``_links_from_cables``); a circuit
+    # end stands in as its circuit, like the shim there.
+    links = []
+    cab, a_ends, b_ends = None, [], []
+
+    def flush():
+        for ka, pa in a_ends:
+            for kb, pb in b_ends:
+                if pa.device_id != pb.device_id:
+                    links.append((cab, pa.device, pa, ka, pb.device, pb, kb))
+
+    for row in rows:
+        if cab is None or row[0] != cab[0]:
+            if cab is not None:
+                flush()
+            cab, a_ends, b_ends = (row[0], row[1], row[2]), [], []
+        for i, attr in enumerate(attrs):
+            pid, owner = row[4 + 2 * i], row[5 + 2 * i]
+            if pid is None:
+                continue
+            if owner is None:
+                break
+            if attr == "front_port":
+                rid = row[fr_rear]
+                rear = rears.get(rid)
+                if rear is None and rid is not None:
+                    rear = rears[rid] = _Pt(rid, is_splitter=row[fr_split])
+                port = _Pt(pid, device(owner), rear_port=rear,
+                           rear_port_position=row[fr_pos])
+            else:
+                port = _Pt(pid, device(owner),
+                           is_splitter=attr == "rear_port" and bool(row[rp_split]))
+            (a_ends if row[3] == "A" else b_ends).append((attr, port))
+            break
+    if cab is not None:
+        flush()
+
+    if scope_q is not None:
+        reached = {d for link in links for d in (link[1].id, link[4].id)}
+        allowed = set(
+            Device.objects.filter(tenant=tenant, id__in=reached)
+            .filter(scope_q).values_list("id", flat=True)
+        )
+        links = [
+            link for link in links
+            if link[1].id in allowed and link[4].id in allowed
+        ]
+
+    raw_kinds: dict = {}
+    for _cab, da, _pa, ka, db, _pb, kb in links:
+        raw_kinds.setdefault(da.id, set()).add(ka)
+        raw_kinds.setdefault(db.id, set()).add(kb)
+    passthrough = {
+        did for did, kinds in raw_kinds.items()
+        if kinds <= {"front_port", "rear_port"}
+    }
+
+    # A rear port's front ports, for the walk's rear → front strand.
+    rear_ends = {
+        link[i].id for link in links for i, k in ((2, 3), (5, 6))
+        if link[k] == "rear_port"
+    }
+    fronts: dict = {}
+    if rear_ends:
+        for fid, rid, start, span in (
+            FrontPort.objects.filter(rear_port_id__in=rear_ends)
+            .order_by("-rear_port_position")
+            .values_list("id", "rear_port_id", "rear_port_position", "positions")
+        ):
+            fronts.setdefault(rid, []).append((fid, start, span))
+
+    def strand(port, kind, position=1):
+        """``strand_of`` over the loaded rows. A splitter side never gets
+        here: the walk stops at it first."""
+        if kind == "front_port":
+            if port.rear_port is None:
+                return None
+            return ("rear_port", port.rear_port,
+                    port.rear_port_position + (position - 1))
+        if kind == "rear_port" and not port.is_splitter:
+            for fid, start, span in fronts.get(port.id, ()):
+                if start <= position:
+                    if start + (span or 1) - 1 >= position:
+                        return ("front_port", _Pt(fid), position - start + 1)
+                    return None
+        return None
+
+    out, _ = _collapse(links, strand_of=strand)
+
+    edges: dict = {}
+    noted = set()
+    for idx, (cab, da, _pa, _ka, db, _pb, _kb, _vias) in enumerate(out):
+        noted.add(da.id)
+        noted.add(db.id)
+        lo, hi = sorted((da.id, db.id), key=str)
+        key = (lo, hi, cab[0])
+        if key not in edges:
+            edges[key] = (_order_key(cab[1], cab[0], idx), cab[2])
+    return edges, passthrough - noted
+
+
+_PLAIN_EDGES_SQL = """
+WITH f AS MATERIALIZED (
+    SELECT DISTINCT sub.id, sub.grp FROM ({f_sql}) AS sub (id, grp)
+),
+-- Each cable's ends on devices in scope, A and B apart, in the order the
+-- device graph pairs them. Grouped per cable rather than self-joined, so
+-- the plan stays linear whatever the planner thinks of the row counts.
+per_cable AS (
+    SELECT t.cable_id,
+           array_agg(f.id ORDER BY t.created_at, t.id)
+               FILTER (WHERE t.{end} = 'A') AS a_dev,
+           array_agg(f.grp ORDER BY t.created_at, t.id)
+               FILTER (WHERE t.{end} = 'A') AS a_grp,
+           array_agg(f.id ORDER BY t.created_at, t.id)
+               FILTER (WHERE t.{end} = 'B') AS b_dev,
+           array_agg(f.grp ORDER BY t.created_at, t.id)
+               FILTER (WHERE t.{end} = 'B') AS b_grp
+    FROM {term} t
+    JOIN {cable} c ON c.id = t.cable_id
+    {joins}
+    JOIN f ON f.id = COALESCE({devices})
+    WHERE c.tenant_id = %s
+      AND t.cable_id NOT IN (SELECT unnest(%s::uuid[]))
+    GROUP BY t.cable_id
+),
+links AS (
+    SELECT p.cable_id,
+           LEAST(a.dev, b.dev) AS lo, GREATEST(a.dev, b.dev) AS hi,
+           CASE WHEN a.dev < b.dev THEN a.grp ELSE b.grp END AS glo,
+           CASE WHEN a.dev < b.dev THEN b.grp ELSE a.grp END AS ghi,
+           a.i * 100000 + b.i AS rk
+    FROM per_cable p
+    CROSS JOIN LATERAL unnest(p.a_dev, p.a_grp) WITH ORDINALITY AS a (dev, grp, i)
+    CROSS JOIN LATERAL unnest(p.b_dev, p.b_grp) WITH ORDINALITY AS b (dev, grp, i)
+    WHERE a.dev <> b.dev AND a.grp IS DISTINCT FROM b.grp
+),
+edges AS (
+    SELECT DISTINCT ON (cable_id, lo, hi) cable_id, glo, ghi, rk
+    FROM links ORDER BY cable_id, lo, hi, rk
+)
+SELECT e.glo, e.ghi, c.type, COUNT(*),
+       (array_agg(c.created_at ORDER BY c.created_at DESC, c.id, e.rk))[1],
+       (array_agg(c.id ORDER BY c.created_at DESC, c.id, e.rk))[1],
+       (array_agg(e.rk ORDER BY c.created_at DESC, c.id, e.rk))[1]
+FROM edges e JOIN {cable} c ON c.id = e.cable_id
+GROUP BY e.glo, e.ghi, c.type
+"""
+
+
+def _plain_cable_edges(tenant, f_qs, attr, skip_cable_ids):
+    """``(group, group, cable type, edge count, first edge's cable
+    created_at, cable id, rank)`` per group pair and type: the device
+    graph's edges between two groups on the cables outside
+    ``skip_cable_ids``, which are plain device-to-device hops. One query;
+    the device scope is ``f_qs``'s own SQL."""
+    qn = connection.ops.quote_name
+    term = CableTermination._meta
+    f_sql, f_params = (
+        f_qs.order_by().values_list("id", f"{attr}_id").query.sql_with_params()
+    )
+    devices, joins = [], []
+    for i, point in enumerate(_DEVICE_POINT_ATTRS):
+        field = term.get_field(point)
+        model = field.related_model._meta
+        joins.append(
+            f"LEFT JOIN {qn(model.db_table)} p{i} ON p{i}.id = t.{qn(field.column)}"
+        )
+        devices.append(f"p{i}.{qn(model.get_field('device').column)}")
+    sql = _PLAIN_EDGES_SQL.format(
+        f_sql=f_sql,
+        end=qn(term.get_field("end").column),
+        devices=", ".join(devices),
+        term=qn(term.db_table),
+        cable=qn(Cable._meta.db_table),
+        joins="\n    ".join(joins),
+    )
+    params = [*f_params, str(tenant.pk), [str(c) for c in skip_cable_ids]]
+    with connection.cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+
 def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
                    scope_q=None):
     """The device graph aggregated by site or location: one node per group
     (device count + role breakdown), one edge per group pair carrying the
-    cable count and media types. Built on the same RBAC-scoped device graph,
-    so hidden devices never leak into counts."""
-    g = _build_graph(tenant, device_filter_q=device_filter_q,
-                     collapse=collapse, scope_q=scope_q)
-    base = _devices_qs(tenant)
-    if device_filter_q is not None:
-        base = base.filter(device_filter_q)
-    if scope_q is not None:
-        base = base.filter(scope_q)
-    attr = "site" if group_by == "site" else "location"
-    info = {}
-    for d in base:
-        obj = getattr(d, attr)
-        info[str(d.id)] = (
-            (str(obj.id), obj.name) if obj is not None else ("none", "Unassigned")
-        )
+    cable count and media types. Counts only devices in the filter and RBAC
+    scope, so hidden devices never leak in. A fixed number of queries,
+    whatever the tenant's size (#343)."""
+    attr = group_by if group_by in _GROUP_ATTRS else "location"
+    f_qs = _scoped_devices(tenant, device_filter_q, scope_q)
 
-    groups: dict = {}
-    for n in g["nodes"]:
-        did = n["data"]["device_id"]
-        gid, gname = info.get(did, ("none", "Unassigned"))
-        grp = groups.setdefault(
-            gid, {"name": gname, "device_count": 0, "roles": {}}
-        )
-        grp["device_count"] += 1
-        role = n["data"].get("role")
-        if role:
-            r = grp["roles"].setdefault(
-                role["name"],
-                {"name": role["name"], "color": role["color"], "count": 0},
-            )
-            r["count"] += 1
+    def gid(raw):
+        return str(raw) if raw is not None else "none"
 
     agg: dict = {}
-    for e in g["edges"]:
-        a = info.get(e["source"][4:], ("none", ""))[0]
-        b = info.get(e["target"][4:], ("none", ""))[0]
+
+    def add_edge(a, b, ctype, count, order):
         if a == b:
-            continue  # intra-group cabling stays inside the group card
-        key = tuple(sorted((a, b)))
-        ent = agg.setdefault(key, {"cable_count": 0, "types": set()})
-        ent["cable_count"] += 1
-        t = e["data"].get("cable_type")
-        if t:
-            ent["types"].add(t)
+            return  # intra-group cabling stays inside the group card
+        ent = agg.setdefault(
+            tuple(sorted((a, b))),
+            {"cable_count": 0, "types": set(), "first": order},
+        )
+        ent["cable_count"] += count
+        if ctype:
+            ent["types"].add(ctype)
+        ent["first"] = min(ent["first"], order)
+
+    # Cables a panel walk can touch: the device graph's own walk, on rows.
+    dropped: set = set()
+    panel_cables = _panel_cable_ids(tenant) if collapse else set()
+    if panel_cables:
+        edges, dropped = _panel_cable_edges(tenant, panel_cables, scope_q)
+        ends = {d for key in edges for d in key[:2]}
+        group_of = {
+            did: gid(g) for did, g in
+            f_qs.filter(id__in=ends).values_list("id", f"{attr}_id")
+        }
+        for (lo, hi, _cid), (order, ctype) in edges.items():
+            if lo in group_of and hi in group_of:
+                add_edge(group_of[lo], group_of[hi], ctype, 1, order)
+
+    # Every other cable: device-to-device hops, counted in SQL.
+    for glo, ghi, ctype, count, created, cid, rank in _plain_cable_edges(
+        tenant, f_qs, attr, panel_cables
+    ):
+        add_edge(gid(glo), gid(ghi), ctype, count, _order_key(created, cid, rank))
+
+    # Devices per group and role, less the panels the walk dropped; rows in
+    # the order of their first device by name, as the graph lists devices.
+    rows = (
+        Device.objects.filter(tenant=tenant, id__in=f_qs.values("id"))
+        .exclude(id__in=dropped)
+        .order_by()
+        .values(f"{attr}_id", f"{attr}__name", "role_id", "role__name",
+                "role__color")
+        .annotate(n=Count("id"), first=Min("name"))
+        .order_by("first")
+    )
+    groups: dict = {}
+    for row in rows:
+        g = row[f"{attr}_id"]
+        grp = groups.setdefault(gid(g), {
+            "name": row[f"{attr}__name"] if g is not None else "Unassigned",
+            "device_count": 0, "roles": {},
+        })
+        grp["device_count"] += row["n"]
+        if row["role_id"] is not None:
+            r = grp["roles"].setdefault(row["role__name"], {
+                "name": row["role__name"], "color": row["role__color"],
+                "count": 0,
+            })
+            r["count"] += row["n"]
 
     nodes = [
         {
-            "id": f"grp:{gid}",
+            "id": f"grp:{key}",
             "type": "group",
             "data": {
-                "group_id": gid if gid != "none" else None,
+                "group_id": key if key != "none" else None,
                 "kind": group_by,
                 "name": v["name"],
                 "device_count": v["device_count"],
@@ -1142,7 +1502,7 @@ def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
                 ),
             },
         }
-        for gid, v in sorted(groups.items(), key=lambda kv: natural_key(kv[1]["name"]))
+        for key, v in sorted(groups.items(), key=lambda kv: natural_key(kv[1]["name"]))
     ]
     edges = [
         {
@@ -1152,7 +1512,7 @@ def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
             "type": "group",
             "data": {"cable_count": v["cable_count"], "types": sorted(v["types"])},
         }
-        for (a, b), v in agg.items()
+        for (a, b), v in sorted(agg.items(), key=lambda kv: kv[1]["first"])
     ]
     return {"nodes": nodes, "edges": edges}
 

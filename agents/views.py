@@ -15,6 +15,7 @@ from typing import Any
 
 from django.core.cache import cache
 from django.http import Http404
+from rest_framework.exceptions import ParseError
 from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
@@ -24,15 +25,16 @@ from rest_framework.views import APIView
 from auth_api.token_auth import ApiTokenAuthentication
 from integrations.toggles import integration_enabled
 
-from . import protocol, tools
+from . import dispatch, protocol, tools
 from .dispatch import ToolError
 from .models import AgentCall, AgentSettings
 
 logger = logging.getLogger(__name__)
 
-RATE_LIMIT = 120           # calls
+RATE_LIMIT = 120           # messages a minute, single or batched
 RATE_WINDOW = 60           # seconds
-MAX_BODY = 256 * 1024
+MAX_BODY = 256 * 1024      # bytes per request
+MAX_BATCH = 20             # messages per JSON-RPC batch
 
 
 class AlwaysJSON(BaseContentNegotiation):
@@ -72,33 +74,69 @@ class Context:
         return self.settings.effective_max_rows
 
 
-def _rate_limited(token) -> bool:
+def _rate_limited(token, messages: int = 1) -> bool:
     """A per-token counter on the cache, the same shape the login lockout
-    uses. A missing cache means no limit, never a refusal."""
+    uses. Every JSON-RPC message counts, so a batch is charged for each
+    message it carries before any of them runs (#328). A missing cache
+    means no limit, never a refusal."""
     key = f"mcp-rate:{getattr(token, 'pk', 'anon')}"
     try:
-        count = cache.incr(key)
+        count = cache.incr(key, messages)
     except ValueError:
-        cache.set(key, 1, RATE_WINDOW)
-        return False
+        cache.set(key, messages, RATE_WINDOW)
+        return messages > RATE_LIMIT
     except Exception:  # noqa: BLE001 - cache down: do not lock the assistant out
         return False
     return count > RATE_LIMIT
 
 
+MASK = "•••"
+# A key carrying one of these holds a credential wherever it sits. "key"
+# also covers api_key, private_key and key_hash; "credential" the encrypted
+# credential blobs.
+_SECRET_WORDS = ("password", "passphrase", "secret", "token", "key", "psk", "credential")
+
+
 def _digest(arguments: dict) -> dict:
-    """Arguments as given, minus anything that smells like a credential."""
-    out = {}
-    for key, value in (arguments or {}).items():
-        if any(word in key.lower() for word in ("password", "secret", "token", "key")):
-            out[key] = "•••"
-        elif isinstance(value, (dict, list)):
-            out[key] = json.loads(json.dumps(value, default=str))[:20] if isinstance(
-                value, list
-            ) else json.loads(json.dumps(value, default=str))
-        else:
-            out[key] = value
-    return out
+    """Arguments as given, minus anything that smells like a credential.
+
+    Masked at every level, not only the top one: a write's values sit
+    inside ``payload``, and a refused write is logged as well (#326). A
+    key is judged by its name and by what the secret classifier says about
+    the target type, so a notification channel's ``config`` is masked
+    while a site's is kept.
+    """
+    arguments = arguments or {}
+    secret_names = dispatch.secret_field_names(
+        dispatch.model_of(str(arguments.get("type") or ""))
+    )
+    return _mask(json.loads(json.dumps(arguments, default=str)), secret_names)
+
+
+def _mask(value, secret_names: frozenset[str]):
+    if isinstance(value, dict):
+        return {
+            key: MASK if _is_secret(key, secret_names) else _mask(val, secret_names)
+            for key, val in value.items()
+        }
+    if isinstance(value, list):
+        return [_mask(v, secret_names) for v in value[:20]]
+    if isinstance(value, str) and value.lstrip()[:1] in ("{", "["):
+        # Tools also take an object sent as JSON text, so a payload can
+        # arrive as a string; mask what it holds rather than storing it raw.
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            return value
+        if isinstance(parsed, (dict, list)):
+            masked = _mask(parsed, secret_names)
+            return masked if masked != parsed else value
+    return value
+
+
+def _is_secret(key, secret_names: frozenset[str]) -> bool:
+    name = str(key).lower()
+    return name in secret_names or any(word in name for word in _SECRET_WORDS)
 
 
 def _log(ctx: Context, tool_name: str, arguments: dict, *, rows: int, ms: int,
@@ -227,17 +265,37 @@ class MCPView(APIView):
     def post(self, request):
         tenant = self._tenant_or_404(request)
         token = getattr(request, "auth", None)
-        if _rate_limited(token):
-            return Response(
-                protocol.error(None, protocol.RATE_LIMITED,
-                               f"More than {RATE_LIMIT} calls a minute; wait and retry."),
+        # Size, shape and budget are settled before any message runs, so a
+        # batch cannot buy more than the per-token limit allows (#328).
+        if _too_big(request):
+            return _reject(protocol.INVALID_REQUEST,
+                           f"Request body larger than {MAX_BODY // 1024} KB.", status=413)
+        try:
+            body = request.data
+        except ParseError as exc:
+            return _reject(protocol.PARSE_ERROR, str(exc.detail), status=400)
+        if isinstance(body, list) and not body:
+            return _reject(protocol.INVALID_REQUEST, "An empty batch.", status=400)
+        if isinstance(body, list) and len(body) > MAX_BATCH:
+            return _reject(protocol.INVALID_REQUEST,
+                           f"A batch may carry at most {MAX_BATCH} messages.", status=400)
+        if _rate_limited(token, len(body) if isinstance(body, list) else 1):
+            return _reject(
+                protocol.RATE_LIMITED,
+                f"More than {RATE_LIMIT} calls a minute; wait and retry.",
                 status=429, headers={"Retry-After": str(RATE_WINDOW)},
             )
-        body = request.data
         ctx = _context(request, tenant)
         if isinstance(body, list):
             # A JSON-RPC batch. Notifications drop out of the answer.
-            answers = [a for a in (_handle(m, ctx) for m in body if isinstance(m, dict)) if a]
+            # Anything in it that is not a message is answered as one.
+            answers = [
+                a for a in (
+                    _handle(m, ctx) if isinstance(m, dict) else protocol.error(
+                        None, protocol.INVALID_REQUEST, "Expected a JSON-RPC object.")
+                    for m in body
+                ) if a
+            ]
             return Response(answers or [], status=200)
         if not isinstance(body, dict):
             return Response(protocol.error(None, protocol.INVALID_REQUEST,
@@ -249,6 +307,22 @@ class MCPView(APIView):
 
 
 mcp = MCPView.as_view()
+
+
+def _too_big(request) -> bool:
+    """Over ``MAX_BODY``, judged by the declared length first so an
+    oversized body is refused without being read, then by what arrived."""
+    try:
+        declared = int(request.META.get("CONTENT_LENGTH") or 0)
+    except (TypeError, ValueError):
+        declared = 0
+    return declared > MAX_BODY or len(request.body) > MAX_BODY
+
+
+def _reject(code: int, message: str, *, status: int, headers: dict | None = None) -> Response:
+    """A JSON-RPC error with no id: the refusal is about the request as a
+    whole, not any one message in it."""
+    return Response(protocol.error(None, code, message), status=status, headers=headers)
 
 
 def _context(request, tenant) -> Context:

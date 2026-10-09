@@ -213,6 +213,211 @@ class TrustTests(_Base):
         self.assertFalse(Script.objects.get(pk=script.pk).trusted)
 
 
+class ExecutionRightsTests(_Base):
+    """Trust approves specific code, and running as the owner lends the
+    owner's identity to whoever may edit the script (#317)."""
+
+    def setUp(self):
+        super().setUp()
+        U = get_user_model()
+        self.editor = U.objects.create_user("editor", "e@e.com", "x")
+        self.approver = U.objects.create_user("approver", "p@e.com", "x")
+        for u in (self.editor, self.approver):
+            UserProfile.objects.create(user=u, role="custom").tenants.add(self.tenant)
+        grant(self.editor, self.tenant, ["view", "change", "run"])
+        grant(self.approver, self.tenant, ["view", "change", "run", "trust"])
+        self.script = self._script(visibility="users", trusted=True)
+        self.script.shared_users.add(self.editor, self.approver)
+
+    def _patch(self, user, body, script=None):
+        self.client.force_login(user)
+        return self.client.patch(f"/api/scripts/{(script or self.script).id}/", body,
+                                 format="json")
+
+    def _log(self):
+        from audit.models import ChangeLogEntry
+
+        return ChangeLogEntry.objects.filter(object_id=str(self.script.id), action="update")
+
+    def test_a_source_change_without_trust_clears_trusted(self):
+        r = self._patch(self.editor, {"source": "print('mine')"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.json()["trusted"])
+        self.script.refresh_from_db()
+        self.assertFalse(self.script.trusted)
+        self.assertEqual(self.script.source, "print('mine')")
+        # the next run executes sandboxed
+        self.client.force_login(self.editor)
+        r = self.client.post(f"/api/scripts/{self.script.id}/run/")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertFalse(ScriptRun.objects.get(pk=r.json()["id"]).trusted)
+        # audited as one change by the editor, trust reset included
+        entry = self._log().get()
+        self.assertEqual(entry.user, self.editor)
+        self.assertEqual(entry.changes["trusted"], {"old": True, "new": False})
+        self.assertIn("source", entry.changes)
+
+    def test_the_owner_without_trust_also_loses_it(self):
+        r = self._patch(self.author, {"source": "print('v2')"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.json()["trusted"])
+
+    def test_a_holder_of_trust_keeps_it_trusted(self):
+        r = self._patch(self.approver, {"source": "print('reviewed')"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["trusted"])
+        self.assertTrue(Script.objects.get(pk=self.script.pk).trusted)
+
+    def test_every_executed_field_clears_trusted(self):
+        for body in (
+            {"params_schema": [{"name": "site", "type": "string", "default": "x"}]},
+            {"schedule_params": {"site": "aarhus"}},
+        ):
+            Script.objects.filter(pk=self.script.pk).update(trusted=True)
+            r = self._patch(self.editor, body)
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertFalse(r.json()["trusted"], body)
+
+    def test_an_unrelated_edit_keeps_trusted(self):
+        for body in (
+            {"description": "d"},
+            {"timeout_seconds": 60, "token_scope": "read"},
+            {"source": "print('hi')"},  # unchanged
+            {"params_schema": [], "schedule_params": {}},  # unchanged
+        ):
+            r = self._patch(self.editor, body)
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertTrue(r.json()["trusted"], body)
+        self.assertFalse(self._log().filter(changes__has_key="trusted").exists())
+
+    def test_run_as_owner_needs_the_owner_or_trust(self):
+        r = self._patch(self.editor, {"run_as": "owner"})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("run_as", r.json())
+        self.assertEqual(Script.objects.get(pk=self.script.pk).run_as, "caller")
+
+        r = self._patch(self.author, {"run_as": "owner"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["run_as"], "owner")
+        # resending the same value, or stepping back down, is not a grant
+        r = self._patch(self.editor, {"run_as": "owner", "timeout_seconds": 60})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._patch(self.editor, {"run_as": "caller"})
+        self.assertEqual(r.status_code, 200, r.content)
+
+        r = self._patch(self.approver, {"run_as": "owner"})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_run_as_owner_on_create_is_the_creator(self):
+        self.client.force_login(self.editor)
+        grant(self.editor, self.tenant, ["add"])
+        r = self.client.post("/api/scripts/", {"name": "own", "run_as": "owner"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["owner_name"], "editor")
+
+    def test_others_cannot_change_what_an_owner_run_script_executes(self):
+        Script.objects.filter(pk=self.script.pk).update(run_as="owner")
+        for body in (
+            {"source": "print('as the owner')"},
+            {"params_schema": [{"name": "n", "type": "integer", "default": 1}]},
+            {"schedule_params": {"n": 2}},
+        ):
+            r = self._patch(self.editor, body)
+            self.assertEqual(r.status_code, 400, (body, r.content))
+            self.assertEqual(set(r.json()), set(body))
+        self.script.refresh_from_db()
+        self.assertEqual(self.script.source, "print('hi')")
+        self.assertTrue(self.script.trusted)
+        # settings that do not change what runs are still theirs to edit
+        r = self._patch(self.editor, {"description": "d", "timeout_seconds": 30})
+        self.assertEqual(r.status_code, 200, r.content)
+        # the owner and a holder of trust may
+        r = self._patch(self.author, {"source": "print('v2')"})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._patch(self.approver, {"source": "print('v3')"})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_stepping_down_to_the_caller_frees_the_code_but_clears_trust(self):
+        Script.objects.filter(pk=self.script.pk).update(run_as="owner")
+        r = self._patch(self.editor, {"run_as": "caller", "source": "print('mine')"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["run_as"], "caller")
+        self.assertFalse(r.json()["trusted"])
+        self.client.force_login(self.editor)
+        r = self.client.post(f"/api/scripts/{self.script.id}/run/")
+        run = ScriptRun.objects.get(pk=r.json()["id"])
+        self.assertEqual(run.run_as_user, self.editor)
+        self.assertFalse(run.trusted)
+
+    def test_a_schedule_runs_as_the_owner_so_the_same_rule_applies(self):
+        cadence = {"frequency": "daily", "at": "02:00"}
+        r = self._patch(self.editor, {"schedule_enabled": True, "cadence": cadence})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("schedule_enabled", r.json())
+
+        r = self._patch(self.author, {"schedule_enabled": True, "cadence": cadence})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._patch(self.editor, {"source": "print('scheduled')"})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("source", r.json())
+        # re-saving the schedule as it is, or switching it off, is fine
+        r = self._patch(self.editor, {"schedule_enabled": True, "cadence": cadence})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._patch(self.editor, {"schedule_enabled": False})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._patch(self.editor, {"source": "print('scheduled')"})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_others_cannot_widen_the_token_of_an_owner_run_script(self):
+        Script.objects.filter(pk=self.script.pk).update(run_as="owner", token_scope="read")
+        r = self._patch(self.editor, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(set(r.json()), {"token_scope"})
+        self.assertEqual(Script.objects.get(pk=self.script.pk).token_scope, "read")
+        # resending the same value is not a widening
+        r = self._patch(self.editor, {"token_scope": "read", "timeout_seconds": 60})
+        self.assertEqual(r.status_code, 200, r.content)
+        # the owner and a holder of trust may
+        r = self._patch(self.author, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 200, r.content)
+        Script.objects.filter(pk=self.script.pk).update(token_scope="read")
+        r = self._patch(self.approver, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_narrowing_the_token_stays_open(self):
+        Script.objects.filter(pk=self.script.pk).update(run_as="owner", token_scope="full")
+        r = self._patch(self.editor, {"token_scope": "read"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["token_scope"], "read")
+
+    def test_a_scheduled_scripts_token_follows_the_same_rule(self):
+        Script.objects.filter(pk=self.script.pk).update(
+            schedule_enabled=True, cadence={"frequency": "daily", "at": "02:00"},
+            token_scope="read",
+        )
+        r = self._patch(self.editor, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("token_scope", r.json())
+        # switching the schedule off in the same write makes it the caller's own
+        r = self._patch(self.editor, {"token_scope": "full", "schedule_enabled": False})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_widening_a_caller_run_script_stays_open(self):
+        Script.objects.filter(pk=self.script.pk).update(token_scope="read")
+        r = self._patch(self.editor, {"token_scope": "full"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["token_scope"], "full")
+
+    def test_the_trust_action_is_audited(self):
+        self.client.force_login(self.approver)
+        r = self.client.post(f"/api/scripts/{self.script.id}/trust/", {"trusted": False},
+                             format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        entry = self._log().get()
+        self.assertEqual(entry.user, self.approver)
+        self.assertEqual(entry.changes["trusted"], {"old": True, "new": False})
+
+
 class ValidationTests(_Base):
     def test_schema_and_timeout_are_checked(self):
         self.client.force_login(self.author)

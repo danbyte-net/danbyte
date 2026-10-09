@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from urllib.parse import urlsplit
 
 import requests
 
-from .secret_store import SecretStoreError
+from .secret_store import SecretPathError, SecretStoreError, clean_secret_path
 
 API_VERSION = "7.4"
 PUBLIC_AUTHORITY = "https://login.microsoftonline.com"
@@ -34,6 +35,12 @@ PUBLIC_AUTHORITY = "https://login.microsoftonline.com"
 # one-to-one - two refs that sanitise the same way still get different names.
 NAME_MAX = 127
 DIGEST_LEN = 12
+_LEGAL_NAME = re.compile(r"[0-9A-Za-z-]{1,127}")
+# The names Danbyte files its own secrets under: the tenant is a UUID, so the
+# managed namespace is exactly this shape - for every tenant, past or present.
+_MANAGED_NAME = re.compile(
+    r"danbyte-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-", re.I
+)
 
 
 def _safe(text: str) -> str:
@@ -93,8 +100,11 @@ class AzureKeyVaultSecretStore:
         """The Key Vault secret name for one of Danbyte's own refs.
 
         Deterministic: the same tenant and ref always resolve to the same
-        name, which is what makes ``get`` find what ``put`` wrote.
+        name, which is what makes ``get`` find what ``put`` wrote. The
+        sanitising already keeps a ``..`` from reaching the URL, but the ref
+        is refused all the same so every store behaves alike (#315).
         """
+        clean_secret_path(ref, label="Secret ref")
         digest = hashlib.sha256(f"{tenant_id}/{ref}".encode()).hexdigest()[:DIGEST_LEN]
         prefix = f"danbyte-{_safe(str(tenant_id))}-"
         room = NAME_MAX - len(prefix) - DIGEST_LEN - 1
@@ -176,13 +186,31 @@ class AzureKeyVaultSecretStore:
     def get(self, tenant_id, ref: str) -> dict | None:
         return self._read(f"secrets/{self._name(tenant_id, ref)}")
 
+    def validate_external_path(self, path: str) -> None:
+        """An external reference is one Key Vault secret name: letters, digits
+        and hyphens only (so it cannot become a different URL), and never one
+        of Danbyte's own ``danbyte-<tenant>-…`` names - for any tenant, since
+        every tenant reaches the vault with the same app registration (#315)."""
+        clean_secret_path(path)
+        if not _LEGAL_NAME.fullmatch(path):
+            raise SecretPathError(
+                "A Key Vault secret name allows only letters, digits and hyphens "
+                "(up to 127 characters)."
+            )
+        if _MANAGED_NAME.match(path):
+            raise SecretPathError(
+                f"'{path}' is inside Danbyte's managed namespace (danbyte-<tenant>-…); "
+                "an external credential cannot reference a secret Danbyte manages."
+            )
+
     def get_at_path(self, tenant_id, path: str) -> dict | None:
         """Read a secret an operator authored themselves, by its Key Vault
         name - outside Danbyte's ``danbyte-{tenant}-{ref}`` namespace, so the
         name is used verbatim. ``tenant_id`` is unused: Key Vault addresses the
-        operator's secret directly, and cross-tenant isolation is theirs to
-        enforce with the vault's access policy or RBAC. Missing → ``None``."""
-        return self._read(f"secrets/{path.strip('/')}")
+        operator's secret directly; :meth:`validate_external_path` keeps the
+        name out of every tenant's managed namespace. Missing → ``None``."""
+        self.validate_external_path(path)
+        return self._read(f"secrets/{path}")
 
     def _read(self, path: str) -> dict | None:
         r = self._req("GET", path)

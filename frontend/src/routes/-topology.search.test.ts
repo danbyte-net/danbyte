@@ -74,6 +74,12 @@ describe("topology search params", () => {
     expect(validate({ view: "" })).toEqual({})
   })
 
+  it("spells out group=none, which a large tenant needs to open ungrouped", () => {
+    expect(validate({ group: "none" })).toEqual({ group: "none" })
+    expect(validate({ group: "site" })).toEqual({ group: "site" })
+    expect(validate({ group: "rack" })).toEqual({})
+  })
+
   it("leaves the tab to the default when none is named", () => {
     expect(validate({})).toEqual({})
     expect(validate({ tab: "faceplates" })).toEqual({})

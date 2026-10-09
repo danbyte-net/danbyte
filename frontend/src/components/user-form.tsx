@@ -47,8 +47,9 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
   const [password, setPassword] = useState("")
   // How the new account gets its password. "invite" → email a set-password
   // link (admin never handles the credential, GDPR-friendly); "manual" → admin
-  // types one. Defaults to invite for new local accounts.
-  const [pwMode, setPwMode] = useState<"invite" | "manual">("invite")
+  // types one. Defaults to invite for new local accounts; an edit sends no
+  // reset link unless the admin ticks the box.
+  const [pwMode, setPwMode] = useState<"invite" | "manual">(isEdit ? "manual" : "invite")
   const [isActive, setIsActive] = useState(user?.is_active ?? true)
   const [isSuperuser, setIsSuperuser] = useState(user?.is_superuser ?? false)
   const [requireMfa, setRequireMfa] = useState(user?.require_mfa ?? false)

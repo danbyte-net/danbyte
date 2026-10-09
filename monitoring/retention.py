@@ -2,8 +2,9 @@
 
 ``CheckResult`` grows fast (one row per check per run), so old rows are deleted
 on a schedule. ``StateTransition`` is the audit timeline and is kept much
-longer. SNMP interface samples feed the utilisation sparklines and are kept
-for days. The windows are settings (``MONITORING_RESULT_RETENTION_DAYS`` /
+longer; each check's newest transition before the cutoff is always kept, as
+it is the status the retained window opens with. SNMP interface samples feed
+the utilisation sparklines and are kept for days. The windows are settings (``MONITORING_RESULT_RETENTION_DAYS`` /
 ``MONITORING_TRANSITION_RETENTION_DAYS`` /
 ``MONITORING_SNMP_SAMPLE_RETENTION_DAYS``).
 
@@ -46,6 +47,24 @@ def _prune_older_than(model, field: str, cutoff, batch: int = _BATCH, *, qs=None
         if len(ids) < batch:
             break
     return total
+
+
+def _prune_transitions(cutoff, batch: int = _BATCH) -> int:
+    """Delete transitions older than ``cutoff``, except each check's newest one
+    before it. That row is the status the check opened the retained window
+    with; timelines, rollups and SLAs read it as the opening state, so a check
+    stable for longer than the retention would otherwise count as unknown
+    (#356)."""
+    keep = (
+        StateTransition.objects.filter(at__lt=cutoff)
+        .order_by("target_ip_id", "template_id", "-at", "-pk")
+        .distinct("target_ip_id", "template_id")
+        .values("pk")
+    )
+    return _prune_older_than(
+        StateTransition, "at", cutoff, batch,
+        qs=StateTransition.objects.exclude(pk__in=keep),
+    )
 
 
 def _close_unseen(model, tenant_id, cutoff, batch: int = _BATCH) -> int:
@@ -100,9 +119,7 @@ def prune(now=None) -> dict:
     results_deleted = _prune_older_than(
         CheckResult, "timestamp", now - timedelta(days=result_days)
     )
-    transitions_deleted = _prune_older_than(
-        StateTransition, "at", now - timedelta(days=transition_days)
-    )
+    transitions_deleted = _prune_transitions(now - timedelta(days=transition_days))
     sample_days = int(getattr(settings, "MONITORING_SNMP_SAMPLE_RETENTION_DAYS", 3))
     samples_deleted = _prune_older_than(
         SnmpInterfaceSample, "sampled_at", now - timedelta(days=sample_days)

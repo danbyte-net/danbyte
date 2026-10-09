@@ -230,3 +230,72 @@ class MoveToMemberTests(_Stack):
         )
         self.assertEqual(r.status_code, 400)
         self.assertIn("same virtual chassis", str(r.json()))
+
+
+class StackNameDriftTests(_Stack):
+    """A stack answers SNMP with one sysName, so only its owner is compared
+    against it (#347)."""
+
+    def _name_items(self, device):
+        return [
+            i for i in compute_device_drift(device, self.tenant)
+            if i["kind"] == "device_field" and i["field"] == "name"
+        ]
+
+    def test_member_has_no_name_drift(self):
+        self.assertEqual(self._name_items(self.member), [])
+
+    def test_master_still_compares_its_name(self):
+        items = self._name_items(self.master)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["intended"], "sw1")
+        self.assertEqual(items[0]["observed"], "stack")
+
+    def test_master_in_sync_when_named_as_the_stack(self):
+        Device.objects.filter(pk=self.master.pk).update(name="stack")
+        self.master.refresh_from_db()
+        self.assertEqual(self._name_items(self.master), [])
+
+    def test_without_a_master_the_lowest_member_is_compared(self):
+        self.vc.master = None
+        self.vc.save()
+        self.master.refresh_from_db()
+        self.member.refresh_from_db()
+        self.assertEqual(len(self._name_items(self.master)), 1)
+        self.assertEqual(self._name_items(self.member), [])
+
+    def test_member_polled_directly_has_no_name_drift(self):
+        # An agent on a member still reports the stack's sysName.
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.member, reachable=True,
+            polled_at=timezone.now(), data={"sys_name": "stack"}, interfaces=[],
+        )
+        self.assertEqual(self._name_items(self.member), [])
+
+    def test_member_left_the_stack_compares_again(self):
+        Device.objects.filter(pk=self.member.pk).update(
+            virtual_chassis=None, vc_position=None
+        )
+        self.member.refresh_from_db()
+        DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.member, reachable=True,
+            polled_at=timezone.now(), data={"sys_name": "stack"}, interfaces=[],
+        )
+        self.assertEqual(len(self._name_items(self.member)), 1)
+
+    def test_stack_and_fleet_views_skip_the_member(self):
+        r = self.client.get(f"/api/monitoring/virtual-chassis/{self.vc.id}/snmp/drift/")
+        fields = {
+            m["device"]["name"]: [
+                d.get("field") for d in m["drift"] if d["kind"] == "device_field"
+            ]
+            for m in r.json()["members"]
+        }
+        self.assertEqual(fields, {"sw1": ["name"], "sw2": []})
+        SnmpProfile.objects.create(tenant=self.tenant, name="default", is_default=True)
+        rows = {
+            x["device_name"]: x
+            for x in self.client.get("/api/monitoring/snmp-drift/").json()["results"]
+        }
+        self.assertEqual(rows["sw1"]["by_kind"]["device_field"], 1)
+        self.assertEqual(rows["sw2"]["by_kind"]["device_field"], 0)

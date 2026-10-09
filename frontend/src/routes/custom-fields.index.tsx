@@ -21,6 +21,7 @@ import {
 } from "@/components/filter-rail"
 import { CustomFieldDeleteDialog } from "@/components/custom-field-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { asArray } from "@/lib/utils"
 
 export const Route = createFileRoute("/custom-fields/")({
   component: CustomFieldsPage,
@@ -48,7 +49,10 @@ function CustomFieldsPage() {
   const rows = useMemo(() => {
     return allRows.filter((f) => {
       if (typeFilter.size > 0 && !typeFilter.has(f.type)) return false
-      if (modelFilter.size > 0 && !f.applies_to.some((m) => modelFilter.has(m)))
+      if (
+        modelFilter.size > 0 &&
+        !asArray(f.applies_to).some((m) => modelFilter.has(m))
+      )
         return false
       return true
     })
@@ -61,7 +65,7 @@ function CustomFieldsPage() {
     const models: Record<string, number> = {}
     for (const f of allRows) {
       types[f.type] = (types[f.type] ?? 0) + 1
-      for (const m of f.applies_to) models[m] = (models[m] ?? 0) + 1
+      for (const m of asArray(f.applies_to)) models[m] = (models[m] ?? 0) + 1
     }
     return {
       type: CUSTOM_FIELD_TYPES.filter((t) => types[t.value]).map<FacetOption>(

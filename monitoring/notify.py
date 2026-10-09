@@ -30,6 +30,20 @@ from core.ssrf import safe_post  # SSRF-guarded outbound
 log = logging.getLogger("monitoring.notify")
 
 
+class DeliveryError(RuntimeError):
+    """A receiver answered with a non-2xx status."""
+
+
+def _post(url: str, **kwargs):
+    """``safe_post`` that treats a non-2xx answer as a failure (#358). A
+    connection error already raises. The URL stays out of the message: a
+    Slack, Teams or Discord webhook URL is itself the credential."""
+    resp = safe_post(url, **kwargs)
+    if not 200 <= resp.status_code < 300:
+        raise DeliveryError(f"The receiver answered HTTP {resp.status_code}.")
+    return resp
+
+
 # ─── payload building ─────────────────────────────────────────────────────
 
 
@@ -164,7 +178,7 @@ def _send_webhook(channel, events: list[dict]) -> None:
         "count": len(events),
         "transitions": events,
     }
-    resp = safe_post(url, json=payload, timeout=timeout)
+    resp = _post(url, json=payload, timeout=timeout)
     log.info("webhook %s → %s (%s changes)", channel.name, resp.status_code, len(events))
 
 
@@ -230,9 +244,10 @@ def _send_email(channel, events: list[dict]) -> None:
         kicker="Monitoring",
         preheader=f"{len(events)} status change(s)",
     )
+    # Raises on an SMTP failure so the change is sent again next run (#358).
     ek.send_html_email(
         subject, recipients, html_body=html, text_body=body,
-        tenant=channel.tenant_id,
+        tenant=channel.tenant_id, fail_silently=False,
     )
     log.info("email digest %s → %s recipients (%s changes)", channel.name, len(recipients), len(events))
 
@@ -339,15 +354,64 @@ def _pending_rows(ch, since, now):
     ]
 
 
-def _deliver_status_changes(ch, rows: list, now) -> None:
-    """One message for ``rows`` on an instant channel, then stamp the send."""
+def _claim(ch, now) -> bool:
+    """Stamp ``status_change_last_run = now`` only if nobody else has moved it
+    since ``ch`` was read: one conditional UPDATE, so of two workers that both
+    found the channel due exactly one wins and sends (#359)."""
+    from .models import NotificationChannel
+
+    prev = ch.status_change_last_run
+    qs = NotificationChannel.objects.filter(pk=ch.pk)
+    qs = (qs.filter(status_change_last_run__isnull=True) if prev is None
+          else qs.filter(status_change_last_run=prev))
+    if not qs.update(status_change_last_run=now):
+        return False
+    ch.status_change_last_run = now
+    return True
+
+
+def _release(ch, now, since) -> None:
+    """A claimed send failed: move the stamp back to the start of the window
+    it covered, so the next run is due at once and sends the same changes
+    again (#358). Only our own stamp is moved back."""
+    from .models import NotificationChannel
+
+    NotificationChannel.objects.filter(pk=ch.pk, status_change_last_run=now).update(
+        status_change_last_run=since
+    )
+    ch.status_change_last_run = since
+
+
+def _send_claimed(ch, since, now, send) -> bool:
+    """Claim the channel's window, run ``send()``, and release the claim if it
+    raises. False when another worker holds the window; re-raises a failure."""
+    if not _claim(ch, now):
+        return False
+    try:
+        send()
+    except Exception:
+        _release(ch, now, since)
+        raise
+    return True
+
+
+def _deliver_status_changes(ch, rows: list) -> None:
+    """One message for ``rows`` on an instant channel. Raises when the
+    receiver did not take it."""
     events = _enrich(rows)
     if ch.kind == "webhook":
         _send_webhook(ch, events)
     elif ch.kind == "email":
         _send_email(ch, events)
-    ch.status_change_last_run = now
-    ch.save(update_fields=["status_change_last_run", "updated_at"])
+
+
+def _send_instant(ch, since, now) -> bool:
+    """Send an instant channel's changes since ``since``, at most once across
+    workers. True when this call delivered a message."""
+    rows = _pending_rows(ch, since, now)
+    if not rows:
+        return False
+    return _send_claimed(ch, since, now, lambda: _deliver_status_changes(ch, rows))
 
 
 def dispatch_status_changes(transitions: list, now=None) -> None:
@@ -356,6 +420,9 @@ def dispatch_status_changes(transitions: list, now=None) -> None:
     channel. A channel that is due sends everything since its last message
     (this batch and whatever was held); one that is not due sends nothing now
     and the beat catches up. Changes on flapping checks are left out.
+
+    The window is claimed before the send, so concurrent workers never send
+    the same change twice, and a failed send gives it back for the next run.
 
     Called at the end of ``process_transitions`` (every check batch). Best-effort
     per channel - a delivery error can never fail the batch.
@@ -370,11 +437,8 @@ def dispatch_status_changes(transitions: list, now=None) -> None:
             if not _instant_due(ch, now):
                 continue
             since = ch.status_change_last_run or (now - INSTANT_SPACING)
-            rows = _pending_rows(ch, since, now)
-            if not rows:
-                continue
             try:
-                _deliver_status_changes(ch, rows, now)
+                _send_instant(ch, since, now)
             except Exception:  # noqa: BLE001 - one channel must not break others
                 log.exception("status channel %s (%s) failed", ch.name, ch.kind)
 
@@ -383,6 +447,7 @@ def run_due_status_change_digests(now=None) -> int:
     """Batched path: for each ``send_status_changes`` channel in **batched**
     mode whose interval has elapsed, send a mini-digest of the status changes in
     the window and stamp ``status_change_last_run``. Driven by the minute beat.
+    A digest that fails is not stamped and goes out on the next beat.
     """
     from django.utils import timezone
 
@@ -390,20 +455,18 @@ def run_due_status_change_digests(now=None) -> int:
 
     now = now or timezone.now()
     sent = 0
-    # Instant channels that held changes inside their spacing window: the
-    # batch that would have sent them is gone, so the beat delivers them.
+    # Instant channels that held changes inside their spacing window, or
+    # whose last send failed: the batch that would have sent them is gone,
+    # so the beat delivers them.
     for ch in NotificationChannel.objects.filter(
         enabled=True, send_status_changes=True, status_change_mode="instant",
         status_change_last_run__isnull=False,
     ).select_related("match_prefix", "match_ip"):
         if not _instant_due(ch, now):
             continue
-        rows = _pending_rows(ch, ch.status_change_last_run, now)
-        if not rows:
-            continue
         try:
-            _deliver_status_changes(ch, rows, now)
-            sent += 1
+            if _send_instant(ch, ch.status_change_last_run, now):
+                sent += 1
         except Exception:  # noqa: BLE001 - one channel must not break others
             log.exception("status channel %s (%s) failed", ch.name, ch.kind)
 
@@ -417,14 +480,16 @@ def run_due_status_change_digests(now=None) -> int:
             continue
         since = ch.status_change_last_run or (now - interval)
         rows = _pending_rows(ch, since, now)
-        if rows:
-            try:
+
+        def send(ch=ch, rows=rows, since=since):
+            if rows:
                 _send_status_digest(ch, rows, since, now)
+
+        try:
+            if _send_claimed(ch, since, now, send) and rows:
                 sent += 1
-            except Exception:  # noqa: BLE001 - one channel must not break others
-                log.exception("status digest %s (%s) failed", ch.name, ch.kind)
-        ch.status_change_last_run = now
-        ch.save(update_fields=["status_change_last_run", "updated_at"])
+        except Exception:  # noqa: BLE001 - one channel must not break others
+            log.exception("status digest %s (%s) failed", ch.name, ch.kind)
     return sent
 
 
@@ -450,7 +515,7 @@ def _send_status_digest(channel, rows: list, since, now) -> None:
     subject = f"{name} - {len(rows)} status change(s) in the last window"
     send_html_email(
         subject, recipients, html_body=html, text_body=text,
-        tenant=channel.tenant_id,
+        tenant=channel.tenant_id, fail_silently=False,
     )
 
 
@@ -620,7 +685,7 @@ def notify_event(
                 if url:
                     import requests
 
-                    safe_post(
+                    _post(
                         url,
                         json={"channel": ch.name, "event": payload},
                         timeout=getattr(settings, "MONITORING_WEBHOOK_TIMEOUT", 5),
@@ -674,19 +739,19 @@ def notify_plain(channel, subject: str, text: str = "", payload: dict | None = N
                 )
         elif kind == "slack":
             if cfg.get("url"):
-                safe_post(cfg["url"], json={"text": body}, timeout=timeout, proxies=proxies)
+                _post(cfg["url"], json={"text": body}, timeout=timeout, proxies=proxies)
         elif kind == "teams":
             if cfg.get("url"):
-                safe_post(cfg["url"], json=_teams_card(body), timeout=timeout, proxies=proxies)
+                _post(cfg["url"], json=_teams_card(body), timeout=timeout, proxies=proxies)
         elif kind == "discord":
             if cfg.get("url"):
-                safe_post(cfg["url"], json={"content": body}, timeout=timeout, proxies=proxies)
+                _post(cfg["url"], json={"content": body}, timeout=timeout, proxies=proxies)
         elif kind == "telegram":
             _telegram_send(channel, body, timeout, proxies)
         elif kind == "pagerduty":
             key = cfg.get("routing_key")
             if key:
-                safe_post(
+                _post(
                     "https://events.pagerduty.com/v2/enqueue",
                     json={
                         "routing_key": key,
@@ -704,7 +769,7 @@ def notify_plain(channel, subject: str, text: str = "", payload: dict | None = N
                 )
         elif kind == "webhook":
             if cfg.get("url"):
-                safe_post(
+                _post(
                     cfg["url"],
                     json={"channel": channel.name, "event": {"subject": subject, "text": text, **payload}},
                     timeout=timeout,
@@ -1021,12 +1086,12 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
             )
     elif kind == "slack":
         if cfg.get("url"):
-            safe_post(
+            _post(
                 cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies
             )
     elif kind == "teams":
         if cfg.get("url"):
-            safe_post(
+            _post(
                 cfg["url"],
                 json=_teams_card(text, url),  # the link is a card action, not text
                 timeout=timeout,
@@ -1034,7 +1099,7 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
             )
     elif kind == "discord":
         if cfg.get("url"):
-            safe_post(
+            _post(
                 cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies
             )
     elif kind == "telegram":
@@ -1042,7 +1107,7 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
     elif kind == "pagerduty":
         key = cfg.get("routing_key")
         if key:
-            safe_post(
+            _post(
                 "https://events.pagerduty.com/v2/enqueue",
                 json={
                     "routing_key": key,
@@ -1064,7 +1129,7 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
             payload = _alert_payload(alert, event, ip)
             if url:
                 payload["url"] = url
-            safe_post(
+            _post(
                 cfg["url"],
                 json={"channel": channel.name, "alert": payload},
                 timeout=timeout,
@@ -1182,10 +1247,10 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
             )
     elif channel.kind == "slack":
         if cfg.get("url"):
-            safe_post(cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies)
+            _post(cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies)
     elif channel.kind == "teams":
         if cfg.get("url"):
-            safe_post(
+            _post(
                 cfg["url"],
                 json=_teams_card(text, url),  # the link is a card action, not text
                 timeout=timeout,
@@ -1193,12 +1258,12 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
             )
     elif channel.kind == "discord":
         if cfg.get("url"):
-            safe_post(cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies)
+            _post(cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies)
     elif channel.kind == "telegram":
         _telegram_send(channel, linked, timeout, proxies)
     elif channel.kind == "webhook":
         if cfg.get("url"):
-            safe_post(
+            _post(
                 cfg["url"],
                 json={
                     "channel": channel.name,

@@ -61,6 +61,102 @@ class PrefixListTests(_Base):
         self.assertEqual(leaf["monitoring_engine"]["is_local"], True)
 
 
+class PrefixListScaleTests(_Base):
+    """A page of prefixes must not pay for every prefix in the tenant: no
+    grouping, no per-row containment scan in SQL, and a plain COUNT for the
+    paginator (#337)."""
+
+    # The per-row scan the list used to run; the batched count must agree.
+    SQL_DESCENDANTS = (
+        "SELECT p.id::text, (SELECT COUNT(*) FROM api_prefix c"
+        " WHERE c.tenant_id = p.tenant_id"
+        " AND c.vrf_id IS NOT DISTINCT FROM p.vrf_id AND c.id <> p.id"
+        " AND c.cidr::inet <<= p.cidr::inet) FROM api_prefix p WHERE p.tenant_id = %s"
+    )
+
+    def _tree(self, tenant, first, last):
+        for a in range(first, last):
+            Prefix.objects.create(tenant=tenant, cidr=f"10.{a}.0.0/16")
+            for b in range(4):
+                Prefix.objects.create(tenant=tenant, cidr=f"10.{a}.{b}.0/24")
+
+    def test_query_count_does_not_grow_with_the_tenant(self):
+        self._tree(self.tenant, 0, 2)
+        small, _ = self._queries("/api/prefixes/?page_size=5")
+        self._tree(self.tenant, 2, 12)
+        self.client.get("/api/prefixes/?page_size=5")
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.get("/api/prefixes/?page_size=5")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["count"], 60)
+        self.assertEqual(len(ctx.captured_queries), small)
+        for q in ctx.captured_queries:
+            sql = q["sql"]
+            self.assertNotIn("<<=", sql, "no per-row containment scan in SQL")
+            self.assertNotIn("COUNT(DISTINCT", sql)
+            if 'AS "__count"' in sql and "api_prefix" in sql:
+                self.assertNotIn("GROUP BY", sql, "the paginator counts plain rows")
+                self.assertNotIn("api_ipaddress", sql)
+
+    def test_figures_match_the_sql_containment(self):
+        from integrations.models import DhcpScope
+
+        from .models import VRF
+
+        red = VRF.objects.create(tenant=self.tenant, name="red")
+        blue = VRF.objects.create(tenant=self.tenant, name="blue")
+        other = Tenant.objects.create(org=self.tenant.org, name="Other", slug="other")
+        made = {}
+        for vrf in (None, red, blue):
+            for cidr in ("10.0.0.0/8", "10.1.0.0/16", "10.1.2.0/24", "10.1.2.128/25",
+                         "10.2.0.0/16", "2001:db8::/32", "2001:db8:1::/48"):
+                if vrf is blue and cidr.startswith("2001"):
+                    continue
+                made[(vrf, cidr)] = Prefix.objects.create(
+                    tenant=self.tenant, vrf=vrf, cidr=cidr
+                )
+        # Host bits in the stored value, an exact duplicate in another VRF
+        # (already above), and a sibling in another tenant that must not count.
+        Prefix.objects.create(tenant=self.tenant, vrf=red, cidr="10.1.2.5/24")
+        Prefix.objects.create(tenant=other, cidr="10.1.2.0/24")
+        for scope_id in ("10.1.2.0", "10.1.2.128"):
+            DhcpScope.objects.create(
+                tenant=self.tenant, scope_id=scope_id, name="s",
+                prefix=made[(None, "10.1.2.0/24")],
+            )
+
+        with connection.cursor() as cur:
+            cur.execute(self.SQL_DESCENDANTS, [str(self.tenant.id)])
+            expected = dict(cur.fetchall())
+        _, body = self._queries("/api/prefixes/?page_size=7")
+        self.assertEqual(body["count"], len(expected))
+        r = self.client.get("/api/prefixes/")
+        rows = r.json()["results"]
+        self.assertEqual({row["id"]: row["child_count"] for row in rows}, expected)
+        self.assertEqual(
+            [row["has_descendants"] for row in rows],
+            [expected[row["id"]] > 0 for row in rows],
+        )
+        self.assertEqual(expected[str(made[(None, "10.0.0.0/8")].id)], 4)
+        self.assertEqual(expected[str(made[(red, "10.1.2.0/24")].id)], 2)
+        dhcp = {row["id"] for row in rows if row["dhcp"]}
+        self.assertEqual(dhcp, {str(made[(None, "10.1.2.0/24")].id)})
+        # Pages walk the same order as the whole list and carry the same
+        # figure per row. Equal CIDRs in different VRFs tie in that order,
+        # so which of them lands on which page is not fixed.
+        paged = []
+        for n in (1, 2, 3):
+            page = self.client.get(f"/api/prefixes/?page_size=7&page={n}").json()
+            paged += page["results"]
+        self.assertEqual([row["cidr"] for row in paged], [row["cidr"] for row in rows])
+        for row in paged:
+            self.assertEqual(row["child_count"], expected[row["id"]], row["cidr"])
+        # The detail reads the same figure.
+        root = made[(red, "10.0.0.0/8")]
+        detail = self.client.get(f"/api/prefixes/{root.id}/").json()
+        self.assertEqual(detail["child_count"], expected[str(root.id)])
+
+
 class VlanListTests(_Base):
     def test_page_cost_is_flat_and_counts_match(self):
         site = Site.objects.create(tenant=self.tenant, name="HQ")
@@ -182,6 +278,38 @@ class IpListTests(_Base):
         self.assertEqual(
             {k: v for k, v in state.items() if v == "scope"}, {}
         )
+
+
+class IpListOrderIndexTests(_Base):
+    """The list's default order within a tenant is served by an index, so a
+    page reads its rows in order instead of sorting the whole tenant (#339)."""
+
+    def test_default_page_reads_the_tenant_address_index(self):
+        p = Prefix.objects.create(tenant=self.tenant, cidr="10.9.0.0/24")
+        for h in (30, 4, 200, 17):
+            IPAddress.objects.create(tenant=self.tenant, ip_address=f"10.9.0.{h}", prefix=p)
+        self.client.get("/api/ips/?page_size=2")
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.get("/api/ips/?page_size=2")
+        self.assertEqual(
+            [row["ip_address"] for row in r.json()["results"]], ["10.9.0.4", "10.9.0.17"]
+        )
+        sql = next(
+            q["sql"] for q in ctx.captured_queries
+            if q["sql"].startswith("SELECT") and 'FROM "api_ipaddress"' in q["sql"]
+            and "LIMIT" in q["sql"]
+        )
+        # A tiny table would rather scan and sort; forbid both to ask
+        # whether the order can come from an index at all.
+        with connection.cursor() as cur:
+            cur.execute("SET LOCAL enable_seqscan = off")
+            cur.execute("SET LOCAL enable_sort = off")
+            cur.execute("EXPLAIN " + sql)
+            plan = "\n".join(row[0] for row in cur.fetchall())
+            cur.execute("RESET enable_seqscan")
+            cur.execute("RESET enable_sort")
+        self.assertIn("ip_tenant_addr_idx", plan)
+        self.assertNotIn("Sort", plan)
 
 
 class VrfListTests(_Base):
@@ -484,3 +612,43 @@ class InterfaceListTests(_Base):
         ]
         self.assertEqual(len(page), 1)
         self.assertNotIn('JOIN "api_interface"', page[0])
+
+
+class CircuitListTests(_Base):
+    def test_page_cost_is_flat(self):
+        from .models import Circuit, CircuitType, Provider, Status
+
+        prov = Provider.objects.create(tenant=self.tenant, name="Prov", slug="prov")
+        ctype = CircuitType.objects.create(tenant=self.tenant, name="Fibre", slug="fibre")
+        status = Status.objects.create(tenant=self.tenant, name="Live", slug="live")
+        for i in range(30):
+            Circuit.objects.create(
+                tenant=self.tenant, cid=f"C-{i:02}", provider=prov, type=ctype, status=status
+            )
+        small, _ = self._queries("/api/circuits/?page_size=5")
+        big, body = self._queries("/api/circuits/?page_size=30")
+        self.assertEqual(small, big, "a bigger page must not cost more queries (#341)")
+        self.assertEqual(body["results"][0]["status"]["name"], "Live")
+
+
+class MacListTests(_Base):
+    def test_page_cost_is_flat_and_vendors_match(self):
+        from .models import MACAddress, OuiPrefix
+        from .oui import vendor_of_object
+
+        OuiPrefix.objects.create(prefix="001b44", vendor="SanDisk", source="ieee")
+        OuiPrefix.objects.create(tenant=self.tenant, prefix="0200aa", vendor="Lab", source="custom")
+        for i in range(30):
+            MACAddress.objects.create(
+                tenant=self.tenant,
+                mac_address=f"{('00:1b:44', '02:00:aa', '0c:00:00')[i % 3]}:00:00:{i:02x}",
+                vendor_override="Hand-built" if i == 7 else "",
+            )
+        small, _ = self._queries("/api/mac-addresses/?page_size=5")
+        big, body = self._queries("/api/mac-addresses/?page_size=30")
+        self.assertEqual(small, big, "a bigger page must not cost more queries (#340)")
+        for row in body["results"]:
+            obj = MACAddress.objects.get(pk=row["id"])
+            self.assertEqual(row["vendor"], vendor_of_object(obj), row["mac_address"])
+        names = {(r["vendor"] or {}).get("name") for r in body["results"]}
+        self.assertEqual(names, {"SanDisk", "Lab", "Hand-built", None})

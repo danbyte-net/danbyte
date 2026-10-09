@@ -306,6 +306,15 @@ enables under **Settings → Security → Secret store**:
   and deployment-tier, so it may be an internal/loopback Vault - Danbyte reaches
   it directly (TLS-verified, redirects off), not through the tenant SSRF guard.
   A provider selected but not fully configured counts as disabled (fail closed).
+
+    Danbyte files each tenant's secrets under `<mount>/data/<tenant id>/<ref>`.
+    Every tenant shares the one token, so Vault policy cannot keep tenants
+    apart; Danbyte does: a ref is refused before it reaches the URL if it could
+    leave the tenant's folder (`..`, a leading `/`, empty or encoded segments),
+    and an external [device credential](../features/device-access.md#device-credentials)
+    may point anywhere **except** a tenant folder on that mount, in any KV v2
+    form. Put hand-authored secrets on another mount, or under a non-tenant
+    folder of the same one (`danbyte/data/team/ssh`).
 - **Azure Key Vault** - keys live in a Key Vault and Danbyte holds only a
   reference. Configure the vault URL, the directory (tenant) and application
   (client) IDs of an app registration, and its client secret; the secret is

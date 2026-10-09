@@ -127,6 +127,20 @@ So "which fibre goes to which front" is exactly the front port's
 trace then follows that mapping automatically: strand *k* → rear *k* → the front
 port whose position is *k* → whatever's patched onto it.
 
+A multi-fibre front port (MPO, LC-duplex) keeps the strand as the trace
+crosses it: fibre *k* of an MPO cabled onto a cassette's rear port continues on
+rear position *start + k − 1* on the other side, so a cassette chain exits on
+the same strand it entered. A strand beyond the connector's fibre count dead-ends
+and marks the trace incomplete.
+
+The mapping rules:
+
+- a front port maps onto a rear port of the **same device** (templates: the
+  same device type);
+- a rear port's **positions** can't drop below the highest position a front
+  port still uses - remap or remove those front ports first. Bulk edit follows
+  the same rule.
+
 ## Splice closures
 
 A splice closure is just a device whose type has front and rear ports mapped

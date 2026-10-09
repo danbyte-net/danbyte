@@ -123,7 +123,8 @@ class AutoDispatchTests(TestCase):
 
     def test_auto_target_fires_on_save(self):
         self._target(auto_on_change=True)
-        with mock.patch.object(D, "enqueue_deploy") as enq:
+        with mock.patch.object(D, "enqueue_deploy") as enq, \
+                self.captureOnCommitCallbacks(execute=True):
             self.dev.name = "sw1-renamed"
             self.dev.save()
         enq.assert_called_once()
@@ -134,20 +135,23 @@ class AutoDispatchTests(TestCase):
 
     def test_manual_target_does_not_fire(self):
         self._target(auto_on_change=False)
-        with mock.patch.object(D, "enqueue_deploy") as enq:
+        with mock.patch.object(D, "enqueue_deploy") as enq, \
+                self.captureOnCommitCallbacks(execute=True):
             self.dev.save()
         enq.assert_not_called()
 
     def test_object_type_scope_respected(self):
         # Target scoped to interfaces only - a device save must not fire it.
         self._target(auto_on_change=True, object_types=["interface"])
-        with mock.patch.object(D, "enqueue_deploy") as enq:
+        with mock.patch.object(D, "enqueue_deploy") as enq, \
+                self.captureOnCommitCallbacks(execute=True):
             self.dev.save()
         enq.assert_not_called()
 
     def test_disabled_target_does_not_fire(self):
         self._target(auto_on_change=True, enabled=False)
-        with mock.patch.object(D, "enqueue_deploy") as enq:
+        with mock.patch.object(D, "enqueue_deploy") as enq, \
+                self.captureOnCommitCallbacks(execute=True):
             self.dev.save()
         enq.assert_not_called()
 

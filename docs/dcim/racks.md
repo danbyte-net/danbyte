@@ -320,9 +320,14 @@ plan's 3D View menu on this device. Cables are not drawn in this view yet.
 Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,
 three-phase × √3) - or, where no primary feed with a voltage and amperage
-reaches the rack, the rated (maximum) draw of the inlets of the rack's PDUs,
-marked as a **PDU rating** - half of it when the rack has two or more PDUs,
-taken as an A/B pair whose either side must carry the rack alone. Demand is the racked devices' power-port draws -
+reaches the rack, the rated (maximum) draw of the rack's PDUs, marked as a
+**PDU rating**. A PDU's inlets are redundant feeds of the same outlets, so a
+PDU counts its smallest rated inlet - unless its outlets name different
+inlets, when each inlet feeds its own bank and they add up. Two or more PDUs
+are taken as A and B sides, split as evenly as their ratings allow, and the
+supply is the smaller side, since either
+side must carry the rack alone: an unequal pair of 3.7 kW and 7.4 kW is
+3.7 kW, four equal PDUs two of them. Demand is the racked devices' power-port draws -
 allocated where you've recorded it, otherwise the nameplate sum (labelled
 *nameplate*). The rack page shows **demand / supply** (`1.2 kW / 3.6 kW`,
 in W below 1 kW) and turns red when over; a rack drawing power with neither
@@ -347,11 +352,15 @@ popover and the site's Capacity tab all use it.
 !!! note "Changed in 0.17"
     Power figures of 1 kW and up read in kW (`3.6 kW` where the page showed
     `3600 W`). A rack with no primary feed had no supply figure at all; it now
-    falls back to its PDUs' inlet ratings, halved for two or more PDUs as an
-    A/B pair - model the feeds (a primary and a redundant one) for the exact
-    figure. The
+    falls back to its PDUs' inlet ratings, taken as A and B sides - model
+    the feeds (a primary and a redundant one) for the exact figure. The
     racks list's **Used** bar measures the exact share: a 42U rack with 40U
     used (95.2 %) is red there now, as it already was on the floor plan.
+
+!!! note "Changed in 0.17.2"
+    The PDU rating no longer adds up a PDU's inlets or averages a pair: a
+    PDU with two 3680 W inlets rates 3680 W (it read 7360 W), and a 3680 W
+    and a 7360 W PDU rate 3680 W (it read 5520 W).
 
 !!! note "Power numbers changed with the PDU fix"
     Devices that **have power outlets** (PDUs - distributors) no longer
@@ -405,7 +414,7 @@ number of queries whatever stands in them, ports or not.
 
 A rack's `power` holds `available_w`, `allocated_w`, `maximum_w` and
 `supply`: `feed` when the supply is its primary feeds, `pdu_rating` when it is
-its PDUs' inlet ratings (halved for two or more PDUs), null when there is
+its PDUs' inlet ratings (the smaller of two sides), null when there is
 neither. A site adds its racks up
 floor plan by floor plan on its [Capacity](../models/site.md#capacity) API.
 

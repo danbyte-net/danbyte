@@ -160,6 +160,30 @@ def _check_envelope(payload: Any) -> None:
             ) from None
 
 
+def _check_type_fields(payload: dict, existing) -> None:
+    """The bundle's device-type fields under the device type API's own rules
+    (``DeviceTypeSerializer``): sizes in range, the DIN rail on the body, a
+    body size for DIN-rail types, choices, the faceplate - and, replacing a
+    type, that its devices on rails survive the new width (#311). A file that
+    breaks one is refused with the field errors the API gives the same edit
+    (a ``ValidationError``, a 400)."""
+    from .serializers import DeviceTypeSerializer
+
+    data = {f: payload[f] for f in TYPE_FIELDS if f != "name" and payload.get(f) is not None}
+    if "din_profiles" in data:
+        # Profiles this build doesn't know are dropped, not refused (the
+        # write below keeps only the known ones).
+        raw = data["din_profiles"]
+        data["din_profiles"] = [
+            p for p in ("ts35", "ts15", "g32") if isinstance(raw, list) and p in raw
+        ]
+    for f in ("faceplate", "image_ports"):
+        if payload.get(f):
+            data[f] = payload[f]
+    serializer = DeviceTypeSerializer(instance=existing, data=data, partial=True)
+    serializer.is_valid(raise_exception=True)
+
+
 def import_bundle(
     payload: Any, tenant, *, replace: bool = False, dry_run: bool = False,
     owning_site=None,
@@ -206,6 +230,7 @@ def import_bundle(
         )
         return report
     report["action"] = "update" if existing else "create"
+    _check_type_fields(payload, existing)
 
     # The bundle says whether it was built against a front/rear photo. Marker
     # coordinates are meaningless without one, so say so rather than importing
@@ -297,6 +322,24 @@ def import_bundle(
     return report
 
 
+def _clean_row(obj, where: str, name: str) -> None:
+    """A component template or sensor row under its model's field rules -
+    lengths, choices, number ranges - before it is written, as the API checks
+    the same row (#311). A bad row is a 400 naming it, and the import's
+    transaction writes nothing."""
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    from rest_framework.exceptions import ValidationError
+
+    try:
+        obj.full_clean(validate_unique=False, validate_constraints=False)
+    except DjangoValidationError as exc:
+        problems = [
+            " ".join(msgs) if field == "__all__" else f"{field}: {' '.join(msgs)}"
+            for field, msgs in exc.message_dict.items()
+        ]
+        raise ValidationError({where: [f"{name}: {'; '.join(problems)}"]}) from None
+
+
 def _import_components(dt, comps: dict, report: dict) -> None:
     """Create the template rows, in COMPONENT_SPECS order so a row that
     references another (front→rear, outlet→inlet) finds it already made."""
@@ -347,7 +390,9 @@ def _import_components(dt, comps: dict, report: dict) -> None:
                 kwargs["manufacturer"] = _get_or_create_manufacturer(
                     dt.tenant, row["manufacturer"]
                 )
-            obj = model.objects.create(device_type=dt, **kwargs)
+            obj = model(device_type=dt, **kwargs)
+            _clean_row(obj, f"components.{key}", row["name"])
+            obj.save()
             made.setdefault(key, {})[obj.name] = obj
             created += 1
         if created:
@@ -387,8 +432,11 @@ def _import_sensors(dt, tenant, sensors: list, report: dict, *, replace: bool) -
         if existing:
             for k, v in fields.items():
                 setattr(existing, k, v)
+            _clean_row(existing, "sensors", slug)
             existing.save()
             report["sensors"]["updated"] += 1
         else:
-            SnmpSensor.objects.create(tenant=tenant, slug=slug, **fields)
+            sensor = SnmpSensor(tenant=tenant, slug=slug, **fields)
+            _clean_row(sensor, "sensors", slug)
+            sensor.save()
             report["sensors"]["created"] += 1

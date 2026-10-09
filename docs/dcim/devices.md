@@ -420,17 +420,22 @@ Notes:
 - The ports are created **one at a time, in order**. Names must be unique per
   device, so if one collides the error names the port that clashed and the ones
   created before it stay created.
-- A range spanning more than **128** components is left alone and treated as a
-  literal name - reach for **Bulk add** on the Interfaces tab instead, which
-  goes through a server-side endpoint, preserves zero-padding
-  (`Gi1/0/[01-48]`), and silently skips names the device already has. See
+- A leading zero on the first number sets the width: `Eth[01-04]` creates
+  Eth01 … Eth04. `Eth[5-5]` creates Eth5.
+- A range that counts down, spans more than **128** components, or appears
+  twice in one name is refused - a name is never stored with its brackets. For
+  more, reach for **Bulk add** on the Interfaces tab, which silently skips
+  names the device already has. See
   [Interfaces](interfaces.md#add-many-interfaces-at-once).
 - **Front ports** advance a second field as they go. A front port claims its own
   strand range on the rear port, and two of them may not share a strand - so the
   range steps the **Start strand** along with the name. `Front[1-24]` against a
   24-strand rear port starting at strand 1 wires the whole trunk through in one
   submit; with a 2-strand connector each port takes the next *pair*. Pick the
-  rear port and starting strand once and the rest follows.
+  rear port and starting strand once and the rest follows. The API does the
+  same for a ranged `POST /api/front-ports/` and refuses the whole range if any
+  port would overrun the rear port or overlap another. Splitter outputs all
+  stay on position 1.
 
 ## Component descriptions
 

@@ -64,6 +64,11 @@ creation order (1-based, no gaps), and advances each tenant/type counter so the
 again is a no-op - already-numbered rows are left alone, so it's safe to re-run
 after any large import.
 
+It numbers 500 rows per transaction (`--batch-size` changes that), so new
+objects in the same tenant wait at most one batch, not the whole run. Stop it
+at any point: the batches it finished keep their numbers, and the next run
+carries on from there without gaps.
+
 !!! tip "Run it after a fresh install or a bulk import"
     A `migrate` adds the column but doesn't backfill existing rows. After
     upgrading an instance that already has data - or after importing a batch via

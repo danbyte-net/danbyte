@@ -36,6 +36,7 @@ from core.models import Organization, Tag, Tenant, TenantGroup
 from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
+from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
 from .cf_search import cf_text_q
@@ -74,7 +75,7 @@ from .models import (
     Module,
     ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
     NATRule,
-    install_module, uninstall_module,
+    ModuleInstallConflict, install_module, reinstall_module, uninstall_module,
     CableTermination, PortReservation,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
@@ -761,6 +762,11 @@ class ComponentBulkMixin(FieldWriteAllowList):
         but a queryset ``update()`` skips. Default: unchanged."""
         return updates
 
+    def check_bulk_rows(self, rows: list, updates: dict) -> None:
+        """Hook for invariants that span other rows (a serializer's
+        ``validate``), checked against the selected rows before the queryset
+        ``update()``. Raise ``ValidationError`` to refuse. Default: none."""
+
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         ids = self._bulk_ids(request)
@@ -809,9 +815,16 @@ class ComponentBulkMixin(FieldWriteAllowList):
         for k in spec["int"]:
             if k in fields:
                 v = fields[k]
-                if v is not None and not isinstance(v, int):
+                if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
                     raise ValidationError({k: "Must be an integer or null."})
                 updates[k] = v
+        for k in spec["fk"]:
+            if k in fields:
+                updates[k] = fields[k] or None
+        # Lengths, ranges, choices and tenant-scoped relations as the edit
+        # form's PATCH checks them (#350); the row rules run below.
+        checked = clean_bulk_updates(self, updates)
+        updates = checked.updates
         for k, model in spec["fk"].items():
             if k in fields:
                 v = fields[k]
@@ -825,6 +838,8 @@ class ComponentBulkMixin(FieldWriteAllowList):
         with transaction.atomic():
             _rows = list(qs)
             updates = self.normalize_bulk_updates(updates)
+            checked.check_rows(_rows, updates)
+            self.check_bulk_rows(_rows, updates)
             updated = qs.update(**updates) if updates else qs.count()
             if updates:
                 log_bulk_update(_rows, updates)
@@ -1187,13 +1202,20 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             **self._site_default_kwargs(serializer),
         )
         # Site gateway-policy autospawn: register a role=gateway IP at the
-        # first/last usable address. Best-effort - never block prefix creation.
+        # first/last usable address. Best-effort - never block prefix creation,
+        # but a failure is logged rather than silently dropped (#331), and runs
+        # in a savepoint so a half-done gateway write cannot leak out.
         try:
             from .views import _autospawn_gateway
 
-            _autospawn_gateway(prefix, request=self.request)
+            with transaction.atomic():
+                _autospawn_gateway(prefix, request=self.request)
         except Exception:  # noqa: BLE001
-            pass
+            import logging
+
+            logging.getLogger("danbyte.api").exception(
+                "gateway autospawn failed for new prefix %s", prefix.pk
+            )
         # Re-home the IPs this new subnet most-specifically contains - carving a
         # child out of a parent must move the covered IPs onto it (they'd
         # otherwise stay stranded on the parent). Best-effort: never block the
@@ -1261,9 +1283,6 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # it was stamped to the user's own site on create.
 
     def get_queryset(self):
-        from django.db.models import IntegerField
-        from django.db.models.expressions import RawSQL
-
         ip_n = Coalesce(
             Subquery(
                 IPAddress.objects.filter(prefix_id=OuterRef("pk")).order_by()
@@ -1272,23 +1291,27 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             0,
         )
 
+        # The DHCP scope count is a correlated subquery like ``ip_n``, not a
+        # joined ``Count``: an aggregate turns the list into a GROUP BY over
+        # every prefix in the tenant before LIMIT and the paginator's COUNT
+        # wraps the same grouping (#337).
+        scope_model = Prefix._meta.get_field("dhcp_scopes").related_model
+        dhcp_scope_n = Coalesce(
+            Subquery(
+                scope_model.objects.filter(prefix_id=OuterRef("pk")).order_by()
+                .values("prefix_id").annotate(c=Count("*")).values("c")[:1]
+            ),
+            0,
+        )
+
         # Everything the list renders per row, once per page (#179): the
-        # address count, the descendant count (Postgres ``<<`` on the stored
-        # cidr, scoped to the same table), the scope flag; ``status`` joined
-        # for the container check in utilisation.
+        # address count and the scope flag; ``status`` joined for the
+        # container check in utilisation. The descendant count is batched
+        # over the page's rows by the serializer (#337).
         qs = (
             super().get_queryset()
             .select_related("status")
-            .annotate(
-                dhcp_scope_n=Count("dhcp_scopes", distinct=True),
-                ip_n=ip_n,
-                descendant_n=RawSQL(
-                    "(SELECT COUNT(*) FROM api_prefix c WHERE c.tenant_id = api_prefix.tenant_id"
-                    " AND c.vrf_id IS NOT DISTINCT FROM api_prefix.vrf_id AND c.id <> api_prefix.id"
-                    " AND c.cidr::inet <<= api_prefix.cidr::inet)",
-                    (), output_field=IntegerField(),
-                ),
-            )
+            .annotate(dhcp_scope_n=dhcp_scope_n, ip_n=ip_n)
         )
         if not self.request:
             return qs
@@ -1690,6 +1713,14 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
+        updates = _bulk_field_updates(
+            fields, ("status_id", "vrf_id", "site_id", "vlan_id", "description")
+        )
+        # The serializer's field rules (#350). Its object-level rules are the
+        # CIDR's own - duplicates and overlaps - which a bulk edit never sets;
+        # a VRF move onto a taken CIDR is the database's 409.
+        updates = clean_bulk_updates(self, updates).updates
+
         # Reject cross-tenant FK assignment - each *_id must resolve within the
         # active tenant (the bulk path bypasses the serializer's scoped fields).
         tenant = _get_active_tenant(self.request)
@@ -1703,9 +1734,6 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         _bulk_status_offered(fields.get("status_id"), Prefix)
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = _bulk_field_updates(
-            fields, ("status_id", "vrf_id", "site_id", "vlan_id", "description")
-        )
 
         with transaction.atomic():
             _rows = list(qs)
@@ -1857,6 +1885,11 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
+        updates = _bulk_field_updates(fields, ("status_id", "role_id", "description"))
+        # The serializer's field rules (#350). Its object-level rules concern
+        # the address and its prefix, which a bulk edit never sets.
+        updates = clean_bulk_updates(self, updates).updates
+
         # Reject cross-tenant FK assignment - the bulk path bypasses the
         # serializer's tenant-scoped fields (issue #59).
         tenant = _get_active_tenant(self.request)
@@ -1867,7 +1900,6 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         _bulk_status_offered(fields.get("status_id"), IPAddress)
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = _bulk_field_updates(fields, ("status_id", "role_id", "description"))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -2122,6 +2154,8 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         qs = self.get_queryset().filter(pk__in=ids)
         updates = _bulk_field_updates(fields, ("gateway_policy", "location", "color", "icon"))
         updates.update(_marker_updates(fields, ("color", "icon")))
+        # Choices and lengths as the edit form's PATCH checks them (#350).
+        updates = clean_bulk_updates(self, updates).updates
 
         with transaction.atomic():
             _rows = list(qs)
@@ -2213,6 +2247,12 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
+        updates = _bulk_field_updates(
+            fields, ("site_id", "group_id", "zone_id", "vrf_id", "status_id", "description"))
+        # The serializer's field rules (#350). Its object-level rules - the
+        # group range and the VID namespace - are check_vlan_moves below.
+        updates = clean_bulk_updates(self, updates).updates
+
         # Reject cross-tenant FK assignment (issue #59).
         tenant = _get_active_tenant(self.request)
         val = fields.get("site_id")
@@ -2224,8 +2264,6 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         _bulk_status_offered(fields.get("status_id"), VLAN)
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = _bulk_field_updates(
-            fields, ("site_id", "group_id", "zone_id", "vrf_id", "status_id", "description"))
         group = None
         if "group_id" in updates:
             group = resolve_group(request, tenant, updates["group_id"])
@@ -2636,16 +2674,17 @@ class TenantViewSet(viewsets.ModelViewSet):
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
-        updates: dict = {}
-        if "group_id" in fields:
-            gid = fields["group_id"]
-            if gid and not TenantGroup.objects.filter(pk=gid).exists():
-                raise ValidationError({"group_id": "Tenant group not found."})
-            updates["group_id"] = gid  # None clears the group
-        if "is_active" in fields:
-            updates["is_active"] = bool(fields["is_active"])
+        updates = {k: fields[k] for k in ("group_id", "is_active") if k in fields}
         if not updates:
             raise ValidationError({"fields": "No editable fields provided."})
+        # As the edit form's PATCH reads them (#350): "false" is false, not
+        # a truthy string.
+        updates = clean_bulk_updates(self, updates).updates
+        if "group_id" in updates:
+            gid = updates["group_id"]
+            if gid and not TenantGroup.objects.filter(pk=gid).exists():
+                raise ValidationError({"group_id": "Tenant group not found."})
+            updates["group_id"] = gid or None  # None clears the group
 
         qs = self.get_queryset().filter(pk__in=ids)
         with transaction.atomic():
@@ -4291,16 +4330,22 @@ class NameRangeCreateMixin:
 
     Names the client already expanded contain no range, so a fanning client
     stays a harmless N single creates. The response body is the FIRST row.
+    "[5-5]" is a range of one; a range that can't be expanded is refused, so
+    no name is ever stored with its brackets (#335).
     """
 
     def perform_create(self, serializer):
         from django.db import transaction
 
-        from .name_range import expand_name_range
+        from .name_range import NAME_RANGE_RE, expand_name_range, range_error
 
         name = serializer.validated_data.get("name") or ""
         names = expand_name_range(name)
-        if len(names) == 1:
+        if any(NAME_RANGE_RE.search(n) for n in names):
+            raise ValidationError(
+                {"name": range_error(name) or "Only one [a-b] range per name."}
+            )
+        if names == [name]:
             return self._create_one(serializer)
         model = serializer.Meta.model
         scope_field = getattr(self, "bulk_name_scope_field", None) or (
@@ -4318,15 +4363,21 @@ class NameRangeCreateMixin:
                 {"name": f"Already exists: {', '.join(sorted(clash)[:5])}."}
             )
         first = None
+        base = dict(serializer.validated_data)
         with transaction.atomic():
-            for n in names:
+            for i, n in enumerate(names):
                 # A fresh save per name through the same validated data - tags
                 # and custom fields ride along like any single create.
                 serializer.instance = None
                 serializer.validated_data["name"] = n
+                self._range_row(serializer.validated_data, base, i)
                 self._create_one(serializer)
                 first = first or serializer.instance
         serializer.instance = first
+
+    def _range_row(self, data, base, i) -> None:
+        """Adjust row ``i`` of a range before it is saved. ``base`` is the
+        validated data as posted. Default: every row is the same but its name."""
 
     def _create_one(self, serializer):
         """One row. Subclasses with their own save logic override THIS, not
@@ -5124,6 +5175,30 @@ class RearPortViewSet(_DevicePortViewSet):
     bulk_int_fields = ("positions",)
     bulk_bool_fields = ("mark_connected",)
 
+    def check_bulk_rows(self, rows, updates):
+        # The single-edit rules hold for bulk edit too (#334): no rear port
+        # drops a position a front port maps onto, and a splitter keeps one.
+        from .serializers import _refuse_unmapping
+
+        if "positions" not in updates:
+            return
+        positions = updates["positions"]
+        if positions is None or positions < 1:
+            raise ValidationError({"positions": "Must be at least 1."})
+        for row in rows:
+            if row.is_splitter and positions != 1:
+                raise ValidationError(
+                    {"positions": f"{row.name} is a splitter - it has exactly "
+                     "1 input position."}
+                )
+            try:
+                _refuse_unmapping(row.front_ports.all(), positions)
+            except ValidationError as e:
+                raise ValidationError(
+                    {"positions": f"{row.device.name} {row.name}: "
+                     f"{e.detail['positions'][0]}"}
+                ) from None
+
 
 class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
@@ -5133,6 +5208,21 @@ class FrontPortViewSet(_DevicePortViewSet):
     )
     serializer_class = FrontPortSerializer
     bulk_bool_fields = ("mark_connected",)
+
+    def _range_row(self, data, base, i) -> None:
+        # "FP[1-12]" at position 1 is twelve ports on positions 1-12, not
+        # twelve on position 1 (#334). Splitter outputs all share position 1.
+        # Each row is checked on its own.
+        from .serializers import check_front_port_mapping
+
+        width = base.get("positions") or 1
+        rear = data.get("rear_port")
+        step = 0 if rear is not None and rear.is_splitter else i * width
+        data["rear_port_position"] = (base.get("rear_port_position") or 1) + step
+        check_front_port_mapping(
+            data.get("device"), data.get("rear_port"),
+            data["rear_port_position"], width,
+        )
 
 
 class ConsolePortViewSet(_DevicePortViewSet):
@@ -5524,7 +5614,8 @@ class ModuleBayViewSet(_DevicePortViewSet):
 
 class ModuleViewSet(TenantScopedViewSet):
     """Installed modules. Creating one stamps the module type's interfaces
-    onto the host device; deleting removes them again (by rendered name)."""
+    onto the host device, owned by the module; changing its type, bay or
+    device re-stamps them; deleting it (or its bay) removes exactly those."""
 
     queryset = (
         Module.objects.select_related(
@@ -5553,9 +5644,18 @@ class ModuleViewSet(TenantScopedViewSet):
             raise ValidationError(
                 {"device_id": "Pick a device in the current tenant."}
             )
+        # create() runs in a transaction: a refused install rolls the module
+        # row back with it.
         serializer.save()
         # Stamp the module's interfaces onto the host device.
-        self._created_interfaces = install_module(serializer.instance)
+        self._created_interfaces = self._install(install_module, serializer.instance)
+
+    @staticmethod
+    def _install(fn, module) -> int:
+        try:
+            return fn(module)
+        except ModuleInstallConflict as exc:
+            raise ValidationError({"module_type_id": str(exc)}) from exc
 
     def create(self, request, *args, **kwargs):
         resp = super().create(request, *args, **kwargs)
@@ -5565,7 +5665,30 @@ class ModuleViewSet(TenantScopedViewSet):
             )
         return resp
 
+    def perform_update(self, serializer):
+        tenant = self._tenant_or_403()
+        device = serializer.validated_data.get("device")
+        if device is not None and device.tenant_id != tenant.id:
+            raise ValidationError(
+                {"device_id": "Pick a device in the current tenant."}
+            )
+        before = Module.objects.values(
+            "module_type_id", "module_bay_id", "device_id"
+        ).get(pk=serializer.instance.pk)
+        module = serializer.save()
+        # A new type, bay or device changes which interfaces the module
+        # contributes: remove what it created, install the new set (#333).
+        # update() runs in a transaction, so a refused install rolls back.
+        if (
+            module.module_type_id != before["module_type_id"]
+            or module.module_bay_id != before["module_bay_id"]
+            or module.device_id != before["device_id"]
+        ):
+            self._install(reinstall_module, module)
+
     def perform_destroy(self, instance):
+        # Interface.module cascades: the module's own interfaces go with it,
+        # whichever path deletes it (this, its bay, its device).
         uninstall_module(instance)
         instance.delete()
 
@@ -5599,6 +5722,16 @@ class FrontPortTemplateViewSet(_ComponentTemplateViewSet):
         .select_related("device_type", "rear_port_template").order_by(NATURAL_NAME)
     )
     serializer_class = FrontPortTemplateSerializer
+
+    def _range_row(self, data, base, i) -> None:
+        # Same fan-out as device front ports (#334): consecutive positions.
+        from .serializers import check_front_port_template_mapping
+
+        width = base.get("positions") or 1
+        rear = data.get("rear_port_template")
+        step = 0 if rear is not None and rear.is_splitter else i * width
+        data["rear_port_position"] = (base.get("rear_port_position") or 1) + step
+        check_front_port_template_mapping(rear, data["rear_port_position"], width)
 
 
 # ─── Virtualization ──────────────────────────────────────────────────────────
@@ -7562,7 +7695,7 @@ class CircuitViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("provider", "type")
+            .select_related("provider", "type", "status")
             .prefetch_related(
                 TAGS, "terminations__site", "terminations__provider_network",
                 # Each end reports the cable landing on it (#118).
@@ -8240,6 +8373,7 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             limit = VirtualChassis._meta.get_field(key).max_length
             if not isinstance(value, str) or len(value) > limit:
                 raise ValidationError({key: f"Text of at most {limit} characters."})
+        updates = clean_bulk_updates(self, updates).updates
 
         qs = self.get_queryset().filter(pk__in=ids)
         with transaction.atomic():
@@ -8365,8 +8499,12 @@ class RegionViewSet(TenantScopedViewSet):
             raise ValidationError(
                 {"fields": "Only parent_id and color are bulk-editable here."}
             )
-        rows = list(self.get_queryset().filter(id__in=ids))
         marker = _marker_updates(fields, ("color",))
+        # The serializer's field rules (#350), the parent's tenant included.
+        clean_bulk_updates(
+            self, {**marker, **({"parent_id": fields["parent_id"]} if "parent_id" in fields else {})}
+        )
+        rows = list(self.get_queryset().filter(id__in=ids))
         if "parent_id" not in fields:
             with transaction.atomic():
                 self.get_queryset().filter(pk__in=[r.pk for r in rows]).update(**marker)
@@ -8386,11 +8524,12 @@ class RegionViewSet(TenantScopedViewSet):
                                       "of the selected regions."}
                     )
                 node = node.parent
-        for r in rows:
-            r.parent = parent
-            for k, v in marker.items():
-                setattr(r, k, v)
-            r.save(update_fields=["parent", *marker])
+        with transaction.atomic():
+            for r in rows:
+                r.parent = parent
+                for k, v in marker.items():
+                    setattr(r, k, v)
+                r.save(update_fields=["parent", *marker])
         return Response({"updated": len(rows)})
 
     def get_serializer_class(self):
@@ -8439,6 +8578,9 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if unknown:
             raise ValidationError({"fields": f"Unknown field(s): {', '.join(unknown)}."})
         updates = _marker_updates(fields, ("color", "icon"))
+        # The serializer's field rules (#350); its row rules are about the
+        # parent and site, which this never sets.
+        updates = clean_bulk_updates(self, updates).updates
         qs = self.get_queryset().filter(pk__in=ids)
         with transaction.atomic():
             rows = list(qs)

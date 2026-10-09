@@ -24,7 +24,9 @@ def racked_devices_prefetch():
     """The ``Prefetch`` of a rack queryset's ``devices`` with everything the
     figures here read: each device's type and role, its power ports and an
     ``outlet_n`` count of its power outlets. Every device in the rack, as a
-    rack's units and power count them all.
+    rack's units and power count them all. ``outlet_inlet_n`` counts the
+    distinct inlets its outlets name: two or more mark a PDU whose inlets
+    feed separate outlet banks (see :func:`pdu_rating`).
 
     A page of racks, or every rack on a floor plan, then costs the same
     queries whatever stands in them; without it ``rack_power`` paid two per
@@ -35,7 +37,10 @@ def racked_devices_prefetch():
 
     racked = (
         Device.objects.select_related("device_type", "role")
-        .annotate(outlet_n=Count("power_outlets", distinct=True))
+        .annotate(
+            outlet_n=Count("power_outlets", distinct=True),
+            outlet_inlet_n=Count("power_outlets__power_port", distinct=True),
+        )
         .prefetch_related("power_ports")
     )
     return Prefetch("devices", queryset=racked)
@@ -66,17 +71,47 @@ def rack_space(rack) -> dict:
     return {"u_height": rack.u_height, "u_used": used, "u_free": max(rack.u_height - used, 0)}
 
 
+def pdu_rating(device) -> int:
+    """The power one PDU (a device with outlets) can deliver, by the rated
+    (maximum) draw of its inlets.
+
+    Two or more inlets are redundant feeds of the same outlets, so the PDU
+    delivers what its smallest rated inlet carries alone (#329). Only when
+    its outlets name two or more different inlets does each inlet feed its
+    own bank of outlets, and the banks add up. 0 when no inlet is rated."""
+    rated = [pp.maximum_draw for pp in device.power_ports.all() if pp.maximum_draw]
+    if not rated:
+        return 0
+    banks = getattr(device, "outlet_inlet_n", None)
+    if banks is None:
+        banks = len({o.power_port_id for o in device.power_outlets.all() if o.power_port_id})
+    return sum(rated) if banks > 1 else min(rated)
+
+
+def _smaller_side(ratings: list[int]) -> int:
+    """The rack's PDUs as A and B sides: the larger of the two sides' smaller
+    totals over every way to split them, so the figure is what one side
+    carries alone. One PDU has no second side and delivers its own rating."""
+    if len(ratings) == 1:
+        return ratings[0]
+    total = sum(ratings)
+    sums = {0}
+    for r in ratings:
+        sums |= {s + r for s in sums if s + r <= total // 2}
+    return max(sums)
+
+
 def rack_power(rack) -> dict:
     """Rack power rollup: ``{"available_w", "allocated_w", "maximum_w",
     "supply"}``.
 
     Supply = the primary feeds delivered to the rack (V × A ×
     max-utilisation%, three-phase × √3), ``supply`` ``"feed"``. Where no
-    primary feed gives a figure, the rated (maximum) draw of the inlets of the
-    rack's PDUs stands in, ``supply`` ``"pdu_rating"``. Two or more rated PDUs
-    are taken as an A/B pair, so the supply is half their ratings: either side
-    must carry the whole rack alone. ``supply`` is None when neither is known
-    (``available_w`` 0).
+    primary feed gives a figure, the rated (maximum) draw of the rack's PDUs
+    stands in (:func:`pdu_rating` each), ``supply`` ``"pdu_rating"``. Two or
+    more rated PDUs are taken as A and B sides, and the supply is the smaller
+    side: either side must carry the whole rack alone (#329). ``supply`` is
+    None when neither is known (``available_w`` 0).
 
     Demand = the racked devices' power-port draws - allocated where
     recorded, with the nameplate (maximum) sum alongside."""
@@ -88,7 +123,8 @@ def rack_power(rack) -> dict:
         if f.phase == "three":
             watts *= 1.732
         available += watts
-    allocated = maximum = rating = pdus = 0
+    allocated = maximum = 0
+    ratings: list[int] = []
     for d in rack.devices.all():
         # A device WITH outlets is a distributor (a PDU): its inlet draw
         # restates its children's draws, so counting both doubled the
@@ -98,10 +134,9 @@ def rack_power(rack) -> dict:
         if outlet_n is None:
             outlet_n = d.power_outlets.count()
         if outlet_n:
-            inlet = sum(pp.maximum_draw or 0 for pp in d.power_ports.all())
-            if inlet:
-                rating += inlet
-                pdus += 1
+            rating = pdu_rating(d)
+            if rating:
+                ratings.append(rating)
             continue
         for pp in d.power_ports.all():
             allocated += pp.allocated_draw or 0
@@ -109,8 +144,8 @@ def rack_power(rack) -> dict:
     fed = round(available)
     if fed:
         supply, available_w = SUPPLY_FEED, fed
-    elif rating:
-        supply, available_w = SUPPLY_PDU_RATING, round(rating / 2 if pdus > 1 else rating)
+    elif ratings:
+        supply, available_w = SUPPLY_PDU_RATING, round(_smaller_side(ratings))
     else:
         supply, available_w = None, 0
     return {

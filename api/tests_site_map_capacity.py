@@ -389,6 +389,61 @@ class CableTests(_MapBase):
         cap = self.edge("cable")["capacity"]
         self.assertEqual((cap["label"], cap["count"]), ("2×10G", 2))
 
+    def _multi(self, a_ports, b_ports, label="bundle"):
+        """One cable with every port of ``a_ports`` on its A end and of
+        ``b_ports`` on its B end, in that order."""
+        cable = Cable.objects.create(tenant=self.tenant, label=label)
+        for end, ports in (("A", a_ports), ("B", b_ports)):
+            for port in ports:
+                CableTermination.objects.create(cable=cable, end=end, interface=port)
+        return cable
+
+    def test_a_multi_port_cable_is_one_link_per_position(self):
+        # 2+2 ports are two links, not the four A×B pairs (#312).
+        (a1, b1), (a2, b2) = self._ports(), self._ports()
+        cable = self._multi([a1, a2], [b1, b2])
+        edge = self.edge("cable")
+        self.assertEqual(edge["link_count"], 2)
+        self.assertEqual(
+            (edge["capacity"]["kbps"], edge["capacity"]["label"]), (2 * TEN_G, "2×10G")
+        )
+        pairs = {(lk["a"]["port"]["id"], lk["z"]["port"]["id"]) for lk in edge["links"]}
+        self.assertEqual(pairs, {(str(a1.id), str(b1.id)), (str(a2.id), str(b2.id))})
+        row = next(r for r in self.cables() if r["id"] == str(cable.id))
+        self.assertEqual((row["link_count"], row["capacity"]["label"]), (2, "2×10G"))
+
+    def test_uneven_multi_port_ends_pair_up_to_the_shorter_end(self):
+        (a1, b1), (a2, b2), (_a3, b3) = self._ports(), self._ports(), self._ports()
+        self._multi([a1, a2], [b1, b2, b3])
+        edge = self.edge("cable")
+        self.assertEqual((edge["link_count"], edge["capacity"]["label"]), (2, "2×10G"))
+
+    def test_a_breakout_fans_out_from_its_single_port(self):
+        # One 40G port broken out to four 10G ports carries four links.
+        qsfp = self._iface(self.sw_ams, "Fo1/1", "40G")
+        lanes = [self._iface(self.sw_lon, f"Te2/{i}", "10G") for i in range(4)]
+        self._multi([qsfp], lanes)
+        edge = self.edge("cable")
+        self.assertEqual((edge["link_count"], edge["capacity"]["label"]), (4, "4×10G"))
+
+    def test_a_multi_port_cable_behind_a_panel_follows_its_own_position(self):
+        # A rear-to-rear trunk patched at LON with a two-port cord: each
+        # strand comes out on the cord's port in its position only.
+        rear_a, fronts_a = self._panel("pp-ams", self.ams, positions=2)
+        rear_b, fronts_b = self._panel("pp-lon", self.lon, positions=2)
+        self._cable({"rear_port": rear_a}, {"rear_port": rear_b}, label="trunk")
+        (a1, b1), (a2, b2) = self._ports(), self._ports()
+        for i, a in enumerate((a1, a2)):
+            self._cable({"interface": a}, {"front_port": fronts_a[i]})
+        cord = Cable.objects.create(tenant=self.tenant, label="cord")
+        for front in fronts_b:
+            CableTermination.objects.create(cable=cord, end="A", front_port=front)
+        for port in (b1, b2):
+            CableTermination.objects.create(cable=cord, end="B", interface=port)
+        edge = self.edge("cable")
+        pairs = {(lk["a"]["port"]["id"], lk["z"]["port"]["id"]) for lk in edge["links"]}
+        self.assertEqual(pairs, {(str(a1.id), str(b1.id)), (str(a2.id), str(b2.id))})
+
     def test_a_cable_that_leads_nowhere_counts_as_unknown(self):
         self._direct()
         rear, fronts = self._panel("pp-lon", self.lon)

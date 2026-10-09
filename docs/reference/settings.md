@@ -115,10 +115,24 @@ created on the first backup, mode `0700`.
 **Before upgrade** backup (they stop otherwise when the backup fails or
 `pg_dump` is missing). See [Backup and restore](../getting-started/backup-restore.md).
 
+## Scripts (`DANBYTE_SCRIPT_SANDBOX`)
+
+`DANBYTE_SCRIPT_SANDBOX` sets how sandboxed [scripts](../features/scripts.md)
+are confined. `landlock`, the default, confines every sandboxed run and
+refuses one the host cannot confine. `none` runs them unconfined, and each
+run log says so; use it only on a host without Landlock, knowing a script
+author can then read what the service account can, including `.env`.
+Trusted scripts are never confined.
+
+`DANBYTE_INTERNAL_URL` is where a script's SDK reaches the API. Default:
+`http://127.0.0.1:8000`.
+
 ## Outbound requests (SSRF guard)
 
 User-configured outbound URLs - webhooks, notification channels, automation
-targets, device-type import URLs, and **per-tenant** SMTP/LDAP hosts - are
+targets, device-type import URLs, virtualization sources (Proxmox, vCenter,
+Cloud Director), Windows server connections, a public assistant provider, and
+**per-tenant** SMTP/LDAP hosts - are
 validated before each request: the host is resolved and rejected if it points at
 a loopback / RFC1918 / link-local / `169.254.0.0/16` (cloud metadata) / ULA /
 reserved address. This stops a tenant admin pointing a webhook (or a tenant SMTP
@@ -128,7 +142,11 @@ cloud-hosted, multi-tenant deployments.
 The guard is **DNS-rebinding safe**: the resolved public IP is pinned for the
 actual connection (with SNI/`Host` preserved for TLS), so a hostname that
 resolves public on the first lookup can't be swapped to `169.254.169.254` on the
-connect. Operator-configured *deployment*-wide SMTP/LDAP hosts are trusted and
+connect. Redirects are never followed: a `3xx` answer is an error, so a host
+that passes the check cannot bounce the request to an internal address. When an
+outbound proxy is set, `NO_PROXY` is matched against the configured hostname,
+not the pinned IP. WinRM and the vCenter SOAP connection (host hardware) are
+checked before they connect but not pinned. Operator-configured *deployment*-wide SMTP/LDAP hosts are trusted and
 not guarded (an operator may legitimately point them at an internal relay); only
 tenant-supplied hosts are checked.
 
@@ -229,6 +247,6 @@ have working defaults, so the feature runs with none of them set.
 | `MONITORING_PLUGIN_DIR` | empty | Directory of trusted Nagios-style plugins. An `exec` check may only run a plugin (by bare name, no path traversal) inside this dir; args are passed without a shell. |
 | `MONITORING_WEBHOOK_TIMEOUT` | `5` | Per-channel webhook POST timeout (seconds). |
 | `MONITORING_RESULT_RETENTION_DAYS` | `30` | Delete `CheckResult` rows older than this (daily prune). Raw results run ~600k rows/day on a busy install (~2.4 GB heap at 17 days) - raise only with the disk to match; the rolled-up state + transitions carry the long-term story. |
-| `MONITORING_TRANSITION_RETENTION_DAYS` | `365` | Delete `StateTransition` rows older than this. |
+| `MONITORING_TRANSITION_RETENTION_DAYS` | `365` | Delete `StateTransition` rows older than this. Each check's newest change before the cutoff is kept, so a check that has not changed for longer still has its status. |
 | `MONITORING_SNMP_SAMPLE_RETENTION_DAYS` | `3` | Delete SNMP interface counter samples (the utilisation sparklines) older than this; the sparklines read only this window. |
 | `MONITORING_ROLLUP_HOURLY_RETENTION_DAYS` | `30` | Delete hourly check rollups older than this. Daily rollups are never pruned. See [Rollups](../features/monitoring.md#rollups). |

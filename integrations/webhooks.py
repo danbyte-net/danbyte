@@ -2,7 +2,10 @@
 
 Wiring: ``apps.ready()`` connects ``post_save`` / ``post_delete`` for every
 tenant-scoped model in the RBAC object-type registry. On a matching change we
-enqueue ``deliver_webhook`` on the ``low`` queue. Everything in the signal path
+enqueue ``deliver_webhook`` on the ``low`` queue once the surrounding
+transaction commits, so a rolled-back change is never announced and a worker
+never delivers before the change is visible (#357). The payload is captured at
+signal time, which a delete needs. Everything in the signal path
 is wrapped so a webhook problem (or a down Redis) can never break the actual
 save - webhooks are best-effort.
 """
@@ -16,6 +19,7 @@ import json
 import logging
 import uuid
 
+from django.db import transaction
 from django.db.models.fields.files import FieldFile
 from django.db.models.signals import post_delete, post_save
 
@@ -65,7 +69,8 @@ def _slug_for(instance) -> str | None:
 
 
 def _fire(instance, event: str) -> None:
-    """Find matching webhooks for the instance's tenant and enqueue delivery.
+    """Find matching webhooks for the instance's tenant and enqueue delivery
+    after the transaction commits (#357); nothing is queued on rollback.
 
     Best-effort: any failure here is swallowed so the save/delete still
     succeeds.
@@ -88,15 +93,23 @@ def _fire(instance, event: str) -> None:
             return
         data = _field_dict(instance)
         object_id = str(getattr(instance, "pk", ""))
+        hook_ids = [str(h.id) for h in hooks]
+        transaction.on_commit(lambda: _enqueue(hook_ids, event, slug, object_id, data))
+    except Exception:  # noqa: BLE001 - never break the originating save
+        logger.exception("webhook dispatch failed (%s)", event)
+
+
+def _enqueue(hook_ids, event, slug, object_id, data) -> None:
+    """Queue one delivery per webhook. Runs after commit, so a failure here
+    (a down Redis) is logged and never reaches the committed request."""
+    try:
         import django_rq
 
         queue = django_rq.get_queue("low")
-        for h in hooks:
-            queue.enqueue(
-                deliver_webhook, str(h.id), event, slug, object_id, data
-            )
-    except Exception:  # noqa: BLE001 - never break the originating save
-        logger.exception("webhook dispatch failed (%s)", event)
+        for hook_id in hook_ids:
+            queue.enqueue(deliver_webhook, hook_id, event, slug, object_id, data)
+    except Exception:  # noqa: BLE001
+        logger.exception("webhook enqueue failed (%s)", event)
 
 
 def _on_save(sender, instance, created, **kwargs):

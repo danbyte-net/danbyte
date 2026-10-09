@@ -94,7 +94,8 @@ and watch the live preview:
 
 Names that already exist on the device are skipped, so re-running is safe.
 
-The single **Add interface** form takes a `[a-b]` range too (`eth[0-3]`), which
+The single **Add interface** form takes a `[a-b]` range too (`eth[0-3]`, or
+`Eth[01-04]` for padded names), which
 is handier for a few ports since you get the full field set - type, MTU, PoE,
 VLANs, VRF, LAG - applied to all of them. The form is grouped into sections:
 device/name/type up top, then **Switching** (802.1Q, VLANs, VRF), **State**

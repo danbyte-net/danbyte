@@ -157,6 +157,33 @@ def containing_prefix(tenant, ip, vrf=ANY_VRF):
     return best
 
 
+def row_in_vrf(tenant, ip, vrf=ANY_VRF, *, rows=None):
+    """The IPAM row for ``ip`` in the routing context ``vrf``, or ``None`` (#331).
+
+    The same literal address legitimately exists once per VRF, so a lookup by
+    address alone can return another VRF's row. A named VRF (``None`` = Global)
+    is a hard scope. With ``ANY_VRF`` a single row is the one meant; when the
+    address is in several VRFs, only the row in the VRF the address places into
+    by longest match counts. ``rows`` may carry the address's rows pre-fetched.
+    """
+    if rows is None:
+        from api.models import IPAddress
+
+        qs = IPAddress.objects.filter(tenant=tenant, ip_address=str(ip))
+        if vrf is not ANY_VRF:
+            return qs.filter(vrf_id=getattr(vrf, "id", None)).first()
+        rows = list(qs[:8])
+    if vrf is not ANY_VRF:
+        vrf_id = getattr(vrf, "id", None)
+        return next((r for r in rows if r.vrf_id == vrf_id), None)
+    if len(rows) <= 1:
+        return rows[0] if rows else None
+    prefix = containing_prefix(tenant, ip)
+    if prefix is None:
+        return None
+    return next((r for r in rows if r.vrf_id == prefix.vrf_id), None)
+
+
 def place(tenant, ip, placement: Placement, *, prefixes=None) -> Placed:
     """Pick the prefix a discovered address belongs in, under ``placement``.
 

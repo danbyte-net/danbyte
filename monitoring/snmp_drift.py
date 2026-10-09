@@ -19,10 +19,10 @@ from django.db import IntegrityError
 from api.models import Interface, IPAddress, MACAddress, Prefix, VLAN
 from api.vlan_scope import resolve_vid
 from api.speed import fmt_speed, speed_mbps
-from api.vrf_placement import ANY_VRF, containing_prefix
+from api.vrf_placement import ANY_VRF, containing_prefix, row_in_vrf
 
 from .models import DeviceSnmp, MonitoringSettings
-from .vc_stack import observed_for, stack_state
+from .vc_stack import observed_for, stack_owner, stack_state
 
 log = logging.getLogger("monitoring.snmp_drift")
 
@@ -276,28 +276,55 @@ def _part_drift(device, tenant, state) -> list[dict]:
     return out
 
 
+def _rows_by_address(qs) -> dict:
+    """``{address: [rows]}`` - a list, because the same address legitimately
+    exists once per VRF (#331)."""
+    out: dict = {}
+    for r in qs:
+        out.setdefault(r.ip_address, []).append(r)
+    return out
+
+
 def _observed_ip_rows(tenant, observed) -> dict:
-    """Existing IPAddress rows for every address this poll reported, by address."""
+    """Existing IPAddress rows for every address this poll reported, by address
+    (a list per address - one row per VRF that holds it)."""
     addrs = {
         ip for o in observed for ip in (o.get("ip_addresses") or []) if _real_ip(ip)
     }
     if not addrs:
         return {}
-    return {
-        r.ip_address: r
-        for r in IPAddress.objects.filter(tenant=tenant, ip_address__in=addrs)
-    }
+    return _rows_by_address(
+        IPAddress.objects.filter(tenant=tenant, ip_address__in=addrs)
+    )
 
 
-def _ip_attachable(ip_rows: dict, device, iface, ip: str) -> bool:
+def _iface_ip_vrf(tenant, iface):
+    """The VRF an address seen on ``iface`` lives in: the interface's own VRF,
+    else the tenant's SNMP VRF policy (device, role, type, site, tenant), else
+    ``ANY_VRF`` - no opinion, keep the longest-match tie-break."""
+    if iface.vrf_id:
+        return iface.vrf
+    from .snmp_resolve import resolve_snmp_vrf
+
+    return resolve_snmp_vrf(iface.device, tenant) or _ANY_VRF
+
+
+def _ip_attachable(ip_rows: dict, device, iface, ip: str, tenant) -> bool:
     """Is attaching ``ip`` to ``iface`` new, safe information?
 
     "Already on the device" is not the same as "already on the right port", and
     conflating them hid the common case: a server's OOB address is recorded on
     the device with no interface, so SNMP naming the port that bears it was
     discarded as redundant and the address never reached the port.
+
+    Only the row in the interface's VRF counts (#331): the same address in
+    another VRF is another host, neither a conflict nor something to bind.
     """
-    row = ip_rows.get(ip)
+    rows = ip_rows.get(ip) or []
+    row = (
+        row_in_vrf(tenant, ip, _iface_ip_vrf(tenant, iface), rows=rows)
+        if rows else None
+    )
     if row is None:
         return True  # not recorded at all → offer to create it
     if row.assigned_interface_id == iface.id:
@@ -384,12 +411,27 @@ DEVICE_FIELDS = (
 ACCEPTABLE_DEVICE_FIELDS = {field for field, _key, _label in DEVICE_FIELDS}
 
 
-def _device_field_items(device, state) -> list[dict]:
+def _stack_member_skips(device) -> set[str]:
+    """Device fields a stack's poll cannot speak for on ``device`` (#347).
+
+    A stack answers SNMP as one box with one ``sysName`` - the stack's. Only
+    the owner (the master, else the lowest member) is named by it; members at
+    position 2, 3, … have no name of their own on the wire, so comparing
+    theirs against the stack's would drift on every poll.
+    """
+    if device.virtual_chassis_id and stack_owner(device).id != device.id:
+        return {"name"}
+    return set()
+
+
+def _device_field_items(device, state, skip=()) -> list[dict]:
     """Device fields this observation disagrees with. Absent is not disagreement -
     a source that does not report a serial is saying nothing about it."""
     data = state.data or {}
     out = []
     for field, key, label in DEVICE_FIELDS:
+        if field in skip:
+            continue
         observed = str(data.get(key) or "").strip()
         if not observed:
             continue
@@ -451,7 +493,7 @@ def compute_device_drift(
 
     # 1. Device fields - the name against sysName, and anything else a source
     #    can speak for. Shared with the indirect path below.
-    items.extend(_device_field_items(device, state))
+    items.extend(_device_field_items(device, state, _stack_member_skips(device)))
 
     # 2. Interfaces, matched by name (case-insensitive).
     observed = [o for o in (state.interfaces or []) if o.get("name")]
@@ -567,7 +609,9 @@ def compute_device_drift(
                 })
         # IPs observed on the interface that aren't recorded on it yet.
         for ip in o.get("ip_addresses", []):
-            if not _real_ip(ip) or not _ip_attachable(ip_rows, device, existing, ip):
+            if not _real_ip(ip) or not _ip_attachable(
+                ip_rows, device, existing, ip, tenant
+            ):
                 continue
             # A prefix only has to exist when the address is new; binding a row
             # that already exists needs nothing.
@@ -693,15 +737,16 @@ def _located_switch_links(device, tenant, state, int_by_name) -> list[dict]:
         ifaces.update(
             (i.id, i) for i in Interface.objects.filter(device=device, pk__in=missing)
         )
-    rows = {
-        r.ip_address: r
-        for r in IPAddress.objects.filter(
+    rows = _rows_by_address(
+        IPAddress.objects.filter(
             tenant=tenant, ip_address__in=set(mac_ip.values())
         ).select_related("switch", "switch_interface")
-    }
+    )
     items = []
     for mac, ip in sorted(mac_ip.items(), key=lambda kv: kv[1]):
-        row = rows.get(ip)
+        # ARP carries no VRF: an address held in several VRFs resolves to the
+        # one it places into, or to nothing (#331).
+        row = row_in_vrf(tenant, ip, rows=rows[ip]) if ip in rows else None
         if row is None:
             continue
         item = _switch_link_item(device, ifaces.get(here[mac].at.interface_id), row)
@@ -775,15 +820,14 @@ def _legacy_switch_links(device, tenant, state, observed, int_by_name) -> list[d
     # switch - and each polled switch then re-claims them, a tug of war.
     ctx = UplinkContext(tenant, ports={state.device_id: legacy_mac_ports(state)})
     ctx.load(interface_ids={iface.id for iface, _key in candidates.values()})
-    rows = {
-        r.ip_address: r
-        for r in IPAddress.objects.filter(
+    rows = _rows_by_address(
+        IPAddress.objects.filter(
             tenant=tenant, ip_address__in=list(candidates)
         ).select_related("switch", "switch_interface")
-    }
+    )
     items = []
     for ip, (iface, key) in candidates.items():
-        row = rows.get(ip)
+        row = row_in_vrf(tenant, ip, rows=rows[ip]) if ip in rows else None
         if row is None:
             continue
         if ctx.classify(state.device_id, key, iface.id).is_uplink:
@@ -1069,7 +1113,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
             _ensure_mac_object(tenant, iface, iface.mac_address)
 
         for ip in o.get("ip_addresses", []):
-            if not _real_ip(ip) or not _ip_attachable(ip_rows, device, iface, ip):
+            if not _real_ip(ip) or not _ip_attachable(ip_rows, device, iface, ip, tenant):
                 continue
             result = _attach_observed_ip(tenant, iface, ip)
             if result == "skipped":
@@ -1078,7 +1122,9 @@ def sync_device_from_snmp(device, tenant) -> dict:
                 summary["ips_assigned"] += 1
                 # Re-read so a second observed row for the same address sees it
                 # as settled rather than attaching it twice.
-                ip_rows[ip] = IPAddress.objects.get(tenant=tenant, ip_address=ip)
+                ip_rows[ip] = list(
+                    IPAddress.objects.filter(tenant=tenant, ip_address=ip)
+                )
 
     # Relationship-shaped drift, applied after the interface pass so a just-
     # created aggregate is there to join: switch links (IP ↔ this switch's
@@ -1146,7 +1192,11 @@ def _attach_observed_ip(tenant, iface, ip: str) -> str:
     """Record an SNMP-observed interface IP in Danbyte → ``"assigned"`` (an
     existing unassigned IP bound to this interface), ``"created"`` (a new IP), or
     ``"skipped"`` (already assigned elsewhere, or no containing prefix exists)."""
-    existing = IPAddress.objects.filter(tenant=tenant, ip_address=ip).first()
+    # Scope everything to the VRF the interface sits in (#331): an address
+    # with the same digits in another VRF is someone else's row - binding it
+    # here would move another routing context's host onto this port.
+    vrf = _iface_ip_vrf(tenant, iface)
+    existing = row_in_vrf(tenant, ip, vrf)
     if existing is not None:
         if existing.assigned_interface_id or (
             existing.assigned_device_id
@@ -1161,16 +1211,8 @@ def _attach_observed_ip(tenant, iface, ip: str) -> str:
         # scoped write actually persists the device link too.
         existing.save(update_fields=["assigned_interface", "assigned_device"])
         return "assigned"
-    # Scope the prefix search to the interface's VRF when it has one, so the IP
-    # lands in the right routing context. Without one, the tenant's default
-    # SNMP VRF policy (device → role → type → site → tenant) narrows the
-    # search; no policy keeps the any-VRF tie-break.
-    if iface.vrf_id:
-        vrf = iface.vrf
-    else:
-        from .snmp_resolve import resolve_snmp_vrf
-
-        vrf = resolve_snmp_vrf(iface.device, tenant) or _ANY_VRF
+    # The prefix search uses the same scope, so the IP lands in the right
+    # routing context.
     prefix = _containing_prefix(tenant, ip, vrf)
     if prefix is None:
         return "skipped"

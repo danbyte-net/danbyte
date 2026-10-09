@@ -508,6 +508,8 @@ SNMP interface (or the agent's), the **site** from the first host group that
 names one of your sites - the reverse of what provisioning writes, so an
 estate Danbyte provisioned and one built by hand read the same way - and the
 **device type** from the inventory model when you have one by that name.
+Zabbix names no VRF, so when the address exists in several VRFs the IP in the
+VRF of its longest containing prefix is the one used.
 
 What the host does not say comes from the connection's defaults: a site, a
 role, a device type.

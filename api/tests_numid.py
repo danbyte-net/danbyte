@@ -1,9 +1,14 @@
 """Tests for per-tenant human-readable object numbers (numid) - issue #82."""
 from __future__ import annotations
 
+from io import StringIO
+from unittest.mock import patch
+
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 
+from api.management.commands.assign_numids import Command
 from api.models import Cable, NumIdSequence
 from core.models import Organization, Tenant
 
@@ -78,3 +83,99 @@ class NumIdTests(TestCase):
         # The sequence is advanced so the next create continues at 3.
         c3 = Cable.objects.create(tenant=self.t_a)
         self.assertEqual(c3.numid, 3)
+
+
+class AssignNumidsBatchTests(TestCase):
+    """``assign_numids`` numbers in bounded batches, one transaction each (#362)."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.t_a = Tenant.objects.create(org=org, name="A", slug="a")
+        self.t_b = Tenant.objects.create(org=org, name="B", slug="b")
+
+    def _unnumbered(self, tenant, n):
+        cables = [Cable.objects.create(tenant=tenant) for _ in range(n)]
+        Cable.objects.filter(tenant=tenant).update(numid=None)
+        NumIdSequence.objects.filter(tenant=tenant).delete()
+        return cables
+
+    def _numids(self, cables):
+        return [Cable.objects.get(pk=c.pk).numid for c in cables]
+
+    def test_batches_number_in_creation_order_without_gaps(self):
+        cables = self._unnumbered(self.t_a, 7)
+        with patch.object(
+            Command, "_assign_batch", autospec=True, side_effect=Command._assign_batch,
+        ) as spy:
+            call_command("assign_numids", batch_size=3, stdout=StringIO())
+        self.assertEqual(self._numids(cables), [1, 2, 3, 4, 5, 6, 7])
+        # 3 + 3 + 1 rows: three batches, the short one ends the tenant.
+        cable_batches = [c for c in spy.call_args_list if c.args[1] is Cable]
+        self.assertEqual(len(cable_batches), 3)
+        seq = NumIdSequence.objects.get(tenant=self.t_a, model_label="api.cable")
+        self.assertEqual(seq.last_value, 7)
+        self.assertEqual(Cable.objects.create(tenant=self.t_a).numid, 8)
+
+    def test_exact_multiple_of_batch_size(self):
+        cables = self._unnumbered(self.t_a, 4)
+        call_command("assign_numids", batch_size=2, stdout=StringIO())
+        self.assertEqual(self._numids(cables), [1, 2, 3, 4])
+
+    def test_continues_after_existing_numbers_and_counter(self):
+        cables = [Cable.objects.create(tenant=self.t_a) for _ in range(5)]
+        # 1-2 keep their numbers, 3-5 lose them, and the counter sits past
+        # them as if later creates had been deleted.
+        Cable.objects.filter(pk__in=[c.pk for c in cables[2:]]).update(numid=None)
+        NumIdSequence.objects.filter(tenant=self.t_a).update(last_value=10)
+        call_command("assign_numids", batch_size=2, stdout=StringIO())
+        self.assertEqual(self._numids(cables), [1, 2, 11, 12, 13])
+
+    def test_starts_above_numbers_the_counter_never_saw(self):
+        cables = [Cable.objects.create(tenant=self.t_a) for _ in range(3)]
+        Cable.objects.filter(pk=cables[0].pk).update(numid=40)
+        Cable.objects.filter(pk__in=[c.pk for c in cables[1:]]).update(numid=None)
+        NumIdSequence.objects.filter(tenant=self.t_a).delete()
+        call_command("assign_numids", batch_size=1, stdout=StringIO())
+        self.assertEqual(self._numids(cables), [40, 41, 42])
+
+    def test_tenants_numbered_independently(self):
+        a = self._unnumbered(self.t_a, 3)
+        b = self._unnumbered(self.t_b, 2)
+        call_command("assign_numids", batch_size=2, stdout=StringIO())
+        self.assertEqual(self._numids(a), [1, 2, 3])
+        self.assertEqual(self._numids(b), [1, 2])
+
+    def test_interrupted_run_keeps_finished_batches_and_resumes(self):
+        cables = self._unnumbered(self.t_a, 5)
+        calls = {"n": 0}
+        real = Command._assign_batch
+
+        def stop_on_second(cmd, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise KeyboardInterrupt
+            return real(cmd, *args, **kwargs)
+
+        with patch.object(
+            Command, "_assign_batch", autospec=True, side_effect=stop_on_second,
+        ), self.assertRaises(KeyboardInterrupt):
+            call_command("assign_numids", batch_size=2, stdout=StringIO())
+        # The first batch is committed and the counter matches it.
+        self.assertEqual(self._numids(cables), [1, 2, None, None, None])
+        seq = NumIdSequence.objects.get(tenant=self.t_a, model_label="api.cable")
+        self.assertEqual(seq.last_value, 2)
+
+        call_command("assign_numids", batch_size=2, stdout=StringIO())
+        self.assertEqual(self._numids(cables), [1, 2, 3, 4, 5])
+
+    def test_rerun_is_a_no_op(self):
+        cables = self._unnumbered(self.t_a, 3)
+        call_command("assign_numids", stdout=StringIO())
+        out = StringIO()
+        call_command("assign_numids", stdout=out)
+        self.assertIn("Assigned 0 numid(s).", out.getvalue())
+        self.assertEqual(self._numids(cables), [1, 2, 3])
+
+    def test_rejects_non_positive_batch_size(self):
+        with self.assertRaises(CommandError):
+            call_command("assign_numids", batch_size=0, stdout=StringIO())

@@ -10,6 +10,8 @@ import json
 import logging
 import uuid
 
+from django.db import transaction
+
 from core.ssrf import safe_get, safe_post, safe_request  # SSRF-guarded outbound
 
 logger = logging.getLogger("danbyte.deploy")
@@ -197,10 +199,19 @@ def auto_fire(instance, slug: str | None = None) -> None:
         object_id = getattr(instance, "pk", None)
         if object_id is None:
             return
-        for t in targets:
-            enqueue_deploy(t, [object_id], event="auto")
+        # After commit (#357): a rolled-back change must not be pushed to a
+        # device, and the job must read the change as saved.
+        transaction.on_commit(lambda: _auto_enqueue(targets, object_id))
     except Exception:  # noqa: BLE001 - never break the originating save
         logger.exception("auto-deploy dispatch failed")
+
+
+def _auto_enqueue(targets, object_id) -> None:
+    for t in targets:
+        try:
+            enqueue_deploy(t, [object_id], event="auto")
+        except Exception:  # noqa: BLE001
+            logger.exception("auto-deploy dispatch failed (%s)", t.name)
 
 
 def _on_auto_save(sender, instance, created, **kwargs):

@@ -10,17 +10,33 @@ Two hypervisors behind the same
   is created once with username/password (``POST /api/session``) and reused via
   the ``vmware-api-session-id`` header for the rest of the pass.
 
-Outbound targets obey the deployment SSRF allowlist, same as the WinRM client.
+Outbound targets obey the deployment SSRF allowlist, same as the WinRM client,
+and every request rides :mod:`core.ssrf`'s pinned, redirect-refusing transport:
+an appliance that answers with a redirect cannot bounce Danbyte to an internal
+address, and a DNS flip between the check and the connect changes nothing
+(#321).
 """
 from __future__ import annotations
 
 import requests
 
-from core.ssrf import SSRFError, assert_public_host
+from core.ssrf import SafeSession, SSRFError, assert_public_host, safe_get
 
 
 class VirtAPIError(RuntimeError):
     """Transport failure or non-2xx from the hypervisor API."""
+
+
+def refuse_redirect(r, product: str) -> None:
+    """A hypervisor API never redirects a correct base URL. Following one would
+    hand the request to whatever address the appliance names, so a 3xx is an
+    error that tells the operator where to point the source instead (#321)."""
+    if 300 <= r.status_code < 400:
+        raise VirtAPIError(
+            f"{product} answered with a redirect ({r.status_code} to "
+            f"{r.headers.get('Location', '?')}). Danbyte does not follow redirects; "
+            "point the source at that address."
+        )
 
 
 def proxmox_get(source, path: str):
@@ -34,14 +50,17 @@ def proxmox_get(source, path: str):
     secret = creds.get("secret", "")
     url = f"https://{source.host}:{source.port}/api2/json/{path.lstrip('/')}"
     try:
-        r = requests.get(
+        r = safe_get(
             url,
             headers={"Authorization": f"PVEAPIToken={token_id}={secret}"},
             verify=source.verify_ssl,
             timeout=15,
         )
+    except SSRFError as exc:
+        raise VirtAPIError(str(exc)) from exc
     except requests.RequestException as exc:
         raise VirtAPIError(f"Proxmox API at {source.host}:{source.port} unreachable: {exc}") from exc
+    refuse_redirect(r, "Proxmox")
     if r.status_code == 401:
         raise VirtAPIError("Proxmox rejected the API token (401).")
     if not r.ok:
@@ -68,7 +87,8 @@ class VCenterClient:
         self.source = source
         self.base = f"https://{source.host}:{source.port}/api"
         self._session_id: str | None = None
-        self._http = requests.Session()
+        # Pinned + redirect-refusing on every call; carries verify across the pass.
+        self._http = SafeSession()
         self._http.verify = source.verify_ssl
 
     def _guard(self) -> None:
@@ -76,6 +96,11 @@ class VCenterClient:
             assert_public_host(self.source.host, self.source.port)
         except SSRFError as exc:
             raise VirtAPIError(str(exc)) from exc
+
+    def _unreachable(self, exc) -> VirtAPIError:
+        return VirtAPIError(
+            f"vCenter API at {self.source.host}:{self.source.port} unreachable: {exc}"
+        )
 
     def login(self) -> VCenterClient:
         self._guard()
@@ -86,10 +111,11 @@ class VCenterClient:
             r = self._http.post(
                 f"{self.base}/session", auth=(username, password), timeout=15
             )
+        except SSRFError as exc:
+            raise VirtAPIError(str(exc)) from exc
         except requests.RequestException as exc:
-            raise VirtAPIError(
-                f"vCenter API at {self.source.host}:{self.source.port} unreachable: {exc}"
-            ) from exc
+            raise self._unreachable(exc) from exc
+        refuse_redirect(r, "vCenter")
         if r.status_code in (401, 403):
             raise VirtAPIError("vCenter rejected the credentials (401/403).")
         if not r.ok:
@@ -112,10 +138,11 @@ class VCenterClient:
                 headers={"vmware-api-session-id": self._session_id},
                 timeout=30,
             )
+        except SSRFError as exc:
+            raise VirtAPIError(str(exc)) from exc
         except requests.RequestException as exc:
-            raise VirtAPIError(
-                f"vCenter API at {self.source.host}:{self.source.port} unreachable: {exc}"
-            ) from exc
+            raise self._unreachable(exc) from exc
+        refuse_redirect(r, "vCenter")
         if r.status_code in (401, 403):
             raise VirtAPIError("vCenter session expired or unauthorized (401/403).")
         if not r.ok:
@@ -134,7 +161,8 @@ class VCenterClient:
                 headers={"vmware-api-session-id": self._session_id},
                 timeout=10,
             )
-        except requests.RequestException:
+        except (requests.RequestException, SSRFError):
             pass  # best-effort logout; the session expires on its own regardless
         finally:
             self._session_id = None
+            self._http.close()

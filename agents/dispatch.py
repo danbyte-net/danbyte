@@ -124,7 +124,11 @@ def resolve(slug: str, settings_row=None) -> tuple[str, str, Any]:
 # ─── result cleaning ────────────────────────────────────────────────────────
 
 @lru_cache(maxsize=256)
-def _secret_field_names(model) -> frozenset[str]:
+def secret_field_names(model) -> frozenset[str]:
+    """The fields the secret classifier flags on ``model``; none for None.
+    The call log masks by these names as well as by what a key looks like."""
+    if model is None:
+        return frozenset()
     names: set[str] = set()
     for field in model._meta.concrete_fields:
         try:
@@ -139,8 +143,7 @@ def _secret_field_names(model) -> frozenset[str]:
 
 def clean(value: Any, model=None) -> Any:
     """Drop secret and noisy keys from a serialized payload, recursively."""
-    secret_names = _secret_field_names(model) if model is not None else frozenset()
-    return _clean(value, secret_names)
+    return _clean(value, secret_field_names(model))
 
 
 def _clean(value: Any, secret_names: frozenset[str]) -> Any:

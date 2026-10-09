@@ -26,7 +26,7 @@ from typing import Any
 
 import requests
 
-from core.ssrf import SSRFError, assert_public_url
+from core.ssrf import SSRFError, safe_post
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +120,9 @@ def _post(conn: Connection, path: str, body: dict, headers: dict) -> Any:
             # SSRF guard would reject it for being RFC1918, which is the
             # whole point of the local option.
             return requests.post(url, verify=conn.verify_tls, **kwargs)
-        assert_public_url(url)
-        return requests.post(url, verify=conn.verify_tls, **kwargs)
+        # Guarded, pinned to the validated address, redirects refused - a
+        # provider URL that passes the check cannot bounce the request inward.
+        return safe_post(url, verify=conn.verify_tls, **kwargs)
     except SSRFError as exc:
         raise ProviderError(
             f"{conn.base_url} is not a public address. Use the local provider "
@@ -132,6 +133,13 @@ def _post(conn: Connection, path: str, body: dict, headers: dict) -> Any:
 
 
 def _check(response) -> None:
+    if 300 <= response.status_code < 400:
+        # The public transport never follows a redirect (#321); an unread 3xx
+        # would otherwise end the stream silently.
+        raise ProviderError(
+            f"The model provider answered with a redirect ({response.status_code}). "
+            "Danbyte does not follow redirects; set the base URL to the final address."
+        )
     if response.status_code < 400:
         return
     body = response.text[:400]

@@ -24,9 +24,9 @@ import re
 
 import requests
 
-from core.ssrf import SSRFError, assert_public_host
+from core.ssrf import SafeSession, SSRFError, assert_public_host
 
-from .virt_client import VirtAPIError
+from .virt_client import VirtAPIError, refuse_redirect
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +200,9 @@ class VCloudClient:
         #: Set by :meth:`login` when the negotiation is worth reporting.
         self.version_note = ""
         self._token: str | None = None
-        self._http = requests.Session()
+        # Pinned + redirect-refusing on every call; carries the bearer token
+        # and verify across the pass.
+        self._http = SafeSession()
         self._http.verify = source.verify_ssl
 
     # ── plumbing ────────────────────────────────────────────────────────
@@ -211,6 +213,8 @@ class VCloudClient:
             raise VirtAPIError(str(exc)) from exc
 
     def _fail(self, exc) -> VirtAPIError:
+        if isinstance(exc, SSRFError):
+            return VirtAPIError(str(exc))
         return VirtAPIError(
             f"Cloud Director at {self.source.host}:{self.source.port} "
             f"unreachable: {exc}"
@@ -233,8 +237,9 @@ class VCloudClient:
                 timeout=_TIMEOUT,
                 allow_redirects=False,
             )
-        except requests.RequestException as exc:
+        except (requests.RequestException, SSRFError) as exc:
             raise self._fail(exc) from exc
+        refuse_redirect(r, "Cloud Director")
         if not r.ok:
             raise VirtAPIError(
                 f"Cloud Director returned {r.status_code} for /api/versions."
@@ -275,8 +280,9 @@ class VCloudClient:
                 timeout=_TIMEOUT,
                 allow_redirects=False,
             )
-        except requests.RequestException as exc:
+        except (requests.RequestException, SSRFError) as exc:
             raise self._fail(exc) from exc
+        refuse_redirect(r, "Cloud Director")
         if r.status_code in (401, 403):
             raise VirtAPIError("Cloud Director rejected the credentials (401/403).")
         if not r.ok:
@@ -304,7 +310,7 @@ class VCloudClient:
                     timeout=10,
                     allow_redirects=False,
                 )
-            except requests.RequestException:
+            except (requests.RequestException, SSRFError):
                 pass  # best-effort logout; the session expires on its own
             finally:
                 self._token = None
@@ -319,8 +325,9 @@ class VCloudClient:
             r = self._http.get(
                 url, params=params, timeout=30, allow_redirects=False
             )
-        except requests.RequestException as exc:
+        except (requests.RequestException, SSRFError) as exc:
             raise self._fail(exc) from exc
+        refuse_redirect(r, "Cloud Director")
         if r.status_code in (401, 403):
             raise VirtAPIError(
                 "Cloud Director session expired or unauthorized (401/403)."

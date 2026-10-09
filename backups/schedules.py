@@ -38,11 +38,13 @@ def due_schedules(now=None) -> list[BackupSchedule]:
 
 def fire_schedule(schedule: BackupSchedule, now=None, *, user=None, kind: str = "scheduled") -> Backup:
     """Create and enqueue one backup for the schedule and stamp last_run_at,
-    so a second tick in the same occurrence does nothing."""
+    so a second tick in the same occurrence does nothing. The stamp follows a
+    successful enqueue: a queue that is down raises with the schedule still
+    due, and the next tick tries again (#360)."""
     now = now or timezone.now()
     backup = create_backup(kind=kind, components=schedule.components, target=schedule.target,
                            schedule=schedule, user=user)
+    enqueue_backup(backup)
     if kind == "scheduled":  # a run started by hand must not eat the next occurrence
         BackupSchedule.objects.filter(pk=schedule.pk).update(last_run_at=now)
-    enqueue_backup(backup)
     return backup

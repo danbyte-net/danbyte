@@ -1032,8 +1032,11 @@ def _autospawn_gateway(prefix, *, request=None):
 
     gateway_role = _tenant_gateway_role(prefix.tenant)
     default_status = _tenant_default_status(prefix.tenant)
-    ip, _ = IPAddress.objects.get_or_create(
+    # Scoped to the prefix's VRF (#331): the same address in another VRF is a
+    # different host in a different routing context, never this gateway.
+    ip, created = IPAddress.objects.select_related("prefix").get_or_create(
         tenant=prefix.tenant,
+        vrf=prefix.vrf,
         ip_address=gw_addr,
         defaults={
             "prefix": prefix,
@@ -1042,6 +1045,15 @@ def _autospawn_gateway(prefix, *, request=None):
             "description": "Auto-created by site gateway policy.",
         },
     )
+    if not created and ip.prefix_id != prefix.id:
+        # Only an address on a broader prefix moves in, the same rule as
+        # reparent_ips_into. One on an equal or more specific prefix belongs
+        # there and is left exactly as it is.
+        cur_net = ip.prefix.network if ip.prefix_id else None
+        if cur_net is not None and cur_net.prefixlen >= net.prefixlen:
+            prefix.gateway = gw_addr
+            prefix.save(update_fields=["gateway", "updated_at"])
+            return None
     # If it pre-existed (e.g. someone imported it earlier), make sure it's a
     # gateway now and attached to this prefix.
     changed = False

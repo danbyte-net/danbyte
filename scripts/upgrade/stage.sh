@@ -178,13 +178,20 @@ if [ "$KIND" = bundle ]; then
   fi
 fi
 # Room for the venv copy, the snapshot and (git) the new node_modules.
+# need = (venv + database + 200 MB headroom [+ node_modules on git]) x 1.2;
+# docs/getting-started/installation.md explains it, keep the two in step.
 _kb() { du -sk "$1" 2>/dev/null | cut -f1; }
-_need=$(( $(_kb "$APP/.venv") + ${P_DB_SIZE:-0} / 1024 + 204800 ))
-[ "$KIND" = git ] && _need=$(( _need + $(_kb "$APP/frontend/node_modules" || echo 0) + 0 ))
-_need=$(( _need * 12 / 10 ))
+_venv=$(_kb "$APP/.venv"); _venv=${_venv:-0}
+_dbk=$(( ${P_DB_SIZE:-0} / 1024 ))
+_nm=0
+[ "$KIND" = git ] && { _nm=$(_kb "$APP/frontend/node_modules"); _nm=${_nm:-0}; }
+_need=$(( (_venv + _dbk + 204800 + _nm) * 12 / 10 ))
+_why="venv $((_venv / 1024)) + database backup $((_dbk / 1024))"
+[ "$KIND" = git ] && _why="$_why + node_modules $((_nm / 1024))"
+_why="($_why + headroom 200) MB x 1.2"
 _avail=$(df -Pk "$UPG_ROOT" | awk 'NR==2 {print $4}')
 [ "${_avail:-0}" -ge "$_need" ] \
-  || fail "not enough free space in $UPG_ROOT: $((_avail / 1024)) MB free, $((_need / 1024)) MB needed" true
+  || fail "not enough free space in $UPG_ROOT: $((_avail / 1024)) MB free, $((_need / 1024)) MB needed = $_why" true
 if command -v loginctl >/dev/null 2>&1 && [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = no ]; then
   warn "linger is off for $(id -un): the services stop when the last session ends (sudo loginctl enable-linger $(id -un))"
 fi

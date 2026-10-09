@@ -2,9 +2,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import { KeyRound, LogIn, Mail, } from "lucide-react"
+import { QRCodeSVG } from "qrcode.react"
 
 import { api, ApiError, auth } from "@/lib/api"
-import type { MfaMethod, SsoPublicProvider } from "@/lib/api"
+import type { MfaMethod, SsoPublicProvider, TotpSetup } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Input } from "@/components/ui/input"
@@ -90,6 +91,9 @@ function LoginPage() {
   const [methods, setMethods] = useState<MfaMethod[]>([])
   const [method, setMethod] = useState<MfaMethod>("totp")
   const [emailHint, setEmailHint] = useState<string | null>(null)
+  // Two-factor is required but the account has no factor yet: enrol an
+  // authenticator here before the sign-in completes.
+  const [enrol, setEnrol] = useState<TotpSetup | null>(null)
   const [code, setCode] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -114,7 +118,11 @@ function LoginPage() {
     setError(null)
     try {
       const res = await auth.login(username.trim(), password)
-      if (res.mfa_required) {
+      if (res.mfa_required && res.enrol_required) {
+        setEnrol(await auth.totpSetup())
+        setCode("")
+        setStep("code")
+      } else if (res.mfa_required) {
         const ms = res.methods ?? []
         setMethods(ms)
         setMethod(ms[0] ?? "email")
@@ -135,7 +143,8 @@ function LoginPage() {
     setBusy(true)
     setError(null)
     try {
-      await auth.verifyMfa(method, code.trim())
+      if (enrol) await auth.totpConfirm(code.trim())
+      else await auth.verifyMfa(method, code.trim())
       await finish()
     } catch (err) {
       setError(errText(err))
@@ -298,7 +307,7 @@ function LoginPage() {
             </form>
           ) : (
             <form onSubmit={submitCode} className="grid gap-4">
-              {methods.length > 1 && (
+              {!enrol && methods.length > 1 && (
                 <div className="flex gap-2">
                   {methods.map((m) => (
                     <button
@@ -326,11 +335,26 @@ function LoginPage() {
                   ))}
                 </div>
               )}
-              <p className="text-[13px] text-muted-foreground">
-                {method === "totp"
-                  ? "Enter the 6-digit code from your authenticator app."
-                  : `Enter the code we sent to ${emailHint ?? "your email"}.`}
-              </p>
+              {enrol ? (
+                <div className="grid gap-3">
+                  <p className="text-[13px] text-muted-foreground">
+                    Two-factor sign-in is required. Scan this with your
+                    authenticator app, then enter its 6-digit code.
+                  </p>
+                  <div className="mx-auto rounded-md bg-white p-2">
+                    <QRCodeSVG value={enrol.otpauth_uri} size={148} />
+                  </div>
+                  <code className="block text-center font-mono text-[11px] break-all text-muted-foreground">
+                    {enrol.secret}
+                  </code>
+                </div>
+              ) : (
+                <p className="text-[13px] text-muted-foreground">
+                  {method === "totp"
+                    ? "Enter the 6-digit code from your authenticator app."
+                    : `Enter the code we sent to ${emailHint ?? "your email"}.`}
+                </p>
+              )}
               <div className="grid gap-1.5">
                 <Label htmlFor="code" className="text-xs">
                   Verification code
@@ -361,7 +385,7 @@ function LoginPage() {
                 className="w-full"
               >
                 {busy && <Spinner className="size-4" />}
-                Verify
+                {enrol ? "Verify and sign in" : "Verify"}
               </Button>
               <div className="flex items-center justify-between text-[13px]">
                 <button
@@ -369,6 +393,7 @@ function LoginPage() {
                   className="text-muted-foreground hover:text-foreground"
                   onClick={() => {
                     setStep("credentials")
+                    setEnrol(null)
                     setCode("")
                     setError(null)
                     setResent(false)
@@ -376,7 +401,7 @@ function LoginPage() {
                 >
                   ← Back
                 </button>
-                {method === "email" && (
+                {!enrol && method === "email" && (
                   <button type="button" className="link" onClick={resend}>
                     Resend code
                   </button>

@@ -213,30 +213,46 @@ _STATUS_DEFAULTS["maintenanceevent"] = "tentative"
 
 
 def seed_builtin_statuses(tenant, *, Status=None):
-    """Idempotently create/merge the built-in ``Status`` catalog for ``tenant``.
+    """Idempotently create the missing built-in ``Status`` rows for ``tenant``.
 
-    Creates a shared ``Status`` row per built-in value (merging into any existing
-    row with the same slug) and extends its ``available_to`` / ``default_for``
-    scope for every object type that uses it. Safe to call repeatedly - on tenant
-    creation (``TenantViewSet.perform_create``), from ``manage.py
-    seed_builtin_statuses`` / ``manage.py bootstrap``, or to backfill an existing
-    tenant. Returns the number of new ``Status`` rows created.
+    Safe to call repeatedly - on tenant creation
+    (``TenantViewSet.perform_create``), from ``manage.py
+    seed_builtin_statuses`` / ``manage.py bootstrap`` (every container start
+    and upgrade), and from the data migrations that introduce a new object
+    type. Returns the number of new ``Status`` rows created.
 
-    The migration ``0047_unified_status`` only seeded values that *existing*
-    objects already used, so a fresh install (or any tenant created after the
-    migration ran) never received the built-in catalog - this function closes
-    that gap.
+    The tenant owns the scopes of everything it already has (#361). Seeding:
+
+    - creates a built-in row whose slug the tenant lacks, scoped to every
+      object type that uses that value;
+    - scopes an object type the tenant has never seen (no status lists it in
+      ``available_to`` or ``default_for``: a type new in this release, or a
+      fresh tenant) onto its built-in rows, existing or new, and makes the
+      built-in default its default;
+    - never adds a type to an existing row's ``available_to`` or to any
+      row's ``default_for`` once the tenant has that type, so an
+      availability or default the operator removed stays removed.
+
+    A built-in value added later to a type the tenant already has reaches
+    tenants only where the row is new; a migration that needs more must
+    extend the scope itself.
     """
     if Status is None:
         from api.models import Status  # local import: keeps this module Django-free
 
     cache = {s.slug: s for s in Status.objects.filter(tenant=tenant)}
+    known_types = set()
+    for s in cache.values():
+        known_types.update(s.available_to or [])
+        known_types.update(s.default_for or [])
     # Older data migrations replay this with a historical Status that predates
     # the semantic-flag columns - only pass the flags the model actually has.
     model_fields = {f.name for f in Status._meta.get_fields()}
     created = 0
+    created_slugs = set()
     for model_slug, values in STATUS_MODEL_VALUES.items():
         default_value = _STATUS_DEFAULTS.get(model_slug, "active")
+        new_type = model_slug not in known_types
         for value in values:
             s = cache.get(value)
             if s is None:
@@ -256,11 +272,18 @@ def seed_builtin_statuses(tenant, *, Status=None):
                 )
                 cache[value] = s
                 created += 1
+                created_slugs.add(value)
+            if not new_type and value not in created_slugs:
+                continue
             changed = False
             if model_slug not in (s.available_to or []):
                 s.available_to = (s.available_to or []) + [model_slug]
                 changed = True
-            if value == default_value and model_slug not in (s.default_for or []):
+            if (
+                new_type
+                and value == default_value
+                and not any(model_slug in (o.default_for or []) for o in cache.values())
+            ):
                 s.default_for = (s.default_for or []) + [model_slug]
                 changed = True
             if changed:
