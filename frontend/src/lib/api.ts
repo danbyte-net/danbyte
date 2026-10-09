@@ -371,6 +371,9 @@ export interface LoginResult {
   ok?: boolean
   mfa_required?: boolean
   methods?: MfaMethod[]
+  /** The account requires a second factor but has none yet: enrol an
+   * authenticator (totpSetup → totpConfirm) to finish signing in. */
+  enrol_required?: boolean
   email_hint?: string | null
 }
 
@@ -405,8 +408,12 @@ export const auth = {
       method: "POST",
       body: JSON.stringify({ code }),
     }),
-  totpDisable: () =>
-    api<{ ok: boolean }>("/api/auth/mfa/totp/disable/", { method: "POST" }),
+  /** Removing the authenticator needs the password or a current code. */
+  totpDisable: (body: { password?: string; code?: string }) =>
+    api<{ ok: boolean }>("/api/auth/mfa/totp/disable/", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 }
 
 // ─── RBAC admin (users / groups / object permissions) ───────────────────────

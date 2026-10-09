@@ -110,6 +110,10 @@ class UserProfile(TimestampedModel):
         default=dict, blank=True,
         help_text="Encrypted-at-rest blob - currently the TOTP secret.",
     )
+    # Time step of the last accepted authenticator code. A code is accepted
+    # once: anything at or before this step is refused, so a code seen over a
+    # shoulder or in a log can't be replayed inside its window.
+    totp_last_used_step = models.BigIntegerField(null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["user__username"]

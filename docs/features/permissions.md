@@ -284,6 +284,10 @@ When you create a user, choose how they get their password:
 Editing an existing user, the same option lets you **email a password-reset
 link**.
 
+A link is refused once the account is disabled, and setting a password never
+re-enables an account. Enable the account before sending an invite or reset
+link; one isn't sent to a disabled account.
+
 !!! note
     Inviting requires an email address on the account and working email settings
     for your deployment. People who sign in through your company directory don't
@@ -305,11 +309,14 @@ You can require a second step at sign-in for any account.
 - People set up their second factor under their own **Preferences → Two-factor
   authentication**, using either an authenticator app (scan a QR code) or a
   6-digit code sent to their email.
-
-!!! note
-    If an account is marked to require two-factor but hasn't set one up yet, it
-    can still sign in normally - so nobody gets locked out before they've
-    enrolled.
+- An account that requires two-factor but has no second factor yet is asked to
+  set up an authenticator app right after entering its password, and is not
+  signed in until that is done.
+- Removing an authenticator asks for the account's password or a current code.
+  While two-factor is required, the only remaining second factor can't be
+  removed: add an email address first, or have an administrator clear it with
+  `danbyte-admin users clear-mfa`.
+- An authenticator code is accepted once.
 
 ## Company directory (LDAP / Active Directory)
 

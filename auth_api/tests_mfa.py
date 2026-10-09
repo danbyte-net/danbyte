@@ -84,8 +84,12 @@ class LoginFlowTests(TestCase):
             self.c, "/api/auth/login/", username="alice", password="pw12345!"
         ).json()
         self.assertIn("totp", chal["methods"])
+        # The confirming code was consumed; the next step's code signs in.
+        from datetime import UTC, datetime
+
         ver = _post(
-            self.c, "/api/auth/mfa/verify/", method="totp", code=pyotp.TOTP(secret).now()
+            self.c, "/api/auth/mfa/verify/", method="totp",
+            code=pyotp.TOTP(secret).at(datetime.now(UTC), 1),
         )
         self.assertEqual(ver.status_code, 200)
         self.assertTrue(self._authed())
@@ -153,8 +157,10 @@ class LoginFlowTests(TestCase):
         )
         self.assertEqual(again.status_code, 400)
 
-    def test_require_mfa_without_factor_logs_in(self):
-        # require_mfa set but no email + no TOTP → can't enforce, must not lock out
+    def test_require_mfa_without_factor_forces_enrolment(self):
+        """require_mfa with no usable factor no longer signs the account in
+        (#320): the password step is accepted, then the authenticator must be
+        enrolled before the session is finalised."""
         self.profile.require_mfa = True
         self.profile.mfa_email = False
         self.user.email = ""
@@ -162,8 +168,161 @@ class LoginFlowTests(TestCase):
         self.profile.save()
         r = _post(self.c, "/api/auth/login/", username="alice", password="pw12345!")
         self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("ok"))
+        body = r.json()
+        self.assertTrue(body["mfa_required"])
+        self.assertTrue(body["enrol_required"])
+        self.assertEqual(body["methods"], [])
+        self.assertFalse(self._authed())
+        # A code can't be verified - there is nothing to verify against.
+        self.assertEqual(
+            _post(self.c, "/api/auth/mfa/verify/", method="totp", code="000000").status_code,
+            400,
+        )
+        # Enrol from the pending login: setup, then confirm finalises the session.
+        setup = _post(self.c, "/api/auth/mfa/totp/setup/")
+        self.assertEqual(setup.status_code, 200, setup.content)
+        secret = setup.json()["secret"]
+        bad = _post(self.c, "/api/auth/mfa/totp/confirm/", code="000000")
+        self.assertEqual(bad.status_code, 400)
+        self.assertFalse(self._authed())
+        ok = _post(self.c, "/api/auth/mfa/totp/confirm/", code=pyotp.TOTP(secret).now())
+        self.assertEqual(ok.status_code, 200, ok.content)
         self.assertTrue(self._authed())
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.mfa_totp_confirmed)
+        self.assertEqual(self.profile.secrets.get("totp"), secret)
+
+    def test_enrolment_endpoints_need_a_session_or_pending_login(self):
+        self.assertEqual(_post(self.c, "/api/auth/mfa/totp/setup/").status_code, 401)
+        self.assertEqual(
+            _post(self.c, "/api/auth/mfa/totp/confirm/", code="000000").status_code, 401
+        )
+        # A pending login that does NOT need enrolment (it has a factor) must
+        # not reach the enrolment endpoints either.
+        self.profile.require_mfa = True
+        self.profile.save()
+        chal = _post(self.c, "/api/auth/login/", username="alice", password="pw12345!")
+        self.assertEqual(chal.json()["methods"], ["email"])
+        self.assertEqual(_post(self.c, "/api/auth/mfa/totp/setup/").status_code, 401)
+        self.assertFalse(self._authed())
+
+
+class TotpHardeningTests(TestCase):
+    """#320 - removing the authenticator needs the password or a current code,
+    a code is accepted once, and the last factor stays while MFA is required."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            "carol", email="carol@example.com", password="pw12345!"
+        )
+        self.secret = pyotp.random_base32()
+        self.profile = UserProfile.objects.create(
+            user=self.user, require_mfa=True, mfa_email=True,
+            mfa_totp_confirmed=True, secrets={"totp": self.secret},
+        )
+        self.totp = pyotp.TOTP(self.secret)
+        self.c = Client()
+
+    def _authed(self, c=None):
+        return "_auth_user_id" in (c or self.c).session
+
+    def _login_totp(self, code, c=None):
+        c = c or self.c
+        chal = _post(c, "/api/auth/login/", username="carol", password="pw12345!")
+        self.assertIn("totp", chal.json()["methods"])
+        return _post(c, "/api/auth/mfa/verify/", method="totp", code=code)
+
+    def _signed_in(self):
+        c = Client()
+        c.force_login(self.user)
+        return c
+
+    def test_disable_needs_password_or_code(self):
+        c = self._signed_in()
+        for body in ({}, {"password": "wrong"}, {"code": "000000"}):
+            r = _post(c, "/api/auth/mfa/totp/disable/", **body)
+            self.assertEqual(r.status_code, 400, (body, r.content))
+            self.profile.refresh_from_db()
+            self.assertTrue(self.profile.mfa_totp_confirmed)
+            self.assertEqual(self.profile.secrets.get("totp"), self.secret)
+
+    def test_disable_with_password(self):
+        c = self._signed_in()
+        r = _post(c, "/api/auth/mfa/totp/disable/", password="pw12345!")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.profile.refresh_from_db()
+        self.assertFalse(self.profile.mfa_totp_confirmed)
+        self.assertNotIn("totp", self.profile.secrets)
+
+    def test_disable_with_current_code(self):
+        c = self._signed_in()
+        r = _post(c, "/api/auth/mfa/totp/disable/", code=self.totp.now())
+        self.assertEqual(r.status_code, 200, r.content)
+        self.profile.refresh_from_db()
+        self.assertFalse(self.profile.mfa_totp_confirmed)
+
+    def test_disable_refused_when_it_is_the_last_required_factor(self):
+        self.user.email = ""
+        self.user.save()
+        c = self._signed_in()
+        r = _post(c, "/api/auth/mfa/totp/disable/", password="pw12345!")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("required", r.json()["detail"])
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.mfa_totp_confirmed)
+        # With MFA no longer required the same request goes through.
+        self.profile.require_mfa = False
+        self.profile.save()
+        r = _post(c, "/api/auth/mfa/totp/disable/", password="pw12345!")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_disable_refused_when_email_codes_are_off(self):
+        self.profile.mfa_email = False
+        self.profile.save()
+        c = self._signed_in()
+        r = _post(c, "/api/auth/mfa/totp/disable/", password="pw12345!")
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_totp_code_accepted_once(self):
+        code = self.totp.now()
+        self.assertEqual(self._login_totp(code).status_code, 200)
+        self.assertTrue(self._authed())
+        # The same code from a second session is refused.
+        other = Client()
+        r = self._login_totp(code, c=other)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertFalse(self._authed(other))
+        # The next time step is a new code and is accepted.
+        from datetime import UTC, datetime
+
+        nxt = self.totp.at(datetime.now(UTC), 1)
+        r = self._login_totp(nxt, c=other)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(self._authed(other))
+
+    def test_confirm_code_cannot_be_replayed_at_login(self):
+        self.profile.require_mfa = False
+        self.profile.mfa_totp_confirmed = False
+        self.profile.secrets = {}
+        self.profile.save()
+        c = self._signed_in()
+        secret = _post(c, "/api/auth/mfa/totp/setup/").json()["secret"]
+        code = pyotp.TOTP(secret).now()
+        self.assertEqual(_post(c, "/api/auth/mfa/totp/confirm/", code=code).status_code, 200)
+        self.profile.refresh_from_db()
+        self.profile.require_mfa = True
+        self.profile.save()
+        r = self._login_totp(code)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertFalse(self._authed())
+
+    def test_disable_code_cannot_be_replayed(self):
+        code = self.totp.now()
+        self.assertEqual(self._login_totp(code).status_code, 200)
+        r = _post(self.c, "/api/auth/mfa/totp/disable/", code=code)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.mfa_totp_confirmed)
 
 
 @override_settings(
@@ -257,3 +416,22 @@ class BruteForceGuardTests(TestCase):
         self.assertTrue(r.json()["mfa_required"])  # first email challenge sent
         again = _post(self.c, "/api/auth/mfa/resend/")
         self.assertEqual(again.status_code, 429)
+
+    def test_totp_disable_shares_the_account_lockout(self):
+        """Guesses at the disable endpoint count against the same per-account
+        cap as the login step, so it can't be used to brute-force the code or
+        the password from a stolen session (#320)."""
+        from auth_api.login_api import MFA_MAX_ACCOUNT_FAILURES
+
+        self.profile.mfa_totp_confirmed = True
+        self.profile.secrets = {"totp": pyotp.random_base32()}
+        self.profile.save()
+        c = Client()
+        c.force_login(self.user)
+        for _ in range(MFA_MAX_ACCOUNT_FAILURES):
+            r = _post(c, "/api/auth/mfa/totp/disable/", code="000000")
+            self.assertEqual(r.status_code, 400)
+        r = _post(c, "/api/auth/mfa/totp/disable/", password="pw12345!")
+        self.assertEqual(r.status_code, 429)
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.mfa_totp_confirmed)

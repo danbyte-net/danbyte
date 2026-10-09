@@ -17,6 +17,7 @@ import json
 import os
 import secrets as pysecrets
 import time
+from datetime import UTC, datetime
 
 from django.conf import settings
 from django.contrib.auth import (
@@ -26,6 +27,7 @@ from django.contrib.auth import (
 )
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.db import transaction
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.views.decorators.http import require_POST
 
@@ -161,6 +163,57 @@ def _gen_code() -> str:
     return f"{pysecrets.randbelow(1_000_000):06d}"
 
 
+# One step either side of now, as before; a code is good for ~90 s at most.
+TOTP_WINDOW = 1
+
+
+def _totp_consume(profile: UserProfile, secret: str, code: str) -> bool:
+    """Check ``code`` against ``secret`` and burn its time step.
+
+    A code is accepted once: a step at or before the last accepted one is
+    refused, so a code seen over a shoulder or kept in a log can't be replayed
+    inside its window (#320). The profile row is locked for the check so two
+    concurrent attempts with the same code can't both pass.
+    """
+    import pyotp
+    from pyotp.utils import strings_equal
+
+    if not secret or not code:
+        return False
+    totp = pyotp.TOTP(secret)
+    now = datetime.now(UTC)
+    base = totp.timecode(now)
+    with transaction.atomic():
+        row = UserProfile.objects.select_for_update().get(pk=profile.pk)
+        last = row.totp_last_used_step
+        for offset in range(-TOTP_WINDOW, TOTP_WINDOW + 1):
+            step = base + offset
+            if last is not None and step <= last:
+                continue
+            if strings_equal(code, totp.at(now, offset)):
+                row.totp_last_used_step = step
+                row.save(update_fields=["totp_last_used_step"])
+                profile.totp_last_used_step = step
+                return True
+    return False
+
+
+def _enrolling_user(request):
+    """Who may enrol an authenticator right now: the signed-in user, or the
+    account behind a pending login that requires enrolment (#320). Returns
+    ``(user, pending)`` - ``pending`` is None for a signed-in user - or
+    ``(None, None)`` when nobody may."""
+    if request.user.is_authenticated:
+        return request.user, None
+    pending = request.session.get(SESSION_KEY)
+    if not pending or not pending.get("enrol") or pending.get("exp", 0) < time.time():
+        return None, None
+    user = User.objects.filter(id=pending["user_id"], is_active=True).first()
+    if user is None:
+        return None, None
+    return user, pending
+
+
 # Django backends that deliver nothing: with one of these and no deployment
 # SMTP host there is no deployment relay to send through.
 _NON_DELIVERING_BACKENDS = frozenset({
@@ -290,13 +343,15 @@ def login_api(request):
     _clear_login_failures(request, username)
     profile = _profile(user)
     methods = _methods(profile, user)
-    # require_mfa with no usable factor can't be enforced (e.g. no email, no
-    # authenticator yet) - log in rather than lock the user out.
-    if profile.require_mfa and methods:
+    if profile.require_mfa:
         request.session[SESSION_KEY] = {
             "user_id": user.id,
             "exp": time.time() + MFA_PENDING_TTL,
             "methods": methods,
+            # No usable factor (no email, no authenticator yet): the password
+            # is accepted but the session is only finalised once an
+            # authenticator is enrolled - never a plain sign-in (#320).
+            "enrol": not methods,
             # Remember which backend authenticated so the post-MFA login() can
             # name it - required once >1 AUTHENTICATION_BACKENDS exist (LDAP).
             "backend": getattr(user, "backend", None),
@@ -308,6 +363,7 @@ def login_api(request):
             {
                 "mfa_required": True,
                 "methods": methods,
+                "enrol_required": not methods,
                 "email_hint": _mask_email(user.email)
                 if "email" in methods
                 else None,
@@ -354,10 +410,8 @@ def mfa_verify_api(request):
             and pending.get("email_exp", 0) >= time.time()
         )
     elif method == "totp":
-        import pyotp
-
-        secret = (_profile(user).secrets or {}).get("totp")
-        ok = bool(secret) and pyotp.TOTP(secret).verify(code, valid_window=1)
+        profile = _profile(user)
+        ok = _totp_consume(profile, (profile.secrets or {}).get("totp"), code)
 
     if not ok:
         _record_mfa_failure(user)
@@ -497,27 +551,32 @@ def set_password_api(request):
         return JsonResponse(
             {"detail": "This link is invalid or has expired."}, status=400
         )
+    # The token hash doesn't cover is_active, so a link sent before an admin
+    # disabled the account is still valid. It must not sign the account back
+    # on, and setting a password never changes the active flag (#322).
+    if not user.is_active:
+        return JsonResponse({"detail": "This account is disabled."}, status=400)
     try:
         validate_password(password, user)
     except ValidationError as exc:
         return JsonResponse({"detail": " ".join(exc.messages)}, status=400)
 
     user.set_password(password)
-    user.is_active = True
-    user.save()
+    user.save(update_fields=["password"])
     return JsonResponse({"ok": True, "username": user.get_username()})
 
 
-# ─── TOTP enrolment (signed-in user, preferences page) ───────────────────────
+# ─── TOTP enrolment (preferences page, or a pending login that requires it) ──
 @require_POST
 def totp_setup_api(request):
-    if not request.user.is_authenticated:
+    user, _ = _enrolling_user(request)
+    if user is None:
         return JsonResponse({"detail": "Authentication required."}, status=401)
     import pyotp
 
     from core.models import DeploymentSettings
 
-    profile = _profile(request.user)
+    profile = _profile(user)
     secret = pyotp.random_base32()
     sec = dict(profile.secrets or {})
     sec["totp_pending"] = secret
@@ -525,24 +584,44 @@ def totp_setup_api(request):
     profile.save(update_fields=["secrets"])
 
     issuer = DeploymentSettings.load().deployment_name or "Danbyte"
-    label = request.user.email or request.user.get_username()
+    label = user.email or user.get_username()
     uri = pyotp.TOTP(secret).provisioning_uri(name=label, issuer_name=issuer)
     return JsonResponse({"secret": secret, "otpauth_uri": uri})
 
 
 @require_POST
 def totp_confirm_api(request):
-    if not request.user.is_authenticated:
+    user, pending_login = _enrolling_user(request)
+    if user is None:
         return JsonResponse({"detail": "Authentication required."}, status=401)
-    import pyotp
-
     data = _json(request) or {}
     code = (data.get("code") or "").strip()
-    profile = _profile(request.user)
+    profile = _profile(user)
     pending = (profile.secrets or {}).get("totp_pending")
     if not pending:
         return JsonResponse({"detail": "Start TOTP setup first."}, status=400)
-    if not pyotp.TOTP(pending).verify(code, valid_window=1):
+    if _mfa_locked(user):
+        request.session.pop(SESSION_KEY, None)
+        return JsonResponse(
+            {"detail": "Too many incorrect codes - try again later."}, status=429
+        )
+    # The confirming code is consumed too, so it can't be replayed at the
+    # sign-in that follows.
+    if not _totp_consume(profile, pending, code):
+        _record_mfa_failure(user)
+        if pending_login is not None:
+            # Same guess cap as the verify step: the pending login is burnt
+            # when it's reached.
+            attempts = pending_login.get("attempts", 0) + 1
+            if attempts >= MAX_MFA_ATTEMPTS:
+                request.session.pop(SESSION_KEY, None)
+                return JsonResponse(
+                    {"detail": "Too many incorrect codes - please sign in again."},
+                    status=429,
+                )
+            pending_login["attempts"] = attempts
+            request.session[SESSION_KEY] = pending_login
+            request.session.modified = True
         return JsonResponse(
             {"detail": "Incorrect code - check your authenticator."}, status=400
         )
@@ -552,14 +631,55 @@ def totp_confirm_api(request):
     profile.secrets = sec
     profile.mfa_totp_confirmed = True
     profile.save(update_fields=["secrets", "mfa_totp_confirmed"])
+    _clear_mfa_failures(user)
+    if pending_login is not None:
+        backend = pending_login.get("backend") or "django.contrib.auth.backends.ModelBackend"
+        request.session.pop(SESSION_KEY, None)
+        auth_login(request, user, backend=backend)
     return JsonResponse({"ok": True})
 
 
 @require_POST
 def totp_disable_api(request):
+    """Remove the authenticator. Needs the account password or a current code
+    - holding a signed-in session is not enough (#320) - and never removes
+    the only second factor of an account that requires one."""
     if not request.user.is_authenticated:
         return JsonResponse({"detail": "Authentication required."}, status=401)
-    profile = _profile(request.user)
+    user = request.user
+    profile = _profile(user)
+    data = _json(request) or {}
+    password = data.get("password") or ""
+    code = (data.get("code") or "").strip()
+
+    if _mfa_locked(user):
+        return JsonResponse(
+            {"detail": "Too many incorrect attempts - try again later."}, status=429
+        )
+    if (
+        profile.require_mfa
+        and profile.mfa_totp_confirmed
+        and "email" not in _methods(profile, user)
+    ):
+        return JsonResponse(
+            {"detail": "Two-factor sign-in is required on this account and the "
+                       "authenticator is its only second factor. Add an email "
+                       "address first, or ask an administrator."},
+            status=400,
+        )
+
+    ok = bool(code) and _totp_consume(profile, (profile.secrets or {}).get("totp"), code)
+    if not ok and password:
+        who = authenticate(request, username=user.get_username(), password=password)
+        ok = who is not None and who.pk == user.pk
+    if not ok:
+        _record_mfa_failure(user)
+        return JsonResponse(
+            {"detail": "Enter your password or a current authenticator code."},
+            status=400,
+        )
+    _clear_mfa_failures(user)
+
     sec = dict(profile.secrets or {})
     sec.pop("totp", None)
     sec.pop("totp_pending", None)
