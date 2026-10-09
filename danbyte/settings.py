@@ -101,6 +101,9 @@ PLUGINS_CONFIG: dict = {}
 # Where a script's SDK client points at this install. Loopback by default;
 # set it when the backend is not reachable on 127.0.0.1:8000 from a worker.
 DANBYTE_INTERNAL_URL = os.getenv("DANBYTE_INTERNAL_URL", "http://127.0.0.1:8000")
+# Sandboxed scripts run confined by Landlock (#316): "landlock" refuses a run
+# the host cannot confine; "none" runs them unconfined, and their logs say so.
+SCRIPT_SANDBOX = os.getenv("DANBYTE_SCRIPT_SANDBOX", "landlock")
 
 PLUGIN_UPLOAD_DIR = Path(os.getenv("DANBYTE_PLUGIN_DIR", BASE_DIR / "plugins_local"))
 if PLUGIN_UPLOAD_DIR.is_dir() and str(PLUGIN_UPLOAD_DIR) not in sys.path:

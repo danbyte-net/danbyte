@@ -6,8 +6,11 @@ kills the whole tree rather than leaking grandchildren.
 
 * **Sandboxed** - ``python -I`` with an environment built from scratch. It
   holds the run token and nothing else: no database password, no Fernet
-  key, no ``DJANGO_SETTINGS_MODULE``. Whatever the script does, it does
-  through the API as the run-as user.
+  key, no ``DJANGO_SETTINGS_MODULE``. The process is confined by
+  :mod:`scripting.sandbox` (Landlock), so it cannot read the worker's
+  ``/proc`` entries, the ``.env`` or anything else outside its work
+  directory and the system, and it gets its own copy of the SDK. Whatever
+  the script does, it does through the API as the run-as user.
 * **Trusted** - the same launcher, plus the settings module and the
   database environment, so ``danbyte_sdk.orm`` works. Only a holder of the
   ``trust`` verb can mark a script trusted; this is worker-privilege code
@@ -35,7 +38,7 @@ from django.db.models import TextField, Value
 from django.db.models.functions import Concat
 from django.utils import timezone
 
-from . import tokens
+from . import sandbox, tokens
 from .models import ScriptOutput, ScriptRun
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,21 @@ def sdk_path() -> str:
     return str(settings.BASE_DIR)
 
 
+def sandbox_sdk_path(work: str) -> str:
+    """Where a sandboxed run finds the SDK: a copy inside its own work
+    directory, so nothing points it at the checkout (#316)."""
+    return os.path.join(work, "_sdk")
+
+
+def copy_sdk(work: str) -> str:
+    dest = sandbox_sdk_path(work)
+    shutil.copytree(
+        os.path.join(sdk_path(), "danbyte_sdk"), os.path.join(dest, "danbyte_sdk"),
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    return dest
+
+
 def internal_url() -> str:
     """Where the script's client should point. The loopback backend by
     default; a deployment behind a proxy that rewrites paths can override
@@ -102,7 +120,7 @@ def base_env(run, key: str, work: str, outputs: str) -> dict:
         "DANBYTE_RUN_ID": str(run.id),
         "DANBYTE_OUTPUT_DIR": outputs,
         "DANBYTE_PARAMS": json.dumps(run.params or {}),
-        "DANBYTE_SDK_PATH": sdk_path(),
+        "DANBYTE_SDK_PATH": sandbox_sdk_path(work),
     }
 
 
@@ -112,21 +130,41 @@ def trusted_env(run, env: dict) -> dict:
     env = {**os.environ, **env}
     env["DJANGO_SETTINGS_MODULE"] = os.environ.get("DJANGO_SETTINGS_MODULE", "danbyte.settings")
     env["PYTHONPATH"] = sdk_path()
+    env["DANBYTE_SDK_PATH"] = sdk_path()
     env["DANBYTE_RUN_AS_ID"] = str(run.run_as_user_id or "")
     env["DANBYTE_TENANT_ID"] = str(run.script.tenant_id or "")
     return env
 
 
-def _limits(cpu_seconds: int):
-    """Applied in the child between fork and exec."""
+def _limits(cpu_seconds: int, confinement=None):
+    """Applied in the child between fork and exec. A confinement that
+    cannot be applied raises here, so the child never starts."""
 
     def apply() -> None:
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 5))
         resource.setrlimit(resource.RLIMIT_AS, (MEMORY_LIMIT, MEMORY_LIMIT))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         resource.setrlimit(resource.RLIMIT_NPROC, (256, 256))
+        if confinement is not None:
+            confinement.restrict_child()
 
     return apply
+
+
+def confine(run, work: str, pump) -> sandbox.Confinement | None:
+    """The confinement for a sandboxed run. Trusted runs are not confined.
+    With ``DANBYTE_SCRIPT_SANDBOX=none`` the run goes ahead unconfined and
+    its log says so; otherwise a host that cannot confine refuses the run."""
+    if run.trusted:
+        return None
+    if sandbox.mode() == "none":
+        pump.feed("Sandbox: off (DANBYTE_SCRIPT_SANDBOX=none). This run can read what the "
+                  "Danbyte service account can.\n")
+        return None
+    conf = sandbox.prepare(work)
+    if conf.notes:
+        pump.feed(f"Sandbox: partial - {'; '.join(conf.notes)}.\n")
+    return conf
 
 
 def build_command(run, work: str) -> list[str]:
@@ -300,22 +338,29 @@ def run_script(run_id: str) -> ScriptRun | None:
     os.makedirs(outputs, exist_ok=True)
     token = None
     proc = None
+    confinement = None
     pump = _LogPump(run)
     try:
         if run.run_as_user is None:
             raise RunnerError("This script has no user to run as.")
+        confinement = confine(run, work, pump)
         token, key = tokens.mint(run)
         env = base_env(run, key, work, outputs)
         if run.trusted:
             env = trusted_env(run, env)
+        else:
+            copy_sdk(work)
         env["DANBYTE_SCRIPT_PATH"] = os.path.join(work, "script.py")
         cmd = build_command(run, work)
         timeout = run.script.effective_timeout
 
         proc = subprocess.Popen(  # noqa: S603 - argv list, no shell, fixed interpreter
             cmd, cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            start_new_session=True, preexec_fn=_limits(timeout), close_fds=True,
+            start_new_session=True, preexec_fn=_limits(timeout, confinement),
+            close_fds=True,
         )
+        if confinement is not None:
+            confinement.close()
         code, timed_out = pump_until_done(proc, pump, timeout)
         if timed_out:
             _kill(proc)
@@ -347,6 +392,8 @@ def run_script(run_id: str) -> ScriptRun | None:
     finally:
         if proc is not None and proc.stdout is not None:
             proc.stdout.close()
+        if confinement is not None:
+            confinement.close()
         tokens.revoke(token)
         shutil.rmtree(work, ignore_errors=True)
     run.refresh_from_db()

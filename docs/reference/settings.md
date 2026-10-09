@@ -115,6 +115,18 @@ created on the first backup, mode `0700`.
 **Before upgrade** backup (they stop otherwise when the backup fails or
 `pg_dump` is missing). See [Backup and restore](../getting-started/backup-restore.md).
 
+## Scripts (`DANBYTE_SCRIPT_SANDBOX`)
+
+`DANBYTE_SCRIPT_SANDBOX` sets how sandboxed [scripts](../features/scripts.md)
+are confined. `landlock`, the default, confines every sandboxed run and
+refuses one the host cannot confine. `none` runs them unconfined, and each
+run log says so; use it only on a host without Landlock, knowing a script
+author can then read what the service account can, including `.env`.
+Trusted scripts are never confined.
+
+`DANBYTE_INTERNAL_URL` is where a script's SDK reaches the API. Default:
+`http://127.0.0.1:8000`.
+
 ## Outbound requests (SSRF guard)
 
 User-configured outbound URLs - webhooks, notification channels, automation

@@ -64,7 +64,10 @@ Two settings shape it:
   create, change or delete anything, whatever the code says.
 - **Runs as** - the person who clicks Run, or the script's owner. Choose
   the owner when you share a script and want it to see the same data for
-  everyone.
+  everyone. Because that lends the owner's identity to the code, only the
+  owner or someone with `trust` can choose it, and only they can change
+  what such a script executes: its source, its parameters and its schedule
+  parameters. Anyone with `change` can still switch it back to the caller.
 
 A run is stopped when it exceeds its **timeout** (five minutes by default,
 an hour at most), uses too much memory, or writes more log or files than
@@ -91,7 +94,9 @@ as any other object.
 ## Schedules
 
 The **Schedule** tab runs a script hourly, daily, weekly or monthly. A
-scheduled run belongs to the owner and uses the owner's access. The
+scheduled run belongs to the owner and uses the owner's access, so turning
+a schedule on, and changing what a scheduled script executes, follows the
+same rule as running as the owner: the owner or someone with `trust`. The
 `danbyte-scripts` timer checks every minute, and a schedule fires once per
 occurrence even if the machine was asleep.
 
@@ -134,6 +139,13 @@ that reason. **A trusted script runs with the worker's own privileges: it
 can reach the database and the host as the Danbyte service account.** Only
 grant it to people you would give a shell.
 
+Trust approves the code as it is. When anyone without `trust` - the owner
+included - changes the source, the parameters or the schedule parameters,
+the script goes back to sandboxed, and the change log shows the reset next
+to the edit. Someone with `trust` re-approves it; their own edits keep it
+trusted. Settings that do not change what runs, such as the timeout, the
+API access or the sharing, leave it alone.
+
 ## What a sandboxed script cannot do
 
 Being honest about the boundary:
@@ -141,11 +153,29 @@ Being honest about the boundary:
 - It gets no database credentials, no encryption keys and no Django
   settings. Its whole access is the run token.
 - It cannot read another tenant's data, because the token cannot.
+- It is confined with Landlock, a Linux feature that needs no extra
+  package or root. It can read the system and the Python install, and
+  read and write its own work directory, which holds its outputs and its
+  own copy of the SDK. It cannot read `/proc`, the Danbyte directory and
+  its `.env`, backups, media or other runs' files.
+- It cannot connect to the Redis or database ports, open unix sockets,
+  or signal processes outside its own run.
 
-But it *is* a process on the Danbyte host, running as the service account.
-It can open network connections and read files that account can read. It
-is not a jail. Treat "who may write a script here" as a real permission,
-which is why publishing to everyone and marking trusted each need one.
+Other network connections stay open, so a script can still reach your
+devices and outside services. It still runs as the Danbyte service
+account, not as a separate user, so treat "who may write a script here" as
+a real permission, which is why publishing to everyone and marking trusted
+each need one.
+
+Confinement needs Linux 5.13 or later with Landlock enabled. Current
+Ubuntu, Debian and RHEL kernels have it, and the default Docker seccomp
+profile allows it. A host that cannot confine a run refuses it, and the
+run fails with that reason. The port block needs Linux 6.7 and the signal
+block 6.12; on an older kernel the run starts and its log names what is
+not blocked.
+`DANBYTE_SCRIPT_SANDBOX=none` runs sandboxed scripts unconfined instead,
+and says so at the top of every run log. See
+[Settings](../reference/settings.md#scripts-danbyte_script_sandbox).
 
 ## Permissions
 
@@ -154,7 +184,7 @@ which is why publishing to everyone and marking trusted each need one.
 | `script: view` | See the scripts shared with them |
 | `script: add` / `change` / `delete` | Author and manage scripts |
 | `script: run` | Run one, and stop a run |
-| `script: trust` | Mark a script trusted |
+| `script: trust` | Mark a script trusted, edit one without clearing that, and edit or schedule scripts that run as their owner |
 | `scripts.publish` | Publish a script to everyone in the tenant |
 
 ## From the shell
