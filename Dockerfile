@@ -8,9 +8,16 @@
 # files pick the stage per service via `target:`. See docs/getting-started/docker.md
 # and docker-compose.prod.yml. The dev stack (docker-compose.dev.yml) reuses the
 # `runtime` stage and just overrides the command to `runserver`.
+#
+# Base images come from ECR Public's copy of the Docker official images, not
+# Docker Hub, which throttles anonymous pulls. BASE_IMAGE_REGISTRY points the
+# build at another mirror (the compose files pass it through from .env).
+# There is deliberately no `# syntax=` line: it makes BuildKit pull its
+# Dockerfile frontend from Docker Hub.
+ARG BASE_IMAGE_REGISTRY=public.ecr.aws/docker/library
 
 # ─── 1. Build the SPA ────────────────────────────────────────────────────────
-FROM public.ecr.aws/docker/library/node:22-slim AS frontend
+FROM ${BASE_IMAGE_REGISTRY}/node:22-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -22,7 +29,7 @@ RUN npm run build
 # `/` to the `frontend` service (vite preview) rather than serving files. A
 # self-signed cert is baked in so browsers that force HTTPS still connect (they
 # show a one-time warning); terminate real TLS in front for production.
-FROM public.ecr.aws/docker/library/nginx:1.27.5-alpine AS web
+FROM ${BASE_IMAGE_REGISTRY}/nginx:1.27.5-alpine AS web
 RUN apk add --no-cache openssl \
     && mkdir -p /etc/nginx/tls \
     && openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
@@ -32,7 +39,7 @@ COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/maintenance.html /usr/share/nginx/maintenance/maintenance.html
 
 # ─── 3. Python application runtime ───────────────────────────────────────────
-FROM public.ecr.aws/docker/library/python:3.13-slim AS runtime
+FROM ${BASE_IMAGE_REGISTRY}/python:3.13-slim AS runtime
 # Marks this as the container deployment: in-app self-upgrade is refused here
 # (a process in a container can't rebuild its image or recreate itself), and
 # the Updates page points to `docker compose build` instead. See core/version.

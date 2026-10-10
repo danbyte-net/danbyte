@@ -66,8 +66,8 @@ matching lines in the compose file to have `bootstrap` do it):
 
 | Service    | Image / stage        | Role                                             |
 | ---------- | -------------------- | ------------------------------------------------ |
-| `postgres` | `postgres:17`        | Database (named volume `postgres_data`)          |
-| `redis`    | `redis:7`            | Queues + channels layer                          |
+| `postgres` | `postgres:17`        | Database (named volume `postgres_data`), from [ECR Public](#base-images) |
+| `redis`    | `redis:7`            | Queues + channels layer, from [ECR Public](#base-images) |
 | `backend`  | app (`runtime`)      | gunicorn WSGI + one-time migrate/bootstrap/static |
 | `ws`       | app (`runtime`)      | daphne ASGI - WebSockets only                    |
 | `workers`  | app (`runtime`)      | `rqworker-pool` (`RQ_WORKERS` processes; ICMP-capable) |
@@ -150,6 +150,31 @@ commented list). The essentials:
 | `DANBYTE_TRUSTED_PROXY_DEPTH` | Proxies appending to `X-Forwarded-For`, counting the stack's own nginx: `1` direct (default), `2` with one proxy in front. Finds the client address for the login lockout. |
 | `HTTP_PORT` | Published host port (default `8080`). |
 | `RQ_WORKERS` | Worker pool size. |
+| `BASE_IMAGE_REGISTRY` | Where base images come from (default `public.ecr.aws/docker/library`). See [Base images](#base-images). |
+
+## Base images
+
+The base images - Postgres, Redis, and the `node`, `nginx` and `python` images
+the Dockerfile builds on - come from **ECR Public**
+(`public.ecr.aws/docker/library`), Amazon's copy of the Docker official images,
+not from Docker Hub. Docker Hub limits anonymous pulls per address, and a build
+host behind a shared NAT or a CI runner reaches that limit quickly; ECR Public
+serves the same images without it. The Dockerfile has no `# syntax=` line for
+the same reason: that line makes BuildKit pull its parser from Docker Hub.
+
+To pull from another mirror (a Harbor or Artifactory proxy, or Docker Hub
+itself with a login), set `BASE_IMAGE_REGISTRY` in `.env` to the path that
+holds the official images:
+
+```ini
+BASE_IMAGE_REGISTRY=harbor.example.com/dockerhub-proxy/library
+```
+
+The compose files use it for `postgres` and `redis` and pass it to the build,
+so the next `build` pulls `node`, `nginx` and `python` from there too. The
+mirror needs the same tags (`postgres:17`, `redis:7`, `node:22-slim`,
+`nginx:1.27.5-alpine`, `python:3.13-slim`). A plain `docker build` takes it as
+`--build-arg BASE_IMAGE_REGISTRY=…`.
 
 ## TLS
 
@@ -328,7 +353,8 @@ The stack is rootless-friendly and works with `podman-compose`. A few notes:
 ## Prebuilt images (ghcr.io)
 
 Tagging a release (`v*`) publishes the three images to **GitHub Container
-Registry** via `.github/workflows/container.yml`:
+Registry** via `.github/workflows/container.yml`, once the release's test
+suite has passed for that tag:
 
 ```
 ghcr.io/danbyte-net/danbyte-app:<version>       # gunicorn / daphne / workers

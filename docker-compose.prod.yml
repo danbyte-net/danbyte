@@ -31,10 +31,17 @@ x-app-env: &app-env
   REDIS_HOST: redis
   REDIS_PORT: "6379"
 
+# Where base images are pulled from: ECR Public's copy of the Docker official
+# images by default (Docker Hub throttles anonymous pulls). Set
+# BASE_IMAGE_REGISTRY in .env to use another mirror.
+x-build-args: &build-args
+  BASE_IMAGE_REGISTRY: ${BASE_IMAGE_REGISTRY:-public.ecr.aws/docker/library}
+
 x-app-build: &app-build
   build:
     context: .
     target: runtime
+    args: *build-args
   image: danbyte-app:latest
   restart: unless-stopped
   depends_on:
@@ -45,7 +52,7 @@ x-app-build: &app-build
 
 services:
   postgres:
-    image: public.ecr.aws/docker/library/postgres:17
+    image: ${BASE_IMAGE_REGISTRY:-public.ecr.aws/docker/library}/postgres:17
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-danbyte}
@@ -60,7 +67,7 @@ services:
       retries: 5
 
   redis:
-    image: public.ecr.aws/docker/library/redis:7
+    image: ${BASE_IMAGE_REGISTRY:-public.ecr.aws/docker/library}/redis:7
     restart: unless-stopped
     volumes:
       - redis_data:/data
@@ -173,6 +180,7 @@ services:
     build:
       context: .
       target: frontend
+      args: *build-args
     image: danbyte-frontend:latest
     restart: unless-stopped
     working_dir: /app/frontend
@@ -184,6 +192,7 @@ services:
     build:
       context: .
       target: web
+      args: *build-args
     image: danbyte-web:latest
     restart: unless-stopped
     depends_on:

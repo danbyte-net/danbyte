@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: public.ecr.aws/docker/library/postgres:17
+    image: ${BASE_IMAGE_REGISTRY:-public.ecr.aws/docker/library}/postgres:17
     environment:
       POSTGRES_DB: danbyte
       POSTGRES_USER: postgres
@@ -11,12 +11,16 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
-    image: public.ecr.aws/docker/library/redis:7
+    image: ${BASE_IMAGE_REGISTRY:-public.ecr.aws/docker/library}/redis:7
     ports:
       - "6379:6379"
 
   backend:
-    build: .
+    build: &build
+      context: .
+      # Base images: ECR Public by default; see docker-compose.prod.yml.
+      args:
+        BASE_IMAGE_REGISTRY: ${BASE_IMAGE_REGISTRY:-public.ecr.aws/docker/library}
     # Migrate + idempotent first-run bootstrap (default Organization, built-in
     # statuses, optional superuser) before serving, so a fresh box comes up
     # usable with no manual steps. All three are safe to re-run on every boot.
@@ -47,7 +51,7 @@ services:
       - .:/app
 
   workers:
-    build: .
+    build: *build
     command: python manage.py rqworker default high low
     environment:
       DB_HOST: postgres
@@ -66,7 +70,7 @@ services:
 
   # The fast lane - sub-minute checks; see docker-compose.prod.yml.
   fastlane:
-    build: .
+    build: *build
     command: python manage.py fastlane
     environment:
       DB_HOST: postgres
@@ -88,7 +92,7 @@ services:
   # The beat - see the note in docker-compose.prod.yml. Without it a dev stack
   # materialises and dispatches nothing.
   scheduler:
-    build: .
+    build: *build
     command: python manage.py run_scheduler
     environment:
       DB_HOST: postgres
