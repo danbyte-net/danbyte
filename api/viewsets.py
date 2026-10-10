@@ -25,7 +25,7 @@ from rest_framework.decorators import (
     api_view,
     permission_classes as drf_permission_classes,
 )
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -9323,9 +9323,41 @@ def _resolve_route_endpoints(plan, body):
     return (a, b, rack_a, rack_b), None
 
 
+def _clone_drawing(src, dst) -> None:
+    """Copy ``src``'s CAD drawing onto plan ``dst``: the file, the render and
+    everything read from it, under ``dst``'s own folder. A drawing still
+    queued is queued again for the copy; cached layer renders are not
+    copied."""
+    import os
+
+    from django.core.files.base import ContentFile
+
+    from . import cad_render
+    from .models import FloorPlanDrawing
+
+    d = FloorPlanDrawing.objects.filter(floor_plan=src, tenant=src.tenant).first()
+    if d is None:
+        return
+    copy = FloorPlanDrawing(tenant=dst.tenant, floor_plan=dst)
+    for f in FloorPlanDrawing._meta.concrete_fields:
+        if f.name in ("id", "tenant", "floor_plan", "source", "rendered", "variants",
+                      "created_at", "updated_at"):
+            continue
+        setattr(copy, f.attname, getattr(d, f.attname))
+    copy.variants = {}
+    with d.source.open("rb") as fh:
+        copy.source.save(os.path.basename(d.source.name), ContentFile(fh.read()), save=False)
+    if d.rendered:
+        with d.rendered.open("rb") as fh:
+            copy.rendered.save("drawing.svg", ContentFile(fh.read()), save=False)
+    copy.save()
+    if copy.status == "queued":
+        cad_render.enqueue(copy.pk, copy.source.name)
+
+
 class FloorPlanViewSet(TenantScopedViewSet):
     queryset = (
-        FloorPlan.objects.select_related("location", "location__site")
+        FloorPlan.objects.select_related("location", "location__site", "drawing")
         .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
     )
@@ -9403,10 +9435,276 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     obj.id = None
                     obj.floor_plan = dst
                     obj.save()
+            _clone_drawing(src, dst)
         return Response(
             FloorPlanSerializer(dst, context=self.get_serializer_context()).data,
             status=drf_status.HTTP_201_CREATED,
         )
+
+    # ── CAD drawing (one per plan; api/cad_render.py) ──────────────────────
+
+    def _drawing_or_404(self, plan):
+        from .models import FloorPlanDrawing
+
+        d = FloorPlanDrawing.objects.filter(floor_plan=plan, tenant=plan.tenant).first()
+        if d is None:
+            raise NotFound("This plan has no drawing.")
+        d.floor_plan = plan
+        return d
+
+    def _drawing_response(self, d, status=200):
+        from .serializers import FloorPlanDrawingSerializer
+
+        return Response(
+            FloorPlanDrawingSerializer(d, context=self.get_serializer_context()).data,
+            status=status,
+        )
+
+    @action(detail=True, methods=["get", "post", "patch", "delete"], url_path="drawing")
+    def drawing(self, request, pk=None):
+        """The plan's CAD drawing.
+
+        GET: the drawing (404 when none). POST (multipart ``file``): upload a
+        DXF, or a DWG when a converter is set up; replaces any drawing and
+        queues processing (202). PATCH: placement - ``x_mm``, ``y_mm``,
+        ``rotation``, ``opacity``, ``hidden_layers``, ``hide_text``. DELETE:
+        remove the drawing and its files."""
+        from . import cad_render
+        from .serializers import FloorPlanDrawingPlacementSerializer
+
+        plan = self.get_object()
+        if request.method == "GET":
+            return self._drawing_response(self._drawing_or_404(plan))
+        if request.method == "POST":
+            return self._drawing_upload(request, plan)
+        d = self._drawing_or_404(plan)
+        if request.method == "DELETE":
+            d.delete()
+            return Response(status=drf_status.HTTP_204_NO_CONTENT)
+        ser = FloorPlanDrawingPlacementSerializer(
+            data=request.data, context={"layers": d.layers}
+        )
+        ser.is_valid(raise_exception=True)
+        d.placement = {
+            **cad_render.default_placement(d.layers or [], d.placement),
+            **(d.placement or {}),
+            **ser.validated_data,
+        }
+        d.save(update_fields=["placement", "updated_at"])
+        return self._drawing_response(d)
+
+    def _drawing_upload(self, request, plan):
+        import os
+
+        from django.db import transaction
+
+        from . import cad_render
+        from .models import FloorPlanDrawing
+
+        f = request.FILES.get("file")
+        if f is None:
+            return Response({"file": ["Choose a DXF or DWG file."]}, status=400)
+        if f.size > cad_render.MAX_UPLOAD_BYTES:
+            return Response({"file": ["The file is over the 50 MB limit."]}, status=400)
+        head = f.read(64)
+        f.seek(0)
+        kind = cad_render.detect_kind(f.name, head)
+        if kind is None:
+            return Response(
+                {"file": ["Not a DXF or DWG drawing (the name and the contents must agree)."]},
+                status=400,
+            )
+        if kind == "dwg":
+            try:
+                cad_render.converter()
+            except cad_render.ConverterUnavailable as exc:
+                return Response({"file": [str(exc)], "code": "converter_missing"}, status=400)
+        name = os.path.basename(f.name)[:255]
+        with transaction.atomic():
+            d = (
+                FloorPlanDrawing.objects.select_for_update()
+                .filter(floor_plan=plan, tenant=plan.tenant).first()
+            )
+            stale = []
+            if d is None:
+                d = FloorPlanDrawing(tenant=plan.tenant, floor_plan=plan)
+            else:
+                stale = [n for n in (d.source.name, d.rendered.name) if n]
+                stale += [v.get("file") for v in (d.variants or {}).values() if v.get("file")]
+            d.source.save(name, f, save=False)
+            d.source_name = name
+            d.source_kind = kind
+            d.source_bytes = f.size
+            d.status = "queued"
+            d.error = ""
+            d.units = ""
+            d.units_mm_per_unit = None
+            # A new file's points are not the old one's.
+            d.calibration = None
+            d.extents = None
+            d.layers = []
+            d.rendered = ""
+            d.rendered_bytes = d.rendered_elements = 0
+            d.simplified = []
+            d.skipped = {}
+            d.variants = {}
+            d.processed_at = None
+            d.save()
+            transaction.on_commit(lambda: cad_render.delete_names(stale))
+            cad_render.enqueue(d.pk, d.source.name)
+        d.floor_plan = plan
+        return self._drawing_response(d, status=drf_status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"], url_path="drawing/reprocess")
+    def drawing_reprocess(self, request, pk=None):
+        """Process the uploaded file again (after a converter was installed,
+        or the queue was down). 202."""
+        from . import cad_render
+
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if d.source_kind == "dwg":
+            try:
+                cad_render.converter()
+            except cad_render.ConverterUnavailable as exc:
+                return Response({"detail": str(exc), "code": "converter_missing"}, status=400)
+        d.status = "queued"
+        d.error = ""
+        d.save(update_fields=["status", "error", "updated_at"])
+        cad_render.enqueue(d.pk, d.source.name)
+        return self._drawing_response(d, status=drf_status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post", "delete"], url_path="drawing/calibrate")
+    def drawing_calibrate(self, request, pk=None):
+        """POST ``{"a": [x, y], "b": [x, y], "distance_mm": n}`` - two points
+        in the SVG's viewBox units and the real distance between them - sets
+        the scale; DELETE goes back to the file's units."""
+        from . import cad_render
+        from .serializers import FloorPlanDrawingCalibrationSerializer
+
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if request.method == "DELETE":
+            d.calibration = None
+        else:
+            if d.status != "ready":
+                return Response({"detail": "The drawing is not processed yet."}, status=409)
+            ser = FloorPlanDrawingCalibrationSerializer(
+                data=request.data, context={"size": cad_render.size_units(d)}
+            )
+            ser.is_valid(raise_exception=True)
+            v = ser.validated_data
+            d.calibration = {
+                "a": list(v["a"]), "b": list(v["b"]), "distance_mm": v["distance_mm"],
+                "mm_per_unit": v["mm_per_unit"],
+            }
+        d.save(update_fields=["calibration", "updated_at"])
+        return self._drawing_response(d)
+
+    @action(detail=True, methods=["post"], url_path="drawing/fit-grid")
+    def drawing_fit_grid(self, request, pk=None):
+        """Size the grid to the drawing: the drawing moves to the plan's
+        origin and the grid becomes the cells that cover it. Optional
+        ``cell_mm`` sets the cell size first. 400 with ``min_cell_mm`` when
+        the drawing needs more than 512 cells a side."""
+        from django.db import transaction
+
+        from . import cad_render
+
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if d.status != "ready" or not d.extents:
+            return Response({"detail": "The drawing is not processed yet."}, status=409)
+        cell = plan.cell_mm
+        if "cell_mm" in request.data:
+            try:
+                cell = int(request.data.get("cell_mm"))
+            except (TypeError, ValueError):
+                return Response({"cell_mm": ["A whole number of millimetres."]}, status=400)
+            if not 50 <= cell <= 5000:
+                return Response({"cell_mm": ["Between 50 and 5000 mm."]}, status=400)
+        f = cad_render.fit(d, cell)
+        if not f["fits"]:
+            return Response(
+                {"detail": f"The drawing needs cells of at least {f['min_cell_mm']} mm "
+                           "to fit 512 cells.",
+                 "min_cell_mm": f["min_cell_mm"]},
+                status=400,
+            )
+        with transaction.atomic():
+            plan.cell_mm = cell
+            plan.grid_width = f["grid_width"]
+            plan.grid_height = f["grid_height"]
+            plan.save()
+            d.placement = {**(d.placement or {}), "x_mm": 0, "y_mm": 0}
+            d.save(update_fields=["placement", "updated_at"])
+        d.floor_plan = plan
+        return Response({
+            "floor_plan": FloorPlanSerializer(plan, context=self.get_serializer_context()).data,
+            "drawing": self._drawing_response(d).data,
+        })
+
+    @action(detail=True, methods=["get", "post"], url_path="drawing/render")
+    def drawing_render(self, request, pk=None):
+        """A server render with layers left out, for drawings too large to
+        toggle in the browser. POST ``{"hidden_layers": [...], "hide_text":
+        bool}`` returns the cached render (200) or queues one (202); GET
+        ``?key=`` reports on it."""
+        from . import cad_render
+        from .serializers import FloorPlanDrawingPlacementSerializer
+
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if d.status != "ready":
+            return Response({"detail": "The drawing is not processed yet."}, status=409)
+        if request.method == "GET":
+            key = request.query_params.get("key", "")
+            entry = (d.variants or {}).get(key)
+            if entry is None:
+                raise NotFound("No such render.")
+            return Response(self._variant_body(key, entry))
+        ser = FloorPlanDrawingPlacementSerializer(
+            data={k: v for k, v in (request.data or {}).items()
+                  if k in ("hidden_layers", "hide_text")},
+            context={"layers": d.layers},
+        )
+        ser.is_valid(raise_exception=True)
+        hidden = ser.validated_data.get("hidden_layers", [])
+        hide_text = ser.validated_data.get("hide_text", False)
+        key, entry, queued = cad_render.request_variant(d, hidden, hide_text)
+        return Response(
+            self._variant_body(key, entry),
+            status=drf_status.HTTP_202_ACCEPTED if queued else 200,
+        )
+
+    @staticmethod
+    def _variant_body(key, entry):
+        from django.core.files.storage import default_storage
+
+        name = entry.get("file") or ""
+        return {
+            "key": key,
+            "status": entry.get("status"),
+            "error": entry.get("error", ""),
+            "url": default_storage.url(name) if name and entry.get("status") == "ready" else None,
+            "bytes": entry.get("bytes", 0),
+            "elements": entry.get("elements", 0),
+            "simplified": entry.get("simplified", []),
+            "hidden_layers": entry.get("hidden_layers", []),
+            "hide_text": entry.get("hide_text", False),
+        }
+
+    @action(detail=False, methods=["get"], url_path="drawing-support")
+    def drawing_support(self, request):
+        """What uploads the server takes: DXF always, DWG when a converter is
+        set up (``message`` says why not), and the size cap."""
+        from . import cad_render
+
+        return Response({
+            **cad_render.converter_status(),
+            "dxf": True,
+            "max_upload_bytes": cad_render.MAX_UPLOAD_BYTES,
+        })
 
     @action(detail=True, methods=["get"], url_path="state")
     def state(self, request, pk=None):
@@ -9500,7 +9798,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         return Response({"as_of": timezone.now().isoformat(), "tiles": out})
 
     # `route` is a POST (it carries a body) but computes only - view, not change.
-    rbac_action_map = {"route": "view"}
+    # `drawing_render` asks for a cached server render with layers hidden:
+    # what a viewer toggling layers on a large drawing needs.
+    rbac_action_map = {"route": "view", "drawing_render": "view"}
 
     @action(detail=True, methods=["post"], url_path="route")
     def route(self, request, pk=None):

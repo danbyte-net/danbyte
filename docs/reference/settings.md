@@ -127,6 +127,28 @@ Trusted scripts are never confined.
 `DANBYTE_INTERNAL_URL` is where a script's SDK reaches the API. Default:
 `http://127.0.0.1:8000`.
 
+## CAD drawings (`DANBYTE_CAD_CONVERTER`)
+
+`DANBYTE_CAD_CONVERTER` is the absolute path of the program that turns a DWG
+into DXF for [floor-plan CAD drawings](../features/floor-plans.md#cad-drawings).
+Default: empty, and DWG uploads are refused with the steps to save the drawing
+as DXF instead; DXF needs nothing.
+
+Two programs are accepted, by file name:
+
+- `dwg2dxf` from LibreDWG (GPL; build it from source, Debian and Ubuntu do not
+  package it).
+- `ODAFileConverter`, the ODA File Converter (free download from the Open
+  Design Alliance; not redistributable, so never bundled). It runs with
+  `QT_QPA_PLATFORM=offscreen`.
+
+Anything else, a relative path, a missing or non-executable file, or one
+writable by everyone is refused. The converter runs on the worker host only,
+without a shell, in a temporary directory, with a scrubbed environment, a
+5-minute timeout and memory and output-size limits; its DXF may be at most
+256 MB. The setting is read from the environment only, never from the UI, and
+is kept in a configuration backup.
+
 ## Outbound requests (SSRF guard)
 
 User-configured outbound URLs - webhooks, notification channels, automation

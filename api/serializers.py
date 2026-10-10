@@ -8667,6 +8667,7 @@ class FloorPlanSerializer(
     site = serializers.SerializerMethodField()
     background_image = serializers.SerializerMethodField()
     tile_count = serializers.SerializerMethodField()
+    drawing = serializers.SerializerMethodField()
     state = serializers.JSONField(required=False)
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
@@ -8685,6 +8686,23 @@ class FloorPlanSerializer(
 
     def get_tile_count(self, obj) -> int:
         return obj.tiles.count()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_drawing(self, obj):
+        """A summary of the plan's CAD drawing; the full record is
+        ``GET /api/floor-plans/{id}/drawing/``."""
+        try:
+            d = obj.drawing
+        except FloorPlan.drawing.RelatedObjectDoesNotExist:
+            return None
+        return {
+            "id": str(d.id),
+            "status": d.status,
+            "source_kind": d.source_kind,
+            "source_name": d.source_name,
+            "rendered_url": _img_url(self, d.rendered) if d.status == "ready" else None,
+            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        }
 
     def validate_state(self, v):
         if not isinstance(v, dict):
@@ -8714,10 +8732,110 @@ class FloorPlanSerializer(
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "background_image",
                   "background_opacity", "state", "description", "tile_count",
+                  "drawing",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "site", "background_image",
-                            "tile_count", "created_at", "updated_at"]
+                            "tile_count", "drawing", "created_at", "updated_at"]
+
+
+class FloorPlanDrawingSerializer(serializers.Serializer):
+    """A plan's CAD drawing as the canvas reads it (read-only; writes go
+    through the plan's ``drawing`` actions). See docs/features/floor-plans.md
+    for the SVG it points at and how ``transform_mm`` places it."""
+
+    def to_representation(self, d):
+        from . import cad_render
+
+        w, h = cad_render.size_units(d)
+        cell = d.floor_plan.cell_mm
+        return {
+            "id": str(d.id),
+            "status": d.status,
+            "error": d.error,
+            "source_kind": d.source_kind,
+            "source_name": d.source_name,
+            "source_bytes": d.source_bytes,
+            "source_url": _img_url(self, d.source),
+            "rendered_url": _img_url(self, d.rendered) if d.status == "ready" else None,
+            "rendered_bytes": d.rendered_bytes,
+            "rendered_elements": d.rendered_elements,
+            "simplified": d.simplified or [],
+            "skipped": d.skipped or {},
+            "units": d.units,
+            "units_mm_per_unit": d.units_mm_per_unit,
+            "mm_per_unit": d.mm_per_unit,
+            "scale_source": d.scale_source,
+            "calibration": d.calibration,
+            "extents": d.extents,
+            "size": {"width": w, "height": h},
+            "size_mm": {"width": w * d.mm_per_unit, "height": h * d.mm_per_unit},
+            "layers": d.layers or [],
+            "placement": d.placement or {},
+            "bounds_mm": cad_render.placed_box_mm(d),
+            "transform_mm": cad_render.transform_mm(d),
+            "fit": cad_render.fit(d, cell) if d.extents else None,
+            "processed_at": d.processed_at.isoformat() if d.processed_at else None,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        }
+
+
+class FloorPlanDrawingPlacementSerializer(serializers.Serializer):
+    """PATCH body for a drawing's placement; every key optional."""
+
+    x_mm = serializers.FloatField(required=False, min_value=-10_000_000, max_value=10_000_000)
+    y_mm = serializers.FloatField(required=False, min_value=-10_000_000, max_value=10_000_000)
+    rotation = serializers.ChoiceField(choices=[0, 90, 180, 270], required=False)
+    opacity = serializers.IntegerField(required=False, min_value=0, max_value=100)
+    hidden_layers = serializers.ListField(
+        child=serializers.CharField(max_length=255, allow_blank=False, trim_whitespace=False),
+        required=False, max_length=10_000,
+    )
+    hide_text = serializers.BooleanField(required=False)
+
+    def validate_hidden_layers(self, value):
+        known = {row.get("name") for row in (self.context.get("layers") or [])}
+        if known:
+            unknown = sorted(set(value) - known)
+            if unknown:
+                raise serializers.ValidationError(
+                    f"Not a layer of this drawing: {', '.join(unknown[:5])}."
+                )
+        return sorted(set(value))
+
+
+class FloorPlanDrawingCalibrationSerializer(serializers.Serializer):
+    """Two points in the SVG's viewBox units and the real distance between
+    them - the cabinet photo calibration's guides, in two dimensions."""
+
+    a = serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2)
+    b = serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2)
+    distance_mm = serializers.FloatField(min_value=1, max_value=1_000_000)
+
+    def validate(self, attrs):
+        import math
+
+        ax, ay = attrs["a"]
+        bx, by = attrs["b"]
+        if not all(math.isfinite(v) for v in (ax, ay, bx, by)):
+            raise serializers.ValidationError({"a": "Points must be finite numbers."})
+        span = math.hypot(bx - ax, by - ay)
+        w, h = self.context.get("size") or (0.0, 0.0)
+        diag = math.hypot(w, h)
+        # The guides must stand apart: 1% of the drawing, like the photo
+        # calibration's 2% of its width.
+        if span <= 0 or (diag and span < diag * 0.01):
+            raise serializers.ValidationError(
+                {"b": "The points must stand apart: at least 1% of the drawing."}
+            )
+        mpu = attrs["distance_mm"] / span
+        if not (1e-6 <= mpu <= 1e6):
+            raise serializers.ValidationError(
+                {"distance_mm": "That distance gives an implausible scale for this drawing."}
+            )
+        attrs["mm_per_unit"] = mpu
+        return attrs
 
 
 class FloorPlanTileSerializer(NumIdModelSerializer):

@@ -56,6 +56,9 @@ def _ser(v):
 # big the value is. Change detection still compares the raw values.
 _SUMMARISED_JSON_FIELDS: dict[str, frozenset[str]] = {
     "api.topologyview": frozenset({"state"}),
+    # A CAD drawing's layer list and cached renders can run to thousands of
+    # entries; what changed is enough.
+    "api.floorplandrawing": frozenset({"layers", "variants"}),
 }
 
 

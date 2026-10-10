@@ -685,3 +685,10 @@ MONITORING_UTIL_ALERT_CLEAR = int(os.getenv("MONITORING_UTIL_ALERT_CLEAR", "80")
 # web UI can pick a plugin + args but can't execute arbitrary system commands.
 MONITORING_EXEC_ENABLED = os.getenv("MONITORING_EXEC_ENABLED", "False") == "True"
 MONITORING_PLUGIN_DIR = os.getenv("MONITORING_PLUGIN_DIR", "")
+
+# Floor-plan CAD drawings: DXF is read natively; DWG needs a converter binary
+# on the worker host. Absolute path to LibreDWG's `dwg2dxf` or the ODA File
+# Converter (`ODAFileConverter`); empty refuses DWG uploads. Only those two
+# programs are run, without a shell, in a temp dir with a scrubbed environment
+# and a timeout - see api/cad_render.py. Set by the operator, never from the UI.
+DANBYTE_CAD_CONVERTER = os.getenv("DANBYTE_CAD_CONVERTER", "").strip()

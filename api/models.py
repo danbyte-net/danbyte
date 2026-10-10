@@ -1,4 +1,5 @@
 import ipaddress
+import os
 import re
 import uuid
 
@@ -7538,6 +7539,86 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+
+def _cad_upload_to(instance, filename: str) -> str:
+    """Every file of a plan's drawing lives in ``floor-plans/cad/<plan id>/``,
+    under a random name: the media view finds the plan from the folder, and a
+    new upload never reuses a cached URL."""
+    ext = os.path.splitext(filename)[1].lower()[:8]
+    return f"floor-plans/cad/{instance.floor_plan_id}/{uuid.uuid4().hex}{ext}"
+
+
+class FloorPlanDrawing(TimestampedModel):
+    """A CAD drawing (DXF, or DWG through a converter) as a floor plan's
+    background. One per plan. The upload is processed by an RQ job
+    (``api/cad_render.py``) into a sanitised, layered SVG plus the drawing's
+    units, extents and layers; ``placement`` holds how the plan shows it."""
+
+    SOURCE_KINDS = [("dxf", "DXF"), ("dwg", "DWG")]
+    STATUS_CHOICES = [("queued", "Queued"), ("ready", "Ready"), ("failed", "Failed")]
+    SCALE_SOURCES = [
+        ("units", "Drawing units"), ("calibration", "Calibration"), ("assumed", "Assumed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="floor_plan_drawings"
+    )
+    floor_plan = models.OneToOneField(
+        FloorPlan, on_delete=models.CASCADE, related_name="drawing"
+    )
+    source = models.FileField(upload_to=_cad_upload_to, max_length=255)
+    source_name = models.CharField(max_length=255, blank=True, default="")
+    source_kind = models.CharField(max_length=8, choices=SOURCE_KINDS)
+    source_bytes = models.PositiveBigIntegerField(default=0)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued")
+    error = models.TextField(blank=True, default="")
+    # $INSUNITS as read ("mm", "in", ... or "unitless") and the scale it gives.
+    units = models.CharField(max_length=16, blank=True, default="")
+    units_mm_per_unit = models.FloatField(null=True, blank=True)
+    # Two points in drawing units and the real distance between them; wins
+    # over the units when set. {"a": [x, y], "b": [x, y], "distance_mm": n}.
+    calibration = models.JSONField(null=True, blank=True)
+    # {"min_x", "min_y", "max_x", "max_y"} in drawing units.
+    extents = models.JSONField(null=True, blank=True)
+    # [{"name", "color", "on", "frozen", "entity_count", "kinds"}]
+    layers = models.JSONField(default=list, blank=True)
+    rendered = models.FileField(upload_to=_cad_upload_to, max_length=255, blank=True)
+    rendered_bytes = models.PositiveIntegerField(default=0)
+    rendered_elements = models.PositiveIntegerField(default=0)
+    # The simplification steps the render needed to fit the caps, in order.
+    simplified = models.JSONField(default=list, blank=True)
+    # What was left out: {"external": n, "infinite": n}.
+    skipped = models.JSONField(default=dict, blank=True)
+    # {"x_mm", "y_mm", "rotation", "opacity", "hidden_layers", "hide_text"}
+    placement = models.JSONField(default=dict, blank=True)
+    # Server renders with a set of layers left out, by key (the large-drawing
+    # path): {key: {"status", "file", "bytes", "elements", "error", ...}}.
+    variants = models.JSONField(default=dict, blank=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["floor_plan"]
+
+    def __str__(self) -> str:
+        return f"{self.floor_plan} drawing"
+
+    @property
+    def mm_per_unit(self) -> float:
+        """The scale in effect: calibration, else the units, else 1 (the
+        drawing is assumed to be in millimetres until calibrated)."""
+        cal = self.calibration if isinstance(self.calibration, dict) else None
+        if cal and cal.get("mm_per_unit"):
+            return float(cal["mm_per_unit"])
+        return float(self.units_mm_per_unit or 1.0)
+
+    @property
+    def scale_source(self) -> str:
+        cal = self.calibration if isinstance(self.calibration, dict) else None
+        if cal and cal.get("mm_per_unit"):
+            return "calibration"
+        return "units" if self.units_mm_per_unit else "assumed"
 
 
 class FloorPlanTile(TimestampedModel):

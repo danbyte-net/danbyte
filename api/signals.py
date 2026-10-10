@@ -7,7 +7,7 @@ operation impossible.
 
 import logging
 
-from django.db.models.signals import pre_delete
+from django.db.models.signals import post_delete, pre_delete
 from django.dispatch import receiver
 
 log = logging.getLogger(__name__)
@@ -65,3 +65,16 @@ def release_macs_before_interface_delete(sender, instance, **kwargs):
         else:
             mac.assigned_interface = None
             mac.save(update_fields=["assigned_interface", "updated_at"])
+
+
+@receiver(post_delete, sender="api.FloorPlanDrawing", dispatch_uid="api.drawing_files")
+def delete_drawing_files(sender, instance, **kwargs):
+    """A plan's CAD drawing takes its files with it - whether it was removed
+    on its own or with its plan, location or tenant. After commit, so a
+    rolled-back delete keeps them."""
+    from django.db import transaction
+
+    from .cad_render import delete_folder
+
+    plan_id = instance.floor_plan_id
+    transaction.on_commit(lambda: delete_folder(plan_id))

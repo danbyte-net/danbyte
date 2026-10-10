@@ -22,6 +22,7 @@ nh3>=0.2                  # HTML sanitizer for rendered label templates (XSS-saf
 weasyprint>=63            # HTML+CSS -> PDF for exact-size label printing (needs
                           # Pango/cairo/gdk-pixbuf system libs - see Dockerfile)
 segno>=1.6                # pure-Python QR generator for server-side label PDFs
+ezdxf>=1.4,<2             # DXF reading + model-space render for floor-plan CAD drawings (MIT)
 requests>=2.32
 pywinrm>=0.5          # agentless Windows DHCP/DNS sync over WinRM (NTLM/Kerberos)
 openpyxl>=3.1

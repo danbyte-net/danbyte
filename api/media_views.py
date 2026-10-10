@@ -9,7 +9,8 @@ hands ``/media/`` to this view, which serves:
   the logo, and a device type's front panel is catalog art;
 * ``documents/``, ``image-attachments/`` and ``floor-plans/`` only when the
   signed-in user can view the object the file belongs to, in the active
-  tenant;
+  tenant (a plan's CAD drawing files sit in ``floor-plans/cad/<plan id>/``
+  and follow the plan's view permission);
 * nothing else. Outpost releases, OUI imports and script outputs have their
   own authenticated routes.
 
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import mimetypes
 import posixpath
+import uuid
 
 from django.conf import settings
 from django.db.models import Q
@@ -75,6 +77,21 @@ def _may_view(request, path: str) -> bool:
             return False
         label = f"{img.content_type.app_label}.{img.content_type.model}"
         return _can_view_object(request, label, str(img.object_id))
+    if path.startswith("floor-plans/cad/"):
+        # A CAD drawing's files live in floor-plans/cad/<plan id>/.
+        parts = path.split("/")
+        try:
+            plan_id = uuid.UUID(parts[2])
+        except (IndexError, ValueError):
+            return False
+        if len(parts) != 4:
+            return False
+        plans = FloorPlan.objects.filter(
+            tenant=tenant, pk=plan_id, drawing__tenant=tenant
+        )
+        return rbac.restrict_queryset(
+            plans, request.user, tenant, "floorplan", "view"
+        ).exists()
     if path.startswith("floor-plans/"):
         plans = FloorPlan.objects.filter(tenant=tenant, background_image=path)
         return rbac.restrict_queryset(

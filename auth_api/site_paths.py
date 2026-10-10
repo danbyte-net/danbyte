@@ -50,6 +50,7 @@ SITE_PATHS: dict[str, str] = {
     "circuittermination": "site",
     "floorplan": "location__site",
     "floorplantile": "floor_plan__location__site",
+    "floorplandrawing": "floor_plan__location__site",
     "floorplantray": "floor_plan__location__site",
     "floorplanraisedfloorarea": "floor_plan__location__site",
     "floorplanwall": "floor_plan__location__site",

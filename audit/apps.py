@@ -144,6 +144,7 @@ AUDITED_MODELS = [
     "api.FloorTileType",
     "api.FloorPlan",
     "api.FloorPlanTile",
+    "api.FloorPlanDrawing",
     "api.SiteMarker",
     "api.FloorPlanTray",
     "api.FloorPlanRaisedFloorArea",

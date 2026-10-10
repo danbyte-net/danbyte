@@ -79,6 +79,128 @@ The grid also carries a **real-world scale**: a **cell size** in millimetres
 (default 3000). Existing plans keep working untouched; the scale powers the
 3D view, route-length estimation, and the scale bar on printed drawings.
 
+## CAD drawings
+
+A plan can carry a **CAD drawing** as its background instead of an image: a
+**DXF** file, or a **DWG** when the server has a converter. The drawing is
+shown at **true scale**: its units and the grid's cell size line up, so a
+600 mm floor tile in the drawing is one 600 mm cell.
+
+<!-- TODO(frontend): the upload control in the plan form, the layers panel
+(show/hide, presets, text toggle), opacity/rotation/offset controls, the
+Calibrate tool, Fit grid to drawing, and the large-drawing chip. -->
+
+### Formats and limits
+
+- **DXF** (ASCII or binary, any version ezdxf reads) is read natively.
+- **DWG** needs a converter on the worker host - see
+  [`DANBYTE_CAD_CONVERTER`](../reference/settings.md#cad-drawings-danbyte_cad_converter).
+  Without one, a DWG upload is refused with the way round it: save the drawing
+  as DXF in the CAD program (AutoCAD and BricsCAD: **Save As → DXF**;
+  LibreCAD: **File → Save As → Drawing Exchange**) and upload that.
+- Uploads are capped at **50 MB**. The file's name and its first bytes must
+  agree (a `.dxf` that is really a DWG is refused).
+- Only **model space** is drawn; paper-space layouts are ignored.
+- Never drawn: raster `IMAGE`s, PDF/DWF/DGN underlays, OLE objects, wipeouts
+  and external references (xrefs) - anything that points at another file.
+  Infinite construction lines (`XLINE`, `RAY`) are skipped too. The drawing
+  record counts what was left out.
+- The rendered drawing is capped at **20 MB** and **250,000 elements**. Over
+  that, it is simplified step by step - hatches go first, then dimensions,
+  then text, then the shortest lines - and the drawing record lists the steps
+  taken. If even that is over, processing fails and says so.
+
+### Processing
+
+An upload is stored and queued; a background job (the RQ workers) converts a
+DWG, reads the DXF, renders it and stores the result. The drawing's status
+goes **queued → ready**, or **failed** with the reason (not a readable DXF, no
+converter, too large, took too long). **Reprocess** runs it again, for
+example after a converter is installed. Uploading a new file replaces the old
+one and its files; the position, rotation and opacity stay, the calibration
+and layer choices go with the old file.
+
+Reading happens only in the worker, in a separate process with memory, CPU
+time and output-size limits, so a damaged or hostile file costs a failed job
+and nothing else. The rendered SVG passes the server's SVG sanitiser before it
+is stored; it holds paths, groups and text only - no scripts, images, links or
+fonts.
+
+### Units and calibration
+
+The drawing's units come from the file (`$INSUNITS`: millimetres, inches,
+metres…). A **unitless** file is drawn as if in millimetres until it is
+calibrated: pick two points on the drawing and type the real distance between
+them, like the [cabinet photo calibration](../dcim/device-catalog.md#photo-ports).
+The points must stand at least 1% of the drawing apart. A calibration wins
+over the file's units; clearing it goes back to them.
+
+### Layers
+
+Every layer with something on it is listed with its colour, whether the file
+had it **on** or **frozen**, and how many shapes it holds. All layers are
+rendered; the ones the file had off or frozen start hidden. Which layers are
+hidden, and whether text is hidden, is saved with the plan.
+
+### Placement
+
+Offset (in mm from the plan's top-left corner), rotation (0, 90, 180, 270)
+and opacity, as for a background image. **Fit grid to drawing** moves the
+drawing to the plan's corner and sets the grid to the cells that cover it,
+optionally at a new cell size; when that would take more than 512 cells a side
+it says which cell size would fit.
+
+### API
+
+All under the plan, with the plan's permissions: reading needs **view** on the
+floor plan, changing needs **change**.
+
+| Call | What it does |
+|---|---|
+| `GET /api/floor-plans/drawing-support/` | `{dxf, dwg, converter, message, max_upload_bytes}` - whether DWG is taken and, if not, why. |
+| `GET /api/floor-plans/{id}/drawing/` | The drawing; 404 when the plan has none. The plan itself carries a `drawing` summary (`id`, `status`, `source_kind`, `source_name`, `rendered_url`, `updated_at`) or `null`. |
+| `POST /api/floor-plans/{id}/drawing/` | Multipart `file`. Replaces any drawing; 202 with `status: "queued"`. 400 with a `file` error for a missing, oversized or unrecognised file; a DWG without a converter adds `code: "converter_missing"`. |
+| `PATCH /api/floor-plans/{id}/drawing/` | Placement: any of `x_mm`, `y_mm` (±10,000,000), `rotation` (0/90/180/270), `opacity` (0-100), `hidden_layers` (names of this drawing's layers), `hide_text`. |
+| `DELETE /api/floor-plans/{id}/drawing/` | Removes the drawing and its files. 204. |
+| `POST /api/floor-plans/{id}/drawing/reprocess/` | Queues processing again. 202. |
+| `POST /api/floor-plans/{id}/drawing/calibrate/` | `{"a": [x, y], "b": [x, y], "distance_mm": n}`, points in the SVG's viewBox units, distance 1-1,000,000 mm. 409 until the drawing is ready. `DELETE` clears it. |
+| `POST /api/floor-plans/{id}/drawing/fit-grid/` | Optional `cell_mm` (50-5000). Returns `{floor_plan, drawing}`; 400 with `min_cell_mm` when the drawing needs more than 512 cells. |
+| `POST /api/floor-plans/{id}/drawing/render/` | `{"hidden_layers": [...], "hide_text": bool}`: a server render with those layers left out, for drawings too large to toggle in the browser. Needs only **view**. 200 with the cached render, or 202 when queued; `GET …/render/?key=` reports on it (`status`, `url`, `error`). The last 12 are kept. |
+
+The drawing record:
+
+- `status` (`queued`, `ready`, `failed`) and `error`.
+- `source_kind`, `source_name`, `source_bytes`, `source_url` (the uploaded file).
+- `rendered_url`, `rendered_bytes`, `rendered_elements`, `simplified` (the
+  steps taken to fit the caps), `skipped` (`external`, `infinite` counts).
+- `units`, `units_mm_per_unit` (from the file, `null` when unitless),
+  `calibration`, `mm_per_unit` (the scale in effect) and `scale_source`
+  (`units`, `calibration` or `assumed`).
+- `extents` (`min_x`, `min_y`, `max_x`, `max_y`) and `size` (`width`,
+  `height`) in drawing units, `size_mm`.
+- `layers`: `name`, `color`, `on`, `frozen`, `entity_count`, `kinds` (counts
+  of `geometry`, `hatch`, `dimension`, `text`).
+- `placement`: `x_mm`, `y_mm`, `rotation`, `opacity`, `hidden_layers`,
+  `hide_text`.
+- `bounds_mm` (the placed, rotated box on the plan), `transform_mm` and `fit`
+  (`grid_width`, `grid_height`, `fits`, `min_cell_mm` at the plan's cell size).
+
+The rendered SVG (fetch it from `rendered_url`; it is served as a download, so
+use it inline, not as a link):
+
+- `viewBox="0 0 W H"` in **drawing units**, y pointing down: a drawing point
+  `(x, y)` is at `(x - min_x, max_y - y)`.
+- One `<g data-layer="NAME">` per layer, in the file's layer order. Inside it,
+  the layer's lines and curves, then `<g data-kind="hatch">`,
+  `<g data-kind="dimension">` and `<g data-kind="text">` as present. Hiding a
+  layer or all text is `display: none` on those groups.
+- Strokes carry the CAD colour and line weight in drawing units; hatches are
+  filled paths (pattern hatches as a 25% tint). Text is `<text>` with a
+  `matrix()` transform and `font-size`, and no font: it takes the page's.
+- `transform_mm` places it on the plan in millimetres: the rotated box's
+  top-left at (`x_mm`, `y_mm`), rotated about its centre. For grid cells,
+  put `scale(1 / cell_mm)` in front.
+
 ## The 3D room view
 
 The **2D / 3D** toggle in the plan header (or `?viz=3d` in the URL) turns the
@@ -758,7 +880,8 @@ cable runs, just the trays, or both.
 The **Clone** action on the floor plans list copies a plan with everything
 drawn on it - tiles (with their rack / device / panel links), cable trays
 (geometry only; the cables routed through the originals stay where they are),
-raised-floor areas and walls - into the same location as `<name> copy`, and
+raised-floor areas and walls, and its [CAD drawing](#cad-drawings) with its
+placement and calibration - into the same location as `<name> copy`, and
 opens it. Handy for a second identical floor, or a what-if layout you can throw
 away. Needs the floor-plan add permission.
 
@@ -776,7 +899,11 @@ Plans, tiles, and tile types are tenant-scoped like everything else; links are
 validated against the active tenant. RBAC object types: **Floor plans**
 (`floorplan`, the plan and its tiles) and **Floor tile types**
 (`floortiletype`, the palette). All three models are audited - every tile
-create/move/delete lands in the [change log](change-log.md).
+create/move/delete lands in the [change log](change-log.md). A plan's CAD
+drawing is audited too (**Floor-plan drawings**), but its endpoints and files
+follow the plan's own permission; its files are served only to someone who
+may view the plan, in its tenant, are deleted with it, and are part of a
+media backup.
 
 ## Popover fields
 
