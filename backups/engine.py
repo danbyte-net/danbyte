@@ -226,6 +226,22 @@ def enqueue_backup(backup: Backup) -> None:
         raise
 
 
+#: Steps that talk to the target: a failure there is the target's (#319).
+_STORAGE_STEPS = ("upload", "verify")
+
+
+def _target_error(target: BackupTarget, error: str) -> None:
+    """Record (or clear) the target's last error, so the Targets list shows
+    a destination that stopped taking archives."""
+    if (target.last_error or "") == error:
+        return
+    try:
+        BackupTarget.objects.filter(pk=target.pk).update(last_error=error, updated_at=timezone.now())
+        target.last_error = error
+    except Exception:  # noqa: BLE001 - bookkeeping must not change the outcome
+        logger.exception("could not record the error on target %s", target.pk)
+
+
 def run_backup(backup_id: str) -> Backup | None:
     """Execute one backup. Never raises into the worker; the row carries
     the outcome."""
@@ -288,6 +304,7 @@ def run_backup(backup_id: str) -> Backup | None:
         if check.get("created_at") != manifest["created_at"] or backend.size(name) != size:
             raise EngineError("the stored archive does not read back as written")
         backup.step_end()
+        _target_error(backup.target, "")
 
         backup.filename = name
         backup.location = location
@@ -315,6 +332,8 @@ def run_backup(backup_id: str) -> Backup | None:
         backup.error = str(exc)[:2000]
         backup.finished_at = timezone.now()
         backup.save()
+        if backup.steps and backup.steps[-1].get("name") in _STORAGE_STEPS:
+            _target_error(backup.target, backup.error)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     try:

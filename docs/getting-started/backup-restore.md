@@ -53,15 +53,60 @@ A target is where archives are stored.
 - **S3-compatible bucket** - bucket, optional prefix, endpoint URL (blank for
   AWS), region and an access key pair. Needs `boto3` in the environment; the
   Test button says so when it is missing.
+- **SCP / SFTP server** - any SSH server that offers SFTP: a NAS, a backup
+  host. See [SFTP targets](#sftp-targets).
 
 **Test** writes and removes a marker on the target. A failing target shows its
-last error on the Backups page. One target is the **default**; *Back up now*
-and uploads use it.
+last error on the Backups page, and so does a backup whose upload or
+read-back fails; the next good backup clears it. One target is the
+**default**; *Back up now* and uploads use it.
 
 **Scan for archives** adopts `.dbk` files on the target that have no row:
 archives copied into the directory by hand, or a whole directory carried
 over from another host. Each is opened for its manifest; one made under
 another key is skipped.
+
+### SFTP targets
+
+| Field | |
+|---|---|
+| Host, Port | the SSH server; port 22 by default |
+| Username | the account archives are written as |
+| Remote directory | created when missing; a relative path starts in the user's home |
+| Host key fingerprint | `SHA256:…`; blank until the first Test |
+| Password / Private key | either one; a key may have a passphrase |
+
+The password, private key and passphrase are stored encrypted like the S3
+keys and are never returned by the API; leave them blank on an edit to keep
+the stored ones.
+
+**Host key.** Nothing logs in until the server's host key matches the
+fingerprint on the target. The first **Test** on a target without one reads
+the key without logging in and shows its fingerprint; **Trust and test** saves
+it and runs the marker test. To enter it by hand instead, run this on the
+server:
+
+```bash
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+Danbyte prefers the Ed25519 key, then ECDSA, then RSA. Once a fingerprint is
+saved, a server presenting another key is refused - Test, backups, restores
+and retention alike - and the error names both fingerprints. If the key was
+replaced on purpose, clear the fingerprint on the target and Test again.
+
+**Outbound rules.** The host follows the same outbound connection rules as
+webhooks and the other integrations: an address on a private network (the
+usual place for a NAS) must be allowed under **Settings → Security →
+Outbound connections** first. Danbyte connects to the address it checked.
+Nothing from the worker user's `~/.ssh` (config, agent, keys, known_hosts) is
+used.
+
+**Uploads** go to `<name>.dbk.part` and are renamed when complete, so an
+interrupted transfer never looks like an archive; Danbyte removes the part
+file when it can, and lists only `.dbk` files. Restores and downloads stream
+the archive from the server; a schedule's retention deletes archives on the
+server too.
 
 ## Schedules
 

@@ -88,9 +88,31 @@ class BackupTargetViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
+        """Write and remove a marker. A target that pins a host key (SFTP)
+        and has none yet answers with the key the server presents instead;
+        the admin confirms it by posting it back as ``accept_host_key``."""
         target = self.get_object()
         try:
-            target.backend().probe()
+            backend = target.backend()
+            if hasattr(backend, "host_key") and not backend.fingerprint:
+                presented = backend.host_key()
+                accept = str(request.data.get("accept_host_key") or "").strip()
+                if not accept:
+                    return Response({
+                        "ok": False, "confirm_host_key": True, "host_key": presented,
+                        "detail": f"Confirm the host key {presented['fingerprint']}.",
+                    })
+                from .sftp import normalize_fingerprint
+
+                if normalize_fingerprint(accept) != presented["fingerprint"]:
+                    raise StorageError(
+                        f"The host key changed while it was being confirmed (now "
+                        f"{presented['fingerprint']}). Nothing was saved."
+                    )
+                target.config = {**target.config, "host_key_fingerprint": presented["fingerprint"]}
+                target.save(update_fields=["config", "updated_at"])
+                backend = target.backend()
+            backend.probe()
         except StorageError as exc:
             target.last_error = str(exc)[:2000]
             target.save(update_fields=["last_error", "updated_at"])

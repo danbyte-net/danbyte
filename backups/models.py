@@ -26,7 +26,7 @@ STATUS_CHOICES = [
 
 
 class BackupTarget(TimestampedModel):
-    """Where archives are stored: a local directory or an S3 bucket."""
+    """Where archives are stored: a local directory, an S3 bucket or an SFTP server."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120, unique=True)
@@ -52,6 +52,11 @@ class BackupTarget(TimestampedModel):
         if self.kind == "s3":
             b, p = self.config.get("bucket", ""), self.config.get("prefix", "")
             return f"s3://{b}/{p}".rstrip("/")
+        if self.kind == "sftp":
+            from .sftp import location_for
+
+            c = self.config
+            return location_for(c.get("host"), c.get("port"), c.get("username"), c.get("path"))
         return ""
 
     def backend(self):

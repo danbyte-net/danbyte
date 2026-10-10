@@ -22,6 +22,7 @@ import type {
   BackupSchedule,
   BackupStep,
   BackupTarget,
+  BackupTargetTestResult,
   BackupsStatus,
   NotificationChannel,
   Paginated,
@@ -80,6 +81,7 @@ import { Field } from "@/components/forms/field"
 import { FormCheckbox } from "@/components/forms/checkbox"
 import { FormSelect } from "@/components/forms/select"
 import { FormText } from "@/components/forms/text"
+import { FormTextarea } from "@/components/forms/textarea"
 import { CheckList } from "@/components/forms/check-list"
 
 export const Route = createFileRoute("/settings/backups")({
@@ -210,20 +212,31 @@ function TargetsCard({ kinds }: { kinds: StorageKind[] }) {
   })
   const [editing, setEditing] = useState<BackupTarget | "new" | null>(null)
   const [removing, setRemoving] = useState<BackupTarget | null>(null)
+  const [hostKey, setHostKey] = useState<{
+    target: BackupTarget
+    fingerprint: string
+    algorithm: string
+  } | null>(null)
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["backup-targets"] })
   }
   const test = useMutation({
-    mutationFn: (t: BackupTarget) =>
-      api<{ ok: boolean; detail: string }>(
-        `/api/backups/targets/${t.id}/test/`,
-        { method: "POST" }
-      ),
-    onSuccess: (r) => {
+    mutationFn: ({ t, accept }: { t: BackupTarget; accept?: string }) =>
+      api<BackupTargetTestResult>(`/api/backups/targets/${t.id}/test/`, {
+        method: "POST",
+        body: JSON.stringify(accept ? { accept_host_key: accept } : {}),
+      }),
+    onSuccess: (r, { t }) => {
+      setHostKey(null)
+      if (r.confirm_host_key && r.host_key) {
+        setHostKey({ target: t, ...r.host_key })
+        return
+      }
       toast.success(r.detail)
       invalidate()
     },
     onError: (e) => {
+      setHostKey(null)
       apiErrorToast(e)
       invalidate()
     },
@@ -305,7 +318,7 @@ function TargetsCard({ kinds }: { kinds: StorageKind[] }) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => test.mutate(t)}>
+                    <DropdownMenuItem onClick={() => test.mutate({ t })}>
                       Test
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => scan.mutate(t)}>
@@ -340,6 +353,39 @@ function TargetsCard({ kinds }: { kinds: StorageKind[] }) {
         />
       )}
       <AlertDialog
+        open={hostKey !== null}
+        onOpenChange={(o) => !o && setHostKey(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Trust this host key?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {hostKey?.target.location}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1 text-xs">
+            <div className="text-muted-foreground">{hostKey?.algorithm}</div>
+            <div className="font-mono break-all">{hostKey?.fingerprint}</div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                if (hostKey)
+                  test.mutate({
+                    t: hostKey.target,
+                    accept: hostKey.fingerprint,
+                  })
+              }}
+              disabled={test.isPending}
+            >
+              {test.isPending ? "Testing…" : "Trust and test"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
         open={removing !== null}
         onOpenChange={(o) => !o && setRemoving(null)}
       >
@@ -356,7 +402,7 @@ function TargetsCard({ kinds }: { kinds: StorageKind[] }) {
             <AlertDialogAction
               onClick={() => removing && remove.mutate(removing)}
             >
-              {remove.isPending ? "Deleting..." : "Delete"}
+              {remove.isPending ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -442,10 +488,34 @@ function TargetDialog({
                 checked={Boolean(config[f.name] ?? f.default ?? false)}
                 onChange={(v) => setConfig({ ...config, [f.name]: v })}
               />
+            ) : f.type === "textarea" ? (
+              <FormTextarea
+                key={f.name}
+                label={f.label}
+                info={f.info}
+                rows={4}
+                value={
+                  f.secret
+                    ? (creds[f.name] ?? "")
+                    : String(config[f.name] ?? "")
+                }
+                onChange={(v) =>
+                  f.secret
+                    ? setCreds({ ...creds, [f.name]: v })
+                    : setConfig({ ...config, [f.name]: v })
+                }
+                placeholder={
+                  f.secret && target?.has_credentials
+                    ? "unchanged"
+                    : f.placeholder
+                }
+              />
             ) : (
               <FormText
                 key={f.name}
                 label={f.label}
+                info={f.info}
+                mono={f.mono}
                 type={f.type}
                 value={
                   f.secret
@@ -485,7 +555,7 @@ function TargetDialog({
             onClick={() => save.mutate()}
             disabled={save.isPending || !name.trim()}
           >
-            {save.isPending ? "Saving..." : "Save"}
+            {save.isPending ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

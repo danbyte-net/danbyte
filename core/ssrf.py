@@ -21,7 +21,8 @@ Three entry points:
   ``SafeSession`` - a ``requests.Session`` that applies the same checks and
   pinning to every request it makes.
 - Bare host:port callers (SMTP, LDAP) use ``assert_public_host(host, port)``
-  before opening their own socket.
+  before opening their own socket, or ``resolve_public_host`` to get the
+  checked addresses and connect to one of them (SFTP backup targets).
 """
 from __future__ import annotations
 
@@ -209,6 +210,13 @@ def warn_if_private(url: str, what: str, logger) -> None:
             "%s %s resolves to a non-public address (%s); allowed because a deployment "
             "admin set it.", what, host, ", ".join(private),
         )
+
+
+def resolve_public_host(host: str, port: int) -> list[str]:
+    """Like :func:`assert_public_host`, but return the validated addresses so
+    a non-HTTP client (SFTP) can connect to one of them directly - the same
+    pinning the URL helpers do against a DNS flip between check and connect."""
+    return _resolve_public(host, int(port))
 
 
 class _PinnedSNIAdapter(HTTPAdapter):
