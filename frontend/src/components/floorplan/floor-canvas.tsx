@@ -136,9 +136,17 @@ export interface FloorCanvasProps {
    * release creates a tile instead of panning. */
   armed: PaletteEntry | null
   onSelect?: (id: string | null) => void
-  /** Layout QoL: Ctrl/⌘-click toggles a tile in the multi-selection. */
-  multiSelectedIds?: Set<string>
+  /** Layout QoL: Shift- or Ctrl/⌘-click toggles a tile in the
+   * multi-selection. */
+  multiSelectedIds?: ReadonlySet<string>
   onToggleSelect?: (id: string) => void
+  /** Dragging a tile of a multi-selection moves the whole selection by
+   * whole cells; false when it can't go there (it stays put). */
+  onMoveSelection?: (dx: number, dy: number) => boolean
+  /** A tile drag (move or resize) starts and ends: the page makes the
+   * edits in between one undo step. */
+  onGestureStart?: () => void
+  onGestureEnd?: () => void
   /** Layout QoL: Shift-drag on empty grid sweeps a marquee; release reports
    * the swept rect (cell units) so the page can select what it covers. */
   onMarquee?: (rect: { x: number; y: number; w: number; h: number }) => void
@@ -250,6 +258,15 @@ export interface FloorCanvasProps {
 type DragState =
   | { mode: "pan" }
   | { mode: "move"; id: string; grabDx: number; grabDy: number; moved: boolean }
+  | {
+      mode: "group"
+      id: string
+      start: CellPoint
+      /** The offset already applied to the selection, in cells. */
+      dx: number
+      dy: number
+      moved: boolean
+    }
   | { mode: "resize"; id: string; origin: CellPoint }
   | { mode: "paint"; start: CellPoint; end: CellPoint }
   | { mode: "marquee"; start: CellPoint; end: CellPoint }
@@ -304,6 +321,9 @@ export function FloorCanvas({
   onSelect,
   multiSelectedIds,
   onToggleSelect,
+  onMoveSelection,
+  onGestureStart,
+  onGestureEnd,
   onMarquee,
   onChangeTile,
   onCreateRect,
@@ -557,10 +577,31 @@ export function FloorCanvas({
       onOpenTile?.(tile)
       return
     }
-    // Ctrl/⌘-click builds the multi-selection instead of moving - the bulk
-    // bar (orientation, delete) works the swept set.
-    if ((e.ctrlKey || e.metaKey) && onToggleSelect) {
+    // Shift- or Ctrl/⌘-click builds the multi-selection instead of moving -
+    // the bulk bar (facing, turn, type, delete) works the selected set.
+    if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelect) {
       onToggleSelect(tile.id)
+      return
+    }
+    // A tile of the multi-selection drags the whole selection; a press
+    // that never moves is a plain click on that tile.
+    if (
+      !armed &&
+      onMoveSelection &&
+      multiSelectedIds &&
+      multiSelectedIds.size > 1 &&
+      multiSelectedIds.has(tile.id)
+    ) {
+      drag.current = {
+        mode: "group",
+        id: tile.id,
+        start: toCell(e),
+        dx: 0,
+        dy: 0,
+        moved: false,
+      }
+      onGestureStart?.()
+      e.currentTarget.setPointerCapture(e.pointerId)
       return
     }
     // Armed placement wins over background zones: clicking a zone with a
@@ -580,6 +621,7 @@ export function FloorCanvas({
       grabDy: c.y - tile.y,
       moved: false,
     }
+    onGestureStart?.()
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
@@ -591,6 +633,7 @@ export function FloorCanvas({
       id: tile.id,
       origin: { x: tile.x, y: tile.y },
     }
+    onGestureStart?.()
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
@@ -721,7 +764,20 @@ export function FloorCanvas({
       return
     }
     const c = toCell(e)
-    if (d.mode === "move") {
+    if (d.mode === "group") {
+      // The selection follows the pointer by whole cells; where it can't
+      // go it waits, and catches up once the pointer is somewhere it can.
+      const dx = c.x - d.start.x
+      const dy = c.y - d.start.y
+      if (
+        (dx !== d.dx || dy !== d.dy) &&
+        onMoveSelection?.(dx - d.dx, dy - d.dy)
+      ) {
+        d.dx = dx
+        d.dy = dy
+        d.moved = true
+      }
+    } else if (d.mode === "move") {
       const tile = tiles.find((x) => x.id === d.id)
       if (!tile) return
       const nx = Math.max(
@@ -817,8 +873,13 @@ export function FloorCanvas({
     const d = drag.current
     drag.current = null
     if (!d) return
+    if (d.mode === "move" || d.mode === "resize") onGestureEnd?.()
     if (d.mode === "pan") {
       endPan()
+    } else if (d.mode === "group") {
+      onGestureEnd?.()
+      // Pressed and released in place: a plain click on that tile.
+      if (!d.moved) onSelect?.(d.id)
     } else if (d.mode === "paint") {
       paintPreview.current?.setAttribute("visibility", "hidden")
       onCreateRect?.(paintRect(d.start, d.end))

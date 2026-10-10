@@ -8,6 +8,8 @@ import type {
   FloorPlanDrawingRender,
 } from "@/lib/api"
 
+import { CAD_FOREGROUND, themeCadColours, themeCadSvgText } from "./cad-colour"
+import type { CadTheme } from "./cad-colour"
 import { canvasTransform, wantsServerRender } from "./cad-math"
 
 // A plan's CAD drawing on the 2D canvas: the sanitised SVG the worker
@@ -392,26 +394,76 @@ export function useCadFloorImage(
 }
 
 /**
+ * A server render as an image URL coloured for `theme` (`cad-colour.ts`):
+ * an `<image>` is its own document, so the page's foreground and the
+ * contrast mapping are written into its text. Null while it loads.
+ */
+export function useThemedCadImage(
+  url: string | null,
+  theme: CadTheme
+): string | null {
+  const [shown, setShown] = useState<string | null>(null)
+  useEffect(() => {
+    setShown(null)
+    if (!url) return
+    let made: string | null = null
+    let cancelled = false
+    const run = async () => {
+      const res = await fetch(url, { credentials: "same-origin" })
+      if (!res.ok) return
+      const text = themeCadSvgText(
+        await res.text(),
+        theme,
+        CAD_FOREGROUND[theme]
+      )
+      if (cancelled) return
+      if (typeof URL.createObjectURL === "function") {
+        made = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }))
+        setShown(made)
+      } else {
+        setShown(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`)
+      }
+    }
+    run().catch(() => {
+      if (!cancelled) setShown(null)
+    })
+    return () => {
+      cancelled = true
+      if (made) URL.revokeObjectURL(made)
+    }
+  }, [url, theme])
+  return shown
+}
+
+/**
  * The drawing inside the canvas's pan/zoom group, under the grid: drawing
  * units placed by the mm transform with `scale(pxPerMm)` in front. Never
- * catches the pointer - panning and tile clicks go straight through.
+ * catches the pointer - panning and tile clicks go straight through. Its
+ * default colour is the canvas's foreground (`currentColor`), and its other
+ * colours keep enough contrast against `theme`'s floor.
  */
 export function CadLayer({
   drawing,
   source,
   placement,
   pxPerMm,
+  theme = "light",
 }: {
   drawing: FloorPlanDrawing
   source: CadSource
   placement: FloorPlanDrawingPlacement
   pxPerMm: number
+  theme?: CadTheme
 }) {
   const host = useRef<SVGGElement>(null)
   const size = drawing.size
+  const imageUrl = useThemedCadImage(
+    source.mode === "image" ? source.imageUrl : null,
+    theme
+  )
 
-  // Insert a fresh copy of the parsed drawing's nodes; the parsed root is
-  // cached across mounts and must stay untouched.
+  // Insert a fresh copy of the parsed drawing's nodes, coloured for the
+  // theme; the parsed root is cached across mounts and must stay untouched.
   useLayoutEffect(() => {
     const g = host.current
     if (!g) return
@@ -423,13 +475,20 @@ export function CadLayer({
       g.ownerDocument.importNode(n, true)
     )
     g.replaceChildren(...nodes)
-  }, [source.mode, source.svg])
+    themeCadColours(g, theme)
+  }, [source.mode, source.svg, theme])
 
   useLayoutEffect(() => {
     const g = host.current
     if (!g || source.mode !== "inline") return
     applyLayerVisibility(g, placement.hidden_layers, placement.hide_text)
-  }, [source.mode, source.svg, placement.hidden_layers, placement.hide_text])
+  }, [
+    source.mode,
+    source.svg,
+    theme,
+    placement.hidden_layers,
+    placement.hide_text,
+  ])
 
   if (!size.width || !size.height) return null
   return (
@@ -439,9 +498,9 @@ export function CadLayer({
       opacity={placement.opacity / 100}
       pointerEvents="none"
     >
-      {source.mode === "image" && source.imageUrl && (
+      {source.mode === "image" && imageUrl && (
         <image
-          href={source.imageUrl}
+          href={imageUrl}
           width={size.width}
           height={size.height}
           preserveAspectRatio="none"

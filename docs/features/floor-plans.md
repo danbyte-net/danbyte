@@ -117,9 +117,18 @@ shown at **true scale**: its units and the grid's cell size line up, so a
 - **Large drawings**: past 60,000 shapes the plan shows the drawing as one
   picture, with a **Layers flattened** chip. Hiding layers or text then asks
   the server for a render without them (the chip reads **Rendering…** until
-  it lands).
-- The drawing is in the plan's **PNG** export, and in the
-  [3D room](#the-3d-room-view) as the floor, with the same layers hidden.
+  it lands). That render keeps the whole drawing's frame, so it sits exactly
+  where the full drawing does even when the hidden layers held its edges.
+- **Colours and the theme**: the drawing's default colour - ACI 7 (white on a
+  CAD screen, black on paper) and near-black or near-white lines and text -
+  is drawn in the app's text colour, so it reads in the light and the dark
+  theme alike. Every other colour is the drawing's own, unless it is too
+  faint on the floor (yellow on the light theme, dark blue on the dark one):
+  then only its lightness moves until it reads, keeping its hue. The PDF
+  prints the light theme's colours.
+- The drawing is in the plan's **PNG** and **PDF** exports (see
+  [Export](#export)), and in the [3D room](#the-3d-room-view) as the floor,
+  with the same layers hidden.
 
 ### Formats and limits
 
@@ -473,10 +482,10 @@ The header names the plan, with the floor switcher and the **Edited** badge,
 and holds the **2D / 3D** and **Layout / Structure / Cables** tabs. The bar
 under it has *Find on plan…*, **Fit to view** and **Grid** on the left, and
 **Racks** (while the plan is [coloured by its racks](#color-by)),
-**Objects**, **Display**, **Background**, **PNG**, plan settings and **Save**
-on the right. When that bar is too narrow for all of them (a small window),
-Grid, Background, PNG and plan settings move into **More**, so nothing is
-ever cut off.
+**Objects**, **Display**, **Background**, **Export**, plan settings, **Undo**,
+**Redo** and **Save** on the right. When that bar is too narrow for all of
+them (a small window), Grid, Background and plan settings move into **More**
+and Export shrinks to its icon, so nothing is ever cut off.
 
 | Action | How |
 |---|---|
@@ -488,6 +497,8 @@ ever cut off.
 | Link to an object | Inspector → Link: rack, cabinet and device use the advanced pickers (cabinets of the plan's site only), power panel/feed and nested plans a searchable dropdown. When a cabinet's outer width × depth does not match the tile, **Fit to cabinet** resizes the tile to it, turned with the tile's facing |
 | Delete | Select + `Delete`, or the inspector button |
 | Nudge | Arrow keys move the selected tile one cell |
+| Undo / redo | ++ctrl+z++ / ++ctrl+shift+z++ (or ++ctrl+y++), or the bar's buttons - ++cmd++ on a Mac |
+| Save | **Save**, or ++ctrl+s++ |
 | Pan / zoom | Drag empty grid / mouse wheel |
 
 **Tiles never stack.** Placing, dragging, resizing, or rotating a tile onto
@@ -497,6 +508,13 @@ are the exception: they may cover anything, and anything may sit on them.
 Edits are local until you press **Save** - one transactional bulk call writes
 all creates, moves, and deletes together, and the change log records each
 tile individually.
+
+**Undo** steps back through the tile edits since the plan was opened or last
+saved - placing, moving, resizing, turning, retyping, relabelling and
+deleting tiles, up to 100 steps - and **Redo** steps forward again. A whole
+drag is one step, and so is a bulk action on a selection. Undoing every step
+leaves nothing to save. Saving starts a fresh history. Trays, walls, raised
+floors and the drawing save as you make them and are not part of it.
 
 While there are unsaved edits an **Edited** badge sits in the header, and
 leaving the plan asks first - **Discard unsaved changes?**, with *Keep editing*
@@ -629,12 +647,24 @@ inside a hall plan.
 
 ### Working many tiles at once
 
-**Ctrl/⌘-click** tiles to build a selection, or **Shift-drag** on empty grid
-to sweep one (plain drag still pans). A bulk bar appears with the count,
-**Facing** buttons that set the orientation of every selected tile in one
-click - placing a hundred racks no longer means a hundred rotate clicks -
-and **Delete**. The changes join the normal draft: nothing persists until
-**Save**, and Esc or a plain click clears the selection.
+**Shift-click** or **Ctrl/⌘-click** tiles to build a selection (a tile
+already selected joins it), or **Shift-drag** on empty grid to sweep one
+(plain drag still pans). Then:
+
+- **Drag** any selected tile to move the whole selection, cell by cell. It
+  stops where it would leave the grid or land on a tile outside the
+  selection, and catches up when the pointer is somewhere it fits.
+- **Arrow keys** move the selection one cell; ++delete++ removes it.
+- A bulk bar shows the count, **Facing** buttons that set the orientation of
+  every selected tile in one click - placing a hundred racks no longer means
+  a hundred rotate clicks - **Turn the selection** (a quarter turn
+  clockwise as one piece, about its middle, each tile's facing turning with
+  it; refused when the turned piece would not fit), **Set type…** and
+  **Delete**.
+
+The changes join the normal draft: nothing persists until **Save**, each
+action is one [undo](#the-editor) step, and Esc or a plain click clears the
+selection.
 
 ## Raised floors (Structure mode)
 
@@ -857,7 +887,10 @@ cable runs, just the trays, or both.
 ## Finding things
 
 - **Find on plan…** (Layout mode, the bar under the header): type a tile's
-  label, linked object, or type name and jump straight to it - the canvas pans and zooms to the hit.
+  label, the rack, device, cabinet or panel it links, or its type or role,
+  and pick a hit - the canvas pans and zooms to it. Every word must match, in
+  any order (`r12 core`), and hits by name come before hits by type; ++enter++
+  jumps to the first. Hidden tiles are not offered.
 - **Fit to view** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
@@ -920,11 +953,37 @@ away. Needs the floor-plan add permission.
 
 ## Export
 
+**Export** in the bar under the header has **PNG**, **PDF…** and **Print**.
+
 **PNG** exports the current view, theme-aware, at 2× resolution - same as the
 topology map and rack elevation exports. Trays and their labels are included,
 so the export doubles as the builder's pull sheet. The [Color by](#color-by)
 legend is part of the picture too, so a coloured plan explains itself on
 paper.
+
+**PDF…** asks for the paper - **A4**, **A3**, **Letter** or **Tabloid**,
+portrait or landscape (A3 landscape until you choose) - and makes one sheet
+on the server:
+
+- the whole plan **fitted to the page** - tiles, zones, raised floors, walls
+  and trays as the plan shows them, unsaved edits and hidden tiles included
+  as on screen, in the light theme;
+- the [CAD drawing](#cad-drawings) under it **in vector**, at its placement
+  and opacity, with the layers and text the plan hides left out. A drawing
+  over 60,000 shapes on paper is refused - hide some of its layers first. If
+  its text is too long to typeset, the text is left out and the sheet says
+  so;
+- a footer with a **scale bar** worked out from the plan's cell size (with
+  the ratio, `1:200`), the **Color by legend**, the drawing's source file,
+  and a **title block**: the plan, its location, site and tenant, the date,
+  the Danbyte version and the page.
+
+**Print** makes the same PDF on the paper last chosen (the menu shows it) and
+opens it in the browser's viewer to print. The PDF obeys the same limits as
+the [topology PDF](topology.md): one at a time per user, a few at a time on
+the server, and 30 seconds of rendering. Anyone who can view the plan can
+export it: `POST /api/floor-plans/{id}/export/pdf/` with the plan's SVG, the
+paper and the legend (`?print=1` for a five-minute print link).
 
 ## Tenancy, permissions, audit
 
@@ -978,6 +1037,9 @@ global one, so the two can't drift apart as you change the default.
 
 ## Roadmap
 
-Planned next: multi-select and undo/redo, cable traces drawn **on** the plan
-with "show on map", wall-plate ("drop") tiles with port assignments, in-plan
-search, and PDF export.
+Planned next: cable traces drawn **on** the plan with "show on map", and
+wall-plate ("drop") tiles with port assignments.
+
+!!! note "New in 0.18"
+    PDF export with the CAD drawing in vector, undo and redo in the editor,
+    moving and turning a multi-selection, and Shift-click to select.

@@ -131,6 +131,8 @@ export function DrawingExportMenu({
   defaultPaper,
   snapshot,
   note,
+  svg = true,
+  pdfExtra,
   disabled,
   className,
 }: {
@@ -149,6 +151,11 @@ export function DrawingExportMenu({
   snapshot?: () => Promise<void>
   /** A word in the menu and the PDF dialog on what the files draw. */
   note?: string
+  /** Offer the SVG file - off where the server adds to the drawing (a floor
+   * plan's CAD drawing), so the SVG alone would be less than the PDF. */
+  svg?: boolean
+  /** More of the PDF request beside the SVG and the paper. */
+  pdfExtra?: () => Record<string, unknown>
   disabled?: boolean
   className?: string
 }) {
@@ -177,6 +184,7 @@ export function DrawingExportMenu({
         const { url } = await api<{ url: string }>(`${pdfUrl}?print=1`, {
           method: "POST",
           body: JSON.stringify({
+            ...pdfExtra?.(),
             svg: drawing.svg,
             paper: { size: sheet.size, orientation: sheet.orientation },
           }),
@@ -266,9 +274,11 @@ export function DrawingExportMenu({
           <DropdownMenuItem onSelect={() => void run("png")}>
             <FileImage /> PNG
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void run("svg")}>
-            <FileCode /> SVG
-          </DropdownMenuItem>
+          {svg && (
+            <DropdownMenuItem onSelect={() => void run("svg")}>
+              <FileCode /> SVG
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onSelect={() => {
               setDraft(paper)

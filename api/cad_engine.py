@@ -5,7 +5,8 @@ resource limits and a scrubbed environment), so it imports nothing from
 Django or the rest of the project: only the standard library and ezdxf.
 
     python -I cad_engine.py INPUT.dxf OUT.svg OUT.json [--hidden FILE] [--hide-text]
-        [--max-bytes N] [--max-elements N] [--max-text N] [--deadline SECONDS]
+        [--extents FILE] [--max-bytes N] [--max-elements N] [--max-text N]
+        [--deadline SECONDS]
 
 What it writes:
 
@@ -14,9 +15,15 @@ What it writes:
   ``<g data-layer="NAME">`` per layer holding that layer's geometry, with
   hatches, dimensions and text in child ``<g data-kind="hatch|dimension|text">``
   groups. Text is ``<text>`` with a ``matrix()`` transform; no fonts, scripts
-  or external references.
+  or external references. The default colour (ACI 7, near-black and
+  near-white) is ``currentColor``, black unless the viewer says otherwise.
 * ``OUT.json``: units, extents, the layer list (name, colour, on, frozen,
   counts) and what was skipped or simplified.
+
+``--extents`` fixes the frame to a JSON ``{min_x, min_y, max_x, max_y}``
+instead of measuring what is drawn. A render with layers hidden passes the
+full drawing's extents, so its viewBox is the full drawing's and it overlays
+the full render exactly, even when the hidden layers sat at an edge.
 
 The SVG is kept under the byte and element caps by a simplification ladder:
 hatches go first, then dimensions, then text, then the shortest strokes. When
@@ -330,11 +337,28 @@ def make_pipeline(backend, cap: Capture, hide_text: bool):
     return TextPipeline(backend)
 
 
+#: Neutrals this close to black or white are the drawing's default colour.
+NEUTRAL_SPREAD = 24
+NEUTRAL_DARK = 48
+NEUTRAL_LIGHT = 207
+FOREGROUND = "currentColor"
+
+
 def _colour(c: str) -> str:
-    """ezdxf's ``#rrggbb[aa]`` without the alpha; black for anything odd."""
-    if isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?", c):
-        return c[:7].lower()
-    return "#000000"
+    """ezdxf's ``#rrggbb[aa]`` without the alpha.
+
+    ACI 7 (white on a dark CAD screen, black on paper) resolves to black
+    here, and drawings are full of near-black and near-white "default"
+    strokes besides; any of them would vanish on one of the two themes. They
+    are written as ``currentColor`` so the viewer draws them in its
+    foreground colour. Anything odd is the foreground too."""
+    if not (isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?", c)):
+        return FOREGROUND
+    r, g, b = (int(c[i : i + 2], 16) for i in (1, 3, 5))
+    hi, lo = max(r, g, b), min(r, g, b)
+    if hi - lo <= NEUTRAL_SPREAD and (hi <= NEUTRAL_DARK or lo >= NEUTRAL_LIGHT):
+        return FOREGROUND
+    return c[:7].lower()
 
 
 # ─── read ───────────────────────────────────────────────────────────────────
@@ -596,7 +620,10 @@ class Writer:
 
         parts = [
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.n(self.w)} '
-            f'{self.n(self.h)}" width="{self.n(self.w)}" height="{self.n(self.h)}">'
+            f'{self.n(self.h)}" width="{self.n(self.w)}" height="{self.n(self.h)}" '
+            # The default colour when the file is opened on its own; the
+            # canvas draws it in the theme's foreground instead.
+            'color="#000000">'
         ]
         elements = 1
         ordered = [n for n in self.order if n in layers] + sorted(
@@ -652,6 +679,22 @@ def write(cap: Capture, order: list[str], svg_path: str, max_bytes: int, max_ele
     )
 
 
+def fix_extents(cap: Capture, path: str) -> None:
+    """Frame the drawing by the extents in ``path`` instead of what was
+    drawn: a render with layers left out keeps the full drawing's viewBox."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            ext = json.load(fh)
+        box = [float(ext[k]) for k in ("min_x", "min_y", "max_x", "max_y")]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise Abort(EXIT_UNREADABLE, "The drawing's extents are unreadable.") from exc
+    if not all(math.isfinite(v) and abs(v) <= MAX_COORD for v in box) or (
+        box[2] < box[0] or box[3] < box[1]
+    ):
+        raise Abort(EXIT_UNREADABLE, "The drawing's extents are unreadable.")
+    cap.min_x, cap.min_y, cap.max_x, cap.max_y = box
+
+
 UNITS = {
     0: "unitless", 1: "in", 2: "ft", 3: "mi", 4: "mm", 5: "cm", 6: "m", 7: "km",
     8: "µin", 9: "mil", 10: "yd", 11: "Å", 12: "nm", 13: "µm", 14: "dm", 15: "dam",
@@ -672,6 +715,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("meta")
     ap.add_argument("--hidden", default="")
     ap.add_argument("--hide-text", action="store_true")
+    ap.add_argument("--extents", default="")
     ap.add_argument("--max-bytes", type=int, default=20 * 1024 * 1024)
     ap.add_argument("--max-elements", type=int, default=250_000)
     ap.add_argument("--max-text", type=int, default=2_000_000)
@@ -691,6 +735,8 @@ def main(argv: list[str] | None = None) -> int:
             raise Abort(EXIT_TOO_LARGE, "The drawing expands to too many shapes to render.")
         table = layer_table(doc)
         skipped = render(doc, cap, hidden, args.hide_text)
+        if args.extents:
+            fix_extents(cap, args.extents)
         if not (math.isfinite(cap.min_x) and math.isfinite(cap.max_x)):
             raise Abort(EXIT_EMPTY, "The drawing's model space has nothing to show.")
         size, elements, steps, counts = write(

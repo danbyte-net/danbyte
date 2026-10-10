@@ -279,9 +279,12 @@ def _current(drawing_id, source_name: str):
     return d
 
 
-def _render(d, tmp: str, *, hidden=(), hide_text: bool = False) -> tuple[dict, bytes]:
+def _render(
+    d, tmp: str, *, hidden=(), hide_text: bool = False, extents: dict | None = None
+) -> tuple[dict, bytes]:
     """(engine metadata, sanitised SVG) for drawing ``d``. ValueError with
-    the operator's message on any failure."""
+    the operator's message on any failure. ``extents`` frames the render by
+    those instead of what it draws (a variant uses the full drawing's)."""
     from .svg_sanitize import SvgRejected, sanitize_svg
 
     src = os.path.join(tmp, "source")
@@ -308,6 +311,11 @@ def _render(d, tmp: str, *, hidden=(), hide_text: bool = False) -> tuple[dict, b
         argv += ["--hidden", hidden_path]
     if hide_text:
         argv.append("--hide-text")
+    if extents:
+        extents_path = os.path.join(tmp, "extents.json")
+        with open(extents_path, "w", encoding="utf-8") as fh:
+            json.dump({k: extents[k] for k in ("min_x", "min_y", "max_x", "max_y")}, fh)
+        argv += ["--extents", extents_path]
     try:
         code, _out, err = _run(
             argv, cwd=tmp, env=_env(tmp), timeout=RENDER_TIMEOUT, fsize=MAX_SVG_BYTES * 4
@@ -456,9 +464,13 @@ def run_variant(drawing_id: str, source_name: str, key: str) -> None:
     spec = d.variants[key]
     try:
         with tempfile.TemporaryDirectory(prefix="danbyte-cad-") as tmp:
+            # Framed by the full drawing's extents: the canvas lays the
+            # variant over the full render's box, so its viewBox must match
+            # even when the hidden layers held the edges.
             meta, svg = _render(
                 d, tmp, hidden=spec.get("hidden_layers") or [],
                 hide_text=bool(spec.get("hide_text")),
+                extents=d.extents if isinstance(d.extents, dict) else None,
             )
         outcome = {"status": "ready", "bytes": len(svg), "elements": meta["elements"],
                    "simplified": meta["simplified"], "error": ""}

@@ -185,6 +185,36 @@ class RenderTests(_Base):
         self.assertEqual(opacities, ["0.25", "1"])
         self.assertEqual(root.findall(f".//{SVG}image"), [])
 
+    def test_the_default_colour_follows_the_viewer(self):
+        """ACI 7 and near-black / near-white true colours are the drawing's
+        default colour: ``currentColor``, black when the file stands alone.
+        Real colours stay as drawn."""
+
+        def extras(doc, msp):
+            doc.layers.add("WHITE")
+            msp.add_line((0, 100), (500, 100),
+                         dxfattribs={"layer": "WHITE", "true_color": 0xFAFAFA})
+            msp.add_line((0, 200), (500, 200),
+                         dxfattribs={"layer": "WHITE", "true_color": 0x101010})
+            msp.add_line((0, 300), (500, 300),
+                         dxfattribs={"layer": "WHITE", "true_color": 0x808080})
+
+        d = self.ready(fx.floor_dxf(extras=extras))
+        root = _tree(self.svg(d))
+        self.assertEqual(root.get("color"), "#000000")
+
+        def paints(layer):
+            g = next(g for g in root.iter(f"{SVG}g") if g.get("data-layer") == layer)
+            out = set()
+            for el in g.iter(f"{SVG}path", f"{SVG}text"):
+                stroke = el.get("stroke")
+                out.add(stroke if stroke and stroke != "none" else el.get("fill"))
+            return out
+
+        self.assertEqual(paints("TEXT"), {"currentColor"})
+        self.assertEqual(paints("WALLS"), {"#ff0000"})
+        self.assertEqual(paints("WHITE"), {"currentColor", "#808080"})
+
     def test_off_and_frozen_layers_are_drawn_but_start_hidden(self):
         d = self.ready()
         rows = {row["name"]: row for row in d.layers}
@@ -627,6 +657,58 @@ class DrawingApiTests(_Base):
         self.assertEqual(
             self.client.get(self.url(tail="render/"), {"key": "nope"}).status_code, 404
         )
+
+    def _variant_root(self, hidden, hide_text=False):
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self.client.post(self.url(tail="render/"),
+                                 {"hidden_layers": hidden, "hide_text": hide_text},
+                                 format="json")
+        self.assertEqual(r.status_code, 202, r.content)
+        d = FloorPlanDrawing.objects.get(floor_plan=self.plan)
+        entry = d.variants[r.data["key"]]
+        self.assertEqual(entry["status"], "ready", entry)
+        with open(os.path.join(MEDIA, entry["file"]), "rb") as fh:
+            return _tree(fh.read())
+
+    def test_a_render_with_edge_layers_hidden_keeps_the_full_view_box(self):
+        # GRID-OFF and FROZEN hold the top edge, DIMS the bottom one: without
+        # them the measured extents shrink, and the canvas would stretch the
+        # variant over the full drawing's box.
+        d = self.ready()
+        base = _tree(self.svg(d))
+        root = self._variant_root(["GRID-OFF", "FROZEN", "DIMS"], hide_text=True)
+        for attr in ("viewBox", "width", "height"):
+            self.assertEqual(root.get(attr), base.get(attr), attr)
+        self.assertNotIn("GRID-OFF", _layers(root))
+        # The walls sit where they sit in the full render.
+        def walls_d(tree):
+            g = next(g for g in tree.iter(f"{SVG}g") if g.get("data-layer") == "WALLS")
+            return sorted(p.get("d") for p in g.iter(f"{SVG}path"))
+
+        self.assertEqual(walls_d(root), walls_d(base))
+        d.refresh_from_db()
+        self.assertEqual(d.extents["max_y"], 7500)
+
+    def test_a_render_with_every_layer_hidden_is_an_empty_full_frame(self):
+        d = self.ready()
+        base = _tree(self.svg(d))
+        root = self._variant_root([row["name"] for row in d.layers], hide_text=True)
+        self.assertEqual(root.get("viewBox"), base.get("viewBox"))
+        self.assertEqual(_layers(root), [])
+
+    def test_unreadable_fixed_extents_fail_the_engine(self):
+        from . import cad_engine
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "in.dxf")
+            with open(src, "wb") as fh:
+                fh.write(fx.floor_dxf())
+            ext = os.path.join(tmp, "ext.json")
+            with open(ext, "w") as fh:
+                json.dump({"min_x": 0, "min_y": 0, "max_x": -1, "max_y": 5}, fh)
+            meta = os.path.join(tmp, "out.json")
+            code = cad_engine.main([src, os.path.join(tmp, "o.svg"), meta, "--extents", ext])
+            self.assertEqual(code, cad_engine.EXIT_UNREADABLE)
 
     def test_only_so_many_renders_are_kept(self):
         self.ready()

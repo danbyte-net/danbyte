@@ -13,7 +13,6 @@ import {
   ArrowRight,
   ArrowUp,
   ChevronRight,
-  Download,
   Ellipsis,
   Grid3x3,
   Image as ImageIcon,
@@ -148,7 +147,20 @@ import {
   useTilePopover,
 } from "@/components/floorplan/tile-popover"
 import { ObjectsSidebar } from "@/components/floorplan/objects-sidebar"
-import { ColorByLegend } from "@/components/floorplan/color-by-legend"
+import {
+  ColorByLegend,
+  colorByLegendEntries,
+} from "@/components/floorplan/color-by-legend"
+import { planSvg } from "@/components/floorplan/plan-svg"
+import { usePlanDraft } from "@/components/floorplan/edit-history"
+import {
+  moveSelection,
+  rotateSelection,
+  searchTiles,
+} from "@/components/floorplan/selection"
+import { DrawingExportMenu } from "@/components/drawing-export-menu"
+import { HistoryButtons } from "@/components/topology/history-buttons"
+import { useDocumentKeys } from "@/components/topology/view-document"
 import { ColorBySelect } from "@/components/floorplan/color-by-select"
 import { RackTablePanel } from "@/components/floorplan/rack-table-panel"
 import { readColorBy } from "@/components/floorplan/tile-paint"
@@ -272,6 +284,11 @@ const isTemp = (id: string) => id.startsWith("new-")
 const samePath = (a: string, b: string) =>
   a.replace(/\/+$/, "") === b.replace(/\/+$/, "")
 
+/** The same tiles, as last saved: a refetch that brings nothing new. */
+const sameTiles = (a: FloorPlanTile[], b: FloorPlanTile[]) =>
+  a.length === b.length &&
+  a.every((t, i) => t.id === b[i].id && t.updated_at === b[i].updated_at)
+
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
   { value: "planned", label: "Planned" },
@@ -388,9 +405,11 @@ function FloorPlanPage() {
   const [show3dHint, setShow3dHint] = useState(true)
 
   // ── Local editing state ────────────────────────────────────────────────
-  const [tiles, setTiles] = useState<EditTile[]>([])
-  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set())
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
+  // The tiles as edited, which changed and which went: the draft Save
+  // writes, with its undo history (edit-history.ts).
+  const draft = usePlanDraft<EditTile>()
+  const { tiles, dirtyIds, deletedIds, setTiles, setDirtyIds, setDeletedIds } =
+    draft
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [armed, setArmed] = useState<PaletteEntry | null>(null)
   // Structure mode: arm-to-draw a raised-floor rectangle + selection.
@@ -547,9 +566,8 @@ function FloorPlanPage() {
   // Switching floors re-uses this mounted component - reset every bit of
   // editor state so one floor's unsaved edits can never bleed into another.
   useEffect(() => {
-    setTiles([])
-    setDirtyIds(new Set())
-    setDeletedIds(new Set())
+    draft.load([])
+    setMultiSel(new Set())
     setSelectedId(null)
     setArmed(null)
     setDeepTile(null)
@@ -578,10 +596,13 @@ function FloorPlanPage() {
 
   // Hydrate local tiles from the server whenever fresh data lands and we
   // have no unsaved edits (so a background refetch never clobbers work).
+  // The same tiles again (a refetch on focus) keep the undo history.
   useEffect(() => {
     if (tilesQuery.data && !isDirtyRef.current) {
-      setTiles(tilesQuery.data.results)
+      const fresh = tilesQuery.data.results
+      if (!sameTiles(draft.tiles, fresh)) draft.load(fresh)
     }
+    // Only fresh data hydrates; the draft is read, not watched.
   }, [tilesQuery.data])
 
   // Closing the tab, reloading, or leaving for another origin would drop
@@ -674,6 +695,37 @@ function FloorPlanPage() {
     },
     [tiles, changeTile]
   )
+
+  // The multi-selection as one piece (selection.ts): moved by whole cells,
+  // or turned a quarter about its middle - all of it or none of it, inside
+  // the grid and never onto a tile outside it. One undo step either way.
+  const applyPatches = useCallback(
+    (patches: Map<string, Partial<FloorPlanTile>>) => {
+      for (const [tid, patch] of patches) changeTile(tid, patch)
+    },
+    [changeTile]
+  )
+  const moveSelectionBy = useCallback(
+    (dx: number, dy: number): boolean => {
+      const plan = planQuery.data
+      if (!plan || (!dx && !dy)) return false
+      const patches = moveSelection(tiles, multiSel, dx, dy, plan)
+      if (!patches) return false
+      applyPatches(patches)
+      return true
+    },
+    [planQuery.data, tiles, multiSel, applyPatches]
+  )
+  const rotateSelectionTurn = useCallback(() => {
+    const plan = planQuery.data
+    if (!plan) return
+    const patches = rotateSelection(tiles, multiSel, plan)
+    if (!patches) {
+      toast.error("No room to turn the selection - a neighbour is in the way.")
+      return
+    }
+    applyPatches(patches)
+  }, [planQuery.data, tiles, multiSel, applyPatches])
 
   const plan = planQuery.data
 
@@ -1255,7 +1307,24 @@ function FloorPlanPage() {
       }
       // In the 3D view the camera rig owns arrows (and a 2D tile selection
       // is invisible) - don't nudge/delete a tile nobody can see.
-      if (!canEdit || !selectedId || view3d) return
+      if (!canEdit || view3d) return
+      // A selection of several: Delete removes them all, arrows move them
+      // as one.
+      if (multiSel.size > 1 && mode === "layout") {
+        if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault()
+          for (const tid of multiSel) deleteTile(tid)
+          setMultiSel(new Set())
+        } else if (e.key.startsWith("Arrow")) {
+          e.preventDefault()
+          moveSelectionBy(
+            e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0,
+            e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0
+          )
+        }
+        return
+      }
+      if (!selectedId) return
       const tile = tiles.find((t) => t.id === selectedId)
       if (!tile || !plan) return
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -1290,7 +1359,34 @@ function FloorPlanPage() {
     areaArmed,
     doorArmed,
     multiSel,
+    moveSelectionBy,
   ])
+
+  // Ctrl/⌘+Z undoes a tile edit, Shift+Ctrl/⌘+Z or Ctrl+Y redoes it, and
+  // Ctrl/⌘+S saves - the topology map's keys.
+  const stepHistory = (dir: "undo" | "redo") => {
+    if (dir === "undo" ? draft.undo() : draft.redo()) popover.close()
+  }
+  useDocumentKeys({
+    enabled: canEdit,
+    onSave: () => {
+      if (isDirty && !save.isPending) save.mutate()
+      return true
+    },
+    onUndo: () => stepHistory("undo"),
+    onRedo: () => stepHistory("redo"),
+  })
+  // A step that removed a selected tile (undoing its placement) drops it
+  // from the selection.
+  useEffect(() => {
+    const ids = new Set(tiles.map((t) => t.id))
+    setMultiSel((prev) =>
+      [...prev].every((tid) => ids.has(tid))
+        ? prev
+        : new Set([...prev].filter((tid) => ids.has(tid)))
+    )
+    if (ids.size) setSelectedId((cur) => (cur && !ids.has(cur) ? null : cur))
+  }, [tiles])
 
   // ── Save (explicit, one bulk transaction) ──────────────────────────────
   const save = useMutation({
@@ -1327,9 +1423,9 @@ function FloorPlanPage() {
       })
     },
     onSuccess: (fresh) => {
-      setTiles(fresh)
-      setDirtyIds(new Set())
-      setDeletedIds(new Set())
+      // New tiles have their real ids now: the history starts again.
+      draft.load(fresh)
+      setMultiSel(new Set())
       setSelectedId(null)
       qc.invalidateQueries({ queryKey: ["floor-plan-tiles", id] })
       qc.invalidateQueries({ queryKey: ["floor-plan", id] })
@@ -1664,7 +1760,7 @@ function FloorPlanPage() {
       <div className="@container flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
         {mode === "layout" && (
           <TileSearch
-            tiles={tiles}
+            tiles={shownTiles}
             value={search}
             onChange={setSearch}
             onPick={(tile) => {
@@ -1918,9 +2014,38 @@ function FloorPlanPage() {
               </PopoverContent>
             </Popover>
           )}
-          <BarButton className={WIDE_ONLY} onClick={exportPng}>
-            <Download /> PNG
-          </BarButton>
+          <DrawingExportMenu
+            name={plan.name}
+            build={async () => ({
+              svg: planSvg({
+                plan,
+                tiles: shownTiles,
+                walls,
+                trays,
+                areas,
+                colorBy,
+                figures: capacity.figures,
+                liveState: liveState.data ?? null,
+                showZoneLabels,
+                showTrays,
+              }),
+              missing: 0,
+            })}
+            pdfUrl={`/api/floor-plans/${plan.id}/export/pdf/`}
+            paperKey="floorplan:export"
+            defaultPaper={{ size: "a3", orientation: "landscape" }}
+            snapshot={view3d ? undefined : exportPng}
+            svg={false}
+            pdfExtra={() => ({
+              legend: capacity.hasRacks
+                ? colorByLegendEntries(
+                    colorBy,
+                    capacity.legend.figures,
+                    capacity.legend.alarm
+                  )
+                : null,
+            })}
+          />
           {canEdit && (
             <BarIconButton
               label="Plan settings"
@@ -1945,15 +2070,12 @@ function FloorPlanPage() {
               >
                 Grid
               </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
+              {canEdit && <DropdownMenuSeparator />}
               {canEdit && (
                 <DropdownMenuItem onSelect={() => setBackgroundOpen(true)}>
                   <ImageIcon /> Background…
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onSelect={exportPng}>
-                <Download /> PNG
-              </DropdownMenuItem>
               {canEdit && (
                 <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
                   <Settings2 /> Plan settings…
@@ -1961,6 +2083,14 @@ function FloorPlanPage() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          {canEdit && (
+            <HistoryButtons
+              canUndo={draft.canUndo}
+              canRedo={draft.canRedo}
+              onUndo={() => stepHistory("undo")}
+              onRedo={() => stepHistory("redo")}
+            />
+          )}
           {canEdit && (
             <BarButton
               variant="default"
@@ -2225,7 +2355,13 @@ function FloorPlanPage() {
                 multiSelectedIds={multiSel}
                 onToggleSelect={(tid) => {
                   setMultiSel((prev) => {
-                    const next = new Set(prev)
+                    // The tile selected by a plain click is the first of
+                    // the selection a Shift- or Ctrl/⌘-click grows.
+                    const next = new Set(
+                      prev.size === 0 && selectedId && selectedId !== tid
+                        ? [selectedId]
+                        : prev
+                    )
                     if (next.has(tid)) next.delete(tid)
                     else next.add(tid)
                     // Exactly one tile selected → open the full inspector
@@ -2252,6 +2388,9 @@ function FloorPlanPage() {
                 }}
                 onHoverTile={popover.onHover}
                 onChangeTile={changeTileGuarded}
+                onMoveSelection={moveSelectionBy}
+                onGestureStart={draft.beginGesture}
+                onGestureEnd={draft.endGesture}
                 onCreateRect={mode === "structure" ? createAreaAt : createAt}
                 raisedFloors={areas}
                 selectedAreaId={selectedAreaId}
@@ -2308,6 +2447,7 @@ function FloorPlanPage() {
                       source={cadSource}
                       placement={cad.placement}
                       pxPerMm={cadPxPerMm}
+                      theme={theme}
                     />
                   )
                 }
@@ -2385,6 +2525,18 @@ function FloorPlanPage() {
                         </Button>
                       </BarTip>
                     ))}
+                    <BarTip tip="Turn the selection">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        aria-label="Turn the selection"
+                        disabled={multiSel.size < 2}
+                        onClick={rotateSelectionTurn}
+                      >
+                        <RotateCw className="h-3.5 w-3.5" />
+                      </Button>
+                    </BarTip>
                     <span className="h-4 w-px bg-border" />
                     <Select
                       value=""
@@ -3556,23 +3708,7 @@ function TileSearch({
   onPick: (tile: FloorPlanTile) => void
 }) {
   const [open, setOpen] = useState(false)
-  const q = value.trim().toLowerCase()
-  const matches = q
-    ? tiles
-        .filter((t) => {
-          const hay = [
-            t.label,
-            t.linked?.name,
-            t.tile_type?.name,
-            t.role_type?.name,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase()
-          return hay.includes(q)
-        })
-        .slice(0, 8)
-    : []
+  const matches = searchTiles(tiles, value).map((h) => h.tile)
   return (
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -3587,6 +3723,14 @@ function TileSearch({
             onChange={(e) => {
               onChange(e.target.value)
               setOpen(true)
+            }}
+            onKeyDown={(e) => {
+              // Enter jumps to the best hit, as the Objects list's search does.
+              if (e.key === "Enter" && matches[0]) {
+                e.preventDefault()
+                onPick(matches[0])
+                setOpen(false)
+              }
             }}
             className="h-7 text-xs md:text-xs"
           />

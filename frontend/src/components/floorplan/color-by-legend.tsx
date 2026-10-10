@@ -49,6 +49,54 @@ export function levelCounts(
   return out
 }
 
+/** The legend as data, for the PDF's sheet (api/floor_plan_pdf.py): its
+ * heading and one swatch per row, as the on-screen legend reads. Null
+ * under Type, which has no legend. */
+export interface LegendEntries {
+  title: string
+  items: { label: string; color: string }[]
+}
+
+export function colorByLegendEntries(
+  colorBy: ColorBy,
+  figures: readonly (RackFigures | null)[],
+  alarm = false
+): LegendEntries | null {
+  if (colorBy === "type") return null
+  const outline = alarm
+    ? [{ label: "Outline: monitoring", color: CAPACITY_HEX.critical }]
+    : []
+  if (isCapacityMetric(colorBy)) {
+    const counts = levelCounts(figures, colorBy)
+    return {
+      title: `${COLOR_BY_LABEL[colorBy]} · ${BASIS[colorBy]}`,
+      items: [
+        ...LEVELS.map(({ level, label }) => ({
+          label: `${label} (${counts[level]})`,
+          color: level === "none" ? CAPACITY_NONE_HEX : CAPACITY_HEX[level],
+        })),
+        ...outline,
+      ],
+    }
+  }
+  const seen = new Map<string, string>()
+  let missing = false
+  for (const f of figures) {
+    const row = colorBy === "role" ? f?.role : f?.status
+    if (row) seen.set(row.name, row.color)
+    else missing = true
+  }
+  const items = [...seen]
+    .sort(([a], [b]) => naturalCompare(a, b))
+    .map(([label, color]) => ({ label, color }))
+  if (missing)
+    items.push({
+      label: colorBy === "role" ? "No role" : "No status",
+      color: CAPACITY_NONE_HEX,
+    })
+  return { title: COLOR_BY_LABEL[colorBy], items: [...items, ...outline] }
+}
+
 /** A tile's fill as a legend swatch: the colour at the tile's strength,
  * outlined in it. */
 function FillSwatch({ color }: { color: string }) {

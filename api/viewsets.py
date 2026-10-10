@@ -40,7 +40,7 @@ from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
 from .cf_search import cf_text_q
-from . import capacity, elevation_pdf, scene_geo
+from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
     FacePortLoader,
@@ -9828,6 +9828,19 @@ class FloorPlanViewSet(TenantScopedViewSet):
             "hide_text": entry.get("hide_text", False),
         }
 
+    @floor_plan_pdf.pdf_schema
+    @action(detail=True, methods=["post"], url_path="export/pdf")
+    def export_pdf(self, request, pk=None):
+        """The plan as the page drew it, its CAD drawing under it, on one
+        sheet of paper (api.floor_plan_pdf)."""
+        return floor_plan_pdf.export_pdf(request, self.get_object())
+
+    @floor_plan_pdf.pdf_file_schema
+    @action(detail=True, methods=["get"], url_path=r"export/pdf/(?P<token>[A-Za-z0-9_-]+)")
+    def export_pdf_file(self, request, pk=None, token=None):
+        """The PDF an ``export/pdf/?print=1`` kept, behind its print link."""
+        return floor_plan_pdf.export_pdf_file(request, self.get_object(), token)
+
     @action(detail=False, methods=["get"], url_path="drawing-support")
     def drawing_support(self, request):
         """What uploads the server takes: DXF always, DWG when a converter is
@@ -9933,8 +9946,14 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
     # `route` is a POST (it carries a body) but computes only - view, not change.
     # `drawing_render` asks for a cached server render with layers hidden:
-    # what a viewer toggling layers on a large drawing needs.
-    rbac_action_map = {"route": "view", "drawing_render": "view"}
+    # what a viewer toggling layers on a large drawing needs. A PDF of the
+    # plan is a way of looking at it.
+    rbac_action_map = {
+        "route": "view",
+        "drawing_render": "view",
+        "export_pdf": "view",
+        "export_pdf_file": "view",
+    }
 
     @action(detail=True, methods=["post"], url_path="route")
     def route(self, request, pk=None):

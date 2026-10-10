@@ -161,7 +161,19 @@ describe("CadLayer", () => {
     expect(svg.querySelectorAll("g[data-layer]")).toHaveLength(2)
   })
 
-  it("draws a server render as one image", () => {
+  it("draws a server render as one image, coloured for the theme", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          '<svg xmlns="http://www.w3.org/2000/svg" color="#000000"><path stroke="currentColor"/><path stroke="#ffff00"/></svg>'
+        )
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const blobs: Blob[] = []
+    const make = vi.spyOn(URL, "createObjectURL").mockImplementation((b) => {
+      blobs.push(b as Blob)
+      return "blob:themed"
+    })
     const { container } = renderLayer({
       mode: "image",
       svg: null,
@@ -169,12 +181,61 @@ describe("CadLayer", () => {
       loading: false,
       error: null,
     })
-    const img = container.querySelector("image")!
-    expect(img.getAttribute("href")).toBe(
-      "/media/floor-plans/cad/p1/variant-k.svg"
+    await waitFor(() => expect(container.querySelector("image")).not.toBeNull())
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/media/floor-plans/cad/p1/variant-k.svg",
+      { credentials: "same-origin" }
     )
+    const img = container.querySelector("image")!
+    expect(img.getAttribute("href")).toBe("blob:themed")
+    const text = await blobs[0].text()
+    expect(text).toContain('color="#18181b"')
+    expect(text).not.toContain("#ffff00")
+    make.mockRestore()
     expect(img.getAttribute("width")).toBe("100")
     expect(container.querySelectorAll("g[data-layer]")).toHaveLength(0)
+  })
+
+  it("draws the default colour in the foreground and keeps others readable", () => {
+    const svg = parseCadSvg(FIXTURE)
+    const { container, rerender } = renderLayer({
+      mode: "inline",
+      svg,
+      imageUrl: null,
+      loading: false,
+      error: null,
+    })
+    // #fff text on the light floor is darkened; the red wall reads as is.
+    const text = () => container.querySelector("text")!.getAttribute("fill")
+    expect(text()).not.toBe("#fff")
+    expect(container.querySelector("path")!.getAttribute("stroke")).toBe(
+      "#ff0000"
+    )
+    const d = drawing()
+    rerender(
+      <svg>
+        <CadLayer
+          drawing={d}
+          source={{
+            mode: "inline",
+            svg,
+            imageUrl: null,
+            loading: false,
+            error: null,
+          }}
+          placement={placementOf(d, { hidden_layers: ["WALLS"] })}
+          pxPerMm={40 / 600}
+          theme="dark"
+        />
+      </svg>
+    )
+    // On the dark floor the white text is fine as drawn again.
+    expect(text()).toBe("#fff")
+    expect(
+      container.querySelector('g[data-layer="WALLS"]')!.getAttribute("display")
+    ).toBe("none")
+    // The cached parse keeps its own colours.
+    expect(svg.querySelector("text")!.getAttribute("fill")).toBe("#fff")
   })
 })
 
