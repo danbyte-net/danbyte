@@ -203,7 +203,9 @@ class EveryListTests(_Base):
 
 
 class KeptRowTests(_Base):
-    def test_rows_still_referenced_are_kept_with_the_reason(self):
+    def use_all(self) -> dict:
+        """Point a session, a policy rule, a community-list rule and an
+        OSPF interface at one row of each catalog type; ``{model: row}``."""
         t, sess = self.t, self.rows[BGPSession]
         used = {
             BGPPeerGroup: self.rows[BGPPeerGroup],
@@ -230,14 +232,21 @@ class KeptRowTests(_Base):
             instance=self.rows[OSPFInstance], interface=ospf_if, area=self.rows[OSPFArea]
         )
         used[OSPFArea] = self.rows[OSPFArea]
+        return used
 
+    def spare(self, model):
+        return model.objects.create(
+            tenant=self.t, name=f"spare-{model.__name__}",
+            **({"area_id": "1"} if model is OSPFArea else {}),
+            **({"value": "65000:99"} if model is Community else {}),
+        )
+
+    def test_rows_still_referenced_are_kept_with_the_reason(self):
+        sess = self.rows[BGPSession]
+        used = self.use_all()
         for model, row in used.items():
             url = next(u for u, m in LISTS.items() if m is model)
-            spare = model.objects.create(
-                tenant=t, name=f"spare-{model.__name__}",
-                **({"area_id": "1"} if model is OSPFArea else {}),
-                **({"value": "65000:99"} if model is Community else {}),
-            )
+            spare = self.spare(model)
             with self.subTest(model=model.__name__):
                 r = self.delete(url, [row.id, spare.id], dry_run=True)
                 body = r.json()
@@ -260,6 +269,56 @@ class KeptRowTests(_Base):
             self.delete("/api/routing/bgp-peer-groups/", [used[BGPPeerGroup].id]).json()["deleted"],
             1,
         )
+
+    def test_single_delete_refuses_what_bulk_delete_keeps_with_the_same_reason(self):
+        """A single DELETE of an in-use catalog row is a 409 whose detail is
+        the bulk delete's kept-row reason; nothing is deleted or logged."""
+        used = self.use_all()
+        for model, row in used.items():
+            url = next(u for u, m in LISTS.items() if m is model)
+            with self.subTest(model=model.__name__):
+                bulk = self.delete(url, [row.id], dry_run=True).json()["skipped"][0]["reason"]
+                logged = ChangeLogEntry.objects.count()
+                r = self.client.delete(f"{url}{row.id}/")
+                self.assertEqual(r.status_code, 409, r.content)
+                self.assertEqual(r.json(), {"detail": bulk})
+                self.assertTrue(model.objects.filter(pk=row.pk).exists())
+                self.assertEqual(ChangeLogEntry.objects.count(), logged)
+                spare = self.spare(model)
+                self.assertEqual(self.client.delete(f"{url}{spare.id}/").status_code, 204)
+                self.assertFalse(model.objects.filter(pk=spare.pk).exists())
+        r = self.client.delete(f"/api/routing/policies/{used[RoutingPolicy].id}/")
+        self.assertEqual(r.json()["detail"], "In use: 1 BGP sessions.")
+        r = self.client.delete(f"/api/routing/ospf-areas/{used[OSPFArea].id}/")
+        self.assertEqual(r.json()["detail"], "In use: 1 OSPF interfaces.")
+        # Once the session is gone its peer group deletes on its own.
+        self.assertEqual(
+            self.client.delete(f"/api/routing/bgp-sessions/{self.rows[BGPSession].id}/")
+            .status_code, 204,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/routing/bgp-peer-groups/{used[BGPPeerGroup].id}/")
+            .status_code, 204,
+        )
+
+    def test_single_delete_checks_access_and_tenant_before_saying_why(self):
+        """The usage is only told to someone allowed to delete the row: a
+        foreign row is a 404, a view-only caller a 403."""
+        self.use_all()
+        foreign = self.foreign[BGPPeerGroup]
+        BGPSession.objects.filter(pk=self.foreign[BGPSession].pk).update(peer_group=foreign)
+        r = self.client.delete(f"/api/routing/bgp-peer-groups/{foreign.id}/")
+        self.assertEqual(r.status_code, 404)
+        user = User.objects.create_user("viewer")
+        UserProfile.objects.create(user=user).tenants.add(self.t)
+        perm = ObjectPermission.objects.create(
+            name="view", object_types=["bgppeergroup"], actions=["view"]
+        )
+        perm.users.add(user)
+        self.login(user)
+        r = self.client.delete(f"/api/routing/bgp-peer-groups/{self.rows[BGPPeerGroup].id}/")
+        self.assertEqual(r.status_code, 403)
+        self.assertNotIn("In use", r.content.decode())
 
     def test_instance_goes_with_its_sessions_listed_as_impact(self):
         r = self.delete("/api/routing/bgp-instances/", [self.rows[BGPInstance].id], dry_run=True)

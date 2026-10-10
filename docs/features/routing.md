@@ -632,6 +632,10 @@ To delete a kept row, point what uses it elsewhere or delete that first,
 then delete the row again. Every deleted row goes exactly as a single delete
 takes it: a keychain's key leaves the secret store with it.
 
+Deleting one of these rows on its own follows the same rule: the delete is
+refused, the dialog stays open and says what still uses it, in the bulk
+delete's words (`In use: 2 BGP sessions.`).
+
 ## API
 
 | Endpoint | Purpose |
@@ -682,6 +686,13 @@ above also answer:
 - `GET …/bulk-edit-fields/` - the same fields described for an editor, in
   the shape of [`/api/editable-fields/`](../reference/api.md); needs
   *change*.
+
+`DELETE` of a single prefix list, community, community list, AS-path list,
+routing policy, keychain, BFD profile, peer group, OSPF area or Ethernet
+segment that something still uses is a `409` with
+`{"detail": "In use: …"}` - the reason `bulk-delete` gives for keeping it.
+Access is checked first: a caller who may not delete the row gets the `403`
+or `404`, not the reason.
 
 A CSV
 row without an `id` is matched on what makes it unique - a static route by

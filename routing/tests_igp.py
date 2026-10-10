@@ -309,9 +309,19 @@ class BFDTests(_Base):
             [(p["name"], p["min_tx"], p["multiplier"]) for p in ctx["bfd_profiles"]],
             [("FAST", 100, 3), ("SLOW", 1000, 3)],
         )
-        # Deleting a profile leaves the rows, BFD still on, timers default.
+        # A profile in use is not deleted; the 409 says what uses it.
+        r = self.client.delete(f"/api/routing/bfd-profiles/{fast}/")
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.json()["detail"], "In use: 1 BGP peer groups, 1 OSPF instances.")
+        # Once nothing uses it, it goes; the rows keep BFD on, timers default.
+        group.bfd_profile = None
+        group.save()
+        self.client.patch(f"/api/routing/ospf-instances/{inst['id']}/",
+                          {"bfd_profile_id": None}, format="json")
         self.assertEqual(self.client.delete(f"/api/routing/bfd-profiles/{fast}/").status_code, 204)
-        self.assertIsNone(routing_context(self.leaf)["ospf"][0]["bfd_profile"])
+        o = routing_context(self.leaf)["ospf"][0]
+        self.assertIsNone(o["bfd_profile"])
+        self.assertTrue(o["bfd"])
 
 
 class RenderTests(_Base):

@@ -21,7 +21,8 @@ the model, the way ``api.editable_fields`` derives editor metadata:
 ``bulk_keep_referenced`` keeps a row other records still point at by a
 nullable reference or a many-to-many, which a delete would silently cut (a
 routing policy that sessions import, a keychain a peer group uses). A
-``PROTECT`` reference keeps the row anyway.
+``PROTECT`` reference keeps the row anyway. The single delete of such a list
+refuses the same rows with a 409 and the same reason (:func:`referenced_by`).
 """
 from __future__ import annotations
 
@@ -30,13 +31,14 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 from django.core.exceptions import FieldDoesNotExist
-from django.db import IntegrityError, models
+from django.db import IntegrityError, models, transaction
 from django.db.models import Count
+from django.db.models.deletion import ProtectedError
 from rest_framework import status as drf_status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .bulk_delete import SafeBulkDeleteMixin, plural_label
+from .bulk_delete import SafeBulkDeleteMixin, _protected_reason, plural_label
 from .viewsets import BulkUpdateMixin
 
 
@@ -70,6 +72,29 @@ def _model_field(model, key: str):
 def _in_use_reason(counts: Counter) -> str:
     parts = [f"{n} {label}" for label, n in sorted(counts.items())]
     return "In use: " + ", ".join(parts) + "."
+
+
+def referenced_by(rows) -> dict:
+    """Who still points at ``rows`` by a nullable reference or a
+    many-to-many - what deleting them would silently cut - as ``{pk:
+    Counter({label: n})}``, in one query per relation. Rows nothing
+    references are left out. Bulk and single delete both ask this."""
+    if not rows:
+        return {}
+    ids = [r.pk for r in rows]
+    uses: dict = defaultdict(Counter)
+    for rel in type(rows[0])._meta.related_objects:
+        if not (rel.many_to_many or getattr(rel, "on_delete", None) is models.SET_NULL):
+            continue
+        name = rel.field.name
+        label = plural_label(rel.related_model)
+        found = (
+            rel.related_model._base_manager.filter(**{f"{name}__in": ids})
+            .values(name).annotate(n=Count("pk", distinct=True))
+        )
+        for row in found:
+            uses[row[name]][label] += row["n"]
+    return dict(uses)
 
 
 class BulkEditMixin(SafeBulkDeleteMixin, BulkUpdateMixin):
@@ -141,20 +166,22 @@ class BulkEditMixin(SafeBulkDeleteMixin, BulkUpdateMixin):
         out = super().bulk_blockers(rows)
         if not self.bulk_keep_referenced or not rows:
             return out
-        ids = [r.pk for r in rows]
-        uses: dict = defaultdict(Counter)
-        for rel in type(rows[0])._meta.related_objects:
-            if not (rel.many_to_many or getattr(rel, "on_delete", None) is models.SET_NULL):
-                continue
-            name = rel.field.name
-            label = plural_label(rel.related_model)
-            found = (
-                rel.related_model._base_manager.filter(**{f"{name}__in": ids})
-                .values(name).annotate(n=Count("pk", distinct=True))
-            )
-            for row in found:
-                uses[row[name]][label] += row["n"]
-        for pk, counts in uses.items():
+        for pk, counts in referenced_by(rows).items():
             if pk not in out:
                 out[pk] = _in_use_reason(counts)
         return out
+
+    def destroy(self, request, *args, **kwargs):
+        """A single delete refuses what the bulk delete keeps, with the
+        same reason: 409 ``{"detail": "In use: 2 BGP sessions."}``."""
+        if not self.bulk_keep_referenced:
+            return super().destroy(request, *args, **kwargs)
+        obj = self.get_object()
+        reason = self.bulk_blockers([obj]).get(obj.pk)
+        if reason is None:
+            try:
+                with transaction.atomic():
+                    return super().destroy(request, *args, **kwargs)
+            except ProtectedError as exc:
+                reason = _protected_reason(exc)
+        return Response({"detail": reason}, status=drf_status.HTTP_409_CONFLICT)
