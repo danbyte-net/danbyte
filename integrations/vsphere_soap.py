@@ -15,16 +15,17 @@ Kept apart from ``virt_client`` deliberately:
   degrades one opt-in feature instead of breaking every sync.
 
 Same transport guarantees as the REST client: the SSRF allowlist is checked
-before connecting and ``verify_ssl`` is honoured. One difference worth stating -
-REST re-checks the allowlist before every request, while SOAP holds a single
-connection, so the check happens once. That is acceptable because the connection
-only ever talks to the host that was checked, but it is a difference.
+before connecting, the connection is pinned to the checked address (TLS still
+verified against the name when ``verify_ssl`` is on), and redirects are not
+followed. One difference worth stating - REST re-checks the allowlist before
+every request, while SOAP resolves once per session and keeps talking to that
+address.
 """
 from __future__ import annotations
 
 import logging
 
-from core.ssrf import SSRFError, assert_public_host
+from core.ssrf import SSRFError, pinned_ssl_context, resolve_public_ip
 
 from .virt_client import VirtAPIError
 
@@ -137,8 +138,9 @@ class VSphereSoap:
         self._si = None
 
     def connect(self) -> VSphereSoap:
+        host, port = self.source.host, self.source.port
         try:
-            assert_public_host(self.source.host, self.source.port)
+            ip = resolve_public_ip(host, port)
         except SSRFError as exc:
             raise VirtAPIError(str(exc)) from exc
         try:
@@ -151,12 +153,18 @@ class VSphereSoap:
             ) from exc
         creds = self.source.credentials or {}
         try:
+            # Connect to the checked address, never the name again (a DNS
+            # flip after the check can't move the session). TLS SNI and
+            # certificate checks stay on the name through the context, and
+            # the Host header names it, so vCenter's proxy routes as before.
+            # pyVmomi's HTTP client does not follow redirects.
             self._si = SmartConnect(
-                host=self.source.host,
-                port=self.source.port,
+                host=f"[{ip}]" if ":" in ip else ip,
+                port=port,
                 user=creds.get("username", ""),
                 pwd=creds.get("password", ""),
-                disableSslCertValidation=not self.source.verify_ssl,
+                sslContext=pinned_ssl_context(host, verify=self.source.verify_ssl),
+                customHeaders={"Host": host if int(port) == 443 else f"{host}:{port}"},
             )
         except Exception as exc:  # pyVmomi raises a wide range of its own
             raise VirtAPIError(f"vCenter SOAP connect failed: {exc}") from exc

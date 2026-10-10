@@ -146,9 +146,14 @@ connect. Redirects are never followed: a `3xx` answer is an error, so a host
 that passes the check cannot bounce the request to an internal address. When an
 outbound proxy is set, `NO_PROXY` is matched against the configured hostname,
 not the pinned IP. WinRM and the vCenter SOAP connection (host hardware) are
-checked before they connect but not pinned. Operator-configured *deployment*-wide SMTP/LDAP hosts are trusted and
+pinned the same way, with TLS verified against the configured hostname.
+Operator-configured *deployment*-wide SMTP/LDAP hosts are trusted and
 not guarded (an operator may legitimately point them at an internal relay); only
-tenant-supplied hosts are checked.
+tenant-supplied hosts are checked. The SSO identity provider (OIDC issuer and
+the endpoints its discovery document names, SAML metadata URL) is set by a
+deployment admin and stays allowed on a private address, but each discovery
+that resolves to one logs a warning on `danbyte.sso`; allow-listed addresses do
+not warn.
 
 If you *need* an internal target (e.g. an on-prem automation runner like the
 [IaC runner](../features/iac-runner.md)), allow-list its address(es):

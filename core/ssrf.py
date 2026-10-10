@@ -28,6 +28,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import socket
+import ssl
 from functools import lru_cache
 from urllib.parse import urlparse, urlunparse
 
@@ -140,6 +141,76 @@ def assert_public_host(host: str, port: int) -> None:
     _resolve_public(host, int(port))
 
 
+def resolve_public_ip(host: str, port: int) -> str:
+    """The address to pin a connection to: like :func:`assert_public_host`,
+    but returns the first validated address so the caller connects to exactly
+    what was checked instead of resolving the name again."""
+    return _resolve_public(host, int(port))[0]
+
+
+def pinned_url(url: str, ip: str) -> tuple[str, str]:
+    """``(url with its host replaced by ip, Host header for the original)``."""
+    parsed = urlparse(url)
+    scheme, host = parsed.scheme, parsed.hostname
+    netloc_ip = f"[{ip}]" if ":" in ip else ip
+    if parsed.port:
+        netloc_ip += f":{parsed.port}"
+    default_port = 443 if scheme == "https" else 80
+    host_header = host if parsed.port in (None, default_port) else f"{host}:{parsed.port}"
+    return urlunparse(parsed._replace(netloc=netloc_ip)), host_header
+
+
+def mount_pinned_adapter(session: requests.Session, url: str, server_hostname: str) -> None:
+    """Mount a :class:`_PinnedSNIAdapter` for the pinned https ``url``'s origin
+    so TLS is verified against ``server_hostname``, not the address. One
+    adapter per origin, reused so keep-alive works; remounted only if the
+    hostname behind the same address changes. The trailing slash keeps 1.2.3.4
+    from also matching 1.2.3.45 or another port."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return
+    prefix = f"https://{parsed.netloc}/"
+    adapter = session.adapters.get(prefix)
+    if not isinstance(adapter, _PinnedSNIAdapter) or adapter._sni != server_hostname:
+        session.mount(prefix, _PinnedSNIAdapter(server_hostname))
+
+
+def pinned_ssl_context(server_hostname: str, *, verify: bool = True) -> ssl.SSLContext:
+    """An ``ssl.SSLContext`` for clients built on ``http.client`` (pyVmomi)
+    that connect to a pinned address: whatever host the client wraps the
+    socket for, SNI and certificate verification use ``server_hostname``.
+    ``verify=False`` keeps the encryption but checks no certificate, the same
+    as the clients' own "do not verify" switch."""
+    ctx = _PinnedSSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.sni_hostname = server_hostname
+    if verify:
+        ctx.load_default_certs()
+    else:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def warn_if_private(url: str, what: str, logger) -> None:
+    """Log a warning when ``url``'s host resolves to a non-public address.
+
+    For URLs a deployment admin sets (the SSO identity provider): those stay
+    allowed, since an internal IdP is normal, but an address nobody expected
+    is visible in the log. Never raises; the request reports its own errors.
+    Allow-listed addresses do not warn."""
+    try:
+        _, host, port = _split(url)
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except (SSRFError, OSError, ValueError):
+        return
+    private = sorted({info[4][0] for info in infos if _blocked(info[4][0])})
+    if private:
+        logger.warning(
+            "%s %s resolves to a non-public address (%s); allowed because a deployment "
+            "admin set it.", what, host, ", ".join(private),
+        )
+
+
 class _PinnedSNIAdapter(HTTPAdapter):
     """Verifies TLS against the original hostname while the URL connects to a
     pre-validated IP - so cert checking still works after we rewrite the URL's
@@ -162,6 +233,17 @@ class _PinnedSNIAdapter(HTTPAdapter):
         return super().proxy_manager_for(proxy, **proxy_kwargs)
 
 
+class _PinnedSSLContext(ssl.SSLContext):
+    """See :func:`pinned_ssl_context`."""
+
+    sni_hostname = ""
+
+    def wrap_socket(self, sock, *args, server_hostname=None, **kwargs):
+        return super().wrap_socket(
+            sock, *args, server_hostname=self.sni_hostname or server_hostname, **kwargs
+        )
+
+
 class SafeSession(requests.Session):
     """A ``requests.Session`` hardened against SSRF on every request it makes:
     the host must resolve to a public (or allow-listed) IP, the connection is
@@ -176,21 +258,13 @@ class SafeSession(requests.Session):
     """
 
     def request(self, method, url, **kwargs):
-        scheme, host, port = _split(url)
+        _, host, port = _split(url)
         ip = _resolve_public(host, port)[0]
         kwargs["allow_redirects"] = False
 
-        parsed = urlparse(url)
-        netloc_ip = f"[{ip}]" if ":" in ip else ip
-        if parsed.port:
-            netloc_ip += f":{parsed.port}"
-        pinned_url = urlunparse(parsed._replace(netloc=netloc_ip))
-
+        pinned, host_header = pinned_url(url, ip)
         headers = dict(kwargs.pop("headers", None) or {})
-        default_port = 443 if scheme == "https" else 80
-        headers.setdefault(
-            "Host", host if parsed.port in (None, default_port) else f"{host}:{parsed.port}"
-        )
+        headers.setdefault("Host", host_header)
 
         if self.trust_env and should_bypass_proxies(url, no_proxy=None):
             # NO_PROXY names hosts; decide on the hostname, not the pinned IP
@@ -199,16 +273,8 @@ class SafeSession(requests.Session):
             proxies.setdefault("no_proxy", ip)
             kwargs["proxies"] = proxies
 
-        if scheme == "https":
-            # One pinned adapter per origin, reused across the session's calls
-            # so keep-alive works; remounted only if the hostname behind the
-            # same address changes (a different SNI). The trailing slash keeps
-            # 1.2.3.4 from also matching 1.2.3.45 or another port.
-            prefix = f"{scheme}://{netloc_ip}/"
-            adapter = self.adapters.get(prefix)
-            if not isinstance(adapter, _PinnedSNIAdapter) or adapter._sni != host:
-                self.mount(prefix, _PinnedSNIAdapter(host))
-        return super().request(method, pinned_url, headers=headers, **kwargs)
+        mount_pinned_adapter(self, pinned, host)
+        return super().request(method, pinned, headers=headers, **kwargs)
 
 
 def safe_request(method: str, url: str, **kwargs):
