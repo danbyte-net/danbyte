@@ -71,8 +71,8 @@ export function colorByLegendEntries(
     return {
       title: `${COLOR_BY_LABEL[colorBy]} · ${BASIS[colorBy]}`,
       items: [
-        ...LEVELS.map(({ level, label }) => ({
-          label: `${label} (${counts[level]})`,
+        ...LEVELS.map((level) => ({
+          label: `${level === "none" ? "No data" : capacityBandLabel(level)} (${counts[level]})`,
           color: level === "none" ? CAPACITY_NONE_HEX : CAPACITY_HEX[level],
         })),
         ...outline,
