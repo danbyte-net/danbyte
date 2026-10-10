@@ -133,6 +133,7 @@ nav = [
     { "Proxmox VE sync"   = "features/virt-proxmox.md" },
     { "VMware vCenter sync" = "features/virt-vcenter.md" },
     { "VMware Cloud Director sync" = "features/virt-vcloud.md" },
+    { "Oxidized config backups" = "features/oxidized.md" },
   ] },
   { "Administration" = [
     "access/index.md",

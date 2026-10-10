@@ -24,7 +24,7 @@ from django.apps import apps
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
-           "view_credits", "set_default"]
+           "view_credits", "set_default", "view_config"]
 
 # Types an "all object types" ("*") grant does NOT reach. Adding or changing
 # these IS administration - accounts, group membership and the grants
@@ -61,7 +61,9 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     "ipsecprofile": ["reveal"],
     # A routing keychain holds the BGP / OSPF / IS-IS key.
     "routingkeychain": ["reveal"],
-    "device": ["connect"],
+    # Read the device's running configuration from Oxidized (#35). A config
+    # holds communities, hashes and keys, so device.view never implies it.
+    "device": ["connect", "view_config"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
     # An agreement's service credits are money; seeing them is its own grant.
@@ -160,6 +162,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("zabbix.ZabbixProvisionRule", "Zabbix provisioning rules", "Monitoring"),
     ("zabbix.ZabbixMaintenance", "Zabbix maintenance windows", "Monitoring"),
     ("zabbix.ZabbixAdoptionRule", "Zabbix adoption rules", "Monitoring"),
+    ("oxidized.OxidizedConnection", "Oxidized connections", "Integrations"),
+    ("oxidized.OxidizedNodeLink", "Oxidized node links", "Integrations"),
     ("api.Service", "Services", "IPAM"),
     ("api.ServiceTemplate", "Service templates", "IPAM"),
     # ─── DCIM ───────────────────────────────────────────────────────

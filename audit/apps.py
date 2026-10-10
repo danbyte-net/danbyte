@@ -138,6 +138,7 @@ AUDITED_MODELS = [
     "zabbix.ZabbixConnection",
     "zabbix.ZabbixProvisionRule",
     "zabbix.ZabbixAdoptionRule",
+    "oxidized.OxidizedConnection",
     "api.Service",
     "api.ServiceTemplate",
     "api.DeviceTypeService",

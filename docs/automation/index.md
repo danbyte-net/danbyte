@@ -21,5 +21,6 @@ devices, render configs, and notify other systems when things change.
 | [Export templates](../features/export-templates.md) | Render objects to text (configs, reports) with templates. |
 | [Config drift (Ansible/Terraform)](../features/iac-runner.md) | Run an external Ansible/Terraform runner against Danbyte as source of truth; report config drift and sync. |
 | [Advanced: custom-field-driven playbook](../features/cf-driven-playbook.md) | Use a per-device boolean custom field as a feature flag a runner reads from the inventory (e.g. install btop when on). |
+| [Oxidized config backups](../features/oxidized.md) | Show each device's configuration backups from Oxidized - current config, history and diffs. Off by default. |
 | [Webhooks](../features/webhooks.md) | Notify external systems on create / update / delete, signed for verification. |
 | [Import & export](../features/import-export.md) | Move data in and out as CSV / XLSX. |

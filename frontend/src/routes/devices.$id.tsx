@@ -162,6 +162,7 @@ import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { DeviceConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
@@ -481,6 +482,7 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="config">
         <div className="space-y-6">
+          <DeviceConfigBackups deviceId={d.id} />
           <ConfigContextPanel endpoint="devices" id={d.id} />
           <DeviceInventoryPanel deviceId={d.id} />
           <DeviceConfigRender deviceId={d.id} bound={d.config_template} />

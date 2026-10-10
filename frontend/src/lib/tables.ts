@@ -276,6 +276,8 @@ const ROWS: Row[] = [
   ["zabbix-adoption-rules", "Zabbix · Adoption rules", "Integrations", "/api/zabbix/adoption-rules/"],
   ["zabbix-provision-rules", "Zabbix · Template rules", "Integrations", "/api/zabbix/template-rules/"],
   ["zabbix-scope", "Zabbix · Scope", "Integrations", null],
+  ["oxidized-links", "Oxidized · Linked nodes", "Integrations", "/api/oxidized/links/"],
+  ["oxidized-unmatched", "Oxidized · Unmatched nodes", "Integrations", null],
 
   // ─── Planning & system ─────────────────────────────────────────────────
   ["planning-boards", "Boards", "Planning", "/api/planning/boards/"],

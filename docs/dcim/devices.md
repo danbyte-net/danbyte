@@ -295,7 +295,7 @@ rear ports. Like the other tab counts they are 0 on the device list.
 | **Components** | Six sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
 | **Services**   | Application services running on the device.                                                     |
 | **Contacts**   | People responsible for the device.                                                              |
-| **Config**     | Configuration context and rendered config.                                                      |
+| **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. |
 | **Journal**    | Free-form notes and a running log you write.                                                    |
 | **Change log** | An automatic record of changes - who changed what, when.                                               |
 

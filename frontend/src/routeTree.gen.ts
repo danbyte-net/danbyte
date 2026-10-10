@@ -146,6 +146,7 @@ import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
 import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
 import { Route as PlanningIndexRouteImport } from './routes/planning.index'
 import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
+import { Route as OxidizedIndexRouteImport } from './routes/oxidized.index'
 import { Route as OspfInstancesIndexRouteImport } from './routes/ospf-instances.index'
 import { Route as OspfAreasIndexRouteImport } from './routes/ospf-areas.index'
 import { Route as NatRulesIndexRouteImport } from './routes/nat-rules.index'
@@ -1205,6 +1206,11 @@ const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PermissionsRoute,
+} as any)
+const OxidizedIndexRoute = OxidizedIndexRouteImport.update({
+  id: '/oxidized/',
+  path: '/oxidized/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const OspfInstancesIndexRoute = OspfInstancesIndexRouteImport.update({
   id: '/ospf-instances/',
@@ -3446,6 +3452,7 @@ export interface FileRoutesByFullPath {
   '/nat-rules/': typeof NatRulesIndexRoute
   '/ospf-areas/': typeof OspfAreasIndexRoute
   '/ospf-instances/': typeof OspfInstancesIndexRoute
+  '/oxidized/': typeof OxidizedIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -3889,6 +3896,7 @@ export interface FileRoutesByTo {
   '/nat-rules': typeof NatRulesIndexRoute
   '/ospf-areas': typeof OspfAreasIndexRoute
   '/ospf-instances': typeof OspfInstancesIndexRoute
+  '/oxidized': typeof OxidizedIndexRoute
   '/permissions': typeof PermissionsIndexRoute
   '/planning': typeof PlanningIndexRoute
   '/platform-groups': typeof PlatformGroupsIndexRoute
@@ -4402,6 +4410,7 @@ export interface FileRoutesById {
   '/nat-rules/': typeof NatRulesIndexRoute
   '/ospf-areas/': typeof OspfAreasIndexRoute
   '/ospf-instances/': typeof OspfInstancesIndexRoute
+  '/oxidized/': typeof OxidizedIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -4916,6 +4925,7 @@ export interface FileRouteTypes {
     | '/nat-rules/'
     | '/ospf-areas/'
     | '/ospf-instances/'
+    | '/oxidized/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -5359,6 +5369,7 @@ export interface FileRouteTypes {
     | '/nat-rules'
     | '/ospf-areas'
     | '/ospf-instances'
+    | '/oxidized'
     | '/permissions'
     | '/planning'
     | '/platform-groups'
@@ -5871,6 +5882,7 @@ export interface FileRouteTypes {
     | '/nat-rules/'
     | '/ospf-areas/'
     | '/ospf-instances/'
+    | '/oxidized/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -6184,6 +6196,7 @@ export interface RootRouteChildren {
   MaintenanceIndexRoute: typeof MaintenanceIndexRoute
   NatRulesIndexRoute: typeof NatRulesIndexRoute
   OspfInstancesIndexRoute: typeof OspfInstancesIndexRoute
+  OxidizedIndexRoute: typeof OxidizedIndexRoute
   PlanningIndexRoute: typeof PlanningIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
@@ -7193,6 +7206,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/permissions/'
       preLoaderRoute: typeof PermissionsIndexRouteImport
       parentRoute: typeof PermissionsRoute
+    }
+    '/oxidized/': {
+      id: '/oxidized/'
+      path: '/oxidized'
+      fullPath: '/oxidized/'
+      preLoaderRoute: typeof OxidizedIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/ospf-instances/': {
       id: '/ospf-instances/'
@@ -11225,6 +11245,7 @@ const rootRouteChildren: RootRouteChildren = {
   MaintenanceIndexRoute: MaintenanceIndexRoute,
   NatRulesIndexRoute: NatRulesIndexRoute,
   OspfInstancesIndexRoute: OspfInstancesIndexRoute,
+  OxidizedIndexRoute: OxidizedIndexRoute,
   PlanningIndexRoute: PlanningIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,

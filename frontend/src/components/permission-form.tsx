@@ -46,10 +46,12 @@ const ACTION_ORDER: RBACAction[] = [
   "grant_superuser",
   "view_credits",
   "set_default",
+  "view_config",
 ]
 const ACTION_HINT: Partial<Record<RBACAction, string>> = {
   view_credits: "See the service credits an agreement owes",
   set_default: "Choose the view Topology opens with",
+  view_config: "Read the device's configuration backups from Oxidized",
   connect: "Open an interactive session to the device",
   reveal: "Read the referenced secret value",
   subscribe: "Opt in or out of this notification channel",

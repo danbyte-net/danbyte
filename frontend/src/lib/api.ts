@@ -434,6 +434,7 @@ export type RBACAction =
   | "trust"
   | "view_credits"
   | "set_default"
+  | "view_config"
 
 export interface RBACUser {
   id: number
@@ -12151,4 +12152,89 @@ export interface SlaAnalysis {
     kinds: string[]
     redundancy: { name: string; count: number }[]
   }
+}
+
+// ─── Oxidized config backups (#35) ──────────────────────────────────────────
+
+export interface OxidizedConnection {
+  id: string
+  name: string
+  url: string
+  username: string
+  password_set: boolean
+  verify_tls: boolean
+  enabled: boolean
+  match_by: "address_name" | "address" | "name"
+  last_checked_at: string | null
+  last_error: string
+  node_count: number | null
+  last_sync_at: string | null
+  link_count: number
+  sync: {
+    nodes: number | null
+    linked: number | null
+    pinned: number | null
+    unmatched_count: number | null
+    missing_pinned: number | null
+    error: string | null
+  }
+}
+
+export interface OxidizedNodeLink {
+  id: string
+  connection: string
+  connection_name: string
+  device: { id: string; name: string }
+  full_name: string
+  node_name: string
+  node_group: string
+  node_ip: string
+  node_model: string
+  matched_by: "address" | "name" | "manual"
+  last_seen_at: string | null
+  created_at: string
+}
+
+export interface OxidizedUnmatchedNode {
+  full_name: string
+  name: string
+  ip: string
+  model: string
+  reason: string
+}
+
+export interface OxidizedDeviceLink {
+  id: string
+  connection: string
+  connection_name: string
+  full_name: string
+  node_ip: string
+  node_model: string
+  matched_by: string
+  last_seen_at: string | null
+}
+
+export interface OxidizedConfig {
+  link: OxidizedDeviceLink
+  config: string
+  bytes: number
+  lines: number
+  cached: boolean
+}
+
+export interface OxidizedVersion {
+  oid: string
+  date: string | null
+  author: string
+  email: string
+  message: string
+}
+
+export interface OxidizedDiff {
+  from: string
+  to: string
+  diff: string
+  too_large: boolean
+  added: number
+  removed: number
 }

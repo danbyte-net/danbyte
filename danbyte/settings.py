@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "auth_api.apps.AuthApiConfig",
     "integrations.apps.IntegrationsConfig",
     "zabbix.apps.ZabbixConfig",
+    "oxidized.apps.OxidizedConfig",
     "search.apps.SearchConfig",
     "monitoring.apps.MonitoringConfig",
     "planning.apps.PlanningConfig",

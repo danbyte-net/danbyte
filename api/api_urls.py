@@ -594,6 +594,7 @@ urlpatterns = [
     path("list-fields/", list_fields_view, name="list-fields"),
     path("monitoring/", include("monitoring.api_urls")),
     path("zabbix/", include("zabbix.api_urls")),
+    path("oxidized/", include("oxidized.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) - gated on jobs.manage.
