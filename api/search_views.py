@@ -186,7 +186,10 @@ def ranked_candidates(q: str, tokens: dict, tenant) -> list[dict]:
             params[f"{name}_key"] = key
             params[name] = f"{_like(v)}%"
     facet_clause = " ".join(facet_bits)
-    fq = fold(q)
+    # An address in any spelling finds its stored compressed form (#382).
+    from .models import normalise_ip_term
+
+    fq = fold(normalise_ip_term(q))
     if not fq:
         if not tokens:
             return []

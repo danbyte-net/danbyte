@@ -52,9 +52,34 @@ prefix and its contents can never disagree about which VRF they are in.
 |---|---|---|
 | `.network` | `ipaddress.IPv4Network \| IPv6Network \| None` | Parsed CIDR |
 | `.family` | `4`, `6`, or `None` | Convenience |
-| `.utilisation_pct` | `int 0-100 \| None` | None for IPv6, containers, and malformed CIDRs. With `allocate_from_ranges` on: used-in-range over the ranges' total size (None until a range exists) |
+| `.utilisation_pct` | `int 0-100 \| None` | Addresses over usable hosts (see below). None for containers, malformed CIDRs and IPv6 prefixes too large to enumerate. With `allocate_from_ranges` on, in either family: used-in-range over the ranges' total size (None until a range exists) |
 | `.allocation_summary()` | `{size, used, free, ranges} \| None` | The allocation ranges' accounting (serialised as `allocation`); None when the prefix allocates from its whole network |
-| `.allocation_spans()` / `.in_allocation(addr)` | `[(start, end)]` / `bool` | The ranges as integer spans, and whether an address falls inside one |
+| `.allocation_spans()` / `.in_allocation(addr)` | `[(start, end)]` / `bool` | The ranges as integer spans, clipped to the prefix and merged where they overlap, and whether an address falls inside one |
+
+## Usable hosts
+
+One rule decides which addresses of a prefix are hosts. Utilisation, next
+available, the Subnet details card (*First usable*, *Last usable*, *Usable
+hosts*), **Add pool** and discovery all use it (`api.models.usable_host_count`),
+and it is what Python's `ip_network(...).hosts()` yields:
+
+| Prefix | Not hosts | Usable hosts |
+|---|---|---|
+| IPv4 `/30` and shorter | network and broadcast | size − 2 |
+| IPv4 `/31` (RFC 3021) and `/32` | none | size |
+| IPv6 `/126` and shorter | the Subnet-Router anycast address, `::` of the prefix (RFC 4291) | size − 1 |
+| IPv6 `/127` (RFC 6164) and `/128` | none | size |
+
+IPv6 has no broadcast, so the last address of a `/126` is a host: a `/126`
+has three usable hosts, `::1` to `::3`.
+
+## Changing the CIDR
+
+A new CIDR must still hold every address and range on the prefix. Narrowing
+or moving a prefix past one is refused with the addresses and ranges that
+would fall outside it (the first five of each, and a count). Move or delete
+them first, or widen instead. Child prefixes are not stored relations, so
+they never block a change - the tree re-nests them.
 
 ## Lifecycle
 

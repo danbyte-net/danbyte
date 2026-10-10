@@ -40,7 +40,9 @@ as well; this is the same catalog, reachable without opening it first.
   and custom-field values, with the object type weighing in (a device
   outranks a catalog row with the same match).
 - **IP or CIDR**: an address query also lists the prefixes that contain it,
-  most specific first; an exact prefix comes top.
+  most specific first; an exact prefix comes top. An IPv6 address matches in
+  any spelling - `2001:0db8::1`, upper case or fully expanded all find
+  `2001:db8::1`, here and in the IP list's search box.
 - **Short id**: an all-digit query matches the number printed on labels and
   short links. Every type numbers from 1, so add a type token to pin it.
 - **VLAN id** matches the VLAN.
