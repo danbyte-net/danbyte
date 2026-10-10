@@ -113917,6 +113917,10 @@ components:
           allOf:
           - $ref: '#/components/schemas/ClusterMini'
           readOnly: true
+        site:
+          allOf:
+          - $ref: '#/components/schemas/SiteMini'
+          readOnly: true
         description:
           type: string
         vm_count:
@@ -113944,6 +113948,7 @@ components:
       - kind_display
       - name
       - numid
+      - site
       - tags
       - updated_at
       - vm_count
