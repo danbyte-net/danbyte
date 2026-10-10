@@ -37,6 +37,11 @@ NONE_WORDS = ("", "global", "none", "-")
 # describe an object rather than contain it, so sharing one says nothing about
 # which same-named object a cell means.
 _NON_SCOPE_MODELS = {"api.status", "auth.user", "auth.group", "contenttypes.contenttype"}
+# Where a row's secret lives in the secret store (a PSK, a CSR's private key,
+# an ACME account key). Danbyte derives these and the API never shows them; a
+# file that set one could point a row at another row's key, and the reveal
+# would read that one (#365, #383).
+_SECRET_REF_FIELDS = {"psk_secret_path", "psk_secret_provider", "key_ref", "account_ref"}
 
 
 def _exportable_fields(model):
@@ -51,7 +56,7 @@ def _exportable_fields(model):
         # Credentials never round-trip through spreadsheets: no export
         # column (EncryptedJSONField decrypts on read!) and no import
         # column (set secrets through their own endpoints).
-        if is_secret_field(model, f):
+        if is_secret_field(model, f) or f.name in _SECRET_REF_FIELDS:
             continue
         out.append(f)
     return out

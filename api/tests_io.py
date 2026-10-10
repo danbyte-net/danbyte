@@ -323,6 +323,110 @@ class IOEndpointTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("larger than", res.json()["detail"])
 
+    def _bomb(self, *, strings=0, cells=0, string=b"<si><t>a</t></si>"):
+        """A workbook that is small on disk and huge once unpacked: a
+        shared-strings table of ``strings`` entries and/or one sheet row of
+        ``cells`` cells, written in chunks so the test never holds it."""
+        import io as _io
+        import zipfile
+
+        buf = _io.BytesIO()
+        ns = b'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+        rel = b"http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+            z.writestr("[Content_Types].xml", (
+                b'<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/'
+                b'package/2006/content-types"><Default Extension="rels" ContentType='
+                b'"application/vnd.openxmlformats-package.relationships+xml"/><Default '
+                b'Extension="xml" ContentType="application/xml"/><Override PartName='
+                b'"/xl/workbook.xml" ContentType="application/vnd.openxmlformats-'
+                b'officedocument.spreadsheetml.sheet.main+xml"/><Override PartName='
+                b'"/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats'
+                b'-officedocument.spreadsheetml.worksheet+xml"/><Override PartName='
+                b'"/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-'
+                b'officedocument.spreadsheetml.sharedStrings+xml"/></Types>'))
+            z.writestr("_rels/.rels", (
+                b'<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats'
+                b'.org/package/2006/relationships"><Relationship Id="rId1" Type="' + rel
+                + b'/officeDocument" Target="xl/workbook.xml"/></Relationships>'))
+            z.writestr("xl/workbook.xml", (
+                b'<?xml version="1.0"?><workbook ' + ns + b' xmlns:r="' + rel
+                + b'"><sheets><sheet name="s" sheetId="1" r:id="rId1"/></sheets></workbook>'))
+            z.writestr("xl/_rels/workbook.xml.rels", (
+                b'<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats'
+                b'.org/package/2006/relationships"><Relationship Id="rId1" Type="' + rel
+                + b'/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" '
+                b'Type="' + rel + b'/sharedStrings" Target="sharedStrings.xml"/>'
+                b'</Relationships>'))
+            with z.open("xl/sharedStrings.xml", "w") as f:
+                f.write(b'<?xml version="1.0"?><sst ' + ns + b'><si><t>name</t></si>')
+                chunk = string * 10000
+                for _ in range(strings // 10000):
+                    f.write(chunk)
+                f.write(b"</sst>")
+            with z.open("xl/worksheets/sheet1.xml", "w") as f:
+                f.write(b'<?xml version="1.0"?><worksheet ' + ns + b'><sheetData>'
+                        b'<row r="1"><c r="A1" t="s"><v>0</v></c></row><row r="2">')
+                chunk = b'<c t="s"><v>0</v></c>' * 10000
+                for _ in range(cells // 10000):
+                    f.write(chunk)
+                f.write(b"</row></sheetData></worksheet>")
+        buf.seek(0)
+        buf.name = "bomb.xlsx"
+        return buf
+
+    def test_a_shared_strings_bomb_is_refused_before_it_is_loaded(self):
+        """#374 - a 4,000,000-string table is under 1 MB on disk."""
+        from unittest import mock
+
+        from openpyxl.reader import strings
+
+        bomb = self._bomb(strings=4_000_000)
+        self.assertLess(len(bomb.getvalue()), 1024 * 1024)
+        with mock.patch.object(strings, "read_string_table",
+                               side_effect=AssertionError("table was loaded")):
+            res = self.client.post("/api/io/site/import/", {"file": bomb, "dry_run": "1"})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("too large", res.json()["detail"])
+
+    def test_many_short_shared_strings_are_refused(self):
+        # Under the unpacked-size cap, over the string-count cap.
+        from unittest import mock
+
+        from api import io_views
+
+        with mock.patch.object(io_views, "MAX_XLSX_SHARED_STRINGS", 50_000):
+            res = self.client.post("/api/io/site/import/",
+                                   {"file": self._bomb(strings=60_000), "dry_run": "1"})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("too many distinct", res.json()["detail"])
+
+    def test_a_sheet_xml_bomb_is_refused(self):
+        bomb = self._bomb(cells=3_000_000)
+        self.assertLess(len(bomb.getvalue()), 1024 * 1024)
+        res = self.client.post("/api/io/site/import/", {"file": bomb, "dry_run": "1"})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("too large", res.json()["detail"])
+
+    def test_a_wide_row_is_cut_at_the_column_cap(self):
+        from unittest import mock
+
+        from api import io_views
+
+        with mock.patch.object(io_views, "MAX_IMPORT_COLUMNS", 100):
+            res = self.client.post("/api/io/site/import/",
+                                   {"file": self._bomb(cells=20_000), "dry_run": "1"})
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("columns", res.json()["detail"])
+
+    def test_not_a_workbook_is_a_plain_400(self):
+        import io as _io
+
+        junk = _io.BytesIO(b"not a zip at all")
+        junk.name = "x.xlsx"
+        res = self.client.post("/api/io/site/import/", {"file": junk, "dry_run": "1"})
+        self.assertEqual(res.status_code, 400)
+
     def test_register_object_type_is_discoverable(self):
         from auth_api.object_types import is_registered, registry_payload
 

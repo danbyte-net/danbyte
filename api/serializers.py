@@ -847,7 +847,11 @@ class VLANSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Taggabl
         group = attrs.get("group", getattr(self.instance, "group", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
         vid = attrs.get("vlan_id", getattr(self.instance, "vlan_id", None))
-        if group is not None and vid is not None:
+        # The range is checked when the VID or the group is set: a VLAN left
+        # outside a range narrowed before that was refused still takes other
+        # edits (#380).
+        placed = self.instance is None or "vlan_id" in attrs or "group" in attrs
+        if group is not None and vid is not None and placed:
             if not (group.min_vid <= vid <= group.max_vid):
                 raise serializers.ValidationError(
                     {"vlan_id": f"VID must be within the group's range "
@@ -1445,6 +1449,9 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         attrs = super().validate(attrs)
         import ipaddress
 
+        if self.instance is not None and "cidr" in attrs:
+            self._refuse_stranding(attrs["cidr"])
+
         request = self.context.get("request")
         if request is None:
             return attrs
@@ -1486,6 +1493,54 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                                  "(this VRF rejects overlapping prefixes)."}
                     )
         return attrs
+
+    def _refuse_stranding(self, cidr):
+        """A new CIDR must still hold every address and range on the prefix
+        (#380): narrowing or moving it would leave them attached to a
+        network they are no longer in. The error names what is outside."""
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except (ValueError, TypeError):
+            return
+        old = self.instance.network
+        if old is not None and old == net:
+            return
+
+        def outside(addr) -> bool:
+            try:
+                a = ipaddress.ip_address(addr)
+            except (ValueError, TypeError):
+                return False
+            return a.version != net.version or a not in net
+
+        ips = sorted(
+            (
+                a for a in self.instance.ip_addresses.values_list("ip_address", flat=True)
+                if outside(a)
+            ),
+            key=lambda a: (ipaddress.ip_address(a).version, int(ipaddress.ip_address(a))),
+        )
+        ranges = [
+            f"{s}–{e}"
+            for s, e in self.instance.ip_ranges.order_by("start_address")
+            .values_list("start_address", "end_address")
+            if outside(s) or outside(e)
+        ]
+        if not ips and not ranges:
+            return
+        parts = []
+        if ips:
+            shown = ", ".join(ips[:5]) + (f" and {len(ips) - 5} more" if len(ips) > 5 else "")
+            parts.append(f"{len(ips)} address{'es' if len(ips) != 1 else ''} ({shown})")
+        if ranges:
+            shown = ", ".join(ranges[:5]) + (
+                f" and {len(ranges) - 5} more" if len(ranges) > 5 else ""
+            )
+            parts.append(f"{len(ranges)} range{'s' if len(ranges) != 1 else ''} ({shown})")
+        raise serializers.ValidationError({
+            "cidr": f"{net} would leave {' and '.join(parts)} outside the prefix. "
+                    "Move or delete them first."
+        })
 
     def get_vlan_vrf_mismatch(self, obj) -> bool:
         return bool(obj.vlan_id and obj.vlan.vrf_id and obj.vlan.vrf_id != obj.vrf_id)
@@ -6974,6 +7029,7 @@ class IPRangeSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagg
         attrs = super().validate(attrs)
         import ipaddress as _ip
 
+        given = set(attrs)
         start = attrs.get("start_address", getattr(self.instance, "start_address", None))
         end = attrs.get("end_address", getattr(self.instance, "end_address", None))
         if start and end:
@@ -6994,7 +7050,34 @@ class IPRangeSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagg
         prefix = attrs.get("prefix", getattr(self.instance, "prefix", None))
         if prefix is not None:
             attrs["vrf"] = prefix.vrf
+        # Inside its prefix, and clear of every other range in the VRF
+        # (#379). Checked when the span, prefix or VRF is set, so a range
+        # saved before the check still takes a description edit.
+        placed = {"start_address", "end_address", "prefix", "vrf"}
+        if start and end and (self.instance is None or placed & given):
+            self._check_placement(attrs, start, end, prefix)
         return attrs
+
+    def _check_placement(self, attrs, start, end, prefix):
+        from api.views import _get_active_tenant
+
+        if self.instance is not None:
+            tenant_id = self.instance.tenant_id
+        else:
+            request = self.context.get("request")
+            tenant = _get_active_tenant(request) if request is not None else None
+            tenant_id = getattr(tenant, "id", None)
+        # A detached copy: the instance itself is only written by save().
+        probe = IPRange(
+            start_address=start, end_address=end, prefix=prefix,
+            vrf=attrs.get("vrf", getattr(self.instance, "vrf", None)),
+        )
+        if self.instance is not None:
+            probe.pk = self.instance.pk
+            probe._state.adding = False
+        errors = probe.placement_errors(tenant_id=tenant_id)
+        if errors:
+            raise serializers.ValidationError(errors)
 
     dhcp = serializers.SerializerMethodField()
 
@@ -7057,12 +7140,27 @@ class AggregateSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
     )
 
     def validate_prefix(self, value):
-        import ipaddress as _ip
-
+        # Stored canonical (#381): ``2001:DB8::/32`` and ``2001:db8::/32``
+        # are one block, and ``10.1.2.3/8`` is ``10.0.0.0/8``.
         try:
-            _ip.ip_network(value, strict=False)
+            value = Aggregate.normalise_prefix(value)
         except ValueError:
             raise serializers.ValidationError("Enter a valid CIDR prefix.")
+        if self.instance is not None and self.instance.prefix == value:
+            return value
+        from api.views import _get_active_tenant
+
+        request = self.context.get("request")
+        tenant_id = getattr(self.instance, "tenant_id", None) or getattr(
+            _get_active_tenant(request) if request is not None else None, "id", None
+        )
+        probe = Aggregate(prefix=value, tenant_id=tenant_id)
+        probe.pk = getattr(self.instance, "pk", None)
+        other = probe.duplicate_of()
+        if other is not None:
+            raise serializers.ValidationError(
+                f"{value} already exists as the aggregate {other.prefix}."
+            )
         return value
 
     class Meta:
@@ -7168,6 +7266,22 @@ class VLANGroupSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(
                 {"max_vid": "Max VID must be ≥ min VID."}
             )
+        # Narrowing the range must not strand the group's VLANs (#380).
+        if self.instance is not None and ("min_vid" in attrs or "max_vid" in attrs):
+            out = list(
+                self.instance.vlans.exclude(vlan_id__gte=lo, vlan_id__lte=hi)
+                .order_by("vlan_id").values_list("vlan_id", flat=True)
+            )
+            if out:
+                shown = ", ".join(str(v) for v in out[:10]) + (
+                    f" and {len(out) - 10} more" if len(out) > 10 else ""
+                )
+                field = "min_vid" if any(v < lo for v in out) else "max_vid"
+                raise serializers.ValidationError({
+                    field: f"{lo}–{hi} would leave VLAN{'s' if len(out) != 1 else ''} "
+                           f"{shown} outside the group. Move or renumber "
+                           f"{'them' if len(out) != 1 else 'it'} first."
+                })
         return attrs
 
     class Meta:
@@ -7247,6 +7361,16 @@ class FHRPGroupSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
         write_only=True, required=False, many=True,
     )
 
+    # The key lives in the secret store (#383), as an SSID's PSK does: write
+    # only, blank on edit keeps it, null clears it. The viewset's mixin moves
+    # it in and out; ``reveal-psk`` reads it back under audit.
+    auth_key = serializers.CharField(
+        source="psk", write_only=True, required=False, allow_blank=True,
+        allow_null=True, max_length=255, style={"input_type": "password"},
+        help_text="Stored in the deployment's secret store, never in this row.",
+    )
+    auth_key_set = serializers.BooleanField(source="psk_set", read_only=True)
+
     def get_assignment_count(self, obj) -> int:
         return obj.assignments.count()
 
@@ -7255,15 +7379,35 @@ class FHRPGroupSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
             raise serializers.ValidationError("Group ID must be 0–255.")
         return value
 
+    def validate_auth_key(self, value):
+        return require_store_for_key(value, "an authentication key")
+
+    def validate(self, attrs):
+        """No authentication type means no key: turning it off clears the
+        stored key, and a key sent with it is refused."""
+        attrs = super().validate(attrs)
+        auth_type = attrs.get(
+            "auth_type", self.instance.auth_type if self.instance else ""
+        )
+        if not auth_type:
+            if attrs.get("psk"):
+                raise serializers.ValidationError(
+                    {"auth_key": "Choose an authentication type to set a key."}
+                )
+            if self.instance is not None and self.instance.psk_set:
+                attrs["psk"] = None
+        return attrs
+
     class Meta:
         model = FHRPGroup
         fields = ["id", "name", "protocol", "protocol_display",
-                  "group_id", "auth_type", "auth_type_display", "auth_key",
+                  "group_id", "auth_type", "auth_type_display",
+                  "auth_key", "auth_key_set",
                   "virtual_ip", "virtual_ip_id", "nd_ra", "nd_ra_interval",
                   "assignments", "assignment_count",
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "auth_key_set", "created_at", "updated_at"]
 
 
 # ─── Contacts ────────────────────────────────────────────────────────────────
@@ -7820,19 +7964,24 @@ class SecretPSKSerializerMixin(serializers.Serializer):
     psk_set = serializers.BooleanField(read_only=True)
 
     def validate_psk(self, value):
-        if value in (None, ""):
-            return value
-        from monitoring.secret_store import secret_store_enabled
+        return require_store_for_key(value, "a PSK")
 
-        # Fail closed: no store means no safe home for the key, and Danbyte
-        # will not fall back to plaintext for a credential.
-        if not secret_store_enabled():
-            raise serializers.ValidationError(
-                "No secret store is enabled, so a PSK cannot be stored safely. "
-                "An administrator must enable one under Settings → Security → "
-                "Secret store first."
-            )
+
+def require_store_for_key(value, what: str):
+    """Refuse a key when no secret store is enabled. Fail closed: no store
+    means no safe home for the key, and Danbyte will not fall back to
+    plaintext for a credential. Blank and null pass (keep / clear)."""
+    if value in (None, ""):
         return value
+    from monitoring.secret_store import secret_store_enabled
+
+    if not secret_store_enabled():
+        raise serializers.ValidationError(
+            f"No secret store is enabled, so {what} cannot be stored safely. "
+            "An administrator must enable one under Settings → Security → "
+            "Secret store first."
+        )
+    return value
 
 
 class WirelessLANSerializer(SecretPSKSerializerMixin, StatusSerializerMixin, 

@@ -131,6 +131,11 @@ A **VLAN group** is a named grouping that scopes VID uniqueness and defines a
 valid VID range:
 
 - Assigning a VLAN to a group checks that its VID falls inside the group's range.
+- Narrowing the range is refused while a VLAN in the group would fall outside
+  it; the error lists those VIDs. Move or renumber them first.
+- A VLAN already outside its group's range (narrowed before 0.18) still takes
+  edits to its other fields; only a new VID or group is checked against the
+  range.
 - A group can optionally be bound to a site or cluster - which is also what lets
   a synced VID resolve to it.
 
@@ -154,7 +159,18 @@ Deprecated), an optional role from your IP-role catalog, a description, tags, an
 custom fields, and - like prefixes and IPs - it lives inside a VRF.
 
 A range can optionally point at a **parent prefix**. Picking one sets and locks
-the range's VRF to match the prefix. The range's **Addresses** tab is the
+the range's VRF to match the prefix.
+
+Ranges don't overlap: a range that shares any address with another range in
+the same VRF is refused, and a range with a parent prefix must lie entirely
+inside it. The Global VRF is one VRF for this check; the same span in two VRFs
+is fine. DHCP exclusion ranges are exempt - they are carved out of a pool on
+purpose. The API and the import apply the check alike. A
+range saved before 0.18 that breaks it still takes edits that leave its span
+and prefix alone, and next available, free rows and utilisation count its
+addresses once and only inside the prefix.
+
+The range's **Addresses** tab is the
 ordinary IP table cut to the span: the registered addresses with every IP
 column (status, role, tags, assignment…) interleaved with the free ones.
 **Show available** toggles the free rows; a free address is click-to-add (so
@@ -214,8 +230,21 @@ An **aggregate** is a top-level block of address space allocated from a RIR.
 Prefixes live *under* aggregates. The aggregate page's **Prefixes tab** lists
 every prefix carved inside the block, with the count in the tab title. For IPv4 aggregates, Danbyte rolls up how much
 of the block is covered by child prefixes and shows it as a utilisation bar
-(IPv6 spaces are too large to express as a percentage). A RIR's detail page lists
-its aggregates.
+(IPv6 spaces are too large to express as a percentage). Coverage is the union
+of the prefixes inside the block, across every VRF: the same `/25` in two
+VRFs, or a `/26` inside a `/25`, counts its addresses once. A RIR's detail
+page lists its aggregates.
+
+An aggregate is stored in canonical form: host bits cleared and IPv6
+compressed in lower case, so `10.1.2.3/8` is saved as `10.0.0.0/8` and
+`2001:DB8::/32` as `2001:db8::/32`. Another spelling of a block that already
+exists is refused as a duplicate.
+
+!!! note "Aggregates saved before 0.18"
+    The upgrade (migration `api 0203`) rewrites stored aggregates to canonical
+    form. Where two aggregates are the same block under different spellings,
+    both are left as they are - nothing is deleted. List them with
+    `manage.py check_aggregates`, then merge each pair by hand.
 
 !!! warning "Delete order"
     You can't delete a RIR that still has aggregates. Remove its aggregates
@@ -239,6 +268,41 @@ Members are added as **assignments**: each binds the group to exactly one device
 or VM interface, with an election priority. You manage members inline on the
 group's detail page (add an interface and priority, or remove one). The list
 filters by protocol and tags.
+
+### The authentication key
+
+Knowing a group's key is enough to join it, so the key is a credential and is
+kept the way an [SSID's PSK](wireless.md#the-pre-shared-key) or an
+[IPsec profile's key](vpn.md#the-pre-shared-key) is: the group holds only a
+reference, and the key lives in the deployment's
+[secret store](../architecture/tenant-settings.md).
+
+- Pick an **Auth type** and type the key into **Auth key**. On an existing
+  group the box is always empty: blank keeps the stored key, a new value
+  rotates it. Setting the auth type to **None** removes the key.
+- The group page shows `••••••••` when a key is set, with an **eye** button to
+  reveal it. Revealing is a separate request, needs the **reveal** permission
+  on FHRP groups, and is written to the change log. **View** alone never shows
+  the key.
+- Deleting the group removes its key from the store.
+- Without a secret store, saving a key is **refused** with a message pointing
+  at **Settings → Security → Secret store**; the rest of the group still saves.
+- Exports, imports and the change log never carry the key. A config template
+  sees `key_set` and prints the placeholder `<fhrp-key:ID>` (see
+  [secrets in a render](export-templates.md#secrets-in-a-render)).
+- The [NetBox import](netbox-import.md) stores a group's key when a secret
+  store is enabled and notes the groups it skipped the key for when not.
+
+In the API, `auth_key` is write-only (`null` clears it) and `auth_key_set`
+says whether one is stored. `POST /api/fhrp-groups/<id>/reveal-psk/` returns
+`{"psk": "…"}`.
+
+!!! note "Upgrading from 0.17"
+    Keys stored before 0.18 move out of the database row on upgrade: into
+    the configured secret store, or, with none configured, into the local
+    store's encrypted table. Nothing reveals them until a store is enabled;
+    enabling the **local** store makes keys moved there readable. Keys are
+    also masked in change-log entries written before the upgrade.
 
 ## IP statuses & IP roles
 

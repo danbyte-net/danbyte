@@ -131,6 +131,75 @@ def is_enumerable(net, cap: int = ENUMERABLE_HOST_CAP) -> bool:
     return net is not None and net.num_addresses <= cap
 
 
+# Assignable host addresses of a network - one rule for utilisation, next
+# available, discovery and the subnet details card, so they can't disagree
+# (#382). It is exactly what ``net.hosts()`` yields:
+#
+# * IPv4 /30 and shorter: the network and broadcast addresses are not hosts.
+# * IPv4 /31 (RFC 3021, point-to-point) and /32: every address is a host.
+# * IPv6 /126 and shorter: IPv6 has no broadcast; only the Subnet-Router
+#   anycast address (the all-zero host, RFC 4291 2.6.1) is not a host, so a
+#   /126 has three hosts, ::1 to ::3.
+# * IPv6 /127 (RFC 6164, point-to-point) and /128: every address is a host.
+
+
+def non_host_addresses(net) -> set:
+    """The addresses of ``net`` that are not assignable hosts (see above)."""
+    if net is None:
+        return set()
+    if net.version == 4:
+        if net.prefixlen <= 30:
+            return {net.network_address, net.broadcast_address}
+        return set()
+    if net.prefixlen <= 126:
+        return {net.network_address}
+    return set()
+
+
+def usable_host_count(net) -> int:
+    """How many addresses ``net.hosts()`` yields, without walking them."""
+    if net is None:
+        return 0
+    return net.num_addresses - len(non_host_addresses(net))
+
+
+def usable_host_bounds(net):
+    """``(first, last)`` assignable host of ``net``, or ``None``."""
+    if net is None or usable_host_count(net) == 0:
+        return None
+    skip = non_host_addresses(net)
+    first = net.network_address
+    last = net.broadcast_address
+    if first in skip:
+        first += 1
+    if last in skip:
+        last -= 1
+    return first, last
+
+
+def normalise_ip_term(term: str) -> str:
+    """A search term that is an IP address, in the stored (compressed,
+    lower-case) form; any other term unchanged. ``2001:0db8::1`` and the
+    fully expanded form both find ``2001:db8::1`` (#382)."""
+    raw = (term or "").strip()
+    try:
+        return ipaddress.ip_address(raw).compressed
+    except ValueError:
+        return term
+
+
+def merge_spans(spans) -> list[tuple[int, int]]:
+    """Sorted, non-overlapping ``(start, end)`` integer spans: overlapping
+    or adjacent spans are joined, so an address is never counted twice."""
+    out: list[list[int]] = []
+    for s, e in sorted(spans):
+        if out and s <= out[-1][1] + 1:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return [(s, e) for s, e in out]
+
+
 # ─── VRF (Virtual Routing and Forwarding) ─────────────────────────────────
 
 
@@ -2761,19 +2830,20 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         n = self.network
         if n is None:
             return None
-        # IPv6 % is only meaningful for small (enumerable) prefixes - a /64 is
-        # forever ~0%, which is noise, so leave it blank (UI shows nothing).
-        if n.version == 6 and not is_enumerable(n):
-            return None
+        # Allocating from ranges: the ranges are the managed space, whatever
+        # the network's size - a /64 with a four-address range reports it
+        # (#382), the same figures as the allocation block.
         if self.allocate_from_ranges:
             summary = self.allocation_summary()
             if not summary or summary["size"] == 0:
                 return None
             return min(100, int(round(100 * summary["used"] / summary["size"])))
-        if n.num_addresses <= 2:
-            capacity = n.num_addresses
-        else:
-            capacity = n.num_addresses - 2
+        # IPv6 % is only meaningful for small (enumerable) prefixes - a /64 is
+        # forever ~0%, which is noise, so leave it blank (UI shows nothing).
+        if n.version == 6 and not is_enumerable(n):
+            return None
+        # The same host count next available walks (#382).
+        capacity = usable_host_count(n)
         if capacity == 0:
             return None
         if used is None:
@@ -2796,20 +2866,31 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def allocation_spans(self) -> list[tuple[int, int]]:
         """``[(start, end)]`` as ints for every well-formed allocation range
-        of this prefix's family. Empty when the option is off."""
+        of this prefix's family. Empty when the option is off.
+
+        Ranges are clipped to the prefix and merged where they overlap
+        (#379): new ranges can't do either, but rows saved before that check
+        must not make next available offer an address twice, or one the
+        prefix can't hold."""
         if not self.allocate_from_ranges:
             return []
         net = self.network
+        lo = int(net.network_address) if net is not None else None
+        hi = int(net.broadcast_address) if net is not None else None
         out: list[tuple[int, int]] = []
         for rng in self.allocation_ranges():
             s, e = rng._start_ip, rng._end_ip
             if s is None or e is None or s.version != e.version or int(e) < int(s):
                 continue
-            if net is not None and s.version != net.version:
-                continue
-            out.append((int(s), int(e)))
-        out.sort()
-        return out
+            start, end = int(s), int(e)
+            if net is not None:
+                if s.version != net.version:
+                    continue
+                start, end = max(start, lo), min(end, hi)
+                if end < start:
+                    continue
+            out.append((start, end))
+        return merge_spans(out)
 
     def in_allocation(self, address: str) -> bool:
         """Whether ``address`` falls inside one of the allocation ranges."""
@@ -6070,6 +6151,73 @@ class IPRange(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             return None
         return int(e) - int(s) + 1
 
+    def placement_errors(self, tenant_id=None) -> dict:
+        """``{field: message}`` when the span is not inside its prefix, or
+        overlaps another range in the same tenant and VRF (#379). Empty
+        when it is fine, or when the addresses don't parse (the field
+        validation reports those).
+
+        DHCP exclusion ranges are carved out of a pool on purpose, so they
+        are never checked against, and never checked themselves."""
+        s, e = self._start_ip, self._end_ip
+        if s is None or e is None or s.version != e.version or int(e) < int(s):
+            return {}
+        if self.prefix_id:
+            net = self.prefix.network
+            if net is not None and (
+                s.version != net.version or s not in net or e not in net
+            ):
+                return {"start_address": (
+                    f"{self.start_address}–{self.end_address} is not inside "
+                    f"the prefix {self.prefix.cidr}."
+                )}
+        if not self._state.adding and self.dhcp_exclusions.exists():
+            return {}
+        tenant_id = tenant_id or self.tenant_id
+        if tenant_id is None:
+            return {}
+        vrf_id = self.prefix.vrf_id if self.prefix_id else self.vrf_id
+        others = IPRange.objects.filter(
+            tenant_id=tenant_id, dhcp_exclusions__isnull=True,
+        )
+        others = (
+            others.filter(vrf_id=vrf_id) if vrf_id else others.filter(vrf__isnull=True)
+        )
+        if not self._state.adding:
+            others = others.exclude(pk=self.pk)
+        for other in others.only("start_address", "end_address"):
+            os_, oe = other._start_ip, other._end_ip
+            if os_ is None or oe is None or os_.version != s.version:
+                continue
+            if int(s) <= int(oe) and int(e) >= int(os_):
+                return {"start_address": (
+                    f"{self.start_address}–{self.end_address} overlaps the range "
+                    f"{other.start_address}–{other.end_address} in this VRF."
+                )}
+        return {}
+
+    def clean(self):
+        # Model-level too: the CSV bulk importer runs full_clean, not the
+        # serializer. A row whose span and prefix are unchanged keeps saving,
+        # so a range stored before the check can still be edited.
+        super().clean()
+        if not self._state.adding:
+            was = (
+                IPRange.objects.filter(pk=self.pk)
+                .values("start_address", "end_address", "prefix_id", "vrf_id")
+                .first()
+            )
+            if was == {
+                "start_address": self.start_address, "end_address": self.end_address,
+                "prefix_id": self.prefix_id, "vrf_id": self.vrf_id,
+            }:
+                return
+        errors = self.placement_errors()
+        if errors:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(errors)
+
 
 # ─── RIRs + Aggregates (top of the IP-space hierarchy) ───────────────────────
 class RIR(NumIdMixin, TimestampedModel):
@@ -6130,6 +6278,51 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     def __str__(self) -> str:
         return self.prefix
 
+    @staticmethod
+    def normalise_prefix(value) -> str:
+        """The canonical form an aggregate is stored in (#381): host bits
+        cleared, IPv6 compressed and lower case. ``2001:DB8::/32`` becomes
+        ``2001:db8::/32``, ``10.1.2.3/8`` becomes ``10.0.0.0/8``. Raises
+        ``ValueError`` for anything that isn't a network."""
+        return str(ipaddress.ip_network(str(value or "").strip(), strict=False))
+
+    def duplicate_of(self, tenant_id=None):
+        """Another aggregate of the tenant covering the same network, in
+        whatever form it was stored, or ``None``."""
+        net = self.network
+        tenant_id = tenant_id or self.tenant_id
+        if net is None or tenant_id is None:
+            return None
+        others = Aggregate.objects.filter(tenant_id=tenant_id).only("prefix")
+        if self.pk:
+            others = others.exclude(pk=self.pk)
+        for other in others:
+            if other.network == net:
+                return other
+        return None
+
+    def clean(self):
+        # Model-level so the CSV importer, which runs full_clean rather than
+        # the serializer, stores the same canonical form.
+        # A stored prefix that isn't being changed is left as it is: a
+        # pre-normalisation duplicate (see check_aggregates) stays editable.
+        super().clean()
+        from django.core.exceptions import ValidationError
+
+        if not self._state.adding and (
+            Aggregate.objects.filter(pk=self.pk, prefix=self.prefix).exists()
+        ):
+            return
+        try:
+            self.prefix = self.normalise_prefix(self.prefix)
+        except ValueError:
+            raise ValidationError({"prefix": "Enter a valid CIDR prefix."}) from None
+        other = self.duplicate_of()
+        if other is not None:
+            raise ValidationError(
+                {"prefix": f"{self.prefix} already exists as the aggregate {other.prefix}."}
+            )
+
     @property
     def network(self):
         try:
@@ -6151,7 +6344,11 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def utilisation_with(self, covered):
         """Utilisation with the covered address count supplied (the list page
-        sums it in SQL, once per page); ``None`` walks the prefixes here."""
+        sums it in SQL, once per page); ``None`` walks the prefixes here.
+
+        Covered space is the union of the prefixes inside the aggregate, in
+        every VRF: the same /25 in two VRFs, or a /25 inside a /24, covers
+        its addresses once (#381)."""
         net = self.network
         if net is None or net.version == 6:
             return None
@@ -6160,7 +6357,7 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             return None
         if covered is not None:
             return min(100, int(round(100 * int(covered) / total)))
-        covered = 0
+        inside = []
         for p in (
             Prefix.objects.filter(tenant_id=self.tenant_id).only("cidr")
         ):
@@ -6169,9 +6366,10 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                 continue
             try:
                 if pn.subnet_of(net):
-                    covered += pn.num_addresses
+                    inside.append(pn)
             except (TypeError, ValueError):
                 continue
+        covered = sum(n.num_addresses for n in ipaddress.collapse_addresses(inside))
         return min(100, int(round(100 * covered / total)))
 
 
@@ -6244,10 +6442,107 @@ class VLANGroup(NumIdMixin, TimestampedModel):
         return self.name
 
 
+class SecretBackedPSK(models.Model):
+    """A pre-shared key that lives in the deployment's secret store, never in
+    the row (#68, #168). The model holds only a reference; ``store_psk`` /
+    ``resolve_psk`` / ``clear_psk`` move the value in and out, and the reveal
+    is an audited action on the viewset. A key is a credential, and
+    credentials do not sit in a documentation database in plaintext - the
+    same arrangement DeviceCredential uses. Subclasses set ``psk_secret_prefix``
+    (the folder the key is filed under in the store).
+    """
+
+    psk_secret_prefix = ""
+
+    psk_secret_provider = models.CharField(
+        max_length=8, blank=True, default="",
+        help_text="Which secret store holds the PSK, stamped at write-time.",
+    )
+    psk_secret_path = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Reference to the PSK inside that store. Empty: no PSK set.",
+    )
+
+    class Meta:
+        abstract = True
+
+    @property
+    def psk_set(self) -> bool:
+        return bool(self.psk_secret_path)
+
+    def store_psk(self, value: str) -> None:
+        """Write the PSK into the active store under ``<prefix>/<id>``,
+        stamping which provider took it. Fail-closed: raises
+        :class:`SecretStoreDisabled` when no store is configured, because the
+        alternative is a key sitting in the database in the clear."""
+        from core.models import DeploymentSettings
+        from monitoring.secret_store import require_secret_store
+
+        store = require_secret_store()
+        # Always re-derived: a path on the row, however it got there, never
+        # decides where the key is written (#315).
+        self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
+        self.psk_secret_provider = (
+            DeploymentSettings.load().secrets_provider or ""
+        ).strip()
+        store.put(self.tenant_id, self.psk_secret_path, {"psk": value})
+
+    def resolve_psk(self) -> str:
+        """Read the PSK back at use-time. Only the reveal action calls this -
+        never list or detail serialization."""
+        from monitoring.secret_store import SecretStoreError, require_secret_store
+
+        if not self.psk_secret_path:
+            raise SecretStoreError("No PSK is set.")
+        store = require_secret_store()
+        value = store.get(self.tenant_id, self.psk_secret_path)
+        if value is None:
+            raise SecretStoreError(
+                f"No secret found at '{self.psk_secret_path}' in the "
+                "configured store."
+            )
+        return value.get("psk", "")
+
+    def clear_psk(self) -> None:
+        """Forget the PSK, removing it from the store as well as the reference.
+
+        Best-effort on the store side: if it is unreachable the reference still
+        goes, because leaving a row pointing at a key nobody can read is worse
+        than an orphaned entry an operator can prune."""
+        path = self.psk_secret_path
+        self.psk_secret_path = ""
+        self.psk_secret_provider = ""
+        if not path:
+            return
+        from monitoring.secret_store import SecretStoreError, active_secret_store
+
+        try:
+            store = active_secret_store()
+            if store is not None:
+                store.delete(self.tenant_id, path)
+        except SecretStoreError:
+            pass
+
+
 # ─── FHRP groups (VRRP / HSRP / GLBP / CARP) ─────────────────────────────────
-class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+class FHRPGroup(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A First-Hop Redundancy Protocol group - VRRP/HSRP/GLBP/CARP - that shares
-    a virtual IP across the interfaces assigned to it."""
+    a virtual IP across the interfaces assigned to it. Its authentication key
+    lives in the secret store (#383), like an SSID's PSK; the API calls it
+    ``auth_key``."""
+
+    psk_secret_prefix = "fhrp-groups"
+
+    # Redeclared with a database default: the columns are new on an existing
+    # table, and the previous release's code inserts rows without them.
+    psk_secret_provider = models.CharField(
+        max_length=8, blank=True, default="", db_default="",
+        help_text="Which secret store holds the PSK, stamped at write-time.",
+    )
+    psk_secret_path = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        help_text="Reference to the PSK inside that store. Empty: no PSK set.",
+    )
 
     PROTOCOL_CHOICES = [
         ("vrrp2", "VRRPv2"),
@@ -6277,7 +6572,6 @@ class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     auth_type = models.CharField(
         max_length=16, choices=AUTH_CHOICES, blank=True, default=""
     )
-    auth_key = models.CharField(max_length=255, blank=True, default="")
     virtual_ip = models.ForeignKey(
         IPAddress,
         on_delete=models.SET_NULL,
@@ -6842,88 +7136,6 @@ class WirelessLANGroup(NumIdMixin, TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
-
-
-class SecretBackedPSK(models.Model):
-    """A pre-shared key that lives in the deployment's secret store, never in
-    the row (#68, #168). The model holds only a reference; ``store_psk`` /
-    ``resolve_psk`` / ``clear_psk`` move the value in and out, and the reveal
-    is an audited action on the viewset. A key is a credential, and
-    credentials do not sit in a documentation database in plaintext - the
-    same arrangement DeviceCredential uses. Subclasses set ``psk_secret_prefix``
-    (the folder the key is filed under in the store).
-    """
-
-    psk_secret_prefix = ""
-
-    psk_secret_provider = models.CharField(
-        max_length=8, blank=True, default="",
-        help_text="Which secret store holds the PSK, stamped at write-time.",
-    )
-    psk_secret_path = models.CharField(
-        max_length=255, blank=True, default="",
-        help_text="Reference to the PSK inside that store. Empty: no PSK set.",
-    )
-
-    class Meta:
-        abstract = True
-
-    @property
-    def psk_set(self) -> bool:
-        return bool(self.psk_secret_path)
-
-    def store_psk(self, value: str) -> None:
-        """Write the PSK into the active store under ``<prefix>/<id>``,
-        stamping which provider took it. Fail-closed: raises
-        :class:`SecretStoreDisabled` when no store is configured, because the
-        alternative is a key sitting in the database in the clear."""
-        from core.models import DeploymentSettings
-        from monitoring.secret_store import require_secret_store
-
-        store = require_secret_store()
-        # Always re-derived: a path on the row, however it got there, never
-        # decides where the key is written (#315).
-        self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
-        self.psk_secret_provider = (
-            DeploymentSettings.load().secrets_provider or ""
-        ).strip()
-        store.put(self.tenant_id, self.psk_secret_path, {"psk": value})
-
-    def resolve_psk(self) -> str:
-        """Read the PSK back at use-time. Only the reveal action calls this -
-        never list or detail serialization."""
-        from monitoring.secret_store import SecretStoreError, require_secret_store
-
-        if not self.psk_secret_path:
-            raise SecretStoreError("No PSK is set.")
-        store = require_secret_store()
-        value = store.get(self.tenant_id, self.psk_secret_path)
-        if value is None:
-            raise SecretStoreError(
-                f"No secret found at '{self.psk_secret_path}' in the "
-                "configured store."
-            )
-        return value.get("psk", "")
-
-    def clear_psk(self) -> None:
-        """Forget the PSK, removing it from the store as well as the reference.
-
-        Best-effort on the store side: if it is unreachable the reference still
-        goes, because leaving a row pointing at a key nobody can read is worse
-        than an orphaned entry an operator can prune."""
-        path = self.psk_secret_path
-        self.psk_secret_path = ""
-        self.psk_secret_provider = ""
-        if not path:
-            return
-        from monitoring.secret_store import SecretStoreError, active_secret_store
-
-        try:
-            store = active_secret_store()
-            if store is not None:
-                store.delete(self.tenant_id, path)
-        except SecretStoreError:
-            pass
 
 
 class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):

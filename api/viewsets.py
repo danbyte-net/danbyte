@@ -27,7 +27,7 @@ from rest_framework.decorators import (
 )
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
@@ -39,6 +39,7 @@ from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
+from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
 from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo
 from .face_ports import FACE_PORT_KINDS
@@ -53,6 +54,7 @@ from .port_state import (
 )
 from .models import (
     _TEMPLATE_MARKER_KIND,
+    normalise_ip_term,
     Antenna,
     AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
@@ -321,11 +323,14 @@ def annotate_dhcp(qs):
     exclusion range carves a hole in the pool - DHCP never hands those out - so
     the serializer checks ``dhcp_excl_n`` before pool membership.
 
-    Each flag is a correlated EXISTS, evaluated for the rows a page returns.
-    The joined COUNT(DISTINCT) form this replaces grouped every listed address
-    across a dozen DHCP tables before paging, which was the dominant cost of
-    the IP list at a few hundred thousand rows (#187). The ``inet`` columns
-    compare directly. Imported lazily: ``integrations`` imports from ``api``."""
+    Each flag is a correlated EXISTS. The joined COUNT(DISTINCT) form this
+    replaces grouped every listed address across a dozen DHCP tables before
+    paging, which was the dominant cost of the IP list at a few hundred
+    thousand rows (#187). Postgres still evaluates the select list for every
+    row an OFFSET skips, so a paged list must not carry these: it attaches
+    them to the page's rows with ``attach_dhcp_flags`` instead (#372). The
+    ``inet`` columns compare directly. Imported lazily: ``integrations``
+    imports from ``api``."""
     from django.db.models import Exists
 
     from integrations.models import DhcpExclusion, DhcpLease, DhcpReservation, DhcpScope
@@ -347,6 +352,27 @@ def annotate_dhcp(qs):
             )
         ),
     )
+
+
+_DHCP_FLAGS = ("dhcp_resv_n", "dhcp_lease_n", "dhcp_pool_n", "dhcp_excl_n")
+
+
+def attach_dhcp_flags(rows):
+    """Set ``annotate_dhcp``'s flags on already-fetched IP rows: one query
+    over the rows' ids, whatever the page's depth (#372)."""
+    rows = list(rows)
+    if not rows:
+        return rows
+    flags = {
+        pk: vals
+        for pk, *vals in annotate_dhcp(
+            IPAddress.objects.filter(pk__in=[r.pk for r in rows]).order_by()
+        ).values_list("pk", *_DHCP_FLAGS)
+    }
+    for row in rows:
+        for name, value in zip(_DHCP_FLAGS, flags.get(row.pk, (False,) * 4), strict=True):
+            setattr(row, name, value)
+    return rows
 
 
 def _apply_lifecycle_filter(qs, value: str):
@@ -1670,10 +1696,11 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                              "pick a span inside one of them."
                 })
             wanted = inside
-        # Never mint the prefix's network/broadcast as host rows (v4, /30 and up).
-        skip_addrs: set[str] = set()
-        if isinstance(net, ipmod.IPv4Network) and net.prefixlen <= 30:
-            skip_addrs = {str(net.network_address), str(net.broadcast_address)}
+        # Never mint an address that is not a host as a row: the v4 network
+        # and broadcast, the v6 Subnet-Router anycast (the shared host rule).
+        from .models import non_host_addresses
+
+        skip_addrs = {str(a) for a in non_host_addresses(net)}
         # An address is unique per VRF, not per prefix - dedupe against that.
         existing = set(
             IPAddress.objects.filter(
@@ -1822,12 +1849,20 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         IP-assign picker scales to very large address spaces (filter, don't
         ship millions of rows): ``?search=`` (address or DNS), ``?prefix=``,
         ``?vrf=``, ``?site=``, ``?assigned_interface=``, ``?assigned_vm=``,
-        ``?monitoring_excluded=true|false``."""
-        qs = annotate_dhcp(super().get_queryset())
+        ``?monitoring_excluded=true|false``.
+
+        A paged list leaves the DHCP flags off and attaches them to the
+        page's rows after paging, so a deep page does not evaluate them for
+        every row OFFSET skips (#372)."""
+        qs = super().get_queryset()
+        if getattr(self, "action", None) != "list" or self.paginator is None:
+            qs = annotate_dhcp(qs)
         if not self.request:
             return qs
         p = self.request.query_params
-        search = p.get("search", "").strip()
+        # An address typed in any spelling (2001:0db8::1, fully expanded,
+        # upper case) matches the stored compressed form (#382).
+        search = normalise_ip_term(p.get("search", "").strip())
         if search:
             # Closest match first: exact, then prefix, then substring - typing
             # "10.0.0.13" must put .13 above .130-.139 (the assign picker
@@ -1894,6 +1929,12 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             ]
             qs = qs.filter(pk__in=ids)
         return _apply_custom_field_scope(self.request, qs, "ipaddress")
+
+    def paginate_queryset(self, queryset):
+        page = super().paginate_queryset(queryset)
+        if page is not None and getattr(self, "action", None) == "list":
+            attach_dhcp_flags(page)
+        return page
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
@@ -7294,7 +7335,14 @@ class AggregateViewSet(TenantScopedViewSet):
 
         # The IPv4 address space covered by prefixes inside the aggregate,
         # summed in SQL once per page - the property walked every prefix in
-        # the tenant per row (#181).
+        # the tenant per row (#181). Covered is the union (#381): the same
+        # network in several VRFs counts once, and a prefix inside another
+        # one adds nothing - only the outermost distinct networks are summed.
+        inside = (
+            "FROM api_prefix {a} WHERE {a}.tenant_id = api_aggregate.tenant_id"
+            " AND family({a}.cidr::inet) = 4"
+            " AND {a}.cidr::inet <<= api_aggregate.prefix::inet"
+        )
         qs = (
             super()
             .get_queryset()
@@ -7302,9 +7350,12 @@ class AggregateViewSet(TenantScopedViewSet):
             .prefetch_related(TAGS)
             .annotate(
                 covered_n=RawSQL(
-                    "(SELECT COALESCE(SUM(power(2, 32 - masklen(p.cidr::inet))), 0)::bigint"
-                    " FROM api_prefix p WHERE p.tenant_id = api_aggregate.tenant_id"
-                    " AND family(p.cidr::inet) = 4 AND p.cidr::inet <<= api_aggregate.prefix::inet)",
+                    "(SELECT COALESCE(SUM(power(2, 32 - masklen(d.net))), 0)::bigint"
+                    " FROM (SELECT DISTINCT network(p.cidr::inet) AS net "
+                    + inside.format(a="p")
+                    + ") d WHERE NOT EXISTS (SELECT 1 "
+                    + inside.format(a="q")
+                    + " AND network(q.cidr::inet) >> d.net))",
                     (), output_field=BigIntegerField(),
                 )
             )
@@ -7419,8 +7470,105 @@ class VLANGroupViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+class SecretPSKViewSetMixin:
+    """Moves a :class:`api.models.SecretBackedPSK` key in and out of the secret
+    store around create/update/destroy, and reveals it through an audited
+    action gated by the ``reveal`` verb (#68, #168). ``psk_object_label`` is
+    what the change log calls the object; ``psk_field`` what the API calls
+    the key (an FHRP group's is ``auth_key``, #383)."""
+
+    psk_object_label = ""
+    psk_field = "psk"
+    rbac_action_map = {"reveal_psk": "reveal", "bulk_delete": "delete"}
+
+    def _pop_psk(self, serializer):
+        """Take the PSK out of the validated data before the row is saved -
+        the model has no column for it, only a reference."""
+        return serializer.validated_data.pop("psk", "")
+
+    def _apply_psk(self, obj, value) -> None:
+        """None clears; a value stores; blank leaves the stored key alone."""
+        from monitoring.secret_store import SecretStoreError
+
+        if value == "":
+            return
+        try:
+            if value is None:
+                obj.clear_psk()
+            else:
+                obj.store_psk(value)
+        except SecretStoreError as exc:
+            raise ValidationError({self.psk_field: str(exc)}) from exc
+        obj.save(update_fields=["psk_secret_path", "psk_secret_provider"])
+
+    def perform_create(self, serializer):
+        from django.db import transaction
+
+        value = self._pop_psk(serializer)
+        with transaction.atomic():
+            super().perform_create(serializer)
+            self._apply_psk(serializer.instance, value)
+
+    def perform_update(self, serializer):
+        from django.db import transaction
+
+        value = self._pop_psk(serializer)
+        with transaction.atomic():
+            super().perform_update(serializer)
+            self._apply_psk(serializer.instance, value)
+
+    def perform_destroy(self, instance):
+        # Take the key with the record: a profile nobody documents any more
+        # has no business leaving its key in the store.
+        instance.clear_psk()
+        super().perform_destroy(instance)
+
+    @action(detail=True, methods=["post"], url_path="reveal-psk")
+    def reveal_psk(self, request, pk=None):
+        """Return the PSK. Requires the ``reveal`` verb (type and row gates),
+        is audited, and fails closed when no secret store is enabled."""
+        from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
+
+        obj = self.get_object()
+        try:
+            psk = obj.resolve_psk()
+        except (SecretStoreDisabled, SecretStoreError) as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        self._audit_reveal(obj)
+        return Response({"psk": psk})
+
+    def _audit_reveal(self, obj):
+        """Revealing writes no model change, so nothing else would log it -
+        same trail the device-credential reveal leaves."""
+        from audit.context import current_request_id, current_via
+        from audit.models import ChangeAction, ChangeLogEntry
+        from audit.site_capture import entry_site_id
+
+        u = getattr(self.request, "user", None)
+        authed = bool(u and u.is_authenticated)
+        ChangeLogEntry.objects.create(
+            tenant_id=getattr(obj, "tenant_id", None),
+            user=u if authed else None,
+            user_name=(u.get_username() if authed else ""),
+            action=ChangeAction.REVEAL,
+            object_type=obj._meta.label_lower,
+            object_label=self.psk_object_label or obj._meta.verbose_name.title(),
+            object_id=str(obj.pk),
+            object_repr=str(obj),
+            object_site_id=entry_site_id(obj),
+            changes={"revealed": self.psk_field},
+            request_id=current_request_id(),
+            via=current_via() or "system",
+        )
+
+
 # ─── FHRP groups ─────────────────────────────────────────────────────────────
-class FHRPGroupViewSet(TenantScopedViewSet):
+class FHRPGroupViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
+    """FHRP groups. The authentication key (#383) is write-only and lives in
+    the secret store; the mixin moves it and reveals it under audit."""
+
+    psk_object_label = "FHRP group"
+    psk_field = "auth_key"
     queryset = FHRPGroup.objects.all()
     serializer_class = FHRPGroupSerializer
     pagination_class = StandardPagination
@@ -8095,96 +8243,6 @@ class WirelessLANGroupViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         return f"In use: {n} wireless LAN{'s' if n != 1 else ''}." if n else None
 
 
-class SecretPSKViewSetMixin:
-    """Moves a :class:`api.models.SecretBackedPSK` key in and out of the secret
-    store around create/update/destroy, and reveals it through an audited
-    action gated by the ``reveal`` verb (#68, #168). ``psk_object_label`` is
-    what the change log calls the object."""
-
-    psk_object_label = ""
-    rbac_action_map = {"reveal_psk": "reveal", "bulk_delete": "delete"}
-
-    def _pop_psk(self, serializer):
-        """Take the PSK out of the validated data before the row is saved -
-        the model has no column for it, only a reference."""
-        return serializer.validated_data.pop("psk", "")
-
-    def _apply_psk(self, obj, value) -> None:
-        """None clears; a value stores; blank leaves the stored key alone."""
-        from monitoring.secret_store import SecretStoreError
-
-        if value == "":
-            return
-        try:
-            if value is None:
-                obj.clear_psk()
-            else:
-                obj.store_psk(value)
-        except SecretStoreError as exc:
-            raise ValidationError({"psk": str(exc)}) from exc
-        obj.save(update_fields=["psk_secret_path", "psk_secret_provider"])
-
-    def perform_create(self, serializer):
-        from django.db import transaction
-
-        value = self._pop_psk(serializer)
-        with transaction.atomic():
-            super().perform_create(serializer)
-            self._apply_psk(serializer.instance, value)
-
-    def perform_update(self, serializer):
-        from django.db import transaction
-
-        value = self._pop_psk(serializer)
-        with transaction.atomic():
-            super().perform_update(serializer)
-            self._apply_psk(serializer.instance, value)
-
-    def perform_destroy(self, instance):
-        # Take the key with the record: a profile nobody documents any more
-        # has no business leaving its key in the store.
-        instance.clear_psk()
-        super().perform_destroy(instance)
-
-    @action(detail=True, methods=["post"], url_path="reveal-psk")
-    def reveal_psk(self, request, pk=None):
-        """Return the PSK. Requires the ``reveal`` verb (type and row gates),
-        is audited, and fails closed when no secret store is enabled."""
-        from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
-
-        obj = self.get_object()
-        try:
-            psk = obj.resolve_psk()
-        except (SecretStoreDisabled, SecretStoreError) as exc:
-            raise ValidationError({"detail": str(exc)}) from exc
-        self._audit_reveal(obj)
-        return Response({"psk": psk})
-
-    def _audit_reveal(self, obj):
-        """Revealing writes no model change, so nothing else would log it -
-        same trail the device-credential reveal leaves."""
-        from audit.context import current_request_id, current_via
-        from audit.models import ChangeAction, ChangeLogEntry
-        from audit.site_capture import entry_site_id
-
-        u = getattr(self.request, "user", None)
-        authed = bool(u and u.is_authenticated)
-        ChangeLogEntry.objects.create(
-            tenant_id=getattr(obj, "tenant_id", None),
-            user=u if authed else None,
-            user_name=(u.get_username() if authed else ""),
-            action=ChangeAction.REVEAL,
-            object_type=obj._meta.label_lower,
-            object_label=self.psk_object_label or obj._meta.verbose_name.title(),
-            object_id=str(obj.pk),
-            object_repr=str(obj),
-            object_site_id=entry_site_id(obj),
-            changes={"revealed": "psk"},
-            request_id=current_request_id(),
-            via=current_via() or "system",
-        )
-
-
 class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScopedViewSet):
     """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
     store - the mixin moves it in and out, never through a read."""
@@ -8632,7 +8690,7 @@ class RegionViewSet(TenantScopedViewSet):
         return Response({"results": candidates})
 
     @action(detail=False, methods=["post"], url_path="parse-boundary",
-            parser_classes=[MultiPartParser, FormParser, JSONParser])
+            parser_classes=[MultiPartParser, FormParser, ObjectJSONParser])
     def parse_boundary(self, request):
         """Turn a GeoJSON / QGIS export into a storable boundary (#80).
 
@@ -9272,7 +9330,7 @@ class DocumentViewSet(TenantScopedViewSet):
     serializer_class = DocumentSerializer
     pagination_class = StandardPagination
     # JSON for link/metadata writes; multipart for file uploads.
-    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    parser_classes = [ObjectJSONParser, MultiPartParser, FormParser]
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("category", "supersedes")

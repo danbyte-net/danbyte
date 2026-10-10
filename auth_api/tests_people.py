@@ -330,8 +330,15 @@ class ImportPeopleTests(TestCase):
         self.assertEqual(row["created_by"], str(op.pk))
         handler.apply(task, row, tenant, op)
 
-        # Someone outside the tenant still does not resolve.
+        # created_by is read-only in the API, so export-only in a file (#364).
+        obj, _action, changes, _tags = handler.apply(
+            task, {**row, "created_by": str(stranger.pk)}, tenant, op)
+        self.assertEqual((obj.created_by_id, changes), (op.pk, {}))
+
+        # A group outside the tenant still does not resolve.
         from django.core.exceptions import ValidationError
 
+        theirs = Group.objects.create(name="theirs")
+        stranger.groups.add(theirs)
         with self.assertRaises(ValidationError):
-            handler.apply(task, {**row, "created_by": str(stranger.pk)}, tenant, op)
+            handler.apply(task, {**row, "assigned_group": str(theirs.pk)}, tenant, op)

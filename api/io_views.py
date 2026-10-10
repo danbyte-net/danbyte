@@ -16,7 +16,9 @@ from __future__ import annotations
 import csv
 import io as _io
 import json
+import re
 
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse, StreamingHttpResponse
@@ -48,10 +50,24 @@ MAX_IMPORT_BYTES = 25 * 1024 * 1024
 #: carry thousands of formatted-but-empty rows, so blank rows do not count
 #: against MAX_IMPORT_ROWS - but they cannot run forever either.
 MAX_IMPORT_SCANNED_ROWS = MAX_IMPORT_ROWS * 4
+#: Cells one sheet row may hold. Wider rows are refused before openpyxl
+#: builds them: its reader materialises a whole row at once.
+MAX_IMPORT_COLUMNS = 500
+#: XLSX limits checked on the zip itself, before openpyxl opens it (#374).
+#: The upload cap bounds the compressed file only; XML compresses a
+#: thousandfold, so the unpacked size and the shared-strings table (which
+#: openpyxl loads whole, even in read-only mode) are capped as well.
+MAX_XLSX_UNPACKED_BYTES = 50 * 1024 * 1024
+MAX_XLSX_SHARED_STRINGS = 250_000
+MAX_XLSX_MEMBERS = 1000
 
 
 class TooManyRows(ValueError):
     """The import has more rows than the cap; raised while reading."""
+
+
+class FileTooLarge(TooManyRows):
+    """The workbook would unpack past a limit; raised before it is opened."""
 MAX_XLSX_EXPORT_ROWS = 50000
 #: Ids one export may name. A long selection is POSTed: in a GET's query
 #: string ~200 UUIDs already pass the proxy's and gunicorn's 8 KB line limit.
@@ -97,8 +113,8 @@ def io_types_view(request):
     for t in io_types():
         slug = t["slug"]
         can_export = _can(request, tenant, slug, "view")
-        can_import = _can(request, tenant, slug, "add") or _can(
-            request, tenant, slug, "change"
+        can_import = t["importable"] and (
+            _can(request, tenant, slug, "add") or _can(request, tenant, slug, "change")
         )
         if can_export or can_import:
             out.append({**t, "can_export": can_export, "can_import": can_import})
@@ -350,12 +366,14 @@ def _parse_upload(request):
             raise TooManyRows(
                 f"The file is larger than {MAX_IMPORT_BYTES // (1024 * 1024)} MB."
             )
+        _check_xlsx(upload)
+        upload.seek(0)
         wb = load_workbook(upload, read_only=True, data_only=True)
         ws = wb.active
         # Stream the sheet and stop at the cap. It used to be list()-ed whole
         # before the cap was checked, so a few MB of compressed rows held a
         # web worker for most of a minute only to be refused (#225).
-        rows = ws.iter_rows(values_only=True)
+        rows = ws.iter_rows(values_only=True, max_col=MAX_IMPORT_COLUMNS)
         first = next(rows, None)
         if first is None:
             return []
@@ -377,6 +395,63 @@ def _parse_upload(request):
     from .bulk_import import parse_rows
 
     return parse_rows(data.get("content", ""), data.get("format", "csv"))
+
+
+_XLSX_TAG = re.compile(rb"<(?:\w{1,16}:)?(si|row|c)[\s>/]")
+
+
+def _check_xlsx(upload) -> None:
+    """Refuse a workbook that would unpack past the limits, reading only the
+    zip directory and streaming the XML through a tag counter (#374).
+
+    Every member counts towards the unpacked size; a zip entry is never
+    read past its declared size, so the directory is a safe upper bound.
+    Shared strings (``<si>``) are counted wherever they are, as is the
+    widest row, because openpyxl loads the string table whole and builds a
+    row at a time."""
+    import zipfile
+
+    upload.seek(0)
+    with zipfile.ZipFile(upload) as zf:
+        infos = zf.infolist()
+        if len(infos) > MAX_XLSX_MEMBERS:
+            raise FileTooLarge("The workbook has too many parts.")
+        mb = MAX_XLSX_UNPACKED_BYTES // (1024 * 1024)
+        if sum(i.file_size for i in infos) > MAX_XLSX_UNPACKED_BYTES:
+            raise FileTooLarge(f"The workbook is too large once unpacked (max {mb} MB).")
+        strings = 0
+        for info in infos:
+            if info.is_dir():
+                continue
+            cells = 0
+            with zf.open(info) as f:
+                tail = b""
+                while True:
+                    chunk = f.read(1024 * 1024)
+                    buf = tail + chunk
+                    cut = len(buf) if not chunk else max(len(buf) - 32, 0)
+                    for m in _XLSX_TAG.finditer(buf, 0, len(buf)):
+                        if m.start() >= cut:
+                            break
+                        tag = m.group(1)
+                        if tag == b"si":
+                            strings += 1
+                            if strings > MAX_XLSX_SHARED_STRINGS:
+                                raise FileTooLarge(
+                                    "The workbook holds too many distinct texts "
+                                    f"(max {MAX_XLSX_SHARED_STRINGS})."
+                                )
+                        elif tag == b"row":
+                            cells = 0
+                        else:
+                            cells += 1
+                            if cells > MAX_IMPORT_COLUMNS:
+                                raise FileTooLarge(
+                                    f"A row has too many columns (max {MAX_IMPORT_COLUMNS})."
+                                )
+                    if not chunk:
+                        break
+                    tail = buf[cut:]
 
 
 @extend_schema(
@@ -423,6 +498,9 @@ def io_import_view(request, slug):
     if isinstance(res, Response):
         return res
     tenant, handler, model = res
+    if not handler.importable():
+        # Import writes only what the API can write (#364).
+        return Response({"detail": "This object type isn't importable."}, status=400)
     can_add = _can(request, tenant, slug, "add")
     can_change = _can(request, tenant, slug, "change")
     if not (can_add or can_change):
@@ -490,25 +568,26 @@ def _import_rows(rows, handler, tenant, request, change_qs, add_qs, can_add,
                 if action == "update" and not can_change:
                     raise PermissionRow("updating rows needs 'change' permission")
 
+                # Saved through the type's API hooks in a dry run too, then
+                # rolled back, so the preview refuses what the commit would.
+                obj = handler.commit(obj, tag_names)
+                # Site-scope guard: the saved row must be in the user's
+                # add/change scope (mirrors the viewset's create/update guard),
+                # so an edit cannot move a row out of the sites they may edit.
+                scope_qs = add_qs if action == "create" else change_qs
+                if not scope_qs.filter(pk=obj.pk).exists():
+                    raise PermissionRow(
+                        "the row falls outside the sites you may edit"
+                    )
                 if dry_run:
                     transaction.set_rollback(True)
-                else:
-                    handler.commit(obj, tag_names)
-                    # Site-scope guard for creates: the saved row must be in the
-                    # user's add-scope (mirrors the viewset write guard).
-                    if action == "create" and not add_qs.filter(
-                        pk=obj.pk
-                    ).exists():
-                        raise PermissionRow(
-                            "the new row falls outside the sites you may edit"
-                        )
                 counts["created" if action == "create" else "updated"] += 1
                 if dry_run:
                     preview.append({
                         "row": i, "action": action,
                         "key": _row_key(handler, row), "changes": changes,
                     })
-        except PermissionRow as exc:
+        except (PermissionRow, DjangoPermissionDenied) as exc:
             errors.append({"row": i, "error": str(exc), "action": "permission"})
         except DatabaseError as exc:
             # Validation catches what it can; the database's own refusal is

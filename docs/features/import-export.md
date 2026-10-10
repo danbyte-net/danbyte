@@ -50,7 +50,9 @@ Rows are matched by **`id`** first; if the `id` is blank or gone, by the type's
 name + site, a rack by site + name, a location by site + slug. Otherwise a new row
 is **created**, so a keyless row for another site makes a new rack there instead
 of moving the one you already have. A key column left out of the file is not
-matched on; one present but blank matches an empty value (no VRF, no site).
+matched on: a rack file with `name` but no `site` column updates the one rack of
+that name, and is refused as ambiguous when several sites have one. A key column
+present but blank matches an empty value (no VRF, no site).
 
 You need **add** permission to create rows and **change** to update them, and you
 can only touch rows inside your own [scope](permissions.md) - importing a row
@@ -63,7 +65,9 @@ edit changes nothing, for every type.
     Links are written as the **name you'd recognise** - a prefix as
     `10.0.10.0/24`, a VLAN as its number, a VRF/site/device by name. So a
     spreadsheet is editable by hand. A **blank VRF cell means the global table**
-    (you can also type `Global`); fill it in to place the row in a named VRF.
+    (you can also type `Global`, `None` or `-`); fill it in to place the row in
+    a named VRF. An object actually named `Global`, `None` or `-` is exported
+    by its id, so it reads back as itself.
     The `id` column is opaque - leave it as-is to update a row, or blank to
     create one.
 
@@ -152,13 +156,14 @@ errors.
 
 | Detail | Behavior |
 |---|---|
-| Columns | Match object fields by name; unknown columns are ignored. Read-only columns such as `numid` are exported but never imported. |
+| Columns | Match object fields by name; unknown columns are ignored. A file sets only what the type's API can write: columns the API holds read-only (`numid`, a script's `trusted` and `owner`, discovery timestamps) are exported but never imported. Where a secret lives in the secret store (a PSK's or key's store path) is neither exported nor imported. |
 | Links to other objects | Resolved by name, slug, or id within your active tenant, among the objects you may view, and within the row's own device, VRF or site. A person or group cell (`created_by`, `owner`, `assigned_group`, …) resolves among the tenant's people when you have no permission on users or groups. An unknown or ambiguous link is a clean per-row error. |
+| Saving | Each row is saved the way the API saves it, through the type's own create and update steps, so their checks apply: only a deployment administrator may point a device credential at an external secret path, a code change by someone without `trust` clears a script's trust, a contact or document is attached only to an object in your tenant you can view. An edit that would move a row out of the sites you may edit is refused. Types the API cannot create or edit (ACME orders, certificate bindings, …) export only. |
 | Validation | The same rules as the API: uniqueness within the tenant, the type's own checks (a VLAN within its group's range, a rack's location in its site, a device's rack position free), and [custom fields](tags-and-custom-fields.md) against their definitions. Custom fields are checked when a row sets or changes them. Each row is checked and saved on its own, so one bad row doesn't stop the rest. |
 | Devices | A new device gets its type's interfaces and other components, as one added in the UI does. |
 | Cables | Updated only: a row can't carry a cable's ends, and a cable needs both. |
 | **Validate** | A dry run - the same checks as the import, with the same errors, writing nothing. |
-| Limit | Up to 5000 rows per import. |
+| Limit | Up to 5000 rows per import. An Excel file may be up to 25 MB, 50 MB once unpacked, with at most 250,000 distinct texts and 500 columns per row; a larger workbook is refused before it is read. |
 
 !!! note
     You can only import object types you have **add** permission for - see

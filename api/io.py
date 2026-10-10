@@ -25,7 +25,7 @@ import json
 import uuid
 from functools import lru_cache
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import F, Q, UniqueConstraint
 
 from auth_api.object_types import model_for, registry_payload, slug_for_model
@@ -154,6 +154,60 @@ class ModelIOHandler:
             self.natural_key = _infer_natural_key(self.model)
         self._fields = {f.name: f for f in _importable_fields(self.model)}
         self._scopes: dict[str, list[tuple[str, str]]] = {}
+        self._write_map: dict[str, str] | None = None
+
+    # ── the API write path ────────────────────────────────────────────────
+    #: The viewset whose serializer and create/update hooks own this type's
+    #: writes. Found on the URL routes when not set.
+    viewset = None
+
+    def write_viewset(self):
+        """The routed viewset that creates and edits this type through the
+        API, or ``None`` when the API cannot write it."""
+        if self.viewset is not None:
+            return self.viewset
+        return _write_viewsets().get(self.model)
+
+    def importable(self) -> bool:
+        """Import writes only what the API can write (#364): a type with no
+        API write path is export-only."""
+        return self.write_viewset() is not None
+
+    def _view(self, request, action):
+        return self.write_viewset()(
+            request=request, args=(), kwargs={}, format_kwarg=None, action=action,
+        )
+
+    def write_map(self) -> dict[str, str]:
+        """``{model field: serializer field}`` for every column an import may
+        set: the fields the type's API serializer writes. A field the API
+        holds read-only (a script's ``trusted`` and ``owner``, a discovered
+        timestamp) or does not offer at all (a PSK's store path) is
+        export-only, as ``numid`` is (#349, #364)."""
+        if self._write_map is not None:
+            return self._write_map
+        from rest_framework import serializers
+
+        out: dict[str, str] = {}
+        if self.importable():
+            view = self._view(None, "partial_update")
+            try:
+                ser_cls = view.get_serializer_class()
+            except Exception:  # noqa: BLE001 - a class that reads the request
+                ser_cls = view.serializer_class
+            fields = ser_cls(context={"view": view}).fields
+            for sname, sf in fields.items():
+                if sf.read_only or isinstance(sf, (serializers.BaseSerializer,
+                                                   serializers.FileField)):
+                    continue
+                src = sf.source
+                target = src if src in self._fields else next(
+                    (n for n, f in self._fields.items() if f.attname == src), None
+                )
+                if target and target != "custom_fields":
+                    out.setdefault(target, sname)
+        self._write_map = out
+        return out
 
     # ── columns / schema ──────────────────────────────────────────────────
     def column_names(self) -> list[str]:
@@ -171,9 +225,14 @@ class ModelIOHandler:
         return cols
 
     def field_info(self) -> list[dict]:
+        """The columns an import sets, plus the natural-key columns it
+        matches on."""
+        writable = self.write_map()
+        nk_names = set(self.natural_key or [])
         info = [
             f for f in importable_field_names(self.model)
             if f["name"] != "custom_fields"
+            and (f["name"] in writable or f["name"] in nk_names)
         ]
         if _is_taggable(self.model):
             info.append({"name": "tags", "kind": "tags", "required": False})
@@ -275,6 +334,10 @@ class ModelIOHandler:
         key = self._readable(rel, f)
         if key is None:
             return str(rel.pk)
+        if f.null and key.strip().lower() in NONE_WORDS:
+            # A region named "Global" or a VRF named "none" would read back
+            # as "no link" (#371).
+            return str(rel.pk)
         scope = {
             g: getattr(obj, self._fields[h].attname)
             for g, h in self.scope_pairs(f) if h in self._fields
@@ -375,9 +438,9 @@ class ModelIOHandler:
         for nk in self.natural_key:
             field = self.model._meta.get_field(nk)
             if nk not in row:
-                if field.null:
-                    continue
-                return None
+                # Not in the file: not part of this match, nullable or not;
+                # several matches are then an "ambiguous" row error (#370).
+                continue
             if field.is_relation:
                 val = resolved.get(field.name)
                 if val is None:
@@ -413,26 +476,39 @@ class ModelIOHandler:
         Validation is the API's: the model's own checks with the tenant set
         (so tenant-wide uniqueness is a row error, #353), custom fields
         against their definitions (#348), then - given the ``request`` - the
-        type's serializer over the fields the row sets or changes (#351)."""
+        type's serializer over the fields the row sets or changes (#351).
+
+        Only the columns the API can write are set (:meth:`write_map`); the
+        rest are export-only. With a ``request`` the validated serializer is
+        kept on the object, and :meth:`commit` saves through the viewset's
+        own create/update hooks (#364, #365)."""
         if existing is None:
             obj = self.model()
             if _is_tenant_scoped(self.model):
                 obj.tenant = tenant
             action = "create"
             old = {}
+            old_cf = {}
         else:
             obj = existing
             action = "update"
             old = self._raw_snapshot(obj)
+            old_cf = dict(getattr(obj, "custom_fields", None) or {})
 
-        resolved = self._resolve_fks(row, tenant, user, existing)
+        writable = self.write_map()
+        resolved = self._resolve_fks(
+            row, tenant, user, existing,
+            only=[n for n in writable if self._fields[n].is_relation],
+        )
+        # A reference resolved only to narrow another one is not written.
+        resolved = {n: v for n, v in resolved.items() if n in writable}
         supplied = set(resolved)
         for col, raw in row.items():
             key = (col or "").strip()
             if not key or key in ("id", "tags", "custom_fields") or key in _SKIP:
                 continue
             field = self._fields.get(key)
-            if field is None or field.is_relation:
+            if field is None or field.is_relation or key not in writable:
                 continue  # unknown or export-only column ignored; refs above
             # An empty cell on a required column with a default means "the
             # default" (gateway_policy, status flags), not an empty string.
@@ -457,6 +533,8 @@ class ModelIOHandler:
         else:
             new = self._raw_snapshot(obj)
             touched = {k for k in new if old.get(k) != new[k]}
+        if _has_custom_fields(self.model) and (obj.custom_fields or {}) != old_cf:
+            touched.add("custom_fields")
         self._api_validate(obj, existing, touched, request)
 
         tag_names = None
@@ -506,30 +584,15 @@ class ModelIOHandler:
     def _api_validate(self, obj, existing, names, request) -> None:
         """Run the type's API serializer over the fields this row sets (a
         create) or changes (an update), as a POST or PATCH would, and keep
-        what it normalises. Fields the API cannot write are left to the
-        model's own validation."""
-        if request is None or (existing is not None and not names):
+        what it normalises. The validated serializer and its view are kept
+        on ``obj`` for :meth:`commit`. Nothing to validate (no request, no
+        API write path, an unchanged row) keeps nothing."""
+        obj._io_write = None
+        if request is None or not self.importable() or (existing is not None and not names):
             return
-        from rest_framework import serializers
-
-        from .editable_fields import serializer_for
-
-        ser_cls = serializer_for(self.model)
-        if ser_cls is None:
-            return
-        context = {"request": request}
-        fields = ser_cls(context=context).fields
-        to_ser: dict[str, str] = {}
-        for sname, sf in fields.items():
-            if sf.read_only or isinstance(sf, (serializers.BaseSerializer,
-                                               serializers.FileField)):
-                continue
-            src = sf.source
-            target = src if src in self._fields else next(
-                (n for n, f in self._fields.items() if f.attname == src), None
-            )
-            if target and target != "custom_fields":
-                to_ser.setdefault(target, sname)
+        view = self._view(request, "create" if existing is None else "partial_update")
+        fields = view.get_serializer().fields
+        to_ser = self.write_map()
         payload = {}
         for name in names:
             sname = to_ser.get(name)
@@ -542,27 +605,48 @@ class ModelIOHandler:
                     payload[sname] = None
                 continue
             payload[sname] = fields[sname].to_representation(value)
-        if existing is not None and not payload:
-            return
         instance = (
             None if existing is None
             else self.model._default_manager.get(pk=existing.pk)
         )
-        ser = ser_cls(instance, data=payload, partial=existing is not None,
-                      context=context)
+        ser = view.get_serializer(instance, data=payload, partial=existing is not None)
         if not ser.is_valid():
-            back = {s: m for m, s in to_ser.items()}
-            raise ValidationError({
-                ("__all__" if k == "non_field_errors" else back.get(k, k)): _flat(v)
-                for k, v in ser.errors.items()
-            })
+            raise ValidationError(_django_errors(ser.errors, to_ser))
         for key, value in ser.validated_data.items():
             field = self._fields.get(key)
             if field is not None and key != "custom_fields" and not field.many_to_many:
                 setattr(obj, key, value)
+        obj._io_write = (ser, view)
+
+    def _save_through_api(self, obj, ser, view):
+        """Save as the API saves: the viewset's ``perform_create`` or
+        ``perform_update`` over the validated serializer, so the checks and
+        side effects that live there (a deployment-admin gate, a cleared
+        trust, a stamped owner) apply to the row (#364, #365). Returns the
+        saved object."""
+        from rest_framework import exceptions as drf
+
+        if _has_custom_fields(self.model):
+            ser.validated_data["custom_fields"] = obj.custom_fields
+        try:
+            if ser.instance is None:
+                view.perform_create(ser)
+            else:
+                view.perform_update(ser)
+        except (drf.PermissionDenied, drf.NotAuthenticated) as exc:
+            raise PermissionDenied(" ".join(_flat(exc.detail))) from None
+        except drf.ValidationError as exc:
+            raise ValidationError(_django_errors(exc.detail, self.write_map())) from None
+        return ser.instance
 
     def commit(self, obj, tag_names):
-        obj.save()
+        """Save the row and its tags; returns the saved object. A row that
+        :meth:`apply` validated through the API is saved through it."""
+        write = getattr(obj, "_io_write", None)
+        if write is not None:
+            obj = self._save_through_api(obj, *write)
+        else:
+            obj.save()
         if tag_names is not None:
             # Tags are tenant-scoped (name unique per tenant). A tenant-less
             # (deployment-wide) tag of that name is the same tag the API
@@ -581,6 +665,7 @@ class ModelIOHandler:
                     t.save()
                 tags.append(t)
             obj.tags.set(tags)
+        return obj
 
     def _raw_snapshot(self, obj) -> dict:
         return {
@@ -598,16 +683,63 @@ def _flat(err) -> list[str]:
     return [str(err)]
 
 
+def _django_errors(detail, to_ser) -> dict | list:
+    """A DRF error body as a Django ``ValidationError`` payload, keyed by
+    the model field a serializer field writes."""
+    if not isinstance(detail, dict):
+        return _flat(detail)
+    back = {s: m for m, s in to_ser.items()}
+    return {
+        ("__all__" if k in ("non_field_errors", "detail") else back.get(k, k)): _flat(v)
+        for k, v in detail.items()
+    }
+
+
+@lru_cache(maxsize=1)
+def _write_viewsets() -> dict:
+    """``{model: viewset}`` for every routed viewset that creates and
+    partially updates its model, read off the URL routes - every app's
+    router, plugins included."""
+    from django.urls import URLPattern, URLResolver, get_resolver
+
+    found: dict = {}
+
+    def walk(patterns):
+        for p in patterns:
+            if isinstance(p, URLResolver):
+                walk(p.url_patterns)
+            elif isinstance(p, URLPattern):
+                cls = getattr(p.callback, "cls", None)
+                actions = getattr(p.callback, "actions", None)
+                qs = getattr(cls, "queryset", None)
+                if cls is None or not actions or qs is None:
+                    continue
+                found.setdefault(qs.model, {}).setdefault(cls, set()).update(
+                    actions.values()
+                )
+
+    walk(get_resolver().url_patterns)
+    out = {}
+    for model, viewsets in found.items():
+        for cls, actions in viewsets.items():
+            if {"create", "partial_update"} <= actions:
+                out[model] = cls
+                break
+    return out
+
+
 class DeviceIOHandler(ModelIOHandler):
     """Devices: a new one gets its type's components, as through the API."""
 
     def commit(self, obj, tag_names):
         from .models import materialize_device_components
 
-        adding = obj._state.adding
-        super().commit(obj, tag_names)
+        # Through the API, DeviceViewSet.perform_create materialises them.
+        adding = obj._state.adding and getattr(obj, "_io_write", None) is None
+        obj = super().commit(obj, tag_names)
         if adding:
             materialize_device_components(obj)
+        return obj
 
 
 # ── registry ──────────────────────────────────────────────────────────────
@@ -650,6 +782,7 @@ def io_types() -> list[dict]:
             "label": entry["label"],
             "group": entry["group"],
             "natural_key": h.natural_key,
+            "importable": h.importable(),
         })
     return out
 

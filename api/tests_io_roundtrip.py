@@ -363,6 +363,77 @@ class SiteScopedNaturalKeyTests(_Case):
         self.assertEqual(orig.description, "edited")
 
 
+class MissingKeyColumnTests(_Case):
+    """#370 - a natural-key column absent from the file is not used for
+    matching; present but empty, it still matches an empty value."""
+
+    def test_rack_without_a_site_column_updates(self):
+        orig = Rack.objects.create(tenant=self.tenant, site=self.site_a, name="R1")
+        res = self.load("rack", "name,description\nR1,patched\n")
+        self.assertEqual((res["updated"], res["created"], res["errors"]), (1, 0, []))
+        orig.refresh_from_db()
+        self.assertEqual(orig.description, "patched")
+
+    def test_rack_without_a_site_column_is_ambiguous_across_sites(self):
+        Rack.objects.create(tenant=self.tenant, site=self.site_a, name="R1")
+        Rack.objects.create(tenant=self.tenant, site=self.site_b, name="R1")
+        res = self.load("rack", "name,description\nR1,patched\n")
+        self.assertEqual((res["updated"], res["created"]), (0, 0))
+        self.assertIn("More than one rack", res["errors"][0]["error"])
+        self.assertFalse(Rack.objects.filter(description="patched").exists())
+
+    def test_location_without_a_site_column_updates(self):
+        orig = Location.objects.create(tenant=self.tenant, site=self.site_a,
+                                       name="floor-1", slug="floor-1")
+        res = self.load("location", "slug,description\nfloor-1,first\n")
+        self.assertEqual((res["updated"], res["errors"]), (1, []))
+        orig.refresh_from_db()
+        self.assertEqual(orig.description, "first")
+
+    def test_an_empty_site_cell_still_matches_nothing(self):
+        Rack.objects.create(tenant=self.tenant, site=self.site_a, name="R1")
+        res = self.load("rack", "name,site,description\nR1,,patched\n")
+        self.assertEqual(res["updated"], 0)
+        self.assertFalse(Rack.objects.filter(description="patched").exists())
+
+
+class NoneWordNameTests(_Case):
+    """#371 - an object named like an empty cell ("Global", "None", "-")
+    survives an unchanged round trip."""
+
+    def test_region_named_global(self):
+        from api.models import Region
+
+        for name in ("Global", "None", "-"):
+            region = Region.objects.create(tenant=self.tenant, name=name,
+                                           slug=f"r-{len(name)}-{name.lower()}")
+            Site.objects.filter(pk=self.site_a.pk).update(region=region)
+            self.assert_noop("site")
+            self.site_a.refresh_from_db()
+            self.assertEqual(self.site_a.region_id, region.id, name)
+            # Written as the id, which reads back as this very region.
+            row = self.rows("site", name="SiteA")[0]
+            self.assertEqual(row["region"], str(region.id))
+
+    def test_prefix_in_a_vrf_named_none(self):
+        vrf = VRF.objects.create(tenant=self.tenant, name="none")
+        p = Prefix.objects.create(tenant=self.tenant, cidr="10.6.0.0/24", vrf=vrf,
+                                  status=self.status)
+        self.assert_noop("prefix")
+        p.refresh_from_db()
+        self.assertEqual(p.vrf_id, vrf.id)
+
+    def test_an_empty_cell_still_unlinks(self):
+        from api.models import Region
+
+        region = Region.objects.create(tenant=self.tenant, name="EU", slug="eu")
+        Site.objects.filter(pk=self.site_a.pk).update(region=region)
+        res = self.load("site", f"id,name,region\n{self.site_a.id},SiteA,\n")
+        self.assertEqual(res["errors"], [])
+        self.site_a.refresh_from_db()
+        self.assertIsNone(self.site_a.region_id)
+
+
 class DryRunMatchesCommitTests(_Case):
     """#353 - a duplicate is a plain-word row error in both modes."""
 
