@@ -66,6 +66,35 @@ body, the snippet to paste, the docs anchor, and the platforms it applies
 to. Admins see it after upgrading until they mark it done - see
 [Upgrading → After an upgrade](upgrading.md#after-an-upgrade).
 
+## Cutting a release
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`:
+
+```text
+test (tests.yml) ─┬─ bundle ─ smoke ─ publish   GitHub Release + offline bundle
+                  └─ images (container.yml)      ghcr.io images
+```
+
+`tests.yml` is the one test gate: the backend suite, migrations and
+`makemigrations --check`, the OpenAPI schema, and the frontend build,
+typecheck and unit tests. Nothing publishes unless it passes, and it runs once
+per tag. A manual run of the *Container images* workflow runs `tests.yml`
+itself before it builds.
+
+After the tag, on the branch for the next release, record the release's
+migration state and commit it:
+
+```bash
+.venv/bin/python scripts/upgrade/migration_baseline.py vX.Y.Z
+```
+
+It rewrites `scripts/upgrade/migration_baseline.json`. The test
+`api.tests_upgrade_db_defaults` then requires a `db_default` on every NOT NULL
+column added to an existing table since that release, because the previous
+release's processes keep inserting rows without it while an upgrade runs.
+Use final releases only, not `-devN` tags. Skipping the step is safe but
+stale: the gate keeps comparing with the older release.
+
 ## Docs while you work
 
 ```bash

@@ -1,8 +1,13 @@
 name: Container images
 
 # Build and publish the Docker/Podman images to GitHub Container Registry
-# (ghcr.io) on a version tag, plus a manual trigger. Three images come out of
-# the one Dockerfile via its build targets:
+# (ghcr.io). Nothing publishes from an untested commit:
+#
+#   version tag      release.yml runs tests.yml, then calls this workflow with
+#                    `tested: true` - the suite runs once per tag.
+#   manual dispatch  this workflow runs tests.yml itself first.
+#
+# Three images come out of the one Dockerfile via its build targets:
 #
 #   ghcr.io/<owner>/danbyte-app       (runtime - gunicorn / daphne / workers)
 #   ghcr.io/<owner>/danbyte-web       (nginx reverse proxy + TLS)
@@ -14,8 +19,12 @@ name: Container images
 # visibility is set to public (ghcr defaults to private).
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tested:
+        description: "The caller already ran tests.yml for this commit and it passed"
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       tag:
@@ -32,8 +41,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Skipped when the caller already ran the suite (a dispatch has no inputs
+  # of that name, so it always tests).
+  test:
+    name: Tests
+    if: ${{ !inputs.tested }}
+    uses: ./.github/workflows/tests.yml
+
   build:
     name: Build + push ${{ matrix.image }}
+    needs: test
+    # A skipped `test` only counts as passed when the caller vouched for it.
+    if: >-
+      ${{ !cancelled() && (needs.test.result == 'success'
+      || (needs.test.result == 'skipped' && inputs.tested)) }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

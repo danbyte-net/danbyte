@@ -1,9 +1,10 @@
 name: Release
 
-# On a version tag: run the full test suite, build the fully-offline bundle,
-# prove the bundle actually boots (install-smoke against Postgres), and only
-# then publish the GitHub Release. The in-app updater discovers versions via
-# the Releases API, so nothing reaches the fleet until every gate is green.
+# On a version tag: run the full test suite (tests.yml), build the fully-offline
+# bundle, prove the bundle actually boots (install-smoke against Postgres), and
+# only then publish the GitHub Release. The container images (container.yml)
+# build once the tests pass. The in-app updater discovers versions via the
+# Releases API, so nothing reaches the fleet until every gate is green.
 on:
   push:
     tags: ['v*']
@@ -18,69 +19,20 @@ concurrency:
 jobs:
   # ── Gate 1: the backend suite + frontend build must pass for this tag ──────
   test:
-    name: Tests (backend suite + frontend build)
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_DB: danbyte
-          POSTGRES_USER: danbyte
-          POSTGRES_PASSWORD: danbyte
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U danbyte"
-          --health-interval 10s --health-timeout 5s --health-retries 5
-      redis:
-        image: public.ecr.aws/docker/library/redis:7
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s --health-timeout 5s --health-retries 5
-    env:
-      DB_HOST: 127.0.0.1
-      DB_PORT: '5432'
-      DB_NAME: danbyte
-      DB_USER: danbyte
-      DB_PASSWORD: danbyte
-      REDIS_URL: redis://127.0.0.1:6379/0
-      REDIS_HOST: 127.0.0.1
-      REDIS_PORT: '6379'
-      DJANGO_SECRET_KEY: ci-not-a-real-secret
-      DEBUG: 'True'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          cache: pip
-      - name: System deps
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* || true
-          sudo apt-get update || sudo apt-get update
-          sudo apt-get install -y build-essential libldap2-dev libsasl2-dev
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt ruff
-      - name: Migrations + undefined-name gate
-        run: |
-          python manage.py migrate --noinput
-          python manage.py makemigrations --check --dry-run
-          ruff check --select F821 .
-      - name: OpenAPI schema generates cleanly
-        # The committed openapi.yaml (repo root) is the source of truth the API
-        # reference site tracks; prove the schema still builds with no errors.
-        run: python manage.py spectacular --file /tmp/openapi.yaml --validate
-      - name: Backend test suite
-        run: python manage.py test --noinput
-      - name: Frontend build + typecheck + unit tests
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-          npm run typecheck
-          npm run test
+    name: Tests
+    uses: ./.github/workflows/tests.yml
+
+  # ── Container images, from the same tested commit ──────────────────────────
+  # Runs beside the bundle once the tests pass; the tests are not run again.
+  images:
+    name: Container images
+    needs: test
+    uses: ./.github/workflows/container.yml
+    with:
+      tested: true
+    permissions:
+      contents: read
+      packages: write
 
   # ── Build the offline bundle (only after tests pass) ───────────────────────
   bundle:
