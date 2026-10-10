@@ -174,7 +174,35 @@ rules. An Outpost that polls every member adds nothing a second time.
 ## Scheduled polling & utilisation {#scheduled-polling}
 
 The on-demand button is a snapshot. To build a **utilisation series** for the
-per-interface sparklines, run the poller on a schedule:
+per-interface sparklines, and to keep the learned MACs and the site map's
+[Utilization](site-map.md#utilization) current, poll on a schedule.
+
+**Poll devices every** (Settings → Monitoring → [MAC tracking](monitoring.md#mac-tracking))
+does it from the core: Off (the default on fresh installs and upgrades), 15
+minutes, 30 minutes or 1 hour, per tenant. Every five minutes the scheduler
+(`danbyte-snmp-poll`, `manage.py dispatch_snmp_polls`) queues a background
+poll for each device that is due:
+
+- one poll per stack, on its owner;
+- devices an [Outpost](../monitoring/outposts.md) polls are left to it; a
+  device bound to a driver engine such as Zabbix polls from the core, as Poll
+  now does;
+- a device is due once its last poll is older than the interval; one never
+  polled is due at once;
+- each tick queues only its share of the tenant's devices (devices × 5 min
+  / interval, oldest poll first), so switching it on spreads the first round
+  across the whole interval instead of polling everything at once;
+- a device is claimed until shortly before it is next due, so a slow poll is
+  never queued twice and a device without a profile or address is retried
+  once per interval, not every tick;
+- a running **Refresh MACs** holds the device; the scheduled poll waits for
+  the next interval.
+
+The polls run on the RQ workers. The Jobs page lists the beat as **Scheduled
+SNMP polls**. Bare metal installs and upgrades enable the timer like the
+others; a container install runs it from `run_scheduler`.
+
+`poll_snmp` still polls every device at once, for cron or a manual run:
 
 ```bash
 python manage.py poll_snmp

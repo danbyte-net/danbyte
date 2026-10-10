@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import type { Me, ObjectPerms, RBACAction } from "@/lib/api"
+import { setCapacityThresholds } from "@/lib/rack-capacity"
 
 /**
  * Resolve whether the user may `change`/`delete` a *specific* object, preferring
@@ -28,7 +29,13 @@ const ANON: Me = { is_authenticated: false, perms: [], permissions: {} }
 export function useMe() {
   const q = useQuery({
     queryKey: ["me"],
-    queryFn: () => api<Me>("/api/me/"),
+    queryFn: async () => {
+      const me = await api<Me>("/api/me/")
+      // The rack capacity levels are read by pure helpers on every surface;
+      // set them before anything that colours a rack renders.
+      setCapacityThresholds(me.capacity_thresholds)
+      return me
+    },
     staleTime: 5 * 60_000,
   })
   const me = q.data ?? ANON

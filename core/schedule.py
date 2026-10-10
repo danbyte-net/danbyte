@@ -130,6 +130,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Discover live addresses in monitored prefixes",
     ),
     ScheduledTask(
+        unit="danbyte-snmp-poll",
+        commands=("dispatch_snmp_polls",),
+        every=5 * MINUTE,
+        label="Enqueue scheduled SNMP polls that are due",
+    ),
+    ScheduledTask(
         unit="danbyte-utilization",
         commands=("check_utilization",),
         every=15 * MINUTE,

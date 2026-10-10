@@ -19,6 +19,7 @@ from .history_views import (
     timeline_batch_view,
     transitions_view,
 )
+from .iface_live_api import interfaces_live_view
 from .mac_api import (
     device_mac_refresh_view,
     device_macs_view,
@@ -35,6 +36,9 @@ from .sla_api import (
     SlaMemberViewSet,
     sla_status_view,
 )
+from .sla_followup_api import SlaIncidentCauseViewSet, SlaIncidentFollowUpViewSet
+from .sla_schedule_api import SlaReportScheduleViewSet
+from .sla_template_api import SlaTemplateViewSet
 from .viewsets import (
     AcmeOrderViewSet,
     AlertRuleViewSet,
@@ -144,6 +148,14 @@ router.register(r"sla-check-groups", SlaCheckGroupViewSet, basename="sla-check-g
 router.register(r"sla-members", SlaMemberViewSet, basename="sla-member")
 router.register(r"sla-exclusions", SlaExclusionViewSet, basename="sla-exclusion")
 router.register(r"holiday-calendars", HolidayCalendarViewSet, basename="holiday-calendar")
+router.register(r"sla-templates", SlaTemplateViewSet, basename="sla-template")
+router.register(
+    r"sla-report-schedules", SlaReportScheduleViewSet, basename="sla-report-schedule"
+)
+router.register(r"sla-incident-causes", SlaIncidentCauseViewSet, basename="sla-incident-cause")
+router.register(
+    r"sla-incident-follow-ups", SlaIncidentFollowUpViewSet, basename="sla-incident-follow-up"
+)
 router.register(
     r"maintenance-events", MaintenanceEventViewSet, basename="maintenance-event"
 )
@@ -218,6 +230,8 @@ urlpatterns = [
     path("devices/<uuid:device_id>/macs/", device_macs_view, name="monitoring-device-macs"),
     path("devices/<uuid:device_id>/mac-refresh/", device_mac_refresh_view,
          name="monitoring-device-mac-refresh"),
+    # Live traffic from the stored SNMP samples (site map Utilization).
+    path("interfaces/live/", interfaces_live_view, name="monitoring-interfaces-live"),
     path("interfaces/<uuid:interface_id>/macs/", interface_macs_view,
          name="monitoring-interface-macs"),
     path("mac-sightings/", mac_sightings_view, name="monitoring-mac-sightings"),

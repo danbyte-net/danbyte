@@ -10,7 +10,7 @@ Two settings stores:
 | Store | Scope | Holds |
 |---|---|---|
 | `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults (Settings → Email), deployment LDAP (Settings → Directory), updates/release repo, `public_base_url`, proxy/timeouts (Settings → Security → Outbound delivery), drift scheduler, retention, deployment name, branding (`favicon`, `login_logo`), faceplate knobs and `port_count_virtual` (Settings → Component details → Port counting) - plus the **defaults** for every overridable group |
-| `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` - its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` - its own `override_datetime` toggle), **Topology card lines** (`topology_card_fields`, `topology_card_role_overrides` - its own `override_topology_card` toggle; Settings → Topology) - plus tenant-only fields with no deployment default, such as `default_topology_view` (the saved view a bare `/topology` opens; `SET_NULL` when the view is deleted; written through `/api/topology-views/default/`) |
+| `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` - its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` - its own `override_datetime` toggle), **Topology card lines** (`topology_card_fields`, `topology_card_role_overrides` - its own `override_topology_card` toggle; Settings → Topology) - plus tenant-only fields with no deployment default, such as `default_topology_view` (the saved view a bare `/topology` opens; `SET_NULL` when the view is deleted; written through `/api/topology-views/default/`) and the rack capacity levels `capacity_warn_pct` / `capacity_critical_pct` (80 / 95; Settings → Tenant policy → Rack capacity) |
 | `SiteSettings` (`core/models.py`, OneToOne per site) | one site | **Email/SMTP only (v1)** - site-local relay + From address, for orgs whose sites run their own IT. Gated by `allow_site_settings` + site-admin qualification (`core/site_settings.py`) |
 
 Each group on `TenantSettings` carries an `override_*` toggle. **Off (and no
@@ -33,6 +33,11 @@ interfaces - returns the deployment value: it has no tenant override yet, but
 every consumer (the device and stack cards, the roll-up, spec sheets, the
 alert sweep) asks through it with the tenant in hand, so one can be added
 without touching them.
+`capacity_thresholds(tenant)` returns the rack capacity levels as
+`{"warn", "critical"}` percentages, 80 / 95 without a row. `/api/me/` serves
+them as `capacity_thresholds`; the SPA hands them to
+`lib/rack-capacity.ts` as it loads, so the racks table, the rack page, floor
+plans, the 3D room and the site Capacity tab all colour at the same levels.
 
 **Topology card lines have two more layers below the tenant.** What a device
 card on the topology Diagram shows under its name is an ordered list of keys

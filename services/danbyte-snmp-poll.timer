@@ -1,0 +1,13 @@
+[Unit]
+Description=Enqueue Danbyte scheduled SNMP polls (interval gated in-app)
+
+[Timer]
+# Fire every 5 min; dispatch_snmp_polls only enqueues devices whose tenant's
+# "Poll devices every" interval has elapsed, spread across that interval.
+OnCalendar=*:0/5
+OnBootSec=150
+Persistent=true
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -172,6 +172,7 @@ export function MonitoringSettingsForm() {
           mac_uplink_threshold: Number(draft.mac_uplink_threshold),
           mac_uplink_lldp: draft.mac_uplink_lldp,
           mac_retention_days: Number(draft.mac_retention_days),
+          snmp_poll_interval_minutes: Number(draft.snmp_poll_interval_minutes),
         })
       }}
     >
@@ -387,6 +388,15 @@ export function MonitoringSettingsForm() {
               min={1}
               value={draft.mac_retention_days}
               onChange={(v) => set("mac_retention_days", v)}
+            />
+            <FormSelect
+              label="Poll devices every"
+              info="Polls every device the core polls, MAC table and interface counters included. Devices an Outpost polls are left to it."
+              value={String(draft.snmp_poll_interval_minutes)}
+              onChange={(v: string | null) =>
+                set("snmp_poll_interval_minutes", Number(v ?? 0))
+              }
+              options={SNMP_POLL_OPTIONS}
             />
           </div>
         </Section>
@@ -844,6 +854,15 @@ function Section({
     </section>
   )
 }
+
+/** "Poll devices every" - the scheduled SNMP poll intervals the server
+ * accepts. */
+export const SNMP_POLL_OPTIONS = [
+  { value: "0", label: "Off" },
+  { value: "15", label: "15 minutes" },
+  { value: "30", label: "30 minutes" },
+  { value: "60", label: "1 hour" },
+]
 
 function NumberField({
   label,

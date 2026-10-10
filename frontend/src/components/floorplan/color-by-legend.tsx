@@ -8,7 +8,9 @@ import type { StatusMini } from "@/lib/api"
 import {
   CAPACITY_HEX,
   CAPACITY_NONE_HEX,
+  capacityBandLabel,
   capacityLevel,
+  useCapacityThresholds,
 } from "@/lib/rack-capacity"
 import type { CapacityLevel } from "@/lib/rack-capacity"
 import { naturalCompare } from "@/lib/natural-sort"
@@ -24,12 +26,7 @@ const BASIS: Record<CapacityMetric, string> = {
   panel_ports: "in use",
 }
 
-const LEVELS: { level: CapacityLevel | "none"; label: string }[] = [
-  { level: "good", label: "≤ 80%" },
-  { level: "warn", label: "80–95%" },
-  { level: "critical", label: "> 95%" },
-  { level: "none", label: "No data" },
-]
+const LEVELS: (CapacityLevel | "none")[] = ["good", "warn", "critical", "none"]
 
 /** The pill for a rack with no status: the grey its tile is filled with. */
 const NO_STATUS: StatusMini = {
@@ -65,7 +62,8 @@ function FillSwatch({ color }: { color: string }) {
 }
 
 /**
- * The key to the plan's Color by (#247): the 80 / 95 % levels with how many
+ * The key to the plan's Color by (#247): the tenant's capacity levels
+ * (80 / 95 % unless changed) with how many
  * racks sit in each, or the roles and statuses as their pills - with what
  * the outline means while a rack is alarming. Drawn inside the export area
  * with no Hide button, so the PNG carries it.
@@ -81,6 +79,7 @@ export function ColorByLegend({
   /** Some rack's outline is a monitoring alarm. */
   alarm?: boolean
 }) {
+  const thresholds = useCapacityThresholds()
   if (colorBy === "type") return null
   const outline = alarm && (
     <LegendRow
@@ -107,7 +106,7 @@ export function ColorByLegend({
           · {BASIS[colorBy]}
         </p>
         <div className="space-y-0.5">
-          {LEVELS.map(({ level, label }) => (
+          {LEVELS.map((level) => (
             <LegendRow
               key={level}
               swatch={
@@ -122,7 +121,9 @@ export function ColorByLegend({
                   data-level={level}
                   className="flex w-28 items-baseline justify-between gap-2 whitespace-nowrap"
                 >
-                  {label}
+                  {level === "none"
+                    ? "No data"
+                    : capacityBandLabel(level, thresholds)}
                   <span className="num text-muted-foreground">
                     {counts[level]}
                   </span>

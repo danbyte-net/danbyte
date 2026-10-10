@@ -85,6 +85,9 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "cert_digest_last_run",
             # default dashboard preset for new users
             "default_dashboard_widgets",
+            # rack capacity levels
+            "capacity_warn_pct",
+            "capacity_critical_pct",
             "updated_at",
         ]
         read_only_fields = ["updated_at", "digest_last_run", "cert_digest_last_run"]
@@ -113,6 +116,17 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
         from core.deployment import validate_topology_card_overrides
 
         return validate_topology_card_overrides(value)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inst = self.instance
+        warn = attrs.get("capacity_warn_pct", getattr(inst, "capacity_warn_pct", 80))
+        crit = attrs.get("capacity_critical_pct", getattr(inst, "capacity_critical_pct", 95))
+        if warn >= crit:
+            raise serializers.ValidationError(
+                {"capacity_critical_pct": "Must be above the warning level."}
+            )
+        return attrs
 
     def validate_display_timezone(self, value):
         from core.deployment import clean_display_timezone

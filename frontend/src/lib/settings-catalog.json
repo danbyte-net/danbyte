@@ -383,6 +383,20 @@
       "keywords": ["timezone", "date format", "clock"]
     },
     {
+      "key": "tenant.rack-capacity",
+      "label": "Rack capacity",
+      "description": "Where rack space, power and port fill turns amber and red",
+      "page": "tenant-policy",
+      "keywords": [
+        "capacity",
+        "threshold",
+        "rack",
+        "power",
+        "warning",
+        "critical"
+      ]
+    },
+    {
       "key": "tenant.onboarding",
       "label": "First-time setup",
       "description": "Re-open the guided setup wizard",
@@ -420,9 +434,12 @@
     {
       "key": "monitoring.mac-tracking",
       "label": "MAC tracking",
-      "description": "MACs shown per port, uplinks and how long learned MACs are kept",
+      "description": "MACs shown per port, uplinks, retention and scheduled polling",
       "page": "monitoring",
       "keywords": [
+        "poll",
+        "scheduled poll",
+        "snmp poll",
         "mac table",
         "learned mac",
         "fdb",

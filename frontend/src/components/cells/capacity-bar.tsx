@@ -1,4 +1,8 @@
-import { CAPACITY_BAR_CLASS, capacityLevel } from "@/lib/rack-capacity"
+import {
+  CAPACITY_BAR_CLASS,
+  capacityLevel,
+  useCapacityThresholds,
+} from "@/lib/rack-capacity"
 import { cn } from "@/lib/utils"
 
 /**
@@ -15,6 +19,8 @@ export function CapacityBar({
   /** Track size - `w-16` unless the slot needs another. */
   className?: string
 }) {
+  const thresholds = useCapacityThresholds()
+  const level = ratio != null ? capacityLevel(ratio, thresholds) : null
   return (
     <span
       aria-hidden
@@ -24,13 +30,10 @@ export function CapacityBar({
         className
       )}
     >
-      {ratio != null && (
+      {ratio != null && level && (
         <span
-          data-level={capacityLevel(ratio)}
-          className={cn(
-            "block h-full rounded-full",
-            CAPACITY_BAR_CLASS[capacityLevel(ratio)]
-          )}
+          data-level={level}
+          className={cn("block h-full rounded-full", CAPACITY_BAR_CLASS[level])}
           style={{ width: `${Math.min(100, Math.max(0, ratio * 100))}%` }}
         />
       )}

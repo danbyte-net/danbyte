@@ -87,7 +87,7 @@ describe("SiteMapDisplayMenu", () => {
       within(colorBy)
         .getAllByRole("button")
         .map((b) => b.textContent)
-    ).toEqual(["Type", "Status", "Speed"])
+    ).toEqual(["Type", "Status", "Speed", "Utilization"])
   })
 
   it("reports a layer, the Speed labels and Color by", () => {

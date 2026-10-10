@@ -178,6 +178,28 @@ def port_count_virtual(tenant) -> bool:
     return bool(_deployment().port_count_virtual)
 
 
+#: The rack capacity levels a tenant without a settings row uses.
+CAPACITY_THRESHOLD_DEFAULTS = {"warn": 80, "critical": 95}
+
+
+def capacity_thresholds(tenant) -> dict:
+    """``{"warn", "critical"}`` - the percentages above which a rack's space,
+    power or port fill reads as filling up, and as full. Tenant only; no
+    row means the defaults. Never creates a row."""
+    if tenant is None:
+        return dict(CAPACITY_THRESHOLD_DEFAULTS)
+    from core.models import TenantSettings
+
+    row = (
+        TenantSettings.objects.filter(tenant=tenant)
+        .values_list("capacity_warn_pct", "capacity_critical_pct")
+        .first()
+    )
+    if row is None:
+        return dict(CAPACITY_THRESHOLD_DEFAULTS)
+    return {"warn": row[0], "critical": row[1]}
+
+
 def effective_floorplan_row(tenant):
     """The object whose floor-plan popover config applies.
 

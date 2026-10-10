@@ -362,6 +362,9 @@ export interface Me {
   }
   /** Resolved date/time display settings (user → tenant → deployment). */
   datetime?: DateTimeSettings
+  /** The tenant's rack capacity levels, in percent: above `warn` a rack is
+   * filling up, above `critical` it is full. */
+  capacity_thresholds?: { warn: number; critical: number }
 }
 
 // ─── Session login + MFA (POST /api/auth/...) ───────────────────────────────
@@ -1984,7 +1987,7 @@ export interface RackTypeWritePayload {
 /** Where a rack's power supply figure comes from: its primary feeds, or -
  * with none - the rated draw of its PDUs' inlets (both strips of an A/B
  * pair). Null: no supply figure (`available_w` 0). */
-export type RackPowerSupply = "feed" | "pdu_rating" | null
+export type RackPowerSupply = "feed" | "pdu_rating" | "budget" | null
 
 /** A rack's power roll-up (api.capacity.rack_power). */
 export interface RackPower {
@@ -1994,6 +1997,9 @@ export interface RackPower {
   maximum_w: number
   /** Always sent; optional so older fixtures still type. */
   supply?: RackPowerSupply
+  /** With `supply: "budget"`: what the feeds or PDUs would give (0 when
+   * neither is known). `available_w` is then the budget. */
+  supplied_w?: number
 }
 
 export interface Rack {
@@ -2015,6 +2021,8 @@ export interface Rack {
   width: RackWidth
   max_weight: string | null
   max_weight_unit: string
+  /** Power budget in watts; null = measure against the feeds. */
+  max_power_w?: number | null
   /** Sum of racked devices' type weights, normalised to kg. */
   total_weight_kg: number
   max_weight_kg: number | null
@@ -2049,6 +2057,7 @@ export interface RackWritePayload {
   location_id?: string | null
   max_weight?: string | null
   max_weight_unit?: string
+  max_power_w?: number | null
   site_id: string
   role_id?: string | null
   rack_type_id?: string | null
@@ -4629,6 +4638,8 @@ export interface SiteCapacityTotals {
     allocated_w: number
     maximum_w: number
     pdu_rating: number
+    /** Racks whose supply figure is their power budget. */
+    budget?: number
     no_supply: number
   }
   ports: PortCountRow
@@ -6571,6 +6582,9 @@ export interface MonitoringSettings {
   mac_uplink_lldp: boolean
   /** "Forget MACs unseen for" N days (1-365). */
   mac_retention_days: number
+  /** "Poll devices every": scheduled SNMP polls from the core, in minutes;
+   * 0 = off. One of 0, 15, 30, 60. */
+  snmp_poll_interval_minutes: number
   global_enabled: boolean
   default_interval_seconds: number
   stale_after_scans: number
@@ -8610,6 +8624,10 @@ export interface TenantSettings {
   time_style: TimeStyle
   /** Raw stored value - blank inherits the server's TIME_ZONE. */
   display_timezone: string
+  /** Rack capacity levels in percent: above warn a rack is filling up,
+   * above critical it is full. warn < critical. */
+  capacity_warn_pct: number
+  capacity_critical_pct: number
   updated_at: string
   deployment_defaults: TenantSettingsDefaults
 }
@@ -11620,6 +11638,9 @@ export interface SlaAgreement {
   /** Emailed each period's report when it freezes. */
   report_recipients: string[]
   report_format: "pdf" | "csv" | "both"
+  /** The template it was made from. */
+  template: string | null
+  template_detail: { id: string; name: string; differs: string[] } | null
   status: "draft" | "active" | "archived"
   effective_from: string | null
   revision: number
@@ -11771,6 +11792,101 @@ export interface SlaIncident {
   end: string
   seconds: number
   members: string[]
+  /** Cause, ticket, note and dispute; null until someone adds them. */
+  follow_up?: SlaIncidentFollowUp | null
+}
+
+/** An entry of the tenant's incident cause catalog. */
+export interface SlaIncidentCause {
+  id: string
+  name: string
+  description: string
+  color: string
+  incident_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SlaIncidentFollowUp {
+  id: string
+  cause: string | null
+  cause_detail: { id: string; name: string; color: string } | null
+  ticket_url: string
+  note: string
+  /** Shown on the incident; the figure still counts it. */
+  disputed: boolean
+  updated_at: string | null
+  updated_by: string | null
+}
+
+/** Down time per cause; `cause` null is the incidents with none. */
+export interface SlaCauseRow {
+  cause: string | null
+  name: string
+  color: string
+  down_s: number
+  incidents: number
+  disputed_s: number
+}
+
+export interface SlaReportSchedule {
+  id: string
+  /** Null: the overview report of every agreement. */
+  agreement: string | null
+  agreement_name: string | null
+  frequency: "weekly" | "monthly"
+  /** 0 = Monday. */
+  weekday: number
+  day_of_month: number
+  hour: number
+  period: "current" | "previous"
+  recipients: string[]
+  report_format: "pdf" | "csv" | "both"
+  enabled: boolean
+  report_sent_at: string | null
+  last_error: string
+  last_attempt_at: string | null
+  failures: number
+  next_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** A tier such as Gold: the rules an agreement is made from and synced with. */
+export interface SlaTemplate {
+  id: string
+  name: string
+  description: string
+  target_pct: string
+  warning_pct: string | null
+  period: SlaPeriod
+  timezone: string
+  service_hours: Record<string, [string, string][]>
+  holiday_calendar: string | null
+  holiday_calendar_detail: { id: string; name: string } | null
+  count_degraded_as: "up" | "down"
+  count_stale_as: "unmeasured" | "down"
+  count_unknown_as: "unmeasured" | "down"
+  exclude_maintenance: boolean
+  min_outage_seconds: number
+  aggregation: "mean" | "worst" | "all"
+  objectives: SlaObjective[]
+  objectives_in_state: boolean
+  credit_tiers?: SlaCreditTier[]
+  period_fee?: string | null
+  currency?: string
+  agreement_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SlaTemplateAgreement {
+  id: string
+  name: string
+  status: "draft" | "active" | "archived"
+  revision: number
+  /** Fields where the agreement no longer matches the template. */
+  differs: string[]
 }
 
 export interface SlaFiguresResponse {
@@ -11787,6 +11903,7 @@ export interface SlaFiguresResponse {
   limited?: { hidden_members: number } | null
   members?: SlaMemberFigure[]
   incidents?: SlaIncident[]
+  by_cause?: SlaCauseRow[]
   days?: { date: string; availability: number | null; down_s: number }[]
 }
 
@@ -11935,6 +12052,7 @@ export interface SlaAnalysis {
   heatmap: { dow: number; hour: number; down_s: number }[]
   durations: { label: string; count: number }[]
   incidents: SlaIncident[]
+  by_cause: SlaCauseRow[]
   latency: {
     kind: string
     /** The p95 alert line, in ms. */

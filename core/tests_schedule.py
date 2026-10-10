@@ -71,6 +71,19 @@ class ScheduleParityTests(SimpleTestCase):
                 self.assertEqual(task.every, parsed.every)
                 self.assertEqual(tuple(sorted(task.at)), tuple(sorted(parsed.at)))
 
+    def test_the_makefile_installs_every_timer(self):
+        """``install-services``, ``install-prod-services`` and the upgrader's
+        ``link-units`` link and enable ``TIMERS``: a unit missing there never
+        runs on bare metal, on a fresh install or after an upgrade."""
+        makefile = (SERVICES.parent / "Makefile").read_text()
+        timers = re.search(r"^TIMERS\s*:=\s*(.*)$", makefile, re.MULTILINE).group(1).split()
+        self.assertEqual(set(timers), {t.unit for t in SCHEDULE})
+
+    def test_the_jobs_page_lists_the_snmp_poll_beat(self):
+        from jobs.views import SCHEDULED_TASKS
+
+        self.assertIn("snmp-poll", {t["name"] for t in SCHEDULED_TASKS})
+
     def test_containers_skip_only_the_upgrade_beat(self):
         """A container upgrades by replacing its image, so it must not run the
         upgrader - but it has to run everything else the timers do."""

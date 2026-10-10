@@ -5015,6 +5015,14 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=8, choices=DeviceType.WEIGHT_UNIT_CHOICES,
         blank=True, default="",
     )
+    # A power budget: what the rack may draw (a cooling or contract limit),
+    # whatever its feeds could deliver. When set, rack capacity measures
+    # demand against it (api.capacity.rack_power).
+    max_power_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Power budget in watts. When set, demand is measured "
+        "against it instead of the feeds.",
+    )
     u_height = models.PositiveSmallIntegerField(
         default=42, help_text="Height in rack units (U)."
     )

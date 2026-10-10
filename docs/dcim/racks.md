@@ -327,7 +327,11 @@ inlets, when each inlet feeds its own bank and they add up. Two or more PDUs
 are taken as A and B sides, split as evenly as their ratings allow, and the
 supply is the smaller side, since either
 side must carry the rack alone: an unequal pair of 3.7 kW and 7.4 kW is
-3.7 kW, four equal PDUs two of them. Demand is the racked devices' power-port draws -
+3.7 kW, four equal PDUs two of them. A **Power budget (W)** on the rack
+form (`max_power_w`) overrides both: what the rack may draw - a cooling or
+contract limit - whatever its feeds could deliver. With a budget set, demand
+is measured against it and the figure is marked *budget*; the API keeps what
+the feeds or PDUs would give as `supplied_w`. Demand is the racked devices' power-port draws -
 allocated where you've recorded it, otherwise the nameplate sum (labelled
 *nameplate*). The rack page shows **demand / supply** (`1.2 kW / 3.6 kW`,
 in W below 1 kW) and turns red when over; a rack drawing power with neither
@@ -348,10 +352,18 @@ ports costs the list a few queries, so it asks for them
 (`?include=ports`) only while one of the two is shown.
 
 A rack's space, power and ports share one scale wherever they are drawn as a
-bar or a colour: green up to 80 % full, amber above 80 %, red above 95 %.
+bar or a colour: green up to the warning level, amber above it, red above the
+critical level. The levels are 80 % and 95 % until a tenant admin changes them
+under **Settings → Tenant policy → Rack capacity** (`capacity_warn_pct`,
+`capacity_critical_pct`; the warning level must sit below the critical one).
 The racks list's **Used**, **Power** and **Ports** bars, the floor plan's
-tiles and its [Color by](../features/floor-plans.md#color-by), the tile
-popover and the site's Capacity tab all use it.
+tiles and its [Color by](../features/floor-plans.md#color-by) legend, the
+tile popover, the 3D room and the site's Capacity tab all use them. A page
+already open picks up changed levels on its next load.
+
+!!! note "Changed in 0.18"
+    The 80 / 95 % levels are a tenant setting, and a rack can carry a power
+    budget that capacity measures against instead of its feeds.
 
 !!! note "Changed in 0.17"
     Power figures of 1 kW and up read in kW (`3.6 kW` where the page showed

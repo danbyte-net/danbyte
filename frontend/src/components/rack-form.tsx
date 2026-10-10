@@ -101,6 +101,9 @@ export function RackForm({
     rack?.outer_depth_mm != null ? String(rack.outer_depth_mm) : ""
   )
   const [maxWeight, setMaxWeight] = useState(rack?.max_weight ?? "")
+  const [maxPower, setMaxPower] = useState(
+    rack?.max_power_w != null ? String(rack.max_power_w) : ""
+  )
   const [maxWeightUnit, setMaxWeightUnit] = useState(
     rack?.max_weight_unit || "kg"
   )
@@ -133,6 +136,7 @@ export function RackForm({
     )
     setMaxWeight(rack.max_weight ?? "")
     setMaxWeightUnit(rack.max_weight_unit || "kg")
+    setMaxPower(rack.max_power_w != null ? String(rack.max_power_w) : "")
     setDescription(rack.description)
     setTagIds(rack.tags.map((t) => t.id))
     setCustomFields(rack.custom_fields ?? {})
@@ -226,6 +230,7 @@ export function RackForm({
         outer_depth_mm: outerDepth.trim() === "" ? null : Number(outerDepth),
         max_weight: maxWeight.trim() === "" ? null : maxWeight.trim(),
         max_weight_unit: maxWeight.trim() === "" ? "" : maxWeightUnit,
+        max_power_w: maxPower.trim() === "" ? null : Number(maxPower),
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -506,6 +511,19 @@ export function RackForm({
                 error={fieldErrors.max_weight_unit}
               />
             </div>
+          </FormSection>
+
+          <FormSection title="Power" card>
+            <FormText
+              label="Power budget (W)"
+              hint="optional"
+              info="What the rack may draw. When set, power capacity is measured against it instead of the feeds."
+              type="number"
+              min={1}
+              value={maxPower}
+              onChange={setMaxPower}
+              error={fieldErrors.max_power_w}
+            />
           </FormSection>
         </FormColumn>
       </FormColumns>

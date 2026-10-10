@@ -3,25 +3,86 @@
  * same way on every surface: the racks table, the rack page, the floor
  * plan's tiles and popover, and the 3D room.
  *
- * One fixed scale for all three figures until thresholds become a setting:
- * above 80 % is a warning, above 95 % critical. The colours are the status
- * colours (emerald / amber / red), never the accent: capacity is a state.
- * IPAM prefix utilisation keeps its own scale (`cells/util-cell.tsx`).
+ * One scale for all three figures: above the tenant's warning level (80 %
+ * unless changed) a rack is filling up, above its critical level (95 %) it
+ * is full. The levels are a tenant setting, served on `/api/me/` as
+ * `capacity_thresholds`; `useMe` hands them to `setCapacityThresholds` as it
+ * loads, before anything is drawn. The colours are the status colours
+ * (emerald / amber / red), never the accent: capacity is a state. IPAM prefix
+ * utilisation keeps its own scale (`cells/util-cell.tsx`).
  */
+import { useSyncExternalStore } from "react"
 
 import type { RackPower } from "@/lib/api"
 
-/** Above this share of capacity a rack is filling up. */
+/** The default levels, as shares: above 80 % warn, above 95 % critical. */
 export const CAPACITY_WARN = 0.8
-/** Above this share it is full, or over. */
 export const CAPACITY_CRITICAL = 0.95
+
+/** The levels in force, as shares of capacity. */
+export interface CapacityThresholds {
+  warn: number
+  critical: number
+}
+
+let thresholds: CapacityThresholds = {
+  warn: CAPACITY_WARN,
+  critical: CAPACITY_CRITICAL,
+}
+const listeners = new Set<() => void>()
+
+/** Set the levels from the tenant's percentages (`me.capacity_thresholds`).
+ * Anything missing or out of order keeps the defaults. */
+export function setCapacityThresholds(
+  pct: { warn?: number; critical?: number } | null | undefined
+) {
+  const warn = (pct?.warn ?? 80) / 100
+  const critical = (pct?.critical ?? 95) / 100
+  const next =
+    Number.isFinite(warn) && Number.isFinite(critical) && warn < critical
+      ? { warn, critical }
+      : { warn: CAPACITY_WARN, critical: CAPACITY_CRITICAL }
+  if (next.warn === thresholds.warn && next.critical === thresholds.critical)
+    return
+  thresholds = next
+  for (const l of listeners) l()
+}
+
+export function capacityThresholds(): CapacityThresholds {
+  return thresholds
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+/** The levels in force, re-rendering the caller when the tenant's change. */
+export function useCapacityThresholds(): CapacityThresholds {
+  return useSyncExternalStore(subscribe, capacityThresholds, capacityThresholds)
+}
+
+/** "80–95%" - a level band for a legend. */
+export function capacityBandLabel(
+  level: CapacityLevel,
+  t: CapacityThresholds = thresholds
+): string {
+  const w = Math.round(t.warn * 100)
+  const c = Math.round(t.critical * 100)
+  if (level === "critical") return `> ${c}%`
+  if (level === "warn") return `${w}–${c}%`
+  return `≤ ${w}%`
+}
 
 export type CapacityLevel = "good" | "warn" | "critical"
 
 /** The level a used / total ratio is at. */
-export function capacityLevel(ratio: number): CapacityLevel {
-  if (ratio > CAPACITY_CRITICAL) return "critical"
-  if (ratio > CAPACITY_WARN) return "warn"
+export function capacityLevel(
+  ratio: number,
+  t: CapacityThresholds = thresholds
+): CapacityLevel {
+  if (ratio > t.critical) return "critical"
+  if (ratio > t.warn) return "warn"
   return "good"
 }
 
@@ -74,6 +135,14 @@ export function formatWatts(watts: number): string {
  * the primary feeds, else the PDUs' inlet rating (`supply: "pdu_rating"`),
  * 0 when neither is known. */
 export type { RackPower }
+
+/** What the rack's supply figure is: its power budget, its feeds, or its
+ * PDUs' rating. */
+export function powerSupplyNote(p: RackPower): string {
+  if (p.supply === "budget") return "budget"
+  if (p.supply === "pdu_rating") return "PDU rating"
+  return ""
+}
 
 /** The demand a rack reports: the allocated draw where it is recorded,
  * else the nameplate sum - and which it is. */

@@ -52,7 +52,8 @@ The page is a clone of the floor-plan editor's shell:
       separately, so a map can show just the carrier picture.
     - **Labels** - **Names** (the site and device name chips) and **Speed**
       (each line's speed on the line, see [Link speed](#link-speed-on-the-map)).
-    - **Color by** - **Type**, **Status** or **Speed**, for the lines.
+    - **Color by** - **Type**, **Status**, **Speed** or **Utilization**,
+      for the lines.
 - **Left palette rail** (Edit mode) - tabbed **Sites / Markers**, exactly
   like the plan's palette: click to arm, then click the map. Marker types
   stay armed so you can stamp several; Esc disarms. Stamping a marker opens
@@ -267,10 +268,50 @@ figure - never a guess.
 | **Type** (default) | Its kind: circuits sky, tunnels violet, cables amber - unless the object brings its own color (a circuit type's, a cable's). |
 | **Status** | Its status's color, from your status catalog. A line with no status is grey. |
 | **Speed** | The speed tier of its figure, on the scale the [topology](topology.md) and the port faceplates use. A line of unknown speed is grey. |
+| **Utilization** | Live traffic, one direction per half - see [Utilization](#utilization). |
 
 The legend follows: the kinds under Type, the statuses on the map's lines as
-their pills under Status, the speed tiers on its lines under Speed. The
+their pills under Status, the speed tiers on its lines under Speed, the
+utilization bands and the time of the newest sample under Utilization. The
 choice is remembered per browser.
+
+### Utilization
+
+**Color by → Utilization** shows how busy each line is right now. A line is
+split at its midpoint: the half at one end shows the traffic leaving that
+end, so A → Z is drawn on A's half and Z → A on Z's. Each half takes its
+band's colour and width:
+
+| Band | |
+|---|---|
+| < 10 % | sky, thinnest |
+| 10–25 % | emerald |
+| 25–50 % | lime |
+| 50–75 % | yellow |
+| 75–90 % | orange |
+| ≥ 90 % | red, widest |
+| No data | grey |
+
+- **Traffic** comes from the interfaces at the line's ends: the rate between
+  the last two SNMP counter samples of each port, what leaves one end or,
+  failing that, what arrives at the other. A bundle adds up its links.
+- **Utilization** is that traffic over the line's [speed](#link-speed-on-the-map),
+  falling back to the ports' reported speed when the line has none.
+- **No data** means no end of the line is an interface with two recent
+  samples: the device was never polled, polled once, or its last poll is
+  more than two hours old (three poll intervals, when the tenant's
+  [scheduled polling](snmp-discovery.md#scheduled-polling) runs less often).
+  Tunnels to a virtual machine have no data.
+- **Direction chips** on each half give the figure - `42%`, or the rate
+  where no speed is known - with an arrow along the half. They are placed
+  like the speed labels, which they replace while Utilization is on.
+- Hovering a line names both directions; the legend carries **As of**, the
+  time of the newest sample.
+- The rates refresh every minute while Utilization is on and are only read
+  then. Interfaces you may not view count as no data.
+
+Keeping the figures current needs polling: turn on **Poll devices every**
+under [MAC tracking](monitoring.md#mac-tracking), or poll by hand.
 
 !!! note "Changed in 0.17"
     A cable with no color of its own was drawn in the circuits' sky blue
@@ -477,6 +518,17 @@ carries:
 Without it the payloads are as before. The map widget and the site and
 device locators share these endpoints and don't ask, so they pay nothing
 for it.
+
+### Live traffic: `GET /api/monitoring/interfaces/live/` {#live-traffic}
+
+`?ids=<id>,<id>,…` - up to 500 interface ids - answers
+`{as_of, interfaces: {id: rate | null}}`. A rate is `in_bps`, `out_bps`
+(each null when that counter went backwards), `speed_mbps`, `at` (the newer
+sample) and `interval_s` (between the two samples); `as_of` is the newest
+`at`. Null means no live rate (see [Utilization](#utilization)). An id from
+another tenant, or one you may not view, is left out. The figures come from
+`monitoring/iface_live.py`, which anything else showing live port traffic
+should read.
 
 `source` names where the figure came from - the rules, and which one wins,
 are under [Circuits → Link speed on the site map](circuits.md#link-speed-on-the-site-map):

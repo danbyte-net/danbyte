@@ -8,9 +8,14 @@ import {
   LegendRow,
   LegendTones,
 } from "@/components/map-legend"
+import { TimeCell } from "@/components/cells/time-ago"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { KIND_COLOR, NO_VALUE_HEX } from "@/components/site-map/line-style"
 import type { LineColorBy, LineKey } from "@/components/site-map/line-style"
+import {
+  UTIL_BANDS,
+  UTIL_NO_DATA,
+} from "@/components/site-map/line-utilization"
 
 /** The dash an un-routed cable is drawn with (`cable-geo-route.ts`). */
 const UNROUTED_DASH = "5 4"
@@ -20,21 +25,26 @@ const UNROUTED_DASH = "5 4"
 const COLOR_BY_NOTE: Record<Exclude<LineColorBy, "type">, string> = {
   status: "Color by status",
   speed: "Color by speed",
+  utilization: "Color by utilization",
 }
 
 /**
  * The site map's key: its pins, clusters and lines, in the maps' shared
  * legend frame. Folded until opened, and remembered per browser. The line
  * rows follow Color by: the kinds' colours, the statuses on the lines as
- * their pills, or the speed tiers on the lines.
+ * their pills, the speed tiers on the lines, or the utilisation bands with
+ * the time the newest traffic sample was taken.
  */
 export function SiteMapLegend({
   colorBy = "type",
   lines,
+  asOf,
 }: {
   colorBy?: LineColorBy
   /** What the drawn lines carry - keyed under Status and Speed. */
   lines?: LineKey
+  /** Utilization: the newest sample behind the colours. */
+  asOf?: string | null
 }) {
   const neutral = colorBy !== "type"
   const tones =
@@ -120,6 +130,28 @@ export function SiteMapLegend({
                 tones={tones}
                 className="max-w-56 pt-0 whitespace-normal"
               />
+            )}
+            {colorBy === "utilization" && (
+              <>
+                <span>Each half: traffic leaving its end</span>
+                {[...UTIL_BANDS, UTIL_NO_DATA].map((b) => (
+                  <LegendRow
+                    key={b.label}
+                    swatch={
+                      <LegendLine
+                        color={b.hex}
+                        width={b.weight}
+                        cap="butt"
+                        length={24}
+                      />
+                    }
+                    label={b.label}
+                  />
+                ))}
+                <span data-slot="as-of" className="flex items-center gap-1">
+                  As of {asOf ? <TimeCell iso={asOf} /> : "–"}
+                </span>
+              </>
             )}
           </div>
         )}

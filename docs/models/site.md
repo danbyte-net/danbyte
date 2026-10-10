@@ -67,9 +67,10 @@ the site has racks and you may view racks; it sits after **Cabinets**.
   **Power** (demand over supply, as the rack page reads it) and **Ports** /
   **Panel ports** (in use over counted). A plan with no racks says so.
 - **Space · Power · Ports · Panel ports** above the cards picks what the
-  thumbnails are coloured by, on the racks' one scale: green up to 80 %,
-  amber above 80 %, red above 95 %, grey where there is nothing to measure
-  (no supply, no ports). The choice stays in the URL (`?measure=power`).
+  thumbnails are coloured by, on the racks' one scale: green up to the
+  tenant's warning level, amber above it, red above its critical level (80 %
+  and 95 % unless changed, see [Racks](../dcim/racks.md)), grey where there
+  is nothing to measure (no supply, no ports). The choice stays in the URL (`?measure=power`).
 - **Not on a floor plan**: the site's racks that no floor plan places, by
   name, with the same figures.
 - The ports open **DCIM → Connections → Port utilization** filtered to the

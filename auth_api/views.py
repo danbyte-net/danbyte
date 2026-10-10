@@ -189,6 +189,7 @@ def me_json(request):
 
     from api.views import _get_active_tenant
     from core.effective_settings import (
+        capacity_thresholds,
         effective_separation,
         effective_sharing,
         effective_ui,
@@ -294,6 +295,9 @@ def me_json(request):
         # Resolved date/time display settings (user override → tenant default
         # → deployment default) - the SPA's single read point for formatting.
         "datetime": datetime_prefs(user, tenant),
+        # Rack capacity levels (tenant setting): percentages above which
+        # space, power and port fill turn amber and red.
+        "capacity_thresholds": capacity_thresholds(tenant),
         "active_tenant": (
             {"id": str(tenant.id), "name": tenant.name, "slug": tenant.slug}
             if tenant is not None else None

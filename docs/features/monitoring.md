@@ -893,6 +893,7 @@ re-poll is needed.
 | **Uplink above** | 4 | A port that learns more distinct MACs than this counts as an [uplink](snmp-discovery.md#uplinks). 0 turns the count rule off. (`mac_uplink_threshold`, 0-4096) |
 | **LLDP switch neighbours mark uplinks** | On | A port whose LLDP neighbour is a switch - not a phone - counts as an uplink. (`mac_uplink_lldp`) |
 | **Forget MACs unseen for** | 30 days | Learned MACs and ARP entries nobody has seen for this long are dropped by the daily prune. (`mac_retention_days`, 1-365) |
+| **Poll devices every** | Off | [Scheduled SNMP polls](snmp-discovery.md#scheduled-polling) from the core: Off, 15 minutes, 30 minutes or 1 hour. Devices an Outpost polls are left to it. (`snmp_poll_interval_minutes`, 0/15/30/60) |
 
 "Uplink above" replaces the fixed limit of four MACs that switch-link
 suggestions used before 0.17, with the same default.

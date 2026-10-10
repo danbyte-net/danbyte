@@ -529,8 +529,9 @@ plan's racks with their port figures are
 `GET /api/racks/?floor_plan=<id>&include=ports`, asked for once rather than
 on every poll.
 
-- **Rack tiles** carry a space-utilization bar (green ≤80% · amber 80–95% ·
-  red >95%) and a percentage. The racks list's **Used** and **Power** bars
+- **Rack tiles** carry a space-utilization bar (green, amber and red at the
+  tenant's capacity levels, 80 % and 95 % unless changed - see
+  [Racks](../dcim/racks.md)) and a percentage. The racks list's **Used** and **Power** bars
   and the tile popover's bar use the same scale. Coloured by a rack measure
   ([Color by](#color-by)), the bar and the figure show that measure instead.
 - **Monitoring rollup** - a rack tile's border turns red the moment any
@@ -559,7 +560,8 @@ what they are - in 2D and in the 3D room alike:
 | **Status** | Its status's colour. |
 
 - The four measures fill a rack's tile with its level on the racks' one
-  scale - green up to 80 %, amber above 80 %, red above 95 % - and grey where
+  scale - green up to the tenant's warning level, amber above it, red above
+  its critical level (80 % and 95 % unless changed) - and grey where
   there is nothing to measure: no supply, no ports counted. The figure is
   always written on the tile, `86%` or *No data*, on a one-cell rack too, so
   the reading never rests on colour alone; the bar along the tile's foot

@@ -50,7 +50,7 @@ export const COLOR_BY_LABEL: Record<ColorBy, string> = {
   status: "Status",
 }
 
-/** The choices that read how full a rack is, on the 80 / 95 % scale. */
+/** The choices that read how full a rack is, on the tenant's capacity levels. */
 export type CapacityMetric = "space" | "power" | "ports" | "panel_ports"
 
 export function isCapacityMetric(c: ColorBy): c is CapacityMetric {
@@ -197,7 +197,7 @@ export const STATE_FILL_OPACITY = 0.35
  *   colour, heavier when it links an object, a rack's space bar along its
  *   foot.
  * - **Space, Power, Ports, Panel ports** fill a rack's tile with its level
- *   on the 80 / 95 % scale, grey for no data, and write the figure on it.
+ *   on the tenant's capacity levels, grey for no data, and write the figure on it.
  * - **Rack role, Status** fill it with the role's or the status's own
  *   colour, grey for none, and keep the space bar.
  *

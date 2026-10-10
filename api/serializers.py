@@ -6140,7 +6140,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                   "status", "status_id", "location", "location_id",
                   "width", "u_height",
                   "outer_width_mm", "outer_depth_mm",
-                  "max_weight", "max_weight_unit",
+                  "max_weight", "max_weight_unit", "max_power_w",
                   "total_weight_kg", "max_weight_kg", "power",
                   "starting_unit", "desc_units", "description",
                   "device_count", "used_units", "ports", "panel_ports", "document_count",

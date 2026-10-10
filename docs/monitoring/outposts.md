@@ -369,8 +369,8 @@ device is picked up on the next poll with no re-enrollment.
   the results land through the normal ingest. The Outpost's work list carries
   every device that resolves to it by those same levels, a device placed in a
   room of a bound site included. Central polling would report outpost-only
-  networks as SNMP unavailable, so the scheduled `poll_snmp` command skips an
-  Outpost's devices. Only an Outpost runs SNMP for the core: a device bound to
+  networks as SNMP unavailable, so the scheduled polls (`dispatch_snmp_polls`)
+  and the `poll_snmp` command skip an Outpost's devices. Only an Outpost runs SNMP for the core: a device bound to
   a driver engine such as Zabbix, and every virtual machine, polls from the
   core.
 - **SSH host-key pinning (shipped)** - pin `ssh_host_key` on the engine and

@@ -2,6 +2,7 @@ import re
 import uuid
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from taggit.managers import TaggableManager
 from taggit.models import GenericUUIDTaggedItemBase, TagBase
@@ -1208,6 +1209,22 @@ class TenantSettings(TimestampedModel):
 
     # Fernet-encrypted {"password": smtp, "ldap_bind_password": ...}.
     secrets = EncryptedJSONField(default=dict, blank=True)
+
+    # ─── rack capacity levels ──────────────────────────────────────────────
+    # Where space, power and port fill turns amber and red on the racks
+    # table, the rack page, floor plans and the site Capacity tab. Tenant
+    # only - there is no deployment value to inherit. Read through
+    # ``core.effective_settings.capacity_thresholds``.
+    capacity_warn_pct = models.PositiveSmallIntegerField(
+        default=80, db_default=80,
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Above this share of capacity a rack is filling up.",
+    )
+    capacity_critical_pct = models.PositiveSmallIntegerField(
+        default=95, db_default=95,
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Above this share a rack is full.",
+    )
 
     # ─── first-run onboarding ──────────────────────────────────────────────
     # Per-tenant bookkeeping (like digest_last_run) - not an inheritable

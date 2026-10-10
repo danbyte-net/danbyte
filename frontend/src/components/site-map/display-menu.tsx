@@ -75,7 +75,7 @@ export function SiteMapDisplayMenu({
       <PopoverContent
         align="end"
         collisionPadding={12}
-        className="max-h-(--radix-popover-content-available-height) w-60 gap-0 overflow-y-auto p-2"
+        className="max-h-(--radix-popover-content-available-height) w-72 gap-0 overflow-y-auto p-2"
       >
         <section aria-label="Layers" className="grid gap-0.5">
           <SectionLabel className="px-2 pt-1">Layers</SectionLabel>

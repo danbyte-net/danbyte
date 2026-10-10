@@ -398,6 +398,12 @@
   line-height: 14px;
   font-variant-numeric: tabular-nums;
 }
+/* Utilization's direction chips: the arrow turns to point along its half. */
+.sm-speed-dir {
+  display: inline-block;
+  margin-right: 2px;
+  color: var(--muted-foreground);
+}
 
 /* Label declutter (full map only - the container carries .sm-zl). Name chips
    hide until their zoom threshold; the route toggles .sm-zl-sites /

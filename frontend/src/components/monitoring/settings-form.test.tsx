@@ -42,6 +42,7 @@ const SETTINGS: MonitoringSettings = {
   mac_uplink_threshold: 4,
   mac_uplink_lldp: true,
   mac_retention_days: 30,
+  snmp_poll_interval_minutes: 0,
   global_enabled: true,
   default_interval_seconds: 300,
   stale_after_scans: 0,
@@ -145,6 +146,42 @@ describe("MonitoringSettingsForm - MAC tracking", () => {
       mac_uplink_threshold: 8,
       mac_uplink_lldp: false,
       mac_retention_days: 14,
+    })
+  })
+})
+
+describe("MonitoringSettingsForm - Poll devices every", () => {
+  it("shows the stored interval and saves it back", async () => {
+    apiMock.mockImplementation(async (path, init) => {
+      if (path === "/api/monitoring/settings/" && !init?.method)
+        return { ...SETTINGS, snmp_poll_interval_minutes: 30 }
+      if (init?.method === "PATCH") return JSON.parse(String(init.body))
+      return { results: [] }
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <MonitoringSettingsForm />
+      </QueryClientProvider>
+    )
+    const label = await screen.findByText("Poll devices every")
+    const field = label.closest("div.grid")
+    expect(field?.querySelector("[role=combobox]")?.textContent).toContain(
+      "30 minutes"
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save monitoring settings" })
+    )
+    await vi.waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(([, init]) => init?.method === "PATCH")
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(([, i]) => i?.method === "PATCH")!
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      snmp_poll_interval_minutes: 30,
     })
   })
 })
