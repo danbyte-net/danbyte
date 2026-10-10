@@ -918,6 +918,82 @@ class MacDetailAndSearchTests(_Base):
         self.assertFalse([h for h in body["hits"] if h["type"] == "interface"])
 
 
+class MacListLocationTests(_Base):
+    """The MAC lists carry each MAC's Location (#344): the same answer the MAC
+    page gives, with the switch's site and location and when it was seen."""
+
+    def setUp(self):
+        super().setUp()
+        from api.models import Location, MACAddress
+
+        self.room = Location.objects.create(
+            site=self.site_a, name="Room 1", slug="room-1", tenant=self.tenant
+        )
+        Device.objects.filter(pk=self.acc.pk).update(location=self.room)
+        self.poll_network()
+        self.pc = MACAddress.objects.create(tenant=self.tenant, mac_address=PC)
+        self.server = MACAddress.objects.create(tenant=self.tenant, mac_address=SERVER)
+        self.unseen = MACAddress.objects.create(tenant=self.tenant, mac_address="0c:00:00:00:00:99")
+
+    def rows(self):
+        r = self.client.get("/api/macs/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return {row["mac"]: row for row in r.json()["results"]}
+
+    def test_the_recorded_list_names_where_each_mac_was_learned(self):
+        loc = self.rows()[PC]["location"]
+        self.assertEqual(loc["kind"], "access")
+        self.assertEqual(loc["site"], {"id": str(self.site_a.id), "name": "A"})
+        self.assertEqual(loc["location"], {"id": str(self.room.id), "name": "Room 1"})
+        self.assertEqual(loc["device"], {"id": str(self.acc.id), "name": "sw-acc-03"})
+        self.assertEqual(loc["interface"], {"id": str(self.gi5.id), "name": "Gi1/0/5"})
+        self.assertEqual((loc["port_name"], loc["vlan"], loc["stale"]), ("Gi1/0/5", 10, False))
+        self.assertTrue(loc["since"] and loc["last_seen"])
+
+    def test_the_list_and_the_mac_page_agree(self):
+        rows = self.rows()
+        for mac in (PC, SERVER, *DESK[:1]):
+            detail = self.client.get(f"/api/macs/{mac}/").json()["location"]
+            if mac not in rows:
+                continue
+            cell = rows[mac]["location"]
+            for key in ("kind", "device", "interface", "port_name", "vlan"):
+                self.assertEqual(cell[key], detail[key], (mac, key))
+        self.assertEqual(rows[SERVER]["location"]["kind"], "access")
+        self.assertEqual(rows[SERVER]["location"]["device"]["name"], "sw-core-01")
+        self.assertIsNone(rows[SERVER]["location"]["location"])
+
+    def test_a_mac_never_learned_or_gone_has_no_location(self):
+        self.assertIsNone(self.rows()["0c:00:00:00:00:99"]["location"])
+        MacSighting.objects.filter(mac=PC).update(gone_at=timezone.now())
+        self.assertIsNone(self.rows()[PC]["location"])
+
+    def test_another_tenants_sighting_is_not_used(self):
+        org = Organization.objects.create(name="Other", slug="other")
+        other = Tenant.objects.create(org=org, name="Other", slug="other")
+        dev = Device.objects.create(tenant=other, name="theirs")
+        now = timezone.now()
+        MacSighting.objects.create(
+            tenant=other, polled_device=dev, device=dev, port_key="gi1", port_name="Gi1",
+            mac="0c:00:00:00:00:99", first_seen=now, last_seen=now,
+        )
+        self.assertIsNone(self.rows()["0c:00:00:00:00:99"]["location"])
+
+    def test_the_mac_object_api_carries_it_too(self):
+        body = self.client.get("/api/mac-addresses/").json()
+        by_mac = {r["mac_address"]: r["location"] for r in body["results"]}
+        self.assertEqual(by_mac[PC]["interface"]["name"], "Gi1/0/5")
+        self.assertEqual(by_mac[PC]["location"]["name"], "Room 1")
+        self.assertIsNone(by_mac["0c:00:00:00:00:99"])
+        one = self.client.get(f"/api/mac-addresses/{self.pc.id}/").json()
+        self.assertEqual(one["location"], by_mac[PC])
+        # Read-only: a write naming it changes nothing and is not refused.
+        r = self.client.patch(f"/api/mac-addresses/{self.pc.id}/",
+                              {"description": "desk", "location": None}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["location"]["device"]["name"], "sw-acc-03")
+
+
 class RbacTests(_Base):
     """Every read filters by tenant first, then the caller's row scope."""
 
@@ -950,6 +1026,28 @@ class RbacTests(_Base):
         self.assertEqual(body["location"]["device"]["name"], "sw-acc-03")
         self.assertEqual(body["location"]["kind"], "behind_uplink")
         self.assertEqual({s["device"]["name"] for s in body["seen"]}, {"sw-acc-03"})
+
+    def test_the_list_location_never_names_a_switch_the_viewer_cant_see(self):
+        from api.models import MACAddress
+
+        MACAddress.objects.create(tenant=self.tenant, mac_address=SERVER)
+        rows = {r["mac"]: r for r in self.client.get("/api/macs/").json()["results"]}
+        loc = rows[SERVER]["location"]
+        self.assertEqual((loc["device"]["name"], loc["kind"]), ("sw-acc-03", "behind_uplink"))
+        self.assertEqual(loc["site"]["name"], "A")
+        body = self.client.get("/api/mac-addresses/").json()
+        (row,) = [r for r in body["results"] if r["mac_address"] == SERVER]
+        self.assertEqual(row["location"]["device"]["name"], "sw-acc-03")
+        # Seen only on a switch out of scope: no Location at all.
+        self.poll(self.core, result(
+            CORE_IFACES, [*core_fdb(), fdb_row("c0:ff:ee:00:00:02", 2)], neighbors=CORE_NEIGHBORS
+        ), self.t0 + timedelta(minutes=1))
+        MACAddress.objects.create(tenant=self.tenant, mac_address="c0:ff:ee:00:00:02")
+        rows = {r["mac"]: r for r in self.client.get("/api/macs/").json()["results"]}
+        self.assertIsNone(rows["c0:ff:ee:00:00:02"]["location"])
+        self.login(self.admin)
+        rows = {r["mac"]: r for r in self.client.get("/api/macs/").json()["results"]}
+        self.assertEqual(rows["c0:ff:ee:00:00:02"]["location"]["device"]["name"], "sw-core-01")
 
     def test_an_arp_ip_shows_only_through_a_viewable_row(self):
         pc = self.client.get(f"/api/macs/{PC}/").json()

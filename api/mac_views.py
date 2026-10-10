@@ -230,8 +230,10 @@ def _mac_object(m: MACAddress, *, with_custom_fields: bool = False) -> dict:
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="Aggregated MAC rows: {count, results:[{mac, interfaces[], "
-        "vm_interfaces[], ips[], objects[]}]}.",
+        description="Aggregated MAC rows: {count, results:[{mac, vendor, interfaces[], "
+        "vm_interfaces[], ips[], objects[], location}]}. location is where the "
+        "network learned the MAC (site, location, device, port, since, last_seen), "
+        "or null.",
     ),
 )
 @api_view(["GET"])
@@ -315,12 +317,20 @@ def mac_list_view(request):
     for m in objects:
         bucket(m.mac_address)["objects"].append(_mac_object(m))
 
+    from monitoring.mac_location import location_cells
+    from monitoring.mac_tables import canon_mac
+
     vendors = vendors_for(entries.keys(), tenant)
+    # Where each MAC was learned - the MAC page's Location, for every row in
+    # one batch (#344).
+    canon = {key: canon_mac(key) for key in entries}
+    located = location_cells(tenant, set(canon.values()) - {None}, user)
     for key, entry in entries.items():
         override = next((o["vendor_override"] for o in entry["objects"] if o["vendor_override"]), "")
         entry["vendor"] = (
             {"name": override, "source": "override"} if override else vendors.get(hexkey(key))
         )
+        entry["location"] = located.get(canon[key])
     results = sorted(entries.values(), key=lambda e: _norm(e["mac"]))
     return Response({"count": len(results), "results": results})
 

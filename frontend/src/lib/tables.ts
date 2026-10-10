@@ -155,6 +155,14 @@ const ROWS: Row[] = [
   ["embedded-device-types", "Device types (embedded)", "DCIM", "/api/device-types/", sub],
   ["embedded-cables", "Cables (embedded)", "DCIM", "/api/cables/", sub],
   ["rack-type-racks", "Rack type · Racks", "DCIM", "/api/racks/", sub],
+  ["device-interfaces", "Device · Interfaces", "DCIM", "/api/interfaces/", sub],
+  ["device-console-ports", "Device · Console ports", "DCIM", "/api/console-ports/", sub],
+  ["device-console-server-ports", "Device · Console server ports", "DCIM", "/api/console-server-ports/", sub],
+  ["device-power-ports", "Device · Power ports", "DCIM", "/api/power-ports/", sub],
+  ["device-power-outlets", "Device · Power outlets", "DCIM", "/api/power-outlets/", sub],
+  ["device-front-ports", "Device · Front ports", "DCIM", "/api/front-ports/", sub],
+  ["device-rear-ports", "Device · Rear ports", "DCIM", "/api/rear-ports/", sub],
+  ["device-inventory", "Device · Inventory", "DCIM", "/api/inventory-items/", sub],
   ["floorplan-racks", "Floor plan · Racks", "DCIM", "/api/racks/", sub],
 
   // ─── Power & circuits ──────────────────────────────────────────────────

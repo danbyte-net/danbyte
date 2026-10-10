@@ -106,6 +106,14 @@ that appears on both a switch port and an assigned IP shows up once, with both
 links. The row also shows the **description and tags** of any MAC object recorded
 for that address.
 
+The **Location** column says where the network learned each MAC - the same
+answer as the MAC page's [Location](#where-is-this-mac): switch · port (an
+`uplink` chip when it is only seen behind one), then the switch's site and
+location and when it was last seen there. A MAC no polled switch reports
+shows `-`. The column is on by default; it sorts by site, location, switch
+and port, the rail filters it by **Learned at site**, and the search box
+matches its site, location, switch and port names.
+
 **Learned** is the network's own MAC table - see
 [the Learned list](#the-learned-list).
 
@@ -161,6 +169,14 @@ become MAC objects or change an IP address on their own.
 
 `GET /api/macs/<mac>/` returns these as `location`, `ips_observed` (each IP
 with its sources) and `names` / `name`, next to the existing keys.
+
+The lists carry the Location too: each row of `GET /api/macs/` and each MAC
+object from `GET /api/mac-addresses/` has a read-only `location` - `kind`
+(`access` or `behind_uplink`), `site`, `location`, `device`, `interface`,
+`port_name`, `vlan`, `since`, `last_seen` and `stale` (last seen more than a
+day ago) - or `null`. It is resolved for the whole page at once, so a page
+costs the same queries however many rows it holds, and it follows the same
+[device scope](#who-sees-what) as the MAC page.
 
 #### The Learned list {#the-learned-list}
 

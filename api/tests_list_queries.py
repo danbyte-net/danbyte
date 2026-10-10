@@ -652,3 +652,49 @@ class MacListTests(_Base):
             self.assertEqual(row["vendor"], vendor_of_object(obj), row["mac_address"])
         names = {(r["vendor"] or {}).get("name") for r in body["results"]}
         self.assertEqual(names, {"SanDisk", "Lab", "Hand-built", None})
+
+    def _learned(self, n, start=0, sw=None):
+        """MAC objects ``start``..``n-1``, each learned on its own port of a
+        switch in a site and location."""
+        from django.utils import timezone
+
+        from monitoring.models import MacSighting
+
+        from .models import Interface, Location, MACAddress
+
+        if sw is None:
+            site = Site.objects.create(tenant=self.tenant, name="HQ")
+            room = Location.objects.create(tenant=self.tenant, site=site, name="R1", slug="r1")
+            sw = Device.objects.create(tenant=self.tenant, name="sw1", site=site, location=room)
+        now = timezone.now()
+        for i in range(start, n):
+            mac = f"0c:00:00:00:01:{i:02x}"
+            port = Interface.objects.create(device=sw, name=f"Gi1/0/{i + 1}")
+            MACAddress.objects.create(tenant=self.tenant, mac_address=mac)
+            MacSighting.objects.create(
+                tenant=self.tenant, polled_device=sw, device=sw, interface=port,
+                port_key=f"gi1/0/{i + 1}", port_name=port.name, mac=mac,
+                first_seen=now, last_seen=now,
+            )
+        return sw
+
+    def test_location_is_resolved_once_per_page(self):
+        sw = self._learned(30)
+        small, _ = self._queries("/api/mac-addresses/?page_size=5")
+        big, body = self._queries("/api/mac-addresses/?page_size=30")
+        self.assertEqual(small, big, "a bigger page must not cost more queries (#344)")
+        for row in body["results"]:
+            loc = row["location"]
+            n = int(row["mac_address"].rsplit(":", 1)[1], 16) + 1
+            self.assertEqual(loc["device"]["id"], str(sw.id))
+            self.assertEqual(loc["port_name"], f"Gi1/0/{n}")
+            self.assertEqual((loc["site"]["name"], loc["location"]["name"]), ("HQ", "R1"))
+
+    def test_the_recorded_mac_list_costs_the_same_for_more_macs(self):
+        sw = self._learned(5)
+        few, _ = self._queries("/api/macs/")
+        self._learned(30, start=5, sw=sw)
+        many, body = self._queries("/api/macs/")
+        self.assertEqual(few, many, "the Location column must not cost a query per row (#344)")
+        self.assertEqual(len(body["results"]), 30)
+        self.assertTrue(all(r["location"]["device"]["name"] == "sw1" for r in body["results"]))

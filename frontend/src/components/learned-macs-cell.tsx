@@ -31,6 +31,7 @@ import {
 import type {
   InterfaceMacs,
   LearnedMac,
+  MacListLocation,
   MacLocationRef,
   PortMacs,
   UplinkState,
@@ -318,6 +319,28 @@ export function WhereCell({
       {loc.kind === "behind_uplink" && (
         <UplinkBadge uplink={{ mode: "auto", reasons: [] }} small />
       )}
+    </span>
+  )
+}
+
+/** Where a MAC list row's MAC was learned (#344): switch · port, then its
+ * site and location and when it was last seen there. */
+export function LearnedAtCell({ loc }: { loc: MacListLocation | null }) {
+  if (!loc) return dash
+  const place = [loc.site?.name, loc.location?.name].filter(Boolean)
+  return (
+    <span className="flex flex-col gap-0.5 text-xs whitespace-nowrap">
+      <span className="inline-flex items-center gap-1.5">
+        <LocationRef loc={loc} />
+        {loc.kind === "behind_uplink" && (
+          <UplinkBadge uplink={{ mode: "auto", reasons: [] }} small />
+        )}
+      </span>
+      <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        {place.length > 0 && <span>{place.join(" · ")}</span>}
+        {place.length > 0 && <span>·</span>}
+        <TimeCell iso={loc.last_seen} />
+      </span>
     </span>
   )
 }

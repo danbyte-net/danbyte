@@ -1,8 +1,6 @@
 import { useMemo, useState } from "react"
-import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Cable as CableIcon, Pencil, Trash2 } from "lucide-react"
 
 import {
   api,
@@ -10,16 +8,15 @@ import {
   type PowerOutlet,
   type PowerPort,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
-import { CableChip } from "@/components/cells/cable-chip"
+import { buildPowerPortColumns } from "@/components/columns/power-port-columns"
+import { buildPowerOutletColumns } from "@/components/columns/power-outlet-columns"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { PowerPortDialog } from "@/components/power-port-dialog"
 import { PowerOutletDialog } from "@/components/power-outlet-dialog"
 import { useRegisterAddActions } from "@/components/device-add-actions"
-import { PortReserveAction } from "@/components/port-reservation-dialog"
-import { hereUrl } from "@/lib/return-url"
 import { ComponentDeleteDialog } from "@/components/component-delete-dialog"
 import { useMe } from "@/lib/use-me"
 
@@ -58,237 +55,32 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
   const portCols = useMemo<ColumnDef<PowerPort>[]>(
     () => [
       selectionColumn<PowerPort>(),
-      {
-        id: "name",
-        header: "Power port",
-        cell: ({ row }) => (
-          <span className="font-mono font-medium">{row.original.name}</span>
-        ),
-      },
-      {
-        id: "type",
-        header: "Type",
-        cell: ({ row }) =>
-          row.original.type ? (
-            <span className="text-xs">{row.original.type_display}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "max_draw",
-        header: "Max draw",
-        cell: ({ row }) =>
-          row.original.maximum_draw != null ? (
-            <span className="num text-xs">{row.original.maximum_draw} W</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "allocated_draw",
-        header: "Allocated",
-        cell: ({ row }) =>
-          row.original.allocated_draw != null ? (
-            <span className="num text-xs">{row.original.allocated_draw} W</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "cable",
-        header: "Cable",
-        cell: ({ row }) => <CableChip cable={row.original.cable} />,
-      },
-      {
-        id: "description",
-        header: "Description",
-        cell: ({ row }) =>
-          row.original.description ? (
-            <span className="text-xs">{row.original.description}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) => (
-          <div className="flex justify-end gap-1">
-            {!row.original.cable && (
-              <>
-                {canConnect && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    asChild
-                    className="h-7 text-muted-foreground hover:text-primary"
-                    title="Connect cable"
-                  >
-                    <Link
-                      to="/cables/new"
-                      search={{
-                        a_kind: "power_port",
-                        a_id: row.original.id,
-                        ret: hereUrl(),
-                      }}
-                    >
-                      <CableIcon className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                )}
-                <PortReserveAction
-                  kind="power_port"
-                  portId={row.original.id}
-                  name={row.original.name}
-                  reservation={row.original.reservation}
-                  canReserve={canReserve}
-                />
-              </>
-            )}
-            {canEditPort && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                onClick={() => setEditPort(row.original)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {canDeletePort && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={() => setDelPort(row.original)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        ),
-      },
+      ...buildPowerPortColumns({
+        actions: {
+          canEdit: canEditPort,
+          canDelete: canDeletePort,
+          canConnect,
+          canReserve,
+          onEdit: setEditPort,
+          onDelete: setDelPort,
+        },
+      }),
     ],
     [canConnect, canReserve, canEditPort, canDeletePort]
   )
-
   const outletCols = useMemo<ColumnDef<PowerOutlet>[]>(
     () => [
       selectionColumn<PowerOutlet>(),
-      {
-        id: "name",
-        header: "Power outlet",
-        cell: ({ row }) => (
-          <span className="font-mono font-medium">{row.original.name}</span>
-        ),
-      },
-      {
-        id: "type",
-        header: "Type",
-        cell: ({ row }) =>
-          row.original.type ? (
-            <span className="text-xs">{row.original.type_display}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "fed_by",
-        header: "Fed by",
-        cell: ({ row }) =>
-          row.original.power_port ? (
-            <span className="font-mono text-xs">
-              {row.original.power_port.name}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "feed_leg",
-        header: "Feed leg",
-        cell: ({ row }) =>
-          row.original.feed_leg ? (
-            <span className="text-xs">{row.original.feed_leg}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "cable",
-        header: "Cable",
-        cell: ({ row }) => <CableChip cable={row.original.cable} />,
-      },
-      {
-        id: "description",
-        header: "Description",
-        cell: ({ row }) =>
-          row.original.description ? (
-            <span className="text-xs">{row.original.description}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) => (
-          <div className="flex justify-end gap-1">
-            {!row.original.cable && (
-              <>
-                {canConnect && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    asChild
-                    className="h-7 text-muted-foreground hover:text-primary"
-                    title="Connect cable"
-                  >
-                    <Link
-                      to="/cables/new"
-                      search={{
-                        a_kind: "power_outlet",
-                        a_id: row.original.id,
-                        ret: hereUrl(),
-                      }}
-                    >
-                      <CableIcon className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                )}
-                <PortReserveAction
-                  kind="power_outlet"
-                  portId={row.original.id}
-                  name={row.original.name}
-                  reservation={row.original.reservation}
-                  canReserve={canReserve}
-                />
-              </>
-            )}
-            {canEditOutlet && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                onClick={() => setEditOutlet(row.original)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {canDeleteOutlet && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={() => setDelOutlet(row.original)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        ),
-      },
+      ...buildPowerOutletColumns({
+        actions: {
+          canEdit: canEditOutlet,
+          canDelete: canDeleteOutlet,
+          canConnect,
+          canReserve,
+          onEdit: setEditOutlet,
+          onDelete: setDelOutlet,
+        },
+      }),
     ],
     [canConnect, canReserve, canEditOutlet, canDeleteOutlet]
   )
@@ -314,7 +106,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         {ports.isError ? (
           <QueryError error={ports.error} />
         ) : ports.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <Loading />
         ) : portRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No power ports. A power port is the device's inlet (PSU) - cable it
@@ -325,7 +117,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
             data={portRows}
             total={ports.data?.count}
             columns={portCols}
-            embedded
+            tableId="device-power-ports"
             searchable
             searchPlaceholder="Search ports…"
             onSelectedRowsChange={setSelPorts}
@@ -340,7 +132,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         {outlets.isError ? (
           <QueryError error={outlets.error} />
         ) : outlets.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <Loading />
         ) : outletRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No power outlets. Outlets are the sockets a PDU offers - each one is
@@ -351,7 +143,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
             data={outletRows}
             total={outlets.data?.count}
             columns={outletCols}
-            embedded
+            tableId="device-power-outlets"
             searchable
             searchPlaceholder="Search ports…"
             onSelectedRowsChange={setSelOutlets}

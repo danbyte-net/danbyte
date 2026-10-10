@@ -265,12 +265,34 @@ booleans). Hidden fields disappear from the form and detail page, but any data
 already set is preserved. If the setting can't be loaded, Danbyte falls back to
 the same defaults.
 
+### Component tables {#component-tables}
+
+Every table on the Components tab - interfaces, console ports, console server
+ports, power ports, power outlets, front ports, rear ports and inventory parts -
+has the **Columns** menu the list pages have: tick columns on or off, drag
+them into order, and **Reset**. The layout is saved per user for each table,
+and the menu also offers the list's other fields and custom fields as
+columns. **Download** exports the table as shown. The column headers sort,
+except on the inventory table, whose parts stay grouped under their parent.
+
+The **Add** control for a sub-tab sits at the right of the sub-tab bar - one
+button when the tab adds one kind, an **Add** menu when it adds several. On
+Interfaces, Front ports and Rear ports the table's header stays in view while
+the rows scroll.
+
+A cable trace opens a front, rear, console or power port on its own sub-tab
+(`?sub=front-ports`, `?sub=rear-ports`, `?sub=console`, `?sub=power`).
+
+`GET /api/devices/<id>/` counts the port tabs as `front_port_count` and
+`rear_port_count`; since 0.18 `hardware_count` no longer includes front and
+rear ports. Like the other tab counts they are 0 on the device list.
+
 ### Other tabs
 
 | Tab            | What's there                                                                                    |
 | -------------- | ----------------------------------------------------------------------------------------------- |
 | **IPs**        | Every IP address assigned to this device.                                                       |
-| **Components** | Four sub-tabs: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, and **Hardware** (device bays for child devices, module bays for line cards, serial-tracked inventory items, and patch-panel front/rear ports). |
+| **Components** | Six sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
 | **Services**   | Application services running on the device.                                                     |
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config.                                                      |
@@ -408,7 +430,9 @@ It works on every add dialog on the device page:
 | **Interfaces**| interfaces (**Add interface**)                                   |
 | **Console**   | console ports, console server ports                              |
 | **Power**     | power ports (inlets), power outlets                              |
-| **Hardware**  | inventory parts, patch-panel front and rear ports                |
+| **Front ports** | patch-panel front ports                                        |
+| **Rear ports** | patch-panel rear ports                                          |
+| **Hardware**  | inventory parts                                                  |
 
 Everything else on the dialog - type, speed, description, an outlet's inlet and
 feed leg, tags - is applied to every component in the range, so a PDU's

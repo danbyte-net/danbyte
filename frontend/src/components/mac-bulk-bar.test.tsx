@@ -55,6 +55,7 @@ const mac = (m: string, over: Partial<MacEntry> = {}): MacEntry => ({
   vm_interfaces: [],
   ips: [],
   objects: [],
+  location: null,
   ...over,
 })
 const dev = (name: string) => ({ id: name, name })

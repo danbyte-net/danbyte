@@ -119,7 +119,10 @@ import {
   useDeviceAntennas,
 } from "@/components/device-antennas-pane"
 import { DeviceModulesPane } from "@/components/device-modules-pane"
-import { DevicePortsPane } from "@/components/device-ports-pane"
+import {
+  DeviceFrontPortsPane,
+  DeviceRearPortsPane,
+} from "@/components/device-ports-pane"
 import {
   AddActionsContext,
   BarSlotContext,
@@ -204,6 +207,8 @@ const DEVICE_COMPONENT_SUBS = [
   "interfaces",
   "console",
   "power",
+  "front-ports",
+  "rear-ports",
   "hardware",
 ] as const
 type DeviceComponentSub = (typeof DEVICE_COMPONENT_SUBS)[number]
@@ -376,7 +381,9 @@ function Body({ device: d }: { device: Device }) {
             (d.interface_count || 0) +
               (d.hardware_count || 0) +
               (d.console_count || 0) +
-              (d.power_count || 0) || undefined,
+              (d.power_count || 0) +
+              (d.front_port_count || 0) +
+              (d.rear_port_count || 0) || undefined,
         },
         { value: "images", label: "Images", count: d.image_count || undefined },
         // Only when the type has a rack-face photo to place markers on.
@@ -644,6 +651,16 @@ function DeviceComponents({
                 count: d.power_count || undefined,
               },
               {
+                value: "front-ports",
+                label: "Front ports",
+                count: d.front_port_count || undefined,
+              },
+              {
+                value: "rear-ports",
+                label: "Rear ports",
+                count: d.rear_port_count || undefined,
+              },
+              {
                 value: "hardware",
                 label: "Hardware",
                 count: d.hardware_count || undefined,
@@ -686,7 +703,9 @@ function DeviceComponents({
           </div>
         </div>
         <BarSlotContext.Provider value={barSlot}>
-          <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
+          {/* A flex column, so a single-table pane (Interfaces, Front
+              ports, Rear ports) can fill it and keep its header in view. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 lg:p-6">
             {sub === "interfaces" && (
               <DeviceInterfacesPane
                 deviceId={d.id}
@@ -700,13 +719,18 @@ function DeviceComponents({
             )}
             {sub === "console" && <DeviceConsolePane deviceId={d.id} />}
             {sub === "power" && <DevicePowerPane deviceId={d.id} />}
+            {sub === "front-ports" && (
+              <DeviceFrontPortsPane deviceId={d.id} initialCabled={cabled} />
+            )}
+            {sub === "rear-ports" && (
+              <DeviceRearPortsPane deviceId={d.id} initialCabled={cabled} />
+            )}
             {sub === "hardware" && (
               <div className="space-y-8">
                 <DeviceBaysPane deviceId={d.id} />
                 <DeviceModulesPane deviceId={d.id} />
                 <DeviceAntennasPane deviceId={d.id} />
                 <DeviceInventoryPane deviceId={d.id} />
-                <DevicePortsPane deviceId={d.id} initialCabled={cabled} />
               </div>
             )}
           </div>
@@ -732,7 +756,12 @@ function DeviceOverview({
       search: (prev) => ({
         ...prev,
         tab: "components",
-        sub: kind === "interfaces" ? "interfaces" : "hardware",
+        sub:
+          kind === "interfaces"
+            ? "interfaces"
+            : kind === "front_ports"
+              ? "front-ports"
+              : "rear-ports",
         ...(state ? { cabled: state } : { cabled: undefined }),
       }),
     })
@@ -1592,7 +1621,7 @@ function DeviceInterfacesPane({
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {barSlot &&
         (canAdd || canSync || virtualChassis) &&
         createPortal(
@@ -1701,7 +1730,8 @@ function DeviceInterfacesPane({
           total={q.data?.count}
           columns={columns}
           rowStyle={(r) => portTint(r)}
-          embedded
+          tableId="device-interfaces"
+          stickyHeader
           onSelectedRowsChange={setSelIfaces}
         />
       )}

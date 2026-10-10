@@ -2723,6 +2723,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     hardware_count = serializers.SerializerMethodField()
     console_count = serializers.SerializerMethodField()
     power_count = serializers.SerializerMethodField()
+    front_port_count = serializers.SerializerMethodField()
+    rear_port_count = serializers.SerializerMethodField()
     service_count = serializers.SerializerMethodField()
     routing_count = serializers.SerializerMethodField()
     image_count = serializers.SerializerMethodField()
@@ -3137,14 +3139,21 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
 
     @detail_only(0)
     def get_hardware_count(self, obj) -> int:
-        # Everything on the Hardware tab: bays, modules, inventory, antennas,
-        # front/rear.
+        # Everything on the Hardware tab: bays, modules, inventory, antennas.
+        # Front and rear ports have tabs of their own (#345).
         return (
             obj.device_bays.count() + obj.module_bays.count()
             + obj.modules.count() + obj.inventory_items.count()
             + obj.antennas.count()
-            + obj.front_ports.count() + obj.rear_ports.count()
         )
+
+    @detail_only(0)
+    def get_front_port_count(self, obj) -> int:
+        return obj.front_ports.count()
+
+    @detail_only(0)
+    def get_rear_port_count(self, obj) -> int:
+        return obj.rear_ports.count()
 
     @detail_only(0)
     def get_console_count(self, obj) -> int:
@@ -3236,6 +3245,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "tags", "tag_ids", "custom_fields",
                   "interface_count", "ip_count",
                   "hardware_count", "console_count", "power_count",
+                  "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
                   "contact_count", "document_count", "permissions",
                   "created_at", "updated_at"]
@@ -3677,6 +3687,37 @@ class MACAddressSerializer(
             return cache[obj.pk]
         return vendor_of_object(obj)
 
+    # Where the network learned the MAC - the MAC page's Location (#344).
+    location = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj) -> dict | None:
+        from monitoring.mac_location import location_cells
+        from monitoring.mac_tables import canon_mac
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            # Sightings are cut to the caller's device scope: no caller, no
+            # Location rather than the tenant's whole view.
+            return None
+        # Resolved once for the whole page, like the vendor (#340).
+        cache = getattr(self.root, "_location_cache", None)
+        if cache is None or obj.tenant_id not in cache:
+            inst = self.root.instance
+            objs = list(inst) if isinstance(inst, (list, tuple)) else [obj]
+            by_tenant: dict = {}
+            for o in objs:
+                by_tenant.setdefault(o.tenant_id, set()).add(canon_mac(o.mac_address))
+            by_tenant.setdefault(obj.tenant_id, set()).add(canon_mac(obj.mac_address))
+            tenants = Tenant.objects.in_bulk(list(by_tenant))
+            cache = {
+                tid: location_cells(tenants[tid], macs - {None}, user)
+                for tid, macs in by_tenant.items() if tid in tenants
+            }
+            self.root._location_cache = cache
+        return (cache.get(obj.tenant_id) or {}).get(canon_mac(obj.mac_address))
+
     assigned_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="assigned_interface", queryset=Interface.objects.all(),
         write_only=True, required=False, allow_null=True,
@@ -3690,9 +3731,9 @@ class MACAddressSerializer(
         model = MACAddress
         fields = ["id", "numid", "mac_address", "assigned_interface",
                   "assigned_interface_id", "description", "vendor_override",
-                  "vendor", "tags", "tag_ids", "custom_fields", "created_at",
-                  "updated_at"]
-        read_only_fields = ["id", "numid", "vendor", "created_at", "updated_at"]
+                  "vendor", "location", "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "vendor", "location", "created_at", "updated_at"]
 
 
 class MACAddressMiniSerializer(serializers.ModelSerializer):

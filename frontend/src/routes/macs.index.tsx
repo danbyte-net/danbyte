@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
@@ -9,11 +9,10 @@ import type {
   MacSightingPage,
   MacSightingRow,
   Paginated,
-  Tag,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, selectionColumn } from "@/components/data-table"
-import { TagList } from "@/components/cells/tag-list"
+import { buildMacColumns, learnedAtKey } from "@/components/columns/mac-columns"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
@@ -356,6 +355,7 @@ function RecordedMacs() {
         return true
       if (m.objects.some((o) => o.description.toLowerCase().includes(needle)))
         return true
+      if (learnedAtKey(m).toLowerCase().includes(needle)) return true
       return m.ips.some((ip) => ip.ip_address.toLowerCase().includes(needle))
     })
   }, [allRows, q])
@@ -363,8 +363,8 @@ function RecordedMacs() {
   const columns = useMemo<ColumnDef<MacRow>[]>(
     () =>
       canRemove
-        ? [selectionColumn<MacRow>(), ...buildColumns()]
-        : buildColumns(),
+        ? [selectionColumn<MacRow>(), ...buildMacColumns<MacRow>()]
+        : buildMacColumns<MacRow>(),
     [canRemove]
   )
   const {
@@ -430,177 +430,4 @@ function RecordedMacs() {
       <OuiRangesDialog open={ranges} onOpenChange={setRanges} />
     </ListPageShell>
   )
-}
-
-/** All distinct non-empty object descriptions, joined - so a row that matched a
- * search on any object's description always shows the matched text. */
-function allDescriptions(m: MacEntry): string {
-  const seen = new Set<string>()
-  for (const o of m.objects) if (o.description) seen.add(o.description)
-  return [...seen].join(" · ")
-}
-
-/** Union of tags across a MAC's objects, de-duplicated by id. */
-function unionTags(m: MacEntry): Tag[] {
-  const seen = new Map<number, Tag>()
-  for (const o of m.objects) for (const t of o.tags) seen.set(t.id, t)
-  return [...seen.values()]
-}
-
-function buildColumns(): ColumnDef<MacRow>[] {
-  return [
-    {
-      id: "mac",
-      header: "MAC address",
-      cell: ({ row }) => (
-        <Link
-          to="/macs/$mac"
-          params={{ mac: row.original.mac }}
-          className="link font-mono text-[13px] font-medium"
-        >
-          {row.original.mac}
-        </Link>
-      ),
-    },
-    {
-      id: "vendor",
-      header: "Vendor",
-      cell: ({ row }) =>
-        row.original.vendor ? (
-          <span
-            className={
-              row.original.vendor.source === "local"
-                ? "text-xs text-muted-foreground"
-                : "text-xs"
-            }
-          >
-            {row.original.vendor.name}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Vendor",
-          get: (r: MacEntry) => r.vendor?.name ?? "__none__",
-          formatValue: (v) => ({ label: v === "__none__" ? "Unknown" : v }),
-        },
-      },
-    },
-    {
-      id: "interfaces",
-      header: "Interfaces",
-      cell: ({ row }) => {
-        const ifs = row.original.interfaces
-        const vifs = row.original.vm_interfaces
-        if (ifs.length === 0 && vifs.length === 0)
-          return <span className="text-muted-foreground">-</span>
-        return (
-          <div className="flex flex-wrap items-center gap-1">
-            {ifs.map((i) => (
-              <Link
-                key={i.id}
-                to="/interfaces/$id"
-                params={{ id: i.id }}
-                className="link rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]"
-              >
-                {i.device.name}:{i.name}
-              </Link>
-            ))}
-            {vifs.map((i) => (
-              <Link
-                key={i.id}
-                to="/virtual-machines/$id"
-                params={{ id: i.vm.id }}
-                search={{ tab: "components" }}
-                className="link rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]"
-              >
-                {i.vm.name}:{i.name}
-              </Link>
-            ))}
-          </div>
-        )
-      },
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Interface",
-          get: (r: MacEntry) =>
-            r.interfaces.length > 0 || r.vm_interfaces.length > 0
-              ? "yes"
-              : "no",
-          formatValue: (v) => ({
-            label: v === "yes" ? "Has interface" : "No interface",
-          }),
-        },
-      },
-    },
-    {
-      id: "ips",
-      header: "Paired IPs",
-      cell: ({ row }) => {
-        const ips = row.original.ips
-        if (ips.length === 0)
-          return <span className="text-muted-foreground">-</span>
-        return (
-          <div className="flex flex-wrap items-center gap-1">
-            {ips.map((ip) => (
-              <Link
-                key={ip.id}
-                to="/ips/$id"
-                params={{ id: ip.id }}
-                className="link rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]"
-              >
-                {ip.ip_address}
-              </Link>
-            ))}
-          </div>
-        )
-      },
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "IP",
-          get: (r: MacEntry) => (r.ips.length > 0 ? "yes" : "no"),
-          formatValue: (v) => ({
-            label: v === "yes" ? "Has IP" : "No IP",
-          }),
-        },
-      },
-    },
-    {
-      id: "tags",
-      header: "Tags",
-      cell: ({ row }) => {
-        const tags = unionTags(row.original)
-        if (tags.length === 0)
-          return <span className="text-muted-foreground">-</span>
-        return <TagList tags={tags} inline />
-      },
-    },
-    {
-      id: "description",
-      header: "Description",
-      accessorFn: (r) => allDescriptions(r),
-      cell: ({ row }) => {
-        const desc = row.getValue<string>("description")
-        return desc ? (
-          <span className="text-[13px]">{desc}</span>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )
-      },
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "MAC object",
-          get: (r: MacEntry) => (r.objects.length > 0 ? "yes" : "no"),
-          formatValue: (v) => ({
-            label: v === "yes" ? "Has object" : "No object",
-          }),
-        },
-      },
-    },
-  ]
 }
