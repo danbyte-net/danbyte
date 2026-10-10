@@ -72,7 +72,8 @@ def public_host() -> str:
     host = urlsplit(url if "://" in url else f"https://{url}").hostname if url else ""
     if host:
         return host
-    for h in getattr(settings, "ALLOWED_HOSTS", []) or []:
+    hosts = getattr(settings, "PUBLIC_ALLOWED_HOSTS", None) or getattr(settings, "ALLOWED_HOSTS", [])
+    for h in hosts or []:
         if h and not h.startswith(("*", ".")) and h not in {"localhost", "127.0.0.1", "::1"}:
             return h
     return socket.gethostname()

@@ -22,6 +22,11 @@ x-app-env: &app-env
   # mounted over /app/backups hid the backups app's own code behind the
   # copy Docker took when the volume was made (#332).
   DANBYTE_BACKUP_DIR: /app/backup-archives
+  # Where scripts run by the workers reach the API: the backend service, not
+  # 127.0.0.1 (nothing listens there in the workers container). Every service
+  # gets it, so the backend also accepts this host name (settings.py adds it
+  # to ALLOWED_HOSTS).
+  DANBYTE_INTERNAL_URL: ${DANBYTE_INTERNAL_URL:-http://backend:8000}
   DB_NAME: ${DB_NAME:-danbyte}
   DB_USER: ${DB_USER:-danbyte}
   DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}

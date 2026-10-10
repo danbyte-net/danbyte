@@ -10,7 +10,8 @@ django_asgi_app = get_asgi_application()
 
 from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.security.websocket import AllowedHostsOriginValidator  # noqa: E402
+from channels.security.websocket import OriginValidator  # noqa: E402
+from django.conf import settings  # noqa: E402
 
 from api.ws_urls import websocket_urlpatterns
 
@@ -22,8 +23,10 @@ application = ProtocolTypeRouter(
         # be one of ours, or another site the user visits could drive their
         # SSH terminal (#228). ALLOWED_HOSTS is already the list of names this
         # deployment answers to; a handshake with no Origin is refused too.
-        "websocket": AllowedHostsOriginValidator(
-            AuthMiddlewareStack(URLRouter(websocket_urlpatterns))
+        # The operator's list only: the internal API host is not a browser origin.
+        "websocket": OriginValidator(
+            AuthMiddlewareStack(URLRouter(websocket_urlpatterns)),
+            settings.PUBLIC_ALLOWED_HOSTS,
         ),
     }
 )

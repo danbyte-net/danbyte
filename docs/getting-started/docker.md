@@ -155,6 +155,32 @@ for per-run namespaces; scripts keep Landlock and Danbyte's filter either
 way. A host without AppArmor needs only the seccomp line. Tested with
 Docker 29; Podman is untested.
 
+### Scripts and the API
+
+A script's SDK calls the API at `DANBYTE_INTERNAL_URL`. Nothing listens on
+`127.0.0.1:8000` inside the `workers` container, so the compose file sets it
+to the `backend` service, `http://backend:8000`, for every app service. The
+backend accepts that one extra host name: a set `DANBYTE_INTERNAL_URL` adds
+its host to `ALLOWED_HOSTS`, and only there; WebSocket origins and the
+site's public name still come from your `ALLOWED_HOSTS`. Override it in
+`.env` only if the backend service is named differently.
+
+### DWG drawings
+
+The image includes LibreDWG's `dwg2dxf`, so
+[floor-plan drawings](../features/floor-plans.md#cad-drawings) take DWG as
+well as DXF with nothing to install: `DANBYTE_CAD_CONVERTER` is set to
+`/usr/local/bin/dwg2dxf` in the image. Debian does not package LibreDWG, so
+the `cad-tools` stage of the `Dockerfile` builds it from the GNU release,
+pinned to one version and its SHA-256, and only that binary reaches the
+runtime image. The build fetches the tarball from `ftp.gnu.org`; a build host
+without it passes another GNU mirror as `--build-arg GNU_MIRROR=…`.
+
+LibreDWG is GPLv3. Danbyte does not link it: the worker runs `dwg2dxf` as a
+separate program for each upload, and the image carries LibreDWG's licence at
+`/usr/share/doc/libredwg/COPYING`. To leave DWG off, set
+`DANBYTE_CAD_CONVERTER=` (empty) in the services' environment.
+
 `web` listens on **:80** (`HTTP_PORT`, default 8080) and **:443**
 (`HTTPS_PORT`, default 8443) with a **self-signed** cert baked into the image -
 so browsers that force HTTPS still connect (one-time cert warning). Put a real
@@ -176,6 +202,7 @@ commented list). The essentials:
 | `DANBYTE_TRUSTED_PROXY_DEPTH` | Proxies appending to `X-Forwarded-For`, counting the stack's own nginx: `1` direct (default), `2` with one proxy in front. Finds the client address for the login lockout. |
 | `HTTP_PORT` | Published host port (default `8080`). |
 | `RQ_WORKERS` | Worker pool size. |
+| `DANBYTE_INTERNAL_URL` | Where scripts reach the API (default `http://backend:8000`). See [Scripts and the API](#scripts-and-the-api). |
 | `BASE_IMAGE_REGISTRY` | Where base images come from (default `public.ecr.aws/docker/library`). See [Base images](#base-images). |
 
 ## Base images

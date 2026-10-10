@@ -39,3 +39,23 @@ class ComposeVolumeTests(SimpleTestCase):
         backup_dir = doc["x-app-env"]["DANBYTE_BACKUP_DIR"]
         for name in ("backend", "workers"):
             self.assertIn(f"backups:{backup_dir}", doc["services"][name]["volumes"], name)
+
+
+class ComposeInternalUrlTests(SimpleTestCase):
+    """Scripts in the workers container reach the API on the backend service:
+    nothing listens on the workers' own 127.0.0.1:8000."""
+
+    def test_prod_points_every_app_service_at_the_backend(self):
+        doc = yaml.safe_load((ROOT / "docker-compose.prod.yml").read_text())
+        url = doc["x-app-env"]["DANBYTE_INTERNAL_URL"]
+        self.assertEqual(url, "${DANBYTE_INTERNAL_URL:-http://backend:8000}")
+        self.assertIn("0.0.0.0:8000", doc["services"]["backend"]["command"])
+        # The backend must see the setting too, or it refuses the host name.
+        for name in ("backend", "workers", "scheduler", "fastlane", "ws"):
+            env = doc["services"][name]["environment"]
+            self.assertEqual(env.get("DANBYTE_INTERNAL_URL"), url, name)
+
+    def test_dev_workers_point_at_the_backend(self):
+        doc = yaml.safe_load((ROOT / "docker-compose.dev.yml").read_text())
+        env = doc["services"]["workers"]["environment"]
+        self.assertEqual(env["DANBYTE_INTERNAL_URL"], "http://backend:8000")

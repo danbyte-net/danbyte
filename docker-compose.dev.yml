@@ -54,6 +54,8 @@ services:
     build: *build
     command: python manage.py rqworker default high low
     environment:
+      # Scripts reach the API on the backend service, not the worker's loopback.
+      DANBYTE_INTERNAL_URL: http://backend:8000
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: danbyte

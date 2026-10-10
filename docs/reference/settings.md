@@ -137,7 +137,9 @@ the API. What each level blocks is in
 Trusted scripts are never confined.
 
 `DANBYTE_INTERNAL_URL` is where a script's SDK reaches the API. Default:
-`http://127.0.0.1:8000`.
+`http://127.0.0.1:8000`. When set, its host is added to `ALLOWED_HOSTS` so the
+backend answers to it; WebSocket origins and the site's public name keep to
+the `ALLOWED_HOSTS` you set. The Docker stack sets it to `http://backend:8000`.
 
 ## CAD drawings (`DANBYTE_CAD_CONVERTER`)
 
@@ -148,8 +150,9 @@ as DXF instead; DXF needs nothing.
 
 Two programs are accepted, by file name:
 
-- `dwg2dxf` from LibreDWG (GPL; build it from source, Debian and Ubuntu do not
-  package it).
+- `dwg2dxf` from LibreDWG (GPLv3; build it from source, Debian and Ubuntu do
+  not package it). The Docker image builds it and sets
+  `DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf`.
 - `ODAFileConverter`, the ODA File Converter (free download from the Open
   Design Alliance; not redistributable, so never bundled). It runs with
   `QT_QPA_PLATFORM=offscreen`.

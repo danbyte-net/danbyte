@@ -101,6 +101,20 @@ PLUGINS_CONFIG: dict = {}
 # Where a script's SDK client points at this install. Loopback by default;
 # set it when the backend is not reachable on 127.0.0.1:8000 from a worker.
 DANBYTE_INTERNAL_URL = os.getenv("DANBYTE_INTERNAL_URL", "http://127.0.0.1:8000")
+# The backend has to answer to that URL's host (in Docker, the `backend`
+# service name), so a set DANBYTE_INTERNAL_URL adds its host, and only that, to
+# ALLOWED_HOSTS. PUBLIC_ALLOWED_HOSTS stays the operator's list: WebSocket
+# origins and the public host name are taken from it, not from the internal one.
+PUBLIC_ALLOWED_HOSTS = list(ALLOWED_HOSTS)
+INTERNAL_HOST = ""
+if os.getenv("DANBYTE_INTERNAL_URL", "").strip():
+    from urllib.parse import urlsplit as _urlsplit
+
+    INTERNAL_HOST = (_urlsplit(DANBYTE_INTERNAL_URL.strip()).hostname or "").lower()
+    if ":" in INTERNAL_HOST:  # an IPv6 literal is listed in brackets
+        INTERNAL_HOST = f"[{INTERNAL_HOST}]"
+    if INTERNAL_HOST and INTERNAL_HOST not in ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(INTERNAL_HOST)
 # Sandboxed scripts (#316): "auto" adds bubblewrap namespaces around Landlock
 # where bwrap works and falls back to Landlock alone; "bwrap" refuses a run it
 # cannot wrap; "landlock" is Landlock alone; "none" runs them unconfined, and
