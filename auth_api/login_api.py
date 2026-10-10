@@ -130,10 +130,13 @@ def _clear_login_failures(request, username: str) -> None:
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
 def _json(request):
+    """The JSON object body, or None when it is not valid JSON or not an
+    object (a string or list body used to crash the callers, #373)."""
     try:
-        return json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
+        data = json.loads(request.body or b"{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def _profile(user) -> UserProfile:

@@ -173,6 +173,8 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # A NUL byte in a query parameter is a 400 before any view runs (#373).
+    "core.middleware.RejectNulQueryMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "auth_api.rbac.RequestCacheMiddleware",
@@ -304,6 +306,13 @@ REST_FRAMEWORK = {
     # client-side, so a small page silently hides rows. ?limit= still overrides.
     "DEFAULT_PAGINATION_CLASS": "api.pagination.StandardResultsSetPagination",
     "PAGE_SIZE": 10000,
+    # JSON bodies must be objects: a string or list reached views reading
+    # request.data.get(...) and crashed (#373). See api/parsers.py.
+    "DEFAULT_PARSER_CLASSES": [
+        "api.parsers.ObjectJSONParser",
+        "rest_framework.parsers.FormParser",
+        "rest_framework.parsers.MultiPartParser",
+    ],
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",

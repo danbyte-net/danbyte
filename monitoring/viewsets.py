@@ -15,10 +15,11 @@ from django.db.models import Exists, OuterRef, Q
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.bulk_delete import bulk_ids
+from api.parsers import ObjectJSONParser
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 from auth_api import rbac
@@ -240,7 +241,7 @@ class CertificateViewSet(TenantScopedViewSet):
 
     queryset = Certificate.objects.all()
     serializer_class = CertificateSerializer
-    parser_classes = [JSONParser, FormParser, MultiPartParser]
+    parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
     # Importing a bundle creates rows, so it needs an ``add`` grant, not the
     # ``change`` a custom mutating action defaults to.
     rbac_action_map = {"import_bundle": "add"}
@@ -460,7 +461,7 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
 
     queryset = SSHHostKey.objects.select_related("device").all()
     serializer_class = SSHHostKeySerializer
-    parser_classes = [JSONParser, FormParser, MultiPartParser]
+    parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
 
     def get_queryset(self):
         qs = super().get_queryset().order_by("device_id", "key_type")
@@ -2293,7 +2294,7 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
     # Global resource: DEPLOYMENT admin only. A tenant-scoped change-user
     # grant must not let a tenant admin push software to every outpost.
     permission_classes = [_IsDeploymentAdminOnly]
-    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    parser_classes = [MultiPartParser, FormParser, ObjectJSONParser]
 
     def perform_create(self, serializer):
         self._stamp_size(serializer.save())

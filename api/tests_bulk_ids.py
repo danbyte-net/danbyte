@@ -56,7 +56,8 @@ class BulkIdsTests(APITestCase):
             with self.subTest(url=url):
                 r = self.client.post(url, ["x"], format="json")
                 self.assertEqual(r.status_code, 400, r.content)
-                self.assertIn("ids", r.json())
+                # Refused by the API-wide parser before the view runs (#373).
+                self.assertEqual(r.json(), {"non_field_errors": ["Expected a JSON object."]})
 
     def test_real_ids_still_delete(self):
         provider = Provider.objects.create(tenant=self.tenant, name="P", slug="p")

@@ -280,6 +280,77 @@ class IpListTests(_Base):
         )
 
 
+class IpListDeepPageTests(_Base):
+    """The DHCP flags are computed for the page's rows only, after paging:
+    Postgres evaluates the select list for every row OFFSET skips, so a flag
+    in the paged query made page N cost N pages of EXISTS (#372)."""
+
+    DHCP_TABLES = ("integrations_dhcpreservation", "integrations_dhcplease",
+                   "integrations_dhcpscope", "integrations_dhcpexclusion")
+
+    def setUp(self):
+        from integrations.models import DhcpExclusion, DhcpLease, DhcpReservation, DhcpScope
+
+        super().setUp()
+        p = Prefix.objects.create(tenant=self.tenant, cidr="10.78.0.0/24")
+        self.ips = {
+            h: IPAddress.objects.create(tenant=self.tenant, ip_address=f"10.78.0.{h}", prefix=p)
+            for h in range(1, 31)
+        }
+        scope = DhcpScope.objects.create(
+            tenant=self.tenant, scope_id="10.78.0.0", name="Lab", prefix=p,
+            start_range="10.78.0.20", end_range="10.78.0.30",
+        )
+        DhcpExclusion.objects.create(
+            scope=scope, start_address="10.78.0.22", end_address="10.78.0.23"
+        )
+        DhcpReservation.objects.create(scope=scope, ip="10.78.0.25", ip_address=self.ips[25])
+        DhcpLease.objects.create(scope=scope, ip="10.78.0.27", ip_address=self.ips[27])
+
+    def _page(self, n):
+        url = f"/api/ips/?page_size=5&page={n}"
+        self.client.get(url)
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.get(url)
+        self.assertEqual(r.status_code, 200, r.content)
+        return ctx.captured_queries, r.json()
+
+    def test_paged_query_carries_no_dhcp_subquery(self):
+        queries, _ = self._page(5)
+        paged = [q["sql"] for q in queries if "OFFSET" in q["sql"]
+                 and 'FROM "api_ipaddress"' in q["sql"]]
+        self.assertTrue(paged)
+        for sql in paged:
+            for table in self.DHCP_TABLES:
+                self.assertNotIn(table, sql)
+        # The flags come from one query keyed on the page's ids.
+        dhcp = [q["sql"] for q in queries if "integrations_dhcpreservation" in q["sql"]]
+        self.assertEqual(len(dhcp), 1)
+        self.assertIn(" IN (", dhcp[0])
+        self.assertNotIn("OFFSET", dhcp[0])
+
+    def test_deep_page_costs_what_the_first_costs(self):
+        first, _ = self._page(1)
+        deep, _ = self._page(6)
+        self.assertEqual(len(first), len(deep))
+
+    def test_states_on_a_deep_page(self):
+        state = {}
+        for n in range(1, 7):
+            _, body = self._page(n)
+            state.update({row["ip_address"]: row["dhcp"] for row in body["results"]})
+        self.assertEqual(len(state), 30)
+        self.assertIsNone(state["10.78.0.5"])
+        self.assertEqual(state["10.78.0.21"], "scope")
+        self.assertEqual(state["10.78.0.22"], "exclusion")
+        self.assertEqual(state["10.78.0.25"], "leased")
+        self.assertEqual(state["10.78.0.27"], "leased")
+
+    def test_detail_keeps_the_flag(self):
+        r = self.client.get(f"/api/ips/{self.ips[25].id}/")
+        self.assertEqual(r.json()["dhcp"], "leased")
+
+
 class IpListOrderIndexTests(_Base):
     """The list's default order within a tenant is served by an index, so a
     page reads its rows in order instead of sorting the whole tenant (#339)."""

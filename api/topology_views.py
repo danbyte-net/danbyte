@@ -33,6 +33,7 @@ from collections import deque
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
+from django.core.exceptions import EmptyResultSet
 from django.db import connection
 from django.db.models import Count, Min, Prefetch, Q
 from drf_spectacular.types import OpenApiTypes
@@ -1387,12 +1388,17 @@ def _plain_cable_edges(tenant, f_qs, attr, skip_cable_ids):
     created_at, cable id, rank)`` per group pair and type: the device
     graph's edges between two groups on the cables outside
     ``skip_cable_ids``, which are plain device-to-device hops. One query;
-    the device scope is ``f_qs``'s own SQL."""
+    the device scope is ``f_qs``'s own SQL. A scope Django proves empty
+    (an RBAC constraint such as ``name__in: []``) has no SQL to embed: no
+    devices, so no edges (#368)."""
     qn = connection.ops.quote_name
     term = CableTermination._meta
-    f_sql, f_params = (
-        f_qs.order_by().values_list("id", f"{attr}_id").query.sql_with_params()
-    )
+    try:
+        f_sql, f_params = (
+            f_qs.order_by().values_list("id", f"{attr}_id").query.sql_with_params()
+        )
+    except EmptyResultSet:
+        return []
     devices, joins = [], []
     for i, point in enumerate(_DEVICE_POINT_ATTRS):
         field = term.get_field(point)
