@@ -169,3 +169,35 @@ class HubProblemTests(SimpleTestCase):
         )
         self.assertEqual(_expand("${R}/node:22", {"R": "ghcr.io/m"}), "ghcr.io/m/node:22")
         self.assertEqual(_expand("$R/node:22", {"R": "ghcr.io/m"}), "ghcr.io/m/node:22")
+
+
+class DwgConverterImageTests(SimpleTestCase):
+    """The runtime image carries LibreDWG's dwg2dxf, built from a pinned,
+    checksummed GNU release, and points DANBYTE_CAD_CONVERTER at it."""
+
+    def stages(self) -> dict:
+        out, name = {}, None
+        for line in (ROOT / "Dockerfile").read_text().splitlines():
+            if m := re.match(r"(?i)FROM\s+\S+\s+AS\s+(\S+)", line.strip()):
+                name = m.group(1).lower()
+            if name:
+                out.setdefault(name, []).append(line)
+        return {k: "\n".join(v) for k, v in out.items()}
+
+    def test_build_is_pinned_and_verified(self):
+        tools = self.stages()["cad-tools"]
+        self.assertRegex(tools, r"ARG LIBREDWG_VERSION=\d+\.\d+")
+        self.assertRegex(tools, r"ARG LIBREDWG_SHA256=[0-9a-f]{64}\b")
+        self.assertIn("sha256sum -c", tools)
+        self.assertIn("--disable-bindings", tools)
+        # Built and shipped: dwg2dxf alone, linked statically.
+        self.assertIn("--disable-shared", tools)
+        self.assertIn("make -C programs dwg2dxf", tools)
+
+    def test_runtime_gets_the_binary_and_the_setting(self):
+        from api.cad_render import CONVERTERS
+
+        runtime = self.stages()["runtime"]
+        self.assertIn("COPY --from=cad-tools /out/dwg2dxf /usr/local/bin/dwg2dxf", runtime)
+        self.assertIn("ENV DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf", runtime)
+        self.assertEqual(CONVERTERS["dwg2dxf"], "libredwg")

@@ -397,6 +397,39 @@ A stalled or restarting Redis no longer takes the web tier down: the one
 cache read every request makes falls back to the database, and Redis calls
 give up after two seconds.
 
+### DWG converter
+
+Optional. [Floor-plan drawings](../features/floor-plans.md#cad-drawings) read
+DXF natively; DWG needs a converter program, which Ubuntu and Debian do not
+package. Either:
+
+- **LibreDWG** - build `dwg2dxf` from the GNU release (the Docker image does
+  the same, see the `cad-tools` stage of the `Dockerfile`):
+
+    ```bash
+    sudo apt install build-essential pkg-config xz-utils
+    curl -fLO https://ftp.gnu.org/gnu/libredwg/libredwg-0.14.tar.xz
+    curl -fLO https://ftp.gnu.org/gnu/libredwg/libredwg-0.14.tar.xz.sig
+    gpg --verify libredwg-0.14.tar.xz.sig   # GNU keyring: ftp.gnu.org/gnu/gnu-keyring.gpg
+    tar xJf libredwg-0.14.tar.xz && cd libredwg-0.14
+    ./configure --disable-shared --disable-bindings --disable-python --disable-docs
+    make -C src -j"$(nproc)" && make -C programs dwg2dxf
+    sudo install -m 0755 programs/dwg2dxf /usr/local/bin/dwg2dxf
+    ```
+
+- **ODA File Converter** - the free download from the Open Design Alliance
+  (its licence does not allow bundling it).
+
+Then point Danbyte at it in `.env` and `make restart`:
+
+```ini
+DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf
+```
+
+LibreDWG is GPLv3. Danbyte does not link it: it runs `dwg2dxf` as a separate
+program, one run per upload, so its licence covers that binary alone. See
+[`DANBYTE_CAD_CONVERTER`](../reference/settings.md#cad-drawings-danbyte_cad_converter).
+
 ### Rotating secrets
 
 Any of these can change later without a reinstall:

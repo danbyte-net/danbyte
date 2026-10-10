@@ -2,6 +2,7 @@
 # Production image for Danbyte, built in stages:
 #   frontend  - Node builds the React SPA (frontend/dist)
 #   web       - nginx serving that SPA + proxying api/ws/static/media
+#   cad-tools - builds LibreDWG's dwg2dxf (DWG floor-plan drawings)
 #   runtime   - Python app (gunicorn WSGI, daphne ASGI/WS, rq workers)
 #
 # `runtime` is last so a bare `docker build .` yields the app image; the compose
@@ -38,7 +39,37 @@ RUN apk add --no-cache openssl \
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/maintenance.html /usr/share/nginx/maintenance/maintenance.html
 
-# ─── 3. Python application runtime ───────────────────────────────────────────
+# ─── 3. LibreDWG's dwg2dxf, the DWG converter for floor-plan drawings ────────
+# Neither Debian trixie nor Ubuntu 26.04 packages LibreDWG, so it is built from
+# the GNU release tarball, pinned by version and SHA-256 (the hash of the
+# tarball whose GPG signature by the maintainer was checked when pinning).
+# Only the library and dwg2dxf are built, statically, so the runtime stage
+# copies one binary that needs nothing beyond libc. Same base as `runtime` so
+# the glibc matches. LibreDWG is GPLv3; Danbyte runs it as a separate program
+# (api/cad_render.py) and does not link it. See docs/features/floor-plans.md.
+FROM ${BASE_IMAGE_REGISTRY}/python:3.13-slim AS cad-tools
+ARG LIBREDWG_VERSION=0.14
+ARG LIBREDWG_SHA256=62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275
+# Any GNU mirror; the checksum still has to match.
+ARG GNU_MIRROR=https://ftp.gnu.org/gnu
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+RUN curl -fsSL -o libredwg.tar.xz \
+        "${GNU_MIRROR}/libredwg/libredwg-${LIBREDWG_VERSION}.tar.xz" \
+    && echo "${LIBREDWG_SHA256}  libredwg.tar.xz" | sha256sum -c - \
+    && tar -xJf libredwg.tar.xz --strip-components=1 \
+    && ./configure --disable-shared --enable-static --disable-bindings --disable-python \
+        --disable-docs --disable-werror \
+    && make -C src -j"$(nproc)" \
+    && make -C programs dwg2dxf \
+    && strip programs/dwg2dxf \
+    && install -D -m 0755 programs/dwg2dxf /out/dwg2dxf \
+    && install -D -m 0644 COPYING /out/LICENSE.libredwg
+
+# ─── 4. Python application runtime ───────────────────────────────────────────
 FROM ${BASE_IMAGE_REGISTRY}/python:3.13-slim AS runtime
 # Marks this as the container deployment: in-app self-upgrade is refused here
 # (a process in a container can't rebuild its image or recreate itself), and
@@ -81,6 +112,10 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=cad-tools /out/dwg2dxf /usr/local/bin/dwg2dxf
+COPY --from=cad-tools /out/LICENSE.libredwg /usr/share/doc/libredwg/COPYING
+ENV DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

@@ -135,6 +135,10 @@ shown at **true scale**: its units and the grid's cell size line up, so a
 - **DXF** (ASCII or binary, any version ezdxf reads) is read natively.
 - **DWG** needs a converter on the worker host - see
   [`DANBYTE_CAD_CONVERTER`](../reference/settings.md#cad-drawings-danbyte_cad_converter).
+  The [Docker image](../getting-started/docker.md#dwg-drawings) ships
+  LibreDWG's `dwg2dxf` and sets it, so DWG works there out of the box; a
+  bare-metal install adds one by hand
+  ([Installation](../getting-started/installation.md#dwg-converter)).
   Without one, a DWG upload is refused with the way round it: save the drawing
   as DXF in the CAD program (AutoCAD and BricsCAD: **Save As → DXF**;
   LibreCAD: **File → Save As → Drawing Exchange**) and upload that.
