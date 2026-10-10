@@ -242,9 +242,8 @@ at `import-runs/<id>/`.
 **Airgapped deployments** (update checks disabled) get a clean refusal
 instead of a hanging timeout - no outbound request is attempted. Recovery
 there is the offline route: restore the media folder from a backup, or
-re-upload images per type; [bundles](#bundles) stay the offline carrier for
-*definitions*, but they deliberately reference images rather than embed
-them, so they can't restore the files themselves.
+re-upload images per type, or import [bundles](#bundles) exported with
+*Include photos*, which carry the files themselves.
 
 ### Jumping to the devices
 
@@ -266,6 +265,7 @@ downloads everything that makes the model work:
 
 - every component template (interfaces, console, power, panel ports, bays)
 - the faceplate layout and the photo-port markers
+- the front and rear photos, when you tick **Include photos**
 - inventory-item templates (the disk bays a chassis ships with)
 - the [custom SNMP sensors](../features/snmp-discovery.md#sensors) bound to it
 
@@ -298,8 +298,38 @@ they line up at any resolution of the same photo; if the bundle was built agains
 an image you don't have, the import says so - upload it on the device type and
 the markers land correctly.
 
-API: `GET /api/device-types/{id}/library-export/` and
-`POST /api/device-types/import-bundle/?dry_run=1&replace=1`.
+#### Photos in a bundle {#bundle-photos}
+
+A type with photos asks on **Export bundle** whether to include them; the box
+is ticked. The photos travel inside the file as base64, so the far side gets
+the same pictures the markers and the [calibration](#photo-ports) were
+placed on. Without them a bundle is a small text file you can read and diff.
+
+- **Caps.** 3 MB per photo and 6 MB per bundle, decoded. A stored photo is at
+  most 2000 px on its long edge, so most fit; one that doesn't is left out of
+  the export with a warning and travels as a reference.
+- **Checked by content.** On import each photo must be a JPEG, PNG, GIF or
+  WebP when its bytes are read, and match the type the bundle states. A photo
+  that fails, or a bundle over a cap, is refused whole with the photo named.
+  The preview checks the photos too.
+- **Stored as an upload.** Imported photos go through the same path as an
+  upload on the device type: downscaled to 2000 px, metadata stripped,
+  animation kept. The bundle's photo ports and calibration come along
+  unchanged.
+- **Replace.** With *Update the device type if it already exists*, a bundle
+  that carries a photo replaces that photo; one that doesn't leaves the
+  stored photos alone. A replaced photo without photo ports in the bundle
+  loses its old calibration, as on an upload.
+
+The format stays version 1. In the file, `images.front` and `images.rear` are
+`true` or `false` when the photo is only referenced, or
+`{"mime", "filename", "data"}` when it is carried. Bundles from earlier versions import as before,
+and an earlier version reads a photo bundle as one that references its photos.
+
+API: `GET /api/device-types/{id}/library-export/?include_photos=1` and
+`POST /api/device-types/import-bundle/?dry_run=1&replace=1`. The API leaves
+photos out unless asked, so existing scripts get the same file. The import
+report lists the photos a bundle carries in `images`.
 
 ## Component templates
 

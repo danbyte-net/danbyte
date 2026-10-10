@@ -18,6 +18,11 @@ Design rules, in order of importance:
    duplicates. (Sensors inside a bundle key off their own slug.)
 4. **An imported sensor observes, it does not write.** ``apply_mode`` is forced
    to ``drift`` on import - see :func:`import_bundle`.
+
+Photos travel only when the exporter asks for them. ``images.front`` /
+``images.rear`` is ``true``/``false`` (the type has that photo, not carried)
+or ``{"mime", "filename", "data"}`` with the file as base64. Both shapes are
+version 1: a 0.17 reader takes a carried photo for a referenced one.
 """
 from __future__ import annotations
 
@@ -25,6 +30,23 @@ from typing import Any
 
 BUNDLE_VERSION = 1
 BUNDLE_KEY = "danbyte_device_type"
+
+# Caps on carried photos, decoded. A whole bundle, base64 and all, has to fit
+# the 10 MB request body (DATA_UPLOAD_MAX_MEMORY_SIZE); a stored photo is at
+# most 2000 px on its long edge, which a JPEG or WebP fits in well under this.
+PHOTO_MAX_BYTES = 3 * 1024 * 1024
+BUNDLE_PHOTOS_MAX_BYTES = 6 * 1024 * 1024
+# The formats a carried photo may be, as Pillow names them read from the
+# bytes, with the MIME type the bundle states and the extension it is stored
+# under. MPO is how Pillow reads many phone JPEGs.
+PHOTO_FORMATS = {
+    "JPEG": ("image/jpeg", ".jpg"),
+    "MPO": ("image/jpeg", ".jpg"),
+    "PNG": ("image/png", ".png"),
+    "GIF": ("image/gif", ".gif"),
+    "WEBP": ("image/webp", ".webp"),
+}
+PHOTO_SIDES = ("front", "rear")
 
 # The physical spec of the type itself. Deliberately excludes ids, tenant,
 # owning_site, timestamps and device_count - all local facts.
@@ -75,8 +97,62 @@ SENSOR_FIELDS = (
 )
 
 
-def export_bundle(device_type) -> dict[str, Any]:
-    """Assemble a portable bundle for one configured device type."""
+def _photo_format(raw: bytes) -> str | None:
+    """The format Pillow reads from ``raw`` when it is a whole, decodable photo
+    of an allowed kind; else None. The bytes decide, never a name or a MIME
+    type, and a decompression bomb counts as no photo."""
+    import warnings
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(raw)) as img:
+                fmt = img.format
+                if fmt not in PHOTO_FORMATS:
+                    return None
+                img.verify()
+            # verify() checks structure only; decoding proves the pixels.
+            with Image.open(BytesIO(raw)) as img:
+                img.load()
+    except Exception:  # noqa: BLE001 - anything Pillow refuses is no photo
+        return None
+    return fmt
+
+
+def _embed_photo(field, budget: int) -> dict[str, str] | None:
+    """A stored photo as a bundle entry, or None when there is none, it can't
+    be read, it isn't an allowed format, or it exceeds a cap - the side then
+    stays a plain reference."""
+    import base64
+    import os
+
+    if not field or not field.name:
+        return None
+    try:
+        with field.open("rb") as fh:
+            raw = fh.read(PHOTO_MAX_BYTES + 1)
+    except OSError:
+        return None
+    if len(raw) > min(PHOTO_MAX_BYTES, budget):
+        return None
+    fmt = _photo_format(raw)
+    if fmt is None:
+        return None
+    return {
+        "mime": PHOTO_FORMATS[fmt][0],
+        "filename": os.path.basename(field.name),
+        "data": base64.b64encode(raw).decode("ascii"),
+    }
+
+
+def export_bundle(device_type, *, include_photos: bool = False) -> dict[str, Any]:
+    """Assemble a portable bundle for one configured device type.
+
+    ``include_photos`` carries the front and rear photos as base64 where they
+    fit the caps; a photo that does not stays ``true``, a reference."""
     from monitoring.models import SnmpSensor
 
     out: dict[str, Any] = {
@@ -116,14 +192,20 @@ def export_bundle(device_type) -> dict[str, Any]:
         {f: getattr(s, f) for f in SENSOR_FIELDS}
         for s in SnmpSensor.objects.filter(device_type=device_type).order_by("name")
     ]
-    # Images are referenced, not embedded: a bundle stays a text file you can
-    # read and diff. The importer says which are missing so the user can upload
-    # them - the marker coordinates are useless without the photo they were
-    # placed on.
+    # Images are referenced unless the exporter asks for them: a bundle without
+    # them stays a small text file you can read and diff. The importer says
+    # which are missing so the user can upload them - the marker coordinates
+    # are useless without the photo they were placed on.
     out["images"] = {
-        "front": bool(device_type.front_image),
-        "rear": bool(device_type.rear_image),
+        side: bool(getattr(device_type, f"{side}_image")) for side in PHOTO_SIDES
     }
+    if include_photos:
+        budget = BUNDLE_PHOTOS_MAX_BYTES
+        for side in PHOTO_SIDES:
+            entry = _embed_photo(getattr(device_type, f"{side}_image"), budget)
+            if entry:
+                out["images"][side] = entry
+                budget -= len(entry["data"]) * 3 // 4
     return out
 
 
@@ -158,6 +240,77 @@ def _check_envelope(payload: Any) -> None:
             raise BundleError(
                 "The bundle's photo ports: " + " ".join(str(d) for d in exc.detail)
             ) from None
+
+
+def _carried_photos(payload: dict, type_name: str) -> dict[str, tuple[bytes, str]]:
+    """The photos the bundle carries, decoded and checked: ``{side: (bytes,
+    filename)}``. A side that is ``true``/``false`` or absent carries none. A
+    carried photo that is not valid base64, exceeds a cap, is not an allowed
+    image when its bytes are read, or whose bytes disagree with its stated
+    MIME type refuses the bundle, naming it."""
+    import base64
+    import binascii
+    import os
+
+    from django.utils.text import get_valid_filename, slugify
+
+    imgs = payload.get("images")
+    if imgs is None:
+        return {}
+    if not isinstance(imgs, dict):
+        raise BundleError("`images` must be an object.")
+    photos: dict[str, tuple[bytes, str]] = {}
+    total = 0
+    for side in PHOTO_SIDES:
+        entry = imgs.get(side)
+        if entry is None or isinstance(entry, bool):
+            continue
+        what = f"The {side} photo"
+        if not isinstance(entry, dict) or not isinstance(entry.get("data"), str):
+            raise BundleError(f"{what} needs its file as base64 in `data`.")
+        data = entry["data"]
+        # Refuse an oversized photo before decoding it.
+        if len(data) > (PHOTO_MAX_BYTES + 2) // 3 * 4 + 4:
+            raise BundleError(
+                f"{what} is over the {PHOTO_MAX_BYTES // (1024 * 1024)} MB a "
+                "bundle photo may be."
+            )
+        try:
+            raw = base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError):
+            raise BundleError(f"{what} isn't valid base64.") from None
+        if len(raw) > PHOTO_MAX_BYTES:
+            raise BundleError(
+                f"{what} is over the {PHOTO_MAX_BYTES // (1024 * 1024)} MB a "
+                "bundle photo may be."
+            )
+        total += len(raw)
+        if total > BUNDLE_PHOTOS_MAX_BYTES:
+            raise BundleError(
+                f"The bundle's photos are over the "
+                f"{BUNDLE_PHOTOS_MAX_BYTES // (1024 * 1024)} MB a bundle may carry."
+            )
+        fmt = _photo_format(raw)
+        if fmt is None:
+            raise BundleError(
+                f"{what} isn't a JPEG, PNG, GIF or WebP image Danbyte can read."
+            )
+        mime, ext = PHOTO_FORMATS[fmt]
+        stated = str(entry.get("mime") or "").strip().lower()
+        if stated == "image/jpg":
+            stated = "image/jpeg"
+        if stated != mime:
+            raise BundleError(
+                f"{what} says {stated or 'no type'} but its data is {mime}."
+            )
+        stem = os.path.splitext(os.path.basename(str(entry.get("filename") or "")))[0]
+        try:
+            stem = get_valid_filename(stem)[:80]
+        except Exception:  # noqa: BLE001 - nothing usable left of the name
+            stem = ""
+        stem = stem or f"{slugify(type_name)[:60] or 'device-type'}-{side}"
+        photos[side] = (raw, stem + ext)
+    return photos
 
 
 def _check_type_fields(payload: dict, existing) -> None:
@@ -217,6 +370,7 @@ def import_bundle(
         "sensors": {"created": 0, "updated": 0, "skipped": 0},
         "faceplate": bool(payload.get("faceplate")),
         "image_ports": bool(payload.get("image_ports")),
+        "images": [],
         "missing_images": [],
         "warnings": [],
     }
@@ -231,13 +385,15 @@ def import_bundle(
         return report
     report["action"] = "update" if existing else "create"
     _check_type_fields(payload, existing)
+    photos = _carried_photos(payload, name)
+    report["images"] = list(photos)
 
     # The bundle says whether it was built against a front/rear photo. Marker
     # coordinates are meaningless without one, so say so rather than importing
     # markers that can't be seen.
     imgs = payload.get("images") or {}
-    for side in ("front", "rear"):
-        if imgs.get(side) and not (
+    for side in PHOTO_SIDES:
+        if side not in photos and imgs.get(side) and not (
             existing and getattr(existing, f"{side}_image", None)
         ):
             report["missing_images"].append(side)
@@ -319,7 +475,27 @@ def import_bundle(
 
         _import_components(dt, comps, report)
         _import_sensors(dt, tenant, sensors, report, replace=replace)
+        if photos:
+            _store_photos(dt, photos, keep_calibration=bool(payload.get("image_ports")))
     return report
+
+
+def _store_photos(dt, photos: dict, *, keep_calibration: bool) -> None:
+    """Store carried photos as the images endpoint stores an upload: the same
+    downscale and metadata strip, animation kept. Written last, so a row the
+    import refuses earlier leaves no file behind. The bundle's own photo ports
+    were placed on these photos and keep their calibration; without them, a
+    replaced photo's old calibration goes, as on an upload."""
+    from django.core.files.base import ContentFile
+
+    from .face_ports import drop_calibration
+    from .images import downscale_image
+
+    for side, (raw, filename) in photos.items():
+        setattr(dt, f"{side}_image", downscale_image(ContentFile(raw, name=filename)))
+        if not keep_calibration:
+            dt.image_ports = drop_calibration(dt.image_ports, side)
+    dt.save()
 
 
 def _clean_row(obj, where: str, name: str) -> None:

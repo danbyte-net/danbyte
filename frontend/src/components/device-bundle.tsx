@@ -18,9 +18,9 @@ import { apiErrorToast } from "@/lib/api-toast"
 /**
  * Device-type **bundles** - one file carrying everything that makes a hardware
  * model work in Danbyte: component templates, the faceplate layout, the
- * photo-port markers, inventory templates, and the vendor SNMP sensors that read
- * its health. Export what you built; someone else imports it and gets your
- * result instead of redoing the work.
+ * photo-port markers, optionally the photos, inventory templates, and the
+ * vendor SNMP sensors that read its health. Export what you built; someone
+ * else imports it and gets your result instead of redoing the work.
  *
  * Bundles carry **no credentials** - sensors poll with the importing
  * deployment's own SNMP profile.
@@ -34,24 +34,42 @@ interface ImportReport {
   sensors: { created: number; updated: number; skipped: number }
   faceplate: boolean
   image_ports: boolean
+  images: string[]
   missing_images: string[]
   warnings: string[]
 }
 
-/** Download this device type's bundle as a file. */
+/** Above this many characters a chosen file shows as its name, not text. */
+const LARGE_TEXT = 200_000
+
+type BundlePhoto = boolean | { mime: string; filename: string; data: string }
+
+/**
+ * Download this device type's bundle as a file. A type with photos asks
+ * first whether to carry them (base64 inside the file); a type without
+ * downloads straight away.
+ */
 export function ExportBundleButton({
   deviceTypeId,
   name,
+  hasPhotos = false,
 }: {
   deviceTypeId: string
   name: string
+  hasPhotos?: boolean
 }) {
   const [busy, setBusy] = useState(false)
-  const run = async () => {
+  const [asking, setAsking] = useState(false)
+  const [photos, setPhotos] = useState(true)
+  const run = async (includePhotos: boolean) => {
     setBusy(true)
     try {
-      const bundle = await api<Record<string, unknown>>(
-        `/api/device-types/${deviceTypeId}/library-export/`
+      const bundle = await api<
+        Record<string, unknown> & { images?: Record<string, BundlePhoto> }
+      >(
+        `/api/device-types/${deviceTypeId}/library-export/${
+          includePhotos ? "?include_photos=1" : ""
+        }`
       )
       const blob = new Blob([JSON.stringify(bundle, null, 2)], {
         type: "application/json",
@@ -63,7 +81,20 @@ export function ExportBundleButton({
       a.download = `${name.replace(/[^\w.-]+/g, "-").toLowerCase()}.danbyte.json`
       a.click()
       URL.revokeObjectURL(url)
-      toast.success("Bundle downloaded")
+      // A photo over the size cap stays a reference (`true`) in the file.
+      const left = includePhotos
+        ? Object.entries(bundle.images ?? {})
+            .filter(([, v]) => v === true)
+            .map(([side]) => side)
+        : []
+      if (left.length) {
+        toast.warning(
+          `Bundle downloaded without the ${left.join(" and ")} photo - over the size limit`
+        )
+      } else {
+        toast.success("Bundle downloaded")
+      }
+      setAsking(false)
     } catch (e) {
       apiErrorToast(e)
     } finally {
@@ -71,10 +102,37 @@ export function ExportBundleButton({
     }
   }
   return (
-    <Button variant="outline" size="sm" onClick={run} disabled={busy}>
-      <Download className="h-3.5 w-3.5" />
-      {busy ? "Exporting…" : "Export bundle"}
-    </Button>
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => (hasPhotos ? setAsking(true) : void run(false))}
+        disabled={busy}
+      >
+        <Download className="h-3.5 w-3.5" />
+        {busy && !asking ? "Exporting…" : "Export bundle"}
+      </Button>
+      <Dialog open={asking} onOpenChange={setAsking}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>Export bundle</DialogTitle>
+          </DialogHeader>
+          <FormCheckbox
+            label="Include photos"
+            checked={photos}
+            onChange={setPhotos}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setAsking(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void run(photos)} disabled={busy}>
+              {busy ? "Exporting…" : "Export"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -92,6 +150,8 @@ export function ImportBundleDialog({
 }) {
   const qc = useQueryClient()
   const [text, setText] = useState("")
+  // A bundle carrying photos runs to megabytes - too much to edit as text.
+  const [fileName, setFileName] = useState<string | null>(null)
   const [replace, setReplace] = useState(false)
   const [preview, setPreview] = useState<ImportReport | null>(null)
   const [done, setDone] = useState<ImportReport | null>(null)
@@ -135,6 +195,7 @@ export function ImportBundleDialog({
 
   const reset = () => {
     setText("")
+    setFileName(null)
     setReplace(false)
     setPreview(null)
     setDone(null)
@@ -155,8 +216,8 @@ export function ImportBundleDialog({
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
           A bundle carries a hardware model's component templates, faceplate,
-          photo-port markers and SNMP health sensors. Imported sensors are
-          observe-only: they surface differences as drift and never write a
+          photo-port markers, photos and SNMP health sensors. Imported sensors
+          are observe-only: they surface differences as drift and never write a
           status you set.
         </p>
         <input
@@ -169,7 +230,11 @@ export function ImportBundleDialog({
             if (!f) return
             setPreview(null)
             setDone(null)
-            void f.text().then(setText)
+            void f.text().then((t) => {
+              setText(t)
+              setFileName(t.length > LARGE_TEXT ? f.name : null)
+            })
+            e.target.value = ""
           }}
         />
         <div className="flex flex-wrap items-center gap-3">
@@ -186,18 +251,27 @@ export function ImportBundleDialog({
             onChange={setReplace}
           />
         </div>
-        <Textarea
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            setPreview(null)
-            setDone(null)
-          }}
-          rows={8}
-          spellCheck={false}
-          placeholder='{"danbyte_device_type": 1, "name": "…", "components": { … }}'
-          className="font-mono text-[11px]"
-        />
+        {fileName ? (
+          <div className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-xs">
+            <span className="truncate font-mono">{fileName}</span>
+            <span className="shrink-0 text-muted-foreground">
+              {(text.length / 1024 / 1024).toFixed(1)} MB
+            </span>
+          </div>
+        ) : (
+          <Textarea
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value)
+              setPreview(null)
+              setDone(null)
+            }}
+            rows={8}
+            spellCheck={false}
+            placeholder='{"danbyte_device_type": 1, "name": "…", "components": { … }}'
+            className="font-mono text-[11px]"
+          />
+        )}
 
         {report && (
           <div className="grid gap-1 rounded-md border border-border bg-muted/30 p-2 text-[11px]">
@@ -223,7 +297,10 @@ export function ImportBundleDialog({
             <span className="text-muted-foreground">
               {report.faceplate ? "faceplate" : "no faceplate"} ·{" "}
               {report.image_ports ? "photo ports" : "no photo ports"} ·{" "}
-              {report.sensors.created + report.sensors.updated} sensor
+              {report.images.length
+                ? `${report.images.join(" and ")} photo${report.images.length > 1 ? "s" : ""}`
+                : "no photos"}{" "}
+              · {report.sensors.created + report.sensors.updated} sensor
               {report.sensors.created + report.sensors.updated === 1 ? "" : "s"}
             </span>
             {report.warnings.map((w, i) => (

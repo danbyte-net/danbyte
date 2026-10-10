@@ -2950,10 +2950,16 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         hardware is model knowledge, identical for everyone who owns the box, so
         it should move as a file instead of being redone. Carries no credentials
         (see ``api/device_library.py``).
+
+        ``?include_photos=1`` carries the front and rear photos as base64. Off
+        by default, so a plain export stays the small text file it always was.
         """
         from .device_library import export_bundle
 
-        return Response(export_bundle(self.get_object()))
+        include = str(request.query_params.get("include_photos", "")).lower() in (
+            "1", "true", "yes",
+        )
+        return Response(export_bundle(self.get_object(), include_photos=include))
 
     @action(detail=False, methods=["post"], url_path="import-bundle")
     def import_bundle(self, request):
