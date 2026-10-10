@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import re
 import uuid
 from datetime import timedelta
 from decimal import Decimal
@@ -188,6 +189,8 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
     sites_detail = serializers.SerializerMethodField()
     for_label = serializers.CharField(read_only=True)
     holiday_calendar_detail = serializers.SerializerMethodField()
+    #: The template it was made from, and where it differs from it now.
+    template_detail = serializers.SerializerMethodField()
     group_count = serializers.IntegerField(read_only=True, default=0)
     member_count = serializers.IntegerField(read_only=True, default=0)
     #: The open (or rolling) period's headline, when computed.
@@ -206,10 +209,12 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
             "effective_from", "revision", "group_count", "member_count", "current",
             "notify_channels", "alert_burn_rate", "burn_alerts", "alert_coverage_pct",
             "credit_tiers", "period_fee", "currency",
-            "report_recipients", "report_format",
+            "report_recipients", "report_format", "template", "template_detail",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "revision", "created_at", "updated_at"]
+        # Required unless a template gives it (checked in validate).
+        extra_kwargs = {"target_pct": {"required": False}}
 
     def to_representation(self, obj):
         data = super().to_representation(obj)
@@ -228,6 +233,18 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
     def get_holiday_calendar_detail(self, obj):
         c = obj.holiday_calendar
         return {"id": str(c.id), "name": c.name} if c else None
+
+    def get_template_detail(self, obj):
+        from .sla_template import CREDIT_FIELDS as MONEY
+        from .sla_template import differs
+
+        t = obj.template
+        if t is None:
+            return None
+        diff = differs(obj, t)
+        if not _may_see_credits(self.context.get("request"), obj):
+            diff = [f for f in diff if f not in MONEY]
+        return {"id": str(t.id), "name": t.name, "differs": diff}
 
     def get_current(self, obj):
         res = getattr(obj, "_current", None)
@@ -365,8 +382,30 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(f"«{k}»: expected a number.") from None
         return out
 
+    def _from_template(self, attrs) -> None:
+        """A new agreement made from a template takes the template's value for
+        each of its fields the request leaves out."""
+        t = attrs.get("template")
+        if self.instance is not None or t is None:
+            return
+        given = set(getattr(self, "initial_data", {}) or {})
+        for f in t.FIELDS:
+            field = f.removesuffix("_id")
+            if field not in given:
+                attrs[field] = getattr(t, field)
+
     def validate(self, attrs):
         request = self.context.get("request")
+        tenant = _tenant_of(self)
+        if tenant is not None:
+            _same_tenant(tenant, template=attrs.get("template"))
+        if (request is not None and attrs.get("template") is not None
+                and attrs["template"] != getattr(self.instance, "template", None)
+                and not rbac.has_action(request.user, tenant, "slatemplate", "view")):
+            raise PermissionDenied("slatemplate:view required.")
+        self._from_template(attrs)
+        if self.instance is None and attrs.get("target_pct") is None:
+            raise ValidationError({"target_pct": "This field is required."})
         if request is not None and any(f in attrs for f in CREDIT_FIELDS):
             tenant = _tenant_of(self)
             if not rbac.has_action(request.user, tenant, "slaagreement", "view_credits"):
@@ -585,9 +624,42 @@ def _result_for(agreement, want: str):
     return key, res
 
 
+def _metrics_response(request, agreements, stem: str):
+    """Period figures as rows, each as the caller may see it."""
+    from django.http import HttpResponse
+
+    from .sla_metrics import MAX_PERIODS, row, to_csv
+
+    p = request.query_params
+    results = SlaPeriodResult.objects.order_by("-period_start")
+    def day(key):
+        try:
+            return dt.datetime.combine(dt.date.fromisoformat(p[key]), dt.time(0), dt.UTC)
+        except ValueError:
+            raise ValidationError({key: "A date as YYYY-MM-DD."}) from None
+
+    if p.get("since"):
+        results = results.filter(period_end__gt=day("since"))
+    if p.get("until"):
+        results = results.filter(period_start__lt=day("until") + timedelta(days=1))
+    rows = []
+    for a in agreements:
+        for res in results.filter(agreement=a)[:MAX_PERIODS]:
+            rows.append(row(a, res, _viewer_figures(request, a, res)))
+    stem = re.sub(r"[^a-z0-9._-]+", "-", stem.lower()).strip("-") or "sla-metrics"
+    if p.get("file") == "csv":
+        resp = HttpResponse(to_csv(rows), content_type="text/csv")
+        resp["Content-Disposition"] = f'attachment; filename="{stem}.csv"'
+        return resp
+    resp = Response(rows)
+    if p.get("file") == "json":
+        resp["Content-Disposition"] = f'attachment; filename="{stem}.json"'
+    return resp
+
+
 class SlaAgreementViewSet(TenantScopedViewSet):
     queryset = SlaAgreement.objects.select_related(
-        "customer", "holiday_calendar", "tenant"
+        "customer", "holiday_calendar", "tenant", "template"
     ).prefetch_related("sites")
     serializer_class = SlaAgreementSerializer
 
@@ -673,12 +745,17 @@ class SlaAgreementViewSet(TenantScopedViewSet):
         key, res = _result_for(a, request.query_params.get("period") or "current")
         if res is None:
             return Response({"period_key": key, "computed": False})
+        from .sla_followup import attach, by_cause
+
+        body = _viewer_figures(request, a, res, full=True)
+        body["incidents"] = attach(a, body["incidents"])
+        body["by_cause"] = by_cause(body["incidents"])
         return Response({
             "period_key": res.period_key, "computed": True, "state": res.state,
             "period_start": res.period_start, "period_end": res.period_end,
             "revision": res.revision, "computed_at": res.computed_at,
             "closed_at": res.closed_at, "frozen_at": res.frozen_at,
-            **_viewer_figures(request, a, res, full=True),
+            **body,
         })
 
     @action(detail=True, methods=["get"])
@@ -730,6 +807,10 @@ class SlaAgreementViewSet(TenantScopedViewSet):
         if bucket == "hour" and (min(end, now) - start).days > 45:
             raise ValidationError({"bucket": "Hourly for at most 45 days."})
         body = analyse(a, start, end, rules=rules, filters=filters, bucket=bucket, now=now)
+        from .sla_followup import attach, by_cause
+
+        body["incidents"] = attach(a, body["incidents"])
+        body["by_cause"] = by_cause(body["incidents"])
         # A slice prices nothing; the whole agreement only for a credit viewer.
         body["figures"] = _credit_gate(
             request, a, body["figures"], whole=not filters)
@@ -851,6 +932,33 @@ class SlaAgreementViewSet(TenantScopedViewSet):
              "created_by": getattr(r.created_by, "username", None)}
             for r in a.revisions.select_related("created_by")
         ])
+
+    @action(detail=True, methods=["get"])
+    def metrics(self, request, pk=None):
+        """The stored figures of every period, ``?file=csv|json`` (JSON by
+        default), ``?since=&until=`` (dates) to narrow the periods."""
+        a = self.get_object()
+        return _metrics_response(request, [a], f"sla-metrics-{a.name}")
+
+    @action(detail=False, methods=["get"], url_path="metrics")
+    def metrics_all(self, request):
+        """The same for every agreement the caller can see, but drafts."""
+        agreements = self.get_queryset().exclude(status="draft")
+        return _metrics_response(request, agreements, "sla-metrics")
+
+    @action(detail=True, methods=["post"], url_path="sync-template")
+    def sync_template(self, request, pk=None):
+        """Copy the agreement's template into it, as a new revision."""
+        from .sla_template import sync
+        from .sla_template_api import check_sync
+
+        a = self.get_object()
+        if a.template is None:
+            raise ValidationError({"template": "Not made from a template."})
+        if not rbac.has_action(request.user, a.tenant, "slatemplate", "view"):
+            raise PermissionDenied("slatemplate:view required.")
+        check_sync(request, a.tenant, a, a.template)
+        return Response({"synced": sync(a, a.template, request.user), "revision": a.revision})
 
     @action(detail=True, methods=["post"])
     def recompute(self, request, pk=None):

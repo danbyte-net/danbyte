@@ -38,6 +38,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PERIOD_LABEL } from "./sla-figure"
 import { MEMBER_NOUN } from "./sla-drill"
+import { useSlaTemplates } from "./sla-templates"
 
 // A new agreement in three steps: what is promised, to what, and which
 // checks measure it. Everything else keeps its default and is on the full
@@ -148,6 +149,9 @@ export function SlaWizard({
   const [forName, setForName] = useState("")
   const [target, setTarget] = useState("99.9")
   const [period, setPeriod] = useState<SlaPeriod>("month")
+  // An SLA template (tier): its rules fill what this wizard does not ask.
+  const [tier, setTier] = useState<string | null>(null)
+  const tierList = useSlaTemplates()
   // Step 2
   const [kind, setKind] = useState<WizardKind>("api.device")
   const [members, setMembers] = useState<Picked[]>([])
@@ -247,6 +251,7 @@ export function SlaWizard({
           target_pct: target,
           period,
           status: "active",
+          ...(tier ? { template: tier } : {}),
         }),
       })
       const group = await api<{ id: string }>(
@@ -320,6 +325,28 @@ export function SlaWizard({
       {step === 0 && (
         <FormSection title="Agreement" card>
           <div className="grid gap-3 sm:grid-cols-2">
+            {(tierList.data?.results.length ?? 0) > 0 && (
+              <FormCombobox
+                label="Template"
+                value={tier}
+                onChange={(id) => {
+                  setTier(id)
+                  const t = tierList.data?.results.find((x) => x.id === id)
+                  if (t) {
+                    setTarget(t.target_pct)
+                    setPeriod(t.period)
+                  }
+                }}
+                options={(tierList.data?.results ?? []).map((t) => ({
+                  value: t.id,
+                  label: t.name,
+                }))}
+                noneLabel="None"
+                placeholder="None"
+                info="Takes the template's target, hours, counting rules, objectives and credits."
+                className="sm:col-span-2"
+              />
+            )}
             <FormText
               label="Name"
               value={name}

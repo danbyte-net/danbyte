@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { SlaAgreement, SlaIncident, SlaMemberFigure } from "@/lib/api"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { dash } from "@/components/cells/dash"
 import { TimeCell } from "@/components/cells/time-ago"
 import { SortHeader } from "@/components/data-table"
@@ -265,5 +266,59 @@ export function slaIncidentColumns(): ColumnDef<SlaIncident>[] {
       header: "Down",
       cell: ({ row }) => row.original.members.join(", ") || dash,
     },
+    {
+      id: "cause",
+      accessorFn: (r) => r.follow_up?.cause_detail?.name ?? "",
+      header: "Cause",
+      cell: ({ row }) => {
+        const c = row.original.follow_up?.cause_detail
+        return c ? (
+          <ColorBadge name={c.name} color={c.color || undefined} />
+        ) : (
+          dash
+        )
+      },
+    },
+    {
+      id: "ticket",
+      accessorFn: (r) => r.follow_up?.ticket_url ?? "",
+      header: "Ticket",
+      cell: ({ row }) => {
+        const url = row.original.follow_up?.ticket_url
+        return url ? (
+          <a href={url} target="_blank" rel="noreferrer" className="link">
+            {ticketLabel(url)}
+          </a>
+        ) : (
+          dash
+        )
+      },
+    },
+    {
+      id: "disputed",
+      accessorFn: (r) => (r.follow_up?.disputed ? 1 : 0),
+      header: "Disputed",
+      cell: ({ row }) =>
+        row.original.follow_up?.disputed ? (
+          <Badge variant="warning">Disputed</Badge>
+        ) : null,
+    },
+    {
+      id: "note",
+      accessorFn: (r) => r.follow_up?.note ?? "",
+      header: "Note",
+      cell: ({ row }) => row.original.follow_up?.note || dash,
+    },
   ]
+}
+
+/** A ticket link as its last path part ("INC-42"), or its host. */
+export function ticketLabel(url: string): string {
+  try {
+    const u = new URL(url)
+    const last = u.pathname.split("/").filter(Boolean).at(-1)
+    return last ? decodeURIComponent(last) : u.host
+  } catch {
+    return url
+  }
 }

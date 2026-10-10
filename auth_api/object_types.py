@@ -262,6 +262,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Covers the agreement's check groups, members and exclusions too.
     ("monitoring.SlaAgreement", "SLA agreements", "Monitoring"),
     ("monitoring.HolidayCalendar", "Holiday calendars", "Monitoring"),
+    ("monitoring.SlaIncidentCause", "SLA incident causes", "Monitoring"),
+    ("monitoring.SlaTemplate", "SLA templates", "Monitoring"),
     ("monitoring.MonitoringPolicy", "Monitoring policies", "Monitoring"),
     ("monitoring.MonitoringProfile", "Monitoring profiles", "Monitoring"),
     ("monitoring.MonitoringDenySubnet", "Monitoring deny subnets", "Monitoring"),

@@ -514,8 +514,11 @@ import { Route as AsPathListsIdEditRouteImport } from './routes/as-path-lists.$i
 import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
 import { Route as AggregatesIdEditRouteImport } from './routes/aggregates.$id_.edit'
 import { Route as PlanningBoardIdTasksTaskIdRouteImport } from './routes/planning.$boardId_.tasks.$taskId'
+import { Route as MonitoringSlaTemplatesNewRouteImport } from './routes/monitoring_.sla.templates.new'
+import { Route as MonitoringSlaTemplatesIdRouteImport } from './routes/monitoring_.sla.templates.$id'
 import { Route as MonitoringSlaIdEditRouteImport } from './routes/monitoring_.sla.$id_.edit'
 import { Route as LTenantTypeNumidRouteImport } from './routes/l.$tenant.$type.$numid'
+import { Route as MonitoringSlaTemplatesIdEditRouteImport } from './routes/monitoring_.sla.templates.$id_.edit'
 
 const ZonesRoute = ZonesRouteImport.update({
   id: '/zones',
@@ -3046,6 +3049,18 @@ const PlanningBoardIdTasksTaskIdRoute =
     path: '/planning/$boardId/tasks/$taskId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const MonitoringSlaTemplatesNewRoute =
+  MonitoringSlaTemplatesNewRouteImport.update({
+    id: '/monitoring_/sla/templates/new',
+    path: '/monitoring/sla/templates/new',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const MonitoringSlaTemplatesIdRoute =
+  MonitoringSlaTemplatesIdRouteImport.update({
+    id: '/monitoring_/sla/templates/$id',
+    path: '/monitoring/sla/templates/$id',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const MonitoringSlaIdEditRoute = MonitoringSlaIdEditRouteImport.update({
   id: '/monitoring_/sla/$id_/edit',
   path: '/monitoring/sla/$id/edit',
@@ -3056,6 +3071,12 @@ const LTenantTypeNumidRoute = LTenantTypeNumidRouteImport.update({
   path: '/l/$tenant/$type/$numid',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MonitoringSlaTemplatesIdEditRoute =
+  MonitoringSlaTemplatesIdEditRouteImport.update({
+    id: '/monitoring_/sla/templates/$id_/edit',
+    path: '/monitoring/sla/templates/$id/edit',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -3564,7 +3585,10 @@ export interface FileRoutesByFullPath {
   '/zones/$id/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
   '/monitoring/sla/$id/edit': typeof MonitoringSlaIdEditRoute
+  '/monitoring/sla/templates/$id': typeof MonitoringSlaTemplatesIdRoute
+  '/monitoring/sla/templates/new': typeof MonitoringSlaTemplatesNewRoute
   '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
+  '/monitoring/sla/templates/$id/edit': typeof MonitoringSlaTemplatesIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -4004,7 +4028,10 @@ export interface FileRoutesByTo {
   '/zones/$id/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
   '/monitoring/sla/$id/edit': typeof MonitoringSlaIdEditRoute
+  '/monitoring/sla/templates/$id': typeof MonitoringSlaTemplatesIdRoute
+  '/monitoring/sla/templates/new': typeof MonitoringSlaTemplatesNewRoute
   '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
+  '/monitoring/sla/templates/$id/edit': typeof MonitoringSlaTemplatesIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -4514,7 +4541,10 @@ export interface FileRoutesById {
   '/zones/$id_/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
   '/monitoring_/sla/$id_/edit': typeof MonitoringSlaIdEditRoute
+  '/monitoring_/sla/templates/$id': typeof MonitoringSlaTemplatesIdRoute
+  '/monitoring_/sla/templates/new': typeof MonitoringSlaTemplatesNewRoute
   '/planning/$boardId_/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
+  '/monitoring_/sla/templates/$id_/edit': typeof MonitoringSlaTemplatesIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -5025,7 +5055,10 @@ export interface FileRouteTypes {
     | '/zones/$id/edit'
     | '/l/$tenant/$type/$numid'
     | '/monitoring/sla/$id/edit'
+    | '/monitoring/sla/templates/$id'
+    | '/monitoring/sla/templates/new'
     | '/planning/$boardId/tasks/$taskId'
+    | '/monitoring/sla/templates/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -5465,7 +5498,10 @@ export interface FileRouteTypes {
     | '/zones/$id/edit'
     | '/l/$tenant/$type/$numid'
     | '/monitoring/sla/$id/edit'
+    | '/monitoring/sla/templates/$id'
+    | '/monitoring/sla/templates/new'
     | '/planning/$boardId/tasks/$taskId'
+    | '/monitoring/sla/templates/$id/edit'
   id:
     | '__root__'
     | '/'
@@ -5974,7 +6010,10 @@ export interface FileRouteTypes {
     | '/zones/$id_/edit'
     | '/l/$tenant/$type/$numid'
     | '/monitoring_/sla/$id_/edit'
+    | '/monitoring_/sla/templates/$id'
+    | '/monitoring_/sla/templates/new'
     | '/planning/$boardId_/tasks/$taskId'
+    | '/monitoring_/sla/templates/$id_/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -6188,7 +6227,10 @@ export interface RootRouteChildren {
   VirtualMachinesIdEditRoute: typeof VirtualMachinesIdEditRoute
   LTenantTypeNumidRoute: typeof LTenantTypeNumidRoute
   MonitoringSlaIdEditRoute: typeof MonitoringSlaIdEditRoute
+  MonitoringSlaTemplatesIdRoute: typeof MonitoringSlaTemplatesIdRoute
+  MonitoringSlaTemplatesNewRoute: typeof MonitoringSlaTemplatesNewRoute
   PlanningBoardIdTasksTaskIdRoute: typeof PlanningBoardIdTasksTaskIdRoute
+  MonitoringSlaTemplatesIdEditRoute: typeof MonitoringSlaTemplatesIdEditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -9728,6 +9770,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlanningBoardIdTasksTaskIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/monitoring_/sla/templates/new': {
+      id: '/monitoring_/sla/templates/new'
+      path: '/monitoring/sla/templates/new'
+      fullPath: '/monitoring/sla/templates/new'
+      preLoaderRoute: typeof MonitoringSlaTemplatesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/templates/$id': {
+      id: '/monitoring_/sla/templates/$id'
+      path: '/monitoring/sla/templates/$id'
+      fullPath: '/monitoring/sla/templates/$id'
+      preLoaderRoute: typeof MonitoringSlaTemplatesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/monitoring_/sla/$id_/edit': {
       id: '/monitoring_/sla/$id_/edit'
       path: '/monitoring/sla/$id/edit'
@@ -9740,6 +9796,13 @@ declare module '@tanstack/react-router' {
       path: '/l/$tenant/$type/$numid'
       fullPath: '/l/$tenant/$type/$numid'
       preLoaderRoute: typeof LTenantTypeNumidRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/templates/$id_/edit': {
+      id: '/monitoring_/sla/templates/$id_/edit'
+      path: '/monitoring/sla/templates/$id/edit'
+      fullPath: '/monitoring/sla/templates/$id/edit'
+      preLoaderRoute: typeof MonitoringSlaTemplatesIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -11205,7 +11268,10 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualMachinesIdEditRoute: VirtualMachinesIdEditRoute,
   LTenantTypeNumidRoute: LTenantTypeNumidRoute,
   MonitoringSlaIdEditRoute: MonitoringSlaIdEditRoute,
+  MonitoringSlaTemplatesIdRoute: MonitoringSlaTemplatesIdRoute,
+  MonitoringSlaTemplatesNewRoute: MonitoringSlaTemplatesNewRoute,
   PlanningBoardIdTasksTaskIdRoute: PlanningBoardIdTasksTaskIdRoute,
+  MonitoringSlaTemplatesIdEditRoute: MonitoringSlaTemplatesIdEditRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

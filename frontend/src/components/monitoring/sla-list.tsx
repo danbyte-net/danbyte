@@ -11,12 +11,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { slaAgreementColumns } from "@/components/columns/sla-columns"
 import { HolidayCalendarsButton } from "./holiday-calendars-dialog"
+import { SlaCausesButton } from "./sla-follow-up"
+import { SlaOverviewSchedulesDialog } from "./sla-report-schedules"
+import { SlaTemplatesButton } from "./sla-templates"
 
 /**
  * `/monitoring?view=sla` - every agreement with this period's figure against
@@ -25,6 +29,7 @@ import { HolidayCalendarsButton } from "./holiday-calendars-dialog"
 export function SlaList() {
   const { canDo } = useMe()
   const [q, setQ] = useState("")
+  const [scheduling, setScheduling] = useState(false)
   const query = useQuery({
     queryKey: ["sla-agreements", q],
     queryFn: () =>
@@ -74,9 +79,34 @@ export function SlaList() {
                   </DropdownMenuItem>
                 ))
               )}
+              <DropdownMenuSeparator />
+              {(["csv", "json"] as const).map((f) => (
+                <DropdownMenuItem key={`metrics-${f}`} asChild>
+                  <a
+                    href={`/api/monitoring/sla-agreements/metrics/?file=${f}`}
+                    download
+                  >
+                    Metrics, {f.toUpperCase()}
+                  </a>
+                </DropdownMenuItem>
+              ))}
+              {canDo("slaagreement", "change") && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setScheduling(true)}>
+                    Schedules…
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
+          <SlaOverviewSchedulesDialog
+            open={scheduling}
+            onOpenChange={setScheduling}
+          />
           <HolidayCalendarsButton />
+          <SlaCausesButton />
+          <SlaTemplatesButton />
           {canDo("slaagreement", "add") && (
             <Button size="sm" asChild>
               <Link to="/monitoring/sla/new">

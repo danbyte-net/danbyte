@@ -7,7 +7,14 @@ import {
 } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
-import { FileDown, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
+import {
+  FileDown,
+  MessageSquarePlus,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -17,6 +24,7 @@ import type {
   SlaCheckGroup,
   SlaExclusion,
   SlaFiguresResponse,
+  SlaIncident,
   SlaMember,
   SlaMemberFigure,
   SlaPeriodSummary,
@@ -55,6 +63,18 @@ import {
   fmtSla,
 } from "@/components/monitoring/sla-figure"
 import { SlaAnalysisView } from "@/components/monitoring/sla-analysis"
+import { SlaReportSchedules } from "@/components/monitoring/sla-report-schedules"
+import { SlaTemplateLine } from "@/components/monitoring/sla-templates"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  SlaDownByCause,
+  SlaFollowUpDialog,
+} from "@/components/monitoring/sla-follow-up"
 import { SlaGroupDialog } from "@/components/monitoring/sla-group-dialog"
 import {
   SlaExclusionDialog,
@@ -97,6 +117,7 @@ type Tab =
   | "groups"
   | "incidents"
   | "exclusions"
+  | "schedules"
   | "revisions"
   | "history"
 
@@ -226,6 +247,9 @@ function Body({ a }: { a: SlaAgreement }) {
               <span>
                 {fmtSla(Number(a.target_pct))} · {PERIOD_LABEL[a.period]}
               </span>
+              {a.template_detail && (
+                <SlaTemplateLine agreement={a} onSynced={refreshAll} />
+              )}
             </>
           }
           description={a.description}
@@ -262,6 +286,7 @@ function Body({ a }: { a: SlaAgreement }) {
         { value: "groups", label: "Check groups", count: a.group_count },
         { value: "incidents", label: "Incidents" },
         { value: "exclusions", label: "Exclusions" },
+        { value: "schedules", label: "Schedules" },
         { value: "revisions", label: "Revisions" },
         { value: "history", label: "Change log" },
       ]}
@@ -300,6 +325,22 @@ function Body({ a }: { a: SlaAgreement }) {
                     <FileDown className="h-3.5 w-3.5" /> CSV
                   </a>
                 </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <FileDown className="h-3.5 w-3.5" /> Metrics
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {(["csv", "json"] as const).map((f) => (
+                      <DropdownMenuItem key={f} asChild>
+                        <a href={`${base}/metrics/?file=${f}`} download>
+                          Every period, {f.toUpperCase()}
+                        </a>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 {canDo("slaagreement", "change") && (
                   <SlaEmailReport
                     base={base}
@@ -341,18 +382,21 @@ function Body({ a }: { a: SlaAgreement }) {
       </DetailTab>
 
       <DetailTab value="incidents">
-        <DataTable
-          columns={slaIncidentColumns()}
-          data={figures.data?.incidents ?? []}
-          tableId="sla-incidents"
-          exportName={`sla-incidents-${a.name}`}
-          exportTitle="SLA incidents"
-          flexColumn="members"
+        <Incidents
+          agreement={a}
+          figures={figures.data}
+          onChanged={() =>
+            qc.invalidateQueries({ queryKey: ["sla-figures", a.id] })
+          }
         />
       </DetailTab>
 
       <DetailTab value="exclusions">
         <Exclusions agreement={a} figures={figures.data} onChanged={changed} />
+      </DetailTab>
+
+      <DetailTab value="schedules">
+        <SlaReportSchedules agreementId={a.id} />
       </DetailTab>
 
       <DetailTab value="revisions">
@@ -583,6 +627,66 @@ function Groups({
         group={editing && editing !== "new" ? editing : undefined}
         open={editing !== null}
         onOpenChange={(o) => !o && setEditing(null)}
+        onSaved={onChanged}
+      />
+    </div>
+  )
+}
+
+function Incidents({
+  agreement: a,
+  figures,
+  onChanged,
+}: {
+  agreement: SlaAgreement
+  figures: SlaFiguresResponse | undefined
+  onChanged: () => void
+}) {
+  const { canDo } = useMe()
+  const [following, setFollowing] = useState<SlaIncident | null>(null)
+  const canEdit = canDo("slaagreement", "change")
+  const columns = useMemo<ColumnDef<SlaIncident>[]>(() => {
+    const cols = slaIncidentColumns()
+    if (!canEdit) return cols
+    return [
+      ...cols,
+      {
+        id: "actions",
+        enableSorting: false,
+        header: "",
+        cell: ({ row }) => (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Follow up"
+            onClick={() => setFollowing(row.original)}
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+          </Button>
+        ),
+      },
+    ]
+  }, [canEdit])
+  const causes = figures?.by_cause ?? []
+  return (
+    <div className="space-y-4">
+      {causes.some((c) => c.cause) && (
+        <Section title="Down time by cause">
+          <SlaDownByCause rows={causes} />
+        </Section>
+      )}
+      <DataTable
+        columns={columns}
+        data={figures?.incidents ?? []}
+        tableId="sla-incidents"
+        exportName={`sla-incidents-${a.name}`}
+        exportTitle="SLA incidents"
+        flexColumn="members"
+      />
+      <SlaFollowUpDialog
+        agreementId={a.id}
+        incident={following}
+        onOpenChange={(o) => !o && setFollowing(null)}
         onSaved={onChanged}
       />
     </div>

@@ -20,7 +20,9 @@ finished periods met the target.
    of checks that already run; see [Monitoring](monitoring.md).
 2. On the SLAs list, click **New agreement**. Three steps follow:
     - **Agreement** - a name, who it is **provided for**, a **target** such
-      as 99.9 and a **period** such as Month.
+      as 99.9 and a **period** such as Month. With a
+      [template](#templates) picked, the agreement takes the template's
+      rules.
     - **Members** - devices, virtual chassis, device roles, device types,
       virtual machines, IP addresses, prefixes or circuits. Pick several at
       once. A virtual chassis is a [switch stack counted once](#switch-stacks).
@@ -65,7 +67,8 @@ minutes. That is the **error budget**.
 | **Unit** | What the figure is built from: one member, or a redundancy group of members counted as one |
 | **Exclusion** | Time that does not count, with the reason recorded |
 
-A new tenant has no agreements. Nothing is seeded.
+A new tenant has no agreements, templates or incident causes. Nothing is
+seeded.
 
 **Provided for** says who the promise is made to:
 
@@ -448,6 +451,48 @@ status changes.
 **Incidents** lists each outage that spent budget: when it started, how long
 it lasted, and which members were down as it began.
 
+### Incident follow-up {#incident-follow-up}
+
+The follow-up button on an incident's row records what happened afterwards:
+
+- **Cause** - picked from the tenant's cause catalog;
+- **Ticket** - a link to the ticket in your own system;
+- **Note** - for the team;
+- **Disputed** - the customer and you do not agree on it.
+
+None of it changes the figure. A disputed incident is shown as disputed and
+still counts; to take the time out, add an [exclusion](#exclusions). Follow-up
+can be added to any stored period, frozen ones included, because it never
+moves a number. It is kept in the change log.
+
+An incident is the run of down time on one unit in one period. One that
+crosses the end of a period is two incidents, each followed up on its own.
+
+**Down time by cause** sums the incidents' down time per cause, with the
+incidents without one last and the disputed share beside each. It shows on
+the **Incidents** tab and as a card on the **Overview**. A unit's down time
+is counted once per incident, so with *Average* the total is more than the
+agreement's down time.
+
+**Causes** on the SLAs list holds the catalog: a name, a colour and a
+description each. It starts empty. Entries that work for many teams:
+
+| Cause | For |
+|---|---|
+| Carrier | A provider's circuit or network |
+| Power | Mains, UPS or PDU |
+| Hardware | A failed device or part |
+| Change | A change of ours, planned or not |
+| Configuration | A wrong setting, found later |
+| Customer | Something on the customer's side |
+| Unknown | Nothing found |
+
+Writing follow-up needs **change** on the agreement. A viewer limited to
+some sites can follow up only the incidents of units they can see, and sees
+only that follow-up.
+
+### Exclusions {#exclusions}
+
 **Exclusions** removes time from the figure, for the whole agreement or for
 one member, with a required reason. Examples are a provider's fibre cut or a
 test the customer asked for. Each exclusion is kept in the change log. An
@@ -537,7 +582,11 @@ The agreement page downloads the selected period's report as **PDF** or
 - the counting rules;
 - availability per day;
 - each member, worst first, with its worst check;
-- each incident, with the members that were down.
+- each incident, with the members that were down, its cause, ticket and
+  whether it is disputed;
+- down time by cause.
+
+The follow-up note stays in Danbyte; reports leave it out.
 
 A report for a period that is still open or not yet frozen says so. A report
 computed under an older revision of the rules names the revision.
@@ -552,8 +601,71 @@ address is not saved on the agreement.
 **Overview** on the SLAs list gives every agreement's figure for this or the
 last period, as one PDF or CSV.
 
+### Scheduled reports {#scheduled-reports}
+
+A schedule emails a report every week or every month:
+
+- **Schedules** on an agreement's page - that agreement's report;
+- **Overview → Schedules…** on the SLAs list - the overview report.
+
+A schedule says when (a weekday, or a day of the month from 1 to 28, and an
+hour), which period (this period so far, or the last one), the recipients
+and the format. The hour is read in the agreement's timezone; the
+overview's in the tenant's.
+
+Schedules are sent by the same `danbyte-sla` timer that computes the
+figures, so a report goes out within fifteen minutes of its hour. Each
+schedule keeps when it last sent. A new schedule waits for its first slot.
+
+A send that fails - the mail server refused it, or there is no stored figure
+for the period yet - is tried again on the next run until it goes through.
+The schedule shows **Failing** with the error, and the count of attempts,
+until then. A slot is sent once even when two runs overlap. **Send now**
+sends the report at once without moving the schedule.
+
+A scheduled report is the whole report, service credit included, like the
+report recipients above: setting one up needs **change** on the agreement,
+*view credits* and a view of every member. The overview's needs the same.
+
+### Metrics export {#metrics-export}
+
+**Metrics** on an agreement's report bar downloads the stored figures of
+every period, one row each, as CSV or JSON: availability, target, state,
+coverage, down time, budget, budget left and spent, burn rate, incidents
+and the credit. JSON adds the latency objectives. **Overview → Metrics** has
+the same for every agreement but drafts.
+
+The rows follow the viewer like the figures do: a viewer limited to some
+sites gets their partial figures, with the number of hidden members, and no
+credit. The credit needs *view credits*.
+
 Reports follow the viewer's permissions like the figures do. A site-scoped
 user's report leaves out the members they cannot see, and says so.
+
+## Templates {#templates}
+
+A template is a tier, such as Gold, Silver or Bronze: a target, service
+hours, holidays, the counting rules, latency objectives and credit tiers.
+**Templates** on the SLAs list lists them; a template's page shows its rules
+and the agreements made from it.
+
+Pick a template when creating an agreement, in the wizard or on the full
+form. The form fills in the template's rules, and anything you change
+before creating stays yours. The agreement remembers its template.
+
+When a template changes, its agreements are not changed with it. The
+template's **Agreements** tab, and the agreement's page, say **Differs**
+with the fields that no longer match. **Sync** copies the template's rules
+into the agreement. That is a rule change like an edit: it makes a new
+[revision](#counting-rules), the running period follows it at once, and
+closed and frozen periods keep the revision they ran under. Syncing an
+agreement that matches changes nothing.
+
+Templates have their own permission, **SLA templates**. Syncing also needs
+**change** on each agreement, and *view credits* when it would change a
+service credit; without *view credits* the template's credits are hidden,
+and an agreement can't be created from a template that sets them.
+Deleting a template leaves its agreements as they are.
 
 ## On lists and object pages
 
@@ -603,7 +715,9 @@ An addition shows in the figure straight away.
 ## Who sees what
 
 One permission, **SLA agreements**, covers an agreement together with its
-groups, members and exclusions. Holiday calendars have their own permission.
+groups, members, exclusions, incident follow-up and report schedules.
+Holiday calendars, incident causes and templates have their own
+permissions.
 
 A viewer whose device, VM or address permissions are limited to some sites gets
 a partial figure. It covers only the units whose members they can all see,
@@ -637,4 +751,11 @@ contract.
 | `GET …/sla-agreements/<id>/analysis/?period=\|since=&until=&bucket=day\|hour&group=&site=&member=&kind=&redundancy=` | The analysis view's data, computed live, with `forecast` while the window runs |
 | `POST …/sla-agreements/<id>/send-report/` | Email it now: `{period, recipients?}` |
 | `GET …/sla-agreements/overview-report/?period=&file=` | Every agreement for one period |
+| `GET …/sla-agreements/<id>/metrics/?file=csv\|json&since=&until=` | Every stored period's figures, one row each (JSON without `file`) |
+| `GET …/sla-agreements/metrics/?file=&since=&until=` | The same for every agreement but drafts |
+| `POST …/sla-agreements/<id>/sync-template/` | Copy the template's rules in, as a new revision |
+| `/api/monitoring/sla-incident-causes/` | The cause catalog |
+| `/api/monitoring/sla-incident-follow-ups/` | Follow-up: `{agreement, unit, started_at, cause, ticket_url, note, disputed}`; `unit` and `started_at` are the incident's. The figures and analysis carry it on each incident as `follow_up`, and `by_cause` |
+| `/api/monitoring/sla-report-schedules/` | Schedules: `{agreement (null for the overview), frequency: weekly\|monthly, weekday, day_of_month, hour, period: current\|previous, recipients, report_format, enabled}`; `report_sent_at`, `last_error` and `failures` are read-only. `POST …/<id>/send-now/` |
+| `/api/monitoring/sla-templates/` | Templates; `GET …/<id>/agreements/` lists its agreements with `differs`, `POST …/<id>/sync/` syncs `{agreements?}`. An agreement takes `template`; on create, fields left out come from it |
 | `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip\|prefix\|circuit\|site\|cluster\|vc, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame. `vc` also returns `measured`: the member and address that stand for the stack. A stack member's device lists the stack's figure with `via_stack` |

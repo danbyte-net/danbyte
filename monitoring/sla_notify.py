@@ -153,10 +153,12 @@ def _parse(iso):
 
 
 def send_report(agreement, result, now=None, recipients=None, view=None,
-                mark: bool = True) -> bool:
+                mark: bool = True, fmt: str | None = None,
+                fail_silently: bool = True) -> bool:
     """Email the period's report to the agreement's recipients (or the given
     ones). ``view`` narrows it for a scoped sender; ``mark`` records the send
-    so a freeze reports once."""
+    so a freeze reports once. ``fail_silently=False`` raises on a mail
+    failure, for callers that retry."""
     from core import email as ek
 
     from .sla_report import report_csv, report_pdf
@@ -164,7 +166,7 @@ def send_report(agreement, result, now=None, recipients=None, view=None,
     recipients = recipients if recipients is not None else list(agreement.report_recipients or [])
     if not recipients:
         return False
-    fmt = agreement.report_format
+    fmt = fmt or agreement.report_format
     files = []
     stem = f"sla-{agreement.name}-{result.period_key}".replace(" ", "-").lower()
     if fmt in ("pdf", "both"):
@@ -186,12 +188,39 @@ def send_report(agreement, result, now=None, recipients=None, view=None,
     ok = ek.send_html_email(
         f"SLA report: {agreement.name} {result.period_key}", recipients,
         html_body=html, text_body=text + "\n", tenant=agreement.tenant_id,
-        attachments=files,
+        attachments=files, fail_silently=fail_silently,
     )
     if ok and mark:
         result.report_sent_at = now or timezone.now()
         result.save(update_fields=["report_sent_at"])
     return ok
+
+
+def send_overview(tenant, rows, label: str, recipients: list, fmt: str = "pdf") -> bool:
+    """Email the overview report (every agreement's figure for one period).
+    Raises on a mail failure, for the schedule to try again."""
+    from core import email as ek
+
+    from .sla_report import overview_csv, overview_pdf
+
+    if not recipients:
+        return False
+    stem = f"sla-overview-{label}".replace(" ", "-").lower()
+    files = []
+    if fmt in ("pdf", "both"):
+        files.append((f"{stem}.pdf", overview_pdf(rows, label), "application/pdf"))
+    if fmt in ("csv", "both"):
+        files.append((f"{stem}.csv", overview_csv(rows).encode(), "text/csv"))
+    breached = sum(1 for _a, _r, f in rows if (f or {}).get("state") == "breached")
+    text = f"{len(rows)} agreement(s) for {label}, {breached} breached."
+    html = ek.render_layout(
+        f"SLA overview: {label}", ek.paragraph(text) + ek.muted("The full report is attached."),
+        kicker="SLA", preheader=text[:120],
+    )
+    return ek.send_html_email(
+        f"SLA overview: {label}", recipients, html_body=html, text_body=text + "\n",
+        tenant=tenant.id, attachments=files, fail_silently=False,
+    )
 
 
 def after_refresh(agreement, results, now=None, was_open=frozenset()) -> None:

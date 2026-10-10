@@ -11,6 +11,7 @@ import type {
   SlaCreditTier,
   SlaObjective,
   SlaPeriod,
+  SlaTemplate,
 } from "@/lib/api"
 import {
   CheckList,
@@ -36,6 +37,7 @@ import { PERIOD_LABEL } from "./sla-figure"
 import { BurnRulesEditor, DEFAULT_BURN_RULES } from "./sla-burn-rules"
 import { CreditTiersEditor } from "./sla-credit-tiers"
 import { ObjectivesEditor } from "./sla-objectives"
+import { useSlaTemplates } from "./sla-templates"
 
 const DAYS = [
   ["mon", "Monday"],
@@ -49,7 +51,10 @@ const DAYS = [
 
 type Hours = Record<string, { on: boolean; from: string; to: string }>
 
-function hoursFrom(a?: SlaAgreement): Hours {
+/** What the form edits: an agreement, or a template's subset of it. */
+type Source = Partial<SlaAgreement>
+
+function hoursFrom(a?: Source): Hours {
   const src = a?.service_hours ?? {}
   return Object.fromEntries(
     DAYS.map(([d], i) => {
@@ -68,16 +73,24 @@ function hoursFrom(a?: SlaAgreement): Hours {
   )
 }
 
+/** An agreement's form, or - with `asTemplate` - a template's: the rules
+ * only, without who it is for, alerts and reports. */
 export function SlaAgreementForm({
   agreement,
+  template,
+  asTemplate = false,
   onSaved,
   onCancel,
 }: {
   agreement?: SlaAgreement
-  onSaved: (a: SlaAgreement) => void
+  /** The template being edited, with `asTemplate`. */
+  template?: SlaTemplate
+  asTemplate?: boolean
+  onSaved: (a: { id: string }) => void
   onCancel: () => void
 }) {
-  const a = agreement
+  const a: Source | undefined = asTemplate ? template : agreement
+  const editing = asTemplate ? template : agreement
   const qc = useQueryClient()
   const saveObject = useSaveObject()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
@@ -95,7 +108,7 @@ export function SlaAgreementForm({
   const [status, setStatus] = useState(a?.status ?? "active")
   const [effective, setEffective] = useState(a?.effective_from ?? "")
   const [allDay, setAllDay] = useState(
-    !a || Object.keys(a.service_hours).length === 0
+    !a || Object.keys(a.service_hours ?? {}).length === 0
   )
   const [hours, setHours] = useState<Hours>(() => hoursFrom(a))
   const [calendar, setCalendar] = useState<string | null>(
@@ -112,7 +125,7 @@ export function SlaAgreementForm({
     a?.alert_burn_rate != null ? String(a.alert_burn_rate) : ""
   )
   const [burnRules, setBurnRules] = useState<SlaBurnRule[]>(
-    a?.burn_alerts.length ? a.burn_alerts : DEFAULT_BURN_RULES
+    a?.burn_alerts?.length ? a.burn_alerts : DEFAULT_BURN_RULES
   )
   const [coverageAlert, setCoverageAlert] = useState(
     a?.alert_coverage_pct ?? ""
@@ -139,6 +152,32 @@ export function SlaAgreementForm({
   const [tiers, setTiers] = useState<SlaCreditTier[]>(a?.credit_tiers ?? [])
   const [fee, setFee] = useState(a?.period_fee ?? "")
   const [currency, setCurrency] = useState(a?.currency ?? "")
+  const [tier, setTier] = useState<string | null>(agreement?.template ?? null)
+  const templateList = useSlaTemplates(!asTemplate)
+  // Picking a template on a new agreement fills the form with its rules.
+  const applyTier = (id: string | null) => {
+    setTier(id)
+    const t = templateList.data?.results.find((x) => x.id === id)
+    if (!t || agreement) return
+    setTarget(t.target_pct)
+    setWarning(t.warning_pct ?? "")
+    setPeriod(t.period)
+    setTz(t.timezone)
+    setAllDay(Object.keys(t.service_hours).length === 0)
+    setHours(hoursFrom(t))
+    setCalendar(t.holiday_calendar)
+    setDegraded(t.count_degraded_as)
+    setStale(t.count_stale_as)
+    setUnknown(t.count_unknown_as)
+    setMaint(t.exclude_maintenance)
+    setGrace(String(t.min_outage_seconds))
+    setAggregation(t.aggregation)
+    setSlos(t.objectives)
+    setSlosInState(t.objectives_in_state)
+    if (t.credit_tiers) setTiers(t.credit_tiers)
+    if (t.period_fee !== undefined) setFee(t.period_fee ?? "")
+    if (t.currency !== undefined) setCurrency(t.currency)
+  }
 
   const contacts = useQuery({
     queryKey: ["contacts-picker"],
@@ -179,31 +218,51 @@ export function SlaAgreementForm({
               [[hours[d].from, hours[d].to]],
             ])
           )
+      const rules = {
+        name: name.trim(),
+        description,
+        target_pct: target,
+        warning_pct: warning || null,
+        period,
+        timezone: tz.trim(),
+        service_hours,
+        holiday_calendar: calendar,
+        count_degraded_as: degraded,
+        count_stale_as: stale,
+        count_unknown_as: unknown,
+        exclude_maintenance: maint,
+        min_outage_seconds: Number(grace) || 0,
+        aggregation,
+        objectives: slos,
+        objectives_in_state: slosInState,
+        ...(money
+          ? {
+              credit_tiers: tiers,
+              period_fee: fee === "" ? null : fee,
+              currency: currency.trim(),
+            }
+          : {}),
+      }
+      if (asTemplate)
+        return saveObject<{ id: string }>({
+          objectType: "monitoring.slatemplate",
+          endpoint: "/api/monitoring/sla-templates/",
+          id: editing?.id,
+          payload: rules,
+        })
       return saveObject<SlaAgreement>({
         objectType: "monitoring.slaagreement",
         endpoint: "/api/monitoring/sla-agreements/",
-        id: a?.id,
+        id: editing?.id,
         payload: {
-          name: name.trim(),
-          description,
+          ...rules,
+          template: tier,
           provided_for: providedFor,
           sites: providedFor === "sites" ? sites : [],
           customer: providedFor === "contact" ? customer : null,
           customer_name: providedFor === "name" ? customerName.trim() : "",
-          target_pct: target,
-          warning_pct: warning || null,
-          period,
-          timezone: tz.trim(),
           status,
           effective_from: effective || null,
-          service_hours,
-          holiday_calendar: calendar,
-          count_degraded_as: degraded,
-          count_stale_as: stale,
-          count_unknown_as: unknown,
-          exclude_maintenance: maint,
-          min_outage_seconds: Number(grace) || 0,
-          aggregation,
           notify_channels: channels,
           alert_burn_rate: burn ? Number(burn) : null,
           burn_alerts: burnRules,
@@ -218,22 +277,17 @@ export function SlaAgreementForm({
             .map((x) => x.trim())
             .filter(Boolean),
           report_format: reportFormat,
-          objectives: slos,
-          objectives_in_state: slosInState,
-          ...(money
-            ? {
-                credit_tiers: tiers,
-                period_fee: fee === "" ? null : fee,
-                currency: currency.trim(),
-              }
-            : {}),
         },
       })
     },
     onSuccess: (saved) => {
-      toast.success(a ? `Updated ${name}` : `Created ${name}`)
-      qc.invalidateQueries({ queryKey: ["sla-agreements"] })
-      qc.invalidateQueries({ queryKey: ["sla-agreement"] })
+      toast.success(editing ? `Updated ${name}` : `Created ${name}`)
+      qc.invalidateQueries({
+        queryKey: asTemplate ? ["sla-templates"] : ["sla-agreements"],
+      })
+      qc.invalidateQueries({
+        queryKey: asTemplate ? ["sla-template"] : ["sla-agreement"],
+      })
       onSaved(saved)
     },
     onError: (err) => {
@@ -255,57 +309,78 @@ export function SlaAgreementForm({
     >
       <FormColumns>
         <FormColumn>
-          <FormSection title="Agreement" card>
+          <FormSection title={asTemplate ? "Template" : "Agreement"} card>
             <FormText
               label="Name"
               value={name}
               onChange={setName}
               required
-              placeholder="Gold - data centre"
+              placeholder={asTemplate ? "Gold" : "Gold - data centre"}
               error={fieldErrors.name}
             />
-            <div className="grid gap-3 @md:grid-cols-2">
-              <FormSelect
-                label="Provided for"
-                value={providedFor}
-                onChange={(v) => setProvidedFor(v as typeof providedFor)}
-                options={[
-                  { value: "tenant", label: "This tenant" },
-                  { value: "sites", label: "Sites" },
-                  { value: "contact", label: "A contact" },
-                  { value: "name", label: "A name" },
-                ]}
-                info="Who the promise is made to. Often the tenant itself; or some of its sites or locations; or a contact or a name outside Danbyte."
-                error={fieldErrors.provided_for}
+            {!asTemplate && (templateList.data?.results.length ?? 0) > 0 && (
+              <FormCombobox
+                label="Template"
+                value={tier}
+                onChange={applyTier}
+                options={(templateList.data?.results ?? []).map((t) => ({
+                  value: t.id,
+                  label: t.name,
+                }))}
+                noneLabel="None"
+                placeholder="None"
+                info={
+                  agreement
+                    ? "Sync on the agreement's page copies the template's rules in."
+                    : "Fills the form with the template's rules."
+                }
+                error={fieldErrors.template}
               />
-              {providedFor === "contact" && (
-                <FormCombobox
-                  label="Contact"
-                  required
-                  value={customer}
-                  onChange={setCustomer}
-                  options={(contacts.data?.results ?? []).map((c) => ({
-                    value: c.id,
-                    label: c.name,
-                  }))}
-                  placeholder="Pick a contact"
-                  searchPlaceholder="Search contacts…"
-                  emptyText="No contacts."
-                  error={fieldErrors.customer}
+            )}
+            {!asTemplate && (
+              <div className="grid gap-3 @md:grid-cols-2">
+                <FormSelect
+                  label="Provided for"
+                  value={providedFor}
+                  onChange={(v) => setProvidedFor(v as typeof providedFor)}
+                  options={[
+                    { value: "tenant", label: "This tenant" },
+                    { value: "sites", label: "Sites" },
+                    { value: "contact", label: "A contact" },
+                    { value: "name", label: "A name" },
+                  ]}
+                  info="Who the promise is made to. Often the tenant itself; or some of its sites or locations; or a contact or a name outside Danbyte."
+                  error={fieldErrors.provided_for}
                 />
-              )}
-              {providedFor === "name" && (
-                <FormText
-                  label="Name"
-                  required
-                  value={customerName}
-                  onChange={setCustomerName}
-                  placeholder="Acme A/S"
-                  error={fieldErrors.customer_name}
-                />
-              )}
-            </div>
-            {providedFor === "sites" && (
+                {providedFor === "contact" && (
+                  <FormCombobox
+                    label="Contact"
+                    required
+                    value={customer}
+                    onChange={setCustomer}
+                    options={(contacts.data?.results ?? []).map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                    }))}
+                    placeholder="Pick a contact"
+                    searchPlaceholder="Search contacts…"
+                    emptyText="No contacts."
+                    error={fieldErrors.customer}
+                  />
+                )}
+                {providedFor === "name" && (
+                  <FormText
+                    label="Name"
+                    required
+                    value={customerName}
+                    onChange={setCustomerName}
+                    placeholder="Acme A/S"
+                    error={fieldErrors.customer_name}
+                  />
+                )}
+              </div>
+            )}
+            {!asTemplate && providedFor === "sites" && (
               <Field label="Sites" required error={fieldErrors.sites}>
                 <CheckList
                   options={(siteOptions.data?.results ?? []).map((o) => ({
@@ -326,18 +401,20 @@ export function SlaAgreementForm({
               rows={2}
               error={fieldErrors.description}
             />
-            <FormSelect
-              label="Status"
-              value={status}
-              onChange={(v) => setStatus(v as typeof status)}
-              options={[
-                { value: "active", label: "Active" },
-                { value: "draft", label: "Draft" },
-                { value: "archived", label: "Archived" },
-              ]}
-              info="Only active agreements are computed. Archived ones keep their history."
-              error={fieldErrors.status}
-            />
+            {!asTemplate && (
+              <FormSelect
+                label="Status"
+                value={status}
+                onChange={(v) => setStatus(v as typeof status)}
+                options={[
+                  { value: "active", label: "Active" },
+                  { value: "draft", label: "Draft" },
+                  { value: "archived", label: "Archived" },
+                ]}
+                info="Only active agreements are computed. Archived ones keep their history."
+                error={fieldErrors.status}
+              />
+            )}
           </FormSection>
 
           <FormSection title="Target" card>
@@ -371,13 +448,15 @@ export function SlaAgreementForm({
                 }))}
                 error={fieldErrors.period}
               />
-              <FormDate
-                label="Counts from"
-                value={effective}
-                onChange={setEffective}
-                info="Nothing before this date is computed."
-                error={fieldErrors.effective_from}
-              />
+              {!asTemplate && (
+                <FormDate
+                  label="Counts from"
+                  value={effective}
+                  onChange={setEffective}
+                  info="Nothing before this date is computed."
+                  error={fieldErrors.effective_from}
+                />
+              )}
             </div>
           </FormSection>
         </FormColumn>
@@ -559,107 +638,114 @@ export function SlaAgreementForm({
           </div>
         </FormSection>
       )}
-      <FormSection title="Alerts and reports" card>
-        <div className="grid gap-4 @3xl:grid-cols-2">
-          <div className="grid gap-3">
-            <Field
-              label="Alert channels"
-              info="At risk, breached, coverage low and a missed latency objective - each at most once per period. Burn-rate alerts when they start and stop."
-              error={fieldErrors.notify_channels}
-            >
-              <CheckList
-                options={(channelList.data?.results ?? []).map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                  hint: c.kind,
-                }))}
-                value={channels}
-                onChange={setChannels}
-                className="max-h-32"
-                empty="No notification channels yet."
+      {!asTemplate && (
+        <FormSection title="Alerts and reports" card>
+          <div className="grid gap-4 @3xl:grid-cols-2">
+            <div className="grid gap-3">
+              <Field
+                label="Alert channels"
+                info="At risk, breached, coverage low and a missed latency objective - each at most once per period. Burn-rate alerts when they start and stop."
+                error={fieldErrors.notify_channels}
+              >
+                <CheckList
+                  options={(channelList.data?.results ?? []).map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    hint: c.kind,
+                  }))}
+                  value={channels}
+                  onChange={setChannels}
+                  className="max-h-32"
+                  empty="No notification channels yet."
+                />
+              </Field>
+              <Field
+                label="Burn-rate alerts"
+                info="Alert while the budget burns this many times faster than the target allows, over both windows. The long window proves it is real, the short one that it is still happening."
+                error={fieldErrors.burn_alerts}
+              >
+                <BurnRulesEditor value={burnRules} onChange={setBurnRules} />
+              </Field>
+              <div className="grid gap-3 @md:grid-cols-2">
+                <FormText
+                  label="At risk above burn rate"
+                  type="number"
+                  inputMode="decimal"
+                  value={burn}
+                  onChange={setBurn}
+                  placeholder="2"
+                  info="How many times faster than time passes the budget may burn. 1 spends it exactly by the period's end."
+                  error={fieldErrors.alert_burn_rate}
+                />
+                <FormText
+                  label="Coverage alert below"
+                  type="number"
+                  inputMode="decimal"
+                  value={coverageAlert}
+                  onChange={setCoverageAlert}
+                  placeholder="90"
+                  info="Alert when less of the service time than this, in percent, was measured."
+                  error={fieldErrors.alert_coverage_pct}
+                />
+              </div>
+              <Field
+                label="p95 latency alert"
+                info="p95 per check kind, in ms, over the period. Above it sends an alert; it never lowers availability."
+                error={fieldErrors.latency_objectives}
+              >
+                <div className="grid grid-cols-2 gap-2 @md:grid-cols-4">
+                  {["icmp", "tcp", "http", "ssh"].map((kind) => (
+                    <label key={kind} className="grid gap-1 text-xs">
+                      <span className="font-mono text-muted-foreground uppercase">
+                        {kind}
+                      </span>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={objectives[kind] ?? ""}
+                        onChange={(e) =>
+                          setObjectives((o) => ({
+                            ...o,
+                            [kind]: e.target.value,
+                          }))
+                        }
+                        aria-label={`${kind} p95 objective`}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </Field>
+            </div>
+            <div className="grid gap-3">
+              <FormTextarea
+                label="Report recipients"
+                value={recipients}
+                onChange={setRecipients}
+                rows={4}
+                placeholder={"noc@example.com\ncustomer@example.com"}
+                info="Each period's report is emailed here when the period freezes, seven days after it ends."
+                error={fieldErrors.report_recipients}
               />
-            </Field>
-            <Field
-              label="Burn-rate alerts"
-              info="Alert while the budget burns this many times faster than the target allows, over both windows. The long window proves it is real, the short one that it is still happening."
-              error={fieldErrors.burn_alerts}
-            >
-              <BurnRulesEditor value={burnRules} onChange={setBurnRules} />
-            </Field>
-            <div className="grid gap-3 @md:grid-cols-2">
-              <FormText
-                label="At risk above burn rate"
-                type="number"
-                inputMode="decimal"
-                value={burn}
-                onChange={setBurn}
-                placeholder="2"
-                info="How many times faster than time passes the budget may burn. 1 spends it exactly by the period's end."
-                error={fieldErrors.alert_burn_rate}
-              />
-              <FormText
-                label="Coverage alert below"
-                type="number"
-                inputMode="decimal"
-                value={coverageAlert}
-                onChange={setCoverageAlert}
-                placeholder="90"
-                info="Alert when less of the service time than this, in percent, was measured."
-                error={fieldErrors.alert_coverage_pct}
+              <FormSelect
+                label="Report as"
+                value={reportFormat}
+                onChange={(v) => setReportFormat(v as typeof reportFormat)}
+                options={[
+                  { value: "pdf", label: "PDF" },
+                  { value: "csv", label: "CSV" },
+                  { value: "both", label: "PDF and CSV" },
+                ]}
               />
             </div>
-            <Field
-              label="p95 latency alert"
-              info="p95 per check kind, in ms, over the period. Above it sends an alert; it never lowers availability."
-              error={fieldErrors.latency_objectives}
-            >
-              <div className="grid grid-cols-2 gap-2 @md:grid-cols-4">
-                {["icmp", "tcp", "http", "ssh"].map((kind) => (
-                  <label key={kind} className="grid gap-1 text-xs">
-                    <span className="font-mono text-muted-foreground uppercase">
-                      {kind}
-                    </span>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={objectives[kind] ?? ""}
-                      onChange={(e) =>
-                        setObjectives((o) => ({ ...o, [kind]: e.target.value }))
-                      }
-                      aria-label={`${kind} p95 objective`}
-                    />
-                  </label>
-                ))}
-              </div>
-            </Field>
           </div>
-          <div className="grid gap-3">
-            <FormTextarea
-              label="Report recipients"
-              value={recipients}
-              onChange={setRecipients}
-              rows={4}
-              placeholder={"noc@example.com\ncustomer@example.com"}
-              info="Each period's report is emailed here when the period freezes, seven days after it ends."
-              error={fieldErrors.report_recipients}
-            />
-            <FormSelect
-              label="Report as"
-              value={reportFormat}
-              onChange={(v) => setReportFormat(v as typeof reportFormat)}
-              options={[
-                { value: "pdf", label: "PDF" },
-                { value: "csv", label: "CSV" },
-                { value: "both", label: "PDF and CSV" },
-              ]}
-            />
-          </div>
-        </div>
-      </FormSection>
+        </FormSection>
+      )}
       <FormFooter
         onCancel={onCancel}
         submitting={save.isPending}
-        submitLabel={a ? "Save" : "Create agreement"}
+        submitLabel={
+          editing ? "Save" : asTemplate ? "Create template" : "Create agreement"
+        }
       />
     </form>
   )
