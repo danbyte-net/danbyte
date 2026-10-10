@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { cleanup, fireEvent, render } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { FloorPlan, FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
 import { FloorCanvas } from "./floor-canvas"
@@ -207,5 +207,54 @@ describe("a rack tile coloured by a measure", () => {
     const faded = paint("space", rackLive(10), { dimmed: true })
     expect(tileGroup(faded).getAttribute("opacity")).toBe("0.25")
     expect(faded.querySelector('[data-part="highlight"]')).toBeNull()
+  })
+})
+
+// Drawing calibration: in point-pick mode a click reports its world point
+// and nothing under it is opened or selected; the drawing sits under the
+// grid.
+describe("point-pick mode and the drawing underlay", () => {
+  it("reports a click's world point instead of opening the tile", () => {
+    const onPick = vi.fn()
+    const onOpen = vi.fn()
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[tile()]}
+        selectedId={null}
+        editable={false}
+        showGrid
+        armed={null}
+        onOpenTile={onOpen}
+        onPickPoint={onPick}
+      />
+    )
+    const svg = container.querySelector("svg")!
+    svg.setPointerCapture = () => {}
+    const g = tileGroup(container)
+    fireEvent.pointerDown(g, { button: 0, clientX: 140, clientY: 90 })
+    fireEvent.pointerUp(g, { button: 0, clientX: 140, clientY: 90 })
+    expect(onOpen).not.toHaveBeenCalled()
+    // The default view is translated by (40, 40) at zoom 1.
+    expect(onPick).toHaveBeenCalledWith({ x: 100, y: 50 })
+  })
+
+  it("draws the underlay before the grid", () => {
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[]}
+        selectedId={null}
+        editable={false}
+        showGrid
+        armed={null}
+        underlay={<g data-testid="under" />}
+      />
+    )
+    const under = container.querySelector('[data-testid="under"]')!
+    const grid = container.querySelector('rect[fill="url(#fp-grid)"]')!
+    expect(
+      under.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
   })
 })

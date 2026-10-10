@@ -10487,10 +10487,106 @@ export interface FloorPlan {
   state: Record<string, unknown>
   description: string
   tile_count: number
+  /** The plan's CAD drawing, when it has one (docs: floor-plans "CAD
+   * drawings"). The full record is GET …/drawing/. */
+  drawing: FloorPlanDrawingSummary | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export type FloorPlanDrawingStatus = "queued" | "ready" | "failed"
+
+export interface FloorPlanDrawingSummary {
+  id: string
+  status: FloorPlanDrawingStatus
+  source_kind: "dxf" | "dwg"
+  source_name: string
+  /** Same-origin /media/… URL of the sanitised SVG; null until ready. */
+  rendered_url: string | null
+  updated_at: string | null
+}
+
+export interface FloorPlanDrawingLayer {
+  name: string
+  /** "#rrggbb" */
+  color: string
+  on: boolean
+  frozen: boolean
+  entity_count: number
+  kinds: { geometry: number; hatch: number; dimension: number; text: number }
+}
+
+export interface FloorPlanDrawingPlacement {
+  x_mm: number
+  y_mm: number
+  rotation: 0 | 90 | 180 | 270
+  /** 0-100 */
+  opacity: number
+  hidden_layers: string[]
+  hide_text: boolean
+}
+
+/** GET /api/floor-plans/<id>/drawing/ */
+export interface FloorPlanDrawing extends FloorPlanDrawingSummary {
+  error: string
+  source_bytes: number
+  source_url: string | null
+  rendered_bytes: number
+  rendered_elements: number
+  simplified: string[]
+  skipped: { external?: number; infinite?: number }
+  units: string
+  units_mm_per_unit: number | null
+  calibration: {
+    a: [number, number]
+    b: [number, number]
+    distance_mm: number
+    mm_per_unit: number
+  } | null
+  /** The scale in effect. */
+  mm_per_unit: number
+  scale_source: "units" | "calibration" | "assumed"
+  extents: { min_x: number; min_y: number; max_x: number; max_y: number } | null
+  size: { width: number; height: number }
+  size_mm: { width: number; height: number }
+  layers: FloorPlanDrawingLayer[]
+  placement: Partial<FloorPlanDrawingPlacement>
+  bounds_mm: { x: number; y: number; width: number; height: number }
+  transform_mm: string
+  fit: {
+    grid_width: number
+    grid_height: number
+    fits: boolean
+    min_cell_mm: number
+  } | null
+  processed_at: string | null
+  created_at: string | null
+}
+
+/** GET /api/floor-plans/drawing-support/ */
+export interface FloorPlanDrawingSupport {
+  dxf: boolean
+  dwg: boolean
+  converter: string | null
+  /** Why DWG is refused; empty when it is taken. */
+  message: string
+  max_upload_bytes: number
+}
+
+/** POST/GET /api/floor-plans/<id>/drawing/render/ - a server render with
+ * layers left out, for drawings too large to toggle in the browser. */
+export interface FloorPlanDrawingRender {
+  key: string
+  status: "queued" | "ready" | "failed"
+  error: string
+  url: string | null
+  bytes: number
+  elements: number
+  simplified: string[]
+  hidden_layers: string[]
+  hide_text: boolean
 }
 
 /** A compact cable, as attached to a tray. */

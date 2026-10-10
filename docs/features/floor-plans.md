@@ -86,9 +86,40 @@ A plan can carry a **CAD drawing** as its background instead of an image: a
 shown at **true scale**: its units and the grid's cell size line up, so a
 600 mm floor tile in the drawing is one 600 mm cell.
 
-<!-- TODO(frontend): the upload control in the plan form, the layers panel
-(show/hide, presets, text toggle), opacity/rotation/offset controls, the
-Calibrate tool, Fit grid to drawing, and the large-drawing chip. -->
+### In the editor
+
+- **Upload**: **Background → Drawing → Upload drawing…** in the plan header
+  (**More → Background…** on a narrow screen). The file picker takes `.dxf`,
+  and `.dwg` only when the server has a converter; without one the popover
+  says so. A plan has one background: a drawing replaces the image, and an
+  image replaces the drawing, each after a confirm.
+- **Status**: while the worker has the file, the popover shows the loading
+  state; a failed drawing shows why, with **Reprocess**. **Remove** deletes
+  the drawing and its files.
+- **Drawing** in the toolbar opens the drawing's panel over the plan:
+  - **Layers**: tick a layer to show it; each shows its colour and shape
+    count, and **Off** or **Frozen** when the file had it so. **All** shows
+    every layer; **Architecture only** hides the layers that hold only
+    hatches, dimensions or text. **Hide text** hides every text.
+  - **Placement**: opacity, rotation (0°, 90°, 180°, 270°) and the offset in
+    mm, with arrows that move it one cell.
+  - **Scale**: the file's units, where the scale comes from (**From file**,
+    **Calibrated** or **Assumed mm**), one unit in mm and the drawing's size.
+    **Reset calibration** goes back to the file's units.
+  - **Fit grid to drawing**; when the drawing needs more than 512 cells a
+    side, it offers the cell size that fits.
+  - **Calibrate**: click two points on the drawing, type the distance between
+    them in mm, **Save**. A drag still pans while you pick.
+- Changes save as you make them, like the background image's opacity; the
+  plan's **Save** is for tiles. Without change permission on the plan you see
+  the drawing and can show or hide layers and text for yourself; that is not
+  saved.
+- **Large drawings**: past 60,000 shapes the plan shows the drawing as one
+  picture, with a **Layers flattened** chip. Hiding layers or text then asks
+  the server for a render without them (the chip reads **Rendering…** until
+  it lands).
+- The drawing is in the plan's **PNG** export, and in the
+  [3D room](#the-3d-room-view) as the floor, with the same layers hidden.
 
 ### Formats and limits
 
@@ -209,7 +240,7 @@ positions - sized from the rack's rail width, outer dimensions and U height -
 with their racked devices drawn at true U positions when you move close.
 Trays render at their recorded level/elevation (overhead runs hang below the
 ceiling, underfloor runs sit beneath the slab), zones tint the floor, and the
-uploaded blueprint textures it.
+uploaded blueprint or CAD drawing textures it.
 
 - **Navigate**: drag to orbit, scroll to zoom, right-drag to pan.
   **Keyboard**: the arrow keys or WASD glide the camera level with the floor

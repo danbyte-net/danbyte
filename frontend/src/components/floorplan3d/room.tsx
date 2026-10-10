@@ -43,9 +43,14 @@ export function Room({
   scene,
   xray = false,
   ceiling = false,
+  drawingFloor = null,
 }: {
   scene: ScenePayload
   xray?: boolean
+  /** The plan's CAD drawing rasterised for the floor (cad-layer.tsx
+   * `useCadFloorImage`), with its placement. Takes the blueprint's place:
+   * a plan has one background. */
+  drawingFloor?: DrawingFloor | null
   /** Draw the ceiling plane - single-sided facing DOWN, so it encloses the
    * room from inside but never blocks the bird's-eye view (and it neither
    * casts nor receives shadow: the key light sits above it). */
@@ -89,7 +94,8 @@ export function Room({
           depthWrite={!xray}
         />
       </mesh>
-      {plan.background_image && (
+      {drawingFloor && <DrawingFloorMesh floor={drawingFloor} />}
+      {!drawingFloor && plan.background_image && (
         <Blueprint
           url={plan.background_image}
           w={w}
@@ -173,6 +179,60 @@ function ZonePatch({
         />
       )}
     </mesh>
+  )
+}
+
+/** A CAD drawing on the floor: a PNG of its visible layers, `sizeMm` before
+ * rotation, centred on the placed box and turned by the plan rotation. */
+export interface DrawingFloor {
+  url: string
+  /** The drawing's own size in mm, unrotated. */
+  sizeMm: { width: number; height: number }
+  /** Centre of the placed box on the plan, mm from the top-left corner. */
+  centreMm: { x: number; y: number }
+  rotation: number
+  /** 0-1 */
+  opacity: number
+}
+
+function DrawingFloorMesh({ floor }: { floor: DrawingFloor }) {
+  const [texture, setTexture] = useState<THREE.Texture | null>(null)
+  useEffect(() => {
+    let disposed = false
+    new THREE.TextureLoader().load(floor.url, (t) => {
+      if (disposed) {
+        t.dispose()
+        return
+      }
+      t.colorSpace = THREE.SRGBColorSpace
+      t.anisotropy = 8
+      setTexture(t)
+    })
+    return () => {
+      disposed = true
+    }
+  }, [floor.url])
+  useEffect(() => () => texture?.dispose(), [texture])
+  if (!texture) return null
+  // The 2D plan turns the drawing clockwise on screen (y down); seen from
+  // above with Z south that is a turn about +Y by minus the angle.
+  return (
+    <group
+      position={[mm(floor.centreMm.x), 0.001, mm(floor.centreMm.y)]}
+      rotation={[0, (-floor.rotation * Math.PI) / 180, 0]}
+    >
+      <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+        <planeGeometry
+          args={[mm(floor.sizeMm.width), mm(floor.sizeMm.height)]}
+        />
+        <meshBasicMaterial
+          map={texture}
+          transparent
+          opacity={floor.opacity}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
   )
 }
 

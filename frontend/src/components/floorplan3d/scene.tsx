@@ -64,6 +64,7 @@ import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
 import type { PartMarkerAt } from "@/components/part-status"
 import type { FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
+import type { DrawingFloor } from "./room"
 import { RackMesh } from "./rack-mesh"
 import type { Sel, ShellMode } from "./rack-mesh"
 import { RackHud } from "./rack-hud"
@@ -119,6 +120,7 @@ export default function FloorScene3D({
   racks,
   pointTileIds,
   focusRack = null,
+  drawingFloor = null,
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -161,6 +163,8 @@ export default function FloorScene3D({
   /** A rack table row clicked: select that rack and fly to its front. A
    * new `n` flies again to the same rack. */
   focusRack?: { tileId: string; n: number } | null
+  /** The plan's CAD drawing as the floor texture (room.tsx). */
+  drawingFloor?: DrawingFloor | null
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -650,7 +654,12 @@ export default function FloorScene3D({
           setFocusOn(false)
         }}
       >
-        <Room scene={data} xray={shellMode === "xray"} ceiling={showCeiling} />
+        <Room
+          scene={data}
+          xray={shellMode === "xray"}
+          ceiling={showCeiling}
+          drawingFloor={drawingFloor}
+        />
         {shownRacks.map((t) => (
           <RackMesh
             key={t.id}

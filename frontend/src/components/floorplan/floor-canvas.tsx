@@ -236,6 +236,14 @@ export interface FloorCanvasProps {
   onHighlightCables?: (ids: string[]) => void
   /** Parent-held ref to drive fit/focus from the header (search, fit btn). */
   apiRef?: React.RefObject<FloorCanvasApi | null>
+  /** Drawn in world px over the floor and under the grid - the plan's CAD
+   * drawing (cad-layer.tsx). */
+  underlay?: React.ReactNode
+  /** Drawn in world px over everything else - calibration marks. */
+  worldOverlay?: React.ReactNode
+  /** Point-pick mode (drawing calibration): a click anywhere reports its
+   * world px point instead of selecting or painting; a drag still pans. */
+  onPickPoint?: (pt: { x: number; y: number }) => void
   className?: string
 }
 
@@ -327,10 +335,15 @@ export function FloorCanvas({
   onSelectCable,
   onHighlightCables,
   apiRef,
+  underlay,
+  worldOverlay,
+  onPickPoint,
   className,
 }: FloorCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const drag = useRef<DragState | null>(null)
+  // Point-pick mode: where the press started, to tell a click from a pan.
+  const pickStart = useRef<{ x: number; y: number } | null>(null)
   const paintPreview = useRef<SVGRectElement>(null)
   // Structure mode: the area being dragged/resized, rendered over the query
   // data until release commits it (server validates overlap/bounds).
@@ -907,17 +920,49 @@ export function FloorCanvas({
         ref={svgRef}
         className="h-full w-full touch-none text-foreground select-none"
         onWheel={onWheel}
+        onPointerDownCapture={
+          onPickPoint
+            ? (e) => {
+                // Picking owns the press: nothing under it selects, moves
+                // or paints. A drag still pans the plan.
+                if (e.button !== 0) return
+                e.stopPropagation()
+                setCtxMenu(null)
+                e.currentTarget.setPointerCapture(e.pointerId)
+                drag.current = { mode: "pan" }
+                startPan(e)
+                pickStart.current = { x: e.clientX, y: e.clientY }
+              }
+            : undefined
+        }
         onPointerDown={(e) => {
           setCtxMenu(null)
           handleBackgroundDown(e)
         }}
         onPointerMove={handleMove}
-        onPointerUp={handleUp}
-        onPointerLeave={handleUp}
+        onPointerUp={(e) => {
+          const start = pickStart.current
+          pickStart.current = null
+          if (
+            start &&
+            onPickPoint &&
+            svgRef.current &&
+            Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5
+          )
+            onPickPoint(toWorld(svgRef.current, e.clientX, e.clientY))
+          handleUp()
+        }}
+        onPointerLeave={() => {
+          pickStart.current = null
+          handleUp()
+        }}
         onDoubleClick={() => drawing && onFinishDraw?.()}
         onContextMenu={handleContextMenu}
         style={{
-          cursor: (armed && editable) || drawing ? "crosshair" : "grab",
+          cursor:
+            (armed && editable) || drawing || onPickPoint
+              ? "crosshair"
+              : "grab",
         }}
       >
         <defs>
@@ -947,6 +992,7 @@ export function FloorCanvas({
               preserveAspectRatio="none"
             />
           )}
+          {underlay}
           {showGrid && (
             <rect
               width={gw}
@@ -1232,6 +1278,7 @@ export function FloorCanvas({
             strokeDasharray="6 3"
             pointerEvents="none"
           />
+          {worldOverlay}
         </g>
       </svg>
 

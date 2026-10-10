@@ -791,3 +791,10 @@
 path.leaflet-interactive:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* A floor plan's CAD drawing (components/floorplan/cad-layer.tsx): strokes
+   keep their screen width at any zoom, so true-scale lineweights - a
+   fraction of a millimetre - stay visible. */
+[data-cad-layer] path {
+  vector-effect: non-scaling-stroke;
+}

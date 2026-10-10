@@ -17,6 +17,7 @@ import {
   Ellipsis,
   Grid3x3,
   Image as ImageIcon,
+  Layers,
   Maximize,
   PanelBottom,
   PanelRight,
@@ -126,6 +127,7 @@ import { CableAdd } from "@/components/cable-add"
 import { DynamicIcon } from "@/components/dynamic-icon"
 import { FloorPlanForm } from "@/components/floor-plan-form"
 import {
+  CELL,
   FloorCanvas,
   cableRoutePoints,
   findCollision,
@@ -167,6 +169,21 @@ import {
 import { HiddenChip } from "@/components/hidden-chip"
 import { hiddenCount, useHideKeys } from "@/components/hidden-objects"
 import { TileBadge } from "@/components/floorplan/tile-badge"
+import {
+  CadLayer,
+  useCadFloorImage,
+  useCadSource,
+} from "@/components/floorplan/cad-layer"
+import { CadPanel } from "@/components/floorplan/cad-panel"
+import {
+  CalibrateBar,
+  CalibrateMarks,
+  useCadCalibration,
+} from "@/components/floorplan/cad-calibrate"
+import { DrawingUpload } from "@/components/floorplan/cad-upload"
+import { useCadDrawing } from "@/components/floorplan/use-cad-drawing"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { SectionLabel } from "@/components/map-panel"
 import { RackElevation } from "@/components/rack-elevation"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Slider } from "@/components/ui/slider"
@@ -389,6 +406,10 @@ function FloorPlanPage() {
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [backgroundOpen, setBackgroundOpen] = useState(false)
+  // The CAD drawing's panel over the canvas, and an image picked while the
+  // plan has a drawing (which it replaces, after a confirm).
+  const [drawingOpen, setDrawingOpen] = useState(false)
+  const [pendingImage, setPendingImage] = useState<File | null>(null)
   // Deep view: the rack/device contents + end-to-end trace side sheet.
   const [deepTile, setDeepTile] = useState<FloorPlanTile | null>(null)
   // A cabinet tile's panel over the canvas: its plate and devices.
@@ -551,6 +572,8 @@ function FloorPlanPage() {
     setColorByLocal(null)
     setShowRacksLocal(null)
     setRackFocus3d(null)
+    setDrawingOpen(false)
+    setPendingImage(null)
   }, [id])
 
   // Hydrate local tiles from the server whenever fresh data lands and we
@@ -759,6 +782,23 @@ function FloorPlanPage() {
     colorBy,
     wantPorts: popoverShowsPorts(popoverCfg.data),
   })
+  // The plan's CAD drawing: placement saved as it changes (an editor) or
+  // kept on screen (a viewer's layer choices), drawn under the grid.
+  const cad = useCadDrawing(plan, canEdit)
+  const cadSource = useCadSource(id, cad.drawing, cad.placement)
+  const cadPxPerMm = CELL / (plan?.cell_mm || 600)
+  const calibration = useCadCalibration(
+    id,
+    cad.drawing,
+    cad.placement,
+    cadPxPerMm
+  )
+  const cadFloorUrl = useCadFloorImage(
+    cad.drawing,
+    cadSource,
+    cad.placement,
+    view3d && cad.drawing?.status === "ready"
+  )
   const showRacks =
     showRacksLocal ?? (plan?.state.show_racks as boolean | undefined) ?? true
   const racksOpen = colorBy !== "type" && showRacks && capacity.hasRacks
@@ -1452,6 +1492,7 @@ function FloorPlanPage() {
   // screen, a dialog from More on a narrow one.
   const backgroundControls = (
     <>
+      <SectionLabel>Image</SectionLabel>
       <input
         ref={fileInput}
         type="file"
@@ -1459,7 +1500,9 @@ function FloorPlanPage() {
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0]
-          if (f) uploadBackground.mutate(f)
+          // One background per plan: an image replaces the drawing.
+          if (f && plan.drawing) setPendingImage(f)
+          else if (f) uploadBackground.mutate(f)
           e.target.value = ""
         }}
       />
@@ -1510,6 +1553,8 @@ function FloorPlanPage() {
           />
         </label>
       )}
+      <SectionLabel className="mt-1">Drawing</SectionLabel>
+      <DrawingUpload cad={cad} hasImage={!!plan.background_image} />
     </>
   )
 
@@ -1648,6 +1693,14 @@ function FloorPlanPage() {
               onClick={() => setViewPref("show_racks", !showRacks)}
             >
               <PanelBottom /> Racks
+            </BarToggle>
+          )}
+          {plan.drawing && !view3d && (
+            <BarToggle
+              pressed={drawingOpen}
+              onClick={() => setDrawingOpen((o) => !o)}
+            >
+              <Layers /> Drawing
             </BarToggle>
           )}
           <BarToggle
@@ -2101,6 +2154,30 @@ function FloorPlanPage() {
                   racks={capacity.rackById}
                   pointTileIds={capacity.highlightTileIds}
                   focusRack={rackFocus3d}
+                  drawingFloor={
+                    cadFloorUrl && cad.drawing
+                      ? {
+                          url: cadFloorUrl,
+                          sizeMm: cad.drawing.size_mm,
+                          centreMm: {
+                            x:
+                              cad.placement.x_mm +
+                              (cad.placement.rotation % 180
+                                ? cad.drawing.size_mm.height
+                                : cad.drawing.size_mm.width) /
+                                2,
+                            y:
+                              cad.placement.y_mm +
+                              (cad.placement.rotation % 180
+                                ? cad.drawing.size_mm.width
+                                : cad.drawing.size_mm.height) /
+                                2,
+                          },
+                          rotation: cad.placement.rotation,
+                          opacity: cad.placement.opacity / 100,
+                        }
+                      : null
+                  }
                 />
               </Suspense>
               {colorLegend}
@@ -2224,7 +2301,53 @@ function FloorPlanPage() {
                     setViewPref("show_cable_links", true)
                 }}
                 apiRef={canvasApi}
+                underlay={
+                  cad.drawing?.status === "ready" && (
+                    <CadLayer
+                      drawing={cad.drawing}
+                      source={cadSource}
+                      placement={cad.placement}
+                      pxPerMm={cadPxPerMm}
+                    />
+                  )
+                }
+                worldOverlay={
+                  calibration.active &&
+                  cad.drawing && (
+                    <CalibrateMarks
+                      drawing={cad.drawing}
+                      placement={cad.placement}
+                      pxPerMm={cadPxPerMm}
+                      points={calibration.points}
+                    />
+                  )
+                }
+                onPickPoint={calibration.active ? calibration.pick : undefined}
               />
+              {cad.drawing?.status === "ready" &&
+                (cadSource.mode === "image" || cadSource.error) && (
+                  <div className="pointer-events-none absolute top-3 left-3 z-10">
+                    <Badge
+                      variant={cadSource.error ? "destructive" : "secondary"}
+                    >
+                      {cadSource.error
+                        ? cadSource.error
+                        : cadSource.loading
+                          ? "Rendering…"
+                          : "Layers flattened"}
+                    </Badge>
+                  </div>
+                )}
+              {calibration.active && <CalibrateBar cal={calibration} />}
+              {drawingOpen && plan.drawing && (
+                <CadPanel
+                  cad={cad}
+                  plan={plan}
+                  canEdit={canEdit}
+                  onCalibrate={calibration.start}
+                  onClose={() => setDrawingOpen(false)}
+                />
+              )}
               {canEdit && mode === "layout" && multiSel.size > 0 && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
                   <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
@@ -2578,6 +2701,26 @@ function FloorPlanPage() {
         tile={deepTile}
         onClose={() => setDeepTile(null)}
         onTraceCables={traceCablesOnMap}
+      />
+
+      <ConfirmDialog
+        open={!!pendingImage}
+        onOpenChange={(o) => !o && setPendingImage(null)}
+        title="Replace the drawing?"
+        description="A plan has one background. The image replaces the drawing and its layers."
+        confirmLabel="Replace"
+        pendingLabel="Uploading…"
+        pending={uploadBackground.isPending || cad.remove.isPending}
+        onConfirm={() => {
+          if (!pendingImage) return
+          uploadBackground.mutate(pendingImage, {
+            onSuccess: () =>
+              cad.remove.mutate(undefined, {
+                onSettled: () => setPendingImage(null),
+              }),
+            onError: () => setPendingImage(null),
+          })
+        }}
       />
 
       <Dialog open={backgroundOpen} onOpenChange={setBackgroundOpen}>
