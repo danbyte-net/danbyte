@@ -9273,6 +9273,7 @@ export interface PowerPanel {
   numid: number | null
   name: string
   site: SiteOption | null
+  location: { id: string; name: string } | null
   comments: string
   feed_count: number
   tags: Tag[]
@@ -9284,6 +9285,7 @@ export interface PowerPanel {
 export interface PowerPanelWritePayload {
   name: string
   site_id: string
+  location_id?: string | null
   comments?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>

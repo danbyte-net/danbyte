@@ -125,6 +125,14 @@ export function PowerFeedBulkBar({
 
 const PANEL_FIELDS: BulkFieldSpec[] = [
   { key: "site_id", label: "Site", kind: "object", object_model: "site" },
+  // A panel's location must be in its site: a site move of panels that
+  // have one changes or clears the location in the same edit.
+  {
+    key: "location_id",
+    label: "Location",
+    kind: "object",
+    object_model: "location",
+  },
 ]
 
 export function PowerPanelBulkBar({

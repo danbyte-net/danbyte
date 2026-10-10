@@ -7682,6 +7682,11 @@ class PowerPanelSerializer(
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True,
     )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
@@ -7691,10 +7696,26 @@ class PowerPanelSerializer(
         v = getattr(obj, "feed_count_annotated", None)
         return v if v is not None else obj.power_feeds.count()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        return {"id": str(loc.id), "name": loc.name} if loc else None
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # A panel's location must live in the panel's site.
+        location = attrs.get("location", getattr(self.instance, "location", None))
+        site = attrs.get("site", getattr(self.instance, "site", None))
+        if location is not None and site is not None and location.site_id != site.id:
+            raise serializers.ValidationError(
+                {"location_id": "Pick a location within the panel's site."}
+            )
+        return attrs
+
     class Meta:
         model = PowerPanel
-        fields = ["id", "name", "site", "site_id", "comments", "feed_count",
-                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        fields = ["id", "name", "site", "site_id", "location", "location_id", "comments",
+                  "feed_count", "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "feed_count", "created_at", "updated_at"]
 
 

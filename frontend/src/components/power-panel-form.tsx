@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
-import { type PowerPanel, type PowerPanelWritePayload } from "@/lib/api"
+import { api } from "@/lib/api"
+import type {
+  LocationOption,
+  Paginated,
+  PowerPanel,
+  PowerPanelWritePayload,
+} from "@/lib/api"
 import {
   FormCombobox,
   FormFooter,
@@ -34,6 +40,9 @@ export function PowerPanelForm({
 
   const [name, setName] = useState(panel?.name ?? "")
   const [siteId, setSiteId] = useState<string | null>(panel?.site?.id ?? null)
+  const [locationId, setLocationId] = useState<string | null>(
+    panel?.location?.id ?? null
+  )
   const [comments, setComments] = useState(panel?.comments ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     panel?.tags.map((t) => t.id) ?? []
@@ -46,6 +55,7 @@ export function PowerPanelForm({
     if (!panel) return
     setName(panel.name)
     setSiteId(panel.site?.id ?? null)
+    setLocationId(panel.location?.id ?? null)
     setComments(panel.comments)
     setTagIds(panel.tags.map((t) => t.id))
     setCustomFields(panel.custom_fields ?? {})
@@ -53,12 +63,21 @@ export function PowerPanelForm({
   }, [panel, reset])
 
   const sites = useSiteOptions()
+  // Locations are per-site - the list follows the chosen site.
+  const locations = useQuery({
+    queryKey: ["locations-picker", siteId],
+    queryFn: () =>
+      api<Paginated<LocationOption>>(`/api/locations/?picker=1&site=${siteId}`),
+    enabled: !!siteId,
+    staleTime: 5 * 60_000,
+  })
 
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: PowerPanelWritePayload = {
         name: name.trim(),
         site_id: siteId ?? "",
+        location_id: locationId,
         comments: comments.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -104,7 +123,10 @@ export function PowerPanelForm({
           label="Site"
           required
           value={siteId}
-          onChange={setSiteId}
+          onChange={(v) => {
+            setSiteId(v)
+            setLocationId(null) // locations are per-site
+          }}
           options={sites.options.map((s) => ({
             value: s.id,
             label: s.name,
@@ -113,6 +135,22 @@ export function PowerPanelForm({
           searchPlaceholder="Search sites…"
           emptyText="No sites."
           error={fieldErrors.site_id}
+        />
+        <FormCombobox
+          label="Location"
+          hint="optional · within the site"
+          value={locationId}
+          onChange={setLocationId}
+          options={(locations.data?.results ?? []).map((l) => ({
+            value: l.id,
+            label: l.name,
+          }))}
+          noneLabel="No location"
+          placeholder={siteId ? "Select a location…" : "Pick a site first"}
+          searchPlaceholder="Search locations…"
+          emptyText="No locations in this site."
+          disabled={!siteId}
+          error={fieldErrors.location_id}
         />
       </FormSection>
 

@@ -7829,14 +7829,17 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
 
 # ─── Power ───────────────────────────────────────────────────────────────────
 class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
-    """Bulk edit sets site and tags; bulk delete keeps a panel that still has
-    feeds, unless ``with_feeds`` takes them along too (#313)."""
+    """Bulk edit sets site, location and tags; bulk delete keeps a panel that
+    still has feeds, unless ``with_feeds`` takes them along too (#313).
+    Filter with ``?site=`` and ``?location=``."""
 
     rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
     queryset = PowerPanel.objects.all().order_by(NATURAL_NAME)
     serializer_class = PowerPanelSerializer
     pagination_class = StandardPagination
-    bulk_fk_fields = {"site_id": Site}
+    # A location outside a row's site is refused row by row by the
+    # serializer's validate(), as a PATCH would be.
+    bulk_fk_fields = {"site_id": Site, "location_id": Location}
     bulk_tags = True
     # Rename and clone are the component tables' own; a panel has neither.
     bulk_rename = None
@@ -7926,7 +7929,7 @@ class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVie
         return PowerPanelSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("site").prefetch_related(
+        qs = super().get_queryset().select_related("site", "location").prefetch_related(
             TAGS
         ).annotate(feed_count_annotated=Count("power_feeds"))
         if self.request:
@@ -7936,6 +7939,9 @@ class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVie
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
+            location = self.request.query_params.get("location")
+            if location:
+                qs = qs.filter(location_id=location)
             # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.

@@ -6533,6 +6533,11 @@ class PowerPanel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
     site = models.ForeignKey(
         Site, on_delete=models.PROTECT, related_name="power_panels"
     )
+    location = models.ForeignKey(
+        "Location", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="power_panels",
+        help_text="Where in the site the panel is (building / floor / room).",
+    )
     name = models.CharField(max_length=128)
     comments = models.TextField(blank=True, default="")
 

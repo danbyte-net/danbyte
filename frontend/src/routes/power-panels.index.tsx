@@ -11,6 +11,7 @@ import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { numidColumn } from "@/components/cells/numid"
 import { siteColumn } from "@/components/cells/site-cell"
+import { locationColumn } from "@/components/cells/location-cell"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
@@ -60,6 +61,10 @@ function PowerPanelsPage() {
         ),
       },
       siteColumn<PowerPanel>({ get: (r) => r.site, className: "text-xs" }),
+      locationColumn<PowerPanel>({
+        get: (r) => r.location,
+        className: "text-xs",
+      }),
       {
         id: "feeds",
         accessorKey: "feed_count",

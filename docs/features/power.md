@@ -17,9 +17,16 @@ A power panel is a distribution board within a site.
 
 1. Open **Power → Power panels** in the sidebar and click **Add power panel**.
 2. Pick the **site** the panel lives in.
-3. Give it a **name** (must be unique within that site).
-4. Optionally add **comments**, tags, and any custom fields.
-5. Save.
+3. Optionally pick a **location** in that site - the building, floor or room
+   the panel is in. Only the site's locations are offered; changing the site
+   clears it.
+4. Give it a **name** (must be unique within that site).
+5. Optionally add **comments**, tags, and any custom fields.
+6. Save.
+
+The **Power panels** list has a **Location** column to sort and filter by. In
+the API a panel carries `location` (id and name) and takes `location_id`;
+`GET /api/power-panels/?location=<id>` lists a location's panels.
 
 ## Add a power feed
 
@@ -52,8 +59,8 @@ that object's detail page, the same way every other object in Danbyte works.
 
 A **power panel** page has:
 
-- **Overview** - its site, how many feeds draw from it, comments, and when it
-  was created and last changed.
+- **Overview** - its site and location, how many feeds draw from it,
+  comments, and when it was created and last changed.
 - **Feeds** - every feed on the panel, the same row the feeds list draws;
   tick feeds to edit or delete several at once.
 - **Journal** - your notes on this panel.
@@ -101,11 +108,14 @@ are untouched, and tags are added or removed rather than replaced.
 | List | Bulk-editable fields |
 |---|---|
 | Power feeds | status, type, supply, phase, voltage, amperage, max utilization, power panel, rack, tags |
-| Power panels | site, tags |
+| Power panels | site, location, tags |
 
 Each value is checked as the edit form checks it. One bad value, or a move
 that would give a panel two feeds of one name (or a site two panels of one
-name), refuses the whole edit and nothing is written. Every changed row gets
+name), refuses the whole edit and nothing is written. A panel's location must
+be in its site: a location outside a selected panel's site is refused, and
+moving panels that have a location to another site needs the location set
+or cleared in the same edit. Every changed row gets
 its own entry in the change log.
 
 **Delete** first shows what will happen: the rows that go, what goes with
