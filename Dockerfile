@@ -61,11 +61,14 @@ WORKDIR /app
 # postgresql-client-17 (from PGDG, the distro's client is older) gives the
 # in-app backup its pg_dump/pg_restore; pg_dump must be at least the server's
 # major version, so bump it together with the postgres image in compose.
+# bubblewrap adds namespaces around sandboxed scripts when the container's
+# seccomp and AppArmor profiles allow user namespaces; otherwise scripts run
+# under Landlock alone and their logs say so (docs/features/scripts.md).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential libpq-dev libldap2-dev libsasl2-dev libssl-dev \
         curl iputils-ping traceroute mtr-tiny dnsutils snmp fping \
-        netcat-openbsd \
+        netcat-openbsd bubblewrap \
         libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
         libffi8 fonts-dejavu-core \
     && install -d /usr/share/postgresql-common/pgdg \

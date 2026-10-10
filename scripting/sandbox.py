@@ -24,6 +24,15 @@ reach abstract unix sockets, and cannot open TCP connections to the
 Redis and database ports (Redis holds the RQ queues, whose jobs the worker
 unpickles).
 
+Where bubblewrap (``bwrap``) works, it is the outer layer (0.18): the run
+gets its own user, pid, mount, ipc, uts and network namespaces. Its
+filesystem holds only the system, the Python install and its own work
+directory, with no ``/proc`` and no Danbyte directory at all, and its
+network has nothing but a loopback port that the worker relays to the
+Danbyte API. Landlock and the seccomp filter still apply inside it, so a
+host without a working ``bwrap`` falls back to the Landlock-only
+confinement above, never below it.
+
 Trusted runs are not confined: they get the ORM and the worker's
 environment on purpose.
 """
@@ -31,10 +40,17 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import hashlib
+import ipaddress
 import logging
 import os
 import platform
+import shutil
+import socket
+import subprocess
 import sys
+import tempfile
+import threading
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
@@ -184,10 +200,21 @@ def _handled_fs(abi: int) -> int:
 
 
 def mode() -> str:
-    """``landlock`` (the default) confines every sandboxed run and refuses
-    one the kernel cannot confine. ``none`` runs them unconfined."""
-    value = str(getattr(settings, "SCRIPT_SANDBOX", "landlock") or "landlock").lower()
-    return "none" if value in ("none", "off", "0", "false") else "landlock"
+    """How sandboxed runs are confined.
+
+    * ``auto`` (the default): bubblewrap around Landlock where ``bwrap``
+      works, Landlock alone where it does not.
+    * ``bwrap``: bubblewrap around Landlock, or the run is refused.
+    * ``landlock``: Landlock alone, the 0.17.2 behaviour.
+    * ``none``: unconfined.
+
+    Every mode but ``none`` refuses a run the kernel cannot Landlock. An
+    unknown value means ``auto``, which is never weaker than ``landlock``.
+    """
+    value = str(getattr(settings, "SCRIPT_SANDBOX", "auto") or "auto").strip().lower()
+    if value in ("none", "off", "0", "false"):
+        return "none"
+    return value if value in ("bwrap", "landlock") else "auto"
 
 
 def blocked_ports() -> set[int]:
@@ -216,9 +243,401 @@ def _python_dirs() -> set[str]:
     return {d for d in dirs if d and d != "/"}
 
 
+def _restrict_outer(libc, seccomp) -> None:
+    """no_new_privs and the unix-socket filter: what every layer starts
+    with, applied between fork and exec."""
+    if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "no_new_privs refused")
+    if seccomp is not None and libc.prctl(
+        _PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(seccomp), 0, 0
+    ) != 0:
+        raise OSError(ctypes.get_errno(), "seccomp filter refused")
+
+
+def granted_dirs(readable: tuple[str, ...] = ()) -> list[str]:
+    """Directories a run may read and execute: the system, the Python
+    install and ``readable``. Refuses one that contains the Danbyte
+    directory, since granting it would hand over the checkout and its
+    ``.env``."""
+    base = os.path.realpath(str(settings.BASE_DIR))
+    dirs = []
+    for path in (*SYSTEM_DIRS, *sorted(_python_dirs()), *readable):
+        real = os.path.realpath(path)
+        if base == real or base.startswith(real.rstrip("/") + "/"):
+            raise SandboxUnavailable(
+                f"Cannot confine scripts: {path} contains the Danbyte directory {base}. "
+                "Install Danbyte outside the Python and system directories."
+            )
+        dirs.append(path)
+    return dirs
+
+
+def interpreter() -> str:
+    """The interpreter by a path that exists inside the bubblewrap
+    sandbox: its directory resolved, the file name kept, so a virtualenv
+    still finds its ``pyvenv.cfg``."""
+    return os.path.join(os.path.realpath(os.path.dirname(sys.executable)),
+                        os.path.basename(sys.executable))
+
+
+# ── bubblewrap ──────────────────────────────────────────────────────────────
+
+# Searched instead of $PATH: bwrap starts before any confinement.
+BWRAP_SEARCH_PATH = "/usr/bin:/bin:/usr/local/bin"
+# The uid and gid a run has inside its user namespace ("nobody"). Outside,
+# it is still the worker's account: an unprivileged user namespace maps
+# exactly one id.
+SANDBOX_ID = 65534
+SANDBOX_HOSTNAME = "danbyte-script"
+NPROC_LIMIT = 256  # processes and threads per run
+PROBE_TTL = 600  # seconds a probe result is shared between worker processes
+_INNER_FALLBACK_PORT = 8080
+
+_PROBE_CODE = (
+    "import socket\n"
+    "assert [n for _, n in socket.if_nameindex()] == ['lo'], socket.if_nameindex()\n"
+    "server = socket.socket()\n"
+    "server.bind(('127.0.0.1', 0))\n"
+    "server.listen()\n"
+    "socket.create_connection(server.getsockname(), 2).close()\n"
+    "print('bwrap-ok')\n"
+)
+
+# Runs inside the sandbox, as the command bwrap starts. It listens on the
+# loopback port the script's DANBYTE_URL names and hands every connection
+# to the worker, which relays it to the API; then it starts the script
+# under Landlock. It stays outside the script's Landlock domain, so the
+# script cannot signal or trace it.
+_LAUNCHER = """\
+import ctypes, resource, socket, subprocess, sys, threading
+
+ruleset, relay, port, nproc = (int(v) for v in sys.argv[1:5])
+command = sys.argv[6:]
+listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+listener.bind(("127.0.0.1", port))
+listener.listen(64)
+link = socket.socket(fileno=relay)
+libc = ctypes.CDLL(None, use_errno=True)
+libc.syscall.restype = ctypes.c_long
+
+
+def confine():
+    resource.setrlimit(resource.RLIMIT_NPROC, (nproc, nproc))
+    if libc.syscall(446, ruleset, 0) != 0:
+        raise OSError(ctypes.get_errno(), "landlock_restrict_self refused")
+
+
+def serve():
+    while True:
+        conn, _ = listener.accept()
+        try:
+            socket.send_fds(link, [b"c"], [conn.fileno()])
+        except OSError:
+            return
+        finally:
+            conn.close()
+
+
+try:
+    child = subprocess.Popen(command, preexec_fn=confine, close_fds=True)
+except Exception as exc:
+    print(f"sandbox: the script could not be confined: {exc}", file=sys.stderr, flush=True)
+    sys.exit(126)
+threading.Thread(target=serve, daemon=True).start()
+code = child.wait()
+sys.exit(code if code >= 0 else 128 - code)
+"""
+
+
+@dataclass(frozen=True)
+class BwrapProbe:
+    """Whether ``bwrap`` can build the sandbox on this host, and why not."""
+
+    path: str = ""
+    usable: bool = False
+    reason: str = ""
+    disable_userns: bool = False
+
+
+_probe_memo: dict[str, BwrapProbe] = {}
+_probe_lock = threading.Lock()
+
+
+def find_bwrap() -> str:
+    return shutil.which("bwrap", path=BWRAP_SEARCH_PATH) or ""
+
+
+def bwrap_argv(probe: BwrapProbe, work: str, read_dirs: list[str], *,
+               hosts: str = "") -> list[str]:
+    """The bwrap command line up to ``--``. The run sees the system and
+    the Python install read-only, its work directory read-write with the
+    files Danbyte put there read-only, a minimal ``/dev``, and nothing
+    else: no ``/proc``, no ``/tmp``, no Danbyte directory."""
+    args = [
+        probe.path,
+        "--unshare-user", "--uid", str(SANDBOX_ID), "--gid", str(SANDBOX_ID),
+        "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-net",
+        "--unshare-cgroup-try", "--hostname", SANDBOX_HOSTNAME,
+        "--die-with-parent", "--new-session", "--cap-drop", "ALL",
+    ]
+    if probe.disable_userns:
+        args.append("--disable-userns")
+    bound: list[str] = []
+    links: list[str] = []
+
+    def covered(path: str) -> bool:
+        return any(path == b or path.startswith(b.rstrip("/") + "/") for b in bound)
+
+    for path in read_dirs:
+        if path in SYSTEM_DIRS and os.path.islink(path):
+            args += ["--symlink", os.readlink(path), path]  # /lib -> usr/lib
+            continue
+        real = os.path.realpath(path)
+        if not os.path.isdir(real):
+            continue
+        if not covered(real):
+            args += ["--ro-bind", real, real]
+            bound.append(real)
+        if real != os.path.abspath(path):
+            links.append(path)
+    # A virtualenv or a versioned interpreter is often reached through a
+    # symlink (pyvenv.cfg's home); recreate it, pointing at the bound copy.
+    for path in links:
+        if not covered(path) and not any(path.startswith(p.rstrip("/") + "/") for p in links):
+            args += ["--symlink", os.path.realpath(path), path]
+    for path in SYSTEM_FILES:
+        if hosts and path == "/etc/hosts":
+            continue
+        if os.path.exists(path):
+            args += ["--ro-bind", path, path]
+    if hosts:
+        args += ["--ro-bind", hosts, "/etc/hosts"]
+    args += ["--dev", "/dev", "--bind", work, work]
+    for name in sorted(os.listdir(work)):
+        if name != "outputs":
+            path = os.path.join(work, name)
+            args += ["--ro-bind", path, path]
+    args += ["--remount-ro", "/", "--chdir", work, "--"]
+    return args
+
+
+def _run_probe(path: str) -> BwrapProbe:
+    """Start a throwaway sandbox exactly as a run would, minus Landlock."""
+    try:
+        dirs = granted_dirs()
+    except SandboxUnavailable as exc:
+        return BwrapProbe(path=path, reason=str(exc))
+    libc = _libc()
+    fprog = _unix_socket_filter()
+    reason = ""
+    with tempfile.TemporaryDirectory(prefix="bwrap-probe-") as work:
+        # --disable-userns needs bubblewrap 0.8; an older one is retried without.
+        for disable in (True, False):
+            candidate = BwrapProbe(path=path, usable=True, disable_userns=disable)
+            argv = bwrap_argv(candidate, work, dirs) + [interpreter(), "-I", "-B", "-c",
+                                                         _PROBE_CODE]
+            try:
+                done = subprocess.run(  # noqa: S603 - argv list, fixed binary
+                    argv, capture_output=True, text=True, timeout=20, cwd=work,
+                    env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, close_fds=True,
+                    preexec_fn=lambda: _restrict_outer(libc, fprog),
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                reason = str(exc)
+                continue
+            if done.returncode == 0 and "bwrap-ok" in done.stdout:
+                return candidate
+            lines = (done.stderr or "").strip().splitlines()
+            reason = lines[-1] if lines else f"exit code {done.returncode}"
+    # bwrap's first sentence says what failed; the rest points at distro docs.
+    reason = reason.removeprefix("bwrap: ").split(". ", 1)[0].strip().rstrip(".")
+    return BwrapProbe(path=path, reason=reason[:300] or "bubblewrap failed")
+
+
+def _probe_key(path: str) -> str:
+    try:
+        st = os.stat(path)
+        stamp = f"{st.st_ino}:{st.st_mtime_ns}"
+    except OSError:
+        stamp = ""
+    raw = "|".join((socket.gethostname(), path, stamp, platform.release(),
+                    str(os.getuid()), interpreter()))
+    return "scripting:bwrap-probe:" + hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def bwrap_probe(*, refresh: bool = False) -> BwrapProbe:
+    """Whether bubblewrap works here. Probed once per worker process and
+    shared through the cache for :data:`PROBE_TTL` seconds, keyed by host,
+    binary, kernel and account, so RQ's per-job processes do not each pay
+    for it. A host can lose the ability (an AppArmor or seccomp change),
+    which is why the shared result expires."""
+    path = find_bwrap()
+    if not path:
+        return BwrapProbe(reason="bubblewrap is not installed")
+    key = _probe_key(path)
+    with _probe_lock:
+        if not refresh:
+            hit = _probe_memo.get(key)
+            if hit is None:
+                try:
+                    from django.core.cache import cache
+
+                    raw = cache.get(key)
+                    hit = BwrapProbe(**raw) if isinstance(raw, dict) else None
+                except Exception:  # noqa: BLE001 - a cache outage means probing
+                    hit = None
+            if hit is not None and hit.path == path:
+                _probe_memo[key] = hit
+                return hit
+        result = _run_probe(path)
+        _probe_memo[key] = result
+        try:
+            from django.core.cache import cache
+
+            cache.set(key, result.__dict__.copy(), PROBE_TTL)
+        except Exception:  # noqa: BLE001
+            pass
+    if result.usable:
+        logger.info("script sandbox: bubblewrap %s works on this host", path)
+    else:
+        logger.warning("script sandbox: bubblewrap %s cannot run here: %s", path, result.reason)
+    return result
+
+
+@dataclass(frozen=True)
+class ApiRoute:
+    """How a run inside its network namespace reaches the API."""
+
+    url: str  # the run's DANBYTE_URL
+    port: int  # the loopback port the launcher listens on
+    alias: str  # a host name the sandbox's /etc/hosts points at 127.0.0.1
+    target: tuple[str, int]  # where the worker relays each connection
+
+
+def api_route(url: str) -> ApiRoute:
+    """The URL keeps its scheme, path and host name, so TLS still checks
+    the right name; an address becomes 127.0.0.1. A port below 1024
+    cannot be bound in the sandbox, so the inside port may differ."""
+    parts = urlsplit(url)
+    scheme = parts.scheme or "http"
+    host = parts.hostname or "127.0.0.1"
+    port = parts.port or (443 if scheme == "https" else 80)
+    inner = port if port >= 1024 and port not in blocked_ports() else _INNER_FALLBACK_PORT
+    try:
+        ipaddress.ip_address(host)
+        literal = True
+    except ValueError:
+        literal = host == "localhost"
+    inner_host, alias = ("127.0.0.1", "") if literal else (host, host)
+    return ApiRoute(f"{scheme}://{inner_host}:{inner}{parts.path.rstrip('/')}", inner, alias,
+                    (host, port))
+
+
+def hosts_file(route: ApiRoute) -> str:
+    names = " ".join(n for n in ("localhost", SANDBOX_HOSTNAME, route.alias) if n)
+    return f"127.0.0.1\t{names}\n::1\tlocalhost\n"
+
+
+class ApiRelay:
+    """The worker's end of a run's only network path: each connection the
+    launcher accepts arrives here as a file descriptor and is joined to a
+    fresh connection to the API. No database access, so threads are fine."""
+
+    MAX_CONNECTIONS = 32
+
+    def __init__(self, target: tuple[str, int]):
+        self.target = target
+        self.parent, self.child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        self._lock = threading.Lock()
+        self._open: set[socket.socket] = set()
+        self._stopped = False
+        self._thread = threading.Thread(target=self._receive, daemon=True,
+                                        name="script-api-relay")
+
+    @property
+    def child_fd(self) -> int:
+        return self.child.fileno()
+
+    def start(self) -> None:
+        """Call once the sandbox has been started with :attr:`child_fd`."""
+        self.child.close()
+        self._thread.start()
+
+    def _receive(self) -> None:
+        while True:
+            try:
+                msg, fds, _, _ = socket.recv_fds(self.parent, 16, 8)
+            except OSError:
+                return
+            if not msg and not fds:
+                return  # the sandbox is gone
+            for fd in fds:
+                self._join(socket.socket(fileno=fd))
+
+    def _join(self, inner: socket.socket) -> None:
+        with self._lock:
+            refuse = self._stopped or len(self._open) >= 2 * self.MAX_CONNECTIONS
+        if refuse:
+            inner.close()
+            return
+        try:
+            outer = socket.create_connection(self.target, timeout=10)
+            outer.settimeout(None)
+        except OSError:
+            inner.close()
+            return
+        with self._lock:
+            if self._stopped:
+                inner.close()
+                outer.close()
+                return
+            self._open.update((inner, outer))
+        left = [2]
+
+        def pipe(src: socket.socket, dst: socket.socket) -> None:
+            try:
+                while data := src.recv(65536):
+                    dst.sendall(data)
+            except OSError:
+                pass
+            try:
+                dst.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+            with self._lock:
+                left[0] -= 1
+                if left[0]:
+                    return
+                self._open.difference_update((inner, outer))
+            inner.close()
+            outer.close()
+
+        for src, dst in ((inner, outer), (outer, inner)):
+            threading.Thread(target=pipe, args=(src, dst), daemon=True,
+                             name="script-api-pipe").start()
+
+    def stop(self) -> None:
+        with self._lock:
+            self._stopped = True
+            live = list(self._open)
+        for sock in (self.parent, *live):
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        if self._thread.is_alive():
+            self._thread.join(timeout=2)
+        self.parent.close()
+        self.child.close()
+
+
+# ── the confinement of one run ──────────────────────────────────────────────
+
+
 @dataclass
 class Confinement:
-    """A prepared Landlock ruleset, applied in the child before ``exec``."""
+    """A prepared Landlock ruleset and, where it works, the bubblewrap
+    sandbox around it."""
 
     abi: int
     ruleset_fd: int
@@ -226,19 +645,45 @@ class Confinement:
     notes: list[str] = field(default_factory=list)
     libc: object = field(default_factory=_libc, repr=False)
     seccomp: object = field(default=None, repr=False)
+    work: str = ""
+    read_dirs: list[str] = field(default_factory=list)
+    bwrap: BwrapProbe | None = None
+    skipped: str = ""  # why bubblewrap is not used, when it is not
+
+    @property
+    def layers(self) -> list[str]:
+        names = ["bubblewrap"] if self.bwrap is not None else []
+        names.append("Landlock")
+        if self.seccomp is not None:
+            names.append("seccomp")
+        return names
 
     def restrict_child(self) -> None:
         """Runs between fork and exec. Raises, so the launch fails, if the
-        kernel refuses: a run is never started half-confined."""
-        libc = self.libc
-        if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-            raise OSError(ctypes.get_errno(), "no_new_privs refused")
-        if self.seccomp is not None and libc.prctl(
-            _PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(self.seccomp), 0, 0
-        ) != 0:
-            raise OSError(ctypes.get_errno(), "seccomp filter refused")
-        if libc.syscall(_SYS_RESTRICT_SELF, self.ruleset_fd, 0) != 0:
+        kernel refuses: a run is never started half-confined. Under
+        bubblewrap, Landlock is applied inside the sandbox by the launcher,
+        since a Landlocked process cannot set up mounts."""
+        _restrict_outer(self.libc, self.seccomp)
+        if self.bwrap is None and self.libc.syscall(_SYS_RESTRICT_SELF, self.ruleset_fd, 0) != 0:
             raise OSError(ctypes.get_errno(), "landlock_restrict_self refused")
+
+    def wrap(self, cmd: list[str], route: ApiRoute, relay_fd: int) -> tuple[list[str], tuple]:
+        """The bubblewrap command for ``cmd``, and the descriptors it must
+        inherit. Writes the launcher and the hosts file into the work
+        directory first, so they are bound read-only."""
+        launcher = os.path.join(self.work, "_danbyte_launch.py")
+        with open(launcher, "w") as fh:
+            fh.write(_LAUNCHER)
+        hosts = os.path.join(self.work, "_hosts")
+        with open(hosts, "w") as fh:
+            fh.write(hosts_file(route))
+        exe = interpreter()
+        inner = [exe if part == sys.executable else part for part in cmd]
+        argv = bwrap_argv(self.bwrap, self.work, self.read_dirs, hosts=hosts) + [
+            exe, "-I", "-B", launcher, str(self.ruleset_fd), str(relay_fd), str(route.port),
+            str(NPROC_LIMIT), "--", *inner,
+        ]
+        return argv, (self.ruleset_fd, relay_fd)
 
     def close(self) -> None:
         if self.ruleset_fd >= 0:
@@ -247,7 +692,8 @@ class Confinement:
 
 
 def prepare(work: str, *, readable: tuple[str, ...] = ()) -> Confinement:
-    """Build the ruleset for one run, whose only writable place is ``work``.
+    """Build the Landlock ruleset for one run, whose only writable place is
+    ``work``. The caller adds the bubblewrap layer (:func:`with_bwrap`).
 
     Raises :class:`SandboxUnavailable` when the kernel has no Landlock.
     """
@@ -257,6 +703,7 @@ def prepare(work: str, *, readable: tuple[str, ...] = ()) -> Confinement:
             "This host cannot confine sandboxed scripts: the kernel has no Landlock "
             "(Linux 5.13 or later with landlock enabled), or a seccomp profile blocks it."
         )
+    read_dirs = granted_dirs(readable)
     libc = _libc()
     libc.syscall.restype = ctypes.c_long
     handled_fs = _handled_fs(abi)
@@ -278,7 +725,7 @@ def prepare(work: str, *, readable: tuple[str, ...] = ()) -> Confinement:
     if fd < 0:
         raise SandboxUnavailable(f"landlock_create_ruleset failed: {os.strerror(ctypes.get_errno())}")
     conf = Confinement(abi=abi, ruleset_fd=int(fd), notes=notes, libc=libc,
-                       seccomp=_unix_socket_filter())
+                       seccomp=_unix_socket_filter(), work=work, read_dirs=read_dirs)
     if conf.seccomp is None:
         notes.append(f"unix sockets are not blocked on {platform.machine()}")
     try:
@@ -299,15 +746,7 @@ def prepare(work: str, *, readable: tuple[str, ...] = ()) -> Confinement:
             finally:
                 os.close(pfd)
 
-        base = os.path.realpath(str(settings.BASE_DIR))
-        for path in (*SYSTEM_DIRS, *sorted(_python_dirs()), *readable):
-            real = os.path.realpath(path)
-            if base == real or base.startswith(real.rstrip("/") + "/"):
-                # Granting it would hand over the checkout and its .env.
-                raise SandboxUnavailable(
-                    f"Cannot confine scripts: {path} contains the Danbyte directory {base}. "
-                    "Install Danbyte outside the Python and system directories."
-                )
+        for path in read_dirs:
             allow(path, _READ_EXEC)
         for path in SYSTEM_FILES:
             allow(path, FS_READ_FILE)
@@ -332,3 +771,21 @@ def prepare(work: str, *, readable: tuple[str, ...] = ()) -> Confinement:
         conf.close()
         raise
     return conf
+
+
+def with_bwrap(conf: Confinement, want: str) -> None:
+    """Add the bubblewrap layer for mode ``want`` (``auto`` or ``bwrap``).
+    ``bwrap`` refuses the run when bubblewrap cannot run here; ``auto``
+    goes ahead under Landlock alone and says why in the run log."""
+    probe = bwrap_probe()
+    if probe.usable:
+        conf.bwrap = probe
+        return
+    if want == "bwrap":
+        raise SandboxUnavailable(
+            f"This host cannot run sandboxed scripts under bubblewrap: {probe.reason}. "
+            "Set DANBYTE_SCRIPT_SANDBOX=auto to fall back to Landlock alone."
+        )
+    conf.skipped = probe.reason
+
+

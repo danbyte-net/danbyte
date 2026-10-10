@@ -118,10 +118,22 @@ created on the first backup, mode `0700`.
 ## Scripts (`DANBYTE_SCRIPT_SANDBOX`)
 
 `DANBYTE_SCRIPT_SANDBOX` sets how sandboxed [scripts](../features/scripts.md)
-are confined. `landlock`, the default, confines every sandboxed run and
-refuses one the host cannot confine. `none` runs them unconfined, and each
-run log says so; use it only on a host without Landlock, knowing a script
-author can then read what the service account can, including `.env`.
+are confined:
+
+- `auto`, the default: bubblewrap namespaces around Landlock where `bwrap`
+  works, Landlock alone where it does not. The run log says which.
+- `bwrap`: bubblewrap around Landlock, and a run is refused when `bwrap`
+  cannot run.
+- `landlock`: Landlock alone, as in 0.17. Scripts keep the host network,
+  so they can reach devices directly.
+- `none`: unconfined, and each run log says so. Use it only on a host
+  without Landlock, knowing a script author can then read what the service
+  account can, including `.env`.
+
+Every value except `none` refuses a run the host cannot Landlock. An
+unknown value means `auto`. Under bubblewrap a script has no network but
+the API. What each level blocks is in
+[Scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do).
 Trusted scripts are never confined.
 
 `DANBYTE_INTERNAL_URL` is where a script's SDK reaches the API. Default:

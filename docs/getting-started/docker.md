@@ -129,6 +129,32 @@ than running as root or granting `NET_RAW`. Podman honours the sysctl too.
     a privileged LXC or on a VM/bare metal, or use a TCP/HTTP check instead of
     ICMP for those targets.
 
+### Script sandbox
+
+The image includes bubblewrap, which puts each sandboxed
+[script](../features/scripts.md#what-a-sandboxed-script-cannot-do) in its
+own namespaces. Docker's default seccomp profile refuses the user
+namespaces it needs, and on an AppArmor host the `docker-default` profile
+refuses its mounts. So in a stock stack scripts run under Landlock and
+Danbyte's seccomp filter alone, the 0.17 level, and each run log says
+`Sandbox: bubblewrap is not used - No permissions to create a new
+namespace…`.
+
+To add the namespaces, relax both profiles on the `workers` service only
+(the lines are in `docker-compose.prod.yml`, commented out):
+
+```yaml
+  workers:
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+```
+
+That trades the container's own seccomp and AppArmor policy on the worker
+for per-run namespaces; scripts keep Landlock and Danbyte's filter either
+way. A host without AppArmor needs only the seccomp line. Tested with
+Docker 29; Podman is untested.
+
 `web` listens on **:80** (`HTTP_PORT`, default 8080) and **:443**
 (`HTTPS_PORT`, default 8443) with a **self-signed** cert baked into the image -
 so browsers that force HTTPS still connect (one-time cert warning). Put a real

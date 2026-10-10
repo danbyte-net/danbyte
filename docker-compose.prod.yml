@@ -130,6 +130,12 @@ services:
       - backups:/app/backup-archives
     sysctls:
       - net.ipv4.ping_group_range=0 2147483647
+    # Sandboxed scripts get bubblewrap namespaces only when the container may
+    # create user namespaces and mount in them; the default profiles refuse,
+    # and scripts then run under Landlock alone. See docs/getting-started/docker.md.
+    # security_opt:
+    #   - seccomp=unconfined
+    #   - apparmor=unconfined
     depends_on:
       postgres:
         condition: service_healthy

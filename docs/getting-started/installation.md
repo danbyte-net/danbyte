@@ -92,6 +92,7 @@ The other tabs cover building from source and a local dev checkout.
         | `--skip-backup` | On a re-run: no pre-upgrade backup. | off |
         | `--host-only` | On a host that runs Danbyte: only the root steps an upgrade ends with (logrotate, nginx + TLS, the certificate unit), from the bundle of the release that runs, with no upgrade stage. It changes no code, so a git checkout takes it too. | off |
         | `--adopt` | On a re-run or with `--host-only`: replace a Danbyte nginx site edited by hand with the new render, keeping a backup. Without it the new render lands beside the site as `danbyte.conf.new`. | off |
+        | `--with-script-sandbox` | Install `bubblewrap`, so sandboxed [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do) run in their own namespaces, and check it works for the service user. Without it they run under Landlock alone. Works on a fresh install and a re-run. | off |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
         **Environment variables** (set before the command; alternative to flags)

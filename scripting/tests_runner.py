@@ -356,3 +356,368 @@ class ConfinementTests(_Base):
         with override_settings(BASE_DIR="/usr/share/danbyte"):
             with self.assertRaises(sandbox.SandboxUnavailable):
                 sandbox.prepare(self.tmp.name)
+
+    @override_settings(SCRIPT_SANDBOX="auto")
+    def test_auto_without_bubblewrap_runs_under_landlock_and_says_so(self):
+        bad = sandbox.BwrapProbe(path="/usr/bin/bwrap", reason="setting up uid map refused")
+        with mock.patch.object(sandbox, "bwrap_probe", return_value=bad):
+            run = self._probe()
+        seen = self._lines(run)
+        self.assertEqual(run.status, "success", run.log)
+        self.assertIn("Sandbox: Landlock", run.log)
+        self.assertIn("bubblewrap is not used - setting up uid map refused", run.log)
+        # never weaker than Landlock alone
+        for label in ("environ", "dotenv", "secret", "checkout", "sdk-dotenv"):
+            self.assertTrue(seen[label].startswith("DENIED"), (label, run.log))
+
+    @override_settings(SCRIPT_SANDBOX="bwrap")
+    def test_bwrap_mode_without_bubblewrap_refuses_the_run(self):
+        bad = sandbox.BwrapProbe(path="/usr/bin/bwrap", reason="setting up uid map refused")
+        with mock.patch.object(sandbox, "bwrap_probe", return_value=bad):
+            run = self._run("print('ran')\n")
+        self.assertEqual(run.status, "failed")
+        self.assertIn("cannot run sandboxed scripts under bubblewrap", run.error)
+        self.assertNotIn("ran", run.log)
+        self.assertFalse(ApiToken.objects.filter(kind="run").exists())
+
+    @override_settings(SCRIPT_SANDBOX="landlock")
+    def test_landlock_mode_never_tries_bubblewrap(self):
+        with mock.patch.object(sandbox, "bwrap_probe") as probe:
+            run = self._run("print('ran')\n")
+        probe.assert_not_called()
+        self.assertEqual(run.status, "success", run.log)
+        self.assertIn("Sandbox: Landlock", run.log)
+        self.assertNotIn("bubblewrap", run.log)
+
+
+@override_settings(SCRIPT_SANDBOX="landlock")
+class LandlockOnlyConfinementTests(ConfinementTests):
+    """The same guarantees with bubblewrap off: the floor every level keeps."""
+
+
+class SandboxModeTests(TestCase):
+    """DANBYTE_SCRIPT_SANDBOX values (#316)."""
+
+    def test_values(self):
+        cases = {"auto": "auto", "": "auto", "bwrap": "bwrap", " BWRAP ": "bwrap",
+                 "landlock": "landlock", "none": "none", "off": "none", "false": "none",
+                 "something-else": "auto"}
+        for value, expected in cases.items():
+            with self.subTest(value=value), override_settings(SCRIPT_SANDBOX=value):
+                self.assertEqual(sandbox.mode(), expected)
+
+    def test_default_is_auto(self):
+        from django.conf import settings
+
+        with override_settings():
+            del settings.SCRIPT_SANDBOX
+            self.assertEqual(sandbox.mode(), "auto")
+
+
+class BwrapProbeTests(TestCase):
+    """Detecting a working bubblewrap, once, and falling back (#316)."""
+
+    def setUp(self):
+        sandbox._probe_memo.clear()
+        self.addCleanup(sandbox._probe_memo.clear)
+        from django.core.cache import cache
+
+        self.cache = cache
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _fake_bwrap(self, body: str) -> str:
+        path = os.path.join(self.tmp.name, "bwrap")
+        with open(path, "w") as fh:
+            fh.write("#!/bin/sh\n" + body)
+        os.chmod(path, 0o755)
+        self.addCleanup(self.cache.delete, sandbox._probe_key(path))
+        return path
+
+    def test_missing_binary_is_reported(self):
+        with mock.patch.object(sandbox, "find_bwrap", return_value=""):
+            probe = sandbox.bwrap_probe()
+        self.assertFalse(probe.usable)
+        self.assertIn("not installed", probe.reason)
+
+    def test_a_bwrap_that_cannot_build_the_sandbox_is_unusable(self):
+        path = self._fake_bwrap(
+            "echo 'bwrap: No permissions to create a new namespace, likely because the "
+            "kernel does not allow it. See <https://example>.' >&2\nexit 1\n"
+        )
+        with mock.patch.object(sandbox, "find_bwrap", return_value=path):
+            probe = sandbox.bwrap_probe(refresh=True)
+        self.assertFalse(probe.usable)
+        self.assertEqual(probe.reason, "No permissions to create a new namespace, likely "
+                                       "because the kernel does not allow it")
+
+    def test_a_bwrap_that_exits_cleanly_without_running_the_probe_is_unusable(self):
+        path = self._fake_bwrap("exit 0\n")
+        with mock.patch.object(sandbox, "find_bwrap", return_value=path):
+            self.assertFalse(sandbox.bwrap_probe(refresh=True).usable)
+
+    def test_the_probe_runs_once_per_process_and_is_shared_through_the_cache(self):
+        path = self._fake_bwrap("exit 1\n")
+        good = sandbox.BwrapProbe(path=path, usable=True)
+        with mock.patch.object(sandbox, "find_bwrap", return_value=path), \
+                mock.patch.object(sandbox, "_run_probe", return_value=good) as run:
+            self.assertTrue(sandbox.bwrap_probe(refresh=True).usable)
+            self.assertTrue(sandbox.bwrap_probe().usable)
+            self.assertEqual(run.call_count, 1)
+            # another worker process: no memo, but the cache has it
+            sandbox._probe_memo.clear()
+            self.assertTrue(sandbox.bwrap_probe().usable)
+            self.assertEqual(run.call_count, 1)
+            sandbox.bwrap_probe(refresh=True)
+            self.assertEqual(run.call_count, 2)
+
+    def test_a_cache_outage_still_probes(self):
+        path = self._fake_bwrap("exit 1\n")
+        with mock.patch.object(sandbox, "find_bwrap", return_value=path), \
+                mock.patch.object(self.cache, "get", side_effect=ConnectionError), \
+                mock.patch.object(self.cache, "set", side_effect=ConnectionError):
+            probe = sandbox.bwrap_probe()
+        self.assertFalse(probe.usable)
+
+    def _landlock_conf(self):
+        return sandbox.Confinement(abi=1, ruleset_fd=-1)
+
+    def test_auto_falls_back_to_landlock_and_says_why(self):
+        bad = sandbox.BwrapProbe(path="/usr/bin/bwrap", reason="uid map refused")
+        conf = self._landlock_conf()
+        with mock.patch.object(sandbox, "bwrap_probe", return_value=bad):
+            sandbox.with_bwrap(conf, "auto")
+        self.assertIsNone(conf.bwrap)
+        self.assertEqual(conf.skipped, "uid map refused")
+        self.assertEqual(conf.layers[0], "Landlock")
+
+    def test_bwrap_mode_refuses_instead_of_falling_back(self):
+        bad = sandbox.BwrapProbe(path="/usr/bin/bwrap", reason="uid map refused")
+        with mock.patch.object(sandbox, "bwrap_probe", return_value=bad):
+            with self.assertRaisesMessage(sandbox.SandboxUnavailable, "uid map refused"):
+                sandbox.with_bwrap(self._landlock_conf(), "bwrap")
+
+    def test_a_working_bwrap_becomes_the_outer_layer(self):
+        good = sandbox.BwrapProbe(path="/usr/bin/bwrap", usable=True)
+        conf = self._landlock_conf()
+        with mock.patch.object(sandbox, "bwrap_probe", return_value=good):
+            sandbox.with_bwrap(conf, "auto")
+        self.assertEqual(conf.bwrap, good)
+        self.assertEqual(conf.layers[:2], ["bubblewrap", "Landlock"])
+
+
+class ApiRouteTests(TestCase):
+    def test_a_loopback_url_keeps_its_port(self):
+        route = sandbox.api_route("http://127.0.0.1:8000")
+        self.assertEqual(route.url, "http://127.0.0.1:8000")
+        self.assertEqual(route.target, ("127.0.0.1", 8000))
+        self.assertEqual(route.alias, "")
+
+    def test_a_host_name_is_kept_for_tls_and_pointed_at_loopback(self):
+        route = sandbox.api_route("https://danbyte.example.com/sub/")
+        self.assertEqual(route.url, "https://danbyte.example.com:8080/sub")
+        self.assertEqual(route.target, ("danbyte.example.com", 443))
+        self.assertIn("danbyte.example.com", sandbox.hosts_file(route).split("\n")[0])
+
+    def test_an_address_becomes_loopback_inside(self):
+        route = sandbox.api_route("http://10.0.0.41:8001")
+        self.assertEqual(route.url, "http://127.0.0.1:8001")
+        self.assertEqual(route.target, ("10.0.0.41", 8001))
+
+    def test_a_blocked_port_is_not_used_inside(self):
+        route = sandbox.api_route("http://backend:6379")
+        self.assertEqual(route.port, 8080)
+        self.assertEqual(route.target, ("backend", 6379))
+
+
+class ApiRelayTests(TestCase):
+    def test_a_handed_over_connection_reaches_the_target_and_back(self):
+        import socket
+        import threading
+
+        target = socket.create_server(("127.0.0.1", 0))
+        self.addCleanup(target.close)
+
+        def echo():
+            conn, _ = target.accept()
+            with conn:
+                conn.sendall(b"api:" + conn.recv(100))
+
+        threading.Thread(target=echo, daemon=True).start()
+        relay = sandbox.ApiRelay(target.getsockname())
+        launcher_end = relay.child.dup()
+        relay.start()
+        self.addCleanup(relay.stop)
+        # what the launcher does with a connection the script opened
+        inner = socket.create_server(("127.0.0.1", 0))
+        script = socket.create_connection(inner.getsockname())
+        accepted, _ = inner.accept()
+        socket.send_fds(launcher_end, [b"c"], [accepted.fileno()])
+        accepted.close()
+        script.sendall(b"ping")
+        script.settimeout(5)
+        self.assertEqual(script.recv(100), b"api:ping")
+        for sock in (script, inner, launcher_end):
+            sock.close()
+
+
+def _bwrap_usable() -> bool:
+    try:
+        path = sandbox.find_bwrap()
+        return bool(path) and sandbox.abi_version() >= 1 and sandbox._run_probe(path).usable
+    except Exception:  # noqa: BLE001 - treat anything odd as "not here"
+        return False
+
+
+_BWRAP_PROBE = """
+import os, socket
+
+
+def probe(label, fn):
+    try:
+        print(label, "OPEN", fn())
+    except OSError as exc:
+        print(label, "DENIED", exc.errno)
+
+
+probe("uid", os.getuid)
+probe("host", socket.gethostname)
+probe("pid", os.getpid)
+probe("nics", lambda: ",".join(n for _, n in socket.if_nameindex()))
+probe("proc", lambda: os.listdir("/proc"))
+probe("root", lambda: os.listdir("/"))
+probe("tmp", lambda: os.listdir("/tmp"))
+probe("checkout", lambda: os.listdir({base!r}))
+probe("outside-tcp", lambda: socket.create_connection(("192.0.2.1", 80), 2).close())
+probe("outside-udp", lambda: socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(
+    b"x", ("192.0.2.1", 53)))
+probe("own-script", lambda: open(os.environ["DANBYTE_SCRIPT_PATH"], "a").write("x"))
+probe("work", lambda: open("mine.txt", "w").write("x"))
+probe("signal", lambda: os.kill(os.getppid(), 0))
+server = socket.create_server(("127.0.0.1", {redis}))
+probe("landlock-port", lambda: socket.create_connection(("127.0.0.1", {redis}), 2).close())
+"""
+
+
+@unittest.skipUnless(_bwrap_usable(), "bubblewrap cannot build a sandbox here")
+class BwrapConfinementTests(_Base):
+    """bubblewrap around Landlock (#316)."""
+
+    def setUp(self):
+        super().setUp()
+        sandbox._probe_memo.clear()
+        self.override_mode = override_settings(SCRIPT_SANDBOX="bwrap")
+        self.override_mode.enable()
+        self.addCleanup(self.override_mode.disable)
+
+    def _lines(self, run):
+        return dict(line.split(" ", 1) for line in run.log.splitlines() if " " in line)
+
+    def test_the_run_log_names_the_layers(self):
+        run = self._run("print('ran')\n")
+        self.assertEqual(run.status, "success", run.log)
+        self.assertIn("Sandbox: bubblewrap, Landlock", run.log)
+
+    def test_the_run_is_in_its_own_namespaces_with_landlock_inside(self):
+        from django.conf import settings
+
+        run = self._run(_BWRAP_PROBE.format(
+            base=str(settings.BASE_DIR), redis=sorted(sandbox.blocked_ports() - {5432})[0],
+        ))
+        self.assertEqual(run.status, "success", run.log)
+        seen = self._lines(run)
+        self.assertEqual(seen["uid"], f"OPEN {sandbox.SANDBOX_ID}")
+        self.assertEqual(seen["host"], f"OPEN {sandbox.SANDBOX_HOSTNAME}")
+        self.assertLess(int(seen["pid"].split()[1]), 10, "not in its own pid namespace")
+        self.assertEqual(seen["nics"], "OPEN lo")
+        for label in ("proc", "tmp", "checkout", "outside-tcp", "outside-udp", "own-script"):
+            self.assertTrue(seen[label].startswith("DENIED"), (label, run.log))
+        # Landlock still applies inside: the sandbox root is not in its rules
+        self.assertEqual(seen["root"], "DENIED 13", run.log)
+        self.assertTrue(seen["work"].startswith("OPEN"), run.log)
+        if sandbox.abi_version() >= 4:
+            self.assertEqual(seen["landlock-port"], "DENIED 13", run.log)
+        if sandbox.abi_version() >= 6:
+            self.assertTrue(seen["signal"].startswith("DENIED"), run.log)
+
+    def test_the_api_is_reachable_through_the_relay(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                seen.append((self.path, self.headers.get("Authorization", "")))
+                body = b"pong"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        with override_settings(DANBYTE_INTERNAL_URL=f"http://127.0.0.1:{port}"):
+            run = self._run(
+                "import os, urllib.request\n"
+                "for _ in range(3):\n"
+                "    req = urllib.request.Request(os.environ['DANBYTE_URL'] + '/api/ping/',\n"
+                "        headers={'Authorization': 'Token ' + os.environ['DANBYTE_TOKEN']})\n"
+                "    print('API', urllib.request.urlopen(req, timeout=10).read().decode())\n"
+            )
+        self.assertEqual(run.status, "success", run.log)
+        self.assertEqual(run.log.count("API pong"), 3, run.log)
+        self.assertEqual(len(seen), 3)
+        self.assertEqual(seen[0][0], "/api/ping/")
+        self.assertTrue(seen[0][1].startswith("Token dbt_"))
+
+    def test_the_sdk_works_inside(self):
+        run = self._run("from danbyte_sdk import run\nrun.log('sdk ok ' + run.param('x'))\n",
+                        params={"x": "1"})
+        self.assertEqual(run.status, "success", run.log)
+        self.assertIn("sdk ok 1", run.log)
+
+    def test_a_landlock_the_launcher_cannot_apply_stops_the_script(self):
+        real_wrap = sandbox.Confinement.wrap
+
+        def bad_ruleset(conf, cmd, route, relay_fd):
+            argv, fds = real_wrap(conf, cmd, route, relay_fd)
+            at = argv.index(str(conf.ruleset_fd), argv.index("--"))
+            argv[at] = "999"  # not a ruleset: landlock_restrict_self fails
+            return argv, fds
+
+        with mock.patch.object(sandbox.Confinement, "wrap", bad_ruleset):
+            run = self._run("print('ran')\n")
+        self.assertEqual(run.status, "failed", run.log)
+        self.assertIn("could not be confined", run.log)
+        self.assertNotIn("\nran", run.log)
+
+    def test_timeout_kills_everything_in_the_sandbox(self):
+        import uuid
+
+        marker = f"bwrap-sleeper-{uuid.uuid4().hex}"
+        source = (
+            "import subprocess, sys, time\n"
+            "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', "
+            f"{marker!r}])\n"
+            "print('forked', flush=True)\n"
+            "time.sleep(60)\n"
+        )
+        run = self._run(source, timeout_seconds=5)
+        self.assertEqual(run.status, "timeout", run.log)
+        self.assertIn("forked", run.log)
+        survivors = []
+        for pid in filter(str.isdigit, os.listdir("/proc")):
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                    if marker.encode() in fh.read():
+                        survivors.append(pid)
+            except OSError:
+                continue
+        self.assertEqual(survivors, [], "a process outlived the sandbox")

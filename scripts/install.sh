@@ -30,6 +30,9 @@
 # this bundle, never from the app directory, and writes into that directory
 # only as the service user: the account owns it, and a link it put there
 # would take root's write somewhere else (#287).
+# --with-script-sandbox also installs bubblewrap, which puts sandboxed
+# scripts in their own namespaces (docs/features/scripts.md); without it
+# they run under Landlock alone.
 set -euo pipefail
 
 # ── Config (env or flags) ────────────────────────────────────────────────────
@@ -46,6 +49,7 @@ FORCE=0
 SKIP_BACKUP=0
 HOST_ONLY=0
 ADOPT=0
+SCRIPT_SANDBOX=0
 # Root-only: the copy of this bundle's files the root steps of an upgrade
 # run from, and their summaries.
 HS_BASE=/var/lib/danbyte/installer
@@ -60,6 +64,7 @@ while [ $# -gt 0 ]; do
     --skip-backup) SKIP_BACKUP=1; shift ;;
     --host-only) HOST_ONLY=1; shift ;;
     --adopt) ADOPT=1; shift ;;
+    --with-script-sandbox) SCRIPT_SANDBOX=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -267,6 +272,29 @@ SVC_GID="$(id -g "$SERVICE_USER")"
 echo "net.ipv4.ping_group_range = $SVC_GID $SVC_GID" \
   > /etc/sysctl.d/99-danbyte-icmp.conf
 sysctl -q -w "net.ipv4.ping_group_range=$SVC_GID $SVC_GID" || true
+
+# bubblewrap for sandboxed scripts: the workers find /usr/bin/bwrap at run
+# time and use it when it works for the service user. Checked here as that
+# user, so a host whose kernel or AppArmor policy refuses unprivileged user
+# namespaces says so now; the installer changes no such policy itself.
+if [ "$SCRIPT_SANDBOX" -eq 1 ]; then
+  step "Script sandbox (bubblewrap)"
+  if ! command -v bwrap >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y bubblewrap \
+        || warn "could not install bubblewrap - sandboxed scripts run under Landlock alone."
+    else
+      warn "apt-get not found - install bubblewrap yourself; until then sandboxed scripts run under Landlock alone."
+    fi
+  fi
+  if command -v bwrap >/dev/null 2>&1; then
+    if as_user bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / true >/dev/null 2>&1; then
+      echo "  bubblewrap works for $SERVICE_USER"
+    else
+      warn "bubblewrap is installed but cannot create user namespaces for $SERVICE_USER (kernel or AppArmor policy) - sandboxed scripts run under Landlock alone; see docs/features/scripts.md."
+    fi
+  fi
+fi
 
 # ── Existing install: the bundle's upgrade stage does steps 4-9 ─────────────
 # Then the root steps, as their own unit: this script only follows both, so

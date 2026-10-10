@@ -155,29 +155,70 @@ Being honest about the boundary:
 - It gets no database credentials, no encryption keys and no Django
   settings. Its whole access is the run token.
 - It cannot read another tenant's data, because the token cannot.
-- It is confined with Landlock, a Linux feature that needs no extra
-  package or root. It can read the system and the Python install, and
-  read and write its own work directory, which holds its outputs and its
-  own copy of the SDK. It cannot read `/proc`, the Danbyte directory and
-  its `.env`, backups, media or other runs' files.
-- It cannot connect to the Redis or database ports, open unix sockets,
-  or signal processes outside its own run.
+- It is confined in layers. **Landlock**, a Linux feature that needs no
+  package or root, is always there. **bubblewrap** adds namespaces around
+  it where the `bwrap` program is installed and allowed to run.
 
-Other network connections stay open, so a script can still reach your
-devices and outside services. It still runs as the Danbyte service
-account, not as a separate user, so treat "who may write a script here" as
-a real permission, which is why publishing to everyone and marking trusted
-each need one.
+What each layer blocks:
 
-Confinement needs Linux 5.13 or later with Landlock enabled. Current
-Ubuntu, Debian and RHEL kernels have it, and the default Docker seccomp
-profile allows it. A host that cannot confine a run refuses it, and the
-run fails with that reason. The port block needs Linux 6.7 and the signal
-block 6.12; on an older kernel the run starts and its log names what is
-not blocked.
-`DANBYTE_SCRIPT_SANDBOX=none` runs sandboxed scripts unconfined instead,
-and says so at the top of every run log. See
+| | Landlock alone | bubblewrap + Landlock |
+|---|---|---|
+| Files | Reads the system and the Python install; reads and writes its own work directory | Sees nothing else at all: the system and Python read-only, the work directory, a minimal `/dev`. The script, its SDK copy and the launcher are read-only |
+| `/proc`, the Danbyte directory, `.env`, backups, media, other runs | Denied | Not there |
+| Network | Redis and database ports refused; everything else open, including your devices | No network: one loopback port, relayed to the Danbyte API. Devices and outside services are unreachable |
+| Unix sockets | Refused | Refused |
+| Other processes | Cannot signal or trace processes outside the run | Its own process namespace: it sees only its own processes |
+| User | The service account | `nobody` (65534) in its own user namespace, which cannot create further namespaces; still the service account to the host |
+| Host name, IPC | The host's | Its own |
+| Processes | 256, counted across the service account | 256 for the run |
+
+Both layers apply together: inside bubblewrap the run is still under
+Landlock and the unix-socket filter, so a missing or refused `bwrap`
+leaves Landlock alone, never less. It still runs as the Danbyte service
+account on the host, not as a separate user, so treat "who may write a
+script here" as a real permission, which is why publishing to everyone
+and marking trusted each need one.
+
+The first line of every run log names the layers in force, for example
+`Sandbox: bubblewrap, Landlock, seccomp.` When bubblewrap is installed
+but cannot run, the next line says why. Each worker tests `bwrap` once
+and shares the answer for ten minutes.
+
+### Choosing the level
+
+`DANBYTE_SCRIPT_SANDBOX` picks it. See
 [Settings](../reference/settings.md#scripts-danbyte_script_sandbox).
+
+| Value | Means |
+|---|---|
+| `auto` | Default. bubblewrap + Landlock where `bwrap` works, Landlock alone where it does not |
+| `bwrap` | bubblewrap + Landlock, or the run is refused |
+| `landlock` | Landlock alone. Scripts keep the network, so they can reach your devices |
+| `none` | Unconfined, and every run log says so |
+
+A script that talks to devices directly, rather than through the
+Danbyte API, needs `landlock`: under bubblewrap its only network is the
+API.
+
+Landlock needs Linux 5.13 or later with Landlock enabled. Current Ubuntu,
+Debian and RHEL kernels have it, and the default Docker seccomp profile
+allows it. Every level except `none` refuses a run on a host without
+it, and the run fails with that reason. The port block needs Linux 6.7
+and the signal block 6.12; on an older kernel the run starts and its log
+names what is not blocked.
+
+bubblewrap needs the `bubblewrap` package (`install.sh
+--with-script-sandbox` installs it; see
+[Installation](../getting-started/installation.md)) and unprivileged user
+namespaces. Ubuntu 24.04 and later allow them for `bwrap` through its
+AppArmor profile, and Debian allows them by default. Docker's default
+profiles refuse them; see
+[Docker → Script sandbox](../getting-started/docker.md#script-sandbox).
+
+Under bubblewrap the script reaches the API at the same URL, except that
+an address becomes `127.0.0.1` and a port below 1024 becomes 8080; a host
+name is kept, so TLS still checks it. With an `https`
+`DANBYTE_INTERNAL_URL`, use a host name, not an address.
 
 ## Permissions
 
