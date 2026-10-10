@@ -76,6 +76,10 @@ another key is skipped.
 | Host key fingerprint | `SHA256:…`; blank until the first Test |
 | Password / Private key | either one; a key may have a passphrase |
 
+Private keys are accepted in the OpenSSH format `ssh-keygen` writes by default,
+with or without a passphrase, and as PEM or PKCS#8. A key with a passphrase is
+refused on save when the passphrase is missing or wrong.
+
 The password, private key and passphrase are stored encrypted like the S3
 keys and are never returned by the API; leave them blank on an edit to keep
 the stored ones.

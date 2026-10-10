@@ -210,11 +210,7 @@ class SFTPBackend:
         try:
             return [asyncssh.import_private_key(self.private_key, self.passphrase or None)]
         except (asyncssh.KeyImportError, ValueError) as exc:
-            hint = ""
-            if "bcrypt" in str(exc):
-                hint = (" Convert the key to PKCS#8 (ssh-keygen -p -m PKCS8 -f KEY) or use a "
-                        "key without a passphrase.")
-            raise StorageError(f"The private key could not be read: {exc}.{hint}") from exc
+            raise StorageError(f"The private key could not be read: {exc}.") from exc
 
     async def _connect(self, addr: str):
         """Runs on the helper loop. ``addr`` comes from :meth:`_address`, which

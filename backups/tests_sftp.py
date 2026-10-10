@@ -160,6 +160,26 @@ class BackendTests(_Base):
         plain = key.export_private_key("openssh").decode()
         self.assertEqual(len(self.backend(password="", private_key=plain).list()), 1)
 
+    def test_encrypted_openssh_private_key(self):
+        """The default ``ssh-keygen`` format with a passphrase (bcrypt KDF)
+        opens and logs in; a wrong or missing passphrase is refused."""
+        for alg in ("ssh-ed25519", "ssh-rsa"):
+            with self.subTest(alg=alg):
+                self.server.close()
+                key = asyncssh.generate_private_key(alg)
+                self.server = _FakeSFTPServer(self.root, client_key=key)
+                self.addCleanup(self.server.close)
+                pem = key.export_private_key("openssh", passphrase="pp").decode()
+                self.assertTrue(pem.startswith("-----BEGIN OPENSSH PRIVATE KEY-----"))
+                b = self.backend(password="", private_key=pem, passphrase="pp")
+                b.put(self.src, f"{alg}.dbk")
+                self.assertIn(f"{alg}.dbk", [e["name"] for e in b.list()])
+                with open(self.src, "rb") as fh, b.open(f"{alg}.dbk") as remote:
+                    self.assertEqual(remote.read(), fh.read())
+                for wrong in ("wrong", ""):
+                    with self.assertRaisesRegex(StorageError, "could not be read"):
+                        self.backend(password="", private_key=pem, passphrase=wrong).list()
+
     def test_wrong_password(self):
         with self.assertRaisesRegex(StorageError, "authentication failed"):
             self.backend(password="nope").list()
@@ -374,6 +394,22 @@ class ApiTests(_Base):
             r = self.client.post("/api/backups/targets/", body, content_type="application/json")
             self.assertEqual(r.status_code, 400, extra)
             self.assertIn(field, r.json(), extra)
+
+    def test_encrypted_openssh_key_is_accepted_with_its_passphrase(self):
+        pem = asyncssh.generate_private_key("ssh-ed25519").export_private_key(
+            "openssh", passphrase="pp").decode()
+        cfg = {"host": "127.0.0.1", "port": self.server.port, "username": USER}
+        for passphrase, status in (("pp", 201), ("wrong", 400), ("", 400)):
+            with self.subTest(passphrase=passphrase):
+                body = {"name": f"k-{passphrase}", "kind": "sftp", "config": cfg,
+                        "credentials": {"private_key": pem, "passphrase": passphrase}}
+                r = self.client.post("/api/backups/targets/", body,
+                                     content_type="application/json")
+                self.assertEqual(r.status_code, status, r.content)
+                if status == 400:
+                    self.assertIn("credentials", r.json())
+                else:
+                    self.assertNotIn(pem, r.content.decode())
 
     def test_edit_keeps_the_stored_secret(self):
         t = self._create().json()
