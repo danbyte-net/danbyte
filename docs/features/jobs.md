@@ -51,7 +51,8 @@ dispatch, config-drift dispatch, the Outpost driver, subnet discovery, interface
 utilisation, the [scheduled SNMP polls](snmp-discovery.md#scheduled-polling)
 (which queue one poll job per due device), alert maintenance, certificate expiry, the daily **email
 digest**, the backup schedule tick, scheduled scripts, the search-index
-rebuild, and the various cleanup/prune jobs. These never appear in the RQ queue, so the **Scheduled
+rebuild, the [end-of-life data](end-of-life-data.md) refresh, and the various
+cleanup/prune jobs. These never appear in the RQ queue, so the **Scheduled
 tasks** section surfaces them directly.
 
 Each task shows its **cadence** (e.g. *every minute*, *daily 07:00*), the

@@ -16,6 +16,7 @@ import { DataTable } from "@/components/data-table"
 import { useDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
+import { useEolSettings } from "@/components/cells/eol-cell"
 import { useTableFilters } from "@/components/table-filters"
 import {
   AvailabilityFramePicker,
@@ -120,11 +121,13 @@ function DevicesPage() {
       ),
     [portUtilQuery.data]
   )
+  const { enabled: eolOn } = useEolSettings()
   const columns = useMemo<ColumnDef<Device>[]>(
     () =>
       buildDeviceColumns<Device>({
         selection: true,
         humanIds,
+        eol: eolOn,
         violations: true,
         drift: driftMap,
         planned: plannedMap,
@@ -145,6 +148,7 @@ function DevicesPage() {
       canDelete,
       monitoring,
       humanIds,
+      eolOn,
       portUtil,
       sla.entries,
       sla.frame,

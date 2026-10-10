@@ -2205,6 +2205,15 @@ def _img_url(serializer, f):
         return None
 
 
+def _eol_payload(platform, context) -> dict | None:
+    """A platform's end-of-life block (#8), or None while the feature is off.
+    The setting is read once per request; lists join ``eol_mapping`` so the
+    rows cost no extra query."""
+    from compliance.eol import config_for, payload
+
+    return payload(platform, config_for((context or {}).get("request")))
+
+
 # User-entered vendor lifecycle window + the derived state - shared by
 # DeviceType (hardware) and Platform (OS). `lifecycle_state` is a model
 # property, so ReadOnlyField picks it up on any LifecycleMixin serializer.
@@ -2877,7 +2886,9 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
                 "release_date": p.release_date,
                 "end_of_support": p.end_of_support,
-                "lifecycle_state": p.lifecycle_state}
+                "lifecycle_state": p.lifecycle_state,
+                # End-of-life data (#8): null while the feature is off.
+                "eol": _eol_payload(p, self.context)}
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -5699,7 +5710,10 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
         p = obj.platform
-        return {"id": str(p.id), "name": p.name, "slug": p.slug} if p else None
+        if not p:
+            return None
+        return {"id": str(p.id), "name": p.name, "slug": p.slug,
+                "eol": _eol_payload(p, self.context)}
 
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
@@ -6619,6 +6633,11 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         return obj.devices.count()
 
     lifecycle_state = serializers.ReadOnlyField()
+    eol = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_eol(self, obj):
+        return _eol_payload(obj, self.context)
 
     class Meta:
         model = Platform
@@ -6626,8 +6645,8 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
-                  "device_count", "created_at", "updated_at"]
-        read_only_fields = ["id", "device_count", "lifecycle_state",
+                  "eol", "device_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "device_count", "lifecycle_state", "eol",
                             "created_at", "updated_at"]
 
 
@@ -8878,6 +8897,7 @@ class FloorPlanDrawingCalibrationSerializer(serializers.Serializer):
     def validate(self, attrs):
         import math
 
+        attrs = super().validate(attrs)
         ax, ay = attrs["a"]
         bx, by = attrs["b"]
         if not all(math.isfinite(v) for v in (ax, ay, bx, by)):

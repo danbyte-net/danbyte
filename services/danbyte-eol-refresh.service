@@ -1,0 +1,15 @@
+[Unit]
+Description=Danbyte end-of-life data refresh (opt-in, deployment-wide)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py eol_refresh
+
+# Triggered daily by danbyte-eol-refresh.timer. Does nothing until a deployment
+# admin turns end-of-life data on; then fetches each enabled source through the
+# SSRF guard and updates every platform mapping from the cached catalog.
+# Logs: journalctl --user -fu danbyte-eol-refresh

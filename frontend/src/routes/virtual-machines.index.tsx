@@ -14,6 +14,7 @@ import type {
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildVmColumns } from "@/components/columns/vm-columns"
+import { useEolSettings } from "@/components/cells/eol-cell"
 import {
   AvailabilityFramePicker,
   useSlaStatus,
@@ -76,11 +77,13 @@ function VirtualMachinesPage() {
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
   const sla = useSlaStatus("vm", vmIds)
 
+  const { enabled: eolOn } = useEolSettings()
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
     () =>
       buildVmColumns({
         selection: true,
         humanIds,
+        eol: eolOn,
         monitoring,
         sla: { entries: sla.entries, frame: sla.frame },
         actions: {
@@ -96,6 +99,7 @@ function VirtualMachinesPage() {
       canEdit,
       canDelete,
       humanIds,
+      eolOn,
       monitoring,
       sla.entries,
       sla.frame,

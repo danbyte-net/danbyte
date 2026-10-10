@@ -10,6 +10,7 @@ import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { platformColumn } from "@/components/cells/platform-cell"
+import { eolColumn } from "@/components/cells/eol-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -56,6 +57,7 @@ export type VmColumnId =
   | "site"
   | "role"
   | "platform"
+  | "eol"
   | "synced_from"
   | "tags"
   | "updated"
@@ -76,6 +78,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "site",
   "role",
   "platform",
+  "eol",
   "synced_from",
   "tags",
   "updated",
@@ -99,6 +102,9 @@ export interface VmColumnOpts<T extends VirtualMachine = VirtualMachine> {
   monitoring?: Record<string, BulkStatusEntry>
   /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
   sla?: SlaColumnOpts
+  /** End-of-life column from the platform's mapping (#8) - pass
+   * `useEolSettings().enabled`; the column only exists while it is on. */
+  eol?: boolean
 }
 
 export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
@@ -112,6 +118,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
   }
   // The "#" column only exists where the deployment enables human ids.
   if (!opts.humanIds) omit.add("numid")
+  if (!opts.eol) omit.add("eol")
   const keep = (id: VmColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -340,6 +347,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     }),
     platform: () =>
       platformColumn<T>({ get: (r) => r.platform, className: "text-xs" }),
+    eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

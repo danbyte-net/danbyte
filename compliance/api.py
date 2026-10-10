@@ -19,7 +19,7 @@ from api.views import _get_active_tenant
 from auth_api import rbac
 
 from .engine import evaluate, evaluate_for_object
-from .models import OBJECT_TYPES, ComplianceRule
+from .models import EOL_OBJECT_TYPES, OBJECT_TYPES, ComplianceRule
 
 
 def _type_registry():
@@ -35,6 +35,7 @@ def _type_registry():
         "vlan": (m.VLAN, s.VLANSerializer),
         "vrf": (m.VRF, s.VRFSerializer),
         "site": (m.Site, s.SiteSerializer),
+        "virtualmachine": (m.VirtualMachine, s.VirtualMachineSerializer),
     }
 
 
@@ -94,7 +95,7 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             "id", "name", "description", "remediation", "enabled", "severity",
             "object_type", "object_type_label", "check_type",
             "check_type_display", "field", "pattern", "tag", "cf_key",
-            "created_at", "updated_at",
+            "eol_fail_on", "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
 
@@ -133,6 +134,17 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"tag": "A tag slug is required."})
         if ct == "required_cf" and not get("cf_key"):
             raise serializers.ValidationError({"cf_key": "A custom-field key is required."})
+        if ct == "eol_status":
+            ot = attrs.get("object_type", getattr(self.instance, "object_type", None))
+            if ot not in EOL_OBJECT_TYPES:
+                raise serializers.ValidationError({
+                    "object_type": "An end-of-life check applies to devices or "
+                                   "virtual machines."
+                })
+            if not get("eol_fail_on"):
+                raise serializers.ValidationError(
+                    {"eol_fail_on": "Pick what the check fails on."}
+                )
         return attrs
 
 
@@ -316,6 +328,7 @@ def compliance_device_status(request, device_id):
             "pattern": rule.pattern,
             "tag": rule.tag,
             "cf_key": rule.cf_key,
+            "eol_fail_on": rule.eol_fail_on,
         }
         for rule in failed
     ]

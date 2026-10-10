@@ -32,7 +32,7 @@ is stored - results are always computed fresh from the current data.
    | **How to fix** | Optional **Markdown remediation guide** - step-by-step instructions rendered wherever the rule's violations appear (see below). |
    | **Enabled** | Turn the rule off to skip it during evaluation without deleting it. |
    | **Severity** | `Critical`, `Warning`, or `Info`. Used for sorting and triage - it does not block or enforce anything. |
-   | **Object type** | What the rule applies to: prefix, IP address, device, VLAN, VRF, or site. |
+   | **Object type** | What the rule applies to: prefix, IP address, device, VLAN, VRF, site, or virtual machine. |
    | **Check type** | The kind of assertion (see below). |
    | **Parameters** | The field, pattern, tag, or custom-field key the check needs. Only the relevant inputs appear once you pick a check type. |
 
@@ -47,6 +47,7 @@ is stored - results are always computed fresh from the current data.
 | **Regex** | The field, *if it has a value*, matches your pattern. | The field name and a regular expression |
 | **Required tag** | The object carries a given tag. | The tag |
 | **Required custom field** | A given custom-field key is set. | The custom-field key |
+| **End-of-life status** | The platform's [end-of-life status](end-of-life-data.md#compliance-rules) is not the one picked. Devices and virtual machines only. | What it fails on: *End of life*, *Support ending or ended*, or *No end-of-life data* |
 
 !!! note "Regex ignores empty values"
     A **Regex** check passes for objects where the field is blank - it only

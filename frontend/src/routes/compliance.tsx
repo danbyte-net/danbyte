@@ -84,6 +84,7 @@ export const OBJ_ROUTE: Record<string, string> = {
   vlan: "/vlans/$id",
   vrf: "/vrfs/$id",
   site: "/sites/$id",
+  virtualmachine: "/virtual-machines/$id",
 }
 
 const SEVERITIES: ComplianceSeverity[] = ["critical", "warning", "info"]
@@ -604,6 +605,7 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
 
 export function ruleSummary(
   r: Pick<ComplianceRule, "field" | "pattern" | "tag" | "cf_key"> & {
+    eol_fail_on?: string
     check_type: string
     check_type_display?: string
   }
@@ -619,6 +621,12 @@ export function ruleSummary(
       return `must have tag “${r.tag}”`
     case "required_cf":
       return `cf “${r.cf_key}” must be set`
+    case "eol_status":
+      return r.eol_fail_on === "unknown"
+        ? "platform must have end-of-life data"
+        : r.eol_fail_on === "ending"
+          ? "platform support must not be ending"
+          : "platform must not be end of life"
     default:
       return r.check_type_display ?? r.check_type
   }

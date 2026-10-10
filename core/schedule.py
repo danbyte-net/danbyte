@@ -197,6 +197,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Check document links still resolve",
     ),
     ScheduledTask(
+        unit="danbyte-eol-refresh",
+        commands=("eol_refresh",),
+        at=("05:35",),
+        label="Refresh end-of-life data (when turned on)",
+    ),
+    ScheduledTask(
         unit="danbyte-certificate-expiry",
         commands=("certificate_expiry",),
         at=("06:30",),

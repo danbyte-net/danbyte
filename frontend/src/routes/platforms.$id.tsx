@@ -16,6 +16,9 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { LifecycleBadge } from "@/components/cells/lifecycle-cell"
 import { LifecycleCard } from "@/components/lifecycle-card"
+import { EolCard } from "@/components/eol-card"
+import { EolBadge } from "@/components/cells/eol-cell"
+import { Loading } from "@/components/loading"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/platforms/$id")({
@@ -28,8 +31,7 @@ function PlatformDetail() {
     queryKey: ["platform", id],
     queryFn: () => api<Platform>(`/api/platforms/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -91,7 +93,12 @@ function Body({ platform: p }: { platform: Platform }) {
       hero={
         <DetailHero
           title={p.name}
-          badges={<LifecycleBadge state={p.lifecycle_state} />}
+          badges={
+            <>
+              <LifecycleBadge state={p.lifecycle_state} />
+              {p.eol && p.eol.status !== "unknown" && <EolBadge info={p.eol} />}
+            </>
+          }
           subtitle={
             p.manufacturer && (
               <Link
@@ -119,6 +126,7 @@ function Body({ platform: p }: { platform: Platform }) {
         <div className="max-w-xl space-y-6">
           <KvCard title="Platform" rows={rows} />
           <LifecycleCard item={p} title="OS lifecycle" />
+          <EolCard platform={p} canEdit={canDo("platform", "change")} />
         </div>
       </DetailTab>
       <DetailTab value="devices">

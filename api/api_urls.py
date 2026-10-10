@@ -71,6 +71,14 @@ from compliance.api import (
     compliance_evaluate,
     compliance_object_types,
 )
+from compliance.eol_api import (
+    eol_import,
+    eol_platform_mapping,
+    eol_product,
+    eol_products,
+    eol_refresh,
+    eol_settings,
+)
 from core import (
     deployment,
     service_api,
@@ -521,6 +529,13 @@ urlpatterns = [
     path("compliance/object-types/", compliance_object_types, name="compliance-object-types"),
     path("compliance/devices/<uuid:device_id>/", compliance_device_status,
          name="compliance-device-status"),
+    path("eol/settings/", eol_settings, name="eol-settings"),
+    path("eol/refresh/", eol_refresh, name="eol-refresh"),
+    path("eol/import/", eol_import, name="eol-import"),
+    path("eol/products/", eol_products, name="eol-products"),
+    path("eol/products/<slug:source>/<str:name>/", eol_product, name="eol-product"),
+    path("eol/platforms/<uuid:platform_id>/", eol_platform_mapping,
+         name="eol-platform-mapping"),
     path("rbac/object-types/", rbac_object_types, name="rbac-object-types"),
     path("rbac/site-role/", create_site_role, name="rbac-site-role"),
     path("users/<int:user_id>/access-summary/", user_access_summary,

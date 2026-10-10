@@ -1588,6 +1588,8 @@ export interface Device {
     release_date?: string | null
     end_of_support?: string | null
     lifecycle_state?: LifecycleState
+    /** End-of-life data (#8); null while the feature is off. */
+    eol?: EolInfo | null
   } | null
   /** Read-only: the device's own platform, else its type's default. */
   effective_platform: { id: string; name: string } | null
@@ -1848,9 +1850,71 @@ export interface Platform extends LifecycleInfo {
   config_template: { id: string; name: string } | null
   description: string
   tags: Tag[]
+  /** End-of-life data (#8); null while the feature is off. */
+  eol?: EolInfo | null
   device_count: number
   created_at: string
   updated_at: string
+}
+
+/** End-of-life status of a platform, from its endoflife.date mapping (#8). */
+export type EolStatus = "supported" | "ending" | "eol" | "unknown"
+export interface EolInfo {
+  status: EolStatus
+  source?: string
+  product?: string
+  cycle?: string
+  release_date?: string | null
+  support_until?: string | null
+  eol_date?: string | null
+  lts?: boolean
+  latest_version?: string
+  synced_at?: string | null
+  /** The product or cycle has left the catalog; the facts are the last known. */
+  missing?: boolean
+}
+export interface EolSettings {
+  enabled: boolean
+  warning_days: number
+  /** The fields below come back for deployment admins only. */
+  can_manage?: boolean
+  sources?: string[]
+  source_urls?: Record<string, string>
+  available_sources?: {
+    key: string
+    label: string
+    default_url: string
+    homepage: string
+  }[]
+  last_refresh_at?: string | null
+  last_refresh_status?: "" | "queued" | "running" | "ok" | "failed"
+  last_refresh_error?: string
+  last_refresh_via?: "" | "online" | "import"
+  products?: number
+  mappings?: number
+}
+export interface EolProductRow {
+  source: string
+  name: string
+  label: string
+  category: string
+}
+export interface EolRelease {
+  name: string
+  label: string
+  release_date: string | null
+  support_until: string | null
+  eol_date: string | null
+  eol: boolean | null
+  lts: boolean
+  latest: string
+}
+export interface EolSuggestion {
+  source: string
+  name: string
+  label: string
+  score: number
+  cycle: string
 }
 
 export interface PlatformWritePayload {
@@ -4889,7 +4953,13 @@ export interface VirtualMachine {
     color: string
     icon: string
   } | null
-  platform: { id: string; name: string; slug: string } | null
+  platform: {
+    id: string
+    name: string
+    slug: string
+    /** End-of-life data (#8); null while the feature is off. */
+    eol?: EolInfo | null
+  } | null
   status: StatusMini | null
   /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".
    * Null for a VM no sync tracks. Distinct from `status`, which is the
@@ -7808,6 +7878,7 @@ export type ComplianceCheck =
   | "regex"
   | "required_tag"
   | "required_cf"
+  | "eol_status"
 export type ComplianceSeverity = "critical" | "warning" | "info"
 export interface ComplianceRule {
   id: string
@@ -7825,6 +7896,8 @@ export interface ComplianceRule {
   pattern: string
   tag: string
   cf_key: string
+  /** eol_status checks: eol | ending | unknown. */
+  eol_fail_on?: "" | "eol" | "ending" | "unknown"
   created_at: string
   updated_at: string
 }
@@ -7881,6 +7954,7 @@ export interface DeviceComplianceViolation {
   pattern: string
   tag: string
   cf_key: string
+  eol_fail_on?: string
 }
 
 /** Response of GET /api/compliance/devices/<id>/ - one device's compliance

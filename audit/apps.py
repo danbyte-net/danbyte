@@ -211,6 +211,8 @@ AUDITED_MODELS = [
     "integrations.DnsZone",
     # Governance config.
     "compliance.ComplianceRule",
+    "compliance.EolSettings",
+    "compliance.EolMapping",
     # Access: object permissions + public share links.
 ]
 

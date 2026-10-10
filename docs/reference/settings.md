@@ -168,7 +168,8 @@ is kept in a configuration backup.
 
 User-configured outbound URLs - webhooks, notification channels, automation
 targets, device-type import URLs, virtualization sources (Proxmox, vCenter,
-Cloud Director), Windows server connections, a public assistant provider, and
+Cloud Director), Windows server connections, a public assistant provider, the
+[end-of-life data](../features/end-of-life-data.md) source, and
 **per-tenant** SMTP/LDAP hosts - are
 validated before each request: the host is resolved and rejected if it points at
 a loopback / RFC1918 / link-local / `169.254.0.0/16` (cloud metadata) / ULA /

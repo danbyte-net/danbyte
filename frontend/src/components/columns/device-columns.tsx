@@ -28,6 +28,7 @@ import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { LifecycleFlag } from "@/components/cells/lifecycle-cell"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import { eolColumn } from "@/components/cells/eol-cell"
 import { cabinetColumn } from "@/components/cells/cabinet-cell"
 import { rackColumn } from "@/components/cells/rack-cell"
 import { siteColumn } from "@/components/cells/site-cell"
@@ -53,6 +54,7 @@ export type DeviceColumnId =
   | "status"
   | "role"
   | "platform"
+  | "eol"
   | "type"
   | "manufacturer"
   | "site"
@@ -77,6 +79,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "status",
   "role",
   "platform",
+  "eol",
   "type",
   "manufacturer",
   "site",
@@ -122,6 +125,9 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   /** Port utilization % per device id (null = has ports table entry but no
    * ports) - enables the "Ports" bar column. One roll-up request per table. */
   portUtil?: Map<string, number>
+  /** End-of-life column from the platform's mapping (#8) - pass
+   * `useEolSettings().enabled`; the column only exists while it is on. */
+  eol?: boolean
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
   /** Trailing RowActions column. */
@@ -161,6 +167,7 @@ export function buildDeviceColumns<T extends Device = Device>(
     omit.add("availability")
   }
   if (!opts.portUtil) omit.add("ports")
+  if (!opts.eol) omit.add("eol")
   const keep = (id: DeviceColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -295,6 +302,7 @@ export function buildDeviceColumns<T extends Device = Device>(
         },
       },
     }),
+    eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
     type: () => ({
       id: "type",
       accessorFn: (r) => r.device_type?.name ?? "",

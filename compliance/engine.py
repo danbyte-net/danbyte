@@ -22,11 +22,12 @@ _ROUTES = {
     "vlan": "vlans",
     "vrf": "vrfs",
     "site": "sites",
+    "virtualmachine": "virtual-machines",
 }
 
 
 def _models():
-    from api.models import Device, IPAddress, Prefix, Site, VLAN, VRF
+    from api.models import VLAN, VRF, Device, IPAddress, Prefix, Site, VirtualMachine
 
     return {
         "prefix": Prefix,
@@ -35,6 +36,7 @@ def _models():
         "vlan": VLAN,
         "vrf": VRF,
         "site": Site,
+        "virtualmachine": VirtualMachine,
     }
 
 
@@ -42,8 +44,27 @@ def _empty(v) -> bool:
     return v is None or v == "" or v == [] or v == {}
 
 
-def _violates(rule: ComplianceRule, obj, tag_slugs) -> bool:
+def _eol_violates(rule: ComplianceRule, obj, eol_cfg) -> bool:
+    """An ``eol_status`` rule (#8) on the object's platform. While the feature
+    is off there is no end-of-life data to judge, so nothing fails."""
+    from .eol import mapping_of, status_of
+
+    if eol_cfg is None or not eol_cfg.enabled:
+        return False
+    status = status_of(mapping_of(getattr(obj, "platform", None)), eol_cfg.warning_days)
+    if rule.eol_fail_on == "eol":
+        return status == "eol"
+    if rule.eol_fail_on == "ending":
+        return status in ("ending", "eol")
+    if rule.eol_fail_on == "unknown":
+        return status == "unknown"
+    return False
+
+
+def _violates(rule: ComplianceRule, obj, tag_slugs, eol_cfg=None) -> bool:
     ct = rule.check_type
+    if ct == "eol_status":
+        return _eol_violates(rule, obj, eol_cfg)
     if ct == "required_tag":
         return rule.tag not in tag_slugs
     if ct == "required_cf":
@@ -79,11 +100,16 @@ def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
         tenant=tenant, enabled=True, object_type=object_type
     )
     tag_slugs: set[str] | None = None
+    eol_cfg = None
     failed = []
     for rule in rules:
         if rule.check_type == "required_tag" and tag_slugs is None:
             tag_slugs = {t.slug for t in obj.tags.all()}
-        if _violates(rule, obj, tag_slugs or set()):
+        if rule.check_type == "eol_status" and eol_cfg is None:
+            from .eol import load_config
+
+            eol_cfg = load_config()
+        if _violates(rule, obj, tag_slugs or set(), eol_cfg):
             failed.append(rule)
     return failed
 
@@ -111,12 +137,19 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
         needs_tags = any(r.check_type == "required_tag" for r in type_rules)
         if needs_tags:
             qs = qs.prefetch_related("tags")
+        eol_cfg = None
+        if any(r.check_type == "eol_status" for r in type_rules):
+            from .eol import load_config
+
+            eol_cfg = load_config()
+            # The platform's mapping rides the row: no query per object.
+            qs = qs.select_related("platform__eol_mapping")
         for obj in qs[:cap]:
             tag_slugs = (
                 {t.slug for t in obj.tags.all()} if needs_tags else set()
             )
             for rule in type_rules:
-                if not _violates(rule, obj, tag_slugs):
+                if not _violates(rule, obj, tag_slugs, eol_cfg):
                     continue
                 counts[rule.id] += 1
                 # Bound the flat list, but keep it generous: per-object UI

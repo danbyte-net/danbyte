@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { Platform } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { lifecycleColumn } from "@/components/cells/lifecycle-cell"
+import { eolColumn } from "@/components/cells/eol-cell"
 import { numidColumn } from "@/components/cells/numid"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
@@ -19,6 +20,7 @@ export type PlatformColumnId =
   | "manufacturer"
   | "devices"
   | "lifecycle"
+  | "eol"
   | "description"
   | "updated"
 
@@ -28,6 +30,7 @@ const CANONICAL_ORDER: PlatformColumnId[] = [
   "manufacturer",
   "devices",
   "lifecycle",
+  "eol",
   "description",
   "updated",
 ]
@@ -43,6 +46,8 @@ export interface PlatformColumnOpts<T extends Platform = Platform> {
   plainHeaders?: PlatformColumnId[]
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
+  /** End-of-life column (#8) - pass `useEolSettings().enabled`. */
+  eol?: boolean
 }
 
 export function buildPlatformColumns<T extends Platform = Platform>(
@@ -50,6 +55,7 @@ export function buildPlatformColumns<T extends Platform = Platform>(
 ): ColumnDef<T, unknown>[] {
   const omit = new Set(opts.omit ?? [])
   if (!opts.humanIds) omit.add("numid")
+  if (!opts.eol) omit.add("eol")
   const keep = (id: PlatformColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -115,6 +121,7 @@ export function buildPlatformColumns<T extends Platform = Platform>(
     }),
     lifecycle: () =>
       lifecycleColumn<T>({ get: (r) => r, header: "OS lifecycle" }),
+    eol: () => eolColumn<T>({ get: (r) => r.eol }),
     description: () => ({
       id: "description",
       accessorKey: "description",

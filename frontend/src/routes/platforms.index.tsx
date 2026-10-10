@@ -7,6 +7,7 @@ import { api, type Paginated, type Platform } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildPlatformColumns } from "@/components/columns/platform-columns"
+import { useEolSettings } from "@/components/cells/eol-cell"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { PlatformDeleteDialog } from "@/components/platform-delete-dialog"
@@ -34,11 +35,13 @@ function PlatformsPage() {
   const rows = query.data?.results ?? []
 
   const handleDelete = useCallback((p: Platform) => setDeleting(p), [])
+  const { enabled: eolOn } = useEolSettings()
   const columns = useMemo(
     () =>
       buildPlatformColumns<Platform>({
         selection: true,
         humanIds,
+        eol: eolOn,
         actions: {
           editTo: "/platforms/$id/edit",
           editParams: (p) => ({ id: p.id }),
@@ -47,7 +50,7 @@ function PlatformsPage() {
           canDelete: () => canDelete,
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds]
+    [handleDelete, canEdit, canDelete, humanIds, eolOn]
   )
   const {
     rail,
@@ -97,4 +100,3 @@ function PlatformsPage() {
     </ListPageShell>
   )
 }
-

@@ -96,6 +96,7 @@ nav = [
     { "SSH host keys"     = "monitoring/ssh-host-keys.md" },
     { "Device access (Connect & terminal)" = "features/device-access.md" },
     { "Compliance"        = "features/compliance.md" },
+    { "End-of-life data"  = "features/end-of-life-data.md" },
   ] },
   { "Working with data" = [
     "working-with-data/index.md",

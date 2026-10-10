@@ -3532,6 +3532,8 @@ class DeviceViewSet(
             "device_type", "device_type__platform", "device_type__manufacturer",
             "site", "site__region", "primary_ip",
             "role", "rack", "status", "platform", "location", "cluster",
+            # The platform's end-of-life mapping (#8), for the EoL column.
+            "platform__eol_mapping",
         )
         # The secondary and OOB addresses, the DIN cabinet and rail and the
         # config template (resolved device -> role -> platform) are
@@ -4154,6 +4156,10 @@ class DeviceViewSet(
             # The with_vc picker reads each device's chassis - pull it in one join.
             if self.request.query_params.get("with_vc") == "1":
                 qs = qs.select_related("virtual_chassis")
+            # ?eol=<status> - the platform's end-of-life status (#8).
+            from compliance.eol import apply_status_filter
+
+            qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
             for key, field in (("site", "site_id"), ("device_type", "device_type_id"),
                                ("status", "status"), ("rack", "rack_id"),
                                ("role", "role_id"), ("platform", "platform_id"),
@@ -6013,7 +6019,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             .select_related("cluster", "device", "site", "site__region", "primary_ip",
                             # Serialised inline; a 2,000-row list would
                             # otherwise fire one query per VM for it.
-                            "group")
+                            "group", "platform", "platform__eol_mapping")
             # `disks` is serialised inline, so without this the list endpoint
             # fires one query per VM.
             .prefetch_related(TAGS, "disks")
@@ -6068,6 +6074,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                 v = self.request.query_params.get(k)
                 if v:
                     qs = qs.filter(**{f: v})
+            from compliance.eol import apply_status_filter
+
+            qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
         return qs
 
 
@@ -6920,7 +6929,7 @@ class PlatformViewSet(DeviceRoleViewSet):
 
     def get_queryset(self):
         qs = TenantScopedViewSet.get_queryset(self).select_related(
-            "manufacturer", "group"
+            "manufacturer", "group", "eol_mapping"
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6932,6 +6941,9 @@ class PlatformViewSet(DeviceRoleViewSet):
             lc = self.request.query_params.get("lifecycle")
             if lc:
                 qs = _apply_lifecycle_filter(qs, lc)
+            from compliance.eol import apply_status_filter
+
+            qs = apply_status_filter(qs, self.request, "eol_mapping__")
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
