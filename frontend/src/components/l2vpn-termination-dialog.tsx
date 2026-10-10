@@ -19,12 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import {
-  Field,
-  FormCombobox,
-  FormSelect,
-  useFieldErrors,
-} from "@/components/forms"
+import { Field, FormCombobox, useFieldErrors } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
 import { cn } from "@/lib/utils"
 
@@ -219,7 +214,7 @@ export function L2vpnTerminationDialog({
                   setInterfaceId(null)
                 }}
               />
-              <FormSelect
+              <FormCombobox
                 label="Interface"
                 value={interfaceId}
                 onChange={setInterfaceId}
@@ -228,6 +223,8 @@ export function L2vpnTerminationDialog({
                   value: i.id,
                   label: i.name,
                 }))}
+                searchPlaceholder="Search interfaces…"
+                emptyText="No interfaces."
               />
             </div>
           )}
@@ -249,7 +246,7 @@ export function L2vpnTerminationDialog({
                   label: v.name,
                 }))}
               />
-              <FormSelect
+              <FormCombobox
                 label="VM interface"
                 value={vmInterfaceId}
                 onChange={setVmInterfaceId}
@@ -258,6 +255,8 @@ export function L2vpnTerminationDialog({
                   value: i.id,
                   label: i.name,
                 }))}
+                searchPlaceholder="Search interfaces…"
+                emptyText="No interfaces."
               />
             </div>
           )}

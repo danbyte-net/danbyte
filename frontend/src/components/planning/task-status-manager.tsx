@@ -32,7 +32,7 @@ import {
   toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
-import { FormColor, FormSelect } from "@/components/forms"
+import { FormColor, FormSelect, FormCombobox } from "@/components/forms"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -428,7 +428,7 @@ function StatusDialog({
         </DialogHeader>
         <div className="space-y-3">
           {!isEdit && (
-            <FormSelect
+            <FormCombobox
               label="Board"
               value={board}
               onChange={setBoard}
@@ -438,6 +438,8 @@ function StatusDialog({
                   : []),
                 ...boards.map((b) => ({ value: b.id, label: b.name })),
               ]}
+              searchPlaceholder="Search boards…"
+              emptyText="No boards."
             />
           )}
           <div className="flex items-end gap-3">

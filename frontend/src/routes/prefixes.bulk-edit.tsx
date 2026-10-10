@@ -15,13 +15,7 @@ import {
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -140,72 +134,76 @@ function BulkEditPrefixesPage() {
         className="grid gap-4"
       >
         <Field label="Status">
-          <Select value={statusId} onValueChange={setStatusId}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={KEEP}>(keep)</SelectItem>
-              <SelectItem value={NONE}>- none -</SelectItem>
-              {statuses.data?.results.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={statusId}
+            onChange={(v) => setStatusId(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: NONE, label: "- none -" },
+              ...(statuses.data?.results ?? []).map((s) => ({
+                value: s.id,
+                label: s.name,
+                color: s.color,
+                badge: true,
+              })),
+            ]}
+            searchPlaceholder="Search statuses…"
+            emptyText="No matches."
+          />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="VRF">
-            <Select value={vrfId} onValueChange={setVrfId}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={KEEP}>(keep)</SelectItem>
-                <SelectItem value={NONE}>Global</SelectItem>
-                {vrfs.data?.results.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={vrfId}
+              onChange={(v) => setVrfId(v ?? KEEP)}
+              options={[
+                { value: KEEP, label: "(keep)" },
+                { value: NONE, label: "Global" },
+                ...(vrfs.data?.results ?? []).map((v) => ({
+                  value: v.id,
+                  label: v.name,
+                  color: v.color,
+                  badge: true,
+                })),
+              ]}
+              searchPlaceholder="Search VRFs…"
+              emptyText="No matches."
+            />
           </Field>
           <Field label="Site">
-            <Select value={siteId} onValueChange={setSiteId}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={KEEP}>(keep)</SelectItem>
-                <SelectItem value={NONE}>No site</SelectItem>
-                {sites.data?.results.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={siteId}
+              onChange={(v) => setSiteId(v ?? KEEP)}
+              options={[
+                { value: KEEP, label: "(keep)" },
+                { value: NONE, label: "No site" },
+                ...(sites.data?.results ?? []).map((s) => ({
+                  value: s.id,
+                  label: s.name,
+                })),
+              ]}
+              searchPlaceholder="Search sites…"
+              emptyText="No matches."
+            />
           </Field>
         </div>
 
         <Field label="VLAN">
-          <Select value={vlanId} onValueChange={setVlanId}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={KEEP}>(keep)</SelectItem>
-              <SelectItem value={NONE}>No VLAN</SelectItem>
-              {vlans.data?.results.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {v.vlan_id} · {v.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={vlanId}
+            onChange={(v) => setVlanId(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: NONE, label: "No VLAN" },
+              ...(vlans.data?.results ?? []).map((v) => ({
+                value: v.id,
+                label: `${v.vlan_id} · ${v.name}`,
+              })),
+            ]}
+            searchPlaceholder="Search VLANs…"
+            emptyText="No matches."
+          />
         </Field>
 
         <Field label="Add tags">

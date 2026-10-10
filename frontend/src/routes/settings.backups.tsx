@@ -79,6 +79,7 @@ import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Field } from "@/components/forms/field"
 import { FormCheckbox } from "@/components/forms/checkbox"
+import { FormCombobox } from "@/components/forms/combobox"
 import { FormSelect } from "@/components/forms/select"
 import { FormText } from "@/components/forms/text"
 import { FormTextarea } from "@/components/forms/textarea"
@@ -817,11 +818,13 @@ function ScheduleDialog({
               onChange={setComponents}
             />
           </Field>
-          <FormSelect
+          <FormCombobox
             label="Target"
             value={target}
             onChange={setTarget}
             options={targetOptions}
+            searchPlaceholder="Search targets…"
+            emptyText="No targets."
           />
           <CadenceFields value={cadence} onChange={setCadence} />
           <Field
@@ -1187,7 +1190,7 @@ function BackupNowDialog({
               onChange={setComponents}
             />
           </Field>
-          <FormSelect
+          <FormCombobox
             label="Target"
             value={target}
             onChange={setTarget}
@@ -1195,6 +1198,8 @@ function BackupNowDialog({
             options={(targets.data?.results ?? [])
               .filter((t) => t.enabled)
               .map((t) => ({ value: t.id, label: t.name }))}
+            searchPlaceholder="Search targets…"
+            emptyText="No targets."
           />
         </div>
         <DialogFooter>

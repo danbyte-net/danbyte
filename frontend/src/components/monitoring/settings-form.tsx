@@ -12,6 +12,7 @@ import type {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormText } from "@/components/forms/text"
+import { FormCombobox } from "@/components/forms/combobox"
 import { FormSelect } from "@/components/forms/select"
 import { FRAME_LABEL } from "@/components/monitoring/sla-status"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -312,7 +313,7 @@ export function MonitoringSettingsForm() {
               </span>
             </span>
           </label>
-          <FormSelect
+          <FormCombobox
             label="Default VRF for discovered IPs"
             hint="When neither the interface nor a binding names one"
             value={draft.snmp_default_vrf?.id ?? null}
@@ -329,6 +330,8 @@ export function MonitoringSettingsForm() {
             }
             noneLabel="None"
             options={vrfOptions.map((o) => ({ value: o.id, label: o.name }))}
+            searchPlaceholder="Search VRFs…"
+            emptyText="No VRFs."
           />
           <label className="flex items-start gap-2">
             <Checkbox

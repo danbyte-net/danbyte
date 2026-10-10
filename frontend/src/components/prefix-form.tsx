@@ -23,7 +23,6 @@ import {
   FormCombobox,
   FormFooter,
   FormSection,
-  FormSelect,
   FormStatusSelect,
   FormTags,
   FormText,
@@ -259,7 +258,7 @@ export function PrefixForm({
 
         <FormColumn>
           <FormSection title="Placement" card>
-            <FormSelect
+            <FormCombobox
               label="Site"
               hint={siteLocked ? "locked to your site" : "optional"}
               value={siteId}
@@ -275,9 +274,11 @@ export function PrefixForm({
                 label: s.name,
               }))}
               error={fieldErrors.site_id}
+              searchPlaceholder="Search sites…"
+              emptyText="No sites."
             />
 
-            <FormSelect
+            <FormCombobox
               label="Location"
               hint={
                 siteId
@@ -294,6 +295,8 @@ export function PrefixForm({
                 label: l.name,
               }))}
               error={fieldErrors.location_id}
+              searchPlaceholder="Search locations…"
+              emptyText="No locations."
             />
 
             <FormCheckbox

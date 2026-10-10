@@ -13,13 +13,7 @@ import {
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -126,36 +120,40 @@ function BulkEditIpsPage() {
       >
         <div className="grid grid-cols-2 gap-3">
           <Field label="Status">
-            <Select value={statusId} onValueChange={setStatusId}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={KEEP}>(keep)</SelectItem>
-                <SelectItem value={NONE}>- none -</SelectItem>
-                {statuses.data?.results.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={statusId}
+              onChange={(v) => setStatusId(v ?? KEEP)}
+              options={[
+                { value: KEEP, label: "(keep)" },
+                { value: NONE, label: "- none -" },
+                ...(statuses.data?.results ?? []).map((s) => ({
+                  value: s.id,
+                  label: s.name,
+                  color: s.color,
+                  badge: true,
+                })),
+              ]}
+              searchPlaceholder="Search statuses…"
+              emptyText="No matches."
+            />
           </Field>
           <Field label="Role">
-            <Select value={roleId} onValueChange={setRoleId}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={KEEP}>(keep)</SelectItem>
-                <SelectItem value={NONE}>No role</SelectItem>
-                {roles.data?.results.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={roleId}
+              onChange={(v) => setRoleId(v ?? KEEP)}
+              options={[
+                { value: KEEP, label: "(keep)" },
+                { value: NONE, label: "No role" },
+                ...(roles.data?.results ?? []).map((r) => ({
+                  value: r.id,
+                  label: r.name,
+                  color: r.color,
+                  badge: true,
+                })),
+              ]}
+              searchPlaceholder="Search roles…"
+              emptyText="No matches."
+            />
           </Field>
         </div>
 

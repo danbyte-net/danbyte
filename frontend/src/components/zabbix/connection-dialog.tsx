@@ -26,6 +26,7 @@ import {
   FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { DeviceTypePicker } from "@/components/device-type-picker"
@@ -428,7 +429,7 @@ function ConnectionForm({
             />
             {adopt && (
               <>
-                <FormSelect
+                <FormCombobox
                   label="Site"
                   hint="when no host group names one"
                   value={adoptSite}
@@ -436,14 +437,18 @@ function ConnectionForm({
                   options={asOptions(sites.data?.results)}
                   noneLabel="None"
                   error={fieldErrors.adopt_site}
+                  searchPlaceholder="Search sites…"
+                  emptyText="No sites."
                 />
-                <FormSelect
+                <FormCombobox
                   label="Role"
                   value={adoptRole}
                   onChange={setAdoptRole}
                   options={asOptions(roles.data?.results)}
                   noneLabel="None"
                   error={fieldErrors.adopt_role}
+                  searchPlaceholder="Search roles…"
+                  emptyText="No roles."
                 />
                 <DeviceTypePicker
                   value={adoptType}

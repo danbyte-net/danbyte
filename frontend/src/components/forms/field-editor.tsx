@@ -6,7 +6,7 @@ import type { DcimChoices, Paginated, StorageUnit, TagOption } from "@/lib/api"
 import { useCustomizationMeta } from "@/lib/custom-fields"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { CfObjectPicker } from "@/components/cf-object-picker"
-import { ColorBadge } from "@/components/cells/color-badge"
+import type { ComboboxOption } from "@/components/ui/combobox"
 import { IconPicker } from "@/components/icon-picker"
 import { ColorPicker } from "@/components/ui/color-picker"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -22,7 +22,6 @@ import { SuggestInput } from "@/components/ui/suggest-input"
 import { Field } from "./field"
 import { FormCombobox } from "./combobox"
 import { FormSelect } from "./select"
-import type { SelectOption } from "./select"
 import type { BulkFieldSpec } from "./field-spec"
 
 // The one per-kind field editor. It renders a single BulkFieldSpec, in either
@@ -44,9 +43,9 @@ const yesNo = (v: unknown) => (v ? "yes" : "no")
 export interface FieldEditorOptions {
   /** `/api/dcim/choices/` lists, for `kind: "choice"`. */
   dcimChoices: DcimChoices
-  vlans: SelectOption[]
-  vrfs: SelectOption[]
-  statuses: SelectOption[]
+  vlans: ComboboxOption[]
+  vrfs: ComboboxOption[]
+  statuses: ComboboxOption[]
   /** Tag picker options - fetched only when `opts.tags` is set. */
   tags: TagOption[]
 }
@@ -107,7 +106,9 @@ export function useFieldEditorOptions(
     // A status reads as its pill everywhere, the dropdown included.
     statuses: (statusOptions.data?.results ?? []).map((s) => ({
       value: s.id,
-      label: <ColorBadge name={s.name} color={s.color || undefined} />,
+      label: s.name,
+      color: s.color,
+      badge: true,
     })),
     tags: tagOptions.data?.results ?? [],
   }
@@ -204,8 +205,7 @@ export function FieldEditor({
       />
     )
   }
-  if (f.kind === "options" || f.kind === "status") {
-    const opts = f.kind === "options" ? f.options : options.statuses
+  if (f.kind === "options") {
     return (
       <FormSelect
         label={f.label}
@@ -213,13 +213,26 @@ export function FieldEditor({
         disabled={disabled}
         value={selectValue}
         onChange={onSelect}
+        options={[...keepRow, ...f.options]}
+      />
+    )
+  }
+  if (f.kind === "status") {
+    // Searchable, and a status reads as its pill everywhere (#276).
+    return (
+      <FormCombobox
+        label={f.label}
+        hint={f.hint}
+        disabled={disabled}
+        value={selectValue}
+        onChange={onSelect}
         options={[
           ...keepRow,
-          ...(f.kind === "status"
-            ? [{ value: NONE, label: "Clear status" }]
-            : []),
-          ...opts,
+          { value: NONE, label: "Clear status" },
+          ...options.statuses,
         ]}
+        searchPlaceholder="Search statuses…"
+        emptyText="No statuses."
       />
     )
   }
@@ -293,7 +306,7 @@ export function FieldEditor({
   if (f.kind === "vlan" || f.kind === "vrf") {
     const opts = f.kind === "vlan" ? options.vlans : options.vrfs
     return (
-      <FormSelect
+      <FormCombobox
         label={f.label}
         disabled={disabled}
         value={selectValue}
@@ -303,6 +316,8 @@ export function FieldEditor({
           { value: NONE, label: `Clear ${f.label.toLowerCase()}` },
           ...opts,
         ]}
+        searchPlaceholder={`Search ${f.label.toLowerCase()}…`}
+        emptyText="No matches."
       />
     )
   }

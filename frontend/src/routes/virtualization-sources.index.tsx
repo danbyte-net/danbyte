@@ -33,6 +33,7 @@ import {
   FormCheckbox,
   FormSelect,
   FormText,
+  FormCombobox,
 } from "@/components/forms"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
@@ -813,7 +814,7 @@ export function SourceDialog({
             )}
           </div>
           <div className="col-span-2 grid grid-cols-2 gap-3 border-t pt-3">
-            <FormSelect
+            <FormCombobox
               label="Address VRF"
               hint="Routing context for the addresses this source discovers. An address is only recorded when a prefix in that VRF contains it."
               value={vrfId || null}
@@ -823,6 +824,8 @@ export function SourceDialog({
                 value: v.id,
                 label: v.name,
               }))}
+              searchPlaceholder="Search VRFs…"
+              emptyText="No VRFs."
             />
             <FormSelect
               label="If nothing there contains it"

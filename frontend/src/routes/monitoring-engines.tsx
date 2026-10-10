@@ -9,15 +9,9 @@ import { api } from "@/lib/api"
 import type { EngineKindInfo, MonitoringEngine, MonitoringSettings, Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Combobox } from "@/components/ui/combobox"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { FormSelect, FormText, FormFooter } from "@/components/forms"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { actionsColumn } from "@/components/columns/actions-column"
@@ -343,27 +337,22 @@ function MonitoringEnginesPage() {
                 Runs everything not pinned to a site or location.
               </p>
             </div>
-            <Select
+            <Combobox
               value={settings.data?.default_engine || LOCAL_ENGINE}
-              onValueChange={(v) =>
-                setDefault.mutate(v === LOCAL_ENGINE ? null : v)
+              onChange={(v) =>
+                v && setDefault.mutate(v === LOCAL_ENGINE ? null : v)
               }
-              disabled={!settings.data}
-            >
-              <SelectTrigger className="h-9 w-full text-[13px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={LOCAL_ENGINE}>Local (built-in)</SelectItem>
-                {engines
+              options={[
+                { value: LOCAL_ENGINE, label: "Local (built-in)" },
+                ...engines
                   .filter((e) => !e.is_local && e.enabled)
-                  .map((e) => (
-                    <SelectItem key={e.id} value={e.id}>
-                      {e.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+                  .map((e) => ({ value: e.id, label: e.name })),
+              ]}
+              searchPlaceholder="Search engines…"
+              emptyText="No engines."
+              disabled={!settings.data}
+              className="text-[13px]"
+            />
           </div>
 
           <form

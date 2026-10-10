@@ -9,7 +9,7 @@ import {
   type Paginated,
 } from "@/lib/api"
 import { FloorCanvas } from "@/components/floorplan/floor-canvas"
-import { FormSelect } from "@/components/forms"
+import { FormCombobox } from "@/components/forms"
 
 // Dashboard widget: a read-only, auto-fit view of a floor plan with live
 // tile status (monitoring rings + rack utilisation), and a link into the
@@ -67,11 +67,13 @@ export function FloorplanWidget({
   return (
     <div className="flex h-full min-h-40 flex-col gap-2">
       {editing && onPlanChange && all.length > 1 && (
-        <FormSelect
+        <FormCombobox
           label="Floor plan"
           value={plan?.id ?? null}
           onChange={(v) => v && onPlanChange(v)}
           options={all.map((x) => ({ value: x.id, label: x.name }))}
+          searchPlaceholder="Search floor plans…"
+          emptyText="No floor plans."
         />
       )}
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-muted/20">

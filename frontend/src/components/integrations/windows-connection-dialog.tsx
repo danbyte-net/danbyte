@@ -15,6 +15,7 @@ import {
   FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 
 /** Create or edit a Windows server connection (WinRM). The password is
@@ -197,7 +198,7 @@ export function WindowsConnectionDialog({
             )}
           </div>
           <div className="mt-1 grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
-            <FormSelect
+            <FormCombobox
               label="Address VRF"
               hint="Routing context for DHCP scope prefixes and addresses imported from DNS."
               value={vrfId || null}
@@ -207,6 +208,8 @@ export function WindowsConnectionDialog({
                 value: v.id,
                 label: v.name,
               }))}
+              searchPlaceholder="Search VRFs…"
+              emptyText="No VRFs."
             />
             <FormSelect
               label="If nothing there contains it"

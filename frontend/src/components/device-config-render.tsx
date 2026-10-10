@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Section } from "@/components/ui/section"
-import { FormSelect } from "@/components/forms"
+import { FormCombobox } from "@/components/forms"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DiffLine } from "@/components/device-drift-panel"
@@ -86,10 +86,8 @@ export function DeviceConfigRender({
   const bundleOptions = (bundles.data?.results ?? []).map((b) => ({
     value: encode({ kind: "bundle", id: b.id }),
     label: b.name,
+    group: "Bundles",
   }))
-  const groups = bundleOptions.length
-    ? [{ label: "Bundles", options: bundleOptions }]
-    : []
 
   const pick = decode(value)
   const render = useMutation({
@@ -133,13 +131,14 @@ export function DeviceConfigRender({
           <>
             <div className="flex items-end gap-2">
               <div className="w-64">
-                <FormSelect
+                <FormCombobox
                   label="Template"
                   value={value}
                   onChange={setValue}
-                  options={options}
-                  groups={groups}
+                  options={[...options, ...bundleOptions]}
                   placeholder="Pick a template"
+                  searchPlaceholder="Search templates…"
+                  emptyText="No templates."
                 />
               </div>
               <Button

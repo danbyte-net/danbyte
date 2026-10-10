@@ -32,6 +32,9 @@ export interface ComboboxOption {
    * statuses) instead of plain text - a status/role looks the same here as
    * everywhere else. Never rendered as a dot. */
   color?: string | null
+  /** Render as a ColorBadge pill even when `color` is empty - a catalog
+   * row with no color set still reads as its neutral pill (statuses). */
+  badge?: boolean
   /** Not selectable (still listed, dimmed) - e.g. an occupied rack unit. */
   disabled?: boolean
   /** Muted right-aligned annotation - e.g. the device occupying a unit. */
@@ -87,7 +90,9 @@ export function Combobox({
   }, [options])
 
   function pick(v: string | null) {
-    onChange(v)
+    // Re-picking the current row is a no-op, as in a native select: a
+    // dependent reset (site → location) must not fire on it.
+    if (v !== value) onChange(v)
     setOpen(false)
   }
 
@@ -108,8 +113,11 @@ export function Combobox({
         >
           {/* min-w-0: a flex child's min-width defaults to its content, so
               truncate alone never engages and a long label spills out. */}
-          {selected?.color ? (
-            <ColorBadge name={selected.label} color={selected.color} />
+          {selected && (selected.color || selected.badge) ? (
+            <ColorBadge
+              name={selected.label}
+              color={selected.color || undefined}
+            />
           ) : selected ? (
             // The field is narrow, so a long value still truncates here -
             // hovering (or focusing) shows it in full.
@@ -176,8 +184,8 @@ export function Combobox({
                         value === o.value ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    {o.color ? (
-                      <ColorBadge name={o.label} color={o.color} />
+                    {o.color || o.badge ? (
+                      <ColorBadge name={o.label} color={o.color || undefined} />
                     ) : (
                       <span className="whitespace-normal">{o.label}</span>
                     )}

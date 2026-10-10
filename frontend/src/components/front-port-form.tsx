@@ -18,6 +18,7 @@ import {
   FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { NameRangeHint } from "@/components/name-range-hint"
@@ -265,7 +266,7 @@ export function FrontPortForm({
           />
         <NameRangeHint name={name} editing={isEdit} noun="front ports" />
         <div className="grid gap-3 @md:grid-cols-2">
-          <FormSelect
+          <FormCombobox
             label="Rear port"
             required
             value={rearPortId}
@@ -279,6 +280,8 @@ export function FrontPortForm({
               label: `${r.name} (${r.positions}p)`,
             }))}
             error={fieldErrors.rear_port_id}
+            searchPlaceholder="Search rear ports…"
+            emptyText="No rear ports."
           />
           <FormSelect
             label={showFibres ? "Start strand" : "Strand"}

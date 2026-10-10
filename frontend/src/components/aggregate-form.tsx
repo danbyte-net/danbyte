@@ -14,11 +14,11 @@ import {
   FormDate,
   FormFooter,
   FormSection,
-  FormSelect,
   FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -127,7 +127,7 @@ export function AggregateForm({
         />
 
         <div className="grid gap-3 @md:grid-cols-2">
-          <FormSelect
+          <FormCombobox
             label="RIR"
             required
             value={rirId}
@@ -138,6 +138,8 @@ export function AggregateForm({
             }))}
             placeholder="Select a RIR"
             error={fieldErrors.rir_id}
+            searchPlaceholder="Search RIRs…"
+            emptyText="No RIRs."
           />
           <FormDate
             label="Date added"

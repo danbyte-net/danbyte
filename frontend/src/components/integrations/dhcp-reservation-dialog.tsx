@@ -14,9 +14,9 @@ import {
 } from "@/components/ui/dialog"
 import {
   FormFooter,
-  FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { DhcpScopeDialog } from "@/components/integrations/dhcp-scope-dialog"
 
@@ -97,7 +97,7 @@ export function DhcpReservationDialog({
           {!isEdit && (
             <div className="flex items-end gap-2">
               <div className="flex-1">
-                <FormSelect
+                <FormCombobox
                   label="Scope"
                   value={scope}
                   onChange={(v) => setScope(v ?? "")}
@@ -108,6 +108,8 @@ export function DhcpReservationDialog({
                     }`,
                   }))}
                   error={fieldErrors.scope}
+                  searchPlaceholder="Search scopes…"
+                  emptyText="No scopes."
                 />
               </div>
               {canAddScope && (

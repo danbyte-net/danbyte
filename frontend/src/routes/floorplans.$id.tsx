@@ -3101,7 +3101,7 @@ function TileInspector({
 
       {/* Re-type a placed tile: any tile type (zones stay zones), or a device
         role standing in as a type. Links and geometry are untouched. */}
-      <FormSelect
+      <FormCombobox
         label="Type"
         value={
           tile.tile_type
@@ -3143,6 +3143,8 @@ function TileInspector({
                 label: `${r.name} (role)`,
               }))),
         ]}
+        searchPlaceholder="Search types…"
+        emptyText="No types."
       />
       {/* Facing is the TILE's own property - build-in-advance tiles need it
           set before any rack is linked, so only zones (no front) skip it. */}

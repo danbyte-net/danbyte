@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { Spinner } from "@/components/ui/spinner"
-import { FormSelect } from "@/components/forms"
+import { FormCombobox } from "@/components/forms"
 import {
   Dialog,
   DialogContent,
@@ -147,12 +147,14 @@ function DeployDialog({
             Automation targets.
           </p>
         ) : (
-          <FormSelect
+          <FormCombobox
             label="Target"
             value={targetId}
             onChange={setTargetId}
             options={options}
             placeholder="Pick a target"
+            searchPlaceholder="Search targets…"
+            emptyText="No targets."
           />
         )}
         <DialogFooter>

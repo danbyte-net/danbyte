@@ -17,7 +17,7 @@ import { openingScope } from "@/lib/settings-catalog"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Field, FormSelect } from "@/components/forms"
+import { Field, FormCombobox } from "@/components/forms"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { QueryError } from "@/components/query-error"
 import {
@@ -415,11 +415,13 @@ function SiteEmail() {
   return (
     <div className="space-y-4">
       <div className="max-w-xs">
-        <FormSelect
+        <FormCombobox
           label="Site"
           value={siteId ?? ""}
           onChange={(v) => setSiteId(v)}
           options={sites.map((s) => ({ value: s.id, label: s.name }))}
+          searchPlaceholder="Search sites…"
+          emptyText="No sites."
         />
       </div>
 

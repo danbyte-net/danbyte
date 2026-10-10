@@ -209,7 +209,7 @@ export function TunnelTerminationDialog({
                   setInterfaceId(null)
                 }}
               />
-              <FormSelect
+              <FormCombobox
                 label="Interface"
                 value={interfaceId}
                 onChange={setInterfaceId}
@@ -218,6 +218,8 @@ export function TunnelTerminationDialog({
                   value: i.id,
                   label: i.name,
                 }))}
+                searchPlaceholder="Search interfaces…"
+                emptyText="No interfaces."
               />
             </div>
           ) : (
@@ -237,7 +239,7 @@ export function TunnelTerminationDialog({
                   label: v.name,
                 }))}
               />
-              <FormSelect
+              <FormCombobox
                 label="VM interface"
                 value={vmInterfaceId}
                 onChange={setVmInterfaceId}
@@ -246,6 +248,8 @@ export function TunnelTerminationDialog({
                   value: i.id,
                   label: i.name,
                 }))}
+                searchPlaceholder="Search interfaces…"
+                emptyText="No interfaces."
               />
             </div>
           )}

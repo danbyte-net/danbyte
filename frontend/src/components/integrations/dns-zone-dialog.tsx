@@ -17,9 +17,9 @@ import {
 import {
   FormCheckbox,
   FormFooter,
-  FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 
 /**
@@ -88,7 +88,7 @@ export function DnsZoneDialog({
           }}
           className="grid gap-3"
         >
-          <FormSelect
+          <FormCombobox
             label="Server"
             value={connection || null}
             onChange={(v) => setConnection(v ?? "")}
@@ -97,6 +97,8 @@ export function DnsZoneDialog({
             options={servers.map((c) => ({ value: c.id, label: c.name }))}
             error={fieldErrors.connection}
             hint="optional"
+            searchPlaceholder="Search servers…"
+            emptyText="No servers."
           />
           <FormText
             label="Zone name"

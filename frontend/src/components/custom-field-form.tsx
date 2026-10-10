@@ -30,6 +30,7 @@ import {
   FormText,
   FormTextarea,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 import { asArray, asRecord } from "@/lib/utils"
@@ -301,7 +302,7 @@ export function CustomFieldForm({
 
           <FormSection title="Placement" card>
             <div className="grid gap-3 @md:grid-cols-2">
-              <FormSelect
+              <FormCombobox
                 label="Group"
                 value={group}
                 onChange={setGroup}
@@ -309,6 +310,8 @@ export function CustomFieldForm({
                 options={groupOptions}
                 hint="Optional section heading this field shows under."
                 error={fieldErrors.group}
+                searchPlaceholder="Search groups…"
+                emptyText="No groups."
               />
               <FormText
                 label="Weight"

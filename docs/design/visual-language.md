@@ -98,7 +98,7 @@ browser's own widget, ignores the theme, and drifts the moment tokens change.
 | Checkbox with a label | `FormCheckbox` from `@/components/forms` | `<label><input type="checkbox">` |
 | Bare checkbox (table cell, list row) | `Checkbox` from `@/components/ui/checkbox` | `<input type="checkbox">` |
 | Dropdown of fixed options | `FormSelect`, or `Select` for an unlabelled one | `<select>` |
-| Long / searchable option list | `FormCombobox` / `Combobox` | `<select>` with many `<option>`s |
+| Long / searchable option list, and any field whose options are rows of another table (site, location, VRF, role, tenant, interface) | `FormCombobox` / `Combobox`; `FormStatusSelect` for a status | `FormSelect` or `<select>` fed with query rows |
 | Searchable picker in a popover | `Popover` + `Command` (see `ui/combobox.tsx`) | a hand-built input + `<button>` list |
 | Free text with common values | `FormText` with `suggestions` (or `SuggestInput` directly) | `<datalist>`, or a `<select>` that locks out other values |
 | Object reference | `ObjectPicker` or an existing domain picker preset (`onPickMany` when a list collects several at once) | a bespoke fetch + list |

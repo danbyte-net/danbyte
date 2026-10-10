@@ -21,6 +21,7 @@ import {
   FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { DeviceTypePicker } from "@/components/device-type-picker"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -350,14 +351,16 @@ function RuleForm({
         error={fieldErrors.pattern}
         required
       />
-      <FormSelect
+      <FormCombobox
         label="Site"
         value={site}
         onChange={setSite}
         options={asOptions(sites.data?.results)}
         error={fieldErrors.site}
+        searchPlaceholder="Search sites…"
+        emptyText="No sites."
       />
-      <FormSelect
+      <FormCombobox
         label="Role"
         hint="blank keeps the default"
         value={role}
@@ -365,6 +368,8 @@ function RuleForm({
         options={asOptions(roles.data?.results)}
         noneLabel="Default"
         error={fieldErrors.role}
+        searchPlaceholder="Search roles…"
+        emptyText="No roles."
       />
       <DeviceTypePicker
         value={type}

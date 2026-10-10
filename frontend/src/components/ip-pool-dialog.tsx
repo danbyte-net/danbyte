@@ -19,7 +19,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormSelect, FormText } from "@/components/forms"
+import {
+  FormCombobox,
+  FormSelect,
+  FormStatusSelect,
+  FormText,
+} from "@/components/forms"
 
 // Matches api/viewsets.py PrefixViewSet.populate POOL_MAX.
 const POOL_MAX = 1024
@@ -215,17 +220,12 @@ export function IpPoolDialog({
               placeholder={usable?.end}
             />
           </div>
-          <FormSelect
-            label="Status"
+          <FormStatusSelect
             value={statusId || null}
             onChange={(v) => setStatusId(v ?? "")}
-            noneLabel="No status"
-            options={(statuses.data?.results ?? []).map((s) => ({
-              value: s.id,
-              label: s.name,
-            }))}
+            options={statuses.data?.results ?? []}
           />
-          <FormSelect
+          <FormCombobox
             label="Role"
             value={roleId || null}
             onChange={(v) => setRoleId(v ?? "")}
@@ -233,7 +233,10 @@ export function IpPoolDialog({
             options={(roles.data?.results ?? []).map((r) => ({
               value: r.id,
               label: r.name,
+              color: r.color,
             }))}
+            searchPlaceholder="Search roles…"
+            emptyText="No roles."
           />
           <FormText
             label="Description"

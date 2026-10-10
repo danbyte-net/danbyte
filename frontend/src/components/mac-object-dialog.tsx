@@ -18,10 +18,10 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import {
-  FormSelect,
   FormTags,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
 import { useOuiRanges } from "@/components/oui-ranges-dialog"
@@ -167,7 +167,7 @@ export function MacObjectDialog({
             error={fieldErrors.mac_address}
           />
           {!isEdit && (ranges.data?.results.length ?? 0) > 0 && (
-            <FormSelect
+            <FormCombobox
               label="Next free in range"
               value={null}
               onChange={(v) => v && allocate.mutate(v)}
@@ -176,6 +176,8 @@ export function MacObjectDialog({
                 value: r.id,
                 label: `${r.prefix} · ${r.vendor}`,
               }))}
+              searchPlaceholder="Search ranges…"
+              emptyText="No ranges."
             />
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -188,7 +190,7 @@ export function MacObjectDialog({
               noneLabel="No device"
               placeholder="No device"
             />
-            <FormSelect
+            <FormCombobox
               label="Assigned interface"
               value={interfaceId}
               onChange={setInterfaceId}
@@ -198,6 +200,8 @@ export function MacObjectDialog({
                 value: i.id,
                 label: i.name,
               }))}
+              searchPlaceholder="Search interfaces…"
+              emptyText="No interfaces."
             />
           </div>
           <FormText

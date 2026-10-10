@@ -645,7 +645,7 @@ export function DeviceForm({
                 error={fieldErrors.status_id}
               />
             </div>
-            <FormSelect
+            <FormCombobox
               label="Site"
               required
               hint={siteLocked ? "locked to your site" : undefined}
@@ -658,6 +658,8 @@ export function DeviceForm({
                 label: s.name,
               }))}
               error={fieldErrors.site_id}
+              searchPlaceholder="Search sites…"
+              emptyText="No sites."
             />
             <div className="grid gap-3 @md:grid-cols-2">
               <FormCombobox

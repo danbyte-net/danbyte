@@ -23,7 +23,7 @@ import { copyWithToast } from "@/lib/clipboard"
 import { RowActions } from "@/components/row-actions"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
-import { FormSelect, FormText } from "@/components/forms"
+import { FormSelect, FormText, FormCombobox } from "@/components/forms"
 import { InfoTip } from "@/components/ui/info-tip"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -895,7 +895,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
                   : undefined
               }
             />
-            <FormSelect
+            <FormCombobox
               label="Site"
               value={siteId}
               onChange={(v) => {
@@ -907,8 +907,10 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
                 value: s.id,
                 label: s.name,
               }))}
+              searchPlaceholder="Search sites…"
+              emptyText="No sites."
             />
-            <FormSelect
+            <FormCombobox
               label="Location"
               info="Optional. Only locations inside the site above are offered - a location elsewhere would place the machine where it isn't."
               value={locationId}
@@ -919,6 +921,8 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
                 value: l.id,
                 label: l.name,
               }))}
+              searchPlaceholder="Search locations…"
+              emptyText="No locations."
             />
             <FormText
               label="Weight"

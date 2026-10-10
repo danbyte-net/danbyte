@@ -20,17 +20,11 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { DevicePicker } from "@/components/device-picker"
 import { EmptyState } from "@/components/empty-state"
-import { FormSelect } from "@/components/forms"
+import { FormCombobox } from "@/components/forms"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -249,20 +243,17 @@ function SwitchUplinks({ sw }: { sw: VirtualSwitch }) {
             />
           </div>
           {device && (
-            <Select value={iface} onValueChange={setIface}>
-              <SelectTrigger size="sm" className="h-9 w-52 text-xs">
-                <SelectValue placeholder="Interface…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(ifaces.data?.results ?? [])
-                  .filter((i) => !currentIds.includes(i.id))
-                  .map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={iface || null}
+              onChange={(v) => setIface(v ?? "")}
+              options={(ifaces.data?.results ?? [])
+                .filter((i) => !currentIds.includes(i.id))
+                .map((i) => ({ value: i.id, label: i.name }))}
+              placeholder="Interface…"
+              searchPlaceholder="Search interfaces…"
+              emptyText="No interfaces."
+              className="w-52 text-xs"
+            />
           )}
           <Button
             size="sm"
@@ -316,7 +307,7 @@ function SwitchVrf({ sw }: { sw: VirtualSwitch }) {
         it.
       </p>
       <div className="max-w-xs">
-        <FormSelect
+        <FormCombobox
           label="VRF"
           value={sw.vrf?.id ?? null}
           onChange={(v) => {
@@ -331,6 +322,8 @@ function SwitchVrf({ sw }: { sw: VirtualSwitch }) {
             value: v.id,
             label: v.name,
           }))}
+          searchPlaceholder="Search VRFs…"
+          emptyText="No VRFs."
         />
       </div>
     </section>
@@ -411,35 +404,35 @@ function SwitchNetworks({
             ) : (
               <span className="text-xs text-muted-foreground">-</span>
             )
-          // Inline control, so the bare Select rather than FormSelect - a
-          // labelled Field belongs in a form, not a table cell. An empty value
+          // Inline control, so the bare Combobox rather than FormCombobox -
+          // a labelled Field belongs in a form, not a table cell. An empty value
           // inherits, so the sentinel says what it inherits *to*.
           const inheritLabel = sw.vrf
             ? `Switch (${sw.vrf.name})`
             : "Follow the source"
+          const current = net.vrf && !net.vrf.inherited ? net.vrf.id : INHERIT
           return (
-            <Select
-              value={net.vrf && !net.vrf.inherited ? net.vrf.id : INHERIT}
-              onValueChange={(v) =>
+            <Combobox
+              value={current}
+              onChange={(v) => {
+                if (!v || v === current) return
                 setVrf.mutate({
                   id: net.id,
                   vrfId: v === INHERIT ? null : v,
                 })
-              }
+              }}
+              options={[
+                { value: INHERIT, label: inheritLabel },
+                ...(vrfs.data?.results ?? []).map((v) => ({
+                  value: v.id,
+                  label: v.name,
+                })),
+              ]}
+              searchPlaceholder="Search VRFs…"
+              emptyText="No VRFs."
               disabled={setVrf.isPending}
-            >
-              <SelectTrigger size="sm" className="h-7 w-44 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={INHERIT}>{inheritLabel}</SelectItem>
-                {(vrfs.data?.results ?? []).map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              className="h-7 w-44 text-xs"
+            />
           )
         },
       },

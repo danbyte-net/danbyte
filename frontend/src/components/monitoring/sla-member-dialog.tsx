@@ -164,11 +164,13 @@ export function SlaMemberDialog({
             add.mutate()
           }}
         >
-          <FormSelect
+          <FormCombobox
             label="Group"
             value={group ?? ""}
             onChange={setGroup}
             options={groups.map((g) => ({ value: g.id, label: g.name }))}
+            searchPlaceholder="Search groups…"
+            emptyText="No groups."
           />
           <FormSelect
             label="Kind"

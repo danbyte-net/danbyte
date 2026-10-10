@@ -204,22 +204,20 @@ export function ContactsPanel({
               searchPlaceholder="Search contacts…"
             />
           </div>
-          <Select
-            value={roleId ?? "__none__"}
-            onValueChange={(v) => setRoleId(v === "__none__" ? null : v)}
-          >
-            <SelectTrigger className="h-9 w-36">
-              <SelectValue placeholder="Role" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">No role</SelectItem>
-              {roles.data?.results.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="w-36">
+            <Combobox
+              value={roleId}
+              onChange={setRoleId}
+              options={(roles.data?.results ?? []).map((r) => ({
+                value: r.id,
+                label: r.name,
+              }))}
+              noneLabel="No role"
+              placeholder="Role"
+              searchPlaceholder="Search roles…"
+              emptyText="No roles."
+            />
+          </div>
           <Select
             value={priority}
             onValueChange={(v) => setPriority(v as ContactPriority)}

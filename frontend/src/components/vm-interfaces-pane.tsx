@@ -610,7 +610,7 @@ function VMInterfaceForm({
         error={fieldErrors.name}
       />
       <div className="grid grid-cols-2 gap-3">
-        <FormSelect
+        <FormCombobox
           label="Parent interface"
           value={parentId}
           onChange={setParentId}
@@ -619,6 +619,8 @@ function VMInterfaceForm({
             .filter((row) => row.id !== iface?.id)
             .map((row) => ({ value: row.id, label: row.name }))}
           error={fieldErrors.parent_id}
+          searchPlaceholder="Search interfaces…"
+          emptyText="No interfaces."
         />
         <FormSelect
           label="Type"
@@ -685,7 +687,7 @@ function VMInterfaceForm({
           ]}
           error={fieldErrors.mode}
         />
-        <FormSelect
+        <FormCombobox
           label={mode === "tagged" ? "Untagged / native VLAN" : "Untagged VLAN"}
           value={vlanId}
           onChange={setVlanId}
@@ -695,6 +697,8 @@ function VMInterfaceForm({
             label: `${v.vlan_id} · ${v.name}`,
           }))}
           error={fieldErrors.vlan_id}
+          searchPlaceholder="Search VLANs…"
+          emptyText="No VLANs."
         />
       </div>
       {mode === "tagged" && (
