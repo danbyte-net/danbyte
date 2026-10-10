@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/alert-dialog"
 import { CopyButton } from "@/components/kv-card"
 
-/** Fetch a pre-shared key on demand - an SSID's (#68) or an IPsec
- * profile's (#168); `endpoint` is the object's collection.
+/** Fetch a pre-shared key on demand - an SSID's (#68), an IPsec
+ * profile's (#168) or an FHRP group's authentication key (#383);
+ * `endpoint` is the object's collection, `label` what the key is called.
  *
  * The key is never part of the page payload: it lives in the deployment's
  * secret store and each reveal is its own audited request, so the change log
@@ -24,9 +25,11 @@ import { CopyButton } from "@/components/kv-card"
 export function RevealPskButton({
   id,
   endpoint = "/api/wireless-lans",
+  label = "Pre-shared key",
 }: {
   id: string
   endpoint?: string
+  label?: string
 }) {
   const [value, setValue] = useState<string | null>(null)
   const reveal = useMutation({
@@ -44,7 +47,7 @@ export function RevealPskButton({
         size="icon"
         variant="ghost"
         className="h-6 w-6"
-        title="Reveal the pre-shared key"
+        title={`Reveal the ${label.toLowerCase()}`}
         disabled={reveal.isPending}
         onClick={() => reveal.mutate()}
       >
@@ -56,7 +59,7 @@ export function RevealPskButton({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Pre-shared key</AlertDialogTitle>
+            <AlertDialogTitle>{label}</AlertDialogTitle>
           </AlertDialogHeader>
           <div className="flex items-center gap-2 rounded-md border border-border p-3">
             <code className="min-w-0 flex-1 font-mono text-sm break-all">

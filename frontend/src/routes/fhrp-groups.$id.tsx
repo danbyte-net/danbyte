@@ -18,6 +18,7 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
+import { RevealPskButton } from "@/components/reveal-psk-button"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/fhrp-groups/$id")({
@@ -132,6 +133,27 @@ function Body({ group: g }: { group: FHRPGroup }) {
   )
 }
 
+/** "Stored" plus a reveal button, or a plain "Not set". The key itself is
+ * never in the page payload - revealing is a separate, audited request that
+ * needs the `reveal` grant on FHRP groups (#383). */
+function AuthKeyRow({ group }: { group: FHRPGroup }) {
+  const { canDo } = useMe()
+  if (!group.auth_key_set)
+    return <span className="text-muted-foreground">Not set</span>
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="font-mono text-[13px]">••••••••</span>
+      {canDo("fhrpgroup", "reveal") && (
+        <RevealPskButton
+          id={group.id}
+          endpoint="/api/fhrp-groups"
+          label="Authentication key"
+        />
+      )}
+    </span>
+  )
+}
+
 /** FHRP group attributes that used to crowd the header, grouped into a table. */
 function FhrpGroupOverview({
   group: g,
@@ -158,6 +180,9 @@ function FhrpGroupOverview({
       label: "Authentication",
       value: g.auth_type ? g.auth_type_display : "None",
     },
+    ...(g.auth_type
+      ? [{ label: "Auth key", value: <AuthKeyRow group={g} /> } satisfies KvRow]
+      : []),
     {
       label: "Virtual IP",
       value: g.virtual_ip ? (

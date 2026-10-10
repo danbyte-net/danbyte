@@ -1059,7 +1059,11 @@ grouping), and all of them respect acknowledgement and silences:
 
 - **Grouping** (on by default) - when one event opens many alerts at once (a switch
   dies, taking 50 IPs down), they're coalesced into a single digest per channel
-  instead of a storm of messages.
+  instead of a storm of messages. PagerDuty still gets one event per alert,
+  each sent on its own: an event refused for rate limiting, a server error or
+  no answer is sent again, up to three attempts within 30 seconds and never
+  before the receiver's `Retry-After`. Events already accepted are not sent
+  twice; one still refused at the end is logged.
 - **Renotify** - re-sends a reminder for an alert that's still firing, unacked, and
   un-silenced after a configurable interval. Acknowledging or silencing stops the
   reminders.

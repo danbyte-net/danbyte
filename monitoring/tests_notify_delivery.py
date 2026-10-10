@@ -301,3 +301,119 @@ class SingleSendTests(_Base):
         self.assertEqual(len(calls), 2)
         ch.refresh_from_db()
         self.assertEqual(ch.status_change_last_run, self.now + timedelta(seconds=1))
+
+
+def _resp_h(code, headers=None):
+    return SimpleNamespace(status_code=code, headers=headers or {}, json=lambda: {})
+
+
+class GroupedPagerDutyTests(_Base):
+    """A grouped burst sends one PagerDuty event per alert. One refused event
+    must not drop the rest, and refused ones are sent again (#369)."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import Alert
+
+        self.alerts = []
+        for n in range(1, 4):
+            ip = IPAddress.objects.create(
+                tenant=self.tenant, ip_address=f"10.9.1.{n}", prefix=self.ip.prefix
+            )
+            self.alerts.append(Alert.objects.create(
+                tenant=self.tenant, target_ip=ip, template=self.template, kind="icmp",
+                dedup_key=f"10.9.1.{n}:icmp", severity="critical", check_status="down",
+            ))
+        self.pd = NotificationChannel.objects.create(
+            tenant=self.tenant, name="pd", kind="pagerduty",
+            config={"routing_key": "R0UT1NG"},
+        )
+        sleeper = patch("monitoring.notify._wait")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
+
+    def answers(self, *answers):
+        """Each outbound POST takes the next answer: a status code, a
+        ``(code, headers)`` pair or an exception; the last one repeats."""
+        answers = list(answers)
+        calls = []
+
+        def fake(url, **kwargs):
+            calls.append(kwargs.get("json"))
+            a = answers.pop(0) if len(answers) > 1 else answers[0]
+            if isinstance(a, BaseException):
+                raise a
+            if isinstance(a, tuple):
+                return _resp_h(*a)
+            return _resp_h(a)
+
+        p = patch("monitoring.notify.safe_post", side_effect=fake)
+        p.start()
+        self.addCleanup(p.stop)
+        return calls
+
+    def keys(self, calls):
+        return [c["dedup_key"] for c in calls if c and "dedup_key" in c]
+
+    def test_one_refused_event_does_not_drop_the_rest(self):
+        calls = self.answers(429, 202, 202, 202)
+        notify.notify_alert_group(self.tenant.id, self.alerts, "firing")
+        self.assertEqual(
+            self.keys(calls),
+            ["10.9.1.1:icmp", "10.9.1.2:icmp", "10.9.1.3:icmp", "10.9.1.1:icmp"],
+        )
+
+    def test_events_that_went_through_are_not_sent_twice(self):
+        calls = self.answers(202, 500, 202, 202)
+        notify.notify_alert_group(self.tenant.id, self.alerts, "firing")
+        keys = self.keys(calls)
+        self.assertEqual(keys.count("10.9.1.1:icmp"), 1)
+        self.assertEqual(keys.count("10.9.1.2:icmp"), 2)
+        self.assertEqual(keys.count("10.9.1.3:icmp"), 1)
+
+    def test_retry_after_is_respected(self):
+        self.answers((429, {"Retry-After": "7"}), 202)
+        notify.notify_alert_group(self.tenant.id, self.alerts, "firing")
+        self.sleep.assert_called_once_with(7)
+
+    def test_retry_after_beyond_the_budget_is_not_retried_early(self):
+        calls = self.answers((429, {"Retry-After": "3600"}), 202)
+        with self.assertLogs("monitoring.notify", "ERROR"):
+            notify.notify_alert_group(self.tenant.id, self.alerts, "firing")
+        self.assertEqual(len(self.keys(calls)), 3)
+        self.sleep.assert_not_called()
+
+    def test_connection_error_is_retried(self):
+        calls = self.answers(ConnectionError("reset"), 202)
+        notify.notify_alert_group(self.tenant.id, self.alerts, "firing")
+        self.assertEqual(self.keys(calls).count("10.9.1.1:icmp"), 2)
+
+    def test_a_rejected_event_is_not_retried(self):
+        calls = self.answers(400, 202)
+        with self.assertLogs("monitoring.notify", "ERROR"):
+            notify.notify_alert_group(self.tenant.id, self.alerts, "firing")
+        self.assertEqual(len(self.keys(calls)), 3)
+        self.sleep.assert_not_called()
+
+    def test_gives_up_after_the_last_attempt_and_logs(self):
+        calls = self.answers(503)
+        with self.assertLogs("monitoring.notify", "ERROR") as logs:
+            notify.notify_alert_group(self.tenant.id, self.alerts, "firing")
+        self.assertEqual(len(self.keys(calls)), 3 * notify.GROUP_SEND_ATTEMPTS)
+        self.assertIn("3 of 3", "\n".join(logs.output))
+
+    def test_other_channels_still_get_the_summary(self):
+        self.channel(send_status_changes=False)
+        calls = self.answers(503)
+        with self.assertLogs("monitoring.notify", "ERROR"):
+            notify.notify_alert_group(self.tenant.id, self.alerts, "firing")
+        self.assertTrue(any(c and c.get("count") == 3 for c in calls))
+
+    def test_retry_after_is_parsed_from_seconds_and_dates(self):
+        from email.utils import format_datetime
+
+        self.assertEqual(notify._retry_after({"Retry-After": "12"}), 12)
+        self.assertIsNone(notify._retry_after({}))
+        self.assertIsNone(notify._retry_after({"Retry-After": "soon"}))
+        later = format_datetime(timezone.now() + timedelta(seconds=30), usegmt=True)
+        self.assertTrue(25 <= notify._retry_after({"Retry-After": later}) <= 31)

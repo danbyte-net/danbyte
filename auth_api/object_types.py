@@ -61,6 +61,8 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     "ipsecprofile": ["reveal"],
     # A routing keychain holds the BGP / OSPF / IS-IS key.
     "routingkeychain": ["reveal"],
+    # An FHRP group's authentication key (#383).
+    "fhrpgroup": ["reveal"],
     # Read the device's running configuration from Oxidized (#35). A config
     # holds communities, hashes and keys, so device.view never implies it.
     "device": ["connect", "view_config"],

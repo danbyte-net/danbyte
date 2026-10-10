@@ -62,7 +62,9 @@ export function FhrpGroupForm({
   const [authType, setAuthType] = useState<"" | "plaintext" | "md5">(
     group?.auth_type ?? ""
   )
-  const [authKey, setAuthKey] = useState(group?.auth_key ?? "")
+  // Write-only (#383): never pre-filled from the record, blank leaves the
+  // stored key alone.
+  const [authKey, setAuthKey] = useState("")
   const [virtualIpId, setVirtualIpId] = useState<string | null>(
     group?.virtual_ip?.id ?? null
   )
@@ -84,7 +86,7 @@ export function FhrpGroupForm({
     setProtocol(group.protocol)
     setGroupId(String(group.group_id))
     setAuthType(group.auth_type)
-    setAuthKey(group.auth_key)
+    setAuthKey("")
     setVirtualIpId(group.virtual_ip?.id ?? null)
     setNdRa(group.nd_ra)
     setNdRaInterval(
@@ -103,7 +105,8 @@ export function FhrpGroupForm({
         protocol,
         group_id: Number(groupId),
         auth_type: authType,
-        auth_key: authType ? authKey : "",
+        // No auth type clears a stored key on the server.
+        ...(authType && authKey ? { auth_key: authKey } : {}),
         virtual_ip_id: virtualIpId,
         nd_ra: protocol === "anycast" && ndRa,
         nd_ra_interval:
@@ -228,9 +231,26 @@ export function FhrpGroupForm({
             options={AUTH_TYPES}
             error={fieldErrors.auth_type}
           />
-          <Field label="Auth key" error={fieldErrors.auth_key}>
+          <Field
+            label="Auth key"
+            hint={
+              authType && group?.auth_key_set
+                ? "blank keeps the stored key"
+                : undefined
+            }
+            info="The key is written to the deployment's secret store, never to this record. An administrator must enable a store under Settings → Security first."
+            error={fieldErrors.auth_key}
+          >
             <Input
-              placeholder={authType ? "shared secret" : "-"}
+              type="password"
+              autoComplete="new-password"
+              placeholder={
+                !authType
+                  ? "-"
+                  : group?.auth_key_set
+                    ? "Stored - type to replace"
+                    : "Not set"
+              }
               value={authKey}
               disabled={!authType}
               onChange={(e) => setAuthKey(e.target.value)}

@@ -215,6 +215,16 @@ def keychain_placeholder(name: str) -> str:
     return KEYCHAIN_PLACEHOLDER.format(name=name)
 
 
+#: The same contract for an FHRP group's authentication key (#383), by group
+#: id: ``POST /api/fhrp-groups/<id>/reveal-psk/`` returns the key.
+FHRP_KEY_PLACEHOLDER = "<fhrp-key:{id}>"
+FHRP_KEY_PLACEHOLDER_RE = re.compile(r"<fhrp-key:([0-9a-f-]{36})>")
+
+
+def fhrp_key_placeholder(group_id) -> str:
+    return FHRP_KEY_PLACEHOLDER.format(id=group_id)
+
+
 def keychain_dict(k: RoutingKeychain) -> dict:
     return {
         "id": str(k.id),
@@ -770,6 +780,11 @@ def routing_context(device) -> dict:
             "nd_ra": bool(g.nd_ra),
             "nd_ra_interval": g.nd_ra_interval,
             "priority": a.priority,
+            # Never the key (#383): whether one is set, and what a template
+            # prints in its place, as for a keychain.
+            "auth_type": g.auth_type or None,
+            "key_set": g.psk_set,
+            "key_placeholder": fhrp_key_placeholder(g.id) if g.psk_set else None,
         })
 
     def _gateway(rows):

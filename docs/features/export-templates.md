@@ -253,6 +253,10 @@ every match of `<keychain:([^<>\s]+)>` with the key from
 `POST /api/routing/keychains/<id>/reveal-psk/` (an audited read behind the
 `reveal` permission) or from its own store.
 
+An FHRP group's authentication key follows the same contract by group id:
+`<fhrp-key:ID>` (a `by_interface` row's `fhrp[].key_placeholder`), resolved
+from `POST /api/fhrp-groups/<ID>/reveal-psk/`.
+
 ## Permissions and audit
 
 Export templates are managed by users with the **Customize** permission group, and

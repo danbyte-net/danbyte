@@ -423,7 +423,8 @@ routing:
   by_interface:  {NAME: {vrf, ospf: {process_id, version, area, cost, ...} | null,
                          isis: {process, families, level, metric, ...} | null,
                          eigrp: {asn, name, passive, summary_addresses, ...} | null,
-                         fhrp: [{protocol, group_id, name, virtual_ip, cidr, priority}],
+                         fhrp: [{protocol, group_id, name, virtual_ip, cidr, priority,
+                                 auth_type, key_set, key_placeholder}],
                          gateway: "10.100.0.1/24" | null}}
   vtep:          {source_interface, source_ip, anycast_ip, anycast_gateway_mac, arp_suppression,
                   vnis: [{vni, name, kind: l2|l3, vlan, vlan_name, vrf, rd, import_targets,
@@ -449,7 +450,10 @@ resolved profile's name, or `null` for the platform default. `by_interface`
 also carries the port's first-hop groups (`fhrp`) and, as `gateway`, the
 EVPN anycast gateway's address with its mask - so an SVI loop prints
 `ip address 10.100.0.1/24` and `fabric forwarding mode anycast-gateway`
-without a template walking the FHRP tables.
+without a template walking the FHRP tables. A group's authentication key is
+never in the row: `key_set` says whether one is stored and
+`key_placeholder` is `<fhrp-key:ID>` for a push tool to replace, as for a
+keychain.
 
 `vrfs` is every table the device has to define - the VRFs its interfaces,
 routes and instances sit in, and the VRFs of the L3VNIs its VTEP carries,

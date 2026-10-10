@@ -4392,7 +4392,9 @@ export interface FHRPGroup {
   group_id: number
   auth_type: "" | "plaintext" | "md5"
   auth_type_display: string
-  auth_key: string
+  /** Whether an authentication key is stored (#383). The key itself is
+   * never serialised - fetch it from `POST /api/fhrp-groups/{id}/reveal-psk/`. */
+  auth_key_set: boolean
   virtual_ip: { id: string; ip_address: string } | null
   /** Anycast gateway: send IPv6 router advertisements, and how often. */
   nd_ra: boolean
@@ -4411,7 +4413,8 @@ export interface FHRPGroupWritePayload {
   protocol: FHRPProtocol
   group_id: number
   auth_type?: "" | "plaintext" | "md5"
-  auth_key?: string
+  /** Write-only: blank keeps the stored key, null clears it. */
+  auth_key?: string | null
   virtual_ip_id?: string | null
   description?: string
   tag_ids?: number[]
