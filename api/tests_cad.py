@@ -251,7 +251,11 @@ class RenderTests(_Base):
         self.assertIn("too many shapes", d.error)
 
     def test_garbage_fails_with_a_reason(self):
-        self.upload(b"0\n" + os.urandom(4000))
+        # Fixed bytes: random ones are sometimes recovered as an empty drawing,
+        # which fails too but with another reason.
+        import random
+
+        self.upload(b"0\n" + random.Random(0).randbytes(4000))
         d = FloorPlanDrawing.objects.get(floor_plan=self.plan)
         self.assertEqual(d.status, "failed")
         self.assertIn("not a readable DXF", d.error)
