@@ -56,6 +56,10 @@ DEFAULTS: dict[str, Any] = {
     "nav_one_open":   False,       # Sidebar: opening a category closes the
                                    # others (the menu's original behaviour,
                                    # #166); off = groups stay as you left them.
+    "sidebar":        None,        # Personal menu layout (#285): hidden ids and
+                                   # section/entry order, validated by
+                                   # auth_api.sidebar_prefs. None = the menu as
+                                   # shipped.
 
     # ─── Safety / confirmations ──────────────────────────────────────────
     "confirm_destructive": True,   # Two-step Confirm button on bulk delete.

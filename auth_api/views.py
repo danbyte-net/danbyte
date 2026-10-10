@@ -345,6 +345,15 @@ def me_prefs(request):
                     {"error": f"'{tz}' is not a valid IANA timezone."}, status=400
                 )
             body["timezone"] = canonical
+        # The sidebar layout is a structured value - store only its cleaned
+        # form (#285). None resets it to the tenant default.
+        if body.get("sidebar") is not None:
+            from .sidebar_prefs import clean_layout
+
+            try:
+                body["sidebar"] = clean_layout(body["sidebar"])
+            except ValueError as e:
+                return JsonResponse({"error": str(e)}, status=400)
         for k, v in body.items():
             user_prefs.set_user(request.user, k, v)
 

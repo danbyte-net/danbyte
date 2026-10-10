@@ -56,6 +56,22 @@ counts the detail page computes for one object only.
     use the advanced filter expression (for example `location.name = "Hall A"`,
     `site.region = "Nordics"` or `custom_fields.owner = "noc"`).
 
+## Filter rail
+
+The filter rail beside a list has one group per facet - status, role,
+manufacturer, tags - each counting the rows in every value.
+
+- **Long facets.** A facet with more than 10 values gets a search box and
+  shows its 8 most common values; **Show all** lists the rest. A ticked value
+  always stays in sight.
+- **Hiding a facet.** Hover a facet's name and click the eye to hide it on
+  that list - **Advanced** included. Hidden facets are listed under **Hidden
+  filters** at the foot of the rail; click one to bring it back. A hidden
+  facet with a selection keeps showing, so no filter applies out of sight.
+
+Hidden facets are saved per list for you, like a column layout (stored as the
+`facets-<list>` layout, e.g. `facets-devices`), and do not affect anyone else.
+
 ## Sorting
 
 Click a column header to sort by it; click it again to reverse. Text sorts in

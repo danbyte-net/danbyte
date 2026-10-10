@@ -12,11 +12,16 @@ import { evaluate, parse, type Expr } from "@/lib/filter-expr"
 import { ExpressionFilter } from "@/components/filter-expression"
 import {
   FacetGroup,
+  FacetHeading,
   FilterRail,
+  HideableFacet,
   toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
 import { naturalCompare } from "@/lib/natural-sort"
+
+/** The advanced expression's id among a list's hideable facets. */
+const EXPR_FACET_ID = "__expr"
 
 // Auto-derive a filter rail from `ColumnDef.meta.facet`.
 //
@@ -340,22 +345,44 @@ export function useTableFilters<TRow>(
     facets.length === 0 && !railOpts?.railExtras ? null : (
       <FilterRail>
         {railOpts?.railExtras}
-        <ExpressionFilter value={exprText} onChange={setExprText} rows={rows} />
+        <HideableFacet
+          id={EXPR_FACET_ID}
+          label="Advanced"
+          active={exprText.trim() !== ""}
+        >
+          {(onHide) => (
+            <ExpressionFilter
+              value={exprText}
+              onChange={setExprText}
+              rows={rows}
+              onHide={onHide}
+            />
+          )}
+        </HideableFacet>
         {facets.map(({ id, def }) => {
           const label = def.label ?? id
           if (def.kind === "range") {
             const cur = (state[id] as RangeState) ?? { min: "", max: "" }
             return (
-              <RangeFacetGroup
+              <HideableFacet
                 key={id}
+                id={id}
                 label={label}
-                value={cur}
-                onChange={(next) => setRange(id, next)}
-                min={def.min}
-                max={def.max}
-                unit={def.unit}
-                placeholder={def.placeholder}
-              />
+                active={cur.min !== "" || cur.max !== ""}
+              >
+                {(onHide) => (
+                  <RangeFacetGroup
+                    label={label}
+                    value={cur}
+                    onChange={(next) => setRange(id, next)}
+                    onHide={onHide}
+                    min={def.min}
+                    max={def.max}
+                    unit={def.unit}
+                    placeholder={def.placeholder}
+                  />
+                )}
+              </HideableFacet>
             )
           }
           const opts = options[id] ?? []
@@ -367,6 +394,7 @@ export function useTableFilters<TRow>(
           return (
             <FacetGroup
               key={id}
+              facetId={id}
               label={label}
               options={opts}
               selected={cur}
@@ -436,6 +464,7 @@ function RangeFacetGroup({
   label,
   value,
   onChange,
+  onHide,
   min,
   max,
   unit,
@@ -444,6 +473,7 @@ function RangeFacetGroup({
   label: string
   value: { min: string; max: string }
   onChange: (v: { min: string; max: string }) => void
+  onHide?: () => void
   min?: number
   max?: number
   unit?: string
@@ -451,20 +481,11 @@ function RangeFacetGroup({
 }) {
   const engaged = value.min !== "" || value.max !== ""
   const header = (
-    <div className="mb-1.5 flex items-center justify-between">
-      <h3 className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-        {label}
-      </h3>
-      {engaged && (
-        <button
-          type="button"
-          onClick={() => onChange({ min: "", max: "" })}
-          className="text-[10px] text-muted-foreground hover:text-foreground"
-        >
-          clear
-        </button>
-      )}
-    </div>
+    <FacetHeading
+      label={label}
+      onHide={onHide}
+      onClear={engaged ? () => onChange({ min: "", max: "" }) : undefined}
+    />
   )
 
   // With known bounds the range renders as a dual-thumb slider (utilisation,

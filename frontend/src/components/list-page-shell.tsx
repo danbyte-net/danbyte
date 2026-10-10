@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { QueryError } from "@/components/query-error"
 import { SavedViews, type SavedViewsProps } from "@/components/saved-views"
+import { FacetVisibilityProvider } from "@/components/filter-rail"
+import { useListFacetPrefs } from "@/lib/use-facet-prefs"
 
 // ─── The canonical list-page chrome ──────────────────────────────────────
 //
@@ -79,10 +81,14 @@ export function ListPageShell({
   children: ReactNode
 }) {
   usePageTitle(title)
+  // Facets the user hid on this list (#285), for the rail to honour.
+  const facetPrefs = useListFacetPrefs()
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 min-w-0 flex-1">
-        {rail}
+        <FacetVisibilityProvider value={facetPrefs}>
+          {rail}
+        </FacetVisibilityProvider>
 
         <div className="flex min-w-0 flex-1 flex-col">
           {/* The controls wrap under the title when they don't fit beside it,

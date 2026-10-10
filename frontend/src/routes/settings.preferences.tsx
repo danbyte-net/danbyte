@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TwoFactorSection } from "@/components/two-factor-section"
 import { ApiTokensSection } from "@/components/api-tokens-section"
+import { SidebarCard } from "@/components/settings/sidebar-card"
 import {
   SettingsCard,
   SettingsGrid,
@@ -51,6 +52,8 @@ function PreferencesPage() {
         <TwoFactorSection />
         <ApiTokensSection />
       </SettingsGrid>
+      {/* Full width: the editor and its preview sit side by side. */}
+      <SidebarCard />
       {/* Full width: one row per table, so it'd leave a hole beside it. */}
       <TableLayoutsSection />
     </div>

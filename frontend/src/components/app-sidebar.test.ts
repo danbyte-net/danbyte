@@ -37,3 +37,19 @@ describe("app sidebar sections", () => {
     expect(urlsOf("Virtualization")).not.toContain("/virtual-topology")
   })
 })
+
+describe("sidebar layout ids (#285)", () => {
+  it("gives every section a unique id a saved layout can refer to", () => {
+    const ids = sections.map((s) => s.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const id of ["ipam", "circuits", "power", "wireless", "vpn"])
+      expect(ids).toContain(id)
+  })
+
+  it("gives every entry a unique id (its URL)", () => {
+    const urls = sections.flatMap((s) =>
+      s.clusters.flatMap((c) => c.items.map((i) => i.url))
+    )
+    expect(new Set(urls).size).toBe(urls.length)
+  })
+})

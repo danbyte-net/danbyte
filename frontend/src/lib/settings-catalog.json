@@ -485,6 +485,13 @@
       "keywords": ["columns", "layout", "publish", "lock", "table"]
     },
     {
+      "key": "data.sidebar-default",
+      "label": "Sidebar default",
+      "description": "Publish your sidebar layout as the tenant's starting point",
+      "page": "table-layouts",
+      "keywords": ["sidebar", "menu", "navigation", "hide", "publish"]
+    },
+    {
       "key": "data.components",
       "label": "Fields",
       "description": "What a component popover shows, top to bottom",
@@ -675,6 +682,20 @@
       "description": "How deep the prefix map draws, per family",
       "page": "preferences",
       "keywords": ["space map", "subnet", "depth", "ipv4", "ipv6"]
+    },
+    {
+      "key": "prefs.sidebar",
+      "label": "Sidebar",
+      "description": "Hide and reorder menu sections and pages",
+      "page": "preferences",
+      "keywords": [
+        "sidebar",
+        "menu",
+        "hide",
+        "reorder",
+        "sections",
+        "navigation"
+      ]
     },
     {
       "key": "prefs.table-layouts",

@@ -19,6 +19,7 @@ import {
   Container,
   Cpu,
   ExternalLink,
+  EyeOff,
   Factory,
   FileSignature,
   Fingerprint,
@@ -46,6 +47,7 @@ import {
   LogOut,
   Map as MapIcon,
   MonitorSmartphone,
+  MoreHorizontal,
   Network,
   Plus,
   Printer,
@@ -145,6 +147,12 @@ import { useUserPrefs } from "@/lib/use-user-prefs"
 import { DynamicIcon } from "@/components/dynamic-icon"
 import { apiErrorToast } from "@/lib/api-toast"
 import { naturalCompare } from "@/lib/natural-sort"
+import {
+  parseLayout,
+  resolveSidebar,
+  setHidden,
+  type SidebarLayout,
+} from "@/lib/sidebar-layout"
 
 // Information architecture mirrors the original Danbyte CLAUDE.md - the
 // order is load-bearing (matches the user's mental model). Stub `/foo`
@@ -178,13 +186,162 @@ type NavCluster = {
   items: NavItem[]
 }
 type NavSection = {
+  /** Stable id a personal sidebar layout refers to (#285) - never rename. */
+  id: string
   label: string
   icon: React.ComponentType<{ className?: string }>
   clusters: NavCluster[]
 }
 
+/** One menu entry as the sidebar renders it, after the RBAC gate: core,
+ * plugin and Admin entries alike. `id` is the URL - what a personal layout
+ * stores to hide or order it. */
+export type SidebarEntry = {
+  id: string
+  title: string
+  url: string
+  icon?: React.ComponentType<{ className?: string }>
+  /** Plugin entries name a Lucide icon instead. */
+  iconName?: string
+}
+export type SidebarSection = {
+  id: string
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  clusters: { label?: string; items: SidebarEntry[] }[]
+}
+
+const ADMIN_ITEMS: SidebarEntry[] = [
+  { id: "/users", title: "Users", url: "/users", icon: UsersRound },
+  { id: "/groups", title: "Groups", url: "/groups", icon: UserCog },
+  {
+    id: "/permissions",
+    title: "Permissions",
+    url: "/permissions",
+    icon: ShieldCheck,
+  },
+]
+
+/**
+ * The menu this user may see, as shipped: core sections, then plugin
+ * sections, then Admin - each entry already through the same gate as the API,
+ * so the nav never advertises a page that would only 403. The personal layout
+ * (lib/sidebar-layout) is applied on top of this, by the sidebar and by the
+ * Preferences editor alike.
+ */
+export function useSidebarModel(): SidebarSection[] {
+  const { canManage, canDo, can } = useMe()
+  const pluginUi = usePluginUi()
+  // Integration-gated items also need their tenant toggle on (Settings →
+  // Integrations). Cached: this changes rarely and the page 404s anyway.
+  const integrations = useQuery({
+    queryKey: ["integrations-enabled"],
+    queryFn: () => api<Record<string, boolean>>("/api/integrations/enabled/"),
+    staleTime: 5 * 60_000,
+  })
+  const itemVisible = (item: NavItem): boolean => {
+    if (
+      item.integration &&
+      !item.integration.some((k) => integrations.data?.[k])
+    )
+      return false
+    if (item.objectType) return canDo(item.objectType, "view")
+    if (item.anyOf) return item.anyOf.some((t) => canDo(t, "view"))
+    if (item.perm) return can(item.perm)
+    return true
+  }
+  // Drop RBAC-hidden items, then any cluster (and section) left empty so a
+  // sub-heading never dangles over zero links.
+  const core: SidebarSection[] = sections
+    .map((section) => ({
+      id: section.id,
+      label: section.label,
+      icon: section.icon,
+      clusters: section.clusters
+        .map((cluster) => ({
+          label: cluster.label,
+          items: cluster.items.filter(itemVisible).map((i) => ({
+            id: i.url,
+            title: i.title,
+            url: i.url,
+            icon: i.icon,
+          })),
+        }))
+        .filter((cluster) => cluster.items.length > 0),
+    }))
+    .filter((section) => section.clusters.length > 0)
+
+  // Server-driven plugin nav: group enabled plugins' items by their `section`,
+  // gated by the SAME RBAC rule as core nav (object_type/perm).
+  const pluginNav = (pluginUi.data?.nav ?? []).filter((n) =>
+    n.object_type ? canDo(n.object_type, "view") : n.perm ? can(n.perm) : true
+  )
+  const pluginGroups = new Map<string, SidebarEntry[]>()
+  for (const item of pluginNav) {
+    const key = item.section || "Plugins"
+    if (!pluginGroups.has(key)) pluginGroups.set(key, [])
+    pluginGroups.get(key)!.push({
+      id: item.url,
+      title: item.title,
+      url: item.url,
+      iconName: item.icon,
+    })
+  }
+  const plugins: SidebarSection[] = Array.from(pluginGroups.entries()).map(
+    ([label, items]) => ({
+      id: `plugin:${label}`,
+      label,
+      icon: Puzzle,
+      clusters: [{ items }],
+    })
+  )
+
+  // Admin RBAC management (for users.manage). Settings + Docs live in the
+  // user popover, not here.
+  const admin: SidebarSection[] = canManage
+    ? [
+        {
+          id: "admin",
+          label: "Admin",
+          icon: UserCog,
+          clusters: [{ items: ADMIN_ITEMS }],
+        },
+      ]
+    : []
+  return [...core, ...plugins, ...admin]
+}
+
+/** The signed-in user's saved sidebar layout (own → tenant default), and a
+ * setter that saves one. Null = the menu as shipped. */
+export function useSidebarLayout() {
+  const { values, setPref, saving } = useUserPrefs()
+  const layout = React.useMemo(
+    () => parseLayout(values.sidebar),
+    [values.sidebar]
+  )
+  return {
+    layout,
+    saving,
+    save: (next: SidebarLayout | null) => setPref("sidebar", next),
+  }
+}
+
+function EntryIcon({
+  entry,
+  className,
+}: {
+  entry: SidebarEntry
+  className?: string
+}) {
+  if (entry.icon) return <entry.icon className={className} />
+  if (entry.iconName)
+    return <DynamicIcon name={entry.iconName} className={className} />
+  return null
+}
+
 export const sections: NavSection[] = [
   {
+    id: "organization",
     label: "Organization",
     icon: Users,
     clusters: [
@@ -271,6 +428,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "ipam",
     label: "IPAM",
     icon: Network,
     clusters: [
@@ -438,6 +596,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "routing",
     label: "Routing",
     icon: RouteIcon,
     clusters: [
@@ -586,6 +745,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "dcim",
     label: "DCIM",
     icon: Server,
     clusters: [
@@ -715,6 +875,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "maps",
     label: "Maps",
     icon: MapIcon,
     clusters: [
@@ -749,6 +910,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "circuits",
     label: "Circuits",
     icon: GitPullRequestArrow,
     clusters: [
@@ -783,6 +945,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "power",
     label: "Power",
     icon: Zap,
     clusters: [
@@ -805,6 +968,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "wireless",
     label: "Wireless",
     icon: Waypoints,
     clusters: [
@@ -827,6 +991,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "vpn",
     label: "VPN",
     icon: Shield,
     clusters: [
@@ -861,6 +1026,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "virtualization",
     label: "Virtualization",
     icon: Boxes,
     clusters: [
@@ -901,6 +1067,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "governance",
     label: "Governance",
     icon: ShieldCheck,
     clusters: [
@@ -974,6 +1141,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "customize",
     label: "Customize",
     icon: SquareStack,
     clusters: [
@@ -1035,6 +1203,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
+    id: "integrations",
     label: "Integrations",
     icon: Webhook,
     clusters: [
@@ -1118,6 +1287,7 @@ function NavGroup({
   hasActive,
   open,
   onOpenChange,
+  onHide,
   children,
 }: {
   label: string
@@ -1125,10 +1295,13 @@ function NavGroup({
   hasActive: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Hide this section from your sidebar (#285). */
+  onHide?: () => void
   children: React.ReactNode
 }) {
   const { state } = useSidebar()
   const iconMode = state === "collapsed"
+  const [menuOpen, setMenuOpen] = React.useState(false)
   // Reveal on the false→true transition only, so collapsing the group you're
   // currently in sticks until you navigate away and back into it.
   const prevActive = React.useRef(hasActive)
@@ -1151,27 +1324,74 @@ function NavGroup({
       <SidebarGroupLabel
         asChild
         className={cn(
-          "sticky top-0 z-10 h-8 rounded-md bg-sidebar-band px-2.5 text-sm font-semibold text-sidebar-foreground",
+          "group/band sticky top-0 z-10 h-8 rounded-md bg-sidebar-band px-2.5 text-sm font-semibold text-sidebar-foreground",
           // You-are-here: the group holding the current page wears a primary
           // edge inside the band (inset shadow - no layout shift, respects
           // the rounding).
           hasActive && "shadow-[inset_3px_0_0_0_var(--primary)]"
         )}
       >
-        <button
-          type="button"
-          onClick={() => onOpenChange(!open)}
-          className="flex w-full items-center gap-2 hover:text-foreground"
+        <div
+          onContextMenu={
+            onHide
+              ? (e) => {
+                  e.preventDefault()
+                  setMenuOpen(true)
+                }
+              : undefined
+          }
         >
-          {Icon && <Icon className="size-4 shrink-0 opacity-80" />}
-          <span>{label}</span>
-          <ChevronDown
-            className={
-              "ml-auto size-3.5 shrink-0 opacity-60 transition-transform " +
-              (shown ? "" : "-rotate-90")
-            }
-          />
-        </button>
+          <button
+            type="button"
+            onClick={() => onOpenChange(!open)}
+            className="flex min-w-0 flex-1 items-center gap-2 self-stretch hover:text-foreground"
+          >
+            {Icon && <Icon className="size-4 shrink-0 opacity-80" />}
+            <span className="truncate">{label}</span>
+          </button>
+          {onHide && (
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`${label} menu`}
+                  className={cn(
+                    "ml-1 shrink-0 rounded-sm opacity-0 group-hover/band:opacity-60 hover:opacity-100 focus-visible:opacity-100",
+                    menuOpen && "opacity-100"
+                  )}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-44">
+                <DropdownMenuItem onClick={onHide}>
+                  <EyeOff className="size-4" />
+                  Hide section
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/settings/preferences" hash="sidebar">
+                    <SlidersHorizontal className="size-4" />
+                    Customize sidebar
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => onOpenChange(!open)}
+            className="ml-auto flex shrink-0 items-center self-stretch pl-1"
+          >
+            <ChevronDown
+              className={
+                "size-3.5 shrink-0 opacity-60 transition-transform " +
+                (shown ? "" : "-rotate-90")
+              }
+            />
+          </button>
+        </div>
       </SidebarGroupLabel>
       {/* You-are-here rail: the category holding the current page gets a
           primary line down its whole body. Inactive groups keep a transparent
@@ -1205,7 +1425,6 @@ function loadNavGroups(): Record<string, boolean> {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { canManage, canDo, can } = useMe()
   // Per-group open state, keyed by label and persisted per browser. A group
   // absent from the map falls back to "open when it holds the active route" -
   // exactly the old per-group default, so first load looks unchanged.
@@ -1229,7 +1448,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // one of its pages - closes every other group.
   const { values: prefs } = useUserPrefs()
   const oneOpen = prefs.nav_one_open === true
-  const pluginUi = usePluginUi()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // The group that owns the current page stays open even if the user collapsed
   // it. An item matches if its URL is the path or a parent of it.
@@ -1239,67 +1457,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // (a device detail keeps Devices lit). Every menu button passes this -
   // the sidebar's data-active styling otherwise never fires.
   const isPage = (u: string) => pathname === u || pathname.startsWith(u + "/")
-  // Hide any link the user can't reach - mirrors the API so the nav never
-  // advertises a page that would only 403 (see NavItem for the gate kinds).
-  // An item with no gate is universal and always shows.
-  // Integration-gated items also need their tenant toggle on (Settings →
-  // Integrations). Cached: this changes rarely and the page 404s anyway.
-  const integrations = useQuery({
-    queryKey: ["integrations-enabled"],
-    queryFn: () => api<Record<string, boolean>>("/api/integrations/enabled/"),
-    staleTime: 5 * 60_000,
-  })
-  const itemVisible = (item: NavItem): boolean => {
-    if (
-      item.integration &&
-      !item.integration.some((k) => integrations.data?.[k])
-    )
-      return false
-    if (item.objectType) return canDo(item.objectType, "view")
-    if (item.anyOf) return item.anyOf.some((t) => canDo(t, "view"))
-    if (item.perm) return can(item.perm)
-    return true
-  }
-  // Drop RBAC-hidden items, then any cluster (and section) left empty so a
-  // sub-heading never dangles over zero links.
-  const visibleSections = sections
-    .map((section) => ({
-      ...section,
-      clusters: section.clusters
-        .map((cluster) => ({
-          ...cluster,
-          items: cluster.items.filter(itemVisible),
-        }))
-        .filter((cluster) => cluster.items.length > 0),
-    }))
-    .filter((section) => section.clusters.length > 0)
-  const navActiveByLabel = (label: string): boolean => {
-    const section = visibleSections.find((x) => x.label === label)
-    if (section) return inGroup(sectionUrls(section))
-    const plugin = pluginGroups.get(label)
-    if (plugin) return inGroup(plugin.map((i) => i.url))
-    if (label === "Admin") return inGroup(["/users", "/groups", "/permissions"])
-    return false
-  }
-  const sectionUrls = (section: (typeof visibleSections)[number]) =>
-    section.clusters.flatMap((c) => c.items).map((i) => i.url)
 
-  // Server-driven plugin nav: group enabled plugins' items by their `section`,
-  // gated by the SAME RBAC rule as core nav (object_type/perm).
-  const pluginNav = (pluginUi.data?.nav ?? []).filter((n) =>
-    n.object_type ? canDo(n.object_type, "view") : n.perm ? can(n.perm) : true
-  )
-  const pluginGroups = new Map<string, typeof pluginNav>()
-  for (const item of pluginNav) {
-    const key = item.section || "Plugins"
-    if (!pluginGroups.has(key)) pluginGroups.set(key, [])
-    pluginGroups.get(key)!.push(item)
+  // The menu this user may see, with their personal layout on top (#285):
+  // hidden sections/entries dropped, their order applied. Hiding is a menu
+  // convenience only - the pages still open by URL.
+  const model = useSidebarModel()
+  const { layout, save: saveLayout } = useSidebarLayout()
+  const visibleSections = resolveSidebar(model, layout)
+  const sectionUrls = (section: SidebarSection) =>
+    section.clusters.flatMap((c) => c.items).map((i) => i.url)
+  const hideSection = (section: SidebarSection) => {
+    const before = layout
+    saveLayout(setHidden(layout, section.id, true))
+    toast.success(`${section.label} hidden`, {
+      action: { label: "Undo", onClick: () => saveLayout(before) },
+    })
   }
-  const groupLabels = [
-    ...visibleSections.map((x) => x.label),
-    ...Array.from(pluginGroups.keys()),
-    ...(canManage ? ["Admin"] : []),
-  ]
+
+  const groupLabels = visibleSections.map((x) => x.label)
   const openGroup = (label: string, open: boolean) =>
     setGroupsOpen(
       open && oneOpen
@@ -1320,9 +1495,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             button: the label names the action that is available. Hidden in
             the icon rail, where groups are always shown. */}
         {(() => {
-          const labels = groupLabels
-          const anyOpen = labels.some(
-            (l) => openGroups[l] ?? navActiveByLabel(l)
+          const anyOpen = visibleSections.some(
+            (s) => openGroups[s.label] ?? inGroup(sectionUrls(s))
           )
           // Styled exactly like a NavGroup label row, so it reads as part
           // of the list rather than a stray floating link.
@@ -1333,7 +1507,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   type="button"
                   onClick={() =>
                     setGroupsOpen(
-                      Object.fromEntries(labels.map((l) => [l, !anyOpen]))
+                      Object.fromEntries(groupLabels.map((l) => [l, !anyOpen]))
                     )
                   }
                   className="flex w-full items-center gap-2 text-[13px] hover:text-foreground"
@@ -1392,14 +1566,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Core, plugin-contributed (server-driven) and Admin sections, all
+            RBAC-gated in useSidebarModel and laid out by the user. */}
         {visibleSections.map((section) => (
           <NavGroup
-            key={section.label}
+            key={section.id}
             label={section.label}
             icon={section.icon}
             hasActive={inGroup(sectionUrls(section))}
             open={openGroups[section.label] ?? inGroup(sectionUrls(section))}
             onOpenChange={(o) => openGroup(section.label, o)}
+            onHide={() => hideSection(section)}
           >
             {section.clusters.map((cluster, i) => (
               <div key={cluster.label ?? i}>
@@ -1413,7 +1590,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 )}
                 <SidebarMenu className="gap-0.5">
                   {cluster.items.map((item) => (
-                    <SidebarMenuItem key={item.url}>
+                    <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton
                         asChild
                         size="sm"
@@ -1421,10 +1598,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         tooltip={item.title}
                         isActive={isPage(item.url)}
                       >
-                        <Link to={item.url}>
+                        <Link to={item.url as never}>
                           {/* Icon only in the collapsed icon-rail; the expanded
                               list is plain text (category labels carry the icons). */}
-                          <item.icon className="hidden group-data-[collapsible=icon]:block" />
+                          <EntryIcon
+                            entry={item}
+                            className="hidden group-data-[collapsible=icon]:block"
+                          />
                           <span>{item.title}</span>
                         </Link>
                       </SidebarMenuButton>
@@ -1435,100 +1615,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             ))}
           </NavGroup>
         ))}
-
-        {/* Plugin-contributed nav (server-driven, RBAC-gated above). */}
-        {Array.from(pluginGroups.entries()).map(([label, items]) => (
-          <NavGroup
-            key={`plugin:${label}`}
-            label={label}
-            icon={Puzzle}
-            hasActive={inGroup(items.map((i) => i.url))}
-            open={openGroups[label] ?? inGroup(items.map((i) => i.url))}
-            onOpenChange={(o) => openGroup(label, o)}
-          >
-            <SidebarMenu className="gap-0.5">
-              {items.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton
-                    asChild
-                    size="sm"
-                    className="h-6 text-[13px]"
-                    tooltip={item.title}
-                    isActive={isPage(item.url)}
-                  >
-                    <Link to={item.url as never}>
-                      <DynamicIcon
-                        name={item.icon}
-                        className="hidden group-data-[collapsible=icon]:block"
-                      />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </NavGroup>
-        ))}
-
-        {/* Admin RBAC management stays pinned (for users.manage). Settings +
-            Docs live in the user popover, not here. */}
-        {canManage && (
-          <NavGroup
-            label="Admin"
-            icon={UserCog}
-            hasActive={inGroup(["/users", "/groups", "/permissions"])}
-            open={
-              openGroups["Admin"] ??
-              inGroup(["/users", "/groups", "/permissions"])
-            }
-            onOpenChange={(o) => openGroup("Admin", o)}
-          >
-            <SidebarMenu className="gap-0.5">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  size="sm"
-                  className="h-6 text-[13px]"
-                  tooltip="Users"
-                  isActive={isPage("/users")}
-                >
-                  <Link to="/users">
-                    <UsersRound className="hidden group-data-[collapsible=icon]:block" />
-                    <span>Users</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  size="sm"
-                  className="h-6 text-[13px]"
-                  tooltip="Groups"
-                  isActive={isPage("/groups")}
-                >
-                  <Link to="/groups">
-                    <UserCog className="hidden group-data-[collapsible=icon]:block" />
-                    <span>Groups</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  size="sm"
-                  className="h-6 text-[13px]"
-                  tooltip="Permissions"
-                  isActive={isPage("/permissions")}
-                >
-                  <Link to="/permissions">
-                    <ShieldCheck className="hidden group-data-[collapsible=icon]:block" />
-                    <span>Permissions</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </NavGroup>
-        )}
       </SidebarContent>
 
       {/* Footer: just the signed-in user - Preferences / Settings / Docs all

@@ -147,7 +147,8 @@ behaves for you. It is a set of small cards - *Appearance*, *Tables*, *Dates
 and times*, *Navigation*, *Task emails*, *Space map* - each with its own
 **Save** button; a card shows *Unsaved changes* until you press it. Only
 *Appearance* applies as you change it: theme and link styling live in the
-browser, not on your profile. Below the cards, *Table layouts* lists every
+browser, not on your profile. Below the cards, *Sidebar* arranges your menu
+(see [below](#sidebar)), and *Table layouts* lists every
 table grouped by area, with a filter, and a **Reset** per table to drop your
 own column layout back to the tenant default.
 
@@ -175,6 +176,36 @@ Date & time**) until a tenant admin overrides it. Pick an explicit value to
 override just for yourself; set it back to Auto to inherit again. Date pickers
 across the app display dates in whatever format resolves for you (the value
 stored is always ISO).
+
+### Sidebar {#sidebar}
+
+The *Sidebar* card on **Preferences** trims the menu to what you use. Each
+section (IPAM, Circuits, Power, Wireless, VPN, …) has a switch; open a section
+to switch single pages off. Drag sections by their grip to reorder them, and
+pages within their group. The preview beside the list shows the menu as it
+will read. **Save** keeps it; **Reset to default** drops your layout.
+
+For a quick tidy, right-click a section header in the sidebar (or use the
+**⋯** that appears on hover) and pick **Hide section**; the toast offers
+**Undo**. **Customize sidebar** in the same menu opens this card.
+
+- Hiding only tidies the menu. Every page still opens by link, search and
+  bookmark, and what you may see or change is unchanged.
+- Dashboard and Favorites always stay.
+- The layout is saved to your account, so it follows you to every browser and
+  tenant.
+- Only what you hid and moved is stored, not a copy of the menu. A page or
+  section added in a later release shows up in its usual place.
+
+Administrators can publish their own layout as the starting sidebar for
+everyone in the tenant who has not saved one: **Settings → Table layouts →
+Sidebar default**, **Publish** or **Clear**. Your own layout always wins over
+it, and **Reset to default** returns to it.
+
+API: the layout is the `sidebar` key of `GET/PUT /api/me/prefs/` -
+`{"v": 1, "order": [section ids], "hidden": [section ids and page URLs],
+"items": {section id: [page URLs]}}`, or `null` to reset. Administrators
+manage the tenant default at `GET/PUT/DELETE /api/prefs/sidebar/default/`.
 
 ## See also
 
