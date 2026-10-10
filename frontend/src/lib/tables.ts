@@ -230,6 +230,7 @@ const ROWS: Row[] = [
   ["sla-members", "SLA · Members", "Monitoring", "/api/monitoring/sla-members/", sub],
   ["sla-exclusions", "SLA · Exclusions", "Monitoring", "/api/monitoring/sla-exclusions/", sub],
   ["sla-incidents", "SLA · Incidents", "Monitoring", null, sub],
+  ["sla-template-agreements", "SLA template · Agreements", "Monitoring", null, sub],
   ["port-utilization-rules", "Port utilization rules", "Monitoring", "/api/monitoring/port-utilization-rules/"],
   ["subscriptions", "Subscriptions", "Monitoring", "/api/monitoring/subscriptions/"],
   ["my-subscriptions", "My subscriptions", "Monitoring", null],

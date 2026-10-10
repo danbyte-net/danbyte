@@ -11,6 +11,7 @@ import type {
   SlaIncidentCause,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useDateFormat } from "@/lib/datetime"
 import { useMe } from "@/lib/use-me"
 import {
   FormCheckbox,
@@ -67,6 +68,7 @@ export function SlaFollowUpDialog({
   onOpenChange: (open: boolean) => void
   onSaved: () => void
 }) {
+  const { formatDateTime } = useDateFormat()
   return (
     <Dialog open={!!incident} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -74,7 +76,7 @@ export function SlaFollowUpDialog({
           <DialogTitle>Follow up</DialogTitle>
           {incident && (
             <DialogDescription>
-              {incident.label} · {new Date(incident.start).toLocaleString()} ·{" "}
+              {incident.label} · {formatDateTime(incident.start)} ·{" "}
               {fmtSpan(incident.seconds * 1000)}
             </DialogDescription>
           )}
