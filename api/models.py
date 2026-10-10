@@ -1680,12 +1680,22 @@ def _module_interface_names(module) -> list[str]:
     """The concrete interface names a module contributes to its host device -
     ``{module}`` → the bay's position, then ``{position}`` → the device's
     stack member. Used by both install and uninstall so they always agree."""
+    return list(_module_template_names(module).values())
+
+
+def _render_module_template(name: str, bay_position: str, vc_position) -> str:
+    return render_component_name(render_module_name(name, bay_position), vc_position)
+
+
+def _module_template_names(module) -> dict:
+    """Template → the interface name it renders to on the module's device,
+    in template order."""
     bay = module.module_bay
     pos = module.device.vc_position
-    return [
-        render_component_name(render_module_name(t.name, bay.position), pos)
+    return {
+        t: _render_module_template(t.name, bay.position, pos)
         for t in module.module_type.interface_templates.all()
-    ]
+    }
 
 
 class ModuleInstallConflict(Exception):
@@ -1722,22 +1732,23 @@ def install_module(module) -> int:
     clash = module_install_conflicts(module)
     if clash:
         raise ModuleInstallConflict(clash)
-    names = _module_interface_names(module)
-    types = {  # rendered name → template, for type/enabled/mgmt flags
-        n: t
-        for n, t in zip(names, module.module_type.interface_templates.all())
-    }
     have = set(module.interfaces.values_list("name", flat=True))
     made = [
-        Interface(device=module.device, module=module, name=n, type=t.type,
-                  virtual=t.type in VIRTUAL_INTERFACE_TYPES,
-                  enabled=t.enabled, mgmt_only=t.mgmt_only,
-                  description=t.description)
-        for n, t in types.items()
+        _module_interface(module, t, n)
+        for t, n in _module_template_names(module).items()
         if n not in have
     ]
     Interface.objects.bulk_create(made)
     return len(made)
+
+
+def _module_interface(module, t, name) -> "Interface":
+    # bulk_create skips Interface.save(): the virtual-type rule by hand.
+    return Interface(device=module.device, module=module, module_template=t,
+                     name=name, type=t.type,
+                     virtual=t.type in VIRTUAL_INTERFACE_TYPES,
+                     enabled=t.enabled, mgmt_only=t.mgmt_only,
+                     description=t.description)
 
 
 def uninstall_module(module) -> int:
@@ -1749,13 +1760,210 @@ def uninstall_module(module) -> int:
     return per_model.get(Interface._meta.label, 0)
 
 
+class ModuleRemovalUnconfirmed(Exception):
+    """Re-stamping a module would delete interfaces that carry a cable or an
+    IP address (#366). ``names`` lists them with what they carry."""
+
+    def __init__(self, names):
+        self.names = names
+        super().__init__(
+            "This removes " + ", ".join(names) + ": cable ends on "
+            + ("it" if len(names) == 1 else "them")
+            + " are dropped and IP addresses unassigned. "
+            "Send confirm_remove to go ahead."
+        )
+
+
+def _module_template_correspondence(old_tmpls, new_tmpls, same_type) -> dict:
+    """Old template pk → the new template that continues it (#366).
+
+    The same type maps every template to itself. A different type pairs
+    templates with the same name pattern first (``Te1/{module}/1`` in both),
+    then the rest by position in template order, where the media type
+    matches. A template left unpaired has no successor."""
+    if same_type:
+        return {t.pk: t for t in old_tmpls}
+    by_name = {t.name: t for t in new_tmpls}
+    corr = {}
+    for t in old_tmpls:
+        nt = by_name.pop(t.name, None)
+        if nt is not None:
+            corr[t.pk] = nt
+    rest_old = [t for t in old_tmpls if t.pk not in corr]
+    rest_new = [t for t in new_tmpls if t.name in by_name]
+    for t, nt in zip(rest_old, rest_new, strict=False):
+        if t.type == nt.type:
+            corr[t.pk] = nt
+    return corr
+
+
 @transaction.atomic
-def reinstall_module(module) -> int:
-    """Re-stamp a module after its type, bay or device changed: remove what
-    it created, then install the current type. Atomic - a name clash raises
-    :class:`ModuleInstallConflict` and leaves the old interfaces in place."""
-    uninstall_module(module)
-    return install_module(module)
+def reinstall_module(module, before=None, *, confirm_remove=False) -> dict:
+    """Re-stamp a module after its type, bay or device changed (#366).
+
+    ``before`` holds the module's previous ``module_type_id``,
+    ``module_bay_id`` and ``device_id``. On the same device, each owned
+    interface is traced to the old template it was stamped from (the
+    recorded ``module_template``, else its rendered name); where that
+    template continues in the new type (see
+    :func:`_module_template_correspondence`) the interface is kept - same
+    row, so cables, IPs, VLANs, LAG, MACs, tags and custom fields stay -
+    and renamed to the new rendering unless an operator had renamed it.
+    Interfaces whose template has no successor are deleted; the new type's
+    other templates are created. An owned interface that traces to no old
+    template is left as it is. A move to another device re-creates all.
+
+    Atomic. A name clash raises :class:`ModuleInstallConflict`; deleting an
+    interface with a cable or IP raises :class:`ModuleRemovalUnconfirmed`
+    unless ``confirm_remove``. Returns ``{"kept", "renamed", "created",
+    "removed"}`` (names; renamed as ``{"from", "to"}``)."""
+    if before is None:
+        before = {
+            "module_type_id": module.module_type_id,
+            "module_bay_id": module.module_bay_id,
+            "device_id": module.device_id,
+        }
+    owned = list(module.interfaces.all())
+    new_names = _module_template_names(module)
+    pairs = []  # (interface, old template, new template, old rendered name)
+    traced: set = set()
+    if before["device_id"] == module.device_id:
+        old_bay = ModuleBay.objects.filter(pk=before["module_bay_id"]).first()
+        old_pos = (old_bay or module.module_bay).position
+        vc = module.device.vc_position
+        old_tmpls = list(
+            ModuleInterfaceTemplate.objects.filter(
+                module_type_id=before["module_type_id"]
+            )
+        )
+        old_names = {
+            t.pk: _render_module_template(t.name, old_pos, vc) for t in old_tmpls
+        }
+        iface_of = {}
+        for i in owned:
+            if i.module_template_id in old_names:
+                iface_of.setdefault(i.module_template_id, i)
+        # No usable link (installed before it was recorded, or the template
+        # was replaced): the rendered name identifies it.
+        by_name = {
+            i.name: i for i in owned
+            if i.module_template_id not in old_names
+        }
+        for t in old_tmpls:
+            if t.pk not in iface_of and old_names[t.pk] in by_name:
+                iface_of[t.pk] = by_name.pop(old_names[t.pk])
+        traced = {i.pk for i in iface_of.values()}
+        corr = _module_template_correspondence(
+            old_tmpls, list(new_names),
+            before["module_type_id"] == module.module_type_id,
+        )
+        for t in old_tmpls:
+            i, nt = iface_of.get(t.pk), corr.get(t.pk)
+            if i is not None and nt is not None:
+                pairs.append((i, t, nt, old_names[t.pk]))
+        moved_device = False
+    else:
+        moved_device = True
+
+    paired = {i.pk for i, *_ in pairs}
+    removed = [
+        i for i in owned
+        if i.pk not in paired and (moved_device or i.pk in traced)
+    ]
+    untouched = [
+        i for i in owned
+        if not moved_device and i.pk not in paired and i.pk not in traced
+    ]
+    successors = {nt.pk for *_, nt, _ in pairs}
+    created = [(t, n) for t, n in new_names.items() if t.pk not in successors]
+    # An interface keeps an operator's own name; one still carrying its
+    # template's rendering follows the template.
+    plan = [
+        (i, t, nt, new_names[nt] if i.name == old_name else i.name)
+        for i, t, nt, old_name in pairs
+    ]
+
+    final = [target for *_, target in plan]
+    final += [i.name for i in untouched] + [n for _, n in created]
+    clash = {n for n in final if final.count(n) > 1}
+    clash.update(
+        module.device.interfaces.filter(name__in=final)
+        .exclude(module=module).values_list("name", flat=True)
+    )
+    if clash:
+        raise ModuleInstallConflict(clash)
+
+    if removed and not confirm_remove:
+        ids = [i.pk for i in removed]
+        cabled = set(
+            CableTermination.objects.filter(interface_id__in=ids)
+            .values_list("interface_id", flat=True)
+        )
+        with_ip = set(
+            IPAddress.objects.filter(assigned_interface_id__in=ids)
+            .values_list("assigned_interface_id", flat=True)
+        )
+        busy = []
+        for i in removed:
+            what = [w for w, s in (("cable", cabled), ("IP", with_ip)) if i.pk in s]
+            if what:
+                busy.append(f"{i.name} ({', '.join(what)})")
+        if busy:
+            raise ModuleRemovalUnconfirmed(sorted(busy))
+
+    report = {
+        "kept": sorted(p[0].name for p in plan if p[3] == p[0].name),
+        "renamed": sorted(
+            ({"from": p[0].name, "to": p[3]} for p in plan if p[3] != p[0].name),
+            key=lambda r: r["from"],
+        ),
+        "created": sorted(n for _, n in created),
+        "removed": sorted(i.name for i in removed),
+    }
+    if removed:
+        Interface.objects.filter(pk__in=[i.pk for i in removed]).delete()
+    _apply_module_renames(plan)
+    Interface.objects.bulk_create(
+        [_module_interface(module, t, n) for t, n in created]
+    )
+    return report
+
+
+def _apply_module_renames(plan) -> None:
+    """Rename and re-link kept module interfaces with a per-row ``save()``,
+    so the change log, search index and other save signals see each one.
+    (device, name) is unique, so a rename waits until no other pending
+    rename still holds its target; a cycle parks one row on a temporary
+    name first."""
+    pending = {}
+    for i, t, nt, target in plan:
+        updates = {"module_template": nt}
+        if target != i.name:
+            updates["name"] = target
+        if nt.type != t.type:
+            updates["type"] = nt.type
+            updates["virtual"] = nt.type in VIRTUAL_INTERFACE_TYPES
+        pending[i.pk] = (i, updates)
+    while pending:
+        # Recomputed each pass: a saved rename frees the name it left.
+        held = {i.name for i, _ in pending.values()}
+        ready = [
+            pk for pk, (i, u) in pending.items()
+            if u.get("name", i.name) == i.name or u["name"] not in held
+        ]
+        if not ready:
+            pk = next(iter(pending))
+            i = pending[pk][0]
+            i.name = f"__mv_{i.pk}"
+            Interface.objects.filter(pk=i.pk).update(name=i.name)
+            continue
+        for pk in ready:
+            i, updates = pending.pop(pk)
+            for k, v in updates.items():
+                setattr(i, k, v)
+            # Only these columns: deleting the removed interfaces may have
+            # nulled this row's lag/parent/bridge in the database.
+            i.save(update_fields=[*updates, "updated_at"])
 
 
 def _seat_default_modules(device, pos) -> int:
@@ -3140,11 +3348,19 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # The installed module that created this interface (#333). Null for the
     # device's own interfaces. Removing the module - directly, through its
     # bay, or by changing its type - removes exactly these.
+    # Set only by install/reinstall: not editable through forms or imports,
+    # and never carried into a clone (#367).
     module = models.ForeignKey(
         "Module", on_delete=models.CASCADE, null=True, blank=True,
-        related_name="interfaces",
+        related_name="interfaces", editable=False,
         help_text="Installed module that created this interface; null for "
                   "the device's own interfaces.",
+    )
+    # The module interface template this interface was stamped from, so a
+    # bay move or type change can follow it even after a rename (#366).
+    module_template = models.ForeignKey(
+        "ModuleInterfaceTemplate", on_delete=models.SET_NULL, null=True,
+        blank=True, related_name="+", editable=False,
     )
     name = models.CharField(max_length=64)
     # The real-world name when it differs from the (template-matching) name -

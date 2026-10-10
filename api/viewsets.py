@@ -75,7 +75,8 @@ from .models import (
     Module,
     ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
     NATRule,
-    ModuleInstallConflict, install_module, reinstall_module, uninstall_module,
+    ModuleInstallConflict, ModuleRemovalUnconfirmed, install_module,
+    reinstall_module, uninstall_module,
     CableTermination, PortReservation,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
@@ -859,6 +860,14 @@ class BulkUpdateMixin(FieldWriteAllowList):
         return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
 
 
+def _is_module_ownership(field) -> bool:
+    """A component's link to the installed module that stamped it, or to the
+    module template it came from - set by install only, never copied."""
+    return field.is_relation and field.related_model in (
+        Module, ModuleInterfaceTemplate,
+    )
+
+
 class ComponentBulkMixin(BulkUpdateMixin):
     """``bulk-update`` + ``bulk-delete`` + ``bulk-rename`` + ``bulk-clone``
     for component viewsets (interfaces, ports, VM interfaces, device-type
@@ -1033,11 +1042,14 @@ class ComponentBulkMixin(BulkUpdateMixin):
                              "the clones new names."}
                 )
 
-        # Copy every concrete field except the PK and audit/number columns.
+        # Copy every concrete field except the PK, audit/number columns and
+        # module ownership: a copy is the user's own component, not part of
+        # the installed module, so it survives the module's removal (#367).
         skip = {"created_at", "updated_at", "numid"}
         copy_fields = [
             f.name for f in model._meta.concrete_fields
             if not f.primary_key and f.name not in skip
+            and not _is_module_ownership(f)
         ]
         created = []
         with transaction.atomic():
@@ -5708,14 +5720,29 @@ class ModuleViewSet(TenantScopedViewSet):
         ).get(pk=serializer.instance.pk)
         module = serializer.save()
         # A new type, bay or device changes which interfaces the module
-        # contributes: remove what it created, install the new set (#333).
-        # update() runs in a transaction, so a refused install rolls back.
+        # contributes: keep and rename the ones that still correspond,
+        # remove only those the new type lacks, create the rest (#366).
+        # update() runs in a transaction, so a refusal rolls back.
         if (
             module.module_type_id != before["module_type_id"]
             or module.module_bay_id != before["module_bay_id"]
             or module.device_id != before["device_id"]
         ):
-            self._install(reinstall_module, module)
+            confirm = self.request.data.get("confirm_remove") in (True, "true", "1", 1)
+            try:
+                self._interface_report = self._install(
+                    lambda m: reinstall_module(m, before, confirm_remove=confirm),
+                    module,
+                )
+            except ModuleRemovalUnconfirmed as exc:
+                raise ValidationError({"confirm_remove": str(exc)}) from exc
+
+    def update(self, request, *args, **kwargs):
+        self._interface_report = None
+        resp = super().update(request, *args, **kwargs)
+        if resp.status_code == 200 and self._interface_report is not None:
+            resp.data["interfaces"] = self._interface_report
+        return resp
 
     def perform_destroy(self, instance):
         # Interface.module cascades: the module's own interfaces go with it,

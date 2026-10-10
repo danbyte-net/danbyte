@@ -749,9 +749,17 @@ interface, and decides what goes when the module does:
   addresses stay, unassigned.
 - **Deleting a module bay** removes its module the same way, as does deleting
   the device.
-- **Changing an installed module's type** (or moving it to another bay)
-  removes its interfaces and installs the new set in one step; a name clash
-  refuses the change and leaves the module as it was.
+- **Moving a module to another bay, or changing its type**, keeps the
+  interfaces that still correspond and renames them in place, so cables, IP
+  addresses, VLANs, LAG membership, MACs, tags, custom fields, descriptions
+  and the journal stay with them. Only ports the new type lacks are removed
+  and only its new ports are created. See [Re-stamping a
+  module](#re-stamping-a-module).
+- **Moving a module to another device** removes its interfaces and creates
+  them again on the new device.
+- **Copies are your own**: a bulk-cloned interface (a sub-interface made from
+  a module port, say) has no module and survives removing the module.
+  Imports cannot set or clear an interface's module either.
 - A **default module** whose interface names clash with the device's is not
   seated.
 
@@ -762,6 +770,32 @@ it, the device type does not define it (as a template or a faceplate or photo
 marker), and it was created no earlier than the module. Anything else stays
 the device's own - it survives removing the module, and you delete it by hand
 if it was the module's.
+
+### Re-stamping a module
+
+Each module interface remembers the template it was stamped from. On a bay
+move or type change (`PATCH /api/modules/<id>/` with `module_bay_id` or
+`module_type_id`), every interface is matched to its successor:
+
+- **Same type, new bay**: each template continues as itself. The interface
+  is renamed to the template's new rendering (`Te1/1/1` → `Te1/2/1`).
+- **Different type**: templates with the same name pattern pair first
+  (`Te1/{module}/1` in both types), then the rest pair by position in
+  template order where the media type matches. A paired interface takes
+  the new type's media type.
+- An interface you renamed keeps your name. One whose template can no
+  longer be traced (renamed before 0.18, or its template deleted) is left
+  as it is.
+
+Removing an interface that carries a **cable or an IP address** needs
+`"confirm_remove": true` in the request. Without it the change is refused
+with a `confirm_remove` error naming those interfaces, and nothing changes.
+With it, the usual interface delete rules apply. A name clash with an
+interface the module does not own refuses the change. Either way the
+module stays as it was.
+
+The response carries what happened under `interfaces`:
+`kept`, `renamed` (`{"from", "to"}`), `created` and `removed`.
 
 A **default module** only decides what's *pre-seated* - it never locks a bay.
 Sync-from-type fills empty matching bays with the default but **never
