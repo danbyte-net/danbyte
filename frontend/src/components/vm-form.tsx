@@ -62,6 +62,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const [clusterId, setClusterId] = useState<string | null>(
     vm?.cluster.id ?? null
   )
+  const [groupId, setGroupId] = useState<string | null>(vm?.group?.id ?? null)
   const [deviceId, setDeviceId] = useState<string | null>(
     vm?.device?.id ?? null
   )
@@ -95,6 +96,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
     if (!vm) return
     setName(vm.name)
     setClusterId(vm.cluster.id)
+    setGroupId(vm.group?.id ?? null)
     setDeviceId(vm.device?.id ?? null)
     setSiteId(vm.site?.id ?? null)
     setRoleId(vm.role?.id ?? null)
@@ -114,6 +116,16 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
     queryKey: ["clusters-picker"],
     queryFn: () => api<Paginated<MiniNamed>>("/api/clusters/?picker=1"),
     staleTime: 10 * 60_000,
+  })
+  // A group lives below one cluster, so only the chosen cluster's are offered.
+  const groups = useQuery({
+    queryKey: ["vm-groups-picker", clusterId],
+    queryFn: () =>
+      api<Paginated<MiniNamed>>(
+        `/api/vm-groups/?picker=1&cluster=${clusterId}`
+      ),
+    enabled: !!clusterId,
+    staleTime: 60_000,
   })
   const sites = useSiteOptions()
   const roles = useQuery({
@@ -141,6 +153,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
       const payload: VirtualMachineWritePayload = {
         name: name.trim(),
         cluster_id: clusterId ?? "",
+        group_id: groupId,
         device_id: deviceId,
         site_id: siteId,
         role_id: roleId,
@@ -199,7 +212,11 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
               label="Cluster"
               required
               value={clusterId}
-              onChange={setClusterId}
+              onChange={(v) => {
+                // The group belongs to the old cluster.
+                if (v !== clusterId) setGroupId(null)
+                setClusterId(v)
+              }}
               options={(clusters.data?.results ?? []).map((c) => ({
                 value: c.id,
                 label: c.name,
@@ -237,10 +254,28 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
                   ]}
                   onCreated={(c) => {
                     qc.invalidateQueries({ queryKey: ["clusters-picker"] })
+                    setGroupId(null)
                     setClusterId(c.id)
                   }}
                 />
               }
+            />
+
+            <FormCombobox
+              label="Group"
+              hint="optional"
+              value={groupId}
+              onChange={setGroupId}
+              disabled={!clusterId}
+              options={(groups.data?.results ?? []).map((g) => ({
+                value: g.id,
+                label: g.name,
+              }))}
+              noneLabel="No group"
+              placeholder="Select a VM group…"
+              searchPlaceholder="Search groups…"
+              emptyText="No groups on this cluster."
+              error={fieldErrors.group_id}
             />
 
             <FormStatusSelect

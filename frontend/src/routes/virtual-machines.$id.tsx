@@ -348,7 +348,20 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
     // The hypervisor's own grouping - a vApp, a pool, a folder. Only shown
     // when there is one; most estates do not group their VMs at all.
     ...(vm.group
-      ? [{ label: "Group", value: vm.group.name }]
+      ? [
+          {
+            label: "Group",
+            value: (
+              <Link
+                to="/vm-groups/$id"
+                params={{ id: vm.group.id }}
+                className="link"
+              >
+                {vm.group.name}
+              </Link>
+            ),
+          },
+        ]
       : []),
     {
       label: "Host device",

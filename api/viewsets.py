@@ -6001,13 +6001,30 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("cluster")
+        qs = (
+            super()
+            .get_queryset()
+            .select_related("cluster", "cluster__status", "cluster__site")
+            .prefetch_related(TAGS)
+        )
         if self.action == "list":
             qs = qs.annotate(vm_count_annotated=Count("virtual_machines"))
         if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) | qs.filter(
+                    description__icontains=s
+                ) | qs.filter(cf_text_q(qs.model, s))
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
+            kind = self.request.query_params.get("kind")
+            if kind:
+                qs = qs.filter(kind=kind)
+            # A group has no site of its own; it is where its cluster is.
+            site = self.request.query_params.get("site")
+            if site:
+                qs = qs.filter(cluster__site_id=site)
         return qs
 
     def get_serializer_class(self):
@@ -6129,6 +6146,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
+            group = self.request.query_params.get("group")
+            if group:
+                qs = qs.filter(group_id=group)
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)

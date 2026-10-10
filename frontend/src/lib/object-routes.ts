@@ -70,6 +70,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.tunnelgroup": "/tunnel-groups/$id",
   "api.virtualchassis": "/virtual-chassis/$id",
   "api.virtualmachine": "/virtual-machines/$id",
+  "api.virtualmachinegroup": "/vm-groups/$id",
   "api.virtualswitch": "/virtual-switches/$id",
   "api.vlan": "/vlans/$id",
   "api.vlangroup": "/vlan-groups/$id",

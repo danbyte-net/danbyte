@@ -253,12 +253,18 @@ function SourceDetailPage() {
           },
         ]),
     { label: "Platforms", value: source.sync_platforms ? "Yes" : "No" },
+    {
+      label: "VM groups",
+      value: source.sync_vm_groups
+        ? cloudDirector
+          ? "vApps"
+          : source.kind === "vcenter"
+            ? "Folders"
+            : "Pools"
+        : "No",
+    },
     ...(cloudDirector
       ? [
-          {
-            label: "VM groups",
-            value: source.sync_vm_groups ? "vApps" : "No",
-          },
           {
             label: "External addresses",
             value: source.sync_nat ? "As NAT rules" : "No",

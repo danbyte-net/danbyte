@@ -45,6 +45,7 @@ export type VmColumnId =
   | "numid"
   | "name"
   | "cluster"
+  | "group"
   | "status"
   | "monitoring"
   | "sla"
@@ -66,6 +67,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "numid",
   "name",
   "cluster",
+  "group",
   "status",
   "monitoring",
   "sla",
@@ -162,6 +164,35 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
           kind: "enum",
           label: "Cluster",
           get: (r: T) => r.cluster.name,
+        },
+      },
+    }),
+    // The hypervisor's grouping - a vApp, pool or folder - or a hand-made
+    // one. Most estates leave it empty, so it reads as a dash there.
+    group: () => ({
+      id: "group",
+      header: ({ column }) => <SortHeader column={column} label="Group" />,
+      accessorFn: (r) => r.group?.name ?? "",
+      cell: ({ row }) =>
+        row.original.group ? (
+          <Link
+            to="/vm-groups/$id"
+            params={{ id: row.original.group.id }}
+            className="link text-xs"
+          >
+            {row.original.group.name}
+          </Link>
+        ) : (
+          dash
+        ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Group",
+          get: (r: T) => r.group?.name ?? "__none__",
+          formatValue: (v) => ({
+            label: v === "__none__" ? "No group" : String(v),
+          }),
         },
       },
     }),

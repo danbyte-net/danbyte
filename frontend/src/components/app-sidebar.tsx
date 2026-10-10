@@ -32,6 +32,7 @@ import {
   GitCompareArrows,
   GitPullRequestArrow,
   Globe,
+  Group,
   Hash,
   History,
   KeyRound,
@@ -1051,6 +1052,12 @@ export const sections: NavSection[] = [
             url: "/clusters",
             icon: Boxes,
             objectType: "cluster",
+          },
+          {
+            title: "VM groups",
+            url: "/vm-groups",
+            icon: Group,
+            objectType: "virtualmachinegroup",
           },
           {
             title: "Cluster types",

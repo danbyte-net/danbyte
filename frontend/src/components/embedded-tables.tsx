@@ -19,6 +19,8 @@ import type {
   BGPSession,
   StaticRoute,
   Tunnel,
+  VirtualMachine,
+  VirtualMachineGroup,
   VTEP,
   WirelessLAN,
 } from "@/lib/api"
@@ -52,6 +54,8 @@ import type {
   VTEPColumnId,
 } from "@/components/columns/routing-columns"
 import { buildTunnelColumns } from "@/components/columns/tunnel-columns"
+import { buildVmColumns } from "@/components/columns/vm-columns"
+import { buildVmGroupColumns } from "@/components/columns/vm-group-columns"
 import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
 import type { WirelessLANColumnId } from "@/components/columns/wireless-lan-columns"
@@ -459,6 +463,81 @@ export function EmbeddedClusterTable({
       columns={columns}
       flexColumn="name"
       tableId="embedded-clusters"
+    />
+  )
+}
+
+/** VMs scoped by any filter the VM list accepts - the Virtual machines tab
+ * on a VM group's page. */
+export function EmbeddedVmTable({
+  filter,
+  emptyText = "No virtual machines.",
+}: {
+  filter: Record<string, string>
+  emptyText?: string
+}) {
+  const { humanIds } = useMe()
+  const q = useEmbed<VirtualMachine>(
+    "embedded-vms",
+    "/api/virtual-machines/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<VirtualMachine>[]>(
+    () =>
+      buildVmColumns({
+        humanIds,
+        include: [
+          "numid",
+          "name",
+          "status",
+          "power",
+          "vcpus",
+          "memory",
+          "primary_ip",
+          "platform",
+        ],
+      }),
+    [humanIds]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="primary_ip"
+      tableId="embedded-vms"
+    />
+  )
+}
+
+/** VM groups scoped by cluster - the Groups tab on a cluster's page. */
+export function EmbeddedVmGroupTable({
+  filter,
+  emptyText = "No VM groups.",
+}: {
+  filter: Record<string, string>
+  emptyText?: string
+}) {
+  const q = useEmbed<VirtualMachineGroup>(
+    "embedded-vm-groups",
+    "/api/vm-groups/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<VirtualMachineGroup>[]>(
+    () =>
+      buildVmGroupColumns({
+        include: ["name", "kind", "vms", "description"],
+        zeroCounts: "number",
+      }),
+    []
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-vm-groups"
     />
   )
 }

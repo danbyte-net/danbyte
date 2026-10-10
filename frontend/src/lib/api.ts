@@ -4934,12 +4934,23 @@ export interface VirtualMachineGroup {
   kind: "vapp" | "pool" | "folder" | "other"
   kind_display: string
   cluster: { id: string; name: string; status: StatusMini | null }
+  /** The cluster's site - a group has none of its own. */
+  site: { id: string; name: string } | null
   description: string
   vm_count: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export interface VirtualMachineGroupWritePayload {
+  name: string
+  cluster_id: string
+  kind?: VirtualMachineGroup["kind"]
+  description?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
 }
 
 export interface VirtualMachine {
@@ -5061,6 +5072,8 @@ export interface VirtualSwitch {
 export interface VirtualMachineWritePayload {
   name: string
   cluster_id: string
+  /** A VM group on the same cluster, or null for none. */
+  group_id?: string | null
   device_id?: string | null
   site_id?: string | null
   role_id?: string | null

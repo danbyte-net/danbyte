@@ -382,7 +382,8 @@ const KIND_SPEC = {
     hosts: true,
     apiVersion: false,
     nat: false,
-    groups: false,
+    // What the hypervisor groups VMs by, for the VM-group switch.
+    groups: "pools",
     templates: false,
   },
   vcenter: {
@@ -403,7 +404,7 @@ const KIND_SPEC = {
     hosts: true,
     apiVersion: false,
     nat: false,
-    groups: false,
+    groups: "folders",
     templates: false,
   },
   vcloud: {
@@ -429,7 +430,7 @@ const KIND_SPEC = {
     // Cloud Director negotiates its API version, so there is one to pin.
     apiVersion: true,
     nat: true,
-    groups: true,
+    groups: "vApps",
     templates: true,
   },
 } as const
@@ -737,14 +738,12 @@ export function SourceDialog({
                 onChange={setSyncMtu}
               />
             )}
-            {spec.groups && (
-              <FormCheckbox
-                label="Sync vApps as VM groups"
-                hint="Mirror the hypervisor's own grouping. A VM you grouped by hand keeps your grouping."
-                checked={syncGroups}
-                onChange={setSyncGroups}
-              />
-            )}
+            <FormCheckbox
+              label={`Sync ${spec.groups} as VM groups`}
+              hint="Mirror the hypervisor's own grouping. A VM you grouped by hand keeps your grouping."
+              checked={syncGroups}
+              onChange={setSyncGroups}
+            />
             {spec.nat && (
               <FormCheckbox
                 label="Record external addresses as NAT rules"

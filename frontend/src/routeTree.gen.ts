@@ -107,6 +107,7 @@ import { Route as WebhooksIndexRouteImport } from './routes/webhooks.index'
 import { Route as WatchedEndpointsIndexRouteImport } from './routes/watched-endpoints.index'
 import { Route as VtepsIndexRouteImport } from './routes/vteps.index'
 import { Route as VrfsIndexRouteImport } from './routes/vrfs.index'
+import { Route as VmGroupsIndexRouteImport } from './routes/vm-groups.index'
 import { Route as VlansIndexRouteImport } from './routes/vlans.index'
 import { Route as VlanGroupsIndexRouteImport } from './routes/vlan-groups.index'
 import { Route as VirtualizationSourcesIndexRouteImport } from './routes/virtualization-sources.index'
@@ -220,6 +221,8 @@ import { Route as WindowsServersIdRouteImport } from './routes/windows-servers.$
 import { Route as WebhooksNewRouteImport } from './routes/webhooks.new'
 import { Route as VrfsNewRouteImport } from './routes/vrfs.new'
 import { Route as VrfsIdRouteImport } from './routes/vrfs.$id'
+import { Route as VmGroupsNewRouteImport } from './routes/vm-groups.new'
+import { Route as VmGroupsIdRouteImport } from './routes/vm-groups.$id'
 import { Route as VlansNewRouteImport } from './routes/vlans.new'
 import { Route as VlansBulkEditRouteImport } from './routes/vlans.bulk-edit'
 import { Route as VlansIdRouteImport } from './routes/vlans.$id'
@@ -430,6 +433,7 @@ import { Route as WirelessLansIdEditRouteImport } from './routes/wireless-lans.$
 import { Route as WirelessLanGroupsIdEditRouteImport } from './routes/wireless-lan-groups.$id_.edit'
 import { Route as WebhooksIdEditRouteImport } from './routes/webhooks.$id_.edit'
 import { Route as VrfsIdEditRouteImport } from './routes/vrfs.$id_.edit'
+import { Route as VmGroupsIdEditRouteImport } from './routes/vm-groups.$id_.edit'
 import { Route as VlansIdEditRouteImport } from './routes/vlans.$id_.edit'
 import { Route as VlanGroupsIdEditRouteImport } from './routes/vlan-groups.$id_.edit'
 import { Route as VirtualMachinesIdEditRouteImport } from './routes/virtual-machines.$id_.edit'
@@ -1011,6 +1015,11 @@ const VrfsIndexRoute = VrfsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => VrfsRoute,
 } as any)
+const VmGroupsIndexRoute = VmGroupsIndexRouteImport.update({
+  id: '/vm-groups/',
+  path: '/vm-groups/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlansIndexRoute = VlansIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1577,6 +1586,16 @@ const VrfsIdRoute = VrfsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => VrfsRoute,
+} as any)
+const VmGroupsNewRoute = VmGroupsNewRouteImport.update({
+  id: '/vm-groups/new',
+  path: '/vm-groups/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VmGroupsIdRoute = VmGroupsIdRouteImport.update({
+  id: '/vm-groups/$id',
+  path: '/vm-groups/$id',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const VlansNewRoute = VlansNewRouteImport.update({
   id: '/new',
@@ -2629,6 +2648,11 @@ const VrfsIdEditRoute = VrfsIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => VrfsRoute,
 } as any)
+const VmGroupsIdEditRoute = VmGroupsIdEditRouteImport.update({
+  id: '/vm-groups/$id_/edit',
+  path: '/vm-groups/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlansIdEditRoute = VlansIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -3379,6 +3403,8 @@ export interface FileRoutesByFullPath {
   '/vlans/$id': typeof VlansIdRoute
   '/vlans/bulk-edit': typeof VlansBulkEditRoute
   '/vlans/new': typeof VlansNewRoute
+  '/vm-groups/$id': typeof VmGroupsIdRoute
+  '/vm-groups/new': typeof VmGroupsNewRoute
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
@@ -3492,6 +3518,7 @@ export interface FileRoutesByFullPath {
   '/virtualization-sources/': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
+  '/vm-groups/': typeof VmGroupsIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
   '/vteps/': typeof VtepsIndexRoute
   '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
@@ -3585,6 +3612,7 @@ export interface FileRoutesByFullPath {
   '/virtual-machines/$id/edit': typeof VirtualMachinesIdEditRoute
   '/vlan-groups/$id/edit': typeof VlanGroupsIdEditRoute
   '/vlans/$id/edit': typeof VlansIdEditRoute
+  '/vm-groups/$id/edit': typeof VmGroupsIdEditRoute
   '/vrfs/$id/edit': typeof VrfsIdEditRoute
   '/webhooks/$id/edit': typeof WebhooksIdEditRoute
   '/wireless-lan-groups/$id/edit': typeof WirelessLanGroupsIdEditRoute
@@ -3823,6 +3851,8 @@ export interface FileRoutesByTo {
   '/vlans/$id': typeof VlansIdRoute
   '/vlans/bulk-edit': typeof VlansBulkEditRoute
   '/vlans/new': typeof VlansNewRoute
+  '/vm-groups/$id': typeof VmGroupsIdRoute
+  '/vm-groups/new': typeof VmGroupsNewRoute
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
@@ -3936,6 +3966,7 @@ export interface FileRoutesByTo {
   '/virtualization-sources': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups': typeof VlanGroupsIndexRoute
   '/vlans': typeof VlansIndexRoute
+  '/vm-groups': typeof VmGroupsIndexRoute
   '/vrfs': typeof VrfsIndexRoute
   '/vteps': typeof VtepsIndexRoute
   '/watched-endpoints': typeof WatchedEndpointsIndexRoute
@@ -4029,6 +4060,7 @@ export interface FileRoutesByTo {
   '/virtual-machines/$id/edit': typeof VirtualMachinesIdEditRoute
   '/vlan-groups/$id/edit': typeof VlanGroupsIdEditRoute
   '/vlans/$id/edit': typeof VlansIdEditRoute
+  '/vm-groups/$id/edit': typeof VmGroupsIdEditRoute
   '/vrfs/$id/edit': typeof VrfsIdEditRoute
   '/webhooks/$id/edit': typeof WebhooksIdEditRoute
   '/wireless-lan-groups/$id/edit': typeof WirelessLanGroupsIdEditRoute
@@ -4337,6 +4369,8 @@ export interface FileRoutesById {
   '/vlans/$id': typeof VlansIdRoute
   '/vlans/bulk-edit': typeof VlansBulkEditRoute
   '/vlans/new': typeof VlansNewRoute
+  '/vm-groups/$id': typeof VmGroupsIdRoute
+  '/vm-groups/new': typeof VmGroupsNewRoute
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
@@ -4450,6 +4484,7 @@ export interface FileRoutesById {
   '/virtualization-sources/': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
+  '/vm-groups/': typeof VmGroupsIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
   '/vteps/': typeof VtepsIndexRoute
   '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
@@ -4543,6 +4578,7 @@ export interface FileRoutesById {
   '/virtual-machines/$id_/edit': typeof VirtualMachinesIdEditRoute
   '/vlan-groups/$id_/edit': typeof VlanGroupsIdEditRoute
   '/vlans/$id_/edit': typeof VlansIdEditRoute
+  '/vm-groups/$id_/edit': typeof VmGroupsIdEditRoute
   '/vrfs/$id_/edit': typeof VrfsIdEditRoute
   '/webhooks/$id_/edit': typeof WebhooksIdEditRoute
   '/wireless-lan-groups/$id_/edit': typeof WirelessLanGroupsIdEditRoute
@@ -4852,6 +4888,8 @@ export interface FileRouteTypes {
     | '/vlans/$id'
     | '/vlans/bulk-edit'
     | '/vlans/new'
+    | '/vm-groups/$id'
+    | '/vm-groups/new'
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
@@ -4965,6 +5003,7 @@ export interface FileRouteTypes {
     | '/virtualization-sources/'
     | '/vlan-groups/'
     | '/vlans/'
+    | '/vm-groups/'
     | '/vrfs/'
     | '/vteps/'
     | '/watched-endpoints/'
@@ -5058,6 +5097,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id/edit'
     | '/vlan-groups/$id/edit'
     | '/vlans/$id/edit'
+    | '/vm-groups/$id/edit'
     | '/vrfs/$id/edit'
     | '/webhooks/$id/edit'
     | '/wireless-lan-groups/$id/edit'
@@ -5296,6 +5336,8 @@ export interface FileRouteTypes {
     | '/vlans/$id'
     | '/vlans/bulk-edit'
     | '/vlans/new'
+    | '/vm-groups/$id'
+    | '/vm-groups/new'
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
@@ -5409,6 +5451,7 @@ export interface FileRouteTypes {
     | '/virtualization-sources'
     | '/vlan-groups'
     | '/vlans'
+    | '/vm-groups'
     | '/vrfs'
     | '/vteps'
     | '/watched-endpoints'
@@ -5502,6 +5545,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id/edit'
     | '/vlan-groups/$id/edit'
     | '/vlans/$id/edit'
+    | '/vm-groups/$id/edit'
     | '/vrfs/$id/edit'
     | '/webhooks/$id/edit'
     | '/wireless-lan-groups/$id/edit'
@@ -5809,6 +5853,8 @@ export interface FileRouteTypes {
     | '/vlans/$id'
     | '/vlans/bulk-edit'
     | '/vlans/new'
+    | '/vm-groups/$id'
+    | '/vm-groups/new'
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
@@ -5922,6 +5968,7 @@ export interface FileRouteTypes {
     | '/virtualization-sources/'
     | '/vlan-groups/'
     | '/vlans/'
+    | '/vm-groups/'
     | '/vrfs/'
     | '/vteps/'
     | '/watched-endpoints/'
@@ -6015,6 +6062,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id_/edit'
     | '/vlan-groups/$id_/edit'
     | '/vlans/$id_/edit'
+    | '/vm-groups/$id_/edit'
     | '/vrfs/$id_/edit'
     | '/webhooks/$id_/edit'
     | '/wireless-lan-groups/$id_/edit'
@@ -6170,6 +6218,8 @@ export interface RootRouteChildren {
   VirtualMachinesNewRoute: typeof VirtualMachinesNewRoute
   VirtualSwitchesIdRoute: typeof VirtualSwitchesIdRoute
   VirtualizationSourcesIdRoute: typeof VirtualizationSourcesIdRoute
+  VmGroupsIdRoute: typeof VmGroupsIdRoute
+  VmGroupsNewRoute: typeof VmGroupsNewRoute
   WindowsServersIdRoute: typeof WindowsServersIdRoute
   BgpInstancesIndexRoute: typeof BgpInstancesIndexRoute
   CabinetRolesIndexRoute: typeof CabinetRolesIndexRoute
@@ -6210,6 +6260,7 @@ export interface RootRouteChildren {
   VirtualSwitchesIndexRoute: typeof VirtualSwitchesIndexRoute
   VirtualTopologyIndexRoute: typeof VirtualTopologyIndexRoute
   VirtualizationSourcesIndexRoute: typeof VirtualizationSourcesIndexRoute
+  VmGroupsIndexRoute: typeof VmGroupsIndexRoute
   VtepsIndexRoute: typeof VtepsIndexRoute
   WatchedEndpointsIndexRoute: typeof WatchedEndpointsIndexRoute
   WindowsServersIndexRoute: typeof WindowsServersIndexRoute
@@ -6238,6 +6289,7 @@ export interface RootRouteChildren {
   ServiceTemplatesIdEditRoute: typeof ServiceTemplatesIdEditRoute
   SilencesIdEditRoute: typeof SilencesIdEditRoute
   VirtualMachinesIdEditRoute: typeof VirtualMachinesIdEditRoute
+  VmGroupsIdEditRoute: typeof VmGroupsIdEditRoute
   LTenantTypeNumidRoute: typeof LTenantTypeNumidRoute
   MonitoringSlaIdEditRoute: typeof MonitoringSlaIdEditRoute
   MonitoringSlaTemplatesIdRoute: typeof MonitoringSlaTemplatesIdRoute
@@ -6933,6 +6985,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/vrfs/'
       preLoaderRoute: typeof VrfsIndexRouteImport
       parentRoute: typeof VrfsRoute
+    }
+    '/vm-groups/': {
+      id: '/vm-groups/'
+      path: '/vm-groups'
+      fullPath: '/vm-groups/'
+      preLoaderRoute: typeof VmGroupsIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/vlans/': {
       id: '/vlans/'
@@ -7724,6 +7783,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/vrfs/$id'
       preLoaderRoute: typeof VrfsIdRouteImport
       parentRoute: typeof VrfsRoute
+    }
+    '/vm-groups/new': {
+      id: '/vm-groups/new'
+      path: '/vm-groups/new'
+      fullPath: '/vm-groups/new'
+      preLoaderRoute: typeof VmGroupsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vm-groups/$id': {
+      id: '/vm-groups/$id'
+      path: '/vm-groups/$id'
+      fullPath: '/vm-groups/$id'
+      preLoaderRoute: typeof VmGroupsIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/vlans/new': {
       id: '/vlans/new'
@@ -9194,6 +9267,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/vrfs/$id/edit'
       preLoaderRoute: typeof VrfsIdEditRouteImport
       parentRoute: typeof VrfsRoute
+    }
+    '/vm-groups/$id_/edit': {
+      id: '/vm-groups/$id_/edit'
+      path: '/vm-groups/$id/edit'
+      fullPath: '/vm-groups/$id/edit'
+      preLoaderRoute: typeof VmGroupsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/vlans/$id_/edit': {
       id: '/vlans/$id_/edit'
@@ -11219,6 +11299,8 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualMachinesNewRoute: VirtualMachinesNewRoute,
   VirtualSwitchesIdRoute: VirtualSwitchesIdRoute,
   VirtualizationSourcesIdRoute: VirtualizationSourcesIdRoute,
+  VmGroupsIdRoute: VmGroupsIdRoute,
+  VmGroupsNewRoute: VmGroupsNewRoute,
   WindowsServersIdRoute: WindowsServersIdRoute,
   BgpInstancesIndexRoute: BgpInstancesIndexRoute,
   CabinetRolesIndexRoute: CabinetRolesIndexRoute,
@@ -11259,6 +11341,7 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualSwitchesIndexRoute: VirtualSwitchesIndexRoute,
   VirtualTopologyIndexRoute: VirtualTopologyIndexRoute,
   VirtualizationSourcesIndexRoute: VirtualizationSourcesIndexRoute,
+  VmGroupsIndexRoute: VmGroupsIndexRoute,
   VtepsIndexRoute: VtepsIndexRoute,
   WatchedEndpointsIndexRoute: WatchedEndpointsIndexRoute,
   WindowsServersIndexRoute: WindowsServersIndexRoute,
@@ -11287,6 +11370,7 @@ const rootRouteChildren: RootRouteChildren = {
   ServiceTemplatesIdEditRoute: ServiceTemplatesIdEditRoute,
   SilencesIdEditRoute: SilencesIdEditRoute,
   VirtualMachinesIdEditRoute: VirtualMachinesIdEditRoute,
+  VmGroupsIdEditRoute: VmGroupsIdEditRoute,
   LTenantTypeNumidRoute: LTenantTypeNumidRoute,
   MonitoringSlaIdEditRoute: MonitoringSlaIdEditRoute,
   MonitoringSlaTemplatesIdRoute: MonitoringSlaTemplatesIdRoute,

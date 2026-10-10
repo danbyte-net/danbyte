@@ -26,6 +26,7 @@ under **Integrations → Virtualization sources**; see
 | --- | --- |
 | Cluster (single-cluster vCenters; else the source name) | **Cluster** (a *VMware vCenter* cluster type is created on demand) |
 | Virtual machine | **Virtual machine** (vCPUs, memory, disk, description) |
+| VM folder | **[VM group](vm-groups.md)** on the VM's cluster, kind *Folder* - on by default |
 | VM annotation | **Description** (blank-filled, never overwrites yours) |
 | Ethernet adapter | **VM interface** with its MAC |
 | Virtual disk device | **Virtual disk** (name, size, datastore, controller) - *opt-in* |
@@ -65,11 +66,26 @@ Per-source switches widen what a source imports:
   overwriting a VLAN you set).
 - **Set platform from the guest OS** (off by default) - fills each VM's
   **platform** from what the hypervisor reports, creating the platform on
-  demand. vCenter's own label is used when VMware Tools supplies one
-  (*Red Hat Enterprise Linux 8 (64-bit)*); otherwise the raw enum is unpacked
-  into something readable (`RHEL_8_64` becomes *RHEL 8 (64-bit)*). Rename it
-  afterwards if you prefer - matching is by slug as well as name, so the next
-  sync still finds your row instead of making a second one. Blank-fill only.
+  demand. For a powered-on VM with VMware Tools running, the name is the
+  guest's own (`full_name` from `/api/vcenter/vm/{vm}/guest/identity`, e.g.
+  *VMware Photon OS (64-bit)*). Otherwise - powered off, or Tools not
+  running, which vCenter answers with a 503 or 404 - the configured guest OS
+  enum is unpacked into something readable (`RHEL_8_64` becomes *RHEL 8
+  (64-bit)*). The enum is what the VM was *created as*, and can lag the real
+  guest: vCenter files Windows Server 2022 as `WINDOWS_SERVER_2021_64`. The
+  sync log counts the powered-on VMs that reported no Tools name. Rename the
+  platform afterwards if you prefer - matching is by slug as well as name, so
+  the next sync still finds your row instead of making a second one.
+  Blank-fill only: a VM that already has a platform keeps it, even once Tools
+  starts reporting a better name.
+- **Sync folders as VM groups** (on by default) - each VM's folder becomes a
+  [VM group](vm-groups.md) of kind *Folder*, named by its whole path below the
+  built-in `vm` folder (*Test site / Linux*), so two folders called *Linux*
+  stay two groups. A VM in the root VM folder has no group. Folder membership
+  comes from the REST API (`/api/vcenter/folder` plus `?folders=` on the VM
+  list) - one request per folder, twice: once to walk the tree, once for its
+  VMs. A folder the API fails to list is never read as "this VM left its
+  folder".
 - **Read host hardware** (off by default, needs *Create hosts as devices*) -
   fills each host Device's **model**, **vendor** and **serial** from vSphere,
   and its platform (e.g. *VMware ESXi 8.0.3*). The model becomes a **device

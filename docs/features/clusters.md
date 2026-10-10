@@ -77,19 +77,10 @@ the VDCs of one org sit together.
 ## VM groups
 
 A **VM group** is a set of virtual machines *below* a cluster - a Cloud
-Director **vApp** today, and the same shape a Proxmox resource pool or a
-vCenter folder would take. It carries a name, a kind, a description, tags and
-custom fields, and it never gates access.
-
-It exists because some platforms have no flat VM list at all: in Cloud
-Director every machine lives in a vApp, so without this the structure an
-operator reads their own console by would be lost on import.
-
-The hypervisor owns membership only until you say otherwise. A
-[sync](virt-vcloud.md#vapps-and-vm-groups) fills a VM's group when it is
-blank, and follows the hypervisor for machines it created itself; a VM you
-move into a group of your own keeps your grouping. Deleting a group leaves
-its VMs alone.
+Director **vApp**, a Proxmox **resource pool**, a vCenter **folder**, or one
+you make by hand. A cluster page's **VM groups** tab lists the cluster's
+groups; [VM groups](vm-groups.md) covers the list, the detail page, and what
+a sync may change.
 
 !!! warning "Delete order"
     A cluster type or group that's still referenced can't be deleted. Move the
@@ -98,6 +89,6 @@ its VMs alone.
 ## See also
 
 - [Virtual machines](virtual-machines.md) - what runs on a cluster.
-- [VMware Cloud Director sync](virt-vcloud.md) - what fills VM groups in.
+- [VM groups](vm-groups.md) - vApps, pools and folders below a cluster.
 - [Virtual switches & topology](virtual-switches.md) - a cluster's networking.
 - [Sites](../dcim/index.md) - the physical location a cluster points at.

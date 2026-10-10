@@ -5715,6 +5715,8 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
     cluster_id = TenantScopedPrimaryKeyRelatedField(
         source="cluster", queryset=Cluster.objects.all(), write_only=True
     )
+    # A group has no site of its own; it sits wherever its cluster does.
+    site = SiteMiniSerializer(source="cluster.site", read_only=True)
     kind_display = serializers.CharField(
         source="get_kind_display", read_only=True
     )
@@ -5748,14 +5750,23 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
             raise serializers.ValidationError(
                 {"name": f"{cluster.name} already has a group called {name}."}
             )
+        # A group lives below one cluster. Moving it while it has members
+        # would leave those VMs grouped on a cluster they do not run on.
+        if self.instance is not None and cluster.pk != self.instance.cluster_id:
+            stranded = self.instance.virtual_machines.exclude(cluster=cluster)
+            if stranded.exists():
+                raise serializers.ValidationError(
+                    {"cluster_id": "Its VMs run on another cluster. Move or "
+                                   "ungroup them first."}
+                )
         return attrs
 
     class Meta:
         model = VirtualMachineGroup
         fields = ["id", "name", "kind", "kind_display", "cluster", "cluster_id",
-                  "description", "vm_count", "tags", "tag_ids", "custom_fields",
-                  "created_at", "updated_at"]
-        read_only_fields = ["id", "kind_display", "vm_count",
+                  "site", "description", "vm_count", "tags", "tag_ids",
+                  "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "kind_display", "site", "vm_count",
                             "created_at", "updated_at"]
 
 
@@ -5863,6 +5874,25 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     synced_from_id = serializers.CharField(read_only=True, default=None)
     #: Unresolved differences between Danbyte and the hypervisor.
     drift_count = serializers.IntegerField(read_only=True, default=0)
+
+    def validate(self, attrs):
+        """A VM group sits below one cluster, so a VM can only join a group on
+        the cluster it runs on. Moving the VM to another cluster without
+        naming a group drops the old one rather than refusing the move."""
+        attrs = super().validate(attrs)
+        cluster = attrs.get("cluster", getattr(self.instance, "cluster", None))
+        if "group" in attrs:
+            group = attrs["group"]
+            if group is not None and cluster is not None \
+                    and group.cluster_id != cluster.pk:
+                raise serializers.ValidationError(
+                    {"group_id": f"{group.name} is a group on another cluster."}
+                )
+        elif self.instance is not None and "cluster" in attrs:
+            current = self.instance.group
+            if current is not None and current.cluster_id != cluster.pk:
+                attrs["group"] = None
+        return attrs
 
     class Meta:
         model = VirtualMachine

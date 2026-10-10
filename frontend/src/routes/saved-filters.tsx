@@ -170,6 +170,11 @@ const LISTS: Record<
     to: "/virtual-machines",
     api: "/api/virtual-machines/",
   },
+  virtualmachinegroup: {
+    label: "VM groups",
+    to: "/vm-groups",
+    api: "/api/vm-groups/",
+  },
   vlan: { label: "VLANs", to: "/vlans", api: "/api/vlans/" },
   vlangroup: {
     label: "VLAN groups",

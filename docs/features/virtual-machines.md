@@ -20,7 +20,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **Power** | Read-only, from the hypervisor - see [Power state](#power-state). |
 | **Role**, **platform** | Also the device catalogs, so one role can span physical and virtual. |
 | **Cluster** | The [cluster](clusters.md) it runs on. |
-| **Group** | The [VM group](clusters.md#vm-groups) it belongs to, where the platform has one - a Cloud Director vApp, for instance. |
+| **Group** | Its [VM group](vm-groups.md) - a vApp, resource pool, folder or one of your own - on the same cluster. Optional. |
 | **Host device** | The physical host *inside* that cluster - see [Placement](#placement-site-and-host-device). |
 | **Site** | Its own location, independent of the cluster's - see [Placement](#placement-site-and-host-device). |
 | **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |

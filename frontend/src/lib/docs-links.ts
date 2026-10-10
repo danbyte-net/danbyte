@@ -77,6 +77,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/cluster-types": "features/clusters/",
   "/cluster-groups": "features/clusters/",
   "/virtual-machines": "features/virtual-machines/",
+  "/vm-groups": "features/vm-groups/",
   "/virtual-switches": "features/virtual-switches/",
   "/virtual-topology": "features/virtual-switches/#network-topology",
   "/circuits": "features/circuits/",

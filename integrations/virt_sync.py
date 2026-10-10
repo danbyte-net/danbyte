@@ -561,6 +561,12 @@ def sync_proxmox(source) -> dict:
         # short enum via the fixed table, LXC's distro names title-cased.
         # Rides the same match-existing-before-minting path as vCenter.
         r["os_name"] = _proxmox_platform_name(cfg.get("ostype"))
+        # Resource pool → VirtualMachineGroup. cluster/resources names the
+        # pool on each guest it holds, so membership costs no request beyond
+        # the list already fetched - walking /pools/{id} would be one per
+        # pool for the same answer.
+        r["group"] = str(r.get("pool") or "").strip()[:200]
+        r["group_kind"] = "pool"
         agent_ifaces = []
         if kind == "qemu" and r.get("status") == "running":
             try:
@@ -715,12 +721,14 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             _reconcile_guest(source, guest_cluster, guest_cluster_name, guest, r,
                              apply, now, counts, fresh_changes, place, warnings)
             if guest.vm_id:
-                # The hypervisor's own grouping - a vApp, later a pool or a
-                # folder. Blank-fill, or follow when the sync owns the row.
-                if source.sync_vm_groups and r.get("group"):
+                # The hypervisor's own grouping - a vApp, a pool or a folder.
+                # Blank-fill, or follow when the sync owns the row. A backend
+                # that groups at all states `group_kind` even for an ungrouped
+                # guest, so a followed row can leave its group too.
+                if source.sync_vm_groups and r.get("group_kind"):
                     counts["vm_groups"] = counts.get("vm_groups", 0) + _link_group(
-                        source, guest_cluster, guest.vm, r["group"],
-                        kind=r.get("group_kind") or "other",
+                        source, guest_cluster, guest.vm, r.get("group") or "",
+                        kind=r["group_kind"],
                         follow=apply and guest.created_vm,
                     )
                 d = details.get(key) or {}
@@ -1191,6 +1199,14 @@ def _blank_fill(vm, specs, source, guest, place=None, os_info=None) -> None:
         if plat is not None:
             vm.platform = plat
             changed.append("platform")
+    elif source.sync_platforms and _platform_from_enum(vm.platform, os_info):
+        # An earlier pass could only read the hypervisor's enum and named the
+        # platform after it; now that VMware Tools reports a better name, move
+        # to that. A platform the operator picked never matches the enum name.
+        plat = _platform_for(source.tenant, _platform_name(*os_info))
+        if plat is not None and plat.pk != vm.platform_id:
+            vm.platform = plat
+            changed.append("platform")
     _apply_placement(vm, place, changed)
     if vm.site_id is None and vm.cluster_id is not None:
         cl = vm.cluster
@@ -1311,7 +1327,17 @@ def _link_group(source, cluster, vm, name: str, *, kind: str = "other",
     """
     from api.models import VirtualMachineGroup
 
-    if vm is None or not name:
+    if vm is None:
+        return 0
+    if not name:
+        # Out of every group on the hypervisor - a guest taken out of its
+        # pool, or moved to the root VM folder. Only a row the sync follows
+        # lets go, and only of a group of this backend's kind: a hand-made
+        # group is "other", and is never the sync's to clear.
+        if follow and vm.group_id is not None and vm.group.kind == kind:
+            vm.group = None
+            vm.save(update_fields=["group"])
+            return 1
         return 0
     c = cluster()
     group, made = VirtualMachineGroup.objects.get_or_create(
@@ -1399,7 +1425,12 @@ def _vcenter_placement_maps(client, source, datacenters, hosts) -> dict:
             pass
 
     folders_of_vm: dict = {}
-    paths = _vcenter_folder_paths(client, "folder" in scopes)
+    # Folders feed placement rules and, behind sync_vm_groups, the VM's
+    # group - walked when either wants them.
+    paths = _vcenter_folder_paths(
+        client, "folder" in scopes or source.sync_vm_groups
+    )
+    complete = bool(paths)
     for fid, path in paths.items():
         if not path:
             continue  # a built-in folder, or the root
@@ -1408,9 +1439,14 @@ def _vcenter_placement_maps(client, source, datacenters, hosts) -> dict:
                 # Direct membership only - the ancestor chain is the path.
                 folders_of_vm[v.get("vm")] = path
         except VirtAPIError:
+            complete = False
             continue
+    # Every vCenter has the built-in "vm" folder, so an empty map means the
+    # walk failed or was skipped - not that no VM is in a folder. Group sync
+    # must then leave memberships alone rather than read a gap as
+    # "ungrouped", so it only trusts a walk that read every folder.
     return {"dc_of_vm": dc_of_vm, "dc_of_host": dc_of_host,
-            "folders_of_vm": folders_of_vm}
+            "folders_of_vm": folders_of_vm, "folders_read": complete}
 
 
 def _apply_placement(obj, place, changed: list) -> None:
@@ -1491,6 +1527,22 @@ def _platform_name(guest_os: str, full_name: str = "") -> str:
         parts = parts[:-1]
     words = [w if (w.isupper() and len(w) <= 4) else w.title() for w in parts]
     return " ".join([*words, suffix]).strip()[:128]
+
+
+def _platform_from_enum(platform, os_info) -> bool:
+    """Whether ``platform`` is the name an earlier pass derived from the OS
+    enum alone, while the hypervisor now also reports a full OS name that
+    reads differently - so the sync may replace it with the better one."""
+    if platform is None or not os_info:
+        return False
+    os_kind, full_name = os_info
+    if not os_kind or not (full_name or "").strip():
+        return False
+    from_enum = _platform_name(os_kind)
+    if not from_enum or _platform_key(from_enum) == _platform_key(full_name):
+        return False
+    key = _platform_key(from_enum)
+    return _platform_key(platform.name) == key or _platform_key(platform.slug) == key
 
 
 def _platform_key(name: str) -> str:
@@ -1901,16 +1953,21 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
 
 _MOREF_RE = re.compile(r"(\d+)")
 
-def _vc_full_name(info: dict) -> str:
+def _vc_full_name(identity) -> str:
     """VMware Tools' own OS label, when it reports one.
 
-    The field is sometimes a plain string and sometimes a localisable message
-    object, so both shapes are handled rather than assuming one.
+    ``identity`` is the ``GET /api/vcenter/vm/{vm}/guest/identity`` body. The
+    VM detail (``/api/vcenter/vm/{vm}``) carries no OS name at all - reading
+    it from there is why this was always empty and every platform came from
+    the guest_OS enum. ``full_name`` is sometimes a plain string and
+    sometimes a localisable message object, so both shapes are handled.
     """
-    fn = ((info or {}).get("identity") or {}).get("full_name")
+    if not isinstance(identity, dict):
+        return ""
+    fn = identity.get("full_name")
     if isinstance(fn, dict):
-        return (fn.get("default_message") or "").strip()
-    return (fn or "").strip()
+        fn = fn.get("default_message")
+    return fn.strip() if isinstance(fn, str) else ""
 
 
 _VC_POWER = {"POWERED_ON": "running", "POWERED_OFF": "stopped",
@@ -1926,8 +1983,18 @@ def _moref_id(moref: str):
 
 def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str,
                       cluster: str = "", datacenter: str = "",
-                      folders=None) -> dict:
-    """Normalise a vCenter VM into the shared resource shape ``_run_pass`` wants."""
+                      folders=None, *, identity=None,
+                      folders_known: bool = False) -> dict:
+    """Normalise a vCenter VM into the shared resource shape ``_run_pass`` wants.
+
+    ``identity`` is the ``/guest/identity`` body - VMware Tools' view of the
+    guest, and the only place its OS name lives. ``folders_known`` says the
+    folder walk read every folder, so a VM with no folder really has none.
+    """
+    folders = list(folders or [])
+    # The VM folder → VirtualMachineGroup, named by its whole path so two
+    # "Linux" folders under different parents stay two groups.
+    group = " / ".join(folders)[:200]
     mem_mib = (info.get("memory") or {}).get("size_MiB") \
         or summary.get("memory_size_MiB") or 0
     cpu = (info.get("cpu") or {}).get("count") or summary.get("cpu_count") or 0
@@ -1945,12 +2012,15 @@ def _vcenter_resource(summary: dict, info: dict, vmid: int, node: str,
         # "" when the guest is on a standalone host - _run_pass falls back to
         # the pass-level cluster name.
         "cluster": cluster,
-        # Guest OS, for the optional Platform mapping.
+        # Guest OS, for the optional Platform mapping: Tools' own name when
+        # it reports one, else the configured guest_OS enum.
         "os_kind": info.get("guest_OS") or "",
-        "os_name": _vc_full_name(info),
+        "os_name": _vc_full_name(identity),
         # Placement inputs; empty for Proxmox, which has neither concept.
         "datacenter": datacenter,
-        "folders": list(folders or []),
+        "folders": folders,
+        "group": group,
+        "group_kind": "folder" if (group or folders_known) else "",
         "status": _VC_POWER.get(power, power.lower()),
         "maxcpu": cpu,
         "maxmem": int(mem_mib) * 1024 * 1024,
@@ -2122,6 +2192,7 @@ def sync_vcenter(source) -> dict:
 
         resources: list = []
         details: dict = {}
+        no_tools_name = 0  # powered-on VMs without a Tools OS name
         for v in vms:
             moref = v.get("vm")
             vmid = _moref_id(moref)
@@ -2132,26 +2203,52 @@ def sync_vcenter(source) -> dict:
             except VirtAPIError as exc:
                 logger.warning("vcenter vm %s fetch failed: %s", moref, exc)
                 info = {}
+            guest_nets = []
+            identity = None
+            if v.get("power_state") == "POWERED_ON":
+                try:
+                    guest_nets = client.get(
+                        f"vcenter/vm/{moref}/guest/networking/interfaces"
+                    ) or []
+                    tools_up = True
+                except VirtAPIError:
+                    # VMware Tools absent/starting - IPs stay unknown, and
+                    # the identity call below would fail the same way.
+                    tools_up = False
+                if tools_up:
+                    try:
+                        identity = client.get(
+                            f"vcenter/vm/{moref}/guest/identity"
+                        )
+                    except VirtAPIError:
+                        # 503/404 while Tools is not running: no Tools name,
+                        # so the platform falls back to the guest_OS enum.
+                        identity = None
+                if not _vc_full_name(identity):
+                    no_tools_name += 1
             resources.append(
                 _vcenter_resource(
                     v, info, vmid, host_of.get(moref, ""),
                     cluster_of.get(moref, ""),
                     maps["dc_of_vm"].get(moref, ""),
                     maps["folders_of_vm"].get(moref) or [],
+                    identity=identity,
+                    folders_known=maps["folders_read"],
                 )
             )
             nics = info.get("nics") or {}
-            guest_nets = []
-            if v.get("power_state") == "POWERED_ON":
-                try:
-                    guest_nets = client.get(
-                        f"vcenter/vm/{moref}/guest/networking/interfaces"
-                    ) or []
-                except VirtAPIError:
-                    pass  # VMware Tools absent/starting - IPs stay unknown
             details[vmid] = {"ifaces": nics, "ips": guest_nets,
                              "disks": info.get("disks"), "nets": nics,
                              "meta": {"notes": info.get("notes")}}
+        if no_tools_name:
+            # Not a warning: a VM without Tools is normal. Logged so a
+            # platform read off the enum can be traced back to why.
+            logger.info(
+                "vcenter: %d powered-on VM(s) reported no VMware Tools OS "
+                "name; their platform falls back to the guest OS setting",
+                no_tools_name,
+            )
+        counts["vms_no_tools_identity"] = no_tools_name
 
         return _run_pass(source, cluster_name, resources, details, now, counts,
                          _sync_vcenter_interfaces,
@@ -2602,6 +2699,122 @@ def _sync_vcloud_nat(source, resources, details, now, warnings) -> int:
     return made
 
 
+_VCD_UUID = re.compile(
+    r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+)
+
+#: After this many vApp reads in a row fail with none succeeding, stop trying
+#: the batched path for the rest of the pass - an account that cannot read a
+#: vApp should not pay a failed request per vApp before every per-VM fetch.
+_VCD_VAPP_GIVE_UP = 3
+
+
+def _vcloud_container_href(record: dict) -> str:
+    """The vApp (or vApp template) that holds a ``vm`` query record, as an
+    ``/api/...`` path ``get_href`` accepts - or "" when the record does not say.
+
+    The query record's ``container`` is documented as the containing vApp's
+    id; appliances send the href, but a bare urn is accepted too. Only a
+    well-formed uuid is ever turned into a path.
+    """
+    from urllib.parse import urlsplit
+
+    raw = str(record.get("container") or "").strip()
+    if not raw:
+        return ""
+    path = urlsplit(raw).path
+    if path.startswith("/api/"):
+        return raw
+    m = _VCD_UUID.search(raw)
+    if not m:
+        return ""
+    lowered = raw.lower()
+    if "vapptemplate" in lowered:
+        return f"/api/vAppTemplate/vappTemplate-{m.group(1)}"
+    return f"/api/vApp/vapp-{m.group(1)}"
+
+
+def _vcloud_fetch_details(client, wanted: list) -> tuple[dict, dict]:
+    """NICs and description for every VM in ``wanted`` (``[(ext_id, record)]``).
+
+    Cloud Director's query service has no record type for a VM's network
+    cards - ``vm`` carries only the primary NIC's network and address, and
+    API 36.0-38.1 define no NIC query - so a VM's NICs come from a VM
+    representation. A **vApp** representation embeds every child VM in full
+    (``children.vm[]``, each with its ``NetworkConnectionSection``), so the
+    batched path reads each vApp once instead of each VM once. A VM whose
+    record names no container, whose vApp cannot be read, or which its vApp
+    does not list falls back to its own detail fetch.
+
+    Returns ``({ext_id: {"nics", "description"}}, stats)``.
+    """
+    out: dict = {}
+    by_vapp: dict = {}
+    loose: list = []
+    for ext_id, rec in wanted:
+        href = _vcloud_container_href(rec)
+        if href:
+            by_vapp.setdefault(href, []).append((ext_id, rec))
+        else:
+            loose.append((ext_id, rec))
+
+    stats = {"vapps": 0, "batched": 0, "per_vm": 0, "vapp_failures": 0}
+    failed_in_a_row = 0
+    for href, members in by_vapp.items():
+        if stats["vapps"] == 0 and failed_in_a_row >= _VCD_VAPP_GIVE_UP:
+            loose.extend(members)
+            continue
+        try:
+            vapp = client.get_href(href)
+        except VirtAPIError as exc:
+            logger.info("cloud director vApp %s unreadable, falling back to "
+                        "per-VM reads: %s", href, exc)
+            stats["vapp_failures"] += 1
+            failed_in_a_row += 1
+            loose.extend(members)
+            continue
+        failed_in_a_row = 0
+        stats["vapps"] += 1
+        children = ((vapp or {}).get("children") or {}).get("vm") or []
+        if isinstance(children, dict):
+            children = [children]  # a single child can arrive unwrapped
+        listed = {}
+        for child in children:
+            if isinstance(child, dict):
+                cid = _vcloud_ext_id(child)
+                if cid:
+                    listed[cid] = child
+        for ext_id, rec in members:
+            child = listed.get(ext_id)
+            if child is None:
+                loose.append((ext_id, rec))
+                continue
+            out[ext_id] = {
+                "nics": _vcloud_nics(child),
+                "description": child.get("description")
+                if child.get("description") is not None
+                else rec.get("description"),
+            }
+            stats["batched"] += 1
+
+    for ext_id, rec in loose:
+        try:
+            detail = client.get_href(rec.get("href") or "")
+        except VirtAPIError as exc:
+            # One unreadable VM must not cost the whole pass.
+            logger.warning("cloud director vm %r fetch failed: %s",
+                           rec.get("name"), exc)
+            detail = {}
+        out[ext_id] = {
+            "nics": _vcloud_nics(detail),
+            "description": (detail or {}).get("description")
+            if (detail or {}).get("description") is not None
+            else rec.get("description"),
+        }
+        stats["per_vm"] += 1
+    return out, stats
+
+
 def sync_vcloud(source) -> dict:
     from .vcloud_client import VCloudClient, _truthy, format_version
 
@@ -2619,7 +2832,8 @@ def sync_vcloud(source) -> dict:
 
         records = client.query("vm")
         resources: list = []
-        details: dict = {}
+        wanted: list = []
+        seen_ids: set = set()
         templates = 0
         for rec in records:
             if _truthy(rec.get("isVAppTemplate")) and not source.sync_templates:
@@ -2629,7 +2843,7 @@ def sync_vcloud(source) -> dict:
             if not r["ext_id"]:
                 logger.warning("skipping a Cloud Director VM with no usable id")
                 continue
-            if r["ext_id"] in details:
+            if r["ext_id"] in seen_ids:
                 # Two records for one urn cannot both be real. Taking the
                 # second would overwrite the first's detail silently, which
                 # is worse than importing one machine and saying so.
@@ -2638,26 +2852,32 @@ def sync_vcloud(source) -> dict:
                     r["name"],
                 )
                 continue
-            try:
-                detail = client.get_href(rec.get("href") or "")
-            except VirtAPIError as exc:
-                # One unreadable VM must not cost the whole pass.
-                logger.warning("cloud director vm %r fetch failed: %s",
-                               r["name"], exc)
-                detail = {}
-            nics = _vcloud_nics(detail)
+            seen_ids.add(r["ext_id"])
             resources.append(r)
-            details[r["ext_id"]] = {
-                "ifaces": nics, "ips": nics, "nets": nics, "disks": None,
-                "meta": {"notes": (detail or {}).get("description")},
-            }
+            wanted.append((r["ext_id"], rec))
         if templates:
             logger.info("skipped %d vApp template(s)", templates)
-        # One detail request per VM. Fine for the estates this was built
-        # against; say so rather than let a large one look like a hang.
-        if len(resources) > 500:
-            logger.info("Cloud Director: read %d VM detail records",
-                        len(resources))
+
+        fetched, stats = _vcloud_fetch_details(client, wanted)
+        path = (
+            "per-VM" if not stats["batched"]
+            else "per-vApp" if not stats["per_vm"] else "per-vApp + per-VM"
+        )
+        logger.info(
+            "Cloud Director NICs: %s path - %d VM(s) from %d vApp read(s), "
+            "%d per-VM read(s), %d unreadable vApp(s)",
+            path, stats["batched"], stats["vapps"], stats["per_vm"],
+            stats["vapp_failures"],
+        )
+        counts["nic_reads"] = stats["vapps"] + stats["per_vm"]
+        details: dict = {}
+        for r in resources:
+            got = fetched.get(r["ext_id"]) or {}
+            nics = got.get("nics") or []
+            details[r["ext_id"]] = {
+                "ifaces": nics, "ips": nics, "nets": nics, "disks": None,
+                "meta": {"notes": got.get("description")},
+            }
 
         result = _run_pass(
             source, source.name, resources, details, now, counts,

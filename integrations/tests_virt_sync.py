@@ -1020,6 +1020,10 @@ VC_DETAIL = {
     "vm-100": {
         "name": "web01", "power_state": "POWERED_ON",
         "guest_OS": "RHEL_8_64",
+        # The detail's identity is the VM's, not the guest's: no OS name
+        # here, as a real vCenter 8.0.3 answers.
+        "identity": {"bios_uuid": "4211aaaa", "instance_uuid": "5011bbbb",
+                     "name": "web01"},
         "cpu": {"count": 4}, "memory": {"size_MiB": 8192},
         "disks": {"2000": {"capacity": 40 * 1024**3}},
         "nics": {"4000": {"label": "Network adapter 1",
@@ -1054,6 +1058,11 @@ VC_GUEST_NET = {
 
 class FakeVCenter:
     """Stand-in for VCenterClient - routes REST paths to the fixtures above."""
+
+    #: ``/guest/identity`` bodies by MoRef. Empty by default, so every VM
+    #: answers as if VMware Tools were not running and the platform comes
+    #: from the guest_OS enum.
+    identities: dict = {}
 
     def __init__(self, source):
         self.source = source
@@ -1098,6 +1107,12 @@ class FakeVCenter:
         if path.endswith("/guest/networking/interfaces"):
             moref = path.split("/")[2]  # vcenter/vm/<moref>/guest/...
             return VC_GUEST_NET.get(moref, [])
+        if path.endswith("/guest/identity"):
+            moref = path.split("/")[2]
+            if moref not in self.identities:
+                # What vCenter 7.0U2+/8 answers while Tools is not running.
+                raise VirtAPIError(f"vCenter API returned 503 for {path}.")
+            return self.identities[moref]
         if path.startswith("vcenter/vm/"):
             return VC_DETAIL.get(path.split("/")[-1], {})
         raise AssertionError(f"unexpected path {path}")
@@ -1890,8 +1905,13 @@ class SitePlacementSyncTests(TestCase):
         self.assertNotEqual(vm.site_id, lab.id)
 
     def test_folders_are_not_walked_without_a_folder_rule(self):
-        """The tree walk is a call per folder - it must not run for nothing."""
+        """The tree walk is a call per folder - it must not run for nothing.
+
+        Folder groups are the other reader, so they are switched off here.
+        """
         self.Site.objects.create(tenant=self.tenant, name="Lab")
+        self.source.sync_vm_groups = False
+        self.source.save(update_fields=["sync_vm_groups"])
         seen = []
         real = FakeVCenter.get
 

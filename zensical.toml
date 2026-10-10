@@ -83,6 +83,7 @@ nav = [
   { "Virtualization" = [
     { "Virtual machines"  = "features/virtual-machines.md" },
     { "Clusters, types & groups" = "features/clusters.md" },
+    { "VM groups"         = "features/vm-groups.md" },
     { "Virtual switches & topology" = "features/virtual-switches.md" },
   ] },
   { "Monitoring & compliance" = [
