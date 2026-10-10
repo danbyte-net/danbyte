@@ -25,7 +25,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DataTable } from "@/components/data-table"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import {
   buildBGPSessionColumns,
   buildStaticRouteColumns,
@@ -81,6 +83,7 @@ export function RoutingPanel({ owner }: { owner: RoutingOwner }) {
   const [editing, setEditing] = useState<StaticRoute | null>(null)
   const [adding, setAdding] = useState(false)
   const [deleting, setDeleting] = useState<StaticRoute | null>(null)
+  const [selected, setSelected] = useState<StaticRoute[]>([])
 
   const routes = useQuery({
     queryKey: ["static-routes", owner.kind, owner.id],
@@ -99,6 +102,7 @@ export function RoutingPanel({ owner }: { owner: RoutingOwner }) {
     () =>
       buildStaticRouteColumns({
         humanIds,
+        selection: canEdit || canDelete,
         omit: ["device"],
         actions: {
           onEdit: setEditing,
@@ -135,9 +139,7 @@ export function RoutingPanel({ owner }: { owner: RoutingOwner }) {
         }
       >
         {routes.isError && <QueryError error={routes.error} />}
-        {routes.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
+        {routes.isLoading && <Loading />}
         {routes.data && rows.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No static routes on this {ownerNoun(owner)}.
@@ -149,8 +151,19 @@ export function RoutingPanel({ owner }: { owner: RoutingOwner }) {
             columns={columns}
             flexColumn="description"
             tableId="device-static-routes"
+            onSelectedRowsChange={setSelected}
+            selectedRows={selected}
           />
         )}
+        <SafeBulkEditBar
+          selected={selected}
+          endpoint="/api/routing/static-routes/"
+          noun={["static route", "static routes"]}
+          invalidate={[["static-routes"], ownerDetailKey(owner)]}
+          onCleared={() => setSelected([])}
+          canEdit={canEdit}
+          canDelete={canDelete}
+        />
       </Section>
 
       <Dialog
@@ -217,6 +230,9 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
     | { kind: "session"; item: BGPSession }
     | null
   >(null)
+  // Ticked sessions per instance table; the bar acts on all of them.
+  const [picked, setPicked] = useState<Record<string, BGPSession[]>>({})
+  const selected = Object.values(picked).flat()
 
   const instances = useQuery({
     queryKey: ["bgp-instances", owner.kind, owner.id],
@@ -243,6 +259,7 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
     () =>
       buildBGPSessionColumns({
         humanIds,
+        selection: canEditS || canDeleteS,
         omit: ["device", "vrf", "local_asn"],
         actions: {
           onEdit: (row) =>
@@ -280,9 +297,7 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
       }
     >
       {instances.isError && <QueryError error={instances.error} />}
-      {instances.isLoading && (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      )}
+      {instances.isLoading && <Loading />}
       {instances.data && rows.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No BGP on this {ownerNoun(owner)}.
@@ -515,6 +530,10 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
                     columns={sessionColumns}
                     flexColumn="description"
                     tableId="device-bgp-sessions"
+                    onSelectedRowsChange={(rs) =>
+                      setPicked((p) => ({ ...p, [inst.id]: rs }))
+                    }
+                    selectedRows={picked[inst.id] ?? []}
                   />
                 )}
               </div>
@@ -523,6 +542,19 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
         )
       })}
 
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/routing/bgp-sessions/"
+        noun={["BGP session", "BGP sessions"]}
+        invalidate={[
+          ["bgp-sessions"],
+          ["bgp-instances"],
+          ownerDetailKey(owner),
+        ]}
+        onCleared={() => setPicked({})}
+        canEdit={canEditS}
+        canDelete={canDeleteS}
+      />
       <Dialog open={dialog !== null} onOpenChange={(o) => !o && close()}>
         <DialogContent size="2xl" className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>

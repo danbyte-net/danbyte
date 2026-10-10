@@ -35,6 +35,7 @@ import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
+import { EmbeddedPowerFeedTable } from "@/components/embedded-tables"
 import { QueryError } from "@/components/query-error"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
 import { RackElevation } from "@/components/rack-elevation"
@@ -75,7 +76,7 @@ function RackDetail() {
 
 function RackDetailBody({ rack: r }: { rack: Rack }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "devices" | "documents" | "journal" | "history"
+    "overview" | "devices" | "power" | "documents" | "journal" | "history"
   >("overview")
   const { canDo } = useMe()
   const nav = useNavigate()
@@ -127,6 +128,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: r.device_count },
+        { value: "power", label: "Power feeds" },
         { value: "documents", label: "Documents", count: r.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -144,6 +146,13 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
             <RackDevicesPane rackId={r.id} />
           </div>
         </div>
+      </DetailTab>
+      <DetailTab value="power">
+        <EmbeddedPowerFeedTable
+          filter={{ rack: r.id }}
+          omitRack
+          emptyText="No feeds deliver power to this rack yet."
+        />
       </DetailTab>
       <DetailTab value="documents">
         <ObjectDocuments objectType="api.rack" objectId={r.id} />

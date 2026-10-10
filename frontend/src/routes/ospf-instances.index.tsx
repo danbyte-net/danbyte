@@ -15,6 +15,7 @@ function Page() {
   const spec = useMemo<RoutingListSpec<OSPFInstance>>(
     () => ({
       title: "OSPF instances",
+      noun: ["OSPF instance", "OSPF instances"],
       objectType: "ospfinstance",
       endpoint: "/api/routing/ospf-instances/",
       queryKey: "ospf-instances",

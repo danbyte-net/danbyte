@@ -58,6 +58,7 @@ const KIND_LABEL: Record<string, string> = {
 
 export const prefixListList: RoutingListSpec<PrefixList> = {
   title: "Prefix lists",
+  noun: ["prefix list", "prefix lists"],
   objectType: "prefixlist",
   endpoint: "/api/routing/prefix-lists/",
   queryKey: "prefix-lists",
@@ -106,6 +107,7 @@ export const prefixListDetail: RoutingDetailSpec<PrefixList, PrefixListRule> = {
 
 export const bfdProfileList: RoutingListSpec<BFDProfile> = {
   title: "BFD profiles",
+  noun: ["BFD profile", "BFD profiles"],
   objectType: "bfdprofile",
   endpoint: "/api/routing/bfd-profiles/",
   queryKey: "bfd-profiles",
@@ -156,6 +158,7 @@ export const bfdProfileDetail: RoutingDetailSpec<BFDProfile> = {
 
 export const ethernetSegmentList: RoutingListSpec<EthernetSegment> = {
   title: "Ethernet segments",
+  noun: ["Ethernet segment", "Ethernet segments"],
   objectType: "ethernetsegment",
   endpoint: "/api/routing/ethernet-segments/",
   queryKey: "ethernet-segments",
@@ -255,6 +258,7 @@ export const ethernetSegmentDetail: RoutingDetailSpec<EthernetSegment> = {
 
 export const communityList: RoutingListSpec<Community> = {
   title: "Communities",
+  noun: ["community", "communities"],
   objectType: "community",
   endpoint: "/api/routing/communities/",
   queryKey: "communities",
@@ -300,6 +304,7 @@ export const communityDetail: RoutingDetailSpec<Community> = {
 
 export const communityListList: RoutingListSpec<CommunityList> = {
   title: "Community lists",
+  noun: ["community list", "community lists"],
   objectType: "communitylist",
   endpoint: "/api/routing/community-lists/",
   queryKey: "community-lists",
@@ -351,6 +356,7 @@ export const communityListDetail: RoutingDetailSpec<
 
 export const asPathListList: RoutingListSpec<ASPathList> = {
   title: "AS-path lists",
+  noun: ["AS-path list", "AS-path lists"],
   objectType: "aspathlist",
   endpoint: "/api/routing/as-path-lists/",
   queryKey: "as-path-lists",
@@ -398,6 +404,7 @@ export const asPathListDetail: RoutingDetailSpec<ASPathList, ASPathListRule> = {
 
 export const routingPolicyList: RoutingListSpec<RoutingPolicy> = {
   title: "Routing policies",
+  noun: ["routing policy", "routing policies"],
   objectType: "routingpolicy",
   endpoint: "/api/routing/policies/",
   queryKey: "routing-policies",
@@ -448,6 +455,7 @@ export const routingPolicyDetail: RoutingDetailSpec<
 
 export const keychainList: RoutingListSpec<RoutingKeychain> = {
   title: "Routing keychains",
+  noun: ["keychain", "keychains"],
   objectType: "routingkeychain",
   endpoint: "/api/routing/keychains/",
   queryKey: "routing-keychains",
@@ -508,6 +516,7 @@ export const keychainDetail: RoutingDetailSpec<RoutingKeychain> = {
 
 export const peerGroupList: RoutingListSpec<BGPPeerGroup> = {
   title: "BGP peer groups",
+  noun: ["peer group", "peer groups"],
   objectType: "bgppeergroup",
   endpoint: "/api/routing/bgp-peer-groups/",
   queryKey: "bgp-peer-groups",
@@ -587,6 +596,7 @@ export const peerGroupDetail: RoutingDetailSpec<BGPPeerGroup> = {
 
 export const ospfAreaList: RoutingListSpec<OSPFArea> = {
   title: "OSPF areas",
+  noun: ["OSPF area", "OSPF areas"],
   objectType: "ospfarea",
   endpoint: "/api/routing/ospf-areas/",
   queryKey: "ospf-areas",

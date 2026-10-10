@@ -586,6 +586,52 @@ a single host (`GET /api/devices/<id>/inventory/`), on the fleet export when
 asked (`GET /api/inventory/ansible/?routing=1`), since most plays never read
 it.
 
+## Editing and deleting several at once
+
+Every routing list has tick boxes: BGP instances, sessions and peer groups;
+OSPF instances and areas; IS-IS and EIGRP instances; VTEPs and Ethernet
+segments; static routes; routing policies, prefix lists, communities,
+community lists and AS-path lists; keychains and BFD profiles. A device's or
+VM's **Routing** tab (static routes and BGP sessions) and a VRF's, an ASN's,
+a peer group's and a prefix's **BGP sessions** and **Static routes** tabs
+have them too. Tick rows, or **Select all**, and the bar at the bottom
+offers **Edit** and **Delete**. More than 1000 rows go 1000 at a time under
+one confirmation (see [Large selections](table-preferences.md#large-selections)).
+
+**Edit** sets the same value on every ticked row. A field left on **Keep
+current** is not touched; **Clear** empties it. What each list offers:
+
+| List | Fields |
+|---|---|
+| Every list | Description, add tags, remove tags |
+| BGP sessions | Status, peer group, BFD profile, keychain, import policy, export policy |
+| Static routes | Status, VRF, next hop, distance |
+| OSPF, IS-IS and EIGRP instances | Status, VRF |
+| BGP instances, VTEPs | Status |
+
+Each value is checked as an edit of that row checks it: a status the type
+does not offer, an object from another tenant or outside your sites, a next
+hop on a blackhole route. One bad row refuses the whole edit and the message
+names it; nothing is written. A change that would give two static routes the
+same path is refused the same way. Each changed row gets its own
+[change log](change-log.md) entry. A session has no separate on/off switch:
+set its status to **Disabled**.
+
+**Delete** asks first. The dialog says how many rows go, what goes with
+them (an instance's sessions and interfaces), and which rows are **kept**
+because something still uses them:
+
+- an OSPF area OSPF interfaces are in;
+- a peer group sessions belong to;
+- a routing policy, keychain or BFD profile a session, peer group, instance
+  or interface uses;
+- a prefix list, community, community list or AS-path list a policy rule or
+  community list rule matches or sets.
+
+To delete a kept row, point what uses it elsewhere or delete that first,
+then delete the row again. Every deleted row goes exactly as a single delete
+takes it: a keychain's key leaves the secret store with it.
+
 ## API
 
 | Endpoint | Purpose |
@@ -621,7 +667,23 @@ interfaces) or `next_hop_vm_interface_id` (static routes). Reads carry both
 `device` and `virtual_machine`, one of them null, plus `site`.
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
-supports CSV import/export and bulk delete like the rest of Danbyte. A CSV
+supports CSV import/export like the rest of Danbyte. The seventeen lists
+above also answer:
+
+- `POST …/bulk-delete/` with `{"ids": [...]}` (add `"dry_run": true` for
+  the preview) - `deleted`, `deleted_ids`, `skipped` (id, name, reason),
+  `impact` and `released`; needs the *delete* permission on the type;
+- `POST …/bulk-update/` with `{"ids": [...], "fields": {...}}` - the
+  fields in the table above as their write keys (`status_id`,
+  `description`, `peer_group_id`, `bfd_profile_id`, `keychain_id`,
+  `import_policy_id`, `export_policy_id`, `vrf_id`, `next_hop`, `distance`)
+  plus `add_tag_ids` and `remove_tag_ids`; an empty id clears. Any other key
+  is a `400`; a duplicate static-route path is a `409`. Needs *change*;
+- `GET …/bulk-edit-fields/` - the same fields described for an editor, in
+  the shape of [`/api/editable-fields/`](../reference/api.md); needs
+  *change*.
+
+A CSV
 row without an `id` is matched on what makes it unique - a static route by
 device, prefix and next hop, a BGP instance by device and VRF, a session by
 instance and remote address, an OSPF or IS-IS instance by device and

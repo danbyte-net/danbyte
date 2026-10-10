@@ -142,6 +142,22 @@ row is checked as its own `PATCH` would be, and the error names the row
 settings."]}`). Text is trimmed and booleans read as a `PATCH` reads them.
 One bad value refuses the whole call: nothing is written.
 
+A list that declares its bulk-edit fields (the routing lists) also answers
+`GET <list>/bulk-edit-fields/` with `{"fields": [...], "tags": true}`: the
+keys its `bulk-update/` accepts, each described as `/api/editable-fields/`
+describes a field (an object field carries the `endpoint` to pick it from).
+Its `bulk-update/` answers `409` when the values would make two rows the
+same (a static route's path), and its `bulk-delete/` keeps a row that other
+records still reference, with the reason in `skipped` - see
+[Routing](../features/routing.md#editing-and-deleting-several-at-once).
+
+The lists that preview a delete (circuits, wireless, virtual chassis, power
+panels and feeds) answer `bulk-delete/` with `{deleted, deleted_ids,
+skipped: [{id, name, reason}], impact: [{label, count}], released: [{label,
+count}], notes: [{id, name, label, detail}], dry_run}`. `skipped` are the
+rows kept because something still uses them; `notes` name rows that go but
+are worth a look first, such as a power feed still cabled to a device.
+
 ## Generating the schema offline
 
 To export the schema to a file (for client generation, diffing, or CI):

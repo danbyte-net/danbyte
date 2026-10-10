@@ -1,8 +1,9 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
+import { useMe } from "@/lib/use-me"
 import type {
   Cabinet,
   Cable,
@@ -21,7 +22,7 @@ import type {
   VTEP,
   WirelessLAN,
 } from "@/lib/api"
-import { DataTable } from "@/components/data-table"
+import { DataTable, selectionColumn } from "@/components/data-table"
 import { buildCabinetColumns } from "@/components/columns/cabinet-columns"
 import type { CabinetColumnId } from "@/components/columns/cabinet-columns"
 import { buildCableColumns } from "@/components/columns/cable-columns"
@@ -55,7 +56,9 @@ import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
 import type { WirelessLANColumnId } from "@/components/columns/wireless-lan-columns"
 import { Loading } from "@/components/loading"
+import { PowerFeedBulkBar } from "@/components/power-bulk-bars"
 import { QueryError } from "@/components/query-error"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useSlaStatus } from "@/components/monitoring/sla-status"
 
 function useEmbed<T>(
@@ -79,12 +82,15 @@ function Frame<T>({
   columns,
   flexColumn,
   tableId,
+  selection,
 }: {
   q: ReturnType<typeof useEmbed<T>>
   emptyText: string
   columns: ColumnDef<T>[]
   flexColumn: string
   tableId: string
+  /** Row selection, for a table with a bulk bar. */
+  selection?: { rows: T[]; onChange: (rows: T[]) => void }
 }) {
   if (q.isError) return <QueryError error={q.error} />
   if (q.isLoading) return <Loading />
@@ -98,6 +104,8 @@ function Frame<T>({
       columns={columns}
       flexColumn={flexColumn}
       tableId={tableId}
+      selectedRows={selection?.rows}
+      onSelectedRowsChange={selection?.onChange}
     />
   )
 }
@@ -252,15 +260,18 @@ export function EmbeddedCircuitTable({
 }
 
 /** Power feeds scoped by panel / rack / status. Reuses the one power-feed
- * column factory - the same row the /power-feeds list draws. `omitPanel` drops
- * the redundant Panel column on a panel's own detail page. */
+ * column factory - the same row the /power-feeds list draws. `omitPanel` and
+ * `omitRack` drop the column that repeats the page's own object. The rows
+ * can be selected for the list's bulk edit and delete. */
 export function EmbeddedPowerFeedTable({
   filter,
   omitPanel = false,
+  omitRack = false,
   emptyText = "No power feeds.",
 }: {
   filter: Record<string, string>
   omitPanel?: boolean
+  omitRack?: boolean
   emptyText?: string
 }) {
   const q = useEmbed<PowerFeed>(
@@ -268,6 +279,10 @@ export function EmbeddedPowerFeedTable({
     "/api/power-feeds/",
     filter
   )
+  const { canDo } = useMe()
+  const canEdit = canDo("powerfeed", "change")
+  const canDelete = canDo("powerfeed", "delete")
+  const [selected, setSelected] = useState<PowerFeed[]>([])
   const columns = useMemo<ColumnDef<PowerFeed>[]>(() => {
     const include: PowerFeedColumnId[] = [
       "name",
@@ -281,17 +296,29 @@ export function EmbeddedPowerFeedTable({
       "max",
     ]
     return buildPowerFeedColumns({
-      include: omitPanel ? include.filter((id) => id !== "panel") : include,
+      include: include.filter(
+        (id) => !(omitPanel && id === "panel") && !(omitRack && id === "rack")
+      ),
+      selection: canEdit || canDelete,
     })
-  }, [omitPanel])
+  }, [omitPanel, omitRack, canEdit, canDelete])
   return (
-    <Frame
-      q={q}
-      emptyText={emptyText}
-      columns={columns}
-      flexColumn="name"
-      tableId="embedded-power-feeds"
-    />
+    <>
+      <Frame
+        q={q}
+        emptyText={emptyText}
+        columns={columns}
+        flexColumn="name"
+        tableId="embedded-power-feeds"
+        selection={{ rows: selected, onChange: setSelected }}
+      />
+      <PowerFeedBulkBar
+        selected={selected}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+      />
+    </>
   )
 }
 
@@ -507,6 +534,67 @@ export function EmbeddedContactTable({
   )
 }
 
+/** Frame plus tick boxes and the routing selection bar (#314): bulk edit
+ * and the safe bulk delete, offered when the caller may do either. */
+function BulkFrame<T extends { id: string }>({
+  q,
+  emptyText,
+  columns,
+  flexColumn,
+  tableId,
+  objectType,
+  endpoint,
+  noun,
+  invalidate,
+}: {
+  q: ReturnType<typeof useEmbed<T>>
+  emptyText: string
+  columns: ColumnDef<T>[]
+  flexColumn: string
+  tableId: string
+  objectType: string
+  endpoint: string
+  noun: [string, string]
+  invalidate: string[][]
+}) {
+  const { canDo } = useMe()
+  const canEdit = canDo(objectType, "change")
+  const canDelete = canDo(objectType, "delete")
+  const selectable = canEdit || canDelete
+  const [selected, setSelected] = useState<T[]>([])
+  const cols = useMemo(
+    () => (selectable ? [selectionColumn<T>(), ...columns] : columns),
+    [columns, selectable]
+  )
+  if (q.isError) return <QueryError error={q.error} />
+  if (q.isLoading) return <Loading />
+  const rows = q.data?.results ?? []
+  if (rows.length === 0)
+    return <p className="text-sm text-muted-foreground">{emptyText}</p>
+  return (
+    <>
+      <DataTable
+        data={rows}
+        total={q.data?.count}
+        columns={cols}
+        flexColumn={flexColumn}
+        tableId={tableId}
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint={endpoint}
+        noun={noun}
+        invalidate={invalidate}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+      />
+    </>
+  )
+}
+
 /** BGP sessions scoped by the local instance's AS, peer group or device -
  * the one session column factory, so a row reads as it does on
  * /bgp-sessions. */
@@ -545,12 +633,16 @@ export function EmbeddedBGPSessionTable({
     [omit]
   )
   return (
-    <Frame
+    <BulkFrame
       q={q}
       emptyText={emptyText}
       columns={columns}
       flexColumn="description"
       tableId="embedded-bgp-sessions"
+      objectType="bgpsession"
+      endpoint="/api/routing/bgp-sessions/"
+      noun={["BGP session", "BGP sessions"]}
+      invalidate={[["embedded-bgp-sessions"], ["bgp-sessions"]]}
     />
   )
 }
@@ -666,12 +758,16 @@ export function EmbeddedStaticRouteTable({
     [omit]
   )
   return (
-    <Frame
+    <BulkFrame
       q={q}
       emptyText={emptyText}
       columns={columns}
       flexColumn="description"
       tableId="embedded-static-routes"
+      objectType="staticroute"
+      endpoint="/api/routing/static-routes/"
+      noun={["static route", "static routes"]}
+      invalidate={[["embedded-static-routes"], ["static-routes"]]}
     />
   )
 }

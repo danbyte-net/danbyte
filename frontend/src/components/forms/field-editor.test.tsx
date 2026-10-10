@@ -246,6 +246,61 @@ describe("FieldEditor per kind", () => {
   })
 })
 
+describe("object field with an endpoint in a bulk edit (#314)", () => {
+  const spec: BulkFieldSpec = {
+    key: "peer_group_id",
+    label: "Peer group",
+    kind: "object",
+    object_model: "bgppeergroup",
+    endpoint: "/api/routing/bgp-peer-groups/",
+  }
+
+  function mountPicker(value: unknown) {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    qc.setQueryData(["bulk-object-options", "/api/routing/bgp-peer-groups/"], {
+      count: 1,
+      next: null,
+      previous: null,
+      results: [{ id: "pg-1", name: "EDGE" }],
+    })
+    const onChange = vi.fn()
+    const onClear = vi.fn()
+    render(
+      <QueryClientProvider client={qc}>
+        <FieldEditor
+          spec={spec}
+          value={value}
+          onChange={onChange}
+          onClear={onClear}
+          options={makeOptions()}
+        />
+      </QueryClientProvider>
+    )
+    return { onChange, onClear }
+  }
+
+  it("offers Keep, Clear and the endpoint's rows", () => {
+    const { onChange, onClear } = mountPicker(undefined)
+    const trigger = screen.getByRole("combobox")
+    expect(trigger.textContent).toContain("Keep current")
+    fireEvent.click(trigger)
+    expect(screen.getByText("Clear peer group")).toBeTruthy()
+    fireEvent.click(screen.getByText("EDGE"))
+    expect(onChange).toHaveBeenCalledWith("pg-1")
+    expect(onClear).not.toHaveBeenCalled()
+  })
+
+  it("sends null for Clear rather than unsetting the field", () => {
+    const { onChange, onClear } = mountPicker("pg-1")
+    fireEvent.click(screen.getByRole("combobox"))
+    fireEvent.click(screen.getByText("Clear peer group"))
+    expect(onChange).toHaveBeenCalledWith(null)
+    expect(onClear).not.toHaveBeenCalled()
+  })
+})
+
 describe('mode="keep" arming', () => {
   const spec: BulkFieldSpec = {
     key: "description",

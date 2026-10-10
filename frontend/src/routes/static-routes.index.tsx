@@ -8,6 +8,7 @@ import { ownerName } from "@/components/routing/owner"
 
 const spec: RoutingListSpec<StaticRoute> = {
   title: "Static routes",
+  noun: ["static route", "static routes"],
   objectType: "staticroute",
   endpoint: "/api/routing/static-routes/",
   queryKey: "static-routes",

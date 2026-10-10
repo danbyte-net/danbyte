@@ -54,7 +54,8 @@ A **power panel** page has:
 
 - **Overview** - its site, how many feeds draw from it, comments, and when it
   was created and last changed.
-- **Feeds** - every feed on the panel, the same row the feeds list draws.
+- **Feeds** - every feed on the panel, the same row the feeds list draws;
+  tick feeds to edit or delete several at once.
 - **Journal** - your notes on this panel.
 - **Change log** - who changed which field, and when.
 
@@ -87,6 +88,41 @@ A **power feed** page has:
 !!! warning "Panels in use can't be deleted"
     If a panel still has feeds attached, Danbyte blocks the delete. Remove or
     reassign those feeds first.
+
+## Editing and deleting several at once
+
+Tick rows in **Power panels** or **Power feeds** - or on a panel's **Feeds**
+tab, or a rack's **Power feeds** tab - and a bar with **Edit** and **Delete**
+comes up.
+
+**Edit** sets the same value on every selected row; fields left on *Keep*
+are untouched, and tags are added or removed rather than replaced.
+
+| List | Bulk-editable fields |
+|---|---|
+| Power feeds | status, type, supply, phase, voltage, amperage, max utilization, power panel, rack, tags |
+| Power panels | site, tags |
+
+Each value is checked as the edit form checks it. One bad value, or a move
+that would give a panel two feeds of one name (or a site two panels of one
+name), refuses the whole edit and nothing is written. Every changed row gets
+its own entry in the change log.
+
+**Delete** first shows what will happen: the rows that go, what goes with
+them, and the rows Danbyte keeps. Feeds cabled to a device are named with the
+power port at the other end; the cable loses its end on the feed. A panel
+that still has feeds is kept, and **Delete their feeds too** deletes the
+panel together with its feeds - only when you may delete every one of those
+feeds. More than 1000 rows go 1000 at a time, under one confirmation (see
+[Large selections](table-preferences.md#large-selections)).
+
+The calls are `POST /api/power-feeds/bulk-update/` and
+`/api/power-panels/bulk-update/` (`{"ids": [...], "fields": {...}}`, tags as
+`add_tag_ids` / `remove_tag_ids`), and `bulk-delete/` on both
+(`{"ids": [...], "dry_run": true}` for the preview, `"with_feeds": true` on
+panels). They need the *change* and *delete* permission on the type, and
+reach only the rows your permissions and sites reach. See
+[Bulk calls](../reference/api.md#bulk-calls).
 
 ## Device power: ports & outlets
 

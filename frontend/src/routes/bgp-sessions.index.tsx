@@ -11,6 +11,7 @@ import { ownerName } from "@/components/routing/owner"
 
 const spec: RoutingListSpec<BGPSession> = {
   title: "BGP sessions",
+  noun: ["BGP session", "BGP sessions"],
   objectType: "bgpsession",
   endpoint: "/api/routing/bgp-sessions/",
   queryKey: "bgp-sessions",

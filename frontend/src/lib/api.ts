@@ -1625,6 +1625,9 @@ export interface Device {
   hardware_count: number
   console_count: number
   power_count: number
+  /** Detail payload only; 0 on the list. */
+  front_port_count?: number
+  rear_port_count?: number
   service_count: number
   /** Per-tab counts served on the detail payload only. */
   routing_count?: number
@@ -4022,6 +4025,8 @@ export interface MacEntry {
     device: { id: string; name: string } | null
   }[]
   objects: MacObject[]
+  /** Where the network learned it - the MAC page's Location (#344). */
+  location: MacListLocation | null
 }
 
 /** MAC detail - richer than the list row (interface enabled, IP status). */
@@ -4077,6 +4082,7 @@ export interface MacDetail {
  * Same shape as the detail-page object, plus timestamps. */
 export interface MACAddress extends MacObjectDetail {
   vendor: MacVendor | null
+  location: MacListLocation | null
   created_at: string
   updated_at: string
 }
@@ -8224,6 +8230,18 @@ export interface MacLocationRef {
   port_name: string
 }
 
+/** A MAC list row's Location (#344): where, in which site and location, and
+ * when it was seen there. */
+export interface MacListLocation extends MacLocationRef {
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  vlan: number | null
+  since: string
+  last_seen: string
+  /** Last seen more than a day ago. */
+  stale: boolean
+}
+
 export interface MacSightingRef {
   device: { id: string; name: string }
   interface: { id: string; name: string } | null
@@ -11021,10 +11039,22 @@ export type BackupRunStatus = "queued" | "running" | "success" | "failed"
 export interface StorageKindField {
   name: string
   label: string
-  type: "text" | "password" | "checkbox"
+  type: "text" | "password" | "checkbox" | "number" | "textarea"
   placeholder?: string
   secret?: boolean
   default?: boolean
+  /** Shown in the (i) popover beside the label. */
+  info?: string
+  mono?: boolean
+}
+
+/** POST /api/backups/targets/{id}/test/ - an SFTP target with no trusted
+ * host key answers with the key to confirm instead of testing. */
+export interface BackupTargetTestResult {
+  ok: boolean
+  detail: string
+  confirm_host_key?: boolean
+  host_key?: { fingerprint: string; algorithm: string }
 }
 
 export interface StorageKind {

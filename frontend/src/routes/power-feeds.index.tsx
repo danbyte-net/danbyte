@@ -12,6 +12,7 @@ import { buildPowerFeedColumns } from "@/components/columns/power-feed-columns"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { PowerFeedDeleteDialog } from "@/components/power-feed-delete-dialog"
+import { PowerFeedBulkBar } from "@/components/power-bulk-bars"
 
 export const Route = createFileRoute("/power-feeds/")({
   component: PowerFeedsPage,
@@ -20,9 +21,12 @@ export const Route = createFileRoute("/power-feeds/")({
 function PowerFeedsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("powerfeed", "add")
+  const canEdit = canDo("powerfeed", "change")
+  const canDelete = canDo("powerfeed", "delete")
   const { humanIds } = useMe()
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<PowerFeed | null>(null)
+  const [selectedRows, setSelectedRows] = useState<PowerFeed[]>([])
 
   const query = useQuery({
     queryKey: ["power-feeds", q],
@@ -38,6 +42,7 @@ function PowerFeedsPage() {
     () =>
       buildPowerFeedColumns<PowerFeed>({
         humanIds,
+        selection: canEdit || canDelete,
         omit: ["max"],
         actions: {
           editTo: "/power-feeds/$id/edit",
@@ -45,7 +50,7 @@ function PowerFeedsPage() {
           onDelete,
         },
       }),
-    [onDelete, humanIds]
+    [onDelete, humanIds, canEdit, canDelete]
   )
 
   const {
@@ -82,12 +87,20 @@ function PowerFeedsPage() {
       <DataTable
         data={filteredRows}
         columns={wiredColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="name"
         tableId="power-feeds"
       />
       <PowerFeedDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <PowerFeedBulkBar
+        selected={selectedRows}
+        onCleared={() => setSelectedRows([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
     </ListPageShell>
   )

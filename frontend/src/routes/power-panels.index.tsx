@@ -7,7 +7,7 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type PowerPanel, type Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { numidColumn } from "@/components/cells/numid"
 import { siteColumn } from "@/components/cells/site-cell"
@@ -15,6 +15,7 @@ import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { PowerPanelDeleteDialog } from "@/components/power-panel-delete-dialog"
+import { PowerPanelBulkBar } from "@/components/power-bulk-bars"
 
 export const Route = createFileRoute("/power-panels/")({
   component: PowerPanelsPage,
@@ -24,8 +25,11 @@ function PowerPanelsPage() {
   const { humanIds } = useMe()
   const { canDo } = useMe()
   const canAdd = canDo("powerpanel", "add")
+  const canEdit = canDo("powerpanel", "change")
+  const canDelete = canDo("powerpanel", "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<PowerPanel | null>(null)
+  const [selectedRows, setSelectedRows] = useState<PowerPanel[]>([])
 
   const query = useQuery({
     queryKey: ["power-panels", q],
@@ -39,6 +43,7 @@ function PowerPanelsPage() {
   const onDelete = useCallback((p: PowerPanel) => setDeleting(p), [])
   const columns = useMemo<ColumnDef<PowerPanel>[]>(
     () => [
+      ...(canEdit || canDelete ? [selectionColumn<PowerPanel>()] : []),
       ...(humanIds ? [numidColumn<PowerPanel>({ get: (r) => r.numid })] : []),
       {
         id: "name",
@@ -86,7 +91,7 @@ function PowerPanelsPage() {
         ),
       },
     ],
-    [onDelete, humanIds]
+    [onDelete, humanIds, canEdit, canDelete]
   )
   const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
     useTableFilters(columns, rows)
@@ -116,12 +121,21 @@ function PowerPanelsPage() {
       <DataTable
         data={filteredRows}
         columns={facetColumns}
+        onSelectedRowsChange={setSelectedRows}
+        selectedRows={selectedRows}
         flexColumn="comments"
         tableId="power-panels"
       />
       <PowerPanelDeleteDialog
         item={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <PowerPanelBulkBar
+        selected={selectedRows}
+        onCleared={() => setSelectedRows([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        canDeleteFeeds={canDo("powerfeed", "delete")}
       />
     </ListPageShell>
   )

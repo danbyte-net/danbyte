@@ -686,6 +686,10 @@ class FieldWriteAllowList:
     the metadata endpoint becoming a third list that can silently disagree with
     the two that already exist.
 
+    A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
+    its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
+    plan may change and the fields a bulk edit offers can differ.
+
     ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
     stay authoritative, so the existing component viewsets need no edit. Note
     the consequence: adding ``editable_*`` to a viewset that *does* have a
@@ -728,34 +732,28 @@ def _bulk_status_offered(status_id, model, key="status_id") -> None:
         )
 
 
-class ComponentBulkMixin(FieldWriteAllowList):
-    """``bulk-update`` + ``bulk-delete`` for component viewsets (interfaces,
-    ports, VM interfaces, device-type component templates).
+class BulkUpdateMixin(FieldWriteAllowList):
+    """``bulk-update`` on its own: the field-level bulk write that
+    :class:`ComponentBulkMixin` and the routing lists (#314) share.
 
     POST ``bulk-update`` {ids: [...], fields: {...}} - only keys present in
-    ``fields`` are touched, and only keys the viewset allow-lists are
-    accepted (an unknown key is a 400, never silently dropped). Tenant-scoped
-    FKs re-validate against the active tenant since ``qs.update`` bypasses
-    the serializer's scoped fields. Selection is scoped by ``get_queryset``
-    (tenant + RBAC rows), so foreign ids silently fall out.
-
-    The allow-list itself lives on :class:`FieldWriteAllowList`.
-
-    POST ``bulk-delete`` {ids: [...]} - same scoping; audited.
+    ``fields`` are touched, and only keys :meth:`bulk_update_allow_list`
+    names are accepted (an unknown key is a 400, never silently dropped).
+    Tenant-scoped FKs re-validate against the active tenant since
+    ``qs.update`` bypasses the serializer's scoped fields. Selection is scoped
+    by ``get_queryset`` (tenant + RBAC rows), so foreign ids silently fall out.
     """
 
     bulk_tags = False                    # add_tag_ids / remove_tag_ids
-    # The FK column that scopes name-uniqueness for rename/clone, e.g.
-    # "device_type_id" (templates) or "device_id" (device components). None
-    # skips the pre-check and relies on the DB constraint.
-    bulk_name_scope_field: str | None = None
-    rbac_action_map = {
-        "bulk_update": "change", "bulk_delete": "delete",
-        "bulk_rename": "change", "bulk_clone": "add",
-    }
+    rbac_action_map = {"bulk_update": "change"}
 
     def _bulk_ids(self, request):
         return bulk_ids(request, MAX_IDS)
+
+    def bulk_update_allow_list(self) -> dict:
+        """What ``bulk-update`` accepts, as ``field_write_allow_list()``
+        shapes it. Default: the viewset's whole field-write allow-list."""
+        return self.field_write_allow_list()
 
     def normalize_bulk_updates(self, updates: dict) -> dict:
         """Hook for model-level invariants that ``Model.save()`` would enforce
@@ -774,7 +772,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
-        spec = self.field_write_allow_list()
+        spec = self.bulk_update_allow_list()
         allowed = {*spec["str"], *spec["bool"], *spec["int"], *spec["fk"]}
         tag_keys = {"add_tag_ids", "remove_tag_ids"} if self.bulk_tags else set()
         unknown = set(fields) - allowed - tag_keys
@@ -859,6 +857,27 @@ class ComponentBulkMixin(FieldWriteAllowList):
                 [row.pk for row in _rows], action="change"
             )
         return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
+
+
+class ComponentBulkMixin(BulkUpdateMixin):
+    """``bulk-update`` + ``bulk-delete`` + ``bulk-rename`` + ``bulk-clone``
+    for component viewsets (interfaces, ports, VM interfaces, device-type
+    component templates).
+
+    ``bulk-update`` comes from :class:`BulkUpdateMixin` and takes the
+    allow-list on :class:`FieldWriteAllowList`.
+
+    POST ``bulk-delete`` {ids: [...]} - same scoping; audited.
+    """
+
+    # The FK column that scopes name-uniqueness for rename/clone, e.g.
+    # "device_type_id" (templates) or "device_id" (device components). None
+    # skips the pre-check and relies on the DB constraint.
+    bulk_name_scope_field: str | None = None
+    rbac_action_map = {
+        "bulk_update": "change", "bulk_delete": "delete",
+        "bulk_rename": "change", "bulk_clone": "add",
+    }
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
@@ -7803,10 +7822,96 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
 
 
 # ─── Power ───────────────────────────────────────────────────────────────────
-class PowerPanelViewSet(TenantScopedViewSet):
+class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
+    """Bulk edit sets site and tags; bulk delete keeps a panel that still has
+    feeds, unless ``with_feeds`` takes them along too (#313)."""
+
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
     queryset = PowerPanel.objects.all().order_by(NATURAL_NAME)
     serializer_class = PowerPanelSerializer
     pagination_class = StandardPagination
+    bulk_fk_fields = {"site_id": Site}
+    bulk_tags = True
+    # Rename and clone are the component tables' own; a panel has neither.
+    bulk_rename = None
+    bulk_clone = None
+
+    def check_bulk_rows(self, rows, updates):
+        from .power_bulk import names_free_after_move
+
+        if "site_id" in updates:
+            names_free_after_move(rows, "site_id", updates["site_id"], "site_id")
+
+    def _with_feeds(self) -> bool:
+        data = getattr(self.request, "data", None)
+        return self.action == "bulk_delete" and isinstance(data, dict) and \
+            bool(data.get("with_feeds"))
+
+    def _deletable_feed_counts(self) -> dict:
+        """``{panel id: feeds of it the caller may delete}`` for the panels
+        of this bulk delete - the feed grant's rows, not the panel's."""
+        if not hasattr(self, "_feed_counts"):
+            from auth_api import rbac
+
+            tenant = _get_active_tenant(self.request)
+            feeds = rbac.restrict_queryset(
+                PowerFeed.objects.filter(
+                    tenant=tenant, power_panel_id__in=bulk_ids(self.request, MAX_IDS)
+                ),
+                self.request.user, tenant, "powerfeed", "delete",
+            )
+            self._feed_counts = dict(
+                feeds.values("power_panel_id").annotate(n=Count("pk"))
+                .values_list("power_panel_id", "n")
+            )
+        return self._feed_counts
+
+    def bulk_blocker(self, obj):
+        n = getattr(obj, "feed_count_annotated", None)
+        if n is None:
+            n = obj.power_feeds.count()
+        if not n:
+            return None
+        feeds = f"{n} power feed{'s' if n != 1 else ''}"
+        if not self._with_feeds():
+            return f"In use: {feeds}."
+        if self._deletable_feed_counts().get(obj.pk, 0) < n:
+            return f"In use: {feeds}, not all of them yours to delete."
+        return None
+
+    def bulk_collector(self):
+        from .power_bulk import FeedsFirstCollector
+
+        return FeedsFirstCollector() if self._with_feeds() else super().bulk_collector()
+
+    def bulk_collect_into(self, collector, rows):
+        if self._with_feeds():
+            feeds = list(PowerFeed.objects.filter(power_panel__in=rows))
+            if feeds:
+                collector.collect(feeds)
+        collector.collect(rows)
+
+    def bulk_notes(self, rows):
+        from .power_bulk import cabled_feed_notes
+
+        if not self._with_feeds():
+            return []
+        return cabled_feed_notes(PowerFeed.objects.filter(power_panel__in=rows))
+
+    def bulk_destroy(self, rows):
+        # The feeds first, each with its own change-log entry, then the panels.
+        if self._with_feeds():
+            feeds = list(PowerFeed.objects.filter(power_panel__in=rows))
+            if feeds:
+                self.delete_together(feeds)
+        self.delete_together(rows)
+
+    def perform_destroy(self, instance):
+        # Only a bulk delete with ``with_feeds`` gets here with feeds left: a
+        # single delete refuses such a panel first (see destroy).
+        if self._with_feeds():
+            PowerFeed.objects.filter(power_panel=instance).delete()
+        super().perform_destroy(instance)
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -7845,10 +7950,33 @@ class PowerPanelViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class PowerFeedViewSet(TenantScopedViewSet):
+class PowerFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
+    """Bulk edit and a bulk delete that names the feeds still cabled (#313)."""
+
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
     queryset = PowerFeed.objects.all().order_by(NATURAL_NAME)
     serializer_class = PowerFeedSerializer
     pagination_class = StandardPagination
+    bulk_str_fields = ("type", "supply", "phase")
+    bulk_int_fields = ("voltage", "amperage", "max_utilization")
+    bulk_fk_fields = {"status_id": Status, "power_panel_id": PowerPanel, "rack_id": Rack}
+    bulk_tags = True
+    # Rename and clone are the component tables' own; a feed has neither.
+    bulk_rename = None
+    bulk_clone = None
+
+    def check_bulk_rows(self, rows, updates):
+        from .power_bulk import names_free_after_move
+
+        if "power_panel_id" in updates:
+            names_free_after_move(
+                rows, "power_panel_id", updates["power_panel_id"], "power_panel_id"
+            )
+
+    def bulk_notes(self, rows):
+        from .power_bulk import cabled_feed_notes
+
+        return cabled_feed_notes(PowerFeed.objects.filter(pk__in=[r.pk for r in rows]))
 
     def get_queryset(self):
         qs = (

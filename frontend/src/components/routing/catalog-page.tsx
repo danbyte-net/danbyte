@@ -20,8 +20,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/data-table"
+import { DataTable, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { TableActions } from "@/components/table-actions"
 import { useTableFilters } from "@/components/table-filters"
 
@@ -31,6 +32,8 @@ import { useTableFilters } from "@/components/table-filters"
 
 export interface RoutingListSpec<T extends { id: string }> {
   title: string
+  /** ["prefix list", "prefix lists"] - the selection bar's toasts. */
+  noun: [string, string]
   /** RBAC slug ("prefixlist") - also the IO type. */
   objectType: string
   endpoint: string
@@ -116,6 +119,9 @@ export function RoutingListPage<T extends { id: string }>({
   const canDelete = canDo(spec.objectType, "delete")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<T | null>(null)
+  const [selected, setSelected] = useState<T[]>([])
+  // Tick boxes for bulk edit and the safe bulk delete (#314).
+  const selectable = canEdit || canDelete
 
   const query = useQuery({
     queryKey: [spec.queryKey],
@@ -130,10 +136,10 @@ export function RoutingListPage<T extends { id: string }>({
   }, [allRows, q, spec])
 
   const onDelete = useCallback((r: T) => setDeleting(r), [])
-  const columns = useMemo(
-    () => spec.columns({ onDelete, humanIds, canEdit, canDelete }),
-    [spec, onDelete, humanIds, canEdit, canDelete]
-  )
+  const columns = useMemo(() => {
+    const cols = spec.columns({ onDelete, humanIds, canEdit, canDelete })
+    return selectable ? [selectionColumn<T>(), ...cols] : cols
+  }, [spec, onDelete, humanIds, canEdit, canDelete, selectable])
   const {
     rail,
     filteredRows,
@@ -170,6 +176,17 @@ export function RoutingListPage<T extends { id: string }>({
         columns={wired}
         flexColumn={spec.flexColumn}
         tableId={spec.tableId}
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint={spec.endpoint}
+        noun={spec.noun}
+        invalidate={[[spec.queryKey]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
       <RoutingDeleteDialog
         item={deleting}

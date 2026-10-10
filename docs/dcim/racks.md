@@ -337,6 +337,10 @@ column, with a bar in front: it is offered in the list's **Columns** menu,
 hidden until you tick it, and sorts by how much of the supply the demand
 takes.
 
+The rack's **Power feeds** tab lists the feeds delivered to it, the same rows
+as the feeds list; tick them to edit or delete several at once (see
+[Power](../features/power.md#editing-and-deleting-several-at-once)).
+
 The racks list offers **Ports** and **Panel ports** the same way - hidden
 until ticked, each a bar and *in use / counted* (`46 / 48`), sorting by the
 share in use and opening the Port utilization page on the rack. Counting

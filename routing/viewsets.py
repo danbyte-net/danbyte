@@ -3,25 +3,25 @@ bulk edit, planned changes, CSV import/export and the assistant see the
 types with no extra wiring."""
 from __future__ import annotations
 
-from django.db import transaction
+import dataclasses
+
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from api.bulk_delete import bulk_ids
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.cf_search import cf_text_q
 from api.natural import natural
 from api.views import _get_active_tenant
 from api.viewsets import (
     NATURAL_NAME,
     CloneableMixin,
-    FieldWriteAllowList,
     SecretPSKViewSetMixin,
     StandardPagination,
     TenantScopedViewSet,
 )
-from audit.bulk import log_bulk_delete
 from auth_api.site_paths import SITE_PATHS, site_in_q
 from core.tags import TAGS
 
@@ -54,6 +54,7 @@ from .models import (
     RoutingPolicyRule,
     StaticRoute,
     VTEPMembership,
+    normalize_address,
 )
 from .serializers import (
     ASPathListMiniSerializer,
@@ -95,28 +96,22 @@ from .serializers import (
     VTEPSerializer,
 )
 
-
-class _BulkDeleteMixin:
-    rbac_action_map = {"bulk_delete": "delete"}
-
-    @action(detail=False, methods=["post"], url_path="bulk-delete")
-    def bulk_delete(self, request):
-        ids = bulk_ids(request)
-        with transaction.atomic():
-            qs = self.get_queryset().filter(pk__in=ids)
-            rows = list(qs)
-            _, by_model = qs.delete()
-            deleted = by_model.get(qs.model._meta.label, 0)
-            log_bulk_delete(rows)
-        return Response({"deleted": deleted})
+# Status, description and tags on every list, plus the per-type fields the
+# bulk edit offers (#314). The instances share the routinginstance statuses.
+_INSTANCE_BULK = BulkEditSpec(
+    fields=("status_id", "description"), status_model="routinginstance"
+)
 
 
-class _CatalogViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class _CatalogViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     """A named tenant-wide list: search on name/description, ``?picker=1``
-    mini rows, rule count annotated for the list page."""
+    mini rows, rule count annotated for the list page. A bulk delete keeps
+    a row that sessions, instances or policy rules still reference."""
 
     mini_serializer_class = None
     editable_str_fields = ("description",)
+    bulk_edit = BulkEditSpec(fields=("description",))
+    bulk_keep_referenced = True
     pagination_class = StandardPagination
 
     def get_serializer_class(self):
@@ -210,7 +205,7 @@ class RoutingKeychainViewSet(SecretPSKViewSetMixin, _CatalogViewSet):
     clone_fields = ("algorithm", "description")
     rbac_action_map = {
         **SecretPSKViewSetMixin.rbac_action_map,
-        **_BulkDeleteMixin.rbac_action_map,
+        **BulkEditMixin.rbac_action_map,
     }
 
 
@@ -288,7 +283,7 @@ class RoutingPolicyRuleViewSet(_RuleViewSet):
 
 # ─── Static routes ───────────────────────────────────────────────────────────
 
-class StaticRouteViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class StaticRouteViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     """Static routes per device or VM. Filter with ``?device=``,
     ``?virtual_machine=``, ``?vrf=``
     (``global`` for the global table), ``?kind=``, ``?status=``,
@@ -297,12 +292,25 @@ class StaticRouteViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
     editable_str_fields = ("description",)
     editable_bool_fields = ("bfd",)
     editable_int_fields = ("distance", "metric", "tag")
+    bulk_edit = BulkEditSpec(
+        fields=("status_id", "description", "vrf_id", "next_hop", "distance")
+    )
     queryset = StaticRoute.objects.all()
     serializer_class = StaticRouteSerializer
     pagination_class = StandardPagination
     clone_fields = ("device", "virtual_machine", "vrf", "kind", "next_hop",
                     "next_hop_interface", "next_hop_vm_interface",
                     "next_hop_vrf", "distance", "metric", "tag", "bfd", "status")
+
+    def normalize_bulk_updates(self, updates):
+        # Written as the box prints it, as a PATCH writes it; a bad address
+        # is left for the per-row check to refuse by name.
+        if updates.get("next_hop"):
+            try:
+                updates = {**updates, "next_hop": normalize_address(updates["next_hop"])}
+            except DjangoValidationError:
+                pass
+        return updates
 
     def get_queryset(self):
         qs = (
@@ -348,12 +356,13 @@ class StaticRouteViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
 
 # ─── BGP ─────────────────────────────────────────────────────────────────────
 
-class BGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class BGPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     """``router bgp`` per device and table. Filter with ``?device=``,
     ``?vrf=`` (``global``), ``?asn=``, ``?site=``, ``?status=``."""
 
     editable_str_fields = ("description", "router_id", "cluster_id")
     editable_bool_fields = ("bfd", "graceful_restart")
+    bulk_edit = _INSTANCE_BULK
     queryset = BGPInstance.objects.all()
     serializer_class = BGPInstanceSerializer
     pagination_class = StandardPagination
@@ -485,17 +494,21 @@ class BGPPeerGroupViewSet(_CatalogViewSet):
         return qs
 
 
-class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class BGPSessionViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     """Neighbours. Filter with ``?instance=``, ``?device=``, ``?site=``,
     ``?asn=`` (the local instance's), ``?remote_asn=``, ``?peer_group=``,
     ``?peer_device=``, ``?status=``, ``?af=``."""
 
     editable_str_fields = ("description", "name")
     editable_int_fields = ("remote_asn", "keepalive", "hold_time", "ebgp_multihop")
+    bulk_edit = BulkEditSpec(fields=(
+        "status_id", "description", "peer_group_id", "bfd_profile_id", "keychain_id",
+        "import_policy_id", "export_policy_id",
+    ))
     queryset = BGPSession.objects.all()
     serializer_class = BGPSessionSerializer
     pagination_class = StandardPagination
-    rbac_action_map = {**_BulkDeleteMixin.rbac_action_map, "create_peer": "add"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "create_peer": "add"}
     clone_fields = ("instance", "peer_group", "remote_asn", "remote_asn_mode",
                     "local_asn", "local_address", "address_families",
                     "import_policy", "export_policy", "bfd", "ebgp_multihop",
@@ -633,12 +646,15 @@ class OSPFAreaViewSet(_CatalogViewSet):
         )
 
 
-class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class _IGPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     """Filter with ``?device=``, ``?virtual_machine=``, ``?vrf=`` (``global``),
     ``?site=``, ``?status=``."""
 
     editable_str_fields = ("description",)
     editable_bool_fields = ("bfd",)
+    bulk_edit = dataclasses.replace(
+        _INSTANCE_BULK, fields=("status_id", "description", "vrf_id")
+    )
     pagination_class = StandardPagination
     text_search_fields: tuple = ()
 
@@ -779,12 +795,13 @@ class EIGRPInterfaceViewSet(_RuleViewSet):
 
 # ─── Overlay: VTEPs ──────────────────────────────────────────────────────────
 
-class VTEPViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class VTEPViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     """One per device. Filter with ``?device=``, ``?site=``, ``?l2vpn=``
     (VTEPs carrying that overlay), ``?status=``."""
 
     editable_str_fields = ("description", "anycast_gateway_mac")
     editable_bool_fields = ("arp_suppression",)
+    bulk_edit = BulkEditSpec(fields=("status_id", "description"))
     queryset = VTEP.objects.all()
     serializer_class = VTEPSerializer
     pagination_class = StandardPagination
@@ -866,11 +883,12 @@ class EthernetSegmentViewSet(_CatalogViewSet):
         return qs.distinct()
 
 
-class LDPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class LDPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     """One per device. Filter with ``?device=``, ``?site=``, ``?status=``."""
 
     editable_str_fields = ("description", "router_id", "transport_address")
     editable_bool_fields = ("bfd",)
+    bulk_edit = _INSTANCE_BULK
     queryset = LDPInstance.objects.all().order_by("device__name")
     serializer_class = LDPInstanceSerializer
     pagination_class = StandardPagination
