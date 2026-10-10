@@ -67,6 +67,30 @@ def release_macs_before_interface_delete(sender, instance, **kwargs):
             mac.save(update_fields=["assigned_interface", "updated_at"])
 
 
+@receiver(post_delete, sender="api.CableTermination", dispatch_uid="api.no_half_cables")
+def delete_cable_left_with_an_empty_end(sender, instance, origin=None, **kwargs):
+    """A cable whose port went away with its device, module or the port
+    itself goes too, when that was the last port on its end (#378): a cable
+    with one end is not a cable. A breakout that loses one leg keeps the rest.
+
+    Not when the delete started at the cable or its terminations (an update
+    replacing an end deletes the old terminations first), nor at a tenant or
+    organization, whose delete removes the cables itself. Instance-level
+    ``delete()`` so the change log records the cable going."""
+    from core.models import Organization, Tenant
+
+    from .models import Cable, CableTermination
+
+    origin_model = getattr(origin, "model", None) or type(origin)
+    if origin is None or origin_model in (Cable, CableTermination, Tenant, Organization):
+        return
+    if CableTermination.objects.filter(cable_id=instance.cable_id, end=instance.end).exists():
+        return
+    cable = Cable.objects.filter(pk=instance.cable_id).first()
+    if cable is not None:
+        cable.delete()
+
+
 @receiver(post_delete, sender="api.FloorPlanDrawing", dispatch_uid="api.drawing_files")
 def delete_drawing_files(sender, instance, **kwargs):
     """A plan's CAD drawing takes its files with it - whether it was removed

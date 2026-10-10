@@ -5,9 +5,9 @@ import type { Device, RackOption } from "@/lib/api"
 // outline turns red exactly where the server would refuse the device, and
 // says why in the server's words.
 //
-// The rules are the server's, not the elevation's: different faces never
-// collide, even where a full-depth device is drawn hatched on the other
-// face, and a device with no face collides on both.
+// The rules are the server's: a device with no face collides on both, and
+// devices on different faces collide only where one of them is full depth
+// (a device with no type counts as full depth, as the elevation draws it).
 
 /** What the unit math reads off a rack. */
 export type RackUnits = Pick<
@@ -19,15 +19,23 @@ export type RackUnits = Pick<
 export type RackOccupant = Pick<
   Device,
   "id" | "name" | "position" | "face" | "rack_width" | "rack_side" | "u_height"
->
+> & { device_type: { is_full_depth: boolean } | null }
 
-/** How a device mounts: its face ("" for both), and for a half-width device
- * the half of the unit it takes. */
+/** How a device mounts: its face ("" for both), for a half-width device
+ * the half of the unit it takes, and whether it fills both faces. */
 export interface RackMount {
   face: "" | "front" | "rear"
   width: "full" | "half"
   side: "" | "left" | "right"
+  fullDepth: boolean
 }
+
+/** Whether an occupant fills both faces of its units. */
+const isFullDepth = (d: RackOccupant) => d.device_type?.is_full_depth ?? true
+
+/** Whether `d` and a device mounted as `mount` are on opposite faces. */
+const across = (d: RackOccupant, mount: RackMount) =>
+  Boolean(mount.face && d.face && d.face !== mount.face)
 
 /** A device's place in a rack: its lowest unit and how many it takes. */
 export interface RackSpot extends RackMount {
@@ -54,9 +62,9 @@ export function fmtUnits(position: number, height: number): string {
 }
 
 /** The device in `unit` that a device mounted as `mount` collides with:
- * one on the same face, or on no face, in the same unit - unless both are
- * half-width and in opposite halves. `exclude` leaves out the device being
- * placed. */
+ * one on the same face, on no face, or on the other face when either is full
+ * depth, in the same unit - unless both are half-width and in opposite
+ * halves. `exclude` leaves out the device being placed. */
 export function unitBlocker(
   occupants: RackOccupant[],
   mount: RackMount,
@@ -65,7 +73,7 @@ export function unitBlocker(
 ): RackOccupant | undefined {
   return occupants.find((d) => {
     if (d.id === exclude || d.position == null) return false
-    if (mount.face && d.face && d.face !== mount.face) return false
+    if (across(d, mount) && !mount.fullDepth && !isFullDepth(d)) return false
     if (
       mount.width === "half" &&
       d.rack_width === "half" &&
@@ -102,10 +110,13 @@ export function rackClash(
     units.some((u) => unitBlocker([d], spot, u, exclude))
   )
   if (!blocker) return null
-  return {
-    message: `Overlaps ${blocker.name} at U${blocker.position}.`,
-    units,
-  }
+  const at = `Overlaps ${blocker.name} at U${blocker.position}`
+  let message = `${at}.`
+  if (across(blocker, spot))
+    message = isFullDepth(blocker)
+      ? `${at}, which is full depth.`
+      : `${at} on the ${blocker.face}; this device is full depth.`
+  return { message, units }
 }
 
 /** Where a press on a unit puts a device: at `position`, its lowest unit;

@@ -33,6 +33,37 @@ ports** - so USB console links or video runs are first-class cables.
 A port can be cabled **only once** - Danbyte rejects connecting a port that's
 already in use, so every connection stays unambiguous.
 
+## What connects to what
+
+A cable has **two ends**, and an edit can swap an end's ports but never empty
+it. The two ends must be ports that plug into each other:
+
+| End | The other end may be |
+|---|---|
+| Interface | interface, front/rear port, circuit |
+| Front / rear port | interface, front/rear port, console, console server, aux, circuit |
+| Console port | console server port, front/rear port, aux port |
+| Console server port | console port, front/rear port, aux port |
+| Aux port | aux port, console, console server, front/rear port |
+| Circuit | interface, front/rear port, circuit |
+| Power port | power outlet, power feed |
+| Power outlet | power port |
+| Power feed | power port |
+
+Patch panels carry any signal through, so front and rear ports take every kind
+but power. Power runs from an outlet or a feed into an inlet. An aux port to a
+console port is a USB console lead. Anything else - an interface to a power
+outlet, two console ports - is refused (`An interface can't be cabled to a
+power outlet.`).
+
+**Deleting the far end deletes the cable.** When a device, a module or a port
+goes, a cable whose end it was the last port on goes with it, and the change
+log records it. A breakout that loses one leg keeps the others.
+
+Cables stored before these rules keep reading and editing; the check applies
+when an end is written. `manage.py check_dcim_integrity` lists cables with an
+empty end or with ends that don't match, and changes nothing.
+
 ## Port reservations
 
 Sometimes you know a port will be needed before you know where its cable will

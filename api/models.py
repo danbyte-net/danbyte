@@ -1682,9 +1682,18 @@ def sync_rack_from_type(rack, *, dims: bool = True, accessories: bool = True):
     cabling depends on). The diff reports extras so a human can decide.
     Returns ``{"dims": [...], "accessories": [...], "updated": [...]}``.
     """
+    from . import rack_units
+
+    # Locked before the diff reads the units its devices are checked against.
+    rack_units.lock_rack(rack)
     diff = diff_rack_from_type(rack)
     changed_dims: list[str] = []
     if dims and diff.get("dims"):
+        rt = rack.rack_type
+        if {"u_height", "starting_unit"} & set(diff["dims"]):
+            # Never shrink a rack out from under its devices (#376).
+            field = "u_height" if "u_height" in diff["dims"] else "starting_unit"
+            rack_units.check_units(rack, rt.starting_unit, rt.u_height, field=field)
         for f in diff["dims"]:
             setattr(rack, f, getattr(rack.rack_type, f))
             changed_dims.append(f)

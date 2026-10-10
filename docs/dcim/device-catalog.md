@@ -745,8 +745,8 @@ interface, and decides what goes when the module does:
   its own ports or another module's. Rename or remove the clashing interface
   first; nothing is adopted.
 - **Remove** deletes the module's own interfaces and nothing else, with the
-  usual interface delete rules: cable ends on them are dropped and IP
-  addresses stay, unassigned.
+  usual interface delete rules: a cable left with no port on that end is
+  removed (see [Cabling](cabling.md)) and IP addresses stay, unassigned.
 - **Deleting a module bay** removes its module the same way, as does deleting
   the device.
 - **Moving a module to another bay, or changing its type**, keeps the

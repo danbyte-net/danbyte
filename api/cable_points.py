@@ -46,6 +46,35 @@ NODE_PREFIX = {
 }
 
 
+# What a cable may join, end to end (#378): each kind and the kinds its far
+# end may be. Patch-panel front/rear ports carry any signal through, power
+# only runs outlet or feed into an inlet, and console ports meet console
+# server ports. Aux ports (USB, video) meet each other, a panel, and the
+# console kinds - a USB console lead.
+_SIGNAL_PATCH = frozenset({"front_port", "rear_port"})
+COMPATIBLE_ENDS = {
+    "interface": frozenset({"interface", "circuit_termination"}) | _SIGNAL_PATCH,
+    "front_port": frozenset({
+        "interface", "console_port", "console_server_port", "aux_port",
+        "circuit_termination",
+    }) | _SIGNAL_PATCH,
+    "console_port": frozenset({"console_server_port", "aux_port"}) | _SIGNAL_PATCH,
+    "console_server_port": frozenset({"console_port", "aux_port"}) | _SIGNAL_PATCH,
+    "aux_port": frozenset({"aux_port", "console_port", "console_server_port"})
+    | _SIGNAL_PATCH,
+    "circuit_termination": frozenset({"interface", "circuit_termination"}) | _SIGNAL_PATCH,
+    "power_port": frozenset({"power_outlet", "power_feed"}),
+    "power_outlet": frozenset({"power_port"}),
+    "power_feed": frozenset({"power_port"}),
+}
+COMPATIBLE_ENDS["rear_port"] = COMPATIBLE_ENDS["front_port"]
+
+
+def compatible_ends(a: str, b: str) -> bool:
+    """Whether a cable may join a port of kind ``a`` to one of kind ``b``."""
+    return b in COMPATIBLE_ENDS.get(a, ())
+
+
 def term_point(t):
     """(attr, obj) for the one point a termination sets, or (None, None)."""
     for attr in POINT_ATTRS:

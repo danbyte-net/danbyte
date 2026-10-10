@@ -21,6 +21,13 @@ familiar front/rear diagram showing what's mounted in each rack unit.
 Picking a [**rack type**](#rack-types) fills the height, width, outer
 dimensions and weight budget from the cabinet model in one go.
 
+A rack's units can't shrink or shift out from under its devices: lowering
+the **height** or raising the **starting unit** below a mounted device is
+refused, naming the devices in the way (`Devices are installed outside
+U1–U10 (hi at U40). Move or remove them first.`). Side-mounted strips have no
+U position and never block. A rack with devices in it can't move to another
+site either - move them out first, as with a [cabinet](cabinets.md).
+
 ### Rack roles
 
 A **rack role** classifies a rack's purpose (e.g. *network*, *compute*,
@@ -86,7 +93,9 @@ before touching anything:
   probably cabled hardware, so syncing never deletes one.
 
 Apply needs **change** on the rack, and the accessory half additionally
-needs device-add at its site. Syncing twice does nothing the second time.
+needs device-add at its site. A height or starting unit that would leave a
+mounted device outside the rack is refused, as on the rack form, and nothing
+is applied. Syncing twice does nothing the second time.
 `POST /api/racks/{id}/sync-from-type/` is the same operation
 (`apply`, plus `dims` / `accessories` to narrow it); without `apply` it is
 a dry run that returns the diff.
@@ -100,7 +109,7 @@ On a device (or in the rack), set:
   rack's real units (top-down, matching the elevation); units that are already
   taken are greyed out and show the blocking device, so you can only pick a
   spot where the device actually fits.
-- **Face** - front or rear (leave blank for full-depth gear that occupies both).
+- **Face** - front or rear. Leave it blank and the device takes both faces.
 - **Side** - only for half-width device types: which half of the U (left/right).
 
 The form draws the rack's front and rear beside these fields: click a free unit
@@ -112,6 +121,26 @@ The device's **height** comes from its [device type](device-catalog.md), so the
 elevation knows how many units to fill. Danbyte checks the device actually fits -
 it won't let you mount a 2U device where only 1U is free, or overlap two devices
 on the same face.
+
+**Full depth takes both faces.** A device whose type is *full depth* (the
+default) fills its units front to back, so nothing mounts on the other face of
+those units, and a full-depth device can't go behind anything either. Two
+shallow devices - patch panels, half-depth switches - share a U front and rear.
+A device with no type counts as full depth, as the elevation draws it.
+
+**A racked device is at its rack's site.** A rack from another site is refused
+(`Pick a rack in the device's site.`), and so is moving a racked device to
+another site without taking it out of the rack. A device with no site takes
+its rack's. Its **location**, when set, is in its site too.
+
+These rules hold on every write: the form, the API, the elevation's drag, and
+the [spreadsheet import](../features/import-export.md). A placement
+and a change to the rack's units or site queue on the rack, so two at once
+can't both pass. Rows stored before a rule existed keep reading and editing;
+the rule applies when the placement, site or location itself changes.
+`manage.py check_dcim_integrity` lists them - devices over each other,
+outside their rack's units, or at a different site than their rack - and
+changes nothing.
 
 ### Half-width devices
 

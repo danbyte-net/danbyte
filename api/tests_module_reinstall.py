@@ -236,8 +236,9 @@ class TypeChangeKeepsInterfacesTests(_Reinstall):
         r = self._patch(module_type_id=str(self.nm1g.id), confirm_remove=True)
         self.assertEqual(r.status_code, 200, r.content)
         self.assertIn("Te1/1/1", r.json()["interfaces"]["removed"])
-        # The documented interface delete rules.
-        self.assertEqual(cable.terminations.count(), 1)
+        # The documented interface delete rules: a cable left with no port
+        # on one end goes with it (#378).
+        self.assertFalse(Cable.objects.filter(pk=cable.pk).exists())
         ip.refresh_from_db()
         self.assertIsNone(ip.assigned_interface_id)
 

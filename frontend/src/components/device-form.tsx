@@ -442,6 +442,8 @@ export function DeviceForm({
   const rackWidth: "full" | "half" =
     selectedType?.rack_width === "half" ? "half" : "full"
   const deviceHeight = Math.max(1, selectedType?.u_height ?? 1)
+  // No type is drawn, and refused, as full depth (#375).
+  const fullDepth = selectedType?.is_full_depth ?? true
 
   // Half-width devices need a side; default to left. Full-width carries none.
   useEffect(() => {
@@ -480,7 +482,7 @@ export function DeviceForm({
     const first = selectedRack.starting_unit
     const last = selectedRack.starting_unit + selectedRack.u_height - 1
     const occupants = rackDevices.data?.results ?? []
-    const mounted = { face, width: rackWidth, side }
+    const mounted = { face, width: rackWidth, side, fullDepth }
     const blockerAt = (p: number) => {
       for (let u = p; u < p + deviceHeight; u++) {
         const b = unitBlocker(occupants, mounted, u, device?.id)
@@ -521,6 +523,7 @@ export function DeviceForm({
     face,
     side,
     rackWidth,
+    fullDepth,
     deviceHeight,
     position,
   ])
@@ -1063,7 +1066,12 @@ export function DeviceForm({
                     name={name}
                     position={position}
                     face={face}
-                    mount={{ width: rackWidth, side, height: deviceHeight }}
+                    mount={{
+                      width: rackWidth,
+                      side,
+                      fullDepth,
+                      height: deviceHeight,
+                    }}
                     onPlace={(p, f) => {
                       setPosition(String(p))
                       setFace(f)

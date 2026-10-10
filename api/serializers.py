@@ -3044,9 +3044,32 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     {field: "Pick an IP assigned to this device."}
                 )
 
+        inst = self.instance
+
+        def changed(*fields):
+            # A create sets everything; an update counts a field only when it
+            # differs, so a form that sends unchanged values back does not
+            # re-judge a row stored before a rule existed.
+            return inst is None or any(
+                f in attrs and attrs[f] != getattr(inst, f) for f in fields
+            )
+
+        placement_changed = changed(
+            "rack", "position", "face", "rack_side", "device_type", "mount",
+        )
+        site_changed = changed("rack", "site", "location", "cabinet")
+
         self._validate_cabinet(attrs)
 
         rack = attrs.get("rack", getattr(self.instance, "rack", None))
+        if rack is not None and (placement_changed or site_changed):
+            # Held until the request commits: a rack shrinking or moving
+            # site meanwhile waits for this placement, or this one for it.
+            from . import rack_units
+
+            rack = rack_units.lock_rack(rack)
+        if site_changed:
+            self._validate_site(attrs, rack)
         position = attrs.get("position", getattr(self.instance, "position", None))
         face = attrs.get("face", getattr(self.instance, "face", ""))
         dt = attrs.get("device_type", getattr(self.instance, "device_type", None))
@@ -3097,14 +3120,17 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     {"mount": "Set a mount side before offset/span."}
                 )
 
-        if rack is None or position is None:
+        if rack is None or position is None or not placement_changed:
             return attrs
         if width == "half" and not side:
             raise serializers.ValidationError(
                 {"rack_side": "This device type is half-width - pick which "
                               "half of the U it sits in (left or right)."}
             )
-        height = (dt.u_height if dt else 1) or 1
+        from .rack_units import full_depth
+        from .rack_units import height as unit_height
+
+        height = unit_height(dt)
         top = rack.starting_unit + rack.u_height - 1
         if position < rack.starting_unit or position + height - 1 > top:
             raise serializers.ValidationError(
@@ -3112,26 +3138,53 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                              f"{rack.u_height}U rack."}
             )
         my_units = set(range(position, position + height))
+        my_full = full_depth(dt)
         others = rack.devices.select_related("device_type").exclude(
             pk=getattr(self.instance, "pk", None)
         )
         for d in others:
             if d.position is None:
                 continue
-            # Same face conflicts (or a full-depth device with no face set).
-            if face and d.face and d.face != face:
+            # Same face conflicts, and so does a device with no face set. On
+            # opposite faces two devices share a U only when neither is full
+            # depth (#375).
+            d_full = full_depth(d.device_type)
+            across = bool(face and d.face and d.face != face)
+            if across and not (my_full or d_full):
                 continue
             # Two half-width devices coexist in the same U on opposite sides.
             d_width = (d.device_type.rack_width if d.device_type else "") or "full"
             if (width == "half" and d_width == "half"
                     and side and d.rack_side and d.rack_side != side):
                 continue
-            dh = (d.device_type.u_height if d.device_type else 1) or 1
-            if my_units & set(range(d.position, d.position + dh)):
-                raise serializers.ValidationError(
-                    {"position": f"Overlaps {d.name} at U{d.position}."}
-                )
+            if my_units & set(range(d.position, d.position + unit_height(d.device_type))):
+                if not across:
+                    msg = f"Overlaps {d.name} at U{d.position}."
+                elif d_full:
+                    msg = f"Overlaps {d.name} at U{d.position}, which is full depth."
+                else:
+                    msg = (f"Overlaps {d.name} at U{d.position} on the {d.face}; "
+                           "this device is full depth.")
+                raise serializers.ValidationError({"position": msg})
         return attrs
+
+    def _validate_site(self, attrs, rack) -> None:
+        """A racked device is at its rack's site, and a device's location is
+        in its site (#377). A device with no site takes its rack's."""
+        inst = self.instance
+        site = attrs.get("site", getattr(inst, "site", None))
+        if rack is not None:
+            if site is None:
+                site = attrs["site"] = rack.site
+            elif site.pk != rack.site_id:
+                field = "site_id" if "site" in attrs and "rack" not in attrs else "rack_id"
+                raise serializers.ValidationError(
+                    {field: "Pick a rack in the device's site."})
+        location = attrs.get("location", getattr(inst, "location", None))
+        if location is not None and site is not None and location.site_id != site.pk:
+            field = "site_id" if "site" in attrs and "location" not in attrs else "location_id"
+            raise serializers.ValidationError(
+                {field: "Pick a location within the device's site."})
 
     def validate_image_ports(self, value):
         from .face_ports import validate_image_ports_doc
@@ -3331,6 +3384,14 @@ def _point_kind(t) -> str:
         if getattr(t, f"{field}_id") is not None:
             return field
     return ""
+
+
+def _kind_label(kind: str, article: bool = False) -> str:
+    """``power_outlet`` → "Power outlet" ("A power outlet" with ``article``)."""
+    words = kind.replace("_", " ")
+    if article:
+        words = ("an " if words[0] in "aeiou" else "a ") + words
+    return words[0].upper() + words[1:]
 
 
 def _point_of(t):
@@ -5126,6 +5187,10 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
 
         if self.instance is None and (not a or not b):
             raise serializers.ValidationError({"a": "Both ends need at least one port."})
+        # An update may replace an end but never empty it (#378).
+        for side, pts in (("a", a), ("b", b)):
+            if pts is not None and not pts:
+                raise serializers.ValidationError({side: "Both ends need at least one port."})
 
         def existing(end):
             if self.instance is None:
@@ -5168,6 +5233,23 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
                     {side: "One end of a cable is one kind of port - "
                            f"got {', '.join(sorted(kinds))}."}
                 )
+
+        # The two ends plug into each other (#378): checked whenever an end
+        # is written, so a stored cable from before the rule still takes
+        # edits that leave its ends alone.
+        if a is not None or b is not None:
+            from .cable_points import compatible_ends
+
+            a_kinds = {k for k, _ in eff_a}
+            b_kinds = {k for k, _ in eff_b}
+            for ak in sorted(a_kinds):
+                for bk in sorted(b_kinds):
+                    if not compatible_ends(ak, bk):
+                        side = "b" if b is not None else "a"
+                        raise serializers.ValidationError({side: (
+                            f"{_kind_label(ak, article=True)} can't be cabled to "
+                            f"{_kind_label(bk, article=True).lower()}."
+                        )})
 
         # ── Fibre strands ──────────────────────────────────────────────────
         eff_type = attrs.get("type", getattr(self.instance, "type", ""))
@@ -6063,6 +6145,28 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
             raise serializers.ValidationError(
                 {"location_id": "Pick a location within the rack's site."}
             )
+        inst = self.instance
+        if inst is not None:
+            from . import rack_units
+
+            units = (attrs.get("starting_unit", inst.starting_unit),
+                     attrs.get("u_height", inst.u_height))
+            moved = site is not None and site.pk != inst.site_id
+            if units != (inst.starting_unit, inst.u_height) or moved:
+                # Locked like a placement locks it: a device being placed
+                # meanwhile is committed and seen here, or waits (#376).
+                rack_units.lock_rack(inst)
+            if units != (inst.starting_unit, inst.u_height):
+                field = "u_height" if units[1] != inst.u_height else "starting_unit"
+                rack_units.check_units(inst, *units, field=field)
+            if moved:
+                # Its devices are at its site (#377): they leave before it moves.
+                n = inst.devices.count()
+                if n:
+                    raise serializers.ValidationError({"site_id": (
+                        f"{n} device{'s are' if n != 1 else ' is'} in it, at its site"
+                        " - move them out first."
+                    )})
         return attrs
 
     def create(self, validated_data):
