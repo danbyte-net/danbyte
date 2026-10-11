@@ -74,6 +74,8 @@ SITE_PATHS: dict[str, str] = {
     "vtep": "device__site",
     "ldpinstance": "device__site",
     "vtepmembership": "vtep__device__site",
+    # An Oxidized node link follows the device or VM it backs (#386).
+    "oxidizednodelink": "device__site|virtual_machine__site",
 }
 
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global

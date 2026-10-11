@@ -78,6 +78,11 @@ The **Oxidized** page lists:
 Each sync re-decides the matched links, so a renamed device or a moved address
 follows. A matched link whose node has gone is removed; a pinned one stays.
 
+!!! warning "Matching trusts device names and addresses"
+    Whoever may rename a device or give it an address can make a node match
+    it. Pin the nodes of sensitive devices, or record their addresses, so a
+    matched link cannot move.
+
 ## Automatic sync
 
 Each connection can re-sync its nodes on a schedule, the same pass as **Sync
@@ -142,6 +147,27 @@ Superusers have it. The connections and the node links are ordinary object
 types (*Oxidized connections*, *Oxidized node links*): they say which node
 backs which device or VM, never what is in it.
 
+### Who can pin and unlink
+
+A device's Config tab shows whichever node is linked to it, so the mapping
+decides whose config people read. Pinning and unlinking are connection
+management:
+
+- **Pin** needs *add* on node links and *change* on the connection. **Unlink**
+  needs *delete* on node links and *change* on the connection. The built-in
+  Administrator group can do both, Operator can pin.
+- Node links follow the site of their device or VM. A grant limited to sites
+  lists, pins and unlinks only those sites' links, and cannot pin a node that
+  is linked to another site's device or VM.
+- A pin never shows you a config you could not already read. Where you hold
+  *view config* on the device or VM you pin to, the node must be linked to
+  another object whose config you can read, or, for an unmatched node, your
+  *view config* on that kind must not be limited to sites or rows.
+  Otherwise the pin is refused.
+
+Without *view config* on the target a pin gives you nothing to read, so an
+administrator who does not read configs can still map every node.
+
 ## API
 
 All under `/api/oxidized/`, 404 while the integration is off.
@@ -152,7 +178,7 @@ All under `/api/oxidized/`, 404 while the integration is off.
 | `connections/<id>/test/` | `POST`. Reach oxidized-web and count nodes. |
 | `connections/<id>/sync/` | `POST`. Read the node list and re-match. |
 | `connections/<id>/unmatched/` | The nodes the last sync left unmatched, with reasons. |
-| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), `POST` to pin (`connection_id`, `full_name`, and one of `device_id` or `virtual_machine_id`), `DELETE` to unlink. A link reads back `device` or `virtual_machine`, the other null. |
+| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), `POST` to pin (`connection_id`, `full_name`, and one of `device_id` or `virtual_machine_id`), `DELETE` to unlink. A link reads back `device` or `virtual_machine`, the other null. Pinning and unlinking need *change* on the connection (403); see [Who can pin and unlink](#who-can-pin-and-unlink). |
 | `devices/<id>/` | The nodes linked to a device. |
 | `devices/<id>/config/` | The current config. `?link=` picks a node, `?refresh=1` skips the cache. |
 | `devices/<id>/versions/` | The history, newest first. |

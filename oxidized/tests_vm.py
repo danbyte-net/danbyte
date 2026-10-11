@@ -246,7 +246,8 @@ class VmPinTests(_VmBase):
     def test_pinning_a_vm_the_user_cannot_see_is_refused(self):
         hidden = self.make_vm("hidden", site=self.site_b)
         user = self.member(
-            (["oxidizednodelink", "oxidizedconnection"], ["view", "add"], None),
+            (["oxidizednodelink"], ["view", "add"], None),
+            (["oxidizedconnection"], ["view", "change"], None),
             (["virtualmachine"], ["view"], self.site_a),
         )
         self.login(user)

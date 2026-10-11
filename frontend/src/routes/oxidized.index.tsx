@@ -136,8 +136,9 @@ function OxidizedPage() {
   const canManage = canDo("oxidizedconnection", "change")
   const canAdd = canDo("oxidizedconnection", "add")
   const canDelete = canDo("oxidizedconnection", "delete")
-  const canPin = canDo("oxidizednodelink", "add")
-  const canUnlink = canDo("oxidizednodelink", "delete")
+  // Pinning and unlinking also need change on the connection (#386).
+  const canPin = canManage && canDo("oxidizednodelink", "add")
+  const canUnlink = canManage && canDo("oxidizednodelink", "delete")
 
   return (
     <ListPageShell

@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from api.models import Device, VirtualMachine
 from api.serializers import TenantScopedPrimaryKeyRelatedField
@@ -85,6 +86,19 @@ class OxidizedConnectionSerializer(serializers.ModelSerializer):
         return attrs
 
 
+def require_connection_change(user, conn) -> None:
+    """Which node backs which object decides whose config an object's Config
+    tab shows, so pinning and unlinking are connection management: they need
+    ``change`` on the connection as well as the link grant (#386)."""
+    from auth_api import rbac
+
+    if not rbac.can_act_on(user, conn.tenant, "oxidizedconnection", "change", conn):
+        raise PermissionDenied(
+            "Pinning or unlinking a node needs the change permission on its "
+            "Oxidized connection."
+        )
+
+
 class _MiniDevice(serializers.Serializer):
     id = serializers.UUIDField()
     name = serializers.CharField()
@@ -143,6 +157,8 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
 
         request = self.context.get("request")
         conn = attrs["connection"]
+        if request is not None:
+            require_connection_change(request.user, conn)
         device, vm = attrs.get("device"), attrs.get("virtual_machine")
         if (device is None) == (vm is None):
             raise serializers.ValidationError(
@@ -172,7 +188,60 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"full_name": "This node is already pinned."}
             )
+        if request is not None:
+            self._check_pin_scope(request.user, conn, attrs["full_name"], target, slug)
         return attrs
+
+    @staticmethod
+    def _check_pin_scope(user, conn, full_name, target, slug):
+        """A pin must never show its author a configuration they could not
+        already read (#386).
+
+        The config endpoints serve whichever node is linked to the object in
+        the URL, so pinning node N to an object T where the author holds
+        ``view_config`` hands them N's config. That is allowed only when N's
+        config is already theirs to read: N is linked to another object they
+        hold ``view`` and ``view_config`` on, or N is linked to nothing and
+        their ``view_config`` on that kind is not limited by site or row.
+        An author without ``view_config`` on T gains nothing to read, so an
+        admin's mapping work is unchanged.
+
+        Separately, a pin deletes the node's previous link; that link must be
+        inside the sites the author may add links in.
+        """
+        from auth_api import rbac
+
+        tenant = conn.tenant
+        previous = (
+            OxidizedNodeLink.objects.filter(connection=conn, full_name=full_name)
+            .exclude(**{"device" if slug == "device" else "virtual_machine": target})
+            .select_related("device", "virtual_machine")
+            .first()
+        )
+        if previous is not None and not rbac.restrict_queryset(
+            OxidizedNodeLink.objects.filter(pk=previous.pk),
+            user, tenant, "oxidizednodelink", "add",
+        ).exists():
+            raise serializers.ValidationError(
+                {"full_name": "This node is linked to an object outside your scope."}
+            )
+        if not rbac.can_act_on(user, tenant, slug, "view_config", target):
+            return
+        if previous is None:
+            if rbac.row_filter(user, tenant, slug, "view_config") is True:
+                return
+        else:
+            was, was_slug = (
+                (previous.device, "device") if previous.device_id
+                else (previous.virtual_machine, "virtualmachine")
+            )
+            if rbac.can_act_on(user, tenant, was_slug, "view", was) and rbac.can_act_on(
+                user, tenant, was_slug, "view_config", was
+            ):
+                return
+        raise serializers.ValidationError(
+            {"full_name": "You cannot read this node's configuration."}
+        )
 
     def create(self, validated):
         conn, full = validated["connection"], validated["full_name"]

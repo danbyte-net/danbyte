@@ -36,7 +36,11 @@ from .client import (
     OxidizedUnreachable,
 )
 from .models import OxidizedConnection, OxidizedNodeLink
-from .serializers import OxidizedConnectionSerializer, OxidizedNodeLinkSerializer
+from .serializers import (
+    OxidizedConnectionSerializer,
+    OxidizedNodeLinkSerializer,
+    require_connection_change,
+)
 from .sync import sync_nodes
 
 OID = re.compile(r"^[0-9a-f]{4,64}$")
@@ -105,6 +109,11 @@ class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         if params.get("virtual_machine"):
             qs = qs.filter(virtual_machine_id=params["virtual_machine"])
         return qs
+
+    def perform_destroy(self, instance):
+        """Unlinking needs ``change`` on the connection, like pinning (#386)."""
+        require_connection_change(self.request.user, instance.connection)
+        super().perform_destroy(instance)
 
 
 # ─── a device's or a virtual machine's configuration ─────────────────────────
