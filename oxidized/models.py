@@ -46,11 +46,11 @@ class OxidizedConnection(TimestampedModel):
     # ── automatic node sync (#385) ─────────────────────────────────────
     #: On for a new connection; the migration that added it left existing
     #: connections off, so an upgrade starts no traffic nobody asked for.
-    auto_sync = models.BooleanField(default=True)
+    auto_sync = models.BooleanField(default=True, db_default=False)
     SYNC_INTERVAL_CHOICES = [(5, "5 minutes"), (10, "10 minutes"), (15, "15 minutes"),
                              (30, "30 minutes"), (60, "1 hour")]
     sync_interval_minutes = models.PositiveSmallIntegerField(
-        choices=SYNC_INTERVAL_CHOICES, default=30
+        choices=SYNC_INTERVAL_CHOICES, default=30, db_default=30
     )
 
     # ── what the last test and node sync learned ──────────────────────
