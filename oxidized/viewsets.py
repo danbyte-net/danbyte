@@ -3,10 +3,12 @@
 Connections and links are ordinary RBAC object types, and the whole surface
 404s while the tenant's Oxidized switch is off.
 
-The device endpoints are the ones that return configuration text, and they
-need ``view_config`` on the device - a capability verb no built-in group
-holds, because a running config carries SNMP communities, password hashes and
-keys. ``device.view`` alone shows that a node exists, never what it says.
+The device and virtual-machine endpoints are the ones that return
+configuration text, and they need ``view_config`` on the object - a capability
+verb no built-in group holds, because a running config carries SNMP
+communities, password hashes and keys. ``view`` alone shows that a node
+exists, never what it says. A virtual router is a VM (#384), so the VM
+endpoints mirror the device ones with ``virtualmachine.view_config``.
 """
 from __future__ import annotations
 
@@ -19,7 +21,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.models import Device
+from api.models import Device, VirtualMachine
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
@@ -88,9 +90,9 @@ class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     integration_keys = ("oxidized",)
     http_method_names = ["get", "post", "delete", "head", "options"]
-    queryset = OxidizedNodeLink.objects.select_related("device", "connection").order_by(
-        "full_name"
-    )
+    queryset = OxidizedNodeLink.objects.select_related(
+        "device", "virtual_machine", "connection"
+    ).order_by("full_name")
     serializer_class = OxidizedNodeLinkSerializer
 
     def get_queryset(self):
@@ -100,57 +102,66 @@ class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             qs = qs.filter(connection_id=params["connection"])
         if params.get("device"):
             qs = qs.filter(device_id=params["device"])
+        if params.get("virtual_machine"):
+            qs = qs.filter(virtual_machine_id=params["virtual_machine"])
         return qs
 
 
-# ─── a device's configuration ────────────────────────────────────────────────
+# ─── a device's or a virtual machine's configuration ─────────────────────────
 
 
 class _DeviceConfigView(APIView):
     """Shared gate for every endpoint that returns configuration text.
 
-    Order matters: tenant, integration switch, the device visible to this
-    user (404 otherwise, so a foreign or hidden device is indistinguishable
-    from a missing one), then ``view_config`` on that device (403).
+    Order matters: tenant, integration switch, the object visible to this
+    user (404 otherwise, so a foreign or hidden object is indistinguishable
+    from a missing one), then ``view_config`` on that object (403).
+
+    Subclassed per object kind: devices here, virtual machines through
+    :class:`_VmConfig`. The URL captures the object as ``obj_id``.
     """
 
     permission_classes = [IsAuthenticated]
+    model = Device
+    slug = "device"
+    link_field = "device"
+    noun = "device"
 
-    def _device(self, request, device_id):
+    def _device(self, request, obj_id):
         tenant = _get_active_tenant(request)
         if tenant is None or not integration_enabled(tenant, "oxidized"):
             raise NotFound("Integration not enabled.")
         qs = rbac.restrict_queryset(
-            Device.objects.filter(tenant=tenant), request.user, tenant, "device", "view"
+            self.model.objects.filter(tenant=tenant), request.user, tenant, self.slug, "view"
         )
-        device = qs.filter(pk=device_id).first()
-        if device is None:
-            raise NotFound("No such device.")
-        if not rbac.can_act_on(request.user, tenant, "device", "view_config", device):
+        obj = qs.filter(pk=obj_id).first()
+        if obj is None:
+            raise NotFound(f"No such {self.noun}.")
+        if not rbac.can_act_on(request.user, tenant, self.slug, "view_config", obj):
             raise PermissionDenied(
-                "Viewing device configurations needs the view config permission on devices."
+                f"Viewing {self.noun} configurations needs the view config permission "
+                f"on {self.noun}s."
             )
-        return tenant, device
+        return tenant, obj
 
-    @staticmethod
-    def _links(tenant, device):
+    def _links(self, tenant, obj):
         return list(
             OxidizedNodeLink.objects.filter(
-                tenant=tenant, device=device,
+                tenant=tenant, **{self.link_field: obj},
                 connection__tenant=tenant, connection__enabled=True,
             ).select_related("connection").order_by("connection__name")
         )
 
-    def _link(self, request, device_id):
-        tenant, device = self._device(request, device_id)
-        links = self._links(tenant, device)
+    def _link(self, request, obj_id):
+        tenant, obj = self._device(request, obj_id)
+        links = self._links(tenant, obj)
         wanted = request.query_params.get("link") or (request.data or {}).get("link")
         if wanted:
             link = next((lk for lk in links if str(lk.id) == str(wanted)), None)
         else:
             link = links[0] if links else None
         if link is None:
-            raise NotFound("This device has no Oxidized node.")
+            raise NotFound(f"This {self.noun} has no Oxidized node.")
         return link
 
     @staticmethod
@@ -160,6 +171,15 @@ class _DeviceConfigView(APIView):
         if isinstance(exc, OxidizedTooLarge):
             return Response({"detail": str(exc)}, status=413)
         return Response({"detail": f"Oxidized: {exc}"}, status=502)
+
+
+class _VmConfig:
+    """Mixin: the same endpoints, for a virtual machine (#384)."""
+
+    model = VirtualMachine
+    slug = "virtualmachine"
+    link_field = "virtual_machine"
+    noun = "virtual machine"
 
 
 def _link_payload(link) -> dict:
@@ -178,16 +198,16 @@ def _link_payload(link) -> dict:
 class DeviceNodesView(_DeviceConfigView):
     """Which Oxidized nodes back this device. No config text."""
 
-    def get(self, request, device_id):
-        tenant, device = self._device(request, device_id)
-        return Response({"links": [_link_payload(lk) for lk in self._links(tenant, device)]})
+    def get(self, request, obj_id):
+        tenant, obj = self._device(request, obj_id)
+        return Response({"links": [_link_payload(lk) for lk in self._links(tenant, obj)]})
 
 
 class DeviceConfigView(_DeviceConfigView):
     """The configuration Oxidized holds now. ``?refresh=1`` skips the cache."""
 
-    def get(self, request, device_id):
-        link = self._link(request, device_id)
+    def get(self, request, obj_id):
+        link = self._link(request, obj_id)
         refresh = request.query_params.get("refresh") in ("1", "true")
         try:
             text, cached = configs.current(link, refresh=refresh)
@@ -205,8 +225,8 @@ class DeviceConfigView(_DeviceConfigView):
 class DeviceVersionsView(_DeviceConfigView):
     """The node's git history in Oxidized, newest first."""
 
-    def get(self, request, device_id):
-        link = self._link(request, device_id)
+    def get(self, request, obj_id):
+        link = self._link(request, obj_id)
         refresh = request.query_params.get("refresh") in ("1", "true")
         try:
             rows, cached = configs.versions(link, refresh=refresh)
@@ -219,10 +239,10 @@ class DeviceVersionsView(_DeviceConfigView):
 class DeviceVersionView(_DeviceConfigView):
     """One version's text."""
 
-    def get(self, request, device_id, oid):
+    def get(self, request, obj_id, oid):
         if not OID.match(oid):
             raise ValidationError({"oid": "Not a commit id."})
-        link = self._link(request, device_id)
+        link = self._link(request, obj_id)
         try:
             text, cached = configs.version(link, oid)
         except OxidizedError as exc:
@@ -234,12 +254,12 @@ class DeviceDiffView(_DeviceConfigView):
     """A unified diff between two versions, or a version and the current
     config (``to=current``)."""
 
-    def get(self, request, device_id):
+    def get(self, request, obj_id):
         old, new = request.query_params.get("from", ""), request.query_params.get("to", "")
         for name, value in (("from", old), ("to", new)):
             if value != "current" and not OID.match(value):
                 raise ValidationError({name: "A commit id, or current."})
-        link = self._link(request, device_id)
+        link = self._link(request, obj_id)
 
         def text(ref):
             return configs.current(link)[0] if ref == "current" else configs.version(link, ref)[0]
@@ -262,8 +282,8 @@ class DeviceFetchNowView(_DeviceConfigView):
     of Oxidized's queue, and the person asking is the one waiting to read it.
     """
 
-    def post(self, request, device_id):
-        link = self._link(request, device_id)
+    def post(self, request, obj_id):
+        link = self._link(request, obj_id)
         try:
             OxidizedClient.for_connection(link.connection).next(
                 link.node_name, link.node_group,
@@ -273,3 +293,27 @@ class DeviceFetchNowView(_DeviceConfigView):
             return self._fail(exc)
         configs.forget(link)
         return Response({"queued": True})
+
+
+class VmNodesView(_VmConfig, DeviceNodesView):
+    pass
+
+
+class VmConfigView(_VmConfig, DeviceConfigView):
+    pass
+
+
+class VmVersionsView(_VmConfig, DeviceVersionsView):
+    pass
+
+
+class VmVersionView(_VmConfig, DeviceVersionView):
+    pass
+
+
+class VmDiffView(_VmConfig, DeviceDiffView):
+    pass
+
+
+class VmFetchNowView(_VmConfig, DeviceFetchNowView):
+    pass

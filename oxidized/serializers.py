@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 from rest_framework import serializers
 
-from api.models import Device
+from api.models import Device, VirtualMachine
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 
 from .models import OxidizedConnection, OxidizedNodeLink
@@ -24,22 +24,32 @@ class OxidizedConnectionSerializer(serializers.ModelSerializer):
     password_set = serializers.BooleanField(read_only=True)
     link_count = serializers.SerializerMethodField()
     sync = serializers.SerializerMethodField()
+    next_sync_at = serializers.SerializerMethodField()
 
     class Meta:
         model = OxidizedConnection
         fields = [
             "id", "name", "url", "username", "password", "password_set",
             "verify_tls", "enabled", "match_by",
+            "auto_sync", "sync_interval_minutes",
             "last_checked_at", "last_error", "node_count", "last_sync_at",
+            "last_sync_attempt_at", "next_sync_at",
             "link_count", "sync", "created_at", "updated_at",
         ]
         read_only_fields = [
             "last_checked_at", "last_error", "node_count", "last_sync_at",
-            "created_at", "updated_at",
+            "last_sync_attempt_at", "created_at", "updated_at",
         ]
 
     def get_link_count(self, obj) -> int:
         return obj.links.count()
+
+    def get_next_sync_at(self, obj) -> str | None:
+        """When the scheduler syncs next (#385); null while auto sync is off."""
+        from .schedule import next_sync_at
+
+        when = next_sync_at(obj)
+        return when.isoformat() if when else None
 
     def get_sync(self, obj) -> dict:
         """The last node sync's counts; the unmatched rows have an endpoint."""
@@ -83,24 +93,32 @@ class _MiniDevice(serializers.Serializer):
 class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
     """A link is matched by a node sync or pinned here by hand.
 
-    Only creating (pinning) and deleting go through the API. A pinned link
-    replaces whatever the sync had matched for that node or that device.
+    Only creating (pinning) and deleting go through the API. A pin names
+    exactly one of ``device_id`` or ``virtual_machine_id`` (#384), and
+    replaces whatever the sync had matched for that node or that target.
     """
 
     connection_id = TenantScopedPrimaryKeyRelatedField(
         source="connection", queryset=OxidizedConnection.objects.all(), write_only=True
     )
     device_id = TenantScopedPrimaryKeyRelatedField(
-        source="device", queryset=Device.objects.all(), write_only=True
+        source="device", queryset=Device.objects.all(), write_only=True,
+        required=False, allow_null=True,
+    )
+    virtual_machine_id = TenantScopedPrimaryKeyRelatedField(
+        source="virtual_machine", queryset=VirtualMachine.objects.all(), write_only=True,
+        required=False, allow_null=True,
     )
     connection = serializers.UUIDField(source="connection_id", read_only=True)
     connection_name = serializers.CharField(source="connection.name", read_only=True)
-    device = _MiniDevice(read_only=True)
+    device = _MiniDevice(read_only=True, allow_null=True)
+    virtual_machine = _MiniDevice(read_only=True, allow_null=True)
 
     class Meta:
         model = OxidizedNodeLink
         fields = [
             "id", "connection", "connection_id", "connection_name", "device", "device_id",
+            "virtual_machine", "virtual_machine_id",
             "full_name", "node_name", "node_group", "node_ip", "node_model",
             "matched_by", "last_seen_at", "created_at",
         ]
@@ -108,6 +126,11 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
             "node_name", "node_group", "node_ip", "node_model", "matched_by",
             "last_seen_at", "created_at",
         ]
+        # The model's unique constraints are not the pin's rules: a pin
+        # replaces the matched link on its node or target (``create``), and
+        # names exactly one target (``validate``). The generated validators
+        # would make both target fields required.
+        validators: list = []
 
     def validate_full_name(self, value):
         value = (value or "").strip().strip("/")
@@ -119,31 +142,45 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
         from auth_api import rbac
 
         request = self.context.get("request")
-        conn, device = attrs["connection"], attrs["device"]
-        if conn.tenant_id != device.tenant_id:
-            raise serializers.ValidationError("The device is not in the connection's tenant.")
+        conn = attrs["connection"]
+        device, vm = attrs.get("device"), attrs.get("virtual_machine")
+        if (device is None) == (vm is None):
+            raise serializers.ValidationError(
+                {"device_id": "Pick a device or a virtual machine, not both."}
+                if device is not None
+                else {"device_id": "Pick a device or a virtual machine."}
+            )
+        target, slug, field = (
+            (device, "device", "device_id") if device is not None
+            else (vm, "virtualmachine", "virtual_machine_id")
+        )
+        if conn.tenant_id != target.tenant_id:
+            raise serializers.ValidationError({field: "Not in the connection's tenant."})
         if request is not None and not rbac.can_act_on(
-            request.user, conn.tenant, "device", "view", device
+            request.user, conn.tenant, slug, "view", target
         ):
-            raise serializers.ValidationError({"device_id": "No such device."})
+            raise serializers.ValidationError({field: "No such object."})
         pinned = OxidizedNodeLink.objects.filter(
             connection=conn, matched_by=OxidizedNodeLink.HOW_MANUAL
         )
-        if pinned.filter(device=device).exists():
-            raise serializers.ValidationError(
-                {"device_id": "This device is already pinned to a node."}
-            )
+        mine = pinned.filter(device=device) if device is not None else pinned.filter(
+            virtual_machine=vm
+        )
+        if mine.exists():
+            raise serializers.ValidationError({field: "Already pinned to a node."})
         if pinned.filter(full_name=attrs["full_name"]).exists():
             raise serializers.ValidationError(
-                {"full_name": "This node is already pinned to a device."}
+                {"full_name": "This node is already pinned."}
             )
         return attrs
 
     def create(self, validated):
-        conn, device, full = validated["connection"], validated["device"], validated["full_name"]
-        OxidizedNodeLink.objects.filter(connection=conn).filter(
-            device=device
-        ).delete()
+        conn, full = validated["connection"], validated["full_name"]
+        device, vm = validated.get("device"), validated.get("virtual_machine")
+        if device is not None:
+            OxidizedNodeLink.objects.filter(connection=conn, device=device).delete()
+        else:
+            OxidizedNodeLink.objects.filter(connection=conn, virtual_machine=vm).delete()
         OxidizedNodeLink.objects.filter(connection=conn, full_name=full).delete()
         known = next(
             (n for n in (conn.last_sync_summary or {}).get("unmatched", [])
@@ -153,8 +190,8 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
         name = full.rpartition("/")[2]
         group = full.rpartition("/")[0]
         return OxidizedNodeLink.objects.create(
-            tenant=conn.tenant, connection=conn, device=device, full_name=full,
-            node_name=name, node_group=group,
+            tenant=conn.tenant, connection=conn, device=device, virtual_machine=vm,
+            full_name=full, node_name=name, node_group=group,
             node_ip=str(known.get("ip") or "")[:64],
             node_model=str(known.get("model") or "")[:64],
             matched_by=OxidizedNodeLink.HOW_MANUAL,

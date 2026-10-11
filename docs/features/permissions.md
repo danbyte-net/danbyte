@@ -37,8 +37,9 @@ self-service opt-in/out), **view credits** (on SLA agreements - see the
 [service credits](sla.md#service-credits) an agreement owes), **set default**
 (on topology views - choose the [view Topology opens
 with](topology.md#default-view) for the tenant; tenant admins can without it,
-and its row limits say which views), **view config** (on devices - read the
-device's [configuration backups from Oxidized](oxidized.md#who-can-read-a-config);
+and its row limits say which views), **view config** (on devices and on virtual
+machines, each its own grant - read the
+[configuration backups from Oxidized](oxidized.md#who-can-read-a-config);
 no built-in group holds it, because a config carries secrets), and **grant
 superuser** (on users - see below). The
 permission form only offers these on the types that use them.

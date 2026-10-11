@@ -124,6 +124,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Enqueue due Zabbix inventory, provisioning and host-status syncs",
     ),
     ScheduledTask(
+        unit="danbyte-oxidized-sync",
+        commands=("oxidized_sync",),
+        every=MINUTE,
+        label="Enqueue due automatic Oxidized node syncs",
+    ),
+    ScheduledTask(
         unit="danbyte-discover",
         commands=("discover_subnets",),
         every=5 * MINUTE,

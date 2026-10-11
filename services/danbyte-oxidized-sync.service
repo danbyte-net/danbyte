@@ -1,0 +1,14 @@
+[Unit]
+Description=Danbyte Oxidized node sync beat
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py oxidized_sync
+
+# Triggered every minute by danbyte-oxidized-sync.timer; the beat itself only
+# enqueues connections whose own sync interval has elapsed.
+# Logs: journalctl --user -fu danbyte-oxidized-sync

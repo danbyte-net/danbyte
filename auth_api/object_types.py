@@ -66,6 +66,8 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     # Read the device's running configuration from Oxidized (#35). A config
     # holds communities, hashes and keys, so device.view never implies it.
     "device": ["connect", "view_config"],
+    # The same for a virtual router modelled as a VM (#384).
+    "virtualmachine": ["view_config"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
     # An agreement's service credits are money; seeing them is its own grant.

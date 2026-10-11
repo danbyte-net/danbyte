@@ -4,7 +4,7 @@ Nothing here writes config text to the database. A read is cached in Redis
 for :data:`CURRENT_TTL` seconds (a version addressed by its git oid, which
 never changes, for :data:`VERSION_TTL`), keyed by tenant, connection and
 node, so opening the tab twice does not fetch twice. Every caller has already
-checked ``device.view_config`` before it gets here - the cache is behind the
+checked ``view_config`` on the device or VM before it gets here - the cache is behind the
 permission check, never in front of it.
 """
 from __future__ import annotations

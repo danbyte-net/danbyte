@@ -49,7 +49,9 @@ Not all background work goes through the queue. Much of Danbyte's routine
 activity runs on a **timer** as a self-contained oneshot - the check engine
 dispatch, config-drift dispatch, the Outpost driver, subnet discovery, interface
 utilisation, the [scheduled SNMP polls](snmp-discovery.md#scheduled-polling)
-(which queue one poll job per due device), alert maintenance, certificate expiry, the daily **email
+(which queue one poll job per due device), the
+[Oxidized node sync](oxidized.md#automatic-sync) (one job per due connection),
+alert maintenance, certificate expiry, the daily **email
 digest**, the backup schedule tick, scheduled scripts, the search-index
 rebuild, the [end-of-life data](end-of-life-data.md) refresh, and the various
 cleanup/prune jobs. These never appear in the RQ queue, so the **Scheduled

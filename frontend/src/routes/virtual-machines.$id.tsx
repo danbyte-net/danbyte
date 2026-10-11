@@ -30,6 +30,7 @@ import { VmSnmpCard } from "@/components/vm-snmp-card"
 import { VmTopologyCard } from "@/components/vm-topology-card"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
+import { VmConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
@@ -195,7 +196,10 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         <RoutingPanel owner={{ kind: "vm", id: vm.id, name: vm.name }} />
       </DetailTab>
       <DetailTab value="config">
-        <ConfigContextPanel endpoint="virtual-machines" id={vm.id} />
+        <div className="space-y-6">
+          <VmConfigBackups vmId={vm.id} />
+          <ConfigContextPanel endpoint="virtual-machines" id={vm.id} />
+        </div>
       </DetailTab>
       <DetailTab value="services">
         <ServicesPane parent={{ kind: "vm", id: vm.id }} />

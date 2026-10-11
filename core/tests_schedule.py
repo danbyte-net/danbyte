@@ -84,6 +84,13 @@ class ScheduleParityTests(SimpleTestCase):
 
         self.assertIn("snmp-poll", {t["name"] for t in SCHEDULED_TASKS})
 
+    def test_the_jobs_page_lists_the_oxidized_sync_beat(self):
+        """The row's name is the one ``oxidized_sync`` records its runs under
+        (#385)."""
+        from jobs.views import SCHEDULED_TASKS
+
+        self.assertIn("oxidized-sync", {t["name"] for t in SCHEDULED_TASKS})
+
     def test_containers_skip_only_the_upgrade_beat(self):
         """A container upgrades by replacing its image, so it must not run the
         upgrader - but it has to run everything else the timers do."""

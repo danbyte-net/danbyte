@@ -1,4 +1,4 @@
-"""Pair Oxidized nodes with Danbyte devices.
+"""Pair Oxidized nodes with Danbyte devices and virtual machines.
 
 Oxidized knows a node by a name, an address and a model - no serial. So the
 ladder is shorter than Zabbix's (:mod:`zabbix.matching`), with the same rule
@@ -6,30 +6,38 @@ at every rung: **one candidate or none**.
 
 1. **A pinned link.** Set by an admin, kept across every pass.
 2. **An address.** The node's ``ip`` is an address Danbyte has recorded on the
-   device - its primary or any assigned address.
+   device or VM - its primary or any assigned address.
 3. **The name.** Case-insensitive, the full name first, then the host part of
    an FQDN (``core1.example.net`` finds a device called ``core1``).
 
+Devices and virtual machines are one candidate pool (#384): a virtual router
+(CHR, VyOS, a virtual firewall) is a VM, and a name or address held by both a
+device and a VM is as ambiguous as one held by two devices.
+
 The connection's ``match_by`` turns rung 2 or 3 off. Where a rung finds two
-devices, or two nodes land on one device, nothing is linked and the node is
+candidates, or two nodes land on one, nothing is linked and the node is
 listed as unmatched with the reason - a node paired with the wrong device
 shows one box's configuration under another's name, and nothing downstream
 would notice.
+
+A target is a ``(kind, id)`` pair, kind being :data:`DEVICE` or :data:`VM`.
 """
 from __future__ import annotations
 
 import ipaddress
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
-from api.models import Device, IPAddress
+from api.models import Device, IPAddress, VirtualMachine
 
 from .client import OxidizedClient, OxidizedError
 from .models import OxidizedConnection, OxidizedNodeLink
 
 #: How many unmatched nodes the summary keeps for the mapping page.
 UNMATCHED_LIMIT = 1000
+
+DEVICE, VM = "device", "vm"
 
 
 def split_full_name(node: dict) -> tuple[str, str, str]:
@@ -60,39 +68,70 @@ def _short(name: str) -> str:
     return name.split(".", 1)[0]
 
 
-def _device_index(tenant):
+def _target_index(tenant):
+    """Lookup tables over the tenant's devices and virtual machines, keyed to
+    ``(kind, id)`` targets. Nothing outside ``tenant`` is ever a candidate."""
     by_addr: dict[str, set] = {}
     by_name: dict[str, set] = {}
     by_short: dict[str, set] = {}
-    devices = {}
-    for dev in Device.objects.filter(tenant=tenant).only("id", "name"):
-        devices[dev.id] = dev
-        name = (dev.name or "").strip().lower()
+    names: dict[tuple, str] = {}
+
+    def add_name(target, raw):
+        names[target] = raw or ""
+        name = (raw or "").strip().lower()
         if name:
-            by_name.setdefault(name, set()).add(dev.id)
+            by_name.setdefault(name, set()).add(target)
             short = _short(name)
             if short:
-                by_short.setdefault(short, set()).add(dev.id)
-    rows = IPAddress.objects.filter(
-        tenant=tenant, assigned_device__isnull=False
-    ).values_list("assigned_device_id", "ip_address")
-    for dev_id, addr in rows:
+                by_short.setdefault(short, set()).add(target)
+
+    def add_addr(target, addr):
         ip = _ip(addr)
         if ip:
-            by_addr.setdefault(ip, set()).add(dev_id)
+            by_addr.setdefault(ip, set()).add(target)
+
+    for dev_id, name in Device.objects.filter(tenant=tenant).values_list("id", "name"):
+        add_name((DEVICE, dev_id), name)
+    for vm_id, name in VirtualMachine.objects.filter(tenant=tenant).values_list("id", "name"):
+        add_name((VM, vm_id), name)
+
+    for dev_id, vm_id, nic_vm_id, addr in IPAddress.objects.filter(tenant=tenant).filter(
+        models.Q(assigned_device__isnull=False)
+        | models.Q(assigned_vm__isnull=False)
+        | models.Q(assigned_vm_interface__isnull=False)
+    ).values_list("assigned_device_id", "assigned_vm_id", "assigned_vm_interface__vm_id",
+                  "ip_address"):
+        if dev_id:
+            add_addr((DEVICE, dev_id), addr)
+        # An address on a VM's interface belongs to that VM even where the
+        # row's assigned_vm was never filled in.
+        for vid in {vm_id, nic_vm_id} - {None}:
+            add_addr((VM, vid), addr)
     # A primary address is normally one of the assigned ones; adding it again
     # covers the odd row where it is not.
     for dev_id, addr in Device.objects.filter(
         tenant=tenant, primary_ip__isnull=False
     ).values_list("id", "primary_ip__ip_address"):
-        ip = _ip(addr)
-        if ip:
-            by_addr.setdefault(ip, set()).add(dev_id)
-    return devices, by_addr, by_name, by_short
+        add_addr((DEVICE, dev_id), addr)
+    for vm_id, addr in VirtualMachine.objects.filter(
+        tenant=tenant, primary_ip__isnull=False
+    ).values_list("id", "primary_ip__ip_address"):
+        add_addr((VM, vm_id), addr)
+    return names, by_addr, by_name, by_short
+
+
+def _noun(hits) -> str:
+    kinds = {kind for kind, _ in hits}
+    if kinds == {DEVICE}:
+        return "devices"
+    if kinds == {VM}:
+        return "virtual machines"
+    return "devices and virtual machines"
 
 
 def match_node(node: dict, index, match_by: str) -> tuple[object, str, str]:
-    """``(device_id | None, how, reason)`` for one node."""
+    """``(target | None, how, reason)`` for one node; a target is
+    ``(kind, id)``."""
     _, by_addr, by_name, by_short = index
     full, name, _group = split_full_name(node)
     rungs = []
@@ -111,10 +150,12 @@ def match_node(node: dict, index, match_by: str) -> tuple[object, str, str]:
                 continue
             hits = table.get(key) or set()
             if len(hits) > 1:
-                return None, "ambiguous", f"{len(hits)} devices share the {how} '{key}'."
+                return None, "ambiguous", (
+                    f"{len(hits)} {_noun(hits)} share the {how} '{key}'."
+                )
             if hits:
                 return next(iter(hits)), how, ""
-    return None, "none", "No device matches."
+    return None, "none", "No device or virtual machine matches."
 
 
 def sync_nodes(conn: OxidizedConnection) -> dict:
@@ -131,18 +172,15 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
     try:
         nodes = OxidizedClient.for_connection(conn).nodes()
     except OxidizedError as exc:
-        conn.last_error = str(exc)[:500]
-        conn.last_checked_at = now
-        conn.save(update_fields=["last_error", "last_checked_at", "updated_at"])
-        summary["error"] = conn.last_error
+        summary["error"] = record_sync_failure(conn, str(exc), now)
         return summary
 
-    index = _device_index(conn.tenant)
-    devices = index[0]
+    index = _target_index(conn.tenant)
+    names = index[0]
     links = list(OxidizedNodeLink.objects.filter(connection=conn))
     pinned = [lk for lk in links if lk.matched_by == OxidizedNodeLink.HOW_MANUAL]
     pinned_nodes = {lk.full_name for lk in pinned}
-    pinned_devices = {lk.device_id for lk in pinned}
+    pinned_targets = {_target_of(lk) for lk in pinned}
 
     seen: dict[str, dict] = {}
     for node in nodes:
@@ -151,28 +189,29 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
             seen[full] = node
     summary["nodes"] = len(seen)
 
-    # First pass: decide. Second: drop every device two nodes claimed.
+    # First pass: decide. Second: drop every target two nodes claimed.
     decided: dict[str, tuple] = {}
     unmatched: list[dict] = []
     claims: dict = {}
     for full, node in seen.items():
         if full in pinned_nodes:
             continue
-        dev_id, how, reason = match_node(node, index, conn.match_by)
-        if dev_id is not None and dev_id in pinned_devices:
-            dev_id, how, reason = None, "ambiguous", "The device is pinned to another node."
-        if dev_id is None:
+        target, how, reason = match_node(node, index, conn.match_by)
+        if target is not None and target in pinned_targets:
+            what = "device" if target[0] == DEVICE else "virtual machine"
+            target, how, reason = None, "ambiguous", f"The {what} is pinned to another node."
+        if target is None:
             unmatched.append(_unmatched_row(full, node, reason))
             continue
-        decided[full] = (dev_id, how)
-        claims.setdefault(dev_id, []).append(full)
-    for dev_id, fulls in claims.items():
+        decided[full] = (target, how)
+        claims.setdefault(target, []).append(full)
+    for target, fulls in claims.items():
         if len(fulls) > 1:
             for full in fulls:
                 decided.pop(full, None)
                 unmatched.append(_unmatched_row(
                     full, seen[full],
-                    f"{len(fulls)} nodes match {devices[dev_id].name}.",
+                    f"{len(fulls)} nodes match {names.get(target, '')}.",
                 ))
 
     with transaction.atomic():
@@ -183,18 +222,20 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
             else:
                 summary["missing_pinned"] += 1
         current = {lk.full_name: lk for lk in links if lk.matched_by != OxidizedNodeLink.HOW_MANUAL}
-        # Free every device whose matched link moves to another node first, so
-        # the (connection, device) constraint never sees two rows at once.
+        # Free every target whose matched link moves to another node first, so
+        # the (connection, device|vm) constraints never see two rows at once.
         stale = [
             lk.id for full, lk in current.items()
-            if full not in decided or decided[full][0] != lk.device_id
+            if full not in decided or decided[full][0] != _target_of(lk)
         ]
         OxidizedNodeLink.objects.filter(id__in=stale).delete()
-        for full, (dev_id, how) in decided.items():
+        for full, ((kind, obj_id), how) in decided.items():
             lk = current.get(full)
             if lk is None or lk.id in stale:
                 lk = OxidizedNodeLink(
-                    tenant=conn.tenant, connection=conn, device_id=dev_id, full_name=full,
+                    tenant=conn.tenant, connection=conn, full_name=full,
+                    device_id=obj_id if kind == DEVICE else None,
+                    virtual_machine_id=obj_id if kind == VM else None,
                 )
             lk.matched_by = how
             _refresh(lk, seen[full], now)
@@ -207,14 +248,42 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
         summary["unmatched"] = unmatched[:UNMATCHED_LIMIT]
         conn.node_count = len(seen)
         conn.last_sync_at = now
+        conn.last_sync_attempt_at = now
         conn.last_checked_at = now
         conn.last_error = ""
         conn.last_sync_summary = summary
         conn.save(update_fields=[
-            "node_count", "last_sync_at", "last_checked_at", "last_error",
-            "last_sync_summary", "updated_at",
+            "node_count", "last_sync_at", "last_sync_attempt_at", "last_checked_at",
+            "last_error", "last_sync_summary", "updated_at",
         ])
     return summary
+
+
+def record_sync_failure(conn: OxidizedConnection, message: str, now=None) -> str:
+    """Stamp a failed sync on the connection and return the stored message.
+
+    ``last_sync_at`` stays the last *successful* sync, and the summary keeps
+    that sync's counts and unmatched nodes, with ``error`` set (#385). The
+    attempt is stamped too, so the scheduler retries once per interval rather
+    than every tick.
+    """
+    now = now or timezone.now()
+    message = (message or "Sync failed.")[:500]
+    conn.last_error = message
+    conn.last_checked_at = now
+    conn.last_sync_attempt_at = now
+    conn.last_sync_summary = {**(conn.last_sync_summary or {}), "error": message}
+    conn.save(update_fields=[
+        "last_error", "last_checked_at", "last_sync_attempt_at", "last_sync_summary",
+        "updated_at",
+    ])
+    return message
+
+
+def _target_of(link: OxidizedNodeLink) -> tuple:
+    if link.device_id:
+        return (DEVICE, link.device_id)
+    return (VM, link.virtual_machine_id)
 
 
 def _refresh(link: OxidizedNodeLink, node: dict, now) -> None:

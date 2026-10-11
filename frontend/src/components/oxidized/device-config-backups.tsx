@@ -29,24 +29,42 @@ import { DiffLine } from "@/components/device-drift-panel"
 
 type View = "current" | "history" | "diff"
 
-/** Gate: the Oxidized switch is on for the tenant and the user holds
- * view_config on devices. The server enforces both; this only keeps the
- * panel out of the way of everyone else. */
+/** What the backups belong to: a device, or a virtual machine running a
+ * network OS (#384). Same panel, same endpoints under another prefix, and
+ * view_config on that object type. */
+type Owner = "device" | "virtualmachine"
+
+const OWNER: Record<Owner, { path: string; noun: string }> = {
+  device: { path: "devices", noun: "device" },
+  virtualmachine: { path: "virtual-machines", noun: "virtual machine" },
+}
+
 export function DeviceConfigBackups({ deviceId }: { deviceId: string }) {
+  return <ConfigBackups owner="device" id={deviceId} />
+}
+
+export function VmConfigBackups({ vmId }: { vmId: string }) {
+  return <ConfigBackups owner="virtualmachine" id={vmId} />
+}
+
+/** Gate: the Oxidized switch is on for the tenant and the user holds
+ * view_config on the owner's type. The server enforces both; this only keeps
+ * the panel out of the way of everyone else. */
+function ConfigBackups({ owner, id }: { owner: Owner; id: string }) {
   const { canDo } = useMe()
   const enabled = useQuery({
     queryKey: ["integrations-enabled"],
     queryFn: () => api<Record<string, boolean>>("/api/integrations/enabled/"),
     staleTime: 60_000,
   })
-  if (!enabled.data?.oxidized || !canDo("device", "view_config")) return null
-  return <Backups deviceId={deviceId} />
+  if (!enabled.data?.oxidized || !canDo(owner, "view_config")) return null
+  return <Backups owner={owner} id={id} />
 }
 
-function Backups({ deviceId }: { deviceId: string }) {
-  const base = `/api/oxidized/devices/${deviceId}`
+function Backups({ owner, id }: { owner: Owner; id: string }) {
+  const base = `/api/oxidized/${OWNER[owner].path}/${id}`
   const nodes = useQuery({
-    queryKey: ["oxidized-device", deviceId],
+    queryKey: ["oxidized-owner", owner, id],
     queryFn: () => api<{ links: OxidizedDeviceLink[] }>(`${base}/`),
   })
   const [linkId, setLinkId] = useState<string | null>(null)
@@ -62,7 +80,7 @@ function Backups({ deviceId }: { deviceId: string }) {
         <QueryError error={nodes.error} />
       ) : !link ? (
         <EmptyState title="Not in Oxidized">
-          No Oxidized node is linked to this device.
+          No Oxidized node is linked to this {OWNER[owner].noun}.
         </EmptyState>
       ) : (
         <div className="space-y-3">

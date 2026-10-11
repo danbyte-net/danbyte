@@ -34,6 +34,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { RowActions } from "@/components/row-actions"
 import { DevicePicker } from "@/components/device-picker"
+import { VMPicker } from "@/components/vm-picker"
 import {
   FormCheckbox,
   FormFooter,
@@ -52,6 +53,16 @@ const MATCH_OPTIONS = [
 ]
 const MATCH_LABEL = Object.fromEntries(
   MATCH_OPTIONS.map((o) => [o.value, o.label])
+)
+const INTERVAL_OPTIONS = [
+  { value: "5", label: "5 minutes" },
+  { value: "10", label: "10 minutes" },
+  { value: "15", label: "15 minutes" },
+  { value: "30", label: "30 minutes" },
+  { value: "60", label: "1 hour" },
+]
+const INTERVAL_LABEL = Object.fromEntries(
+  INTERVAL_OPTIONS.map((o) => [o.value, o.label])
 )
 
 /** The Oxidized connection and its node mapping (#35). */
@@ -283,8 +294,26 @@ function ConnectionCard({
       ),
     },
     {
+      label: "Auto sync",
+      value: conn.auto_sync
+        ? `Every ${INTERVAL_LABEL[String(conn.sync_interval_minutes)]}`
+        : "Off",
+    },
+    {
       label: "Last sync",
       value: conn.last_sync_at ? <TimeCell iso={conn.last_sync_at} /> : dash,
+    },
+    ...(conn.sync.error
+      ? [
+          {
+            label: "Last sync failed",
+            value: <Badge variant="destructive">{conn.sync.error}</Badge>,
+          },
+        ]
+      : []),
+    {
+      label: "Next sync",
+      value: conn.next_sync_at ? <TimeCell iso={conn.next_sync_at} /> : dash,
     },
   ]
   return (
@@ -333,7 +362,7 @@ function ConnectionCard({
 }
 
 /** Nodes the last sync paired with nothing, with the reason and a way to pin
- * one to a device by hand. */
+ * one to a device or a virtual machine by hand. */
 function UnmatchedNodes({
   connection,
   canPin,
@@ -343,7 +372,13 @@ function UnmatchedNodes({
 }) {
   const qc = useQueryClient()
   const [pinning, setPinning] = useState<OxidizedUnmatchedNode | null>(null)
-  const [deviceId, setDeviceId] = useState<string | null>(null)
+  const [kind, setKind] = useState<"device" | "vm">("device")
+  const [targetId, setTargetId] = useState<string | null>(null)
+  const closePin = () => {
+    setPinning(null)
+    setTargetId(null)
+    setKind("device")
+  }
 
   const q = useQuery({
     queryKey: ["oxidized-unmatched", connection.id],
@@ -359,14 +394,14 @@ function UnmatchedNodes({
         method: "POST",
         body: JSON.stringify({
           connection_id: connection.id,
-          device_id: deviceId,
+          [kind === "vm" ? "virtual_machine_id" : "device_id"]: targetId,
           full_name: pinning?.full_name,
         }),
       }),
     onSuccess: (r) => {
-      toast.success(`Pinned ${r.full_name} to ${r.device.name}`)
-      setPinning(null)
-      setDeviceId(null)
+      const target = r.device ?? r.virtual_machine
+      toast.success(`Pinned ${r.full_name} to ${target?.name ?? ""}`)
+      closePin()
       void qc.invalidateQueries({ queryKey: ["oxidized-links"] })
       void qc.invalidateQueries({ queryKey: ["oxidized-connections"] })
     },
@@ -415,7 +450,7 @@ function UnmatchedNodes({
                   variant="outline"
                   onClick={() => setPinning(row.original)}
                 >
-                  Pin to device
+                  Pin
                 </Button>
               ),
             } as ColumnDef<OxidizedUnmatchedNode>,
@@ -441,34 +476,41 @@ function UnmatchedNodes({
           flexColumn="reason"
         />
       )}
-      <Dialog
-        open={!!pinning}
-        onOpenChange={(o) => {
-          if (!o) {
-            setPinning(null)
-            setDeviceId(null)
-          }
-        }}
-      >
+      <Dialog open={!!pinning} onOpenChange={(o) => !o && closePin()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Pin {pinning?.full_name}</DialogTitle>
           </DialogHeader>
-          <DevicePicker
-            value={deviceId}
-            onChange={setDeviceId}
-            placeholder="Select a device…"
+          <SegmentedTabs
+            value={kind}
+            onValueChange={(v) => {
+              setKind(v)
+              setTargetId(null)
+            }}
+            items={[
+              { value: "device", label: "Device" },
+              { value: "vm", label: "Virtual machine" },
+            ]}
           />
+          {kind === "vm" ? (
+            <VMPicker
+              value={targetId}
+              onChange={setTargetId}
+              placeholder="Select a virtual machine…"
+            />
+          ) : (
+            <DevicePicker
+              value={targetId}
+              onChange={setTargetId}
+              placeholder="Select a device…"
+            />
+          )}
           <DialogFooter>
-            <Button
-              variant="ghost"
-              disabled={pin.isPending}
-              onClick={() => setPinning(null)}
-            >
+            <Button variant="ghost" disabled={pin.isPending} onClick={closePin}>
               Cancel
             </Button>
             <Button
-              disabled={!deviceId || pin.isPending}
+              disabled={!targetId || pin.isPending}
               onClick={() => pin.mutate()}
             >
               {pin.isPending ? "Pinning…" : "Pin"}
@@ -513,18 +555,11 @@ function LinkedNodes({
     () => [
       {
         id: "device",
-        accessorFn: (r) => r.device.name,
-        header: ({ column }) => <SortHeader column={column} label="Device" />,
-        cell: ({ row }) => (
-          <Link
-            to="/devices/$id"
-            params={{ id: row.original.device.id }}
-            search={{ tab: "config" }}
-            className="link font-medium"
-          >
-            {row.original.device.name}
-          </Link>
+        accessorFn: (r) => (r.device ?? r.virtual_machine)?.name ?? "",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Device or VM" />
         ),
+        cell: ({ row }) => <LinkTarget link={row.original} />,
       },
       {
         id: "node",
@@ -605,7 +640,7 @@ function LinkedNodes({
     <Section title="Linked nodes" count={links.data?.count ?? rows.length}>
       {links.isLoading ? null : rows.length === 0 ? (
         <EmptyState title="Nothing linked">
-          Sync nodes pairs each Oxidized node with its device.
+          Sync nodes pairs each Oxidized node with its device or VM.
         </EmptyState>
       ) : (
         <DataTable
@@ -619,7 +654,7 @@ function LinkedNodes({
       <ConfirmDialog
         open={!!unlinking}
         onOpenChange={(o) => !o && setUnlinking(null)}
-        title={`Unlink ${unlinking?.device.name ?? "this device"}?`}
+        title={`Unlink ${(unlinking?.device ?? unlinking?.virtual_machine)?.name ?? "this node"}?`}
         description="A matched link comes back on the next sync if it still matches. Oxidized is untouched."
         confirmLabel="Unlink"
         pendingLabel="Unlinking…"
@@ -627,6 +662,35 @@ function LinkedNodes({
         onConfirm={() => unlinking && unlink.mutate(unlinking.id)}
       />
     </Section>
+  )
+}
+
+/** The device or virtual machine a node backs, linked to its Config tab. */
+function LinkTarget({ link }: { link: OxidizedNodeLink }) {
+  if (link.virtual_machine)
+    return (
+      <span className="inline-flex items-center gap-2">
+        <Link
+          to="/virtual-machines/$id"
+          params={{ id: link.virtual_machine.id }}
+          search={{ tab: "config" }}
+          className="link font-medium"
+        >
+          {link.virtual_machine.name}
+        </Link>
+        <Badge variant="secondary">VM</Badge>
+      </span>
+    )
+  if (!link.device) return null
+  return (
+    <Link
+      to="/devices/$id"
+      params={{ id: link.device.id }}
+      search={{ tab: "config" }}
+      className="link font-medium"
+    >
+      {link.device.name}
+    </Link>
   )
 }
 
@@ -681,6 +745,10 @@ function ConnectionForm({
   const [matchBy, setMatchBy] = useState<string | null>(
     connection?.match_by ?? "address_name"
   )
+  const [autoSync, setAutoSync] = useState(connection?.auto_sync ?? true)
+  const [syncInterval, setSyncInterval] = useState<string | null>(
+    String(connection?.sync_interval_minutes ?? 30)
+  )
 
   // A plain request rather than the planning-aware save: a staged change
   // would keep the password in the plan.
@@ -701,6 +769,8 @@ function ConnectionForm({
             verify_tls: verifyTls,
             enabled,
             match_by: matchBy,
+            auto_sync: autoSync,
+            sync_interval_minutes: Number(syncInterval ?? 30),
           }),
         }
       ),
@@ -767,6 +837,21 @@ function ConnectionForm({
           options={MATCH_OPTIONS}
           error={fieldErrors.match_by}
         />
+        <FormCheckbox
+          label="Sync nodes automatically"
+          checked={autoSync}
+          onChange={setAutoSync}
+        />
+        {autoSync && (
+          <FormSelect
+            label="Sync every"
+            info="Reads the node list and re-matches on this interval, as Sync nodes does. Pinned links are kept."
+            value={syncInterval}
+            onChange={setSyncInterval}
+            options={INTERVAL_OPTIONS}
+            error={fieldErrors.sync_interval_minutes}
+          />
+        )}
         <FormCheckbox
           label="Verify TLS certificate"
           checked={verifyTls}

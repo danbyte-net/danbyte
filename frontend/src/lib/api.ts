@@ -12181,10 +12181,17 @@ export interface OxidizedConnection {
   verify_tls: boolean
   enabled: boolean
   match_by: "address_name" | "address" | "name"
+  /** Automatic node sync (#385). */
+  auto_sync: boolean
+  sync_interval_minutes: 5 | 10 | 15 | 30 | 60
   last_checked_at: string | null
   last_error: string
   node_count: number | null
+  /** The last successful node sync. */
   last_sync_at: string | null
+  last_sync_attempt_at: string | null
+  /** Null while automatic sync is off. */
+  next_sync_at: string | null
   link_count: number
   sync: {
     nodes: number | null
@@ -12200,7 +12207,9 @@ export interface OxidizedNodeLink {
   id: string
   connection: string
   connection_name: string
-  device: { id: string; name: string }
+  /** Exactly one of device / virtual_machine is set (#384). */
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
   full_name: string
   node_name: string
   node_group: string
