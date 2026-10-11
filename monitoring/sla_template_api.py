@@ -13,6 +13,7 @@ from rest_framework.response import Response
 
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
+from core.hidden_fields import PermissionHiddenFieldsMixin
 
 from . import sla_template
 from .models import SlaAgreement, SlaTemplate
@@ -26,7 +27,7 @@ def may_see_credits(request, tenant) -> bool:
         request.user, tenant, "slaagreement", "view_credits")
 
 
-class SlaTemplateSerializer(serializers.ModelSerializer):
+class SlaTemplateSerializer(PermissionHiddenFieldsMixin, serializers.ModelSerializer):
     agreement_count = serializers.IntegerField(read_only=True, default=0)
     holiday_calendar_detail = serializers.SerializerMethodField()
 
@@ -55,12 +56,10 @@ class SlaTemplateSerializer(serializers.ModelSerializer):
         c = obj.holiday_calendar
         return {"id": str(c.id), "name": c.name} if c else None
 
-    def to_representation(self, obj):
-        data = super().to_representation(obj)
-        if not may_see_credits(self.context.get("request"), obj.tenant):
-            for f in sla_template.CREDIT_FIELDS:
-                data.pop(f, None)
-        return data
+    def hidden_fields(self, obj) -> set[str]:
+        if may_see_credits(self.context.get("request"), obj.tenant):
+            return set()
+        return set(sla_template.CREDIT_FIELDS)
 
     def validate_name(self, value):
         value = value.strip()

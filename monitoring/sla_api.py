@@ -31,6 +31,7 @@ from rest_framework.response import Response
 from api.models import DeviceRole, DeviceType, Platform, Site
 from api.viewsets import TenantScopedViewSet, _get_active_tenant
 from auth_api import rbac
+from core.hidden_fields import PermissionHiddenFieldsMixin
 
 from . import sla
 from .models import (
@@ -178,7 +179,7 @@ class HolidayCalendarViewSet(TenantScopedViewSet):
 # ─── agreements ─────────────────────────────────────────────────────────────
 
 
-class SlaAgreementSerializer(serializers.ModelSerializer):
+class SlaAgreementSerializer(PermissionHiddenFieldsMixin, serializers.ModelSerializer):
     # The period headline is a set of figures the SLA page draws, not one
     # value a column can show (see api.list_fields).
     list_columns_exclude = ("current",)
@@ -216,12 +217,10 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
         # Required unless a template gives it (checked in validate).
         extra_kwargs = {"target_pct": {"required": False}}
 
-    def to_representation(self, obj):
-        data = super().to_representation(obj)
-        if not _may_see_credits(self.context.get("request"), obj):
-            for f in CREDIT_FIELDS:
-                data.pop(f, None)
-        return data
+    def hidden_fields(self, obj) -> set[str]:
+        if _may_see_credits(self.context.get("request"), obj):
+            return set()
+        return set(CREDIT_FIELDS)
 
     def get_customer_detail(self, obj):
         c = obj.customer

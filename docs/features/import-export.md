@@ -34,6 +34,15 @@ selection travels in the request body, not the link, so a large one - **Select
 all N** on a long list - exports like a few rows, up to 50,000 at a time.
 Scripts do the same with `POST /api/io/<type>/export/` and a JSON body of
 `{"fmt": "csv", "ids": [...]}`; a `GET` takes `?ids=` for a short list.
+Any other field of the type narrows the export to an exact match
+(`?vrf=<id>`).
+
+**An export shows you what the API shows you.** A field the type's API hides
+from you is not a column in your file and can't be used as an export filter:
+without `view_credits`, an SLA agreement or SLA template exports without its
+`period_fee`, `credit_tiers` and `currency`, and `?period_fee=` is refused. A
+file exported without those columns imports back leaving them as they are.
+Secrets and their store paths aren't filters either.
 
 On a **prefix** page the Import / Export acts on the **IP addresses inside that
 prefix** (the workflow that replaced the old "IPs" dropdown).
@@ -57,6 +66,14 @@ present but blank matches an empty value (no VRF, no site).
 You need **add** permission to create rows and **change** to update them, and you
 can only touch rows inside your own [scope](permissions.md) - importing a row
 outside it is a clean per-row error, never a silent escalation.
+
+**Import and export refuse a type where its API refuses it.** While an
+integration (Oxidized, Zabbix, DNS, DHCP, virtualization) or a plugin is
+switched off for the tenant, its types are not offered, and an import or
+export of one is refused whole with the API's `404`, dry run included, before
+any row is read. The same goes for the API's other checks on the type, such
+as an administrator-only type: what the API refuses for a create or an
+update, the import refuses for those rows.
 
 **An unchanged export imports back as a no-op.** Re-uploading a file you didn't
 edit changes nothing, for every type.
@@ -209,6 +226,13 @@ register_io(WidgetIO())
 
 Add the app to `INSTALLED_APPS` and its `Widgets` type appears in the permission
 picker and gains a **Data** menu wherever its table is shown - no core changes.
+
+Import and export go through the type's routed viewset: its `initial()` gates
+(`PluginEnabledMixin`, `IntegrationToggleMixin`), permission classes and
+allowed methods apply to them. A serializer that shows some fields only to
+some users mixes in `core.hidden_fields.PermissionHiddenFieldsMixin` and names
+them in `hidden_fields(obj)`; the export leaves the same fields out. Don't
+drop fields per user in a bare `to_representation` - the export can't see it.
 
 ## Related
 

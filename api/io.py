@@ -173,6 +173,66 @@ class ModelIOHandler:
         API write path is export-only."""
         return self.write_viewset() is not None
 
+    def read_viewset(self):
+        """The routed viewset that lists this type through the API, or
+        ``None`` when the API does not list it."""
+        if self.viewset is not None and "list" in _routed_actions(self.model, self.viewset):
+            return self.viewset
+        return read_viewset_for(self.model)
+
+    def api_gate(self, request, action) -> None:
+        """Run the gates the API runs before it serves ``action``
+        (``list``, ``create`` or ``partial_update``) for this type: the
+        allowed methods and the viewset's ``initial()``, which holds its
+        permission classes and any whole-type switch (an integration or a
+        plugin off for the tenant). Raises the API's own ``APIException``
+        (404, 403, 405). A type the API does not serve that way has no gate
+        here; RBAC still applies to it (#388)."""
+        from rest_framework.exceptions import MethodNotAllowed
+
+        cls = self.read_viewset() if action == "list" else self.write_viewset()
+        if cls is None:
+            return
+        method = _GATE_METHODS[action]
+        if method.lower() not in cls.http_method_names:
+            raise MethodNotAllowed(method)
+        req = _as_method(request, method)
+        view = cls(request=req, args=(), kwargs={}, format_kwarg=None, action=action)
+        view.headers = {}
+        view.initial(req)
+
+    def _read_serializer(self, request):
+        cls = self.read_viewset()
+        if cls is None or request is None:
+            return None
+        req = _as_method(request, "GET")
+        view = cls(request=req, args=(), kwargs={}, format_kwarg=None, action="list")
+        return view.get_serializer()
+
+    def field_visibility(self, request):
+        """The type's API serializer for this request when it hides fields
+        from some users (``hidden_fields``), else ``None`` (#387)."""
+        from core.hidden_fields import PermissionHiddenFieldsMixin
+
+        ser = self._read_serializer(request)
+        return ser if isinstance(ser, PermissionHiddenFieldsMixin) else None
+
+    def hidden_columns(self, visibility, tenant=None, obj=None) -> set[str]:
+        """The columns the API shows the user of the ``visibility``
+        serializer (:meth:`field_visibility`) without: for ``obj``, else for
+        any object of ``tenant`` (#387)."""
+        if visibility is None:
+            return set()
+        if obj is None:
+            obj = self.model(tenant=tenant) if _is_tenant_scoped(self.model) else self.model()
+        out = set()
+        for name in visibility.hidden_fields(obj):
+            out.add(name)
+            sf = visibility.fields.get(name)
+            if sf is not None and sf.source and sf.source != "*":
+                out.add(sf.source.split(".")[0])
+        return out
+
     def _view(self, request, action):
         return self.write_viewset()(
             request=request, args=(), kwargs={}, format_kwarg=None, action=action,
@@ -388,12 +448,15 @@ class ModelIOHandler:
             return json.dumps(value)
         return str(value)
 
-    def to_row(self, obj, refs=None) -> dict:
+    def to_row(self, obj, refs=None, columns=None, visibility=None) -> dict:
         """One object as a file row. ``refs`` is a cache shared across the
-        rows of one export."""
+        rows of one export; ``columns`` are the file's columns. A field the
+        ``visibility`` serializer hides for this object stays empty, as the
+        API leaves it out (#387)."""
+        hidden = self.hidden_columns(visibility, obj=obj)
         row = {"id": str(obj.pk)}
         for f in _exportable_fields(self.model):
-            if f.name == "custom_fields":
+            if f.name == "custom_fields" or f.name in hidden:
                 continue
             row[f.name] = self._export_value(obj, f, refs)
         if _is_taggable(self.model):
@@ -401,7 +464,9 @@ class ModelIOHandler:
         if _has_custom_fields(self.model):
             cf = obj.custom_fields or {}
             row["custom_fields"] = json.dumps(cf) if cf else ""
-        return {c: row.get(c, "") for c in self.column_names()}
+        for name in hidden:
+            row.pop(name, None)
+        return {c: row.get(c, "") for c in (columns or self.column_names())}
 
     # ── import ────────────────────────────────────────────────────────────
     def lookup(self, row, tenant, user=None):
@@ -695,11 +760,55 @@ def _django_errors(detail, to_ser) -> dict | list:
     }
 
 
+_GATE_METHODS = {"list": "GET", "create": "POST", "partial_update": "PATCH"}
+
+
+def _as_method(request, method):
+    """A copy of the DRF ``request`` that reads as ``method``, so a gate or
+    permission class that looks at the method judges the action an import
+    or export stands for, not the POST that carried the file."""
+    import copy
+
+    req = copy.copy(request)
+    inner = copy.copy(request._request)
+    inner.method = method
+    req._request = inner
+    return req
+
+
+def _routed_actions(model, cls) -> set:
+    return _routed_viewsets().get(model, {}).get(cls, set())
+
+
+def read_viewset_for(model):
+    """The routed viewset that lists ``model``, preferring the one that
+    also writes it, or ``None``."""
+    if model is None:
+        return None
+    viewsets = _routed_viewsets().get(model, {})
+    writer = _write_viewsets().get(model)
+    if writer is not None and "list" in viewsets.get(writer, set()):
+        return writer
+    return next((cls for cls, acts in viewsets.items() if "list" in acts), None)
+
+
 @lru_cache(maxsize=1)
 def _write_viewsets() -> dict:
     """``{model: viewset}`` for every routed viewset that creates and
-    partially updates its model, read off the URL routes - every app's
-    router, plugins included."""
+    partially updates its model."""
+    out = {}
+    for model, viewsets in _routed_viewsets().items():
+        for cls, actions in viewsets.items():
+            if {"create", "partial_update"} <= actions:
+                out[model] = cls
+                break
+    return out
+
+
+@lru_cache(maxsize=1)
+def _routed_viewsets() -> dict:
+    """``{model: {viewset: actions}}`` for every routed viewset, read off
+    the URL routes - every app's router, plugins included."""
     from django.urls import URLPattern, URLResolver, get_resolver
 
     found: dict = {}
@@ -719,13 +828,7 @@ def _write_viewsets() -> dict:
                 )
 
     walk(get_resolver().url_patterns)
-    out = {}
-    for model, viewsets in found.items():
-        for cls, actions in viewsets.items():
-            if {"create", "partial_update"} <= actions:
-                out[model] = cls
-                break
-    return out
+    return found
 
 
 class DeviceIOHandler(ModelIOHandler):
