@@ -102,6 +102,33 @@ def detail_only(default=None):
     return decorate
 
 
+def _changes(instance, attrs, *fields, norm=None) -> bool:
+    """Whether a write changes any of ``fields`` (#389). A create sets them
+    all; an update counts a field only when it is sent with a value that
+    differs from the stored one, so an edit form sending a record back
+    unchanged does not re-judge a rule the record predates. ``norm`` maps
+    both sides to a comparable form (an address spelling, a set)."""
+    if instance is None:
+        return True
+    for f in fields:
+        if f not in attrs:
+            continue
+        new, old = attrs[f], getattr(instance, f, None)
+        if norm is not None:
+            new, old = norm(new), norm(old)
+        if new != old:
+            return True
+    return False
+
+
+def _ip_norm(value):
+    """An address in one spelling, for ``_changes``; anything unparsable as is."""
+    try:
+        return ipaddress.ip_address(str(value).strip())
+    except ValueError:
+        return value
+
+
 class NumIdModelSerializer(serializers.ModelSerializer):
     """``ModelSerializer`` that auto-exposes a read-only ``numid`` for any model
     that carries it (``NumIdMixin``), so every object surfaces its per-tenant
@@ -847,10 +874,10 @@ class VLANSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Taggabl
         group = attrs.get("group", getattr(self.instance, "group", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
         vid = attrs.get("vlan_id", getattr(self.instance, "vlan_id", None))
-        # The range is checked when the VID or the group is set: a VLAN left
+        # The range is checked when the VID or the group changes: a VLAN left
         # outside a range narrowed before that was refused still takes other
-        # edits (#380).
-        placed = self.instance is None or "vlan_id" in attrs or "group" in attrs
+        # edits, from its form too (#380, #389).
+        placed = _changes(self.instance, attrs, "vlan_id", "group")
         if group is not None and vid is not None and placed:
             if not (group.min_vid <= vid <= group.max_vid):
                 raise serializers.ValidationError(
@@ -1767,7 +1794,14 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
 
         ip_str = attrs.get("ip_address", getattr(self.instance, "ip_address", None))
         prefix = attrs.get("prefix", getattr(self.instance, "prefix", None))
-        if ip_str and prefix is not None:
+        # Judged when the address or its prefix changes: an address stranded
+        # outside its prefix before the checks still saves from its form
+        # (#389).
+        placed = _changes(self.instance, attrs, "ip_address", norm=_ip_norm) or _changes(
+            self.instance, attrs, "prefix")
+        if ip_str and prefix is not None and (
+            placed or _changes(self.instance, attrs, "mask_length")
+        ):
             try:
                 addr = _ipa.ip_address(ip_str)
             except ValueError:
@@ -1779,7 +1813,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
                 raise serializers.ValidationError(
                     {"prefix": f"Prefix {prefix.cidr} is not a valid network."}
                 )
-            if addr.version != net.version or addr not in net:
+            if placed and (addr.version != net.version or addr not in net):
                 raise serializers.ValidationError(
                     {"ip_address": f"{ip_str} is not inside the prefix {prefix.cidr}."}
                 )
@@ -1789,10 +1823,10 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
                     {"mask_length": f"An IPv{addr.version} address takes at most /{addr.max_prefixlen}."}
                 )
             # A prefix that allocates only from its ranges refuses an address
-            # outside every range - but only when the address or prefix is
-            # what's being set; renaming a legacy IP still saves.
+            # outside every range - but only when the address or prefix
+            # changes; renaming a legacy IP still saves.
             if (
-                ("ip_address" in attrs or "prefix" in attrs)
+                placed
                 and prefix.allocate_from_ranges
                 and not prefix.in_allocation(ip_str)
             ):
@@ -2553,8 +2587,18 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         if rail_at is not None and height is not None and rail_at > height:
             raise serializers.ValidationError(
                 {"din_rail_mm": f"Below the body ({din.mm(height)} mm tall)."})
-        if self.instance is not None and ("width_mm" in attrs or "din_profiles" in attrs):
-            din.check_type_change(self.instance, get("width_mm"), profiles)
+        inst = self.instance
+        if inst is not None and (
+            _changes(inst, attrs, "width_mm")
+            or _changes(inst, attrs, "din_profiles", norm=lambda v: set(v or []))
+        ):
+            din.check_type_change(inst, get("width_mm"), profiles)
+        if inst is not None and _changes(inst, attrs, "u_height", "is_full_depth", "rack_width"):
+            # Its racked devices keep the rack rules (#390).
+            from . import rack_units
+
+            rack_units.check_type_change(
+                inst, get("u_height"), get("is_full_depth"), get("rack_width"))
         return attrs
 
     class Meta:
@@ -3054,8 +3098,12 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                 f in attrs and attrs[f] != getattr(inst, f) for f in fields
             )
 
+        eff_type = attrs.get("device_type", getattr(inst, "device_type", None))
+        # A side counts only on a half-width type; a full-width one drops it.
+        sided = bool(eff_type and eff_type.rack_width == "half")
         placement_changed = changed(
-            "rack", "position", "face", "rack_side", "device_type", "mount",
+            "rack", "position", "face", "device_type", "mount",
+            *(("rack_side",) if sided else ()),
         )
         site_changed = changed("rack", "site", "location", "cabinet")
 
@@ -3067,6 +3115,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             # site meanwhile waits for this placement, or this one for it.
             from . import rack_units
 
+            if placement_changed:
+                # The type first, as a type change takes it (#390): one being
+                # changed meanwhile is waited for and its new size read.
+                rack_units.share_type(eff_type)
             rack = rack_units.lock_rack(rack)
         if site_changed:
             self._validate_site(attrs, rack)
@@ -3235,7 +3287,9 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             if "cabinet" in attrs and get("location") is None \
                     and cabinet.location_id is not None:
                 attrs["location"] = cabinet.location
-        moved = any(f in attrs for f in ("cabinet", "din_rail", "din_offset_mm", "device_type"))
+        # Placed again only when a value it depends on changes, so devices
+        # stored overlapping before the rule still save from their form (#389).
+        moved = _changes(inst, attrs, "cabinet", "din_rail", "din_offset_mm", "device_type")
         if rail is not None and moved:
             attrs["din_offset_mm"] = din.place(
                 rail, get("device_type"), offset, exclude=getattr(inst, "pk", None))
@@ -5234,10 +5288,18 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
                            f"got {', '.join(sorted(kinds))}."}
                 )
 
-        # The two ends plug into each other (#378): checked whenever an end
-        # is written, so a stored cable from before the rule still takes
-        # edits that leave its ends alone.
-        if a is not None or b is not None:
+        # The two ends plug into each other (#378): checked when an end
+        # changes - its set of ports, in any order - so a stored cable from
+        # before the rule still saves from its form (#389).
+        def points(pts):
+            return {(k, o.pk) for k, o in pts}
+
+        ends_changed = (
+            self.instance is None
+            or (a is not None and points(a) != points(existing("A")))
+            or (b is not None and points(b) != points(existing("B")))
+        )
+        if ends_changed:
             from .cable_points import compatible_ends
 
             a_kinds = {k for k, _ in eff_a}
@@ -5323,11 +5385,17 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         for k, v in validated_data.items():
             setattr(instance, k, v)
         instance.save()
+        # Every rewritten end's old terminations go before any new one is
+        # made: a port moving from one end to the other (a swap) would
+        # otherwise meet its own old row on the unique constraint (#392). A
+        # queryset delete started here is not a port going away, so the
+        # empty-end signal leaves the cable alone (#378).
+        rewritten = [end for end, pts in (("A", a), ("B", b)) if pts is not None]
+        if rewritten:
+            instance.terminations.filter(end__in=rewritten).delete()
         if a is not None:
-            instance.terminations.filter(end="A").delete()
             self._sync(instance, "A", a)
         if b is not None:
-            instance.terminations.filter(end="B").delete()
             self._sync(instance, "B", b)
         if tags is not None:
             instance.tags.set(tags)
@@ -7163,7 +7231,6 @@ class IPRangeSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagg
         attrs = super().validate(attrs)
         import ipaddress as _ip
 
-        given = set(attrs)
         start = attrs.get("start_address", getattr(self.instance, "start_address", None))
         end = attrs.get("end_address", getattr(self.instance, "end_address", None))
         if start and end:
@@ -7185,10 +7252,12 @@ class IPRangeSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagg
         if prefix is not None:
             attrs["vrf"] = prefix.vrf
         # Inside its prefix, and clear of every other range in the VRF
-        # (#379). Checked when the span, prefix or VRF is set, so a range
-        # saved before the check still takes a description edit.
-        placed = {"start_address", "end_address", "prefix", "vrf"}
-        if start and end and (self.instance is None or placed & given):
+        # (#379). Checked when the span, prefix or VRF changes, so a range
+        # saved before the check still saves from its form (#389).
+        placed = _changes(
+            self.instance, attrs, "start_address", "end_address", norm=_ip_norm
+        ) or _changes(self.instance, attrs, "prefix", "vrf")
+        if start and end and placed:
             self._check_placement(attrs, start, end, prefix)
         return attrs
 
@@ -7280,7 +7349,13 @@ class AggregateSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
             value = Aggregate.normalise_prefix(value)
         except ValueError:
             raise serializers.ValidationError("Enter a valid CIDR prefix.")
-        if self.instance is not None and self.instance.prefix == value:
+        same_block = False
+        if self.instance is not None:
+            try:
+                same_block = Aggregate.normalise_prefix(self.instance.prefix) == value
+            except ValueError:
+                same_block = False
+        if same_block and self.instance.prefix == value:
             return value
         from api.views import _get_active_tenant
 
@@ -7291,6 +7366,11 @@ class AggregateSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
         probe = Aggregate(prefix=value, tenant_id=tenant_id)
         probe.pk = getattr(self.instance, "pk", None)
         other = probe.duplicate_of()
+        if other is not None and same_block:
+            # Its own block in another spelling (#389): a row kept beside its
+            # twin by migration 0204 is not a duplicate of itself, and keeps
+            # the spelling it is stored in until the two are merged by hand.
+            return self.instance.prefix
         if other is not None:
             raise serializers.ValidationError(
                 f"{value} already exists as the aggregate {other.prefix}."
@@ -7400,10 +7480,14 @@ class VLANGroupSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(
                 {"max_vid": "Max VID must be ≥ min VID."}
             )
-        # Narrowing the range must not strand the group's VLANs (#380).
-        if self.instance is not None and ("min_vid" in attrs or "max_vid" in attrs):
+        # Narrowing the range must not strand the group's VLANs (#380). Judged
+        # when a bound changes, and only for VLANs inside the old bounds, so a
+        # group from before the rule still saves from its form (#389).
+        inst = self.instance
+        if inst is not None and _changes(inst, attrs, "min_vid", "max_vid"):
             out = list(
-                self.instance.vlans.exclude(vlan_id__gte=lo, vlan_id__lte=hi)
+                inst.vlans.filter(vlan_id__gte=inst.min_vid, vlan_id__lte=inst.max_vid)
+                .exclude(vlan_id__gte=lo, vlan_id__lte=hi)
                 .order_by("vlan_id").values_list("vlan_id", flat=True)
             )
             if out:
@@ -8000,10 +8084,15 @@ class PowerPanelSerializer(
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        # A panel's location must live in the panel's site.
+        # A panel's location must live in the panel's site - judged when
+        # either changes, so a panel whose location moved since still saves
+        # from its form (#389).
         location = attrs.get("location", getattr(self.instance, "location", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
-        if location is not None and site is not None and location.site_id != site.id:
+        if (
+            location is not None and site is not None and location.site_id != site.id
+            and _changes(self.instance, attrs, "location", "site")
+        ):
             raise serializers.ValidationError(
                 {"location_id": "Pick a location within the panel's site."}
             )

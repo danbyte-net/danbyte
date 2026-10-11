@@ -464,6 +464,15 @@ def import_bundle(
                 fields.get("width_mm", existing.width_mm),
                 fields.get("din_profiles", existing.din_profiles),
             )
+            # And its racked devices the rack rules (#390).
+            from .rack_units import check_type_change as check_rack_type_change
+
+            check_rack_type_change(
+                existing,
+                fields.get("u_height", existing.u_height),
+                fields.get("is_full_depth", existing.is_full_depth),
+                fields.get("rack_width", existing.rack_width),
+            )
             for k, v in fields.items():
                 setattr(existing, k, v)
             existing.save()

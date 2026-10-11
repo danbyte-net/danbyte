@@ -45,7 +45,10 @@ Fields:
   where two units mount side-by-side in one U (see
   [half-width devices](racks.md#half-width-devices))
 - **Full depth** - occupies both rack faces (default). Shallow gear unticks
-  this and frees the opposite face in [rack elevations](racks.md#rack-elevations)
+  this and frees the opposite face in [rack elevations](racks.md#rack-elevations).
+  A change to the height, width or full depth that would put a racked device
+  of the type over another or past the top of its rack is refused, naming the
+  devices.
 - **Airflow**, **weight** - hardware facts (airflow also exists per device as
   an override)
 - **Size (mm)** - the body's width, height and depth, in tenths of a
@@ -287,8 +290,8 @@ Three rules make a bundle safe to accept from anyone:
 - **The same rules as the form.** The type's fields - sizes between 1 and
   5000 mm, a DIN rail on the body, a body size for DIN-rail types, choices,
   the faceplate - and every component template and sensor are checked as the
-  API checks them, and on a replace the type's devices on DIN rails must still
-  fit. A file that breaks one is refused whole with the field at fault, and
+  API checks them, and on a replace the type's devices on DIN rails and in
+  racks must still fit. A file that breaks one is refused whole with the field at fault, and
   nothing of it is saved. The preview checks the type's own fields already.
 
 Ids never travel - manufacturers, an outlet's inlet, a front port's rear port all

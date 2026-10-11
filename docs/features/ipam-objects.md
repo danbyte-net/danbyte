@@ -133,9 +133,10 @@ valid VID range:
 - Assigning a VLAN to a group checks that its VID falls inside the group's range.
 - Narrowing the range is refused while a VLAN in the group would fall outside
   it; the error lists those VIDs. Move or renumber them first.
-- A VLAN already outside its group's range (narrowed before 0.18) still takes
-  edits to its other fields; only a new VID or group is checked against the
-  range.
+- A VLAN already outside its group's range (narrowed before 0.18) still saves
+  from its form; only a changed VID or group is checked against the range.
+  Likewise its group saves with its range unchanged, and a new range is
+  refused only for VLANs it would newly leave outside.
 - A group can optionally be bound to a site or cluster - which is also what lets
   a synced VID resolve to it.
 
@@ -166,8 +167,8 @@ the same VRF is refused, and a range with a parent prefix must lie entirely
 inside it. The Global VRF is one VRF for this check; the same span in two VRFs
 is fine. DHCP exclusion ranges are exempt - they are carved out of a pool on
 purpose. The API and the import apply the check alike. A
-range saved before 0.18 that breaks it still takes edits that leave its span
-and prefix alone, and next available, free rows and utilisation count its
+range saved before 0.18 that breaks it still saves from its form while its
+span, prefix and VRF are unchanged, and next available, free rows and utilisation count its
 addresses once and only inside the prefix.
 
 The range's **Addresses** tab is the
@@ -244,7 +245,8 @@ exists is refused as a duplicate.
     The upgrade (migration `api 0203`) rewrites stored aggregates to canonical
     form. Where two aggregates are the same block under different spellings,
     both are left as they are - nothing is deleted. List them with
-    `manage.py check_aggregates`, then merge each pair by hand.
+    `manage.py check_aggregates`, then merge each pair by hand. Until then
+    each saves from its form, keeping its own spelling.
 
 !!! warning "Delete order"
     You can't delete a RIR that still has aggregates. Remove its aggregates

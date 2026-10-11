@@ -94,7 +94,9 @@ use it.
 - Must fall inside its parent prefix's CIDR - enforced in
   `IPAddressSerializer.validate()` (the SPA/API path): rejected with a 400 if the
   address isn't a member of the selected prefix's network, or if its family
-  (v4/v6) doesn't match.
+  (v4/v6) doesn't match. Judged when the address or prefix changes, in any
+  spelling: an address stored outside its prefix still saves from its form.
+  The *Allocate only from ranges* check follows the same rule.
 - Must not collide with another IP in the same `(tenant, vrf)` - DB-level unique
   constraint (failsafe).
 

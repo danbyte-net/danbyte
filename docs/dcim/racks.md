@@ -133,11 +133,21 @@ A device with no type counts as full depth, as the elevation draws it.
 another site without taking it out of the rack. A device with no site takes
 its rack's. Its **location**, when set, is in its site too.
 
+**A device type's change keeps its racked devices in place.** A new height,
+full depth or width that would put one of its devices over another device or
+past the top of its rack is refused, naming the devices (`Racked devices of
+this type would no longer fit: top at U10 in R1 would run past U10. Move them
+first.`). So is giving a type with side-mounted strips a U height. This holds
+on the type form, the API and a [bundle import](device-catalog.md) that
+replaces the type.
+
 These rules hold on every write: the form, the API, the elevation's drag, and
-the [spreadsheet import](../features/import-export.md). A placement
-and a change to the rack's units or site queue on the rack, so two at once
-can't both pass. Rows stored before a rule existed keep reading and editing;
-the rule applies when the placement, site or location itself changes.
+the [spreadsheet import](../features/import-export.md). A placement, a change
+to the rack's units or site, and a change to a device type's size queue on the
+rack, so two at once can't both pass. Rows stored before a rule existed keep
+reading and editing, from their forms too; the rule applies when the
+placement, site or location itself changes, and a type change is refused only
+for the conflicts it makes.
 `manage.py check_dcim_integrity` lists them - devices over each other,
 outside their rack's units, or at a different site than their rack - and
 changes nothing.

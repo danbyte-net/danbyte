@@ -36,7 +36,8 @@ already in use, so every connection stays unambiguous.
 ## What connects to what
 
 A cable has **two ends**, and an edit can swap an end's ports but never empty
-it. The two ends must be ports that plug into each other:
+it. One edit can also swap the two ends, or move a port from one end to the
+other. The two ends must be ports that plug into each other:
 
 | End | The other end may be |
 |---|---|
@@ -60,9 +61,10 @@ power outlet.`).
 goes, a cable whose end it was the last port on goes with it, and the change
 log records it. A breakout that loses one leg keeps the others.
 
-Cables stored before these rules keep reading and editing; the check applies
-when an end is written. `manage.py check_dcim_integrity` lists cables with an
-empty end or with ends that don't match, and changes nothing.
+Cables stored before these rules keep reading and editing, from the cable form
+too: the check applies when an end's ports change, in any order.
+`manage.py check_dcim_integrity` lists cables with an empty end or with ends
+that don't match, and changes nothing.
 
 ## Port reservations
 

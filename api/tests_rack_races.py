@@ -118,3 +118,29 @@ class RackRaceTests(APITransactionTestCase):
         self.assertEqual(out["second"].status_code, 400, out["second"].content)
         self.assertIn("position", out["second"].json())
         self.assertFalse(Device.objects.filter(name="hi").exists())
+
+    # A type change (#390) locks the type, then its devices' racks; a
+    # placement shares the type's lock, then locks its rack.
+
+    def grow(self, u_height):
+        return self._client().patch(f"/api/device-types/{self.type.id}/",
+                                    {"u_height": u_height}, format="json")
+
+    def test_a_placement_in_progress_blocks_growing_its_type(self):
+        self.assertEqual(self.place("low", 10, "front").status_code, 201)
+        out = self.race(lambda: self.place("high", 11, "front"), lambda: self.grow(2))
+        self.assertEqual(out["first"].status_code, 201, out["first"].content)
+        self.assertTrue(out["waited"])
+        self.assertEqual(out["second"].status_code, 400, out["second"].content)
+        self.assertIn("low at U10 in R1 would overlap high", str(out["second"].json()))
+        self.type.refresh_from_db()
+        self.assertEqual(self.type.u_height, 1)
+
+    def test_a_type_growing_in_progress_refuses_the_placement_it_overlaps(self):
+        self.assertEqual(self.place("low", 10, "front").status_code, 201)
+        out = self.race(lambda: self.grow(2), lambda: self.place("high", 11, "front"))
+        self.assertEqual(out["first"].status_code, 200, out["first"].content)
+        self.assertTrue(out["waited"])
+        self.assertEqual(out["second"].status_code, 400, out["second"].content)
+        self.assertIn("position", out["second"].json())
+        self.assertFalse(Device.objects.filter(name="high").exists())
