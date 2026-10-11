@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import regex
 
+from core.tags import TAGS, tags_of
+
 from .models import ComplianceRule, OBJECT_TYPES
 
 # Cap the string a regex rule is matched against. Compliance patterns are
@@ -104,7 +106,7 @@ def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
     failed = []
     for rule in rules:
         if rule.check_type == "required_tag" and tag_slugs is None:
-            tag_slugs = {t.slug for t in obj.tags.all()}
+            tag_slugs = {t.slug for t in tags_of(obj)}
         if rule.check_type == "eol_status" and eol_cfg is None:
             from .eol import load_config
 
@@ -136,7 +138,7 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
         qs = model.objects.filter(tenant=tenant)
         needs_tags = any(r.check_type == "required_tag" for r in type_rules)
         if needs_tags:
-            qs = qs.prefetch_related("tags")
+            qs = qs.prefetch_related(TAGS)
         eol_cfg = None
         if any(r.check_type == "eol_status" for r in type_rules):
             from .eol import load_config
@@ -146,7 +148,7 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
             qs = qs.select_related("platform__eol_mapping")
         for obj in qs[:cap]:
             tag_slugs = (
-                {t.slug for t in obj.tags.all()} if needs_tags else set()
+                {t.slug for t in tags_of(obj)} if needs_tags else set()
             )
             for rule in type_rules:
                 if not _violates(rule, obj, tag_slugs, eol_cfg):

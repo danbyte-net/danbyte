@@ -78,6 +78,35 @@ def _protected_reason(exc: ProtectedError) -> str:
     return "In use: " + ", ".join(parts) + "."
 
 
+def collect_emptied_cables(collector, origin_model) -> None:
+    """Add to ``collector`` the cables its cable terminations leave with an
+    empty end, and so what deleting those cables takes along - the
+    terminations on their other end. The collector alone stops at the
+    terminations; the delete goes further through
+    :func:`api.signals.delete_cable_left_with_an_empty_end` (#378), and the
+    preview must count what the delete removes (#391). Skipped for the
+    origins that signal skips."""
+    from core.models import Organization, Tenant
+
+    from .models import Cable, CableTermination
+
+    if origin_model in (Cable, CableTermination, Tenant, Organization):
+        return
+    going = collector.data.get(CableTermination)
+    if not going:
+        return
+    going_pks = {t.pk for t in going}
+    ends = {(t.cable_id, t.end) for t in going}
+    kept = set(
+        CableTermination.objects.filter(cable_id__in={c for c, _ in ends})
+        .exclude(pk__in=going_pks)
+        .values_list("cable_id", "end")
+    )
+    emptied = {c for c, end in ends if (c, end) not in kept}
+    if emptied:
+        collector.collect(list(Cable.objects.filter(pk__in=emptied)))
+
+
 class SafeBulkDeleteMixin:
     """Adds ``bulk-delete``; see the module docstring. Declare
     ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset."""
@@ -138,22 +167,27 @@ class SafeBulkDeleteMixin:
         """``(reasons, cascade)``: ``{pk: why}`` for the rows a ``PROTECT``
         reference holds, and what deleting the others would also remove, as
         ``{label: count}`` without the rows themselves."""
+        model = type(rows[0]) if rows else None
+
+        def collect(collector, objs):
+            self.bulk_collect_into(collector, objs)
+            collect_emptied_cables(collector, model)
+
         reasons: dict = {}
         collector = self.bulk_collector()
         try:
-            self.bulk_collect_into(collector, rows)
+            collect(collector, rows)
         except ProtectedError:
             for obj in rows:
                 try:
-                    self.bulk_collect_into(self.bulk_collector(), [obj])
+                    collect(self.bulk_collector(), [obj])
                 except ProtectedError as exc:
                     reasons[obj.pk] = _protected_reason(exc)
             rest = [o for o in rows if o.pk not in reasons]
             collector = self.bulk_collector()
             if rest:
-                self.bulk_collect_into(collector, rest)
+                collect(collector, rest)
         cascade = Counter()
-        model = type(rows[0]) if rows else None
         n_rows = len(rows) - len(reasons)
         for m, instances in collector.data.items():
             n = len(instances) - (n_rows if m is model else 0)

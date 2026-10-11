@@ -9,6 +9,7 @@ the map.
 """
 from __future__ import annotations
 
+from django.db.models import Prefetch
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
@@ -17,6 +18,7 @@ from rest_framework.response import Response
 
 from auth_api import rbac
 from core.models import DeploymentSettings
+from core.tags import TAGS, TAGS_ATTR, tags_of
 
 from .models import CableRoute, Device, Site, SiteMarker
 from .site_map_links import LinkFigures, include_capacity
@@ -188,7 +190,7 @@ def site_map(request):
         )
         .filter(latitude__isnull=False, longitude__isnull=False)
         .select_related("role", "site", "status", "device_type", "primary_ip")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
     )
     dev_filt = rbac.row_filter(request.user, tenant, "device", "change")
     if dev_filt is None:
@@ -228,7 +230,7 @@ def site_map(request):
             "tags": [
                 {"id": t.id, "name": t.name, "slug": t.slug,
                  "color": t.color, "text_color": t.text_color}
-                for t in d.tags.all()
+                for t in tags_of(d)
             ],
             "custom_fields": d.custom_fields or {},
             "front_image": (
@@ -289,7 +291,7 @@ def site_map(request):
             "device__role", "device__site", "device__status",
             "device__device_type", "device__primary_ip",
         )
-        .prefetch_related("device__tags")
+        .prefetch_related(Prefetch("device__tags", to_attr=TAGS_ATTR))
     ]
 
     # Region boundaries - OSM-sourced polygons shaded under the markers.

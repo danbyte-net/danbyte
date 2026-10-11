@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
+from core.tags import TAGS, tags_of
+
 from .natural import natural
 
 #: What ``include`` may name; anything else is ignored.
@@ -231,7 +233,7 @@ def _prefetch_card_relations(devices, wanted) -> None:
     if "rack" in wanted:
         lookups.append("rack")
     if "tags" in wanted:
-        lookups.append("tags")
+        lookups.append(TAGS)
     if devices and lookups:
         prefetch_related_objects(devices, *lookups)
 
@@ -258,7 +260,7 @@ def _card_rack(d):
 
 def _card_tags(d):
     return [
-        {"name": t.name, "slug": t.slug, "color": t.color} for t in d.tags.all()
+        {"name": t.name, "slug": t.slug, "color": t.color} for t in tags_of(d)
     ]
 
 

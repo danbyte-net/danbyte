@@ -27,6 +27,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from auth_api.rbac import restrict_queryset
+from core.tags import TAGS, tags_of
 
 from .config_context import render_config_context
 from .natural import natural
@@ -60,7 +61,7 @@ def _iface_dict(iface) -> dict:
             if iface.vlan_id else None
         ),
         "ip_addresses": [_ip_dict(ip) for ip in iface.ip_addresses.all()],
-        "tags": [t.slug for t in iface.tags.all()],
+        "tags": [t.slug for t in tags_of(iface)],
         "custom_fields": iface.custom_fields or {},
     }
 
@@ -76,7 +77,7 @@ def with_inventory_relations(qs):
     iface_qs = (
         Interface.objects.select_related("vlan", "vrf")
         .prefetch_related(
-            "tags",
+            TAGS,
             Prefetch(
                 "ip_addresses",
                 queryset=IPAddress.objects.select_related("prefix").order_by("ip_address"),
@@ -87,7 +88,7 @@ def with_inventory_relations(qs):
     return qs.select_related(
         "site", "site__region", "role", "platform",
         "primary_ip", "device_type", "device_type__manufacturer",
-    ).prefetch_related("tags", Prefetch("interfaces", queryset=iface_qs))
+    ).prefetch_related(TAGS, Prefetch("interfaces", queryset=iface_qs))
 
 
 def device_hostvars(d, *, providers: bool = True) -> dict:
@@ -112,7 +113,7 @@ def device_hostvars(d, *, providers: bool = True) -> dict:
                 d.device_type.manufacturer.name
                 if d.device_type_id and d.device_type.manufacturer_id else None
             ),
-            "tags": [t.slug for t in d.tags.all()],
+            "tags": [t.slug for t in tags_of(d)],
             # User-defined custom fields, keyed by field name. A playbook can
             # read e.g. ``danbyte.custom_fields.install_btop`` to gate a task.
             "custom_fields": d.custom_fields or {},
@@ -144,7 +145,7 @@ def device_groups(d) -> list[str]:
     if d.platform_id:
         groups.append(_grp("platform", d.platform.slug))
     groups.append(_grp("status", d.status.slug if d.status_id else "none"))
-    for t in d.tags.all():
+    for t in tags_of(d):
         groups.append(_grp("tag", t.slug))
     # Each boolean custom field that's ON becomes a ``cf_<name>`` group, so a
     # playbook can target ``hosts: cf_install_btop`` instead of a ``when:``.
@@ -168,7 +169,7 @@ def _vm_iface_dict(iface) -> dict:
             if iface.vlan_id else None
         ),
         "ip_addresses": [_ip_dict(ip) for ip in iface.ip_addresses.all()],
-        "tags": [t.slug for t in iface.tags.all()],
+        "tags": [t.slug for t in tags_of(iface)],
         "custom_fields": iface.custom_fields or {},
     }
 
@@ -183,7 +184,7 @@ def with_vm_inventory_relations(qs):
     iface_qs = (
         VMInterface.objects.select_related("vlan")
         .prefetch_related(
-            "tags",
+            TAGS,
             Prefetch(
                 "ip_addresses",
                 queryset=IPAddress.objects.select_related("prefix").order_by("ip_address"),
@@ -194,7 +195,7 @@ def with_vm_inventory_relations(qs):
     return qs.select_related(
         "site", "site__region", "role", "platform", "status",
         "cluster", "cluster__group", "primary_ip", "device",
-    ).prefetch_related("tags", Prefetch("interfaces", queryset=iface_qs))
+    ).prefetch_related(TAGS, Prefetch("interfaces", queryset=iface_qs))
 
 
 def vm_hostvars(vm) -> dict:
@@ -219,7 +220,7 @@ def vm_hostvars(vm) -> dict:
             "vcpus": vm.vcpus,
             "memory_mb": vm.memory_mb,
             "disk_gb": vm.disk_gb,
-            "tags": [t.slug for t in vm.tags.all()],
+            "tags": [t.slug for t in tags_of(vm)],
             "custom_fields": vm.custom_fields or {},
             "interfaces": [_vm_iface_dict(i) for i in vm.interfaces.all()],
         },
@@ -247,7 +248,7 @@ def vm_groups(vm) -> list[str]:
         if vm.cluster.group_id:
             groups.append(_grp("cluster_group", vm.cluster.group.name))
     groups.append(_grp("status", vm.status.slug if vm.status_id else "none"))
-    for t in vm.tags.all():
+    for t in tags_of(vm):
         groups.append(_grp("tag", t.slug))
     for key, val in (vm.custom_fields or {}).items():
         if val is True:

@@ -166,7 +166,9 @@ The lists that preview a delete (circuits, wireless, virtual chassis, power
 panels and feeds) answer `bulk-delete/` with `{deleted, deleted_ids,
 skipped: [{id, name, reason}], impact: [{label, count}], released: [{label,
 count}], notes: [{id, name, label, detail}], dry_run}`. `skipped` are the
-rows kept because something still uses them; `notes` name rows that go but
+rows kept because something still uses them; `impact` counts everything else
+the delete removes, including a cable left with no port on one end; `notes`
+name rows that go but
 are worth a look first, such as a power feed still cabled to a device.
 
 ## Generating the schema offline

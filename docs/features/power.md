@@ -120,7 +120,9 @@ its own entry in the change log.
 
 **Delete** first shows what will happen: the rows that go, what goes with
 them, and the rows Danbyte keeps. Feeds cabled to a device are named with the
-power port at the other end; the cable loses its end on the feed. A panel
+power port at the other end, under **Cable removed** when the feed is the
+last port on its end of the cable - the cable goes too, with its other
+end - or **Cable kept** when other legs keep that end. A panel
 that still has feeds is kept, and **Delete their feeds too** deletes the
 panel together with its feeds - only when you may delete every one of those
 feeds. More than 1000 rows go 1000 at a time, under one confirmation (see
