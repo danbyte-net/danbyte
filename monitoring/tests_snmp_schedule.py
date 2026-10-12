@@ -184,8 +184,8 @@ class SelectionTests(_Base):
         )
         dev = self.device("sw-zbx")
         with mock.patch(
-            "monitoring.engines.engines_for_devices",
-            side_effect=lambda tenant, devices: {d.id: zbx for d in devices},
+            "monitoring.engines.engines_for_targets",
+            side_effect=lambda tenant, targets: {t.key: zbx for t in targets},
         ):
             snmp_schedule.dispatch()
         self.assertEqual(self.enqueued(), [str(dev.id)])
@@ -274,14 +274,14 @@ class JobTests(_Base):
         self.interval(15)
         dev = self.device("sw")
         state = mock.Mock(reachable=True)
-        with mock.patch("monitoring.snmp_poll.poll_device", return_value=(state, None)) as poll:
+        with mock.patch("monitoring.snmp_poll.poll_target", return_value=(state, None)) as poll:
             self.assertEqual(snmp_schedule.poll_scheduled(str(dev.id), str(self.tenant.id)), "polled")
         self.assertEqual(poll.call_args.args[0].id, dev.id)
         self.assertNotIn(lock_key(dev.id), self.redis.kv)  # released
 
     def test_the_job_rechecks_the_setting(self):
         dev = self.device("sw")
-        with mock.patch("monitoring.snmp_poll.poll_device") as poll:
+        with mock.patch("monitoring.snmp_poll.poll_target") as poll:
             self.assertEqual(snmp_schedule.poll_scheduled(str(dev.id), str(self.tenant.id)), "off")
         poll.assert_not_called()
 
@@ -290,7 +290,7 @@ class JobTests(_Base):
         other = Tenant.objects.create(org=org, name="Other", slug="other")
         self.interval(15, tenant=other)
         dev = self.device("ours")
-        with mock.patch("monitoring.snmp_poll.poll_device") as poll:
+        with mock.patch("monitoring.snmp_poll.poll_target") as poll:
             self.assertEqual(snmp_schedule.poll_scheduled(str(dev.id), str(other.id)), "skipped")
         poll.assert_not_called()
 
@@ -302,7 +302,7 @@ class JobTests(_Base):
             token={"secret": "t"},
         )
         set_binding(self.tenant, "device", dev.id, outpost)
-        with mock.patch("monitoring.snmp_poll.poll_device") as poll:
+        with mock.patch("monitoring.snmp_poll.poll_target") as poll:
             self.assertEqual(snmp_schedule.poll_scheduled(str(dev.id), str(self.tenant.id)), "remote")
         poll.assert_not_called()
 
@@ -310,7 +310,7 @@ class JobTests(_Base):
         self.interval(15)
         dev = self.device("sw")
         self.redis.set(lock_key(dev.id), "other-run")
-        with mock.patch("monitoring.snmp_poll.poll_device") as poll:
+        with mock.patch("monitoring.snmp_poll.poll_target") as poll:
             self.assertEqual(snmp_schedule.poll_scheduled(str(dev.id), str(self.tenant.id)), "busy")
         poll.assert_not_called()
         self.assertEqual(self.redis.get(lock_key(dev.id)), b"other-run")

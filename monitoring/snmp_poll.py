@@ -16,7 +16,6 @@ from django.utils import timezone
 from danbyte_checks.snmp_facts import fetch_snmp
 
 from .models import DeviceSnmp
-from .snmp_resolve import resolve_device_profile, resolve_vm_profile
 from .snmp_util import record_samples
 
 log = logging.getLogger("monitoring.snmp_poll")
@@ -180,33 +179,40 @@ def persist_snmp_result(tenant, profile, result, *, device=None, vm=None) -> Dev
     return state
 
 
-def poll_device(device, tenant, profile=None, *, mac_mode: str = "full"):
-    """Poll ``device`` and persist its observed SNMP state + counter samples.
+def poll_target(target, tenant, profile=None, *, mac_mode: str = "full"):
+    """Poll an SNMP target - a device or a VM (``snmp_target.SnmpTarget``) -
+    and persist its observed state + counter samples. The one poll the core
+    runs, for Poll now, Refresh MACs, the schedule and ``poll_snmp``.
 
     Returns ``(DeviceSnmp | None, reason)`` - ``reason`` is ``"no_profile"`` or
     ``"no_target"`` on a setup error (state untouched), otherwise ``None`` and a
-    saved ``DeviceSnmp`` (whose ``reachable`` reflects whether the device
+    saved ``DeviceSnmp`` (whose ``reachable`` reflects whether the target
     answered). ``mac_mode`` is ``"quick"`` for the synchronous Poll now.
     """
+    from .snmp_target import SnmpTarget
+
     # A stack is one SNMP agent: polling any member polls the owner and the
     # observed state lives on the owner's row, so every member reads the same
     # facts and no port is counted twice (#148).
-    if device.virtual_chassis_id:
-        from .vc_stack import stack_owner
-
-        owner = stack_owner(device)
-        if owner.id != device.id:
-            return poll_device(owner, tenant, profile, mac_mode=mac_mode)
+    target = SnmpTarget.of(target).owner()
     if profile is None:
-        profile, _source = resolve_device_profile(device, tenant)
+        profile, _source = target.resolve_profile(tenant)
     if profile is None:
         return None, "no_profile"
-    target = _device_target(device)
-    if not target:
+    address = target.address()
+    if not address:
         return None, "no_target"
 
-    result = fetch_for(target, profile, device=device, mac_mode=mac_mode)
-    return persist_snmp_result(tenant, profile, result, device=device), None
+    result = fetch_for(
+        address, profile, device=None if target.is_vm else target.obj,
+        mac_mode=mac_mode,
+    )
+    return persist_snmp_result(tenant, profile, result, **target.store()), None
+
+
+def poll_device(device, tenant, profile=None, *, mac_mode: str = "full"):
+    """``poll_target`` for a device."""
+    return poll_target(device, tenant, profile, mac_mode=mac_mode)
 
 
 def _vm_target(vm):
@@ -231,18 +237,5 @@ def _vm_target(vm):
 
 
 def poll_vm(vm, tenant, profile=None, *, mac_mode: str = "full"):
-    """Poll a virtual machine (a virtual router / appliance) and persist its
-    observed SNMP state - same engine and storage as :func:`poll_device`.
-
-    Returns ``(DeviceSnmp | None, reason)`` - ``reason`` is ``"no_profile"`` or
-    ``"no_target"`` on a setup error, otherwise ``None`` and a saved row."""
-    if profile is None:
-        profile, _source = resolve_vm_profile(vm, tenant)
-    if profile is None:
-        return None, "no_profile"
-    target = _vm_target(vm)
-    if not target:
-        return None, "no_target"
-
-    result = fetch_for(target, profile, mac_mode=mac_mode)
-    return persist_snmp_result(tenant, profile, result, vm=vm), None
+    """``poll_target`` for a virtual machine (a virtual router / appliance)."""
+    return poll_target(vm, tenant, profile, mac_mode=mac_mode)

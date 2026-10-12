@@ -11,9 +11,11 @@ it has no binding of its own:
     5. the tenant's **default engine** (``MonitoringSettings.default_engine``)
     6. the tenant's built-in **local** engine (always exists)
 
-``engine_for_device`` reads the same levels minus the prefix (``engines_for_devices``
-for many at once), and ``devices_for_engine`` is its inverse for an Outpost's SNMP
-work list.
+``engine_for_target`` reads the same levels minus the prefix for an SNMP poll
+target - a device or a virtual machine (``snmp_target.SnmpTarget``) -
+``engines_for_targets`` for many at once, and ``targets_for_engine`` is its
+inverse for an Outpost's SNMP work list. A VM has no binding or location of its
+own, so it resolves by its site, else its cluster's site.
 
 Bindings live on the monitoring side (``MonitoringEngineBinding`` - scope +
 object_id) so ``api`` never depends on ``monitoring``.
@@ -28,6 +30,8 @@ from .models import (
     MonitoringEngineBinding,
     MonitoringSettings,
 )
+from .snmp_target import DEVICE, KINDS, SnmpTarget
+from .snmp_target import candidates as snmp_candidates
 
 # ─── Who answered ───────────────────────────────────────────────────────
 #
@@ -221,46 +225,47 @@ def engine_for_prefix(prefix) -> MonitoringEngine:
     return engine or MonitoringEngine.local_for(tenant)
 
 
-def _device_site_id(device):
-    """The site a device answers to: its own, else its location's. A device
-    placed in a room of a site but never given the site itself still lives
-    there, and its SNMP poll must follow the site's engine (#325)."""
-    if device.site_id:
-        return device.site_id
-    return device.location.site_id if device.location_id else None
+def engine_for_target(target) -> MonitoringEngine:
+    """The engine that polls an SNMP **target** - a device or a VM (never None).
 
-
-def engine_for_device(device) -> MonitoringEngine:
-    """The engine responsible for a **device** (never None). Same resolution as
-    ``engine_for_ip`` but keyed off the device's own location/site - used to
-    decide which Outpost runs a device's SNMP discovery."""
-    tenant = device.tenant
-    engine = _binding_engine(
-        tenant, MonitoringEngineBinding.SCOPE_DEVICE, device.id
-    )
+    Same resolution as ``engine_for_ip`` minus the prefix, keyed off the
+    object itself: its own binding (devices have one), its location and the
+    location's parents (devices), its site - its own, else its location's,
+    else its cluster's (``SnmpTarget.site_id``) - the tenant default, local.
+    ``engines_for_targets`` reads the same levels for many at once."""
+    target = SnmpTarget.of(target)
+    tenant = target.tenant
+    engine = None
+    if target.engine_scope:
+        engine = _binding_engine(tenant, target.engine_scope, target.id)
     if engine is None:
-        engine = _location_chain_engine(tenant, device.location_id)
+        engine = _location_chain_engine(tenant, target.location_id)
     if engine is None:
         engine = _binding_engine(
-            tenant, MonitoringEngineBinding.SCOPE_SITE, _device_site_id(device)
+            tenant, MonitoringEngineBinding.SCOPE_SITE, target.site_id()
         )
     if engine is None:
         engine = _default_engine(tenant)
     return engine or MonitoringEngine.local_for(tenant)
 
 
-def engines_for_devices(tenant, devices) -> dict:
-    """``{device_id: engine}`` for many devices in a fixed handful of queries.
+def engine_for_device(device) -> MonitoringEngine:
+    """``engine_for_target`` for a device."""
+    return engine_for_target(SnmpTarget(DEVICE, device))
 
-    Same precedence as ``engine_for_device`` - device, location and its
-    parents, site, tenant default, local - read from the tenant's bindings and
-    location tree loaded once. The per-device walk costs several queries a
-    row, which an Outpost that is the tenant default would pay for every
-    device on each work fetch, and so would ``poll_snmp``."""
-    from api.models import Location
 
-    devices = list(devices)
-    if not devices:
+def engines_for_targets(tenant, targets) -> dict:
+    """``{target.key: engine}`` for many targets in a fixed handful of queries.
+
+    Same precedence as ``engine_for_target``, read from the tenant's bindings,
+    location tree and (for VMs without a site) cluster sites loaded once. The
+    per-target walk costs several queries a row, which an Outpost that is the
+    tenant default would pay for every target on each work fetch, and so
+    would the scheduled poller."""
+    from api.models import Cluster, Location
+
+    targets = [SnmpTarget.of(t) for t in targets]
+    if not targets:
         return {}
     bound: dict = {
         MonitoringEngineBinding.SCOPE_DEVICE: {},
@@ -275,30 +280,51 @@ def engines_for_devices(tenant, devices) -> dict:
             usable[b.engine_id] = engine_usable(b.engine)
         if usable[b.engine_id]:
             bound[b.scope][b.object_id] = b.engine
-    by_device = bound[MonitoringEngineBinding.SCOPE_DEVICE]
     by_location = bound[MonitoringEngineBinding.SCOPE_LOCATION]
     by_site = bound[MonitoringEngineBinding.SCOPE_SITE]
-    tree = {
-        lid: (parent_id, site_id)
-        for lid, parent_id, site_id in Location.objects.filter(
-            tenant=tenant
-        ).values_list("id", "parent_id", "site_id")
-    }
+    tree: dict = {}
+    if any(t.location_id for t in targets):
+        tree = {
+            lid: (parent_id, site_id)
+            for lid, parent_id, site_id in Location.objects.filter(
+                tenant=tenant
+            ).values_list("id", "parent_id", "site_id")
+        }
+    cluster_ids = {t.cluster_id for t in targets if t.cluster_id and not t.own_site_id}
+    cluster_site = (
+        dict(
+            Cluster.objects.filter(tenant=tenant, id__in=cluster_ids).values_list(
+                "id", "site_id"
+            )
+        )
+        if cluster_ids
+        else {}
+    )
     fallback = _default_engine(tenant) or MonitoringEngine.local_for(tenant)
 
     out = {}
-    for d in devices:
-        engine = by_device.get(d.id)
-        cur, seen = d.location_id, set()
+    for t in targets:
+        engine = bound.get(t.engine_scope, {}).get(t.id) if t.engine_scope else None
+        cur, seen = t.location_id, set()
         while engine is None and cur and cur not in seen and len(seen) < 32:
             seen.add(cur)
             engine = by_location.get(cur)
             cur = tree.get(cur, (None, None))[0]
         if engine is None:
-            site_id = d.site_id or tree.get(d.location_id, (None, None))[1]
+            site_id = (
+                t.own_site_id
+                or tree.get(t.location_id, (None, None))[1]
+                or cluster_site.get(t.cluster_id)
+            )
             engine = by_site.get(site_id)
-        out[d.id] = engine or fallback
+        out[t.key] = engine or fallback
     return out
+
+
+def engines_for_devices(tenant, devices) -> dict:
+    """``{device_id: engine}`` - ``engines_for_targets`` for devices."""
+    resolved = engines_for_targets(tenant, [SnmpTarget(DEVICE, d) for d in devices])
+    return {obj_id: engine for (_kind, obj_id), engine in resolved.items()}
 
 
 def _location_subtree_ids(tenant, location_ids):
@@ -322,18 +348,18 @@ def _location_subtree_ids(tenant, location_ids):
     return ids
 
 
-def devices_for_engine(engine, ids=None):
-    """The tenant's devices whose resolved engine is ``engine`` - the candidates
-    an Outpost should SNMP-poll. Narrowed to the engine's bound sites +
-    location-subtrees, then each confirmed with ``engine_for_device`` (a nested,
-    more-specific binding could steal a device back to another engine).
+def targets_for_engine(engine, ids=None, kinds=KINDS) -> list:
+    """The tenant's SNMP targets (``SnmpTarget``) whose resolved engine is
+    ``engine`` - what an Outpost polls, and the only targets it may report
+    for. Narrowed to the engine's bound devices, sites and location subtrees
+    (every target when it is the tenant default), then each confirmed with
+    ``engines_for_targets`` (a nested, more-specific binding could steal a
+    target back to another engine).
 
-    ``ids`` (device UUIDs) narrows the candidates first, so a check of the few
-    devices an Outpost posted results for costs what they cost, not what every
-    device in its sites does (#293)."""
+    ``ids`` narrows the candidates first, so a check of the few targets an
+    Outpost posted results for costs what they cost, not what every target in
+    its sites does (#293)."""
     from django.db.models import Q
-
-    from api.models import Device
 
     tenant = engine.tenant
     bindings = list(
@@ -342,28 +368,41 @@ def devices_for_engine(engine, ids=None):
     site_ids = [b.object_id for b in bindings if b.scope == MonitoringEngineBinding.SCOPE_SITE]
     loc_ids = [b.object_id for b in bindings if b.scope == MonitoringEngineBinding.SCOPE_LOCATION]
     dev_ids = [b.object_id for b in bindings if b.scope == MonitoringEngineBinding.SCOPE_DEVICE]
-    # The same levels ``engine_for_device`` reads: a device bound on its own
-    # form, and every unbound device when this engine is the tenant default,
+    # The same levels ``engine_for_target`` reads: a device bound on its own
+    # form, and every unbound target when this engine is the tenant default,
     # are this engine's to poll too. Leaving them out answered "Queued on
     # Outpost" to a Poll now the Outpost never saw (#325).
     is_default = MonitoringSettings.for_tenant(tenant).default_engine_id == engine.id
     if not (site_ids or loc_ids or dev_ids or is_default):
         return []
-    candidates = Device.objects.filter(tenant=tenant)
-    if not is_default:
-        all_loc_ids = _location_subtree_ids(tenant, loc_ids) if loc_ids else set()
-        candidates = candidates.filter(
-            Q(id__in=dev_ids)
-            | Q(site_id__in=site_ids)
-            | Q(location__site_id__in=site_ids)
-            | Q(location_id__in=all_loc_ids)
-        )
-    candidates = candidates.select_related("primary_ip", "tenant")
-    if ids is not None:
-        candidates = candidates.filter(id__in=ids)
-    candidates = list(candidates)
-    resolved = engines_for_devices(tenant, candidates)
-    return [d for d in candidates if resolved[d.id].id == engine.id]
+    targets = []
+    for kind in kinds:
+        qs = snmp_candidates(tenant, kind)
+        if not is_default:
+            if kind == DEVICE:
+                all_loc_ids = _location_subtree_ids(tenant, loc_ids) if loc_ids else set()
+                where = (
+                    Q(id__in=dev_ids)
+                    | Q(site_id__in=site_ids)
+                    | Q(location__site_id__in=site_ids)
+                    | Q(location_id__in=all_loc_ids)
+                )
+            else:
+                where = Q(site_id__in=site_ids) | Q(
+                    site__isnull=True, cluster__site_id__in=site_ids
+                )
+            qs = qs.filter(where)
+        qs = qs.select_related("primary_ip", "tenant")
+        if ids is not None:
+            qs = qs.filter(id__in=ids)
+        targets += [SnmpTarget(kind, o) for o in qs]
+    resolved = engines_for_targets(tenant, targets)
+    return [t for t in targets if resolved[t.key].id == engine.id]
+
+
+def devices_for_engine(engine, ids=None):
+    """The devices ``targets_for_engine`` hands ``engine``."""
+    return [t.obj for t in targets_for_engine(engine, ids, kinds=(DEVICE,))]
 
 
 def set_binding(tenant, scope, object_id, engine):

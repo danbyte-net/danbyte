@@ -16,8 +16,9 @@ import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
-import { IpLinks, MacLink } from "@/components/device-snmp-card"
+import { IpLinks, MacLink, SnmpPollSource } from "@/components/device-snmp-card"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { KvCard, mono, dash, type KvRow } from "@/components/kv-card"
 import { TimeCell } from "@/components/cells/time-ago"
 
@@ -64,11 +65,23 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
 
   const poll = useMutation({
     mutationFn: () =>
-      api<DeviceSnmp>(`${base}/snmp-poll/`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      }),
+      api<DeviceSnmp & { queued?: boolean; detail?: string }>(
+        `${base}/snmp-poll/`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        }
+      ),
     onSuccess: (data) => {
+      // A VM whose engine is an Outpost queues there, as a device does
+      // (#325) - results land when the agent's next pass reports.
+      if (data.queued) {
+        toast.info(data.detail || "Queued on the site's Outpost")
+        setTimeout(() => {
+          void qc.invalidateQueries({ queryKey: ["vm-snmp", vmId] })
+        }, 30_000)
+        return
+      }
       qc.setQueryData(["vm-snmp", vmId], data)
       if (data.reachable) toast.success("Polled VM over SNMP")
       else toast.error(data.error || "VM did not respond to SNMP")
@@ -166,8 +179,7 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
     [ipIdByAddr]
   )
 
-  if (snmp.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (snmp.isLoading) return <Loading />
 
   const state = snmp.data
   const facts = state?.data ?? {}
@@ -197,7 +209,10 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
           system facts and interfaces. It resolves an SNMP profile from the VM,
           its platform/cluster, or the tenant default.
         </p>
-        <div className="mt-3">{PollButton}</div>
+        <div className="mt-3 flex flex-col items-center gap-2">
+          <SnmpPollSource state={state} />
+          {PollButton}
+        </div>
       </EmptyState>
     )
 
@@ -217,6 +232,8 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
         </span>
         <span className="ml-auto">{PollButton}</span>
       </div>
+
+      <SnmpPollSource state={state} />
 
       {state.error && <p className="text-xs text-destructive">{state.error}</p>}
 

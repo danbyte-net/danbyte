@@ -68,7 +68,7 @@ from danbyte_checks.snmp_facts import (
     fetch_system_facts_sync,
 )
 from .snmp_resolve import resolve_device_profile
-from .snmp_poll import poll_device, poll_vm
+from .snmp_poll import poll_target
 from .snmp_util import compute_device_utilization
 from .snmp_drift import (
     _skip_not_present,
@@ -2628,8 +2628,7 @@ def device_snmp_view(request, device_id):
     if state is not None and state.device_id and state.device_id != device.id:
         data["polled_via"] = {"id": str(state.device_id), "name": state.device.name}
     # Where Poll now runs: the Outpost's name, or null for the core (#325).
-    outpost = _snmp_outpost(device)
-    data["poll_outpost"] = outpost.name if outpost else None
+    data["poll_outpost"] = _poll_outpost_name(device)
     return Response(data)
 
 
@@ -2657,47 +2656,46 @@ def device_snmp_poll_view(request, device_id):
     return _snmp_poll(request, device, tenant)
 
 
-def _snmp_outpost(device):
-    """The Outpost that runs ``device``'s SNMP poll, or ``None`` for the core.
+def _snmp_outpost(target):
+    """The Outpost that runs ``target``'s SNMP poll - a device or a VM - or
+    ``None`` for the core.
 
     Only an Outpost runs an SNMP poll on the core's behalf. A driver engine
-    (Zabbix) answers its own check kind and nothing else, so a device bound to
-    one polls from the core like a local device (#325)."""
-    from .engines import engine_for_device
+    (Zabbix) answers its own check kind and nothing else, so a target bound to
+    one polls from the core like a local one (#325)."""
+    from .engines import engine_for_target
 
-    engine = engine_for_device(device)
+    engine = engine_for_target(target)
     if engine.kind != MonitoringEngine.REMOTE or not engine.enabled:
         return None
     return engine
 
 
-def _queue_on_outpost(device, tenant, profile=None):
-    """``None`` when ``device`` polls from the core; otherwise the 202 (or a
-    400 setup error) for a device whose site or location an Outpost polls.
+def _queue_on_outpost(target, tenant, profile=None):
+    """``None`` when ``target`` (a device or a VM) polls from the core;
+    otherwise the 202 (or a 400 setup error) for one an Outpost polls.
 
     The agent pulls work, so "now" means its next poll: stamp the request and
     answer 202. The same profile/target validation applies, so the caller
     gets an actionable error instead of a queue that never delivers. Shared
     by Poll now and Refresh MACs."""
-    engine = _snmp_outpost(device)
+    from .snmp_target import SnmpTarget
+
+    target = SnmpTarget.of(target)
+    engine = _snmp_outpost(target)
     if engine is None:
         return None
-    from .snmp_poll import _device_target
-    from .snmp_resolve import resolve_device_profile
-
     if profile is None:
-        profile, _src = resolve_device_profile(device, tenant)
+        profile, _src = target.resolve_profile(tenant)
     if profile is None:
-        return Response(
-            {"detail": "No SNMP profile resolves for this device - assign "
-             "one on the device, its role, its type, or set a tenant "
-             "default."},
-            status=400,
-        )
-    if not _device_target(device):
-        return Response(
-            {"detail": "Device has no primary IP or name to poll."},
-            status=400,
+        return Response({"detail": target.no_profile_detail()}, status=400)
+    if not target.address():
+        return Response({"detail": target.no_target_detail()}, status=400)
+    if target.is_vm:
+        # A VM is on an Outpost's work list once it has an observed row
+        # (``snmp_target.candidates``): the first Poll now opts it in.
+        DeviceSnmp.objects.get_or_create(
+            **target.store(), defaults={"tenant": tenant, "profile": profile}
         )
     engine.snmp_requested_at = timezone.now()
     engine.save(update_fields=["snmp_requested_at"])
@@ -2714,10 +2712,21 @@ def _queue_on_outpost(device, tenant, profile=None):
     )
 
 
-def _snmp_poll(request, device, tenant):
-    """The poll itself, on an already-authenticated request. The stack view
-    calls this too: re-dispatching the device view with the raw request made
-    the CSRF check read a body the first pass had consumed (#175)."""
+def _poll_outpost_name(target):
+    """Where Poll now runs, for the SNMP card: the Outpost's name, or null for
+    the core (#325)."""
+    outpost = _snmp_outpost(target)
+    return outpost.name if outpost else None
+
+
+def _snmp_poll(request, target, tenant):
+    """Poll now for a device or a VM, on an already-authenticated request. The
+    stack view calls this too: re-dispatching the device view with the raw
+    request made the CSRF check read a body the first pass had consumed
+    (#175)."""
+    from .snmp_target import SnmpTarget
+
+    target = SnmpTarget.of(target)
     profile = None
     profile_id = request.data.get("profile_id")
     if profile_id:
@@ -2725,26 +2734,20 @@ def _snmp_poll(request, device, tenant):
         if profile is None:
             return Response({"detail": "SNMP profile not found."}, status=400)
 
-    # A device whose site/location is bound to an Outpost polls from THERE -
-    # central polling would report outpost-only networks unreachable (#128).
-    queued = _queue_on_outpost(device, tenant, profile)
+    # A target whose engine is an Outpost polls from THERE - central polling
+    # would report outpost-only networks unreachable (#128, #325).
+    queued = _queue_on_outpost(target, tenant, profile)
     if queued is not None:
         return queued
 
-    # profile=None → poll_device resolves it (device → role → type → default).
+    # profile=None → the poll resolves it along the kind's hierarchy.
     # Poll now is synchronous, so its MAC-table read is the quick one (#284):
     # a short budget and no per-VLAN contexts. Refresh MACs reads it all.
-    state, reason = poll_device(device, tenant, profile, mac_mode="quick")
+    state, reason = poll_target(target, tenant, profile, mac_mode="quick")
     if reason == "no_profile":
-        return Response(
-            {"detail": "No SNMP profile resolves for this device - assign one on "
-             "the device, its role, its type, or set a tenant default."},
-            status=400,
-        )
+        return Response({"detail": target.no_profile_detail()}, status=400)
     if reason == "no_target":
-        return Response(
-            {"detail": "Device has no primary IP or name to poll."}, status=400
-        )
+        return Response({"detail": target.no_target_detail()}, status=400)
     return Response({**DeviceSnmpSerializer(state).data, "poll_outpost": None})
 
 
@@ -2795,44 +2798,29 @@ def vm_snmp_view(request, vm_id):
         .first()
     )
     if state is None:
-        return Response({
+        data = {
             "vm": str(vm.id), "device": None, "profile": None,
             "profile_name": None, "data": {}, "interfaces": [], "neighbors": [],
             "arp": [], "sensors": [], "reachable": None, "error": "",
             "polled_at": None, "fdb_polled_at": None, "fdb_meta": {},
-        })
-    return Response(DeviceSnmpSerializer(state).data)
+        }
+    else:
+        data = DeviceSnmpSerializer(state).data
+    data["poll_outpost"] = _poll_outpost_name(vm)
+    return Response(data)
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def vm_snmp_poll_view(request, vm_id):
     """On-demand SNMP poll of a VM. Body: ``{profile_id?}`` (falls back to the
-    VM → platform → cluster → site → tenant-default resolution)."""
+    VM → platform → cluster → site → tenant-default resolution). Routed like a
+    device's: a VM whose engine is an Outpost queues there (#325)."""
     resolved, err = _resolve_vm(request, vm_id, "change")
     if err is not None:
         return err
     vm, tenant = resolved
-
-    profile = None
-    profile_id = request.data.get("profile_id")
-    if profile_id:
-        profile = SnmpProfile.objects.filter(pk=profile_id, tenant=tenant).first()
-        if profile is None:
-            return Response({"detail": "SNMP profile not found."}, status=400)
-
-    state, reason = poll_vm(vm, tenant, profile)
-    if reason == "no_profile":
-        return Response(
-            {"detail": "No SNMP profile resolves for this VM - assign one on the "
-             "VM, its platform/cluster, or set a tenant default."},
-            status=400,
-        )
-    if reason == "no_target":
-        return Response(
-            {"detail": "VM has no primary IP to poll."}, status=400
-        )
-    return Response(DeviceSnmpSerializer(state).data)
+    return _snmp_poll(request, vm, tenant)
 
 
 @api_view(["GET"])

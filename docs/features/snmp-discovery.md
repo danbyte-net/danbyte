@@ -96,6 +96,18 @@ it *runs*: **VM → platform → cluster → site → tenant default**. Bind a p
 at whichever level fits (a per-VM binding can also carry a `target` override to
 poll a management address instead of the primary IP).
 
+A VM polls from the same [engine](../monitoring/outposts.md#how-an-engine-is-chosen-for-a-target)
+a device would at its place: its **site**, else its **cluster's site**, then
+the tenant default. A VM has no engine binding or location of its own. The SNMP
+tab says *Polls from Outpost …* or *Polls from the core*, and Poll now on an
+Outpost's VM queues there like a device's.
+
+Every device is an SNMP target; a VM becomes one once something says it runs
+an agent: a profile bound to the VM, its platform or its cluster, or a first
+**Poll now**. Only those VMs go on an Outpost's work list and on the
+[schedule](#scheduled-polling), so a tenant-default profile does not set every
+hypervisor guest polling.
+
 ## Poll a device {#poll-a-device}
 
 Open a device → its **SNMP** tab → the **Observed** card → **Poll now**.
@@ -114,9 +126,10 @@ engine](../monitoring/outposts.md#how-an-engine-is-chosen-for-a-target) - device
 → location → site → tenant default - and the card says which: *Polls from
 Outpost …* or *Polls from the core*. On an Outpost the request is queued there
 and the button answers *Queued on Outpost …*; the facts land when the agent's
-next pass reports. Everything else - an unbound device, one bound to a Zabbix
-engine or a disabled Outpost, and every VM - polls from the core. **Poll
-sensors** and **Explore OIDs** always run from the core.
+next pass reports. Everything else - an unbound device, or one bound to a
+Zabbix engine or a disabled Outpost - polls from the core. A
+[VM](#virtual-machines) follows the same rule by its site. **Poll sensors** and
+**Explore OIDs** always run from the core.
 
 Poll now also reads the device's [MAC table](#mac-tables), but quickly: it
 has to answer before the web server gives up on the request, so it stops
@@ -181,11 +194,12 @@ per-interface sparklines, and to keep the learned MACs and the site map's
 does it from the core: Off (the default on fresh installs and upgrades), 15
 minutes, 30 minutes or 1 hour, per tenant. Every five minutes the scheduler
 (`danbyte-snmp-poll`, `manage.py dispatch_snmp_polls`) queues a background
-poll for each device that is due:
+poll for each device, and each [SNMP-target VM](#virtual-machines), that is
+due:
 
 - one poll per stack, on its owner;
-- devices an [Outpost](../monitoring/outposts.md) polls are left to it; a
-  device bound to a driver engine such as Zabbix polls from the core, as Poll
+- devices and VMs an [Outpost](../monitoring/outposts.md) polls are left to
+  it; one bound to a driver engine such as Zabbix polls from the core, as Poll
   now does;
 - a device is due once its last poll is older than the interval; one never
   polled is due at once;
@@ -202,7 +216,8 @@ The polls run on the RQ workers. The Jobs page lists the beat as **Scheduled
 SNMP polls**. Bare metal installs and upgrades enable the timer like the
 others; a container install runs it from `run_scheduler`.
 
-`poll_snmp` still polls every device at once, for cron or a manual run:
+`poll_snmp` still polls every device and SNMP-target VM the core polls at
+once, for cron or a manual run:
 
 ```bash
 python manage.py poll_snmp

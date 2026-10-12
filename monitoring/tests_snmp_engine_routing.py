@@ -122,7 +122,7 @@ class PollNowRoutingTests(_Base):
 
     def test_an_unbound_device_polls_from_the_core(self):
         dev = self._device("sw-core", site=self.site)
-        with patch("monitoring.views.poll_device") as poll:
+        with patch("monitoring.views.poll_target") as poll:
             poll.return_value = (None, "no_target")
             r = self._poll(dev)
         self.assertEqual(r.status_code, 400, r.content)
@@ -134,8 +134,8 @@ class PollNowRoutingTests(_Base):
             tenant=self.tenant, name="zbx", slug="zbx", kind="zabbix",
         )
         dev = self._device("sw-zbx", site=self.site)
-        with patch("monitoring.engines.engine_for_device", return_value=zbx), \
-                patch("monitoring.views.poll_device") as poll:
+        with patch("monitoring.engines.engine_for_target", return_value=zbx), \
+                patch("monitoring.views.poll_target") as poll:
             poll.return_value = (None, "no_target")
             r = self._poll(dev)
         self.assertEqual(r.status_code, 400, r.content)
@@ -203,7 +203,7 @@ class ScheduledPollTests(_Base):
         remote = self._device("sw-remote", site=self.site)
         hq = Site.objects.create(tenant=self.tenant, name="hq")
         local = self._device("sw-local", site=hq)
-        with patch("monitoring.management.commands.poll_snmp.poll_device") as poll:
+        with patch("monitoring.management.commands.poll_snmp.poll_target") as poll:
             poll.return_value = (None, "no_target")
             call_command("poll_snmp")
         polled = {c.args[0].id for c in poll.call_args_list}
