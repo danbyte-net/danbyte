@@ -107,12 +107,15 @@ function OxidizedPage() {
 
   const sync = useMutation({
     mutationFn: (id: string) =>
-      api<{ linked: number; unmatched_count: number }>(
+      api<{ linked: number; proposed: number; unmatched_count: number }>(
         `/api/oxidized/connections/${id}/sync/`,
         { method: "POST" }
       ),
     onSuccess: (r) => {
-      toast.success(`${r.linked} linked, ${r.unmatched_count} unmatched.`)
+      toast.success(
+        `${r.linked} linked, ${r.unmatched_count} unmatched` +
+          (r.proposed ? `, ${r.proposed} to confirm.` : ".")
+      )
       refreshAll()
     },
     onError: (e) => {
@@ -182,7 +185,11 @@ function OxidizedPage() {
             onDelete={() => setDeleting(conn)}
           />
           <UnmatchedNodes connection={conn} canPin={canPin} />
-          <LinkedNodes connection={conn} canUnlink={canUnlink} />
+          <LinkedNodes
+            connection={conn}
+            canUnlink={canUnlink}
+            canConfirm={canPin}
+          />
         </div>
       )}
 
@@ -286,6 +293,22 @@ function ConnectionCard({
         ),
     },
     { label: "Linked", value: <span className="num">{conn.link_count}</span> },
+    ...(conn.sync.proposed
+      ? [
+          {
+            label: "Proposed",
+            value: <Badge variant="warning">{conn.sync.proposed}</Badge>,
+          },
+        ]
+      : []),
+    ...(conn.sync.warning_count
+      ? [
+          {
+            label: "Namesakes",
+            value: <Badge variant="warning">{conn.sync.warning_count}</Badge>,
+          },
+        ]
+      : []),
     {
       label: "Unmatched",
       value: conn.sync.unmatched_count ? (
@@ -523,13 +546,17 @@ function UnmatchedNodes({
   )
 }
 
-/** The pairings in force: matched by the last sync, or pinned by hand. */
+/** The pairings in force: matched by the last sync, or pinned by hand. A
+ * proposed match serves no config until confirmed (#399); a link kept
+ * despite a namesake carries the sync's note (#400). */
 function LinkedNodes({
   connection,
   canUnlink,
+  canConfirm,
 }: {
   connection: OxidizedConnection
   canUnlink: boolean
+  canConfirm: boolean
 }) {
   const qc = useQueryClient()
   const [unlinking, setUnlinking] = useState<OxidizedNodeLink | null>(null)
@@ -539,6 +566,32 @@ function LinkedNodes({
       api<Paginated<OxidizedNodeLink>>(
         `/api/oxidized/links/?connection=${connection.id}&page_size=1000`
       ),
+  })
+  const sync = useQuery({
+    queryKey: ["oxidized-unmatched", connection.id],
+    queryFn: () =>
+      api<{
+        results: OxidizedUnmatchedNode[]
+        count: number
+        warnings?: OxidizedUnmatchedNode[]
+      }>(`/api/oxidized/connections/${connection.id}/unmatched/`),
+  })
+  const notes = useMemo(
+    () =>
+      new Map((sync.data?.warnings ?? []).map((w) => [w.full_name, w.reason])),
+    [sync.data]
+  )
+  const confirm = useMutation({
+    mutationFn: (id: string) =>
+      api<OxidizedNodeLink>(`/api/oxidized/links/${id}/confirm/`, {
+        method: "POST",
+      }),
+    onSuccess: (r) => {
+      toast.success(`Confirmed ${r.full_name}`)
+      void qc.invalidateQueries({ queryKey: ["oxidized-links"] })
+      void qc.invalidateQueries({ queryKey: ["oxidized-connections"] })
+    },
+    onError: (e) => apiErrorToast(e),
   })
   const unlink = useMutation({
     mutationFn: (id: string) =>
@@ -551,6 +604,8 @@ function LinkedNodes({
     },
     onError: (e) => apiErrorToast(e),
   })
+  const confirmLink = confirm.mutate
+  const confirming = confirm.isPending ? confirm.variables : undefined
 
   const columns = useMemo<ColumnDef<OxidizedNodeLink>[]>(
     () => [
@@ -592,17 +647,30 @@ function LinkedNodes({
           <SortHeader column={column} label="Matched by" />
         ),
         cell: ({ row }) => (
-          <Badge
-            variant={
-              row.original.matched_by === "manual" ? "info" : "secondary"
-            }
-          >
-            {row.original.matched_by === "manual"
-              ? "Pinned"
-              : row.original.matched_by === "address"
-                ? "Address"
-                : "Name"}
-          </Badge>
+          <span className="inline-flex items-center gap-2">
+            <Badge
+              variant={
+                row.original.matched_by === "manual" ? "info" : "secondary"
+              }
+            >
+              {row.original.matched_by === "manual"
+                ? "Pinned"
+                : row.original.matched_by === "address"
+                  ? "Address"
+                  : "Name"}
+            </Badge>
+            {row.original.proposed && <Badge variant="warning">Proposed</Badge>}
+          </span>
+        ),
+      },
+      {
+        id: "note",
+        accessorFn: (r) => notes.get(r.full_name) ?? "",
+        header: ({ column }) => <SortHeader column={column} label="Note" />,
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {notes.get(row.original.full_name) ?? ""}
+          </span>
         ),
       },
       {
@@ -618,22 +686,38 @@ function LinkedNodes({
             <span className="text-muted-foreground">-</span>
           ),
       },
-      ...(canUnlink
+      ...(canUnlink || canConfirm
         ? [
             {
               id: "actions",
               enableHiding: false,
               cell: ({ row }) => (
                 <RowActions
-                  onDelete={() => setUnlinking(row.original)}
+                  onDelete={
+                    canUnlink ? () => setUnlinking(row.original) : undefined
+                  }
                   deleteLabel="Unlink"
+                  extra={
+                    canConfirm && row.original.proposed ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={confirming !== undefined}
+                        onClick={() => confirmLink(row.original.id)}
+                      >
+                        {confirming === row.original.id
+                          ? "Confirming…"
+                          : "Confirm"}
+                      </Button>
+                    ) : null
+                  }
                 />
               ),
             } as ColumnDef<OxidizedNodeLink>,
           ]
         : []),
     ],
-    [canUnlink]
+    [canUnlink, canConfirm, notes, confirming, confirmLink]
   )
 
   const rows = links.data?.results ?? []

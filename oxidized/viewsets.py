@@ -41,7 +41,7 @@ from .serializers import (
     OxidizedNodeLinkSerializer,
     require_connection_change,
 )
-from .sync import sync_nodes
+from .sync import remember_unlinked, sync_nodes
 
 OID = re.compile(r"^[0-9a-f]{4,64}$")
 
@@ -81,11 +81,14 @@ class OxidizedConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     @action(detail=True, methods=["get"])
     def unmatched(self, request, pk=None):
-        """The nodes the last sync could not pair with a device, and why."""
+        """The nodes the last sync could not pair with a device, and why;
+        ``warnings`` lists the links it kept despite namesakes (#400)."""
         s = self.get_object().last_sync_summary or {}
         return Response({
             "results": s.get("unmatched") or [],
             "count": s.get("unmatched_count") or 0,
+            "warnings": s.get("warnings") or [],
+            "warning_count": s.get("warning_count") or 0,
         })
 
 
@@ -98,6 +101,8 @@ class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         "device", "virtual_machine", "connection"
     ).order_by("full_name")
     serializer_class = OxidizedNodeLinkSerializer
+    #: Confirming a proposed link is a pin in effect.
+    rbac_action_map = {"confirm": "add"}
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -111,9 +116,38 @@ class OxidizedNodeLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return qs
 
     def perform_destroy(self, instance):
-        """Unlinking needs ``change`` on the connection, like pinning (#386)."""
+        """Unlinking needs ``change`` on the connection, like pinning (#386).
+        The node remembers where it pointed, so a later pin is judged as a
+        move from there (#398)."""
         require_connection_change(self.request.user, instance.connection)
+        remember_unlinked([instance])
         super().perform_destroy(instance)
+
+    @action(detail=True, methods=["post"])
+    def confirm(self, request, pk=None):
+        """Confirm a link the sync proposed (#399). Held to the rules of
+        pinning the node to that object by hand: ``change`` on the connection,
+        ``add`` on the link in its site, and no config the confirmer could not
+        already read."""
+        link = self.get_object()
+        user, conn = request.user, link.connection
+        if not rbac.restrict_queryset(
+            OxidizedNodeLink.objects.filter(pk=link.pk), user, conn.tenant,
+            "oxidizednodelink", "add",
+        ).exists():
+            raise NotFound("No such link.")
+        require_connection_change(user, conn)
+        if not link.proposed:
+            raise ValidationError({"detail": "This link is not proposed."})
+        slug = "device" if link.device_id else "virtualmachine"
+        if not rbac.can_act_on(user, conn.tenant, slug, "view", link.target):
+            raise NotFound("No such link.")
+        OxidizedNodeLinkSerializer._check_pin_scope(
+            user, conn, link.full_name, link.target, slug
+        )
+        link.proposed = False
+        link.save(update_fields=["proposed", "updated_at"])
+        return Response(self.get_serializer(link).data)
 
 
 # ─── a device's or a virtual machine's configuration ─────────────────────────
@@ -154,10 +188,11 @@ class _DeviceConfigView(APIView):
         return tenant, obj
 
     def _links(self, tenant, obj):
+        # A proposed link serves nothing until it is confirmed (#399).
         return list(
             OxidizedNodeLink.objects.filter(
                 tenant=tenant, **{self.link_field: obj},
-                connection__tenant=tenant, connection__enabled=True,
+                connection__tenant=tenant, connection__enabled=True, proposed=False,
             ).select_related("connection").order_by("connection__name")
         )
 

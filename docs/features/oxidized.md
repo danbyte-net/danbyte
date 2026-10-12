@@ -67,21 +67,46 @@ one box's configuration under another's name; a missing one is visible and
 fixable. This is the same rule the [Zabbix](../monitoring/zabbix.md) matcher
 follows.
 
+A link, once matched, is kept. When a new device or VM shares the name or
+address of a linked node's object, or a second node lands on it, the link
+stays and the sync reports the namesake as a note on the link. Only a node
+without a link is left unmatched by a namesake.
+
+### Proposed links
+
+A new match for a node Danbyte has seen before - one that sat unmatched, or
+moves to another device or VM - is **proposed**. A proposed link shows no
+config on the device's or VM's Config tab until someone confirms it.
+Whoever created, renamed or addressed the object that now matches may not be
+allowed to read that node's config.
+
+Links are made at once, without confirmation, for:
+
+- every node on a connection's first sync;
+- a node seen for the first time;
+- a node matched back to the object its last confirmed link pointed at, such
+  as after an **Unlink**.
+
 The **Oxidized** page lists:
 
 - **Unmatched nodes** - every node the last sync could not pair, with why.
   **Pin** links one by hand to a device or a virtual machine.
-- **Linked nodes** - every pairing in force, how it was made, and when the
-  node was last seen. **Unlink** removes one; a matched node comes back on the
+- **Linked nodes** - every pairing in force, how it was made, any note from
+  the last sync, and when the node was last seen. A **Proposed** link has a
+  **Confirm** button. **Unlink** removes one; a matched node comes back on the
   next sync if it still matches.
 
+The connection card counts **Proposed** links and **Namesakes**, links kept
+despite a namesake.
+
 Each sync re-decides the matched links, so a renamed device or a moved address
-follows. A matched link whose node has gone is removed; a pinned one stays.
+follows, as a proposed link. A matched link whose node has gone is removed; a
+pinned one stays.
 
 !!! warning "Matching trusts device names and addresses"
     Whoever may rename a device or give it an address can make a node match
-    it. Pin the nodes of sensitive devices, or record their addresses, so a
-    matched link cannot move.
+    it. That is why such a match is proposed rather than served. Check the
+    device or VM before confirming, and pin the nodes of sensitive devices.
 
 ## Automatic sync
 
@@ -153,17 +178,21 @@ A device's Config tab shows whichever node is linked to it, so the mapping
 decides whose config people read. Pinning and unlinking are connection
 management:
 
-- **Pin** needs *add* on node links and *change* on the connection. **Unlink**
-  needs *delete* on node links and *change* on the connection. The built-in
-  Administrator group can do both, Operator can pin.
+- **Pin** and **Confirm** need *add* on node links and *change* on the
+  connection. **Unlink** needs *delete* on node links and *change* on the
+  connection. The built-in Administrator group can do all three, Operator can
+  pin and confirm.
 - Node links follow the site of their device or VM. A grant limited to sites
   lists, pins and unlinks only those sites' links, and cannot pin a node that
   is linked to another site's device or VM.
-- A pin never shows you a config you could not already read. Where you hold
-  *view config* on the device or VM you pin to, the node must be linked to
-  another object whose config you can read, or, for an unmatched node, your
-  *view config* on that kind must not be limited to sites or rows.
-  Otherwise the pin is refused.
+- A pin or a confirm never shows you a config you could not already read.
+  Where you hold *view config* on the device or VM you pin to, the node must
+  be linked to an object whose config you can read. An unlinked node counts
+  as linked to the object its last confirmed link pointed at, so unlinking
+  first changes nothing. For a node that never had a confirmed link, or whose
+  last object was deleted, your *view config* on that kind must not be
+  limited to sites or rows. A proposed link does not count. Otherwise the
+  pin or confirm is refused.
 
 Without *view config* on the target a pin gives you nothing to read, so an
 administrator who does not read configs can still map every node.
@@ -176,10 +205,11 @@ All under `/api/oxidized/`, 404 while the integration is off.
 |---|---|
 | `connections/` | CRUD. `password` is write-only; `password_set` reads back. `auto_sync` and `sync_interval_minutes` (5, 10, 15, 30, 60) set the schedule; `last_sync_at` (last success), `last_sync_attempt_at` and `next_sync_at` (null while off) read back. |
 | `connections/<id>/test/` | `POST`. Reach oxidized-web and count nodes. |
-| `connections/<id>/sync/` | `POST`. Read the node list and re-match. |
-| `connections/<id>/unmatched/` | The nodes the last sync left unmatched, with reasons. |
-| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), `POST` to pin (`connection_id`, `full_name`, and one of `device_id` or `virtual_machine_id`), `DELETE` to unlink. A link reads back `device` or `virtual_machine`, the other null. Pinning and unlinking need *change* on the connection (403); see [Who can pin and unlink](#who-can-pin-and-unlink). |
-| `devices/<id>/` | The nodes linked to a device. |
+| `connections/<id>/sync/` | `POST`. Read the node list and re-match. The summary counts `linked`, `proposed`, `unmatched_count` and `warning_count`. |
+| `connections/<id>/unmatched/` | The nodes the last sync left unmatched, with reasons, and `warnings`: the links it kept despite a namesake. |
+| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), `POST` to pin (`connection_id`, `full_name`, and one of `device_id` or `virtual_machine_id`), `DELETE` to unlink. A link reads back `device` or `virtual_machine`, the other null, and `proposed`. Pinning and unlinking need *change* on the connection (403); see [Who can pin and unlink](#who-can-pin-and-unlink). |
+| `links/<id>/confirm/` | `POST`. Confirm a proposed link. 400 when it is not proposed or the confirm would show you a config you cannot read. |
+| `devices/<id>/` | The nodes linked to a device. A proposed link is left out until confirmed. |
 | `devices/<id>/config/` | The current config. `?link=` picks a node, `?refresh=1` skips the cache. |
 | `devices/<id>/versions/` | The history, newest first. |
 | `devices/<id>/versions/<oid>/` | One version's text. |

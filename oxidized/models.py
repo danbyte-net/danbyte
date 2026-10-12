@@ -129,6 +129,11 @@ class OxidizedNodeLink(TimestampedModel):
     node_ip = models.CharField(max_length=64, blank=True, default="")
     node_model = models.CharField(max_length=64, blank=True, default="")
     matched_by = models.CharField(max_length=8, choices=HOW_CHOICES)
+    #: A sync's new match for a node it had seen before, waiting for a
+    #: connection manager to confirm it (#399). No config is served through a
+    #: proposed link: an object created or renamed to match an unlinked node
+    #: must not hand its config to whoever made the object.
+    proposed = models.BooleanField(default=False, db_default=False)
     #: When the node sync last saw this node. A pinned link whose node has
     #: gone stays, with this falling behind, so the admin can see it.
     last_seen_at = models.DateTimeField(null=True, blank=True)
@@ -161,3 +166,45 @@ class OxidizedNodeLink(TimestampedModel):
     def target(self):
         """The device or virtual machine this node backs."""
         return self.device if self.device_id else self.virtual_machine
+
+
+class OxidizedNode(TimestampedModel):
+    """Every node a connection's sync or a pin has named, kept after its link
+    goes (#398, #399). ``created_at`` is when Danbyte first saw the node.
+
+    ``last_device`` / ``last_virtual_machine`` hold the target of the node's
+    last confirmed link that was removed, so unlinking and pinning again is
+    judged like moving the link directly, and a sync that links the node back
+    to that same object needs no confirmation.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="oxidized_nodes"
+    )
+    connection = models.ForeignKey(
+        OxidizedConnection, on_delete=models.CASCADE, related_name="nodes"
+    )
+    full_name = models.CharField(max_length=255)
+    last_device = models.ForeignKey(
+        "api.Device", on_delete=models.SET_NULL, related_name="+", null=True, blank=True,
+    )
+    last_virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.SET_NULL, related_name="+",
+        null=True, blank=True,
+    )
+
+    class Meta:
+        ordering = ["full_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "full_name"], name="uniq_oxidized_node_conn_name"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.full_name
+
+    @property
+    def last_target(self):
+        return self.last_device if self.last_device_id else self.last_virtual_machine

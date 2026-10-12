@@ -2164,6 +2164,27 @@ export interface RackSyncResponse {
   result?: { dims: string[]; accessories: string[]; updated: string[] }
 }
 
+/** POST /api/racks/{id}/move/ - `?dry_run=1` reports and writes nothing. */
+export interface RackMoveResult {
+  rack: { id: string; name: string }
+  from_site: { id: string; name: string }
+  to_site: { id: string; name: string }
+  to_location: { id: string; name: string } | null
+  devices: {
+    id: string
+    name: string
+    position: number | null
+    face: string
+    mount: string
+    /** False for a child device that goes along in a parent's bay. */
+    racked: boolean
+  }[]
+  cleared: { floor_plan_tiles: number }
+  blockers: { code: string; message: string }[]
+  can_move: boolean
+  moved: boolean
+}
+
 /** Picker shape (?picker=1) - RackMiniSerializer, includes unit geometry. */
 export interface RackOption {
   id: string
@@ -12197,7 +12218,11 @@ export interface OxidizedConnection {
     nodes: number | null
     linked: number | null
     pinned: number | null
+    /** Matched links waiting for confirmation (#399). */
+    proposed: number | null
     unmatched_count: number | null
+    /** Links kept despite a namesake (#400). */
+    warning_count: number | null
     missing_pinned: number | null
     error: string | null
   }
@@ -12216,6 +12241,8 @@ export interface OxidizedNodeLink {
   node_ip: string
   node_model: string
   matched_by: "address" | "name" | "manual"
+  /** A sync's match that serves no config until confirmed (#399). */
+  proposed: boolean
   last_seen_at: string | null
   created_at: string
 }

@@ -20,6 +20,19 @@ listed as unmatched with the reason - a node paired with the wrong device
 shows one box's configuration under another's name, and nothing downstream
 would notice.
 
+A link, once matched, is kept (#400): when the node's current target is among
+a rung's candidates, or the current holder is among the nodes landing on one
+target, the link stays and the namesakes are reported as a warning. A new
+object sharing a linked device's name cannot unlink it.
+
+A new match for a node the connection had already seen - unmatched, or
+linked elsewhere - is *proposed* (#399): it serves no config until a
+connection manager confirms it, because whoever created or renamed the
+object it matched may not be allowed to read that node. A node seen for the
+first time (every node, on a connection's first sync) links straight away,
+and so does a node matched back to the object its last confirmed link
+pointed at.
+
 A target is a ``(kind, id)`` pair, kind being :data:`DEVICE` or :data:`VM`.
 """
 from __future__ import annotations
@@ -32,9 +45,10 @@ from django.utils import timezone
 from api.models import Device, IPAddress, VirtualMachine
 
 from .client import OxidizedClient, OxidizedError
-from .models import OxidizedConnection, OxidizedNodeLink
+from .models import OxidizedConnection, OxidizedNode, OxidizedNodeLink
 
-#: How many unmatched nodes the summary keeps for the mapping page.
+#: How many unmatched nodes (and warnings) the summary keeps for the
+#: mapping page.
 UNMATCHED_LIMIT = 1000
 
 DEVICE, VM = "device", "vm"
@@ -129,9 +143,16 @@ def _noun(hits) -> str:
     return "devices and virtual machines"
 
 
-def match_node(node: dict, index, match_by: str) -> tuple[object, str, str]:
+def match_node(
+    node: dict, index, match_by: str, current=None
+) -> tuple[object, str, str]:
     """``(target | None, how, reason)`` for one node; a target is
-    ``(kind, id)``."""
+    ``(kind, id)``.
+
+    ``current`` is the target the node's matched link points at now. Where a
+    rung finds several candidates and ``current`` is one of them, the link is
+    kept: the result is ``current``, with the namesakes described in
+    ``reason`` as a warning (#400)."""
     _, by_addr, by_name, by_short = index
     full, name, _group = split_full_name(node)
     rungs = []
@@ -150,9 +171,10 @@ def match_node(node: dict, index, match_by: str) -> tuple[object, str, str]:
                 continue
             hits = table.get(key) or set()
             if len(hits) > 1:
-                return None, "ambiguous", (
-                    f"{len(hits)} {_noun(hits)} share the {how} '{key}'."
-                )
+                shared = f"{len(hits)} {_noun(hits)} share the {how} '{key}'"
+                if current is not None and current in hits:
+                    return current, how, f"{shared}; the existing link is kept."
+                return None, "ambiguous", f"{shared}."
             if hits:
                 return next(iter(hits)), how, ""
     return None, "none", "No device or virtual machine matches."
@@ -162,11 +184,13 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
     """Read the node list and bring the links up to date.
 
     Pinned links are never touched beyond ``last_seen_at``. Matched links are
-    re-decided every pass, so a renamed device or a moved address follows.
+    re-decided every pass, so a renamed device or a moved address follows -
+    as a proposed link when the node was seen before (see the module notes).
     """
     now = timezone.now()
     summary = {
-        "nodes": 0, "linked": 0, "pinned": 0, "unmatched": [], "unmatched_count": 0,
+        "nodes": 0, "linked": 0, "pinned": 0, "proposed": 0, "unmatched": [],
+        "unmatched_count": 0, "warnings": [], "warning_count": 0,
         "missing_pinned": 0, "error": "",
     }
     try:
@@ -181,6 +205,16 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
     pinned = [lk for lk in links if lk.matched_by == OxidizedNodeLink.HOW_MANUAL]
     pinned_nodes = {lk.full_name for lk in pinned}
     pinned_targets = {_target_of(lk) for lk in pinned}
+    current = {
+        lk.full_name: lk for lk in links if lk.matched_by != OxidizedNodeLink.HOW_MANUAL
+    }
+    # What the connection knew before this pass: the nodes it has seen, and
+    # where each one's last confirmed link pointed.
+    known: dict[str, tuple | None] = {}
+    for full, dev_id, vm_id in OxidizedNode.objects.filter(connection=conn).values_list(
+        "full_name", "last_device_id", "last_virtual_machine_id"
+    ):
+        known[full] = (DEVICE, dev_id) if dev_id else (VM, vm_id) if vm_id else None
 
     seen: dict[str, dict] = {}
     for node in nodes:
@@ -192,27 +226,44 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
     # First pass: decide. Second: drop every target two nodes claimed.
     decided: dict[str, tuple] = {}
     unmatched: list[dict] = []
+    warnings: list[dict] = []
     claims: dict = {}
     for full, node in seen.items():
         if full in pinned_nodes:
             continue
-        target, how, reason = match_node(node, index, conn.match_by)
+        held = _target_of(current[full]) if full in current else None
+        target, how, reason = match_node(node, index, conn.match_by, current=held)
         if target is not None and target in pinned_targets:
             what = "device" if target[0] == DEVICE else "virtual machine"
             target, how, reason = None, "ambiguous", f"The {what} is pinned to another node."
         if target is None:
             unmatched.append(_unmatched_row(full, node, reason))
             continue
+        if reason:
+            warnings.append(_unmatched_row(full, node, reason))
         decided[full] = (target, how)
         claims.setdefault(target, []).append(full)
     for target, fulls in claims.items():
-        if len(fulls) > 1:
-            for full in fulls:
-                decided.pop(full, None)
-                unmatched.append(_unmatched_row(
+        if len(fulls) < 2:
+            continue
+        # The node already linked to the target keeps it (#400).
+        holder = next(
+            (f for f in fulls if f in current and _target_of(current[f]) == target), None
+        )
+        for full in fulls:
+            if full == holder:
+                warnings.append(_unmatched_row(
                     full, seen[full],
-                    f"{len(fulls)} nodes match {names.get(target, '')}.",
+                    f"{len(fulls)} nodes match {names.get(target, '')}; "
+                    "the existing link is kept.",
                 ))
+                continue
+            decided.pop(full, None)
+            unmatched.append(_unmatched_row(
+                full, seen[full],
+                f"{names.get(target, '')} is linked to node {holder}." if holder
+                else f"{len(fulls)} nodes match {names.get(target, '')}.",
+            ))
 
     with transaction.atomic():
         for lk in pinned:
@@ -221,31 +272,46 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
                 lk.save()
             else:
                 summary["missing_pinned"] += 1
-        current = {lk.full_name: lk for lk in links if lk.matched_by != OxidizedNodeLink.HOW_MANUAL}
         # Free every target whose matched link moves to another node first, so
         # the (connection, device|vm) constraints never see two rows at once.
         stale = [
             lk.id for full, lk in current.items()
             if full not in decided or decided[full][0] != _target_of(lk)
         ]
+        remember_unlinked(lk for lk in current.values() if lk.id in stale)
         OxidizedNodeLink.objects.filter(id__in=stale).delete()
-        for full, ((kind, obj_id), how) in decided.items():
+        proposed = 0
+        for full, (target, how) in decided.items():
+            kind, obj_id = target
             lk = current.get(full)
             if lk is None or lk.id in stale:
                 lk = OxidizedNodeLink(
                     tenant=conn.tenant, connection=conn, full_name=full,
                     device_id=obj_id if kind == DEVICE else None,
                     virtual_machine_id=obj_id if kind == VM else None,
+                    # A node seen before follows to a new object only once
+                    # someone confirms it (#399).
+                    proposed=full in known and known[full] != target,
                 )
             lk.matched_by = how
             _refresh(lk, seen[full], now)
             lk.save()
+            proposed += lk.proposed
+        OxidizedNode.objects.bulk_create(
+            [OxidizedNode(tenant=conn.tenant, connection=conn, full_name=full)
+             for full in seen if full not in known],
+            ignore_conflicts=True,
+        )
 
         summary["linked"] = len(decided)
         summary["pinned"] = len(pinned)
+        summary["proposed"] = proposed
         unmatched.sort(key=lambda r: r["full_name"].lower())
         summary["unmatched_count"] = len(unmatched)
         summary["unmatched"] = unmatched[:UNMATCHED_LIMIT]
+        warnings.sort(key=lambda r: r["full_name"].lower())
+        summary["warning_count"] = len(warnings)
+        summary["warnings"] = warnings[:UNMATCHED_LIMIT]
         conn.node_count = len(seen)
         conn.last_sync_at = now
         conn.last_sync_attempt_at = now
@@ -278,6 +344,37 @@ def record_sync_failure(conn: OxidizedConnection, message: str, now=None) -> str
         "updated_at",
     ])
     return message
+
+
+def remember_unlinked(links) -> None:
+    """Note on each link's node where it pointed, before the links are
+    deleted (#398). A proposed link was never confirmed, so it leaves the
+    node's memory as it was."""
+    for lk in links:
+        if lk.proposed:
+            OxidizedNode.objects.get_or_create(
+                connection_id=lk.connection_id, full_name=lk.full_name,
+                defaults={"tenant_id": lk.tenant_id},
+            )
+            continue
+        OxidizedNode.objects.update_or_create(
+            connection_id=lk.connection_id, full_name=lk.full_name,
+            defaults={
+                "tenant_id": lk.tenant_id, "last_device_id": lk.device_id,
+                "last_virtual_machine_id": lk.virtual_machine_id,
+            },
+        )
+
+
+def last_target(conn: OxidizedConnection, full_name: str):
+    """The device or VM the node's last confirmed link pointed at, while it
+    still exists."""
+    row = (
+        OxidizedNode.objects.filter(connection=conn, full_name=full_name)
+        .select_related("last_device", "last_virtual_machine")
+        .first()
+    )
+    return row.last_target if row is not None else None
 
 
 def _target_of(link: OxidizedNodeLink) -> tuple:

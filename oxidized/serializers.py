@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+from django.db.models import Q
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from api.models import Device, VirtualMachine
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 
-from .models import OxidizedConnection, OxidizedNodeLink
+from .models import OxidizedConnection, OxidizedNode, OxidizedNodeLink
 
 
 def _origin(url: str) -> tuple:
@@ -56,7 +57,8 @@ class OxidizedConnectionSerializer(serializers.ModelSerializer):
         """The last node sync's counts; the unmatched rows have an endpoint."""
         s = obj.last_sync_summary or {}
         return {k: s.get(k) for k in (
-            "nodes", "linked", "pinned", "unmatched_count", "missing_pinned", "error",
+            "nodes", "linked", "pinned", "proposed", "unmatched_count", "warning_count",
+            "missing_pinned", "error",
         )}
 
     def validate_url(self, value):
@@ -134,11 +136,11 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
             "id", "connection", "connection_id", "connection_name", "device", "device_id",
             "virtual_machine", "virtual_machine_id",
             "full_name", "node_name", "node_group", "node_ip", "node_model",
-            "matched_by", "last_seen_at", "created_at",
+            "matched_by", "proposed", "last_seen_at", "created_at",
         ]
         read_only_fields = [
             "node_name", "node_group", "node_ip", "node_model", "matched_by",
-            "last_seen_at", "created_at",
+            "proposed", "last_seen_at", "created_at",
         ]
         # The model's unique constraints are not the pin's rules: a pin
         # replaces the matched link on its node or target (``create``), and
@@ -200,9 +202,12 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
         The config endpoints serve whichever node is linked to the object in
         the URL, so pinning node N to an object T where the author holds
         ``view_config`` hands them N's config. That is allowed only when N's
-        config is already theirs to read: N is linked to another object they
-        hold ``view`` and ``view_config`` on, or N is linked to nothing and
-        their ``view_config`` on that kind is not limited by site or row.
+        config is already theirs to read: N's confirmed link points at an
+        object they hold ``view`` and ``view_config`` on; or N has no confirmed
+        link and its last one pointed at such an object, so unlinking first
+        gains nothing (#398); or N never had a confirmed link and their
+        ``view_config`` on that kind is not limited by site or row. The same
+        rule confirms a proposed link (#399).
         An author without ``view_config`` on T gains nothing to read, so an
         admin's mapping work is unchanged.
 
@@ -211,30 +216,39 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
         """
         from auth_api import rbac
 
+        from .sync import last_target
+
         tenant = conn.tenant
-        previous = (
+        existing = (
             OxidizedNodeLink.objects.filter(connection=conn, full_name=full_name)
-            .exclude(**{"device" if slug == "device" else "virtual_machine": target})
             .select_related("device", "virtual_machine")
             .first()
         )
-        if previous is not None and not rbac.restrict_queryset(
-            OxidizedNodeLink.objects.filter(pk=previous.pk),
-            user, tenant, "oxidizednodelink", "add",
-        ).exists():
+        if (
+            existing is not None
+            and existing.target != target
+            and not rbac.restrict_queryset(
+                OxidizedNodeLink.objects.filter(pk=existing.pk),
+                user, tenant, "oxidizednodelink", "add",
+            ).exists()
+        ):
             raise serializers.ValidationError(
                 {"full_name": "This node is linked to an object outside your scope."}
             )
         if not rbac.can_act_on(user, tenant, slug, "view_config", target):
             return
-        if previous is None:
+        # Whose config the node is: its confirmed link's object, or, once
+        # unlinked, the object its last confirmed link pointed at (#398). A
+        # proposed link proves nothing - a sync made it, not a reader (#399).
+        if existing is not None and not existing.proposed:
+            was = existing.target
+        else:
+            was = last_target(conn, full_name)
+        if was is None:
             if rbac.row_filter(user, tenant, slug, "view_config") is True:
                 return
         else:
-            was, was_slug = (
-                (previous.device, "device") if previous.device_id
-                else (previous.virtual_machine, "virtualmachine")
-            )
+            was_slug = "device" if isinstance(was, Device) else "virtualmachine"
             if rbac.can_act_on(user, tenant, was_slug, "view", was) and rbac.can_act_on(
                 user, tenant, was_slug, "view_config", was
             ):
@@ -244,13 +258,19 @@ class OxidizedNodeLinkSerializer(serializers.ModelSerializer):
         )
 
     def create(self, validated):
+        from .sync import remember_unlinked
+
         conn, full = validated["connection"], validated["full_name"]
         device, vm = validated.get("device"), validated.get("virtual_machine")
-        if device is not None:
-            OxidizedNodeLink.objects.filter(connection=conn, device=device).delete()
-        else:
-            OxidizedNodeLink.objects.filter(connection=conn, virtual_machine=vm).delete()
-        OxidizedNodeLink.objects.filter(connection=conn, full_name=full).delete()
+        replaced = OxidizedNodeLink.objects.filter(connection=conn).filter(
+            Q(device=device) if device is not None else Q(virtual_machine=vm)
+        ) | OxidizedNodeLink.objects.filter(connection=conn, full_name=full)
+        replaced = list(replaced)
+        remember_unlinked(replaced)
+        OxidizedNodeLink.objects.filter(id__in=[lk.id for lk in replaced]).delete()
+        OxidizedNode.objects.get_or_create(
+            connection=conn, full_name=full, defaults={"tenant": conn.tenant}
+        )
         known = next(
             (n for n in (conn.last_sync_summary or {}).get("unmatched", [])
              if n.get("full_name") == full),
