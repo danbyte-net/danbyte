@@ -6194,6 +6194,7 @@ class RackMoveSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         site, location = attrs["site"], attrs.get("location")
         rack = self.context.get("rack")
         if rack is not None and site.pk == rack.site_id:
