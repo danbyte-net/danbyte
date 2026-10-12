@@ -69,8 +69,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # BuildKit comes from Google's mirror and every base image from ECR
-      # Public: Docker Hub throttles anonymous pulls from shared runners.
+      # BuildKit and every base image come from Google's Docker Hub mirror:
+      # Docker Hub and ECR Public both throttle anonymous pulls from shared
+      # runners.
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -106,6 +107,7 @@ jobs:
           context: .
           file: ./Dockerfile
           target: ${{ matrix.target }}
+          build-args: BASE_IMAGE_REGISTRY=mirror.gcr.io/library
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

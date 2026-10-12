@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:17
+        image: mirror.gcr.io/library/postgres:17
         env:
           POSTGRES_DB: danbyte
           POSTGRES_USER: danbyte
