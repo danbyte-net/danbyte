@@ -1245,6 +1245,12 @@ it in the page; **Send this one** (or **Send all**) mails it to an address you
 choose, subject prefixed with `[Preview]`, through the same SMTP config, so
 you can check it in a real mail client before it goes out for real.
 
+The page fetches the rendered mail and shows it in a sandboxed frame with
+scripts off, so the preview works behind any reverse proxy, including ones
+that send `X-Frame-Options: DENY` or `frame-ancestors 'none'` on every
+response. Opened directly, `/api/deployment/email/templates/<key>/` keeps its
+own locked-down headers.
+
 Every email shares one layout: a document, not a marketing card. White,
 black ink, hairlines, bold for emphasis, and colour only where something
 needs acting on - a red critical count, a red *Down*; a warning is bold, an

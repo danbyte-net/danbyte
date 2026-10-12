@@ -26,6 +26,7 @@ import {
   SettingsHeader,
 } from "@/components/settings/settings-card"
 import { SmtpFields } from "@/components/settings/smtp-fields"
+import { EmailPreviewFrame } from "@/components/settings/email-preview-frame"
 import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
 
 export const Route = createFileRoute("/settings/email")({
@@ -165,7 +166,6 @@ function DeploymentEmail() {
 function TemplatesCard({ enabled }: { enabled: boolean }) {
   const [to, setTo] = useState("")
   const [key, setKey] = useState<string | null>(null)
-  const [height, setHeight] = useState(480)
 
   const templates = useQuery({
     queryKey: ["email-templates"],
@@ -209,23 +209,7 @@ function TemplatesCard({ enabled }: { enabled: boolean }) {
             items={list.map((t) => ({ value: t.key, label: t.label }))}
           />
         )}
-        {current && (
-          // Same origin, so the frame can report its height; sandboxed with
-          // nothing allowed, since a mail has nothing to run.
-          <iframe
-            key={current}
-            title="Email preview"
-            src={`/api/deployment/email/templates/${current}/`}
-            sandbox=""
-            className="w-full rounded-md border border-border bg-muted/30"
-            style={{ height }}
-            onLoad={(e) => {
-              const doc = e.currentTarget.contentDocument
-              if (doc)
-                setHeight(Math.max(320, doc.documentElement.scrollHeight))
-            }}
-          />
-        )}
+        {current && <EmailPreviewFrame key={current} template={current} />}
         <div className="flex flex-wrap items-end gap-2">
           <Field label="Recipient" className="min-w-64 flex-1">
             <Input
