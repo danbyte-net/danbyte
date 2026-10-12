@@ -3,6 +3,7 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { RackSyncTypeButton } from "@/components/rack-sync-type-button"
+import { RackMoveButton } from "@/components/rack-move-dialog"
 import { useQuery } from "@tanstack/react-query"
 import { Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import {
@@ -95,6 +96,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
           <ShowOnFloorPlan rackId={r.id} />
           <PrintLabelButton objectType="rack" ids={[r.id]} />
           <RackSyncTypeButton rack={r} />
+          <RackMoveButton rack={r} />
           {canDo("rack", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/racks/$id/edit" params={{ id: r.id }}>

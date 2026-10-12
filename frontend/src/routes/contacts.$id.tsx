@@ -95,6 +95,7 @@ function Body({ contact: c }: { contact: Contact }) {
       ) : (
         dash
       ),
+      copy: c.address || undefined,
     },
     {
       label: "Working hours",

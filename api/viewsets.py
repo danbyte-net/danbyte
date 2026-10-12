@@ -189,6 +189,7 @@ from .serializers import (
     CabinetSerializer,
     CabinetTypeMiniSerializer,
     CabinetTypeSerializer,
+    RackMoveSerializer,
     RackSerializer,
     RackRoleSerializer,
     RackRoleMiniSerializer,
@@ -6601,7 +6602,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         # them (#188).
         from .models import Document
 
-        if self.action in ("scene", "export_pdf_file"):
+        if self.action in ("scene", "export_pdf_file", "move"):
             # The scene loads its own geometry (api.scene_geo), and a print
             # link only checks the rack is still in view; the figures below
             # would only be thrown away.
@@ -6736,6 +6737,115 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 )
         result = sync_rack_from_type(rack, dims=dims, accessories=accessories)
         return Response({"applied": True, "diff": diff, "result": result})
+
+    @extend_schema(
+        summary="Move a rack to another site together with its devices",
+        request=RackMoveSerializer,
+        parameters=[
+            OpenApiParameter(
+                name="dry_run", type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY,
+                description="Report what the move would do and write nothing.",
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description=(
+                    "`rack`, `from_site`, `to_site`, `to_location`; `devices` that "
+                    "go along (`id`, `name`, `position`, `face`, `mount`, `racked`); "
+                    "`cleared.floor_plan_tiles`; `blockers` (`code`, `message`); "
+                    "`can_move`; `moved`."
+                ),
+            ),
+            409: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Something blocks the move: the same body with `detail`.",
+            ),
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="move")
+    def move(self, request, pk=None):
+        """Move the rack and every device in it to another site in one
+        transaction, keeping positions and faces (#394). Each device's site
+        and location become the rack's. Anything still tied to the old site
+        blocks the move and is listed (api.rack_move); a floor-plan placement
+        at the old site is cleared. Needs change on the rack and on every
+        device it moves, at both sites."""
+        from . import rack_move, rack_units
+
+        rack = self.get_object()
+        tenant = self._tenant_or_403()
+        ser = RackMoveSerializer(
+            data=request.data, context={**self.get_serializer_context(), "rack": rack}
+        )
+        ser.is_valid(raise_exception=True)
+        site, location = ser.validated_data["site"], ser.validated_data.get("location")
+        dry_run = str(request.query_params.get("dry_run", "")).lower() in ("1", "true", "yes")
+
+        with transaction.atomic():
+            rack_units.lock_rack(rack)
+            plan = rack_move.plan(rack, site, location)
+            self._authorize_move(plan, tenant)
+            if dry_run:
+                return Response(rack_move.payload(plan, moved=False))
+            if plan.blockers:
+                n = len(plan.blockers)
+                body = rack_move.payload(plan, moved=False)
+                body["detail"] = (
+                    f"The rack can't move: {n} thing{'s' if n != 1 else ''} "
+                    "tie it to its site."
+                )
+                return Response(body, status=drf_status.HTTP_409_CONFLICT)
+            body = rack_move.payload(plan, moved=False)
+            rack_move.apply(plan)
+            self._assert_moved_in_scope(plan, tenant)
+        body["moved"] = True
+        return Response(body)
+
+    def _authorize_move(self, plan, tenant):
+        """Change on every device that goes along and on the cleared floor-
+        plan tiles where they are now, and change on racks and devices at the
+        new site. The rack itself is already a change-scoped lookup."""
+        from auth_api import rbac
+        from auth_api.object_types import is_registered
+
+        user = self.request.user
+        if user.is_superuser:
+            return
+        ids = plan.device_ids
+        if ids and rbac.restrict_queryset(
+            Device.objects.filter(pk__in=ids), user, tenant, "device", "change"
+        ).count() != len(ids):
+            raise PermissionDenied("You may not change every device this move takes along.")
+        for slug in ("rack", "device") if ids else ("rack",):
+            scope = rbac.site_scope(user, tenant, slug, "change")
+            if scope is not None and plan.site.pk not in scope:
+                raise PermissionDenied(f"You may not change {slug}s at {plan.site.name}.")
+        tiles = [t.pk for t in plan.tiles]
+        if tiles and (not is_registered("floorplantile") or rbac.restrict_queryset(
+            FloorPlanTile.objects.filter(pk__in=tiles), user, tenant, "floorplantile", "change"
+        ).count() != len(tiles)):
+            raise PermissionDenied(
+                "You may not change the floor plan that places this rack.")
+
+    def _assert_moved_in_scope(self, plan, tenant):
+        """After the writes, in the same transaction: the rack and devices
+        are still ones the caller may change, now at the new site - the same
+        post-save guard an ordinary edit gets, constraints included."""
+        from auth_api import rbac
+
+        user = self.request.user
+        if user.is_superuser:
+            return
+        ids = plan.device_ids
+        rack_ok = rbac.restrict_queryset(
+            Rack.objects.filter(pk=plan.rack.pk), user, tenant, "rack", "change"
+        ).exists()
+        devices_ok = not ids or rbac.restrict_queryset(
+            Device.objects.filter(pk__in=ids), user, tenant, "device", "change"
+        ).count() == len(ids)
+        if not (rack_ok and devices_ok):
+            raise PermissionDenied("The move would leave objects outside your permission scope.")
 
     def _viewable_devices(self, rack):
         """The rack's devices the caller may view (device view, row scope)."""

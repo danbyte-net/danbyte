@@ -6183,6 +6183,27 @@ class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                             "created_at", "updated_at"]
 
 
+class RackMoveSerializer(serializers.Serializer):
+    """Where ``POST /api/racks/<id>/move/`` takes a rack and its devices
+    (#394): a site of the active tenant, and optionally a location in it."""
+
+    site_id = TenantScopedPrimaryKeyRelatedField(source="site", queryset=Site.objects.all())
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        required=False, allow_null=True,
+    )
+
+    def validate(self, attrs):
+        site, location = attrs["site"], attrs.get("location")
+        rack = self.context.get("rack")
+        if rack is not None and site.pk == rack.site_id:
+            raise serializers.ValidationError({"site_id": "The rack is already at this site."})
+        if location is not None and location.site_id != site.pk:
+            raise serializers.ValidationError(
+                {"location_id": "Pick a location within the new site."})
+        return attrs
+
+
 class RackMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = Rack

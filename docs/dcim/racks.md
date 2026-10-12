@@ -25,8 +25,9 @@ A rack's units can't shrink or shift out from under its devices: lowering
 the **height** or raising the **starting unit** below a mounted device is
 refused, naming the devices in the way (`Devices are installed outside
 U1–U10 (hi at U40). Move or remove them first.`). Side-mounted strips have no
-U position and never block. A rack with devices in it can't move to another
-site either - move them out first, as with a [cabinet](cabinets.md).
+U position and never block. A rack with devices in it can't change site on
+an ordinary edit; [move it to the other site](#move-a-rack-to-another-site)
+together with its devices instead.
 
 ### Rack roles
 
@@ -99,6 +100,51 @@ is applied. Syncing twice does nothing the second time.
 `POST /api/racks/{id}/sync-from-type/` is the same operation
 (`apply`, plus `dims` / `accessories` to narrow it); without `apply` it is
 a dry run that returns the diff.
+
+## Move a rack to another site
+
+**Move to site…** on the rack page moves the rack and every device in it to
+another site in one step - a re-homed cabinet, a site split or merge. Pick the
+site and, optionally, a location in it. The dialog first shows what the move
+takes:
+
+- **Devices going along**: everything racked in it - positioned, half-width
+  and side-mounted alike - plus the devices installed in their device bays.
+  Each keeps its U position, face and rail; its site and location become the
+  rack's. Without a location, the old one is cleared.
+- **Cleared**: a floor-plan tile at the old site that places the rack or one
+  of its devices loses its link. The tile itself stays on the plan.
+- **Blocking the move**: anything still tied to the old site. The move is
+  refused until each is resolved, and every reason is listed:
+    - a cable from one of its devices to anything outside the rack - another
+      device, a power feed, a circuit. Cables between its own devices go along.
+    - a VLAN of another site on one of its interfaces, untagged or tagged.
+      Shared VLANs with no site are fine.
+    - an IP address of another site, or in a prefix of another site, on one
+      of its devices.
+    - a power feed delivered to the rack from another site's panel.
+    - a device whose cluster is at another site.
+    - a device in a bay of a device outside the rack, or a bay child racked
+      in another rack.
+    - a rack of the same name at the new site.
+    - with [enhanced site separation](../access/site-separation.md)
+      on: a device type, status or tag local to another site.
+
+Port reservations on the moving ports follow them to the new site. Each moved
+rack, device and tile is written to its change log.
+
+The move needs **change** on the rack and on every device it takes along, at
+both the old and the new site, and **change** on any floor-plan tile it
+clears. Without them the move, and its preview, is refused.
+
+`POST /api/racks/{id}/move/` with `site_id` and an optional `location_id` is
+the same operation; `?dry_run=1` reports and writes nothing. The response
+holds `rack`, `from_site`, `to_site`, `to_location`, the `devices` that go
+along (`id`, `name`, `position`, `face`, `mount`, and `racked`: false for a
+bay child), `cleared.floor_plan_tiles`, the `blockers` (`code`, `message`),
+`can_move` and `moved`. A move with blockers answers 409 with the same body
+and a `detail`. Blocker codes: `cable`, `vlan`, `ip`, `power_feed`,
+`cluster`, `bay`, `name` and `catalog`; a far cable end is never named.
 
 ## Mount a device in a rack
 

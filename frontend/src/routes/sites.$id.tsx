@@ -701,7 +701,11 @@ function SiteOverview({
           } satisfies KvRow,
         ]
       : []),
-    { label: "Address", value: s.location || dash },
+    {
+      label: "Address",
+      value: s.location || dash,
+      copy: s.location || undefined,
+    },
     {
       label: "Time zone",
       value: s.time_zone ? <SiteLocalTime tz={s.time_zone} /> : dash,
