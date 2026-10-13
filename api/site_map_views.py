@@ -9,7 +9,7 @@ the map.
 """
 from __future__ import annotations
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
@@ -378,21 +378,11 @@ def site_map_connections(request):
     each edge's speed and the links behind it (``api.site_map_links``).
     """
     from .models import Circuit, Tunnel
-    from .topology_views import _physical_links
+    from .topology_views import _links_around, _physical_links
 
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=400)
-
-    # Every cable hop of the tenant, loaded once: the cable lines below, and
-    # with ?include=capacity what each circuit is cabled to and where each
-    # trunk's strands come out.
-    cable_view = rbac.row_filter(request.user, tenant, "cable", "view")
-    links = _physical_links(tenant) if cable_view is not None else []
-    figures = (
-        LinkFigures(request.user, tenant, links, cable_view=cable_view is not None)
-        if include_capacity(request) else None
-    )
 
     visible_sites = {
         s.id: s
@@ -401,6 +391,32 @@ def site_map_connections(request):
             request.user, tenant, "site", "view",
         ).filter(latitude__isnull=False, longitude__isnull=False)
     }
+    # Every edge joins two placed sites the caller can see - with fewer there
+    # is nothing to draw, and no reason to load a cable (#417).
+    if len(visible_sites) < 2:
+        return Response({"connections": []})
+
+    # The cable hops, loaded once: the cable lines below, and with
+    # ?include=capacity what each circuit is cabled to and where each trunk's
+    # strands come out - that walk keeps the whole tenant. A plain cable line
+    # only needs the cables with an end at a placed site.
+    cable_view = rbac.row_filter(request.user, tenant, "cable", "view")
+    capacity = include_capacity(request)
+    if cable_view is None:
+        links = []
+    elif capacity:
+        links = _physical_links(tenant)
+    else:
+        links = _links_around(
+            tenant,
+            Device.objects.filter(tenant=tenant, site_id__in=list(visible_sites))
+            .values("id"),
+            through_panels=False,
+        )
+    figures = (
+        LinkFigures(request.user, tenant, links, cable_view=cable_view is not None)
+        if capacity else None
+    )
 
     def site_ref(site):
         return {
@@ -597,7 +613,7 @@ def site_map_cables(request):
     ``?include=capacity`` adds each cable's speed and the end-to-end links
     its strands carry (``api.site_map_links``).
     """
-    from .topology_views import _physical_links
+    from .topology_views import _links_around, _physical_links
 
     tenant = _get_active_tenant(request)
     if tenant is None:
@@ -631,11 +647,34 @@ def site_map_cables(request):
         sp = site_pt.get(dev.site_id)
         return (sp[0], sp[1]) if sp else None
 
+    # The devices a line can end on: viewable, and placed on their own or
+    # through their site. None → nothing draws, so no cable is loaded (#417).
+    placed = (
+        rbac.restrict_queryset(
+            Device.objects.filter(tenant=tenant),
+            request.user, tenant, "device", "view",
+        )
+        .filter(
+            Q(latitude__isnull=False, longitude__isnull=False)
+            | Q(site_id__in=list(site_pt))
+        )
+        .values("id")
+    )
+    if not placed.exists():
+        return Response({"cables": []})
+
     routes_by_cable = _routes_by_cable(tenant)
-    links = _physical_links(tenant)
+    capacity = include_capacity(request)
+    # A line's two ends are its cable's own ends, so the cables touching a
+    # placed device are every one that can draw. The capacity walk follows
+    # strands through panels anywhere and keeps the whole-tenant load.
+    links = (
+        _physical_links(tenant) if capacity
+        else _links_around(tenant, placed, through_panels=False)
+    )
     figures = (
         LinkFigures(request.user, tenant, links, cable_view=True, devices=viewable_devs)
-        if include_capacity(request) else None
+        if capacity else None
     )
     out = []
     seen = set()

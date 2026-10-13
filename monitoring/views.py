@@ -2311,6 +2311,39 @@ def _flap_rollup(flapping_since_values) -> dict:
     return {"flapping": n} if n else {}
 
 
+def _rollup_by_owner(request, tenant, ips_by_owner: dict) -> dict:
+    """``{owner_id: roll-up}`` across each owner's IPs (a device's, a VM's),
+    from one CheckState query for every IP at once - a query per owner cost a
+    5,000-device list ~5,000 queries (#416). Owners with no monitored check
+    are left out. Excluded addresses and the caller's IP view scope apply as
+    for a single target."""
+    from .exclusion import monitored
+
+    every_ip = [ip_id for ip_ids in ips_by_owner.values() for ip_id in ip_ids]
+    if not every_ip:
+        return {}
+    states_by_ip: dict = {}
+    for row in monitored(_scope_ip_keyed(
+        request, tenant,
+        CheckState.objects.filter(target_ip_id__in=every_ip),
+    ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"):
+        states_by_ip.setdefault(row["target_ip_id"], []).append(row)
+    out: dict = {}
+    for owner_id, ip_ids in ips_by_owner.items():
+        states = [s for ip_id in ip_ids for s in states_by_ip.get(ip_id, ())]
+        if not states:
+            continue
+        statuses = [s["status"] for s in states]
+        out[owner_id] = {
+            "status": worst_status(statuses),
+            "counts": status_counts(statuses),
+            "monitored_ips": len({s["target_ip_id"] for s in states}),
+            **_external_detail([s["last_detail"] for s in states]),
+            **_flap_rollup(s["flapping_since"] for s in states),
+        }
+    return out
+
+
 def _external_detail(rows) -> dict:
     """What an external monitoring system said, rolled up for a list column.
 
@@ -2524,21 +2557,7 @@ def bulk_status_view(request):
         ips_by_vm: dict = {}
         for vm_id, ip_id in ip_rows:
             ips_by_vm.setdefault(str(vm_id), []).append(ip_id)
-        for vm_id, ip_ids in ips_by_vm.items():
-            states = list(monitored(_scope_ip_keyed(
-                request, tenant,
-                CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"))
-            statuses = [s["status"] for s in states]
-            if not statuses:
-                continue
-            out[vm_id] = {
-                "status": worst_status(statuses),
-                "counts": status_counts(statuses),
-                "monitored_ips": len({s["target_ip_id"] for s in states}),
-                **_external_detail([s["last_detail"] for s in states]),
-                **_flap_rollup(s["flapping_since"] for s in states),
-            }
+        out.update(_rollup_by_owner(request, tenant, ips_by_vm))
         return Response({"statuses": out})
 
     device_param = _ids("devices")
@@ -2561,22 +2580,7 @@ def bulk_status_view(request):
         ips_by_device: dict = {}
         for dev_id, ip_id in ip_rows:
             ips_by_device.setdefault(str(dev_id), []).append(ip_id)
-        for dev_id, ip_ids in ips_by_device.items():
-            states = list(monitored(_scope_ip_keyed(
-                request,
-                tenant,
-                CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"))
-            statuses = [s["status"] for s in states]
-            if not statuses:
-                continue
-            out[dev_id] = {
-                "status": worst_status(statuses),
-                "counts": status_counts(statuses),
-                "monitored_ips": len({s["target_ip_id"] for s in states}),
-                **_external_detail([s["last_detail"] for s in states]),
-                **_flap_rollup(s["flapping_since"] for s in states),
-            }
+        out.update(_rollup_by_owner(request, tenant, ips_by_device))
         return Response({"statuses": out})
 
     return Response({"statuses": {}})

@@ -86,6 +86,9 @@ export interface ExportOptions {
   title: string
   /** Pre-stamped timestamp string (callers stamp it; keeps this pure). */
   generatedAt: string
+  /** Said beside the row count on the HTML/print page - e.g. that the list
+   * the rows came from was cut off. */
+  note?: string
 }
 
 // A cell that starts like a formula runs in the spreadsheet of whoever opens
@@ -156,7 +159,7 @@ export function toHtml(
 <body>
 <header>
   <h1>${htmlEscape(opts.title)}</h1>
-  <div class="meta">${rows.length} row${rows.length === 1 ? "" : "s"} · exported ${htmlEscape(opts.generatedAt)}</div>
+  <div class="meta">${rows.length} row${rows.length === 1 ? "" : "s"}${opts.note ? ` · ${htmlEscape(opts.note)}` : ""} · exported ${htmlEscape(opts.generatedAt)}</div>
 </header>
 <table>
   <thead><tr>${thead}</tr></thead>

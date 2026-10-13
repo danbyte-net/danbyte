@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { listCapFacetNote, useListCap } from "@/lib/list-cap"
 import { cn } from "@/lib/utils"
 
 // Shared filter-rail building blocks. Every list page uses these:
@@ -150,6 +151,8 @@ export function FilterRail({
   className?: string
 }) {
   const vis = useContext(FacetVisibilityContext)
+  // A capped list page: the counts below are over the rows that arrived.
+  const cap = useListCap()
   const [labels, setLabels] = useState<Record<string, string>>({})
   const register = useMemo(
     () => (id: string, label: string) =>
@@ -166,6 +169,11 @@ export function FilterRail({
         className
       )}
     >
+      {cap && (
+        <p className="num text-[11px] text-amber-800 dark:text-amber-300">
+          {listCapFacetNote(cap)}
+        </p>
+      )}
       <FacetLabelsContext.Provider value={register}>
         {children}
       </FacetLabelsContext.Provider>

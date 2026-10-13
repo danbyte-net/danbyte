@@ -53,7 +53,9 @@ REST_FRAMEWORK = {
 
 The SPA loads full result sets and filters client-side, so the page size is
 high by design; it is capped (`max_page_size = 10000`) so `?page_size=` can't
-be used to force an amplified, memory-heavy response.
+be used to force an amplified, memory-heavy response. A list page whose tenant
+holds more rows than one request returns says so rather than looking complete
+(see [Very long lists](../features/table-preferences.md#very-long-lists)).
 
 ## DEBUG (default-closed)
 

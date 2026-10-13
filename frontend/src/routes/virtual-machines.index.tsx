@@ -142,6 +142,7 @@ function VirtualMachinesPage() {
         </>
       }
       query={query}
+      page={query.data}
     >
       <DataTable
         data={filteredRows}

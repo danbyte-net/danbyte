@@ -231,6 +231,12 @@ can't drift page to page (source of truth:
 - Tables are paged by `DataTable` alone. When the API pages server-side, hand it
   `serverPagination={{ page, pageCount, totalRows, onPageChange }}` so that one
   pager drives the server - don't add a second Prev/Next row.
+- A list page that fetches its rows in one capped request hands the shell the
+  server's answer, `page={query.data}`. When `count` exceeds the rows that
+  arrived, the count chip reads *N of M* in the `warning` badge, an amber notice
+  over the table says the list is cut off, `FilterRail` says its counts are
+  partial, and `DataTable`'s Download names the rows it holds - one context,
+  no per-page wiring beyond the prop.
 - An **embedded** table on a detail page fetches one capped page (`page_size=500`)
   rather than paging. Hand `DataTable` the server's `total={q.data?.count}` with
   it: when more rows exist than arrived it says so, instead of a site with 600

@@ -46,6 +46,7 @@ import { tableApi } from "@/lib/tables"
 import { useTablePreference } from "@/lib/use-table-preference"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { coerce, exportTable, type ExportFormat } from "@/lib/table-export"
+import { listCapExportNote, useListCap } from "@/lib/list-cap"
 import { naturalSortingFn } from "@/lib/natural-sort"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -62,6 +63,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -260,6 +262,14 @@ export function DataTable<T>({
   const capped = serverPagination
     ? null
     : truncationNotice(total, data.length, !!globalFilter.trim())
+  // A capped list page (ListPageShell's `page`): the Download covers the rows
+  // that arrived, so it says so (#412). A table that fetches everything for
+  // export (`exportAll`) is not cut off.
+  const listCap = useListCap()
+  const exportNote =
+    listCap && !exportAll && !serverPagination
+      ? listCapExportNote(listCap)
+      : null
   const stripes = striped ?? displayPrefs.table_stripes === true
 
   // ─── Pagination ────────────────────────────────────────────────────────
@@ -731,7 +741,12 @@ export function DataTable<T>({
                       <ChevronDown className="ml-1 h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuContent align="end" className="min-w-44">
+                    {exportNote && selectedCount === 0 && (
+                      <DropdownMenuLabel className="num font-normal whitespace-nowrap text-amber-800 dark:text-amber-300">
+                        {exportNote}
+                      </DropdownMenuLabel>
+                    )}
                     {(
                       [
                         ["html", "HTML page (shareable)"],
@@ -748,6 +763,10 @@ export function DataTable<T>({
                             name: base,
                             title: exportTitle || prettifyName(base),
                             generatedAt: formatDateTime(new Date()),
+                            note:
+                              exportNote && selectedCount === 0
+                                ? exportNote
+                                : undefined,
                           }
                           // A selection always wins; otherwise a server-paged
                           // table exports everything its filters match.

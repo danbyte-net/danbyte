@@ -92,6 +92,7 @@ function VlansPage() {
         </>
       }
       query={query}
+      page={query.data}
     >
       <DataTable
         data={filteredRows}

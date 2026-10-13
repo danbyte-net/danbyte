@@ -233,6 +233,7 @@ function InterfacesPage() {
         </>
       }
       query={query}
+      page={query.data}
     >
       <DataTable
         data={rows}

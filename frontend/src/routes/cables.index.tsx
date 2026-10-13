@@ -119,6 +119,7 @@ function CablesPage() {
         </>
       }
       query={query}
+      page={query.data}
     >
       <DataTable
         data={filteredRows}

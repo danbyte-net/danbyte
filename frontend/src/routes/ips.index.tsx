@@ -117,6 +117,7 @@ function IpsPage() {
           placeholder: "Filter by address or DNS name…",
         }}
         query={query}
+        page={query.data}
       >
         {allRows.length === 0 ? (
           <EmptyState title="No IP addresses.">

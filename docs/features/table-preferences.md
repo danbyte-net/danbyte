@@ -85,6 +85,22 @@ The box filters the rows the tab has loaded. A tab that loads only the first
 part of a long list says so under the table - *Searching the first 500 of
 1,234* - and the full list page searches the rest.
 
+## Very long lists
+
+A list page loads its rows in one request: up to 10,000, and 1,000 for IP
+addresses. When the tenant holds more, the page says so:
+
+- the count beside the title reads *1,000 of 40,960*, in amber;
+- a notice over the table reads *Showing the first 1,000 of 40,960 - search to
+  narrow the list*;
+- the filter rail notes that its counts cover the loaded rows only;
+- **Download** names the rows it holds - *First 1,000 of 40,960 rows* - in its
+  menu and on the HTML and print page.
+
+The header search runs on the server, so it reaches every row; the filter rail
+and the advanced filter refine the rows that arrived. This applies to IP
+addresses, interfaces, cables, devices, prefixes, VLANs and virtual machines.
+
 ## Sorting
 
 Click a column header to sort by it; click it again to reverse. Text sorts in

@@ -203,6 +203,7 @@ function DevicesPage() {
         </>
       }
       query={query}
+      page={query.data}
     >
       <DataTable
         data={filteredRows}

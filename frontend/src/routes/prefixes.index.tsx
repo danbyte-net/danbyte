@@ -229,6 +229,7 @@ function PrefixesPage() {
           </>
         }
         query={query}
+        page={query.data}
       >
         <DataTable
           data={rows}

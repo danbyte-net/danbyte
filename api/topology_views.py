@@ -538,6 +538,40 @@ def _terminations_touching(tenant, devices, rear_ids, fronts_of_rear_ids):
     )
 
 
+def _links_around(tenant, devices, through_panels=True):
+    """``_physical_links`` narrowed to the cables with an end on ``devices``
+    (ids or a ``values("id")`` queryset) and, with ``through_panels``, every
+    cable reached from those across front⇄rear pass-throughs - what a walk
+    outward from the devices can cross. Same hop tuples and the same cable
+    order as the whole-tenant load, so a walk that takes the first hop on a
+    port picks the same one (#417)."""
+    cable_ids: set = set()
+    asked_rear: set = set()
+    asked_fronts_of: set = set()
+    rear_ids: set = set()
+    fronts_of: set = set()
+    pending = devices
+    while True:
+        rows = _terminations_touching(tenant, pending, rear_ids, fronts_of)
+        pending = None
+        rear_ids, fronts_of = set(), set()
+        for cid, front_rear_id, rear_id in rows:
+            cable_ids.add(cid)
+            if not through_panels:
+                continue
+            if front_rear_id is not None and front_rear_id not in asked_rear:
+                asked_rear.add(front_rear_id)
+                rear_ids.add(front_rear_id)
+            if rear_id is not None and rear_id not in asked_fronts_of:
+                asked_fronts_of.add(rear_id)
+                fronts_of.add(rear_id)
+        if not (rear_ids or fronts_of):
+            break
+    if not cable_ids:
+        return []
+    return _links_from_cables(_cables_qs(tenant).filter(id__in=cable_ids))
+
+
 def _narrowed_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
                     collapse=True, scope_q=None, collect=None):
     # ``collect`` rides into every assembly pass; each one replaces its keys
@@ -1959,7 +1993,9 @@ def device_paths(device, viewable_ids=None):
     from .fiber_colors import fiber_color, is_fiber_type
     from .models import FiberSettings
 
-    links = _physical_links(device.tenant)
+    # Only the cables a run from this device can cross: its own, then across
+    # each panel it reaches. The whole tenant's hops were built per call (#417).
+    links = _links_around(device.tenant, {device.id})
     palette = FiberSettings.for_tenant(device.tenant).colors
     by_port = {}
     for cab, da, pa, ka, db, pb, kb in links:
