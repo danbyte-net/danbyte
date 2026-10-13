@@ -278,8 +278,9 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   }, [rangesOnly, rangeId, ranges])
 
   const statuses = useQuery({
-    queryKey: ["statuses-picker"],
-    queryFn: () => api<Paginated<StatusOption>>("/api/statuses/"),
+    queryKey: ["statuses", "ipaddress"],
+    queryFn: () =>
+      api<Paginated<StatusOption>>("/api/statuses/?available_to=ipaddress"),
     staleTime: 10 * 60_000,
   })
   const roles = useQuery({

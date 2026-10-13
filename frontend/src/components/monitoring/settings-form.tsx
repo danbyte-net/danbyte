@@ -47,6 +47,7 @@ interface IpStatus {
   name: string
   color: string
   text_color: string
+  available_to: string[]
 }
 
 export function MonitoringSettingsForm() {
@@ -70,6 +71,13 @@ export function MonitoringSettingsForm() {
   useEffect(() => {
     if (settingsQ.data) setDraft(settingsQ.data)
   }, [settingsQ.data])
+  // IP statuses only, plus any already ticked so it can still be unticked.
+  const ipStatuses = (statusesQ.data?.results ?? []).filter(
+    (s) =>
+      s.available_to.includes("ipaddress") ||
+      draft?.skip_ip_statuses.includes(s.id) ||
+      draft?.flap_exclude_ip_statuses.includes(s.id)
+  )
 
   const save = useMutation({
     mutationFn: (body: Partial<MonitoringSettings>) =>
@@ -247,7 +255,7 @@ export function MonitoringSettingsForm() {
           }
         >
           <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-            {(statusesQ.data?.results ?? []).map((s) => (
+            {ipStatuses.map((s) => (
               <label key={s.id} className="flex items-center gap-2 text-[13px]">
                 <Checkbox
                   checked={draft.skip_ip_statuses.includes(s.id)}
@@ -256,7 +264,7 @@ export function MonitoringSettingsForm() {
                 <span>{s.name}</span>
               </label>
             ))}
-            {statusesQ.data && statusesQ.data.results.length === 0 && (
+            {statusesQ.data && ipStatuses.length === 0 && (
               <span className="text-[13px] text-muted-foreground">
                 No IP statuses defined yet.
               </span>
@@ -627,7 +635,7 @@ export function MonitoringSettingsForm() {
                 tab.)
               </p>
               <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-                {(statusesQ.data?.results ?? []).map((s) => (
+                {ipStatuses.map((s) => (
                   <label
                     key={s.id}
                     className="flex items-center gap-2 text-[13px]"
@@ -639,7 +647,7 @@ export function MonitoringSettingsForm() {
                     <span>{s.name}</span>
                   </label>
                 ))}
-                {statusesQ.data && statusesQ.data.results.length === 0 && (
+                {statusesQ.data && ipStatuses.length === 0 && (
                   <span className="text-[13px] text-muted-foreground">
                     No IP statuses defined yet.
                   </span>
