@@ -12,11 +12,17 @@ Blocks, listed with a reason each: a cable from a moving port to anything
 outside the moving devices (another device, a power feed, a circuit), a VLAN
 or IP address of another site on a moving device, a power feed delivered to
 the rack from another site's panel, a cluster at another site, a device in a
-bay of a device outside the rack, a rack of the same name at the new site and,
-under enhanced site separation, a catalog entry (device type, status, tag)
-local to another site. Cleared: a floor-plan tile that places the rack or one
-of its devices on a plan of another site. Updated: each device's site and
-location, and the site a port reservation on a moving port carries.
+bay of a device outside the rack, a bay child racked in another rack or
+mounted in a DIN cabinet (#403), a moving device in a virtual chassis with
+devices outside the rack, a rack of the same name at the new site
+and, under enhanced site separation, a catalog entry local to another site on
+the rack, its devices, their components, IP and MAC addresses (#407). Cleared:
+a floor-plan tile that places the rack or one of its devices on a plan of
+another site. Updated: each device's site and location, and the site a port
+reservation on a moving port carries.
+
+A reason names an object only when the caller may view it; otherwise it says
+"a device", "another site" and so on (#404).
 """
 from __future__ import annotations
 
@@ -25,15 +31,37 @@ from dataclasses import dataclass, field
 from django.db.models import Q
 
 from .models import (
+    VLAN,
+    VRF,
+    Antenna,
+    AuxPort,
+    Cabinet,
     Cable,
     CableTermination,
+    Cluster,
+    ConsolePort,
+    ConsoleServerPort,
     Device,
+    DeviceBay,
+    DeviceType,
     FloorPlanTile,
+    FrontPort,
     Interface,
+    InventoryItem,
     IPAddress,
+    IPRole,
+    MACAddress,
+    Module,
+    ModuleBay,
     PortReservation,
     PowerFeed,
+    PowerOutlet,
+    PowerPort,
     Rack,
+    RearPort,
+    Site,
+    Status,
+    VirtualChassis,
 )
 
 # The cable ends and reservable points that sit on a device.
@@ -41,8 +69,33 @@ DEVICE_POINTS = (
     "interface", "front_port", "rear_port", "console_port",
     "console_server_port", "power_port", "power_outlet", "aux_port",
 )
+_POINT_MODELS = {
+    "interface": Interface, "front_port": FrontPort, "rear_port": RearPort,
+    "console_port": ConsolePort, "console_server_port": ConsoleServerPort,
+    "power_port": PowerPort, "power_outlet": PowerOutlet, "aux_port": AuxPort,
+}
+# Rows hanging off a moving device that carry tags, statuses or custom
+# fields: (model, the path to their own name).
+COMPONENTS = (
+    (Interface, "name"), (FrontPort, "name"), (RearPort, "name"),
+    (ConsolePort, "name"), (ConsoleServerPort, "name"), (PowerPort, "name"),
+    (PowerOutlet, "name"), (AuxPort, "name"), (Antenna, "name"),
+    (DeviceBay, "name"), (ModuleBay, "name"), (Module, "module_bay__name"),
+    (InventoryItem, "name"),
+)
 # A long list of one kind stops here and says how many more.
 PER_KIND = 25
+
+
+@dataclass(frozen=True)
+class Ref:
+    """An object a reason may name: ``name`` when the caller may view it,
+    ``fallback`` otherwise."""
+
+    model: type
+    pk: object
+    name: str | None
+    fallback: str
 
 
 @dataclass
@@ -58,35 +111,46 @@ class Plan:
     def device_ids(self) -> set:
         return {d.pk for d in self.devices}
 
-    def block(self, code: str, message: str) -> None:
-        self.blockers.append({"code": code, "message": message})
+    def block(self, code: str, message: str, **parts) -> None:
+        """``message`` is a format string; each part is plain text (an
+        object the caller is already moving) or a ``Ref``."""
+        self.blockers.append({"code": code, "message": message, "parts": parts})
 
 
-def _site_name(site_id, names: dict) -> str:
-    return names.get(site_id, "another site")
+def _site(site_id, names: dict) -> Ref:
+    return Ref(Site, site_id, names.get(site_id), "another site")
 
 
-def plan(rack: Rack, site, location) -> Plan:
-    """What moving ``rack`` to ``site`` (and ``location``, or none) takes."""
+def _device(pk, name, fallback="a device") -> Ref:
+    return Ref(Device, pk, name, fallback)
+
+
+def _component(model, pk, dev: str, name: str) -> Ref:
+    noun = "a port" if model in _POINT_MODELS.values() else "a component"
+    return Ref(model, pk, f"{dev} {name}", f"{noun} of {dev}")
+
+
+def plan(rack: Rack, site, location, *, user, tenant) -> Plan:
+    """What moving ``rack`` to ``site`` (and ``location``, or none) takes.
+    ``user`` and ``tenant`` decide which objects a reason may name."""
     from core.effective_settings import separation_enabled
 
     p = Plan(rack=rack, site=site, location=location)
     tenant_id = rack.tenant_id
     p.devices = list(
         Device.objects.filter(tenant_id=tenant_id, rack=rack)
-        .select_related("device_type", "status", "cluster", "parent_bay__device")
-        .prefetch_related("tags")
+        .select_related("device_type", "cluster", "parent_bay__device", "virtual_chassis")
         .order_by("name")
     )
     _add_children(p, tenant_id)
     ids = p.device_ids
-    names = dict(
-        type(site).objects.filter(tenant_id=tenant_id).values_list("pk", "name")
-    )
+    names = dict(Site.objects.filter(tenant_id=tenant_id).values_list("pk", "name"))
 
     if Rack.objects.filter(site=site, name=rack.name).exclude(pk=rack.pk).exists():
-        p.block("name", f"{site.name} already has a rack named {rack.name}.")
+        p.block("name", "{site} already has a rack named {rack}.",
+                site=site.name, rack=rack.name)
     _check_bays(p)
+    _check_placement(p)
     if ids:
         _check_cables(p, ids)
         _check_vlans(p, ids, names)
@@ -94,18 +158,19 @@ def plan(rack: Rack, site, location) -> Plan:
         for d in p.devices:
             c = d.cluster
             if c is not None and c.site_id and c.site_id != site.pk:
-                p.block("cluster", f"{d.name}: cluster {c.name} is at "
-                                   f"{_site_name(c.site_id, names)}.")
+                p.block("cluster", "{dev}: {cluster} is at {site}.", dev=d.name,
+                        cluster=Ref(Cluster, c.pk, f"cluster {c.name}", "its cluster"),
+                        site=_site(c.site_id, names))
     feeds = list(
         PowerFeed.objects.filter(rack=rack)
         .exclude(power_panel__site_id=site.pk)
         .values_list("power_panel__site_id", flat=True)
     )
-    for site_id in sorted(set(feeds), key=lambda s: _site_name(s, names)):
+    for site_id in sorted(set(feeds), key=lambda s: names.get(s, "")):
         n = sum(1 for s in feeds if s == site_id)
-        p.block("power_feed", f"{n} power feed{'s' if n != 1 else ''} from "
-                              f"{_site_name(site_id, names)} deliver"
-                              f"{'' if n != 1 else 's'} to this rack.")
+        p.block("power_feed", f"{n} power feed{'s' if n != 1 else ''} from {{site}} "
+                              f"deliver{'' if n != 1 else 's'} to this rack.",
+                site=_site(site_id, names))
     if separation_enabled(rack.tenant):
         _check_catalog(p, names)
 
@@ -114,29 +179,39 @@ def plan(rack: Rack, site, location) -> Plan:
         .exclude(floor_plan__location__site_id=site.pk)
     )
     _cap(p)
+    _name(p, user, tenant)
     return p
 
 
 def _add_children(p: Plan, tenant_id) -> None:
     """Devices installed in the bays of moving devices go along, unless they
-    are racked somewhere else."""
+    are racked in another rack or mounted in a DIN cabinet (#403): both tie
+    them to the old site."""
     seen = p.device_ids
     frontier = set(seen)
     while frontier:
         kids = list(
             Device.objects.filter(tenant_id=tenant_id, parent_bay__device_id__in=frontier)
             .exclude(pk__in=seen)
-            .select_related("device_type", "status", "cluster", "rack",
-                            "parent_bay__device")
-            .prefetch_related("tags")
+            .select_related("device_type", "cluster", "rack", "cabinet",
+                            "virtual_chassis", "parent_bay__device")
         )
         frontier = set()
         for k in kids:
             seen.add(k.pk)
             if k.rack_id and k.rack_id != p.rack.pk:
-                p.block("bay", f"{k.name} sits in a bay of "
-                               f"{k.parent_bay.device.name} but is racked in "
-                               f"{k.rack.name}.")
+                p.block("bay", "{child} sits in a bay of {parent} but is racked in {rack}.",
+                        child=_device(k.pk, k.name, "A device"),
+                        parent=k.parent_bay.device.name,
+                        rack=Ref(Rack, k.rack_id, k.rack.name, "another rack"))
+                continue
+            if k.cabinet_id:
+                p.block("bay", "{child} sits in a bay of {parent} but is mounted in "
+                               "{cabinet}.",
+                        child=_device(k.pk, k.name, "A device"),
+                        parent=k.parent_bay.device.name,
+                        cabinet=Ref(Cabinet, k.cabinet_id, f"cabinet {k.cabinet.name}",
+                                    "a cabinet"))
                 continue
             p.devices.append(k)
             frontier.add(k.pk)
@@ -147,8 +222,29 @@ def _check_bays(p: Plan) -> None:
     for d in p.devices:
         bay = getattr(d, "parent_bay", None)
         if bay is not None and bay.device_id not in ids:
-            p.block("bay", f"{d.name} sits in a bay of {bay.device.name}, "
-                           "outside the rack.")
+            p.block("bay", "{dev} sits in a bay of {parent}, outside the rack.",
+                    dev=d.name, parent=_device(bay.device_id, bay.device.name))
+
+
+def _check_placement(p: Plan) -> None:
+    """A virtual chassis whose other members stay behind. (A racked device
+    is never in a DIN cabinet - ``device_rack_or_cabinet`` - and a bay child
+    in one is stopped in ``_add_children``.)"""
+    ids = p.device_ids
+    chassis = {d.virtual_chassis_id: d for d in p.devices if d.virtual_chassis_id}
+    if not chassis:
+        return
+    split = set(
+        Device.objects.filter(virtual_chassis_id__in=chassis).exclude(pk__in=ids)
+        .values_list("virtual_chassis_id", flat=True)
+    )
+    for d in p.devices:
+        vc = d.virtual_chassis
+        if vc is not None and vc.pk in split:
+            p.block("virtual_chassis", "{dev} is in {vc} with devices outside the rack.",
+                    dev=d.name,
+                    vc=Ref(VirtualChassis, vc.pk, f"virtual chassis {vc.name}",
+                           "a virtual chassis"))
 
 
 def _check_cables(p: Plan, ids: set) -> None:
@@ -162,6 +258,7 @@ def _check_cables(p: Plan, ids: set) -> None:
         return
     rows = CableTermination.objects.filter(cable_id__in=cable_ids).values(
         "cable_id",
+        *[f"{f}_id" for f in DEVICE_POINTS],
         *[f"{f}__device_id" for f in DEVICE_POINTS],
         *[f"{f}__device__name" for f in DEVICE_POINTS],
         *[f"{f}__name" for f in DEVICE_POINTS],
@@ -173,15 +270,16 @@ def _check_cables(p: Plan, ids: set) -> None:
                     if row[f"{f}__device_id"] is not None), None)
         if dev in ids:
             f = next(f for f in DEVICE_POINTS if row[f"{f}__device_id"] == dev)
-            inside_end.setdefault(
-                row["cable_id"], f"{row[f'{f}__device__name']} {row[f'{f}__name']}"
-            )
+            inside_end.setdefault(row["cable_id"], _component(
+                _POINT_MODELS[f], row[f"{f}_id"], row[f"{f}__device__name"],
+                row[f"{f}__name"]))
         else:
             leaving.add(row["cable_id"])
     cables = {c.pk: c for c in Cable.objects.filter(pk__in=leaving)}
-    for cid in sorted(leaving, key=lambda c: inside_end.get(c, "")):
-        # The far end is not named: the caller may not be allowed to see it.
-        p.block("cable", f"{cables[cid]} on {inside_end[cid]} leaves the rack.")
+    for cid in sorted(leaving, key=lambda c: inside_end[c].name):
+        # The far end is never named.
+        p.block("cable", "{cable} on {end} leaves the rack.",
+                cable=Ref(Cable, cid, str(cables[cid]), "A cable"), end=inside_end[cid])
 
 
 def _check_vlans(p: Plan, ids: set, names: dict) -> None:
@@ -189,31 +287,32 @@ def _check_vlans(p: Plan, ids: set, names: dict) -> None:
     rows = list(
         Interface.objects.filter(device_id__in=ids, vlan__site__isnull=False)
         .exclude(vlan__site_id=site_pk)
-        .values_list("device__name", "name", "vlan__vlan_id", "vlan__site_id")
+        .values_list("device__name", "name", "pk", "vlan_id", "vlan__vlan_id",
+                     "vlan__site_id")
     )
     rows += list(
         Interface.tagged_vlans.through.objects.filter(
             interface__device_id__in=ids, vlan__site__isnull=False
         )
         .exclude(vlan__site_id=site_pk)
-        .values_list("interface__device__name", "interface__name",
-                     "vlan__vlan_id", "vlan__site_id")
+        .values_list("interface__device__name", "interface__name", "interface_id",
+                     "vlan_id", "vlan__vlan_id", "vlan__site_id")
     )
-    for dev, port, vid, site_id in sorted(set(rows)):
-        p.block("vlan", f"{dev} {port} carries VLAN {vid} of "
-                        f"{_site_name(site_id, names)}.")
+    for dev, port, port_pk, vlan_pk, vid, site_id in sorted(set(rows), key=str):
+        p.block("vlan", "{port} carries {vlan} of {site}.",
+                port=_component(Interface, port_pk, dev, port),
+                vlan=Ref(VLAN, vlan_pk, f"VLAN {vid}", "a VLAN"),
+                site=_site(site_id, names))
 
 
 def _check_ips(p: Plan, ids: set, names: dict) -> None:
     site_pk = p.site.pk
-    on_device = Q(assigned_device_id__in=ids) | Q(assigned_interface__device_id__in=ids)
     elsewhere = (
         (Q(site__isnull=False) & ~Q(site_id=site_pk))
         | (Q(prefix__site__isnull=False) & ~Q(prefix__site_id=site_pk))
     )
     rows = (
-        IPAddress.objects.filter(tenant_id=p.rack.tenant_id)
-        .filter(on_device).filter(elsewhere)
+        _ips(p, ids).filter(elsewhere)
         .values_list("pk", "assigned_device__name", "assigned_interface__device__name",
                      "site_id", "prefix__site_id")
         .distinct()
@@ -224,32 +323,140 @@ def _check_ips(p: Plan, ids: set, names: dict) -> None:
         key = (dev or iface_dev, where)
         counts[key] = counts.get(key, 0) + 1
     for (dev, site_id), n in sorted(counts.items(), key=lambda kv: str(kv[0])):
-        p.block("ip", f"{dev}: {n} IP address{'es' if n != 1 else ''} of "
-                      f"{_site_name(site_id, names)}.")
+        p.block("ip", f"{{dev}}: {n} IP address{'es' if n != 1 else ''} of {{site}}.",
+                dev=dev, site=_site(site_id, names))
+
+
+def _ips(p: Plan, ids: set):
+    return IPAddress.objects.filter(tenant_id=p.rack.tenant_id).filter(
+        Q(assigned_device_id__in=ids) | Q(assigned_interface__device_id__in=ids))
+
+
+def _local(model, noun: str, tenant_id, site_pk) -> dict:
+    """Entries of a catalog local to a site other than the new one:
+    ``{pk: (noun, name, owning site)}``. One query."""
+    return {
+        pk: (noun, name, owner)
+        for pk, name, owner in model.objects.filter(
+            owning_site__tenant_id=tenant_id, owning_site__isnull=False
+        ).exclude(owning_site_id=site_pk).values_list("pk", "name", "owning_site_id")
+    }
 
 
 def _check_catalog(p: Plan, names: dict) -> None:
     """Under enhanced site separation a catalog entry local to one site is
-    not offered at another, so the rack and its devices must not take one
-    along."""
-    site_pk = p.site.pk
+    not offered at another, so nothing that moves may take one along: the
+    rack, its devices, their components, and the IP and MAC addresses on
+    them (#407). The catalogs are those of ``CATALOG_SITE_PATHS`` that such
+    rows reference - device type, status, tag, VRF, IP role and custom field.
+    Query count does not grow with the number of rows."""
+    from django.contrib.contenttypes.models import ContentType
 
-    def foreign(entry) -> bool:
-        owner = getattr(entry, "owning_site_id", None) if entry is not None else None
-        return owner is not None and owner != site_pk
+    from core.models import Tag, TaggedItem
+    from customization.models import CustomField
 
-    for obj in [p.rack, *p.devices]:
-        dt = getattr(obj, "device_type", None)
-        if foreign(dt):
-            p.block("catalog", f"{obj.name}: device type {dt.name} is local to "
-                               f"{_site_name(dt.owning_site_id, names)}.")
-        if foreign(obj.status):
-            p.block("catalog", f"{obj.name}: status {obj.status.name} is local to "
-                               f"{_site_name(obj.status.owning_site_id, names)}.")
-        for tag in obj.tags.all():
-            if foreign(tag):
-                p.block("catalog", f"{obj.name}: tag {tag.name} is local to "
-                                   f"{_site_name(tag.owning_site_id, names)}.")
+    site_pk, tenant_id, ids = p.site.pk, p.rack.tenant_id, p.device_ids
+    tags = _local(Tag, "tag", tenant_id, site_pk)
+    statuses = _local(Status, "status", tenant_id, site_pk)
+    vrfs = _local(VRF, "VRF", tenant_id, site_pk)
+    roles = _local(IPRole, "IP role", tenant_id, site_pk)
+    fields = {
+        key: (pk, "custom field", label, owner)
+        for pk, key, label, owner in CustomField.objects.filter(
+            tenant_id=tenant_id, owning_site__isnull=False
+        ).exclude(owning_site_id=site_pk).values_list("pk", "key", "label", "owning_site_id")
+    }
+    catalogs = {"status": (Status, statuses), "vrf": (VRF, vrfs), "role": (IPRole, roles)}
+
+    def found(subject, model, pk, noun, name, owner):
+        article = "an" if noun.startswith(("IP", "a", "e", "i", "o", "u")) else "a"
+        p.block("catalog", "{obj}: {entry} is local to {site}.", obj=subject,
+                entry=Ref(model, pk, f"{noun} {name}", f"{article} {noun}"),
+                site=_site(owner, names))
+
+    for d in [p.rack, *p.devices]:
+        dt = getattr(d, "device_type", None)
+        if dt is not None and dt.owning_site_id and dt.owning_site_id != site_pk:
+            found(d.name, DeviceType, dt.pk, "device type", dt.name, dt.owning_site_id)
+
+    # (model, rows of it that move, how one is named, catalog FKs it carries)
+    subjects = [
+        (Rack, Rack.objects.filter(pk=p.rack.pk), ("pk", "name"), ("status",)),
+        (Device, Device.objects.filter(pk__in=ids), ("pk", "name"), ("status",)),
+    ]
+    if ids:
+        for model, name_path in COMPONENTS:
+            fks = tuple(f for f in ("status", "vrf") if _has_field(model, f))
+            subjects.append((model, model.objects.filter(device_id__in=ids),
+                             ("pk", "device__name", name_path), fks))
+        subjects.append((IPAddress, _ips(p, ids),
+                         ("pk", "assigned_device__name",
+                          "assigned_interface__device__name", "ip_address"),
+                         ("status", "vrf", "role")))
+        subjects.append((MACAddress, MACAddress.objects.filter(
+            tenant_id=tenant_id, assigned_interface__device_id__in=ids),
+            ("pk", "assigned_interface__device__name", "mac_address"), ()))
+
+    def subject_ref(model, row):
+        if model in (Rack, Device):
+            return row[1]
+        if model is IPAddress:
+            dev = row[1] or row[2]
+            return Ref(IPAddress, row[0], f"{dev} {row[3]}", f"an IP address of {dev}")
+        if model is MACAddress:
+            return Ref(MACAddress, row[0], f"{row[1]} {row[2]}", f"a MAC address of {row[1]}")
+        return _component(model, row[0], row[1], row[2])
+
+    # Tags: one query over every subject, then the names of the tagged rows.
+    if tags:
+        cts = ContentType.objects.get_for_models(*[s[0] for s in subjects])
+        where = Q()
+        for model, qs, _label, _fks in subjects:
+            where |= Q(content_type=cts[model], object_id__in=qs.values("pk"))
+        hits: dict = {}
+        for ct_id, obj_id, tag_id in TaggedItem.objects.filter(
+                where, tag_id__in=tags).values_list("content_type_id", "object_id", "tag_id"):
+            hits.setdefault(ct_id, []).append((obj_id, tag_id))
+        for model, qs, label, _fks in subjects:
+            pairs = hits.get(cts[model].pk)
+            if not pairs:
+                continue
+            rows = {r[0]: r for r in qs.filter(pk__in={o for o, _ in pairs})
+                    .values_list(*label)}
+            for obj_id, tag_id in sorted(pairs, key=lambda x: (str(rows[x[0]][1:]), str(x[1]))):
+                found(subject_ref(model, rows[obj_id]), Tag, tag_id, *tags[tag_id])
+
+    for model, qs, label, fks in subjects:
+        fks = [f for f in fks if catalogs[f][1]]
+        keys = list(fields) if _has_field(model, "custom_fields") else []
+        if not fks and not keys:
+            continue
+        where = Q()
+        for f in fks:
+            where |= Q(**{f"{f}_id__in": catalogs[f][1]})
+        if keys:
+            where |= Q(custom_fields__has_any_keys=keys)
+        extra = [f"{f}_id" for f in fks] + (["custom_fields"] if keys else [])
+        for row in qs.filter(where).values_list(*label, *extra).order_by(*label[1:]):
+            subject = subject_ref(model, row)
+            values = dict(zip(extra, row[len(label):], strict=True))
+            for f in fks:
+                cat_model, entries = catalogs[f]
+                if values[f"{f}_id"] in entries:
+                    found(subject, cat_model, values[f"{f}_id"], *entries[values[f"{f}_id"]])
+            for key, value in sorted((values.get("custom_fields") or {}).items()):
+                if key in fields and value not in (None, "", [], {}):
+                    found(subject, CustomField, *fields[key])
+
+
+def _has_field(model, name: str) -> bool:
+    from django.core.exceptions import FieldDoesNotExist
+
+    try:
+        model._meta.get_field(name)
+    except FieldDoesNotExist:
+        return False
+    return True
 
 
 def _cap(p: Plan) -> None:
@@ -261,8 +468,40 @@ def _cap(p: Plan) -> None:
             kept.append(b)
     for code, n in counts.items():
         if n > PER_KIND:
-            kept.append({"code": code, "message": f"…and {n - PER_KIND} more."})
+            kept.append({"code": code, "message": f"…and {n - PER_KIND} more.",
+                         "parts": {}})
     p.blockers = kept
+
+
+def _name(p: Plan, user, tenant) -> None:
+    """Turn each reason into its message, naming an object only when the
+    caller may view it (#404). One query per kind of object named."""
+    from auth_api import rbac
+
+    wanted: dict = {}
+    for b in p.blockers:
+        for v in b["parts"].values():
+            if isinstance(v, Ref) and v.name is not None and v.pk is not None:
+                wanted.setdefault(v.model, set()).add(v.pk)
+    visible: dict = {}
+    for model, pks in wanted.items():
+        if getattr(user, "is_superuser", False):
+            visible[model] = pks
+            continue
+        visible[model] = set(rbac.restrict_queryset(
+            model.objects.filter(pk__in=pks), user, tenant, model._meta.model_name, "view",
+        ).values_list("pk", flat=True))
+
+    def text(v):
+        if not isinstance(v, Ref):
+            return v
+        return v.name if v.pk in visible.get(v.model, ()) else v.fallback
+
+    p.blockers = [
+        {"code": b["code"],
+         "message": b["message"].format(**{k: text(v) for k, v in b["parts"].items()})}
+        for b in p.blockers
+    ]
 
 
 def payload(p: Plan, *, moved: bool) -> dict:

@@ -8,16 +8,25 @@ cleared. Permission: change on the rack and every device, at both sites."""
 from __future__ import annotations
 
 from django.contrib.auth.models import User
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from audit.models import ChangeLogEntry
 from auth_api.models import ObjectPermission, UserProfile
 from core.models import DeploymentSettings, Organization, Tag, Tenant
+from customization.models import CustomField
 
+from . import rack_move
 from .models import (
     VLAN,
+    VRF,
+    Cabinet,
     Cable,
     CableTermination,
+    Cluster,
+    ClusterType,
+    ConsolePort,
     Device,
     DeviceBay,
     DeviceType,
@@ -25,14 +34,20 @@ from .models import (
     FloorPlanTile,
     FloorTileType,
     Interface,
+    InventoryItem,
     IPAddress,
+    IPRole,
     Location,
+    MACAddress,
     PortReservation,
     PowerFeed,
     PowerPanel,
+    PowerPort,
     Prefix,
     Rack,
     Site,
+    Status,
+    VirtualChassis,
 )
 from .test_utils import status_for
 
@@ -374,3 +389,305 @@ class PermissionTests(_Case):
         self.assert_unmoved()
         self.grant(["floorplantile"], [self.site_a])
         self.assertEqual(self.move().status_code, 200)
+
+
+class PlacementTests(_Case):
+    """A device that goes along must not keep a placement at the old site
+    (#403)."""
+
+    def _cabinet(self, site=None, name="CabA"):
+        return Cabinet.objects.create(tenant=self.tenant, site=site or self.site_a,
+                                      name=name, inner_width_mm=500, inner_height_mm=600)
+
+    def test_a_bay_child_in_a_din_cabinet_blocks(self):
+        cab = self._cabinet()
+        child = Device.objects.create(tenant=self.tenant, name="blade",
+                                      site=self.site_a, cabinet=cab, device_type=self.dt)
+        r = self.client.post("/api/device-bays/", {
+            "device_id": str(self.srv.id), "name": "b1",
+            "installed_device_id": str(child.id)}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        r = self.move()
+        self.assertEqual(r.status_code, 409, r.content)
+        self.assertEqual(self.codes(r), ["bay"])
+        self.assertIn("blade sits in a bay of srv1 but is mounted in cabinet CabA.",
+                      [b["message"] for b in r.json()["blockers"]])
+        self.assertNotIn("blade", [d["name"] for d in r.json()["devices"]])
+        self.assert_unmoved()
+        child.refresh_from_db()
+        self.assertEqual((child.site_id, child.cabinet_id), (self.site_a.id, cab.id))
+
+    def test_a_grandchild_under_a_cabinet_child_is_not_taken(self):
+        cab = self._cabinet()
+        child = Device.objects.create(tenant=self.tenant, name="blade",
+                                      site=self.site_a, cabinet=cab, device_type=self.dt)
+        grand = Device.objects.create(tenant=self.tenant, name="card",
+                                      site=self.site_a, device_type=self.dt)
+        DeviceBay.objects.create(device=self.srv, name="b1", installed_device=child)
+        DeviceBay.objects.create(device=child, name="c1", installed_device=grand)
+        names = [d["name"] for d in self.move(dry_run=True).json()["devices"]]
+        self.assertNotIn("card", names)
+
+    def test_a_virtual_chassis_split_by_the_move_blocks(self):
+        vc = VirtualChassis.objects.create(tenant=self.tenant, name="stack1")
+        Device.objects.filter(pk=self.srv.pk).update(virtual_chassis=vc, vc_position=1)
+        other = Device.objects.create(tenant=self.tenant, name="sw2", site=self.site_a,
+                                      device_type=self.dt)
+        Device.objects.filter(pk=other.pk).update(virtual_chassis=vc, vc_position=2)
+        r = self.move()
+        self.assertEqual(r.status_code, 409, r.content)
+        self.assertEqual(self.codes(r), ["virtual_chassis"])
+        self.assert_unmoved()
+
+    def test_a_virtual_chassis_wholly_in_the_rack_moves(self):
+        vc = VirtualChassis.objects.create(tenant=self.tenant, name="stack1")
+        Device.objects.filter(pk=self.srv.pk).update(virtual_chassis=vc, vc_position=1)
+        Device.objects.filter(pk=self.pdu.pk).update(virtual_chassis=vc, vc_position=2)
+        self.assertEqual(self.move().status_code, 200)
+
+
+class NamingTests(_Case):
+    """A reason names an object only when the caller may view it (#404)."""
+
+    def setUp(self):
+        super().setUp()
+        self.site_c = Site.objects.create(tenant=self.tenant, name="SiteC")
+        self.user = User.objects.create_user("m", password="x")
+        UserProfile.objects.create(user=self.user).tenants.add(self.tenant)
+        self.perm = ObjectPermission.objects.create(
+            name="ab", object_types=["rack", "device", "site", "cluster", "cable",
+                                     "interface", "vlan", "cabinet"],
+            actions=["view", "change"])
+        self.perm.users.add(self.user)
+        self.perm.tenants.add(self.tenant)
+        self.perm.sites.set([self.site_a, self.site_b])
+
+    def messages(self, r):
+        self.assertEqual(r.status_code, 200, r.content)
+        return " ".join(b["message"] for b in r.json()["blockers"])
+
+    def cluster(self, name, site):
+        ctype = ClusterType.objects.create(tenant=self.tenant, name=name, slug=name)
+        return Cluster.objects.create(tenant=self.tenant, name=name, type=ctype, site=site)
+
+    def test_a_bay_parent_the_caller_cannot_view_is_not_named(self):
+        chassis = Device.objects.create(tenant=self.tenant, name="secret-chassis-x",
+                                        site=self.site_c, device_type=self.dt)
+        DeviceBay.objects.create(device=chassis, name="b1", installed_device=self.srv)
+        self.login(self.user)
+        self.assertEqual(self.client.get(f"/api/devices/{chassis.id}/").status_code, 404)
+        text = self.messages(self.move(dry_run=True))
+        self.assertNotIn("secret-chassis-x", text)
+        self.assertIn("srv1 sits in a bay of a device, outside the rack.", text)
+        r = self.move()
+        self.assertEqual(r.status_code, 409)
+        self.assertNotIn("secret-chassis-x", str(r.json()))
+
+    def test_a_bay_parent_the_caller_can_view_is_named(self):
+        chassis = Device.objects.create(tenant=self.tenant, name="chassis",
+                                        site=self.site_a, device_type=self.dt)
+        DeviceBay.objects.create(device=chassis, name="b1", installed_device=self.srv)
+        self.login(self.user)
+        self.assertIn("a bay of chassis,", self.messages(self.move(dry_run=True)))
+
+    def test_a_child_and_rack_the_caller_cannot_view_are_not_named(self):
+        far = Rack.objects.create(tenant=self.tenant, site=self.site_c, name="secret-rack")
+        child = Device.objects.create(tenant=self.tenant, name="secret-blade",
+                                      site=self.site_c, rack=far, device_type=self.dt)
+        DeviceBay.objects.create(device=self.srv, name="b1", installed_device=child)
+        self.login(self.user)
+        text = self.messages(self.move(dry_run=True))
+        self.assertNotIn("secret", text)
+        self.assertIn("A device sits in a bay of srv1 but is racked in another rack.", text)
+
+    def test_a_cabinet_the_caller_cannot_view_is_not_named(self):
+        cab = Cabinet.objects.create(tenant=self.tenant, site=self.site_c, name="secret-cab",
+                                     inner_width_mm=500, inner_height_mm=600)
+        child = Device.objects.create(tenant=self.tenant, name="blade", site=self.site_a,
+                                      device_type=self.dt)
+        Device.objects.filter(pk=child.pk).update(cabinet=cab)
+        DeviceBay.objects.create(device=self.srv, name="b1", installed_device=child)
+        self.login(self.user)
+        text = self.messages(self.move(dry_run=True))
+        self.assertNotIn("secret-cab", text)
+        self.assertIn("blade sits in a bay of srv1 but is mounted in a cabinet.", text)
+
+    def test_a_cluster_and_site_the_caller_cannot_view_are_not_named(self):
+        cl = self.cluster("secret-cluster", self.site_c)
+        Device.objects.filter(pk=self.srv.pk).update(cluster=cl)
+        self.login(self.user)
+        text = self.messages(self.move(dry_run=True))
+        self.assertNotIn("secret-cluster", text)
+        self.assertNotIn("SiteC", text)
+        self.assertIn("srv1: its cluster is at another site.", text)
+
+    def test_a_site_the_caller_can_view_is_named(self):
+        cl = self.cluster("c1", self.site_a)
+        Device.objects.filter(pk=self.srv.pk).update(cluster=cl)
+        self.login(self.user)
+        self.assertIn("srv1: cluster c1 is at SiteA.", self.messages(self.move(dry_run=True)))
+
+    def test_vlan_ip_and_power_feed_sites_follow_the_same_rule(self):
+        iface = Interface.objects.create(device=self.srv, name="eth0")
+        iface.vlan = VLAN.objects.create(tenant=self.tenant, vlan_id=10, name="V",
+                                         site=self.site_c)
+        iface.save()
+        pfx = Prefix.objects.create(tenant=self.tenant, cidr="10.9.0.0/24",
+                                    site=self.site_c, status=status_for(self.tenant))
+        IPAddress.objects.create(tenant=self.tenant, ip_address="10.9.0.5", prefix=pfx,
+                                 assigned_device=self.srv)
+        panel = PowerPanel.objects.create(tenant=self.tenant, site=self.site_c, name="P")
+        PowerFeed.objects.create(tenant=self.tenant, power_panel=panel, name="F",
+                                 rack=self.rack)
+        self.login(self.user)
+        text = self.messages(self.move(dry_run=True))
+        self.assertNotIn("SiteC", text)
+        self.assertIn("srv1 eth0 carries a VLAN of another site.", text)
+        self.assertIn("srv1: 1 IP address of another site.", text)
+        self.assertIn("1 power feed from another site delivers to this rack.", text)
+
+    def test_a_cable_the_caller_cannot_view_is_not_named(self):
+        other = Device.objects.create(tenant=self.tenant, name="sw9", site=self.site_a)
+        cable = Cable.objects.create(tenant=self.tenant, label="secret-cable")
+        CableTermination.objects.create(
+            cable=cable, end="A", interface=Interface.objects.create(device=self.srv,
+                                                                     name="eth0"))
+        CableTermination.objects.create(
+            cable=cable, end="B", interface=Interface.objects.create(device=other,
+                                                                     name="ge1"))
+        self.perm.object_types = [t for t in self.perm.object_types if t != "cable"]
+        self.perm.save()
+        self.login(self.user)
+        text = self.messages(self.move(dry_run=True))
+        self.assertNotIn("secret-cable", text)
+        self.assertIn("A cable on srv1 eth0 leaves the rack.", text)
+
+    def test_the_superuser_sees_every_name(self):
+        cl = self.cluster("c9", self.site_c)
+        Device.objects.filter(pk=self.srv.pk).update(cluster=cl)
+        self.assertIn("srv1: cluster c9 is at SiteC.", self.messages(self.move(dry_run=True)))
+
+
+class ComponentCatalogTests(_Case):
+    """Under enhanced site separation, site-local catalog entries on the
+    devices' components, IP and MAC addresses block too (#407)."""
+
+    def setUp(self):
+        super().setUp()
+        dep = DeploymentSettings.load()
+        dep.enhanced_site_separation = True
+        dep.save()
+        self.eth0 = Interface.objects.create(device=self.srv, name="eth0")
+        self.a_tag = Tag.objects.create(tenant=self.tenant, name="a-only", slug="a-only",
+                                        owning_site=self.site_a)
+
+    def messages(self, r):
+        return [b["message"] for b in r.json()["blockers"]]
+
+    def test_a_local_tag_on_an_interface_blocks(self):
+        self.eth0.tags.add(self.a_tag)
+        r = self.move()
+        self.assertEqual(r.status_code, 409, r.content)
+        self.assertEqual(self.codes(r), ["catalog"])
+        self.assertIn("srv1 eth0: tag a-only is local to SiteA.", self.messages(r))
+        self.assert_unmoved()
+
+    def test_a_local_tag_on_a_device_still_blocks(self):
+        self.srv.tags.add(self.a_tag)
+        self.assertIn("srv1: tag a-only is local to SiteA.",
+                      self.messages(self.move(dry_run=True)))
+
+    def test_a_local_tag_on_other_components_blocks(self):
+        PowerPort.objects.create(device=self.pdu, name="in").tags.add(self.a_tag)
+        ConsolePort.objects.create(device=self.srv, name="con").tags.add(self.a_tag)
+        InventoryItem.objects.create(device=self.srv, name="disk0").tags.add(self.a_tag)
+        msgs = self.messages(self.move(dry_run=True))
+        self.assertIn("pdu1 in: tag a-only is local to SiteA.", msgs)
+        self.assertIn("srv1 con: tag a-only is local to SiteA.", msgs)
+        self.assertIn("srv1 disk0: tag a-only is local to SiteA.", msgs)
+
+    def test_a_global_tag_or_one_local_to_the_new_site_does_not_block(self):
+        self.eth0.tags.add(Tag.objects.create(tenant=self.tenant, name="g", slug="g"))
+        self.eth0.tags.add(Tag.objects.create(tenant=self.tenant, name="b", slug="b",
+                                              owning_site=self.site_b))
+        self.assertEqual(self.codes(self.move(dry_run=True)), [])
+
+    def test_a_local_vrf_on_an_interface_blocks(self):
+        self.eth0.vrf = VRF.objects.create(tenant=self.tenant, name="red",
+                                           owning_site=self.site_a)
+        self.eth0.save()
+        self.assertIn("srv1 eth0: VRF red is local to SiteA.",
+                      self.messages(self.move(dry_run=True)))
+
+    def test_a_local_status_on_an_interface_blocks(self):
+        self.eth0.status = Status.objects.create(tenant=self.tenant, name="Lab", slug="lab",
+                                                 owning_site=self.site_a)
+        self.eth0.save()
+        self.assertIn("srv1 eth0: status Lab is local to SiteA.",
+                      self.messages(self.move(dry_run=True)))
+
+    def test_a_local_vrf_role_or_tag_on_an_ip_blocks(self):
+        pfx = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/24",
+                                    status=status_for(self.tenant))
+        ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.7", prefix=pfx,
+            assigned_interface=self.eth0,
+            role=IPRole.objects.create(tenant=self.tenant, name="Lo", slug="lo",
+                                       owning_site=self.site_a))
+        IPAddress.objects.filter(pk=ip.pk).update(vrf=VRF.objects.create(
+            tenant=self.tenant, name="blue", owning_site=self.site_a))
+        ip.tags.add(self.a_tag)
+        msgs = self.messages(self.move(dry_run=True))
+        self.assertIn("srv1 10.0.0.7: IP role Lo is local to SiteA.", msgs)
+        self.assertIn("srv1 10.0.0.7: VRF blue is local to SiteA.", msgs)
+        self.assertIn("srv1 10.0.0.7: tag a-only is local to SiteA.", msgs)
+
+    def test_a_local_tag_on_a_mac_address_blocks(self):
+        mac = MACAddress.objects.create(tenant=self.tenant, mac_address="00:11:22:33:44:55",
+                                        assigned_interface=self.eth0)
+        mac.tags.add(self.a_tag)
+        self.assertEqual(self.codes(self.move(dry_run=True)), ["catalog"])
+
+    def test_a_value_of_a_local_custom_field_blocks(self):
+        CustomField.objects.create(tenant=self.tenant, key="owner", label="Owner",
+                                   applies_to=["interface", "device"],
+                                   owning_site=self.site_a)
+        Interface.objects.filter(pk=self.eth0.pk).update(custom_fields={"owner": "x"})
+        self.assertIn("srv1 eth0: custom field Owner is local to SiteA.",
+                      self.messages(self.move(dry_run=True)))
+        Interface.objects.filter(pk=self.eth0.pk).update(custom_fields={"owner": ""})
+        self.assertEqual(self.codes(self.move(dry_run=True)), [])
+
+    def test_components_are_ignored_with_separation_off(self):
+        dep = DeploymentSettings.load()
+        dep.enhanced_site_separation = False
+        dep.save()
+        self.eth0.tags.add(self.a_tag)
+        self.assertEqual(self.codes(self.move(dry_run=True)), [])
+
+    def test_a_local_entry_the_caller_cannot_view_is_not_named(self):
+        self.eth0.tags.add(self.a_tag)
+        user = User.objects.create_user("m", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="ab", object_types=["rack", "device", "interface", "site"],
+            actions=["view", "change"])
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        self.login(user)
+        self.assertIn("srv1 eth0: a tag is local to SiteA.",
+                      self.messages(self.move(dry_run=True)))
+
+    def test_the_query_count_does_not_grow_with_the_rows(self):
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                rack_move.plan(self.rack, self.site_b, None,
+                               user=self.admin, tenant=self.tenant)
+            return len(ctx.captured_queries)
+
+        self.eth0.tags.add(self.a_tag)
+        one = count()
+        for i in range(10):
+            Interface.objects.create(device=self.srv, name=f"eth{i + 1}").tags.add(self.a_tag)
+            Interface.objects.create(device=self.pdu, name=f"p{i}").tags.add(self.a_tag)
+        self.assertEqual(count(), one)

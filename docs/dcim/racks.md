@@ -125,10 +125,13 @@ takes:
     - a power feed delivered to the rack from another site's panel.
     - a device whose cluster is at another site.
     - a device in a bay of a device outside the rack, or a bay child racked
-      in another rack.
+      in another rack or mounted in a DIN cabinet.
+    - a device in a virtual chassis with members outside the rack.
     - a rack of the same name at the new site.
     - with [enhanced site separation](../access/site-separation.md)
-      on: a device type, status or tag local to another site.
+      on: a catalog entry local to another site - a device type, status,
+      tag, VRF, IP role or custom field - on the rack, its devices, their
+      ports and other components, or their IP and MAC addresses.
 
 Port reservations on the moving ports follow them to the new site. Each moved
 rack, device and tile is written to its change log.
@@ -144,7 +147,9 @@ along (`id`, `name`, `position`, `face`, `mount`, and `racked`: false for a
 bay child), `cleared.floor_plan_tiles`, the `blockers` (`code`, `message`),
 `can_move` and `moved`. A move with blockers answers 409 with the same body
 and a `detail`. Blocker codes: `cable`, `vlan`, `ip`, `power_feed`,
-`cluster`, `bay`, `name` and `catalog`; a far cable end is never named.
+`cluster`, `bay`, `virtual_chassis`, `name` and `catalog`. A reason names
+an object only when you may view it, and otherwise says "a device", "another
+site" and so on; a far cable end is never named.
 
 ## Mount a device in a rack
 

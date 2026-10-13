@@ -6784,7 +6784,8 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
         with transaction.atomic():
             rack_units.lock_rack(rack)
-            plan = rack_move.plan(rack, site, location)
+            plan = rack_move.plan(rack, site, location,
+                                  user=request.user, tenant=tenant)
             self._authorize_move(plan, tenant)
             if dry_run:
                 return Response(rack_move.payload(plan, moved=False))
