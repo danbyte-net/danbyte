@@ -560,9 +560,15 @@ hint - and the reserved VLANs 1002-1005 are never read. Three VLANs in a row
 that don't answer before any has answered end the per-VLAN read (the agent
 doesn't take `community@vid`, or the SNMPv3 group lacks
 `context vlan- match prefix`), and the read is partial. Once one has
-answered, a VLAN that stays silent has no table on this switch: it is asked
-once and recorded as skipped, and the read can still complete. A VLAN that
-answers and then errs, or stops mid-table, is failed.
+answered, a silent VLAN the switch isn't known to carry has no table on this
+switch: it is asked once and recorded as skipped, and the read can still
+complete. A VLAN the switch is known to carry is retried like any other
+request; if it stays silent it is failed and the read is partial, so one lost
+packet never drops a real VLAN. VLAN 1 is the exception: the default context
+already stands for it. A VLAN that answers and then errs, or stops
+mid-table, is failed. A VLAN carried only on trunks has no SVI or access port
+to show it; in `always` mode the VLANs Danbyte has on the device's
+interfaces, tagged ones included, count as known too.
 
 Only **learned** entries are kept. Dropped: the switch's own and invalid
 entries, multicast and broadcast addresses, all-zero MACs, and any MAC that

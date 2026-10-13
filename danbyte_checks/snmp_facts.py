@@ -1320,6 +1320,7 @@ class _MacTableRead:
         self.halted = False  # the agent stopped answering in the default context
         self.context_answered = False  # some per-VLAN context answered
         self.silent: set[int] = set()  # VLANs whose context never answered
+        self.local: set[int] = set()  # VLANs the switch is known to carry
 
     @property
     def stopped(self) -> bool:
@@ -1463,8 +1464,9 @@ class _MacTableRead:
         """VLANs the switch is known to carry: port PVIDs, SVIs, the profile's
         hint and, on Cisco, the access VLANs (vmVlan). An agent in a VTP
         domain lists every VLAN of the domain, and has no per-VLAN context for
-        one with no port here (#402). Only orders the reads, so a failed walk
-        is no problem of the read."""
+        one with no port here (#402). These go first, and a silent one fails
+        rather than being skipped (#408). A failed vmVlan walk is no problem
+        of the read."""
         local = set(self.ifaces.pvids) | self.ifaces.svis
         local |= {v for v in (_int(x) for x in self.opts["hint"]) if v}
         if self.can_walk:
@@ -1477,6 +1479,7 @@ class _MacTableRead:
         if self.stopped or not plan_context_vlans(vlans, 4094)[0]:
             return rows
         local = set() if self.opts["quick"] else await self._local_vlans()
+        self.local = local
         to_read, over_cap = plan_context_vlans(vlans, self.opts["max_vlans"], local)
         if self.stopped or not to_read:
             return rows
@@ -1517,11 +1520,14 @@ class _MacTableRead:
         """Read one VLAN's context → ``(ok, rows, failure)``; ``failure`` is ``""``
         when the budget or the row cap cut it short rather than the agent."""
         auth, context = self._context_auth(vid)
-        # Once one context answered, a silent one is a VLAN the agent keeps no
-        # table for, not a lost packet: it isn't asked twice.
+        # Once one context answered, a silent VLAN the switch isn't known to
+        # carry is one the agent keeps no table for: it isn't asked twice. A
+        # known one is retried like any read, so one lost packet can't drop
+        # it (#408).
+        quiet = self.context_answered and vid not in self.local
         base, ok, stats = await self.walk(
             {"if_index": _DOT1D_BASE_PORT_IFINDEX}, auth=auth, context=context,
-            retries=0 if self.context_answered else MAC_RETRIES,
+            retries=0 if quiet else MAC_RETRIES,
         )
         if not ok:
             if stats["timeout"] and not base:
@@ -1545,9 +1551,11 @@ class _MacTableRead:
         context answered - a wrong community, or a v3 group without ``context
         vlan- match prefix`` - skip the rest. Once one answered, the agent takes
         per-VLAN contexts and a failure is that VLAN's alone (#402). A context
-        that then never answers is a VLAN the agent keeps no table for - in a
-        VTP domain, one with no port on this switch - and is skipped: its MACs
-        are neither closed nor refreshed, and the read can still complete."""
+        that then never answers, for a VLAN the switch isn't known to carry, is
+        one the agent keeps no table for - in a VTP domain, one with no port on
+        this switch - and is skipped: its MACs are neither closed nor
+        refreshed, and the read can still complete. A known VLAN that stays
+        silent failed, and the read is partial (#408)."""
         listed = self.meta["vlans"]
         gate = asyncio.Semaphore(max(1, MAC_CONTEXT_CONCURRENCY))
         results: dict[int, list[dict]] = {}
@@ -1583,7 +1591,14 @@ class _MacTableRead:
         if self.context_answered:
             # Decided at the end: a context that went silent while another was
             # still on its way to answering is just as port-less.
-            portless = {v for v in failures if v in self.silent and v not in aborted}
+            # A VLAN the switch is known to carry that stays silent, retries
+            # and all, failed (#408) - except VLAN 1, which the default
+            # context already stands for.
+            portless = {
+                v for v in failures
+                if v in self.silent and v not in aborted
+                and (v not in self.local or v == 1)
+            }
             for vid in portless:
                 del failures[vid]
             listed["failed"][:] = [v for v in listed["failed"] if v not in portless]

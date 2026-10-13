@@ -952,10 +952,11 @@ class PerVlanContextTests(SimpleTestCase):
             _, meta = read_macs(agent, params=params)
         self.assertIn("public@50", agent.communities())
         self.assertNotIn("in a row", meta["error"])
-        # The agent takes community@vlan, so the silent ones - before the
-        # answer or after it - have no table here (#402).
-        self.assertEqual(meta["vlans"], {"read": [30], "skipped": [10, 20, 40, 50], "failed": []})
-        self.assertTrue(meta["complete"])
+        # The profile's hint names VLANs the switch carries, so a silent one
+        # is that VLAN's own failure, not a VLAN with no table (#408).
+        self.assertEqual(meta["vlans"], {"read": [30], "skipped": [], "failed": [10, 20, 40, 50]})
+        self.assertFalse(meta["complete"])
+        self.assertIn("per-VLAN contexts failed: VLAN 10 (timeout)", meta["error"])
 
     def test_a_context_that_errs_after_another_answered_still_fails(self):
         # genErr, or a table that stops mid-walk, is not a VLAN without a table.
@@ -1108,6 +1109,106 @@ class VtpDomainContextTests(SimpleTestCase):
         agent = vtp32(VTP32_ENTITY)
         read_macs(agent)
         self.assertEqual(len(agent.walked(VM_VLAN)), 1)
+
+
+# sw-acc-50: a Cisco access switch in a VTP domain with access ports in VLANs
+# 32, 40 and 50 (vmVlan) and none in the domain's VLAN 10 (#408).
+ACC50_ENTITY = "\n".join(
+    line
+    for n, vid in enumerate((1, 10, 32, 40, 50), start=1)
+    for line in (
+        f'.{ENT_LOGICAL}.2.{n} = STRING: "vlan{vid}"',
+        f".{ENT_LOGICAL}.3.{n} = OID: .1.3.6.1.2.1.17",
+        f'.{ENT_LOGICAL}.8.{n} = STRING: "vlan-{vid}"',
+    )
+)
+ACC50_ACCESS = "\n".join(
+    f".{VM_VLAN}.{index} = INTEGER: {vid}"
+    for index, vid in ((10101, 32), (10102, 40), (10103, 50))
+)
+ACC50_ROWS = {(PC, "10101", 32), (PRINTER, "10102", 40), (AP, "10103", 50)}
+
+
+def acc50(*, vlan50: bool = True) -> FakeAgent:
+    contexts = {
+        1: walk(base_ports({25: 10201})),
+        32: walk(base_ports({1: 10101, 25: 10201}), bridge_fdb((PC, 1, LEARNED))),
+        40: walk(base_ports({2: 10102, 25: 10201}), bridge_fdb((PRINTER, 2, LEARNED))),
+    }
+    if vlan50:
+        contexts[50] = walk(base_ports({3: 10103, 25: 10201}), bridge_fdb((AP, 3, LEARNED)))
+    return FakeAgent(
+        walk(*VTP32_DEFAULT, iftable(*VTP32_PORTS), ACC50_ENTITY, ACC50_ACCESS), contexts
+    )
+
+
+def asked(agent: FakeAgent, community: str) -> int:
+    return sum(1 for r in agent.requests if r["op"] == "bulk" and r["community"] == community)
+
+
+class KnownVlanContextTests(SimpleTestCase):
+    """A VLAN the switch is known to carry is never taken for one with no
+    table: it is retried, and a silent one fails the read (#408)."""
+
+    def test_one_lost_packet_on_a_known_vlan_is_retried(self):
+        agent = acc50()
+        agent.fail_on(BASE_PORT, context="vlan-50", times=1)
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            rows, meta = read_macs(agent)
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), ACC50_ROWS)
+        self.assertEqual(meta["vlans"], {"read": [1, 32, 40, 50], "skipped": [10], "failed": []})
+        self.assertTrue(meta["complete"])
+        self.assertEqual(meta["error"], "")
+        self.assertEqual(asked(agent, "public@50"), 3)  # lost, retried, then the FDB walk
+
+    def test_a_known_vlan_that_stays_silent_fails_the_read(self):
+        agent = acc50(vlan50=False)
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            rows, meta = read_macs(agent)
+        self.assertEqual(meta["vlans"], {"read": [1, 32, 40], "skipped": [10], "failed": [50]})
+        self.assertFalse(meta["complete"])
+        self.assertEqual(meta["error"], "per-VLAN contexts failed: VLAN 50 (timeout)")
+        self.assertEqual(asked(agent, "public@50"), 2)
+        self.assertNotIn(50, {row["vlan"] for row in rows})
+
+    def test_a_vlan_with_no_port_here_is_still_asked_once_and_skipped(self):
+        # The #402 case is unchanged next to it.
+        agent = acc50()
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            _, meta = read_macs(agent)
+        self.assertEqual(meta["vlans"]["skipped"], [10])
+        self.assertTrue(meta["complete"])
+        self.assertEqual(asked(agent, "public@10"), 1)
+
+    def test_v3_known_vlan_context_is_retried(self):
+        agent = acc50()
+        agent.fail_on(BASE_PORT, context="vlan-50", times=1)
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            rows, meta = read_macs(agent, version="v3")
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), ACC50_ROWS)
+        self.assertEqual(meta["vlans"]["failed"], [])
+        self.assertIn(50, meta["vlans"]["read"])
+        self.assertTrue(meta["complete"])
+
+    def test_known_vlans_answering_in_parallel_are_still_retried(self):
+        agent = acc50()
+        agent.fail_on(BASE_PORT, context="vlan-50", times=1)
+        rows, meta = read_macs(agent)  # default concurrency
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), ACC50_ROWS)
+        self.assertEqual(meta["vlans"]["read"], [1, 32, 40, 50])
+        self.assertTrue(meta["complete"])
+
+    def test_a_silent_vlan_one_is_retried_and_left_to_the_default_context(self):
+        # VLAN 1 has an SVI here, but the default context already stands for it.
+        agent = FakeAgent(
+            walk(system("sw-acc-07"), SW07_IFACES, *SW07_VLAN1, SW07_ENTITY),
+            {v: SW07_CONTEXTS[v] for v in (10, 20)},
+        )
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            _, meta = read_macs(agent)
+        self.assertEqual(meta["vlans"]["skipped"], [1])
+        self.assertTrue(meta["complete"])
+        self.assertEqual(asked(agent, "public@1"), 2)
 
 
 # ─── Budgets, caps and incomplete walks ─────────────────────────────────────
