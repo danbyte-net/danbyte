@@ -168,3 +168,68 @@ export function batchStoppedToast(
 ): void {
   toast.error(summary, { description: apiErrorMessage(failure.cause) })
 }
+
+/** What {@link eachCall} did: the items that went through and the ones that
+ * were refused, each with its reason, both in the order given. */
+export interface EachCallResult<TItem> {
+  done: TItem[]
+  failed: { item: TItem; cause: unknown }[]
+}
+
+/**
+ * `call` once per item, for a write that has no bulk endpoint - linking the
+ * objects ticked in a multi-pick, say. At most `parallel` calls are in flight
+ * (one by default, for writes whose side effects must not race). Unlike
+ * {@link runBatches} a refusal does not end the run: every item is tried, and
+ * the answer says which went through.
+ */
+export async function eachCall<TItem>(
+  items: readonly TItem[],
+  call: (item: TItem) => Promise<unknown>,
+  parallel = 1
+): Promise<EachCallResult<TItem>> {
+  const ok: boolean[] = items.map(() => false)
+  const causes = new Map<number, unknown>()
+  let next = 0
+  const lane = async () => {
+    while (next < items.length) {
+      const i = next++
+      try {
+        await call(items[i])
+        ok[i] = true
+      } catch (cause) {
+        causes.set(i, cause)
+      }
+    }
+  }
+  const lanes = Math.max(1, Math.min(parallel, items.length))
+  await Promise.all(Array.from({ length: lanes }, lane))
+  return {
+    done: items.filter((_, i) => ok[i]),
+    failed: items.flatMap((item, i) =>
+      ok[i] ? [] : [{ item, cause: causes.get(i) }]
+    ),
+  }
+}
+
+/** The one toast for an {@link eachCall} run. `verb` is the past tense
+ * ("Linked"); `what(n)` names n items ("3 objects"). A refusal shows the
+ * first reason under the count. */
+export function eachCallToast(
+  result: EachCallResult<unknown>,
+  verb: string,
+  what: (n: number) => string
+): void {
+  const done = result.done.length
+  const failed = result.failed.length
+  if (!failed) {
+    toast.success(`${verb} ${what(done)}`)
+    return
+  }
+  toast.error(
+    done
+      ? `${verb} ${done} of ${what(done + failed)}, ${failed} refused`
+      : `Nothing ${verb.toLowerCase()}`,
+    { description: apiErrorMessage(result.failed[0].cause) }
+  )
+}

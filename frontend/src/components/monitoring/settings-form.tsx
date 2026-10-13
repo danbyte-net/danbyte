@@ -789,25 +789,30 @@ export function MonitoringSettingsForm() {
             </div>
           )}
           <DevicePicker
-            label="Add ARP source"
+            label="Add ARP sources"
             value={null}
             excludeIds={draft.arp_source_devices ?? []}
-            onPickLabel={(id, label) => {
-              // The picker hands the display name over with the id, so the
-              // chip shows the real device immediately - dashed until Save.
+            onPickMany={(items) => {
+              // The picker hands the display names over with the ids, so the
+              // chips show the real devices immediately - dashed until Save.
               // One atomic update (see the remove handler / issue #127).
-              if (!id || (draft.arp_source_devices ?? []).includes(id)) return
-              setDraft(
-                (cur) =>
-                  cur && {
-                    ...cur,
-                    arp_source_devices: [...(cur.arp_source_devices ?? []), id],
-                    arp_source_devices_detail: [
-                      ...(cur.arp_source_devices_detail ?? []),
-                      { id, name: label },
-                    ],
-                  }
-              )
+              setDraft((cur) => {
+                if (!cur) return cur
+                const have = new Set(cur.arp_source_devices ?? [])
+                const fresh = items.filter((o) => !have.has(o.id))
+                if (!fresh.length) return cur
+                return {
+                  ...cur,
+                  arp_source_devices: [
+                    ...(cur.arp_source_devices ?? []),
+                    ...fresh.map((o) => o.id),
+                  ],
+                  arp_source_devices_detail: [
+                    ...(cur.arp_source_devices_detail ?? []),
+                    ...fresh.map((o) => ({ id: o.id, name: o.label })),
+                  ],
+                }
+              })
             }}
             onChange={() => {}}
           />

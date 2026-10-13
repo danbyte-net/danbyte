@@ -52,6 +52,11 @@ with a level (*No impact*, *Reduced redundancy*, *Degraded*, *Outage*). You can
 only mark impact on objects you can view, and the impact is site-stamped so
 enhanced site separation keeps working after the fact.
 
+**Mark impact** takes a type and a level, then a picker with checkboxes: tick
+several objects and **Add** marks them all at that level. Objects already
+marked are left out of the list. A refused object leaves the others marked,
+and the toast says how many went through.
+
 ## Alert suppression
 
 Danbyte already has the "expected downtime" primitive -

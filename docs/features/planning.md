@@ -98,7 +98,12 @@ time** (set it next to the date; a timed single-day task draws as a block on
 the calendar's hour grid instead of the all-day band) - and:
 
 - **Linked objects** - attach anything Danbyte knows about via the same object
-  picker custom fields use, including interfaces. In the task sheet links are
+  picker custom fields use, including interfaces. **Link object** asks for a
+  type, then opens that type's picker with checkboxes: tick several in the
+  dropdown or in the advanced search and **Add** links them all at once.
+  Objects already linked are left out of the list. Each link is checked on its
+  own, so one refusal leaves the rest linked and the toast says how many went
+  through. In the task sheet links are
   grouped by object type, deep-link to the object's detail page, and a linked
   **device also shows its front/rear faceplate** so "replace this switch" comes
   with a picture of the switch. Links are RBAC-gated: you can only link objects

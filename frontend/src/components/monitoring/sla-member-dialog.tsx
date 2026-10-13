@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -10,6 +11,7 @@ import type {
   SlaObjectType,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { SLA_MEMBERS_PER_CALL } from "@/lib/bulk-batches"
 import {
   Field,
   FormCombobox,
@@ -23,6 +25,8 @@ import { DeviceTypePicker } from "@/components/device-type-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
 import { VirtualChassisPicker } from "@/components/virtual-chassis-picker"
+import { VMPicker } from "@/components/vm-picker"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -63,7 +67,28 @@ export function selectorPatch(
   }
 }
 
-/** Add one object to an agreement's group, or a role or type to its
+/** Kinds picked several at a time - each has an ObjectPicker preset. A
+ * circuit takes its own monitor address, and a role or type joins the
+ * selector, so those stay one at a time. */
+const MULTI_KINDS: ReadonlySet<MemberKind> = new Set<MemberKind>([
+  "api.device",
+  "api.virtualchassis",
+  "api.ipaddress",
+  "api.prefix",
+  "api.virtualmachine",
+])
+
+/** The toast for a bulk-add answer. */
+export function membersAddedMessage(created: number, skipped: number): string {
+  if (!created)
+    return skipped > 1
+      ? "Already members of that group"
+      : "Already a member of that group"
+  const added = created === 1 ? "Member added" : `${created} members added`
+  return skipped ? `${added}, ${skipped} already in the group` : added
+}
+
+/** Add objects to an agreement's group, or a role or type to its
  * selector. */
 export function SlaMemberDialog({
   agreementId,
@@ -81,6 +106,24 @@ export function SlaMemberDialog({
   const qc = useQueryClient()
   const [type, setType] = useState<MemberKind>("api.device")
   const [objectId, setObjectId] = useState<string | null>(null)
+  // Object kinds with a picker preset take several at once.
+  const multi = MULTI_KINDS.has(type)
+  const [chosen, setChosen] = useState<{ id: string; label: string }[]>([])
+  const pickMore = (items: { id: string; label: string }[]) =>
+    setChosen((cur) => {
+      const have = new Set(cur.map((c) => c.id))
+      return [...cur, ...items.filter((o) => !have.has(o.id))]
+    })
+  // Bulk mode for every multi-kind picker: ticks gather below as chips, and
+  // the one bulk-add call takes at most a call's worth.
+  const pickMany = {
+    value: null,
+    onChange: () => undefined,
+    onPickMany: pickMore,
+    excludeIds: chosen.map((c) => c.id),
+    pickLimit: Math.max(0, SLA_MEMBERS_PER_CALL - chosen.length),
+    disabled: chosen.length >= SLA_MEMBERS_PER_CALL,
+  }
   const [group, setGroup] = useState<string | null>(groups[0]?.id ?? null)
   const bySelector = type === "role" || type === "type"
   const picked = groups.find((g) => g.id === group)
@@ -97,15 +140,6 @@ export function SlaMemberDialog({
         "/api/circuits/?page_size=1000"
       ),
     enabled: open && type === "api.circuit",
-    staleTime: 5 * 60_000,
-  })
-  const vms = useQuery({
-    queryKey: ["vms-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/virtual-machines/?picker=1"
-      ),
-    enabled: open && type === "api.virtualmachine",
     staleTime: 5 * 60_000,
   })
   const roles = useQuery({
@@ -128,6 +162,7 @@ export function SlaMemberDialog({
         await qc.invalidateQueries({ queryKey: ["sla-groups", agreementId] })
         return "Selector updated"
       }
+      const ids = multi ? chosen.map((c) => c.id) : [objectId]
       const r = await api<{ created: number; skipped: number }>(
         "/api/monitoring/sla-members/bulk-add/",
         {
@@ -137,15 +172,16 @@ export function SlaMemberDialog({
             group,
             redundancy_group: redundancy.trim(),
             monitor_ip: type === "api.circuit" ? monitorIp : null,
-            objects: [{ object_type: type, object_id: objectId }],
+            objects: ids.map((id) => ({ object_type: type, object_id: id })),
           }),
         }
       )
-      return r.created ? "Member added" : "Already a member of that group"
+      return membersAddedMessage(r.created, r.skipped)
     },
     onSuccess: (message) => {
       toast.success(message)
       setObjectId(null)
+      setChosen([])
       onAdded()
       onOpenChange(false)
     },
@@ -178,6 +214,7 @@ export function SlaMemberDialog({
             onChange={(v) => {
               setType(v as MemberKind)
               setObjectId(null)
+              setChosen([])
               setMonitorIp(null)
             }}
             options={KINDS}
@@ -207,13 +244,13 @@ export function SlaMemberDialog({
             </>
           )}
           {type === "api.device" && (
-            <DevicePicker value={objectId} onChange={setObjectId} required />
+            <DevicePicker label="Devices" required {...pickMany} />
           )}
           {type === "api.virtualchassis" && (
             <VirtualChassisPicker
-              value={objectId}
-              onChange={setObjectId}
+              label="Virtual chassis"
               required
+              {...pickMany}
               info="Counts once, on the master's primary address - else the first member's that has one."
             />
           )}
@@ -261,25 +298,31 @@ export function SlaMemberDialog({
             </div>
           )}
           {type === "api.ipaddress" && (
-            <IpPicker value={objectId} onChange={setObjectId} required />
+            <IpPicker label="IP addresses" required {...pickMany} />
           )}
           {type === "api.prefix" && (
-            <PrefixPicker value={objectId} onChange={setObjectId} required />
+            <PrefixPicker label="Prefixes" required {...pickMany} />
           )}
           {type === "api.virtualmachine" && (
-            <FormCombobox
-              label="Virtual machine"
-              required
-              value={objectId}
-              onChange={setObjectId}
-              options={(vms.data?.results ?? []).map((v) => ({
-                value: v.id,
-                label: v.name,
-              }))}
-              placeholder="Pick a VM"
-              searchPlaceholder="Search VMs…"
-              emptyText="No virtual machines."
-            />
+            <VMPicker label="Virtual machines" required {...pickMany} />
+          )}
+          {multi && chosen.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {chosen.map((c) => (
+                <Badge key={c.id} variant="secondary" className="gap-1">
+                  {c.label}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${c.label}`}
+                    onClick={() =>
+                      setChosen((xs) => xs.filter((x) => x.id !== c.id))
+                    }
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
           )}
           {!bySelector && (
             <FormText
@@ -300,9 +343,15 @@ export function SlaMemberDialog({
             </Button>
             <Button
               type="submit"
-              disabled={!objectId || !group || add.isPending}
+              disabled={
+                (multi ? !chosen.length : !objectId) || !group || add.isPending
+              }
             >
-              {add.isPending ? "Adding…" : "Add"}
+              {add.isPending
+                ? "Adding…"
+                : multi && chosen.length
+                  ? `Add ${chosen.length}`
+                  : "Add"}
             </Button>
           </DialogFooter>
         </form>

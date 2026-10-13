@@ -219,8 +219,11 @@ add the device itself.
 ## Members
 
 Add devices, virtual chassis, virtual machines, IP addresses, prefixes or
-circuits on the **Members** tab. The chassis picker leaves out stacks with no
-members. A prefix stands for the monitored addresses in it and in its
+circuits on the **Members** tab. Devices, virtual chassis, virtual machines,
+IP addresses and prefixes are picked several at a time: tick them in the
+picker, check the list under it, and **Add** puts them all in the group in one
+go. Circuits, roles and types are added one at a time. The chassis picker
+leaves out stacks with no members. A prefix stands for the monitored addresses in it and in its
 child prefixes. An address with no check is not counted, so adding a /16 does
 not bring in thousands of unmeasured rows.
 

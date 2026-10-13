@@ -34,6 +34,7 @@ import { DeviceTypePicker } from "@/components/device-type-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
 import { VirtualChassisPicker } from "@/components/virtual-chassis-picker"
+import { VMPicker } from "@/components/vm-picker"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PERIOD_LABEL } from "./sla-figure"
@@ -167,15 +168,6 @@ export function SlaWizard({
         .map((i) => ({ type: kind, id: i.id, label: i.label, color: i.color })),
     ])
 
-  const vms = useQuery({
-    queryKey: ["vms-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/virtual-machines/?picker=1"
-      ),
-    enabled: kind === "api.virtualmachine",
-    staleTime: 5 * 60_000,
-  })
   const circuits = useQuery({
     queryKey: ["circuits-picker"],
     queryFn: () =>
@@ -462,20 +454,10 @@ export function SlaWizard({
                 />
               )}
               {kind === "api.virtualmachine" && (
-                <FormCombobox
-                  label="Virtual machine"
+                <VMPicker
                   value={null}
-                  onChange={(id) => {
-                    const vm = vms.data?.results.find((v) => v.id === id)
-                    if (vm) add([{ id: vm.id, label: vm.name }])
-                  }}
-                  options={(vms.data?.results ?? []).map((v) => ({
-                    value: v.id,
-                    label: v.name,
-                  }))}
-                  placeholder="Add a VM"
-                  searchPlaceholder="Search VMs…"
-                  emptyText="No virtual machines."
+                  onChange={() => undefined}
+                  onPickMany={add}
                 />
               )}
               {kind === "api.circuit" && (

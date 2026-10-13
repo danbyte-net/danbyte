@@ -498,7 +498,8 @@ switch, a firewall, a virtual router - with the switch's own table asked
 first, then the others in device-name order; the first answer per MAC wins.
 **ARP sources** (Settings → Monitoring → Switch-link suggestions) narrows that
 to the devices you name, in name order, exactly as before: on L2-only
-networks list the gateways and firewalls that actually route. If two sources
+networks list the gateways and firewalls that actually route. The picker takes
+several devices at once; they apply on **Save**. If two sources
 disagree about a MAC, the first answer in device-name order wins,
 deterministically, rather than flapping between polls.
 

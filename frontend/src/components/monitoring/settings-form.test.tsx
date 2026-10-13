@@ -13,8 +13,26 @@ vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
   api: apiMock,
 }))
-// The ARP-source picker is not under test.
-vi.mock("@/components/device-picker", () => ({ DevicePicker: () => null }))
+// The ARP-source picker stands in for its multi-pick hand-over: one button
+// that ticks an already-listed device and two new ones.
+vi.mock("@/components/device-picker", () => ({
+  DevicePicker: (props: {
+    onPickMany?: (items: { id: string; label: string }[]) => void
+  }) => (
+    <button
+      type="button"
+      onClick={() =>
+        props.onPickMany?.([
+          { id: "d0", label: "fw-0" },
+          { id: "d1", label: "fw-1" },
+          { id: "d2", label: "fw-2" },
+        ])
+      }
+    >
+      tick ARP sources
+    </button>
+  ),
+}))
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))
@@ -146,6 +164,48 @@ describe("MonitoringSettingsForm - MAC tracking", () => {
       mac_uplink_threshold: 8,
       mac_uplink_lldp: false,
       mac_retention_days: 14,
+    })
+  })
+})
+
+describe("MonitoringSettingsForm - ARP sources", () => {
+  it("adds every ticked device once and saves the list", async () => {
+    apiMock.mockImplementation(async (path, init) => {
+      if (path === "/api/monitoring/settings/" && !init?.method)
+        return {
+          ...SETTINGS,
+          arp_source_devices: ["d0"],
+          arp_source_devices_detail: [{ id: "d0", name: "fw-0" }],
+        }
+      if (init?.method === "PATCH") return JSON.parse(String(init.body))
+      return { results: [] }
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <MonitoringSettingsForm />
+      </QueryClientProvider>
+    )
+    fireEvent.click(
+      await screen.findByRole("button", { name: "tick ARP sources" })
+    )
+    // Chips for the new picks, and no second chip for the one already there.
+    expect(screen.getAllByText("fw-0")).toHaveLength(1)
+    expect(screen.getByText("fw-1")).toBeTruthy()
+    expect(screen.getByText("fw-2")).toBeTruthy()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save monitoring settings" })
+    )
+    await vi.waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(([, init]) => init?.method === "PATCH")
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(([, i]) => i?.method === "PATCH")!
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      arp_source_devices: ["d0", "d1", "d2"],
     })
   })
 })

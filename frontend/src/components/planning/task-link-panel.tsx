@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button"
 import { FormSelect } from "@/components/forms"
 import { CfObjectPicker } from "@/components/cf-object-picker"
 import { apiErrorToast } from "@/lib/api-toast"
+import { eachCall, eachCallToast } from "@/lib/bulk-batches"
 import { PlanActions } from "./plan-actions"
 import { LinkedDeviceCard } from "./linked-device-card"
 import { ObjectRow, objectIcon, slugFromObjectType } from "./object-chip"
 
-/** Attach any registered Danbyte object to a task: pick a type, pick the
- * object, link it.
+/** Attach any registered Danbyte object to a task: pick a type, tick the
+ * objects, link them.
  *
  * Links render grouped by object type - one card per type with its own icon and
  * count - rather than as a flat chip soup, because a task about four devices
@@ -35,7 +36,6 @@ export function TaskLinkPanel({
   const meta = useCustomizationMeta()
   const [adding, setAdding] = useState(false)
   const [typeSlug, setTypeSlug] = useState<string | null>(null)
-  const [objectId, setObjectId] = useState<string | null>(null)
 
   const refModels = meta.data?.reference_models ?? []
   const refMeta = refModels.find((r) => r.value === typeSlug) ?? null
@@ -65,24 +65,43 @@ export function TaskLinkPanel({
     qc.invalidateQueries({ queryKey: ["planning-task", taskId] })
   }
 
+  // Objects of the picked type already on the task - left out of the picker.
+  const linkedIds = useMemo(
+    () =>
+      links
+        .filter((l) => slugFromObjectType(l.object_type) === typeSlug)
+        .map((l) => l.object_id),
+    [links, typeSlug]
+  )
+
+  // No bulk endpoint: one POST per ticked object. Each is checked on its own
+  // (tenant, view permission, duplicate), so a refusal leaves the rest linked.
   const add = useMutation({
-    mutationFn: () =>
-      api("/api/planning/links/", {
-        method: "POST",
-        body: JSON.stringify({
-          task: taskId,
-          object_type: typeSlug,
-          object_id: objectId,
-        }),
-      }),
-    onSuccess: () => {
-      toast.success("Linked")
-      setAdding(false)
-      setTypeSlug(null)
-      setObjectId(null)
-      invalidate()
+    mutationFn: (items: { id: string }[]) =>
+      eachCall(
+        items,
+        (o) =>
+          api("/api/planning/links/", {
+            method: "POST",
+            body: JSON.stringify({
+              task: taskId,
+              object_type: typeSlug,
+              object_id: o.id,
+            }),
+          }),
+        4
+      ),
+    onSuccess: (result) => {
+      eachCallToast(result, "Linked", (n) =>
+        n === 1 ? "1 object" : `${n} objects`
+      )
+      if (!result.failed.length) {
+        setAdding(false)
+        setTypeSlug(null)
+      }
     },
     onError: (e) => apiErrorToast(e),
+    onSettled: () => invalidate(),
   })
 
   const remove = useMutation({
@@ -198,10 +217,7 @@ export function TaskLinkPanel({
           <FormSelect
             label="Object type"
             value={typeSlug}
-            onChange={(v) => {
-              setTypeSlug(v)
-              setObjectId(null)
-            }}
+            onChange={setTypeSlug}
             placeholder="Pick a type"
             options={refModels.map((r) => ({ value: r.value, label: r.label }))}
           />
@@ -209,20 +225,22 @@ export function TaskLinkPanel({
             <CfObjectPicker
               refMeta={refMeta}
               label={refMeta.label}
-              value={objectId}
-              onChange={setObjectId}
+              value={null}
+              onChange={() => undefined}
+              onPickMany={(items) => add.mutate(items)}
+              excludeIds={linkedIds}
+              placeholder={add.isPending ? "Linking…" : undefined}
+              disabled={add.isPending}
             />
           )}
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>
-              Cancel
-            </Button>
+          <div className="flex justify-end">
             <Button
               size="sm"
-              disabled={!typeSlug || !objectId || add.isPending}
-              onClick={() => add.mutate()}
+              variant="ghost"
+              disabled={add.isPending}
+              onClick={() => setAdding(false)}
             >
-              {add.isPending ? "Linking..." : "Link"}
+              Done
             </Button>
           </div>
         </div>

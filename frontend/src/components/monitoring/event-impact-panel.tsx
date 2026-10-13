@@ -1,7 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus, X } from "lucide-react"
-import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type { MaintenanceEvent, MaintenanceEventImpact } from "@/lib/api"
@@ -10,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { FormSelect } from "@/components/forms"
 import { CfObjectPicker } from "@/components/cf-object-picker"
 import { apiErrorToast } from "@/lib/api-toast"
+import { eachCall, eachCallToast } from "@/lib/bulk-batches"
 import {
   ObjectRow,
   slugFromObjectType,
@@ -42,7 +42,6 @@ export function EventImpactPanel({ event }: { event: MaintenanceEvent }) {
   const meta = useCustomizationMeta()
   const [adding, setAdding] = useState(false)
   const [typeSlug, setTypeSlug] = useState<string | null>(null)
-  const [objectId, setObjectId] = useState<string | null>(null)
   const [level, setLevel] = useState("outage")
 
   const refModels = meta.data?.reference_models ?? []
@@ -53,25 +52,42 @@ export function EventImpactPanel({ event }: { event: MaintenanceEvent }) {
     qc.invalidateQueries({ queryKey: ["maintenance-event", event.id] })
   }
 
+  // Objects of the picked type already marked - left out of the picker.
+  const markedIds = useMemo(
+    () =>
+      event.impacts
+        .filter((i) => slugFromObjectType(i.object_type) === typeSlug)
+        .map((i) => i.object_id),
+    [event.impacts, typeSlug]
+  )
+
+  // No bulk endpoint: one POST per ticked object, one at a time - each create
+  // re-syncs the event's silence, so they must not race. A refusal leaves the
+  // rest marked.
   const add = useMutation({
-    mutationFn: () =>
-      api("/api/monitoring/event-impacts/", {
-        method: "POST",
-        body: JSON.stringify({
-          event: event.id,
-          object_type: typeSlug,
-          object_id: objectId,
-          level,
-        }),
-      }),
-    onSuccess: () => {
-      toast.success("Impact recorded")
-      setAdding(false)
-      setTypeSlug(null)
-      setObjectId(null)
-      invalidate()
+    mutationFn: (items: { id: string }[]) =>
+      eachCall(items, (o) =>
+        api("/api/monitoring/event-impacts/", {
+          method: "POST",
+          body: JSON.stringify({
+            event: event.id,
+            object_type: typeSlug,
+            object_id: o.id,
+            level,
+          }),
+        })
+      ),
+    onSuccess: (result) => {
+      eachCallToast(result, "Marked", (n) =>
+        n === 1 ? "1 object" : `${n} objects`
+      )
+      if (!result.failed.length) {
+        setAdding(false)
+        setTypeSlug(null)
+      }
     },
     onError: (e) => apiErrorToast(e),
+    onSettled: () => invalidate(),
   })
 
   const remove = useMutation({
@@ -147,10 +163,7 @@ export function EventImpactPanel({ event }: { event: MaintenanceEvent }) {
             <FormSelect
               label="Object type"
               value={typeSlug}
-              onChange={(v) => {
-                setTypeSlug(v)
-                setObjectId(null)
-              }}
+              onChange={setTypeSlug}
               placeholder="Pick a type"
               options={refModels.map((r) => ({
                 value: r.value,
@@ -168,20 +181,22 @@ export function EventImpactPanel({ event }: { event: MaintenanceEvent }) {
             <CfObjectPicker
               refMeta={refMeta}
               label={refMeta.label}
-              value={objectId}
-              onChange={setObjectId}
+              value={null}
+              onChange={() => undefined}
+              onPickMany={(items) => add.mutate(items)}
+              excludeIds={markedIds}
+              placeholder={add.isPending ? "Marking…" : undefined}
+              disabled={add.isPending}
             />
           )}
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>
-              Cancel
-            </Button>
+          <div className="flex justify-end">
             <Button
               size="sm"
-              disabled={!typeSlug || !objectId || add.isPending}
-              onClick={() => add.mutate()}
+              variant="ghost"
+              disabled={add.isPending}
+              onClick={() => setAdding(false)}
             >
-              {add.isPending ? "Marking..." : "Mark impact"}
+              Done
             </Button>
           </div>
         </div>
