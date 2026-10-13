@@ -145,14 +145,21 @@ the `ALLOWED_HOSTS` you set. The Docker stack sets it to `http://backend:8000`.
 
 `DANBYTE_CAD_CONVERTER` is the absolute path of the program that turns a DWG
 into DXF for [floor-plan CAD drawings](../features/floor-plans.md#cad-drawings).
-Default: empty, and DWG uploads are refused with the steps to save the drawing
-as DXF instead; DXF needs nothing.
+DXF needs nothing.
+
+Default (unset or empty): `vendor/cad/bin/dwg2dxf` in the app directory, the
+static LibreDWG build the release bundle installs (or `make cad-tools`
+builds), when it is there and executable. Without it, DWG uploads are refused
+with the steps to save the drawing as DXF instead. An explicit path always
+wins; `off` refuses DWG even with the bundled converter present. The value is
+resolved when the services start, so restart them after adding a converter.
 
 Two programs are accepted, by file name:
 
-- `dwg2dxf` from LibreDWG (GPLv3; build it from source, Debian and Ubuntu do
-  not package it). The Docker image builds it and sets
-  `DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf`.
+- `dwg2dxf` from LibreDWG (GPLv3; Debian and Ubuntu do not package it). The
+  release bundle ships it, see
+  [Installation](../getting-started/installation.md#dwg-converter); the Docker
+  image builds the same and sets `DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf`.
 - `ODAFileConverter`, the ODA File Converter (free download from the Open
   Design Alliance; not redistributable, so never bundled). It runs with
   `QT_QPA_PLATFORM=offscreen`.

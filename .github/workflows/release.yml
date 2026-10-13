@@ -47,7 +47,14 @@ jobs:
           sudo apt-get update || sudo apt-get update
           # build-essential: python-ldap compiles its wheel into the wheelhouse.
           sudo apt-get install -y build-essential libldap2-dev libsasl2-dev xz-utils
+      # LibreDWG's dwg2dxf, statically linked on Alpine by the image's own
+      # cad-tools stage (deploy/cad/build-dwg2dxf.sh: pinned version + SHA-256),
+      # so DWG floor plans work on every bundle install.
+      - name: Build the DWG converter (static dwg2dxf)
+        run: docker buildx build --target cad-dist --build-arg BASE_IMAGE_REGISTRY=mirror.gcr.io/library --output type=local,dest=build/cad .
       - name: Build release bundle
+        env:
+          CAD_TOOLS_DIR: ${{ github.workspace }}/build/cad
         run: |
           chmod +x scripts/build-release.sh
           scripts/build-release.sh "${GITHUB_REF_NAME#v}"
@@ -106,6 +113,16 @@ jobs:
           # The offline bundle must migrate + pass system checks on a clean DB.
           /tmp/venv/bin/python manage.py migrate --noinput
           /tmp/venv/bin/python manage.py check
+      - name: The bundled DWG converter runs and is the default
+        run: |
+          set -euo pipefail
+          BUNDLE=$(find /tmp -maxdepth 1 -type d -name 'danbyte-*' | head -1)
+          cd "$BUNDLE"
+          file -b vendor/cad/bin/dwg2dxf | grep -Eq 'statically linked|static-pie linked'
+          vendor/cad/bin/dwg2dxf --version
+          test -f vendor/cad/LICENSE.libredwg && test -f vendor/cad/NOTICE
+          /tmp/venv/bin/python manage.py shell -c \
+            "import sys; from api.cad_render import converter_status as s; r = s(); print(r); sys.exit(0 if r['dwg'] else 1)"
       - name: Boot gunicorn + hit /api/health/
         run: |
           set -euo pipefail

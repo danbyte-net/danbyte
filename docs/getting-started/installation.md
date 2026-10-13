@@ -399,35 +399,43 @@ give up after two seconds.
 
 ### DWG converter
 
-Optional. [Floor-plan drawings](../features/floor-plans.md#cad-drawings) read
-DXF natively; DWG needs a converter program, which Ubuntu and Debian do not
-package. Either:
+[Floor-plan drawings](../features/floor-plans.md#cad-drawings) read DXF
+natively; DWG goes through a converter program. The release bundle ships one:
+LibreDWG's `dwg2dxf`, statically linked so it runs on any x86_64 Linux,
+installed at `vendor/cad/bin/dwg2dxf` in the app directory. A fresh install
+and an upgrade from a bundle both put it there, and Danbyte uses it while
+`DANBYTE_CAD_CONVERTER` is unset, so DWG works with nothing to set up,
+airgapped hosts included.
 
-- **LibreDWG** - build `dwg2dxf` from the GNU release (the Docker image does
-  the same, see the `cad-tools` stage of the `Dockerfile`):
+Beside it, `vendor/cad` holds LibreDWG's licence (`LICENSE.libredwg`), a
+`NOTICE` and the exact source it was built from (`src/libredwg-<v>.tar.xz`).
+LibreDWG is GPLv3. Danbyte does not link it: it runs `dwg2dxf` as a separate
+program, one run per upload, so its licence covers that binary alone.
 
-    ```bash
-    sudo apt install build-essential pkg-config xz-utils
-    curl -fLO https://ftp.gnu.org/gnu/libredwg/libredwg-0.14.tar.xz
-    curl -fLO https://ftp.gnu.org/gnu/libredwg/libredwg-0.14.tar.xz.sig
-    gpg --verify libredwg-0.14.tar.xz.sig   # GNU keyring: ftp.gnu.org/gnu/gnu-keyring.gpg
-    tar xJf libredwg-0.14.tar.xz && cd libredwg-0.14
-    ./configure --disable-shared --disable-bindings --disable-python --disable-docs
-    make -C src -j"$(nproc)" && make -C programs dwg2dxf
-    sudo install -m 0755 programs/dwg2dxf /usr/local/bin/dwg2dxf
-    ```
+**Source checkout.** A git clone has no `vendor/`. Build the same binary
+there with:
 
-- **ODA File Converter** - the free download from the Open Design Alliance
-  (its licence does not allow bundling it).
-
-Then point Danbyte at it in `.env` and `make restart`:
-
-```ini
-DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf
+```bash
+sudo apt install build-essential pkg-config curl xz-utils file
+make cad-tools          # deploy/cad/build-dwg2dxf.sh → vendor/cad
+make restart
 ```
 
-LibreDWG is GPLv3. Danbyte does not link it: it runs `dwg2dxf` as a separate
-program, one run per upload, so its licence covers that binary alone. See
+It downloads the pinned LibreDWG release from `ftp.gnu.org`, checks its
+SHA-256 and links `dwg2dxf` statically. `GNU_MIRROR=<url>` picks another
+mirror; `LIBREDWG_TARBALL=<path>` builds from a tarball already on disk (the
+checksum still has to match). `vendor/` is git-ignored and survives upgrades.
+
+**Another converter.** Set `DANBYTE_CAD_CONVERTER` in `.env` and
+`make restart`; an explicit value always wins over the bundled one:
+
+```ini
+DANBYTE_CAD_CONVERTER=/opt/oda/ODAFileConverter
+```
+
+The ODA File Converter is a free download from the Open Design Alliance (its
+licence does not allow bundling it). `DANBYTE_CAD_CONVERTER=off` refuses DWG
+uploads even with the bundled converter present. See
 [`DANBYTE_CAD_CONVERTER`](../reference/settings.md#cad-drawings-danbyte_cad_converter).
 
 ### Rotating secrets

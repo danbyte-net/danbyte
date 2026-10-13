@@ -458,6 +458,17 @@ step "Python venv (offline wheelhouse)"
 as_user bash -lc "cd '$APP' && vendor/python/bin/python3 -m venv .venv \
   && .venv/bin/pip install --no-index --find-links vendor/wheels -r requirements.txt >/dev/null"
 
+# ── 5b. DWG converter (bundled) ──────────────────────────────────────────────
+# The bundle's static LibreDWG dwg2dxf came over with vendor/ above, as the
+# service user's, mode 0755; settings use it while DANBYTE_CAD_CONVERTER is
+# unset. Checked as the account that runs it - root runs nothing in $APP.
+step "DWG converter (LibreDWG dwg2dxf)"
+if as_user "$APP/vendor/cad/bin/dwg2dxf" --version >/dev/null 2>&1; then
+  echo "  $APP/vendor/cad/bin/dwg2dxf"
+else
+  warn "the bundled dwg2dxf is missing or does not run - DWG floor-plan drawings are refused until DANBYTE_CAD_CONVERTER names a converter (DXF works)."
+fi
+
 # ── 6. Secrets + .env (reuse existing on re-run) ─────────────────────────────
 step "Configuring .env"
 # The bundle's interpreter: root runs nothing from the app directory.

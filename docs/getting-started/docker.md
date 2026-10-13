@@ -171,15 +171,17 @@ The image includes LibreDWG's `dwg2dxf`, so
 [floor-plan drawings](../features/floor-plans.md#cad-drawings) take DWG as
 well as DXF with nothing to install: `DANBYTE_CAD_CONVERTER` is set to
 `/usr/local/bin/dwg2dxf` in the image. Debian does not package LibreDWG, so
-the `cad-tools` stage of the `Dockerfile` builds it from the GNU release,
-pinned to one version and its SHA-256, and only that binary reaches the
-runtime image. The build fetches the tarball from `ftp.gnu.org`; a build host
-without it passes another GNU mirror as `--build-arg GNU_MIRROR=…`.
+the `cad-tools` stage of the `Dockerfile` builds it on Alpine with
+`deploy/cad/build-dwg2dxf.sh`, from the GNU release pinned to one version and
+its SHA-256, linked statically; only that binary reaches the runtime image.
+The release bundle carries the same build (target `cad-dist`). The build
+fetches the tarball from `ftp.gnu.org`; a build host without it passes
+another GNU mirror as `--build-arg GNU_MIRROR=…`.
 
 LibreDWG is GPLv3. Danbyte does not link it: the worker runs `dwg2dxf` as a
-separate program for each upload, and the image carries LibreDWG's licence at
-`/usr/share/doc/libredwg/COPYING`. To leave DWG off, set
-`DANBYTE_CAD_CONVERTER=` (empty) in the services' environment.
+separate program for each upload, and the image carries LibreDWG's licence
+and a notice naming its source at `/usr/share/doc/libredwg/`. To leave DWG
+off, set `DANBYTE_CAD_CONVERTER=off` in the services' environment.
 
 `web` listens on **:80** (`HTTP_PORT`, default 8080) and **:443**
 (`HTTPS_PORT`, default 8443) with a **self-signed** cert baked into the image -

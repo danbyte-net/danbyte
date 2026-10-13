@@ -714,7 +714,28 @@ MONITORING_PLUGIN_DIR = os.getenv("MONITORING_PLUGIN_DIR", "")
 
 # Floor-plan CAD drawings: DXF is read natively; DWG needs a converter binary
 # on the worker host. Absolute path to LibreDWG's `dwg2dxf` or the ODA File
-# Converter (`ODAFileConverter`); empty refuses DWG uploads. Only those two
-# programs are run, without a shell, in a temp dir with a scrubbed environment
-# and a timeout - see api/cad_render.py. Set by the operator, never from the UI.
-DANBYTE_CAD_CONVERTER = os.getenv("DANBYTE_CAD_CONVERTER", "").strip()
+# Converter (`ODAFileConverter`). Only those two programs are run, without a
+# shell, in a temp dir with a scrubbed environment and a timeout - see
+# api/cad_render.py. Set by the operator, never from the UI.
+# Unset or empty: the static dwg2dxf the release bundle (or `make cad-tools`)
+# puts in vendor/cad, when it is there and executable; otherwise DWG uploads
+# are refused. `off` refuses them even with the bundled one present.
+CAD_CONVERTER_BUNDLED = BASE_DIR / "vendor" / "cad" / "bin" / "dwg2dxf"
+
+
+def resolve_cad_converter(value: str | None, bundled: Path) -> str:
+    """DANBYTE_CAD_CONVERTER: an explicit setting wins, then ``bundled``
+    when it is an executable file, else empty (DWG refused)."""
+    value = (value or "").strip()
+    if value.lower() == "off":
+        return ""
+    if value:
+        return value
+    if bundled.is_file() and os.access(bundled, os.X_OK):
+        return str(bundled)
+    return ""
+
+
+DANBYTE_CAD_CONVERTER = resolve_cad_converter(
+    os.getenv("DANBYTE_CAD_CONVERTER"), CAD_CONVERTER_BUNDLED
+)

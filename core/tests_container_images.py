@@ -172,8 +172,10 @@ class HubProblemTests(SimpleTestCase):
 
 
 class DwgConverterImageTests(SimpleTestCase):
-    """The runtime image carries LibreDWG's dwg2dxf, built from a pinned,
-    checksummed GNU release, and points DANBYTE_CAD_CONVERTER at it."""
+    """The runtime image carries LibreDWG's dwg2dxf, built statically on
+    Alpine by deploy/cad/build-dwg2dxf.sh (pinned, checksummed GNU release),
+    and points DANBYTE_CAD_CONVERTER at it. The release bundle exports the
+    same stage (``cad-dist``)."""
 
     def stages(self) -> dict:
         out, name = {}, None
@@ -184,20 +186,30 @@ class DwgConverterImageTests(SimpleTestCase):
                 out.setdefault(name, []).append(line)
         return {k: "\n".join(v) for k, v in out.items()}
 
-    def test_build_is_pinned_and_verified(self):
+    def test_build_runs_the_shared_static_recipe(self):
         tools = self.stages()["cad-tools"]
-        self.assertRegex(tools, r"ARG LIBREDWG_VERSION=\d+\.\d+")
-        self.assertRegex(tools, r"ARG LIBREDWG_SHA256=[0-9a-f]{64}\b")
-        self.assertIn("sha256sum -c", tools)
-        self.assertIn("--disable-bindings", tools)
-        # Built and shipped: dwg2dxf alone, linked statically.
-        self.assertIn("--disable-shared", tools)
-        self.assertIn("make -C programs dwg2dxf", tools)
+        self.assertRegex(tools, r"FROM \S+/alpine:\d+\.\d+ AS cad-tools")
+        self.assertIn("COPY deploy/cad/build-dwg2dxf.sh", tools)
+        self.assertIn("build-dwg2dxf.sh /out", tools)
+        # No second copy of the pin: the script holds version and hash.
+        self.assertNotIn("LIBREDWG_SHA256", tools)
+
+    def test_cad_dist_is_the_build_output_alone(self):
+        dist = self.stages()["cad-dist"]
+        self.assertIn("FROM scratch AS cad-dist", dist)
+        self.assertIn("COPY --from=cad-tools /out/ /", dist)
+
+    def test_runtime_is_still_the_last_stage(self):
+        self.assertEqual(list(self.stages())[-1], "runtime")
 
     def test_runtime_gets_the_binary_and_the_setting(self):
         from api.cad_render import CONVERTERS
 
         runtime = self.stages()["runtime"]
-        self.assertIn("COPY --from=cad-tools /out/dwg2dxf /usr/local/bin/dwg2dxf", runtime)
+        self.assertIn("COPY --from=cad-tools /out/bin/dwg2dxf /usr/local/bin/dwg2dxf", runtime)
+        self.assertIn("COPY --from=cad-tools /out/LICENSE.libredwg", runtime)
         self.assertIn("ENV DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf", runtime)
         self.assertEqual(CONVERTERS["dwg2dxf"], "libredwg")
+
+    def test_a_local_vendor_folder_stays_out_of_the_image(self):
+        self.assertIn("vendor", (ROOT / ".dockerignore").read_text().split())
