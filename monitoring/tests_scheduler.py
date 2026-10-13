@@ -107,6 +107,49 @@ class StateMachineTests(Base):
         self.assertEqual(st.status, "up")
         self.assertEqual(st.consecutive_fail, 0)
 
+    def test_stale_survives_a_success_too_short_to_rise(self):
+        t = self._tmpl(slug="stl", rise=2, fall=1)
+        st = self._state(t, status=CheckStatus.STALE, consecutive_fail=12)
+        now = timezone.now()
+        self.assertIsNone(apply_outcome(st, rise=2, fall=1, outcome=CheckOutcome("up", 1.0),
+                                        now=now, stale_after_scans=10))
+        self.assertIsNone(apply_outcome(st, rise=2, fall=1, outcome=CheckOutcome("down"),
+                                        now=now, stale_after_scans=10))
+        self.assertEqual(st.status, "stale")
+
+    def test_stale_survives_a_higher_scan_limit(self):
+        # The fast lane scales stale_after_scans up; its next probe must not
+        # read a stale check as merely down.
+        t = self._tmpl(slug="stl2", rise=1, fall=1)
+        st = self._state(t, status=CheckStatus.STALE, consecutive_fail=10)
+        tr = apply_outcome(st, rise=1, fall=1, outcome=CheckOutcome("down"),
+                           now=timezone.now(), stale_after_scans=600)
+        self.assertIsNone(tr)
+        self.assertEqual(st.status, "stale")
+
+    def test_stale_survives_the_day_limit(self):
+        t = self._tmpl(slug="stl3", rise=1, fall=1)
+        now = timezone.now()
+        st = self._state(t, status=CheckStatus.STALE, consecutive_fail=3, since=now)
+        apply_outcome(st, rise=1, fall=1, outcome=CheckOutcome("down"), now=now,
+                      stale_after_days=7)
+        self.assertEqual(st.status, "stale")
+
+    def test_stale_rises_to_up(self):
+        t = self._tmpl(slug="stl4", rise=2, fall=1)
+        st = self._state(t, status=CheckStatus.STALE, consecutive_fail=12)
+        now = timezone.now()
+        apply_outcome(st, rise=2, fall=1, outcome=CheckOutcome("up", 1.0), now=now)
+        tr = apply_outcome(st, rise=2, fall=1, outcome=CheckOutcome("up", 1.0), now=now)
+        self.assertEqual((tr.from_status, tr.to_status), ("stale", "up"))
+
+    def test_down_still_goes_stale_after_the_scan_limit(self):
+        t = self._tmpl(slug="stl5", rise=1, fall=1)
+        st = self._state(t, status=CheckStatus.DOWN, consecutive_fail=9)
+        tr = apply_outcome(st, rise=1, fall=1, outcome=CheckOutcome("down"),
+                           now=timezone.now(), stale_after_scans=10)
+        self.assertEqual((tr.from_status, tr.to_status), ("down", "stale"))
+
     def test_first_success_from_unknown_rises(self):
         t = self._tmpl(slug="first", rise=1, fall=3)
         st = self._state(t)  # default status unknown

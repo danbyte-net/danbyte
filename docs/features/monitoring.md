@@ -375,7 +375,8 @@ To avoid flapping on a single blip, status changes require a streak:
   doesn't wait out the rise count.
 - **Stale** - a check that's been down for a long time (a configurable number of
   consecutive failures, or a number of days) is escalated to *stale* to mark a
-  chronic outage versus a fresh one.
+  chronic outage versus a fresh one. A stale check stays stale until it rises to
+  *up* (or shows *degraded*); further failures don't move it back to *down*.
 - **Skipped** - IPs whose status is on your skip list (for example *reserved*)
   are never dialled; their checks are marked *skipped* and no result is recorded.
   An address [excluded from monitoring](#excluding-an-address) is *skipped* too,
