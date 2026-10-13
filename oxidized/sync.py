@@ -23,7 +23,9 @@ would notice.
 A link, once matched, is kept (#400): when the node's current target is among
 a rung's candidates, or the current holder is among the nodes landing on one
 target, the link stays and the namesakes are reported as a warning. A new
-object sharing a linked device's name cannot unlink it.
+object sharing a linked device's name cannot unlink it. Only a confirmed link
+counts; failing one, the target of the node's last confirmed link is restored
+the same way, ahead of a proposal (#405).
 
 A new match for a node the connection had already seen - unmatched, or
 linked elsewhere - is *proposed* (#399): it serves no config until a
@@ -31,7 +33,9 @@ connection manager confirms it, because whoever created or renamed the
 object it matched may not be allowed to read that node. A node seen for the
 first time (every node, on a connection's first sync) links straight away,
 and so does a node matched back to the object its last confirmed link
-pointed at.
+pointed at. A connection that synced before node memory existed has not
+recorded every node it saw (#406); until its next successful sync records
+them, a node missing from memory counts as seen before.
 
 A target is a ``(kind, id)`` pair, kind being :data:`DEVICE` or :data:`VM`.
 """
@@ -144,15 +148,17 @@ def _noun(hits) -> str:
 
 
 def match_node(
-    node: dict, index, match_by: str, current=None
+    node: dict, index, match_by: str, current=None, remembered=None
 ) -> tuple[object, str, str]:
     """``(target | None, how, reason)`` for one node; a target is
     ``(kind, id)``.
 
-    ``current`` is the target the node's matched link points at now. Where a
-    rung finds several candidates and ``current`` is one of them, the link is
-    kept: the result is ``current``, with the namesakes described in
-    ``reason`` as a warning (#400)."""
+    ``current`` is the target the node's confirmed matched link points at now.
+    Where a rung finds several candidates and ``current`` is one of them, the
+    link is kept: the result is ``current``, with the namesakes described in
+    ``reason`` as a warning (#400). Failing that, ``remembered`` - the target
+    of the node's last confirmed link - is restored the same way (#405). A
+    proposed link is neither."""
     _, by_addr, by_name, by_short = index
     full, name, _group = split_full_name(node)
     rungs = []
@@ -174,6 +180,8 @@ def match_node(
                 shared = f"{len(hits)} {_noun(hits)} share the {how} '{key}'"
                 if current is not None and current in hits:
                     return current, how, f"{shared}; the existing link is kept."
+                if remembered is not None and remembered in hits:
+                    return remembered, how, f"{shared}; the last confirmed link is restored."
                 return None, "ambiguous", f"{shared}."
             if hits:
                 return next(iter(hits)), how, ""
@@ -208,6 +216,9 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
     current = {
         lk.full_name: lk for lk in links if lk.matched_by != OxidizedNodeLink.HOW_MANUAL
     }
+    # Only a confirmed link holds its target against namesakes and other
+    # nodes; a proposal is a sync's guess, not an existing link (#405).
+    confirmed = {full: _target_of(lk) for full, lk in current.items() if not lk.proposed}
     # What the connection knew before this pass: the nodes it has seen, and
     # where each one's last confirmed link pointed.
     known: dict[str, tuple | None] = {}
@@ -215,6 +226,10 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
         "full_name", "last_device_id", "last_virtual_machine_id"
     ):
         known[full] = (DEVICE, dev_id) if dev_id else (VM, vm_id) if vm_id else None
+    # Until the first sync after the upgrade that added node memory has
+    # recorded every node, a node missing from it may have been seen before
+    # all the same (#406): its new match is proposed.
+    first_seen_links = conn.node_memory_complete
 
     seen: dict[str, dict] = {}
     for node in nodes:
@@ -231,8 +246,9 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
     for full, node in seen.items():
         if full in pinned_nodes:
             continue
-        held = _target_of(current[full]) if full in current else None
-        target, how, reason = match_node(node, index, conn.match_by, current=held)
+        target, how, reason = match_node(
+            node, index, conn.match_by, current=confirmed.get(full), remembered=known.get(full)
+        )
         if target is not None and target in pinned_targets:
             what = "device" if target[0] == DEVICE else "virtual machine"
             target, how, reason = None, "ambiguous", f"The {what} is pinned to another node."
@@ -246,16 +262,21 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
     for target, fulls in claims.items():
         if len(fulls) < 2:
             continue
-        # The node already linked to the target keeps it (#400).
-        holder = next(
-            (f for f in fulls if f in current and _target_of(current[f]) == target), None
-        )
+        # The node whose confirmed link points at the target keeps it (#400);
+        # failing that, the one node whose last confirmed link did (#405).
+        holder = next((f for f in fulls if confirmed.get(f) == target), None)
+        restored = False
+        if holder is None:
+            recalled = [f for f in fulls if known.get(f) == target]
+            if len(recalled) == 1:
+                holder, restored = recalled[0], True
         for full in fulls:
             if full == holder:
                 warnings.append(_unmatched_row(
                     full, seen[full],
                     f"{len(fulls)} nodes match {names.get(target, '')}; "
-                    "the existing link is kept.",
+                    + ("the last confirmed link is restored." if restored
+                       else "the existing link is kept."),
                 ))
                 continue
             decided.pop(full, None)
@@ -291,7 +312,9 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
                     virtual_machine_id=obj_id if kind == VM else None,
                     # A node seen before follows to a new object only once
                     # someone confirms it (#399).
-                    proposed=full in known and known[full] != target,
+                    proposed=(
+                        known[full] != target if full in known else not first_seen_links
+                    ),
                 )
             lk.matched_by = how
             _refresh(lk, seen[full], now)
@@ -318,9 +341,11 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
         conn.last_checked_at = now
         conn.last_error = ""
         conn.last_sync_summary = summary
+        # Every node this pass saw is recorded now.
+        conn.node_memory_complete = True
         conn.save(update_fields=[
             "node_count", "last_sync_at", "last_sync_attempt_at", "last_checked_at",
-            "last_error", "last_sync_summary", "updated_at",
+            "last_error", "last_sync_summary", "node_memory_complete", "updated_at",
         ])
     return summary
 

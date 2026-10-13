@@ -65,6 +65,12 @@ class OxidizedConnection(TimestampedModel):
     #: them without asking Oxidized again. ``error`` holds the last failed
     #: sync's message, cleared by the next successful one.
     last_sync_summary = models.JSONField(default=dict, blank=True)
+    #: Every node the connection has seen is in ``OxidizedNode``. Off for a
+    #: connection that synced before node memory existed, whose backfill only
+    #: had the capped unmatched list (#406): until a successful sync records
+    #: every node, a node missing from memory counts as seen before. Off on
+    #: the column, so a row an older process inserts fails closed.
+    node_memory_complete = models.BooleanField(default=True, db_default=False)
 
     class Meta:
         ordering = ["name"]

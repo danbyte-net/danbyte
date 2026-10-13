@@ -72,6 +72,10 @@ address of a linked node's object, or a second node lands on it, the link
 stays and the sync reports the namesake as a note on the link. Only a node
 without a link is left unmatched by a namesake.
 
+Only a confirmed link is kept this way. A proposed link holds nothing: when
+the node's last confirmed device or VM is among the candidates again, the
+link returns there, confirmed, and the proposal goes.
+
 ### Proposed links
 
 A new match for a node Danbyte has seen before - one that sat unmatched, or
@@ -86,6 +90,11 @@ Links are made at once, without confirmation, for:
 - a node seen for the first time;
 - a node matched back to the object its last confirmed link pointed at, such
   as after an **Unlink**.
+
+A connection that synced before upgrading to 0.18 has not recorded every node
+it saw. Its first successful sync after the upgrade proposes a new match for
+any node it has no record of, and records every node; from the next sync on,
+a node new to Oxidized links at once again.
 
 The **Oxidized** page lists:
 

@@ -7,6 +7,10 @@ a config its author could not already read.
   config is served through it until a connection manager confirms it.
 - #400: a matched link is kept when its object is still among the
   candidates; the namesakes become a warning.
+- #405: only a confirmed link is kept that way; a proposal yields to the
+  node's last confirmed target.
+- #406: a connection that synced before node memory existed treats a node
+  missing from memory as seen before until its next sync records them all.
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ from api.models import Device
 from monitoring.tests_snmp_schedule import FakeQueue, FakeRedis
 
 from . import schedule
+from .client import OxidizedError
 from .models import OxidizedConnection, OxidizedNode, OxidizedNodeLink
 from .sync import sync_nodes
 from .tests import FAKE, node
@@ -380,3 +385,148 @@ class BackfillTests(_SyncBase):
         )
         mig.backfill_nodes(django_apps, None)  # idempotent
         self.assertEqual(OxidizedNode.objects.count(), 3)
+
+
+# ─── #405: a proposed link holds nothing ────────────────────────────────────
+
+
+class ProposedHoldsNothingTests(_SyncBase):
+    def propose_core1_to_a_vm(self):
+        self.core.name = "core1-old"
+        self.core.save()
+        vm = self.make_vm("core1", site=self.site_a)
+        sync_nodes(self.conn)
+        lk = OxidizedNodeLink.objects.get(full_name="core1")
+        self.assertEqual((lk.virtual_machine_id, lk.proposed), (vm.id, True))
+        return vm
+
+    def test_reported_scenario_the_remembered_device_wins(self):
+        vm = self.propose_core1_to_a_vm()
+        self.core.name = "core1"
+        self.core.save()
+        reasons = []
+        for _ in range(2):
+            summary = sync_nodes(self.conn)
+            lk = OxidizedNodeLink.objects.get(full_name="core1")
+            self.assertEqual(lk.device_id, self.core.id)
+            self.assertFalse(lk.proposed)
+            reasons += [w["reason"] for w in summary["warnings"] if w["full_name"] == "core1"]
+        self.assertFalse(OxidizedNodeLink.objects.filter(virtual_machine=vm).exists())
+        self.assertIn("last confirmed link is restored", reasons[0])
+        self.assertIn("existing link is kept", reasons[1])
+        self.login()
+        self.assertIn("TOPSECRET", self.cfg(self.core).json()["config"])
+        self.assertEqual(self.client.get(self.vm_url(vm)).status_code, 404)
+
+    def test_a_proposal_does_not_survive_a_namesake(self):
+        """Without a remembered target, an ambiguous rung drops the proposal."""
+        self.make_vm("ghost", site=self.site_a)
+        sync_nodes(self.conn)
+        self.assertTrue(self.ghost().proposed)
+        Device.objects.create(tenant=self.tenant, name="ghost", site=self.site_a)
+        summary = sync_nodes(self.conn)
+        self.assertFalse(OxidizedNodeLink.objects.filter(full_name="ghost").exists())
+        reasons = {u["full_name"]: u["reason"] for u in summary["unmatched"]}
+        self.assertIn("share the name", reasons["ghost"])
+
+    def test_a_proposal_does_not_hold_its_target_against_another_node(self):
+        vm = self.make_vm("ghost", site=self.site_a)
+        sync_nodes(self.conn)
+        self.assertTrue(self.ghost().proposed)
+        self.vrf_ip("192.0.2.77/32", assigned_vm=vm)
+        FAKE["nodes"].append(node("ghost-b", ip="192.0.2.77"))
+        summary = sync_nodes(self.conn)
+        self.assertFalse(OxidizedNodeLink.objects.filter(virtual_machine=vm).exists())
+        reasons = {u["full_name"]: u["reason"] for u in summary["unmatched"]}
+        self.assertIn("2 nodes match", reasons["ghost"])
+        self.assertIn("2 nodes match", reasons["ghost-b"])
+
+    def test_the_remembered_node_holds_its_target_against_another_node(self):
+        self.propose_core1_to_a_vm()
+        self.core.name = "core1"
+        self.core.save()
+        self.vrf_ip("10.9.0.77/32", assigned_device=self.core)
+        FAKE["nodes"].append(node("core1-mgmt", ip="10.9.0.77"))
+        summary = sync_nodes(self.conn)
+        lk = OxidizedNodeLink.objects.get(device=self.core)
+        self.assertEqual((lk.full_name, lk.proposed), ("core1", False))
+        reasons = {u["full_name"]: u["reason"] for u in summary["unmatched"]}
+        self.assertIn("linked to node core1", reasons["core1-mgmt"])
+
+    def test_a_confirmed_link_still_beats_a_remembered_one(self):
+        """The node's confirmed link is kept even when its remembered object
+        is among the namesakes too."""
+        self.propose_core1_to_a_vm()
+        self.login()
+        lk = OxidizedNodeLink.objects.get(full_name="core1")
+        self.assertEqual(_confirm(self.client, lk).status_code, 200)
+        self.core.name = "core1"
+        self.core.save()
+        sync_nodes(self.conn)
+        lk = OxidizedNodeLink.objects.get(full_name="core1")
+        self.assertIsNotNone(lk.virtual_machine_id)
+        self.assertFalse(lk.proposed)
+
+
+# ─── #406: nodes the upgrade could not list count as seen before ────────────
+
+
+class IncompleteMemoryTests(_SyncBase):
+    def upgrade_forgot(self, *names):
+        OxidizedNode.objects.filter(full_name__in=names).delete()
+        OxidizedConnection.objects.filter(pk=self.conn.pk).update(node_memory_complete=False)
+        self.conn.refresh_from_db()
+
+    def test_a_new_connection_has_seen_nothing(self):
+        conn = OxidizedConnection.objects.create(tenant=self.tenant, name="new", url="http://x")
+        self.assertTrue(conn.node_memory_complete)
+        self.conn.refresh_from_db()
+        self.assertTrue(self.conn.node_memory_complete)
+
+    def test_reported_scenario_a_node_beyond_the_cap_is_proposed(self):
+        FAKE["nodes"].append(node("zz-secret"))
+        FAKE["configs"]["zz-secret"] = SECRET
+        self.upgrade_forgot("zz-secret")
+        dev = Device.objects.create(tenant=self.tenant, name="zz-secret", site=self.site_a)
+        summary = sync_nodes(self.conn)
+        lk = OxidizedNodeLink.objects.get(full_name="zz-secret")
+        self.assertEqual((lk.device_id, lk.proposed), (dev.id, True))
+        self.assertEqual(summary["proposed"], 1)
+        self.login()
+        self.assertEqual(self.cfg(dev).status_code, 404)
+        self.conn.refresh_from_db()
+        self.assertTrue(self.conn.node_memory_complete)
+        self.assertTrue(OxidizedNode.objects.filter(full_name="zz-secret").exists())
+
+    def test_existing_links_stay_confirmed(self):
+        self.upgrade_forgot()
+        sync_nodes(self.conn)
+        got = dict(OxidizedNodeLink.objects.values_list("full_name", "proposed"))
+        self.assertEqual(got, {"core1": False, "sw1": False})
+
+    def test_a_node_new_to_oxidized_after_that_sync_links_straight_away(self):
+        self.upgrade_forgot()
+        sync_nodes(self.conn)
+        Device.objects.create(tenant=self.tenant, name="edge9", site=self.site_a)
+        FAKE["nodes"].append(node("edge9"))
+        sync_nodes(self.conn)
+        self.assertFalse(OxidizedNodeLink.objects.get(full_name="edge9").proposed)
+
+    def test_a_failed_sync_leaves_the_memory_incomplete(self):
+        self.upgrade_forgot()
+        with mock.patch(
+            "oxidized.sync.OxidizedClient.nodes", side_effect=OxidizedError("down")
+        ):
+            self.assertEqual(sync_nodes(self.conn)["error"], "down")
+        self.conn.refresh_from_db()
+        self.assertFalse(self.conn.node_memory_complete)
+
+    def test_the_migration_marks_connections_that_have_synced(self):
+        mig = importlib.import_module("oxidized.migrations.0005_node_memory_complete")
+        fresh = OxidizedConnection.objects.create(tenant=self.tenant, name="new", url="http://x")
+        OxidizedConnection.objects.update(node_memory_complete=False)
+        mig.mark_complete(django_apps, None)
+        self.conn.refresh_from_db()
+        fresh.refresh_from_db()
+        self.assertFalse(self.conn.node_memory_complete)  # synced in setUp
+        self.assertTrue(fresh.node_memory_complete)
