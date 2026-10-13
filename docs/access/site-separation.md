@@ -49,6 +49,39 @@ ergonomics on top:
     journal history. A Site-A viewer never sees Site-B rows through a side door,
     and a note can only be attached to an object the author may actually view.
 
+    A row the viewer *may* read never names a related row they can't: an IP
+    address shows its prefix, device, interface, switch and VM as empty when
+    those belong to another site - in the API, the spreadsheet export and the
+    context line of a search hit.
+
+## Which rows belong to a site
+
+A row belongs to a site through its own site, or through the object it hangs
+off:
+
+- an **IP address** - its own site, else its prefix's. An address inside
+  Site B's prefix is Site B's even when the prefix doesn't copy its site onto
+  addresses; only an address in a site-less prefix is shared;
+- a **service** - its device's or VM's site, else its address's;
+- **NAT rules, virtual chassis, site-map markers** - their device's (the
+  master's, for a virtual chassis);
+- **IP ranges, DHCP scopes** - their prefix's; DHCP reservations and leases,
+  their scope's prefix's;
+- **VLAN groups** - their site, else their cluster's;
+- **FHRP group assignments, tunnel and L2VPN terminations** - their
+  interface's device or VM (an L2VPN's VLAN, for a VLAN termination);
+- **virtual disks, virtual switches** - their VM's, their cluster's;
+- **DNS records and drift, certificate bindings** - their IP address's;
+- **config snapshots and state, BMC endpoints, port-utilization rules, Zabbix
+  host links and pending changes, virtualization changes** - their device's
+  or VM's.
+
+A site-limited grant narrows all of these, for reading and writing. Types
+that only *refer* to a site-bound row stay tenant-wide: FHRP groups, wireless
+LANs, prefix-list rules, notification channels, virtualization networks and
+placement rules, Zabbix connections and adoption rules. Check assignments,
+monitoring policies, alert rules and silences follow the object they target.
+
 ## Creating prefixes: your space, or a fresh one
 
 A site editor can create prefixes two ways:

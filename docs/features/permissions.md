@@ -153,9 +153,12 @@ rows*.
    authorisation. Leave empty to cover every tenant
    the person can reach.
 6. (Optional) Limit it to certain **sites**. This narrows the object types that
-   *belong to* a site - devices, prefixes, IPs, VLANs, racks, interfaces, and
-   the like - to those sites only. Object types with no site (VRFs, route
-   targets, tags, catalog entries) are unaffected. Leave empty for all sites.
+   *belong to* a site - devices, prefixes, IPs, VLANs, racks, interfaces,
+   services, NAT rules, and the like - to those sites only. An IP address
+   belongs to its prefix's site when it has none of its own. Object types with
+   no site (VRFs, route targets, tags, catalog entries) are unaffected. Leave
+   empty for all sites. The full list is under
+   [Which rows belong to a site](../access/site-separation.md#which-rows-belong-to-a-site).
 
     **Shared objects** (a prefix or VLAN with no site - e.g. a supernet the
     whole company allocates from) are *readable* under a site-scoped grant:
@@ -190,10 +193,22 @@ assembles the underlying permissions for you (a site-scoped edit grant plus an
 unscoped read grant for the editor; a single site-scoped read grant for the
 viewer). You can fine-tune or delete those permissions afterwards like any other.
 
+Both roles can open the sites they cover. Neither can rename or delete a
+site - that stays with administrators. The roles leave out records synced from
+other systems and device configuration history (config snapshots and state,
+DHCP, DNS, Zabbix, BMC, virtualization changes, certificate bindings); grant
+those on their own when someone needs them.
+
 An editor **reads everything** by default (the "see all, edit only mine" model,
 good for cross-site troubleshooting). Tick **"Can only see their own sites"**
 for a strict silo - the read-all grant is dropped and they see nothing outside
-their sites.
+their sites. The silo editor gets a separate `- site record` grant instead,
+for viewing their own sites.
+
+!!! note "Upgrading to 0.18"
+    Site roles created earlier gain view on their sites, and the services, NAT
+    rules, VLAN groups, IP ranges, virtual chassis and other types that became
+    site-scoped. A grant edited away from the role's shape is left as it is.
 
 ### Set it up when you create the user
 

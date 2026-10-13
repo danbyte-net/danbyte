@@ -673,22 +673,28 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
       manage their site-LOCAL catalog entries.
     * ``viewer`` - site-scoped ``view`` only.
 
+    Both roles can open the sites they cover (#415): the viewer's grant names
+    ``site`` too, and a silo editor gets a site-scoped view grant on ``site``
+    of its own (``- site record``) - never change or delete, which stay
+    with administrators.
+
     Returns the created ObjectPermission rows. Callers own authorisation.
     """
     from core.effective_settings import separation_enabled
 
-    from .site_paths import CATALOG_SITE_PATHS, SITE_PATHS
+    from .site_paths import CATALOG_SITE_PATHS, site_role_types
 
     sites = list(sites)
     user_ids = list(user_ids or [])
     group_ids = list(group_ids or [])
     label = (name or ", ".join(s.name for s in sites)).strip() or "Site role"
 
-    # Site-bound object types the role manages *at* the site. Exclude the Site
-    # record itself and the sitesettings admin surface. Add the local/global
-    # catalog types only when separation is on (else they ignore site scope and
-    # a scoped grant would silently apply tenant-wide).
-    types = sorted(set(SITE_PATHS) - {"site", "sitesettings"})
+    # Site-bound object types the role manages *at* the site: not the Site
+    # record, the sitesettings admin surface or the integration records
+    # (SITE_ROLE_EXCLUDED). Add the local/global catalog types only when
+    # separation is on (else they ignore site scope and a scoped grant would
+    # silently apply tenant-wide).
+    types = site_role_types()
     if separation_enabled(tenant):
         types = sorted(set(types) | set(CATALOG_SITE_PATHS))
 
@@ -710,10 +716,12 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
     if role == "editor":
         make(f"{label} - site edit", types,
              ["view", "add", "change", "delete"], scoped=True)
-        if not silo:
+        if silo:
+            make(f"{label} - site record", ["site"], ["view"], scoped=True)
+        else:
             make(f"{label} - read all", ["*"], ["view"], scoped=False)
     else:  # viewer
-        make(f"{label} - site view", types, ["view"], scoped=True)
+        make(f"{label} - site view", sorted([*types, "site"]), ["view"], scoped=True)
     return created
 
 

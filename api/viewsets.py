@@ -9508,12 +9508,10 @@ class DocumentViewSet(TenantScopedViewSet):
         if not separation_enabled(tenant):
             return None
         from auth_api import rbac
-        from auth_api.site_paths import SITE_PATHS
+        from auth_api.site_paths import site_role_types
 
         ids: set = set()
-        for slug in SITE_PATHS:
-            if slug in ("site", "sitesettings"):
-                continue
+        for slug in site_role_types():
             scope = rbac.site_scope(user, tenant, slug, "view")
             if scope is None:
                 return None  # an unscoped view grant → any site

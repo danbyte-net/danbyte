@@ -20,6 +20,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from core.hidden_fields import PermissionHiddenFieldsMixin
 from core.models import Tag, Tenant, TenantGroup
 from core.tags import tags_of
 from customization.models import (
@@ -1649,8 +1650,84 @@ class PrefixMiniSerializer(NumIdModelSerializer):
         fields = ["id", "cidr", "vrf", "site", "vlan", "gateway"]
 
 
-class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class _HiddenRelatedListSerializer(serializers.ListSerializer):
+    """Answers a page's related-row visibility in one query per type before
+    the rows render (see ``HiddenRelatedFieldsMixin``)."""
+
+    def to_representation(self, data):
+        from django.db.models.manager import BaseManager
+
+        rows = data.all() if isinstance(data, BaseManager) else data
+        rows = list(rows)
+        self.child.prime_related(rows)
+        return super().to_representation(rows)
+
+
+class HiddenRelatedFieldsMixin(PermissionHiddenFieldsMixin):
+    """A row that names related rows the caller may not view shows those
+    fields as ``null`` - in the API and in the spreadsheet export (#413).
+    Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+    list answers its page in one query per related type.
+
+    ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+    check is the related type's own view scope (``rbac.ViewableRows``), so a
+    site viewer never learns the device, interface or prefix of another site
+    through an address that is itself visible (a shared one, or one placed at
+    their site inside another site's prefix)."""
+
+    hidden_as_null = True
+    hidden_related: tuple[tuple[str, str, str], ...] = ()
+
+    def _viewable(self):
+        cached = getattr(self, "_viewable_rows", None)
+        if cached is not None:
+            return cached
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False) or user.is_superuser:
+            self._viewable_rows = False
+            return False
+        from api.views import _get_active_tenant
+        from auth_api.rbac import ViewableRows
+
+        self._viewable_rows = ViewableRows(user, _get_active_tenant(request))
+        return self._viewable_rows
+
+    def prime_related(self, rows) -> None:
+        viewable = self._viewable()
+        if not viewable:
+            return
+        by_slug: dict[str, set] = {}
+        for _field, slug, attname in self.hidden_related:
+            by_slug.setdefault(slug, set()).update(
+                getattr(obj, attname, None) for obj in rows
+            )
+        for slug, pks in by_slug.items():
+            viewable.prime(slug, pks)
+
+    def hidden_fields(self, obj) -> set[str]:
+        out = set(super().hidden_fields(obj))
+        viewable = self._viewable()
+        if not viewable:
+            return out
+        for field, slug, attname in self.hidden_related:
+            if not viewable.may_view(slug, getattr(obj, attname, None)):
+                out.add(field)
+        return out
+
+
+class IPAddressSerializer(HiddenRelatedFieldsMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "ipaddress"
+    # The rows an address names: each only when the caller may view it (#413).
+    hidden_related = (
+        ("prefix", "prefix", "prefix_id"),
+        ("assigned_device", "device", "assigned_device_id"),
+        ("assigned_interface", "interface", "assigned_interface_id"),
+        ("switch", "device", "switch_id"),
+        ("switch_interface", "interface", "switch_interface_id"),
+        ("assigned_vm", "virtualmachine", "assigned_vm_id"),
+        ("assigned_vm_interface", "vminterface", "assigned_vm_interface_id"),
+    )
     # Not columns (see api.list_fields): the role flags the address cell
     # already draws as a badge, and a tab count computed for a single
     # address only - it reads 0 on a list.
@@ -1994,6 +2071,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             # Set through their monitoring endpoints, which do the rest.
             "monitoring_excluded", "availability_since",
         ]
+        list_serializer_class = _HiddenRelatedListSerializer
 
 
 # ─── IP picker serializers ─────────────────────────────────────────────

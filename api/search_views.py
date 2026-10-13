@@ -332,6 +332,58 @@ def _allowed(rows: list[dict], user, tenant) -> list[dict]:
     return [r for r in rows if r["object_id"] in ok.get(r["object_type"], set())]
 
 
+def _redact_context(page: list[dict], user, tenant) -> None:
+    """Drop the context names of site-bound rows the caller may not view - a
+    shared address bound to another site's device must not name it (#413).
+    One query per hit type, and one per related type, for the page only."""
+    if getattr(user, "is_superuser", False):
+        return
+    from auth_api.site_paths import site_path_for
+
+    from .search_index import _CONTEXT_RELATIONS
+
+    viewable = rbac.ViewableRows(user, tenant)
+    by_type: dict[str, list[dict]] = {}
+    for r in page:
+        if r.get("context"):
+            by_type.setdefault(r["object_type"], []).append(r)
+    for slug, rows in by_type.items():
+        model = model_for(slug)
+        if model is None:
+            continue
+        # (context key, related slug, fk attname) for this type's relations.
+        links = []
+        for attr, key in _CONTEXT_RELATIONS:
+            try:
+                f = model._meta.get_field(attr)
+            except Exception:  # noqa: BLE001 - not a field of this model
+                continue
+            if not (f.is_relation and f.concrete and (f.many_to_one or f.one_to_one)):
+                continue
+            rel_slug = f.related_model._meta.model_name
+            if site_path_for(rel_slug, tenant) is None:
+                continue
+            links.append((key, rel_slug, f.attname))
+        if not links:
+            continue
+        ids = [r["object_id"] for r in rows]
+        objs = {
+            o["pk"]: o
+            for o in model._default_manager.filter(pk__in=ids).values(
+                "pk", *{a for _k, _s, a in links}
+            )
+        }
+        for _key, rel_slug, attname in links:
+            viewable.prime(rel_slug, [o[attname] for o in objs.values()])
+        for r in rows:
+            o = objs.get(r["object_id"])
+            if o is None:
+                continue
+            for key, rel_slug, attname in links:
+                if not viewable.may_view(rel_slug, o[attname]):
+                    r["context"].pop(key, None)
+
+
 @extend_schema(
     summary="Global tenant-scoped search: one ranked list across every object type",
     tags=["search"],
@@ -412,6 +464,7 @@ def search(request):
         ]
     }
     page = rows[offset : offset + limit]
+    _redact_context(page, request.user, tenant)
     hits = [
         {
             "type": r["object_type"],
