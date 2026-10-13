@@ -549,6 +549,20 @@ API the option is the profile's `params.mac_vlan_contexts`
 (`auto`/`always`/`off`), with `mac_max_vlans` (1-1024, default 128) and
 `mac_budget_s` (5-600 seconds, default 120) next to it.
 
+A per-VLAN table is opened as `community@vid` on SNMPv1/v2c and as the
+context `vlan-<vid>` on SNMPv3, so a VLAN with no IP address on the switch -
+VLAN 1 included - is read like any other. A switch in a VTP domain lists every
+VLAN of the domain but has no table for a VLAN with no port on it, and stays
+silent there. So the VLANs the switch is known to carry go first - its SVIs,
+its ports' access VLANs (PVID, or Cisco's `vmVlan`) and the profile's VLAN
+hint - and the reserved VLANs 1002-1005 are never read. Three VLANs in a row
+that don't answer before any has answered end the per-VLAN read (the agent
+doesn't take `community@vid`, or the SNMPv3 group lacks
+`context vlan- match prefix`), and the read is partial. Once one has
+answered, a VLAN that stays silent has no table on this switch: it is asked
+once and recorded as skipped, and the read can still complete. A VLAN that
+answers and then errs, or stops mid-table, is failed.
+
 Only **learned** entries are kept. Dropped: the switch's own and invalid
 entries, multicast and broadcast addresses, all-zero MACs, and any MAC that
 is one of the polled device's own interface addresses - so a port never
@@ -575,9 +589,9 @@ as gone. A read that **stopped early** - the time budget ran out, the
 100,000-row cap was hit, a walk failed, per-VLAN tables could not be opened -
 is **partial**: it adds and refreshes what it saw and closes nothing, so a
 slow switch never reads as "every MAC left". VLANs left out of a read - over
-`mac_max_vlans`, or a per-VLAN table that failed - don't make it partial, so a
-big switch still closes what moved elsewhere; the MACs in those VLANs are
-simply neither closed nor refreshed by that read. A poll that never reached
+`mac_max_vlans`, or with no table on the switch - don't make it partial, so a
+big switch still closes what moved elsewhere. The MACs in those VLANs, and in
+a per-VLAN table that failed, are neither closed nor refreshed by that read. A poll that never reached
 the device writes nothing at all.
 
 The device's SNMP state carries `fdb_polled_at` - the last complete read - and

@@ -915,7 +915,8 @@ def fetch_topology_sync(
 #    VLAN. dot1qVlanFdbId (index timeMark.vlan) says which VLAN an FDB id is.
 # 3. Only when Q-BRIDGE has no rows: BRIDGE-MIB dot1dTpFdbPort/Status in the
 #    default context, then per-VLAN contexts on agents that keep one table per
-#    VLAN (Cisco-style: community@vid, or the SNMPv3 context "vlan-<vid>").
+#    VLAN (Cisco-style: community@vid, or the SNMPv3 context "vlan-<vid>"),
+#    the VLANs the switch is known to carry first (#402).
 #
 # Only learned host entries survive (learned_rows), and ``fdb_meta`` says how
 # far the read got: only a complete read may close MACs that went away.
@@ -940,9 +941,14 @@ _ENT_LOGICAL_COLUMNS = {
     "community": "1.3.6.1.2.1.47.1.2.1.1.4",
     "context": "1.3.6.1.2.1.47.1.2.1.1.8",
 }
-# CISCO-VTP-MIB vtpVlanState (index domain.vlan): the one vendor OID, used only
-# when ENTITY-MIB lists no bridge contexts.
+# CISCO-VTP-MIB vtpVlanState (index domain.vlan): used only when ENTITY-MIB
+# lists no bridge contexts.
 _VTP_VLAN_STATE = "1.3.6.1.4.1.9.9.46.1.3.1.1.2"
+# CISCO-VLAN-MEMBERSHIP-MIB vmVlan (index ifIndex): a port's access VLAN. Only
+# orders the per-VLAN reads, so the VLANs this switch really carries go first.
+_VM_VLAN = "1.3.6.1.4.1.9.9.68.1.2.2.1.2"
+# An SVI's name: Cisco "Vl32" / "Vlan32", "vlan-32", "vlan.32".
+_SVI_NAME = re.compile(r"^vl(?:an)?[\s.\-]*0*(\d{1,4})$", re.IGNORECASE)
 _RESERVED_VLANS = range(1002, 1006)  # fddi/token-ring defaults: no MAC table
 _FDB_STATUS = {"1": "other", "2": "invalid", "3": "learned", "4": "self", "5": "mgmt"}
 # Bridge ports are ethernet ports or aggregates: ethernetCsmacd, iso88023,
@@ -991,10 +997,15 @@ class _Ifaces:
         self.types: dict[str, tuple[str, str]] = {}
         self.own: set[str] = set()
         self.pvids: set[int] = set()
+        self.svis: set[int] = set()  # VLANs with an interface of their own
         for row in interfaces or ():
             index = str(row.get("if_index") or "").strip()
             if not index:
                 continue
+            for text in (row.get("name"), row.get("descr")):
+                found = _SVI_NAME.match(str(text or "").strip())
+                if found and 1 <= int(found.group(1)) <= 4094:
+                    self.svis.add(int(found.group(1)))
             self.types[index] = (
                 str(row.get("type") or "").strip(), str(row.get("type_name") or "").strip()
             )
@@ -1244,14 +1255,19 @@ def parse_vtp_vlans(states: dict) -> list[int]:
     return sorted(out)
 
 
-def plan_context_vlans(vlans, max_vlans: int = MAC_MAX_VLANS) -> tuple[list, list]:
-    """VLANs → ``(to_read, over_cap)``: valid ids, ascending, without the
-    reserved 1002-1005, the first ``max_vlans`` read and the rest skipped."""
+def plan_context_vlans(vlans, max_vlans: int = MAC_MAX_VLANS,
+                       prefer=()) -> tuple[list, list]:
+    """VLANs → ``(to_read, over_cap)``: valid ids without the reserved
+    1002-1005, in read order - the ``prefer`` ones (VLANs the switch is known
+    to carry) first, each part ascending - the first ``max_vlans`` read and
+    the rest skipped."""
     clean = sorted({
         v for v in (_int(x) for x in vlans)
         if v and 1 <= v <= 4094 and v not in _RESERVED_VLANS
     })
-    return clean[:max_vlans], clean[max_vlans:]
+    first = {v for v in (_int(x) for x in prefer or ()) if v}
+    ordered = [v for v in clean if v in first] + [v for v in clean if v not in first]
+    return ordered[:max_vlans], ordered[max_vlans:]
 
 
 def _clamp(value, default: int, low: int, high: int) -> int:
@@ -1302,6 +1318,8 @@ class _MacTableRead:
         self.default_base = False
         self.stack: dict | None = None
         self.halted = False  # the agent stopped answering in the default context
+        self.context_answered = False  # some per-VLAN context answered
+        self.silent: set[int] = set()  # VLANs whose context never answered
 
     @property
     def stopped(self) -> bool:
@@ -1314,11 +1332,12 @@ class _MacTableRead:
         return not self.halted and self.budget.remaining() > 0
 
     async def walk(self, columns: dict, *, auth=None, context=None, cap_rows=False,
-                   max_rep: int = MAC_MAX_REPETITIONS) -> tuple[dict, bool, dict]:
+                   max_rep: int = MAC_MAX_REPETITIONS,
+                   retries: int = MAC_RETRIES) -> tuple[dict, bool, dict]:
         stats: dict = {}
         rows, complete = await _walk_columns(
             self.mod, self.engine, auth or self.auth, self.transport, columns,
-            context=context, max_rep=max_rep, retries=MAC_RETRIES,
+            context=context, max_rep=max_rep, retries=retries,
             budget=self.budget, cap_rows=cap_rows, stats=stats,
         )
         return rows, complete, stats
@@ -1440,9 +1459,25 @@ class _MacTableRead:
             return list(self.opts["hint"]), False
         return [], False
 
+    async def _local_vlans(self) -> set[int]:
+        """VLANs the switch is known to carry: port PVIDs, SVIs, the profile's
+        hint and, on Cisco, the access VLANs (vmVlan). An agent in a VTP
+        domain lists every VLAN of the domain, and has no per-VLAN context for
+        one with no port here (#402). Only orders the reads, so a failed walk
+        is no problem of the read."""
+        local = set(self.ifaces.pvids) | self.ifaces.svis
+        local |= {v for v in (_int(x) for x in self.opts["hint"]) if v}
+        if self.can_walk:
+            rows, _ok, _stats = await self.walk({"vlan": _VM_VLAN})
+            local |= {v for v in (_int(x) for x in _column(rows, "vlan").values()) if v}
+        return local
+
     async def _per_vlan(self, rows: list[dict]) -> list[dict]:
         vlans, advertised = await self._context_vlans()
-        to_read, over_cap = plan_context_vlans(vlans, self.opts["max_vlans"])
+        if self.stopped or not plan_context_vlans(vlans, 4094)[0]:
+            return rows
+        local = set() if self.opts["quick"] else await self._local_vlans()
+        to_read, over_cap = plan_context_vlans(vlans, self.opts["max_vlans"], local)
         if self.stopped or not to_read:
             return rows
         listed = self.meta["vlans"]
@@ -1482,10 +1517,15 @@ class _MacTableRead:
         """Read one VLAN's context → ``(ok, rows, failure)``; ``failure`` is ``""``
         when the budget or the row cap cut it short rather than the agent."""
         auth, context = self._context_auth(vid)
+        # Once one context answered, a silent one is a VLAN the agent keeps no
+        # table for, not a lost packet: it isn't asked twice.
         base, ok, stats = await self.walk(
-            {"if_index": _DOT1D_BASE_PORT_IFINDEX}, auth=auth, context=context
+            {"if_index": _DOT1D_BASE_PORT_IFINDEX}, auth=auth, context=context,
+            retries=0 if self.context_answered else MAC_RETRIES,
         )
         if not ok:
+            if stats["timeout"] and not base:
+                self.silent.add(vid)
             return False, [], "" if stats["truncated"] else _why(stats)
         fdb, ok, stats = await self.walk(
             {"port": _DOT1D_TP_FDB_PORT, "status": _DOT1D_TP_FDB_STATUS},
@@ -1500,9 +1540,14 @@ class _MacTableRead:
         return True, rows, ""
 
     async def _read_contexts(self, vlans: list[int]) -> list[dict]:
-        """Read per-VLAN contexts, ``MAC_CONTEXT_CONCURRENCY`` at a time. After
-        ``MAC_CONTEXT_ABORT_AFTER`` failures in a row - a wrong community, or a
-        v3 group without ``context vlan- match prefix`` - the rest is skipped."""
+        """Read per-VLAN contexts in ``vlans`` order, ``MAC_CONTEXT_CONCURRENCY``
+        at a time. ``MAC_CONTEXT_ABORT_AFTER`` failures in a row before any
+        context answered - a wrong community, or a v3 group without ``context
+        vlan- match prefix`` - skip the rest. Once one answered, the agent takes
+        per-VLAN contexts and a failure is that VLAN's alone (#402). A context
+        that then never answers is a VLAN the agent keeps no table for - in a
+        VTP domain, one with no port on this switch - and is skipped: its MACs
+        are neither closed nor refreshed, and the read can still complete."""
         listed = self.meta["vlans"]
         gate = asyncio.Semaphore(max(1, MAC_CONTEXT_CONCURRENCY))
         results: dict[int, list[dict]] = {}
@@ -1519,12 +1564,15 @@ class _MacTableRead:
                 results[vid] = rows
                 if ok:
                     listed["read"].append(vid)
+                    self.context_answered = True
                     streak.clear()
                 elif not failure:
                     listed["skipped"].append(vid)
                 else:
                     listed["failed"].append(vid)
                     failures[vid] = failure
+                    if self.context_answered:
+                        return
                     streak.append(vid)
                     if aborted:
                         aborted.append(vid)  # was already in flight
@@ -1532,6 +1580,14 @@ class _MacTableRead:
                         aborted.extend(streak)
 
         await asyncio.gather(*(one(vid) for vid in vlans))
+        if self.context_answered:
+            # Decided at the end: a context that went silent while another was
+            # still on its way to answering is just as port-less.
+            portless = {v for v in failures if v in self.silent and v not in aborted}
+            for vid in portless:
+                del failures[vid]
+            listed["failed"][:] = [v for v in listed["failed"] if v not in portless]
+            listed["skipped"].extend(portless)
         if aborted:
             hint = (
                 "the v3 group may lack 'context vlan- match prefix'"

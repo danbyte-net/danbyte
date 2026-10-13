@@ -246,6 +246,44 @@ class RecordTests(_Base):
         self.assertEqual(state.fdb_polled_at, t2)
         self.assertEqual(state.mac_ports["gi1/0/7"]["count"], 1)
 
+    def test_a_port_less_vtp_vlan_leaves_the_read_complete(self):
+        """#402 end to end: the collector against a Cisco-style switch whose
+        VTP VLANs 10, 20 and 30 have no context, then the write side."""
+        from monitoring import tests_mac_collector as mc
+
+        sw = Device.objects.create(tenant=self.tenant, name="sw-vtp-32", site=self.site_a)
+        for name in ("Gi1/0/1", "Gi1/0/2", "Te1/1/1"):
+            Interface.objects.create(device=sw, name=name)
+
+        def read(*vlan32_entries):
+            agent = mc.vtp32(mc.VTP32_ENTITY)
+            agent.trees["vlan-32"] = agent._index(mc.walk(
+                mc.base_ports({1: 10101, 2: 10102, 25: 10201}),
+                mc.bridge_fdb(*vlan32_entries),
+            ))
+            ifaces = mc.interfaces_of(agent)
+            fdb, fdb_meta = mc.read_macs(agent, interfaces=ifaces)
+            return result(ifaces, fdb, fdb_meta=fdb_meta)
+
+        t0, t1, t2 = self.t0, self.t0 + timedelta(minutes=15), self.t0 + timedelta(minutes=30)
+        # Before: a MAC in VLAN 10, when VLAN 10 still had a port here.
+        self.poll(sw, result(mc.interfaces_of(mc.vtp32(mc.VTP32_ENTITY)),
+                             [fdb_row(SERVER, 10102, vlan=10)]), t0)
+        res = read((mc.PC, 1, mc.LEARNED), (mc.PRINTER, 2, mc.LEARNED))
+        self.assertTrue(res["fdb_meta"]["complete"])
+        self.assertEqual(res["fdb_meta"]["vlans"]["skipped"], [10, 20, 30])
+        self.poll(sw, res, t1)
+        self.assertEqual(set(self.present(sw).values_list("mac", "vlan_vid")),
+                         {(SERVER, 10), (mc.PC, 32), (mc.PRINTER, 32)})
+
+        self.poll(sw, read((mc.PC, 1, mc.LEARNED)), t2)
+        rows = {r.mac: r for r in MacSighting.objects.filter(polled_device=sw)}
+        self.assertEqual(rows[mc.PRINTER].gone_at, t2)  # left VLAN 32: closed
+        self.assertEqual((rows[mc.PC].gone_at, rows[mc.PC].last_seen), (None, t2))
+        # VLAN 10 was not read: neither closed nor refreshed.
+        self.assertEqual((rows[SERVER].gone_at, rows[SERVER].last_seen), (None, t0))
+        self.assertEqual(DeviceSnmp.objects.get(device=sw).fdb_polled_at, t2)
+
     def test_arp_meta_decides_whether_arp_rows_close(self):
         gw_ifaces = [iface_row(1, "Vlan10")]
         arp = [{"ip": "10.10.3.44", "mac": PC, "if_index": "1", "type": "dynamic"},
