@@ -9167,6 +9167,9 @@ export interface PlanningTask {
   board_name: string
   status: string
   status_name: string
+  status_color: string
+  /** The status row's meaning - "completed"/"cancelled" are closed. */
+  status_group: PlanningSemanticGroup
   title: string
   description: string
   priority: PlanningPriority
@@ -9189,6 +9192,21 @@ export interface PlanningTask {
   planned_changes: PlanningPlannedChange[]
   created_at: string
   updated_at: string
+}
+
+/** A linked task past its due moment that is the caller's work - the overdue
+ * warning on an object's page. The server decides "mine" and drops dismissed
+ * ones. */
+export interface PlanningOverdueTask {
+  id: string
+  board: string
+  board_name: string
+  title: string
+  status_name: string
+  status_color: string
+  priority: PlanningPriority
+  due_date: string
+  due_time: string | null
 }
 
 // ─── Circuits ──────────────────────────────────────────────────────────

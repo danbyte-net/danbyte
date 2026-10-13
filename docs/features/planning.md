@@ -130,6 +130,26 @@ The sheet is for a glance; a task carrying linked devices, planned changes and a
 comment thread reads better as a page, with the properties in a rail beside the
 content. The page has its own URL, so it can be linked to and bookmarked.
 
+## On the object's own page
+
+Every object detail page - a device, a prefix, a circuit - has a **Tasks** tab,
+just before Journal and Change log, for anyone who can view tasks. It lists the
+tasks linked to that object: title, board, status, assignees, due and priority.
+**Open** (the default, counted on the tab) hides tasks whose status means
+*completed* or *cancelled*; **All** shows them too. The tab is added by the
+detail-page shell from the URL, so a new detail page gets it without wiring.
+
+**Overdue warning.** When a linked task is past due and not closed, an
+*Overdue* row shows under the page header - only to the people whose work it
+is: the task's assignees, or, for a task queued on a team and not yet claimed,
+that team's members (the same rule as *My tasks*). Everyone else sees nothing.
+A date-only task is due at the end of its day; a task with a due time is due at
+that time, in the deployment's time zone.
+
+The **×** hides the warning for you, on every device you sign in from. It stays
+hidden only for that due moment: move the due date or time and, if the task
+goes overdue again, it comes back. Hiding it changes nothing on the task.
+
 ## On the dashboard and in the digest
 
 The **My tasks** dashboard widget lists your open tasks, most urgent first -
@@ -246,12 +266,15 @@ dashed ghost of the device at its planned position and face.
 
 Everything lives under `/api/planning/`: `boards/`, `statuses/`, `labels/`,
 `milestones/` (filter by `board`), `tasks/` (filter by `board`, `status`,
-`assignee`, `label`, `milestone`, `q`), `links/` (filter by `task`, or
+`assignee`, `label`, `milestone`, `q`, `open=1`, and `object_type` + `object_id`
+for the tasks linked to one object), `links/` (filter by `task`, or
 reverse-look-up with `object_type` + `object_id` to find every task referencing
 an object), `assignable-users/`, and `planned-changes/`:
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET tasks/overdue/?object_type=&object_id=` | Open, past-due tasks on this object that are the caller's work, minus the ones the caller hid at the current due moment |
+| `POST tasks/{id}/dismiss-overdue/` | Hide that warning for the caller until the due date or time changes. `403` unless it is the caller's task |
 | `GET planned-changes/?task=` | What this task will change |
 | `GET planned-changes/?object_type=&object_id=` | What is planned for this object |
 | `GET planned-changes/map/` | Every open plan grouped by target - one request per table, for the per-row badge |
@@ -266,7 +289,7 @@ planned (re-plan instead); applied and cancelled rows are history and can be
 neither edited nor deleted.
 
 All endpoints are tenant-scoped and default-closed; all planning models are
-audited.
+audited except the per-user overdue dismissal, which is personal display state.
 
 ## Calendar
 
