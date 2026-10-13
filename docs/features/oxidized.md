@@ -91,10 +91,11 @@ Links are made at once, without confirmation, for:
 - a node matched back to the object its last confirmed link pointed at, such
   as after an **Unlink**.
 
-A connection that synced before upgrading to 0.18 has not recorded every node
-it saw. Its first successful sync after the upgrade proposes a new match for
-any node it has no record of, and records every node; from the next sync on,
-a node new to Oxidized links at once again.
+A connection that synced on an 0.18 pre-release, before node memory existed,
+has not recorded every node it saw. On such a connection a new match for any
+node it has no record of is always proposed, since a node that was away from
+Oxidized during a sync may still have been seen before. Connections created
+since link a node new to Oxidized at once.
 
 The **Oxidized** page lists:
 

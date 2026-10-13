@@ -10,7 +10,9 @@ a config its author could not already read.
 - #405: only a confirmed link is kept that way; a proposal yields to the
   node's last confirmed target.
 - #406: a connection that synced before node memory existed treats a node
-  missing from memory as seen before until its next sync records them all.
+  missing from memory as seen before.
+- #411: that holds for good - a sync records only the nodes listed at that
+  moment, so no sync makes the memory complete.
 """
 from __future__ import annotations
 
@@ -25,7 +27,7 @@ from monitoring.tests_snmp_schedule import FakeQueue, FakeRedis
 from . import schedule
 from .client import OxidizedError
 from .models import OxidizedConnection, OxidizedNode, OxidizedNodeLink
-from .sync import sync_nodes
+from .sync import remember_unlinked, sync_nodes
 from .tests import FAKE, node
 from .tests_pin_scope import LINK, SECRET, _PinBase
 
@@ -494,8 +496,6 @@ class IncompleteMemoryTests(_SyncBase):
         self.assertEqual(summary["proposed"], 1)
         self.login()
         self.assertEqual(self.cfg(dev).status_code, 404)
-        self.conn.refresh_from_db()
-        self.assertTrue(self.conn.node_memory_complete)
         self.assertTrue(OxidizedNode.objects.filter(full_name="zz-secret").exists())
 
     def test_existing_links_stay_confirmed(self):
@@ -504,9 +504,50 @@ class IncompleteMemoryTests(_SyncBase):
         got = dict(OxidizedNodeLink.objects.values_list("full_name", "proposed"))
         self.assertEqual(got, {"core1": False, "sw1": False})
 
-    def test_a_node_new_to_oxidized_after_that_sync_links_straight_away(self):
+    def test_a_node_absent_from_the_first_sync_is_still_proposed_later(self):
+        """A sync records only the nodes Oxidized lists at that moment, so it
+        cannot complete the memory: a forgotten node that was away during it
+        is proposed when it comes back (#411)."""
+        self.upgrade_forgot("zz-secret")
+        sync_nodes(self.conn)  # zz-secret is not in Oxidized right now
+        sync_nodes(self.conn)
+        FAKE["nodes"].append(node("zz-secret"))
+        FAKE["configs"]["zz-secret"] = SECRET
+        dev = Device.objects.create(tenant=self.tenant, name="zz-secret", site=self.site_a)
+        sync_nodes(self.conn)
+        lk = OxidizedNodeLink.objects.get(full_name="zz-secret")
+        self.assertEqual((lk.device_id, lk.proposed), (dev.id, True))
+        self.login()
+        self.assertEqual(self.cfg(dev).status_code, 404)
+
+    def test_a_successful_sync_does_not_complete_the_memory(self):
         self.upgrade_forgot()
         sync_nodes(self.conn)
+        self.conn.refresh_from_db()
+        self.assertFalse(self.conn.node_memory_complete)
+
+    def test_a_node_new_to_oxidized_is_proposed_on_an_incomplete_connection(self):
+        """Danbyte cannot tell a node new to Oxidized from a forgotten one, so
+        on such a connection both are proposed (#411)."""
+        self.upgrade_forgot()
+        sync_nodes(self.conn)
+        Device.objects.create(tenant=self.tenant, name="edge9", site=self.site_a)
+        FAKE["nodes"].append(node("edge9"))
+        sync_nodes(self.conn)
+        self.assertTrue(OxidizedNodeLink.objects.get(full_name="edge9").proposed)
+
+    def test_a_recorded_node_on_an_incomplete_connection_relinks_at_once(self):
+        """Once recorded, a node follows the usual rules: back to its last
+        confirmed object, it links straight away."""
+        self.upgrade_forgot()
+        sync_nodes(self.conn)
+        lk = OxidizedNodeLink.objects.get(full_name="core1")
+        remember_unlinked([lk])
+        lk.delete()
+        sync_nodes(self.conn)
+        self.assertFalse(OxidizedNodeLink.objects.get(full_name="core1").proposed)
+
+    def test_a_complete_connection_links_a_new_node_at_once(self):
         Device.objects.create(tenant=self.tenant, name="edge9", site=self.site_a)
         FAKE["nodes"].append(node("edge9"))
         sync_nodes(self.conn)
@@ -530,3 +571,24 @@ class IncompleteMemoryTests(_SyncBase):
         fresh.refresh_from_db()
         self.assertFalse(self.conn.node_memory_complete)  # synced in setUp
         self.assertTrue(fresh.node_memory_complete)
+
+    def test_the_follow_up_migration_re_marks_connections_older_than_node_memory(self):
+        """0006 undoes what a pre-release sync cleared (#411): a connection
+        that existed before node memory and has synced is incomplete again;
+        one created since, or never synced, is left complete."""
+        from django.db import connection as db
+
+        mig = importlib.import_module("oxidized.migrations.0006_node_memory_stays_incomplete")
+        old_unsynced = OxidizedConnection.objects.create(
+            tenant=self.tenant, name="old-idle", url="http://x")
+        OxidizedConnection.objects.filter(pk__in=[self.conn.pk, old_unsynced.pk]).update(
+            created_at="2000-01-01T00:00:00Z")
+        newer = OxidizedConnection.objects.create(tenant=self.tenant, name="new", url="http://y")
+        sync_nodes(newer)
+        sync_nodes(self.conn)
+        OxidizedConnection.objects.update(node_memory_complete=True)
+        mig.mark_incomplete(django_apps, mock.Mock(connection=db))
+        got = dict(OxidizedConnection.objects.values_list("name", "node_memory_complete"))
+        self.assertFalse(got[self.conn.name])
+        self.assertTrue(got["old-idle"])
+        self.assertTrue(got["new"])

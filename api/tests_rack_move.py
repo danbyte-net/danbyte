@@ -16,9 +16,11 @@ from audit.models import ChangeLogEntry
 from auth_api.models import ObjectPermission, UserProfile
 from core.models import DeploymentSettings, Organization, Tag, Tenant
 from customization.models import CustomField
+from routing.models import BGPInstance, BGPSession, OSPFInstance, StaticRoute
 
 from . import rack_move
 from .models import (
+    ASN,
     VLAN,
     VRF,
     Cabinet,
@@ -39,6 +41,7 @@ from .models import (
     IPRole,
     Location,
     MACAddress,
+    Manufacturer,
     PortReservation,
     PowerFeed,
     PowerPanel,
@@ -690,4 +693,176 @@ class ComponentCatalogTests(_Case):
         for i in range(10):
             Interface.objects.create(device=self.srv, name=f"eth{i + 1}").tags.add(self.a_tag)
             Interface.objects.create(device=self.pdu, name=f"p{i}").tags.add(self.a_tag)
+        self.assertEqual(count(), one)
+
+
+class EveryCatalogTests(_Case):
+    """Every site-local catalog a moving row can reference is checked, on
+    every row that moves with the devices - components and routing rows
+    alike (#409)."""
+
+    def setUp(self):
+        super().setUp()
+        dep = DeploymentSettings.load()
+        dep.enhanced_site_separation = True
+        dep.save()
+        self.a_tag = Tag.objects.create(tenant=self.tenant, name="a-only", slug="a-only",
+                                        owning_site=self.site_a)
+
+    def messages(self, r):
+        return [b["message"] for b in r.json()["blockers"]]
+
+    def maker(self, name="LocalCo", owner=None):
+        return Manufacturer.objects.create(tenant=self.tenant, name=name, slug=name.lower(),
+                                           owning_site=owner)
+
+    def test_a_local_manufacturer_on_an_inventory_item_blocks(self):
+        InventoryItem.objects.create(device=self.srv, name="psu0",
+                                     manufacturer=self.maker(owner=self.site_a))
+        r = self.move()
+        self.assertEqual(r.status_code, 409, r.content)
+        self.assertEqual(self.messages(r),
+                         ["srv1 psu0: manufacturer LocalCo is local to SiteA."])
+        self.assert_unmoved()
+
+    def test_a_global_manufacturer_or_one_of_the_new_site_does_not_block(self):
+        InventoryItem.objects.create(device=self.srv, name="g", manufacturer=self.maker("Glob"))
+        InventoryItem.objects.create(device=self.srv, name="b",
+                                     manufacturer=self.maker("BCo", self.site_b))
+        self.assertEqual(self.codes(self.move(dry_run=True)), [])
+
+    def test_a_local_status_on_an_inventory_item_blocks(self):
+        InventoryItem.objects.create(
+            device=self.srv, name="psu1",
+            status=Status.objects.create(tenant=self.tenant, name="Lab", slug="lab",
+                                         owning_site=self.site_a))
+        self.assertIn("srv1 psu1: status Lab is local to SiteA.",
+                      self.messages(self.move(dry_run=True)))
+
+    def test_a_local_device_type_names_the_device(self):
+        self.dt.owning_site = self.site_a
+        self.dt.save()
+        self.assertEqual(self.messages(self.move(dry_run=True)),
+                         ["srv1: device type 1u is local to SiteA."])
+
+    def test_a_manufacturer_the_caller_cannot_view_is_not_named(self):
+        InventoryItem.objects.create(device=self.srv, name="psu0",
+                                     manufacturer=self.maker(owner=self.site_a))
+        user = User.objects.create_user("m", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="ab", object_types=["rack", "device", "inventoryitem", "site"],
+            actions=["view", "change"])
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        self.login(user)
+        self.assertEqual(self.messages(self.move(dry_run=True)),
+                         ["srv1 psu0: a manufacturer is local to SiteA."])
+
+    def test_a_local_vrf_or_status_on_a_static_route_blocks(self):
+        StaticRoute.objects.create(
+            tenant=self.tenant, device=self.srv, prefix="10.9.0.0/16", next_hop="10.0.0.1",
+            vrf=VRF.objects.create(tenant=self.tenant, name="red", owning_site=self.site_a),
+            next_hop_vrf=VRF.objects.create(tenant=self.tenant, name="leak",
+                                            owning_site=self.site_a),
+            status=Status.objects.create(tenant=self.tenant, name="Lab", slug="lab",
+                                         owning_site=self.site_a))
+        msgs = self.messages(self.move(dry_run=True))
+        self.assertIn("srv1 static route 10.9.0.0/16: VRF red is local to SiteA.", msgs)
+        self.assertIn("srv1 static route 10.9.0.0/16: VRF leak is local to SiteA.", msgs)
+        self.assertIn("srv1 static route 10.9.0.0/16: status Lab is local to SiteA.", msgs)
+
+    def test_a_local_entry_on_a_routing_instance_or_session_blocks(self):
+        OSPFInstance.objects.create(tenant=self.tenant, device=self.srv,
+                                    process_id="1").tags.add(self.a_tag)
+        bgp = BGPInstance.objects.create(
+            tenant=self.tenant, device=self.pdu,
+            asn=ASN.objects.create(tenant=self.tenant, asn=65001),
+            vrf=VRF.objects.create(tenant=self.tenant, name="red", owning_site=self.site_a))
+        BGPSession.objects.create(tenant=self.tenant, instance=bgp, remote_address="10.0.0.2",
+                                  remote_asn=65002).tags.add(self.a_tag)
+        msgs = self.messages(self.move(dry_run=True))
+        self.assertIn("srv1 OSPF 1: tag a-only is local to SiteA.", msgs)
+        self.assertIn("pdu1 BGP AS65001: VRF red is local to SiteA.", msgs)
+        self.assertIn("pdu1 BGP session 10.0.0.2: tag a-only is local to SiteA.", msgs)
+
+    def test_a_value_of_a_local_custom_field_on_a_routing_row_blocks(self):
+        CustomField.objects.create(tenant=self.tenant, key="owner", label="Owner",
+                                   applies_to=["staticroute"], owning_site=self.site_a)
+        StaticRoute.objects.create(tenant=self.tenant, device=self.srv, prefix="0.0.0.0/0",
+                                   next_hop="10.0.0.1", custom_fields={"owner": "x"})
+        self.assertEqual(
+            self.messages(self.move(dry_run=True)),
+            ["srv1 static route 0.0.0.0/0: custom field Owner is local to SiteA."])
+
+    def test_routing_rows_are_ignored_with_separation_off(self):
+        dep = DeploymentSettings.load()
+        dep.enhanced_site_separation = False
+        dep.save()
+        StaticRoute.objects.create(
+            tenant=self.tenant, device=self.srv, prefix="10.9.0.0/16", next_hop="10.0.0.1",
+            vrf=VRF.objects.create(tenant=self.tenant, name="red", owning_site=self.site_a))
+        InventoryItem.objects.create(device=self.srv, name="psu0",
+                                     manufacturer=self.maker(owner=self.site_a))
+        self.assertEqual(self.codes(self.move(dry_run=True)), [])
+
+    def test_every_catalog_reference_of_a_moving_row_is_checked(self):
+        """A new local catalog, or a new foreign key to one on a row that
+        moves, must not go unchecked: every such key is one the plan reads."""
+        from django.apps import apps
+
+        from auth_api.site_paths import CATALOG_SITE_PATHS
+
+        local = {m for m in apps.get_models()
+                 if CATALOG_SITE_PATHS.get(m._meta.model_name) == "owning_site"}
+        p = rack_move.Plan(rack=self.rack, site=self.site_b, location=None,
+                           devices=[self.srv])
+        subjects = rack_move._subjects(p)
+        checked = {(s.model, f) for s in subjects for f, _cat in s.fks}
+        for model in {s.model for s in subjects}:
+            for f in model._meta.get_fields():
+                if f.many_to_one and f.concrete and f.related_model in local:
+                    self.assertIn((model, f.name), checked, f"{model.__name__}.{f.name}")
+
+    def test_every_row_that_follows_a_device_to_its_site_is_checked(self):
+        """Whatever takes its site from a moving device moves with it, so
+        every such type that carries tags, custom fields or a local catalog
+        is a subject of the check."""
+        from django.apps import apps
+
+        from auth_api.site_paths import SITE_PATHS
+
+        local_fk = {m for m in apps.get_models() if hasattr(m, "owning_site")}
+        p = rack_move.Plan(rack=self.rack, site=self.site_b, location=None,
+                           devices=[self.srv])
+        subjects = {s.model for s in rack_move._subjects(p)}
+        for model in apps.get_models():
+            path = SITE_PATHS.get(model._meta.model_name, "")
+            if not any(a.endswith("device__site") for a in path.split("|")):
+                continue
+            names = {f.name for f in model._meta.get_fields()}
+            refs = ("tags" in names or "custom_fields" in names
+                    or any(getattr(f, "related_model", None) in local_fk
+                           for f in model._meta.get_fields() if f.many_to_one))
+            if refs:
+                self.assertIn(model, subjects, model.__name__)
+
+    def test_the_query_count_does_not_grow_with_routing_rows(self):
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                rack_move.plan(self.rack, self.site_b, None,
+                               user=self.admin, tenant=self.tenant)
+            return len(ctx.captured_queries)
+
+        red = VRF.objects.create(tenant=self.tenant, name="red", owning_site=self.site_a)
+        StaticRoute.objects.create(tenant=self.tenant, device=self.srv, prefix="10.0.0.0/8",
+                                   next_hop="10.0.0.1", vrf=red)
+        InventoryItem.objects.create(device=self.srv, name="i", manufacturer=self.maker(
+            owner=self.site_a))
+        one = count()
+        for i in range(10):
+            StaticRoute.objects.create(tenant=self.tenant, device=self.pdu,
+                                       prefix=f"10.{i}.0.0/16", next_hop="10.0.0.1", vrf=red)
+            InventoryItem.objects.create(device=self.srv, name=f"i{i}",
+                                         manufacturer=self.maker(f"M{i}", self.site_a))
         self.assertEqual(count(), one)

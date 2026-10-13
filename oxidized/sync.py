@@ -34,8 +34,9 @@ object it matched may not be allowed to read that node. A node seen for the
 first time (every node, on a connection's first sync) links straight away,
 and so does a node matched back to the object its last confirmed link
 pointed at. A connection that synced before node memory existed has not
-recorded every node it saw (#406); until its next successful sync records
-them, a node missing from memory counts as seen before.
+recorded every node it saw (#406): on it, a node missing from memory always
+counts as seen before, since a sync records only the nodes listed at that
+moment (#411).
 
 A target is a ``(kind, id)`` pair, kind being :data:`DEVICE` or :data:`VM`.
 """
@@ -226,9 +227,10 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
         "full_name", "last_device_id", "last_virtual_machine_id"
     ):
         known[full] = (DEVICE, dev_id) if dev_id else (VM, vm_id) if vm_id else None
-    # Until the first sync after the upgrade that added node memory has
-    # recorded every node, a node missing from it may have been seen before
-    # all the same (#406): its new match is proposed.
+    # On a connection that synced before node memory existed, a node missing
+    # from it may have been seen before all the same (#406): its new match is
+    # proposed. No sync clears this - a node away from Oxidized during one is
+    # still unrecorded (#411).
     first_seen_links = conn.node_memory_complete
 
     seen: dict[str, dict] = {}
@@ -341,11 +343,11 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
         conn.last_checked_at = now
         conn.last_error = ""
         conn.last_sync_summary = summary
-        # Every node this pass saw is recorded now.
-        conn.node_memory_complete = True
+        # ``node_memory_complete`` stays as it is: this pass recorded only
+        # the nodes Oxidized lists now, not one that is away (#411).
         conn.save(update_fields=[
             "node_count", "last_sync_at", "last_sync_attempt_at", "last_checked_at",
-            "last_error", "last_sync_summary", "node_memory_complete", "updated_at",
+            "last_error", "last_sync_summary", "updated_at",
         ])
     return summary
 

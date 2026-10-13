@@ -130,8 +130,10 @@ takes:
     - a rack of the same name at the new site.
     - with [enhanced site separation](../access/site-separation.md)
       on: a catalog entry local to another site - a device type, status,
-      tag, VRF, IP role or custom field - on the rack, its devices, their
-      ports and other components, or their IP and MAC addresses.
+      tag, VRF, IP role, manufacturer or custom field - on the rack, its
+      devices, their ports and other components such as inventory items,
+      their IP and MAC addresses, or their static routes, BGP sessions and
+      other routing processes.
 
 Port reservations on the moving ports follow them to the new site. Each moved
 rack, device and tile is written to its change log.

@@ -16,7 +16,8 @@ bay of a device outside the rack, a bay child racked in another rack or
 mounted in a DIN cabinet (#403), a moving device in a virtual chassis with
 devices outside the rack, a rack of the same name at the new site
 and, under enhanced site separation, a catalog entry local to another site on
-the rack, its devices, their components, IP and MAC addresses (#407). Cleared:
+the rack, its devices, their components, IP and MAC addresses (#407) and
+routing rows (#409). Cleared:
 a floor-plan tile that places the rack or one of its devices on a plan of
 another site. Updated: each device's site and location, and the site a port
 reservation on a moving port carries.
@@ -32,7 +33,6 @@ from django.db.models import Q
 
 from .models import (
     VLAN,
-    VRF,
     Antenna,
     AuxPort,
     Cabinet,
@@ -43,13 +43,11 @@ from .models import (
     ConsoleServerPort,
     Device,
     DeviceBay,
-    DeviceType,
     FloorPlanTile,
     FrontPort,
     Interface,
     InventoryItem,
     IPAddress,
-    IPRole,
     MACAddress,
     Module,
     ModuleBay,
@@ -60,7 +58,6 @@ from .models import (
     Rack,
     RearPort,
     Site,
-    Status,
     VirtualChassis,
 )
 
@@ -83,6 +80,24 @@ COMPONENTS = (
     (DeviceBay, "name"), (ModuleBay, "name"), (Module, "module_bay__name"),
     (InventoryItem, "name"),
 )
+# Routing rows that take their site from a moving device (``SITE_PATHS``) and
+# so move with it (#409): (model, the path to the device, how one is called,
+# the path to what tells it apart or None).
+ROUTING_ROWS = (
+    ("routing.StaticRoute", "device", "static route {}", "prefix"),
+    ("routing.BGPInstance", "device", "BGP AS{}", "asn__asn"),
+    ("routing.BGPSession", "instance__device", "BGP session {}", "remote_address"),
+    ("routing.OSPFInstance", "device", "OSPF {}", "process_id"),
+    ("routing.ISISInstance", "device", "IS-IS {}", "process"),
+    ("routing.EIGRPInstance", "device", "EIGRP {}", "asn"),
+    ("routing.LDPInstance", "device", "LDP", None),
+    ("routing.VTEP", "device", "VTEP", None),
+)
+# How a catalog is called in a reason; any other uses its verbose name.
+CATALOG_NOUNS = {
+    "devicetype": "device type", "status": "status", "vrf": "VRF", "iprole": "IP role",
+    "manufacturer": "manufacturer", "zone": "zone", "routetarget": "route target",
+}
 # A long list of one kind stops here and says how many more.
 PER_KIND = 25
 
@@ -343,30 +358,127 @@ def _local(model, noun: str, tenant_id, site_pk) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class _Subject:
+    """Rows of one model that move: the values that name a row (``label``,
+    its pk first), the catalog foreign keys it carries as ``(field, catalog
+    model)``, and how a row becomes the subject of a reason."""
+
+    model: type
+    rows: object
+    label: tuple
+    fks: tuple
+    ref: object
+
+
+def _local_catalogs() -> dict:
+    """Every catalog a row points at by foreign key that can be local to a
+    site: those of ``CATALOG_SITE_PATHS`` with their own ``owning_site``.
+    Tags and custom fields are read apart; a custom-field group and the
+    component templates are never referenced by a row that moves."""
+    from django.apps import apps
+
+    from auth_api.site_paths import CATALOG_SITE_PATHS
+    from core.models import Tag
+    from customization.models import CustomField, CustomFieldGroup
+
+    return {
+        m: CATALOG_NOUNS.get(m._meta.model_name, str(m._meta.verbose_name))
+        for m in apps.get_models()
+        if CATALOG_SITE_PATHS.get(m._meta.model_name) == "owning_site"
+        and m not in (Tag, CustomField, CustomFieldGroup)
+    }
+
+
+def _catalog_fks(model, catalogs: dict) -> tuple:
+    return tuple(
+        (f.name, f.related_model) for f in model._meta.concrete_fields
+        if f.many_to_one and f.related_model in catalogs
+    )
+
+
+def _subjects(p: Plan) -> list:
+    """Everything that moves and may carry a catalog entry: the rack, its
+    devices, their components, IP and MAC addresses (#407), and the routing
+    rows that take their site from a moving device (#409)."""
+    from django.apps import apps
+
+    catalogs = _local_catalogs()
+    ids, tenant_id = p.device_ids, p.rack.tenant_id
+
+    def plain(row):
+        return row[1]
+
+    def component(model):
+        return lambda row: _component(model, row[0], row[1], row[2])
+
+    def ip(row):
+        dev = row[1] or row[2]
+        return Ref(IPAddress, row[0], f"{dev} {row[3]}", f"an IP address of {dev}")
+
+    def mac(row):
+        return Ref(MACAddress, row[0], f"{row[1]} {row[2]}", f"a MAC address of {row[1]}")
+
+    def routing(model, called):
+        return lambda row: _component(
+            model, row[0], row[1],
+            called.format("" if len(row) < 3 or row[2] is None else row[2]).strip())
+
+    out = [
+        _Subject(Rack, Rack.objects.filter(pk=p.rack.pk), ("pk", "name"),
+                 _catalog_fks(Rack, catalogs), plain),
+        _Subject(Device, Device.objects.filter(pk__in=ids), ("pk", "name"),
+                 _catalog_fks(Device, catalogs), plain),
+    ]
+    if not ids:
+        return out
+    for model, name_path in COMPONENTS:
+        out.append(_Subject(model, model.objects.filter(device_id__in=ids),
+                            ("pk", "device__name", name_path),
+                            _catalog_fks(model, catalogs), component(model)))
+    out.append(_Subject(IPAddress, _ips(p, ids),
+                        ("pk", "assigned_device__name", "assigned_interface__device__name",
+                         "ip_address"),
+                        _catalog_fks(IPAddress, catalogs), ip))
+    out.append(_Subject(MACAddress, MACAddress.objects.filter(
+        tenant_id=tenant_id, assigned_interface__device_id__in=ids),
+        ("pk", "assigned_interface__device__name", "mac_address"),
+        _catalog_fks(MACAddress, catalogs), mac))
+    for label, device, called, name_path in ROUTING_ROWS:
+        model = apps.get_model(label)
+        out.append(_Subject(
+            model, model.objects.filter(**{f"{device}_id__in": ids}),
+            ("pk", f"{device}__name", *([name_path] if name_path else [])),
+            _catalog_fks(model, catalogs), routing(model, called)))
+    return out
+
+
 def _check_catalog(p: Plan, names: dict) -> None:
     """Under enhanced site separation a catalog entry local to one site is
-    not offered at another, so nothing that moves may take one along: the
-    rack, its devices, their components, and the IP and MAC addresses on
-    them (#407). The catalogs are those of ``CATALOG_SITE_PATHS`` that such
-    rows reference - device type, status, tag, VRF, IP role and custom field.
-    Query count does not grow with the number of rows."""
+    not offered at another, so nothing that moves may take one along (see
+    ``_subjects``). Every catalog of ``CATALOG_SITE_PATHS`` a moving row can
+    reference is checked: tags, custom fields, and each foreign key to a
+    catalog with an owning site - device type, status, VRF, IP role,
+    manufacturer and the like (#407, #409). Query count does not grow with
+    the number of rows."""
     from django.contrib.contenttypes.models import ContentType
 
     from core.models import Tag, TaggedItem
     from customization.models import CustomField
 
-    site_pk, tenant_id, ids = p.site.pk, p.rack.tenant_id, p.device_ids
+    site_pk, tenant_id = p.site.pk, p.rack.tenant_id
+    subjects = _subjects(p)
+    catalogs = _local_catalogs()
+    referenced = {cat for s in subjects for _f, cat in s.fks}
+    local = {cat: _local(cat, catalogs[cat], tenant_id, site_pk)
+             for cat in sorted(referenced, key=lambda m: m._meta.label)}
     tags = _local(Tag, "tag", tenant_id, site_pk)
-    statuses = _local(Status, "status", tenant_id, site_pk)
-    vrfs = _local(VRF, "VRF", tenant_id, site_pk)
-    roles = _local(IPRole, "IP role", tenant_id, site_pk)
     fields = {
         key: (pk, "custom field", label, owner)
         for pk, key, label, owner in CustomField.objects.filter(
             tenant_id=tenant_id, owning_site__isnull=False
         ).exclude(owning_site_id=site_pk).values_list("pk", "key", "label", "owning_site_id")
     }
-    catalogs = {"status": (Status, statuses), "vrf": (VRF, vrfs), "role": (IPRole, roles)}
 
     def found(subject, model, pk, noun, name, owner):
         article = "an" if noun.startswith(("IP", "a", "e", "i", "o", "u")) else "a"
@@ -374,76 +486,44 @@ def _check_catalog(p: Plan, names: dict) -> None:
                 entry=Ref(model, pk, f"{noun} {name}", f"{article} {noun}"),
                 site=_site(owner, names))
 
-    for d in [p.rack, *p.devices]:
-        dt = getattr(d, "device_type", None)
-        if dt is not None and dt.owning_site_id and dt.owning_site_id != site_pk:
-            found(d.name, DeviceType, dt.pk, "device type", dt.name, dt.owning_site_id)
-
-    # (model, rows of it that move, how one is named, catalog FKs it carries)
-    subjects = [
-        (Rack, Rack.objects.filter(pk=p.rack.pk), ("pk", "name"), ("status",)),
-        (Device, Device.objects.filter(pk__in=ids), ("pk", "name"), ("status",)),
-    ]
-    if ids:
-        for model, name_path in COMPONENTS:
-            fks = tuple(f for f in ("status", "vrf") if _has_field(model, f))
-            subjects.append((model, model.objects.filter(device_id__in=ids),
-                             ("pk", "device__name", name_path), fks))
-        subjects.append((IPAddress, _ips(p, ids),
-                         ("pk", "assigned_device__name",
-                          "assigned_interface__device__name", "ip_address"),
-                         ("status", "vrf", "role")))
-        subjects.append((MACAddress, MACAddress.objects.filter(
-            tenant_id=tenant_id, assigned_interface__device_id__in=ids),
-            ("pk", "assigned_interface__device__name", "mac_address"), ()))
-
-    def subject_ref(model, row):
-        if model in (Rack, Device):
-            return row[1]
-        if model is IPAddress:
-            dev = row[1] or row[2]
-            return Ref(IPAddress, row[0], f"{dev} {row[3]}", f"an IP address of {dev}")
-        if model is MACAddress:
-            return Ref(MACAddress, row[0], f"{row[1]} {row[2]}", f"a MAC address of {row[1]}")
-        return _component(model, row[0], row[1], row[2])
-
     # Tags: one query over every subject, then the names of the tagged rows.
-    if tags:
-        cts = ContentType.objects.get_for_models(*[s[0] for s in subjects])
+    tagged = [s for s in subjects if _has_field(s.model, "tags")]
+    if tags and tagged:
+        cts = ContentType.objects.get_for_models(*[s.model for s in tagged])
         where = Q()
-        for model, qs, _label, _fks in subjects:
-            where |= Q(content_type=cts[model], object_id__in=qs.values("pk"))
+        for s in tagged:
+            where |= Q(content_type=cts[s.model], object_id__in=s.rows.values("pk"))
         hits: dict = {}
         for ct_id, obj_id, tag_id in TaggedItem.objects.filter(
                 where, tag_id__in=tags).values_list("content_type_id", "object_id", "tag_id"):
             hits.setdefault(ct_id, []).append((obj_id, tag_id))
-        for model, qs, label, _fks in subjects:
-            pairs = hits.get(cts[model].pk)
+        for s in tagged:
+            pairs = hits.get(cts[s.model].pk)
             if not pairs:
                 continue
-            rows = {r[0]: r for r in qs.filter(pk__in={o for o, _ in pairs})
-                    .values_list(*label)}
+            rows = {r[0]: r for r in s.rows.filter(pk__in={o for o, _ in pairs})
+                    .values_list(*s.label)}
             for obj_id, tag_id in sorted(pairs, key=lambda x: (str(rows[x[0]][1:]), str(x[1]))):
-                found(subject_ref(model, rows[obj_id]), Tag, tag_id, *tags[tag_id])
+                found(s.ref(rows[obj_id]), Tag, tag_id, *tags[tag_id])
 
-    for model, qs, label, fks in subjects:
-        fks = [f for f in fks if catalogs[f][1]]
-        keys = list(fields) if _has_field(model, "custom_fields") else []
+    for s in subjects:
+        fks = [(f, cat) for f, cat in s.fks if local[cat]]
+        keys = list(fields) if _has_field(s.model, "custom_fields") else []
         if not fks and not keys:
             continue
         where = Q()
-        for f in fks:
-            where |= Q(**{f"{f}_id__in": catalogs[f][1]})
+        for f, cat in fks:
+            where |= Q(**{f"{f}_id__in": local[cat]})
         if keys:
             where |= Q(custom_fields__has_any_keys=keys)
-        extra = [f"{f}_id" for f in fks] + (["custom_fields"] if keys else [])
-        for row in qs.filter(where).values_list(*label, *extra).order_by(*label[1:]):
-            subject = subject_ref(model, row)
-            values = dict(zip(extra, row[len(label):], strict=True))
-            for f in fks:
-                cat_model, entries = catalogs[f]
-                if values[f"{f}_id"] in entries:
-                    found(subject, cat_model, values[f"{f}_id"], *entries[values[f"{f}_id"]])
+        extra = [f"{f}_id" for f, _cat in fks] + (["custom_fields"] if keys else [])
+        for row in s.rows.filter(where).values_list(*s.label, *extra).order_by(*s.label[1:]):
+            subject = s.ref(row)
+            values = dict(zip(extra, row[len(s.label):], strict=True))
+            for f, cat in fks:
+                entry = local[cat].get(values[f"{f}_id"])
+                if entry is not None:
+                    found(subject, cat, values[f"{f}_id"], *entry)
             for key, value in sorted((values.get("custom_fields") or {}).items()):
                 if key in fields and value not in (None, "", [], {}):
                     found(subject, CustomField, *fields[key])
