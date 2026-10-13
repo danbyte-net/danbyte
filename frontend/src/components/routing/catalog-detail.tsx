@@ -225,6 +225,8 @@ function Body<T extends CatalogRow, TRule>({
               columns={spec.rules.columns()}
               flexColumn="description"
               tableId={spec.rules.tableId}
+              searchable
+              searchPlaceholder="Search rules…"
             />
           )}
         </DetailTab>

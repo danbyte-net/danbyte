@@ -72,6 +72,19 @@ manufacturer, tags - each counting the rows in every value.
 Hidden facets are saved per list for you, like a column layout (stored as the
 `facets-<list>` layout, e.g. `facets-devices`), and do not affect anyone else.
 
+## Searching a table
+
+A list page searches with the box in its header. A table on a detail tab - a
+rack's devices, a device's interfaces, a site's prefixes, a virtualization
+source's VMs, an object's change log - has its own search box above the rows
+when it can run long. It matches the words a row shows in its shown columns,
+ignoring case: names, addresses, statuses, related objects by name. Hidden
+columns are not searched.
+
+The box filters the rows the tab has loaded. A tab that loads only the first
+part of a long list says so under the table - *Searching the first 500 of
+1,234* - and the full list page searches the rest.
+
 ## Sorting
 
 Click a column header to sort by it; click it again to reverse. Text sorts in

@@ -280,6 +280,8 @@ function VrfVlansTable({ vrfId }: { vrfId: string }) {
       columns={columns}
       flexColumn="description"
       tableId="vlan-embedded"
+      searchable
+      searchPlaceholder="Search VLANs…"
     />
   )
 }
@@ -313,6 +315,8 @@ function VrfPrefixesTable({ vrfId }: { vrfId: string }) {
       columns={columns}
       flexColumn="description"
       tableId="prefix-embedded"
+      searchable
+      searchPlaceholder="Search prefixes…"
     />
   )
 }

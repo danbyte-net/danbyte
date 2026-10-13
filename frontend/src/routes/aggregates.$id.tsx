@@ -203,6 +203,8 @@ function AggregatePrefixes({
       columns={columns}
       flexColumn="description"
       tableId="prefix-embedded"
+      searchable
+      searchPlaceholder="Search prefixes…"
     />
   )
 }

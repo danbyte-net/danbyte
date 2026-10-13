@@ -64,6 +64,15 @@ const COLUMNS: ColumnDef<ChangeLogEntry>[] = [
     enableSorting: false,
     header: "Changes",
     cell: ({ row }) => <ChangesCell e={row.original} />,
+    // The search box reads the diff, folded or not: field names and values.
+    meta: {
+      export: {
+        value: (e) =>
+          Object.entries(e.changes)
+            .map(([f, c]) => `${f}: ${diffText(c)}`)
+            .join("; "),
+      },
+    },
   },
 ]
 
@@ -122,6 +131,8 @@ export function ChangeLogPanel({
           columns={COLUMNS}
           flexColumn="changes"
           embedded
+          searchable
+          searchPlaceholder="Search changes…"
         />
       )}
     </div>

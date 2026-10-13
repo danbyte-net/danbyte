@@ -151,6 +151,8 @@ export function RoutingPanel({ owner }: { owner: RoutingOwner }) {
             columns={columns}
             flexColumn="description"
             tableId="device-static-routes"
+            searchable
+            searchPlaceholder="Search routes…"
             onSelectedRowsChange={setSelected}
             selectedRows={selected}
           />
@@ -530,6 +532,8 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
                     columns={sessionColumns}
                     flexColumn="description"
                     tableId="device-bgp-sessions"
+                    searchable
+                    searchPlaceholder="Search sessions…"
                     onSelectedRowsChange={(rs) =>
                       setPicked((p) => ({ ...p, [inst.id]: rs }))
                     }

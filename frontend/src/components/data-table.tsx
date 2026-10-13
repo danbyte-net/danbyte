@@ -45,7 +45,7 @@ import { useDeviceFieldVisibility, useListFields } from "@/lib/list-fields"
 import { tableApi } from "@/lib/tables"
 import { useTablePreference } from "@/lib/use-table-preference"
 import { useUserPrefs } from "@/lib/use-user-prefs"
-import { exportTable, type ExportFormat } from "@/lib/table-export"
+import { coerce, exportTable, type ExportFormat } from "@/lib/table-export"
 import { naturalSortingFn } from "@/lib/natural-sort"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -160,7 +160,10 @@ interface DataTableProps<T> {
   pagedWhenGrouped?: boolean
   /** Show a filter box above the table. Embedded panes (device components,
    * detail tabs) suppress the Export/Columns toolbar but still want to find a
-   * row in a long list - this is that box, and it filters every column. */
+   * row in a long list - this is that box, and it filters every shown column.
+   * It filters the rows `data` holds: a capped list (`total`) says so under
+   * the table, and a `serverPagination` table must search on the server
+   * instead. */
   searchable?: boolean
   /** Placeholder for the filter box. */
   searchPlaceholder?: string
@@ -254,7 +257,9 @@ export function DataTable<T>({
   // a `striped` prop overrides it for this specific table.
   const { values: displayPrefs, setPref } = useUserPrefs()
   const { formatDateTime } = useDateFormat()
-  const capped = serverPagination ? null : truncationNotice(total, data.length)
+  const capped = serverPagination
+    ? null
+    : truncationNotice(total, data.length, !!globalFilter.trim())
   const stripes = striped ?? displayPrefs.table_stripes === true
 
   // ─── Pagination ────────────────────────────────────────────────────────
@@ -517,10 +522,21 @@ export function DataTable<T>({
   // without one keep TanStack's index keys.
   const keyById = useMemo(() => hasDistinctIds(data), [data])
 
+  // TanStack only searches columns with an accessor; a searchable table gives
+  // its cell-only columns one that reads their text (see searchAccessor).
+  const tableColumns = useMemo(
+    () => (searchable ? columns.map(searchAccessor) : columns),
+    [columns, searchable]
+  )
+  const defsById = useMemo(
+    () => new Map(tableColumns.map((c) => [c.id, c])),
+    [tableColumns]
+  )
+
   const table = useReactTable({
     data,
     getRowId: keyById ? rowIdOf : undefined,
-    columns,
+    columns: tableColumns,
     state: {
       sorting,
       columnFilters,
@@ -547,6 +563,14 @@ export function DataTable<T>({
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onGlobalFilterChange: setGlobalFilter,
+    // The search box matches the words a row shows - object references by
+    // name, not by being skipped (see cellSearchText).
+    getColumnCanGlobalFilter: columnSearchable,
+    globalFilterFn: (row, columnId, value) =>
+      matchesSearch(
+        cellSearchText(row, columnId, defsById.get(columnId)),
+        value
+      ),
     getGroupedRowModel: getGroupedRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -640,7 +664,11 @@ export function DataTable<T>({
       {searchable && (
         <Input
           value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
+          onChange={(e) => {
+            setGlobalFilter(e.target.value)
+            // Matches start on page one, not past the end of a shorter list.
+            table.setPageIndex(0)
+          }}
           placeholder={searchPlaceholder ?? "Search…"}
           className="h-8 max-w-xs text-[13px]"
           aria-label="Filter rows"
@@ -1105,10 +1133,76 @@ export function DataTable<T>({
  * is what arrived. */
 export function truncationNotice(
   total: number | undefined,
-  shown: number
+  shown: number,
+  searching = false
 ): string | null {
   if (total == null || !Number.isFinite(total) || total <= shown) return null
+  // The search box filters the rows that arrived, so with a capped list it
+  // says so rather than let a miss read as "not there".
+  if (searching)
+    return `Searching the first ${shown.toLocaleString()} of ${total.toLocaleString()} - open the full list to search the rest.`
   return `Showing the first ${shown.toLocaleString()} of ${total.toLocaleString()} - filter or open the full list to see the rest.`
+}
+
+// ─── Search box ─────────────────────────────────────────────────────────
+
+/** Columns that hold controls, never data. */
+const SEARCH_SKIP = new Set(["select", "actions"])
+
+/** Whether the search box looks at a column: every shown data column, whatever
+ * its first row holds (TanStack's default skips a column whose first value is
+ * empty or an object - a device list whose first row has no serial would never
+ * match a serial). */
+export function columnSearchable(column: {
+  id: string
+  getIsVisible: () => boolean
+}): boolean {
+  return !SEARCH_SKIP.has(column.id) && column.getIsVisible()
+}
+
+/** A cell-only column (no accessor) given one, so the search box can read it:
+ * its `meta.export` text, else the row field the column is named after. It
+ * stays unsortable unless it said otherwise, and `meta.searchOnly` keeps the
+ * export from writing it as a new column. Columns with an accessor, control
+ * columns and id-less columns pass through untouched. */
+export function searchAccessor<T>(def: ColumnDef<T, unknown>): ColumnDef<T> {
+  const id = def.id
+  if (!id || SEARCH_SKIP.has(id) || "columns" in def) return def
+  if ("accessorKey" in def || "accessorFn" in def) return def
+  const exported = def.meta?.export?.value
+  return {
+    ...def,
+    accessorFn: (r: T) =>
+      exported
+        ? exported(r)
+        : r && typeof r === "object"
+          ? (r as Record<string, unknown>)[id]
+          : undefined,
+    enableSorting: def.enableSorting ?? false,
+    meta: { ...def.meta, searchOnly: true },
+  }
+}
+
+/** The words a cell offers the search box - what the export writes for it: a
+ * column's `meta.export` text, else its value with object references read as
+ * their names. */
+export function cellSearchText<T>(
+  row: { original: T; getValue: (columnId: string) => unknown },
+  columnId: string,
+  def: ColumnDef<T, unknown> | undefined
+): string {
+  const exported = def?.meta?.export?.value
+  if (exported) return coerce(exported(row.original))
+  return coerce(row.getValue(columnId))
+}
+
+/** Case-insensitive substring match; an empty query matches everything. */
+export function matchesSearch(text: string, query: unknown): boolean {
+  const q = String(query ?? "")
+    .trim()
+    .toLowerCase()
+  if (!q) return true
+  return text.toLowerCase().includes(q)
 }
 
 // Turn a file-base name ("ip-ranges") into a heading ("Ip Ranges") for the

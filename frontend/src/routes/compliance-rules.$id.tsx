@@ -329,6 +329,8 @@ function AffectedObjects({
           autoColumns={{ api: AFFECTED_LIST_API[objectType] ?? null }}
           exportName={`affected-${objectType}`}
           exportTitle={ruleName}
+          searchable
+          searchPlaceholder="Search objects…"
         />
       ) : q.data && total > 0 ? (
         <DataTable
@@ -336,6 +338,8 @@ function AffectedObjects({
           columns={fallbackColumns}
           flexColumn="object"
           exportTitle={ruleName}
+          searchable
+          searchPlaceholder="Search objects…"
         />
       ) : null}
     </div>

@@ -154,6 +154,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
           filter={{ rack: r.id }}
           omitRack
           emptyText="No feeds deliver power to this rack yet."
+          searchable={false}
         />
       </DetailTab>
       <DetailTab value="documents">
@@ -193,6 +194,12 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
         id: "position",
         accessorKey: "position",
         header: ({ column }) => <SortHeader column={column} label="Position" />,
+        // Search reads the position as shown: "U12", or "unracked".
+        meta: {
+          export: {
+            value: (d) => (d.position != null ? `U${d.position}` : "unracked"),
+          },
+        },
         cell: ({ row }) =>
           row.original.position != null ? (
             <span className="num font-mono text-xs">
@@ -230,7 +237,16 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
     return (
       <p className="text-sm text-muted-foreground">No devices in this rack.</p>
     )
-  return <DataTable data={rows} columns={columns} flexColumn="name" embedded />
+  return (
+    <DataTable
+      data={rows}
+      columns={columns}
+      flexColumn="name"
+      embedded
+      searchable
+      searchPlaceholder="Search devices…"
+    />
+  )
 }
 
 /** The rack's attributes, grouped into labelled tables - the detail that used

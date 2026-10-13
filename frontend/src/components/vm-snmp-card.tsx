@@ -259,6 +259,8 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
             tableId="vm-snmp-interfaces"
             flexColumn="name"
             embedded
+            searchable
+            searchPlaceholder="Search interfaces…"
           />
         )}
       </section>
@@ -289,6 +291,8 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
             tableId="vm-snmp-arp"
             flexColumn="if"
             embedded
+            searchable
+            searchPlaceholder="Search ARP entries…"
           />
         </section>
       )}

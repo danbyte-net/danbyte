@@ -251,7 +251,8 @@ The rack's **Overview** puts the rack's facts on the left - the **Rack** and
 the right, under **Elevation**: paired elevations, **front and rear side by
 side**. Until you zoom by hand the zoom steps down until both faces fit the
 column, so a whole rack reads without scrolling; **−** and **+** take over
-from there. The Devices tab keeps a single toggleable elevation. Three
+from there. The Devices tab keeps a single toggleable elevation beside a
+searchable list of the rack's devices. Three
 **display modes**:
 
 | Mode | Shows |

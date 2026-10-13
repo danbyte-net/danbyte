@@ -21,9 +21,12 @@ import { QueryError } from "@/components/query-error"
 export function EmbeddedDeviceTable({
   filter,
   emptyText = "No devices.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const qs = useMemo(() => {
     const p = new URLSearchParams({ ...filter, page_size: "500" })
@@ -62,6 +65,8 @@ export function EmbeddedDeviceTable({
       columns={columns}
       flexColumn="type"
       tableId="embedded-devices"
+      searchable={searchable}
+      searchPlaceholder="Search devices…"
     />
   )
 }

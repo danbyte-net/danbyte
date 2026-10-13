@@ -413,6 +413,8 @@ export function VMInterfacesPane({
           data={rows}
           columns={columns}
           embedded
+          searchable
+          searchPlaceholder="Search interfaces…"
           onSelectedRowsChange={setSelected}
         />
       )}

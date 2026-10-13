@@ -256,6 +256,8 @@ function ImportPage() {
                   data={result.errors}
                   flexColumn="error"
                   enableExport={false}
+                  searchable
+                  searchPlaceholder="Search errors…"
                 />
               </div>
             )}

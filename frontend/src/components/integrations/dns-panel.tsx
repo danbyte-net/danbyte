@@ -265,6 +265,8 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
             columns={zoneColumns}
             tableId="dns-zones"
             flexColumn="type"
+            searchable
+            searchPlaceholder="Search zones…"
           />
         )}
       </div>
@@ -277,6 +279,8 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
             columns={driftColumns}
             tableId="dns-drifts"
             flexColumn="names"
+            searchable
+            searchPlaceholder="Search drift…"
           />
         </div>
       )}

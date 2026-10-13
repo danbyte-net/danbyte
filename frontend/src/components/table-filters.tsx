@@ -127,6 +127,9 @@ declare module "@tanstack/react-table" {
      * (`type` shows `device_type`) - so the catalog does not offer the same
      * field twice. */
     field?: string | string[]
+    /** Set by DataTable on a cell-only column it gave an accessor so the
+     * search box can read it; the export still treats it as cell-only. */
+    searchOnly?: boolean
   }
 }
 

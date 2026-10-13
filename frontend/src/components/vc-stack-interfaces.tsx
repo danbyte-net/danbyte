@@ -219,6 +219,8 @@ export function StackInterfacesTable({
       }
       rowStyle={(r) => portTint(r)}
       embedded
+      searchable
+      searchPlaceholder="Search interfaces…"
     />
   )
 }

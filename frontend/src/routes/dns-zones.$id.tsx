@@ -244,6 +244,7 @@ function Body({ zone }: { zone: DnsZone }) {
               queryKey={["dns-records", "zone", zone.id]}
               showZone={false}
               empty="No address records synced yet."
+              searchable
             />
           </div>
         )}

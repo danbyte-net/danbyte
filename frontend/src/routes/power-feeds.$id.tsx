@@ -123,6 +123,7 @@ function Body({ feed: f }: { feed: PowerFeed }) {
         <EmbeddedCableTable
           filter={{ power_feed: f.id }}
           emptyText="Nothing is cabled to this feed yet."
+          searchable={false}
         />
       </DetailTab>
       <DetailTab value="journal">

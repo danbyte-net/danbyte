@@ -228,5 +228,14 @@ function TagUsageTable({ tagId }: { tagId: number }) {
       </p>
     )
   }
-  return <DataTable data={rows} columns={columns} flexColumn="name" embedded />
+  return (
+    <DataTable
+      data={rows}
+      columns={columns}
+      flexColumn="name"
+      embedded
+      searchable
+      searchPlaceholder="Search objects…"
+    />
+  )
 }

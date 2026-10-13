@@ -534,7 +534,13 @@ function RacksOfTypePane({ rackTypeId }: { rackTypeId: string }) {
           rack's form.
         </p>
       ) : (
-        <DataTable data={rows} columns={columns} tableId="rack-type-racks" />
+        <DataTable
+          data={rows}
+          columns={columns}
+          tableId="rack-type-racks"
+          searchable
+          searchPlaceholder="Search racks…"
+        />
       )}
     </section>
   )

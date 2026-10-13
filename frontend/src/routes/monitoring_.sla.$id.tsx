@@ -531,6 +531,8 @@ function Members({
         exportName={`sla-members-${a.name}`}
         exportTitle="SLA members"
         flexColumn="name"
+        searchable
+        searchPlaceholder="Search members…"
       />
       <SlaMemberDialog
         agreementId={a.id}
@@ -682,6 +684,8 @@ function Incidents({
         exportName={`sla-incidents-${a.name}`}
         exportTitle="SLA incidents"
         flexColumn="members"
+        searchable
+        searchPlaceholder="Search incidents…"
       />
       <SlaFollowUpDialog
         agreementId={a.id}

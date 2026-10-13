@@ -215,6 +215,8 @@ Every virtualization source keeps the full log of its **last run** on its
 detail page (**Sync log** tab): each VM created or adopted, interface,
 switch, network, VLAN, link, placement, prune, and every warning - followed
 by the run summary. **Copy log** puts the whole thing on the clipboard.
+The search box above it finds a VM, address or warning in a long run; the
+**Virtual machines** and **Hosts** tabs have one too.
 
 When reporting a sync problem, paste that log into the issue - it says
 exactly what the sync saw and did, and needs no shell or container access to

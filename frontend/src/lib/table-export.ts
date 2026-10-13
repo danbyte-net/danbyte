@@ -22,7 +22,10 @@ function prettify(id: string): string {
   return id.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function coerce(v: unknown): string {
+/** A cell value as plain text: an object reference reads as its name (or
+ * label, CIDR, address), a list as its items joined. Shared by the export and
+ * the table's search box, so both see the same words. */
+export function coerce(v: unknown): string {
   if (v == null) return ""
   if (typeof v === "string") return v
   if (typeof v === "number" || typeof v === "boolean") return String(v)
@@ -45,7 +48,8 @@ function exportColumns<T>(table: Table<T>): ExportColumn[] {
     if (SKIP_IDS.has(col.id)) continue
     const meta = col.columnDef.meta
     const hasAccessor =
-      "accessorKey" in col.columnDef || "accessorFn" in col.columnDef
+      !meta?.searchOnly &&
+      ("accessorKey" in col.columnDef || "accessorFn" in col.columnDef)
     if (!hasAccessor && !meta?.export) continue
     const header =
       meta?.export?.header ??

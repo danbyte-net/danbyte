@@ -183,7 +183,14 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
       <p className="text-sm text-muted-foreground">No virtual machines yet.</p>
     )
   return (
-    <DataTable data={rows} columns={columns} flexColumn="primary_ip" embedded />
+    <DataTable
+      data={rows}
+      columns={columns}
+      flexColumn="primary_ip"
+      embedded
+      searchable
+      searchPlaceholder="Search virtual machines…"
+    />
   )
 }
 
@@ -310,6 +317,8 @@ function ClusterDevicesPane({ clusterId }: { clusterId: string }) {
       tableId="cluster-devices"
       flexColumn="name"
       embedded
+      searchable
+      searchPlaceholder="Search hosts…"
     />
   )
 }

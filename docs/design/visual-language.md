@@ -235,6 +235,15 @@ can't drift page to page (source of truth:
   rather than paging. Hand `DataTable` the server's `total={q.data?.count}` with
   it: when more rows exist than arrived it says so, instead of a site with 600
   prefixes showing exactly 500 and looking complete.
+- An embedded table that can run past a screenful (devices, interfaces, IPs,
+  VMs, prefixes, VLANs, logs, change history) turns on `DataTable`'s
+  `searchable` with a `searchPlaceholder` naming what it searches ("Search
+  devices…"); the `Embedded*Table` helpers have it on, `searchable={false}`
+  for a list that stays short. It filters loaded rows only - with `total` set,
+  a capped list says the search covers the first page; a `serverPagination`
+  table needs a server search instead. Columns are matched by their text: a
+  cell-only column reads its `meta.export` value or the row field named like
+  its id.
 - A list that is a view *of* another list (e.g. `/racks/elevations`) gets the
   shell's `backTo` / `backLabel` breadcrumb rather than its own nav.
 - A table that points at its rows' objects somewhere else on the page (a

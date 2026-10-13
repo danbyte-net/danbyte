@@ -479,6 +479,8 @@ function SwitchNetworks({
       tableId="switch-networks"
       flexColumn="vms"
       embedded
+      searchable
+      searchPlaceholder="Search networks…"
     />
   )
 }

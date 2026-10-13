@@ -424,6 +424,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           params={`prefix=${p.id}`}
           queryKey={["dns-records", "prefix", p.id]}
           empty="No DNS records point into this prefix."
+          searchable
         />
       </DetailTab>
 

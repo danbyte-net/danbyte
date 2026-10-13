@@ -581,6 +581,8 @@ function TemplateSection({
           columns={columns}
           flexColumn="description"
           embedded
+          searchable
+          searchPlaceholder="Search templates…"
           onSelectedRowsChange={setSelected}
         />
       )}

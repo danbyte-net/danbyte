@@ -1734,6 +1734,8 @@ function DeviceInterfacesPane({
           rowStyle={(r) => portTint(r)}
           tableId="device-interfaces"
           stickyHeader
+          searchable
+          searchPlaceholder="Search interfaces…"
           onSelectedRowsChange={setSelIfaces}
         />
       )}

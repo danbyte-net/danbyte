@@ -241,6 +241,8 @@ function ZoneVlansTable({
           columns={columns}
           flexColumn="description"
           tableId="zone-vlans"
+          searchable
+          searchPlaceholder="Search VLANs…"
         />
       )}
       <ZoneAssignVlanDialog
