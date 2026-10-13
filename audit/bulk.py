@@ -48,12 +48,16 @@ def log_bulk_update(rows, updates: dict) -> None:
     rid = current_request_id()
     entries = []
     for r in rows:
+        # A relation is logged under its field name (``status``, not
+        # ``status_id``), as the save signals log it, so the change log
+        # resolves it to a name.
+        names = {f.attname: f.name for f in r._meta.concrete_fields}
         changes = {}
         for k, v in updates.items():
             old = _ser(getattr(r, k, None))
             new = _ser(v)
             if old != new:
-                changes[k] = _diff(r, k, old, new)
+                changes[names.get(k, k)] = _diff(r, k, old, new)
         if changes:
             entries.append(_entry(r, ChangeAction.UPDATE, changes, user, rid))
     if entries:

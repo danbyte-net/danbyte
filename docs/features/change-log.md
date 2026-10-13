@@ -54,7 +54,8 @@ The change log covers the things people edit:
 - **Organization** - tenants and tags.
 
 Bulk edits (changing many rows at once) are recorded too - one entry per affected
-object, each with its own diff.
+object, each with its own diff. A relation changed in bulk (a status, a VRF, a
+peer group) shows by name, as a single edit does.
 
 A saved topology view's layout can run to megabytes, so its entries summarise
 it - the top-level parts that changed and the size before and after - rather

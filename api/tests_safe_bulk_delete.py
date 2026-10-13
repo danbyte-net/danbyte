@@ -217,7 +217,7 @@ class VirtualChassisTests(_Base):
         self.assertIsNone(self.a.vc_position)
         self.assertIsNone(self.a.vc_priority)
         entry = ChangeLogEntry.objects.get(object_id=str(self.a.pk), action="update")
-        self.assertIn("virtual_chassis_id", entry.changes)
+        self.assertIn("virtual_chassis", entry.changes)
 
     def test_bulk_update_sets_domain_description_and_tags(self):
         tag = Tag.objects.create(name="lab", slug="lab", tenant=self.tenant)

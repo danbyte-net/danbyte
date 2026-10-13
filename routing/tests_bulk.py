@@ -371,7 +371,7 @@ class SessionEditTests(_Base):
             entry = ChangeLogEntry.objects.filter(
                 action=ChangeAction.UPDATE, object_id=str(s.pk)
             ).latest("timestamp")
-            self.assertIn("peer_group_id", entry.changes)
+            self.assertIn("peer_group", entry.changes)
         # An empty id clears.
         r = self.update(self.url, self.ids, {"keychain_id": ""})
         self.assertEqual(r.status_code, 200, r.content)

@@ -275,6 +275,28 @@ def _relation_fields(model_label: str) -> dict:
     return out
 
 
+def _canonical_changes(model_label: str, changes: dict) -> dict:
+    """``changes`` keyed by field name. Older bulk edits logged a
+    relation under its column (``status_id``); show those as the field
+    (``status``) so the label resolves like a single edit's."""
+    try:
+        model = django_apps.get_model(model_label)
+    except (LookupError, ValueError):
+        return changes
+    attnames = {
+        f.attname: f.name
+        for f in model._meta.concrete_fields
+        if f.is_relation and f.many_to_one
+    }
+    if not any(k in attnames for k in changes):
+        return changes
+    out = {}
+    for k, v in changes.items():
+        name = attnames.get(k, k)
+        out[name if name not in changes else k] = v
+    return out
+
+
 def _label_for(model, pk):
     """str() of the related row, or None if it can't be resolved (deleted)."""
     if pk in (None, ""):
@@ -309,7 +331,7 @@ def _labels_for_rows(rows) -> dict:
         rels = _relation_fields(r.object_type)
         if not rels:
             continue
-        for field, diff in (r.changes or {}).items():
+        for field, diff in _canonical_changes(r.object_type, r.changes or {}).items():
             model = rels.get(field)
             if model is None or not isinstance(diff, dict):
                 continue
@@ -388,10 +410,10 @@ class ChangeLogSerializer(serializers.ModelSerializer):
     def get_changes(self, obj) -> dict:
         """Enrich FK fields with a resolved label so the UI can show the VLAN /
         site / role name next to its UUID. Non-relation fields pass through."""
-        raw = obj.changes or {}
         rels = _relation_fields(obj.object_type)
         if not rels:
-            return raw
+            return obj.changes or {}
+        raw = _canonical_changes(obj.object_type, obj.changes or {})
         labels = self.context.get("_fk_labels")
         if labels is None:
             rows = (
