@@ -40,7 +40,7 @@ from .models import (
     ImageAttachment,
     Document, DocumentCategory,
     FiberSettings,
-    FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
+    FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
     FloorPlanWall, FloorTileType, FrontPort,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
@@ -9239,6 +9239,7 @@ class FloorPlanDrawingSerializer(serializers.Serializer):
             "skipped": d.skipped or {},
             "units": d.units,
             "units_mm_per_unit": d.units_mm_per_unit,
+            "units_override": d.units_override or None,
             "mm_per_unit": d.mm_per_unit,
             "scale_source": d.scale_source,
             "calibration": d.calibration,
@@ -9278,6 +9279,15 @@ class FloorPlanDrawingPlacementSerializer(serializers.Serializer):
                     f"Not a layer of this drawing: {', '.join(unknown[:5])}."
                 )
         return sorted(set(value))
+
+
+class FloorPlanDrawingUnitsSerializer(serializers.Serializer):
+    """The units the drawing is really in, when the file's are wrong; null
+    trusts the file again."""
+
+    units = serializers.ChoiceField(
+        choices=list(FloorPlanDrawing.UNITS_OVERRIDES), allow_null=True
+    )
 
 
 class FloorPlanDrawingCalibrationSerializer(serializers.Serializer):

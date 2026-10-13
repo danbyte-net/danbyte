@@ -223,3 +223,77 @@ export function fmtSizeMm(s: Size): string {
       : `${Math.round(v)}`
   return `${f(s.width)} × ${f(s.height)} ${big ? "m" : "mm"}`
 }
+
+// ─── units the drawing may be in ────────────────────────────────────────────
+
+/** The units an editor may say the drawing is in, as the server takes them
+ * (FloorPlanDrawing.UNITS_OVERRIDES), metric first. */
+export const DRAWING_UNITS = [
+  { value: "mm", name: "millimetres", mm: 1 },
+  { value: "cm", name: "centimetres", mm: 10 },
+  { value: "m", name: "metres", mm: 1000 },
+  { value: "in", name: "inches", mm: 25.4 },
+  { value: "ft", name: "feet", mm: 304.8 },
+] as const
+
+export type DrawingUnit = (typeof DRAWING_UNITS)[number]["value"]
+
+/** A floor plan's longest side is plausible between a small room (2 m) and
+ * a large campus (5 km). Outside that the file's units are almost surely
+ * wrong: a building drawn in metres but labelled mm comes out 1000× small,
+ * one drawn in mm but labelled m 1000× large. */
+export const PLAUSIBLE_MM = { min: 2_000, max: 5_000_000 } as const
+
+/** The size a suggestion aims for: a typical building, 50 m. Among the
+ * units that make the drawing plausible, the one nearest this wins. */
+const TYPICAL_MM = 50_000
+
+const METRIC = new Set<string>(["mm", "cm", "m"])
+
+export interface ScaleHint {
+  /** The drawing's longest side at the scale in effect, mm. */
+  longestMm: number
+  tooSmall: boolean
+  /** The unit that makes it plausible; null when none does. */
+  suggest: DrawingUnit | null
+}
+
+/** Why the drawing's size looks wrong, and the unit that would fix it; null
+ * when it looks right, or the editor has already said (a calibration or a
+ * units override). */
+export function scaleHint(
+  d: Pick<FloorPlanDrawing, "size" | "mm_per_unit" | "scale_source">
+): ScaleHint | null {
+  if (d.scale_source !== "units" && d.scale_source !== "assumed") return null
+  const longest = Math.max(d.size.width, d.size.height)
+  if (!(longest > 0) || !(d.mm_per_unit > 0)) return null
+  const longestMm = longest * d.mm_per_unit
+  if (longestMm >= PLAUSIBLE_MM.min && longestMm <= PLAUSIBLE_MM.max)
+    return null
+  // Metric only: a mislabelled file is far more often mm-vs-m than
+  // imperial, and mm, cm and m between them cover every plausible size
+  // the imperial units would. The unit in effect never fits here.
+  const best = DRAWING_UNITS.filter((u) => METRIC.has(u.value))
+    .map((u) => ({ u, mm: longest * u.mm }))
+    .filter(({ mm }) => mm >= PLAUSIBLE_MM.min && mm <= PLAUSIBLE_MM.max)
+    .sort(
+      (a, b) =>
+        Math.abs(Math.log10(a.mm / TYPICAL_MM)) -
+        Math.abs(Math.log10(b.mm / TYPICAL_MM))
+    )
+    .at(0)?.u
+  return {
+    longestMm,
+    tooSmall: longestMm < PLAUSIBLE_MM.min,
+    suggest: best?.value ?? null,
+  }
+}
+
+/** "15 cm", "148 m", "12 km" - one length, rounded for a sentence. */
+export function fmtLengthMm(mm: number): string {
+  const r = (v: number) => String(+v.toPrecision(v < 100 ? 2 : 3))
+  if (mm < 10) return `${r(mm)} mm`
+  if (mm < 1000) return `${r(mm / 10)} cm`
+  if (mm < 1_000_000) return `${r(mm / 1000)} m`
+  return `${r(mm / 1_000_000)} km`
+}

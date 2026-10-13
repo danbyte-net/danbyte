@@ -815,6 +815,8 @@ class DrawingAccessTests(_Base):
         ("post", "reprocess/", None),
         ("post", "calibrate/", {"a": [0, 0], "b": [3000, 4000], "distance_mm": 10}),
         ("delete", "calibrate/", None),
+        ("post", "units/", {"units": "m"}),
+        ("delete", "units/", None),
         ("post", "fit-grid/", {}),
     ]
 
@@ -901,3 +903,128 @@ class DrawingAccessTests(_Base):
         self.client.logout()
         self.assertIn(self.client.get(self.url()).status_code, (401, 403))
         self.assertEqual(self.client.get(self.d.rendered.url).status_code, 404)
+
+
+# ─── the units override ─────────────────────────────────────────────────────
+
+
+def _metres_labelled_mm() -> bytes:
+    """A 148 x 51 building drawn in metres whose header says millimetres -
+    the shape of a real architectural DWG that came out as a 15 cm speck."""
+    import ezdxf
+
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (148, 0), (148, 51), (0, 51)], close=True)
+    msp.add_line((74, 0), (74, 51))
+    return fx.to_bytes(doc)
+
+
+class DrawingUnitsTests(_Base):
+    def setUp(self):
+        super().setUp()
+        self.d = self.ready(_metres_labelled_mm())
+
+    def test_the_file_units_are_trusted_until_overridden(self):
+        r = self.client.get(self.url())
+        self.assertEqual((r.data["units"], r.data["scale_source"]), ("mm", "units"))
+        self.assertIsNone(r.data["units_override"])
+        self.assertAlmostEqual(r.data["size_mm"]["width"], 148, places=3)
+
+    def test_an_override_rescales_and_delete_trusts_the_file_again(self):
+        r = self.client.post(self.url(tail="units/"), {"units": "m"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual((r.data["units_override"], r.data["scale_source"]), ("m", "override"))
+        self.assertEqual(r.data["mm_per_unit"], 1000.0)
+        self.assertAlmostEqual(r.data["size_mm"]["width"], 148_000, places=0)
+        self.assertAlmostEqual(r.data["bounds_mm"]["width"], 148_000, places=0)
+        self.assertIn("scale(1000)", r.data["transform_mm"])
+        self.d.refresh_from_db()
+        self.assertEqual(self.d.units_override, "m")
+        self.assertEqual(self.d.units, "mm")  # what the file says is kept
+        r = self.client.delete(self.url(tail="units/"))
+        self.assertEqual((r.status_code, r.data["scale_source"]), (200, "units"))
+        self.assertIsNone(r.data["units_override"])
+        self.assertEqual(r.data["mm_per_unit"], 1.0)
+        self.client.post(self.url(tail="units/"), {"units": "ft"}, format="json")
+        r = self.client.post(self.url(tail="units/"), {"units": None}, format="json")
+        self.assertEqual((r.status_code, r.data["scale_source"]), (200, "units"))
+
+    def test_every_unit_has_its_scale(self):
+        for units, mpu in (("mm", 1.0), ("cm", 10.0), ("m", 1000.0), ("in", 25.4),
+                           ("ft", 304.8)):
+            with self.subTest(units=units):
+                r = self.client.post(self.url(tail="units/"), {"units": units},
+                                     format="json")
+                self.assertEqual(r.data["mm_per_unit"], mpu)
+
+    def test_bad_units_are_refused(self):
+        for body in ({"units": "km"}, {"units": "unitless"}, {"units": ""}, {}):
+            with self.subTest(body=body):
+                r = self.client.post(self.url(tail="units/"), body, format="json")
+                self.assertEqual(r.status_code, 400)
+        self.d.refresh_from_db()
+        self.assertEqual(self.d.units_override, "")
+
+    def test_calibration_wins_and_the_newer_choice_replaces_it(self):
+        cal = {"a": [0, 0], "b": [100, 0], "distance_mm": 50_000}
+        self.client.post(self.url(tail="units/"), {"units": "m"}, format="json")
+        r = self.client.post(self.url(tail="calibrate/"), cal, format="json")
+        self.assertEqual((r.data["scale_source"], r.data["mm_per_unit"]), ("calibration", 500))
+        self.assertEqual(r.data["units_override"], "m")
+        # Resetting the calibration falls back to the override, not the file.
+        r = self.client.delete(self.url(tail="calibrate/"))
+        self.assertEqual((r.data["scale_source"], r.data["mm_per_unit"]), ("override", 1000))
+        # Picking units after a calibration drops it.
+        self.client.post(self.url(tail="calibrate/"), cal, format="json")
+        r = self.client.post(self.url(tail="units/"), {"units": "cm"}, format="json")
+        self.assertEqual((r.data["scale_source"], r.data["mm_per_unit"]), ("override", 10))
+        self.assertIsNone(r.data["calibration"])
+        # Clearing the override keeps whatever calibration there is.
+        self.client.post(self.url(tail="calibrate/"), cal, format="json")
+        r = self.client.delete(self.url(tail="units/"))
+        self.assertEqual(r.data["scale_source"], "calibration")
+
+    def test_a_unitless_file_takes_an_override(self):
+        self.ready(fx.floor_dxf(units=0))
+        self.assertEqual(self.client.get(self.url()).data["scale_source"], "assumed")
+        r = self.client.post(self.url(tail="units/"), {"units": "cm"}, format="json")
+        self.assertEqual((r.data["scale_source"], r.data["mm_per_unit"]), ("override", 10))
+
+    def test_a_new_upload_drops_the_override_and_a_clone_keeps_it(self):
+        self.client.post(self.url(tail="units/"), {"units": "m"}, format="json")
+        r = self.client.post(f"/api/floor-plans/{self.plan.id}/clone/", {}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        copy = FloorPlanDrawing.objects.get(floor_plan_id=r.data["id"])
+        self.assertEqual((copy.units_override, copy.scale_source), ("m", "override"))
+        d = self.ready(fx.floor_dxf())
+        self.assertEqual((d.units_override, d.scale_source), ("", "units"))
+
+    def test_the_change_is_in_the_change_log(self):
+        from audit.models import ChangeLogEntry
+
+        self.client.post(self.url(tail="units/"), {"units": "m"}, format="json")
+        row = ChangeLogEntry.objects.filter(
+            object_type="api.floorplandrawing", object_id=str(self.d.id), action="update"
+        ).latest("timestamp")
+        self.assertEqual(row.changes["units_override"]["new"], "m")
+        self.assertEqual(row.tenant_id, self.tenant.id)
+
+    def test_a_viewer_cannot_and_an_editor_can(self):
+        self.login(self.member("viewer", "view"))
+        r = self.client.post(self.url(tail="units/"), {"units": "m"}, format="json")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(self.client.delete(self.url(tail="units/")).status_code, 403)
+        self.d.refresh_from_db()
+        self.assertEqual(self.d.units_override, "")
+        self.login(self.member("editor", "view", "change"))
+        r = self.client.post(self.url(tail="units/"), {"units": "m"}, format="json")
+        self.assertEqual(r.status_code, 200)
+
+    def test_another_tenant_cannot_set_units(self):
+        self.login(self.member("outsider", "view", "change", tenant=self.other), self.other)
+        r = self.client.post(self.url(tail="units/"), {"units": "m"}, format="json")
+        self.assertEqual(r.status_code, 404)
+        self.d.refresh_from_db()
+        self.assertEqual(self.d.units_override, "")

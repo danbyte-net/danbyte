@@ -217,3 +217,113 @@ describe("CadPanel", () => {
     })
   })
 })
+
+describe("CadPanel units", () => {
+  // A building drawn in metres whose file says mm: a 15 cm speck.
+  const SPECK = {
+    ...DRAWING,
+    size: { width: 148, height: 51 },
+    size_mm: { width: 148, height: 51 },
+    units_override: null,
+  } as unknown as FloorPlanDrawing
+  const METRES = {
+    ...SPECK,
+    units_override: "m",
+    scale_source: "override",
+    mm_per_unit: 1000,
+    size_mm: { width: 148_000, height: 51_000 },
+  } as unknown as FloorPlanDrawing
+
+  const serve = (initial: FloorPlanDrawing) => {
+    apiMock.mockImplementation(async (path, init) => {
+      if (path === "/api/floor-plans/p1/drawing/units/")
+        return init?.method === "DELETE" ? SPECK : METRES
+      if (path === "/api/floor-plans/p1/drawing/") return initial
+      throw new Error(`unexpected ${path}`)
+    })
+  }
+  const unitCalls = () =>
+    apiMock.mock.calls.filter(([path]) => path.endsWith("/drawing/units/"))
+
+  const Harness = ({ canEdit }: { canEdit: boolean }) => {
+    const cad = useCadDrawing(PLAN, canEdit)
+    return (
+      <CadPanel
+        cad={cad}
+        plan={PLAN}
+        canEdit={canEdit}
+        onCalibrate={() => {}}
+        onClose={() => {}}
+      />
+    )
+  }
+  const mount = (canEdit: boolean) => {
+    const Wrapper = makeWrapper()
+    render(
+      <Wrapper>
+        <Harness canEdit={canEdit} />
+      </Wrapper>
+    )
+  }
+
+  it("warns about a speck and sets the suggested unit in one click", async () => {
+    serve(SPECK)
+    mount(true)
+    await screen.findByText("Drawn 15 cm across")
+    expect(screen.getByText("The file says mm.")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Use metres" }))
+    await waitFor(() => expect(unitCalls()).toHaveLength(1))
+    expect(unitCalls()[0][1]).toEqual({
+      method: "POST",
+      body: JSON.stringify({ units: "m" }),
+    })
+    // The scale is now set by hand: no more warning.
+    await screen.findByText("Set by hand")
+    expect(screen.queryByText("Drawn 15 cm across")).toBeNull()
+  })
+
+  it("does not show a viewer the warning or the units control", async () => {
+    serve(SPECK)
+    mount(false)
+    await screen.findByText("WALLS")
+    expect(screen.queryByText("Drawn 15 cm across")).toBeNull()
+    expect(screen.queryByText("Drawn in")).toBeNull()
+  })
+
+  it("does not nag once the units are set, and From file clears them", async () => {
+    serve(METRES)
+    mount(true)
+    await screen.findByText("Set by hand")
+    expect(screen.queryByText(/Drawn .* across/)).toBeNull()
+    const m = screen.getByRole("button", { name: "m" })
+    expect(m.getAttribute("aria-current")).toBe("page")
+    fireEvent.click(m) // already picked: nothing sent
+    fireEvent.click(screen.getByRole("button", { name: "From file" }))
+    await waitFor(() => expect(unitCalls()).toHaveLength(1))
+    expect(unitCalls()[0][1]).toEqual({ method: "DELETE" })
+  })
+
+  it("does not nag a calibrated drawing", async () => {
+    serve({
+      ...SPECK,
+      scale_source: "calibration",
+      calibration: { a: [0, 0], b: [100, 0], distance_mm: 100, mm_per_unit: 1 },
+    } as unknown as FloorPlanDrawing)
+    mount(true)
+    await screen.findByText("Calibrated")
+    expect(screen.queryByText(/Drawn .* across/)).toBeNull()
+  })
+
+  it("picks a unit from the tabs", async () => {
+    serve(DRAWING)
+    mount(true)
+    await screen.findByText("Drawn in")
+    expect(screen.queryByText(/Drawn .* across/)).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "ft" }))
+    await waitFor(() => expect(unitCalls()).toHaveLength(1))
+    expect(unitCalls()[0][1]).toEqual({
+      method: "POST",
+      body: JSON.stringify({ units: "ft" }),
+    })
+  })
+})

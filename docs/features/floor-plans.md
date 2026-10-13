@@ -103,9 +103,12 @@ shown at **true scale**: its units and the grid's cell size line up, so a
     hatches, dimensions or text. **Hide text** hides every text.
   - **Placement**: opacity, rotation (0°, 90°, 180°, 270°) and the offset in
     mm, with arrows that move it one cell.
-  - **Scale**: the file's units, where the scale comes from (**From file**,
+  - **Scale**: the file's units, **Drawn in** (**From file**, mm, cm, m, in,
+    ft), where the scale comes from (**From file**, **Set by hand**,
     **Calibrated** or **Assumed mm**), one unit in mm and the drawing's size.
-    **Reset calibration** goes back to the file's units.
+    When that size is no plausible floor plan, a warning says so and offers
+    the unit that fixes it - see [Units and calibration](#units-and-calibration).
+    **Reset calibration** goes back to the units.
   - **Fit grid to drawing**; when the drawing needs more than 512 cells a
     side, it offers the cell size that fits.
   - **Calibrate**: click two points on the drawing, type the distance between
@@ -164,8 +167,8 @@ DWG, reads the DXF, renders it and stores the result. The drawing's status
 goes **queued → ready**, or **failed** with the reason (not a readable DXF, no
 converter, too large, took too long). **Reprocess** runs it again, for
 example after a converter is installed. Uploading a new file replaces the old
-one and its files; the position, rotation and opacity stay, the calibration
-and layer choices go with the old file.
+one and its files; the position, rotation and opacity stay, the calibration,
+picked units and layer choices go with the old file.
 
 Reading happens only in the worker, in a separate process with memory, CPU
 time and output-size limits, so a damaged or hostile file costs a failed job
@@ -179,8 +182,26 @@ The drawing's units come from the file (`$INSUNITS`: millimetres, inches,
 metres…). A **unitless** file is drawn as if in millimetres until it is
 calibrated: pick two points on the drawing and type the real distance between
 them, like the [cabinet photo calibration](../dcim/device-catalog.md#photo-ports).
-The points must stand at least 1% of the drawing apart. A calibration wins
-over the file's units; clearing it goes back to them.
+The points must stand at least 1% of the drawing apart.
+
+Files often carry the wrong units: an architect's plan drawn in metres but
+saved with a millimetre header lands as a speck in the plan's corner. **Drawn
+in** says what the drawing is really in - mm, cm, m, in or ft - without
+picking points; **From file** trusts the file again.
+
+The scale in effect is, first to last: a calibration, the units picked under
+**Drawn in**, the file's units, millimetres. Picking units drops any
+calibration, since the newer choice wins; a calibration made afterwards wins
+over the picked units, and resetting it falls back to them. A new file drops
+both; a [clone](#cloning-a-plan) keeps both.
+
+When the scale comes from the file, or is assumed, and the drawing's longest
+side comes out under 2 m or over 5 km, the Scale panel warns - **Drawn 15 cm
+across**, with what the file says - and offers one click to the metric unit
+that would make it 2 m to 5 km across, the one nearest a 50 m building when
+several would. The bounds span a single room to a large campus; the usual
+mistake, mm against m, is a factor of 1000 and lands far outside them. Once
+the units are picked or the drawing is calibrated, the warning stays away.
 
 ### Layers
 
@@ -211,6 +232,7 @@ floor plan, changing needs **change**.
 | `DELETE /api/floor-plans/{id}/drawing/` | Removes the drawing and its files. 204. |
 | `POST /api/floor-plans/{id}/drawing/reprocess/` | Queues processing again. 202. |
 | `POST /api/floor-plans/{id}/drawing/calibrate/` | `{"a": [x, y], "b": [x, y], "distance_mm": n}`, points in the SVG's viewBox units, distance 1-1,000,000 mm. 409 until the drawing is ready. `DELETE` clears it. |
+| `POST /api/floor-plans/{id}/drawing/units/` | `{"units": "m"}` (`mm`, `cm`, `m`, `in`, `ft`): the units the drawing is really in, over the file's; drops any calibration. `{"units": null}` or `DELETE` trusts the file again. Returns the drawing. |
 | `POST /api/floor-plans/{id}/drawing/fit-grid/` | Optional `cell_mm` (50-5000). Returns `{floor_plan, drawing}`; 400 with `min_cell_mm` when the drawing needs more than 512 cells. |
 | `POST /api/floor-plans/{id}/drawing/render/` | `{"hidden_layers": [...], "hide_text": bool}`: a server render with those layers left out, for drawings too large to toggle in the browser. Needs only **view**. 200 with the cached render, or 202 when queued; `GET …/render/?key=` reports on it (`status`, `url`, `error`). The last 12 are kept. |
 
@@ -221,8 +243,9 @@ The drawing record:
 - `rendered_url`, `rendered_bytes`, `rendered_elements`, `simplified` (the
   steps taken to fit the caps), `skipped` (`external`, `infinite` counts).
 - `units`, `units_mm_per_unit` (from the file, `null` when unitless),
-  `calibration`, `mm_per_unit` (the scale in effect) and `scale_source`
-  (`units`, `calibration` or `assumed`).
+  `units_override` (the picked units, `null` when none), `calibration`,
+  `mm_per_unit` (the scale in effect) and `scale_source` (`calibration`,
+  `override`, `units` or `assumed`).
 - `extents` (`min_x`, `min_y`, `max_x`, `max_y`) and `size` (`width`,
   `height`) in drawing units, `size_mm`.
 - `layers`: `name`, `color`, `on`, `frozen`, `entity_count`, `kinds` (counts
@@ -954,7 +977,7 @@ The **Clone** action on the floor plans list copies a plan with everything
 drawn on it - tiles (with their rack / device / panel links), cable trays
 (geometry only; the cables routed through the originals stay where they are),
 raised-floor areas and walls, and its [CAD drawing](#cad-drawings) with its
-placement and calibration - into the same location as `<name> copy`, and
+placement, units and calibration - into the same location as `<name> copy`, and
 opens it. Handy for a second identical floor, or a what-if layout you can throw
 away. Needs the floor-plan add permission.
 

@@ -198,6 +198,20 @@ export function useCadDrawing(plan: FloorPlan | undefined, canEdit: boolean) {
     onError: (err) => apiErrorToast(err),
   })
 
+  /** Say what units the drawing is in (drops any calibration); null trusts
+   * the file again. The canvas rescales from the returned scale. */
+  const setUnits = useMutation({
+    mutationFn: (units: string | null) =>
+      api<FloorPlanDrawing>(
+        `/api/floor-plans/${planId}/drawing/units/`,
+        units
+          ? { method: "POST", body: JSON.stringify({ units }) }
+          : { method: "DELETE" }
+      ),
+    onSuccess: (d) => qc.setQueryData(drawingKey(planId), d),
+    onError: (err) => apiErrorToast(err),
+  })
+
   /** Fit the grid to the drawing. A drawing that needs more than 512 cells
    * comes back as `{ minCellMm }` for the caller to offer. */
   const fitGrid = useMutation({
@@ -247,6 +261,7 @@ export function useCadDrawing(plan: FloorPlan | undefined, canEdit: boolean) {
     remove,
     reprocess,
     resetCalibration,
+    setUnits,
     fitGrid,
     saving: patchMut.isPending,
   }

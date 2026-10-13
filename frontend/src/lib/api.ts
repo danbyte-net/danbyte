@@ -10689,6 +10689,9 @@ export interface FloorPlanDrawing extends FloorPlanDrawingSummary {
   skipped: { external?: number; infinite?: number }
   units: string
   units_mm_per_unit: number | null
+  /** The units an editor says the drawing is in; null trusts the file.
+   * POST/DELETE …/drawing/units/. */
+  units_override: "mm" | "cm" | "m" | "in" | "ft" | null
   calibration: {
     a: [number, number]
     b: [number, number]
@@ -10697,7 +10700,7 @@ export interface FloorPlanDrawing extends FloorPlanDrawingSummary {
   } | null
   /** The scale in effect. */
   mm_per_unit: number
-  scale_source: "units" | "calibration" | "assumed"
+  scale_source: "units" | "calibration" | "override" | "assumed"
   extents: { min_x: number; min_y: number; max_x: number; max_y: number } | null
   size: { width: number; height: number }
   size_mm: { width: number; height: number }

@@ -8008,8 +8008,12 @@ class FloorPlanDrawing(TimestampedModel):
     SOURCE_KINDS = [("dxf", "DXF"), ("dwg", "DWG")]
     STATUS_CHOICES = [("queued", "Queued"), ("ready", "Ready"), ("failed", "Failed")]
     SCALE_SOURCES = [
-        ("units", "Drawing units"), ("calibration", "Calibration"), ("assumed", "Assumed"),
+        ("units", "Drawing units"), ("calibration", "Calibration"),
+        ("override", "Units override"), ("assumed", "Assumed"),
     ]
+    # The units an operator may say the drawing is in, when the file's
+    # $INSUNITS is wrong or missing: cad_engine's names and their scale.
+    UNITS_OVERRIDES = {"mm": 1.0, "cm": 10.0, "m": 1000.0, "in": 25.4, "ft": 304.8}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -8027,6 +8031,12 @@ class FloorPlanDrawing(TimestampedModel):
     # $INSUNITS as read ("mm", "in", ... or "unitless") and the scale it gives.
     units = models.CharField(max_length=16, blank=True, default="")
     units_mm_per_unit = models.FloatField(null=True, blank=True)
+    # The units the operator says the drawing is in ("" = trust the file);
+    # wins over the file's units, loses to a calibration.
+    units_override = models.CharField(
+        max_length=8, blank=True, default="", db_default="",
+        choices=[(k, k) for k in UNITS_OVERRIDES],
+    )
     # Two points in drawing units and the real distance between them; wins
     # over the units when set. {"a": [x, y], "b": [x, y], "distance_mm": n}.
     calibration = models.JSONField(null=True, blank=True)
@@ -8056,11 +8066,14 @@ class FloorPlanDrawing(TimestampedModel):
 
     @property
     def mm_per_unit(self) -> float:
-        """The scale in effect: calibration, else the units, else 1 (the
-        drawing is assumed to be in millimetres until calibrated)."""
+        """The scale in effect: calibration, else the units override, else
+        the file's units, else 1 (the drawing is assumed to be in
+        millimetres until told otherwise)."""
         cal = self.calibration if isinstance(self.calibration, dict) else None
         if cal and cal.get("mm_per_unit"):
             return float(cal["mm_per_unit"])
+        if self.units_override in self.UNITS_OVERRIDES:
+            return self.UNITS_OVERRIDES[self.units_override]
         return float(self.units_mm_per_unit or 1.0)
 
     @property
@@ -8068,6 +8081,8 @@ class FloorPlanDrawing(TimestampedModel):
         cal = self.calibration if isinstance(self.calibration, dict) else None
         if cal and cal.get("mm_per_unit"):
             return "calibration"
+        if self.units_override in self.UNITS_OVERRIDES:
+            return "override"
         return "units" if self.units_mm_per_unit else "assumed"
 
 

@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest"
 
-import type { FloorPlanDrawingLayer } from "@/lib/api"
+import type { FloorPlanDrawing, FloorPlanDrawingLayer } from "@/lib/api"
 import {
   INLINE_ELEMENT_BUDGET,
   applyMatrix,
   canvasToDrawing,
   canvasTransform,
   drawingToCanvas,
+  fmtLengthMm,
   fmtSizeMm,
   placedBoxMm,
   placementMatrix,
   placementOf,
   presetHidden,
+  scaleHint,
   toggleHidden,
   transformMm,
   wantsServerRender,
@@ -188,5 +190,74 @@ describe("calibration", () => {
   it("formats sizes in m or mm", () => {
     expect(fmtSizeMm({ width: 12400, height: 8000 })).toBe("12.4 × 8 m")
     expect(fmtSizeMm({ width: 600, height: 450 })).toBe("600 × 450 mm")
+  })
+})
+
+describe("scaleHint", () => {
+  const sized = (
+    width: number,
+    height: number,
+    mm_per_unit: number,
+    scale_source: FloorPlanDrawing["scale_source"] = "units"
+  ) => scaleHint({ size: { width, height }, mm_per_unit, scale_source })
+
+  it("suggests metres for a building in metres labelled mm", () => {
+    // The extents of a real architectural DWG: 148 × 51 units, mm header.
+    expect(sized(148, 51, 1)).toEqual({
+      longestMm: 148,
+      tooSmall: true,
+      suggest: "m",
+    })
+  })
+
+  it("suggests mm for a building in mm labelled metres", () => {
+    expect(sized(60_000, 20_000, 1000)).toEqual({
+      longestMm: 60_000_000,
+      tooSmall: false,
+      suggest: "mm",
+    })
+  })
+
+  it("picks the plausible unit nearest a typical building", () => {
+    // 3000 units: mm 3 m, cm 30 m, m 3 km - all plausible, cm is nearest.
+    expect(sized(3000, 100, 1_000_000)?.suggest).toBe("cm")
+  })
+
+  it("says nothing for a plausible size, bounds included", () => {
+    expect(sized(10_000, 6_000, 1)).toBeNull()
+    expect(sized(2, 1, 1000)).toBeNull()
+    expect(sized(5, 1, 1_000_000)).toBeNull()
+    expect(sized(1.9, 1, 1000)?.tooSmall).toBe(true)
+    expect(sized(5.1, 1, 1_000_000)?.tooSmall).toBe(false)
+  })
+
+  it("checks an assumed-mm drawing too", () => {
+    expect(sized(148, 51, 1, "assumed")?.suggest).toBe("m")
+  })
+
+  it("stays quiet once calibrated or set by hand", () => {
+    expect(sized(148, 51, 1, "calibration")).toBeNull()
+    expect(sized(148, 51, 1, "override")).toBeNull()
+  })
+
+  it("warns without a suggestion when no unit fits", () => {
+    expect(sized(0.01, 0.01, 1)).toEqual({
+      longestMm: 0.01,
+      tooSmall: true,
+      suggest: null,
+    })
+    // An inch-labelled file is never offered inches or feet.
+    expect(sized(10, 5, 25.4)?.suggest).toBe("m")
+  })
+
+  it("ignores an empty drawing", () => {
+    expect(sized(0, 0, 1)).toBeNull()
+  })
+
+  it("formats one length for the sentence", () => {
+    expect(fmtLengthMm(148)).toBe("15 cm")
+    expect(fmtLengthMm(5)).toBe("5 mm")
+    expect(fmtLengthMm(148_000)).toBe("148 m")
+    expect(fmtLengthMm(60_000_000)).toBe("60 km")
   })
 })

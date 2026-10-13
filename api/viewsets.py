@@ -101,6 +101,7 @@ from .serializers import (
     CableRouteSerializer,
     CableSerializer,
     FiberSettingsSerializer,
+    FloorPlanDrawingUnitsSerializer,
     FloorPlanMiniSerializer,
     FloorPlanRaisedFloorAreaSerializer,
     FloorPlanTraySerializer,
@@ -9907,7 +9908,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
             d.error = ""
             d.units = ""
             d.units_mm_per_unit = None
-            # A new file's points are not the old one's.
+            # A new file's points are not the old one's, and its units may
+            # be right this time.
+            d.units_override = ""
             d.calibration = None
             d.extents = None
             d.layers = []
@@ -9967,6 +9970,38 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "mm_per_unit": v["mm_per_unit"],
             }
         d.save(update_fields=["calibration", "updated_at"])
+        return self._drawing_response(d)
+
+    @extend_schema(
+        summary="Set the units the drawing is in",
+        request=FloorPlanDrawingUnitsSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="The drawing, as GET …/drawing/ returns it.",
+            ),
+        },
+    )
+    @action(detail=True, methods=["post", "delete"], url_path="drawing/units")
+    def drawing_units(self, request, pk=None):
+        """POST ``{"units": "m"}`` (mm, cm, m, in, ft) says what the drawing
+        is really drawn in when the file's units are wrong, and drops any
+        calibration - the newer choice wins; ``null`` or DELETE trusts the
+        file again. A calibration made afterwards still wins over it."""
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if request.method == "DELETE":
+            units = None
+        else:
+            ser = FloorPlanDrawingUnitsSerializer(data=request.data)
+            ser.is_valid(raise_exception=True)
+            units = ser.validated_data["units"]
+        d.units_override = units or ""
+        fields = ["units_override", "updated_at"]
+        if units:
+            d.calibration = None
+            fields.append("calibration")
+        d.save(update_fields=fields)
         return self._drawing_response(d)
 
     @action(detail=True, methods=["post"], url_path="drawing/fit-grid")

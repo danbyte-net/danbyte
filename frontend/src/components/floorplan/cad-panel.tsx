@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react"
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react"
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  TriangleAlert,
+} from "lucide-react"
 
 import type { FloorPlan, FloorPlanDrawingLayer } from "@/lib/api"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -14,8 +20,16 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 
-import { ROTATIONS, fmtSizeMm, presetHidden, toggleHidden } from "./cad-math"
-import type { Rotation } from "./cad-math"
+import {
+  DRAWING_UNITS,
+  ROTATIONS,
+  fmtLengthMm,
+  fmtSizeMm,
+  presetHidden,
+  scaleHint,
+  toggleHidden,
+} from "./cad-math"
+import type { DrawingUnit, Rotation, ScaleHint } from "./cad-math"
 import type { CadDrawingState } from "./use-cad-drawing"
 
 // The drawing's panel over the floor plan: its layers (show/hide, presets,
@@ -26,8 +40,12 @@ import type { CadDrawingState } from "./use-cad-drawing"
 const SCALE_SOURCE: Record<string, string> = {
   units: "From file",
   calibration: "Calibrated",
+  override: "Set by hand",
   assumed: "Assumed mm",
 }
+
+/** The units tab that trusts the file. */
+const FROM_FILE = "file"
 
 /** Above this many layers the list gets a filter box. */
 const LAYER_FILTER_AT = 10
@@ -53,6 +71,7 @@ export function CadPanel({
   const [minCell, setMinCell] = useState<number | null>(null)
 
   const status = d?.status ?? cad.summary?.status
+  const hint = d?.status === "ready" ? scaleHint(d) : null
   const hidden = new Set(p.hidden_layers)
   const layers = d?.layers ?? []
   const shown = filter.trim()
@@ -210,6 +229,28 @@ export function CadPanel({
 
           <PanelSection label="Scale">
             <PanelRow label="Units">{d.units || "unitless"}</PanelRow>
+            {canEdit && (
+              <div className="my-1.5 grid gap-1">
+                <span className="text-[11px] whitespace-nowrap text-muted-foreground">
+                  Drawn in
+                </span>
+                <SegmentedTabs
+                  wrap
+                  value={d.units_override ?? FROM_FILE}
+                  onValueChange={(v) => {
+                    if (v !== (d.units_override ?? FROM_FILE))
+                      cad.setUnits.mutate(v === FROM_FILE ? null : v)
+                  }}
+                  items={[
+                    { value: FROM_FILE, label: "From file" },
+                    ...DRAWING_UNITS.map((u) => ({
+                      value: u.value,
+                      label: u.value,
+                    })),
+                  ]}
+                />
+              </div>
+            )}
             <PanelRow label="Scale">
               {SCALE_SOURCE[d.scale_source] ?? d.scale_source}
             </PanelRow>
@@ -219,6 +260,14 @@ export function CadPanel({
             <PanelRow label="Size">
               <span className="num">{fmtSizeMm(d.size_mm)}</span>
             </PanelRow>
+            {canEdit && hint && (
+              <ScaleHintNote
+                hint={hint}
+                fileUnits={d.scale_source === "units" ? d.units : ""}
+                pending={cad.setUnits.isPending}
+                onUse={(u) => cad.setUnits.mutate(u)}
+              />
+            )}
             {canEdit && d.calibration && (
               <Button
                 variant="ghost"
@@ -252,6 +301,45 @@ export function CadPanel({
         onConfirm={() => minCell != null && fit(minCell)}
       />
     </PanelShell>
+  )
+}
+
+/** The drawing's size looks wrong at the file's units: say so, and offer
+ * the unit that would make it a plausible floor plan. */
+function ScaleHintNote({
+  hint,
+  fileUnits,
+  pending,
+  onUse,
+}: {
+  hint: ScaleHint
+  /** What the file says; "" when it says nothing. */
+  fileUnits: string
+  pending: boolean
+  onUse: (u: DrawingUnit) => void
+}) {
+  const unit = DRAWING_UNITS.find((u) => u.value === hint.suggest)
+  return (
+    <div data-part="cad-scale-hint" className="mt-2 grid gap-1">
+      <Badge variant="warning">
+        <TriangleAlert />
+        Drawn {fmtLengthMm(hint.longestMm)} across
+      </Badge>
+      <span className="text-[11px] text-muted-foreground">
+        {fileUnits ? `The file says ${fileUnits}.` : "The file has no units."}
+      </span>
+      {unit && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 w-fit px-2 text-[11px]"
+          disabled={pending}
+          onClick={() => onUse(unit.value)}
+        >
+          {pending ? "Saving…" : `Use ${unit.name}`}
+        </Button>
+      )}
+    </div>
   )
 }
 
