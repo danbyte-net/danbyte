@@ -2185,7 +2185,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if not q:
             raise ValidationError({"q": "Type an address."})
         try:
-            rows = nominatim_search(q)
+            rows = nominatim_search(q, language=request.META.get("HTTP_ACCEPT_LANGUAGE", ""))
         except Exception as exc:  # noqa: BLE001 - surfaced, not raised
             return Response(
                 {"detail": f"OpenStreetMap lookup failed: {exc}"},
@@ -8801,7 +8801,8 @@ class RegionViewSet(TenantScopedViewSet):
         if not q:
             raise ValidationError({"q": "Type a place or postal code."})
         try:
-            rows = nominatim_search(q, polygons=True)
+            rows = nominatim_search(
+                q, polygons=True, language=request.META.get("HTTP_ACCEPT_LANGUAGE", ""))
         except Exception as exc:  # noqa: BLE001 - surfaced, not raised
             return Response(
                 {"detail": f"OpenStreetMap lookup failed: {exc}"},

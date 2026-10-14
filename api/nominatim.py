@@ -11,14 +11,26 @@ from core.version import system_version
 SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 
 
-def nominatim_search(q: str, *, polygons: bool = False, limit: int = 5) -> list:
+#: Result language when the caller gives none. Nominatim answers in the
+#: place's local language when no Accept-Language reaches it (#420), and a
+#: server-side request never carries the browser's.
+DEFAULT_LANGUAGE = "en"
+
+
+def nominatim_search(q: str, *, polygons: bool = False, limit: int = 5,
+                     language: str = "") -> list:
     """One Nominatim search; raises on transport/HTTP errors. With
     ``polygons``, boundary geometry comes back pre-simplified so a whole
     country stays a few tens of KB."""
     # Call-time import so tests patching core.ssrf.safe_get take effect.
     from core.ssrf import safe_get
 
-    params: dict = {"q": q, "format": "jsonv2", "limit": limit}
+    params: dict = {
+        "q": q, "format": "jsonv2", "limit": limit,
+        # Comma list or Accept-Language syntax; capped so a header can't
+        # bloat the URL.
+        "accept-language": (language or DEFAULT_LANGUAGE)[:100],
+    }
     if polygons:
         params |= {"polygon_geojson": 1, "polygon_threshold": 0.003}
     resp = safe_get(
