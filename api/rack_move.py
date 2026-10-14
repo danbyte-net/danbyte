@@ -80,10 +80,13 @@ COMPONENTS = (
     (DeviceBay, "name"), (ModuleBay, "name"), (Module, "module_bay__name"),
     (InventoryItem, "name"),
 )
-# Routing rows that take their site from a moving device (``SITE_PATHS``) and
-# so move with it (#409): (model, the path to the device, how one is called,
-# the path to what tells it apart or None).
-ROUTING_ROWS = (
+# Other rows that take their site from a moving device (``SITE_PATHS``) and
+# so move with it (#409, #414): (model, the path to the device, how one is
+# called, the path to what tells it apart or None).
+DEVICE_ROWS = (
+    ("api.Service", "device", "service {}", "name"),
+    ("api.NATRule", "device", "NAT rule {}", "name"),
+    ("monitoring.PortUtilizationRule", "device", "port rule {}", "name"),
     ("routing.StaticRoute", "device", "static route {}", "prefix"),
     ("routing.BGPInstance", "device", "BGP AS{}", "asn__asn"),
     ("routing.BGPSession", "instance__device", "BGP session {}", "remote_address"),
@@ -444,7 +447,7 @@ def _subjects(p: Plan) -> list:
         tenant_id=tenant_id, assigned_interface__device_id__in=ids),
         ("pk", "assigned_interface__device__name", "mac_address"),
         _catalog_fks(MACAddress, catalogs), mac))
-    for label, device, called, name_path in ROUTING_ROWS:
+    for label, device, called, name_path in DEVICE_ROWS:
         model = apps.get_model(label)
         out.append(_Subject(
             model, model.objects.filter(**{f"{device}_id__in": ids}),
