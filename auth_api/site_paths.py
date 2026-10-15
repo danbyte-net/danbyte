@@ -204,6 +204,52 @@ def site_role_types() -> list[str]:
     return sorted(set(SITE_PATHS) - SITE_ROLE_EXCLUDED)
 
 
+# Registered types a site role's types point at that are NOT catalogs, each
+# with the reason. Everything else a role type references - and is neither
+# site-bound (SITE_PATHS) nor a tenant-wide object with site links
+# (SITE_PATH_EXEMPT) - is a catalog the role reads (#425).
+# tests_site_paths_registry fails when a reference is in neither list.
+SITE_ROLE_REFERENCE_EXCLUDED: dict[str, str] = {
+    "tenant": "the row's own tenant, set by the server",
+    "user": "accounts are administration",
+    "cable": "inventory that spans sites, not a catalog",
+    "circuit": "inventory that spans sites, not a catalog",
+    "providernetwork": "circuit inventory, read with the circuits",
+    "l2vpn": "inventory that spans sites, not a catalog",
+    "tunnel": "inventory that spans sites, not a catalog",
+    "exporttemplate": "automation templates are administration",
+    "oxidizedconnection": "integration configuration",
+}
+
+
+def site_role_catalog_types() -> list[str]:
+    """The catalog types the site roles read (#425): every registered type a
+    site role type points at by foreign key or many-to-many - device types,
+    roles, platforms, statuses, tags, VRFs, … - plus the custom-field
+    definitions when a role type carries custom fields. Derived from the
+    models, so a new catalog reference on a site type is read with it."""
+    from core.models import CustomFieldsMixin
+
+    from .object_types import _registry
+
+    registry = _registry()
+    skip = set(SITE_PATHS) | set(SITE_PATH_EXEMPT) | set(SITE_ROLE_REFERENCE_EXCLUDED)
+    out: set[str] = set()
+    for slug in site_role_types():
+        model = registry[slug]["model"]
+        if issubclass(model, CustomFieldsMixin):
+            out |= {"customfield", "customfieldgroup"}
+        for f in model._meta.get_fields():
+            if f.auto_created or not f.is_relation or f.related_model is None:
+                continue
+            if not (f.many_to_one or f.one_to_one or f.many_to_many):
+                continue
+            target = f.related_model._meta.model_name
+            if target in registry and target not in skip:
+                out.add(target)
+    return sorted(out)
+
+
 # A path may list alternatives with "|": a routing row belongs to a device OR
 # a virtual machine, so its site is the device's or the VM's (#217). The row's
 # site is the FIRST alternative that is set: an address's own site wins over

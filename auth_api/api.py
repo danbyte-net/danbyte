@@ -678,11 +678,15 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
     of its own (``- site record``) - never change or delete, which stay
     with administrators.
 
+    Both also read the catalogs their types reference (#425,
+    ``site_role_catalog_types``): the viewer's grant names them, and a silo
+    editor gets ``- catalog view``. View only, limited to the same sites.
+
     Returns the created ObjectPermission rows. Callers own authorisation.
     """
     from core.effective_settings import separation_enabled
 
-    from .site_paths import CATALOG_SITE_PATHS, site_role_types
+    from .site_paths import CATALOG_SITE_PATHS, site_role_catalog_types, site_role_types
 
     sites = list(sites)
     user_ids = list(user_ids or [])
@@ -697,6 +701,13 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
     types = site_role_types()
     if separation_enabled(tenant):
         types = sorted(set(types) | set(CATALOG_SITE_PATHS))
+
+    # The catalogs those types point at (device types, roles, statuses, tags,
+    # custom fields, …), view only, so the pickers and an import by name work
+    # without the read-all grant (#425). Limited to the same sites: a catalog
+    # with locality then shows global entries and these sites' local ones
+    # while separation is on, and ignores the limit (tenant-wide) otherwise.
+    catalogs = site_role_catalog_types()
 
     created = []
 
@@ -718,10 +729,12 @@ def assemble_site_role(tenant, role, sites, *, user_ids=None, group_ids=None,
              ["view", "add", "change", "delete"], scoped=True)
         if silo:
             make(f"{label} - site record", ["site"], ["view"], scoped=True)
+            make(f"{label} - catalog view", catalogs, ["view"], scoped=True)
         else:
             make(f"{label} - read all", ["*"], ["view"], scoped=False)
     else:  # viewer
-        make(f"{label} - site view", sorted([*types, "site"]), ["view"], scoped=True)
+        make(f"{label} - site view", sorted({*types, *catalogs, "site"}), ["view"],
+             scoped=True)
     return created
 
 

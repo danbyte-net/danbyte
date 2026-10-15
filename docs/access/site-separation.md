@@ -131,6 +131,12 @@ With separation **on**, they gain a locality dimension so a site can't "fix"
 With separation **off**, the locality stamp is kept but not enforced -
 catalogs behave tenant-wide exactly as before.
 
+The [site roles](../features/permissions.md#site-roles-local-it-in-one-click)
+read the catalogs their objects use, a silo editor and a viewer included: with
+separation on, global entries and their own sites' local ones; with it off,
+the tenant's whole catalog. Catalogs without locality - device roles,
+platforms, rack and cabinet types, and the like - read tenant-wide either way.
+
 !!! warning "Tags are tenant-scoped now (independent of this mode)"
     Tags used to live in one global table - every tenant saw every other
     tenant's tag names. Tags now belong to the tenant that created them; a

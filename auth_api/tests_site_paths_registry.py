@@ -22,9 +22,11 @@ from auth_api.site_paths import (
     SITE_PATH_EXEMPT,
     SITE_PATHS,
     SITE_ROLE_EXCLUDED,
+    SITE_ROLE_REFERENCE_EXCLUDED,
     alternatives,
     site_in_q,
     site_null_q,
+    site_role_catalog_types,
     site_role_types,
 )
 from core.models import Organization, Tenant
@@ -103,7 +105,68 @@ class SitePathsRegistryTests(SimpleTestCase):
             self.assertIn(slug, types)
 
 
+def _references(model):
+    """Registered types ``model`` points at by FK, one-to-one or M2M."""
+    registry = _registry()
+    out = {}
+    for f in model._meta.get_fields():
+        if f.auto_created or not f.is_relation or f.related_model is None:
+            continue
+        if f.one_to_many:
+            continue
+        slug = f.related_model._meta.model_name
+        if slug in registry:
+            out.setdefault(slug, []).append(f.name)
+    return out
+
+
+class SiteRoleCatalogsTests(SimpleTestCase):
+    """#425: the site roles read every catalog their types point at."""
+
+    def test_every_reference_is_read_or_excluded(self):
+        catalogs = set(site_role_catalog_types())
+        known = set(SITE_PATHS) | set(SITE_PATH_EXEMPT) | set(SITE_ROLE_REFERENCE_EXCLUDED)
+        missing = {}
+        registry = _registry()
+        for slug in site_role_types():
+            for target, fields in _references(registry[slug]["model"]).items():
+                if target not in catalogs and target not in known:
+                    missing[f"{slug}.{fields[0]}"] = target
+        self.assertEqual(
+            missing, {},
+            "A site role type points at a type the role neither reads nor "
+            "excludes. site_role_catalog_types should derive it; if it is not a "
+            "catalog, add it to SITE_ROLE_REFERENCE_EXCLUDED with the reason.",
+        )
+
+    def test_catalogs_are_not_site_bound_or_administration(self):
+        catalogs = set(site_role_catalog_types())
+        self.assertFalse(catalogs & set(SITE_PATHS))
+        self.assertFalse(catalogs & set(SITE_PATH_EXEMPT))
+        self.assertFalse(catalogs & set(SITE_ROLE_REFERENCE_EXCLUDED))
+        for slug in ("user", "group", "objectpermission", "tenant", "exporttemplate"):
+            self.assertNotIn(slug, catalogs)
+
+    def test_the_reported_catalogs_are_read(self):
+        self.assertLessEqual({
+            "devicetype", "devicerole", "platform", "status", "tag", "customfield",
+            "customfieldgroup", "vrf", "iprole", "manufacturer", "rackrole",
+            "racktype", "cabinettype", "cabinetrole", "zone",
+        }, set(site_role_catalog_types()))
+
+    def test_exclusions_are_real_and_explained(self):
+        registry = _registry()
+        referenced = set()
+        for slug in site_role_types():
+            referenced |= set(_references(registry[slug]["model"]))
+        for slug, reason in SITE_ROLE_REFERENCE_EXCLUDED.items():
+            with self.subTest(slug=slug):
+                self.assertIn(slug, referenced)
+                self.assertTrue(reason.strip())
+
+
 MIGRATION = importlib.import_module("auth_api.migrations.0028_site_roles_site_view")
+CATALOG_MIGRATION = importlib.import_module("auth_api.migrations.0029_site_roles_catalog_view")
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -202,3 +265,60 @@ class SiteRoleUpgradeTests(TestCase):
             MIGRATION.OLD_ROLE_TYPES | set(MIGRATION.NEW_ROLE_TYPES), set(site_role_types())
         )
         self.assertEqual(MIGRATION.CATALOG_TYPES, set(CATALOG_SITE_PATHS))
+
+
+class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
+    """0029 gives the site roles built before #425 their catalog view."""
+
+    def _run(self):
+        MIGRATION.forwards(django_apps, None)
+        CATALOG_MIGRATION.forwards(django_apps, None)
+
+    def test_silo_editor_gains_a_catalog_view_grant(self):
+        self._old("A - site edit", ["view", "add", "change", "delete"])
+        self._run()
+        grant = ObjectPermission.objects.get(name="A - catalog view")
+        self.assertEqual(grant.actions, ["view"])
+        self.assertEqual(grant.object_types, CATALOG_MIGRATION.ROLE_CATALOGS)
+        self.assertEqual(list(grant.sites.all()), [self.site_a])
+        self.assertEqual(list(grant.users.all()), [self.user])
+        self.assertEqual(list(grant.tenants.all()), [self.tenant])
+        self.assertTrue(rbac.has_action(self.user, self.tenant, "devicetype", "view"))
+        self.assertFalse(rbac.has_action(self.user, self.tenant, "devicetype", "add"))
+        self.assertFalse(rbac.has_action(self.user, self.tenant, "devicerole", "change"))
+
+    def test_viewer_gains_the_catalogs(self):
+        perm = self._old("A - site view", ["view"])
+        self._run()
+        perm.refresh_from_db()
+        self.assertLessEqual(set(CATALOG_MIGRATION.ROLE_CATALOGS), set(perm.object_types))
+        self.assertFalse(ObjectPermission.objects.filter(name="A - catalog view").exists())
+
+    def test_reading_editor_gets_no_catalog_grant(self):
+        self._old("A - site edit", ["view", "add", "change", "delete"])
+        read_all = ObjectPermission.objects.create(
+            name="A - read all", object_types=["*"], actions=["view"]
+        )
+        read_all.users.set([self.user])
+        self._run()
+        self.assertFalse(ObjectPermission.objects.filter(name="A - catalog view").exists())
+
+    def test_hand_built_editor_is_left_alone(self):
+        self._old("Z - site edit", ["view", "change"])
+        self._old("Ops - site edit", ["view", "add", "change", "delete"],
+                  types=["device", "prefix", "ipaddress", "circuit"])
+        self._run()
+        self.assertFalse(ObjectPermission.objects.filter(name__endswith="catalog view").exists())
+
+    def test_second_catalog_run_changes_nothing(self):
+        self._old("A - site edit", ["view", "add", "change", "delete"])
+        view = self._old("B - site view", ["view"])
+        self._run()
+        view.refresh_from_db()
+        before = (sorted(view.object_types), ObjectPermission.objects.count())
+        self._run()
+        view.refresh_from_db()
+        self.assertEqual((sorted(view.object_types), ObjectPermission.objects.count()), before)
+
+    def test_frozen_catalogs_match_the_role(self):
+        self.assertEqual(CATALOG_MIGRATION.ROLE_CATALOGS, site_role_catalog_types())

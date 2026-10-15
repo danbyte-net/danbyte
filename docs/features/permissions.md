@@ -203,12 +203,22 @@ An editor **reads everything** by default (the "see all, edit only mine" model,
 good for cross-site troubleshooting). Tick **"Can only see their own sites"**
 for a strict silo - the read-all grant is dropped and they see nothing outside
 their sites. The silo editor gets a separate `- site record` grant instead,
-for viewing their own sites.
+for viewing their own sites, and a `- catalog view` grant for the catalogs
+their objects use.
+
+Both roles **read the catalogs** their site's objects point at - device types
+and roles, platforms, manufacturers, statuses, tags, custom fields, VRFs, IP
+roles, rack, cabinet and module types, cluster types, routing policies and the
+like - so the pickers in **Add device** and an import by name work. They
+never change those catalogs: that stays with administrators, or with the site
+editor's own local entries under
+[enhanced site separation](../access/site-separation.md#local-vs-global-catalog-entries).
 
 !!! note "Upgrading to 0.18"
     Site roles created earlier gain view on their sites, and the services, NAT
     rules, VLAN groups, IP ranges, virtual chassis and other types that became
-    site-scoped. A grant edited away from the role's shape is left as it is.
+    site-scoped. Site viewers and silo site editors gain view on the catalogs
+    above. A grant edited away from the role's shape is left as it is.
 
 ### Set it up when you create the user
 
