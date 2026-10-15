@@ -15,6 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { cn } from "@/lib/utils"
 
 export interface IdOption {
@@ -23,7 +24,12 @@ export interface IdOption {
   /** A short mono detail beside the name - a file path, say - shown on the
    * chip and in the list so two same-named rows stay tellable apart. */
   hint?: string
+  /** A coloured catalog row (a role, a status): set, even to null, and the
+   * option and its chip render as the row's ColorBadge, as in its table. */
+  color?: string | null
 }
+
+const colored = (o: IdOption) => o.color !== undefined
 
 /** A generic id/name multi-select: chosen items render as removable chips, and
  * a searchable popover toggles membership. Mirrors the RT/tag multi-selects but
@@ -67,7 +73,13 @@ export function IdMultiSelect({
   // in front of you when you have searched, not the two hundred behind them.
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options
+    return q
+      ? options.filter((o) =>
+          // Typed a string, but API rows can lack it; one bad row must not
+          // take the form down.
+          ((o.name as string | undefined) ?? "").toLowerCase().includes(q)
+        )
+      : options
   }, [options, query])
   const allShown = shown.length > 0 && shown.every((o) => valueSet.has(o.id))
 
@@ -83,15 +95,8 @@ export function IdMultiSelect({
 
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      {selected.map((o) => (
-        <span
-          key={o.id}
-          className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-foreground"
-        >
-          {o.name}
-          {o.hint && (
-            <span className="font-mono text-muted-foreground">{o.hint}</span>
-          )}
+      {selected.map((o) => {
+        const remove = (
           <button
             type="button"
             onClick={() => toggle(o.id)}
@@ -100,8 +105,29 @@ export function IdMultiSelect({
           >
             <X className="h-2.5 w-2.5" />
           </button>
-        </span>
-      ))}
+        )
+        return colored(o) ? (
+          <span key={o.id} className="inline-flex items-center gap-0.5">
+            <ColorBadge
+              name={o.name}
+              color={o.color ?? undefined}
+              suffix={o.hint}
+            />
+            {remove}
+          </span>
+        ) : (
+          <span
+            key={o.id}
+            className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-foreground"
+          >
+            {o.name}
+            {o.hint && (
+              <span className="font-mono text-muted-foreground">{o.hint}</span>
+            )}
+            {remove}
+          </span>
+        )
+      })}
 
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
@@ -171,7 +197,14 @@ export function IdMultiSelect({
                       >
                         {on && <Check className="h-2.5 w-2.5" />}
                       </span>
-                      <span className="truncate text-xs">{o.name}</span>
+                      {colored(o) ? (
+                        <ColorBadge
+                          name={o.name}
+                          color={o.color ?? undefined}
+                        />
+                      ) : (
+                        <span className="truncate text-xs">{o.name}</span>
+                      )}
                       {o.hint && (
                         <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
                           {o.hint}

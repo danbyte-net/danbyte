@@ -83,7 +83,12 @@ export function ConfigBundleForm({
     staleTime: 10 * 60_000,
   })
   const roleOptions = useMemo<IdOption[]>(
-    () => (roles.data?.results ?? []).map((r) => ({ id: r.id, name: r.name })),
+    () =>
+      (roles.data?.results ?? []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        color: r.color ?? null,
+      })),
     [roles.data]
   )
 
