@@ -150,6 +150,27 @@ class InstallerTests(SimpleTestCase):
         self.assertIn("warn ", block)
         self.assertNotIn("die ", block)
 
+    def test_bubblewrap_is_installed_by_default(self):
+        # DWG converts only inside bubblewrap (#424), so the installer brings
+        # it unless told not to; the old opt-in flag still parses.
+        self.assertIn("SCRIPT_SANDBOX=1\n", self.text)
+        self.assertIn("--without-bubblewrap) SCRIPT_SANDBOX=0", self.text)
+        self.assertIn("--with-script-sandbox) SCRIPT_SANDBOX=1", self.text)
+        self.assertIn("apt-get -o DPkg::Lock::Timeout=900 install -y bubblewrap", self.text)
+
+    def test_an_upgrade_that_gains_bubblewrap_keeps_scripts_on_landlock(self):
+        # Scripts on auto would lose device access once bwrap appears; an
+        # existing install keeps Landlock unless .env already chose.
+        block = self.text[self.text.index('step "Sandbox (bubblewrap)"'):]
+        block = block[:block.index("\nfi\n")]
+        self.assertIn('[ "$EXISTING" -eq 1 ]', block)
+        self.assertIn("! env_get DANBYTE_SCRIPT_SANDBOX", block)
+        self.assertIn("env_backfill DANBYTE_SCRIPT_SANDBOX landlock", block)
+        # Only when this run installed it: the check sits inside the
+        # "bwrap missing" branch.
+        self.assertLess(block.index("if ! command -v bwrap"),
+                        block.index("env_backfill DANBYTE_SCRIPT_SANDBOX landlock"))
+
     def test_the_bundle_layout_untars_to_the_install_path(self):
         """What install.sh's tar pipe does, run for real: the converter lands
         at <app>/vendor/cad/bin/dwg2dxf, executable, not world-writable."""

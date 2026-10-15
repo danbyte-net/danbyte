@@ -92,7 +92,7 @@ The other tabs cover building from source and a local dev checkout.
         | `--skip-backup` | On a re-run: no pre-upgrade backup. | off |
         | `--host-only` | On a host that runs Danbyte: only the root steps an upgrade ends with (logrotate, nginx + TLS, the certificate unit), from the bundle of the release that runs, with no upgrade stage. It changes no code, so a git checkout takes it too. | off |
         | `--adopt` | On a re-run or with `--host-only`: replace a Danbyte nginx site edited by hand with the new render, keeping a backup. Without it the new render lands beside the site as `danbyte.conf.new`. | off |
-        | `--with-script-sandbox` | Install `bubblewrap`, so sandboxed [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do) run in their own namespaces, and check it works for the service user. Without it they run under Landlock alone, and DWG [floor-plan drawings](#dwg-converter) are refused. Works on a fresh install and a re-run. | off |
+        | `--without-bubblewrap` | Don't install `bubblewrap`. By default the installer installs it and checks it works for the service user: DWG [floor-plan drawings](#dwg-converter) are converted only inside it, and sandboxed [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do) run in their own namespaces with it. Without it DWG is refused and scripts run under Landlock alone. On a re-run that adds bubblewrap, scripts stay on Landlock (`DANBYTE_SCRIPT_SANDBOX=landlock` goes into `.env`) unless `.env` already sets a script sandbox. `--with-script-sandbox` is still accepted and changes nothing. | installs |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
         **Environment variables** (set before the command; alternative to flags)
@@ -409,8 +409,8 @@ airgapped hosts included, once bubblewrap is there.
 
 The converter runs in a bubblewrap sandbox (no network, no access to the app
 directory, `.env` or media), and without a working `bwrap` DWG uploads are
-refused. Install it with `--with-script-sandbox` (or
-`sudo apt install bubblewrap`); the installer's DWG step checks it works for
+refused. The installer installs it unless you pass `--without-bubblewrap`
+(or `sudo apt install bubblewrap` yourself); its DWG step checks it works for
 the service user and warns when it does not, for example when AppArmor
 refuses unprivileged user namespaces. See
 [`DANBYTE_CAD_SANDBOX`](../reference/settings.md#converter-sandbox-danbyte_cad_sandbox).

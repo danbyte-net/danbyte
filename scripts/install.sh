@@ -30,9 +30,12 @@
 # this bundle, never from the app directory, and writes into that directory
 # only as the service user: the account owns it, and a link it put there
 # would take root's write somewhere else (#287).
-# --with-script-sandbox also installs bubblewrap, which puts sandboxed
-# scripts in their own namespaces (docs/features/scripts.md); without it
-# they run under Landlock alone.
+# bubblewrap is installed by default: the DWG converter runs only inside it
+# (#424), and sandboxed scripts get their own namespaces from it
+# (docs/features/scripts.md). --without-bubblewrap skips it: DWG drawings are
+# then refused and scripts run under Landlock alone. An existing install that
+# gains bubblewrap here keeps its scripts on Landlock unless .env already
+# chose a script sandbox. --with-script-sandbox is still accepted.
 set -euo pipefail
 
 # ── Config (env or flags) ────────────────────────────────────────────────────
@@ -49,7 +52,7 @@ FORCE=0
 SKIP_BACKUP=0
 HOST_ONLY=0
 ADOPT=0
-SCRIPT_SANDBOX=0
+SCRIPT_SANDBOX=1
 # Root-only: the copy of this bundle's files the root steps of an upgrade
 # run from, and their summaries.
 HS_BASE=/var/lib/danbyte/installer
@@ -65,6 +68,7 @@ while [ $# -gt 0 ]; do
     --host-only) HOST_ONLY=1; shift ;;
     --adopt) ADOPT=1; shift ;;
     --with-script-sandbox) SCRIPT_SANDBOX=1; shift ;;
+    --without-bubblewrap) SCRIPT_SANDBOX=0; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -273,18 +277,27 @@ echo "net.ipv4.ping_group_range = $SVC_GID $SVC_GID" \
   > /etc/sysctl.d/99-danbyte-icmp.conf
 sysctl -q -w "net.ipv4.ping_group_range=$SVC_GID $SVC_GID" || true
 
-# bubblewrap for sandboxed scripts: the workers find /usr/bin/bwrap at run
-# time and use it when it works for the service user. Checked here as that
-# user, so a host whose kernel or AppArmor policy refuses unprivileged user
-# namespaces says so now; the installer changes no such policy itself.
+# bubblewrap for the DWG converter and sandboxed scripts: the workers find
+# /usr/bin/bwrap at run time and use it when it works for the service user.
+# Checked here as that user, so a host whose kernel or AppArmor policy refuses
+# unprivileged user namespaces says so now; the installer changes no such
+# policy itself.
 if [ "$SCRIPT_SANDBOX" -eq 1 ]; then
-  step "Script sandbox (bubblewrap)"
+  step "Sandbox (bubblewrap)"
   if ! command -v bwrap >/dev/null 2>&1; then
     if command -v apt-get >/dev/null 2>&1; then
       DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y bubblewrap \
-        || warn "could not install bubblewrap - sandboxed scripts run under Landlock alone."
+        || warn "could not install bubblewrap - DWG drawings are refused and sandboxed scripts run under Landlock alone."
     else
-      warn "apt-get not found - install bubblewrap yourself; until then sandboxed scripts run under Landlock alone."
+      warn "apt-get not found - install bubblewrap yourself; until then DWG drawings are refused and sandboxed scripts run under Landlock alone."
+    fi
+    # Scripts on auto would move from Landlock to bubblewrap with it, which
+    # keeps them off the network but for the API. An install upgraded here
+    # keeps what its scripts had, unless .env already chose.
+    if [ "$EXISTING" -eq 1 ] && command -v bwrap >/dev/null 2>&1 \
+        && ! env_get DANBYTE_SCRIPT_SANDBOX >/dev/null 2>&1; then
+      env_backfill DANBYTE_SCRIPT_SANDBOX landlock
+      echo "  scripts stay on Landlock (DANBYTE_SCRIPT_SANDBOX=landlock in .env); set auto for namespaces"
     fi
   fi
   if command -v bwrap >/dev/null 2>&1; then
@@ -471,7 +484,7 @@ fi
 # The converter runs only inside a bubblewrap sandbox (#424): without one
 # that works for the service user, DWG is refused.
 if ! command -v bwrap >/dev/null 2>&1; then
-  warn "bubblewrap is not installed - DWG floor-plan drawings are refused until it is (re-run with --with-script-sandbox, or apt install bubblewrap). DXF works."
+  warn "bubblewrap is not installed - DWG floor-plan drawings are refused until it is (apt install bubblewrap, or re-run without --without-bubblewrap). DXF works."
 elif ! as_user bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / true >/dev/null 2>&1; then
   warn "bubblewrap cannot create user namespaces for $SERVICE_USER (kernel or AppArmor policy) - DWG floor-plan drawings are refused; see docs/reference/settings.md (DANBYTE_CAD_SANDBOX)."
 fi

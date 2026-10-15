@@ -207,8 +207,9 @@ it, and the run fails with that reason. The port block needs Linux 6.7
 and the signal block 6.12; on an older kernel the run starts and its log
 names what is not blocked.
 
-bubblewrap needs the `bubblewrap` package (`install.sh
---with-script-sandbox` installs it; see
+bubblewrap needs the `bubblewrap` package (`install.sh` installs it unless
+given `--without-bubblewrap`; an existing install it is added to keeps its
+scripts on Landlock until `.env` says otherwise; see
 [Installation](../getting-started/installation.md)) and unprivileged user
 namespaces. Ubuntu 24.04 and later allow them for `bwrap` through its
 AppArmor profile, and Debian allows them by default. Docker's default
