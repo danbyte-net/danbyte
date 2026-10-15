@@ -237,11 +237,11 @@ floor plan, changing needs **change**.
 | `POST /api/floor-plans/{id}/drawing/` | Multipart `file`. Replaces any drawing; 202 with `status: "queued"`. 400 with a `file` error for a missing, oversized or unrecognised file; a DWG without a converter adds `code: "converter_missing"`. |
 | `PATCH /api/floor-plans/{id}/drawing/` | Placement: any of `x_mm`, `y_mm` (±10,000,000), `rotation` (0/90/180/270), `opacity` (0-100), `hidden_layers` (names of this drawing's layers), `hide_text`. |
 | `DELETE /api/floor-plans/{id}/drawing/` | Removes the drawing and its files. 204. |
-| `POST /api/floor-plans/{id}/drawing/reprocess/` | Queues processing again. 202. |
+| `POST /api/floor-plans/{id}/drawing/reprocess/` | Queues processing again. 202; 200 with the drawing unchanged while a run is already queued. |
 | `POST /api/floor-plans/{id}/drawing/calibrate/` | `{"a": [x, y], "b": [x, y], "distance_mm": n}`, points in the SVG's viewBox units, distance 1-1,000,000 mm. 409 until the drawing is ready. `DELETE` clears it. |
 | `POST /api/floor-plans/{id}/drawing/units/` | `{"units": "m"}` (`mm`, `cm`, `m`, `in`, `ft`): the units the drawing is really in, over the file's; drops any calibration. `{"units": null}` or `DELETE` trusts the file again. Returns the drawing. |
 | `POST /api/floor-plans/{id}/drawing/fit-grid/` | Optional `cell_mm` (50-5000). Returns `{floor_plan, drawing}`; 400 with `min_cell_mm` when the drawing needs more than 512 cells. |
-| `POST /api/floor-plans/{id}/drawing/render/` | `{"hidden_layers": [...], "hide_text": bool}`: a server render with those layers left out, for drawings too large to toggle in the browser. Needs only **view**. 200 with the cached render, or 202 when queued; `GET …/render/?key=` reports on it (`status`, `url`, `error`). The last 12 are kept. |
+| `POST /api/floor-plans/{id}/drawing/render/` | `{"hidden_layers": [...], "hide_text": bool}`: a server render with those layers left out, for drawings too large to toggle in the browser. Needs only **view**. 200 with the cached render, or 202 when queued; `GET …/render/?key=` reports on it (`status`, `url`, `error`). The same request while one is queued returns that one. At most 3 renders of a drawing queue at once; past that, 429 until one finishes. The last 12 are kept. |
 
 The drawing record:
 

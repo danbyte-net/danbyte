@@ -4570,10 +4570,11 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
     serializer_class = InterfaceSerializer
     pagination_class = StandardPagination
     tenant_field = None
+    # Extends the mixin's map: dropping its keys left bulk-clone needing only
+    # ``change`` instead of ``add``.
     rbac_action_map = {
+        **ComponentBulkMixin.rbac_action_map,
         "bulk_create": "add",
-        "bulk_update": "change",
-        "bulk_delete": "delete",
     }
 
     def get_serializer_class(self):
@@ -9965,8 +9966,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["post"], url_path="drawing/reprocess")
     def drawing_reprocess(self, request, pk=None):
         """Process the uploaded file again (after a converter was installed,
-        or the queue was down). 202."""
+        or the queue was down). 202; 200 with the drawing as it is while a
+        run is already queued, so repeated requests queue one job."""
+        from django.db import transaction
+
         from . import cad_render
+        from .models import FloorPlanDrawing
 
         plan = self.get_object()
         d = self._drawing_or_404(plan)
@@ -9975,10 +9980,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 cad_render.converter()
             except cad_render.ConverterUnavailable as exc:
                 return Response({"detail": str(exc), "code": "converter_missing"}, status=400)
-        d.status = "queued"
-        d.error = ""
-        d.save(update_fields=["status", "error", "updated_at"])
-        cad_render.enqueue(d.pk, d.source.name)
+        with transaction.atomic():
+            d = FloorPlanDrawing.objects.select_for_update().get(pk=d.pk)
+            # A run queued longer than a job may take was lost; queue again.
+            if d.status == "queued" and cad_render.in_flight(d.updated_at.isoformat()):
+                d.floor_plan = plan
+                return self._drawing_response(d)
+            d.status = "queued"
+            d.error = ""
+            d.save(update_fields=["status", "error", "updated_at"])
+            cad_render.enqueue(d.pk, d.source.name)
+        d.floor_plan = plan
         return self._drawing_response(d, status=drf_status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["post", "delete"], url_path="drawing/calibrate")
@@ -10110,7 +10122,13 @@ class FloorPlanViewSet(TenantScopedViewSet):
         ser.is_valid(raise_exception=True)
         hidden = ser.validated_data.get("hidden_layers", [])
         hide_text = ser.validated_data.get("hide_text", False)
-        key, entry, queued = cad_render.request_variant(d, hidden, hide_text)
+        try:
+            key, entry, queued = cad_render.request_variant(d, hidden, hide_text)
+        except cad_render.TooManyRenders:
+            return Response(
+                {"detail": "Other renders of this drawing are still queued. Try again shortly."},
+                status=drf_status.HTTP_429_TOO_MANY_REQUESTS,
+            )
         return Response(
             self._variant_body(key, entry),
             status=drf_status.HTTP_202_ACCEPTED if queued else 200,

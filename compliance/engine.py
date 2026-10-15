@@ -147,8 +147,13 @@ def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
     return failed
 
 
-def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
-    """Return per-rule violation counts + a flat violation list."""
+def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
+    """Return per-rule violation counts + a flat violation list.
+
+    ``scope(object_type, queryset)`` returns the rows of ``queryset`` the
+    caller may view, or None for all of them: the flat list then names only
+    those. The per-rule counts stay whole - a compliance grant says how many
+    objects fail a rule, not which."""
     if rules is None:
         rules = list(
             ComplianceRule.objects.filter(tenant=tenant, enabled=True)
@@ -167,6 +172,11 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
     for object_type, type_rules in by_type.items():
         model = models[object_type]
         qs = model.objects.filter(tenant=tenant)
+        shown = None
+        if scope is not None:
+            viewable = scope(object_type, qs)
+            if viewable is not None:
+                shown = set(viewable.values_list("pk", flat=True))
         needs_tags = any(_needs_tags(r) for r in type_rules)
         if needs_tags:
             qs = qs.prefetch_related(TAGS)
@@ -193,6 +203,8 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
                 if not _violates(rule, obj, tag_slugs, eol_cfg, coverage_days):
                     continue
                 counts[rule.id] += 1
+                if shown is not None and obj.pk not in shown:
+                    continue
                 # Bound the flat list, but keep it generous: per-object UI
                 # markers (the violation badge) rely on object_ids being
                 # present here, not just the aggregate per-rule counts.

@@ -171,7 +171,7 @@ class ComplianceRuleViewSet(TenantScopedViewSet):
         live engine as the global evaluate, scoped to one rule (and the active
         tenant via the queryset)."""
         rule = self.get_object()
-        result = evaluate(rule.tenant, rules=[rule])
+        result = evaluate(rule.tenant, rules=[rule], scope=_view_scope(request, rule.tenant))
         summary = next(iter(result["rules"]), None)
         # Serialize the failing objects with their *real* type serializer so the
         # detail page can render the genuine per-type table (all its columns),
@@ -257,10 +257,24 @@ def compliance_evaluate(request):
         return Response({"rules": [], "violations": [], "total_violations": 0})
     if not rbac.has_action(request.user, tenant, "compliancerule", "view"):
         return Response({"detail": "compliancerule.view required."}, status=403)
-    result = evaluate(tenant)
-    _append_config_drift(result, tenant)
+    scope = _view_scope(request, tenant)
+    result = evaluate(tenant, scope=scope)
+    _append_config_drift(result, tenant, scope)
     result["violations"] = _filter_violations(result["violations"], request)
     return Response(result)
+
+
+def _view_scope(request, tenant):
+    """The ``scope`` for :func:`evaluate`: each type's rows cut to what the
+    caller may view of it, None when that is every row. A compliance grant
+    says which rules fail, not which objects fail them."""
+    def scope(object_type, qs):
+        slug = qs.model._meta.model_name
+        if rbac.row_filter(request.user, tenant, slug, "view") is True:
+            return None
+        return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
+
+    return scope
 
 
 def _filter_violations(violations: list[dict], request) -> list[dict]:
@@ -385,7 +399,7 @@ def _device_has_config_drift(tenant, device) -> bool:
 CONFIG_DRIFT_RULE_ID = "config-drift"
 
 
-def _append_config_drift(result: dict, tenant) -> None:
+def _append_config_drift(result: dict, tenant, scope=None) -> None:
     """Surface drifted devices as synthetic compliance violations so a drifted
     device gets the same ⚠ marker (and Compliance-page row) as a rule violation.
 
@@ -397,10 +411,18 @@ def _append_config_drift(result: dict, tenant) -> None:
         from integrations.models import DeviceConfigState
     except Exception:  # noqa: BLE001
         return
+    from api.models import Device
+
     drifted = (
         DeviceConfigState.objects.filter(tenant=tenant, status="drift")
         .select_related("device")
     )
+    total = drifted.count()
+    viewable = (
+        scope("device", Device.objects.filter(tenant=tenant)) if scope is not None else None
+    )
+    if viewable is not None:
+        drifted = drifted.filter(device__in=viewable)
     rows = [
         {
             "rule_id": CONFIG_DRIFT_RULE_ID,
@@ -414,19 +436,20 @@ def _append_config_drift(result: dict, tenant) -> None:
         }
         for s in drifted
     ]
-    if not rows:
+    if not total:
         return
     result["violations"].extend(rows)
+    # Counted whole, like a rule's count; the rows are the caller's own.
     result["rules"].append(
         {
             "id": CONFIG_DRIFT_RULE_ID,
             "name": "Config drift",
             "object_type": "device",
             "severity": "warning",
-            "violations": len(rows),
+            "violations": total,
         }
     )
-    result["total_violations"] = result.get("total_violations", 0) + len(rows)
+    result["total_violations"] = result.get("total_violations", 0) + total
 
 
 @extend_schema(

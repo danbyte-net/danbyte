@@ -273,3 +273,90 @@ class AdminWorkflowTests(_PinBase):
         r = self.pin(full="ghost")
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(self.client.delete(f"{LINK}{r.json()['id']}/").status_code, 403)
+
+
+class SyncReasonScopeTests(_VmBase):
+    """A sync matches against the whole tenant, so a claim reason can name a
+    device or VM outside the caller's scope; the API names only what the
+    caller can view."""
+
+    UNMATCHED = "/api/oxidized/connections/{}/unmatched/"
+
+    def setUp(self):
+        super().setUp()
+        self.hidden = Device.objects.create(
+            tenant=self.tenant, name="secret-core", site=self.site_b
+        )
+        FAKE["nodes"] = [node("secret-core"), node("secret-core.example.net")]
+        self.user = self.member((["*"], ["view"], self.site_a))
+
+    def rows(self, key="results", user=None):
+        self.login(user or self.user)
+        r = self.client.get(self.UNMATCHED.format(self.conn.id))
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertNotIn(str(self.hidden.id), r.content.decode())
+        return {row["full_name"]: row["reason"] for row in r.json()[key]}
+
+    def test_admin_sees_the_name(self):
+        sync_nodes(self.conn)
+        self.login()
+        r = self.client.get(self.UNMATCHED.format(self.conn.id)).json()
+        by = {row["full_name"]: row for row in r["results"]}
+        self.assertEqual(by["secret-core"]["reason"], "2 nodes match secret-core.")
+        self.assertEqual(
+            set(by["secret-core"]), {"full_name", "name", "ip", "model", "reason"}
+        )
+
+    def test_site_scoped_reader_gets_no_name(self):
+        sync_nodes(self.conn)
+        self.assertEqual(self.rows()["secret-core"], "2 nodes match a device.")
+
+    def test_in_scope_device_stays_named(self):
+        self.hidden.site = self.site_a
+        self.hidden.save()
+        sync_nodes(self.conn)
+        self.login(self.user)
+        r = self.client.get(self.UNMATCHED.format(self.conn.id)).json()
+        self.assertEqual(r["results"][0]["reason"], "2 nodes match secret-core.")
+
+    def test_linked_holder_and_warning_redacted(self):
+        self.link(device=self.hidden, full="secret-core")
+        sync_nodes(self.conn)
+        self.assertEqual(
+            self.rows()["secret-core.example.net"], "A device is linked to node secret-core."
+        )
+        self.assertEqual(
+            self.rows("warnings")["secret-core"],
+            "2 nodes match a device; the existing link is kept.",
+        )
+
+    def test_vm_reason_redacted(self):
+        self.hidden.delete()
+        self.hidden = self.make_vm("secret-core", site=self.site_b)
+        sync_nodes(self.conn)
+        self.assertEqual(self.rows()["secret-core"], "2 nodes match a virtual machine.")
+
+    def test_sync_response_is_redacted(self):
+        user = self.member((["*"], ["view", "add", "change"], self.site_a), username="op")
+        self.login(user)
+        r = self.client.post(f"/api/oxidized/connections/{self.conn.id}/sync/")
+        self.assertEqual(r.status_code, 200, r.content)
+        reasons = {row["full_name"]: row["reason"] for row in r.json()["unmatched"]}
+        self.assertEqual(reasons["secret-core"], "2 nodes match a device.")
+        self.assertNotIn(str(self.hidden.id), r.content.decode())
+
+    def test_summary_from_before_targets_is_redacted(self):
+        def row(full, reason):
+            return {"full_name": full, "name": full, "ip": "", "model": "", "reason": reason}
+
+        self.conn.last_sync_summary = {"unmatched": [
+            row("a", "secret-core is linked to node b."),
+            row("c", "2 nodes match secret-core.example.net."),
+            row("d", "No device or virtual machine matches."),
+        ], "unmatched_count": 3}
+        self.conn.save()
+        got = self.rows()
+        self.assertEqual(got["a"], "A device or virtual machine is linked to node b.")
+        self.assertEqual(got["c"], "2 nodes match a device or virtual machine.")
+        self.assertEqual(got["d"], "No device or virtual machine matches.")
+        self.assertEqual(self.rows(user=self.admin)["a"], "secret-core is linked to node b.")

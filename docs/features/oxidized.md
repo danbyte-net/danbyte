@@ -216,7 +216,7 @@ All under `/api/oxidized/`, 404 while the integration is off.
 | `connections/` | CRUD. `password` is write-only; `password_set` reads back. `auto_sync` and `sync_interval_minutes` (5, 10, 15, 30, 60) set the schedule; `last_sync_at` (last success), `last_sync_attempt_at` and `next_sync_at` (null while off) read back. |
 | `connections/<id>/test/` | `POST`. Reach oxidized-web and count nodes. |
 | `connections/<id>/sync/` | `POST`. Read the node list and re-match. The summary counts `linked`, `proposed`, `unmatched_count` and `warning_count`. |
-| `connections/<id>/unmatched/` | The nodes the last sync left unmatched, with reasons, and `warnings`: the links it kept despite a namesake. |
+| `connections/<id>/unmatched/` | The nodes the last sync left unmatched, with reasons, and `warnings`: the links it kept despite a namesake. A reason names a device or VM only when the caller can view it; otherwise it reads "a device" or "a virtual machine". The same goes for the `sync/` response. |
 | `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), `POST` to pin (`connection_id`, `full_name`, and one of `device_id` or `virtual_machine_id`), `DELETE` to unlink. A link reads back `device` or `virtual_machine`, the other null, and `proposed`. Pinning and unlinking need *change* on the connection (403); see [Who can pin and unlink](#who-can-pin-and-unlink). |
 | `links/<id>/confirm/` | `POST`. Confirm a proposed link. 400 when it is not proposed or the confirm would show you a config you cannot read. |
 | `devices/<id>/` | The nodes linked to a device. A proposed link is left out until confirmed. |

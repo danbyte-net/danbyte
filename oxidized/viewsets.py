@@ -41,7 +41,7 @@ from .serializers import (
     OxidizedNodeLinkSerializer,
     require_connection_change,
 )
-from .sync import remember_unlinked, sync_nodes
+from .sync import reasons_for, remember_unlinked, sync_nodes
 
 OID = re.compile(r"^[0-9a-f]{4,64}$")
 
@@ -76,18 +76,26 @@ class OxidizedConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     @action(detail=True, methods=["post"])
     def sync(self, request, pk=None):
         """Read the node list now and re-match every link that is not pinned."""
-        summary = sync_nodes(self.get_object())
+        conn = self.get_object()
+        summary = sync_nodes(conn)
+        summary = {
+            **summary,
+            "unmatched": reasons_for(summary.get("unmatched"), request.user, conn.tenant),
+            "warnings": reasons_for(summary.get("warnings"), request.user, conn.tenant),
+        }
         return Response(summary, status=502 if summary["error"] else 200)
 
     @action(detail=True, methods=["get"])
     def unmatched(self, request, pk=None):
         """The nodes the last sync could not pair with a device, and why;
         ``warnings`` lists the links it kept despite namesakes (#400)."""
-        s = self.get_object().last_sync_summary or {}
+        conn = self.get_object()
+        s = conn.last_sync_summary or {}
+        # A reason names a device or VM only for a caller who can view it.
         return Response({
-            "results": s.get("unmatched") or [],
+            "results": reasons_for(s.get("unmatched"), request.user, conn.tenant),
             "count": s.get("unmatched_count") or 0,
-            "warnings": s.get("warnings") or [],
+            "warnings": reasons_for(s.get("warnings"), request.user, conn.tenant),
             "warning_count": s.get("warning_count") or 0,
         })
 

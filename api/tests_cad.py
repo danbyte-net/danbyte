@@ -10,12 +10,14 @@ import stat
 import sys
 import tarfile
 import tempfile
+from datetime import timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from lxml import etree
 from rest_framework.test import APITestCase
 
@@ -824,6 +826,93 @@ class DrawingApiTests(_Base):
 
 
 # ─── permissions and tenant isolation, endpoint by endpoint ─────────────────
+
+
+class _HeldQueue:
+    """django_rq's queue, recording jobs without running them."""
+
+    def __init__(self):
+        self.jobs = []
+
+    def enqueue(self, fn, *args, **kwargs):
+        self.jobs.append((fn.__name__, args))
+
+
+class RenderChurnTests(_Base):
+    """Repeated reprocess and render requests queue one job, and a viewer
+    cannot pile renders onto the queue."""
+
+    def setUp(self):
+        super().setUp()
+        self.d = self.ready()
+        self.held = _HeldQueue()
+        hold = mock.patch("django_rq.get_queue", return_value=self.held)
+        hold.start()
+        self.addCleanup(hold.stop)
+
+    def post(self, tail, body=None):
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.post(self.url(tail=tail), body or {}, format="json")
+
+    def test_reprocess_while_queued_queues_nothing_more(self):
+        self.assertEqual(self.post("reprocess/").status_code, 202)
+        for _ in range(3):
+            r = self.post("reprocess/")
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertEqual(r.data["status"], "queued")
+        self.assertEqual(len(self.held.jobs), 1)
+
+    def test_a_lost_reprocess_may_be_queued_again(self):
+        self.assertEqual(self.post("reprocess/").status_code, 202)
+        long_ago = timezone.now() - timedelta(seconds=cad_render.JOB_TIMEOUT + 60)
+        FloorPlanDrawing.objects.filter(pk=self.d.pk).update(updated_at=long_ago)
+        self.assertEqual(self.post("reprocess/").status_code, 202)
+        self.assertEqual(len(self.held.jobs), 2)
+
+    def test_identical_render_requests_queue_one_job(self):
+        self.login(self.member("viewer", "view"))
+        codes = [self.post("render/", {"hidden_layers": ["WALLS"]}).status_code
+                 for _ in range(5)]
+        self.assertEqual(codes, [202, 200, 200, 200, 200])
+        self.assertEqual(len(self.held.jobs), 1)
+
+    def test_renders_in_flight_are_capped(self):
+        self.login(self.member("viewer", "view"))
+        layers = ["WALLS", "DOORS", "TEXT", "DIMS"]
+        with mock.patch.object(cad_render, "MAX_QUEUED_VARIANTS", 2):
+            first = self.post("render/", {"hidden_layers": [layers[0]]})
+            self.assertEqual(self.post("render/", {"hidden_layers": [layers[1]]}).status_code,
+                             202)
+            refused = self.post("render/", {"hidden_layers": [layers[2]]})
+            self.assertEqual(refused.status_code, 429, refused.content)
+            # One already queued is still served.
+            again = self.post("render/", {"hidden_layers": [layers[0]]})
+            self.assertEqual((again.status_code, again.data["key"]), (200, first.data["key"]))
+        self.assertEqual(len(self.held.jobs), 2)
+        self.d.refresh_from_db()
+        self.assertEqual(len(self.d.variants), 2)
+
+    def test_a_finished_render_frees_a_slot(self):
+        with mock.patch.object(cad_render, "MAX_QUEUED_VARIANTS", 1):
+            first = self.post("render/", {"hidden_layers": ["WALLS"]})
+            self.assertEqual(self.post("render/", {"hidden_layers": ["DOORS"]}).status_code,
+                             429)
+            name, args = self.held.jobs[0]
+            cad_render.run_variant(*args)
+            self.assertEqual(self.client.get(self.url(tail="render/"),
+                                              {"key": first.data["key"]}).data["status"],
+                             "ready")
+            self.assertEqual(self.post("render/", {"hidden_layers": ["DOORS"]}).status_code,
+                             202)
+
+    def test_a_lost_render_is_queued_again(self):
+        first = self.post("render/", {"hidden_layers": ["WALLS"]})
+        variants = dict(self.d.__class__.objects.get(pk=self.d.pk).variants)
+        long_ago = timezone.now() - timedelta(seconds=cad_render.JOB_TIMEOUT + 60)
+        variants[first.data["key"]]["at"] = long_ago.isoformat()
+        FloorPlanDrawing.objects.filter(pk=self.d.pk).update(variants=variants)
+        self.assertEqual(self.post("render/", {"hidden_layers": ["WALLS"]}).status_code, 202)
+        self.assertEqual(len(self.held.jobs), 2)
 
 
 class DrawingAccessTests(_Base):

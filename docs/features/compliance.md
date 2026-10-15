@@ -93,6 +93,10 @@ the API endpoint (`GET /api/compliance/evaluate/?severity=…&rule=…&object=�
 which narrows the returned violation list while keeping the per-rule summary and
 total unfiltered.
 
+The violation list, here and on a rule's page, names only objects the caller
+can view: a site-limited user sees their own sites' failures. The per-rule
+counts and the total still count every object.
+
 !!! tip "Large data sets are capped"
     To stay fast on big tenants, the flat violations list is capped at 5,000
     entries, and each rule scans up to 5,000 rows. The **counts** stay exact even

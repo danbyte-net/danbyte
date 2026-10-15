@@ -18,7 +18,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
-from api.bulk_delete import bulk_ids
+from api.bulk_delete import SafeBulkDeleteMixin
 from api.parsers import ObjectJSONParser
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
@@ -2364,10 +2364,13 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
         )
 
 
-class WatchedEndpointViewSet(TenantScopedViewSet):
+class WatchedEndpointViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     """CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
     device). Tenant-scoped + RBAC via the registered object type. A ``check
-    now`` action reads the certificate immediately."""
+    now`` action reads the certificate immediately; ``bulk-delete`` is the
+    shared one (api.bulk_delete) and needs ``delete``."""
+
+    rbac_action_map = {"bulk_delete": "delete"}
 
     queryset = WatchedEndpoint.objects.select_related("last_certificate").order_by(
         "host", "port"
@@ -2393,11 +2396,3 @@ class WatchedEndpointViewSet(TenantScopedViewSet):
         ep.refresh_from_db()
         return Response(self.get_serializer(ep).data)
 
-    @action(detail=False, methods=["post"], url_path="bulk-delete")
-    def bulk_delete(self, request):
-        ids = bulk_ids(request)
-        # get_queryset already scopes to the tenant + RBAC, so this can only
-        # ever delete the caller's own endpoints.
-        qs = self.get_queryset().filter(id__in=ids)
-        _, by_model = qs.delete()
-        return Response({"deleted": by_model.get(qs.model._meta.label, 0)})

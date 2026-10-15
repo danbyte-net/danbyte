@@ -66,6 +66,9 @@ RENDER_TIMEOUT = 600
 MEMORY_LIMIT = 3 * 1024 * 1024 * 1024
 #: Server renders with layers left out kept per drawing; the oldest goes.
 MAX_VARIANTS = 12
+#: Server renders one drawing may have queued at once; past this a new one
+#: is refused until one finishes, so render requests cannot pile up.
+MAX_QUEUED_VARIANTS = 3
 JOB_TIMEOUT = CONVERT_TIMEOUT + RENDER_TIMEOUT + 120
 
 #: The converter programs that may be run, by file name, and how.
@@ -556,14 +559,52 @@ def variant_key(d, hidden, hide_text: bool) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:24]
 
 
+class TooManyRenders(Exception):
+    """MAX_QUEUED_VARIANTS renders of the drawing are already queued."""
+
+
+def in_flight(stamp: str, now=None) -> bool:
+    """Whether a render queued at ``stamp`` (ISO time) may still be running:
+    one queued longer than JOB_TIMEOUT ago was lost (a worker died) and may
+    be queued again."""
+    from datetime import datetime, timedelta
+
+    try:
+        at = datetime.fromisoformat(stamp)
+    except (TypeError, ValueError):
+        return False
+    return at > (now or timezone.now()) - timedelta(seconds=JOB_TIMEOUT)
+
+
 def request_variant(d, hidden, hide_text: bool) -> tuple[str, dict, bool]:
     """``(key, entry, queued)``: the cached render for this hidden set, or a
-    newly queued one. Keeps at most MAX_VARIANTS, dropping the oldest."""
+    newly queued one. Keeps at most MAX_VARIANTS, dropping the oldest.
+
+    The drawing row is locked while deciding, so identical requests arriving
+    together queue one job; :class:`TooManyRenders` when MAX_QUEUED_VARIANTS
+    others are still in flight."""
+    with transaction.atomic():
+        locked = type(d).objects.select_for_update().get(pk=d.pk)
+        d.variants = locked.variants
+        return _request_variant(d, hidden, hide_text)
+
+
+def _request_variant(d, hidden, hide_text: bool) -> tuple[str, dict, bool]:
     key = variant_key(d, hidden, hide_text)
     variants = dict(d.variants or {})
     entry = variants.get(key)
-    if entry and entry.get("status") in ("ready", "queued"):
+    now = timezone.now()
+    if entry and (
+        entry.get("status") == "ready"
+        or (entry.get("status") == "queued" and in_flight(entry.get("at"), now))
+    ):
         return key, entry, False
+    queued = sum(
+        1 for k, v in variants.items()
+        if k != key and v.get("status") == "queued" and in_flight(v.get("at"), now)
+    )
+    if queued >= MAX_QUEUED_VARIANTS:
+        raise TooManyRenders
     stale = []
     while len(variants) >= MAX_VARIANTS:
         oldest = min(variants, key=lambda k: variants[k].get("at", ""))
@@ -572,7 +613,7 @@ def request_variant(d, hidden, hide_text: bool) -> tuple[str, dict, bool]:
         del variants[oldest]
     entry = {
         "status": "queued", "hidden_layers": sorted(set(hidden)), "hide_text": bool(hide_text),
-        "at": timezone.now().isoformat(), "file": "", "bytes": 0, "elements": 0,
+        "at": now.isoformat(), "file": "", "bytes": 0, "elements": 0,
         "simplified": [], "error": "",
     }
     variants[key] = entry

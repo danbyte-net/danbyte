@@ -43,6 +43,7 @@ A target is a ``(kind, id)`` pair, kind being :data:`DEVICE` or :data:`VM`.
 from __future__ import annotations
 
 import ipaddress
+import re
 
 from django.db import models, transaction
 from django.utils import timezone
@@ -272,20 +273,24 @@ def sync_nodes(conn: OxidizedConnection) -> dict:
             recalled = [f for f in fulls if known.get(f) == target]
             if len(recalled) == 1:
                 holder, restored = recalled[0], True
+        # These reasons name a Danbyte object, so each row keeps the target
+        # and a nameless wording: the API serves the named one only to a
+        # caller who can view that object (see :func:`reasons_for`).
         for full in fulls:
             if full == holder:
+                tail = ("the last confirmed link is restored." if restored
+                        else "the existing link is kept.")
                 warnings.append(_unmatched_row(
-                    full, seen[full],
-                    f"{len(fulls)} nodes match {names.get(target, '')}; "
-                    + ("the last confirmed link is restored." if restored
-                       else "the existing link is kept."),
+                    full, seen[full], f"{len(fulls)} nodes match {{target}}; {tail}",
+                    target=target, name=names.get(target, ""),
                 ))
                 continue
             decided.pop(full, None)
             unmatched.append(_unmatched_row(
                 full, seen[full],
-                f"{names.get(target, '')} is linked to node {holder}." if holder
-                else f"{len(fulls)} nodes match {names.get(target, '')}.",
+                f"{{target}} is linked to node {holder}." if holder
+                else f"{len(fulls)} nodes match {{target}}.",
+                target=target, name=names.get(target, ""),
             ))
 
     with transaction.atomic():
@@ -419,11 +424,84 @@ def _refresh(link: OxidizedNodeLink, node: dict, now) -> None:
     link.last_seen_at = now
 
 
-def _unmatched_row(full: str, node: dict, reason: str) -> dict:
-    return {
+def _unmatched_row(full: str, node: dict, reason: str, target=None, name="") -> dict:
+    """One unmatched or warning row. With ``target``, ``reason`` is a template
+    whose ``{target}`` is the object's name; the row stores both wordings and
+    the target, and :func:`reasons_for` picks per caller."""
+    row = {
         "full_name": full,
         "name": str(node.get("name") or ""),
         "ip": str(node.get("ip") or ""),
         "model": str(node.get("model") or ""),
         "reason": reason,
     }
+    if target is not None:
+        kind, obj_id = target
+        # The placeholder leads any node name in the text: replace it once.
+        row["reason"] = reason.replace("{target}", name, 1)
+        hidden = reason.replace("{target}", _THING[kind], 1)
+        row["reason_hidden"] = hidden[:1].upper() + hidden[1:]
+        row["target"] = {"kind": kind, "id": str(obj_id)}
+    return row
+
+
+_THING = {DEVICE: "a device", VM: "a virtual machine"}
+
+#: The claim reasons as stored before rows carried their target.
+_LEGACY_CLAIM = (
+    (re.compile(r"^.* is linked to node (.*)$", re.S),
+     r"A device or virtual machine is linked to node \1"),
+    (re.compile(r"^(\d+) nodes match .*?(\.|; the (?:existing|last confirmed) link is "
+                r"(?:kept|restored)\.)$", re.S), r"\1 nodes match a device or virtual machine\2"),
+)
+
+
+def reasons_for(rows, user, tenant) -> list[dict]:
+    """``rows`` as ``user`` may see them: a reason names a device or virtual
+    machine only when the user can view it.
+
+    A sync matches against every object in the tenant, so a reason can name
+    one outside the caller's sites or constraints. A row from before rows
+    carried their target is redacted unless the user can view every device
+    and virtual machine.
+    """
+    from auth_api import rbac
+
+    rows = list(rows or [])
+    wanted: dict[str, set] = {DEVICE: set(), VM: set()}
+    for row in rows:
+        t = row.get("target") or {}
+        if t.get("kind") in wanted and t.get("id"):
+            wanted[t["kind"]].add(t["id"])
+    visible: dict[str, set] = {}
+    for kind, model, slug in ((DEVICE, Device, "device"), (VM, VirtualMachine, "virtualmachine")):
+        visible[kind] = set()
+        if wanted[kind]:
+            qs = model.objects.filter(tenant=tenant, id__in=wanted[kind])
+            visible[kind] = {
+                str(pk) for pk in rbac.restrict_queryset(qs, user, tenant, slug, "view")
+                .values_list("id", flat=True)
+            }
+    open_all = None
+    out = []
+    for row in rows:
+        row = dict(row)
+        t = row.pop("target", None) or {}
+        hidden = row.pop("reason_hidden", None)
+        if t:
+            if t.get("id") not in visible.get(t.get("kind"), set()):
+                row["reason"] = hidden or ""
+        else:
+            reason = row.get("reason") or ""
+            for rx, repl in _LEGACY_CLAIM:
+                if rx.match(reason):
+                    if open_all is None:
+                        open_all = all(
+                            rbac.row_filter(user, tenant, slug, "view") is True
+                            for slug in ("device", "virtualmachine")
+                        )
+                    if not open_all:
+                        row["reason"] = rx.sub(repl, reason)
+                    break
+        out.append(row)
+    return out
