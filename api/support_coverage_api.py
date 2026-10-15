@@ -33,6 +33,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.response import Response
 
 from auth_api import rbac
+from core.hidden_fields import PermissionHiddenFieldsMixin
 from core.models import Tag
 from core.tags import TAGS
 from monitoring.models import NotificationChannel
@@ -75,10 +76,20 @@ def _device_count_subquery():
 
 # ─── serializers ─────────────────────────────────────────────────────────────
 
+#: A contract's money: shown and changed with ``supportcontract.view_cost``.
+COST_FIELDS = ("cost", "currency")
+
+
+def may_see_cost(request, tenant) -> bool:
+    """Whether the caller may see and change contract cost in ``tenant``.
+    No request (a job, the shell) is not a viewer and is not narrowed."""
+    return request is None or rbac.has_action(
+        request.user, tenant, "supportcontract", "view_cost")
+
 
 class SupportContractSerializer(
-    CustomFieldsSerializerMixin, TaggableSerializerMixin, ObjectPermsSerializerMixin,
-    NumIdModelSerializer,
+    PermissionHiddenFieldsMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin,
+    ObjectPermsSerializerMixin, NumIdModelSerializer,
 ):
     cf_model = "supportcontract"
 
@@ -115,6 +126,15 @@ class SupportContractSerializer(
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def hidden_fields(self, obj) -> set[str]:
+        # Cost is commercial data: the API and the export leave it out
+        # without view_cost.
+        memo = self.context.setdefault("_may_see_cost", {})
+        key = getattr(obj, "tenant_id", None)
+        if key not in memo:
+            memo[key] = may_see_cost(self.context.get("request"), getattr(obj, "tenant", None))
+        return set() if memo[key] else set(COST_FIELDS)
+
     @extend_schema_field(serializers.ChoiceField(choices=cov.CONTRACT_STATES))
     def get_state(self, obj) -> str:
         return cov.contract_state(
@@ -143,8 +163,29 @@ class SupportContractSerializer(
             raise serializers.ValidationError("A three-letter code, like EUR.")
         return value
 
+    def _check_cost(self, attrs):
+        """Without view_cost a write may not set or change the cost; a body
+        that leaves it out, or repeats the stored value, keeps it."""
+        request = self.context.get("request")
+        if request is None or not any(f in attrs for f in COST_FIELDS):
+            return
+        tenant = getattr(self.instance, "tenant", None) or _get_active_tenant(request)
+        if may_see_cost(request, tenant):
+            return
+        errors = {}
+        for f in COST_FIELDS:
+            if f not in attrs:
+                continue
+            now = (getattr(self.instance, f) if self.instance is not None
+                   else SupportContract._meta.get_field(f).get_default())
+            if attrs[f] != now:
+                errors[f] = "Setting the cost needs view cost."
+        if errors:
+            raise serializers.ValidationError(errors)
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        self._check_cost(attrs)
         get = lambda k: attrs.get(k, getattr(self.instance, k, None))  # noqa: E731
         start, end = get("start_date"), get("end_date")
         if start and end and end < start:

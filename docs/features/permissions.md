@@ -34,7 +34,10 @@ by *change*: **connect** (on devices - open a [Connect launcher or the SSH
 terminal](device-access.md)), **reveal** (on device credentials, wireless
 LANs and IPSec profiles - read the referenced secret), **subscribe** (on notification channels -
 self-service opt-in/out), **view credits** (on SLA agreements - see the
-[service credits](sla.md#service-credits) an agreement owes), **set default**
+[service credits](sla.md#service-credits) an agreement owes), **view cost**
+(on support contracts - see and set [what a contract
+costs](support-coverage.md#permissions); no built-in group holds it),
+**set default**
 (on topology views - choose the [view Topology opens
 with](topology.md#default-view) for the tenant; tenant admins can without it,
 and its row limits say which views), **view config** (on devices and on virtual
@@ -209,7 +212,7 @@ their objects use.
 Both roles **read the catalogs** their site's objects point at - device types
 and roles, platforms, manufacturers, statuses, tags, custom fields, VRFs, IP
 roles, rack, cabinet and module types, cluster types, routing policies,
-support contracts (cost included) and the like - so the pickers in **Add device** and an import by name work. They
+support contracts (without their cost) and the like - so the pickers in **Add device** and an import by name work. They
 never change those catalogs: that stays with administrators, or with the site
 editor's own local entries under
 [enhanced site separation](../access/site-separation.md#local-vs-global-catalog-entries).

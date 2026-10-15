@@ -40,7 +40,8 @@ Any other field of the type narrows the export to an exact match
 **An export shows you what the API shows you.** A field the type's API hides
 from you is not a column in your file and can't be used as an export filter:
 without `view_credits`, an SLA agreement or SLA template exports without its
-`period_fee`, `credit_tiers` and `currency`, and `?period_fee=` is refused. A
+`period_fee`, `credit_tiers` and `currency`, and `?period_fee=` is refused;
+without `view_cost`, a support contract exports without `cost` and `currency`. A
 file exported without those columns imports back leaving them as they are.
 Secrets and their store paths aren't filters either.
 

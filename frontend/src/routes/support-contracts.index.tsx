@@ -24,6 +24,8 @@ function SupportContractsPage() {
   const canAdd = canDo("supportcontract", "add")
   const canEdit = canDo("supportcontract", "change")
   const canDelete = canDo("supportcontract", "delete")
+  // Cost is commercial data: the API leaves it out without view_cost.
+  const canSeeCost = canDo("supportcontract", "view_cost")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<SupportContract | null>(null)
   const [selectedRows, setSelectedRows] = useState<SupportContract[]>([])
@@ -43,7 +45,7 @@ function SupportContractsPage() {
       buildSupportContractColumns({
         humanIds,
         selection: canDelete,
-        omit: ["description"],
+        omit: canSeeCost ? ["description"] : ["description", "cost"],
         actions: {
           editTo: "/support-contracts/$id/edit",
           editParams: (c) => ({ id: c.id }),
@@ -52,7 +54,7 @@ function SupportContractsPage() {
           canDelete: (c) => c.permissions?.delete ?? canDelete,
         },
       }),
-    [onDelete, canEdit, canDelete, humanIds]
+    [onDelete, canEdit, canDelete, canSeeCost, humanIds]
   )
   const {
     rail,

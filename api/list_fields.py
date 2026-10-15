@@ -481,6 +481,25 @@ def _disambiguate(fields: list[ListField]) -> None:
             d.label = humanize(f"{d.via} {lowered}{(' ' + rest) if rest else ''}")
 
 
+def _hidden_for_caller(view, serializer, model) -> set[str]:
+    """The fields the list hides from this caller on every row (a contract's
+    cost without view_cost): never offered as a column. A per-row hide
+    (``hidden_as_null``, a relation out of scope) still is."""
+    from core.hidden_fields import PermissionHiddenFieldsMixin
+
+    if (model is None or not isinstance(serializer, PermissionHiddenFieldsMixin)
+            or serializer.hidden_as_null):
+        return set()
+    request = getattr(view, "request", None)
+    if any(f.name == "tenant" for f in model._meta.concrete_fields):
+        from api.views import _get_active_tenant
+
+        obj = model(tenant=_get_active_tenant(request) if request is not None else None)
+    else:
+        obj = model()
+    return set(serializer.hidden_fields(obj))
+
+
 def catalog_for(view) -> dict:
     """The column catalog of ``view``'s list serializer. A plain ViewSet that
     builds its list by hand has no serializer to read, so no catalog."""
@@ -494,6 +513,7 @@ def catalog_for(view) -> dict:
         model = getattr(qs, "model", None)
     model_label = model._meta.label_lower if model is not None else ""
     exclude = set(getattr(serializer_cls, "list_columns_exclude", ()) or ())
+    exclude |= _hidden_for_caller(view, serializer, model)
 
     fields: list[ListField] = []
     for name, field in serializer.fields.items():

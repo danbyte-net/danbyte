@@ -16,17 +16,24 @@ import { SupportContractForm } from "./support-contract-form"
 
 // The support contract form (#421) sends what is in its fields: a blank cost
 // is null, a currency is upper-cased, dates left empty are null (an empty
-// end date means open-ended), and the ticked channels go as ids.
+// end date means open-ended), and the ticked channels go as ids. Without
+// view_cost the cost fields are neither shown nor sent.
 
-const { apiMock } = vi.hoisted(() => ({
+const { apiMock, perms } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
+  perms: { viewCost: true },
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<typeof Api>()),
   api: apiMock,
 }))
 vi.mock("@/lib/use-me", () => ({
-  useMe: () => ({ me: {}, canDo: () => true, humanIds: false }),
+  useMe: () => ({
+    me: {},
+    canDo: (_type: string, action: string) =>
+      action === "view_cost" ? perms.viewCost : true,
+    humanIds: false,
+  }),
 }))
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<object>()),
@@ -60,6 +67,7 @@ const page = (results: unknown[]) =>
   })
 
 beforeEach(() => {
+  perms.viewCost = true
   apiMock.mockReset()
   apiMock.mockImplementation((path, init) => {
     if (init?.method === "POST" || init?.method === "PATCH")
@@ -177,5 +185,23 @@ describe("SupportContractForm", () => {
     expect(call?.[0]).toBe("/api/support-contracts/k1/")
     expect(sent().cost).toBe(1500.5)
     expect(sent().end_date).toBe("2027-01-01")
+  })
+
+  it("hides the cost and leaves it out of an edit without view_cost", async () => {
+    perms.viewCost = false
+    const { cost: _c, currency: _cur, ...hidden } = CONTRACT
+    renderForm(hidden)
+    expect(screen.queryByText("Cost", { selector: "label" })).toBeNull()
+    expect(screen.queryByText("Currency", { selector: "label" })).toBeNull()
+    fireEvent.change(input("Reseller"), { target: { value: "Other" } })
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Save changes" })
+        .closest("form") as HTMLFormElement
+    )
+    await waitFor(() => expect(sent()).toBeTruthy())
+    expect(sent().reseller).toBe("Other")
+    expect("cost" in sent()).toBe(false)
+    expect("currency" in sent()).toBe(false)
   })
 })

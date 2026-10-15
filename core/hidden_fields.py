@@ -33,3 +33,43 @@ class PermissionHiddenFieldsMixin:
             else:
                 data.pop(name, None)
         return data
+
+
+#: Fields the change log shows only to holders of an RBAC action, per stored
+#: ``object_type`` label: ``{label: (object-type slug, action, fields)}``. The
+#: serializer hides them from the object; the history must not show them in
+#: its diff or snapshots either.
+GATED_HISTORY_FIELDS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "api.supportcontract": ("supportcontract", "view_cost", ("cost", "currency")),
+    # SLA money: the API hides it without view_credits, so the history does.
+    "monitoring.slaagreement": (
+        "slaagreement", "view_credits", ("credit_tiers", "period_fee", "currency"),
+    ),
+    "monitoring.slatemplate": (
+        "slaagreement", "view_credits", ("credit_tiers", "period_fee", "currency"),
+    ),
+}
+
+
+def hidden_history_fields(user, tenant, object_type: str, memo: dict | None = None) -> set[str]:
+    """The fields of an ``object_type`` change-log entry ``user`` may not
+    see in ``tenant``. ``memo`` caches the answer across one page."""
+    gate = GATED_HISTORY_FIELDS.get(object_type)
+    if gate is None:
+        return set()
+    if memo is not None and object_type in memo:
+        return memo[object_type]
+    from auth_api import rbac
+
+    slug, action, fields = gate
+    out = set() if rbac.has_action(user, tenant, slug, action) else set(fields)
+    if memo is not None:
+        memo[object_type] = out
+    return out
+
+
+def strip_history(data, hidden: set[str]):
+    """``data`` (a diff or a snapshot) without the ``hidden`` keys."""
+    if not hidden or not isinstance(data, dict):
+        return data
+    return {k: v for k, v in data.items() if k not in hidden}

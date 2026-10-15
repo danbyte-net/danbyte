@@ -372,6 +372,26 @@ class ChangeLogSerializer(serializers.ModelSerializer):
     def get_change_count(self, obj) -> int:
         return len(obj.changes or {})
 
+    def to_representation(self, obj):
+        """A field the object's API hides from this caller (a contract's
+        cost without view_cost) is left out of the diff and the snapshots."""
+        from core.hidden_fields import hidden_history_fields, strip_history
+
+        data = super().to_representation(obj)
+        request = self.context.get("request")
+        if request is None:
+            return data
+        memo = self.context.setdefault("_hidden_history", {})
+        if "_tenant" not in memo:
+            memo["_tenant"] = _get_active_tenant(request)
+        hidden = hidden_history_fields(request.user, memo["_tenant"], obj.object_type, memo)
+        if hidden:
+            for key in ("changes", "pre_change", "post_change"):
+                if key in data:
+                    data[key] = strip_history(data[key], hidden)
+            data["change_count"] = len(data.get("changes") or {})
+        return data
+
     def get_object_exists(self, obj) -> bool:
         """Whether the entry's target row is still alive - the UI only links
         to living objects (an object deleted after the entry would 404).

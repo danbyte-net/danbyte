@@ -69,7 +69,7 @@ export function DateText({ value }: { value: string | null | undefined }) {
 /** "1,200.00 EUR" - the cost with its currency. */
 export function formatCost(
   cost: number | null | undefined,
-  currency: string
+  currency: string | undefined
 ): string {
   if (cost == null) return ""
   const n = Number(cost).toLocaleString(undefined, {

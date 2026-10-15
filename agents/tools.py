@@ -315,13 +315,17 @@ def _changes(ctx, type: str = "", id: str = "", since: str = "", limit: int = 20
         cutoff = _since(since)
         if cutoff is not None:
             qs = qs.filter(timestamp__gte=cutoff)
+    # A field the object's API hides from this user stays out of its history.
+    from core.hidden_fields import hidden_history_fields
+
+    hidden = hidden_history_fields(ctx.principal[0], ctx.tenant, model._meta.label_lower)
     entries = [
         {
             "at": e.timestamp.isoformat(),
             "who": e.user_name or "system",
             "action": e.action,
             "via": e.via,
-            "changes": {k: v for k, v in (e.changes or {}).items()},
+            "changes": {k: v for k, v in (e.changes or {}).items() if k not in hidden},
         }
         for e in qs.order_by("-timestamp")[: min(int(limit or 20), ctx.max_rows)]
     ]

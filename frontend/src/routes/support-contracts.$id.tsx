@@ -145,6 +145,7 @@ function Body({ contract: c }: { contract: SupportContract }) {
 }
 
 function ContractOverview({ contract: c }: { contract: SupportContract }) {
+  const { canDo } = useMe()
   const contractRows: KvRow[] = [
     {
       label: "Manufacturer",
@@ -177,10 +178,18 @@ function ContractOverview({ contract: c }: { contract: SupportContract }) {
       ),
     },
   ]
+  // Cost is commercial data: the API leaves it out without view_cost.
   const cost = formatCost(c.cost, c.currency)
   const commercialRows: KvRow[] = [
     { label: "Reseller", value: c.reseller || dash },
-    { label: "Cost", value: cost ? <span className="num">{cost}</span> : dash },
+    ...(canDo("supportcontract", "view_cost")
+      ? [
+          {
+            label: "Cost",
+            value: cost ? <span className="num">{cost}</span> : dash,
+          },
+        ]
+      : []),
     {
       label: "Vendor portal",
       value: c.portal_url ? (

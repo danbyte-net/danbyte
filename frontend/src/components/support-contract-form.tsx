@@ -25,6 +25,7 @@ import {
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
+import { useMe } from "@/lib/use-me"
 
 export interface SupportContractFormProps {
   contract?: SupportContract
@@ -42,6 +43,10 @@ export function SupportContractForm({
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  // Cost is commercial data: without view_cost it is neither shown nor sent,
+  // so an edit keeps the stored cost.
+  const { canDo } = useMe()
+  const money = canDo("supportcontract", "view_cost")
 
   const [manufacturerId, setManufacturerId] = useState<string | null>(
     contract?.manufacturer.id ?? null
@@ -81,7 +86,7 @@ export function SupportContractForm({
     setEndDate(contract.end_date ?? "")
     setReseller(contract.reseller)
     setCost(contract.cost != null ? String(contract.cost) : "")
-    setCurrency(contract.currency)
+    setCurrency(contract.currency ?? "")
     setPortalUrl(contract.portal_url)
     setRenewalNotes(contract.renewal_notes)
     setDescription(contract.description)
@@ -114,8 +119,12 @@ export function SupportContractForm({
         start_date: startDate || null,
         end_date: endDate || null,
         reseller: reseller.trim(),
-        cost: cost.trim() === "" ? null : Number(cost),
-        currency: currency.trim().toUpperCase(),
+        ...(money
+          ? {
+              cost: cost.trim() === "" ? null : Number(cost),
+              currency: currency.trim().toUpperCase(),
+            }
+          : {}),
         portal_url: portalUrl.trim(),
         renewal_notes: renewalNotes.trim(),
         description: description.trim(),
@@ -228,23 +237,25 @@ export function SupportContractForm({
               onChange={setReseller}
               error={fieldErrors.reseller}
             />
-            <div className="grid gap-3 @md:grid-cols-2">
-              <FormText
-                label="Cost"
-                type="number"
-                inputMode="decimal"
-                value={cost}
-                onChange={setCost}
-                error={fieldErrors.cost}
-              />
-              <FormText
-                label="Currency"
-                value={currency}
-                onChange={(v) => setCurrency(v.toUpperCase().slice(0, 3))}
-                placeholder="EUR"
-                error={fieldErrors.currency}
-              />
-            </div>
+            {money && (
+              <div className="grid gap-3 @md:grid-cols-2">
+                <FormText
+                  label="Cost"
+                  type="number"
+                  inputMode="decimal"
+                  value={cost}
+                  onChange={setCost}
+                  error={fieldErrors.cost}
+                />
+                <FormText
+                  label="Currency"
+                  value={currency}
+                  onChange={(v) => setCurrency(v.toUpperCase().slice(0, 3))}
+                  placeholder="EUR"
+                  error={fieldErrors.currency}
+                />
+              </div>
+            )}
             <FormText
               label="Vendor portal"
               type="url"

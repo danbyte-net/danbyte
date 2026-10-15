@@ -131,6 +131,23 @@ class CreditVisibilityTests(_Priced):
         r = self.client.patch(url, {"description": "Core"}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
 
+    def test_the_change_log_leaves_money_out(self):
+        # The history of a priced change would otherwise show the fee the API
+        # hides.
+        self.agreement.period_fee = Decimal("4321")
+        self.agreement.description = "Core"
+        self.agreement.save()
+        url = f"/api/changelog/?object_type=monitoring.slaagreement&object_id={self.agreement.id}"
+        self.login(self.viewer("view"))
+        rows = self.client.get(url).json()["results"]
+        self.assertTrue(rows)
+        self.assertNotIn("4321", str(rows))
+        for row in rows:
+            self.assertFalse({"period_fee", "credit_tiers", "currency"} & set(row["changes"]))
+        self.login(self.viewer("view", "view_credits"))
+        rows = self.client.get(url).json()["results"]
+        self.assertTrue(any("period_fee" in r["changes"] for r in rows))
+
     def test_a_credit_viewer_sees_it(self):
         self.login(self.viewer("view", "view_credits"))
         self.assertEqual(self.current()["credit"]["currency"], "DKK")

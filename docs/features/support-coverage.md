@@ -24,7 +24,7 @@ has:
 | Service level | Free text in the vendor's own words: *8x5xNBD*, *24x7x4*, *SNT*. |
 | Start / End | The term. The end date is the **last covered day**; blank means open-ended. |
 | Reseller | The partner you buy it through. |
-| Cost | An amount with a three-letter currency (EUR, USD). |
+| Cost | An amount with a three-letter currency (EUR, USD). Needs *view cost*, see [Permissions](#permissions). |
 | Vendor portal | A link to the contract in the vendor's portal. |
 | Renewal notes | What to remember at the next renewal. |
 | Notifications | Channels that hear when it nears its end. See [Notifications](#notifications). |
@@ -137,12 +137,25 @@ show the *Site* column, and export it.
 Linking devices needs *add* on Support coverage and sight of the contract and
 the devices. The one-click site roles include Support coverage.
 
+### Cost
+
+A contract's cost is commercial data, so seeing it is its own grant: **view
+cost** on Support contracts. Without it, cost and currency are left out of
+the contract page, the list and its columns, the API, exports and the change
+log, and the form has no cost fields. Setting or changing the cost needs it
+too; an edit without it keeps the stored cost.
+
+Superusers see the cost. No built-in group holds *view cost*, not even
+Administrator, and neither do the site roles: add it to a grant for the
+people who handle renewals and budgets. *All object types* with *view cost*
+covers it.
+
 ## API
 
 | Endpoint | Notes |
 |---|---|
 | `GET/POST /api/support-contracts/` | `?state=active,expiring,expired`, `?manufacturer=`, `?device=`, `?search=` |
-| `GET/PATCH/DELETE /api/support-contracts/<id>/` | `notify_channel_ids` and `tag_ids` to write |
+| `GET/PATCH/DELETE /api/support-contracts/<id>/` | `notify_channel_ids` and `tag_ids` to write; `cost` and `currency` absent without *view cost* |
 | `POST /api/support-contracts/bulk-delete/` | Safe bulk delete |
 | `GET/POST /api/support-coverage/` | `?contract=`, `?device=`; body `{"contract_id", "device_id"}` |
 | `DELETE /api/support-coverage/<id>/` | |

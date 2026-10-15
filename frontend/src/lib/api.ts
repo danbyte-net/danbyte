@@ -435,6 +435,7 @@ export type RBACAction =
   | "view_credits"
   | "set_default"
   | "view_config"
+  | "view_cost"
 
 export interface RBACUser {
   id: number
@@ -9415,8 +9416,9 @@ export interface SupportContract {
   end_date: string | null
   state: ContractState
   reseller: string
-  cost: number | null
-  currency: string
+  /** Money: absent for a caller without `view_cost`. */
+  cost?: number | null
+  currency?: string
   portal_url: string
   renewal_notes: string
   description: string
