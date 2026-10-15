@@ -30,6 +30,7 @@ import resource
 import select
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -298,14 +299,25 @@ def collect_outputs(run: ScriptRun, outputs: str) -> int:
     saved = 0
     for name in sorted(os.listdir(outputs))[:OUTPUT_FILE_LIMIT]:
         path = os.path.join(outputs, name)
-        if not os.path.isfile(path):
+        # The script owns this folder and this worker is not sandboxed: a
+        # link left here would have it read whatever the link names (.env,
+        # /proc/self/environ). Open without following one, then check what
+        # was opened, so a swap after a check can't slip through.
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError:
+            logger.warning("run %s: output %s is not a plain file; skipped", run.id, name)
             continue
-        size = os.path.getsize(path)
-        if total + size > OUTPUT_LIMIT:
-            logger.warning("run %s exceeded the output limit; dropping %s", run.id, name)
-            break
-        total += size
-        with open(path, "rb") as fh:
+        with os.fdopen(fd, "rb") as fh:
+            st = os.fstat(fh.fileno())
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+                logger.warning("run %s: output %s is not a plain file; skipped", run.id, name)
+                continue
+            size = st.st_size
+            if total + size > OUTPUT_LIMIT:
+                logger.warning("run %s exceeded the output limit; dropping %s", run.id, name)
+                break
+            total += size
             out = ScriptOutput(
                 run=run, name=name, size=size,
                 content_type=mimetypes.guess_type(name)[0] or "application/octet-stream",

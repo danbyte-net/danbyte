@@ -169,6 +169,26 @@ class OutputTests(_Base):
         self.assertIn("name,site", body)
         self.assertIn("r1,aarhus", body)
 
+    def test_a_link_in_outputs_is_not_followed(self):
+        # The worker collects outputs outside the sandbox: a link the script
+        # leaves there must not make it read a file the script can't.
+        secret = os.path.join(self.tmp.name, "secret.env")
+        with open(secret, "w") as fh:
+            fh.write("DB_PASSWORD=never-leaves\n")
+        run = self._run(
+            "import os\n"
+            "out = os.environ['DANBYTE_OUTPUT_DIR']\n"
+            f"os.symlink({secret!r}, os.path.join(out, 'leak.txt'))\n"
+            "os.symlink('/proc/self/environ', os.path.join(out, 'env.txt'))\n"
+            "os.mkfifo(os.path.join(out, 'pipe.txt'))\n"
+            "open(os.path.join(out, 'real.txt'), 'w').write('ok')\n"
+        )
+        self.assertEqual(run.status, "success", run.log)
+        self.assertEqual([o.name for o in run.outputs.all()], ["real.txt"])
+        for out in run.outputs.all():
+            with out.file.open("rb") as fh:
+                self.assertNotIn(b"never-leaves", fh.read())
+
     def test_output_name_cannot_escape_the_run_directory(self):
         run = self._run(
             "from danbyte_sdk import run\nrun.output('../../escaped.txt', 'x')\n"
