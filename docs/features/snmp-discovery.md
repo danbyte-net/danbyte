@@ -464,6 +464,37 @@ The per-device card is for one box. To see drift across the whole fleet, open
   (**in sync** / **N drifted** / **unreachable**), a one-line summary of what
   drifted (name, interfaces), the profile used, and when it was last polled.
   Filter by status; click a device to open its drift inbox and accept items.
+  Hover **N drifted** to see what differs; it is read when the card opens.
+
+#### Bulk actions {#bulk-snmp-actions}
+
+On the **SNMP** tab, tick devices to get a bar with **Poll**, **Refresh MACs**
+and **Sync from SNMP**; **All devices** in the header runs the same three on
+every listed device (the status filter applies). Each runs in the background
+and one toast follows the progress, then says how many devices succeeded and
+why the rest did not (unreachable, already being read, not permitted, queued on
+an Outpost).
+
+- **Poll** is Poll now (the quick MAC read); **Refresh MACs** reads the whole
+  MAC table, as on the device. A stack is polled once, through its owner.
+- **Devices an Outpost polls** are not polled from the core: each Outpost is
+  asked for a pass, once, as Poll now does.
+- **Sync from SNMP** is the device's Sync, applied to each device from its last
+  poll; it never polls. It always asks first and lists the devices, since it
+  writes interfaces, VLANs and IPs. Device names are left alone. A device with
+  no reachable poll is skipped. The change log names you, with one request id
+  for the whole run.
+- **Permissions:** `device.change`, checked per device within your site scope
+  when you click and again when each job runs. Devices you may not change are
+  counted, not named.
+- **Limits:** 5,000 devices per run. Poll and Refresh MACs queue one job per
+  device; Sync queues one job per 25 devices. Needs the RQ workers running.
+
+API: `POST /api/monitoring/snmp-drift/bulk-poll/`, `bulk-mac-refresh/` and
+`bulk-sync/` with `{"devices": [id, ...]}` answer `202` with a `run_id`
+(`run_id: null` and `200` when nothing was left to queue, such as all on
+Outposts); `GET /api/monitoring/snmp-drift/bulk-runs/<run_id>/` returns its
+progress to the user who started it.
 
 Both tabs answer the same question - *does reality match intent?* - from the two
 sources Danbyte has (your runner, and SNMP).
@@ -967,7 +998,7 @@ disk-status column is what you point the sensor at.
   needs view on the interface; the network-wide learned list needs view on
   MAC addresses and lists only devices you may view.
 - **Poll now and Refresh MACs** - **`device.change`**. Refresh MACs checks it
-  again when the job runs.
+  again when the job runs, as do the [bulk actions](#bulk-snmp-actions).
 - **Accept drift** (reconcile observed → intended) - requires **`device.change`**.
   This is the one source-of-truth write in the whole feature, so it's gated like
   editing the device itself, not merely tenant membership.

@@ -39,6 +39,7 @@ from .sla_api import (
 from .sla_followup_api import SlaIncidentCauseViewSet, SlaIncidentFollowUpViewSet
 from .sla_schedule_api import SlaReportScheduleViewSet
 from .sla_template_api import SlaTemplateViewSet
+from .snmp_bulk import bulk_mac_refresh_view, bulk_poll_view, bulk_run_view, bulk_sync_view
 from .viewsets import (
     AcmeOrderViewSet,
     AlertRuleViewSet,
@@ -248,6 +249,12 @@ urlpatterns = [
     path("devices/<uuid:device_id>/redfish/", device_redfish_view, name="monitoring-device-redfish"),
     path("devices/<uuid:device_id>/redfish-poll/", device_redfish_poll_view, name="monitoring-device-redfish-poll"),
     path("snmp-drift/", snmp_drift_list_view, name="monitoring-snmp-drift-list"),
+    # Bulk Poll / Refresh MACs / Sync from the SNMP drift page (#419).
+    path("snmp-drift/bulk-poll/", bulk_poll_view, name="monitoring-snmp-bulk-poll"),
+    path("snmp-drift/bulk-mac-refresh/", bulk_mac_refresh_view,
+         name="monitoring-snmp-bulk-mac-refresh"),
+    path("snmp-drift/bulk-sync/", bulk_sync_view, name="monitoring-snmp-bulk-sync"),
+    path("snmp-drift/bulk-runs/<str:run_id>/", bulk_run_view, name="monitoring-snmp-bulk-run"),
     path("topology/ghosts/", snmp_topology_ghosts_view, name="monitoring-topology-ghosts"),
     path("topology/materialize-cable/", materialize_cable_view, name="monitoring-materialize-cable"),
     path("snmp-profile-options/", snmp_profile_options_view, name="monitoring-snmp-profile-options"),

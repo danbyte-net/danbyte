@@ -10123,6 +10123,48 @@ export interface SnmpDriftRow {
   polled_at: string | null
 }
 
+/** A bulk action on the SNMP drift page (#419). */
+export type SnmpBulkAction = "poll" | "macs" | "sync"
+
+/** `POST /api/monitoring/snmp-drift/bulk-{poll,mac-refresh,sync}/`. */
+export interface SnmpBulkStart {
+  /** Null when nothing was left to queue here. */
+  run_id: string | null
+  action: SnmpBulkAction
+  requested: number
+  queued: number
+  /** Named devices the caller may not change. */
+  skipped: number
+  /** Outposts asked for a pass instead of a core poll. */
+  outposts: { name: string; devices: number; stale: boolean }[]
+}
+
+export type SnmpBulkOutcome =
+  | "ok"
+  | "unreachable"
+  | "failed"
+  | "denied"
+  | "busy"
+  | "outpost"
+
+/** `GET /api/monitoring/snmp-drift/bulk-runs/<run_id>/`. */
+export interface SnmpBulkRun {
+  run_id: string
+  found: boolean
+  done: boolean
+  action?: SnmpBulkAction
+  total?: number
+  processed?: number
+  counts?: Record<SnmpBulkOutcome, number>
+  sync?: {
+    interfaces_created: number
+    interfaces_updated: number
+    ips_assigned: number
+    ips_skipped: number
+    vlans_assigned: number
+  }
+}
+
 // One drift-transition event (/api/config-snapshots/?device=).
 export interface DeviceConfigSnapshot {
   id: string
