@@ -355,8 +355,13 @@ class JobRecheckTests(_Base):
 
 
 DWG = b"AC1032" + b"\x00" * 200
+LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                      "LOCATION": "cad-tests"}}
 
 
+# These fakes are Python scripts reading files beside them, which the
+# sandbox would hide; the sandbox has its own tests in tests_cad_sandbox.
+@override_settings(CAD_SANDBOX="off", CACHES=LOCMEM)
 class ConverterTests(_Base):
     def setUp(self):
         super().setUp()

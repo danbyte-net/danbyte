@@ -35,6 +35,10 @@ confinement above, never below it.
 
 Trusted runs are not confined: they get the ORM and the worker's
 environment on purpose.
+
+The same bubblewrap namespaces also confine the floor-plan DWG converter
+(:func:`program_argv`, #424), a native program rather than a script: there
+the sandbox is required, not a layer that may be skipped.
 """
 from __future__ import annotations
 
@@ -259,17 +263,23 @@ def granted_dirs(readable: tuple[str, ...] = ()) -> list[str]:
     install and ``readable``. Refuses one that contains the Danbyte
     directory, since granting it would hand over the checkout and its
     ``.env``."""
-    base = os.path.realpath(str(settings.BASE_DIR))
     dirs = []
     for path in (*SYSTEM_DIRS, *sorted(_python_dirs()), *readable):
-        real = os.path.realpath(path)
-        if base == real or base.startswith(real.rstrip("/") + "/"):
+        if contains_app(path):
             raise SandboxUnavailable(
-                f"Cannot confine scripts: {path} contains the Danbyte directory {base}. "
+                f"Cannot confine scripts: {path} contains the Danbyte directory "
+                f"{os.path.realpath(str(settings.BASE_DIR))}. "
                 "Install Danbyte outside the Python and system directories."
             )
         dirs.append(path)
     return dirs
+
+
+def contains_app(path: str) -> bool:
+    """Whether granting ``path`` would hand over the Danbyte directory."""
+    base = os.path.realpath(str(settings.BASE_DIR))
+    real = os.path.realpath(path)
+    return base == real or base.startswith(real.rstrip("/") + "/")
 
 
 def interpreter() -> str:
@@ -367,21 +377,25 @@ def find_bwrap() -> str:
     return shutil.which("bwrap", path=BWRAP_SEARCH_PATH) or ""
 
 
-def bwrap_argv(probe: BwrapProbe, work: str, read_dirs: list[str], *,
-               hosts: str = "") -> list[str]:
-    """The bwrap command line up to ``--``. The run sees the system and
-    the Python install read-only, its work directory read-write with the
-    files Danbyte put there read-only, a minimal ``/dev``, and nothing
-    else: no ``/proc``, no ``/tmp``, no Danbyte directory."""
+def namespace_args(probe: BwrapProbe, hostname: str) -> list[str]:
+    """bwrap and its namespaces: user (mapped to nobody), pid, ipc, uts,
+    an empty network, no capabilities, gone with its parent."""
     args = [
         probe.path,
         "--unshare-user", "--uid", str(SANDBOX_ID), "--gid", str(SANDBOX_ID),
         "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-net",
-        "--unshare-cgroup-try", "--hostname", SANDBOX_HOSTNAME,
+        "--unshare-cgroup-try", "--hostname", hostname,
         "--die-with-parent", "--new-session", "--cap-drop", "ALL",
     ]
     if probe.disable_userns:
         args.append("--disable-userns")
+    return args
+
+
+def read_dir_args(read_dirs: list[str]) -> list[str]:
+    """Read-only binds of ``read_dirs`` at their real paths, with the
+    symlinks that lead to them (``/lib -> usr/lib``) recreated."""
+    args: list[str] = []
     bound: list[str] = []
     links: list[str] = []
 
@@ -405,6 +419,16 @@ def bwrap_argv(probe: BwrapProbe, work: str, read_dirs: list[str], *,
     for path in links:
         if not covered(path) and not any(path.startswith(p.rstrip("/") + "/") for p in links):
             args += ["--symlink", os.path.realpath(path), path]
+    return args
+
+
+def bwrap_argv(probe: BwrapProbe, work: str, read_dirs: list[str], *,
+               hosts: str = "") -> list[str]:
+    """The bwrap command line up to ``--``. The run sees the system and
+    the Python install read-only, its work directory read-write with the
+    files Danbyte put there read-only, a minimal ``/dev``, and nothing
+    else: no ``/proc``, no ``/tmp``, no Danbyte directory."""
+    args = namespace_args(probe, SANDBOX_HOSTNAME) + read_dir_args(read_dirs)
     for path in SYSTEM_FILES:
         if hosts and path == "/etc/hosts":
             continue
@@ -419,6 +443,95 @@ def bwrap_argv(probe: BwrapProbe, work: str, read_dirs: list[str], *,
             args += ["--ro-bind", path, path]
     args += ["--remount-ro", "/", "--chdir", work, "--"]
     return args
+
+
+# ── one native program (the DWG converter, #424) ────────────────────────────
+
+PROGRAM_HOSTNAME = "danbyte-sandbox"
+# What a dynamically linked program may need from /etc beyond SYSTEM_FILES.
+PROGRAM_ETC_DIRS = ("/etc/fonts",)
+
+
+def is_static_elf(path: str) -> bool:
+    """Whether ``path`` is an ELF executable without a program interpreter
+    (statically linked), so it needs nothing but itself to run."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(64)
+            if head[:4] != b"\x7fELF" or head[4] not in (1, 2) or head[5] not in (1, 2):
+                return False
+            wide, order = head[4] == 2, "little" if head[5] == 1 else "big"
+
+            def num(at: int, size: int) -> int:
+                return int.from_bytes(head[at:at + size], order)
+
+            phoff = num(32, 8) if wide else num(28, 4)
+            phentsize = num(54, 2) if wide else num(42, 2)
+            phnum = num(56, 2) if wide else num(44, 2)
+            if not phoff or not phnum or phentsize < 4 or phnum > 512:
+                return False
+            fh.seek(phoff)
+            table = fh.read(phentsize * phnum)
+    except OSError:
+        return False
+    if len(table) < phentsize * phnum:
+        return False
+    for i in range(phnum):
+        if int.from_bytes(table[i * phentsize:i * phentsize + 4], order) == 3:  # PT_INTERP
+            return False
+    return True
+
+
+def program_argv(probe: BwrapProbe, program: str, *, cwd: str,
+                 read_only: tuple[str, ...] = (), writable: tuple[str, ...] = (),
+                 proc: bool = False, tmp: bool = False) -> list[str]:
+    """The bwrap command line, up to ``--``, that runs one native
+    ``program`` (an absolute, resolved path) with the namespaces of
+    :func:`namespace_args`.
+
+    A static program sees nothing but itself, ``read_only``, ``writable``
+    and a minimal ``/dev``. A dynamic one (or a script) also sees the
+    system directories and name/font configuration read-only, and its own
+    directory. ``proc`` mounts a ``/proc`` of the sandbox's own pid
+    namespace, ``tmp`` an empty private ``/tmp``. The root is read-only;
+    only ``writable`` can be written. Never the Danbyte directory: a program
+    whose directory contains it is refused (a static one is bound as a
+    single file)."""
+    real = os.path.realpath(program)
+    args = namespace_args(probe, PROGRAM_HOSTNAME)
+    if is_static_elf(real):
+        args += ["--ro-bind", real, real]
+    else:
+        home = os.path.dirname(real)
+        if contains_app(home):
+            raise SandboxUnavailable(
+                f"Cannot confine {os.path.basename(real)}: its directory {home} contains the "
+                "Danbyte directory. Install it elsewhere."
+            )
+        args += read_dir_args([*SYSTEM_DIRS, *PROGRAM_ETC_DIRS, home])
+        for path in SYSTEM_FILES:
+            if os.path.exists(path):
+                args += ["--ro-bind", path, path]
+    args += ["--dev", "/dev"]
+    if proc:
+        args += ["--proc", "/proc"]
+    if tmp:
+        args += ["--tmpfs", "/tmp"]
+    for path in read_only:
+        args += ["--ro-bind", path, path]
+    for path in writable:
+        args += ["--bind", path, path]
+    args += ["--remount-ro", "/", "--chdir", cwd, "--"]
+    return args
+
+
+def program_restrictor():
+    """A function that applies no_new_privs and the unix-socket seccomp
+    filter, as for scripts; call it between fork and exec of a
+    :func:`program_argv` command. Built before the fork, so the child loads
+    nothing."""
+    libc, fprog = _libc(), _unix_socket_filter()
+    return lambda: _restrict_outer(libc, fprog)
 
 
 def _run_probe(path: str) -> BwrapProbe:

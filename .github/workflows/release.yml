@@ -121,6 +121,9 @@ jobs:
           file -b vendor/cad/bin/dwg2dxf | grep -Eq 'statically linked|static-pie linked'
           vendor/cad/bin/dwg2dxf --version
           test -f vendor/cad/LICENSE.libredwg && test -f vendor/cad/NOTICE
+          # It runs only inside bubblewrap (#424); without it DWG is refused.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap >/dev/null
           /tmp/venv/bin/python manage.py shell -c \
             "import sys; from api.cad_render import converter_status as s; r = s(); print(r); sys.exit(0 if r['dwg'] else 1)"
       - name: Boot gunicorn + hit /api/health/

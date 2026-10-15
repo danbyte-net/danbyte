@@ -85,7 +85,9 @@ WORKDIR /app
 # major version, so bump it together with the postgres image in compose.
 # bubblewrap adds namespaces around sandboxed scripts when the container's
 # seccomp and AppArmor profiles allow user namespaces; otherwise scripts run
-# under Landlock alone and their logs say so (docs/features/scripts.md).
+# under Landlock alone and their logs say so (docs/features/scripts.md). The
+# DWG converter runs only inside it: without working namespaces on the
+# workers, DWG is refused (docs/getting-started/docker.md, #424).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential libpq-dev libldap2-dev libsasl2-dev libssl-dev \

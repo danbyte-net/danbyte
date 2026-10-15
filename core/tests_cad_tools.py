@@ -264,7 +264,8 @@ class SettingsResolutionTests(SimpleTestCase):
 
     def test_the_bundled_path_passes_the_converter_checks(self):
         exe = _put_converter(self.tmp)
-        with override_settings(DANBYTE_CAD_CONVERTER=resolve_cad_converter(None, exe)):
+        with override_settings(DANBYTE_CAD_CONVERTER=resolve_cad_converter(None, exe),
+                               CAD_SANDBOX="off"):
             path, flavour = cad_render.converter()
             self.assertEqual((path, flavour), (str(exe), "libredwg"))
             self.assertTrue(cad_render.converter_status()["dwg"])

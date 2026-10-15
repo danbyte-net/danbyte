@@ -6,13 +6,20 @@ the web worker and out of process:
 
 1. A DWG is turned into DXF by the converter named in
    ``settings.DANBYTE_CAD_CONVERTER`` - LibreDWG's ``dwg2dxf`` or the ODA File
-   Converter, nothing else. It runs without a shell, in a temp dir, with a
-   scrubbed environment, resource limits and a timeout, and its output is
-   size-checked. With no converter set, DWG uploads are refused up front.
+   Converter, nothing else. It is a C/C++ parser fed untrusted files, so it
+   runs in a bubblewrap sandbox (``scripting.sandbox.program_argv``, #424):
+   no network, a read-only root holding only the program (and, for a
+   dynamic one, the system libraries), the staged DWG read-only and an
+   output dir as the only writable place - never the Danbyte directory,
+   ``.env`` or media. Also no shell, a scrubbed environment, resource limits
+   and a timeout, and its output is size-checked. With no converter set, or
+   no working sandbox (unless ``DANBYTE_CAD_SANDBOX=off``), DWG uploads are
+   refused up front.
 2. ``api/cad_engine.py`` reads the DXF with ezdxf (``ezdxf.recover``) and
    writes the SVG and its metadata. It runs as ``python -I`` in its own
    process under memory, CPU and file-size limits, so a hostile file can
-   cost a failed job but never the worker.
+   cost a failed job but never the worker. It is pure Python, so a bad file
+   raises rather than corrupting memory; it is not sandboxed.
 3. The SVG goes through ``svg_sanitize.sanitize_svg(profile="cad")`` - the
    only way a drawing reaches the browser - and is stored with the layers,
    units and extents.
@@ -41,6 +48,8 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
+
+from scripting import sandbox
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +83,11 @@ DWG_MAGIC = (b"AC1012", b"AC1014", b"AC1015", b"AC1018", b"AC1021", b"AC1024",
 BINARY_DXF = b"AutoCAD Binary DXF\r\n\x1a\x00"
 
 
+#: Where a worker leaves its verdict on the sandbox for the web processes.
+SANDBOX_KEY = "cad:sandbox-probe"
+SANDBOX_OFF = ("off", "none", "0", "false", "no")
+
+
 class ConverterUnavailable(Exception):
     pass
 
@@ -81,10 +95,70 @@ class ConverterUnavailable(Exception):
 # ─── the converter ──────────────────────────────────────────────────────────
 
 
+def sandbox_mode() -> str:
+    """``bwrap`` (the default, and any value but an explicit off) or
+    ``off``: DANBYTE_CAD_SANDBOX."""
+    value = str(getattr(settings, "CAD_SANDBOX", "bwrap") or "bwrap").strip().lower()
+    return "off" if value in SANDBOX_OFF else "bwrap"
+
+
+def _no_sandbox(reason: str) -> str:
+    return (
+        f"DWG files are converted in a sandbox, and this server cannot build one: {reason}. "
+        "Save the drawing as DXF in your CAD program and upload that."
+    )
+
+
+def sandbox_problem() -> str:
+    """Why the converter cannot be sandboxed, as far as a web process can
+    tell without starting it: no ``bwrap``, or a worker's last probe failed.
+    Empty when it looks fine or the sandbox is off. The worker probes for
+    real before every conversion (:func:`sandboxed`)."""
+    if sandbox_mode() == "off":
+        return ""
+    if not sandbox.find_bwrap():
+        return "bubblewrap is not installed"
+    try:
+        from django.core.cache import cache
+
+        seen = cache.get(SANDBOX_KEY)
+    except Exception:  # noqa: BLE001 - a cache outage leaves it to the worker
+        seen = None
+    if isinstance(seen, dict) and not seen.get("usable"):
+        return str(seen.get("reason") or "bubblewrap failed")
+    return ""
+
+
+def _sandbox_probe() -> sandbox.BwrapProbe:
+    """On the worker: whether bwrap works here (the script sandbox's probe),
+    recorded for the web processes. ConverterUnavailable when it does not."""
+    probe = sandbox.bwrap_probe()
+    try:
+        from django.core.cache import cache
+
+        cache.set(SANDBOX_KEY, {"usable": probe.usable, "reason": probe.reason},
+                  sandbox.PROBE_TTL)
+    except Exception:  # noqa: BLE001
+        pass
+    if not probe.usable:
+        raise ConverterUnavailable(_no_sandbox(probe.reason or "bubblewrap failed"))
+    return probe
+
+
 def converter() -> tuple[str, str]:
     """``(path, flavour)`` of the configured converter, or
-    :class:`ConverterUnavailable` saying why not. The path must be absolute,
-    an executable regular file not writable by everyone, and named like one of
+    :class:`ConverterUnavailable` saying why not: no converter, a bad one,
+    or no sandbox to run it in (:func:`sandbox_problem`)."""
+    path, flavour = _configured()
+    problem = sandbox_problem()
+    if problem:
+        raise ConverterUnavailable(_no_sandbox(problem))
+    return path, flavour
+
+
+def _configured() -> tuple[str, str]:
+    """The converter setting, checked: the path must be absolute, an
+    executable regular file not writable by everyone, and named like one of
     the two supported programs."""
     raw = (getattr(settings, "DANBYTE_CAD_CONVERTER", "") or "").strip()
     if not raw:
@@ -117,13 +191,15 @@ def converter_status() -> dict:
     return {"dwg": True, "converter": os.path.basename(path), "message": ""}
 
 
-def _limits(memory: int, fsize: int, cpu: int):
+def _limits(memory: int, fsize: int, cpu: int, restrict=None):
     def apply():  # runs in the child between fork and exec
         resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
         resource.setrlimit(resource.RLIMIT_FSIZE, (fsize, fsize))
         resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         os.setsid()
+        if restrict is not None:
+            restrict()  # raises, so a half-confined child never starts
 
     return apply
 
@@ -141,13 +217,14 @@ def _env(tmp: str, **extra) -> dict:
     }
 
 
-def _run(argv: list[str], *, cwd: str, env: dict, timeout: int, fsize: int):
+def _run(argv: list[str], *, cwd: str, env: dict, timeout: int, fsize: int, restrict=None):
     """Run a program: argv list (no shell), its own session, limits, a
-    timeout that kills the whole process group."""
+    timeout that kills the whole process group. ``restrict`` runs last
+    before exec (the sandbox's no_new_privs and seccomp filter)."""
     proc = subprocess.Popen(  # noqa: S603 - argv list, fixed programs
         argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        preexec_fn=_limits(MEMORY_LIMIT, fsize, timeout + 5),  # noqa: PLW1509
+        preexec_fn=_limits(MEMORY_LIMIT, fsize, timeout + 5, restrict),  # noqa: PLW1509
         close_fds=True,
     )
     try:
@@ -165,7 +242,7 @@ def _run(argv: list[str], *, cwd: str, env: dict, timeout: int, fsize: int):
 def convert_dwg(src: str, tmp: str) -> str:
     """The DXF the converter makes of ``src``, inside ``tmp``. Raises
     ValueError with a message for the operator."""
-    path, flavour = converter()
+    path, flavour = _configured()
     in_dir = os.path.join(tmp, "dwg-in")
     out_dir = os.path.join(tmp, "dwg-out")
     os.makedirs(in_dir)
@@ -175,19 +252,24 @@ def convert_dwg(src: str, tmp: str) -> str:
     out = os.path.join(out_dir, "drawing.dxf")
     if flavour == "libredwg":
         argv = [path, "-y", "-o", out, staged]
-        env = _env(tmp)
+        env = _env(out_dir)
     else:
         # ODA: input folder, output folder, version, type, recurse, audit, filter.
         argv = [path, in_dir, out_dir, "ACAD2018", "DXF", "0", "1", "*.DWG"]
-        env = _env(tmp, QT_QPA_PLATFORM="offscreen")
+        env = _env(out_dir, QT_QPA_PLATFORM="offscreen")
+    argv, restrict = sandboxed(argv, flavour, in_dir=in_dir, out_dir=out_dir)
     try:
         code, _out, err = _run(
-            argv, cwd=tmp, env=env, timeout=CONVERT_TIMEOUT, fsize=MAX_CONVERTED_BYTES + 1
+            argv, cwd=out_dir, env=env, timeout=CONVERT_TIMEOUT,
+            fsize=MAX_CONVERTED_BYTES + 1, restrict=restrict,
         )
     except subprocess.TimeoutExpired as exc:
         raise ValueError("Converting the DWG took too long.") from exc
-    except OSError as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         raise ValueError("The DWG converter could not be started.") from exc
+    if restrict is not None and code != 0 and err.lstrip().startswith(b"bwrap:"):
+        logger.warning("CAD converter sandbox failed: %s", err.decode("utf-8", "replace"))
+        raise ValueError("The DWG converter's sandbox could not start on this server.")
     if not os.path.isfile(out):
         logger.warning("CAD converter exit %s: %s", code, err.decode("utf-8", "replace"))
         raise ValueError(
@@ -199,6 +281,31 @@ def convert_dwg(src: str, tmp: str) -> str:
     if size == 0:
         raise ValueError("The DWG converter produced an empty drawing.")
     return out
+
+
+def sandboxed(argv: list[str], flavour: str, *, in_dir: str, out_dir: str):
+    """``(argv, restrict)``: ``argv`` wrapped in the bubblewrap sandbox, and
+    what to apply before exec. The converter sees its program, the staged
+    DWG read-only and ``out_dir`` read-write. ODA, a dynamically linked Qt
+    program, also gets the system libraries, its install directory, a
+    ``/proc`` of its own pid namespace and a private ``/tmp``.
+
+    With ``DANBYTE_CAD_SANDBOX=off`` the argv is returned as it is (limits
+    only). Otherwise a host where bwrap does not work raises
+    ConverterUnavailable: the converter never runs unconfined by default."""
+    if sandbox_mode() == "off":
+        logger.warning("CAD converter runs outside the sandbox (DANBYTE_CAD_SANDBOX=off)")
+        return argv, None
+    probe = _sandbox_probe()
+    oda = flavour == "oda"
+    try:
+        wrap = sandbox.program_argv(
+            probe, argv[0], cwd=out_dir, read_only=(in_dir,), writable=(out_dir,),
+            proc=oda, tmp=oda,
+        )
+    except sandbox.SandboxUnavailable as exc:
+        raise ConverterUnavailable(str(exc)) from exc
+    return wrap + argv, sandbox.program_restrictor()
 
 
 # ─── upload checks ──────────────────────────────────────────────────────────

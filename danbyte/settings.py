@@ -739,3 +739,8 @@ def resolve_cad_converter(value: str | None, bundled: Path) -> str:
 DANBYTE_CAD_CONVERTER = resolve_cad_converter(
     os.getenv("DANBYTE_CAD_CONVERTER"), CAD_CONVERTER_BUNDLED
 )
+# The converter parses untrusted files, so it runs in a bubblewrap sandbox
+# (#424): no network, no Danbyte directory, only its own temp dirs. A host
+# where bwrap cannot build one refuses DWG. `off` runs the converter without
+# it (limits only) - an explicit, documented risk, never the default.
+CAD_SANDBOX = os.getenv("DANBYTE_CAD_SANDBOX", "bwrap")

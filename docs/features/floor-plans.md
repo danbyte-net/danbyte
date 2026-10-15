@@ -140,7 +140,8 @@ shown at **true scale**: its units and the grid's cell size line up, so a
   [`DANBYTE_CAD_CONVERTER`](../reference/settings.md#cad-drawings-danbyte_cad_converter).
   The release bundle and the
   [Docker image](../getting-started/docker.md#dwg-drawings) both ship
-  LibreDWG's `dwg2dxf`, so DWG works out of the box on every install; a
+  LibreDWG's `dwg2dxf`, so DWG works out of the box wherever bubblewrap
+  can run it in a sandbox (see [Processing](#processing)); a
   source checkout builds it with `make cad-tools`
   ([Installation](../getting-started/installation.md#dwg-converter)).
   LibreDWG is GPLv3 and runs as a separate program, never linked; its
@@ -165,16 +166,22 @@ shown at **true scale**: its units and the grid's cell size line up, so a
 An upload is stored and queued; a background job (the RQ workers) converts a
 DWG, reads the DXF, renders it and stores the result. The drawing's status
 goes **queued → ready**, or **failed** with the reason (not a readable DXF, no
-converter, too large, took too long). **Reprocess** runs it again, for
+converter or no sandbox for it, too large, took too long). **Reprocess** runs it again, for
 example after a converter is installed. Uploading a new file replaces the old
 one and its files; the position, rotation and opacity stay, the calibration,
 picked units and layer choices go with the old file.
 
-Reading happens only in the worker, in a separate process with memory, CPU
-time and output-size limits, so a damaged or hostile file costs a failed job
-and nothing else. The rendered SVG passes the server's SVG sanitiser before it
-is stored; it holds paths, groups and text only - no scripts, images, links or
-fonts.
+Reading happens only in the worker, in separate processes with memory, CPU
+time and output-size limits. The DWG converter is a C parser, so it also runs
+in a bubblewrap sandbox: no network, no Danbyte directory, `.env` or media,
+and nothing writable but its own output directory. A converter bug a hostile
+file exploits is contained there; see
+[`DANBYTE_CAD_SANDBOX`](../reference/settings.md#converter-sandbox-danbyte_cad_sandbox).
+A host where the sandbox cannot run refuses DWG and says why, unless the
+operator turns the sandbox off. The DXF reader (ezdxf) is pure Python and
+is not sandboxed: a bad file makes it fail, not run code. The rendered SVG
+passes the server's SVG sanitiser before it is stored; it holds paths,
+groups and text only - no scripts, images, links or fonts.
 
 ### Units and calibration
 

@@ -168,10 +168,49 @@ Two programs are accepted, by file name:
 
 Anything else, a relative path, a missing or non-executable file, or one
 writable by everyone is refused. The converter runs on the worker host only,
-without a shell, in a temporary directory, with a scrubbed environment, a
+in the sandbox below, without a shell, with a scrubbed environment, a
 5-minute timeout and memory and output-size limits; its DXF may be at most
 256 MB. The setting is read from the environment only, never from the UI, and
 is kept in a configuration backup.
+
+### Converter sandbox (`DANBYTE_CAD_SANDBOX`)
+
+The converter parses files anyone with change rights on a floor plan can
+upload, so it runs in a [bubblewrap](https://github.com/containers/bubblewrap)
+sandbox, the same one [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do)
+use:
+
+- its own user (`nobody` inside), pid, ipc, uts and network namespaces: no
+  network at all, not even loopback to the database or Redis, and no other
+  process to see or signal;
+- a read-only root that holds only the converter, the uploaded DWG
+  (read-only) and one output directory, the only place it can write. No
+  Danbyte directory, `.env`, media, home directories, `/proc` or `/sys`;
+- no capabilities, `no_new_privs`, and Danbyte's seccomp filter that refuses
+  unix sockets.
+
+The bundled `dwg2dxf` is static, so that is all it sees. A dynamically linked
+converter also sees the system directories (`/usr`, `/lib`, name and font
+configuration) and its own install directory, read-only; a converter whose
+directory contains the Danbyte directory is refused. The ODA File Converter
+additionally gets a `/proc` of its own sandbox and an empty private `/tmp`,
+which Qt needs; Danbyte does not test ODA in the sandbox.
+
+`DANBYTE_CAD_SANDBOX` takes two values:
+
+- `bwrap`, the default: the converter always runs in the sandbox. A host
+  where `bwrap` is missing or cannot create user namespaces (kernel, AppArmor,
+  or a container's seccomp profile) refuses DWG uploads, and the upload form
+  and `GET /api/floor-plans/drawing-support/` say why. DXF is unaffected.
+- `off`: the converter runs without the sandbox, under the limits alone,
+  with the service account's files and network. A hostile DWG that exploits
+  a converter bug then runs with the rights of the worker that holds the
+  database credentials and the secret keys. Set it only if you accept that,
+  for example to run an operator-chosen converter that fails in the sandbox.
+
+Any other value means `bwrap`. The ezdxf reader that renders the DXF is pure
+Python and runs in its own process under the same limits, outside the
+sandbox.
 
 ## Outbound requests (SSRF guard)
 

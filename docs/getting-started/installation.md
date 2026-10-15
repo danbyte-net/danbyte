@@ -92,7 +92,7 @@ The other tabs cover building from source and a local dev checkout.
         | `--skip-backup` | On a re-run: no pre-upgrade backup. | off |
         | `--host-only` | On a host that runs Danbyte: only the root steps an upgrade ends with (logrotate, nginx + TLS, the certificate unit), from the bundle of the release that runs, with no upgrade stage. It changes no code, so a git checkout takes it too. | off |
         | `--adopt` | On a re-run or with `--host-only`: replace a Danbyte nginx site edited by hand with the new render, keeping a backup. Without it the new render lands beside the site as `danbyte.conf.new`. | off |
-        | `--with-script-sandbox` | Install `bubblewrap`, so sandboxed [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do) run in their own namespaces, and check it works for the service user. Without it they run under Landlock alone. Works on a fresh install and a re-run. | off |
+        | `--with-script-sandbox` | Install `bubblewrap`, so sandboxed [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do) run in their own namespaces, and check it works for the service user. Without it they run under Landlock alone, and DWG [floor-plan drawings](#dwg-converter) are refused. Works on a fresh install and a re-run. | off |
         | `--unattended`, `-y` | Skip interactive confirmation prompts (scripted / CI installs). | prompts on |
 
         **Environment variables** (set before the command; alternative to flags)
@@ -404,8 +404,16 @@ natively; DWG goes through a converter program. The release bundle ships one:
 LibreDWG's `dwg2dxf`, statically linked so it runs on any x86_64 Linux,
 installed at `vendor/cad/bin/dwg2dxf` in the app directory. A fresh install
 and an upgrade from a bundle both put it there, and Danbyte uses it while
-`DANBYTE_CAD_CONVERTER` is unset, so DWG works with nothing to set up,
-airgapped hosts included.
+`DANBYTE_CAD_CONVERTER` is unset, so DWG works with nothing else to set up,
+airgapped hosts included, once bubblewrap is there.
+
+The converter runs in a bubblewrap sandbox (no network, no access to the app
+directory, `.env` or media), and without a working `bwrap` DWG uploads are
+refused. Install it with `--with-script-sandbox` (or
+`sudo apt install bubblewrap`); the installer's DWG step checks it works for
+the service user and warns when it does not, for example when AppArmor
+refuses unprivileged user namespaces. See
+[`DANBYTE_CAD_SANDBOX`](../reference/settings.md#converter-sandbox-danbyte_cad_sandbox).
 
 Beside it, `vendor/cad` holds LibreDWG's licence (`LICENSE.libredwg`), a
 `NOTICE` and the exact source it was built from (`src/libredwg-<v>.tar.xz`).
@@ -416,7 +424,7 @@ program, one run per upload, so its licence covers that binary alone.
 there with:
 
 ```bash
-sudo apt install build-essential pkg-config curl xz-utils file
+sudo apt install build-essential pkg-config curl xz-utils file bubblewrap
 make cad-tools          # deploy/cad/build-dwg2dxf.sh → vendor/cad
 make restart
 ```
@@ -434,7 +442,8 @@ DANBYTE_CAD_CONVERTER=/opt/oda/ODAFileConverter
 ```
 
 The ODA File Converter is a free download from the Open Design Alliance (its
-licence does not allow bundling it). `DANBYTE_CAD_CONVERTER=off` refuses DWG
+licence does not allow bundling it). It runs in the same sandbox, with the
+system libraries and its install directory added. `DANBYTE_CAD_CONVERTER=off` refuses DWG
 uploads even with the bundled converter present. See
 [`DANBYTE_CAD_CONVERTER`](../reference/settings.md#cad-drawings-danbyte_cad_converter).
 

@@ -137,7 +137,9 @@ services:
       - net.ipv4.ping_group_range=0 2147483647
     # Sandboxed scripts get bubblewrap namespaces only when the container may
     # create user namespaces and mount in them; the default profiles refuse,
-    # and scripts then run under Landlock alone. See docs/getting-started/docker.md.
+    # and scripts then run under Landlock alone. The DWG converter runs only
+    # under bubblewrap, so DWG floor-plan drawings need these lines too
+    # (DXF does not). See docs/getting-started/docker.md.
     # security_opt:
     #   - seccomp=unconfined
     #   - apparmor=unconfined

@@ -468,6 +468,13 @@ if as_user "$APP/vendor/cad/bin/dwg2dxf" --version >/dev/null 2>&1; then
 else
   warn "the bundled dwg2dxf is missing or does not run - DWG floor-plan drawings are refused until DANBYTE_CAD_CONVERTER names a converter (DXF works)."
 fi
+# The converter runs only inside a bubblewrap sandbox (#424): without one
+# that works for the service user, DWG is refused.
+if ! command -v bwrap >/dev/null 2>&1; then
+  warn "bubblewrap is not installed - DWG floor-plan drawings are refused until it is (re-run with --with-script-sandbox, or apt install bubblewrap). DXF works."
+elif ! as_user bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / true >/dev/null 2>&1; then
+  warn "bubblewrap cannot create user namespaces for $SERVICE_USER (kernel or AppArmor policy) - DWG floor-plan drawings are refused; see docs/reference/settings.md (DANBYTE_CAD_SANDBOX)."
+fi
 
 # ── 6. Secrets + .env (reuse existing on re-run) ─────────────────────────────
 step "Configuring .env"

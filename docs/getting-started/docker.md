@@ -183,6 +183,19 @@ separate program for each upload, and the image carries LibreDWG's licence
 and a notice naming its source at `/usr/share/doc/libredwg/`. To leave DWG
 off, set `DANBYTE_CAD_CONVERTER=off` in the services' environment.
 
+The converter only runs in the bubblewrap sandbox (no network, no app
+directory, `.env` or media; see
+[`DANBYTE_CAD_SANDBOX`](../reference/settings.md#converter-sandbox-danbyte_cad_sandbox)),
+and the image's bubblewrap meets the same Docker profiles as the
+[script sandbox](#script-sandbox). In a stock stack a DWG drawing therefore
+fails with `…this server cannot build one: No permissions to create a new
+namespace…`, and the upload form then refuses DWG with the same reason;
+DXF works. To take DWG, relax the profiles on the
+`workers` service as shown there. `DANBYTE_CAD_SANDBOX=off` runs the
+converter without the sandbox instead, which hands a hostile file the
+worker's database credentials and secret keys if it exploits a converter
+bug.
+
 `web` listens on **:80** (`HTTP_PORT`, default 8080) and **:443**
 (`HTTPS_PORT`, default 8443) with a **self-signed** cert baked into the image -
 so browsers that force HTTPS still connect (one-time cert warning). Put a real
