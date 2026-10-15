@@ -199,6 +199,7 @@ function ChangeLogDetail() {
               changed={changedFields}
               tone="removed"
               labels={e.related_labels}
+              hidden={e.hidden_related?.pre_change}
               emptyText={
                 e.action === "create"
                   ? "None - the object did not exist yet."
@@ -211,6 +212,7 @@ function ChangeLogDetail() {
               changed={changedFields}
               tone="added"
               labels={e.related_labels}
+              hidden={e.hidden_related?.post_change}
               emptyText={
                 e.action === "delete"
                   ? "None - the object was deleted."
@@ -236,11 +238,19 @@ function DifferenceCard({
   const fields = Object.entries(e.changes)
   const removed: Record<string, unknown> = {}
   const added: Record<string, unknown> = {}
+  const removedHidden: string[] = []
+  const addedHidden: string[] = []
   if (e.action === "update") {
     for (const [f, c] of fields) {
       removed[f] = c.old
       added[f] = c.new
+      if (c.old_hidden) removedHidden.push(f)
+      if (c.new_hidden) addedHidden.push(f)
     }
+  } else if (e.action === "delete") {
+    removedHidden.push(...(e.hidden_related?.pre_change ?? []))
+  } else {
+    addedHidden.push(...(e.hidden_related?.post_change ?? []))
   }
   const removedData =
     e.action === "delete"
@@ -262,10 +272,20 @@ function DifferenceCard({
       </h2>
       <div className="space-y-3">
         {removedData && Object.keys(removedData).length > 0 && (
-          <DiffBlock data={removedData} tone="removed" labels={labels} />
+          <DiffBlock
+            data={removedData}
+            tone="removed"
+            labels={labels}
+            hidden={removedHidden}
+          />
         )}
         {addedData && Object.keys(addedData).length > 0 && (
-          <DiffBlock data={addedData} tone="added" labels={labels} />
+          <DiffBlock
+            data={addedData}
+            tone="added"
+            labels={labels}
+            hidden={addedHidden}
+          />
         )}
         {!removedData && !addedData && (
           <p className="text-[13px] text-muted-foreground">
@@ -294,10 +314,12 @@ function DiffBlock({
   data,
   tone,
   labels,
+  hidden,
 }: {
   data: Record<string, unknown>
   tone: keyof typeof TONE
   labels?: Record<string, string>
+  hidden?: string[]
 }) {
   return (
     <div className={`rounded-lg border p-3 ${TONE[tone].block}`}>
@@ -306,7 +328,11 @@ function DiffBlock({
           <div key={k} className="flex gap-2">
             <dt className="shrink-0">{k}:</dt>
             <dd className="min-w-0 break-all whitespace-pre-wrap">
-              <FieldValue value={v} labels={labels} />
+              <FieldValue
+                value={v}
+                labels={labels}
+                hidden={hidden?.includes(k)}
+              />
             </dd>
           </div>
         ))}
@@ -324,6 +350,7 @@ function SnapshotCard({
   tone,
   emptyText,
   labels,
+  hidden,
 }: {
   title: string
   data: Record<string, unknown> | null
@@ -331,6 +358,7 @@ function SnapshotCard({
   tone: keyof typeof TONE
   emptyText: string
   labels?: Record<string, string>
+  hidden?: string[]
 }) {
   return (
     <section>
@@ -354,7 +382,11 @@ function SnapshotCard({
               >
                 <dt className="shrink-0 text-muted-foreground">{k}:</dt>
                 <dd className="min-w-0 break-all whitespace-pre-wrap">
-                  <FieldValue value={v} labels={labels} />
+                  <FieldValue
+                    value={v}
+                    labels={labels}
+                    hidden={hidden?.includes(k)}
+                  />
                 </dd>
               </div>
             ))}
@@ -380,10 +412,14 @@ function fmtValue(v: unknown): string {
 function FieldValue({
   value,
   labels,
+  hidden,
 }: {
   value: unknown
   labels?: Record<string, string>
+  hidden?: boolean
 }) {
+  // A related row the caller may not view: neither its name nor its id.
+  if (hidden) return <span className="text-muted-foreground">hidden</span>
   if (typeof value === "string" && labels && labels[value]) {
     return (
       <span>

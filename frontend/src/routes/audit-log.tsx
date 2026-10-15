@@ -406,13 +406,21 @@ function ChangesCell({ e }: { e: ChangeLogEntry }) {
                     {f}
                   </td>
                   <td className="max-w-[22rem] py-0.5 pr-2 align-top font-mono break-all whitespace-pre-wrap text-red-600 line-through dark:text-red-400">
-                    <FieldVal value={c.old} label={c.old_label} />
+                    <FieldVal
+                      value={c.old}
+                      label={c.old_label}
+                      hidden={c.old_hidden}
+                    />
                   </td>
                   <td className="py-0.5 pr-2 align-top text-muted-foreground">
                     →
                   </td>
                   <td className="max-w-[22rem] py-0.5 align-top font-mono break-all whitespace-pre-wrap text-emerald-600 dark:text-emerald-400">
-                    <FieldVal value={c.new} label={c.new_label} />
+                    <FieldVal
+                      value={c.new}
+                      label={c.new_label}
+                      hidden={c.new_hidden}
+                    />
                   </td>
                 </tr>
               ))}
@@ -426,7 +434,18 @@ function ChangesCell({ e }: { e: ChangeLogEntry }) {
 
 /** FK fields carry a server-resolved label (e.g. the VLAN name); show it with
  * the raw UUID kept muted beside it. */
-function FieldVal({ value, label }: { value: unknown; label?: string }) {
+function FieldVal({
+  value,
+  label,
+  hidden,
+}: {
+  value: unknown
+  label?: string
+  hidden?: boolean
+}) {
+  // A related row the caller may not view: the server sends neither its
+  // name nor its id.
+  if (hidden) return <span className="text-muted-foreground">hidden</span>
   if (label) {
     return (
       <span>

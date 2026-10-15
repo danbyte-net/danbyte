@@ -158,6 +158,25 @@ def _like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _folded_term(q: str) -> str:
+    """The query as the index compares it. An address in any spelling finds
+    its stored compressed form (#382)."""
+    from .models import normalise_ip_term
+
+    return fold(normalise_ip_term(q))
+
+
+def _term_params(fq: str) -> dict:
+    like = _like(fq)
+    return {
+        "q": fq,
+        "prefix": f"{like}%",
+        "word": f"% {like}%",
+        "sub": f"%{like}%",
+        "numid": int(fq) if fq.isdigit() and len(fq) < 10 else -1,
+    }
+
+
 def ranked_candidates(q: str, tokens: dict, tenant) -> list[dict]:
     """Top candidates from the index, before RBAC."""
     types = []
@@ -186,23 +205,13 @@ def ranked_candidates(q: str, tokens: dict, tenant) -> list[dict]:
             params[f"{name}_key"] = key
             params[name] = f"{_like(v)}%"
     facet_clause = " ".join(facet_bits)
-    # An address in any spelling finds its stored compressed form (#382).
-    from .models import normalise_ip_term
-
-    fq = fold(normalise_ip_term(q))
+    fq = _folded_term(q)
     if not fq:
         if not tokens:
             return []
         return _fetch(_BROWSE_SQL.format(type_clause=type_clause, facet_clause=facet_clause),
                       params)
-    like = _like(fq)
-    params.update({
-        "q": fq,
-        "prefix": f"{like}%",
-        "word": f"% {like}%",
-        "sub": f"%{like}%",
-        "numid": int(fq) if fq.isdigit() and len(fq) < 10 else -1,
-    })
+    params.update(_term_params(fq))
     clauses = {"type_clause": type_clause, "facet_clause": facet_clause}
     if _ADDR_RE.match(fq) and re.search(r"[.:/]", fq):
         return _fetch(_RANK_SQL.format(**clauses, match_clause=_ADDR_MATCH), params)
@@ -384,6 +393,116 @@ def _redact_context(page: list[dict], user, tenant) -> None:
                     r["context"].pop(key, None)
 
 
+def _body_joins(model, spec) -> list[str]:
+    """``select_related`` paths for a spec's body: each path's leading run
+    of forward foreign keys."""
+    out = []
+    for path in spec.body:
+        cur, hops = model, []
+        for part in path.split(".")[:-1]:
+            try:
+                f = cur._meta.get_field(part)
+            except Exception:  # noqa: BLE001 - a property, not a relation
+                break
+            if not (f.is_relation and f.concrete and (f.many_to_one or f.one_to_one)):
+                break
+            hops.append(part)
+            cur = f.related_model
+        if hops:
+            out.append("__".join(hops))
+    return out
+
+
+# A hit whose name (or short id) matches stands on its own: no related name
+# is ever part of the title.
+_TITLE_MATCH_SQL = """
+SELECT e.object_id FROM api_searchentry e
+WHERE e.object_type = %(type)s AND e.object_id = ANY(%(ids)s)
+  AND (e.title_f LIKE %(sub)s OR e.title_f %% %(q)s
+       OR (e.numid IS NOT NULL AND e.numid = %(numid)s))
+"""
+
+
+def _drop_hidden_matches(rows: list[dict], q: str, user, tenant) -> list[dict]:
+    """Drop the hits that matched only through the name of a related row the
+    caller may not view (#413). A body carries related names - an address
+    its device's - so "find the address of device X" works; but a shared
+    address bound to another site's device must not answer a search for
+    that device's name. Each hit whose related row is hidden is re-matched
+    on its title and on its body rebuilt without the hidden names. Rows
+    added by containment or MAC location matched on something else and are
+    kept. One query per hit type, one per related type, and for the hits
+    that need it one more pair per type."""
+    if getattr(user, "is_superuser", False) or not rows:
+        return rows
+    fq = _folded_term(q)
+    if not fq:
+        return rows
+    from auth_api.site_paths import site_path_for
+
+    from .search_index import _body, related_body_paths
+
+    viewable = rbac.ViewableRows(user, tenant)
+    by_type: dict[str, list[dict]] = {}
+    for r in rows:
+        if not r.get("injected"):
+            by_type.setdefault(r["object_type"], []).append(r)
+    dropped: set = set()
+    for slug, hits in by_type.items():
+        spec = SPECS.get(slug)
+        model = model_for(slug)
+        if spec is None or model is None:
+            continue
+        links = [
+            (path, attname, rel._meta.model_name)
+            for path, attname, rel in related_body_paths(model, spec)
+            if site_path_for(rel._meta.model_name, tenant) is not None
+        ]
+        if not links:
+            continue
+        ids = [r["object_id"] for r in hits]
+        fks = {
+            o["pk"]: o
+            for o in model._default_manager.filter(pk__in=ids).values(
+                "pk", *{a for _p, a, _s in links}
+            )
+        }
+        for _path, attname, rel_slug in links:
+            viewable.prime(rel_slug, [o[attname] for o in fks.values()])
+        hidden: dict = {}
+        for pk, o in fks.items():
+            skip = {
+                path for path, attname, rel_slug in links
+                if not viewable.may_view(rel_slug, o[attname])
+            }
+            if skip:
+                hidden[pk] = frozenset(skip)
+        if not hidden:
+            continue
+        with connection.cursor() as cur:
+            cur.execute(_TITLE_MATCH_SQL, {
+                **_term_params(fq), "type": slug, "ids": list(hidden),
+            })
+            on_title = {row[0] for row in cur.fetchall()}
+        recheck = [pk for pk in hidden if pk not in on_title]
+        if not recheck:
+            continue
+        objs = list(
+            model._default_manager.filter(pk__in=recheck).select_related(
+                *_body_joins(model, spec)
+            )
+        )
+        for obj in objs:
+            if fq not in fold(_body(obj, spec, skip=hidden[obj.pk])):
+                dropped.add((slug, obj.pk))
+        # A hit whose row is gone matched nothing it can still show.
+        alive = {o.pk for o in objs}
+        dropped.update((slug, pk) for pk in recheck if pk not in alive)
+    if not dropped:
+        return rows
+    return [r for r in rows if (r["object_type"], r["object_id"]) not in dropped]
+
+
 @extend_schema(
     summary="Global tenant-scoped search: one ranked list across every object type",
     tags=["search"],
@@ -435,7 +554,11 @@ def search(request):
     if mac:
         by_key = {(r["object_type"], r["object_id"]): r for r in rows}
         for h in _mac_hits(mac, tokens, tenant, request.user):
+            # Found by the MAC itself, never by a related row's name.
+            h["injected"] = True
             cur = by_key.get((h["object_type"], h["object_id"]))
+            if cur is not None:
+                cur["injected"] = True
             if cur is None:
                 by_key[(h["object_type"], h["object_id"])] = h
                 rows.append(h)
@@ -445,13 +568,18 @@ def search(request):
     elif q and (not tokens.get("type") or "prefix" in tokens.get("type", [])):
         by_key = {(r["object_type"], r["object_id"]): r for r in rows}
         for h in _network_hits(q, tenant):
+            # Found by containment, never by a related row's name.
+            h["injected"] = True
             cur = by_key.get((h["object_type"], h["object_id"]))
+            if cur is not None:
+                cur["injected"] = True
             if cur is None:
                 rows.append(h)
             elif float(cur["score"]) < h["score"]:
                 cur["score"], cur["subtitle"] = h["score"], h["subtitle"]
         rows.sort(key=lambda r: (-float(r["score"]), r["title"]))
     rows = _allowed(rows, request.user, tenant)
+    rows = _drop_hidden_matches(rows, mac or q, request.user, tenant)
 
     labels = _type_labels()
     counts: dict[str, int] = {}

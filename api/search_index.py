@@ -308,7 +308,10 @@ def _custom_values(obj) -> str:
     return " ".join(bits)
 
 
-def _body(obj, spec: IndexSpec) -> str:
+def _body(obj, spec: IndexSpec, skip=frozenset()) -> str:
+    """The searchable text of ``obj``. ``skip`` leaves out some of the
+    spec's related paths - search re-checks a hit without the names of
+    related rows its reader may not view (#413)."""
     bits: list[str] = []
     for attr in _BODY_CANDIDATES:
         if _has_field(obj, attr):
@@ -316,6 +319,8 @@ def _body(obj, spec: IndexSpec) -> str:
             if v not in (None, ""):
                 bits.append(str(v))
     for path in spec.body:
+        if path in skip:
+            continue
         v = _path(obj, path)
         if v not in (None, ""):
             bits.append(str(v))
@@ -330,6 +335,23 @@ def _body(obj, spec: IndexSpec) -> str:
     bits.append(_custom_values(obj))
     text = " ".join(b for b in bits if b)
     return text[:_BODY_MAX]
+
+
+def related_body_paths(model, spec: IndexSpec) -> list[tuple[str, str, str]]:
+    """``(path, fk attname, related model)`` for each of the spec's body
+    paths that names a related row - the first hop is a foreign key."""
+    out = []
+    for path in spec.body:
+        head, dot, _rest = path.partition(".")
+        if not dot:
+            continue
+        try:
+            f = model._meta.get_field(head)
+        except Exception:  # noqa: BLE001 - not a field of this model
+            continue
+        if f.is_relation and f.concrete and (f.many_to_one or f.one_to_one):
+            out.append((path, f.attname, f.related_model))
+    return out
 
 
 def _facets(obj, spec: IndexSpec) -> dict:

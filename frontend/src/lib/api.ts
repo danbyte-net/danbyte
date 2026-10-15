@@ -8084,6 +8084,10 @@ export interface FieldChange {
   new: unknown
   old_label?: string
   new_label?: string
+  /** The related row is one the caller may not view: the value is null and
+   * no label is given. */
+  old_hidden?: boolean
+  new_hidden?: boolean
 }
 export interface ChangeLogEntry {
   id: string
@@ -8110,6 +8114,9 @@ export interface ChangeLogEntry {
    * (changes + snapshots) - detail endpoint only. Lets the UI show the
    * related object's name wherever its UUID appears. */
   related_labels?: Record<string, string>
+  /** Snapshot keys whose related row the caller may not view; their values
+   * are null - detail endpoint only. */
+  hidden_related?: { pre_change: string[]; post_change: string[] }
 }
 
 export type SmtpSecurity = "none" | "starttls" | "ssl"

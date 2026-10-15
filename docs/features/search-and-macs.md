@@ -77,6 +77,11 @@ Every hit is checked against your permissions for its type, including site
 scope, before it is returned - search never shows an object its page would
 refuse.
 
+A hit is also never found through a related object you can't view. An
+address is found by its device's name only when you can see that device; a
+shared address bound to another site's device is still found by its address,
+DNS name or description.
+
 ### The index
 
 Search runs on one index table that every save and delete keeps current. A
