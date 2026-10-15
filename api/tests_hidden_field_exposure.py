@@ -289,7 +289,7 @@ class HiddenRelationsInTemplatesTests(_Base):
             self.export("ipaddress", code, self.u)
 
     def test_coverage_row_with_a_hidden_contract_is_not_handed_out(self):
-        # The row's own text names the contract ("CN-HIDDEN → dev-a").
+        # Left out whole: the row once named its contract in its own text.
         for code in (
             "{% for d in objects %}{% for cv in d.support_coverage.all() %}{{ cv }}|"
             "{{ cv.contract }}{% endfor %}{% endfor %}",
@@ -302,12 +302,14 @@ class HiddenRelationsInTemplatesTests(_Base):
             self.label(cv, "<p>{{ obj }}</p>", self.u)
 
     def test_label_relation_lists_are_fenced(self):
-        out = self.label(self.dev_a, "<p>{% for c in obj.support_coverage.all() %}{{ c }}{% endfor %}"
-                                     "</p>", self.u)
+        code = ("<p>{% for c in obj.support_coverage.all() %}{{ c }}={{ c.contract }}"
+                "{% endfor %}</p>")
+        out = self.label(self.dev_a, code, self.u)
         self.assertNotIn("CN-HIDDEN", out)
+        self.assertNotIn("Coverage of", out)
         self.grant(self.u, ["supportcontract"], ["view"])
-        out = self.label(self.dev_a, "<p>{% for c in obj.support_coverage.all() %}{{ c }}{% endfor %}"
-                                     "</p>", self.u)
+        out = self.label(self.dev_a, code, self.u)
+        self.assertIn("Coverage of dev-a=", out)
         self.assertIn("CN-HIDDEN", out)
 
 

@@ -429,6 +429,20 @@ class CoverageRbacTests(_Base):
         }, format="json")
         self.assertEqual(r.status_code, 403)
 
+    def test_a_hidden_contract_cannot_be_filtered_by(self):
+        # Coverage rows by a contract the user can't see would answer for it;
+        # the row's own name carries the device only.
+        row = SupportCoverage.objects.create(tenant=self.tenant, contract=self.c, device=self.a)
+        self.assertEqual(str(row), "Coverage of a")
+        self.grant(["supportcoverage", "device"], ["view"])
+        self._login(self.user)
+        r = self.client.get(f"/api/support-coverage/?contract={self.c.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["count"], 0)
+        self.grant(["supportcontract"], ["view"])
+        r = self.client.get(f"/api/support-coverage/?contract={self.c.id}")
+        self.assertEqual(r.json()["count"], 1)
+
     def test_site_editor_covers_their_sites_only(self):
         self.grant(["supportcontract", "device"], ["view"])
         self.grant(["supportcoverage"], ["view", "add", "delete"], sites=[self.site_a])

@@ -7127,7 +7127,9 @@ class SupportCoverage(TimestampedModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.contract} → {self.device}"
+        # The device alone: this is the change log's title for the row, and a
+        # site user who may see the coverage may not see the contract.
+        return f"Coverage of {self.device}"
 
 
 # ─── Power ───────────────────────────────────────────────────────────────────

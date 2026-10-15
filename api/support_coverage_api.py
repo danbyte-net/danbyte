@@ -365,8 +365,18 @@ class SupportCoverageViewSet(TenantScopedViewSet):
                         uuid.UUID(v)
                     except ValueError:
                         raise ValidationError({key: "A valid UUID."}) from None
+                    if key == "contract" and not self._contract_visible(v):
+                        # A hidden contract's rows would answer for it.
+                        return qs.none()
                     qs = qs.filter(**{f"{key}_id": v})
         return qs
+
+    def _contract_visible(self, contract_id) -> bool:
+        tenant = self._tenant_or_403()
+        return rbac.restrict_queryset(
+            SupportContract.objects.filter(tenant=tenant, pk=contract_id),
+            self.request.user, tenant, "supportcontract", "view",
+        ).exists()
 
     # ── bulk ────────────────────────────────────────────────────────────
     def _contract(self, request, tenant):
