@@ -270,17 +270,38 @@ def convert_dwg(src: str, tmp: str) -> str:
     if restrict is not None and code != 0 and err.lstrip().startswith(b"bwrap:"):
         logger.warning("CAD converter sandbox failed: %s", err.decode("utf-8", "replace"))
         raise ValueError("The DWG converter's sandbox could not start on this server.")
-    if not os.path.isfile(out):
+    return _take_output(out, os.path.join(tmp, "converted.dxf"), code, err)
+
+
+def _take_output(out: str, dest: str, code, err: bytes) -> str:
+    """Copy the converter's output into ``dest``, a file this worker made.
+
+    The converter wrote ``out`` from inside its sandbox, but the engine reads
+    the result outside it: a converter taken over by a crafted DWG could
+    leave a link there to a file only the worker can read. So the output is
+    opened without following a link, must be a plain file with one name, and
+    the engine gets a copy, never the converter's own path."""
+    try:
+        fd = os.open(out, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        fd = None
+    if fd is None:
         logger.warning("CAD converter exit %s: %s", code, err.decode("utf-8", "replace"))
         raise ValueError(
             "The DWG converter could not read this file (unsupported version or damaged)."
         )
-    size = os.path.getsize(out)
-    if size > MAX_CONVERTED_BYTES:
-        raise ValueError("The converted drawing is too large to process.")
-    if size == 0:
-        raise ValueError("The DWG converter produced an empty drawing.")
-    return out
+    with os.fdopen(fd, "rb") as fh:
+        st = os.fstat(fh.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            logger.warning("CAD converter left something other than a file at %s", out)
+            raise ValueError("The DWG converter produced an unusable result.")
+        if st.st_size > MAX_CONVERTED_BYTES:
+            raise ValueError("The converted drawing is too large to process.")
+        if st.st_size == 0:
+            raise ValueError("The DWG converter produced an empty drawing.")
+        with open(dest, "xb") as copy:
+            shutil.copyfileobj(fh, copy, 1024 * 1024)
+    return dest
 
 
 def sandboxed(argv: list[str], flavour: str, *, in_dir: str, out_dir: str):

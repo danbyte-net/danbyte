@@ -442,6 +442,20 @@ class ConverterTests(_Base):
         self.assertEqual(d.status, "failed")
         self.assertIn("too long", d.error)
 
+    def test_a_link_left_by_the_converter_is_not_followed(self):
+        # The engine reads the result outside the sandbox: a converter that
+        # leaves a link to another file must not get that file rendered.
+        secret = os.path.join(self.bin, "other-tenant.dxf")
+        shutil.copyfile(self.dxf, secret)
+        linking = self.fake(
+            f"out = sys.argv[sys.argv.index('-o') + 1]\nos.symlink({secret!r}, out)"
+        )
+        with self.settings(DANBYTE_CAD_CONVERTER=linking):
+            self.upload(DWG, name="plan.dwg")
+        d = FloorPlanDrawing.objects.get(floor_plan=self.plan)
+        self.assertEqual(d.status, "failed")
+        self.assertIn("could not read this file", d.error)
+
     def test_converter_output_over_the_cap_is_refused(self):
         with self.settings(DANBYTE_CAD_CONVERTER=self.copying()), \
                 mock.patch.object(cad_render, "MAX_CONVERTED_BYTES", 100):
