@@ -103,6 +103,11 @@ import { DeviceDeployPanel } from "@/components/device-deploy-panel"
 import { DeviceDriftPanel } from "@/components/device-drift-panel"
 import { DeviceInventoryPanel } from "@/components/device-inventory-panel"
 import { DeviceHardwareHealth } from "@/components/device-hardware-health"
+import { useDateFormat } from "@/lib/datetime"
+import {
+  CoverageSummary,
+  DeviceCoverageCard,
+} from "@/components/device-coverage-card"
 import {
   FaceplateLegend,
   FaceplateView,
@@ -777,6 +782,7 @@ function DeviceOverview({
     retry: false,
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
+  const { formatDate } = useDateFormat()
 
   // How many VMs run on this device (a hypervisor host). One cheap count -
   // page_size=1 and read the total.
@@ -905,6 +911,13 @@ function DeviceOverview({
           } satisfies KvRow,
         ]
       : []),
+    // Support & warranty coverage (#421), next to the vendor lifecycle.
+    {
+      label: "Support coverage",
+      value: (
+        <CoverageSummary status={d.coverage?.status} end={d.coverage?.end} />
+      ),
+    },
     {
       label: "Serial number",
       value: mono(d.serial_number),
@@ -914,6 +927,14 @@ function DeviceOverview({
       label: "Asset tag",
       value: mono(d.asset_tag),
       copy: d.asset_tag || undefined,
+    },
+    {
+      label: "Warranty end",
+      value: d.warranty_end ? (
+        <span className="num">{formatDate(d.warranty_end)}</span>
+      ) : (
+        dash
+      ),
     },
     { label: "Height", value: <span className="num">{d.u_height} U</span> },
     ...(visibility.airflow
@@ -1117,6 +1138,7 @@ function DeviceOverview({
       <KvCard title="Device" rows={deviceRows} />
       <KvCard title="Management" rows={managementRows} />
       <KvCard title="Hardware" rows={hardwareRows} />
+      <DeviceCoverageCard deviceId={d.id} />
       <KvCard title="Location" rows={locationRows} />
       <CustomFieldValues
         model="device"

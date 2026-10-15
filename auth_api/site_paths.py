@@ -116,6 +116,9 @@ SITE_PATHS: dict[str, str] = {
     "dnsdrift": "ip_address__site|ip_address__prefix__site",
     "virtchange": "vm__site",
     "certificatebinding": "target_ip__site|target_ip__prefix__site",
+    # A covered device's row follows the device (#421); the contract itself
+    # is tenant-wide.
+    "supportcoverage": "device__site",
 }
 
 # Site-bound types the one-click site roles do NOT grant (auth_api.api.

@@ -183,6 +183,7 @@ from .presence_views import (
 )
 from .search_views import search as search_view
 from .site_map_views import site_map, site_map_cables, site_map_connections
+from .support_coverage_api import SupportContractViewSet, SupportCoverageViewSet
 from .terraform_views import vm_render_view
 from .topology_export import topology_pdf_file_view, topology_pdf_view
 from .topology_views import (
@@ -342,6 +343,8 @@ router.register(r"provider-networks", ProviderNetworkViewSet, basename="provider
 router.register(r"circuit-types", CircuitTypeViewSet, basename="circuit-type")
 router.register(r"circuits",      CircuitViewSet,     basename="circuit")
 router.register(r"circuit-terminations", CircuitTerminationViewSet, basename="circuit-termination")
+router.register(r"support-contracts", SupportContractViewSet, basename="support-contract")
+router.register(r"support-coverage", SupportCoverageViewSet, basename="support-coverage")
 router.register(r"tunnel-terminations", TunnelTerminationViewSet, basename="tunnel-termination")
 router.register(r"l2vpns",        L2VPNViewSet,       basename="l2vpn")
 router.register(r"l2vpn-terminations", L2VPNTerminationViewSet, basename="l2vpn-termination")

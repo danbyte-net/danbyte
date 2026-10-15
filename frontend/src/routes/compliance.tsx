@@ -606,6 +606,7 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
 export function ruleSummary(
   r: Pick<ComplianceRule, "field" | "pattern" | "tag" | "cf_key"> & {
     eol_fail_on?: string
+    coverage_fail_on?: string
     check_type: string
     check_type_display?: string
   }
@@ -627,6 +628,12 @@ export function ruleSummary(
         : r.eol_fail_on === "ending"
           ? "platform support must not be ending"
           : "platform must not be end of life"
+    case "coverage": {
+      const scope = r.tag ? `devices tagged “${r.tag}”` : "devices"
+      return r.coverage_fail_on === "expiring"
+        ? `${scope} must have coverage beyond the warning window`
+        : `${scope} must have active coverage`
+    }
     default:
       return r.check_type_display ?? r.check_type
   }

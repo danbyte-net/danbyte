@@ -38,6 +38,9 @@ without touching them.
 them as `capacity_thresholds`; the SPA hands them to
 `lib/rack-capacity.ts` as it loads, so the racks table, the rack page, floor
 plans, the 3D room and the site Capacity tab all colour at the same levels.
+`coverage_warning_days(tenant)` returns the support-coverage warning window
+(`coverage_warning_days`, 90 without a row): coverage ending within it reads
+as Expiring ([support coverage](../features/support-coverage.md)).
 
 **Topology card lines have two more layers below the tenant.** What a device
 card on the topology Diagram shows under its name is an ordered list of keys

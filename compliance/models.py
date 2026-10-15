@@ -23,6 +23,7 @@ class CheckType(models.TextChoices):
     REQUIRED_TAG = "required_tag", "Must carry a tag"
     REQUIRED_CF = "required_cf", "Custom field must be set"
     EOL_STATUS = "eol_status", "End-of-life status"
+    COVERAGE = "coverage", "Support coverage"
 
 
 class EolFailOn(models.TextChoices):
@@ -31,6 +32,13 @@ class EolFailOn(models.TextChoices):
     EOL = "eol", "End of life"
     ENDING = "ending", "Support ending or ended"
     UNKNOWN = "unknown", "No end-of-life data"
+
+
+class CoverageFailOn(models.TextChoices):
+    """What a ``coverage`` rule fails on (#421)."""
+
+    EXPIRED = "expired", "Expired or not covered"
+    EXPIRING = "expiring", "Expiring, expired or not covered"
 
 
 class Severity(models.TextChoices):
@@ -53,6 +61,10 @@ OBJECT_TYPES = {
 # Object types an ``eol_status`` rule can target: the ones that carry a
 # platform. The status is their platform's end-of-life mapping (#8).
 EOL_OBJECT_TYPES = ("device", "virtualmachine")
+
+# Object types a ``coverage`` rule can target: devices carry support coverage
+# (#421).
+COVERAGE_OBJECT_TYPES = ("device",)
 
 
 class ComplianceRule(TimestampedModel):
@@ -90,6 +102,12 @@ class ComplianceRule(TimestampedModel):
     #   eol_status                    → {"eol_fail_on": "ending"}
     eol_fail_on = models.CharField(
         max_length=8, choices=EolFailOn.choices, blank=True, default="",
+        db_default="",
+    )
+    #   coverage                      → {"coverage_fail_on": "expired",
+    #                                    "tag": optional - only devices with it}
+    coverage_fail_on = models.CharField(
+        max_length=8, choices=CoverageFailOn.choices, blank=True, default="",
         db_default="",
     )
 

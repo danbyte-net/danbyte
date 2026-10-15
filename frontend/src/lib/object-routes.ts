@@ -57,6 +57,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.provider": "/providers/$id",
   "api.providernetwork": "/provider-networks/$id",
   "api.rack": "/racks/$id",
+  "api.supportcontract": "/support-contracts/$id",
   "api.rackrole": "/rack-roles/$id",
   "api.racktype": "/rack-types/$id",
   "api.region": "/regions/$id",

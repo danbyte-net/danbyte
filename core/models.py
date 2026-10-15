@@ -1226,6 +1226,16 @@ class TenantSettings(TimestampedModel):
         help_text="Above this share a rack is full.",
     )
 
+    # ─── support coverage (#421) ───────────────────────────────────────────
+    # Coverage ending within this many days reads as Expiring. Tenant only,
+    # like the capacity levels. Read through
+    # ``core.effective_settings.coverage_warning_days``.
+    coverage_warning_days = models.PositiveSmallIntegerField(
+        default=90, db_default=90,
+        validators=[MinValueValidator(1), MaxValueValidator(730)],
+        help_text="Coverage ending within this many days reads as Expiring.",
+    )
+
     # ─── first-run onboarding ──────────────────────────────────────────────
     # Per-tenant bookkeeping (like digest_last_run) - not an inheritable
     # override. Set once the first-run wizard is completed or skipped, so it

@@ -88,6 +88,8 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             # rack capacity levels
             "capacity_warn_pct",
             "capacity_critical_pct",
+            # support coverage warning window (#421)
+            "coverage_warning_days",
             "updated_at",
         ]
         read_only_fields = ["updated_at", "digest_last_run", "cert_digest_last_run"]

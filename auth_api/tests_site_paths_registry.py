@@ -166,7 +166,12 @@ class SiteRoleCatalogsTests(SimpleTestCase):
 
 
 MIGRATION = importlib.import_module("auth_api.migrations.0028_site_roles_site_view")
+
 CATALOG_MIGRATION = importlib.import_module("auth_api.migrations.0029_site_roles_catalog_view")
+
+# Types that joined the site roles after 0028, each with the migration that
+# gives the roles built before it the type.
+LATER = importlib.import_module("auth_api.migrations.0030_site_roles_support_coverage")
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -262,7 +267,8 @@ class SiteRoleUpgradeTests(TestCase):
 
     def test_frozen_lists_match_the_role(self):
         self.assertEqual(
-            MIGRATION.OLD_ROLE_TYPES | set(MIGRATION.NEW_ROLE_TYPES), set(site_role_types())
+            MIGRATION.OLD_ROLE_TYPES | set(MIGRATION.NEW_ROLE_TYPES) | set(LATER.NEW_TYPES),
+            set(site_role_types()),
         )
         self.assertEqual(MIGRATION.CATALOG_TYPES, set(CATALOG_SITE_PATHS))
 
@@ -321,4 +327,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
         self.assertEqual((sorted(view.object_types), ObjectPermission.objects.count()), before)
 
     def test_frozen_catalogs_match_the_role(self):
-        self.assertEqual(CATALOG_MIGRATION.ROLE_CATALOGS, site_role_catalog_types())
+        self.assertEqual(
+            sorted(CATALOG_MIGRATION.ROLE_CATALOGS + LATER.NEW_CATALOGS),
+            sorted(site_role_catalog_types()),
+        )

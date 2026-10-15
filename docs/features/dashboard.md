@@ -25,6 +25,9 @@ The page is a mosaic of tiles:
 - **Certificate widgets** - **Certificate health** (expiry buckets across the
   whole inventory), **Expiring certificates** (expired or within 30 days), and
   **Expired certificates** (already past expiry). Add them from *Add widget*.
+- **Support coverage** - devices per [coverage status](support-coverage.md),
+  narrowed by site and manufacturer, and the support contracts that end
+  soonest. A count opens the devices list filtered to it.
 - **Activity widgets** - **Changelog** (the latest audit changes across the
   tenant: who changed what, each linking to the full change and out to the audit
   log) and **Recent activity** (latest monitoring status changes).

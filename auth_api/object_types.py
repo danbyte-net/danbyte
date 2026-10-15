@@ -178,6 +178,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.PlatformGroup", "Platform groups", "DCIM"),
     ("api.Platform", "Platforms", "DCIM"),
     ("api.Manufacturer", "Manufacturers", "DCIM"),
+    # Support & warranty coverage (#421).
+    ("api.SupportContract", "Support contracts", "DCIM"),
+    ("api.SupportCoverage", "Support coverage", "DCIM"),
     ("api.Rack", "Racks", "DCIM"),
     ("api.RackRole", "Rack roles", "DCIM"),
     ("api.RackType", "Rack types", "DCIM"),

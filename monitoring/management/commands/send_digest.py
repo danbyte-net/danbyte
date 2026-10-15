@@ -68,12 +68,19 @@ class Command(BaseCommand):
 
             count = run_scheduled_digests()
             cert_count = run_scheduled_cert_digests()
+            # Support contracts entering the warning window or expiring (#421),
+            # each announced once to the contract's channels.
+            from api.support_coverage import notify_contracts
+
+            contract_count = notify_contracts()
             self.stdout.write(self.style.SUCCESS(
-                f"sent {count} monitoring + {cert_count} certificate digest(s)"))
-            total = count + cert_count
+                f"sent {count} monitoring + {cert_count} certificate digest(s), "
+                f"{contract_count} support contract notice(s)"))
+            total = count + cert_count + contract_count
             if total:
                 run.note(
-                    f"sent {count} monitoring + {cert_count} certificate digest(s)",
+                    f"sent {count} monitoring + {cert_count} certificate digest(s), "
+                    f"{contract_count} support contract notice(s)",
                     count=total)
             else:
                 run.skip("no tenants due this cycle")

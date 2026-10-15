@@ -38,18 +38,22 @@ export const Route = createFileRoute("/devices/")({
     status?: string
     site?: string
     manufacturer?: string
+    coverage?: string
   } => {
     const out: {
       type?: string
       status?: string
       site?: string
       manufacturer?: string
+      coverage?: string
     } = {}
     if (typeof search.type === "string") out.type = search.type
     if (typeof search.status === "string") out.status = search.status
     if (typeof search.site === "string") out.site = search.site
     if (typeof search.manufacturer === "string")
       out.manufacturer = search.manufacturer
+    // Support coverage status (#421), from the Support coverage widget.
+    if (typeof search.coverage === "string") out.coverage = search.coverage
     return out
   },
   component: DevicesPage,
@@ -159,6 +163,7 @@ function DevicesPage() {
     status: statusFilter,
     site: siteFilter,
     manufacturer: manufacturerFilter,
+    coverage: coverageFilter,
   } = Route.useSearch()
   const initialEnums = useMemo(() => {
     const seed: Record<string, string[]> = {}
@@ -166,8 +171,9 @@ function DevicesPage() {
     if (statusFilter) seed.status = [statusFilter]
     if (siteFilter) seed.site = [siteFilter]
     if (manufacturerFilter) seed.manufacturer = [manufacturerFilter]
+    if (coverageFilter) seed.coverage = [coverageFilter]
     return Object.keys(seed).length ? seed : undefined
-  }, [typeFilter, statusFilter, siteFilter, manufacturerFilter])
+  }, [typeFilter, statusFilter, siteFilter, manufacturerFilter, coverageFilter])
   const {
     rail,
     filteredRows,

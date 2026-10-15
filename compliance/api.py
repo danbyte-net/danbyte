@@ -19,7 +19,7 @@ from api.views import _get_active_tenant
 from auth_api import rbac
 
 from .engine import evaluate, evaluate_for_object
-from .models import EOL_OBJECT_TYPES, OBJECT_TYPES, ComplianceRule
+from .models import COVERAGE_OBJECT_TYPES, EOL_OBJECT_TYPES, OBJECT_TYPES, ComplianceRule
 
 
 def _type_registry():
@@ -95,7 +95,7 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             "id", "name", "description", "remediation", "enabled", "severity",
             "object_type", "object_type_label", "check_type",
             "check_type_display", "field", "pattern", "tag", "cf_key",
-            "eol_fail_on", "created_at", "updated_at",
+            "eol_fail_on", "coverage_fail_on", "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
 
@@ -110,6 +110,7 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         ct = attrs.get("check_type", getattr(self.instance, "check_type", None))
         get = lambda k: attrs.get(k, getattr(self.instance, k, ""))  # noqa: E731
         if ct in ("required", "forbidden", "regex") and not get("field"):
@@ -144,6 +145,16 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             if not get("eol_fail_on"):
                 raise serializers.ValidationError(
                     {"eol_fail_on": "Pick what the check fails on."}
+                )
+        if ct == "coverage":
+            ot = attrs.get("object_type", getattr(self.instance, "object_type", None))
+            if ot not in COVERAGE_OBJECT_TYPES:
+                raise serializers.ValidationError(
+                    {"object_type": "A support coverage check applies to devices."}
+                )
+            if not get("coverage_fail_on"):
+                raise serializers.ValidationError(
+                    {"coverage_fail_on": "Pick what the check fails on."}
                 )
         return attrs
 

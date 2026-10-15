@@ -29,6 +29,7 @@ import {
   FormFooter,
   FormColumn,
   FormColumns,
+  FormDate,
   FormSection,
   FormStatusSelect,
   FormSelect,
@@ -156,6 +157,7 @@ export function DeviceForm({
   )
   const [serial, setSerial] = useState(device?.serial_number ?? "")
   const [assetTag, setAssetTag] = useState(device?.asset_tag ?? "")
+  const [warrantyEnd, setWarrantyEnd] = useState(device?.warranty_end ?? "")
   const [description, setDescription] = useState(seed?.description ?? "")
   const [rackId, setRackId] = useState<string | null>(
     device?.rack?.id ?? initial?.rackId ?? null
@@ -260,6 +262,7 @@ export function DeviceForm({
     setStatusId(device.status?.id ?? null)
     setSerial(device.serial_number)
     setAssetTag(device.asset_tag)
+    setWarrantyEnd(device.warranty_end ?? "")
     setDescription(device.description)
     setRackId(device.rack?.id ?? null)
     setPosition(device.position != null ? String(device.position) : "")
@@ -542,6 +545,7 @@ export function DeviceForm({
         status_id: statusId,
         serial_number: serial.trim(),
         asset_tag: assetTag.trim(),
+        warranty_end: warrantyEnd || null,
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -603,6 +607,7 @@ export function DeviceForm({
         setName("")
         setSerial("")
         setAssetTag("")
+        setWarrantyEnd("")
         return
       }
       onSaved(saved)
@@ -807,6 +812,12 @@ export function DeviceForm({
                 onChange={setAssetTag}
                 mono
                 error={fieldErrors.asset_tag}
+              />
+              <FormDate
+                label="Warranty end"
+                value={warrantyEnd}
+                onChange={setWarrantyEnd}
+                error={fieldErrors.warranty_end}
               />
             </div>
             {visibility.airflow && (

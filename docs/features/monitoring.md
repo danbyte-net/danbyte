@@ -1361,7 +1361,9 @@ one by hand with:
 
 The digest also carries a compact **Certificates** strip - expired, expiring
 (critical / warning), and recently-changed counts - so the overall certificate
-picture rides along with the status summary.
+picture rides along with the status summary. When support contracts end within
+the [coverage warning window](support-coverage.md#notifications), or ended in
+the last 30 days, a **Support contracts** section lists them.
 
 ## Certificate digest
 

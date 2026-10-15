@@ -34,6 +34,8 @@ AUDITED_MODELS = [
     "api.CircuitType",
     "api.Circuit",
     "api.CircuitTermination",
+    "api.SupportContract",
+    "api.SupportCoverage",
     "api.PowerPanel",
     "api.PowerFeed",
     "api.WirelessLANGroup",

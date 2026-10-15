@@ -28,7 +28,7 @@ _SKIP = {"id", "created_at", "updated_at", "tenant"}
 # rd…) so an edited spreadsheet resolves back to the right object.
 _FK_LOOKUPS = [
     "pk", "slug", "name", "model", "cidr", "rd", "vlan_id", "ip_address",
-    "address", "asn",
+    "address", "asn", "contract_number",
 ]
 # Cell values that mean "no link" on a nullable foreign key (a VRF cell left
 # empty is the global table).

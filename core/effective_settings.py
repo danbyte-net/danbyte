@@ -200,6 +200,26 @@ def capacity_thresholds(tenant) -> dict:
     return {"warn": row[0], "critical": row[1]}
 
 
+#: The support-coverage warning window a tenant without a settings row uses.
+COVERAGE_WARNING_DAYS_DEFAULT = 90
+
+
+def coverage_warning_days(tenant) -> int:
+    """Days before coverage ends that it reads as Expiring (#421). Tenant
+    only; no row means the default. Never creates a row."""
+    if tenant is None:
+        return COVERAGE_WARNING_DAYS_DEFAULT
+    from core.models import TenantSettings
+
+    tenant_id = getattr(tenant, "pk", tenant)
+    days = (
+        TenantSettings.objects.filter(tenant_id=tenant_id)
+        .values_list("coverage_warning_days", flat=True)
+        .first()
+    )
+    return COVERAGE_WARNING_DAYS_DEFAULT if days is None else int(days)
+
+
 def effective_floorplan_row(tenant):
     """The object whose floor-plan popover config applies.
 

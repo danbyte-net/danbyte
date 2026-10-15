@@ -48,6 +48,7 @@ is stored - results are always computed fresh from the current data.
 | **Required tag** | The object carries a given tag. | The tag |
 | **Required custom field** | A given custom-field key is set. | The custom-field key |
 | **End-of-life status** | The platform's [end-of-life status](end-of-life-data.md#compliance-rules) is not the one picked. Devices and virtual machines only. | What it fails on: *End of life*, *Support ending or ended*, or *No end-of-life data* |
+| **Support coverage** | The device's [support coverage](support-coverage.md#compliance-rules) is not one the check fails on. Devices only. | What it fails on: *Expired or not covered*, or *Expiring, expired or not covered*; optionally a tag, to judge only devices with it |
 
 !!! note "Regex ignores empty values"
     A **Regex** check passes for objects where the field is blank - it only

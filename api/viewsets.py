@@ -41,7 +41,7 @@ from .filters import apply_tag_filter
 from .natural import natural, natural_key
 from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
-from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo
+from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, support_coverage
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
     FacePortLoader,
@@ -3615,6 +3615,9 @@ class DeviceViewSet(
         .annotate(
             ip_count_annotated=_count_of(IPAddress, "assigned_device"),
             interface_count_annotated=_count_of(Interface, "device"),
+            # Support coverage (#421): the latest covered day and how many
+            # contracts cover the device - two more correlated subqueries.
+            **support_coverage.device_annotations(),
         )
         .all().order_by(NATURAL_NAME)
     )
@@ -3694,6 +3697,35 @@ class DeviceViewSet(
         from .config_context import render_config_context
 
         return Response(render_config_context(self.get_object()))
+
+    @extend_schema(
+        summary="The device's support & warranty coverage",
+        responses={200: support_coverage.schema("device")},
+    )
+    @action(detail=True, methods=["get"], url_path="coverage")
+    def coverage(self, request, pk=None):
+        """Status, the contracts covering the device (best first) and the
+        lifecycle flags (#421)."""
+        from .support_coverage_api import device_coverage
+
+        return Response(device_coverage(request, self.get_object()))
+
+    @extend_schema(
+        summary="Devices per support coverage status",
+        parameters=[
+            OpenApiParameter("site", OpenApiTypes.UUID, OpenApiParameter.QUERY),
+            OpenApiParameter("manufacturer", OpenApiTypes.UUID, OpenApiParameter.QUERY),
+        ],
+        responses={200: support_coverage.schema("summary")},
+    )
+    @action(detail=False, methods=["get"], url_path="coverage-summary")
+    def coverage_summary(self, request):
+        """The Support coverage dashboard widget (#421): counts per status
+        over the devices the caller can see - narrowed like the list - and
+        the contracts that end soonest."""
+        from .support_coverage_api import coverage_summary
+
+        return Response(coverage_summary(request, self.get_queryset()))
 
     @action(detail=True, methods=["get"], url_path="port-utilization")
     def port_utilization(self, request, pk=None):
@@ -4204,6 +4236,8 @@ class DeviceViewSet(
             self.queryset = self.palette_queryset
         qs = super().get_queryset()
         if self.request:
+            from .topology_views import _uuid_param
+
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = (qs.filter(name__icontains=s) | qs.filter(serial_number__icontains=s)
@@ -4215,6 +4249,11 @@ class DeviceViewSet(
             from compliance.eol import apply_status_filter
 
             qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
+            # ?coverage=<status> - support & warranty coverage (#421).
+            qs = support_coverage.apply_device_filter(qs, self.request)
+            contract = _uuid_param(self.request.query_params, "support_contract")
+            if contract:
+                qs = qs.filter(support_coverage__contract_id=contract)
             for key, field in (("site", "site_id"), ("device_type", "device_type_id"),
                                ("status", "status"), ("rack", "rack_id"),
                                ("role", "role_id"), ("platform", "platform_id"),
@@ -4223,8 +4262,6 @@ class DeviceViewSet(
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{field: v})
-            from .topology_views import _uuid_param
-
             for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id")):
                 v = _uuid_param(self.request.query_params, key)
                 if v:

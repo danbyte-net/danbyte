@@ -19,6 +19,8 @@ import { StatusHistoryWidget } from "./widget-status-history"
 import type { StatusHistoryConfig } from "./widget-status-history"
 import { AlertsPerDay, LatencyWeek } from "./widget-monitoring-charts"
 import { MyTasksWidget } from "./widget-tasks"
+import { SupportCoverageWidget } from "./widget-support-coverage"
+import type { SupportCoverageConfig } from "./widget-support-coverage"
 import {
   AvailabilityByGroupWidget,
   CoverageWidget,
@@ -75,6 +77,7 @@ export type WidgetId =
   | "top-offenders"
   | "coverage"
   | "upcoming-maintenance"
+  | "support-coverage"
 
 import type { WidgetMeta } from "@/lib/dashboard-layout"
 
@@ -196,6 +199,11 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
   coverage: { span: { w: 2, h: 2 }, min: { w: 2, h: 2 }, max: { w: 3, h: 4 } },
   "upcoming-maintenance": {
     span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 5 },
+  },
+  "support-coverage": {
+    span: { w: 3, h: 3 },
     min: { w: 2, h: 2 },
     max: { w: 6, h: 5 },
   },
@@ -625,6 +633,20 @@ export const CATALOG: WidgetDef[] = [
     title: "Maintenance",
     description: "Maintenance and outages not yet closed",
     render: () => <UpcomingMaintenanceWidget />,
+  },
+  {
+    id: "support-coverage",
+    fit: "scroll",
+    multi: true,
+    title: "Support coverage",
+    description: "Devices by support and warranty coverage",
+    render: (_d, ctx) => (
+      <SupportCoverageWidget
+        config={ctx?.config as SupportCoverageConfig | undefined}
+        editing={ctx?.editing}
+        setConfig={(c) => ctx?.setConfig({ ...c })}
+      />
+    ),
   },
 ]
 

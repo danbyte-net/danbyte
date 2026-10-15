@@ -208,8 +208,8 @@ their objects use.
 
 Both roles **read the catalogs** their site's objects point at - device types
 and roles, platforms, manufacturers, statuses, tags, custom fields, VRFs, IP
-roles, rack, cabinet and module types, cluster types, routing policies and the
-like - so the pickers in **Add device** and an import by name work. They
+roles, rack, cabinet and module types, cluster types, routing policies,
+support contracts (cost included) and the like - so the pickers in **Add device** and an import by name work. They
 never change those catalogs: that stays with administrators, or with the site
 editor's own local entries under
 [enhanced site separation](../access/site-separation.md#local-vs-global-catalog-entries).

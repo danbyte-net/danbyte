@@ -1597,6 +1597,10 @@ export interface Device {
   status: StatusMini | null
   serial_number: string
   asset_tag: string
+  /** Last day of the unit's hardware warranty (#421). */
+  warranty_end?: string | null
+  /** Support & warranty coverage (#421), derived server-side. */
+  coverage?: DeviceCoverageBrief
   description: string
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
@@ -1689,6 +1693,8 @@ export interface DeviceWritePayload {
   status_id?: string | null
   serial_number?: string
   asset_tag?: string
+  /** Last day of the hardware warranty (#421). */
+  warranty_end?: string | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -7917,6 +7923,7 @@ export type ComplianceCheck =
   | "required_tag"
   | "required_cf"
   | "eol_status"
+  | "coverage"
 export type ComplianceSeverity = "critical" | "warning" | "info"
 export interface ComplianceRule {
   id: string
@@ -7936,6 +7943,8 @@ export interface ComplianceRule {
   cf_key: string
   /** eol_status checks: eol | ending | unknown. */
   eol_fail_on?: "" | "eol" | "ending" | "unknown"
+  /** coverage checks (#421): expired | expiring. */
+  coverage_fail_on?: "" | "expired" | "expiring"
   created_at: string
   updated_at: string
 }
@@ -7993,6 +8002,7 @@ export interface DeviceComplianceViolation {
   tag: string
   cf_key: string
   eol_fail_on?: string
+  coverage_fail_on?: string
 }
 
 /** Response of GET /api/compliance/devices/<id>/ - one device's compliance
@@ -8740,6 +8750,8 @@ export interface TenantSettings {
    * above critical it is full. warn < critical. */
   capacity_warn_pct: number
   capacity_critical_pct: number
+  /** Support coverage ending within this many days reads as Expiring (#421). */
+  coverage_warning_days: number
   updated_at: string
   deployment_defaults: TenantSettingsDefaults
 }
@@ -9376,6 +9388,108 @@ export interface Circuit {
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+// ─── Support & warranty coverage (#421) ────────────────────────────────
+
+/** A device's coverage: covered · expiring · expired · none (not covered). */
+export type CoverageStatus = "covered" | "expiring" | "expired" | "none"
+/** A contract's own state against the tenant's warning window. */
+export type ContractState = "active" | "expiring" | "expired"
+
+/** `coverage` on every device row. `end` null = open-ended or none. */
+export interface DeviceCoverageBrief {
+  status: CoverageStatus
+  end: string | null
+  contracts: number
+}
+
+export interface SupportContract {
+  id: string
+  numid: number | null
+  manufacturer: { id: string; name: string }
+  contract_number: string
+  service_level: string
+  start_date: string | null
+  /** Last covered day; null = open-ended. */
+  end_date: string | null
+  state: ContractState
+  reseller: string
+  cost: number | null
+  currency: string
+  portal_url: string
+  renewal_notes: string
+  description: string
+  notify_channels: { id: string; name: string }[]
+  device_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  permissions?: { change: boolean; delete: boolean }
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportContractWritePayload {
+  manufacturer_id: string
+  contract_number: string
+  service_level?: string
+  start_date?: string | null
+  end_date?: string | null
+  reseller?: string
+  cost?: number | null
+  currency?: string
+  portal_url?: string
+  renewal_notes?: string
+  description?: string
+  notify_channel_ids?: string[]
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
+}
+
+/** POST /api/support-coverage/bulk-add/ result. */
+export interface CoverageBulkAddResult {
+  created: number
+  existing: number
+  matched: number
+  unmatched: string[]
+  ambiguous: string[]
+}
+
+export interface DeviceCoverageContract {
+  id: string
+  contract_number: string
+  manufacturer: { id: string; name: string }
+  service_level: string
+  start_date: string | null
+  end_date: string | null
+  state: ContractState
+}
+
+/** GET /api/devices/<id>/coverage/ */
+export interface DeviceCoverage {
+  status: CoverageStatus
+  end: string | null
+  warranty_end: string | null
+  warning_days: number
+  contracts: DeviceCoverageContract[]
+  /** Contracts covering the device that the caller may not view. */
+  hidden_contracts: number
+  flags: { code: "contract_after_eol" | "eol_under_contract"; label: string }[]
+}
+
+/** GET /api/devices/coverage-summary/?site=&manufacturer= */
+export interface SupportCoverageSummary {
+  warning_days: number
+  total: number
+  counts: Record<CoverageStatus, number>
+  ending: {
+    id: string
+    contract_number: string
+    manufacturer: { id: string; name: string }
+    end_date: string
+    state: ContractState
+    device_count: number
+  }[]
 }
 
 export interface CircuitWritePayload {

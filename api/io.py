@@ -905,7 +905,7 @@ def register_builtins() -> None:
     never lands on its namesake elsewhere (#352). Called from
     ``ApiConfig.ready``.
     """
-    from .models import Device, IPAddress, IPRange, Prefix, VLAN
+    from .models import VLAN, Device, IPAddress, IPRange, Prefix, SupportContract, SupportCoverage
 
     register_io(_handler(
         Prefix, natural_key=["cidr", "vrf"],
@@ -929,4 +929,14 @@ def register_builtins() -> None:
     ))
     register_io(_handler(
         Device, DeviceIOHandler, natural_key=["name", "site"], fk_keys={"site": "name"}
+    ))
+    # Support coverage (#421): a contract by its number per manufacturer, a
+    # coverage row by contract number and device name.
+    register_io(_handler(
+        SupportContract, natural_key=["manufacturer", "contract_number"],
+        fk_keys={"manufacturer": "name"},
+    ))
+    register_io(_handler(
+        SupportCoverage, natural_key=["contract", "device"],
+        fk_keys={"contract": "contract_number", "device": "name"},
     ))

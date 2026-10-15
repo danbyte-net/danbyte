@@ -818,6 +818,12 @@ export const sections: NavSection[] = [
             icon: Factory,
             objectType: "manufacturer",
           },
+          {
+            title: "Support contracts",
+            url: "/support-contracts",
+            icon: ShieldCheck,
+            objectType: "supportcontract",
+          },
         ],
       },
       {

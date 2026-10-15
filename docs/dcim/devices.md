@@ -21,7 +21,8 @@ detail page.
    [Device catalog](device-catalog.md) page; it only takes a moment and you'll
    reuse it for every device of that model.
 4. Optionally set the **site**, **location**, **role**, **platform**,
-   **cluster**, **status**, **serial number**, and **asset tag**.
+   **cluster**, **status**, **serial number**, **asset tag** and **warranty end**
+   (see [Support & warranty coverage](../features/support-coverage.md)).
 5. Optionally fill the **built-in extras** - **comments**, **airflow**, and
    **latitude / longitude**. Which optional fields appear is controlled by your
    administrator (see [Built-in fields](#built-in-fields) below), so you may not
@@ -306,8 +307,8 @@ The available statuses are yours to define - Danbyte doesn't ship a fixed list.
 
 ## Custom fields
 
-Need to track something Danbyte doesn't have a field for - a warranty date, an
-owner team, a maintenance window? Add a **custom field** for devices and it
+Need to track something Danbyte doesn't have a field for - an owner team, a
+maintenance window? Add a **custom field** for devices and it
 appears on every device's form and Overview. See
 [Tags & custom fields](../features/tags-and-custom-fields.md).
 

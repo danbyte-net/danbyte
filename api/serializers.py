@@ -17,7 +17,7 @@ from django.utils.text import slugify
 from rest_framework.exceptions import APIException
 from rest_framework.fields import empty
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import extend_schema_field
+from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import serializers
 
 from core.hidden_fields import PermissionHiddenFieldsMixin
@@ -2917,6 +2917,9 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     certificate_count = serializers.SerializerMethodField()
     contact_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
+    # Support & warranty coverage (#421): {status, end, contracts}, from the
+    # list queryset's annotations - no query per row.
+    coverage = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -3066,6 +3069,18 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                 "lifecycle_state": p.lifecycle_state,
                 # End-of-life data (#8): null while the feature is off.
                 "eol": _eol_payload(p, self.context)}
+
+    @extend_schema_field(inline_serializer("DeviceCoverageBrief", {
+        "status": serializers.ChoiceField(choices=["covered", "expiring", "expired", "none"]),
+        "end": serializers.DateField(allow_null=True),
+        "contracts": serializers.IntegerField(),
+    }))
+    def get_coverage(self, obj):
+        from .support_coverage import device_payload
+
+        view = self.context.get("view")
+        fresh = getattr(view, "action", None) in ("create", "update", "partial_update")
+        return device_payload(obj, self.context.get("request"), fresh=fresh)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -3486,6 +3501,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "image_ports",
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
+                  "warranty_end", "coverage",
                   "description", "comments", "airflow", "effective_airflow",
                   "port_labels", "topology_card", "topology_photo_size",
                   "latitude", "longitude",

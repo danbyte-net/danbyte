@@ -63,10 +63,36 @@ def _eol_violates(rule: ComplianceRule, obj, eol_cfg) -> bool:
     return False
 
 
-def _violates(rule: ComplianceRule, obj, tag_slugs, eol_cfg=None) -> bool:
+def _coverage_violates(rule: ComplianceRule, obj, tag_slugs, warning_days) -> bool:
+    """A ``coverage`` rule (#421) on a device's support coverage. A rule with
+    a tag judges only the devices that carry it."""
+    from api.support_coverage import device_end, status_for
+
+    if rule.tag and rule.tag not in tag_slugs:
+        return False
+    status = status_for(device_end(obj), warning_days)
+    if rule.coverage_fail_on == "expired":
+        return status in ("expired", "none")
+    if rule.coverage_fail_on == "expiring":
+        return status in ("expiring", "expired", "none")
+    return False
+
+
+def _needs_tags(rule: ComplianceRule) -> bool:
+    return rule.check_type == "required_tag" or (
+        rule.check_type == "coverage" and bool(rule.tag)
+    )
+
+
+def _violates(rule: ComplianceRule, obj, tag_slugs, eol_cfg=None,
+              coverage_days=None) -> bool:
     ct = rule.check_type
     if ct == "eol_status":
         return _eol_violates(rule, obj, eol_cfg)
+    if ct == "coverage":
+        if coverage_days is None:
+            return False
+        return _coverage_violates(rule, obj, tag_slugs, coverage_days)
     if ct == "required_tag":
         return rule.tag not in tag_slugs
     if ct == "required_cf":
@@ -103,15 +129,20 @@ def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
     )
     tag_slugs: set[str] | None = None
     eol_cfg = None
+    coverage_days = None
     failed = []
     for rule in rules:
-        if rule.check_type == "required_tag" and tag_slugs is None:
+        if _needs_tags(rule) and tag_slugs is None:
             tag_slugs = {t.slug for t in tags_of(obj)}
         if rule.check_type == "eol_status" and eol_cfg is None:
             from .eol import load_config
 
             eol_cfg = load_config()
-        if _violates(rule, obj, tag_slugs or set(), eol_cfg):
+        if rule.check_type == "coverage" and coverage_days is None:
+            from core.effective_settings import coverage_warning_days
+
+            coverage_days = coverage_warning_days(tenant)
+        if _violates(rule, obj, tag_slugs or set(), eol_cfg, coverage_days):
             failed.append(rule)
     return failed
 
@@ -136,9 +167,17 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
     for object_type, type_rules in by_type.items():
         model = models[object_type]
         qs = model.objects.filter(tenant=tenant)
-        needs_tags = any(r.check_type == "required_tag" for r in type_rules)
+        needs_tags = any(_needs_tags(r) for r in type_rules)
         if needs_tags:
             qs = qs.prefetch_related(TAGS)
+        coverage_days = None
+        if any(r.check_type == "coverage" for r in type_rules):
+            from api.support_coverage import annotate_devices
+            from core.effective_settings import coverage_warning_days
+
+            coverage_days = coverage_warning_days(tenant)
+            # The coverage end rides the row: no query per device.
+            qs = annotate_devices(qs)
         eol_cfg = None
         if any(r.check_type == "eol_status" for r in type_rules):
             from .eol import load_config
@@ -151,7 +190,7 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
                 {t.slug for t in tags_of(obj)} if needs_tags else set()
             )
             for rule in type_rules:
-                if not _violates(rule, obj, tag_slugs, eol_cfg):
+                if not _violates(rule, obj, tag_slugs, eol_cfg, coverage_days):
                     continue
                 counts[rule.id] += 1
                 # Bound the flat list, but keep it generous: per-object UI

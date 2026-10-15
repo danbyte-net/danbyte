@@ -13,6 +13,10 @@ For operating systems and software, platforms can also take their dates from
 a public source instead - see [End-of-life data](end-of-life-data.md). The two
 are kept apart; fetched data never overwrites what you entered here.
 
+These dates describe the model. Whether a single device is under a support
+contract or warranty is [Support & warranty coverage](support-coverage.md);
+the device overview shows both side by side.
+
 ## The fields
 
 Both **device types** (hardware) and **platforms** (OS) have the same

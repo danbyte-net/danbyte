@@ -29,6 +29,7 @@ import { ColorBadge } from "@/components/cells/color-badge"
 import { LifecycleFlag } from "@/components/cells/lifecycle-cell"
 import { PlatformCell } from "@/components/cells/platform-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
+import { coverageColumn } from "@/components/cells/coverage-cell"
 import { cabinetColumn } from "@/components/cells/cabinet-cell"
 import { rackColumn } from "@/components/cells/rack-cell"
 import { siteColumn } from "@/components/cells/site-cell"
@@ -55,6 +56,7 @@ export type DeviceColumnId =
   | "role"
   | "platform"
   | "eol"
+  | "coverage"
   | "type"
   | "manufacturer"
   | "site"
@@ -80,6 +82,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "role",
   "platform",
   "eol",
+  "coverage",
   "type",
   "manufacturer",
   "site",
@@ -303,6 +306,8 @@ export function buildDeviceColumns<T extends Device = Device>(
       },
     }),
     eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
+    // Support & warranty coverage (#421), derived server-side per row.
+    coverage: () => coverageColumn<T>({ get: (r) => r.coverage }),
     type: () => ({
       id: "type",
       accessorFn: (r) => r.device_type?.name ?? "",

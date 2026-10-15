@@ -2171,6 +2171,12 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     serial_number = models.CharField(max_length=255, blank=True)
     asset_tag = models.CharField(max_length=128, blank=True)
+    # Hardware warranty of this unit, for coverage without a support contract
+    # (#421). The last covered day; blank = no warranty on record.
+    warranty_end = models.DateField(
+        null=True, blank=True,
+        help_text="Last day of the hardware warranty.",
+    )
     description = models.TextField(blank=True)
     primary_ip = models.ForeignKey(
         "IPAddress",
@@ -7038,6 +7044,90 @@ class CircuitTermination(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.circuit.cid}/{self.term_side}: {self.endpoint}"
+
+
+# ─── Support & warranty coverage (#421) ──────────────────────────────────────
+# A vendor support contract covers devices; each device's coverage status is
+# derived at read time from the best of its contracts and its own hardware
+# warranty (api.support_coverage). Nothing ships pre-filled.
+
+
+class SupportContract(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A support or maintenance contract with a manufacturer (or through a
+    reseller) that covers a set of devices until its end date.
+
+    Tenant-wide: a contract often spans sites. Its coverage rows
+    (:class:`SupportCoverage`) belong to each device's site."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="support_contracts"
+    )
+    manufacturer = models.ForeignKey(
+        Manufacturer, on_delete=models.PROTECT, related_name="support_contracts"
+    )
+    contract_number = models.CharField(max_length=128)
+    # Free text: service levels are vendor vocabulary (8x5xNBD, 24x7x4, SNT,
+    # P1 …) that drives no logic, so a catalog would only add a step.
+    service_level = models.CharField(max_length=64, blank=True, default="", db_default="")
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(
+        null=True, blank=True,
+        help_text="Last covered day. Blank = open-ended.",
+    )
+    reseller = models.CharField(max_length=128, blank=True, default="", db_default="")
+    cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=3, blank=True, default="", db_default="")
+    portal_url = models.URLField(max_length=500, blank=True, default="", db_default="")
+    renewal_notes = models.TextField(blank=True, default="", db_default="")
+    description = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: Where "entering the warning window" and "expired" are announced.
+    notify_channels = models.ManyToManyField(
+        "monitoring.NotificationChannel", blank=True, related_name="support_contracts"
+    )
+    #: The last state announced to the channels ("" · expiring · expired), so
+    #: each change is sent once. Bookkeeping, never written by the API.
+    notified_state = models.CharField(max_length=8, blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["end_date", "contract_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "manufacturer", "contract_number"],
+                name="uniq_supportcontract_tenant_mfr_number",
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "end_date"])]
+
+    def __str__(self) -> str:
+        return self.contract_number
+
+
+class SupportCoverage(TimestampedModel):
+    """One device covered by one support contract."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="support_coverage"
+    )
+    contract = models.ForeignKey(
+        SupportContract, on_delete=models.CASCADE, related_name="coverage"
+    )
+    device = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, related_name="support_coverage"
+    )
+
+    class Meta:
+        ordering = ["contract", "device"]
+        verbose_name_plural = "support coverage"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contract", "device"], name="uniq_supportcoverage_contract_device"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.contract} → {self.device}"
 
 
 # ─── Power ───────────────────────────────────────────────────────────────────
