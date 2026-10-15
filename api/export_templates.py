@@ -116,6 +116,10 @@ _CLOSED_APPS = frozenset({"auth", "auth_api", "audit", "contenttypes", "sessions
 _CLOSED_MODELS = frozenset({
     "core.organization", "core.tenant", "core.tenantgroup", "core.tenantsettings",
     "core.deploymentsettings", "core.bookmark", "core.bookmarkfolder",
+    # An SLA's stored figures and rule snapshots carry its service credit
+    # and every member's figure; the SLA API cuts them per viewer, which a
+    # template walking the rows cannot.
+    "monitoring.slaperiodresult", "monitoring.slaagreementrevision",
 })
 _OPEN_ATTRS = {
     "auth.user": frozenset({"id", "pk", "username", "first_name", "last_name"}),
@@ -183,6 +187,15 @@ def _template_environment_class():
             self._tenant_id = getattr(tenant, "pk", tenant)
             self._user = user
             self._row_filters: dict = {}
+            # The fields the API hides from this user (contract cost, SLA
+            # credits, an address's device at another site), read from the
+            # same table the serializers and the change log read. A render
+            # nobody started (no user) is not narrowed, as in the API.
+            self._gate = None
+            if user is not None:
+                from core.hidden_fields import RowFieldGate
+
+                self._gate = RowFieldGate(user, tenant)
 
         # ── rows ───────────────────────────────────────────────────────
         def _row_open(self, obj, attr) -> bool:
@@ -223,6 +236,8 @@ def _template_environment_class():
             meta = getattr(obj, "_meta", None)
             if meta is not None and hasattr(meta, "get_field"):
                 if not self._row_open(obj, attr) or not self._value_open(value):
+                    return False
+                if self._gate is not None and self._gate.hides(obj, attr):
                     return False
                 from django.core.exceptions import FieldDoesNotExist
 
@@ -272,6 +287,8 @@ def _template_environment_class():
                         return value.none()
                     if q is not True:
                         value = value.filter(q)
+            if self._gate is not None:
+                value = self._gate.narrow(value)
             return value
 
         def _check_lookups(self, model, method, args, kwargs):
@@ -282,6 +299,10 @@ def _template_environment_class():
 
             from core.secret_fields import is_secret_field
 
+            # Jinja adds its own scope to a call made inside a loop or a
+            # block; Context.call takes them off before the method sees them.
+            kwargs = {k: v for k, v in kwargs.items()
+                      if k not in ("_loop_vars", "_block_vars")}
             if method == "order_by":
                 if kwargs:
                     raise SecurityError("order_by() takes field names only.")
@@ -304,7 +325,9 @@ def _template_environment_class():
                         )
                 if field is None or not getattr(field, "concrete", False):
                     raise SecurityError(f"'{key}' is not a field of this row.")
-                if is_secret_field(model, field):
+                if is_secret_field(model, field) or (
+                    self._gate is not None and self._gate.refuses_lookup(model, field.name)
+                ):
                     raise SecurityError(f"'{key}' cannot be read.")
                 if method == "order_by" and rest:
                     raise SecurityError(f"order_by('{key}') walks a relation.")
@@ -393,6 +416,11 @@ def _objects_for(template, tenant, user=None, *, limit=None):
     if user is None:
         return []
     qs = rbac.restrict_queryset(qs, user, tenant, template.object_type, "view")
+    # A row whose text names a relation the user may not view is left out,
+    # as the sandbox leaves it out of every relation (core.hidden_fields).
+    from core.hidden_fields import RowFieldGate
+
+    qs = RowFieldGate(user, tenant).narrow(qs)
     total = qs.count()
     if limit is None and total > MAX_TEMPLATE_ROWS:
         raise ValueError(
@@ -434,7 +462,10 @@ def render_export_template(template, tenant, user=None, *, preview=False) -> str
         raise ValueError(f"Unknown object type: {template.object_type}")
 
     total = getattr(objects, "total", len(objects))
-    tmpl = _env(tenant, user).from_string(template.template_code or "")
+    env = _env(tenant, user)
+    if env._gate is not None:
+        env._gate.prime(objects)
+    tmpl = env.from_string(template.template_code or "")
     return tmpl.render(objects=objects, queryset=objects, count=total)
 
 

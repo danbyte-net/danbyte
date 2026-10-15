@@ -35,11 +35,12 @@ class PermissionHiddenFieldsMixin:
         return data
 
 
-#: Fields the change log shows only to holders of an RBAC action, per stored
-#: ``object_type`` label: ``{label: (object-type slug, action, fields)}``. The
-#: serializer hides them from the object; the history must not show them in
-#: its diff or snapshots either.
-GATED_HISTORY_FIELDS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+#: Fields shown only to holders of an RBAC action, per model label:
+#: ``{label: (object-type slug, action, fields)}``. The one table every reader
+#: asks: the serializer hides them from the object, the change log from its
+#: diff and snapshots, and the export and label template sandbox from a
+#: template, however the row is reached.
+GATED_FIELDS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "api.supportcontract": ("supportcontract", "view_cost", ("cost", "currency")),
     # SLA money: the API hides it without view_credits, so the history does.
     "monitoring.slaagreement": (
@@ -49,23 +50,146 @@ GATED_HISTORY_FIELDS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "slaagreement", "view_credits", ("credit_tiers", "period_fee", "currency"),
     ),
 }
+#: The change log's name for the same table.
+GATED_HISTORY_FIELDS = GATED_FIELDS
+
+#: Relations a row names only when the caller may view the related row, per
+#: model label: ``{label: ((field, object-type slug), ...)}``. The API shows
+#: such a field as ``null`` (#413); a template reads it as undefined.
+GATED_RELATIONS: dict[str, tuple[tuple[str, str], ...]] = {
+    "api.ipaddress": (
+        ("prefix", "prefix"),
+        ("assigned_device", "device"),
+        ("assigned_interface", "interface"),
+        ("switch", "device"),
+        ("switch_interface", "interface"),
+        ("assigned_vm", "virtualmachine"),
+        ("assigned_vm_interface", "vminterface"),
+    ),
+    # A coverage row is its device's; its contract may be one the caller
+    # cannot view.
+    "api.supportcoverage": (("contract", "supportcontract"),),
+}
+
+#: Gated relations a row's own text names (``str(coverage)`` is "contract →
+#: device"). A template prints a row it holds, so such a row is not handed to
+#: a template at all while that relation is hidden.
+ROW_TEXT_RELATIONS: dict[str, str] = {"api.supportcoverage": "contract"}
 
 
-def hidden_history_fields(user, tenant, object_type: str, memo: dict | None = None) -> set[str]:
-    """The fields of an ``object_type`` change-log entry ``user`` may not
-    see in ``tenant``. ``memo`` caches the answer across one page."""
-    gate = GATED_HISTORY_FIELDS.get(object_type)
+def hidden_related_spec(label: str) -> tuple[tuple[str, str, str], ...]:
+    """``GATED_RELATIONS[label]`` in the shape ``HiddenRelatedFieldsMixin``
+    reads: ``(field, slug, fk attname)``."""
+    return tuple((f, slug, f"{f}_id") for f, slug in GATED_RELATIONS.get(label, ()))
+
+
+def gated_fields(user, tenant, label: str, memo: dict | None = None) -> set[str]:
+    """The fields of a ``label`` row ``user`` may not see in ``tenant``.
+    ``memo`` caches the answer across one page or one render."""
+    gate = GATED_FIELDS.get(label)
     if gate is None:
         return set()
-    if memo is not None and object_type in memo:
-        return memo[object_type]
+    if memo is not None and label in memo:
+        return memo[label]
     from auth_api import rbac
 
     slug, action, fields = gate
     out = set() if rbac.has_action(user, tenant, slug, action) else set(fields)
     if memo is not None:
-        memo[object_type] = out
+        memo[label] = out
     return out
+
+
+def hidden_history_fields(user, tenant, object_type: str, memo: dict | None = None) -> set[str]:
+    """The fields of an ``object_type`` change-log entry ``user`` may not
+    see in ``tenant``. ``memo`` caches the answer across one page."""
+    return gated_fields(user, tenant, object_type, memo)
+
+
+class RowFieldGate:
+    """What ``user`` may not read on a row in ``tenant``, for one render of
+    an export or label template: the gated fields of its type, and the gated
+    relations that point at a row the user may not view. The answer the API
+    gives, so a template prints nothing the API leaves out."""
+
+    def __init__(self, user, tenant):
+        self.user = user
+        self.tenant = tenant
+        self._memo: dict = {}
+        self._viewable = None
+
+    def _rows(self):
+        if self._viewable is None:
+            from auth_api.rbac import ViewableRows
+
+            self._viewable = ViewableRows(self.user, self.tenant)
+        return self._viewable
+
+    def fields(self, model) -> set[str]:
+        return gated_fields(self.user, self.tenant, model._meta.label_lower, self._memo)
+
+    @staticmethod
+    def _relation(model, name):
+        """``(slug, fk attname)`` when ``name`` (the relation or its ``_id``)
+        is a gated relation of ``model``."""
+        for field, slug in GATED_RELATIONS.get(model._meta.label_lower, ()):
+            if name in (field, f"{field}_id"):
+                return slug, f"{field}_id"
+        return None
+
+    def hides(self, obj, attr: str) -> bool:
+        """Whether ``obj.<attr>`` is hidden from the user."""
+        model = type(obj)
+        if attr in self.fields(model):
+            return True
+        rel = self._relation(model, attr)
+        if rel is None:
+            return False
+        slug, attname = rel
+        return not self._rows().may_view(slug, getattr(obj, attname, None))
+
+    def refuses_lookup(self, model, name: str) -> bool:
+        """Whether a filter or an ordering on ``name`` would test a value the
+        user may not see on some row: a gated field, or a gated relation the
+        user does not see on every row."""
+        if name in self.fields(model):
+            return True
+        rel = self._relation(model, name)
+        return rel is not None and not self._rows().sees_every(rel[0])
+
+    def narrow(self, qs):
+        """``qs`` without the rows whose text names a hidden relation
+        (``ROW_TEXT_RELATIONS``)."""
+        field = ROW_TEXT_RELATIONS.get(qs.model._meta.label_lower)
+        if field is None:
+            return qs
+        slug = self._relation(qs.model, field)[0]
+        if self._rows().sees_every(slug):
+            return qs
+        from django.db.models import Q
+
+        from auth_api import rbac
+        from auth_api.object_types import model_for
+
+        q = rbac.row_filter(self.user, self.tenant, slug, "view")
+        if q is None:
+            return qs.filter(**{f"{field}__isnull": True})
+        related = model_for(slug)._default_manager.filter(q).values("pk")
+        return qs.filter(Q(**{f"{field}__in": related}) | Q(**{f"{field}__isnull": True}))
+
+    def hides_row(self, obj) -> bool:
+        """Whether ``obj`` itself names a hidden relation in its text."""
+        field = ROW_TEXT_RELATIONS.get(type(obj)._meta.label_lower)
+        return field is not None and self.hides(obj, field)
+
+    def prime(self, rows) -> None:
+        """Answer the gated relations of ``rows`` in one query per type."""
+        by_slug: dict[str, set] = {}
+        for obj in rows:
+            for field, slug in GATED_RELATIONS.get(type(obj)._meta.label_lower, ()):
+                by_slug.setdefault(slug, set()).add(getattr(obj, f"{field}_id", None))
+        for slug, pks in by_slug.items():
+            self._rows().prime(slug, pks)
 
 
 def strip_history(data, hidden: set[str]):

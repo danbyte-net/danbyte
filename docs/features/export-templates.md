@@ -117,6 +117,15 @@ prefix; a router config needs the pieces. These filters take a string
     `none`; a lookup names one field of that row (`name__startswith`), never
     a path into another table (`site__name`).
 
+    A template renders for whoever runs it - the preview for the editor, a
+    download for the person downloading - and shows them what the API
+    shows them. A field the API leaves out reads as empty and cannot be
+    filtered or ordered on: a contract's cost without *view cost*, an SLA's
+    credits and fee without *view credits*, an address's device, interface,
+    prefix or VM the user can't see. A coverage row whose contract the user
+    can't see is left out, and an SLA's stored period figures and rule
+    snapshots are not reachable.
+
     Output is always served as a download of an inert type:
     `text/plain`, CSV, JSON, XML or YAML. A template declaring `text/html`
     downloads as plain text.

@@ -20,7 +20,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import serializers
 
-from core.hidden_fields import PermissionHiddenFieldsMixin
+from core.hidden_fields import PermissionHiddenFieldsMixin, hidden_related_spec
 from core.models import Tag, Tenant, TenantGroup
 from core.tags import tags_of
 from customization.models import (
@@ -1719,15 +1719,8 @@ class HiddenRelatedFieldsMixin(PermissionHiddenFieldsMixin):
 class IPAddressSerializer(HiddenRelatedFieldsMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "ipaddress"
     # The rows an address names: each only when the caller may view it (#413).
-    hidden_related = (
-        ("prefix", "prefix", "prefix_id"),
-        ("assigned_device", "device", "assigned_device_id"),
-        ("assigned_interface", "interface", "assigned_interface_id"),
-        ("switch", "device", "switch_id"),
-        ("switch_interface", "interface", "switch_interface_id"),
-        ("assigned_vm", "virtualmachine", "assigned_vm_id"),
-        ("assigned_vm_interface", "vminterface", "assigned_vm_interface_id"),
-    )
+    # The table lives in core.hidden_fields, which templates read too.
+    hidden_related = hidden_related_spec("api.ipaddress")
     # Not columns (see api.list_fields): the role flags the address cell
     # already draws as a badge, and a tab count computed for a single
     # address only - it reads 0 on a list.

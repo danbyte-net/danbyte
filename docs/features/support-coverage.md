@@ -137,6 +137,10 @@ show the *Site* column, and export it.
 Linking devices needs *add* on Support coverage and sight of the contract and
 the devices. The one-click site roles include Support coverage.
 
+A contract's device count, its `?device=` filter and the dashboard widget's
+site filter count only the devices you can see. A coverage row whose contract
+you can't see shows no contract, in the API and the export.
+
 ### Cost
 
 A contract's cost is commercial data, so seeing it is its own grant: **view
@@ -157,7 +161,7 @@ covers it.
 | `GET/POST /api/support-contracts/` | `?state=active,expiring,expired`, `?manufacturer=`, `?device=`, `?search=` |
 | `GET/PATCH/DELETE /api/support-contracts/<id>/` | `notify_channel_ids` and `tag_ids` to write; `cost` and `currency` absent without *view cost* |
 | `POST /api/support-contracts/bulk-delete/` | Safe bulk delete |
-| `GET/POST /api/support-coverage/` | `?contract=`, `?device=`; body `{"contract_id", "device_id"}` |
+| `GET/POST /api/support-coverage/` | `?contract=`, `?device=`; body `{"contract_id", "device_id"}`; `contract` is `null` when you can't see it |
 | `DELETE /api/support-coverage/<id>/` | |
 | `POST /api/support-coverage/bulk-add/` | `{"contract_id", "device_ids": [...], "serials": "..."}` → `created`, `existing`, `matched`, `unmatched`, `ambiguous` |
 | `POST /api/support-coverage/bulk-remove/` | `{"contract_id", "device_ids": [...]}` → `removed` |

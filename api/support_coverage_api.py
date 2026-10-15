@@ -33,7 +33,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.response import Response
 
 from auth_api import rbac
-from core.hidden_fields import PermissionHiddenFieldsMixin
+from core.hidden_fields import PermissionHiddenFieldsMixin, hidden_related_spec
 from core.models import Tag
 from core.tags import TAGS
 from monitoring.models import NotificationChannel
@@ -45,12 +45,14 @@ from .models import Device, Manufacturer, SupportContract, SupportCoverage
 from .natural import natural
 from .serializers import (
     CustomFieldsSerializerMixin,
+    HiddenRelatedFieldsMixin,
     ManufacturerMiniSerializer,
     NumIdModelSerializer,
     ObjectPermsSerializerMixin,
     TaggableSerializerMixin,
     TagSerializer,
     TenantScopedPrimaryKeyRelatedField,
+    _HiddenRelatedListSerializer,
 )
 from .views import _get_active_tenant
 from .viewsets import StandardPagination, TenantScopedViewSet
@@ -61,10 +63,26 @@ _STATE_PARAM = OpenApiParameter(
 )
 
 
-def _device_count_subquery():
+def _visible_coverage_q(user, tenant) -> Q:
+    """The coverage rows whose device ``user`` may view, as a filter on
+    ``SupportCoverage``: a contract's device count and the ``?device=`` /
+    ``?site=`` narrowing must not tell a site-limited user of devices at
+    other sites. ``user`` ``None`` (a job) is not narrowed."""
+    if user is None:
+        return Q()
+    q = rbac.row_filter(user, tenant, "device", "view")
+    if q is True:
+        return Q()
+    if q is None:
+        return Q(pk__in=[])
+    return Q(device__in=Device.objects.filter(q).values("pk"))
+
+
+def _device_count_subquery(visible: Q | None = None):
     return Coalesce(
         Subquery(
             SupportCoverage.objects.filter(contract=OuterRef("pk"))
+            .filter(visible if visible is not None else Q())
             .order_by()
             .values("contract")
             .annotate(n=Count("pk"))
@@ -143,7 +161,11 @@ class SupportContractSerializer(
 
     def get_device_count(self, obj) -> int:
         n = getattr(obj, "device_count_annotated", None)
-        return n if n is not None else obj.coverage.count()
+        if n is not None:
+            return n
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        return obj.coverage.filter(_visible_coverage_q(user, obj.tenant)).count()
 
     @extend_schema_field(inline_serializer("SupportContractChannel", {
         "id": serializers.UUIDField(), "name": serializers.CharField(),
@@ -207,7 +229,11 @@ class SupportContractSerializer(
         return attrs
 
 
-class SupportCoverageSerializer(NumIdModelSerializer):
+class SupportCoverageSerializer(HiddenRelatedFieldsMixin, NumIdModelSerializer):
+    # A row is its device's; the contract shows as null when the caller may
+    # not view it, as the device's coverage card counts it hidden.
+    hidden_related = hidden_related_spec("api.supportcoverage")
+
     contract = serializers.SerializerMethodField()
     contract_id = TenantScopedPrimaryKeyRelatedField(
         source="contract", queryset=SupportContract.objects.all(), write_only=True,
@@ -223,6 +249,7 @@ class SupportCoverageSerializer(NumIdModelSerializer):
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
         validators = []  # the pair is checked in validate() with a field error
+        list_serializer_class = _HiddenRelatedListSerializer
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_contract(self, obj):
@@ -263,7 +290,6 @@ class SupportContractViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     queryset = (
         SupportContract.objects.select_related("manufacturer")
         .prefetch_related(TAGS, "notify_channels")
-        .annotate(device_count_annotated=_device_count_subquery())
         .order_by(Coalesce("end_date", cov.OPEN_ENDED), natural("contract_number"))
     )
     serializer_class = SupportContractSerializer
@@ -283,6 +309,10 @@ class SupportContractViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         qs = super().get_queryset()
         if not self.request:
             return qs
+        # Devices the caller may view only: a site-limited user neither
+        # counts nor filters by a device at another site.
+        visible = _visible_coverage_q(self.request.user, _get_active_tenant(self.request))
+        qs = qs.annotate(device_count_annotated=_device_count_subquery(visible))
         params = self.request.query_params
         s = params.get("search", "").strip()
         if s:
@@ -291,15 +321,18 @@ class SupportContractViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
                 | Q(reseller__icontains=s) | Q(service_level__icontains=s)
                 | Q(manufacturer__name__icontains=s) | cf_text_q(qs.model, s)
             )
-        for key, field in (("manufacturer", "manufacturer_id"),
-                           ("device", "coverage__device_id")):
+        for key in ("manufacturer", "device"):
             v = params.get(key)
             if v:
                 try:
                     uuid.UUID(v)
                 except ValueError:
                     raise ValidationError({key: "A valid UUID."}) from None
-                qs = qs.filter(**{field: v})
+                if key == "manufacturer":
+                    qs = qs.filter(manufacturer_id=v)
+                else:
+                    qs = qs.filter(pk__in=SupportCoverage.objects.filter(visible, device_id=v)
+                                   .values("contract_id"))
         states = cov.parse_statuses(params.get("state"), cov.CONTRACT_STATES, "state")
         if states:
             days = cov.warning_days_for(self.request)
@@ -543,12 +576,17 @@ def coverage_summary(request, devices) -> dict:
         mfr = request.query_params.get("manufacturer")
         if mfr:
             contracts = contracts.filter(manufacturer_id=mfr)
+        # Devices the caller may view only, for the site filter and the
+        # counts alike.
+        visible = _visible_coverage_q(request.user, tenant)
         site = request.query_params.get("site")
         if site:
-            contracts = contracts.filter(coverage__device__site_id=site).distinct()
+            contracts = contracts.filter(pk__in=SupportCoverage.objects.filter(
+                visible, device__site_id=site,
+            ).values("contract_id"))
         contracts = (
             contracts.select_related("manufacturer")
-            .annotate(device_count_annotated=_device_count_subquery())
+            .annotate(device_count_annotated=_device_count_subquery(visible))
             .order_by("end_date", "contract_number")[:8]
         )
         ending = [

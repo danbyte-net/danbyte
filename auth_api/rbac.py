@@ -387,6 +387,10 @@ class ViewableRows:
                 self._filters[slug] = row_filter(self.user, self.tenant, slug, "view")
         return self._filters[slug]
 
+    def sees_every(self, slug: str) -> bool:
+        """Whether every row of ``slug`` is visible: nothing to hide."""
+        return self._filter(slug) is True
+
     def prime(self, slug: str, pks) -> None:
         f = self._filter(slug)
         seen = self._seen.setdefault(slug, {})
