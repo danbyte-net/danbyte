@@ -148,6 +148,22 @@ class RegionBoundaryTests(APITestCase):
         _, kwargs = mock_get.call_args
         self.assertIn("Danbyte/", kwargs["headers"]["User-Agent"])
 
+    def test_lookup_follows_the_browser_language(self):
+        """Boundary labels come back in the browser's language, else English,
+        not the place's local language (#420)."""
+        from unittest.mock import patch
+
+        fake = type("R", (), {
+            "raise_for_status": lambda self: None,
+            "json": lambda self: [],
+        })()
+        with patch("core.ssrf.safe_get", return_value=fake) as mock_get:
+            self.client.get("/api/regions/boundary-lookup/?q=Fyn", HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(mock_get.call_args[1]["params"]["accept-language"], "de")
+        with patch("core.ssrf.safe_get", return_value=fake) as mock_get:
+            self.client.get("/api/regions/boundary-lookup/?q=Fyn")
+        self.assertEqual(mock_get.call_args[1]["params"]["accept-language"], "en")
+
     def test_lookup_upstream_failure_is_502(self):
         from unittest.mock import patch
 

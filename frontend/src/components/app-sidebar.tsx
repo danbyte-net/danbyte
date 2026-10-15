@@ -342,6 +342,21 @@ function EntryIcon({
   return null
 }
 
+/** The one nav URL that owns `pathname`: the longest entry that is the path
+ *  or a parent of it, so nested entries (/planning/calendar) win over their
+ *  parent (/planning) instead of both lighting up (#418). */
+export function activeNavUrl(
+  pathname: string,
+  urls: readonly string[]
+): string | null {
+  let best: string | null = null
+  for (const u of urls) {
+    if (pathname !== u && !pathname.startsWith(u + "/")) continue
+    if (best === null || u.length > best.length) best = u
+  }
+  return best
+}
+
 export const sections: NavSection[] = [
   {
     id: "organization",
@@ -1469,10 +1484,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // it. An item matches if its URL is the path or a parent of it.
   const inGroup = (urls: string[]) =>
     urls.some((u) => pathname === u || pathname.startsWith(u + "/"))
-  // Active state for a nav item: its page, or any page nested under it
-  // (a device detail keeps Devices lit). Every menu button passes this -
-  // the sidebar's data-active styling otherwise never fires.
-  const isPage = (u: string) => pathname === u || pathname.startsWith(u + "/")
 
   // The menu this user may see, with their personal layout on top (#285):
   // hidden sections/entries dropped, their order applied. Hiding is a menu
@@ -1480,6 +1491,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const model = useSidebarModel()
   const { layout, save: saveLayout } = useSidebarLayout()
   const visibleSections = resolveSidebar(model, layout)
+  // Active state for a nav item: its page, or any page nested under it
+  // (a device detail keeps Devices lit), but only the most specific entry
+  // lights - /planning/calendar is Calendar, not Planning too (#418). Every
+  // menu button passes this; the sidebar's data-active styling otherwise
+  // never fires.
+  const activeUrl = activeNavUrl(
+    pathname,
+    visibleSections.flatMap((s) =>
+      s.clusters.flatMap((c) => c.items.map((i) => i.url))
+    )
+  )
+  const isPage = (u: string) => u === activeUrl
   const sectionUrls = (section: SidebarSection) =>
     section.clusters.flatMap((c) => c.items).map((i) => i.url)
   const hideSection = (section: SidebarSection) => {

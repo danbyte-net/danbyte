@@ -408,7 +408,9 @@ the coordinate fields are empty, the best match fills them automatically (a
 toast names the place it chose). **Find on OSM** next to the field does the
 same on demand and lists the candidates, for when the automatic match picks
 the wrong one - and coordinates you typed yourself are never overwritten.
-Powered by OpenStreetMap's Nominatim, one lookup per action,
+Candidates are named in your browser's language, or English when it sends
+none, rather than each place's local language. Powered by OpenStreetMap's
+Nominatim, one lookup per action,
 © OpenStreetMap contributors.
 
 ## Region boundaries

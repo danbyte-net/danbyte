@@ -370,3 +370,27 @@ class SiteGeocodeTests(SiteMapTests.__bases__[0]):
         with patch("core.ssrf.safe_get", side_effect=OSError("boom")):
             r = self.client_api.get("/api/sites/geocode/?q=x")
         self.assertEqual(r.status_code, 502)
+
+    def test_results_follow_the_browser_language(self):
+        """Nominatim answers in each place's local language unless told
+        otherwise; the lookup passes the browser's language, else English
+        (#420)."""
+        from unittest.mock import patch
+
+        fake = type("R", (), {
+            "raise_for_status": lambda self: None,
+            "json": lambda self: [],
+        })()
+        with patch("core.ssrf.safe_get", return_value=fake) as mock_get:
+            self.client_api.get("/api/sites/geocode/?q=Tokyo",
+                                HTTP_ACCEPT_LANGUAGE="da-DK,da;q=0.9,en;q=0.8")
+        args, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["accept-language"], "da-DK,da;q=0.9,en;q=0.8")
+        # Still the one guarded request to the fixed Nominatim host.
+        self.assertEqual(args[0], "https://nominatim.openstreetmap.org/search")
+        with patch("core.ssrf.safe_get", return_value=fake) as mock_get:
+            self.client_api.get("/api/sites/geocode/?q=Tokyo")
+        self.assertEqual(mock_get.call_args[1]["params"]["accept-language"], "en")
+        with patch("core.ssrf.safe_get", return_value=fake) as mock_get:
+            self.client_api.get("/api/sites/geocode/?q=Tokyo", HTTP_ACCEPT_LANGUAGE="x" * 500)
+        self.assertEqual(len(mock_get.call_args[1]["params"]["accept-language"]), 100)
