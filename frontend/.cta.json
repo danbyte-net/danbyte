@@ -2,7 +2,7 @@
   "projectName": "start-app",
   "mode": "file-router",
   "typescript": true,
-  "packageManager": "pnpm",
+  "packageManager": "npm",
   "includeExamples": false,
   "tailwind": true,
   "addOnOptions": {},
