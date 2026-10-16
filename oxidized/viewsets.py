@@ -15,6 +15,15 @@ from __future__ import annotations
 import re
 
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+    inline_serializer,
+)
+from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -369,3 +378,113 @@ class VmDiffView(_VmConfig, DeviceDiffView):
 
 class VmFetchNowView(_VmConfig, DeviceFetchNowView):
     pass
+
+
+# ─── OpenAPI ──────────────────────────────────────────────────────────────────
+# The config views are plain APIViews, so the schema is spelled out here once
+# and applied to the device and the VM class of each endpoint.
+
+_LINK = inline_serializer(
+    name="OxidizedConfigLink",
+    fields={
+        "id": serializers.UUIDField(),
+        "connection": serializers.UUIDField(),
+        "connection_name": serializers.CharField(),
+        "full_name": serializers.CharField(),
+        "node_ip": serializers.CharField(allow_blank=True),
+        "node_model": serializers.CharField(allow_blank=True),
+        "matched_by": serializers.CharField(),
+        "last_seen_at": serializers.DateTimeField(allow_null=True),
+    },
+)
+_NODES = inline_serializer(
+    name="OxidizedNodes", fields={"links": serializers.ListField(child=_LINK)}
+)
+_CONFIG = inline_serializer(
+    name="OxidizedConfig",
+    fields={
+        "link": _LINK,
+        "config": serializers.CharField(),
+        "bytes": serializers.IntegerField(),
+        "lines": serializers.IntegerField(),
+        "cached": serializers.BooleanField(),
+    },
+)
+_VERSIONS = inline_serializer(
+    name="OxidizedVersions",
+    fields={
+        "results": serializers.ListField(child=serializers.DictField()),
+        "history": serializers.BooleanField(),
+        "cached": serializers.BooleanField(required=False),
+        "detail": serializers.CharField(required=False),
+    },
+)
+_VERSION = inline_serializer(
+    name="OxidizedVersion",
+    fields={
+        "oid": serializers.CharField(),
+        "config": serializers.CharField(),
+        "cached": serializers.BooleanField(),
+    },
+)
+_QUEUED = inline_serializer(
+    name="OxidizedFetchNow", fields={"queued": serializers.BooleanField()}
+)
+_ERR = OpenApiResponse(response=OpenApiTypes.OBJECT, description="``{detail}``")
+_LINK_PARAM = OpenApiParameter(
+    "link", OpenApiTypes.UUID, description="Which node link, when there are several.",
+)
+_REFRESH = OpenApiParameter(
+    "refresh", OpenApiTypes.BOOL, description="Skip the cache and ask Oxidized.",
+)
+_ERRORS = {
+    403: OpenApiResponse(description="Needs view config on the object."),
+    404: _ERR,
+    502: _ERR,
+}
+
+
+def _document(view, kind: str, noun: str) -> None:
+    """Attach the schema for one config endpoint class (device or VM)."""
+    key = "devices" if kind == "device" else "virtual_machines"
+    specs = {
+        DeviceNodesView: ("get", "nodes", f"Oxidized nodes linked to a {noun}",
+                          {200: _NODES, 404: _ERR}, []),
+        DeviceConfigView: ("get", "config", f"A {noun}'s current configuration",
+                           {200: _CONFIG, 413: _ERR, **_ERRORS}, [_LINK_PARAM, _REFRESH]),
+        DeviceVersionsView: ("get", "versions_list", f"A {noun}'s configuration history",
+                             {200: _VERSIONS, **_ERRORS}, [_LINK_PARAM, _REFRESH]),
+        DeviceVersionView: ("get", "version", f"One version of a {noun}'s configuration",
+                            {200: _VERSION, 400: _ERR, 413: _ERR, **_ERRORS}, [_LINK_PARAM]),
+        DeviceDiffView: (
+            "get", "diff", f"Diff two versions of a {noun}'s configuration",
+            {200: OpenApiTypes.OBJECT, 400: _ERR, 413: _ERR, **_ERRORS},
+            [
+                OpenApiParameter("from", str, required=True,
+                                 description="A commit id, or current."),
+                OpenApiParameter("to", str, required=True,
+                                 description="A commit id, or current."),
+                _LINK_PARAM,
+            ],
+        ),
+        DeviceFetchNowView: ("post", "fetch_now", f"Ask Oxidized to back up a {noun} next",
+                             {200: _QUEUED, **_ERRORS}, []),
+    }
+    base = next(b for b in view.__mro__ if b in specs)
+    method, op, summary, responses, params = specs[base]
+    extend_schema_view(**{method: extend_schema(
+        operation_id=f"oxidized_{key}_{op}",
+        summary=summary,
+        tags=["oxidized"],
+        request=None,
+        responses=responses,
+        parameters=params,
+    )})(view)
+
+
+for _view in (DeviceNodesView, DeviceConfigView, DeviceVersionsView,
+              DeviceVersionView, DeviceDiffView, DeviceFetchNowView):
+    _document(_view, "device", "device")
+for _view in (VmNodesView, VmConfigView, VmVersionsView,
+              VmVersionView, VmDiffView, VmFetchNowView):
+    _document(_view, "vm", "virtual machine")

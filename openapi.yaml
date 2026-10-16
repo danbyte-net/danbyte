@@ -13028,6 +13028,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/Device'
           description: ''
+  /api/devices/{id}/coverage/:
+    get:
+      operationId: devices_coverage_retrieve
+      description: |-
+        Status, the contracts covering the device (best first) and the
+        lifecycle flags (#421).
+      summary: The device's support & warranty coverage
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this device.
+        required: true
+      tags:
+      - devices
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceCoverage'
+          description: ''
   /api/devices/{id}/deploy/:
     post:
       operationId: devices_deploy_create
@@ -13620,6 +13647,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Device'
+          description: ''
+  /api/devices/coverage-summary/:
+    get:
+      operationId: devices_coverage_summary_retrieve
+      description: |-
+        The Support coverage dashboard widget (#421): counts per status
+        over the devices the caller can see - narrowed like the list - and
+        the contracts that end soonest.
+      summary: Devices per support coverage status
+      parameters:
+      - in: query
+        name: manufacturer
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: site
+        schema:
+          type: string
+          format: uuid
+      tags:
+      - devices
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportCoverageSummary'
           description: ''
   /api/devices/face-ports/:
     get:
@@ -17494,7 +17552,8 @@ paths:
       operationId: floor_plans_drawing_reprocess_create
       description: |-
         Process the uploaded file again (after a converter was installed,
-        or the queue was down). 202.
+        or the queue was down). 202; 200 with the drawing as it is while a
+        run is already queued, so repeated requests queue one job.
       parameters:
       - in: path
         name: id
@@ -17527,6 +17586,77 @@ paths:
               schema:
                 $ref: '#/components/schemas/FloorPlan'
           description: ''
+  /api/floor-plans/{id}/drawing/units/:
+    post:
+      operationId: floor_plans_drawing_units_create
+      description: |-
+        POST ``{"units": "m"}`` (mm, cm, m, in, ft) says what the drawing
+        is really drawn in when the file's units are wrong, and drops any
+        calibration - the newer choice wins; ``null`` or DELETE trusts the
+        file again. A calibration made afterwards still wins over it.
+      summary: Set the units the drawing is in
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this floor plan.
+        required: true
+      tags:
+      - floor-plans
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FloorPlanDrawingUnitsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FloorPlanDrawingUnitsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FloorPlanDrawingUnitsRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: The drawing, as GET …/drawing/ returns it.
+    delete:
+      operationId: floor_plans_drawing_units_destroy
+      description: |-
+        POST ``{"units": "m"}`` (mm, cm, m, in, ft) says what the drawing
+        is really drawn in when the file's units are wrong, and drops any
+        calibration - the newer choice wins; ``null`` or DELETE trusts the
+        file again. A calibration made afterwards still wins over it.
+      summary: Set the units the drawing is in
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this floor plan.
+        required: true
+      tags:
+      - floor-plans
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: The drawing, as GET …/drawing/ returns it.
   /api/floor-plans/{id}/export/pdf/:
     post:
       operationId: floor_plans_export_pdf_create
@@ -34848,6 +34978,149 @@ paths:
                 type: object
                 additionalProperties: {}
           description: A count and per-device drift summary rows.
+  /api/monitoring/snmp-drift/bulk-mac-refresh/:
+    post:
+      operationId: monitoring_snmp_drift_bulk_mac_refresh_create
+      summary: Refresh MACs for many devices, in the background
+      tags:
+      - monitoring
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '{run_id, action, requested, queued, skipped, outposts: [{name,
+            devices, stale}]}. skipped counts the named devices the caller may not
+            change; outposts lists the Outposts asked for a pass.'
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: Nothing left to queue here - every device was skipped or belongs
+            to an Outpost. Same shape, run_id null.
+  /api/monitoring/snmp-drift/bulk-poll/:
+    post:
+      operationId: monitoring_snmp_drift_bulk_poll_create
+      summary: Poll now for many devices, in the background
+      tags:
+      - monitoring
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '{run_id, action, requested, queued, skipped, outposts: [{name,
+            devices, stale}]}. skipped counts the named devices the caller may not
+            change; outposts lists the Outposts asked for a pass.'
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: Nothing left to queue here - every device was skipped or belongs
+            to an Outpost. Same shape, run_id null.
+  /api/monitoring/snmp-drift/bulk-runs/{run_id}/:
+    get:
+      operationId: monitoring_snmp_drift_bulk_runs_retrieve
+      summary: Progress of a bulk SNMP run
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - monitoring
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '{run_id, found, done, action, total, processed, counts: {ok,
+            unreachable, failed, denied, busy, outpost}, sync: {...} for a sync}.
+            An unknown, expired or someone else''s run reads {found: false, done:
+            true}.'
+  /api/monitoring/snmp-drift/bulk-sync/:
+    post:
+      operationId: monitoring_snmp_drift_bulk_sync_create
+      summary: Sync many devices from their last SNMP poll, in the background
+      tags:
+      - monitoring
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SnmpBulkRequestRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '{run_id, action, requested, queued, skipped, outposts: [{name,
+            devices, stale}]}. skipped counts the named devices the caller may not
+            change; outposts lists the Outposts asked for a pass.'
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: Nothing left to queue here - every device was skipped or belongs
+            to an Outpost. Same shape, run_id null.
   /api/monitoring/snmp-profile-options/:
     get:
       operationId: monitoring_snmp_profile_options_retrieve
@@ -36536,7 +36809,8 @@ paths:
       operationId: monitoring_virtual_machines_snmp_poll_create
       description: |-
         On-demand SNMP poll of a VM. Body: ``{profile_id?}`` (falls back to the
-        VM → platform → cluster → site → tenant-default resolution).
+        VM → platform → cluster → site → tenant-default resolution). Routed like a
+        device's: a VM whose engine is an Outpost queues there (#325).
       parameters:
       - in: path
         name: vm_id
@@ -36578,7 +36852,8 @@ paths:
       description: |-
         CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
         device). Tenant-scoped + RBAC via the registered object type. A ``check
-        now`` action reads the certificate immediately.
+        now`` action reads the certificate immediately; ``bulk-delete`` is the
+        shared one (api.bulk_delete) and needs ``delete``.
       parameters:
       - name: page
         required: false
@@ -36615,7 +36890,8 @@ paths:
       description: |-
         CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
         device). Tenant-scoped + RBAC via the registered object type. A ``check
-        now`` action reads the certificate immediately.
+        now`` action reads the certificate immediately; ``bulk-delete`` is the
+        shared one (api.bulk_delete) and needs ``delete``.
       tags:
       - monitoring
       requestBody:
@@ -36646,7 +36922,8 @@ paths:
       description: |-
         CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
         device). Tenant-scoped + RBAC via the registered object type. A ``check
-        now`` action reads the certificate immediately.
+        now`` action reads the certificate immediately; ``bulk-delete`` is the
+        shared one (api.bulk_delete) and needs ``delete``.
       parameters:
       - in: path
         name: id
@@ -36672,7 +36949,8 @@ paths:
       description: |-
         CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
         device). Tenant-scoped + RBAC via the registered object type. A ``check
-        now`` action reads the certificate immediately.
+        now`` action reads the certificate immediately; ``bulk-delete`` is the
+        shared one (api.bulk_delete) and needs ``delete``.
       parameters:
       - in: path
         name: id
@@ -36710,7 +36988,8 @@ paths:
       description: |-
         CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
         device). Tenant-scoped + RBAC via the registered object type. A ``check
-        now`` action reads the certificate immediately.
+        now`` action reads the certificate immediately; ``bulk-delete`` is the
+        shared one (api.bulk_delete) and needs ``delete``.
       parameters:
       - in: path
         name: id
@@ -36747,7 +37026,8 @@ paths:
       description: |-
         CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
         device). Tenant-scoped + RBAC via the registered object type. A ``check
-        now`` action reads the certificate immediately.
+        now`` action reads the certificate immediately; ``bulk-delete`` is the
+        shared one (api.bulk_delete) and needs ``delete``.
       parameters:
       - in: path
         name: id
@@ -36770,7 +37050,8 @@ paths:
       description: |-
         CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
         device). Tenant-scoped + RBAC via the registered object type. A ``check
-        now`` action reads the certificate immediately.
+        now`` action reads the certificate immediately; ``bulk-delete`` is the
+        shared one (api.bulk_delete) and needs ``delete``.
       parameters:
       - in: path
         name: id
@@ -36809,7 +37090,8 @@ paths:
       description: |-
         CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
         device). Tenant-scoped + RBAC via the registered object type. A ``check
-        now`` action reads the certificate immediately.
+        now`` action reads the certificate immediately; ``bulk-delete`` is the
+        shared one (api.bulk_delete) and needs ``delete``.
       tags:
       - monitoring
       requestBody:
@@ -37853,14 +38135,15 @@ paths:
       operationId: outpost_snmp_create
       description: |-
         Ingest SNMP results the Outpost fetched → the same persistence as a local
-        poll (``persist_snmp_result``).
+        poll (``persist_snmp_result``), for devices and VMs alike.
 
-        Only for the devices this engine polls (``devices_for_engine``) - the set
+        Only for the targets this engine polls (``targets_for_engine``) - the set
         its work list hands out. Results carry learned MACs and ARP now (#284),
-        so an agent's token must not be able to write sightings for a device in
+        so an agent's token must not be able to write sightings for a target in
         another site of its tenant, or one the core or another Outpost polls.
-        Only the posted devices are checked, so the cost follows the results
-        (#293).
+        Only the posted targets are checked, so the cost follows the results
+        (#293). A row's ``kind``, when the agent echoes it, must match the target
+        the id names; without it the id alone decides.
       summary: Ingest SNMP results the Outpost fetched (same persistence as a local
         poll)
       tags:
@@ -37900,7 +38183,8 @@ paths:
               schema:
                 type: object
                 additionalProperties: {}
-          description: The SNMP devices to poll and the re-poll interval.
+          description: The SNMP targets (devices and VMs) to poll and the re-poll
+            interval.
   /api/outpost/sweep-work/:
     get:
       operationId: outpost_sweep_work_retrieve
@@ -38232,7 +38516,9 @@ paths:
   /api/oxidized/connections/{id}/unmatched/:
     get:
       operationId: oxidized_connections_unmatched_retrieve
-      description: The nodes the last sync could not pair with a device, and why.
+      description: |-
+        The nodes the last sync could not pair with a device, and why;
+        ``warnings`` lists the links it kept despite namesakes (#400).
       parameters:
       - in: path
         name: id
@@ -38253,13 +38539,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/OxidizedConnection'
           description: ''
-  /api/oxidized/devices/{device_id}/:
+  /api/oxidized/devices/{obj_id}/:
     get:
-      operationId: oxidized_devices_retrieve
+      operationId: oxidized_devices_nodes
       description: Which Oxidized nodes back this device. No config text.
+      summary: Oxidized nodes linked to a device
       parameters:
       - in: path
-        name: device_id
+        name: obj_id
         schema:
           type: string
           format: uuid
@@ -38271,19 +38558,42 @@ paths:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
-  /api/oxidized/devices/{device_id}/config/:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedNodes'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/devices/{obj_id}/config/:
     get:
-      operationId: oxidized_devices_config_retrieve
+      operationId: oxidized_devices_config
       description: The configuration Oxidized holds now. ``?refresh=1`` skips the
         cache.
+      summary: A device's current configuration
       parameters:
+      - in: query
+        name: link
+        schema:
+          type: string
+          format: uuid
+        description: Which node link, when there are several.
       - in: path
-        name: device_id
+        name: obj_id
         schema:
           type: string
           format: uuid
         required: true
+      - in: query
+        name: refresh
+        schema:
+          type: boolean
+        description: Skip the cache and ask Oxidized.
       tags:
       - oxidized
       security:
@@ -38291,19 +38601,65 @@ paths:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
-  /api/oxidized/devices/{device_id}/diff/:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedConfig'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/devices/{obj_id}/diff/:
     get:
-      operationId: oxidized_devices_diff_retrieve
+      operationId: oxidized_devices_diff
       description: |-
         A unified diff between two versions, or a version and the current
         config (``to=current``).
+      summary: Diff two versions of a device's configuration
       parameters:
-      - in: path
-        name: device_id
+      - in: query
+        name: from
+        schema:
+          type: string
+        description: A commit id, or current.
+        required: true
+      - in: query
+        name: link
         schema:
           type: string
           format: uuid
+        description: Which node link, when there are several.
+      - in: path
+        name: obj_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: to
+        schema:
+          type: string
+        description: A commit id, or current.
         required: true
       tags:
       - oxidized
@@ -38312,18 +38668,54 @@ paths:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
-  /api/oxidized/devices/{device_id}/fetch-now/:
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '413':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/devices/{obj_id}/fetch-now/:
     post:
-      operationId: oxidized_devices_fetch_now_create
+      operationId: oxidized_devices_fetch_now
       description: |-
         Ask Oxidized to back this node up next (``/node/next``).
 
         Gated on ``view_config`` like the reads: it changes nothing but the order
         of Oxidized's queue, and the person asking is the one waiting to read it.
+      summary: Ask Oxidized to back up a device next
       parameters:
       - in: path
-        name: device_id
+        name: obj_id
         schema:
           type: string
           format: uuid
@@ -38335,18 +38727,50 @@ paths:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
-  /api/oxidized/devices/{device_id}/versions/:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedFetchNow'
+          description: ''
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/devices/{obj_id}/versions/:
     get:
-      operationId: oxidized_devices_versions_retrieve
+      operationId: oxidized_devices_versions_list
       description: The node's git history in Oxidized, newest first.
+      summary: A device's configuration history
       parameters:
+      - in: query
+        name: link
+        schema:
+          type: string
+          format: uuid
+        description: Which node link, when there are several.
       - in: path
-        name: device_id
+        name: obj_id
         schema:
           type: string
           format: uuid
         required: true
+      - in: query
+        name: refresh
+        schema:
+          type: boolean
+        description: Skip the cache and ask Oxidized.
       tags:
       - oxidized
       security:
@@ -38354,14 +38778,41 @@ paths:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
-  /api/oxidized/devices/{device_id}/versions/{oid}/:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedVersions'
+          description: ''
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/devices/{obj_id}/versions/{oid}/:
     get:
-      operationId: oxidized_devices_versions_retrieve_2
+      operationId: oxidized_devices_version
       description: One version's text.
+      summary: One version of a device's configuration
       parameters:
+      - in: query
+        name: link
+        schema:
+          type: string
+          format: uuid
+        description: Which node link, when there are several.
       - in: path
-        name: device_id
+        name: obj_id
         schema:
           type: string
           format: uuid
@@ -38378,7 +38829,41 @@ paths:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedVersion'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '413':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
   /api/oxidized/links/:
     get:
       operationId: oxidized_links_list
@@ -38484,6 +38969,364 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/oxidized/links/{id}/confirm/:
+    post:
+      operationId: oxidized_links_confirm_create
+      description: |-
+        Confirm a link the sync proposed (#399). Held to the rules of
+        pinning the node to that object by hand: ``change`` on the connection,
+        ``add`` on the link in its site, and no config the confirmer could not
+        already read.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this oxidized node link.
+        required: true
+      tags:
+      - oxidized
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OxidizedNodeLinkRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OxidizedNodeLinkRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OxidizedNodeLinkRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedNodeLink'
+          description: ''
+  /api/oxidized/virtual-machines/{obj_id}/:
+    get:
+      operationId: oxidized_virtual_machines_nodes
+      description: 'Mixin: the same endpoints, for a virtual machine (#384).'
+      summary: Oxidized nodes linked to a virtual machine
+      parameters:
+      - in: path
+        name: obj_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - oxidized
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedNodes'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/virtual-machines/{obj_id}/config/:
+    get:
+      operationId: oxidized_virtual_machines_config
+      description: 'Mixin: the same endpoints, for a virtual machine (#384).'
+      summary: A virtual machine's current configuration
+      parameters:
+      - in: query
+        name: link
+        schema:
+          type: string
+          format: uuid
+        description: Which node link, when there are several.
+      - in: path
+        name: obj_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: refresh
+        schema:
+          type: boolean
+        description: Skip the cache and ask Oxidized.
+      tags:
+      - oxidized
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedConfig'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/virtual-machines/{obj_id}/diff/:
+    get:
+      operationId: oxidized_virtual_machines_diff
+      description: 'Mixin: the same endpoints, for a virtual machine (#384).'
+      summary: Diff two versions of a virtual machine's configuration
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+        description: A commit id, or current.
+        required: true
+      - in: query
+        name: link
+        schema:
+          type: string
+          format: uuid
+        description: Which node link, when there are several.
+      - in: path
+        name: obj_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: to
+        schema:
+          type: string
+        description: A commit id, or current.
+        required: true
+      tags:
+      - oxidized
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '413':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/virtual-machines/{obj_id}/fetch-now/:
+    post:
+      operationId: oxidized_virtual_machines_fetch_now
+      description: 'Mixin: the same endpoints, for a virtual machine (#384).'
+      summary: Ask Oxidized to back up a virtual machine next
+      parameters:
+      - in: path
+        name: obj_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - oxidized
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedFetchNow'
+          description: ''
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/virtual-machines/{obj_id}/versions/:
+    get:
+      operationId: oxidized_virtual_machines_versions_list
+      description: 'Mixin: the same endpoints, for a virtual machine (#384).'
+      summary: A virtual machine's configuration history
+      parameters:
+      - in: query
+        name: link
+        schema:
+          type: string
+          format: uuid
+        description: Which node link, when there are several.
+      - in: path
+        name: obj_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: refresh
+        schema:
+          type: boolean
+        description: Skip the cache and ask Oxidized.
+      tags:
+      - oxidized
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedVersions'
+          description: ''
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+  /api/oxidized/virtual-machines/{obj_id}/versions/{oid}/:
+    get:
+      operationId: oxidized_virtual_machines_version
+      description: 'Mixin: the same endpoints, for a virtual machine (#384).'
+      summary: One version of a virtual machine's configuration
+      parameters:
+      - in: query
+        name: link
+        schema:
+          type: string
+          format: uuid
+        description: Which node link, when there are several.
+      - in: path
+        name: obj_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: oid
+        schema:
+          type: string
+        required: true
+      tags:
+      - oxidized
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OxidizedVersion'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '413':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '403':
+          description: Needs view config on the object.
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
+        '502':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '``{detail}``'
   /api/people/:
     get:
       operationId: people_list
@@ -40169,6 +41012,18 @@ paths:
         RBAC: action grants are checked by ``RBACObjectPermission`` (via the
         mixin) and row constraints applied in ``get_queryset`` below.
       parameters:
+      - in: query
+        name: object_id
+        schema:
+          type: string
+          format: uuid
+        description: 'With object_type: the linked object''s id.'
+      - in: query
+        name: object_type
+        schema:
+          type: string
+        description: 'With object_id: only tasks linked to this object (RBAC slug
+          or app label, e.g. device or api.device).'
       - name: page
         required: false
         in: query
@@ -40388,6 +41243,78 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/planning/tasks/{id}/dismiss-overdue/:
+    post:
+      operationId: planning_tasks_dismiss_overdue_create
+      description: Hide this task's overdue warning for the caller until its due date
+        or time changes.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this task.
+        required: true
+      tags:
+      - planning
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: Dismissed for this due moment.
+        '403':
+          description: Not one of your tasks.
+  /api/planning/tasks/overdue/:
+    get:
+      operationId: planning_tasks_overdue_list
+      description: Open tasks past their due moment that are the caller's work (assignee,
+        or an unclaimed task queued on one of their groups), minus those the caller
+        dismissed at the current due moment. Not paginated.
+      parameters:
+      - in: query
+        name: object_id
+        schema:
+          type: string
+          format: uuid
+        description: 'With object_type: the linked object''s id.'
+      - in: query
+        name: object_type
+        schema:
+          type: string
+        description: 'With object_id: only tasks linked to this object (RBAC slug
+          or app label, e.g. device or api.device).'
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - planning
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOverdueTaskList'
+          description: ''
   /api/platform-groups/:
     get:
       operationId: platform_groups_list
@@ -45071,6 +45998,64 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/racks/{id}/move/:
+    post:
+      operationId: racks_move_create
+      description: |-
+        Move the rack and every device in it to another site in one
+        transaction, keeping positions and faces (#394). Each device's site
+        and location become the rack's. Anything still tied to the old site
+        blocks the move and is listed (api.rack_move); a floor-plan placement
+        at the old site is cleared. Needs change on the rack and on every
+        device it moves, at both sites.
+      summary: Move a rack to another site together with its devices
+      parameters:
+      - in: query
+        name: dry_run
+        schema:
+          type: boolean
+        description: Report what the move would do and write nothing.
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this rack.
+        required: true
+      tags:
+      - racks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RackMoveRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RackMoveRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RackMoveRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: '`rack`, `from_site`, `to_site`, `to_location`; `devices` that
+            go along (`id`, `name`, `position`, `face`, `mount`, `racked`); `cleared.floor_plan_tiles`;
+            `blockers` (`code`, `message`); `can_move`; `moved`.'
+        '409':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: 'Something blocks the move: the same body with `detail`.'
   /api/racks/{id}/port-state/:
     get:
       operationId: racks_port_state_retrieve
@@ -56494,6 +57479,399 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Status'
+          description: ''
+  /api/support-contracts/:
+    get:
+      operationId: support_contracts_list
+      description: |-
+        Adds ``bulk-delete``; see the module docstring. Declare
+        ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset.
+      parameters:
+      - in: query
+        name: device
+        schema:
+          type: string
+          format: uuid
+        description: Contracts covering this device.
+      - in: query
+        name: manufacturer
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: state
+        schema:
+          type: string
+        description: 'Comma-separated: active, expiring, expired.'
+      tags:
+      - support-contracts
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSupportContractList'
+          description: ''
+    post:
+      operationId: support_contracts_create
+      description: |-
+        Adds ``bulk-delete``; see the module docstring. Declare
+        ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset.
+      tags:
+      - support-contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportContract'
+          description: ''
+  /api/support-contracts/{id}/:
+    get:
+      operationId: support_contracts_retrieve
+      description: |-
+        Adds ``bulk-delete``; see the module docstring. Declare
+        ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this support contract.
+        required: true
+      tags:
+      - support-contracts
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportContract'
+          description: ''
+    put:
+      operationId: support_contracts_update
+      description: |-
+        Adds ``bulk-delete``; see the module docstring. Declare
+        ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this support contract.
+        required: true
+      tags:
+      - support-contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportContract'
+          description: ''
+    patch:
+      operationId: support_contracts_partial_update
+      description: |-
+        Adds ``bulk-delete``; see the module docstring. Declare
+        ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this support contract.
+        required: true
+      tags:
+      - support-contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSupportContractRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSupportContractRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSupportContractRequest'
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportContract'
+          description: ''
+    delete:
+      operationId: support_contracts_destroy
+      description: |-
+        Adds ``bulk-delete``; see the module docstring. Declare
+        ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this support contract.
+        required: true
+      tags:
+      - support-contracts
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/support-contracts/bulk-delete/:
+    post:
+      operationId: support_contracts_bulk_delete_create
+      description: |-
+        Adds ``bulk-delete``; see the module docstring. Declare
+        ``rbac_action_map = {"bulk_delete": "delete"}`` on the viewset.
+      tags:
+      - support-contracts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SupportContractRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportContract'
+          description: ''
+  /api/support-coverage/:
+    get:
+      operationId: support_coverage_list
+      description: 'The contract ↔ device rows. No update: a row is added or removed.'
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - support-coverage
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSupportCoverageList'
+          description: ''
+    post:
+      operationId: support_coverage_create
+      description: 'The contract ↔ device rows. No update: a row is added or removed.'
+      tags:
+      - support-coverage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportCoverage'
+          description: ''
+  /api/support-coverage/{id}/:
+    get:
+      operationId: support_coverage_retrieve
+      description: 'The contract ↔ device rows. No update: a row is added or removed.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this support coverage.
+        required: true
+      tags:
+      - support-coverage
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportCoverage'
+          description: ''
+    delete:
+      operationId: support_coverage_destroy
+      description: 'The contract ↔ device rows. No update: a row is added or removed.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this support coverage.
+        required: true
+      tags:
+      - support-coverage
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/support-coverage/bulk-add/:
+    post:
+      operationId: support_coverage_bulk_add_create
+      description: 'The contract ↔ device rows. No update: a row is added or removed.'
+      summary: Cover devices by a contract, by id and/or serial number
+      tags:
+      - support-coverage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageBulkAddRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageBulkAddRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageBulkAddRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportCoverageBulkAddResult'
+          description: ''
+  /api/support-coverage/bulk-remove/:
+    post:
+      operationId: support_coverage_bulk_remove_create
+      description: 'The contract ↔ device rows. No update: a row is added or removed.'
+      summary: Remove devices from a contract
+      tags:
+      - support-coverage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageBulkRemoveRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageBulkRemoveRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SupportCoverageBulkRemoveRequest'
+        required: true
+      security:
+      - apiToken: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportCoverageBulkRemoveResult'
           description: ''
   /api/system/info/:
     get:
@@ -70319,6 +71697,9 @@ components:
           description: |-
             Enrich FK fields with a resolved label so the UI can show the VLAN /
             site / role name next to its UUID. Non-relation fields pass through.
+            A related row the caller may not view is named neither by label nor
+            by id: its value is null and ``old_hidden`` / ``new_hidden`` is set
+            (#413).
           readOnly: true
         change_count:
           type: integer
@@ -70392,6 +71773,9 @@ components:
           description: |-
             Enrich FK fields with a resolved label so the UI can show the VLAN /
             site / role name next to its UUID. Non-relation fields pass through.
+            A related row the caller may not view is named neither by label nor
+            by id: its value is null and ``old_hidden`` / ``new_hidden`` is set
+            (#413).
           readOnly: true
         change_count:
           type: integer
@@ -70415,14 +71799,23 @@ components:
             in this entry - the compact diff *and* both full snapshots. A UUID is
             globally unique, so one map lets the UI swap in the site / device /
             interface name wherever that UUID appears, without caring which field
-            or snapshot it came from. Unresolvable ids (deleted rows) are omitted;
-            the UI falls back to the raw UUID for those.
+            or snapshot it came from. Unresolvable ids (deleted rows) and rows the
+            caller may not view are omitted; the UI falls back to the raw value.
+          readOnly: true
+        hidden_related:
+          type: object
+          additionalProperties: {}
+          description: |-
+            ``{"pre_change": [keys], "post_change": [keys]}``: the snapshot
+            keys whose related row the caller may not view. Their values are
+            nulled in the snapshots (#413).
           readOnly: true
       required:
       - action
       - action_display
       - change_count
       - changes
+      - hidden_related
       - id
       - object_exists
       - object_id
@@ -70705,6 +72098,7 @@ components:
       - required_tag
       - required_cf
       - eol_status
+      - coverage
       type: string
       description: |-
         * `required` - Field must be set
@@ -70713,6 +72107,7 @@ components:
         * `required_tag` - Must carry a tag
         * `required_cf` - Custom field must be set
         * `eol_status` - End-of-life status
+        * `coverage` - Support coverage
     Circuit:
       type: object
       description: |-
@@ -70936,6 +72331,10 @@ components:
           allOf:
           - $ref: '#/components/schemas/ProviderNetworkMini'
           readOnly: true
+        vm_interface:
+          type: object
+          additionalProperties: {}
+          readOnly: true
         port_speed_kbps:
           type: integer
           maximum: 2147483647
@@ -70977,6 +72376,7 @@ components:
       - site
       - term_side
       - updated_at
+      - vm_interface
     CircuitTerminationRequest:
       type: object
       description: One end (A/Z) of a circuit - exactly one of site / provider_network.
@@ -70993,6 +72393,11 @@ components:
           writeOnly: true
           nullable: true
         provider_network_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
+        vm_interface_id:
           type: string
           format: uuid
           writeOnly: true
@@ -71991,6 +73396,10 @@ components:
           oneOf:
           - $ref: '#/components/schemas/EolFailOnEnum'
           - $ref: '#/components/schemas/BlankEnum'
+        coverage_fail_on:
+          oneOf:
+          - $ref: '#/components/schemas/CoverageFailOnEnum'
+          - $ref: '#/components/schemas/BlankEnum'
         created_at:
           type: string
           format: date-time
@@ -72046,6 +73455,10 @@ components:
         eol_fail_on:
           oneOf:
           - $ref: '#/components/schemas/EolFailOnEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        coverage_fail_on:
+          oneOf:
+          - $ref: '#/components/schemas/CoverageFailOnEnum'
           - $ref: '#/components/schemas/BlankEnum'
       required:
       - check_type
@@ -73355,6 +74768,14 @@ components:
       description: |-
         * `unmeasured` - Not measured
         * `down` - Down
+    CoverageFailOnEnum:
+      enum:
+      - expired
+      - expiring
+      type: string
+      description: |-
+        * `expired` - Expired or not covered
+        * `expiring` - Expiring, expired or not covered
     CreateSiteRoleRequestRequest:
       type: object
       properties:
@@ -74584,6 +76005,15 @@ components:
         asset_tag:
           type: string
           maxLength: 128
+        warranty_end:
+          type: string
+          format: date
+          nullable: true
+          description: Last day of the hardware warranty.
+        coverage:
+          allOf:
+          - $ref: '#/components/schemas/DeviceCoverageBrief'
+          readOnly: true
         description:
           type: string
         comments:
@@ -74740,6 +76170,7 @@ components:
       - config_template
       - console_count
       - contact_count
+      - coverage
       - created_at
       - device_type
       - din_rail
@@ -74993,6 +76424,56 @@ components:
         * `drift` - Drift
         * `unknown` - Unknown
         * `error` - Error
+    DeviceCoverage:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/Status514Enum'
+        end:
+          type: string
+          format: date
+          nullable: true
+        warranty_end:
+          type: string
+          format: date
+          nullable: true
+        warning_days:
+          type: integer
+        contracts:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        hidden_contracts:
+          type: integer
+        flags:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+      required:
+      - contracts
+      - end
+      - flags
+      - hidden_contracts
+      - status
+      - warning_days
+      - warranty_end
+    DeviceCoverageBrief:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/Status514Enum'
+        end:
+          type: string
+          format: date
+          nullable: true
+        contracts:
+          type: integer
+      required:
+      - contracts
+      - end
+      - status
     DeviceCredential:
       type: object
       description: |-
@@ -75403,6 +76884,11 @@ components:
         asset_tag:
           type: string
           maxLength: 128
+        warranty_end:
+          type: string
+          format: date
+          nullable: true
+          description: Last day of the hardware warranty.
         description:
           type: string
         comments:
@@ -78860,6 +80346,19 @@ components:
       - tags
       - tile_count
       - updated_at
+    FloorPlanDrawingUnitsRequest:
+      type: object
+      description: |-
+        The units the drawing is really in, when the file's are wrong; null
+        trusts the file again.
+      properties:
+        units:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/UnitsEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - units
     FloorPlanMini:
       type: object
       description: |-
@@ -80183,22 +81682,16 @@ components:
     IPAddress:
       type: object
       description: |-
-        Adds a read-only ``permissions`` field - ``{"change": bool, "delete":
-        bool}`` for the *current user on this specific object*, in the active tenant.
+        A row that names related rows the caller may not view shows those
+        fields as ``null`` - in the API and in the spreadsheet export (#413).
+        Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+        list answers its page in one query per related type.
 
-        Unlike the frontend's type-level ``canDo`` map, this is **constraint-aware**:
-        a grant restricted to certain rows (e.g. only ``status=active`` prefixes)
-        reports ``change: false`` for an object outside that set, so the UI can hide
-        an Edit button that would only 403. The API still enforces independently;
-        this is presentation, not the boundary.
-
-        The per-action constraint decision is resolved once per request and cached,
-        so serializing a list stays cheap: superuser / ungranted / unconstrained
-        rows never hit the DB; only a genuinely constrained grant runs one indexed
-        ``pk`` lookup per row.
-
-        Set ``rbac_object_type`` on the serializer to override the slug; it defaults
-        to the model's ``model_name``.
+        ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+        check is the related type's own view scope (``rbac.ViewableRows``), so a
+        site viewer never learns the device, interface or prefix of another site
+        through an address that is itself visible (a shared one, or one placed at
+        their site inside another site's prefix).
       properties:
         id:
           type: string
@@ -80393,22 +81886,16 @@ components:
     IPAddressRequest:
       type: object
       description: |-
-        Adds a read-only ``permissions`` field - ``{"change": bool, "delete":
-        bool}`` for the *current user on this specific object*, in the active tenant.
+        A row that names related rows the caller may not view shows those
+        fields as ``null`` - in the API and in the spreadsheet export (#413).
+        Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+        list answers its page in one query per related type.
 
-        Unlike the frontend's type-level ``canDo`` map, this is **constraint-aware**:
-        a grant restricted to certain rows (e.g. only ``status=active`` prefixes)
-        reports ``change: false`` for an object outside that set, so the UI can hide
-        an Edit button that would only 403. The API still enforces independently;
-        this is presentation, not the boundary.
-
-        The per-action constraint decision is resolved once per request and cached,
-        so serializing a list stays cheap: superuser / ungranted / unconstrained
-        rows never hit the DB; only a genuinely constrained grant runs one indexed
-        ``pk`` lookup per row.
-
-        Set ``rbac_object_type`` on the serializer to override the slug; it defaults
-        to the model's ``model_name``.
+        ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+        check is the related type's own view scope (``rbac.ViewableRows``), so a
+        site viewer never learns the device, interface or prefix of another site
+        through an address that is itself visible (a shared one, or one placed at
+        their site inside another site's prefix).
       properties:
         ip_address:
           type: string
@@ -87470,12 +88957,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OutpostResultItemRequest'
+    OutpostSnmpResultItemKindEnum:
+      enum:
+      - device
+      - vm
+      type: string
+      description: |-
+        * `device` - device
+        * `vm` - vm
     OutpostSnmpResultItemRequest:
       type: object
       properties:
         device_id:
           type: string
           minLength: 1
+        kind:
+          $ref: '#/components/schemas/OutpostSnmpResultItemKindEnum'
       required:
       - device_id
     OutpostSnmpResultsRequestRequest:
@@ -87485,6 +88982,107 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OutpostSnmpResultItemRequest'
+    OverdueTask:
+      type: object
+      description: |-
+        Read-shape for the overdue warning on an object's page: what the row
+        needs and nothing else.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        board:
+          type: string
+          format: uuid
+          readOnly: true
+        board_name:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+        status_name:
+          type: string
+          readOnly: true
+        status_color:
+          type: string
+          readOnly: true
+        priority:
+          allOf:
+          - $ref: '#/components/schemas/Priority03bEnum'
+          readOnly: true
+        due_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        due_time:
+          type: string
+          format: time
+          readOnly: true
+          nullable: true
+      required:
+      - board
+      - board_name
+      - due_date
+      - due_time
+      - id
+      - priority
+      - status_color
+      - status_name
+      - title
+    OxidizedConfig:
+      type: object
+      properties:
+        link:
+          $ref: '#/components/schemas/OxidizedConfigLink'
+        config:
+          type: string
+        bytes:
+          type: integer
+        lines:
+          type: integer
+        cached:
+          type: boolean
+      required:
+      - bytes
+      - cached
+      - config
+      - lines
+      - link
+    OxidizedConfigLink:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        connection:
+          type: string
+          format: uuid
+        connection_name:
+          type: string
+        full_name:
+          type: string
+        node_ip:
+          type: string
+        node_model:
+          type: string
+        matched_by:
+          type: string
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - connection
+      - connection_name
+      - full_name
+      - id
+      - last_seen_at
+      - matched_by
+      - node_ip
+      - node_model
     OxidizedConnection:
       type: object
       description: The password is write-only. The API says whether one is set, never
@@ -87512,6 +89110,13 @@ components:
           type: boolean
         match_by:
           $ref: '#/components/schemas/MatchByEnum'
+        auto_sync:
+          type: boolean
+        sync_interval_minutes:
+          allOf:
+          - $ref: '#/components/schemas/SyncIntervalMinutesEnum'
+          minimum: 0
+          maximum: 32767
         last_checked_at:
           type: string
           format: date-time
@@ -87529,6 +89134,17 @@ components:
           format: date-time
           readOnly: true
           nullable: true
+        last_sync_attempt_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        next_sync_at:
+          type: string
+          nullable: true
+          description: When the scheduler syncs next (#385); null while auto sync
+            is off.
+          readOnly: true
         link_count:
           type: integer
           readOnly: true
@@ -87551,8 +89167,10 @@ components:
       - last_checked_at
       - last_error
       - last_sync_at
+      - last_sync_attempt_at
       - link_count
       - name
+      - next_sync_at
       - node_count
       - password_set
       - sync
@@ -87583,16 +89201,31 @@ components:
           type: boolean
         match_by:
           $ref: '#/components/schemas/MatchByEnum'
+        auto_sync:
+          type: boolean
+        sync_interval_minutes:
+          allOf:
+          - $ref: '#/components/schemas/SyncIntervalMinutesEnum'
+          minimum: 0
+          maximum: 32767
       required:
       - name
       - url
+    OxidizedFetchNow:
+      type: object
+      properties:
+        queued:
+          type: boolean
+      required:
+      - queued
     OxidizedNodeLink:
       type: object
       description: |-
         A link is matched by a node sync or pinned here by hand.
 
-        Only creating (pinning) and deleting go through the API. A pinned link
-        replaces whatever the sync had matched for that node or that device.
+        Only creating (pinning) and deleting go through the API. A pin names
+        exactly one of ``device_id`` or ``virtual_machine_id`` (#384), and
+        replaces whatever the sync had matched for that node or that target.
       properties:
         id:
           type: string
@@ -87609,6 +89242,12 @@ components:
           allOf:
           - $ref: '#/components/schemas/_MiniDevice'
           readOnly: true
+          nullable: true
+        virtual_machine:
+          allOf:
+          - $ref: '#/components/schemas/_MiniDevice'
+          readOnly: true
+          nullable: true
         full_name:
           type: string
           maxLength: 255
@@ -87627,6 +89266,9 @@ components:
         matched_by:
           allOf:
           - $ref: '#/components/schemas/MatchedByEnum'
+          readOnly: true
+        proposed:
+          type: boolean
           readOnly: true
         last_seen_at:
           type: string
@@ -87650,13 +89292,16 @@ components:
       - node_ip
       - node_model
       - node_name
+      - proposed
+      - virtual_machine
     OxidizedNodeLinkRequest:
       type: object
       description: |-
         A link is matched by a node sync or pinned here by hand.
 
-        Only creating (pinning) and deleting go through the API. A pinned link
-        replaces whatever the sync had matched for that node or that device.
+        Only creating (pinning) and deleting go through the API. A pin names
+        exactly one of ``device_id`` or ``virtual_machine_id`` (#384), and
+        replaces whatever the sync had matched for that node or that target.
       properties:
         connection_id:
           type: string
@@ -87666,14 +89311,58 @@ components:
           type: string
           format: uuid
           writeOnly: true
+          nullable: true
+        virtual_machine_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
         full_name:
           type: string
           minLength: 1
           maxLength: 255
       required:
       - connection_id
-      - device_id
       - full_name
+    OxidizedNodes:
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/OxidizedConfigLink'
+      required:
+      - links
+    OxidizedVersion:
+      type: object
+      properties:
+        oid:
+          type: string
+        config:
+          type: string
+        cached:
+          type: boolean
+      required:
+      - cached
+      - config
+      - oid
+    OxidizedVersions:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        history:
+          type: boolean
+        cached:
+          type: boolean
+        detail:
+          type: string
+      required:
+      - history
+      - results
     PaginatedASNList:
       type: object
       required:
@@ -90779,6 +92468,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OutpostRelease'
+    PaginatedOverdueTaskList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/OverdueTask'
     PaginatedOxidizedConnectionList:
       type: object
       required:
@@ -92067,6 +93779,52 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Status'
+    PaginatedSupportContractList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportContract'
+    PaginatedSupportCoverageList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportCoverage'
     PaginatedTagManageList:
       type: object
       required:
@@ -94310,6 +96068,11 @@ components:
           format: uuid
           writeOnly: true
           nullable: true
+        vm_interface_id:
+          type: string
+          format: uuid
+          writeOnly: true
+          nullable: true
         port_speed_kbps:
           type: integer
           maximum: 2147483647
@@ -94570,6 +96333,10 @@ components:
         eol_fail_on:
           oneOf:
           - $ref: '#/components/schemas/EolFailOnEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        coverage_fail_on:
+          oneOf:
+          - $ref: '#/components/schemas/CoverageFailOnEnum'
           - $ref: '#/components/schemas/BlankEnum'
     PatchedConfigBundleRequest:
       type: object
@@ -95318,6 +97085,11 @@ components:
         asset_tag:
           type: string
           maxLength: 128
+        warranty_end:
+          type: string
+          format: date
+          nullable: true
+          description: Last day of the hardware warranty.
         description:
           type: string
         comments:
@@ -96535,22 +98307,16 @@ components:
     PatchedIPAddressRequest:
       type: object
       description: |-
-        Adds a read-only ``permissions`` field - ``{"change": bool, "delete":
-        bool}`` for the *current user on this specific object*, in the active tenant.
+        A row that names related rows the caller may not view shows those
+        fields as ``null`` - in the API and in the spreadsheet export (#413).
+        Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+        list answers its page in one query per related type.
 
-        Unlike the frontend's type-level ``canDo`` map, this is **constraint-aware**:
-        a grant restricted to certain rows (e.g. only ``status=active`` prefixes)
-        reports ``change: false`` for an object outside that set, so the UI can hide
-        an Edit button that would only 403. The API still enforces independently;
-        this is presentation, not the boundary.
-
-        The per-action constraint decision is resolved once per request and cached,
-        so serializing a list stays cheap: superuser / ungranted / unconstrained
-        rows never hit the DB; only a genuinely constrained grant runs one indexed
-        ``pk`` lookup per row.
-
-        Set ``rbac_object_type`` on the serializer to override the slug; it defaults
-        to the model's ``model_name``.
+        ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+        check is the related type's own view scope (``rbac.ViewableRows``), so a
+        site viewer never learns the device, interface or prefix of another site
+        through an address that is itself visible (a shared one, or one placed at
+        their site inside another site's prefix).
       properties:
         ip_address:
           type: string
@@ -98763,6 +100529,13 @@ components:
           type: boolean
         match_by:
           $ref: '#/components/schemas/MatchByEnum'
+        auto_sync:
+          type: boolean
+        sync_interval_minutes:
+          allOf:
+          - $ref: '#/components/schemas/SyncIntervalMinutesEnum'
+          minimum: 0
+          maximum: 32767
     PatchedPlannedChangeRequest:
       type: object
       description: |-
@@ -100374,6 +102147,12 @@ components:
           description: User-defined custom fields
     PatchedSlaAgreementRequest:
       type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
       properties:
         name:
           type: string
@@ -100637,6 +102416,12 @@ components:
           type: boolean
     PatchedSlaTemplateRequest:
       type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
       properties:
         name:
           type: string
@@ -100938,6 +102723,75 @@ components:
             where a check state is (a Zabbix severity map, say). A check still records
             one of the six states, so at most one status per tenant may claim each.
           maxLength: 8
+    PatchedSupportContractRequest:
+      type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
+      properties:
+        manufacturer_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        contract_number:
+          type: string
+          minLength: 1
+          maxLength: 128
+        service_level:
+          type: string
+          maxLength: 64
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+          description: Last covered day. Blank = open-ended.
+        reseller:
+          type: string
+          maxLength: 128
+        cost:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: 0
+          exclusiveMaximum: true
+          nullable: true
+        currency:
+          type: string
+          maxLength: 3
+        portal_url:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 500
+          - type: string
+            maxLength: 0
+        renewal_notes:
+          type: string
+        description:
+          type: string
+          maxLength: 255
+        notify_channel_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            writeOnly: true
+          writeOnly: true
+        tag_ids:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
+        custom_fields:
+          description: User-defined custom fields
     PatchedTagManageRequest:
       type: object
       description: |-
@@ -101009,7 +102863,7 @@ components:
           type: string
           description: Markdown subset (headings, lists, code, links).
         priority:
-          $ref: '#/components/schemas/TaskPriorityEnum'
+          $ref: '#/components/schemas/Priority03bEnum'
         assignees:
           type: array
           items:
@@ -102415,7 +104269,7 @@ components:
           readOnly: true
         state:
           allOf:
-          - $ref: '#/components/schemas/StateEnum'
+          - $ref: '#/components/schemas/PlannedChangeStateEnum'
           readOnly: true
         note:
           type: string
@@ -102508,6 +104362,16 @@ components:
       required:
       - object_type
       - task
+    PlannedChangeStateEnum:
+      enum:
+      - planned
+      - applied
+      - cancelled
+      type: string
+      description: |-
+        * `planned` - Planned
+        * `applied` - Applied
+        * `cancelled` - Cancelled
     Platform:
       type: object
       description: |-
@@ -104333,6 +106197,20 @@ components:
       required:
       - object_id
       - object_type
+    Priority03bEnum:
+      enum:
+      - none
+      - low
+      - medium
+      - high
+      - urgent
+      type: string
+      description: |-
+        * `none` - None
+        * `low` - Low
+        * `medium` - Medium
+        * `high` - High
+        * `urgent` - Urgent
     ProfileEnum:
       enum:
       - ts35
@@ -105178,6 +107056,21 @@ components:
           description: Number units top-to-bottom instead of bottom-up.
       required:
       - name
+    RackMoveRequest:
+      type: object
+      description: |-
+        Where ``POST /api/racks/<id>/move/`` takes a rack and its devices
+        (#394): a site of the active tenant, and optionally a location in it.
+      properties:
+        site_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - site_id
     RackRequest:
       type: object
       description: |-
@@ -108565,6 +110458,12 @@ components:
         * `tabloid` - tabloid
     SlaAgreement:
       type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
       properties:
         id:
           type: string
@@ -108716,6 +110615,12 @@ components:
       - updated_at
     SlaAgreementRequest:
       type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
       properties:
         name:
           type: string
@@ -109400,6 +111305,12 @@ components:
           type: boolean
     SlaTemplate:
       type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
       properties:
         id:
           type: string
@@ -109480,6 +111391,12 @@ components:
       - updated_at
     SlaTemplateRequest:
       type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
       properties:
         name:
           type: string
@@ -109552,6 +111469,16 @@ components:
           type: string
           format: uuid
           nullable: true
+    SnmpBulkRequestRequest:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - devices
     SnmpInterfaceLinkRequestRequest:
       type: object
       properties:
@@ -109862,16 +111789,6 @@ components:
       - group
       - idp_group
       - provider
-    StateEnum:
-      enum:
-      - planned
-      - applied
-      - cancelled
-      type: string
-      description: |-
-        * `planned` - Planned
-        * `applied` - Applied
-        * `cancelled` - Cancelled
     StaticRoute:
       type: object
       description: |-
@@ -110179,6 +112096,18 @@ components:
       - text_color
       - updated_at
       - usage_count
+    Status514Enum:
+      enum:
+      - covered
+      - expiring
+      - expired
+      - none
+      type: string
+      description: |-
+        * `covered` - covered
+        * `expiring` - expiring
+        * `expired` - expired
+        * `none` - none
     Status790Enum:
       enum:
       - queued
@@ -110364,6 +112293,367 @@ components:
       description: |-
         * `ac` - AC
         * `dc` - DC
+    SupportContract:
+      type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
+      properties:
+        numid:
+          type: integer
+          readOnly: true
+          nullable: true
+          description: Per-tenant human-readable number (see NumIdSequence).
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        manufacturer:
+          allOf:
+          - $ref: '#/components/schemas/ManufacturerMini'
+          readOnly: true
+        contract_number:
+          type: string
+          maxLength: 128
+        service_level:
+          type: string
+          maxLength: 64
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+          description: Last covered day. Blank = open-ended.
+        state:
+          allOf:
+          - $ref: '#/components/schemas/SupportContractStateEnum'
+          readOnly: true
+        reseller:
+          type: string
+          maxLength: 128
+        cost:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: 0
+          exclusiveMaximum: true
+          nullable: true
+        currency:
+          type: string
+          maxLength: 3
+        portal_url:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 500
+          - type: string
+            maxLength: 0
+        renewal_notes:
+          type: string
+        description:
+          type: string
+          maxLength: 255
+        notify_channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportContractChannel'
+          readOnly: true
+        device_count:
+          type: integer
+          readOnly: true
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+          readOnly: true
+        custom_fields:
+          description: User-defined custom fields
+        permissions:
+          type: object
+          additionalProperties:
+            type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - contract_number
+      - created_at
+      - device_count
+      - id
+      - manufacturer
+      - notify_channels
+      - numid
+      - permissions
+      - state
+      - tags
+      - updated_at
+    SupportContractChannel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
+    SupportContractRequest:
+      type: object
+      description: |-
+        Mix into a serializer; override :meth:`hidden_fields`.
+
+        ``hidden_as_null`` keeps a hidden field in the response as ``null``
+        instead of leaving it out - for a nullable relation the client already
+        reads as "none" (an address's device when that device is out of scope).
+      properties:
+        manufacturer_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        contract_number:
+          type: string
+          minLength: 1
+          maxLength: 128
+        service_level:
+          type: string
+          maxLength: 64
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+          description: Last covered day. Blank = open-ended.
+        reseller:
+          type: string
+          maxLength: 128
+        cost:
+          type: number
+          format: double
+          maximum: 10000000000
+          minimum: 0
+          exclusiveMaximum: true
+          nullable: true
+        currency:
+          type: string
+          maxLength: 3
+        portal_url:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 500
+          - type: string
+            maxLength: 0
+        renewal_notes:
+          type: string
+        description:
+          type: string
+          maxLength: 255
+        notify_channel_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            writeOnly: true
+          writeOnly: true
+        tag_ids:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
+        custom_fields:
+          description: User-defined custom fields
+      required:
+      - contract_number
+      - manufacturer_id
+    SupportContractStateEnum:
+      enum:
+      - active
+      - expiring
+      - expired
+      type: string
+      description: |-
+        * `active` - active
+        * `expiring` - expiring
+        * `expired` - expired
+    SupportCoverage:
+      type: object
+      description: |-
+        A row that names related rows the caller may not view shows those
+        fields as ``null`` - in the API and in the spreadsheet export (#413).
+        Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+        list answers its page in one query per related type.
+
+        ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+        check is the related type's own view scope (``rbac.ViewableRows``), so a
+        site viewer never learns the device, interface or prefix of another site
+        through an address that is itself visible (a shared one, or one placed at
+        their site inside another site's prefix).
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        contract:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        device:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - contract
+      - created_at
+      - device
+      - id
+      - updated_at
+    SupportCoverageBulkAddRequest:
+      type: object
+      properties:
+        contract_id:
+          type: string
+          format: uuid
+        device_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        serials:
+          type: string
+          minLength: 1
+          description: Serial numbers, one per line or separated by commas, semicolons
+            or spaces. Matched without case.
+      required:
+      - contract_id
+    SupportCoverageBulkAddResult:
+      type: object
+      properties:
+        created:
+          type: integer
+        existing:
+          type: integer
+        matched:
+          type: integer
+        unmatched:
+          type: array
+          items:
+            type: string
+        ambiguous:
+          type: array
+          items:
+            type: string
+      required:
+      - ambiguous
+      - created
+      - existing
+      - matched
+      - unmatched
+    SupportCoverageBulkRemoveRequest:
+      type: object
+      properties:
+        contract_id:
+          type: string
+          format: uuid
+        device_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - contract_id
+      - device_ids
+    SupportCoverageBulkRemoveResult:
+      type: object
+      properties:
+        removed:
+          type: integer
+      required:
+      - removed
+    SupportCoverageRequest:
+      type: object
+      description: |-
+        A row that names related rows the caller may not view shows those
+        fields as ``null`` - in the API and in the spreadsheet export (#413).
+        Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+        list answers its page in one query per related type.
+
+        ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+        check is the related type's own view scope (``rbac.ViewableRows``), so a
+        site viewer never learns the device, interface or prefix of another site
+        through an address that is itself visible (a shared one, or one placed at
+        their site inside another site's prefix).
+      properties:
+        contract_id:
+          type: string
+          format: uuid
+          writeOnly: true
+        device_id:
+          type: string
+          format: uuid
+          writeOnly: true
+      required:
+      - contract_id
+      - device_id
+    SupportCoverageSummary:
+      type: object
+      properties:
+        warning_days:
+          type: integer
+        total:
+          type: integer
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        ending:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+      required:
+      - counts
+      - ending
+      - total
+      - warning_days
+    SyncIntervalMinutesEnum:
+      enum:
+      - 5
+      - 10
+      - 15
+      - 30
+      - 60
+      type: integer
+      description: |-
+        * `5` - 5 minutes
+        * `10` - 10 minutes
+        * `15` - 15 minutes
+        * `30` - 30 minutes
+        * `60` - 1 hour
     SyncModeEnum:
       enum:
       - auto
@@ -110594,6 +112884,12 @@ components:
         status_name:
           type: string
           readOnly: true
+        status_color:
+          type: string
+          readOnly: true
+        status_group:
+          type: string
+          readOnly: true
         title:
           type: string
           maxLength: 255
@@ -110601,7 +112897,7 @@ components:
           type: string
           description: Markdown subset (headings, lists, code, links).
         priority:
-          $ref: '#/components/schemas/TaskPriorityEnum'
+          $ref: '#/components/schemas/Priority03bEnum'
         assignees:
           type: array
           items:
@@ -110695,6 +112991,8 @@ components:
       - milestone_name
       - planned_changes
       - status
+      - status_color
+      - status_group
       - status_name
       - title
       - updated_at
@@ -110837,20 +113135,6 @@ components:
       - object_id
       - object_type
       - task
-    TaskPriorityEnum:
-      enum:
-      - none
-      - low
-      - medium
-      - high
-      - urgent
-      type: string
-      description: |-
-        * `none` - None
-        * `low` - Low
-        * `medium` - Medium
-        * `high` - High
-        * `urgent` - Urgent
     TaskRequest:
       type: object
       properties:
@@ -110868,7 +113152,7 @@ components:
           type: string
           description: Markdown subset (headings, lists, code, links).
         priority:
-          $ref: '#/components/schemas/TaskPriorityEnum'
+          $ref: '#/components/schemas/Priority03bEnum'
         assignees:
           type: array
           items:
@@ -111408,6 +113692,11 @@ components:
           maximum: 100
           minimum: 1
           description: Above this share a rack is full.
+        coverage_warning_days:
+          type: integer
+          maximum: 730
+          minimum: 1
+          description: Coverage ending within this many days reads as Expiring.
     TenantTestDigestRequestRequest:
       type: object
       properties:
@@ -112096,6 +114385,20 @@ components:
         * `evpl` - EVPL
         * `spb` - SPB
         * `trill` - TRILL
+    UnitsEnum:
+      enum:
+      - mm
+      - cm
+      - m
+      - in
+      - ft
+      type: string
+      description: |-
+        * `mm` - mm
+        * `cm` - cm
+        * `m` - m
+        * `in` - in
+        * `ft` - ft
     UpdateChannelEnum:
       enum:
       - stable
@@ -112647,6 +114950,13 @@ components:
           type: array
           items: {}
           readOnly: true
+        circuit_termination:
+          type: object
+          additionalProperties: {}
+          description: |-
+            The circuit end landing on this interface (#432), when the caller
+            may view that end - ``{id, side, circuit: {id, cid}}`` or null.
+          readOnly: true
         vlan:
           allOf:
           - $ref: '#/components/schemas/VLANMini'
@@ -112689,6 +114999,7 @@ components:
           format: date-time
           readOnly: true
       required:
+      - circuit_termination
       - created_at
       - id
       - ip_addresses
