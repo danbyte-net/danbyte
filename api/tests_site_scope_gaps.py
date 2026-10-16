@@ -9,6 +9,9 @@ from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
 from api.models import (
+    L2VPN,
+    Circuit,
+    CircuitTermination,
     Cluster,
     ClusterType,
     Device,
@@ -19,8 +22,10 @@ from api.models import (
     Interface,
     IPAddress,
     IPRange,
+    L2VPNTermination,
     NATRule,
     Prefix,
+    Provider,
     Service,
     Site,
     SiteMarker,
@@ -40,6 +45,14 @@ from auth_api.models import ObjectPermission, UserProfile
 from auth_api.site_paths import SITE_PATHS
 from core.models import Organization, Tenant
 from integrations.models import DeviceConfigSnapshot, DeviceConfigState
+from routing.models import (
+    BGPAddressFamily,
+    BGPInstance,
+    OSPFArea,
+    OSPFInstance,
+    OSPFInterface,
+    Redistribution,
+)
 
 
 class _TwoSites(APITestCase):
@@ -517,3 +530,256 @@ class AuditHistoryBackfillTests(SiteBIpFixture):
         body = self.client.get(url).content.decode()
         self.assertNotIn("b-ssh", body)
         self.assertIn("a-ssh", body)
+
+
+class _SiteBoundChildRows(_TwoSites):
+    """#426: one row of each type at each site - circuit, tunnel and L2VPN
+    terminations, a BGP address family with a redistribution, and an OSPF
+    interface - all reached through a parent their viewset filters by."""
+
+    URLS = (
+        "/api/circuit-terminations/",
+        "/api/tunnel-terminations/",
+        "/api/l2vpn-terminations/",
+        "/api/routing/redistributions/",
+        "/api/routing/bgp-address-families/",
+        "/api/routing/ospf-interfaces/",
+    )
+
+    def setUp(self):
+        super().setUp()
+        prov = Provider.objects.create(tenant=self.tenant, name="Telco", slug="telco")
+        self.circuit = Circuit.objects.create(tenant=self.tenant, cid="CID-1", provider=prov)
+        self.tunnel = Tunnel.objects.create(tenant=self.tenant, name="t1")
+        self.l2vpn = L2VPN.objects.create(
+            tenant=self.tenant, name="v1", slug="v1", type="vpls"
+        )
+        self.area = OSPFArea.objects.create(tenant=self.tenant, name="bb", area_id="0")
+        self.a = self._rows(self.site_a, "a", 65001)
+        self.b = self._rows(self.site_b, "b", 65002)
+
+    def _rows(self, site, tag, asn):
+        dev = Device.objects.create(tenant=self.tenant, name=f"{tag}-edge", site=site)
+        tun0 = Interface.objects.create(device=dev, name="tun0")
+        xe0 = Interface.objects.create(device=dev, name="xe-0")
+        bgp = BGPInstance.objects.create(
+            tenant=self.tenant, device=dev, asn=self.tenant.asns.create(asn=asn)
+        )
+        af = BGPAddressFamily.objects.create(instance=bgp, afi_safi="ipv4-unicast")
+        ospf = OSPFInstance.objects.create(tenant=self.tenant, device=dev, process_id="1")
+        return {
+            "dev": dev, "tun0": tun0, "xe0": xe0, "af": af,
+            "/api/circuit-terminations/": CircuitTermination.objects.create(
+                circuit=self.circuit, term_side=tag.upper(), site=site,
+                xconnect_id=f"{tag.upper()}-XC-secret",
+            ),
+            "/api/tunnel-terminations/": TunnelTermination.objects.create(
+                tunnel=self.tunnel, interface=tun0
+            ),
+            "/api/l2vpn-terminations/": L2VPNTermination.objects.create(
+                l2vpn=self.l2vpn, interface=xe0
+            ),
+            "/api/routing/redistributions/": Redistribution.objects.create(
+                bgp_af=af, source="connected"
+            ),
+            "/api/routing/bgp-address-families/": af,
+            "/api/routing/ospf-interfaces/": OSPFInterface.objects.create(
+                instance=ospf, interface=xe0, area=self.area
+            ),
+        }
+
+
+class SiteLimitedGrantChildRowsTests(_SiteBoundChildRows):
+    """#426: a grant on every type limited to site A, as in the report."""
+
+    def setUp(self):
+        super().setUp()
+        self._grant(["*"], actions=("view", "add", "change", "delete"))
+        self._login()
+
+    def test_device_at_site_b_is_404(self):
+        self.assertEqual(self.client.get(f"/api/devices/{self.b['dev'].id}/").status_code, 404)
+
+    def test_list_shows_only_site_a_rows(self):
+        for url in self.URLS:
+            with self.subTest(url=url):
+                ids = self._ids(url)
+                self.assertIn(str(self.a[url].id), ids)
+                self.assertNotIn(str(self.b[url].id), ids)
+
+    def test_list_does_not_leak_the_cross_connect(self):
+        body = self.client.get("/api/circuit-terminations/").content.decode()
+        self.assertNotIn("B-XC-secret", body)
+        self.assertIn("A-XC-secret", body)
+
+    def test_detail_is_404_for_site_b(self):
+        for url in self.URLS:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(f"{url}{self.a[url].id}/").status_code, 200)
+                self.assertEqual(self.client.get(f"{url}{self.b[url].id}/").status_code, 404)
+
+    def test_delete_of_a_site_b_row_is_404_and_keeps_it(self):
+        for url in self.URLS:
+            with self.subTest(url=url):
+                obj = self.b[url]
+                self.assertEqual(self.client.delete(f"{url}{obj.id}/").status_code, 404)
+                self.assertTrue(type(obj).objects.filter(pk=obj.pk).exists())
+
+    def test_patch_of_a_site_b_row_is_404(self):
+        obj = self.b["/api/circuit-terminations/"]
+        r = self.client.patch(
+            f"/api/circuit-terminations/{obj.id}/", {"xconnect_id": "x"}, format="json"
+        )
+        self.assertEqual(r.status_code, 404)
+        obj.refresh_from_db()
+        self.assertEqual(obj.xconnect_id, "B-XC-secret")
+        red = self.b["/api/routing/redistributions/"]
+        r = self.client.patch(
+            f"/api/routing/redistributions/{red.id}/", {"metric": 5}, format="json"
+        )
+        self.assertEqual(r.status_code, 404)
+        red.refresh_from_db()
+        self.assertIsNone(red.metric)
+
+    def _nested_ids(self, url):
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200, r.content)
+        return {t["id"] for t in r.json()["terminations"]}
+
+    def test_parent_lists_only_the_visible_ends(self):
+        """A circuit, tunnel or L2VPN is tenant-wide; its ends are not."""
+        for parent, url in (
+            (self.circuit, "/api/circuits/"),
+            (self.tunnel, "/api/tunnels/"),
+            (self.l2vpn, "/api/l2vpns/"),
+        ):
+            child = {
+                "/api/circuits/": "/api/circuit-terminations/",
+                "/api/tunnels/": "/api/tunnel-terminations/",
+                "/api/l2vpns/": "/api/l2vpn-terminations/",
+            }[url]
+            with self.subTest(url=url):
+                self.assertEqual(
+                    self._nested_ids(f"{url}{parent.id}/"), {str(self.a[child].id)}
+                )
+                listed = self.client.get(url).json()
+                rows = listed["results"] if isinstance(listed, dict) else listed
+                self.assertEqual(
+                    {t["id"] for row in rows for t in row["terminations"]},
+                    {str(self.a[child].id)},
+                )
+        self.assertNotIn(
+            "B-XC-secret", self.client.get(f"/api/circuits/{self.circuit.id}/").content.decode()
+        )
+
+    def test_parent_update_response_lists_only_the_visible_ends(self):
+        r = self.client.patch(
+            f"/api/circuits/{self.circuit.id}/", {"description": "x"}, format="json"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertNotIn("B-XC-secret", r.content.decode())
+        self.assertIn("A-XC-secret", r.content.decode())
+
+    def test_own_site_row_can_be_deleted(self):
+        obj = self.a["/api/tunnel-terminations/"]
+        r = self.client.delete(f"/api/tunnel-terminations/{obj.id}/")
+        self.assertEqual(r.status_code, 204)
+
+    def _refused(self, url, body, model):
+        before = model.objects.count()
+        r = self.client.post(url, body, format="json")
+        self.assertIn(r.status_code, (400, 403), r.content)
+        self.assertEqual(model.objects.count(), before)
+
+    def test_create_under_a_site_b_parent_is_refused(self):
+        circuit = Circuit.objects.create(
+            tenant=self.tenant, cid="CID-2", provider=self.circuit.provider
+        )
+        self._refused("/api/circuit-terminations/", {
+            "circuit_id": str(circuit.id), "term_side": "A", "site_id": str(self.site_b.id),
+        }, CircuitTermination)
+        self._refused("/api/tunnel-terminations/", {
+            "tunnel_id": str(self.tunnel.id), "interface_id": str(self.b["xe0"].id),
+        }, TunnelTermination)
+        self._refused("/api/l2vpn-terminations/", {
+            "l2vpn_id": str(self.l2vpn.id), "interface_id": str(self.b["tun0"].id),
+        }, L2VPNTermination)
+        self._refused("/api/routing/redistributions/", {
+            "bgp_af_id": str(self.b["af"].id), "source": "static",
+        }, Redistribution)
+
+    def test_moving_an_own_row_to_site_b_is_refused(self):
+        obj = self.a["/api/circuit-terminations/"]
+        r = self.client.patch(
+            f"/api/circuit-terminations/{obj.id}/", {"site_id": str(self.site_b.id)},
+            format="json",
+        )
+        self.assertIn(r.status_code, (400, 403), r.content)
+        obj.refresh_from_db()
+        self.assertEqual(obj.site_id, self.site_a.id)
+        tt = self.a["/api/tunnel-terminations/"]
+        r = self.client.patch(
+            f"/api/tunnel-terminations/{tt.id}/", {"interface_id": str(self.b["tun0"].id)},
+            format="json",
+        )
+        self.assertIn(r.status_code, (400, 403), r.content)
+        tt.refresh_from_db()
+        self.assertEqual(tt.interface_id, self.a["tun0"].id)
+
+
+class UnscopedGrantChildRowsTests(_SiteBoundChildRows):
+    """A grant without a site limit still reads and lists every end."""
+
+    def test_unscoped_grant_sees_both_sites(self):
+        self._grant(["*"], actions=("view",), sites=[])
+        self._login()
+        for url in _SiteBoundChildRows.URLS:
+            with self.subTest(url=url):
+                self.assertLessEqual(
+                    {str(self.a[url].id), str(self.b[url].id)}, self._ids(url)
+                )
+        ends = self.client.get(f"/api/circuits/{self.circuit.id}/").json()["terminations"]
+        self.assertEqual(len(ends), 2)
+
+    def test_circuit_grant_alone_lists_no_ends(self):
+        self._grant(["circuit"], actions=("view",), sites=[])
+        self._login()
+        ends = self.client.get(f"/api/circuits/{self.circuit.id}/").json()["terminations"]
+        self.assertEqual(ends, [])
+
+
+class SiteViewerChildRowsTests(_SiteBoundChildRows):
+    """#426: the one-click Site viewer of site A."""
+
+    def setUp(self):
+        super().setUp()
+        assemble_site_role(self.tenant, "viewer", [self.site_a], user_ids=[self.user.id])
+        self._login()
+
+    def test_circuit_terminations_follow_the_site(self):
+        url = "/api/circuit-terminations/"
+        ids = self._ids(url)
+        self.assertNotIn(str(self.b[url].id), ids)
+        self.assertIn(str(self.a[url].id), ids)
+        self.assertEqual(self.client.get(f"{url}{self.b[url].id}/").status_code, 404)
+
+    def test_circuit_detail_shows_only_the_own_end(self):
+        # The role leaves circuits (tenant-wide) to an explicit grant.
+        self._grant(["circuit"], sites=[])
+        body = self.client.get(f"/api/circuits/{self.circuit.id}/")
+        self.assertEqual(body.status_code, 200)
+        ids = {t["id"] for t in body.json()["terminations"]}
+        self.assertEqual(ids, {str(self.a["/api/circuit-terminations/"].id)})
+        self.assertNotIn("B-XC-secret", body.content.decode())
+
+    def test_the_other_types_follow_the_site(self):
+        for url in self.URLS[1:]:
+            with self.subTest(url=url):
+                self.assertNotIn(str(self.b[url].id), self._ids(url))
+                self.assertEqual(self.client.get(f"{url}{self.b[url].id}/").status_code, 404)
+
+    def test_viewer_cannot_delete(self):
+        obj = self.a["/api/tunnel-terminations/"]
+        r = self.client.delete(f"/api/tunnel-terminations/{obj.id}/")
+        self.assertEqual(r.status_code, 403)
+        self.assertTrue(TunnelTermination.objects.filter(pk=obj.pk).exists())

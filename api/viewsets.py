@@ -8160,7 +8160,7 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
             circuit = self.request.query_params.get("circuit")
             if circuit:
                 qs = qs.filter(circuit_id=circuit)
-        return qs
+        return restrict_for_view(self, qs)
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()
@@ -8607,7 +8607,7 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
             device = self.request.query_params.get("device")
             if device:
                 qs = qs.filter(interface__device_id=device)
-        return qs
+        return restrict_for_view(self, qs)
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()
@@ -8695,7 +8695,7 @@ class L2VPNTerminationViewSet(TenantScopedViewSet):
             l2vpn = self.request.query_params.get("l2vpn")
             if l2vpn:
                 qs = qs.filter(l2vpn_id=l2vpn)
-        return qs
+        return restrict_for_view(self, qs)
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()

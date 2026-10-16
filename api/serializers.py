@@ -8061,6 +8061,23 @@ class CircuitMiniSerializer(NumIdModelSerializer):
         fields = ["id", "cid"]
 
 
+class ViewableListSerializer(serializers.ListSerializer):
+    """A parent's nested child list cut to the rows the reader may view as
+    ``rbac_slug`` - a tenant-wide circuit, tunnel or L2VPN lists only the
+    ends inside the reader's site scope (#426)."""
+
+    def __init__(self, *args, rbac_slug, tenant_path, **kwargs):
+        self.rbac_slug = rbac_slug
+        self.tenant_path = tenant_path
+        super().__init__(*args, **kwargs)
+
+    def to_representation(self, data):
+        from .visible_ips import visible_children
+
+        rows = visible_children(data, self.context, self.rbac_slug, self.tenant_path)
+        return super().to_representation(rows)
+
+
 class CircuitTerminationSerializer(serializers.ModelSerializer):
     """One end (A/Z) of a circuit - exactly one of site / provider_network."""
 
@@ -8129,7 +8146,10 @@ class CircuitSerializer(StatusSerializerMixin,
 
     provider = ProviderMiniSerializer(read_only=True)
     type = CircuitTypeMiniSerializer(read_only=True)
-    terminations = CircuitTerminationSerializer(many=True, read_only=True)
+    terminations = ViewableListSerializer(
+        child=CircuitTerminationSerializer(), read_only=True,
+        rbac_slug="circuittermination", tenant_path="circuit__tenant",
+    )
     tags = TagSerializer(many=True, read_only=True)
 
     provider_id = TenantScopedPrimaryKeyRelatedField(
@@ -8507,7 +8527,10 @@ class TunnelSerializer(StatusSerializerMixin,
     cf_model = "tunnel"
     group = TunnelGroupMiniSerializer(read_only=True)
     ipsec_profile = IPSecProfileMiniSerializer(read_only=True)
-    terminations = TunnelTerminationSerializer(many=True, read_only=True)
+    terminations = ViewableListSerializer(
+        child=TunnelTerminationSerializer(), read_only=True,
+        rbac_slug="tunneltermination", tenant_path="tunnel__tenant",
+    )
     encapsulation_display = serializers.CharField(
         source="get_encapsulation_display", read_only=True
     )
@@ -9085,7 +9108,10 @@ class L2VPNSerializer(StatusSerializerMixin,
         source="export_targets", queryset=RouteTarget.objects.all(),
         write_only=True, required=False, many=True,
     )
-    terminations = L2VPNTerminationSerializer(many=True, read_only=True)
+    terminations = ViewableListSerializer(
+        child=L2VPNTerminationSerializer(), read_only=True,
+        rbac_slug="l2vpntermination", tenant_path="l2vpn__tenant",
+    )
     termination_count = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(

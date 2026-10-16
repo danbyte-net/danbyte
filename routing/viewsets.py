@@ -22,6 +22,7 @@ from api.viewsets import (
     StandardPagination,
     TenantScopedViewSet,
 )
+from auth_api.drf import restrict_for_view
 from auth_api.site_paths import SITE_PATHS, site_in_q
 from core.tags import TAGS
 
@@ -228,7 +229,7 @@ class _RuleViewSet(TenantScopedViewSet):
             pid = self.request.query_params.get(self.parent)
             if pid:
                 qs = qs.filter(**{f"{self.parent}_id": pid})
-        return qs
+        return restrict_for_view(self, qs)
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()
@@ -443,7 +444,7 @@ class RedistributionViewSet(TenantScopedViewSet):
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{f"{key}_id": v})
-        return qs
+        return restrict_for_view(self, qs)
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()

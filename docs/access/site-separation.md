@@ -68,8 +68,12 @@ off:
 - **IP ranges, DHCP scopes** - their prefix's; DHCP reservations and leases,
   their scope's prefix's;
 - **VLAN groups** - their site, else their cluster's;
+- **circuit terminations** - their own site;
 - **FHRP group assignments, tunnel and L2VPN terminations** - their
   interface's device or VM (an L2VPN's VLAN, for a VLAN termination);
+- **routing rows** - BGP address families, redistributions and IGP
+  interfaces, their instance's device or VM; VTEP memberships, their VTEP's
+  device;
 - **virtual disks, virtual switches** - their VM's, their cluster's;
 - **DNS records and drift, certificate bindings** - their IP address's;
 - **config snapshots and state, BMC endpoints, port-utilization rules, Zabbix
@@ -81,6 +85,9 @@ that only *refer* to a site-bound row stay tenant-wide: FHRP groups, wireless
 LANs, prefix-list rules, notification channels, virtualization networks and
 placement rules, Zabbix connections and adoption rules. Check assignments,
 monitoring policies, alert rules and silences follow the object they target.
+
+Circuits, tunnels and L2VPNs are tenant-wide, but their ends are not: a
+circuit, tunnel or L2VPN lists only the terminations the reader may view.
 
 ## Creating prefixes: your space, or a fresh one
 

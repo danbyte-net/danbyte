@@ -7,14 +7,20 @@ Before #414 a site-limited grant silently applied tenant-wide to services,
 NAT rules, VLAN groups and a dozen more types nobody had added to the map.
 """
 import importlib
+import uuid
+from unittest import mock
 
 from django.apps import apps as django_apps
 from django.contrib.auth.models import User
 from django.core.exceptions import FieldError
 from django.test import SimpleTestCase, TestCase
+from django.urls import get_resolver
+from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from api.models import Site
 from auth_api import rbac
+from auth_api.drf import _object_type
 from auth_api.models import ObjectPermission, UserProfile
 from auth_api.object_types import _registry
 from auth_api.site_paths import (
@@ -330,4 +336,96 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
         self.assertEqual(
             sorted(CATALOG_MIGRATION.ROLE_CATALOGS + LATER.NEW_CATALOGS),
             sorted(site_role_catalog_types()),
+        )
+
+
+def _routed_viewsets():
+    """Every DRF viewset class mounted anywhere in the URLconf."""
+    out = set()
+
+    def walk(patterns):
+        for p in patterns:
+            if hasattr(p, "url_patterns"):
+                walk(p.url_patterns)
+            elif getattr(getattr(p, "callback", None), "cls", None) is not None:
+                out.add(p.callback.cls)
+
+    walk(get_resolver().url_patterns)
+    return out
+
+
+class RoutedViewsetsRestrictTests(TestCase):
+    """#426: every routed viewset of a site-scoped type runs its queryset
+    through the RBAC row restriction for each action. A viewset that built
+    its own queryset and returned it unrestricted ignored site limits and row
+    constraints - circuit, tunnel and L2VPN terminations and redistributions
+    listed, read and deleted another site's rows."""
+
+    ACTIONS = (
+        ("list", "get", "view"),
+        ("retrieve", "get", "view"),
+        ("partial_update", "patch", "change"),
+        ("destroy", "delete", "delete"),
+    )
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.site_a = Site.objects.create(tenant=self.tenant, name="A")
+        self.user = User.objects.create_user("u", password="x")
+        UserProfile.objects.create(user=self.user).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="A", object_types=["*"], actions=["view", "add", "change", "delete"],
+        )
+        perm.tenants.set([self.tenant])
+        perm.sites.set([self.site_a])
+        perm.users.set([self.user])
+
+    def _view(self, cls, action, method):
+        raw = getattr(APIRequestFactory(), method)("/")
+        force_authenticate(raw, user=self.user)
+        view = cls()
+        view.action = action
+        view.args = ()
+        view.kwargs = {} if action == "list" else {"pk": str(uuid.uuid4())}
+        view.format_kwarg = None
+        view.request = Request(raw)
+        view.request.user = self.user
+        return view
+
+    maxDiff = None
+
+    def test_every_site_scoped_viewset_restricts_its_queryset(self):
+        scoped = set(SITE_PATHS) | set(CATALOG_SITE_PATHS)
+        real = rbac.restrict_queryset
+        checked, bypass = set(), []
+        for cls in sorted(_routed_viewsets(), key=lambda c: (c.__module__, c.__name__)):
+            if not hasattr(cls, "get_queryset"):
+                continue
+            slug = _object_type(cls())
+            if slug not in scoped:
+                continue
+            for action, method, verb in self.ACTIONS:
+                seen = []
+
+                def record(qs, user, tenant, s, a, _seen=seen):
+                    _seen.append((s, a))
+                    return real(qs, user, tenant, s, a)
+
+                view = self._view(cls, action, method)
+                with mock.patch.object(rbac, "restrict_queryset", side_effect=record):
+                    view.get_queryset()
+                if (slug, verb) not in seen:
+                    bypass.append(f"{cls.__module__}.{cls.__name__}.{action} ({slug})")
+            checked.add(slug)
+        self.assertEqual(
+            bypass, [],
+            "These viewsets return a queryset the RBAC row restriction never saw, "
+            "so site limits and constraints do not apply. End get_queryset with "
+            "restrict_for_view(self, qs) or chain to super().get_queryset().",
+        )
+        self.assertLessEqual(
+            {"circuittermination", "tunneltermination", "l2vpntermination",
+             "redistribution", "device", "interface", "tag"},
+            checked,
         )
