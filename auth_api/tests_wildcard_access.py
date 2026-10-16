@@ -91,11 +91,14 @@ class BuiltinGroupEngineTests(TestCase):
             for slug in ACCESS_TYPES:
                 with self.subTest(group=group, slug=slug):
                     want = set(CRUD) if group == "Administrator" else set()
-                    self.assertEqual(acts.get(slug, set()), want)
+                    # A "*" grant's verbs apply to every type it reaches, so
+                    # the Administrator's money verbs ride along (0.18).
+                    self.assertEqual(acts.get(slug, set()) & set(CRUD), want)
 
     def test_everything_else_is_unchanged(self):
         acts = {g: rbac.effective_actions(u, self.tenant) for g, u in self.users.items()}
-        self.assertEqual(acts["Administrator"]["prefix"], set(CRUD))
+        self.assertEqual(
+            acts["Administrator"]["prefix"], {*CRUD, "view_credits", "view_cost"})
         self.assertEqual(acts["Operator"]["prefix"], {"view", "add", "change"})
         self.assertEqual(acts["Read-only"]["prefix"], {"view"})
         self.assertEqual(acts["Operator"]["script"], {"view", "add", "change"})

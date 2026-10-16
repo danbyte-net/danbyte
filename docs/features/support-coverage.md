@@ -149,8 +149,8 @@ the contract page, the list and its columns, the API, exports and the change
 log, and the form has no cost fields. Setting or changing the cost needs it
 too; an edit without it keeps the stored cost.
 
-Superusers see the cost. No built-in group holds *view cost*, not even
-Administrator, and neither do the site roles: add it to a grant for the
+Superusers and the built-in Administrator group see the cost. Operator,
+Read-only and the site roles do not: add *view cost* to a grant for the
 people who handle renewals and budgets. *All object types* with *view cost*
 covers it.
 

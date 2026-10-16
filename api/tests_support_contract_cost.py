@@ -2,8 +2,8 @@
 ``view_cost`` shows it, the way ``view_credits`` shows an SLA agreement's
 money. Without it the API, the export, the list-column catalog and the change
 log leave cost and currency out, and a write may not set or change them; a
-body that leaves them out keeps them. No built-in group and no site role
-holds the verb."""
+body that leaves them out keeps them. The built-in Administrator group holds
+the verb; Operator, Read-only and the site roles do not."""
 from __future__ import annotations
 
 import csv
@@ -94,16 +94,26 @@ class ReadTests(_Case):
         self._login(self.viewer)
         self.assertNotIn("cost", self._detail())
 
-    def test_builtin_groups_do_not_hold_it(self):
-        """The "*" grants carry CRUD verbs only, like view_credits."""
+    def _builtin(self, name):
         ensure_builtin_groups()
-        for name in ("Administrator", "Operator", "Read-only"):
+        u = User.objects.create_user(f"b-{name}", password="x")
+        UserProfile.objects.create(user=u, role="custom").tenants.add(self.tenant)
+        u.groups.add(Group.objects.get(name=name))
+        return u
+
+    def test_administrator_sees_it(self):
+        """Administrators manage grants, so the built-in grant lists view_cost."""
+        self._login(self._builtin("Administrator"))
+        body = self._detail()
+        self.assertEqual(Decimal(str(body["cost"])), Decimal("12345.67"))
+        self.assertEqual(self._list()[0]["currency"], "EUR")
+
+    def test_operator_and_read_only_do_not(self):
+        for name in ("Operator", "Read-only"):
             with self.subTest(group=name):
-                u = User.objects.create_user(f"b-{name}", password="x")
-                UserProfile.objects.create(user=u, role="custom").tenants.add(self.tenant)
-                u.groups.add(Group.objects.get(name=name))
-                self._login(u)
+                self._login(self._builtin(name))
                 self.assertFalse(set(COST) & set(self._detail()))
+                self.assertNotIn("12345", json.dumps(self._list()))
 
     def test_wildcard_grant_naming_the_verb_shows_it(self):
         u = self._user("star", ["view", "view_cost"], types=["*"])
@@ -287,6 +297,22 @@ class ChangeLogTests(_Case):
         self.assertEqual(detail["change_count"], len(detail["changes"]))
         for key in ("changes", "pre_change", "post_change"):
             self.assertFalse(set(COST) & set(detail.get(key) or {}), key)
+
+    def _builtin(self, name):
+        ensure_builtin_groups()
+        u = User.objects.create_user(f"h-{name}", password="x")
+        UserProfile.objects.create(user=u, role="custom").tenants.add(self.tenant)
+        u.groups.add(Group.objects.get(name=name))
+        return u
+
+    def test_history_shows_cost_to_administrator_only(self):
+        for name, sees in (("Administrator", True), ("Operator", False), ("Read-only", False)):
+            with self.subTest(group=name):
+                self._login(self._builtin(name))
+                detail = self.client.get(f"/api/changelog/{self.entry.id}/").json()
+                self.assertEqual("cost" in detail["changes"], sees)
+                self.assertEqual("currency" in (detail.get("post_change") or {}), sees)
+                self.assertEqual("500.00" in json.dumps(self._entries()), sees)
 
     def test_history_shows_cost_with_view_cost(self):
         rows = self._entries()

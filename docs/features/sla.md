@@ -571,7 +571,9 @@ running period always follows the current rules.
 The credit shows after the target on the Overview, in a **Credit** column on
 the SLAs list once any agreement owes one, as a line in the PDF report and as
 rows in its CSV, and per agreement with totals per currency in the
-**Overview** report. It needs the **view credits** permission (see below). A
+**Overview** report. It needs the **view credits** permission (see below),
+which the built-in Administrator group holds and Operator and Read-only do
+not. A
 filtered analysis never shows one; a slice of a service is not what the
 contract prices.
 

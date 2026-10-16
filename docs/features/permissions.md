@@ -36,7 +36,7 @@ LANs and IPSec profiles - read the referenced secret), **subscribe** (on notific
 self-service opt-in/out), **view credits** (on SLA agreements - see the
 [service credits](sla.md#service-credits) an agreement owes), **view cost**
 (on support contracts - see and set [what a contract
-costs](support-coverage.md#permissions); no built-in group holds it),
+costs](support-coverage.md#cost)),
 **set default**
 (on topology views - choose the [view Topology opens
 with](topology.md#default-view) for the tenant; tenant admins can without it,
@@ -73,9 +73,17 @@ hand. They can't be deleted.
 
 | Group | What members can do |
 |---|---|
-| **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions (its grant names those types). |
+| **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions (its grant names those types) - and see SLA service credits and contract costs (*view credits*, *view cost*). |
 | **Operator** | View, add, and change every object except users, groups and permissions - but not delete. No Admin pages or tenant settings. |
 | **Read-only** | View every object except users, groups and permissions; change nothing. |
+
+An all-object grant carries only the verbs it lists. The Administrator grant
+lists *view credits* and *view cost*: administrators manage the grants and
+could give themselves both. Operator and Read-only hold neither, and no
+built-in group holds *reveal*, *view config*, *connect* or the other
+capability verbs. Upgrading to 0.18 adds the two verbs to the built-in
+Administrator grant; a copy of it, or one shared with another group, is left
+as it is.
 
 !!! tip "Upgrades don't lock anyone out"
     When permissions were introduced, every existing user was placed into a
